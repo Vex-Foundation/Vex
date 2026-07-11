@@ -105,11 +105,9 @@ const RESERVED_UNREGISTERED: Readonly<Record<string, string>> = {
     "Reserved DB status responder — only database.migrate is wired; status is a future health-panel surface.",
 
   // Wizard provider step persists via the verify-then-persist
-  // `providerPersist` handler (verify happens inside persist). Standalone
-  // list-models / connection-test responders are declared for a future
-  // provider-management surface but are not wired yet.
-  [CH.onboarding.providerListModels]:
-    "Reserved provider model-list responder — provider step verifies inside providerPersist; standalone list is not wired yet.",
+  // `providerPersist` handler (verify happens inside persist). A standalone
+  // connection-test responder remains reserved; model listing is now wired
+  // for the provider picker.
   [CH.onboarding.providerTest]:
     "Reserved provider connection-test responder — verify is folded into providerPersist; standalone test is not wired yet.",
 };

@@ -12,7 +12,7 @@
  *  - Success card with latencyMs + advance to "review".
  *  - External `<a target="_blank">` to openrouter.ai/models (no
  *    bridge call).
- *  - `providerListModels` NOT exposed on window.vex.onboarding.
+ *  - Model catalogue is exposed through the typed onboarding bridge.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +27,7 @@ import type { JSX } from "react";
 import type { Result } from "@shared/ipc/result.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type {
+  ProviderListModelsResult,
   ProviderPersistInput,
   ProviderPersistResult,
 } from "@shared/schemas/provider.js";
@@ -37,6 +38,8 @@ import type {
 
 const mockUseEnvState = vi.fn();
 const mockPersistProvider = vi.fn();
+const mockUseProviderModels = vi.fn();
+const mockProviderModelsRefetch = vi.fn();
 const mockSetWizardMutate = vi.fn();
 const mockInvalidate = vi.fn();
 const mockOnAdvance = vi.fn();
@@ -48,6 +51,7 @@ vi.mock("../../../../lib/api/onboarding.js", () => ({
 vi.mock("../../../../lib/api/provider.js", () => ({
   persistProvider: (input: ProviderPersistInput) => mockPersistProvider(input),
   useInvalidateEnvStateAfterProviderWrite: () => mockInvalidate,
+  useProviderModels: (enabled: boolean) => mockUseProviderModels(enabled),
 }));
 
 vi.mock("../../../../lib/api/wizard.js", async () => {
@@ -109,6 +113,40 @@ function makeQueryResult(
   } as UseQueryResult<Result<EnvState>>;
 }
 
+function makeProviderModelsQuery(): UseQueryResult<
+  Result<ProviderListModelsResult>
+> {
+  return {
+    data: {
+      ok: true,
+      data: {
+        models: [
+          {
+            modelId: "anthropic/claude-sonnet-4.5",
+            displayName: "Anthropic: Claude Sonnet 4.5",
+            providerId: "anthropic",
+            contextLength: 200_000,
+            pricingInputPerMillion: 3,
+            pricingOutputPerMillion: 15,
+          },
+          {
+            modelId: "openai/gpt-5.2",
+            displayName: "OpenAI: GPT-5.2",
+            providerId: "openai",
+            contextLength: 400_000,
+            pricingInputPerMillion: 1.75,
+            pricingOutputPerMillion: 14,
+          },
+        ],
+        fetchedAt: "2026-07-11T12:00:00.000Z",
+      },
+    },
+    isLoading: false,
+    isError: false,
+    refetch: mockProviderModelsRefetch,
+  } as unknown as UseQueryResult<Result<ProviderListModelsResult>>;
+}
+
 function renderWithQuery(ui: JSX.Element) {
   const qc = new QueryClient({
     defaultOptions: {
@@ -122,6 +160,9 @@ function renderWithQuery(ui: JSX.Element) {
 beforeEach(() => {
   mockUseEnvState.mockReset();
   mockPersistProvider.mockReset();
+  mockUseProviderModels.mockReset();
+  mockUseProviderModels.mockReturnValue(makeProviderModelsQuery());
+  mockProviderModelsRefetch.mockReset();
   mockSetWizardMutate.mockReset();
   mockInvalidate.mockReset();
   mockOnAdvance.mockReset();
@@ -155,6 +196,7 @@ describe("ProviderStep", () => {
     expect(
       container.querySelector('[data-vex-wizard-provider="form"]'),
     ).toBeNull();
+    expect(mockUseProviderModels).toHaveBeenCalledWith(false);
     // Model label shown.
     expect(getByText(/anthropic\/claude-sonnet-4\.5/)).toBeTruthy();
   });
@@ -487,17 +529,14 @@ describe("ProviderStep", () => {
     ).not.toBeNull();
   });
 
-  it("does NOT expose providerListModels on window.vex.onboarding (M10 dropped IPC)", () => {
-    // Bridge surface assertion — `providerListModels` channel is
-    // declared in `channels.ts` but never wired into the preload bridge
-    // in M10. Renderer code can't reach it.
+  it("exposes providerListModels on window.vex.onboarding", () => {
     const onboarding = (
       globalThis as unknown as {
         readonly window?: { readonly vex?: { readonly onboarding?: Record<string, unknown> } };
       }
     ).window?.vex?.onboarding;
     if (onboarding) {
-      expect(onboarding.providerListModels).toBeUndefined();
+      expect(onboarding.providerListModels).toBeTypeOf("function");
       expect(onboarding.providerTest).toBeUndefined();
     }
   });

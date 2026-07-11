@@ -30,6 +30,7 @@ import { registerFinalizeHandler } from "./onboarding/finalize.js";
 import { registerPolymarketConfiguredAddressesHandler } from "./onboarding/polymarket-configured-addresses.js";
 import { registerPolymarketSetupHandler } from "./onboarding/polymarket-setup.js";
 import { registerProviderHandler } from "./onboarding/provider.js";
+import { registerProviderModelsHandler } from "./onboarding/provider-models.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerRuntimeHandlers } from "./runtime.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
@@ -67,6 +68,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerEmbeddingHandler());
   teardowns.push(registerAgentCoreHandler());
   teardowns.push(registerProviderHandler());
+  teardowns.push(registerProviderModelsHandler());
   teardowns.push(registerFinalizeHandler());
   teardowns.push(registerSessionsCreateHandler());
   teardowns.push(registerSessionsListHandler());

@@ -21,6 +21,7 @@ export const onboardingKeys = {
   all: ["onboarding"] as const,
   envState: () => ["onboarding", "envState"] as const,
   wizardState: () => ["onboarding", "wizardState"] as const,
+  providerModels: () => ["onboarding", "providerModels"] as const,
   // Puzzle 5 B-UI — lowercased EVM addresses with Polymarket creds configured.
   polymarketConfiguredAddresses: () =>
     ["onboarding", "polymarketConfiguredAddresses"] as const,

@@ -41,6 +41,8 @@ import type {
   AgentCoreConfigureResult,
 } from "../../../schemas/agent-core.js";
 import type {
+  ProviderListModelsInput,
+  ProviderListModelsResult,
   ProviderPersistInput,
   ProviderPersistResult,
 } from "../../../schemas/provider.js";
@@ -131,6 +133,9 @@ export interface OnboardingBridge {
   readonly providerPersist: (
     input: ProviderPersistInput
   ) => Promise<Result<ProviderPersistResult>>;
+  readonly providerListModels: (
+    input?: ProviderListModelsInput
+  ) => Promise<Result<ProviderListModelsResult>>;
   readonly completeSetup: (
     input: CompleteSetupInput
   ) => Promise<Result<CompleteSetupResult>>;

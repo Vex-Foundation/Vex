@@ -139,6 +139,7 @@ describe("preload bridge surface", () => {
       "CH.wallets.getPreparedIntent",
       "CH.wallets.cancelPreparedIntent",
       "CH.models.listAvailable",
+      "CH.onboarding.providerListModels",
       "CH.usage.getSessionTotals",
       "CH.usage.getLastTurn",
       "CH.usage.getContextWindow",

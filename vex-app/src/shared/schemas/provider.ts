@@ -65,3 +65,39 @@ export const providerPersistResultSchema = z
   .strict();
 
 export type ProviderPersistResult = z.infer<typeof providerPersistResultSchema>;
+
+// ── OpenRouter model catalogue ─────────────────────────────────────────────
+
+/**
+ * Public, renderer-safe projection of an OpenRouter catalogue entry. The main
+ * process deliberately allow-lists only the metadata needed by the picker;
+ * provider routing details and raw API payloads never cross IPC.
+ */
+export const providerModelOptionSchema = z
+  .object({
+    modelId: z.string().trim().min(1).max(200),
+    displayName: z.string().trim().min(1).max(200),
+    providerId: z.string().trim().min(1).max(64),
+    contextLength: z.number().int().positive().nullable(),
+    pricingInputPerMillion: z.number().finite().nonnegative().nullable(),
+    pricingOutputPerMillion: z.number().finite().nonnegative().nullable(),
+  })
+  .strict();
+
+export type ProviderModelOption = z.infer<typeof providerModelOptionSchema>;
+
+export const providerListModelsInputSchema = z.object({}).strict();
+export type ProviderListModelsInput = z.infer<
+  typeof providerListModelsInputSchema
+>;
+
+export const providerListModelsResultSchema = z
+  .object({
+    models: z.array(providerModelOptionSchema).max(1_000).readonly(),
+    fetchedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export type ProviderListModelsResult = z.infer<
+  typeof providerListModelsResultSchema
+>;

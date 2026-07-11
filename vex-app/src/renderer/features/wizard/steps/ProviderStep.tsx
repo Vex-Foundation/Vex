@@ -42,12 +42,12 @@ import { useCallback, useRef, useState, type JSX } from "react";
 import { type ProviderPersistInput } from "@shared/schemas/provider.js";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
-import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { PasswordField } from "../../../components/common/PasswordField.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
   persistProvider,
+  useProviderModels,
   useInvalidateEnvStateAfterProviderWrite,
 } from "../../../lib/api/provider.js";
 import {
@@ -58,6 +58,7 @@ import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import { CAUSE_HINTS, uiCopyFor, type ServerError } from "./provider/error-ui.js";
 import { ModelBrandIcon } from "./provider/ModelBrandIcon.js";
+import { ModelPicker } from "./provider/ModelPicker.js";
 
 export interface ProviderStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -89,6 +90,12 @@ export function ProviderStep({
   const configured = providerState?.configured ?? false;
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
+  const providerModels = useProviderModels(!configured || showOverride);
+  const providerModelsResult = providerModels.data;
+  const catalogueModels =
+    providerModelsResult?.ok === true ? providerModelsResult.data.models : [];
+  const catalogueFailed =
+    providerModels.isError || providerModelsResult?.ok === false;
 
   const openLogsFolder = useCallback(() => {
     // Fire-and-forget one-shot action: opening the OS file manager has no
@@ -327,17 +334,21 @@ export function ProviderStep({
             <ModelBrandIcon modelId={model} size={16} />
             Model id
           </Label>
-          <Input
+          <ModelPicker
             id="vex-provider-model"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="anthropic/claude-sonnet-4.5"
             value={model}
-            onChange={(e) => setModel(e.target.value)}
+            models={catalogueModels}
+            loading={providerModels.isLoading}
+            failed={catalogueFailed}
+            disabled={submitting || stepAdvance.isPending}
+            onChange={setModel}
+            onRetry={() => {
+              void providerModels.refetch();
+            }}
           />
           <p className="text-xs text-[var(--color-text-muted)]">
-            Browse model ids at{" "}
+            Browse tool-capable models or enter any OpenRouter model id. View
+            the full catalogue at{" "}
             <a
               href="https://openrouter.ai/models"
               target="_blank"

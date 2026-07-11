@@ -13,8 +13,14 @@ import { embeddingConfigureInputSchema } from "../../shared/schemas/embedding.js
 import type { EmbeddingConfigureInput } from "../../shared/schemas/embedding.js";
 import { completeSetupInputSchema } from "../../shared/schemas/finalize.js";
 import type { CompleteSetupInput } from "../../shared/schemas/finalize.js";
-import { providerPersistInputSchema } from "../../shared/schemas/provider.js";
-import type { ProviderPersistInput } from "../../shared/schemas/provider.js";
+import {
+  providerListModelsInputSchema,
+  providerPersistInputSchema,
+} from "../../shared/schemas/provider.js";
+import type {
+  ProviderListModelsInput,
+  ProviderPersistInput,
+} from "../../shared/schemas/provider.js";
 import {
   walletAddInputSchema,
   walletExportAllInputSchema,
@@ -195,6 +201,13 @@ export const onboarding = {
       CH.onboarding.providerPersist,
       input,
       providerPersistInputSchema
+    );
+  },
+  providerListModels(input: ProviderListModelsInput = {}) {
+    return invokeWithSchema(
+      CH.onboarding.providerListModels,
+      input,
+      providerListModelsInputSchema,
     );
   },
   completeSetup(input: CompleteSetupInput) {
