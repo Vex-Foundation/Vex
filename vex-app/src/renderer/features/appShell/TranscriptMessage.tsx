@@ -75,7 +75,7 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
         <span
           data-vex-agent-spinner=""
           aria-hidden
-          className="absolute -inset-[3px] rounded-full border border-[var(--vex-accent)] border-r-transparent animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          className="absolute -inset-[3px] rounded-full border border-[var(--vex-accent)] border-r-transparent animate-spin [animation-duration:1200ms] motion-reduce:animate-none"
         />
       ) : null}
       <img

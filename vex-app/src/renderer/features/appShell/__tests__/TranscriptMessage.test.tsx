@@ -279,6 +279,7 @@ describe("TranscriptMessage agent activity avatar", () => {
     expect(avatar).not.toBeNull();
     expect(spinner?.className).toContain("border-[var(--vex-accent)]");
     expect(spinner?.className).toContain("animate-spin");
+    expect(spinner?.className).toContain("[animation-duration:1200ms]");
     expect(spinner?.className).toContain("motion-reduce:animate-none");
   });
 
