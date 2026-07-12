@@ -64,6 +64,63 @@ export function submitSuccessText(data: ChatSubmitResult): string | null {
   return null;
 }
 
+/**
+ * A chat submit can resolve successfully at the IPC boundary while the agent
+ * itself stopped before finishing. These runtime guards are not transport
+ * errors, so they arrive in `ChatSubmitResult.stopReason` rather than the
+ * `Result` error channel. Translate only the terminal, operator-actionable
+ * failure reasons here; approval and mission pause states already have their
+ * own dedicated UI.
+ */
+export interface SubmitFailureNotice {
+  readonly text: string;
+  readonly retryable: boolean;
+}
+
+function incompleteTurnNotice(
+  data: ChatSubmitResult,
+  reason: string,
+): SubmitFailureNotice {
+  if (data.toolCallsMade === 0) {
+    return { text: reason, retryable: true };
+  }
+  return {
+    text:
+      `${reason} Review the transcript before trying again; ` +
+      "earlier steps may have completed.",
+    retryable: false,
+  };
+}
+
+export function submitFailureNotice(
+  data: ChatSubmitResult,
+): SubmitFailureNotice | null {
+  switch (data.stopReason) {
+    case "iteration_limit":
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped before completing the task after reaching this turn's action limit.",
+      );
+    case "timeout":
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped before completing the task because this turn timed out.",
+      );
+    case "system_error":
+      return incompleteTurnNotice(
+        data,
+        "Vex stopped before completing the task because of an internal error.",
+      );
+    case "compact_unable_at_critical":
+      return {
+        text: "Vex stopped because this conversation ran out of usable context. Start a new session or try a narrower request.",
+        retryable: false,
+      };
+    default:
+      return null;
+  }
+}
+
 export function placeholderFor(session: SessionListItem | null): string {
   if (session?.mode !== "mission") return "What do you want Vex to do?";
   const goal = session.initialGoal?.trim();

@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import {
   useMutation,
+  useMutationState,
   useQueryClient,
   type UseMutationResult,
 } from "@tanstack/react-query";
@@ -37,12 +38,33 @@ export type UseSubmitChatResult = UseMutationResult<
   ChatSubmitInput
 > & { readonly stop: () => void };
 
+export const CHAT_SUBMIT_MUTATION_KEY = ["chat", "submit"] as const;
+
+/**
+ * Read the shared mutation cache instead of creating another submit observer.
+ * This keeps shell-level status indicators live for the entire IPC request,
+ * including quiet gaps between provider streams and tool execution.
+ */
+export function useIsChatSubmitting(sessionId: string | null): boolean {
+  const pendingSessionIds = useMutationState({
+    filters: {
+      mutationKey: CHAT_SUBMIT_MUTATION_KEY,
+      status: "pending",
+    },
+    select: (mutation) =>
+      (mutation.state.variables as ChatSubmitInput | undefined)?.sessionId ??
+      null,
+  });
+  return sessionId !== null && pendingSessionIds.includes(sessionId);
+}
+
 export function useSubmitChat(): UseSubmitChatResult {
   const queryClient = useQueryClient();
   const cancelRef = useRef<(() => void) | null>(null);
   const activeSubmitRef = useRef<symbol | null>(null);
 
   const mutation = useMutation({
+    mutationKey: CHAT_SUBMIT_MUTATION_KEY,
     mutationFn: (input: ChatSubmitInput) => {
       const invocation = window.vex.chat.submit(input);
       cancelRef.current = invocation.cancel;

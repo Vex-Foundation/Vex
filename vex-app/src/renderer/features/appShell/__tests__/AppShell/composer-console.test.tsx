@@ -43,7 +43,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
 }));
 
 const mockSubmitChat = {
-  isPending: false,
+  isPending: false as boolean,
   mutateAsync: vi.fn(),
   stop: vi.fn(),
 };
@@ -92,6 +92,7 @@ function agentRow(over: Partial<SessionListItem> = {}): SessionListItem {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSubmitChat.isPending = false;
   runStatus = null;
   useUiStore.setState({
     pendingFirstMessage: null,
@@ -181,6 +182,22 @@ describe("SessionComposer — Signal Console chrome", () => {
     expect(status?.textContent).toBe("AWAITING SIGNATURE");
     expect(status?.className).toContain("text-[var(--vex-pin)]");
     expect(form?.contains(status)).toBe(false);
+  });
+
+  it("keeps the turn visibly WORKING between stream updates", () => {
+    mockSubmitChat.isPending = true;
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+
+    const status = container.querySelector(
+      '[data-vex-console-status="working"]',
+    );
+    expect(status?.textContent).toBe("Working…");
+    expect(status?.getAttribute("role")).toBe("status");
+    expect(
+      container.querySelector('[data-vex-console-status="stopping"]'),
+    ).toBeNull();
   });
 
   it("has no PROPOSE → ENFORCE → PROVE flow strip on the welcome stage", () => {

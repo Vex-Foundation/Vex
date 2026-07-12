@@ -280,6 +280,42 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
+  it("surfaces a timed-out turn after tool activity without offering a blind Retry", async () => {
+    const row = makeAgentRow("Timed-out chat");
+    sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
+    sessionsGetMock.mockResolvedValue({ ok: true, data: row });
+    useUiStore.setState({ activeSessionId: row.id });
+    chatSubmitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          text: null,
+          toolCallsMade: 3,
+          pendingApprovals: [],
+          stopReason: "timeout",
+          missionStatus: null,
+          treatedAsInitialGoal: false,
+        },
+      }),
+      cancel: vi.fn(),
+    });
+
+    renderShell();
+    await screen.findByText("Timed-out chat");
+    const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "bridge in one shot" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await screen.findByText(
+      "Vex stopped before completing the task because this turn timed out. Review the transcript before trying again; earlier steps may have completed.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Retry sending the message" }),
+    ).toBeNull();
+    expect(draft.value).toBe("");
+    expect(chatSubmitMock).toHaveBeenCalledTimes(1);
+  });
+
   it("arms an inline Retry on a retryable provider error and re-sends the same message", async () => {
     const row = makeAgentRow("Retry chat");
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
@@ -510,7 +546,7 @@ describe("AppShell", () => {
       cancel,
     });
 
-    renderShell();
+    const { container } = renderShell();
     await screen.findByText("Stoppable chat");
 
     const draft = screen.getByLabelText("Session draft") as HTMLTextAreaElement;
@@ -518,6 +554,12 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const stopBtn = await screen.findByRole("button", { name: "Stop generating" });
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-vex-tape-state="live"]'),
+      ).not.toBeNull(),
+    );
+    expect(screen.getByText("Working…")).toBeTruthy();
     // Pins the fix: a submit-typed Stop would re-run onSubmit (re-sending the
     // draft) instead of only cancelling the turn.
     expect(stopBtn.getAttribute("type")).toBe("button");

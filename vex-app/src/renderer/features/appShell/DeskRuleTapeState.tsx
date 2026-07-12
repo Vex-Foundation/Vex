@@ -5,9 +5,9 @@
  * the head of the tape.
  *
  * State precedence mirrors the streaming strip's circuit-break: a pending
- * approval FREEZES the run, so AWAITING wins over LIVE; otherwise LIVE while the
- * engine streams; then a non-streaming mission run reads PAUSED (paused_*) or
- * RUNNING (so a started, quiet run no longer looks idle); IDLE at rest. Blue is
+ * approval FREEZES the run, so AWAITING wins over LIVE; otherwise LIVE while a
+ * chat submit remains active (including quiet gaps between engine streams);
+ * then a mission run reads PAUSED (paused_*) or RUNNING; IDLE at rest. Blue is
  * rationed to the non-idle states.
  *
  * Landing hero-status treatment: the dot carries the `.vex-pulse-dot` ring
@@ -23,6 +23,7 @@
 
 import type { JSX } from "react";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
+import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -32,6 +33,7 @@ export function DeskRuleTapeState(): JSX.Element | null {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const appShellView = useUiStore((s) => s.appShellView);
   const preview = useStreamPreview(activeSessionId);
+  const chatSubmitting = useIsChatSubmitting(activeSessionId);
   const pending = usePendingApprovals(activeSessionId);
   const runtime = useRuntimeState(activeSessionId);
 
@@ -40,14 +42,15 @@ export function DeskRuleTapeState(): JSX.Element | null {
   const pendingData = pending.data;
   const hasPending =
     pendingData !== undefined && pendingData.ok && pendingData.data.length > 0;
-  const streaming = preview !== null && preview.phase === "streaming";
+  const live =
+    chatSubmitting || (preview !== null && preview.phase === "streaming");
   const run = runtime.data !== undefined && runtime.data.ok ? runtime.data.data : null;
   const hasActiveRun = run?.hasActiveRun === true;
   const paused = hasActiveRun && (run?.status?.startsWith("paused") ?? false);
 
   const state = hasPending
     ? "awaiting"
-    : streaming
+    : live
       ? "live"
       : paused
         ? "paused"
