@@ -2,6 +2,7 @@ import { CH } from "../../shared/ipc/channels.js";
 import {
   sessionCreateInputSchema,
   sessionDeleteInputSchema,
+  sessionExportMarkdownInputSchema,
   sessionGetInputSchema,
   sessionGetModelInputSchema,
   sessionSetPinnedInputSchema,
@@ -9,6 +10,7 @@ import {
 import type {
   SessionCreateInput,
   SessionDeleteInput,
+  SessionExportMarkdownInput,
   SessionGetInput,
   SessionGetModelInput,
   SessionSetPinnedInput,
@@ -48,6 +50,13 @@ export const sessions = {
       CH.sessions.delete,
       input,
       sessionDeleteInputSchema
+    );
+  },
+  exportMarkdown(input: SessionExportMarkdownInput) {
+    return invokeWithSchema(
+      CH.sessions.exportMarkdown,
+      input,
+      sessionExportMarkdownInputSchema
     );
   },
   getModel(input: SessionGetModelInput) {

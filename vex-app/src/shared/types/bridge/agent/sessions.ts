@@ -4,6 +4,8 @@ import type {
   SessionCreateResult,
   SessionDeleteInput,
   SessionDeleteResult,
+  SessionExportMarkdownInput,
+  SessionExportMarkdownResult,
   SessionGetInput,
   SessionGetModelInput,
   SessionList,
@@ -45,6 +47,10 @@ export interface SessionsBridge {
   readonly delete: (
     input: SessionDeleteInput
   ) => Promise<Result<SessionDeleteResult>>;
+  /** Open a native save dialog and export a readable, redacted transcript. */
+  readonly exportMarkdown: (
+    input: SessionExportMarkdownInput
+  ) => Promise<Result<SessionExportMarkdownResult>>;
   /**
    * Resolve the global runtime model for the session — `source:
    * "global_default"` (from `AGENT_PROVIDER`/`AGENT_MODEL`) or

@@ -87,6 +87,7 @@ export const CH = {
     get: "vex:sessions:get",
     setPinned: "vex:sessions:setPinned",
     delete: "vex:sessions:delete",
+    exportMarkdown: "vex:sessions:exportMarkdown",
     /**
      * Global runtime model resolution for a session. `getModel` is
      * read-only and reports the model the engine resolves from

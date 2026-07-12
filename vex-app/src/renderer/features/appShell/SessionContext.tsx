@@ -12,9 +12,15 @@
  * desk rule stays a single quiet title line.
  */
 
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
+import {
+  CheckmarkCircle02Icon,
+  Download01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
+import { useExportSessionMarkdown } from "../../lib/api/sessions.js";
 import { Stamp } from "./SessionRows/Stamp.js";
 import { getSessionTitle } from "./sessionListModel.js";
 
@@ -31,6 +37,17 @@ export function SessionContext({
   loading,
   error,
 }: SessionContextProps): JSX.Element | null {
+  const exportMutation = useExportSessionMarkdown();
+  const [exportStatus, setExportStatus] = useState<"idle" | "saved" | "error">(
+    "idle",
+  );
+
+  useEffect(() => {
+    if (exportStatus === "idle") return;
+    const timeout = window.setTimeout(() => setExportStatus("idle"), 2_500);
+    return () => window.clearTimeout(timeout);
+  }, [exportStatus]);
+
   if (loading) {
     return (
       <div className="flex h-9 items-center gap-2 font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
@@ -73,6 +90,46 @@ export function SessionContext({
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           {title}
         </span>
+        <span
+          aria-live="polite"
+          className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]"
+        >
+          {exportStatus === "saved"
+            ? "Exported"
+            : exportStatus === "error"
+              ? "Export failed"
+              : ""}
+        </span>
+        <button
+          type="button"
+          aria-label="Export session as Markdown"
+          title="Export session as Markdown"
+          disabled={exportMutation.isPending}
+          onClick={() => {
+            setExportStatus("idle");
+            exportMutation.mutate(
+              { id: activeSession.id },
+              {
+                onSuccess: (result) => {
+                  if (result.ok && result.data.outcome === "saved") {
+                    setExportStatus("saved");
+                  } else if (!result.ok) {
+                    setExportStatus("error");
+                  }
+                },
+                onError: () => setExportStatus("error"),
+              },
+            );
+          }}
+          className="grid size-7 shrink-0 place-items-center rounded-sm text-[var(--vex-text-3)] transition-colors hover:bg-[var(--vex-surface-2)] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)] disabled:cursor-wait disabled:opacity-50"
+        >
+          <HugeiconsIcon
+            icon={exportStatus === "saved" ? CheckmarkCircle02Icon : Download01Icon}
+            size={15}
+            aria-hidden
+            className={exportMutation.isPending ? "animate-pulse" : undefined}
+          />
+        </button>
         {activeSession.permission !== "full" ? (
           <Stamp tone="warn">restricted</Stamp>
         ) : null}

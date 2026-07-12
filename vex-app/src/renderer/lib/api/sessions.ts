@@ -26,6 +26,8 @@ import type {
   SessionCreateResult,
   SessionDeleteInput,
   SessionDeleteResult,
+  SessionExportMarkdownInput,
+  SessionExportMarkdownResult,
   SessionList,
   SessionListItem,
   SessionModelDto,
@@ -175,6 +177,17 @@ export function useDeleteSession(): UseMutationResult<
         useUiStore.getState().setActiveSessionId(null);
       }
     },
+  });
+}
+
+export function useExportSessionMarkdown(): UseMutationResult<
+  Result<SessionExportMarkdownResult>,
+  Error,
+  SessionExportMarkdownInput
+> {
+  return useMutation({
+    mutationFn: (input) => window.vex.sessions.exportMarkdown(input),
+    retry: false,
   });
 }
 

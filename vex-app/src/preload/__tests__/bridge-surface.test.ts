@@ -158,6 +158,7 @@ describe("preload bridge surface", () => {
       // Move 0.3 — read-only per-session executed-trade activity (MOVES).
       "CH.portfolio.listMoves",
       "CH.sessions.getModel",
+      "CH.sessions.exportMarkdown",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".
       "CH.support.openLogsFolder",
       // Updater (M13) — user-triggered in-app update bridge.

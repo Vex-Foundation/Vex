@@ -85,6 +85,7 @@ describe("CH / EV channel constants", () => {
     expect(typeof CH.memory.listSession).toBe("string");
     expect(typeof CH.memory.getStats).toBe("string");
     expect(typeof CH.sessions.getModel).toBe("string");
+    expect(CH.sessions.exportMarkdown).toBe("vex:sessions:exportMarkdown");
   });
 
   it("channels are unique (no duplicate values across namespaces)", () => {

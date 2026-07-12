@@ -32,6 +32,7 @@ const EXPECTED_FUNCTION_EXPORTS = [
   "setInitialMissionGoalIfUnset",
   "getSessionById",
   "listSessions",
+  "getSessionExportMessages",
   "softDeleteSessionWithClient",
   "softDeleteSession",
   "setSessionPinnedWithClient",

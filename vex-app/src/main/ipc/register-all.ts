@@ -35,6 +35,7 @@ import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerRuntimeHandlers } from "./runtime.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
 import { registerSessionsDeleteHandler } from "./sessions/delete.js";
+import { registerSessionsExportMarkdownHandler } from "./sessions/export-markdown.js";
 import { registerSessionsGetHandler } from "./sessions/get.js";
 import { registerSessionsGetModelHandler } from "./sessions/get-model.js";
 import { registerSessionsListHandler } from "./sessions/list.js";
@@ -75,6 +76,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsGetHandler());
   teardowns.push(registerSessionsSetPinnedHandler());
   teardowns.push(registerSessionsDeleteHandler());
+  teardowns.push(registerSessionsExportMarkdownHandler());
   teardowns.push(...registerSessionPlanHandlers());
   // Agent integration puzzle 1: typed bridge surface for the chat panel,
   // runtime control, mission contract/commands, approvals, wallet scope,

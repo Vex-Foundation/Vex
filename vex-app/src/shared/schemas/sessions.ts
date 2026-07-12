@@ -105,6 +105,24 @@ export const sessionGetInputSchema = z
 export type SessionGetInput = z.infer<typeof sessionGetInputSchema>;
 
 /**
+ * Native Markdown export. Main owns both the save dialog and the destination
+ * path; the renderer supplies only the session id and receives no path back.
+ */
+export const sessionExportMarkdownInputSchema = sessionGetInputSchema;
+export type SessionExportMarkdownInput = z.infer<
+  typeof sessionExportMarkdownInputSchema
+>;
+
+export const sessionExportMarkdownResultSchema = z
+  .object({
+    outcome: z.enum(["saved", "cancelled"]),
+  })
+  .strict();
+export type SessionExportMarkdownResult = z.infer<
+  typeof sessionExportMarkdownResultSchema
+>;
+
+/**
  * Single row in the sidebar list. Carries enough metadata for the
  * sidebar to render mode/permission badges + optional mission-run
  * status pill without a second IPC roundtrip.
