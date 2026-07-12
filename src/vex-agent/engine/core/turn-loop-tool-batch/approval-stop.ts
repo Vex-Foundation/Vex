@@ -19,14 +19,19 @@ import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { withTransaction } from "@vex-agent/db/client.js";
 import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
-import { buildIntentPreview, buildPolicySnapshot } from "../approval-intent-preview.js";
+import {
+  buildIntentPreview,
+  buildPolicySnapshot,
+  type IntentPreview,
+} from "../approval-intent-preview.js";
 
 /**
  * Puzzle 5 phase 3 — TTL stamped at enqueue (not at approve). The approve
  * gate (`prepareApprove` snapshot) and the scheduled sweep both rely on a
  * DB-visible `expires_at` so a stale approval gets auto-rejected even
- * without operator action. Single 1h default for all action kinds; phase 7
- * will introduce per-kind TTLs if real workloads need them.
+ * without operator action. One hour is the default; a trusted prepared action
+ * can supply an earlier expiry so its approval never outlives the underlying
+ * wallet intent.
  */
 const APPROVAL_TTL_MS = 60 * 60 * 1000;
 
@@ -66,34 +71,58 @@ export async function enqueueApprovalIntent(args: {
   readonly result: ToolResult;
   readonly toolContext: InternalToolContext;
   readonly intentActionKind: ActionKind;
+  /** Handler-authored preview for a registry-validated prepared follow-up. */
+  readonly trustedPreview?: IntentPreview;
+  /** Optional prepared-action expiry; approval must not outlive it. */
+  readonly trustedExpiresAt?: string;
 }): Promise<string> {
-  const { context, toolCall, result, toolContext, intentActionKind } = args;
+  const {
+    context,
+    toolCall,
+    result,
+    toolContext,
+    intentActionKind,
+    trustedPreview,
+    trustedExpiresAt,
+  } = args;
 
   const approvalId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const intentRiskLevel = riskLevelFromActionKind(intentActionKind);
   // Stage 7 R5: carry the gate-matched swap safety verdict (typed, off the
   // ToolResult — NOT raw args) into the preview so restricted-mode approval
   // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
-  const intentPreview = buildIntentPreview(
-    toolCall.name,
-    toolCall.arguments,
-    result.prequote
-      ? {
-          prequoteVerdict: result.prequote.verdict,
-          fotTax: result.prequote.fotTax,
-          // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
-          // buildIntentPreview renders the fixed lock warning (never from args).
-          termLock: result.prequote.termLock,
-        }
-      : undefined,
-  );
+  const intentPreview = trustedPreview ??
+    buildIntentPreview(
+      toolCall.name,
+      toolCall.arguments,
+      result.prequote
+        ? {
+            prequoteVerdict: result.prequote.verdict,
+            fotTax: result.prequote.fotTax,
+            // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
+            // buildIntentPreview renders the fixed lock warning (never from args).
+            termLock: result.prequote.termLock,
+          }
+        : undefined,
+    );
   const intentPolicy = buildPolicySnapshot(toolContext);
   // Phase 3: stamp `expires_at` at enqueue so the approve gate +
   // scheduled sweep have a DB-visible TTL boundary (see APPROVAL_TTL_MS
   // header). `CreateIntentInput.previewJson/policyJson` were widened in
   // phase 3 to accept the structured builder shapes directly — no
   // `as unknown as Record<string, unknown>` cast needed.
-  const intentExpiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
+  const defaultExpiresAtMs = Date.now() + APPROVAL_TTL_MS;
+  const trustedExpiresAtMs = trustedExpiresAt === undefined
+    ? Number.POSITIVE_INFINITY
+    : Date.parse(trustedExpiresAt);
+  const intentExpiresAt = new Date(
+    Math.min(
+      defaultExpiresAtMs,
+      Number.isFinite(trustedExpiresAtMs)
+        ? trustedExpiresAtMs
+        : defaultExpiresAtMs,
+    ),
+  ).toISOString();
 
   // Single transaction: queue + intent + mission-status flip. A
   // partial state (queue without intent, or queue+intent without

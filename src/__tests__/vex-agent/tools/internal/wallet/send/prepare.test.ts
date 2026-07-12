@@ -187,6 +187,18 @@ describe("handleWalletSendPrepare", () => {
         token: null,
       },
     });
+    expect(result.preparedActionFollowUp).toEqual({
+      toolName: "wallet_send_confirm",
+      args: {
+        network: "eip155",
+        intentId: createArgs.intentId,
+      },
+      expiresAt: createArgs.expiresAt,
+      approvalPreview: {
+        toolName: "wallet_send_confirm",
+        criticalArgs: createArgs.previewJson.criticalArgs,
+      },
+    });
   });
 
   it("rejects missing required fields", async () => {
@@ -218,7 +230,7 @@ describe("handleWalletSendPrepare", () => {
   });
 
   it("uses solana wallet address for solana network", async () => {
-    await handleWalletSendPrepare(
+    const result = await handleWalletSendPrepare(
       { network: "solana", to: "SoLAdr11111111111111111111111111111111", amount: "0.5" },
       makeContext(),
     );
@@ -226,5 +238,17 @@ describe("handleWalletSendPrepare", () => {
       "SoLanaAddr1111111111111111111111111111111",
     );
     expect(mockCreate.mock.calls[0][0].chainAlias).toBeNull();
+    expect(result.preparedActionFollowUp).toMatchObject({
+      args: { network: "solana" },
+      approvalPreview: {
+        criticalArgs: {
+          network: "solana",
+          chain: null,
+          to: "SoLAdr11111111111111111111111111111111",
+          amount: "0.5",
+          token: null,
+        },
+      },
+    });
   });
 });

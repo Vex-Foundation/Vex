@@ -64,7 +64,7 @@ export async function handleWalletSendPrepare(
     idempotencyKey: intentId,
   });
 
-  return ok({
+  const result = ok({
     intentId,
     network,
     chain: chain ?? undefined,
@@ -75,4 +75,16 @@ export async function handleWalletSendPrepare(
     expiresAt,
     message: "Use wallet_send_confirm to broadcast this transfer.",
   });
+  return {
+    ...result,
+    preparedActionFollowUp: {
+      toolName: "wallet_send_confirm",
+      args: { network, intentId },
+      expiresAt,
+      approvalPreview: {
+        toolName: "wallet_send_confirm",
+        criticalArgs: { ...previewJson.criticalArgs },
+      },
+    },
+  };
 }

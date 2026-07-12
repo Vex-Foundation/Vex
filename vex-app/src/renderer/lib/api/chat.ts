@@ -9,7 +9,7 @@ import type {
   ChatSubmitInput,
   ChatSubmitResult,
 } from "@shared/schemas/chat.js";
-import { isUsageQueryForSession } from "./queryKeys.js";
+import { approvalsKeys, isUsageQueryForSession } from "./queryKeys.js";
 import { sessionKeys } from "./sessions.js";
 
 /**
@@ -62,6 +62,17 @@ export function useSubmitChat(): UseSubmitChatResult {
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.plan(variables.sessionId),
       });
+      // A restricted turn can enqueue an approval before chat.submit returns.
+      // Refresh both the inline card and the app-wide inbox immediately instead
+      // of waiting for their polling fallback.
+      if (result.data.pendingApprovals?.length > 0) {
+        void queryClient.invalidateQueries({
+          queryKey: approvalsKeys.pending(variables.sessionId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: approvalsKeys.pendingAll(),
+        });
+      }
       // A completed turn advances usage rows + the session token_count, so
       // refresh the runtime bar immediately (usage totals, last-turn, and
       // context window). The transcript-append live-sync is the backstop

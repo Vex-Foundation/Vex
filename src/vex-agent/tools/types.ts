@@ -230,6 +230,27 @@ export interface ToolResult {
      */
     readonly termLock?: { readonly maturityIso: string };
   };
+  /**
+   * Trusted one-step handoff from a successful non-mutating prepare tool to
+   * its mutating execution tool. The turn loop validates the source→target
+   * pair and canonicalizes the args through the registry before dispatch.
+   * This is handler-authored data; it is never populated from model output.
+   */
+  preparedActionFollowUp?: PreparedActionFollowUp;
+}
+
+export type ApprovalPreviewScalar = string | number | boolean | null;
+
+export interface PreparedActionFollowUp {
+  readonly toolName: string;
+  readonly args: Record<string, unknown>;
+  /** Earliest expiry of the prepared action, carried into approval TTL. */
+  readonly expiresAt: string;
+  /** Trusted, renderer-safe preview sourced from validated prepared state. */
+  readonly approvalPreview: {
+    readonly toolName: string;
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
 }
 
 /**

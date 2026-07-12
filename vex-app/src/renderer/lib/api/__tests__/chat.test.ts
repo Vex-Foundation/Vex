@@ -20,7 +20,7 @@ import { createElement } from "react";
 
 import { useSubmitChat } from "../chat.js";
 import { sessionKeys } from "../sessions.js";
-import { usageKeys } from "../queryKeys.js";
+import { approvalsKeys, usageKeys } from "../queryKeys.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000c2";
 const submitMock = vi.fn();
@@ -108,6 +108,30 @@ describe("useSubmitChat onSuccess invalidation", () => {
     await result.current.mutateAsync({ sessionId: SESSION, message: "hello" });
 
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it("immediately refreshes inline and global approvals when the turn enqueues one", async () => {
+    submitMock.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { text: null, pendingApprovals: ["approval-1"] },
+      }),
+      cancel: vi.fn(),
+    });
+    const client = new QueryClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useSubmitChat(), {
+      wrapper: makeWrapper(client),
+    });
+
+    await result.current.mutateAsync({ sessionId: SESSION, message: "send it" });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: approvalsKeys.pending(SESSION),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: approvalsKeys.pendingAll(),
+    });
   });
 });
 
