@@ -263,3 +263,34 @@ describe("TranscriptMessage assistant_stopped (9-5b)", () => {
     expect(container.querySelector("[data-vex-stopped]")).not.toBeNull();
   });
 });
+
+describe("TranscriptMessage agent activity avatar", () => {
+  it("draws a theme-accent spinner around the active agent avatar", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Preparing the transfer." }),
+        agentWorking: true,
+      }),
+    );
+    const avatar = container.querySelector(
+      '[data-vex-agent-avatar-state="working"]',
+    );
+    const spinner = container.querySelector("[data-vex-agent-spinner]");
+    expect(avatar).not.toBeNull();
+    expect(spinner?.className).toContain("border-[var(--vex-accent)]");
+    expect(spinner?.className).toContain("animate-spin");
+    expect(spinner?.className).toContain("motion-reduce:animate-none");
+  });
+
+  it("keeps settled agent avatars still", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Transfer prepared." }),
+      }),
+    );
+    expect(
+      container.querySelector('[data-vex-agent-avatar-state="settled"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
+  });
+});

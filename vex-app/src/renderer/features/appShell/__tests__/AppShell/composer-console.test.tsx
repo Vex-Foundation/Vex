@@ -184,17 +184,16 @@ describe("SessionComposer — Signal Console chrome", () => {
     expect(form?.contains(status)).toBe(false);
   });
 
-  it("keeps the turn visibly WORKING between stream updates", () => {
+  it("does not add a WORKING label above the composer while a turn is pending", () => {
     mockSubmitChat.isPending = true;
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
 
-    const status = container.querySelector(
-      '[data-vex-console-status="working"]',
-    );
-    expect(status?.textContent).toBe("Working…");
-    expect(status?.getAttribute("role")).toBe("status");
+    expect(
+      container.querySelector('[data-vex-console-status="working"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain("Working…");
     expect(
       container.querySelector('[data-vex-console-status="stopping"]'),
     ).toBeNull();

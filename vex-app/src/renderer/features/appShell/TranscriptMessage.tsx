@@ -5,10 +5,9 @@
  * Switches on the pure `TranscriptEntry.variant`. The transcript reads as
  * an asymmetric register: USER turns are compact right-aligned cards with a
  * persistent "You · HH:MM" caption; ASSISTANT turns are full-width document
- * flow hung off the Signal Tape spine by a quiet node in a 28px gutter (no
- * bubble, no avatar — the shell is photo-free; accent is rationed to the
- * live/pending node, so a settled node rests in --vex-text-3). Assistant prose
- * renders through
+ * flow hung off the Signal Tape spine by its 18px avatar in a 28px gutter (no
+ * bubble). While the current turn is active, a restrained accent ring rotates
+ * around that avatar; settled turns remain still. Assistant prose renders through
  * `MarkdownContent` (stage 8-2a) — safe React elements, never an HTML
  * string; user/tool/notice rows + the `compaction`/`recall` markers (stage
  * 8-4) render as plain React text nodes. Either way model/tool output cannot
@@ -65,15 +64,28 @@ function TapeClock({ createdAt }: { readonly createdAt: string }): JSX.Element |
  * "Vex" caption carries the name, so the image is aria-hidden. CSP-safe — a
  * same-origin /vex.jpg under the existing `img-src 'self'` directive.
  */
-function AssistantAvatar(): JSX.Element {
+function AssistantAvatar({ working = false }: { readonly working?: boolean }): JSX.Element {
   return (
-    <img
-      src="/vex.jpg"
-      alt=""
-      aria-hidden
-      draggable={false}
-      className="absolute left-0 top-[2px] h-[18px] w-[18px] rounded-full object-cover ring-2 ring-[var(--vex-surface-0)]"
-    />
+    <span
+      data-vex-agent-avatar=""
+      data-vex-agent-avatar-state={working ? "working" : "settled"}
+      className="absolute left-0 top-[2px] h-[18px] w-[18px]"
+    >
+      {working ? (
+        <span
+          data-vex-agent-spinner=""
+          aria-hidden
+          className="absolute -inset-[3px] rounded-full border border-[var(--vex-accent)] border-r-transparent animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+        />
+      ) : null}
+      <img
+        src="/vex.jpg"
+        alt=""
+        aria-hidden
+        draggable={false}
+        className="h-[18px] w-[18px] rounded-full object-cover ring-2 ring-[var(--vex-surface-0)]"
+      />
+    </span>
   );
 }
 
@@ -107,6 +119,7 @@ function AssistantBody({ content }: { readonly content: string }): JSX.Element {
 export function TranscriptMessage({
   row,
   pendingApprovals,
+  agentWorking = false,
 }: {
   readonly row: TranscriptEntry;
   /**
@@ -114,6 +127,8 @@ export function TranscriptMessage({
    * call id matches get the "Awaiting signature" stamp-link to their card.
    */
   readonly pendingApprovals?: ReadonlyMap<string, string>;
+  /** True only for the newest assistant avatar in the currently active turn. */
+  readonly agentWorking?: boolean;
 }): JSX.Element {
   switch (row.variant) {
     case "user":
@@ -131,7 +146,7 @@ export function TranscriptMessage({
     case "assistant":
       return (
         <div data-vex-message-role="assistant" className="relative pl-7">
-          <AssistantAvatar />
+          <AssistantAvatar working={agentWorking} />
           <AssistantCaption createdAt={row.createdAt} />
           <AssistantBody content={row.content} />
         </div>
@@ -143,7 +158,7 @@ export function TranscriptMessage({
           data-vex-stopped=""
           className="relative pl-7"
         >
-          <AssistantAvatar />
+          <AssistantAvatar working={agentWorking} />
           <AssistantCaption createdAt={row.createdAt} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
@@ -174,7 +189,7 @@ export function TranscriptMessage({
           {/* Assistant prose accompanying the tool call (often empty). */}
           {row.content.length > 0 ? (
             <div className="relative pl-7">
-              <AssistantAvatar />
+              <AssistantAvatar working={agentWorking} />
               <AssistantCaption createdAt={row.createdAt} />
               <AssistantBody content={row.content} />
             </div>

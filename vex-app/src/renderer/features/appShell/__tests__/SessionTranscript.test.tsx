@@ -17,7 +17,10 @@ import type {
   MessageRole,
   SessionMessageDto,
 } from "@shared/schemas/messages.js";
+
 import { SessionTranscript } from "../SessionTranscript.js";
+import { findWorkingAgentEntryKey } from "../agentActivity.js";
+import type { TranscriptEntry } from "../transcriptRowModel.js";
 import { useStreamStore } from "../../../stores/streamStore.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000aa";
@@ -164,6 +167,44 @@ describe("SessionTranscript", () => {
       cursor: null,
       limit: 50,
     });
+  });
+
+  it("selects only the current turn's newest agent avatar as working", () => {
+    const rows: TranscriptEntry[] = [
+      {
+        id: 1,
+        variant: "assistant" as const,
+        label: null,
+        content: "Earlier reply",
+        createdAt: ISO,
+      },
+      {
+        id: 2,
+        variant: "user" as const,
+        label: null,
+        content: "Send SOL",
+        createdAt: ISO,
+      },
+      {
+        id: 3,
+        variant: "assistant" as const,
+        label: null,
+        content: "Preparing transfer",
+        createdAt: ISO,
+      },
+      {
+        id: 4,
+        variant: "tool" as const,
+        label: "wallet_send_prepare_output",
+        toolKind: "result" as const,
+        content: "prepared",
+        createdAt: ISO,
+      },
+    ];
+
+    expect(findWorkingAgentEntryKey(rows, true)).toBe("3");
+    expect(findWorkingAgentEntryKey(rows, false)).toBeNull();
+    expect(findWorkingAgentEntryKey(rows.slice(0, 2), true)).toBeNull();
   });
 
   it("shows the empty state when there are no messages", async () => {

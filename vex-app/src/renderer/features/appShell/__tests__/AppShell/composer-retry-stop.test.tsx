@@ -559,7 +559,7 @@ describe("AppShell", () => {
         container.querySelector('[data-vex-tape-state="live"]'),
       ).not.toBeNull(),
     );
-    expect(screen.getByText("Working…")).toBeTruthy();
+    expect(screen.queryByText("Working…")).toBeNull();
     // Pins the fix: a submit-typed Stop would re-run onSubmit (re-sending the
     // draft) instead of only cancelling the turn.
     expect(stopBtn.getAttribute("type")).toBe("button");

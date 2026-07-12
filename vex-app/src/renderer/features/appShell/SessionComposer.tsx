@@ -25,9 +25,9 @@
  * all live in `.vex-console` (globals.css) — token-only, so both themes
  * recolor from `--vex-accent`. The context strip is gone, so the two
  * transient states it carried survive as a tiny tag FLOATING above the pill:
- * amber "AWAITING SIGNATURE" while a run is parked for approval, muted
- * "Stopping…" while a stop settles, or blue "Working…" while a chat submit
- * remains active between visible stream updates.
+ * amber "AWAITING SIGNATURE" while a run is parked for approval or muted
+ * "Stopping…" while a stop settles. Active work is shown on the agent avatar
+ * in the transcript instead of adding another label above the input.
  *
  * Pure helpers: gating reasons + placeholders in `composer-helpers.ts`.
  * Mission controls (start/continue/recover/stop/edit/renew) are buttons in
@@ -409,11 +409,9 @@ export function SessionComposer({
     <>
       <div className="relative mt-6">
         {/* TRANSIENT SIGNAL TAG — floats above the pill's right side. An
-         * approval pause wins, then a requested stop, then the submit-wide
-         * working state. The latter remains visible between inference streams
-         * and tool calls, when the tape preview can otherwise look idle even
-         * though the turn is still running. Sibling of the form so the pill's
-         * rounded surface never owns this floating status layer. */}
+         * approval pause wins over a requested stop. The active-work signal
+         * lives on the agent avatar in the transcript, so the composer stays
+         * visually quiet while a turn is running. */}
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
@@ -429,14 +427,6 @@ export function SessionComposer({
             className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--vex-text-2)]"
           >
             Stopping…
-          </span>
-        ) : submitPending ? (
-          <span
-            data-vex-console-status="working"
-            role="status"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-accent-border-strong)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--vex-accent-text)]"
-          >
-            Working…
           </span>
         ) : null}
 
