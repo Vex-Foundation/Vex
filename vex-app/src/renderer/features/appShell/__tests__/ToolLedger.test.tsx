@@ -116,6 +116,56 @@ describe("ToolActRow", () => {
   it("renders no stamp at rest (the persisted ledger row is quiet)", () => {
     render(createElement(ToolActRow, { act: act() }));
     expect(screen.queryByText(/awaiting signature/i)).toBeNull();
+    expect(screen.queryByRole("status", { name: /transaction confirmed/i })).toBeNull();
+  });
+
+  it("marks a confirmed wallet transfer with a visible check state", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "wallet_send_confirm",
+          output: JSON.stringify({
+            txHash: "solana-signature",
+            chain: "solana",
+            status: "confirmed",
+          }),
+        }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("status", { name: "Transaction confirmed" }),
+    ).not.toBeNull();
+    expect(screen.getByText("Confirmed")).not.toBeNull();
+    expect(
+      container.querySelector('[data-vex-transaction-status="confirmed"]'),
+    ).not.toBeNull();
+  });
+
+  it("does not infer confirmation from malformed, failed, or unrelated output", () => {
+    const cases = [
+      act({ toolName: "wallet_send_confirm", output: "not json" }),
+      act({
+        toolName: "wallet_send_confirm",
+        output: JSON.stringify({ txHash: "hash", status: "failed" }),
+      }),
+      act({
+        toolName: "wallet_send_confirm",
+        output: JSON.stringify({ status: "confirmed" }),
+      }),
+      act({
+        toolName: "wallet_balances",
+        output: JSON.stringify({ txHash: "hash", status: "confirmed" }),
+      }),
+    ];
+
+    for (const candidate of cases) {
+      const view = render(createElement(ToolActRow, { act: candidate }));
+      expect(
+        screen.queryByRole("status", { name: /transaction confirmed/i }),
+      ).toBeNull();
+      view.unmount();
+    }
   });
 
   it("Awaiting-signature stamp links to the approval card and focuses it", () => {
