@@ -288,27 +288,27 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
       >
         {side.text}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
+      <span className="flex h-4 min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11px] leading-none text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
         <span
           title={input.full ?? undefined}
-          className="inline-flex items-center gap-1"
+          className="inline-flex min-w-0 items-center gap-1"
         >
           {input.iconSymbol !== null ? (
             <TokenIcon symbol={input.iconSymbol} size={12} />
           ) : null}
-          <span>
+          <span className="truncate">
             {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
           </span>
         </span>
-        <span className="text-[var(--vex-text-3)]">{" → "}</span>
+        <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
         <span
           title={output.full ?? undefined}
-          className="inline-flex items-center gap-1"
+          className="inline-flex min-w-0 items-center gap-1"
         >
           {output.iconSymbol !== null ? (
             <TokenIcon symbol={output.iconSymbol} size={12} />
           ) : null}
-          <span>
+          <span className="truncate">
             {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
           </span>
         </span>
