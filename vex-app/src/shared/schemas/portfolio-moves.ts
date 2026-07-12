@@ -35,6 +35,9 @@ import { z } from "zod";
  */
 export const MOVES_MAX = 50;
 
+/** Maximum display-symbol length extracted from a capture item. */
+export const MOVE_TOKEN_SYMBOL_MAX = 64;
+
 /**
  * IPC input for `vex.portfolio.listMoves`. `.strict()` rejects any extra key;
  * `sessionId` MUST be a UUID. The renderer never supplies a wallet address —
@@ -62,7 +65,12 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *                      distinguishes bridge venues in the chip. Nullable for
  *                      tolerance even though the DDL is NOT NULL.
  *  - `inputToken` / `inputAmount` / `outputToken` / `outputAmount` — the swap
- *                      legs as the engine recorded them (all nullable).
+ *                      legs as the activity projection recorded them (all
+ *                      nullable; spot token values are address-first).
+ *  - `inputTokenSymbol` / `outputTokenSymbol` — bounded, display-only symbols
+ *                      recovered from the activity row's exact capture item;
+ *                      nullable for historical/incomplete captures. These do
+ *                      not replace the address-first projection fields.
  *  - `valueUsd`      — notional USD; `null` when the engine could not price it.
  *  - `captureStatus` — the trade-capture lifecycle status string (tolerant).
  *  - `instrumentKey` — opaque instrument identifier; `null` when absent.
@@ -84,8 +92,10 @@ export const moveItemSchema = z
     productType: z.string().nullable(),
     venue: z.string().nullable(),
     inputToken: z.string().nullable(),
+    inputTokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
     inputAmount: z.string().nullable(),
     outputToken: z.string().nullable(),
+    outputTokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
     outputAmount: z.string().nullable(),
     valueUsd: z.number().nullable(),
     captureStatus: z.string().nullable(),

@@ -14,10 +14,13 @@
  * status dot · stamp (mono 9px chip: BUY success-tone / SELL paper-tone /
  * SWAP muted; `productType` takes priority — `bridge` → BRIDGE·VENUE,
  * `send`/`transfer` → TRANSFER, both muted) · `IN → OUT` legs · HH:MM. Raw
- * mint addresses never print in full: address-like token strings truncate to
- * `So1111…1112` (full mint on the tooltip) and a deliberately tiny
- * well-known-mint map resolves the unmissable tickers. Short token strings
- * render as uppercase symbols. A leg carries its amount (`0.0017 ETH`) ONLY
+ * mint addresses never print in full: a bounded symbol from the activity's
+ * exact capture item takes priority, with the full mint retained on the
+ * tooltip; address-like fallbacks truncate to `So1111…1112`. A deliberately
+ * tiny well-known-mint map resolves unmissable legacy tickers, and short token
+ * strings render as uppercase symbols. Resolved symbols reuse the app's
+ * offline token mark (brand icon when bundled, otherwise a monogram). A leg
+ * carries its amount (`0.0017 ETH`) ONLY
  * when the recorded amount is a dotted decimal — raw base-unit integers from
  * legacy captures (wei/lamports) and nulls render nothing.
  *
@@ -37,6 +40,7 @@ import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import { TokenIcon } from "../../../components/common/TokenIcon.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
 import { moveExplorerUrl } from "../../../lib/explorer-links.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
@@ -102,23 +106,36 @@ interface TokenDisplay {
   readonly text: string;
   /** Full value for the tooltip when `text` is lossy, else `null`. */
   readonly full: string | null;
+  /** Safe symbol used by the app's offline token mark; null for raw addresses. */
+  readonly iconSymbol: string | null;
 }
 
 /**
- * Display rule for one swap leg: known mint → ticker, address-like → the
- * canonical `truncateAddress` shortening (`So1111…1112`), short strings →
- * uppercase symbols. Legs are nullable in the tolerant DTO → `?`.
- * Truncated/known forms carry the full mint on the tooltip; symbols are
+ * Display rule for one swap leg: captured symbol → uppercase label with the
+ * address retained on the tooltip; known mint → ticker; address-like → the
+ * canonical `truncateAddress` shortening (`So1111…1112`); short strings →
+ * uppercase symbols. Legs are nullable in the tolerant DTO → `?`. Symbols are
  * uppercased in JS (not CSS) so base58 case in truncations stays intact.
  */
-function tokenDisplay(token: string | null): TokenDisplay {
-  if (token === null || token.length === 0) return { text: "?", full: null };
-  const ticker = KNOWN_MINTS.get(token);
-  if (ticker !== undefined) return { text: ticker, full: token };
-  if (ADDRESS_LIKE.test(token)) {
-    return { text: truncateAddress(token), full: token };
+function tokenDisplay(token: string | null, symbol: string | null): TokenDisplay {
+  if (symbol !== null && symbol.length > 0) {
+    return {
+      text: symbol.toUpperCase(),
+      full: token !== null && token !== symbol ? token : null,
+      iconSymbol: symbol,
+    };
   }
-  return { text: token.toUpperCase(), full: null };
+  if (token === null || token.length === 0) {
+    return { text: "?", full: null, iconSymbol: null };
+  }
+  const ticker = KNOWN_MINTS.get(token);
+  if (ticker !== undefined) {
+    return { text: ticker, full: token, iconSymbol: ticker };
+  }
+  if (ADDRESS_LIKE.test(token)) {
+    return { text: truncateAddress(token), full: token, iconSymbol: null };
+  }
+  return { text: token.toUpperCase(), full: null, iconSymbol: token };
 }
 
 /** ≤6 significant digits, no grouping — mono-ledger compact figures. */
@@ -242,8 +259,8 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = moveState(move.captureStatus);
   const side = sideStamp(move);
-  const input = tokenDisplay(move.inputToken);
-  const output = tokenDisplay(move.outputToken);
+  const input = tokenDisplay(move.inputToken, move.inputTokenSymbol);
+  const output = tokenDisplay(move.outputToken, move.outputTokenSymbol);
   const inputAmount = amountDisplay(move.inputAmount);
   const outputAmount = amountDisplay(move.outputAmount);
   const time = formatClock(move.createdAt);
@@ -272,12 +289,28 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
         {side.text}
       </span>
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
-        <span title={input.full ?? undefined}>
-          {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+        <span
+          title={input.full ?? undefined}
+          className="inline-flex items-center gap-1"
+        >
+          {input.iconSymbol !== null ? (
+            <TokenIcon symbol={input.iconSymbol} size={12} />
+          ) : null}
+          <span>
+            {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+          </span>
         </span>
         <span className="text-[var(--vex-text-3)]">{" → "}</span>
-        <span title={output.full ?? undefined}>
-          {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+        <span
+          title={output.full ?? undefined}
+          className="inline-flex items-center gap-1"
+        >
+          {output.iconSymbol !== null ? (
+            <TokenIcon symbol={output.iconSymbol} size={12} />
+          ) : null}
+          <span>
+            {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+          </span>
         </span>
       </span>
       {time !== null ? (

@@ -47,8 +47,10 @@ function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem 
     productType: null,
     venue: null,
     inputToken: null,
+    inputTokenSymbol: null,
     inputAmount: null,
     outputToken: null,
+    outputTokenSymbol: null,
     outputAmount: null,
     valueUsd: null,
     captureStatus: "executed",
@@ -72,6 +74,30 @@ beforeEach(() => {
 });
 
 describe("MovesBlock ledger display", () => {
+  it("prefers captured token symbols while preserving mint addresses on tooltips", () => {
+    mockMoves([
+      move({
+        id: "1",
+        tradeSide: "buy",
+        inputToken: SOL_MINT,
+        inputTokenSymbol: "SOL",
+        outputToken: LONG_MINT,
+        outputTokenSymbol: "ansem",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+
+    expect(screen.getByText("SOL").parentElement?.getAttribute("title")).toBe(
+      SOL_MINT,
+    );
+    expect(screen.getByText("ANSEM").parentElement?.getAttribute("title")).toBe(
+      LONG_MINT,
+    );
+    expect(screen.queryByText("7jk8Ub…rmYK")).toBeNull();
+    // Unknown symbols use the app's offline monogram instead of a remote image.
+    expect(screen.getByText("a").getAttribute("aria-hidden")).not.toBeNull();
+  });
+
   it("resolves known mints to tickers and truncates address-like mints", () => {
     mockMoves([
       move({
@@ -85,10 +111,10 @@ describe("MovesBlock ledger display", () => {
 
     // Known mint → ticker, full mint kept on the tooltip.
     const sol = screen.getByText("SOL");
-    expect(sol.getAttribute("title")).toBe(SOL_MINT);
+    expect(sol.parentElement?.getAttribute("title")).toBe(SOL_MINT);
     // Address-like → truncateAddress shape, full mint on the tooltip.
     const truncated = screen.getByText("7jk8Ub…rmYK");
-    expect(truncated.getAttribute("title")).toBe(LONG_MINT);
+    expect(truncated.parentElement?.getAttribute("title")).toBe(LONG_MINT);
     // The raw base58 run never prints in full.
     expect(screen.queryByText(LONG_MINT)).toBeNull();
   });

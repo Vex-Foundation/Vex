@@ -24,7 +24,9 @@
  *  - the tolerant mapper passes through a row with `trade_side = null`,
  *    `capture_status = 'filled'`, and `value_usd = null`;
  *  - a failed session-scope read propagates (fail closed);
- *  - the SELECT projects ONLY bounded columns (never params/result/trade_capture).
+ *  - the SELECT projects ONLY bounded columns: never params/result or raw JSONB;
+ *    token symbols are type-checked, length-bounded scalar extractions from the
+ *    exact capture item.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -182,14 +184,21 @@ describe("moves-db getMovesForSession — scoping + binding", () => {
     expect(bound).not.toContain(WALLET_A.toLowerCase());
   });
 
-  it("projects ONLY bounded columns (never params/result/trade_capture)", async () => {
+  it("projects ONLY bounded columns and bounded capture-item symbol scalars", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
     mocks.query.mockResolvedValueOnce({ rows: [] });
     await getMovesForSession(SESSION);
     const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
     expect(sql).not.toContain("params");
     expect(sql).not.toContain("result");
-    expect(sql).not.toContain("trade_capture");
+    expect(sql).not.toContain("SELECT ci.trade_capture");
+    expect(sql).toContain("jsonb_typeof(ci.trade_capture->'inputToken')");
+    expect(sql).toContain("LEFT(ci.trade_capture->>'inputToken', 64)");
+    expect(sql).toContain("jsonb_typeof(ci.trade_capture->'outputToken')");
+    expect(sql).toContain("LEFT(ci.trade_capture->>'outputToken', 64)");
+    expect(sql).toContain("LEFT JOIN protocol_capture_items ci");
+    expect(sql).toContain("ci.id = a.capture_item_id");
+    expect(sql).toContain("ci.execution_id = a.execution_id");
     expect(sql).toContain("LIMIT 50");
   });
 });
@@ -207,7 +216,7 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
 
     const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
     expect(sql).toContain("JOIN protocol_executions");
-    expect(sql).not.toContain("LEFT JOIN");
+    expect(sql).not.toContain("LEFT JOIN protocol_executions");
     expect(sql).toContain("a.execution_id");
   });
 
@@ -252,8 +261,10 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
           product_type: "spot",
           venue: "uniswap",
           input_token: "USDC",
+          input_token_symbol: "USDC",
           input_amount: "50",
           output_token: "ETH",
+          output_token_symbol: "ETH",
           output_amount: "0.02",
           value_usd: "50",
           capture_status: "executed",
@@ -274,6 +285,8 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     expect(result.data[0]?.txRef).toBe("0xfeed");
     expect(result.data[0]?.productType).toBe("spot");
     expect(result.data[0]?.venue).toBe("uniswap");
+    expect(result.data[0]?.inputTokenSymbol).toBe("USDC");
+    expect(result.data[0]?.outputTokenSymbol).toBe("ETH");
   });
 
   it("selects product_type and namespace-as-venue for the chip derivation", async () => {
@@ -287,6 +300,38 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
 });
 
 describe("moves-db getMovesForSession — tolerant mapping", () => {
+  it("trims valid capture symbols and drops symbols containing control characters", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 6,
+          trade_side: "buy",
+          product_type: "spot",
+          venue: "jupiter",
+          input_token: SOL_ADDR,
+          input_token_symbol: "  SOL  ",
+          input_amount: "100",
+          output_token: "7jk8UbH339rCgnohpBvqiss4a7bXWmicMPCUCFmDrmYK",
+          output_token_symbol: "BAD\nSYMBOL",
+          output_amount: "1",
+          value_usd: null,
+          capture_status: "executed",
+          instrument_key: null,
+          chain: "solana",
+          tx_ref: null,
+          created_at: "2026-05-21T10:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data[0]?.inputTokenSymbol).toBe("SOL");
+    expect(result.data[0]?.outputTokenSymbol).toBeNull();
+  });
+
   it("maps a tolerant row (trade_side=null, capture_status='filled', value_usd=null)", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
     mocks.query.mockResolvedValueOnce({
@@ -297,8 +342,10 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           product_type: null,
           venue: null,
           input_token: "USDC",
+          input_token_symbol: null,
           input_amount: "100",
           output_token: "SOL",
+          output_token_symbol: null,
           output_amount: "1.2",
           value_usd: null,
           capture_status: "filled",
@@ -320,8 +367,10 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         productType: null,
         venue: null,
         inputToken: "USDC",
+        inputTokenSymbol: null,
         inputAmount: "100",
         outputToken: "SOL",
+        outputTokenSymbol: null,
         outputAmount: "1.2",
         valueUsd: null,
         captureStatus: "filled",
@@ -343,8 +392,10 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           product_type: "bridge",
           venue: "relay",
           input_token: "ETH",
+          input_token_symbol: "ETH",
           input_amount: "0.001714",
           output_token: "ETH",
+          output_token_symbol: "ETH",
           output_amount: "0.001693",
           value_usd: null,
           capture_status: "executed",
@@ -363,6 +414,7 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
     expect(row?.productType).toBe("bridge");
     expect(row?.venue).toBe("relay");
     expect(row?.inputToken).toBe("ETH");
+    expect(row?.inputTokenSymbol).toBe("ETH");
     expect(row?.inputAmount).toBe("0.001714");
     expect(row?.outputAmount).toBe("0.001693");
   });

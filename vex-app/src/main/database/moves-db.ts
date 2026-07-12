@@ -39,11 +39,11 @@
  *  - join key is the raw ADDRESS string — DO NOT lowercase (the engine stores
  *    raw checksum/base58 addresses).
  *  - The SELECT projects ONLY bounded, renderer-safe columns. It NEVER selects
- *    `params`, `result`, `trade_capture`, `meta`, or the raw `external_refs`
- *    JSONB. The single sanctioned extraction from `external_refs` is the
- *    on-chain tx reference scalar (`->>'txHash'` for EVM, `->>'signature'`
- *    for Solana) — public on-chain data powering the renderer's
- *    block-explorer deep links; never the whole blob.
+ *    `params`, `result`, `meta`, or any raw JSONB blob. The sanctioned scalar
+ *    extractions are the on-chain tx reference from `external_refs`, plus the
+ *    input/output token symbols from the activity row's exact capture item.
+ *    Symbol extraction is string-type checked and SQL-bounded to 64 chars;
+ *    neither raw `trade_capture` nor raw `external_refs` crosses IPC.
  *  - logging records sessionId + the row COUNT only; NEVER raw addresses,
  *    USD figures, token symbols, or tx hashes.
  */
@@ -52,6 +52,7 @@ import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   MOVES_MAX,
+  MOVE_TOKEN_SYMBOL_MAX,
   type MovesDto,
 } from "@shared/schemas/portfolio-moves.js";
 import { getSessionWalletScope } from "./sessions-db.js";
@@ -132,8 +133,10 @@ interface MoveRow {
   readonly product_type: string | null;
   readonly venue: string | null;
   readonly input_token: string | null;
+  readonly input_token_symbol: string | null;
   readonly input_amount: string | null;
   readonly output_token: string | null;
+  readonly output_token_symbol: string | null;
   readonly output_amount: string | null;
   readonly value_usd: number | string | null;
   readonly capture_status: string | null;
@@ -154,6 +157,26 @@ function toNumberOrNull(value: number | string | null): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+const CONTROL_CHARACTER = /[\u0000-\u001F\u007F]/;
+
+/**
+ * Capture JSON is trusted only as stored audit data, never as a renderer DTO.
+ * Keep its display symbol a small scalar: trim whitespace, reject control
+ * characters, and enforce the same bound as the shared output schema.
+ */
+function toTokenSymbolOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const symbol = value.trim();
+  if (
+    symbol.length === 0 ||
+    symbol.length > MOVE_TOKEN_SYMBOL_MAX ||
+    CONTROL_CHARACTER.test(symbol)
+  ) {
+    return null;
+  }
+  return symbol;
 }
 
 /** TIMESTAMPTZ comes back as a Date (node-postgres) or string; normalise to ISO. */
@@ -220,8 +243,22 @@ export async function getMovesForSession(
                 a.product_type,
                 a.namespace AS venue,
                 a.input_token,
+                CASE
+                  WHEN jsonb_typeof(ci.trade_capture->'inputToken') = 'string'
+                   AND char_length(ci.trade_capture->>'inputToken')
+                       BETWEEN 1 AND ${MOVE_TOKEN_SYMBOL_MAX}
+                  THEN LEFT(ci.trade_capture->>'inputToken', ${MOVE_TOKEN_SYMBOL_MAX})
+                  ELSE NULL
+                END AS input_token_symbol,
                 a.input_amount,
                 a.output_token,
+                CASE
+                  WHEN jsonb_typeof(ci.trade_capture->'outputToken') = 'string'
+                   AND char_length(ci.trade_capture->>'outputToken')
+                       BETWEEN 1 AND ${MOVE_TOKEN_SYMBOL_MAX}
+                  THEN LEFT(ci.trade_capture->>'outputToken', ${MOVE_TOKEN_SYMBOL_MAX})
+                  ELSE NULL
+                END AS output_token_symbol,
                 a.output_amount,
                 a.value_usd,
                 a.capture_status,
@@ -232,6 +269,9 @@ export async function getMovesForSession(
                 a.created_at
            FROM proj_activity a
            JOIN protocol_executions e ON e.id = a.execution_id
+           LEFT JOIN protocol_capture_items ci
+             ON ci.id = a.capture_item_id
+            AND ci.execution_id = a.execution_id
           WHERE a.wallet_address = ANY($1::text[])
             AND e.session_id = $2
           ORDER BY a.created_at DESC, a.id DESC
@@ -245,8 +285,10 @@ export async function getMovesForSession(
         productType: row.product_type,
         venue: row.venue,
         inputToken: row.input_token,
+        inputTokenSymbol: toTokenSymbolOrNull(row.input_token_symbol),
         inputAmount: row.input_amount,
         outputToken: row.output_token,
+        outputTokenSymbol: toTokenSymbolOrNull(row.output_token_symbol),
         outputAmount: row.output_amount,
         valueUsd: toNumberOrNull(row.value_usd),
         captureStatus: row.capture_status,

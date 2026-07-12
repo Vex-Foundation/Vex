@@ -41,8 +41,10 @@ describe("move item schema (tolerant)", () => {
       productType: "spot",
       venue: "kyberswap",
       inputToken: "USDC",
+      inputTokenSymbol: "USDC",
       inputAmount: "100",
       outputToken: "ETH",
+      outputTokenSymbol: "ETH",
       outputAmount: "0.03",
       valueUsd: 100,
       captureStatus: "executed",
@@ -105,8 +107,10 @@ describe("move item schema (tolerant)", () => {
           productType: null,
           venue: null,
           inputToken: null,
+          inputTokenSymbol: null,
           inputAmount: null,
           outputToken: null,
+          outputTokenSymbol: null,
           outputAmount: null,
           valueUsd: null,
           captureStatus: null,
@@ -120,6 +124,18 @@ describe("move item schema (tolerant)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ txRef: null })).success,
     ).toBe(true);
+  });
+
+  it("accepts absent token symbols as null and bounds present symbols", () => {
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({ inputTokenSymbol: null, outputTokenSymbol: null }),
+      ).success,
+    ).toBe(true);
+    expect(
+      moveItemSchema.safeParse(itemFixture({ outputTokenSymbol: "x".repeat(65) }))
+        .success,
+    ).toBe(false);
   });
 
   it("rejects a missing chain (NOT NULL in the DDL)", () => {
@@ -147,8 +163,10 @@ describe("moves dto schema (array + cap)", () => {
     productType: null,
     venue: null,
     inputToken: "USDC",
+    inputTokenSymbol: null,
     inputAmount: "1",
     outputToken: "SOL",
+    outputTokenSymbol: null,
     outputAmount: "1",
     valueUsd: null,
     captureStatus: "filled",
