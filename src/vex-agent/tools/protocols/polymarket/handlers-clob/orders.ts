@@ -114,6 +114,20 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
       ...(result.tradeIDs?.length ? { tradeIDs: result.tradeIDs } : {}),
       ...(result.errorMsg ? { errorMsg: result.errorMsg } : {}),
     };
+
+    // The venue rejected the order (bad signature, insufficient balance,
+    // market closed, etc.). Fail the ToolResult and skip _tradeCapture — an
+    // order the CLOB never accepted must not be recorded as a resting/open
+    // order. Same class of bug as relay.bridge (PR #27): venue truth must
+    // drive tool-result truth, not just ride along in the output text.
+    if (!result.success) {
+      return {
+        success: false,
+        output: JSON.stringify(buyOutput, null, 2),
+        data: { ...result, conditionId },
+      };
+    }
+
     return {
       success: true,
       output: JSON.stringify(buyOutput, null, 2),
@@ -212,6 +226,19 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
       ...(result.tradeIDs?.length ? { tradeIDs: result.tradeIDs } : {}),
       ...(result.errorMsg ? { errorMsg: result.errorMsg } : {}),
     };
+
+    // Same rejection guard as clob.buy: the venue rejected the order, so the
+    // ToolResult must fail and no _tradeCapture goes out. Mirrors the repo's
+    // own clob.cancel precedent a few lines below ("reports success=false
+    // when the requested order lands in not_canceled").
+    if (!result.success) {
+      return {
+        success: false,
+        output: JSON.stringify(sellOutput, null, 2),
+        data: { ...result, conditionId },
+      };
+    }
+
     return {
       success: true,
       output: JSON.stringify(sellOutput, null, 2),

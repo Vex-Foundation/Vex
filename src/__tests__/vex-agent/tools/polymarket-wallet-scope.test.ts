@@ -77,7 +77,7 @@ beforeEach(() => {
   mockResolveSelectedAddress.mockReturnValue(SEL);
   mockGetPrice.mockResolvedValue({ price: 0.5 });
   mockGetFeeRate.mockResolvedValue({ base_fee: 0 });
-  mockPostOrder.mockResolvedValue({ status: "matched", orderID: "oid-1" });
+  mockPostOrder.mockResolvedValue({ success: true, status: "matched", orderID: "oid-1" });
   mockCancelOrder.mockResolvedValue({ canceled: ["oid-1"], not_canceled: {} });
   mockGetTrades.mockResolvedValue({ data: [], next_cursor: "" });
   mockBuildClobOrder.mockReturnValue({ salt: "1", maker: SEL, signer: SEL });
