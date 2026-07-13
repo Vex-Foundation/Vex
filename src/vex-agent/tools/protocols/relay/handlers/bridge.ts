@@ -212,12 +212,40 @@ async function relayBridge(
     destinationChainId: legs.destinationChainId,
   });
 
-  const captureStatus =
-    result.finalStatus === "success"
-      ? "executed"
-      : result.finalStatus === "failure" || result.finalStatus === "refund"
-        ? "failed"
-        : "pending";
+  // "failure"/"refund" are TERMINAL Relay intent statuses (`pollToTerminal`
+  // returns them without throwing): every step may have mined successfully and
+  // the bridge still did not deliver. The tool result must say so — the
+  // capture pipeline projects proj_activity only from successful results, and
+  // the model plans off `success`. No capture, no pin: nothing arrived.
+  if (result.finalStatus === "failure" || result.finalStatus === "refund") {
+    logger.warn("relay.bridge.terminal_failure", {
+      originChainId: legs.originChainId,
+      destinationChainId: legs.destinationChainId,
+      finalStatus: result.finalStatus,
+    });
+    const message = result.finalStatus === "refund"
+      ? "Relay reported this bridge as refunded: the destination amount did NOT arrive; funds were returned toward the origin/refund address. Verify balances before any follow-up."
+      : "Relay reported this bridge as failed: the destination amount did NOT arrive. Verify balances via the request id before retrying.";
+    return {
+      success: false,
+      output: JSON.stringify({
+        success: false,
+        requestId: result.requestId,
+        status: result.finalStatus,
+        txHashes: result.txHashes,
+        fromChain: legs.originChainId,
+        toChain: legs.destinationChainId,
+        message,
+      }, null, 2),
+      data: {
+        requestId: result.requestId,
+        status: result.finalStatus,
+        txHashes: result.txHashes,
+      },
+    };
+  }
+
+  const captureStatus = result.finalStatus === "success" ? "executed" : "pending";
 
   // Display legs (symbols + human-readable amounts) for the capture; the raw
   // currency addresses stay in inputTokenAddress/outputTokenAddress.
@@ -227,6 +255,8 @@ async function relayBridge(
   // Auto-pin (fail-soft): an ERC-20 bridged ONTO a local chain joins the
   // tracked_tokens set (seed ∪ pins) so balance scans and the portfolio see
   // it. Native needs no pin. A DB bookmark — never fails the bridge result.
+  // Pending pins too: the bridge may still complete and the scan must not
+  // miss the token when it lands.
   if (getLocalChain(legs.destinationChainId) && legs.destinationCurrency !== RELAY_NATIVE_CURRENCY && isAddress(legs.destinationCurrency)) {
     try {
       await pinTrackedToken({
@@ -258,6 +288,12 @@ async function relayBridge(
       txHashes: result.txHashes,
       fromChain: legs.originChainId,
       toChain: legs.destinationChainId,
+      // "pending" = the status poll window closed before a terminal status:
+      // broadcast happened and the bridge may still complete, but it is NOT
+      // confirmed — spell that out so it is never read as completion.
+      ...(result.finalStatus !== "success"
+        ? { message: "Relay has not confirmed this bridge yet (status is still pending after the poll window). It may still complete — check the request id before any retry; do NOT re-bridge." }
+        : {}),
     }, null, 2),
     data: {
       requestId: result.requestId,
