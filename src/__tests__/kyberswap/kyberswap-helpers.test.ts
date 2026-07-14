@@ -61,6 +61,12 @@ describe("requireFeature", () => {
     expect(() => requireFeature("mantle", "zaas")).toThrow(VexError);
     expect(() => requireFeature("megaeth", "zaas")).toThrow(VexError);
   });
+
+  it("gates Robinhood to aggregator only — limit order + zap are rejected", () => {
+    expect(() => requireFeature("robinhood", "aggregator")).not.toThrow();
+    expect(() => requireFeature("robinhood", "limitOrder")).toThrow(VexError);
+    expect(() => requireFeature("robinhood", "zaas")).toThrow(VexError);
+  });
 });
 
 // ── Token resolution (address path + symbol fallback) ──────────────

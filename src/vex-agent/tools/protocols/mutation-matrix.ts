@@ -51,6 +51,11 @@ const PNL_PREDICTION_FIELDS = [
   "type", "walletAddress", "status", "positionKey", "instrumentKey",
 ] as const;
 
+/** Netted perp position snapshots, consumed by the existing lifecycle projector. */
+const PNL_PERPS_FIELDS = [
+  "type", "walletAddress", "status", "positionKey", "instrumentKey",
+] as const;
+
 const PROJECTION_FIELDS = [
   "type", "positionKey", "status",
 ] as const;
@@ -94,6 +99,7 @@ const entries: [string, MutationContract][] = [
   // with exact USD split proportionally across the legs (valuationSource "pendle").
   ["pendle.py.mint",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "items",  requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
   ["pendle.py.redeem",       { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "items",  requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+  ["hyperliquid.spot.trade", { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: false, fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
 
   // ── pnl_prediction ────────────────────────────────────────
   // Solana predictions — single positionPubkey per buy/sell/claim
@@ -111,6 +117,31 @@ const entries: [string, MutationContract][] = [
   ["polymarket.clob.cancelOrders", { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
   ["polymarket.clob.cancelAll",    { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
   ["polymarket.clob.cancelMarket", { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
+
+  // Hyperliquid mutations capture the post-action clearinghouse snapshot, so
+  // scale in/out projects netted truth without changing the shared projector.
+  ["hyperliquid.perp.open",         { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.close",        { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.setTpsl",      { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.modifyOrder",  { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.cancelOrders", { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.setLeverage",  { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.adjustMargin", { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.perp.twap",         { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
+  ["hyperliquid.risk.proposeSetup", { role: "utility", capture: "none", expectedType: "social", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS, valuationExpected: "none" }],
+
+  // Hyperliquid funding, vault, staking and reward mutations are account
+  // operations, not trade lots. Keep their captures audit-only so they remain
+  // visible without inventing spot/perp PnL semantics.
+  ["hyperliquid.deposit",           { role: "audit", capture: "full", expectedType: "transfer", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.transfer.usdClass", { role: "audit", capture: "full", expectedType: "account", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.withdraw",          { role: "audit", capture: "full", expectedType: "transfer", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.transfer.send",     { role: "audit", capture: "full", expectedType: "transfer", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.vault.transfer",    { role: "audit", capture: "full", expectedType: "lp", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.staking.delegate",  { role: "audit", capture: "full", expectedType: "stake", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.staking.transfer",  { role: "audit", capture: "full", expectedType: "stake", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.rewards.claim",     { role: "audit", capture: "full", expectedType: "reward", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
+  ["hyperliquid.builder.approveFee", { role: "audit", capture: "full", expectedType: "account", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
 
   // ── projection (orders, LP) ───────────────────────────────
   ["kyberswap.limitOrder.create",    { role: "projection", capture: "full", expectedType: "order", previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],

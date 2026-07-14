@@ -21,7 +21,7 @@ import { projectLpLifecycle } from "./projectors/lp.js";
 import { projectSpotLot } from "./projectors/spot.js";
 
 const OPEN_STATUSES = new Set(["open", "executed"]);
-const CLOSE_STATUSES = new Set(["closed", "cancelled", "claimed"]);
+const CLOSE_STATUSES = new Set(["closed", "cancelled", "claimed", "liquidated"]);
 
 /**
  * Project an activity event into open positions and/or lot ledger.
@@ -63,6 +63,8 @@ async function projectLifecyclePosition(activity: Activity): Promise<void> {
       instrumentKey: instrumentKey ?? undefined,
       positionKey,
       entryPriceUsd: activity.unitPriceUsd ?? undefined,
+      currentValueUsd: stringMeta(activity.meta, "currentValueUsd"),
+      unrealizedPnlUsd: stringMeta(activity.meta, "unrealizedPnlUsd"),
       notionalUsd: activity.inputValueUsd ?? undefined,
       feeUsd: activity.feeValueUsd ?? undefined,
       contracts: typeof (activity.meta as Record<string, unknown>)?.contracts === "string"
@@ -74,12 +76,17 @@ async function projectLifecyclePosition(activity: Activity): Promise<void> {
     logger.debug("sync.position.opened", { positionKey, productType });
 
   } else if (CLOSE_STATUSES.has(status)) {
-    const closeStatus = status === "cancelled" ? "cancelled" : "closed";
+    const closeStatus = status === "cancelled" ? "cancelled" : status === "liquidated" ? "liquidated" : "closed";
     const closed = await openPositionsRepo.closePosition(activity.namespace, productType, activity.chain, walletAddress ?? "", positionKey, closeStatus);
     if (closed) {
       logger.debug("sync.position.closed", { positionKey, productType, closeStatus });
     }
   }
+}
+
+function stringMeta(meta: Record<string, unknown>, key: string): string | undefined {
+  const value = meta[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 // ── Order lifecycle (DCA, limit orders) ───────────────────────────

@@ -187,6 +187,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockExecuteEvm.mockResolvedValueOnce({
       kind: "chain_failed",
       txHash: "0xtxRev",
+      chain: "Base",
       errorKind: "ChainRevert",
       errorHash: "abcd1234abcd1234",
     });
@@ -200,6 +201,11 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     expect(result.output).toContain("reverted on-chain");
     expect(result.output).toContain("0xtxRev");
     expect(result.output).toContain("abcd1234abcd1234");
+    // A reverted tx is still linkable — the failure carries a coherent ref
+    // (metadata-only, model-invisible) using the SAME chain identity as success.
+    expect(result.data?._explorerRefs).toEqual([
+      { chain: "Base", txRef: "0xtxRev" },
+    ]);
     expect(mockMarkFailed).toHaveBeenCalledWith(
       "intent-test-1",
       SESSION_ID,
@@ -213,6 +219,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockExecuteEvm.mockResolvedValueOnce({
       kind: "confirmation_unknown",
       txHash: "0xtxUnk",
+      chain: "Base",
       errorKind: "TimeoutError",
       errorHash: "deadbeef12345678",
     });
@@ -225,6 +232,10 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("confirmation unknown");
     expect(result.output).toContain("0xtxUnk");
+    // Broadcast happened → linkable ref retained.
+    expect(result.data?._explorerRefs).toEqual([
+      { chain: "Base", txRef: "0xtxUnk" },
+    ]);
     expect(mockMarkFailed).toHaveBeenCalledWith(
       "intent-test-1",
       SESSION_ID,

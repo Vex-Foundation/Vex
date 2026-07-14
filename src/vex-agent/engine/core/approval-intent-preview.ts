@@ -35,7 +35,9 @@ const PREVIEW_KEY_ALLOWLIST: ReadonlySet<string> = new Set([
   "to",
   "recipient",
   "recipientAddress",
+  "destination",
   "amount",
+  "amountUsd",
   "amountIn",
   "amountUsdc",
   // Stage 9: swap money/safety leg now BOUND into the prequote identity (it
@@ -56,12 +58,32 @@ const PREVIEW_KEY_ALLOWLIST: ReadonlySet<string> = new Set([
   "conditionId",
   "outcome",
   "side",
+  "size",
+  "price",
+  "markPrice",
+  "minutes",
+  "randomize",
+  "ntli",
+  "toPerp",
   "orderId",
   "fromChain",
   "toChain",
   "fromToken",
   "toToken",
   "query",
+  "slPrice",
+  "tpPrice",
+  "leverage",
+  "marginMode",
+  "notionalUsd",
+  "estLiquidationPx",
+  "coin",
+  "assetType",
+  "vaultAddress",
+  "validator",
+  "amountWei",
+  "maxFeeRate",
+  "builder",
 ]);
 
 /** Max string length stored in `criticalArgs`. Longer values are truncated. */
@@ -129,6 +151,13 @@ export interface IntentPreviewExtras {
    * from `maturityIso` into `criticalArgs.termLock`. Omitted when not a PT buy.
    */
   termLock?: { maturityIso: string };
+  /** Trusted Hyperliquid protection verdict from the runtime gate. */
+  hyperliquid?: {
+    stopLossVerdict?: "protected_required" | "unprotected_by_user_choice";
+    notionalUsd?: string;
+    estLiquidationPx?: string;
+    destinationClass?: string;
+  };
 }
 
 /** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
@@ -222,6 +251,16 @@ export function buildIntentPreview(
       const date = new Date(ms).toISOString().slice(0, 10);
       criticalArgs.termLock = `Funds locked until ${date}; early exit trades at market price and may realize a loss.`;
     }
+  }
+  if (extras?.hyperliquid !== undefined) {
+    if (extras.hyperliquid.stopLossVerdict !== undefined) {
+      criticalArgs.stopLoss = extras.hyperliquid.stopLossVerdict === "unprotected_by_user_choice"
+        ? "UNPROTECTED — user disabled mandatory stop-loss policy"
+        : "required by policy";
+    }
+    if (extras.hyperliquid.notionalUsd !== undefined) criticalArgs.notionalUsd = extras.hyperliquid.notionalUsd;
+    if (extras.hyperliquid.estLiquidationPx !== undefined) criticalArgs.estLiquidationPx = extras.hyperliquid.estLiquidationPx;
+    if (extras.hyperliquid.destinationClass !== undefined) criticalArgs.destinationClass = extras.hyperliquid.destinationClass;
   }
 
   // Derive namespace from dotted tool name (e.g. "kyberswap.swap.sell" → "kyberswap").

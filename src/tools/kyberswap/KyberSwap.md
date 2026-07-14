@@ -6,7 +6,7 @@
 >
 > **Docs:** https://docs.kyberswap.com/
 
-This document maps every `.ts` file in `src/tools/kyberswap/` and `src/commands/kyberswap/` to the data it provides for token swaps, limit orders, liquidity provisioning, token discovery, and portfolio tracking across 18 EVM chains and 400+ DEXs.
+This document maps every `.ts` file in `src/tools/kyberswap/` and `src/commands/kyberswap/` to the data it provides for token swaps, limit orders, liquidity provisioning, token discovery, and portfolio tracking across 19 EVM chains and 400+ DEXs.
 
 ---
 

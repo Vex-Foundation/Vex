@@ -173,8 +173,16 @@ export function registerChatSubmitHandler(): () => void {
         });
       } catch (cause) {
         const kind = cause instanceof Error ? cause.name : typeof cause;
+        // Diagnostic detail: engine failure messages carry no user content
+        // (they name modules, tables, providers), so the first line is safe
+        // to log locally — without it every failure collapses to kind=Error.
+        const detail =
+          cause instanceof Error
+            ? ` message=${JSON.stringify(cause.message.split("\n")[0]?.slice(0, 300) ?? "")}` +
+              ` at=${JSON.stringify(cause.stack?.split("\n")[1]?.trim().slice(0, 200) ?? "")}`
+            : "";
         log.warn(
-          `[ipc:vex:chat:submit] failed kind=${kind} correlationId=${ctx.requestId}`,
+          `[ipc:vex:chat:submit] failed kind=${kind}${detail} correlationId=${ctx.requestId}`,
         );
         return err(classifyEngineError(cause, ctx.requestId));
       }

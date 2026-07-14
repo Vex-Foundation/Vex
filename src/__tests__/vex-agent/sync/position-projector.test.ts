@@ -91,11 +91,33 @@ describe("position-projector", () => {
       expect(mockUpsertPosition.mock.calls[0][0].status).toBe("open");
     });
 
+    it("projects capture-derived Hyperliquid MTM fields without a direct sync write", async () => {
+      await projectPosition(makeActivity({
+        namespace: "hyperliquid", chain: "hyperliquid", productType: "perps",
+        positionKey: "hyperliquid:perp:BTC:0xWallet", captureStatus: "open",
+        meta: { contracts: "1", currentValueUsd: "100", unrealizedPnlUsd: "20" },
+      }));
+      expect(mockUpsertPosition.mock.calls[0][0]).toMatchObject({
+        currentValueUsd: "100",
+        unrealizedPnlUsd: "20",
+      });
+    });
+
     it("closes position when captureStatus=closed", async () => {
       await projectPosition(makeActivity({
         productType: "perps", positionKey: "PK1", captureStatus: "closed",
       }));
       expect(mockClosePosition).toHaveBeenCalledWith("solana", "perps", "solana", "0xWallet", "PK1", "closed");
+    });
+
+    it("retains a liquidation status from a synthetic reconciliation capture", async () => {
+      await projectPosition(makeActivity({
+        namespace: "hyperliquid", chain: "hyperliquid", productType: "perps",
+        positionKey: "hyperliquid:perp:BTC:0xWallet", captureStatus: "liquidated",
+      }));
+      expect(mockClosePosition).toHaveBeenCalledWith(
+        "hyperliquid", "perps", "hyperliquid", "0xWallet", "hyperliquid:perp:BTC:0xWallet", "liquidated",
+      );
     });
 
     it("skips when no positionKey", async () => {

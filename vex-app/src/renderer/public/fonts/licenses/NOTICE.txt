@@ -12,6 +12,14 @@ Shipped (variable WOFF2, latin + latin-ext subsets, wght axis):
   /fonts/jetbrains-mono-latin-wght.woff2     — "JetBrains Mono" (labels/code)
   /fonts/jetbrains-mono-latin-ext-wght.woff2
 
+Shipped (static WOFF2, latin + latin-ext subsets, 400 regular + italic):
+  /fonts/instrument-serif-latin.woff2            — "Instrument Serif" (serif accent)
+  /fonts/instrument-serif-latin-ext.woff2
+  /fonts/instrument-serif-italic-latin.woff2
+  /fonts/instrument-serif-italic-latin-ext.woff2
+
 These are the Fontsource-packaged builds (fontsource.org) of the upstream
 OFL fonts: Omnibus-Type/Archivo, Google Fonts Inter Tight, and
-JetBrains/JetBrainsMono.
+JetBrains/JetBrainsMono. Instrument Serif is the Google Fonts / gstatic
+subset build of the upstream Instrument/instrument-serif family
+(© 2022 The Instrument Serif Project Authors).

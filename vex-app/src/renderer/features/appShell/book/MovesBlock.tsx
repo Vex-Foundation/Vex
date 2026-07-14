@@ -23,9 +23,13 @@
  *
  * The ledger shows the 10 newest fills (`MOVES_DISPLAY_CAP`); the header badge
  * still counts the FULL fetched result (server-capped at `MOVES_MAX`). A row
- * whose `chain`+`txRef` resolve through `moveExplorerUrl` renders as an
- * external link (target=_blank → main's `shell.openExternal` allowlist) with a
- * hover-revealed ↗ affordance; unresolvable rows stay non-interactive.
+ * whose `chain`+`txRef` resolve through `explorerTxUrl` renders as an external
+ * link (target=_blank → main's `shell.openExternal` allowlist) with a
+ * hover-revealed ↗ affordance. A row with NO `txRef` whose `chain`+
+ * `walletAddress` resolve through `explorerAccountUrl` (e.g. HyperCore) keeps a
+ * non-linked row but appends a distinct, labelled `View account ↗` link — the
+ * row itself is NOT an anchor. Rows that resolve to neither stay
+ * non-interactive.
  *
  * Dot colour is a PURE client-side derivation over the tolerant `captureStatus`
  * string (executed/filled/closed/claimed → done; open/pending → pending;
@@ -37,8 +41,11 @@ import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import {
+  explorerAccountUrl,
+  explorerTxUrl,
+} from "@shared/explorer-links.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
-import { moveExplorerUrl } from "../../../lib/explorer-links.js";
 import { formatClock, truncateAddress } from "../../../lib/format.js";
 import { cn } from "../../../lib/utils.js";
 import { BookBlock } from "./BookBlock.js";
@@ -247,7 +254,13 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const inputAmount = amountDisplay(move.inputAmount);
   const outputAmount = amountDisplay(move.outputAmount);
   const time = formatClock(move.createdAt);
-  const explorerUrl = moveExplorerUrl(move.chain, move.txRef);
+  const explorerUrl = explorerTxUrl(move.chain, move.txRef);
+  // No tx ref (e.g. a HyperCore fill) → offer a distinct account link instead
+  // of a whole-row link. Only consulted when there is no tx URL to prefer.
+  const accountUrl =
+    explorerUrl === null
+      ? explorerAccountUrl(move.chain, move.walletAddress)
+      : null;
 
   // Shared row cells. The `group` sits on the hoverable wrapper (anchor for
   // linked rows, <li> for plain rows) so legs lighten on row hover in both.
@@ -323,6 +336,21 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
       className="group flex items-center gap-2 border-b border-[var(--vex-line)] py-1.5 last:border-b-0"
     >
       {cells}
+      {accountUrl !== null ? (
+        // No tx hash on this row (HyperCore) — link to the account page, NOT
+        // the whole row. target=_blank routes through main's
+        // setWindowOpenHandler → shell.openExternal allowlist.
+        <a
+          href={accountUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open account on block explorer"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        >
+          View account
+          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} aria-hidden />
+        </a>
+      ) : null}
     </li>
   );
 }

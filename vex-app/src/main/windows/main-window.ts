@@ -18,6 +18,7 @@ import {
   isAllowedExternalUrl,
   type ExternalAllowEntry,
 } from "../security/url.js";
+import { EXPLORER_EXTERNAL_ALLOW } from "@shared/explorer-links.js";
 import {
   clampToVisibleArea,
   type DisplayInfo,
@@ -56,21 +57,16 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   "releases.electronjs.org",
   "desktop.docker.com",
   "docs.docker.com",
-  // Solana explorer + DexScreener: agent-surfaced token/tx links. Exact-host
-  // entries are safe — `isAllowedExternalUrl` matches `url.hostname === entry`,
-  // so `dexscreener.com.evil.com` / `notdexscreener.com` do not match.
-  "explorer.solana.com",
+  // DexScreener: agent-surfaced token links (not a block explorer). Exact-host
+  // entry is safe — `isAllowedExternalUrl` matches `url.hostname === entry`, so
+  // `dexscreener.com.evil.com` / `notdexscreener.com` do not match.
   "dexscreener.com",
-  // EVM block explorers: user-clicked MOVES tx deep links (etherscan family +
-  // per-chain forks). Exact-host semantics as above — subdomain/lookalike
-  // hosts do not match — and https-only is enforced upstream in
-  // `isAllowedExternalUrl`.
-  "etherscan.io",
-  "basescan.org",
-  "arbiscan.io",
-  "bscscan.com",
-  "polygonscan.com",
-  "optimistic.etherscan.io",
+  // Block-explorer hosts (user-clicked MOVES tx / account deep links). Single
+  // source of truth in `@shared/explorer-links` so the chain→URL mapper and
+  // this allowlist can never drift. Pre-existing hosts stay host-wide; the new
+  // Hyperliquid/HyperEVM/Robinhood hosts are path-scoped there. https-only and
+  // path-boundary matching are enforced upstream in `isAllowedExternalUrl`.
+  ...EXPLORER_EXTERNAL_ALLOW,
   // GitHub: restrict to Vex Foundation org + Electron releases (specific repos only)
   { host: "github.com", pathPrefix: "/Vex-Foundation/" },
   { host: "github.com", pathPrefix: "/electron/electron/releases" },

@@ -154,22 +154,16 @@ describe("swap_quote — family router", () => {
   });
 });
 
-describe("swap_quote — Robinhood Chain 4663 routes to Uniswap (LOCKED #3)", () => {
+describe("swap_quote — Robinhood Chain 4663 routes to KyberSwap primary, Uniswap fallback", () => {
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const VEX = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 
-  it("chain 'robinhood' → uniswap.swap.quote (NOT kyberswap)", async () => {
+  it("chain 'robinhood' → kyberswap.swap.quote (KyberSwap now aggregates 4663; Uniswap is the fallback)", async () => {
     await handleSwapQuote({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1.5" }, CTX);
     const { toolId, params } = lastCall();
-    expect(toolId).toBe("uniswap.swap.quote");
-    expect(toolId).not.toContain("kyberswap");
+    expect(toolId).toBe("kyberswap.swap.quote");
     expect(params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" });
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
-  });
-
-  it("chain '4663' → uniswap.swap.quote", async () => {
-    await handleSwapQuote({ chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1" }, CTX);
-    expect(lastCall().toolId).toBe("uniswap.swap.quote");
   });
 
   it("a chain with NO venue (neither kyber nor uniswap) → clean error, NO dispatch", async () => {

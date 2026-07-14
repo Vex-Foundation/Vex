@@ -46,8 +46,6 @@ import type {
   MissionStartResult,
   MissionStopInput,
   MissionStopResult,
-  MissionUpdateDraftInput,
-  MissionUpdateDraftResult,
 } from "@shared/schemas/mission.js";
 import {
   missionKeys,
@@ -157,24 +155,6 @@ export function useSetAutoRetry(): UseMutationResult<
     mutationFn: (input) => window.vex.mission.setAutoRetry(input),
     retry: false,
     onSettled: (_result, _error, input) => {
-      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
-    },
-  });
-}
-
-export function useUpdateMissionDraft(): UseMutationResult<
-  Result<MissionUpdateDraftResult>,
-  Error,
-  MissionUpdateDraftInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) => window.vex.mission.updateDraft(input),
-    retry: false,
-    onSuccess: (_result, input) => {
-      // Phase 6 leaves updateDraft fail-closed but we still invalidate
-      // so when phase 7+ wires the structured form, hooks already
-      // refresh the draft + diff caches without further changes.
       qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
     },
   });

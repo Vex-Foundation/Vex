@@ -72,10 +72,14 @@ export const zapIn: ProtocolHandler = async (p, ctx) => {
 
   const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
   if (tokenIn.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
-    await ensureKyberAllowance(publicClient, walletClient, getAddress(tokenIn), routeResp.data.routerAddress, BigInt(amountIn), p.approveExact === true);
+    await ensureKyberAllowance(publicClient, walletClient, getAddress(tokenIn), routeResp.data.routerAddress, BigInt(amountIn));
   }
 
   const buildResp = await getKyberZaasClient().buildZapIn(slug, { sender: signer.address, recipient: signer.address, route: routeResp.data.route });
+  // Verify the BUILD-response router before broadcasting (fail closed): the tx
+  // target and approvals both flow to this address, so an attacker-controlled
+  // build router is a direct theft vector.
+  verifyRouterAddress(buildResp.data.routerAddress, KS_ZAP_ROUTER_POSITION);
   const { hash: txHash, receipt } = await sendKyberTransactionWithReceipt(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
   // Capture position ref from receipt based on DEX family (R11: reuse zapDexEntry from above)

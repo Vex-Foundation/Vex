@@ -194,6 +194,42 @@ describe("loop-wake repo — cancelForSession", () => {
   });
 });
 
+describe("loop-wake repo — monotonic promotion", () => {
+  beforeEach(() => {
+    resetMocks();
+    mockPoolQueryOne = makePoolQueryOneMock();
+    mockPoolExecute = makePoolExecuteMock();
+  });
+
+  it("promotes only a matching pending watch for a paused mission run", async () => {
+    mockPoolExecute.mockResolvedValueOnce(1);
+    expect(await loopWake.promotePendingWake(SESSION, RUN, "watch-1")).toBe(true);
+    const [sql, params] = mockPoolExecute.mock.calls[0];
+    expect(sql).toContain("SET due_at = LEAST(wake.due_at, NOW())");
+    expect(sql).toContain("wake.status = 'pending'");
+    expect(sql).toContain("wake.payload->>'watchId' = $3");
+    expect(sql).toContain("run.status = 'paused_wake'");
+    expect(params).toEqual([SESSION, RUN, "watch-1"]);
+  });
+
+  it.each(["claim_due", "ingress_cancel", "duplicate_tick"]) (
+    "drops a %s race when the conditional update affects no row",
+    async () => {
+      mockPoolExecute.mockResolvedValueOnce(0);
+      await expect(loopWake.promotePendingWake(SESSION, RUN, "watch-1")).resolves.toBe(false);
+    },
+  );
+
+  it("uses the same monotonic predicate for a non-watch safety escalation", async () => {
+    mockPoolExecute.mockResolvedValueOnce(1);
+    expect(await loopWake.promotePendingWakeForSafety(SESSION, RUN)).toBe(true);
+    const [sql] = mockPoolExecute.mock.calls[0];
+    expect(sql).toContain("SET due_at = LEAST(wake.due_at, NOW())");
+    expect(sql).not.toContain("watchId");
+    expect(sql).toContain("run.status = 'paused_wake'");
+  });
+});
+
 // ── claimDue ────────────────────────────────────────────────────────
 
 describe("loop-wake repo — claimDue (exactly-once)", () => {

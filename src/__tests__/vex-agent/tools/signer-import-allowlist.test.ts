@@ -81,7 +81,9 @@ describe("signer import allowlist", () => {
   });
 
   it("protocol manifest actionKinds stay within the deny-covered census", () => {
-    const allowedKinds = new Set(["read", "user_wallet_broadcast", "external_post"]);
+    // "local_write" reviewed for hyperliquid.risk.proposeSetup (HL Phase 4a):
+    // writes a local session-policy proposal row only — no signing, no provider call.
+    const allowedKinds = new Set(["read", "user_wallet_broadcast", "external_post", "local_write"]);
     const seen = new Set<string>();
     for (const file of walk(join(TOOLS_DIR, "protocols"))) {
       const src = readFileSync(file, "utf-8");

@@ -258,6 +258,19 @@ beforeEach(() => {
       messages: {
         list: messagesListMock,
       },
+      // HL Phase 4a: AppShell mounts the Hyperliquid positions live-sync hook
+      // (`useHyperliquidPositions`), which subscribes via window.vex.hyperliquid.
+      // No-op stubs keep shell tests independent of the HL bridge surface.
+      hyperliquid: {
+        getPositions: vi.fn().mockResolvedValue({ ok: true, data: { sessionId: "", positions: [] } }),
+        getCandles: vi.fn().mockResolvedValue({ ok: true, data: { coin: "", interval: "1h", candles: [] } }),
+        listRiskProposals: vi.fn().mockResolvedValue({ ok: true, data: { sessionId: "", proposals: [] } }),
+        confirmRiskProposal: vi.fn(),
+        onPositionsUpdate: () => () => {},
+        onRiskProposalUpdate: () => () => {},
+        onWorkspaceMode: () => () => {},
+        exitWorkspace: vi.fn(),
+      },
       // Agent integration puzzle 2/09 + F5: SessionPanel mounts
       // `useTranscriptLiveSync` + `useStreamPreviewSync` +
       // `useControlStateLiveSync`, which subscribe to the engine bridge. Stubs

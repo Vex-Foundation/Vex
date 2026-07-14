@@ -29,6 +29,11 @@ vi.mock("../db-config.js", () => ({
   buildPoolConfig: async () => null,
 }));
 
+// Load the façade before individual 5s test timers start. The full app graph
+// grew with Hyperliquid; outcome assertions should measure the query helper,
+// not first-time Vite module transformation under a saturated worker pool.
+await import("../sessions-db.js");
+
 const TEST_ID = "00000000-0000-4000-8000-000000000001";
 
 interface ScriptedQueryResult {

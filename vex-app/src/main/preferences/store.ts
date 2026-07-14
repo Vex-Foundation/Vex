@@ -25,6 +25,7 @@ import {
 
 class PreferencesStore {
   private cache: Preferences | null = null;
+  private readonly listeners = new Set<(preferences: Preferences) => void>();
   /** Serialises ALL operations (load + write + update) to remove read-modify-write races. */
   private chain: Promise<void> = Promise.resolve();
   private writeCounter = 0;
@@ -113,6 +114,27 @@ class PreferencesStore {
     });
   }
 
+  /**
+   * Main-process observers use this for live, fail-closed policy refreshes.
+   * Preferences never cross this listener boundary into renderer code; IPC is
+   * still the only renderer-facing path.
+   */
+  subscribe(listener: (preferences: Preferences) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(preferences: Preferences): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(preferences);
+      } catch {
+        // A policy observer must not make a successfully persisted preference
+        // write look failed. Its own resolver remains fail-closed on refresh.
+      }
+    }
+  }
+
   private async writeInner(prefs: Preferences): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     this.writeCounter += 1;
@@ -125,6 +147,7 @@ class PreferencesStore {
       });
       await fs.rename(tmp, this.filePath);
       this.cache = prefs;
+      this.notify(prefs);
     } catch (e) {
       await fs.unlink(tmp).catch(() => undefined);
       throw e;

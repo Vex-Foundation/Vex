@@ -260,6 +260,7 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
           instrument_key: "eth-usdc",
           chain: "ethereum",
           tx_ref: "0xfeed",
+          wallet_address: WALLET_A,
           created_at: "2026-06-01T12:00:00.000Z",
         },
       ],
@@ -272,6 +273,7 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     expect(result.data[0]?.id).toBe("42");
     expect(result.data[0]?.chain).toBe("ethereum");
     expect(result.data[0]?.txRef).toBe("0xfeed");
+    expect(result.data[0]?.walletAddress).toBe(WALLET_A);
     expect(result.data[0]?.productType).toBe("spot");
     expect(result.data[0]?.venue).toBe("uniswap");
   });
@@ -283,6 +285,14 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
     expect(sql).toContain("a.product_type");
     expect(sql).toContain("a.namespace AS venue");
+  });
+
+  it("selects wallet_address for the account block-explorer link", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await getMovesForSession(SESSION);
+    const sql = String(mocks.query.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("a.wallet_address");
   });
 });
 
@@ -305,6 +315,7 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
           instrument_key: null,
           chain: "solana",
           tx_ref: null,
+          wallet_address: SOL_ADDR,
           created_at: "2026-05-21T10:00:00.000Z",
         },
       ],
@@ -328,6 +339,7 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         instrumentKey: null,
         chain: "solana",
         txRef: null,
+        walletAddress: SOL_ADDR,
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);

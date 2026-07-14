@@ -17,6 +17,7 @@ import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 import { controlFailedError } from "../runtime/_errors.js";
 import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { refreshHyperliquidPolicyOverlays } from "../../hyperliquid/policy-provider.js";
 
 export function registerMissionAcceptContractHandler(): () => void {
   return registerHandler({
@@ -42,6 +43,9 @@ export function registerMissionAcceptContractHandler(): () => void {
             ? { planUpdatedAt: input.planUpdatedAt }
             : {}),
         });
+        if (outcome.outcome === "accepted") {
+          await refreshHyperliquidPolicyOverlays();
+        }
         log.info(
           `[ipc:vex:mission:acceptContract] outcome=${outcome.outcome} ` +
             `missionId=${input.missionId} correlationId=${ctx.requestId}`,

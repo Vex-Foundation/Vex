@@ -234,6 +234,22 @@ export function SessionTranscript({
     if (el !== null && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
   }, [previewSig]);
 
+  // Turn settled (stream → null): retire the anchor run-out. The spacer's job
+  // was to guarantee scroll range WHILE the reply streamed below the anchored
+  // user message; once the turn is complete, "scrolled to bottom" must mean
+  // the last message sits flush with the bottom edge — no dead space (owner
+  // order). If the viewport was inside the removed range the browser clamps
+  // scrollTop, which lands exactly on that flush state; a reader anchored
+  // above a long reply sees no movement at all.
+  const hadPreview = useRef(false);
+  useEffect(() => {
+    const had = hadPreview.current;
+    hadPreview.current = previewSig !== null;
+    if (!had || previewSig !== null) return;
+    const spacer = anchorSpacerRef.current;
+    if (spacer !== null) spacer.style.height = "0px";
+  }, [previewSig]);
+
   // After an intentional older-page fetch settles, hold the viewport if a page
   // was actually prepended (oldest id changed); clear the anchor either way —
   // success OR failure — so it can never gate a later load or bottom-follow.

@@ -170,6 +170,7 @@ export async function executeEvmTransfer(
       return {
         kind: "chain_failed",
         txHash: hash,
+        chain: chainName,
         errorKind: "ChainRevert",
         errorHash,
       };
@@ -208,6 +209,7 @@ export async function executeEvmTransfer(
     return {
       kind: "confirmation_unknown",
       txHash: hash,
+      chain: chainName,
       errorKind: sum.errorKind,
       errorHash: sum.errorHash,
     };

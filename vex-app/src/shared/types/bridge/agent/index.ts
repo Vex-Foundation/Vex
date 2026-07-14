@@ -17,6 +17,7 @@ import type { ApprovalsBridge } from "./approvals.js";
 import type { ChatBridge } from "./chat.js";
 import type { CompactionBridge } from "./compaction.js";
 import type { EngineEventsBridge } from "./engine.js";
+import type { HyperliquidBridge } from "./hyperliquid.js";
 import type { LongMemoryBridge } from "./long-memory.js";
 import type { MemoryBridge } from "./memory.js";
 import type { MemoryInspectorBridge } from "./memory-inspector.js";
@@ -33,6 +34,7 @@ export type { ApprovalsBridge } from "./approvals.js";
 export type { ChatBridge } from "./chat.js";
 export type { CompactionBridge } from "./compaction.js";
 export type { EngineEventsBridge } from "./engine.js";
+export type { HyperliquidBridge } from "./hyperliquid.js";
 export type { LongMemoryBridge } from "./long-memory.js";
 export type { MemoryBridge } from "./memory.js";
 export type { MemoryInspectorBridge } from "./memory-inspector.js";
@@ -64,6 +66,8 @@ export interface VexAgentBridge {
   readonly memoryInspector: MemoryInspectorBridge;
   /** Read-only dual-scope POSITION portfolio: global inventory / session scope (stage 3). */
   readonly portfolio: PortfolioBridge;
+  /** Main-owned Hyperliquid positions and user-confirmed risk setup. */
+  readonly hyperliquid: HyperliquidBridge;
   /**
    * Engine -> renderer push events (transcript spine, future runtime
    * deltas, etc.). The namespace mirrors `EV.engine.<topic>` so the

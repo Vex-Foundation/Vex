@@ -14,7 +14,7 @@ export const UNISWAP_SWAP_DISCOVERY = {
   "uniswap.swap.quote": {
     embeddingText: embeddingText(
       `Preview a token swap on Uniswap across V2 and V3 pools — best route, expected output, price impact, gas, and token-safety signals — before executing. ` +
-      `Use this when the user wants the price or route before swapping on Robinhood Chain (the only venue there, where $VEX and Virtuals agent tokens trade against VIRTUAL) or as an all-EVM fallback when KyberSwap is unavailable. ` +
+      `Use this when the user wants the price or route as an all-EVM fallback when KyberSwap is unavailable, or on Robinhood Chain where $VEX and Virtuals agent tokens trade against VIRTUAL. ` +
       `Example queries: preview uniswap swap on robinhood, best uniswap price for virtual to vex, quote swap on robinhood chain, uniswap route preview. Read-only.`,
     ),
     aliases: ["uniswap quote", "uniswap route preview", "robinhood swap quote", "v2 v3 best route"],
@@ -26,7 +26,7 @@ export const UNISWAP_SWAP_DISCOVERY = {
   "uniswap.swap.sell": {
     embeddingText: embeddingText(
       `Sell a token on Uniswap (V2 or V3, best route) — exact-input swap: spend the input token to receive the output. Execution handles the token approval automatically. ` +
-      `Use this when the user wants to sell, dump, or exit a position on Robinhood Chain (the only venue there — sell $VEX or a Virtuals agent token for VIRTUAL/ETH) or as an all-EVM fallback for KyberSwap. ` +
+      `Use this when the user wants to sell, dump, or exit a position as an all-EVM fallback for KyberSwap, or on Robinhood Chain — sell $VEX or a Virtuals agent token for VIRTUAL/ETH. ` +
       `Example queries: sell vex for virtual on robinhood, dump my robinhood token, exit position on uniswap, swap out on robinhood chain.`,
     ),
     aliases: ["uniswap sell", "sell on robinhood", "exit position uniswap", "swap out uniswap"],
@@ -38,7 +38,7 @@ export const UNISWAP_SWAP_DISCOVERY = {
   "uniswap.swap.buy": {
     embeddingText: embeddingText(
       `Buy a token on Uniswap (V2 or V3, best route) — exact-input swap marked as a buy for portfolio tracking (a lot opens on the output token). Execution handles the token approval automatically. ` +
-      `Use this when the user wants to buy, ape into, or acquire a token on Robinhood Chain (the only venue there — buy $VEX or a Virtuals agent token with VIRTUAL/ETH) or as an all-EVM fallback for KyberSwap. ` +
+      `Use this when the user wants to buy, ape into, or acquire a token as an all-EVM fallback for KyberSwap, or on Robinhood Chain — buy $VEX or a Virtuals agent token with VIRTUAL/ETH. ` +
       `Example queries: buy vex with virtual on robinhood, ape into a robinhood token, acquire token on uniswap, open a spot position on robinhood chain.`,
     ),
     aliases: ["uniswap buy", "buy on robinhood", "acquire token uniswap", "ape robinhood"],

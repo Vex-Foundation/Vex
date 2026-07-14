@@ -18,6 +18,7 @@ describe("resolveChainSlug", () => {
     expect(resolveChainSlug("arbitrum")).toBe("arbitrum");
     expect(resolveChainSlug("base")).toBe("base");
     expect(resolveChainSlug("megaeth")).toBe("megaeth");
+    expect(resolveChainSlug("robinhood")).toBe("robinhood");
   });
 
   it("resolves aliases", () => {
@@ -63,6 +64,7 @@ describe("chainIdToSlug", () => {
     expect(chainIdToSlug(42161)).toBe("arbitrum");
     expect(chainIdToSlug(8453)).toBe("base");
     expect(chainIdToSlug(4326)).toBe("megaeth");
+    expect(chainIdToSlug(4663)).toBe("robinhood");
   });
 
   it("returns undefined for unknown IDs", () => {
@@ -77,6 +79,7 @@ describe("slugToChainId", () => {
     expect(slugToChainId("bsc")).toBe(56);
     expect(slugToChainId("polygon")).toBe(137);
     expect(slugToChainId("base")).toBe(8453);
+    expect(slugToChainId("robinhood")).toBe(4663);
   });
 
   it("throws for unknown slug", () => {
@@ -105,6 +108,14 @@ describe("getChainFeatures", () => {
     expect(f.zaas).toBe(false);
   });
 
+  it("returns aggregator-only for Robinhood (provisional; no limit order, no zap)", () => {
+    const f = getChainFeatures("robinhood");
+    expect(f.chainId).toBe(4663);
+    expect(f.aggregator).toBe(true);
+    expect(f.limitOrder).toBe(false);
+    expect(f.zaas).toBe(false);
+  });
+
   it("throws for unknown slug", () => {
     expect(() => getChainFeatures("unknown" as any)).toThrow(VexError);
   });
@@ -122,6 +133,10 @@ describe("chainSupportsFeature", () => {
     expect(chainSupportsFeature("megaeth", "zaas")).toBe(false);
     expect(chainSupportsFeature("scroll", "aggregator")).toBe(false);
     expect(chainSupportsFeature("zksync", "limitOrder")).toBe(false);
+    // Robinhood is aggregator-only — limit order + zap are gated OFF.
+    expect(chainSupportsFeature("robinhood", "aggregator")).toBe(true);
+    expect(chainSupportsFeature("robinhood", "limitOrder")).toBe(false);
+    expect(chainSupportsFeature("robinhood", "zaas")).toBe(false);
   });
 
   it("returns true for ZaaS-only chains' zaas feature", () => {
@@ -131,9 +146,9 @@ describe("chainSupportsFeature", () => {
 });
 
 describe("getKyberChains", () => {
-  it("returns 20 chains", () => {
+  it("returns 21 chains", () => {
     const chains = getKyberChains();
-    expect(chains).toHaveLength(20);
+    expect(chains).toHaveLength(21);
   });
 
   it("each chain has required fields", () => {
@@ -149,7 +164,7 @@ describe("getKyberChains", () => {
 
   it("aggregator-enabled chains have aggregator=true", () => {
     const aggregatorChains = getKyberChains().filter((c) => c.aggregator);
-    expect(aggregatorChains.length).toBe(18);
+    expect(aggregatorChains.length).toBe(19);
   });
 
   it("ZaaS-only chains have aggregator=false and zaas=true", () => {

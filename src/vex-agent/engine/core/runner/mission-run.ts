@@ -121,6 +121,7 @@ export async function runPreparedMissionStart(
     };
 
     const baseVisibility: ToolVisibilityBase = {
+      sessionId: prepared.sessionId,
       permission: prepared.permission,
       role: "parent",
       sessionKind: "mission",
@@ -239,6 +240,7 @@ export async function resumePreparedMissionRun(
     };
 
     const baseVisibility: ToolVisibilityBase = {
+      sessionId: prepared.run.sessionId,
       permission,
       role: "parent",
       sessionKind: "mission",

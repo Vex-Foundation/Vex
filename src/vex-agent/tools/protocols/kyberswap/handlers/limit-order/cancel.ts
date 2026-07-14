@@ -6,6 +6,7 @@
 
 import { getKyberLimitOrderClient } from "@tools/kyberswap/limit-order/client.js";
 import { signEip712Message } from "@tools/kyberswap/limit-order/signing.js";
+import { verifyCancelOrderSignMessage } from "@tools/kyberswap/limit-order/sign-message-verification.js";
 import {
   getKyberEvmClients,
   sendKyberTransaction,
@@ -37,6 +38,9 @@ export const limitOrderCancel: ProtocolHandler = async (p, ctx) => {
     maker: signer.address,
     orderIds: [orderId],
   });
+  // Cross-check the cancel sign-message before signing — only the allowlisted
+  // DSLOProtocol on the requested chain may be signed for. Fail closed.
+  verifyCancelOrderSignMessage(eip712, { chainId });
   const signature = await signEip712Message(signer.privateKey, eip712);
   await getKyberLimitOrderClient().cancelOrders({ ...eip712, signature });
 

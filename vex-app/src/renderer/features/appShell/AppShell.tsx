@@ -33,6 +33,8 @@
  */
 
 import type { JSX } from "react";
+import type { SkyTheme } from "./signalSkyShaders.js";
+import type { AppShellView } from "../../stores/uiStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { BookPanel } from "./BookPanel.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
@@ -45,9 +47,14 @@ import { SessionsList } from "./SessionsList.js";
 import { MemoryPanel } from "./MemoryPanel.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { SignalSky } from "./SignalSky.js";
+import { HypervexingWorkspace } from "./workspace/HypervexingWorkspace.js";
+import { HypervexingFirstEntryAck } from "./workspace/HypervexingFirstEntryAck.js";
+import { useHypervexingWorkspace } from "./workspace/useHypervexingWorkspace.js";
+import { deriveShellTheme } from "./workspace/workspaceModeGate.js";
 
 /** Sky strength behind an active session transcript — dimmed so the tape
- * stays the protagonist; the welcome/idle stage runs the sky at full 1. */
+ * stays the protagonist; the welcome/idle stage runs the sky at full 1. The
+ * Hypervexing workspace also dims the sky (the chart is the protagonist). */
 const SKY_DIM_INTENSITY = 0.35;
 
 export function AppShell(): JSX.Element {
@@ -60,6 +67,17 @@ export function AppShell(): JSX.Element {
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const closeCreateSession = useUiStore((s) => s.closeCreateSession);
 
+  // Hypervexing workspace: agent-driven entry (a main→renderer push), ack-gated
+  // first entry, always-available exit. The controller owns the ack-dialog gate
+  // and turns each agent request into the right store transition.
+  const workspace = useHypervexingWorkspace();
+  const inWorkspace = workspace.workspaceMode === "hypervexing";
+
+  // `data-vex-theme` is DERIVED: while the mode is active it reads
+  // "hypervexing"; otherwise it is the user's own persisted theme, so EXIT
+  // restores navy vs lime exactly. The mode never overwrites `theme`.
+  const derivedTheme: SkyTheme = deriveShellTheme(workspace.workspaceMode, theme);
+
   // Stage F responsive: below ~1360px the three columns (sidebar + chat +
   // BOOK) no longer fit, so auto-collapse BOOK on the narrowing edge. One-way on
   // the transition (not continuously enforced) so a user can still re-open BOOK
@@ -68,12 +86,12 @@ export function AppShell(): JSX.Element {
 
   // Sky intensity is derived from state AppShell already subscribes to —
   // full on welcome/idle (no active session, or a non-session sub-view),
-  // dimmed behind an active session transcript. The uniform itself eases
-  // inside SignalSky, so this can flip freely.
+  // dimmed behind an active session transcript OR the Hypervexing chart. The
+  // uniform itself eases inside SignalSky, so this can flip freely.
   const skyIntensity =
-    activeSessionId === null || appShellView !== "session"
-      ? 1
-      : SKY_DIM_INTENSITY;
+    inWorkspace || (activeSessionId !== null && appShellView === "session")
+      ? SKY_DIM_INTENSITY
+      : 1;
 
   return (
     // `relative isolate`: anchors the absolutely-positioned Signal Sky and
@@ -81,11 +99,64 @@ export function AppShell(): JSX.Element {
     <main
       className="relative isolate flex h-screen w-screen overflow-hidden bg-[var(--vex-surface-0)] text-foreground"
       data-vex-shell="true"
-      data-vex-theme={theme}
+      data-vex-theme={derivedTheme}
       data-vex-screen="appShell"
     >
-      <SignalSky intensity={skyIntensity} theme={theme} />
-      <SessionsList onCreate={() => openCreateSession()} />
+      <SignalSky intensity={skyIntensity} theme={derivedTheme} />
+
+      {inWorkspace ? (
+        // The 5-zone trading room replaces the normal columns while active. It
+        // reuses the SAME SessionPanel (docked), so chat context is preserved
+        // and only ONE chat surface is ever mounted.
+        <HypervexingWorkspace onExit={workspace.exit} />
+      ) : (
+        <NormalShell
+          appShellView={appShellView}
+          activeSessionId={activeSessionId}
+          bookOpen={bookOpen}
+          toggleBook={toggleBook}
+          onCreate={() => openCreateSession()}
+        />
+      )}
+
+      <SessionCreator
+        open={createSessionOpen}
+        onOpenChange={(next) => {
+          if (!next) closeCreateSession();
+        }}
+      />
+
+      {/* First-entry risk acknowledgment (renders in the CURRENT theme, before
+       * the morph). The mode activates only after the user accepts. */}
+      <HypervexingFirstEntryAck
+        open={workspace.ackPending}
+        saving={workspace.ackSaving}
+        onConfirm={workspace.confirmAck}
+        onCancel={workspace.cancelAck}
+      />
+    </main>
+  );
+}
+
+/** The normal (non-Hypervexing) shell columns: sessions rail · content column
+ * under the desk rule · optional BOOK panel. Extracted so the AppShell root
+ * cleanly branches between the normal shell and the Hypervexing workspace. */
+function NormalShell({
+  appShellView,
+  activeSessionId,
+  bookOpen,
+  toggleBook,
+  onCreate,
+}: {
+  readonly appShellView: AppShellView;
+  readonly activeSessionId: string | null;
+  readonly bookOpen: boolean;
+  readonly toggleBook: () => void;
+  readonly onCreate: () => void;
+}): JSX.Element {
+  return (
+    <>
+      <SessionsList onCreate={onCreate} />
 
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
         {/* DESK RULE — the working header datum and the head of the tape. The
@@ -143,13 +214,6 @@ export function AppShell(): JSX.Element {
           onToggle={toggleBook}
         />
       ) : null}
-
-      <SessionCreator
-        open={createSessionOpen}
-        onOpenChange={(next) => {
-          if (!next) closeCreateSession();
-        }}
-      />
-    </main>
+    </>
   );
 }

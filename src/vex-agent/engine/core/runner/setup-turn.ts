@@ -109,6 +109,7 @@ export async function processMissionSetupTurn(
   };
 
   const baseVisibility: ToolVisibilityBase = {
+    sessionId,
     permission: setupContext.sessionPermission,
     role: "parent",
     sessionKind: "mission",

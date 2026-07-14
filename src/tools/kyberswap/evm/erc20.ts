@@ -5,7 +5,6 @@
 
 import {
   getAddress,
-  maxUint256,
   type Address,
   type Chain,
   type Hex,
@@ -119,12 +118,28 @@ export interface ApproveResult {
  * Ensure ERC-20 allowance is sufficient. Approve if needed.
  * Handles USDT-style tokens that require reset to 0 before new approval.
  *
+ * Approves the EXACT `requiredAmount` when short (never an unlimited
+ * `maxUint256`) — the exact-amount doctrine mirrors Uniswap's
+ * `ensureUniswapAllowanceExact` (`src/tools/uniswap/erc20.ts`): a smaller
+ * standing-allowance surface, so a compromised router can pull only what this
+ * one operation needs. The former `approveExact` opt-in (default unlimited) was
+ * REMOVED, not merely defaulted to exact: the Stage-9 prequote identity binds
+ * `approveExact` into the swap match-hash and the recorder pins it `false`, so
+ * an execute passing `approveExact: true` produced a divergent digest and was
+ * already BLOCKED (no_quote) by the gate — the opt-in was dead on arrival. The
+ * `approveExact` param is likewise gone from the kyberswap swap/zap manifests,
+ * so the dispatcher rejects it as an unknown param before a handler runs.
+ *
+ * Callers that genuinely need an unlimited standing allowance (zap-out /
+ * zap-migrate ERC-20 LP-share exits, where the router-pulled amount is not
+ * determinable pre-build) pass `maxUint256` AS `requiredAmount` explicitly and
+ * document why at the call site.
+ *
  * @param publicClient - viem PublicClient for the target chain
  * @param walletClient - viem WalletClient for signing
  * @param token - ERC-20 token address
  * @param spender - Spender to approve (validated against KYBER_KNOWN_SPENDERS)
- * @param requiredAmount - Minimum allowance needed
- * @param approveExact - If true, approve exact amount; otherwise maxUint256
+ * @param requiredAmount - Exact allowance to grant when the current one is short
  */
 export async function ensureKyberAllowance(
   publicClient: PublicClient<Transport, Chain>,
@@ -132,7 +147,6 @@ export async function ensureKyberAllowance(
   token: Address,
   spender: Address,
   requiredAmount: bigint,
-  approveExact = false,
 ): Promise<ApproveResult | null> {
   validateKyberSpender(spender);
 
@@ -174,7 +188,7 @@ export async function ensureKyberAllowance(
     }
   }
 
-  const approveAmount = approveExact ? requiredAmount : maxUint256;
+  const approveAmount = requiredAmount;
 
   try {
     logger.debug({ event: "kyberswap.allowance.approve", token, spender, amount: approveAmount.toString() });

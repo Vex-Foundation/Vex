@@ -51,13 +51,16 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
+import { hyperliquidMissionRiskSchema, type HyperliquidMissionRisk } from "../../../lib/hyperliquid-policy.js";
 import type { MissionDraft } from "../types.js";
 
 /** Bumped when the canonical shape or hashing rules change. */
-export const CONTRACT_HASH_VERSION = 1;
+export const CONTRACT_HASH_VERSION = 2;
+export const LEGACY_CONTRACT_HASH_VERSION = 1;
+export type ContractHashVersion = typeof LEGACY_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION;
 
-const CanonicalContractMaterialSchema = z.object({
-  v: z.literal(CONTRACT_HASH_VERSION),
+const CanonicalContractMaterialV1Schema = z.object({
+  v: z.literal(LEGACY_CONTRACT_HASH_VERSION),
   goal: z.string().nullable(),
   capitalSource: z.string().nullable(),
   startingCapital: z.string().nullable(),
@@ -70,7 +73,12 @@ const CanonicalContractMaterialSchema = z.object({
   stopConditions: z.array(z.string()),
 }).strict();
 
-export type CanonicalContractMaterial = z.infer<typeof CanonicalContractMaterialSchema>;
+const CanonicalContractMaterialV2Schema = CanonicalContractMaterialV1Schema.omit({ v: true }).extend({
+  v: z.literal(CONTRACT_HASH_VERSION),
+  hyperliquidRisk: hyperliquidMissionRiskSchema.nullable(),
+}).strict();
+
+export type CanonicalContractMaterial = z.infer<typeof CanonicalContractMaterialV1Schema> | z.infer<typeof CanonicalContractMaterialV2Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -96,10 +104,12 @@ function normalizeChainArray(values: readonly string[] | null | undefined): stri
   return normalizeStringArray(values).map((s) => s.toLowerCase());
 }
 
-/** Build the canonical contract material from a `MissionDraft`. */
-export function buildContractMaterial(draft: MissionDraft): CanonicalContractMaterial {
-  const material = {
-    v: CONTRACT_HASH_VERSION as typeof CONTRACT_HASH_VERSION,
+/** Build canonical material for the recorded contract version, never silently upgrading v1. */
+export function buildContractMaterial(
+  draft: MissionDraft,
+  version: ContractHashVersion = CONTRACT_HASH_VERSION,
+): CanonicalContractMaterial {
+  const base = {
     goal: normalizeNullableString(draft.goal),
     capitalSource: normalizeNullableString(draft.capitalSource),
     startingCapital: normalizeNullableString(draft.startingCapital),
@@ -112,10 +122,30 @@ export function buildContractMaterial(draft: MissionDraft): CanonicalContractMat
     successCriteria: normalizeStringArray(draft.successCriteria),
     stopConditions: normalizeStringArray(draft.stopConditions),
   };
-  // The .parse() call doubles as an invariant check — if any of the
-  // normalizers drifts and produces a wrong-shape value, we catch it
-  // here instead of producing a silently-wrong hash.
-  return CanonicalContractMaterialSchema.parse(material);
+  if (version === LEGACY_CONTRACT_HASH_VERSION) {
+    // A v1 contract cannot carry risk: accepting it would omit safety-critical
+    // material from the hash. Existing accepted v1 rows have `null` by design.
+    if (draft.hyperliquidRisk !== null && draft.hyperliquidRisk !== undefined) {
+      throw new Error("Hyperliquid mission risk requires contract hash version 2.");
+    }
+    return CanonicalContractMaterialV1Schema.parse({ v: LEGACY_CONTRACT_HASH_VERSION, ...base });
+  }
+  return CanonicalContractMaterialV2Schema.parse({
+    v: CONTRACT_HASH_VERSION,
+    ...base,
+    hyperliquidRisk: normalizeHyperliquidRisk(draft.hyperliquidRisk),
+  });
+}
+
+function normalizeHyperliquidRisk(value: HyperliquidMissionRisk | null | undefined): HyperliquidMissionRisk | null {
+  if (value === null || value === undefined) return null;
+  const parsed = hyperliquidMissionRiskSchema.parse(value);
+  return {
+    ...parsed,
+    ...(parsed.marketAllowlist === undefined
+      ? {}
+      : { marketAllowlist: [...new Set(parsed.marketAllowlist.map((coin) => coin.trim().toUpperCase()))].sort() }),
+  };
 }
 
 /**
@@ -143,8 +173,11 @@ export function canonicalStringify(value: unknown): string {
  * set ordering produce the same hash; two drafts that differ in
  * runtime-affecting content produce different hashes.
  */
-export function computeContractHash(draft: MissionDraft): string {
-  const material = buildContractMaterial(draft);
+export function computeContractHash(
+  draft: MissionDraft,
+  version: ContractHashVersion = CONTRACT_HASH_VERSION,
+): string {
+  const material = buildContractMaterial(draft, version);
   const canonical = canonicalStringify(material);
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }

@@ -230,6 +230,16 @@ export interface ToolResult {
      */
     readonly termLock?: { readonly maturityIso: string };
   };
+  /**
+   * Trusted Hyperliquid gate output for approval display. Never sourced from
+   * model params; it is computed from policy plus live exchange state.
+   */
+  hyperliquid?: {
+    readonly stopLossVerdict?: "protected_required" | "unprotected_by_user_choice";
+    readonly notionalUsd?: string;
+    readonly estLiquidationPx?: string;
+    readonly destinationClass?: string;
+  };
 }
 
 /**

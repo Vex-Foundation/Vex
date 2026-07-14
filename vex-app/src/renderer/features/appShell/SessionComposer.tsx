@@ -70,6 +70,7 @@ import { ComposerQuickActions } from "./ComposerQuickActions.js";
 import { usePlaceholderRotator } from "./composer-placeholders.js";
 import { PlanSwitch } from "./PlanSwitch.js";
 import { nextReasoningEffort, ReasoningSwitch } from "./ReasoningSwitch.js";
+import { HypervexingSummon } from "./workspace/HypervexingSummon.js";
 
 /**
  * Shared geometry for the round send control's three states (send / stop /
@@ -129,6 +130,7 @@ export function SessionComposer({
     mutateAsync: submitTurn,
     stop: stopTurn,
   } = useSubmitChat();
+  const workspaceMode = useUiStore((s) => s.workspaceMode);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const pendingFirstMessage = useUiStore((s) => s.pendingFirstMessage);
   const clearPendingFirstMessage = useUiStore((s) => s.clearPendingFirstMessage);
@@ -278,6 +280,11 @@ export function SessionComposer({
 
   const runStatus = readRunStatus(runtimeQuery.data);
   const freeTextGate = runStatus !== null && FREE_TEXT_DISALLOWED.has(runStatus);
+
+  // The summoning word in the draft, outside the mode — drives the ripple
+  // veil, the gradient text paint, and the spellcheck suppression together.
+  const summonActive =
+    workspaceMode !== "hypervexing" && /hypervexing/i.test(draft);
 
   // Plan mode — same engine-owned, session-scoped state SessionPlanCard
   // displays (same query key, no extra fetch). The PLAN switch is the single
@@ -436,6 +443,10 @@ export function SessionComposer({
             "vex-console relative flex items-center gap-1.5 overflow-visible rounded-[24px] bg-[var(--vex-glass)] p-1.5 backdrop-blur-xl",
           )}
         >
+          {/* The summoning ritual: typing "hypervexing" ripples the pill in
+           * the protocol's mint before the message is even sent. Only outside
+           * the mode — inside, the room itself is the acknowledgment. */}
+          <HypervexingSummon active={summonActive} />
           <textarea
               ref={textareaRef}
               value={draft}
@@ -459,6 +470,9 @@ export function SessionComposer({
               rows={1}
               placeholder={placeholder}
               aria-label="Session draft"
+              // The summoning word is real vocabulary here, not a typo — the
+              // spellchecker's red squiggle would deface the ritual.
+              spellCheck={!summonActive}
               className={cn(
                 "block w-full flex-1 resize-none overflow-y-auto bg-transparent leading-[1.6] text-foreground caret-[var(--vex-accent)] outline-none",
                 "max-h-[200px] py-1.5 pr-1 placeholder:text-[var(--vex-text-3)]",
@@ -467,6 +481,9 @@ export function SessionComposer({
                 "pl-5",
                 // Stage: taller idle presence + larger type (the instrument).
                 stage ? "min-h-[44px] text-[16px]" : "min-h-[36px] text-[15px]",
+                // The invocation glows: draft text paints as a drifting
+                // mint→teal gradient while the summoning word is present.
+                summonActive && "hv-summon-input",
               )}
             />
 
@@ -474,13 +491,18 @@ export function SessionComposer({
            * round send control, all sharing one height (h-9) and vertically
            * centered against the field so the control bank reads level at rest. */}
           <div className="flex shrink-0 items-center gap-1.5">
-              <PlanSwitch
-                sessionId={sessionId}
-                planOn={planOn}
-                busy={setPlanMode.isPending}
-                missionBlocked={planMissionBlocked}
-                onToggle={togglePlanMode}
-              />
+              {/* In the Hypervexing room the copilot is plain chat by decree —
+               * the Chat/Plan selector hides; plan/mission control stays a
+               * normal-desk affordance. */}
+              {workspaceMode !== "hypervexing" ? (
+                <PlanSwitch
+                  sessionId={sessionId}
+                  planOn={planOn}
+                  busy={setPlanMode.isPending}
+                  missionBlocked={planMissionBlocked}
+                  onToggle={togglePlanMode}
+                />
+              ) : null}
 
               {/* REASON control (S6) — only when the active model supports
                * reasoning; welcome (no session) hides it (capability unknown). */}

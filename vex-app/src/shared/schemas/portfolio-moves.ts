@@ -75,6 +75,11 @@ export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
  *                      (`txHash` for EVM, `signature` for Solana); `null` when
  *                      the capture recorded neither. The raw `external_refs`
  *                      JSONB is still never shipped to the renderer.
+ *  - `walletAddress` — `proj_activity.wallet_address`: the session's OWN wallet
+ *                      that executed the move (already server-side scoped to the
+ *                      session — never renderer-supplied). Powers the account
+ *                      block-explorer link for rows that carry no `txRef` (e.g.
+ *                      HyperCore fills). Nullable for tolerance.
  *  - `createdAt`     — activity timestamp (offset ISO; NOT NULL in the DDL).
  */
 export const moveItemSchema = z
@@ -92,6 +97,7 @@ export const moveItemSchema = z
     instrumentKey: z.string().nullable(),
     chain: z.string(),
     txRef: z.string().nullable(),
+    walletAddress: z.string().nullable(),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();

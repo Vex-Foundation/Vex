@@ -28,6 +28,19 @@ export const MAX_RENDER_LOGS = 500;
  */
 export type VexTheme = "vex" | "robinhood";
 
+/**
+ * Hypervexing workspace mode. This is a SEPARATE flag layered over `theme`,
+ * NOT a third `VexTheme` value:
+ *  - it is agent-driven and transient (entered via an agent tool push, exited
+ *    via the in-mode EXIT control), so it must NOT persist — a relaunch always
+ *    starts in `normal` mode (excluded from the persist whitelist below);
+ *  - `data-vex-theme` is DERIVED from it in AppShell
+ *    (`workspaceMode === "hypervexing" ? "hypervexing" : theme`), so EXIT
+ *    restores the user's persisted theme (navy vs lime) exactly.
+ * `theme` stays the user's own choice; the mode never overwrites it.
+ */
+export type WorkspaceMode = "normal" | "hypervexing";
+
 export type View =
   | "splash"
   | "systemCheck"
@@ -77,6 +90,13 @@ interface UiState {
    * Defaults to `vex` (the cobalt Signal Desk).
    */
   readonly theme: VexTheme;
+  /**
+   * Hypervexing workspace mode. Defaults to `normal` and is NOT persisted
+   * (see partialize) — a relaunch always starts in `normal`, never inside the
+   * mode. Drives the DERIVED `data-vex-theme` in AppShell without touching the
+   * user's own `theme`.
+   */
+  readonly workspaceMode: WorkspaceMode;
   readonly sidebarOpen: boolean;
   /**
    * The on-demand right-side BOOK panel (per-session instrument: MOVES /
@@ -118,8 +138,15 @@ interface UiState {
    * every session back at the default; the engine owns the real default.
    */
   readonly reasoningEffortBySession: Readonly<Record<string, ReasoningEffort>>;
+  /**
+   * Hypervexing market-picker favorites (starred coins). Persisted — a
+   * trader's watch set is a deliberate choice that must survive relaunch.
+   * Pure UI preference: rows come from the markets query, this only stars.
+   */
+  readonly hlFavorites: readonly string[];
   readonly setTheme: (value: VexTheme) => void;
   readonly toggleTheme: () => void;
+  readonly setWorkspaceMode: (value: WorkspaceMode) => void;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
@@ -140,6 +167,7 @@ interface UiState {
     effort: ReasoningEffort,
   ) => void;
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
+  readonly toggleHlFavorite: (coin: string) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -148,6 +176,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       theme: "vex",
+      workspaceMode: "normal",
       sidebarOpen: true,
       bookOpen: true,
       currentView: "splash",
@@ -162,9 +191,11 @@ export const useUiStore = create<UiState>()(
       pendingFirstMessage: null,
       signingState: "idle",
       reasoningEffortBySession: {},
+      hlFavorites: [],
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === "vex" ? "robinhood" : "vex" })),
+      setWorkspaceMode: (workspaceMode) => set({ workspaceMode }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
@@ -197,6 +228,12 @@ export const useUiStore = create<UiState>()(
           },
         })),
       setSigningState: (signingState) => set({ signingState }),
+      toggleHlFavorite: (coin) =>
+        set((state) => ({
+          hlFavorites: state.hlFavorites.includes(coin)
+            ? state.hlFavorites.filter((c) => c !== coin)
+            : [...state.hlFavorites, coin],
+        })),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -205,12 +242,13 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
+        hlFavorites: state.hlFavorites,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -218,6 +256,7 @@ export const useUiStore = create<UiState>()(
       //       persist normally).
       //   v3: `theme` added — seed the cobalt default so a pre-theme install
       //       hydrates into `vex`, not `undefined`.
+      //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -225,6 +264,9 @@ export const useUiStore = create<UiState>()(
         let next = persisted as Record<string, unknown>;
         if (version < 2) next = { ...next, bookOpen: true };
         if (version < 3 && !("theme" in next)) next = { ...next, theme: "vex" };
+        if (version < 4 && !("hlFavorites" in next)) {
+          next = { ...next, hlFavorites: [] };
+        }
         return next;
       },
       // localStorage is user-writable (untrusted input), and `migrate` only
@@ -239,7 +281,16 @@ export const useUiStore = create<UiState>()(
             : undefined;
         const theme: VexTheme =
           incoming?.theme === "robinhood" ? "robinhood" : "vex";
-        return { ...current, ...incoming, theme };
+        // Same hand-edited-payload coercion for the favorites list: anything
+        // that is not a string array degrades to no stars, never a crash.
+        const hlFavorites: readonly string[] = Array.isArray(
+          incoming?.hlFavorites,
+        )
+          ? incoming.hlFavorites.filter(
+              (coin): coin is string => typeof coin === "string",
+            )
+          : [];
+        return { ...current, ...incoming, theme, hlFavorites };
       },
     }
   )

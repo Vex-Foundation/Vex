@@ -29,6 +29,8 @@ import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
+import { HYPERLIQUID_INTERNAL_TOOLS } from "./hyperliquid.js";
+import { getHypervexingAliasToolDef } from "../hypervexing-aliases.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -50,6 +52,7 @@ export const TOOLS: readonly ToolDef[] = [
   ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
+  ...HYPERLIQUID_INTERNAL_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
@@ -57,15 +60,15 @@ export const TOOLS: readonly ToolDef[] = [
 const byName = new Map<string, ToolDef>(TOOLS.map(t => [t.name, t]));
 
 export function getToolDef(name: string): ToolDef | undefined {
-  return byName.get(name);
+  return byName.get(name) ?? getHypervexingAliasToolDef(name);
 }
 
 export function isInternalTool(name: string): boolean {
-  return byName.has(name);
+  return getToolDef(name) !== undefined;
 }
 
 export function isMutatingTool(name: string): boolean {
-  return byName.get(name)?.mutating === true;
+  return getToolDef(name)?.mutating === true;
 }
 
 /**
@@ -76,7 +79,7 @@ export function isMutatingTool(name: string): boolean {
  * produce a descriptive "unknown tool" error rather than a pressure error.
  */
 export function getPressureSafety(name: string): ToolDef["pressureSafety"] | undefined {
-  return byName.get(name)?.pressureSafety;
+  return getToolDef(name)?.pressureSafety;
 }
 
 /**
@@ -86,7 +89,7 @@ export function getPressureSafety(name: string): ToolDef["pressureSafety"] | und
  * `executeProtocolTool` overrides with the derived target classification.
  */
 export function getActionKind(name: string): ActionKind | undefined {
-  return byName.get(name)?.actionKind;
+  return getToolDef(name)?.actionKind;
 }
 
 export function getAllTools(): readonly ToolDef[] {

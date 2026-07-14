@@ -16,7 +16,28 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { slugToChainId } from "../chains.js";
+import { getLocalChain, getLocalChainRpcUrl, toLocalViemChain } from "../../evm-chains/registry.js";
 import type { KyberChainSlug } from "../types.js";
+
+/**
+ * Robinhood Chain (4663) is aggregator-supported by KyberSwap but its chain
+ * metadata (RPC + user override + Multicall3 + explorer) is owned by the shared
+ * evm-chains registry that Uniswap already uses. We REUSE that entry here rather
+ * than duplicate the endpoint, so a user RPC override applies to Kyber too and
+ * the two swap venues can never drift on 4663's wiring.
+ */
+const ROBINHOOD_CHAIN_ID = 4663;
+
+function robinhoodLocalChain() {
+  const config = getLocalChain(ROBINHOOD_CHAIN_ID);
+  if (!config) {
+    throw new VexError(
+      ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
+      "Missing evm-chains registry entry for Robinhood Chain (4663)",
+    );
+  }
+  return config;
+}
 
 // ── ERC-20 ABI (minimal: allowance + approve + metadata) ─────────────
 
@@ -86,14 +107,32 @@ export const DEFAULT_RPC: Record<string, string> = {
 export const RPC_TIMEOUT_MS = 30_000;
 export const RPC_RETRY_COUNT = 2;
 
-// ── Chain to viem Chain ─────────────────────────────────────────────
+// ── RPC + viem Chain resolution ─────────────────────────────────────
 
-export function toViemChain(slug: KyberChainSlug): Chain {
-  const chainId = slugToChainId(slug);
+/**
+ * Resolve the RPC URL for a Kyber-supported chain. Robinhood (4663) defers to the
+ * shared evm-chains registry (honouring a user override); every other chain uses
+ * the bundled default. Throws (never a silent undefined) when a chain has no RPC.
+ */
+function resolveKyberRpcUrl(slug: KyberChainSlug): string {
+  if (slug === "robinhood") {
+    return getLocalChainRpcUrl(robinhoodLocalChain());
+  }
   const rpcUrl = DEFAULT_RPC[slug];
   if (!rpcUrl) {
     throw new VexError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `No RPC URL for chain: ${slug}`);
   }
+  return rpcUrl;
+}
+
+export function toViemChain(slug: KyberChainSlug): Chain {
+  // Robinhood reuses the shared local-chain definition (wires Multicall3 +
+  // explorer + user RPC override) instead of the minimal build below.
+  if (slug === "robinhood") {
+    return toLocalViemChain(robinhoodLocalChain());
+  }
+  const chainId = slugToChainId(slug);
+  const rpcUrl = resolveKyberRpcUrl(slug);
   return {
     id: chainId,
     name: slug,
@@ -111,7 +150,7 @@ export interface KyberEvmClients {
 
 export function getKyberEvmClients(slug: KyberChainSlug, privateKey: Hex): KyberEvmClients {
   const chain = toViemChain(slug);
-  const rpcUrl = DEFAULT_RPC[slug]!;
+  const rpcUrl = resolveKyberRpcUrl(slug);
 
   const publicClient = createPublicClient({
     chain,
@@ -135,7 +174,7 @@ export function getKyberEvmClients(slug: KyberChainSlug, privateKey: Hex): Kyber
  */
 export function getKyberPublicClient(slug: KyberChainSlug): PublicClient<Transport, Chain> {
   const chain = toViemChain(slug);
-  const rpcUrl = DEFAULT_RPC[slug]!;
+  const rpcUrl = resolveKyberRpcUrl(slug);
   return createPublicClient({
     chain,
     transport: http(rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT }),

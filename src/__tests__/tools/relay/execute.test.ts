@@ -155,6 +155,12 @@ describe("executeRelayBridge — ordered broadcast (PHASE 2)", () => {
     // Each broadcast waits for its receipt before the next.
     expect(waitForTransactionReceipt).toHaveBeenCalledTimes(2);
     expect(result.txHashes).toEqual(["0xaaa", "0xbbb"]);
+    // Per-hop records pair each hash with the chain it broadcast on (origin
+    // approve → ORIGIN, deposit → DESTINATION); txHashes[i] === transactions[i].hash.
+    expect(result.transactions).toEqual([
+      { chainId: ORIGIN, hash: "0xaaa" },
+      { chainId: DESTINATION, hash: "0xbbb" },
+    ]);
     expect(result.finalStatus).toBe("pending"); // no requestId → no poll
   });
 

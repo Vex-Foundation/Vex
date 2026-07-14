@@ -33,8 +33,11 @@ import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { validateProtocolParams } from "./runtime/params.js";
 import { summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
-import { captureExecution } from "./runtime/capture.js";
+import { captureExecution, createHyperliquidExecutionIntent } from "./runtime/capture.js";
+import { withHyperliquidWalletMutationLock } from "./runtime/hyperliquid-mutation-lock.js";
 import logger from "@utils/logger.js";
+import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
+import { evaluateHyperliquidCollateralGate, evaluateHyperliquidProtectionGate } from "./hyperliquid/protection-gate.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
 
@@ -101,6 +104,19 @@ export async function executeProtocolTool(
     ...context,
     walletResolution: context.walletResolution ?? { source: "default" },
     walletPolicy: context.walletPolicy ?? { kind: "none" },
+    // Fallback hydration ONLY for hyperliquid.* targets (mirrors the dispatcher
+    // gating) — other namespaces must never touch the HL policy provider.
+    // `evm != null` (loose) also rejects `undefined` from legacy/test callers.
+    ...(context.hyperliquidPolicy === undefined && request.toolId.startsWith("hyperliquid.")
+      ? {
+          hyperliquidPolicy: resolveHlPolicy({
+            ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
+            ...(context.walletResolution?.source === "session" && context.walletResolution.evm != null
+              ? { walletAddress: context.walletResolution.evm.address }
+              : {}),
+          }),
+        }
+      : {}),
   };
 
   // Per-session wallet scope (puzzle 5): the 5B hard-deny for user-wallet signing
@@ -144,6 +160,17 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
+  const hyperliquidPolicy = scopedContext.hyperliquidPolicy ?? {
+    kind: "unavailable" as const,
+    reason: "provider_absent" as const,
+  };
+  if (manifest.namespace === "hyperliquid" && manifest.mutating && hyperliquidPolicy.kind === "unavailable") {
+    return withActionKind({
+      success: false,
+      output: `${request.toolId} is unavailable because Hyperliquid trading policy is not configured. Hyperliquid reads remain available.`,
+    }, effectiveActionKind);
+  }
+
   // Pressure-barrier guard for protocol tools — at band ≥ barrier, mutating
   // protocol calls are blocked unless they are preview/dryRun. The agent must
   // call `compact_now` first to clear the barrier. Same semantics as the
@@ -181,6 +208,17 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
+  // Business invariant: live HL state is checked after untrusted params are
+  // structurally valid and before any approval/signing decision.
+  const hyperliquidProtection = await evaluateHyperliquidProtectionGate(request.toolId, params, scopedContext);
+  if (hyperliquidProtection?.kind === "block") {
+    return withActionKind({ success: false, output: hyperliquidProtection.message }, effectiveActionKind);
+  }
+  const hyperliquidCollateral = await evaluateHyperliquidCollateralGate(request.toolId, params, scopedContext);
+  if (hyperliquidCollateral?.kind === "block") {
+    return withActionKind({ success: false, output: hyperliquidCollateral.message }, effectiveActionKind);
+  }
+
   // Find handler
   const handler = getProtocolHandler(request.toolId);
   if (!handler) {
@@ -214,8 +252,20 @@ export async function executeProtocolTool(
   // Preview (dryRun) is read-only simulation — skip approval. The pending
   // result (with the typed `prequote` carry) is built in
   // `evaluateApprovalGate` (./runtime/gates.ts).
+  const destinationClass = hyperliquidDestinationClass(request.toolId, params);
+  const hyperliquidPreview = {
+    ...(hyperliquidProtection === null ? {} : {
+      stopLossVerdict: hyperliquidProtection.stopLossVerdict,
+      ...(hyperliquidProtection.notionalUsd ? { notionalUsd: hyperliquidProtection.notionalUsd } : {}),
+      ...(hyperliquidProtection.estimatedLiquidationPx ?? hyperliquidProtection.snapshot.liquidationPx
+        ? { estLiquidationPx: hyperliquidProtection.estimatedLiquidationPx ?? hyperliquidProtection.snapshot.liquidationPx ?? undefined }
+        : {}),
+    }),
+    ...(destinationClass === undefined ? {} : { destinationClass }),
+  };
   const pendingApproval = evaluateApprovalGate(
-    manifest, request, params, context, prequoteVerdict, prequoteFotTax, prequoteTermLock,
+    manifest, request, params, scopedContext, prequoteVerdict, prequoteFotTax, prequoteTermLock,
+    Object.keys(hyperliquidPreview).length === 0 ? undefined : hyperliquidPreview,
   );
   if (pendingApproval) {
     return withActionKind(pendingApproval, effectiveActionKind);
@@ -224,11 +274,56 @@ export async function executeProtocolTool(
   // Determine preview BEFORE handler call — flag survives thrown exceptions
   const isPreview = isPreviewExecution(request.toolId, params);
   const shouldCapture = manifest.mutating && !isPreview;
+  const isSerializedHyperliquidMutation = shouldCapture && manifest.namespace === "hyperliquid";
 
   // Execute + capture
   const startTime = Date.now();
+  let intentExecutionId: number | undefined;
   try {
-    const result = await handler(params, scopedContext);
+    const executeHandler = async (): Promise<ToolResult> => {
+      if (!isSerializedHyperliquidMutation) return handler(params, scopedContext);
+
+      let walletAddress: string;
+      try {
+        walletAddress = (await import("../internal/wallet/resolve.js"))
+          .resolveSelectedAddress(scopedContext.walletResolution, scopedContext.walletPolicy, "eip155");
+      } catch {
+        return { success: false, output: "A selected EVM wallet is required for Hyperliquid trading." };
+      }
+
+      return withHyperliquidWalletMutationLock(walletAddress, async () => {
+        // Approval previews use the first read above. This second, locked read
+        // is authoritative for submission: it closes the open/cancel and
+        // collateral race without holding a lock while a user approval waits.
+        const finalProtection = await evaluateHyperliquidProtectionGate(request.toolId, params, scopedContext);
+        if (finalProtection?.kind === "block") {
+          return { success: false, output: finalProtection.message };
+        }
+        const finalCollateral = await evaluateHyperliquidCollateralGate(request.toolId, params, scopedContext);
+        if (finalCollateral?.kind === "block") {
+          return { success: false, output: finalCollateral.message };
+        }
+
+        try {
+          intentExecutionId = await createHyperliquidExecutionIntent(
+            request.toolId, manifest.namespace, context.sessionId ?? null, params,
+          );
+        } catch (error) {
+          const safe = summarizeProtocolError(error);
+          logger.warn("hyperliquid.execution_intent.persist_failed", {
+            toolId: request.toolId,
+            code: safe.category,
+            message: safe.message,
+          });
+          return {
+            success: false,
+            output: "Hyperliquid mutation was blocked because its durable intent could not be recorded. Retry when local storage is available.",
+          };
+        }
+        return handler(params, scopedContext);
+      });
+    };
+    const result = await executeHandler();
     const durationMs = Date.now() - startTime;
 
     logger.info("protocol.execute.completed", {
@@ -260,7 +355,7 @@ export async function executeProtocolTool(
     // Preview executions skip capture entirely (determined before handler call)
     if (shouldCapture) {
       try {
-        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs);
+        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs, intentExecutionId);
       } catch (err) {
         // B-003: capture/DB errors can embed a credential-bearing connection
         // URL — log only the redacted, bounded summary.
@@ -300,7 +395,7 @@ export async function executeProtocolTool(
     );
     if (shouldCapture) {
       try {
-        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, failedResult, durationMs);
+        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, failedResult, durationMs, intentExecutionId);
       } catch (captureErr) {
         // B-003: same redaction discipline on the failure-capture path.
         const safeCapture = summarizeProtocolError(captureErr);
@@ -314,4 +409,14 @@ export async function executeProtocolTool(
 
     return failedResult;
   }
+}
+
+function hyperliquidDestinationClass(toolId: string, params: Record<string, unknown>): string | undefined {
+  if (toolId === "hyperliquid.deposit") return "Hyperliquid bridge deposit";
+  if (toolId === "hyperliquid.withdraw") return "External EVM address";
+  if (toolId === "hyperliquid.transfer.send") return "External Hyperliquid account";
+  if (toolId === "hyperliquid.transfer.usdClass") {
+    return params.toPerp === true ? "Hyperliquid perpetual account" : "Hyperliquid spot account";
+  }
+  return undefined;
 }

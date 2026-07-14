@@ -203,6 +203,8 @@ export interface MissionDraft {
   stopConditions: string[] | null;
   /** Optional — mission may have no deadline. */
   deadline: string | null;
+  /** Optional, host-accepted Hyperliquid envelope for an autonomous mission. */
+  hyperliquidRisk?: import("../../lib/hyperliquid-policy.js").HyperliquidMissionRisk | null;
 }
 
 /**

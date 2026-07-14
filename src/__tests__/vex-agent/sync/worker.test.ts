@@ -52,6 +52,14 @@ vi.mock("../../../vex-agent/sync/chains.js", () => ({
   resolveChainHint: vi.fn().mockResolvedValue({ family: "eip155", chainIds: [1] }),
 }));
 
+const mockReconcileHyperliquid = vi.fn().mockResolvedValue({
+  checked: 1, captured: 1, closed: 0, cancelled: 0, liquidated: 0,
+  consolidating: 0, unprotected: 0, skipped: 0, errors: 0,
+});
+vi.mock("../../../vex-agent/sync/hyperliquid-reconciler.js", () => ({
+  reconcileHyperliquid: () => mockReconcileHyperliquid(),
+}));
+
 const { drainPendingRuns, processNextRun } = await import("../../../vex-agent/sync/worker.js");
 
 describe("sync worker", () => {
@@ -113,6 +121,21 @@ describe("sync worker", () => {
       expect(mockSelectiveSync).toHaveBeenCalledTimes(2);
       expect(mockSelectiveSync).toHaveBeenCalledWith("eip155");
       expect(mockSelectiveSync).toHaveBeenCalledWith("solana");
+    });
+
+    it("dispatches and deduplicates Hyperliquid reconciliation runs", async () => {
+      mockClaimAllPending.mockResolvedValueOnce([
+        { id: 1, syncJobId: 41, executionId: 1, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+        { id: 2, syncJobId: 42, executionId: 2, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+      ]);
+      mockGetJob.mockResolvedValue({ id: 41, syncType: "hyperliquid_reconcile", namespace: "hyperliquid", strategy: "post_mutation" });
+
+      const result = await drainPendingRuns();
+
+      expect(result).toMatchObject({ processed: 2, deduped: 1, errors: 0 });
+      expect(mockReconcileHyperliquid).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(1, expect.objectContaining({ captured: 1 }), 1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(2, expect.objectContaining({ captured: 1 }), 1);
     });
 
     it("marks all runs as failed on error", async () => {
@@ -227,6 +250,18 @@ describe("sync worker", () => {
       await processNextRun();
 
       expect(mockSelectiveSync).toHaveBeenCalledWith("eip155");
+    });
+
+    it("dispatches a single Hyperliquid reconciliation run", async () => {
+      mockClaimPendingRun.mockResolvedValueOnce({
+        id: 8, syncJobId: 41, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0,
+      });
+      mockGetJob.mockResolvedValueOnce({ id: 41, syncType: "hyperliquid_reconcile", namespace: "hyperliquid", strategy: "post_mutation" });
+
+      await processNextRun();
+
+      expect(mockReconcileHyperliquid).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(8, expect.objectContaining({ checked: 1 }), 1);
     });
 
     it("suffixes the persisted failure with the errno cause code", async () => {

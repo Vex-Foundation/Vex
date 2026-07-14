@@ -16,11 +16,28 @@ export interface DbConnection {
 }
 
 let current: DbConnection | null = null;
+type DbConnectionListener = (value: DbConnection | null, previous: DbConnection | null) => void;
+const listeners = new Set<DbConnectionListener>();
 
 export function setDbConnection(value: DbConnection | null): void {
+  const previous = current;
   current = value;
+  for (const listener of listeners) {
+    try {
+      listener(value, previous);
+    } catch {
+      // Connection handoff must remain available even if an optional observer
+      // (for example policy-cache hydration) fails unexpectedly.
+    }
+  }
 }
 
 export function getDbConnection(): DbConnection | null {
   return current;
+}
+
+/** Subscribe to main-only connection transitions; cleanup is idempotent. */
+export function subscribeDbConnection(listener: DbConnectionListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

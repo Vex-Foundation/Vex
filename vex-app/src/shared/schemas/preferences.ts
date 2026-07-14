@@ -7,6 +7,19 @@
  */
 
 import { z } from "zod";
+import { hyperliquidPolicyTransportSchema } from "./hyperliquid.js";
+
+const hyperliquidPreferencesSchema = z
+  .object({
+    /**
+     * Global, user-owned policy values. The canonical root schema owns every
+     * numeric bound and default; renderer input is revalidated again in main.
+     */
+    policy: hyperliquidPolicyTransportSchema,
+    /** One-time main-owned acknowledgement of HL ToS applicability and risk. */
+    riskAcknowledgedAt: z.string().datetime({ offset: true }).nullable(),
+  })
+  .strict();
 
 export const preferencesSchema = z
   .object({
@@ -49,6 +62,16 @@ export const preferencesSchema = z
         reducedMotion: z.enum(["auto", "always", "never"]),
       })
       .strict(),
+
+    /**
+     * Hyperliquid is disabled until the user acknowledges its risk disclosure.
+     * A default keeps pre-037 preference files backward compatible without
+     * treating an absent acknowledgement as consent.
+     */
+    hyperliquid: hyperliquidPreferencesSchema.default({
+      policy: hyperliquidPolicyTransportSchema.parse({}),
+      riskAcknowledgedAt: null,
+    }),
   })
   .strict();
 
@@ -60,4 +83,8 @@ export const defaultPreferences: Preferences = {
   window: { width: 1280, height: 800, x: null, y: null, maximized: false },
   updater: { lastCheckedAt: null },
   ui: { reducedMotion: "auto" },
+  hyperliquid: {
+    policy: hyperliquidPolicyTransportSchema.parse({}),
+    riskAcknowledgedAt: null,
+  },
 };

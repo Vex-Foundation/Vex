@@ -139,7 +139,9 @@ export type MissionGetDiffResult = z.infer<typeof missionGetDiffResultSchema>;
 // ── updateDraft (fail-closed in phase 6) ─────────────────────────
 
 export const missionUpdateDraftInputSchema = z
-  .object({ sessionId: sessionIdField })
+  .object({
+    sessionId: sessionIdField,
+  })
   .strict();
 export type MissionUpdateDraftInput = z.infer<
   typeof missionUpdateDraftInputSchema

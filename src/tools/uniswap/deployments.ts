@@ -1,9 +1,9 @@
 /**
  * Uniswap V2 + V3 per-chain deployment registry (keyless quoting + execution).
  *
- * Vex uses Uniswap as the ONLY venue on Robinhood Chain (4663) and as an
- * all-EVM fallback where KyberSwap is primary (venue policy lives in
- * `./venue-router.ts`). Every address below was RE-VERIFIED on-chain before it
+ * Vex uses Uniswap as an all-EVM fallback where KyberSwap is primary, including
+ * on Robinhood Chain (4663), which KyberSwap now aggregates too (venue policy
+ * lives in `./venue-router.ts`). Every address below was RE-VERIFIED on-chain before it
  * landed here — a wrong router/factory address moves real funds to the wrong
  * contract, so the registry is treated as maximum sensitivity.
  *
@@ -75,7 +75,7 @@ export interface UniswapDeployment {
 
 const STANDARD_V3_FEE_TIERS = [100, 500, 3000, 10000] as const;
 
-// ── Robinhood Chain (4663) — the PRIMARY/only venue here ─────────────────────
+// ── Robinhood Chain (4663) — Uniswap fallback (KyberSwap primary here too) ────
 // All six deployment addresses + WETH cross-verified 2026-07-05:
 //   V2 Router02.factory()=0x8bce…937f, WETH()=0x0Bd7…AD73
 //   V3 SwapRouter02.factory()=0x1f7d…2efa, WETH9()=0x0Bd7…AD73

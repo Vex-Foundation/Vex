@@ -27,6 +27,7 @@
     "tool-reembed": "tsx src/vex-agent/scripts/tool-reembed.ts",
     "tool-embeddings:health": "tsx src/vex-agent/scripts/tool-embeddings-health.ts",
     "benchmark-cross-lingual": "tsx src/vex-agent/scripts/cross-lingual-benchmark.ts",
+    "hyperliquid:testnet-matrix": "tsx src/vex-agent/scripts/hyperliquid-testnet-matrix.ts",
     "vex:dev": "pnpm --dir vex-app install && pnpm --dir vex-app dev",
     "vex:make": "pnpm --dir vex-app make",
     "vex:lint": "pnpm --dir vex-app lint",
@@ -34,11 +35,13 @@
     "vex:test:e2e": "pnpm --dir vex-app test:e2e"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "0.33.1",
     "@openrouter/sdk": "^0.12.79",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "@tavily/core": "^0.7.2",
     "bs58": "^6.0.0",
+    "decimal.js": "10.6.0",
     "ethers": "^6.13.1",
     "pg": "^8.20.0",
     "rettiwt-api": "7.0.3",

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { KYBERSWAP_TOOLS } from "../../../vex-agent/tools/protocols/kyberswap/manifest.js";
+import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
 
 describe("kyberswap manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
@@ -227,5 +228,80 @@ describe("kyberswap manifest", () => {
     const zapList = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.list")!;
     expect(zapList).toBeDefined();
     expect(zapList.mutating).toBe(false);
+  });
+
+  // ── Etap 1: quote↔execute slippageBps param-surface alignment ──────
+  //
+  // Regression guard for the deterministic no_quote swap-block loop. The
+  // prequote gate binds slippageBps into the match-hash from the QUOTE params
+  // (recorder) and the EXECUTE params (gate). Previously kyberswap.swap.quote
+  // did NOT declare slippageBps, so the dispatcher's strict param boundary
+  // REJECTED a quote carrying it (and the agent never passed it), so every
+  // recorded quote hashed slippage="" while a buy/sell carrying slippageBps:50
+  // hashed "50" → unwinnable no_quote block. The quote must accept the same
+  // optional slippageBps the execute tools accept.
+
+  const quoteTool = () => KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.quote")!;
+
+  it("kyberswap.swap.quote declares an optional slippageBps number param", () => {
+    const slippage = quoteTool().params.find(p => p.key === "slippageBps");
+    expect(slippage).toBeDefined();
+    expect(slippage!.type).toBe("number");
+    expect(slippage!.required).not.toBe(true);
+    // The description must steer the agent to match the value on the execute call.
+    expect(slippage!.description.toLowerCase()).toContain("slippage");
+    expect(slippage!.description.toLowerCase()).toMatch(/same|match/);
+  });
+
+  it("the dispatcher param boundary ACCEPTS slippageBps on kyberswap.swap.quote", () => {
+    const v = validateProtocolParams(quoteTool(), {
+      chain: "base",
+      tokenIn: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      tokenOut: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      amountIn: "1",
+      slippageBps: 50,
+    });
+    expect(v.ok).toBe(true);
+  });
+
+  it("quote/sell/buy exampleParams all carry a consistent slippageBps", () => {
+    for (const toolId of ["kyberswap.swap.quote", "kyberswap.swap.sell", "kyberswap.swap.buy"]) {
+      const tool = KYBERSWAP_TOOLS.find(t => t.toolId === toolId)!;
+      expect(tool.exampleParams.slippageBps).toBe(50);
+    }
+  });
+
+  // ── Etap 4: always-exact approvals — `approveExact` removed from the surface ──
+  //
+  // Approvals are now always exact (see `ensureKyberAllowance`), so the opt-in
+  // param is gone from the swap sell/buy + zap.in manifests. The prequote gate
+  // already blocked an execute passing `approveExact: true` (it diverges the
+  // match-hash → no_quote), so the tool contract must not advertise it either —
+  // and the strict dispatcher boundary must reject a model that still passes it.
+
+  it("kyberswap.swap.sell/buy no longer declare approveExact", () => {
+    for (const toolId of ["kyberswap.swap.sell", "kyberswap.swap.buy"]) {
+      const tool = KYBERSWAP_TOOLS.find(t => t.toolId === toolId)!;
+      expect(tool.params.some(p => p.key === "approveExact")).toBe(false);
+    }
+  });
+
+  it("kyberswap.zap.in no longer declares approveExact", () => {
+    const zapIn = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.in")!;
+    expect(zapIn.params.some(p => p.key === "approveExact")).toBe(false);
+  });
+
+  it("the dispatcher param boundary REJECTS approveExact on kyberswap.swap.buy", () => {
+    const buy = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.buy")!;
+    const v = validateProtocolParams(buy, {
+      chain: "base",
+      tokenIn: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      tokenOut: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      amountIn: "100",
+      slippageBps: 50,
+      approveExact: true,
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.reason).toContain('Unknown parameter "approveExact"');
   });
 });

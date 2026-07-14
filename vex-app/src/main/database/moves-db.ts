@@ -44,6 +44,11 @@
  *    on-chain tx reference scalar (`->>'txHash'` for EVM, `->>'signature'`
  *    for Solana) — public on-chain data powering the renderer's
  *    block-explorer deep links; never the whole blob.
+ *  - `wallet_address` IS projected (`walletAddress`) so the renderer can build
+ *    an account block-explorer link for rows without a tx ref (HyperCore). This
+ *    is the session's OWN wallet, already server-side scoped by the wallet
+ *    filter — it is not a widening of the read. It is still NEVER logged (see
+ *    below).
  *  - logging records sessionId + the row COUNT only; NEVER raw addresses,
  *    USD figures, token symbols, or tx hashes.
  */
@@ -140,6 +145,7 @@ interface MoveRow {
   readonly instrument_key: string | null;
   readonly chain: string;
   readonly tx_ref: string | null;
+  readonly wallet_address: string | null;
   readonly created_at: string | Date;
 }
 
@@ -229,6 +235,7 @@ export async function getMovesForSession(
                 a.chain,
                 COALESCE(a.external_refs->>'txHash', a.external_refs->>'signature')
                   AS tx_ref,
+                a.wallet_address,
                 a.created_at
            FROM proj_activity a
            JOIN protocol_executions e ON e.id = a.execution_id
@@ -253,6 +260,7 @@ export async function getMovesForSession(
         instrumentKey: row.instrument_key,
         chain: row.chain,
         txRef: row.tx_ref,
+        walletAddress: row.wallet_address,
         createdAt: toIso(row.created_at),
       }));
 

@@ -107,6 +107,8 @@ interface SkyScene {
   readonly uRes: WebGLUniformLocation | null;
   readonly uTime: WebGLUniformLocation | null;
   readonly uIntensity: WebGLUniformLocation | null;
+  readonly uInk: WebGLUniformLocation | null;
+  readonly uSoft: WebGLUniformLocation | null;
   readonly uDeep: WebGLUniformLocation | null;
   readonly uBright: WebGLUniformLocation | null;
 }
@@ -166,6 +168,8 @@ function buildSkyScene(gl: WebGLRenderingContext): SkyScene | null {
     uRes: gl.getUniformLocation(program, "u_res"),
     uTime: gl.getUniformLocation(program, "u_time"),
     uIntensity: gl.getUniformLocation(program, "u_intensity"),
+    uInk: gl.getUniformLocation(program, "u_ink"),
+    uSoft: gl.getUniformLocation(program, "u_soft"),
     uDeep: gl.getUniformLocation(program, "u_deep"),
     uBright: gl.getUniformLocation(program, "u_bright"),
   };
@@ -237,8 +241,19 @@ export function SignalSky({
     let lastNow = 0;
     /** Eased intensity actually written to the uniform each frame. */
     let current = targetRef.current;
-    /** Eased accent channels chased toward accentRef each frame (theme flip). */
+    /** Eased palette channels chased toward accentRef each frame (theme flip).
+     * All FOUR bands ease so a navy→bottle-green flip morphs the whole scene. */
     const startAccent = accentRef.current;
+    const curInk: [number, number, number] = [
+      startAccent.ink[0],
+      startAccent.ink[1],
+      startAccent.ink[2],
+    ];
+    const curSoft: [number, number, number] = [
+      startAccent.soft[0],
+      startAccent.soft[1],
+      startAccent.soft[2],
+    ];
     const curDeep: [number, number, number] = [
       startAccent.deep[0],
       startAccent.deep[1],
@@ -268,6 +283,8 @@ export function SignalSky({
       ctx.uniform2f(scene.uRes, canvas.width, canvas.height);
       ctx.uniform1f(scene.uTime, timeSec);
       ctx.uniform1f(scene.uIntensity, current);
+      ctx.uniform3f(scene.uInk, curInk[0], curInk[1], curInk[2]);
+      ctx.uniform3f(scene.uSoft, curSoft[0], curSoft[1], curSoft[2]);
       ctx.uniform3f(scene.uDeep, curDeep[0], curDeep[1], curDeep[2]);
       ctx.uniform3f(scene.uBright, curBright[0], curBright[1], curBright[2]);
       ctx.drawArrays(ctx.TRIANGLES, 0, 3);
@@ -282,6 +299,8 @@ export function SignalSky({
       const target = targetRef.current;
       if (current !== target) current = approach(current, target, step);
       const accent = accentRef.current;
+      easeTriplet(curInk, accent.ink, step);
+      easeTriplet(curSoft, accent.soft, step);
       easeTriplet(curDeep, accent.deep, step);
       easeTriplet(curBright, accent.bright, step);
       lastNow = now;
@@ -313,6 +332,12 @@ export function SignalSky({
      * to chase a new theme). */
     const snapAccent = (): void => {
       const accent = accentRef.current;
+      curInk[0] = accent.ink[0];
+      curInk[1] = accent.ink[1];
+      curInk[2] = accent.ink[2];
+      curSoft[0] = accent.soft[0];
+      curSoft[1] = accent.soft[1];
+      curSoft[2] = accent.soft[2];
       curDeep[0] = accent.deep[0];
       curDeep[1] = accent.deep[1];
       curDeep[2] = accent.deep[2];

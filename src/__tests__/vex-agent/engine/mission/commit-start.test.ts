@@ -107,7 +107,7 @@ function makeAcceptedMission(overrides: Record<string, unknown> = {}) {
     acceptedContractHash: hash,
     acceptedContractAt: "2026-05-22T11:00:00.000Z",
     acceptedContractBy: "host",
-    contractHashVersion: 1,
+    contractHashVersion: 2,
   };
 }
 
@@ -159,7 +159,7 @@ describe("commitMissionStart", () => {
     const mission = makeAcceptedMission();
     mockGetMissionForUpdate.mockResolvedValueOnce({
       ...mission,
-      contractHashVersion: 99, // ahead of CONTRACT_HASH_VERSION = 1
+      contractHashVersion: 99, // unknown recorded contract version
     });
     const outcome = await commitMissionStart({
       missionId: "mission-1",

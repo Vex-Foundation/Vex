@@ -216,7 +216,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 1,
+        contractHashVersion: 2,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
 
@@ -230,7 +230,7 @@ describe("acceptContract", () => {
     if (outcome.outcome === "accepted") {
       expect(outcome.acceptedContractHash).toBe(hash);
       expect(outcome.acceptedBy).toBe("host");
-      expect(outcome.contractHashVersion).toBe(1);
+      expect(outcome.contractHashVersion).toBe(2);
       expect(outcome.acceptedAt).toBe("2026-05-22T11:00:00.000Z");
     }
 
@@ -240,7 +240,7 @@ describe("acceptContract", () => {
       "mission-1",
       hash,
       "host",
-      1,
+      2,
     );
   });
 
@@ -253,7 +253,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 1,
+        contractHashVersion: 2,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
 
@@ -282,7 +282,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 1,
+        contractHashVersion: 2,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
     await acceptContract({
@@ -317,7 +317,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 1,
+        contractHashVersion: 2,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
     mockGetActivePlan.mockResolvedValue(null); // default, made explicit
@@ -348,7 +348,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 1,
+        contractHashVersion: 2,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
     mockGetActivePlan.mockResolvedValue(makePlan({ enabled: false }));
@@ -377,7 +377,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 1,
+        contractHashVersion: 2,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
     const plan = makePlan({ updatedAt: "2026-05-22T09:30:00.000Z" });
@@ -556,14 +556,14 @@ describe("assertAcceptedContract", () => {
     expect(outcome.outcome).toBe("stale_acceptance");
     if (outcome.outcome === "stale_acceptance") {
       expect(outcome.acceptedHash).toBe("0".repeat(64));
-      expect(outcome.currentHash).toBe(computeContractHash(missionToDraft(mission)));
+      expect(outcome.currentHash).toBe(computeContractHash(missionToDraft(mission), 1));
       expect(outcome.currentHash).not.toBe(outcome.acceptedHash);
     }
   });
 
   it("returns accepted when the four-tuple matches the current draft", async () => {
     const mission = makeMission();
-    const currentHash = computeContractHash(missionToDraft(mission));
+    const currentHash = computeContractHash(missionToDraft(mission), 1);
     mockGetMissionForUpdate.mockResolvedValueOnce({
       ...mission,
       acceptedContractHash: currentHash,

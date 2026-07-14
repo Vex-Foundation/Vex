@@ -54,6 +54,9 @@ import { SessionWelcomeHero } from "./SessionWelcomeHero.js";
 
 export function SessionPanel(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  // In the Hypervexing dock the composer is ALWAYS bottom-pinned (user
+  // decree): the welcome/idle stage's vertical centering never applies there.
+  const inHypervexing = useUiStore((s) => s.workspaceMode) === "hypervexing";
   // Puzzle 02/06: keep the active session's transcript + usage queries fresh
   // (transcript-append event + 30s fallback poll). Puzzle 09: drive the
   // ephemeral streaming preview from the engine stream spine. F5: push
@@ -95,7 +98,10 @@ export function SessionPanel(): JSX.Element {
     !transcriptQuery.isLoading &&
     preview === null &&
     transcriptPages !== undefined &&
-    flattenTranscriptPages(transcriptPages).length === 0;
+    flattenTranscriptPages(transcriptPages).length === 0 &&
+    // The dock never plays the centered idle stage — tape layout from the
+    // first frame, composer pinned to the bottom like an active session.
+    !inHypervexing;
 
   // No active session → the welcome stage. The panel is the stage frame:
   // relative (the hero's absolute vignette + bottom row resolve against it)
@@ -121,8 +127,9 @@ export function SessionPanel(): JSX.Element {
         </div>
         {/* Trailing spacer — balances the hero zone above (vertical
             centering) and reserves the band the hero's absolute bottom row
-            occupies, so chips and the row never collide. */}
-        <div aria-hidden className="min-h-16 flex-1" />
+            occupies, so chips and the row never collide. Skipped in the
+            Hypervexing dock, where the composer docks to the very bottom. */}
+        {inHypervexing ? null : <div aria-hidden className="min-h-16 flex-1" />}
       </div>
     );
   }

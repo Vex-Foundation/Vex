@@ -352,6 +352,39 @@ describe("turn-loop", () => {
       expect(metadata.source).toBe("assistant");
     });
 
+    it("derives explorerRefs from the real tool result.data into persisted metadata", async () => {
+      // Caller-level: refs are NOT injected into the sink — the turn batch
+      // derives them from the dispatched tool's `result.data` (capture-shaped)
+      // and threads them through to the persisted tool-result metadata.
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "kyberswap_swap", arguments: {} }] },
+        { content: "Done" },
+      ]);
+      mockDispatchTool.mockResolvedValue({
+        success: true,
+        output: '{"txHash":"0xabc"}',
+        data: {
+          txHash: "0xtop", // top-level hash is deliberately NOT paired
+          _tradeCapture: { chain: "base", signature: "0xabc", walletAddress: "0xw" },
+        },
+      });
+
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      // The tool-result append (2nd addMessage call) carries the coherent ref.
+      const toolResultCall = mockAddMessage.mock.calls.find(
+        (c) => c[1]?.role === "tool",
+      );
+      expect(toolResultCall).toBeDefined();
+      const metadata = toolResultCall![2] as { payload?: Record<string, unknown> };
+      expect(metadata.payload?.explorerRefs).toEqual([
+        { chain: "base", txRef: "0xabc" },
+      ]);
+    });
+
     it("saves assistant message BEFORE tool results (correct ordering)", async () => {
       const provider = makeProvider([
         { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "test" } }] },

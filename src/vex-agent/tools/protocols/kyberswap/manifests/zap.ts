@@ -19,7 +19,6 @@ export const ZAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tickUpper", type: "number", description: "Upper tick for new position." },
       { key: "positionRef", type: "string", description: "Position reference as expected by ZaaS API — NFT token ID for concentrated liquidity DEXes, wallet owner address for V2-like DEXes, ERC-1155 bin token ID for PancakeBin. Omit for new position." },
       { key: "slippageBps", type: "number", description: "Slippage tolerance in basis points." },
-      { key: "approveExact", type: "boolean", description: "Approve exact amount instead of max." },
       { key: "dryRun", type: "boolean", description: "Preview route without executing." },
     ],
     exampleParams: { chain: "ethereum", dex: "DEX_UNISWAPV3", pool: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640", tokenIn: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", amountIn: "1000000000", slippageBps: 100 },

@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { hyperliquidDisplayBlockSchema } from "./hyperliquid.js";
 
 export const MESSAGES_TAIL_DEFAULT_LIMIT = 50;
 export const MESSAGES_TAIL_MAX_LIMIT = 100;
@@ -91,10 +92,31 @@ export const toolCallDisplaySchema = z
 export type ToolCallDisplay = z.infer<typeof toolCallDisplaySchema>;
 
 /**
- * Renderer-visible message DTO. `metadata` from `messages.metadata`
- * JSONB is deliberately absent — engine markers come back in puzzle 02
- * once the controlled metadata DTO union exists. Until then the mapper
- * collapses `runtime_notice`-shaped rows into `kind: "runtime_notice"`
+ * One validated block-explorer reference projected from a tool-result row's
+ * `messages.metadata -> 'explorerRefs'` (derived in the ROOT engine at
+ * persistence time from the tool's structured capture). The renderer resolves
+ * `{ chain, txRef }` through the shared `explorerTxUrl` builder to a deep link;
+ * an unknown chain simply renders no link. Bounds mirror the engine's
+ * `deriveExplorerRefs` caps so an oversize/malformed JSONB projection is
+ * rejected at the mapper boundary rather than shipped.
+ */
+export const explorerRefSchema = z
+  .object({
+    chain: z.string().min(1).max(64),
+    txRef: z.string().min(1).max(128),
+  })
+  .strict();
+export type ExplorerRef = z.infer<typeof explorerRefSchema>;
+
+/** Bounded list of explorer refs for one tool-result row (max mirrors engine). */
+export const explorerRefsSchema = z.array(explorerRefSchema).max(8);
+
+/**
+ * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
+ * shipped wholesale; `explorerRefs` is the FIRST narrowly allow-listed,
+ * mapper-validated projection off that column (tool-result rows only). Other
+ * engine markers continue to arrive via the top-level `message_type` column —
+ * the mapper collapses `runtime_notice`-shaped rows into `kind: "runtime_notice"`
  * with `content` carrying the user-visible banner only.
  */
 export const sessionMessageDtoSchema = z
@@ -122,6 +144,15 @@ export const sessionMessageDtoSchema = z
      * `tool_result` row `<toolName>_output`.
      */
     toolCalls: z.array(toolCallDisplaySchema).max(32).nullable(),
+    /** Main-validated card data; renderer never brands model-authored text. */
+    toolDisplayBlock: hyperliquidDisplayBlockSchema.nullable().optional(),
+    /**
+     * Validated block-explorer refs for a `tool_result` row (the first
+     * narrowly allow-listed projection of `messages.metadata`). Required and
+     * `null` on every non-tool row / when no valid refs were persisted; the
+     * mapper never throws on malformed JSONB — it collapses to `null`.
+     */
+    explorerRefs: explorerRefsSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

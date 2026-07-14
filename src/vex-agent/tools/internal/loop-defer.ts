@@ -20,6 +20,7 @@
  * no-op so it doesn't double-enqueue on retry.
  */
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { ToolResult } from "../types.js";
@@ -27,6 +28,7 @@ import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import { currentDate } from "@vex-agent/engine/runtime-clock.js";
+import { validateWakeWatchConditions } from "@vex-agent/engine/wake/watch-registry.js";
 
 const ONE_SECOND_MS = 1_000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
@@ -53,6 +55,12 @@ const LoopDeferArgs = z
       .string({ error: "reason is required and must be a non-empty string" })
       .min(1, { message: "reason is required (non-empty)" })
       .max(REASON_MAX_CHARS, { message: `reason must be ≤ ${REASON_MAX_CHARS} chars` }),
+    // The scheduler validates only this envelope. Variant fields are owned by
+    // the evaluator registered by the protocol that supplies the condition.
+    watch: z.array(z.object({ type: z.string().min(1) }).passthrough())
+      .min(1, { message: "watch must include at least one condition" })
+      .max(4, { message: "watch may include at most 4 conditions" })
+      .optional(),
   })
   .refine(
     (v) => (v.after_ms !== undefined) !== (v.wake_at !== undefined),
@@ -69,7 +77,7 @@ export async function handleLoopDefer(
     const firstIssue = parsed.error.issues[0];
     return fail(`loop_defer: ${firstIssue?.message ?? "invalid arguments"}`);
   }
-  const { after_ms, wake_at, reason } = parsed.data;
+  const { after_ms, wake_at, reason, watch } = parsed.data;
 
   // Layer 2 — runtime defense-in-depth.
   if (!isMissionRunContext(context)) {
@@ -96,12 +104,22 @@ export async function handleLoopDefer(
 
   const dueAt = new Date(dueAtMs);
 
+  let payload: Record<string, unknown> | null = null;
+  if (watch !== undefined) {
+    try {
+      const conditions = await validateWakeWatchConditions(watch, context);
+      payload = { watchId: randomUUID(), watchVersion: 1, conditions };
+    } catch (error) {
+      return fail(`loop_defer: ${error instanceof Error ? error.message : "watch validation failed"}`);
+    }
+  }
+
   const row = await loopWakeRepo.enqueue({
     sessionId: context.sessionId,
     missionRunId: context.missionRunId!, // non-null verified by isMissionRunContext above
     dueAt,
     reason,
-    payload: null,
+    payload,
   });
 
   if (row === null) {

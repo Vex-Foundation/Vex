@@ -48,6 +48,8 @@ import {
 } from "../../db/repos/missions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
 import { cloneMissionAsDraft } from "./renew-internals.js";
+import { CONTRACT_HASH_VERSION, LEGACY_CONTRACT_HASH_VERSION, computeContractHash } from "./contract-hash.js";
+import { missionToDraft } from "./mapper.js";
 
 export interface RenewMissionInput {
   readonly sessionId: string;
@@ -104,7 +106,22 @@ export async function renewMission(
     }
 
     // 3. Acceptance gate — only accepted contracts can be renewed.
-    if (source.acceptedContractHash === null) {
+    if (
+      source.acceptedContractHash === null
+      || source.contractHashVersion === null
+      || (source.contractHashVersion !== LEGACY_CONTRACT_HASH_VERSION
+        && source.contractHashVersion !== CONTRACT_HASH_VERSION)
+    ) {
+      return {
+        outcome: "not_accepted",
+        sourceMissionId: source.id,
+      };
+    }
+
+    // Renewal must not clone an acceptance that has drifted. Verify with the
+    // source row's recorded version so a v1 contract is never reinterpreted
+    // as v2 merely because the current app understands new material.
+    if (computeContractHash(missionToDraft(source), source.contractHashVersion) !== source.acceptedContractHash) {
       return {
         outcome: "not_accepted",
         sourceMissionId: source.id,

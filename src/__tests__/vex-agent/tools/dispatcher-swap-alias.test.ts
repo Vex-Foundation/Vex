@@ -169,21 +169,20 @@ describe("swap alias — side routing", () => {
   });
 });
 
-describe("swap alias — Robinhood Chain 4663 routes to Uniswap, never KyberSwap (LOCKED #3)", () => {
-  // Uniswap tokens are ADDRESS-ONLY (VIRTUAL → VEX on Robinhood Chain).
+describe("swap alias — Robinhood Chain 4663 routes to KyberSwap primary, Uniswap fallback", () => {
+  // Swap-venue tokens are ADDRESS-ONLY (VIRTUAL → VEX on Robinhood Chain).
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const VEX = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
   const RH_ARGS = { chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1.5", slippageBps: 50 };
 
-  it("chain 'robinhood' (default side) → uniswap.swap.sell (NOT kyberswap)", async () => {
+  it("chain 'robinhood' (default side) → kyberswap.swap.sell (KyberSwap aggregates 4663; Uniswap is the fallback)", async () => {
     await dispatchTool({ name: "swap", args: RH_ARGS, toolCallId: "rh1" }, ctx());
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
-    expect(req.toolId).toBe("uniswap.swap.sell");
-    expect(req.toolId).not.toContain("kyberswap");
+    expect(req.toolId).toBe("kyberswap.swap.sell");
     expect(req.params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 });
   });
 
-  it("chain '4663' with side:'buy' → uniswap.swap.buy", async () => {
+  it("NUMERIC chain '4663' with side:'buy' → uniswap.swap.buy (known slug-only venue-router asymmetry: numeric ids skip KyberSwap)", async () => {
     await dispatchTool({ name: "swap", args: { ...RH_ARGS, chain: "4663", side: "buy" }, toolCallId: "rh2" }, ctx());
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string }];
     expect(req.toolId).toBe("uniswap.swap.buy");

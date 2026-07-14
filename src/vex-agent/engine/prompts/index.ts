@@ -11,7 +11,8 @@
  * - TURN layers — volatile per-call state, joined into the TRAILING system
  *   message (cacheHint "turn_state", placed AFTER history): runtime clock,
  *   context pressure, resume packet, `# Memory` (routing at its end),
- *   active plan, Tool Map, mission turn-state, one-shots.
+ *   active plan, Tool Map, Hypervexing workspace state, mission turn-state,
+ *   one-shots.
  *
  * Hard ordering constraint preserved: state signals → memory routing → Tool
  * Map. Determinism: static layers must not contain timestamps/randomness —
@@ -113,6 +114,12 @@ export interface PromptStackOptions {
    * Empty string omits the section (e.g. no agent-surface tools visible).
    */
   toolCatalogPrompt?: string;
+  /**
+   * Session-mode Hypervexing state generated from the same visibility context
+   * as the Tool Map. TURN-STATE because workspace mode and policy can change
+   * between turns.
+   */
+  hypervexingTurnStatePrompt?: string;
 }
 
 export interface PromptStack {
@@ -217,8 +224,9 @@ export function buildPromptStack(
 
   // Pressure-state first (drives immediate tool behaviour), then the
   // post-compact bridge, then the consolidated memory section (routing at
-  // its end), then the advisory plan, then the Tool Map — preserving the
-  // hard constraint: state signals → memory routing → tool catalog.
+  // its end), then the advisory plan, Tool Map, and Hypervexing workspace
+  // state — preserving the hard constraint: state signals → memory routing →
+  // tool catalog.
   if (options.contextPressureBanner && options.contextPressureBanner.length > 0) {
     turnLayers.push(options.contextPressureBanner);
   }
@@ -239,6 +247,9 @@ export function buildPromptStack(
   // cannot drift.
   if (options.toolCatalogPrompt && options.toolCatalogPrompt.length > 0) {
     turnLayers.push(options.toolCatalogPrompt);
+  }
+  if (options.hypervexingTurnStatePrompt && options.hypervexingTurnStatePrompt.length > 0) {
+    turnLayers.push(options.hypervexingTurnStatePrompt);
   }
 
   // Mission turn-state: the frozen per-slice iteration snapshot
@@ -284,7 +295,11 @@ export { buildSafetyContractPrompt } from "./safety-contract.js";
 export { buildToolModelPrompt } from "./tool-model.js";
 export { buildMemoryPolicyPrompt } from "./memory-policy.js";
 export { buildResearchPrompt } from "./research.js";
-export { buildProtocolsPrompt, resetProtocolsPromptCache } from "./protocols.js";
+export {
+  buildProtocolsPrompt,
+  buildHypervexingTurnStatePrompt,
+  resetProtocolsPromptCache,
+} from "./protocols.js";
 export { buildPermissionPrompt } from "./execution-policy.js";
 export { buildAgentPrompt } from "./agent.js";
 export { buildMissionSetupPrompt, type MissionSetupContext } from "./mission-setup.js";

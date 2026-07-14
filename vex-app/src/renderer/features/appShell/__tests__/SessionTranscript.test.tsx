@@ -48,6 +48,7 @@ function msg(p: {
     toolCallId: null,
     toolName: p.toolName ?? null,
     toolCalls: null,
+    explorerRefs: null,
   };
 }
 

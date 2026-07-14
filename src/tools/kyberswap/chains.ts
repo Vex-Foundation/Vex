@@ -35,6 +35,12 @@ const CHAINS: readonly ChainEntry[] = [
   { slug: "etherlink", chainId: 42793, name: "Etherlink",  aggregator: true, limitOrder: true,  zaas: false },
   { slug: "monad",     chainId: 143,   name: "Monad",      aggregator: true, limitOrder: true,  zaas: false },
   { slug: "megaeth",   chainId: 4326,  name: "MegaETH",    aggregator: true, limitOrder: true,  zaas: false },
+  // Robinhood Chain — aggregator only. Provisional per KyberSwap docs (declared
+  // "initial observation period; support may be discontinued"). Aggregator
+  // support verified live 2026-07-13 (GET /robinhood/api/v1/routes → code:0 with
+  // real routes) and on-chain (MetaAggregationRouterV2 0x6131…37b5 has bytecode;
+  // eth_chainId 0x1237 = 4663). Limit Order + ZaaS are NOT in the docs for 4663.
+  { slug: "robinhood", chainId: 4663,  name: "Robinhood Chain", aggregator: true, limitOrder: false, zaas: false },
   { slug: "scroll",    chainId: 534352, name: "Scroll",    aggregator: false, limitOrder: false, zaas: true },
   { slug: "zksync",    chainId: 324,    name: "zkSync",    aggregator: false, limitOrder: false, zaas: true },
 ] as const;

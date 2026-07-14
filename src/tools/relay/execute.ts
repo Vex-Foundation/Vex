@@ -99,8 +99,21 @@ export interface RelayExecuteArgs {
   destinationChainId: number;
 }
 
+/** One broadcast transaction paired with the chain it was broadcast on. */
+export interface RelayTransaction {
+  readonly chainId: number;
+  readonly hash: string;
+}
+
 export interface RelayExecuteResult {
   txHashes: string[];
+  /**
+   * Per-tx records carrying the chain each hash was broadcast on. Additive
+   * alongside `txHashes` (kept for compatibility): a Relay bridge spans the
+   * origin AND destination chains, so a chain-less `txHashes[]` cannot map every
+   * hash to an explorer. `transactions[i].hash === txHashes[i]` by construction.
+   */
+  transactions: RelayTransaction[];
   requestId: string | null;
   finalStatus: string;
 }
@@ -199,7 +212,7 @@ export async function executeRelayBridge(args: RelayExecuteArgs): Promise<RelayE
   const { planned, requestId } = planRelayBridge(quote, expectedFrom, originChainId, destinationChainId);
 
   // ── PHASE 2: broadcast the pre-validated transactions strictly in order. ──
-  const txHashes: string[] = [];
+  const transactions: RelayTransaction[] = [];
   for (const tx of planned) {
     const { publicClient, walletClient } = await resolveStepClients(tx.chainId, privateKey);
     const hash = await walletClient.sendTransaction({
@@ -214,10 +227,12 @@ export async function executeRelayBridge(args: RelayExecuteArgs): Promise<RelayE
       what: `Relay step "${tx.stepId}"`,
       hint: "No further steps were broadcast. Check the transaction hash before re-quoting or retrying.",
     });
-    txHashes.push(hash);
+    // Pair each hash with the chain it was broadcast on (fund safety already
+    // constrained tx.chainId to {origin, destination} in PHASE 1).
+    transactions.push({ chainId: tx.chainId, hash });
     logger.info("relay.bridge.step_broadcast", { stepId: tx.stepId, chainId: tx.chainId });
   }
 
   const finalStatus = requestId ? await pollToTerminal(requestId) : "pending";
-  return { txHashes, requestId, finalStatus };
+  return { txHashes: transactions.map((t) => t.hash), transactions, requestId, finalStatus };
 }

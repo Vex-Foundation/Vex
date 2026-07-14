@@ -81,7 +81,7 @@ function requireDeployment(chain: string): UniswapDeployment {
     throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Uniswap has no verified deployment for chain "${chain}".`,
-      "Uniswap is available on Robinhood Chain and the major EVM chains; use kyberswap where it is supported.",
+      "Uniswap is a fallback venue on Robinhood Chain and the major EVM chains; prefer kyberswap, which is primary wherever it is supported.",
     );
   }
   return deployment;

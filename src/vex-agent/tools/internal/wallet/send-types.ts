@@ -20,12 +20,21 @@ export type ExecuteOutcome =
   | {
       readonly kind: "chain_failed";
       readonly txHash: string;
+      /**
+       * The SAME chain identity the confirmed path's `_tradeCapture.chain`
+       * carries (EVM: the resolved network name; Solana: "solana"). Lets the
+       * failure `ToolResult` attach a linkable `_explorerRefs` entry for a
+       * broadcast-but-reverted tx.
+       */
+      readonly chain: string;
       readonly errorKind: string;
       readonly errorHash: string;
     }
   | {
       readonly kind: "confirmation_unknown";
       readonly txHash: string;
+      /** Same chain identity as `chain_failed` — a broadcast tx still links. */
+      readonly chain: string;
       readonly errorKind: string;
       readonly errorHash: string;
     }

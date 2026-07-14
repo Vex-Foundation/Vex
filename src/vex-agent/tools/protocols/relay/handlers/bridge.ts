@@ -299,6 +299,15 @@ async function relayBridge(
       requestId: result.requestId,
       status: result.finalStatus,
       txHashes: result.txHashes,
+      // Per-hop explorer refs (metadata-only, model-invisible): a bridge spans
+      // the origin AND destination chains, so each broadcast hash is paired
+      // with its own chain. `deriveExplorerRefs` validates + merges these with
+      // the coherent origin-chain capture ref (deduped). The `_tradeCapture`
+      // audit shape below is deliberately UNCHANGED (projections depend on it).
+      _explorerRefs: result.transactions.map((t) => ({
+        chain: String(t.chainId),
+        txRef: t.hash,
+      })),
       _tradeCapture: {
         type: "bridge",
         chain: String(legs.originChainId),

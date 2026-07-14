@@ -25,6 +25,7 @@ import { getMission } from "../../db/repos/missions.js";
 
 import {
   CONTRACT_HASH_VERSION,
+  LEGACY_CONTRACT_HASH_VERSION,
   computeContractHash,
 } from "./contract-hash.js";
 import { missionToDraft } from "./mapper.js";
@@ -68,10 +69,14 @@ export async function getContractStatus(
     };
   }
 
-  const currentHash = computeContractHash(missionToDraft(mission));
   const acceptedHash = mission.acceptedContractHash;
   const acceptedVersion = mission.contractHashVersion;
-  const versionOk = acceptedVersion === CONTRACT_HASH_VERSION;
+  const acceptedVersionKnown = acceptedVersion === LEGACY_CONTRACT_HASH_VERSION || acceptedVersion === CONTRACT_HASH_VERSION;
+  const currentHash = computeContractHash(
+    missionToDraft(mission),
+    acceptedVersionKnown ? acceptedVersion : CONTRACT_HASH_VERSION,
+  );
+  const versionOk = acceptedVersionKnown;
   const isAccepted = acceptedHash !== null
     && versionOk
     && currentHash === acceptedHash;
@@ -82,7 +87,7 @@ export async function getContractStatus(
     missionId: input.missionId,
     sessionId: input.sessionId,
     currentHash,
-    contractHashVersion: CONTRACT_HASH_VERSION,
+    contractHashVersion: acceptedVersionKnown ? acceptedVersion : CONTRACT_HASH_VERSION,
     acceptedHash,
     acceptedAt: mission.acceptedContractAt,
     acceptedBy: mission.acceptedContractBy,

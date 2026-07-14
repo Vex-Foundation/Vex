@@ -176,6 +176,7 @@ export async function executeSolanaTransfer(
     return {
       kind: "chain_failed",
       txHash: submission.signature,
+      chain: "solana",
       errorKind: submission.errorKind ?? "Unknown",
       errorHash: submission.errorHash ?? "0000000000000000",
     };
@@ -184,6 +185,7 @@ export async function executeSolanaTransfer(
     return {
       kind: "confirmation_unknown",
       txHash: submission.signature,
+      chain: "solana",
       errorKind: submission.errorKind ?? "Unknown",
       errorHash: submission.errorHash ?? "0000000000000000",
     };

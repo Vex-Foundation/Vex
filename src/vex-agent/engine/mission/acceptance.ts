@@ -38,6 +38,7 @@ import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 
 import {
   CONTRACT_HASH_VERSION,
+  LEGACY_CONTRACT_HASH_VERSION,
   computeContractHash,
 } from "./contract-hash.js";
 import { missionToDraft } from "./mapper.js";
@@ -113,19 +114,16 @@ export async function assertAcceptedContract(
     if (!mission) {
       return { outcome: "mission_not_found" };
     }
-    // `contractHashVersion` must equal the current `CONTRACT_HASH_VERSION`
-    // — a non-current version means the row was accepted under an older
-    // canonical-material shape and the host needs to re-accept under
-    // the new shape. The four-tuple CHECK constraint catches NULL
-    // partial state too.
+    // Legacy v1 contracts remain immutable and valid forever. Recompute with
+    // the version stored at acceptance; unknown versions fail closed.
     if (
       mission.acceptedContractHash === null
       || mission.contractHashVersion === null
-      || mission.contractHashVersion !== CONTRACT_HASH_VERSION
+      || !isKnownContractHashVersion(mission.contractHashVersion)
     ) {
       return { outcome: "not_accepted", missionId: mission.id };
     }
-    const currentHash = computeContractHash(missionToDraft(mission));
+    const currentHash = computeContractHash(missionToDraft(mission), mission.contractHashVersion);
     if (currentHash !== mission.acceptedContractHash) {
       return {
         outcome: "stale_acceptance",
@@ -234,7 +232,9 @@ export async function acceptContract(
     // 3. Recompute the canonical hash from the locked row. If the
     //    UI showed an older draft, the hash won't match and the user
     //    must re-view + re-accept.
-    const currentHash = computeContractHash(missionToDraft(mission));
+    // New acceptance always emits v2 material. A legacy v1 draft that somehow
+    // carries Hyperliquid risk cannot be accepted under the old hash shape.
+    const currentHash = computeContractHash(missionToDraft(mission), CONTRACT_HASH_VERSION);
     if (currentHash !== input.contractHash) {
       return {
         outcome: "hash_mismatch",
@@ -338,4 +338,8 @@ export async function acceptContract(
     }
     throw err;
   }
+}
+
+function isKnownContractHashVersion(version: number): version is typeof LEGACY_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION {
+  return version === LEGACY_CONTRACT_HASH_VERSION || version === CONTRACT_HASH_VERSION;
 }

@@ -60,6 +60,34 @@ describe("upsertPosition — multi-wallet identity", () => {
   });
 });
 
+describe("upsertPosition — parameter type inference (incident 2026-07-13)", () => {
+  it("casts $9/$10 to ::numeric in every CASE WHEN ... IS NULL use", async () => {
+    // Postgres cannot infer a parameter's type from an `IS NULL` test alone.
+    // With bare `$9`/`$10`, PREPARE failed with
+    // `could not determine data type of parameter $9`, so projectPosition threw
+    // and NO perps row was ever written to proj_open_positions (empty POSITIONS
+    // panel). The ::numeric casts pin the type to the real column type.
+    await repo.upsertPosition({
+      namespace: "hyperliquid",
+      positionType: "perps",
+      chain: "hyperliquid",
+      externalId: "ext-1",
+      walletAddress: "0xWalletA",
+      currentValueUsd: "1000",
+      unrealizedPnlUsd: "20",
+    });
+
+    const [sql] = mockExecute.mock.calls[0] as [string, unknown[]];
+    // Both the VALUES last_refresh_at and the DO UPDATE last_refresh_at use it.
+    expect(sql).toContain("CASE WHEN $9::numeric IS NULL AND $10::numeric IS NULL THEN NULL ELSE NOW() END");
+    expect(sql).toContain(
+      "last_refresh_at = CASE WHEN $9::numeric IS NULL AND $10::numeric IS NULL THEN proj_open_positions.last_refresh_at ELSE NOW() END",
+    );
+    // The bare, type-ambiguous form must never come back.
+    expect(sql).not.toContain("CASE WHEN $9 IS NULL");
+  });
+});
+
 describe("closePosition — full identity", () => {
   it("matches on namespace + type + chain + wallet + external_id", async () => {
     await repo.closePosition("khalani", "perps", "base", "0xWalletA", "ext-1", "closed");

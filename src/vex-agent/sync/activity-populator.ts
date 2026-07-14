@@ -124,7 +124,7 @@ export async function populateActivity(
     positionKey: typeof tradeCapture.positionKey === "string" ? tradeCapture.positionKey : null,
     instrumentKey: typeof tradeCapture.instrumentKey === "string" ? tradeCapture.instrumentKey : null,
     externalRefs: executionExternalRefs ?? {},
-    meta: (tradeCapture.meta as Record<string, unknown>) ?? {},
+    meta: captureMeta(tradeCapture),
   });
 
   if (id > 0) {
@@ -147,4 +147,21 @@ export async function populateActivity(
       });
     }
   }
+}
+
+/**
+ * proj_activity has no separate MTM columns. Carry the typed capture values in
+ * the activity metadata to the projector; the reconciler itself never writes
+ * `proj_open_positions` directly.
+ */
+function captureMeta(tradeCapture: Record<string, unknown>): Record<string, unknown> {
+  const rawMeta = tradeCapture.meta;
+  const meta = isRecord(rawMeta) ? { ...rawMeta } : {};
+  if (typeof tradeCapture.currentValueUsd === "string") meta.currentValueUsd = tradeCapture.currentValueUsd;
+  if (typeof tradeCapture.unrealizedPnlUsd === "string") meta.unrealizedPnlUsd = tradeCapture.unrealizedPnlUsd;
+  return meta;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

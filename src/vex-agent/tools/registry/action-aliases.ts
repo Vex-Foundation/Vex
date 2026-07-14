@@ -45,14 +45,14 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Preview a token swap WITHOUT executing — best route, expected output, price impact, and token-safety signals. Auto-routes by chain: KyberSwap on its supported EVM chains; Uniswap on Robinhood Chain (the only venue there) and as an all-EVM fallback; chain \"solana\" → Jupiter. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled here to avoid wrong-contract matches; Solana accepts a symbol or mint. `amount` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). Call this BEFORE any swap: a fresh matching quote (same venue) is what unlocks execution.",
+      "Preview a token swap WITHOUT executing — best route, expected output, price impact, and token-safety signals. Auto-routes by chain: KyberSwap on its supported EVM chains (incl. Robinhood Chain), with Uniswap as the all-EVM fallback; chain \"solana\" → Jupiter. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled here to avoid wrong-contract matches; Solana accepts a symbol or mint. `amount` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). Call this BEFORE any swap: a fresh matching quote (same venue) is what unlocks execution.",
     parameters: {
       type: "object",
       properties: {
         chain: {
           type: "string",
           description:
-            "Chain to swap on. EVM slugs/aliases route to KyberSwap where supported (ethereum, base, arbitrum, …); \"robinhood\" (4663) routes to Uniswap; the literal \"solana\" routes to Jupiter.",
+            "Chain to swap on. EVM slugs/aliases route to KyberSwap where supported (ethereum, base, arbitrum, robinhood, …) with Uniswap as fallback; the literal \"solana\" routes to Jupiter.",
         },
         tokenIn: {
           type: "string",
@@ -88,14 +88,14 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     // result already carries the target's actionKind from executeProtocolTool.
     actionKind: "user_wallet_broadcast",
     description:
-      "Execute a REAL on-chain token swap (spends funds, broadcasts a signed transaction). Auto-routes by chain: KyberSwap on its supported EVM chains; Uniswap on Robinhood Chain (the only venue there) and as an all-EVM fallback; chain \"solana\" → Jupiter. REQUIRES a fresh matching swap_quote FIRST on the SAME venue — the execute gate blocks a swap that has no fresh matching quote (a Kyber quote can't authorize a Uniswap swap, and vice-versa), so always preview with swap_quote before calling this. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled to avoid wrong-contract matches; Solana accepts a symbol or mint. `amount` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). `side` (\"sell\"/\"buy\") is EVM-only; it tags the trade for portfolio tracking and does not apply to Solana.",
+      "Execute a REAL on-chain token swap (spends funds, broadcasts a signed transaction). Auto-routes by chain: KyberSwap on its supported EVM chains (incl. Robinhood Chain), with Uniswap as the all-EVM fallback; chain \"solana\" → Jupiter. REQUIRES a fresh matching swap_quote FIRST on the SAME venue — the execute gate blocks a swap that has no fresh matching quote (a Kyber quote can't authorize a Uniswap swap, and vice-versa), so always preview with swap_quote before calling this. EVM tokens must be a CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native — EVM symbol resolution is disabled to avoid wrong-contract matches; Solana accepts a symbol or mint. `amount` is the HUMAN decimal of tokenIn (e.g. \"1.5\", not wei/lamports). `side` (\"sell\"/\"buy\") is EVM-only; it tags the trade for portfolio tracking and does not apply to Solana.",
     parameters: {
       type: "object",
       properties: {
         chain: {
           type: "string",
           description:
-            "Chain to swap on. EVM slugs/aliases route to KyberSwap where supported (ethereum, base, arbitrum, …); \"robinhood\" (4663) routes to Uniswap; the literal \"solana\" routes to Jupiter.",
+            "Chain to swap on. EVM slugs/aliases route to KyberSwap where supported (ethereum, base, arbitrum, robinhood, …) with Uniswap as fallback; the literal \"solana\" routes to Jupiter.",
         },
         tokenIn: {
           type: "string",

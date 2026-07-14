@@ -4,9 +4,24 @@
 
 import type { Address } from "viem";
 
+import { VEX_TREASURY_EVM } from "../../lib/vex-treasury.js";
+
 // ── Client identification ───────────────────────────────────────────
 
 export const KYBER_CLIENT_ID = "Vex";
+
+// ── Vex integrator fee (aggregator swaps) ───────────────────────────
+//
+// Product-owner-reviewed constants — NEVER derived from model/tool params. A
+// model-controllable fee is an overcharge vector, so these are hard-coded next
+// to the venue they configure and fed to GET /routes verbatim. Base is 10000
+// (Kyber `isInBps: true`), so 25 = 0.25%. Charged in the INPUT token; KyberSwap
+// requires no on-chain approval and takes 0% cut. Fees accrue to VEX_TREASURY_EVM
+// (Vex-treasury: token buyback and burn).
+
+export const KYBERSWAP_FEE_BPS = 25;
+export const KYBERSWAP_FEE_CHARGE_BY = "currency_in" as const;
+export const KYBERSWAP_FEE_RECEIVER: Address = VEX_TREASURY_EVM;
 
 // ── Native token (same on all EVM chains) ───────────────────────────
 
@@ -20,18 +35,22 @@ export const COMMON_SERVICE_BASE_URL = "https://common-service.kyberswap.com";
 export const LIMIT_ORDER_BASE_URL = "https://limit-order.kyberswap.com";
 export const ZAAS_BASE_URL = "https://zap-api.kyberswap.com";
 
-// ── Aggregator contracts (same address on all 18 chains) ────────────
+// ── Aggregator contracts (same address on all 19 aggregator chains) ──
 
 export const META_AGGREGATION_ROUTER_V2: Address = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5";
 export const INPUT_SCALING_HELPER_V2: Address = "0x2f577A41BeC1BE1152AeEA12e73b7391d15f655D";
 
 // ── Limit Order contracts ───────────────────────────────────────────
 
-/** DSLOProtocol — deployed on all 17 LO-supported chains. */
+/**
+ * DSLOProtocol — the current double-signature Limit Order Protocol, deployed at
+ * the same address on all LO-supported chains. This is the ONLY verifyingContract
+ * accepted for signing new orders / gasless cancels (see sign-message-verification).
+ * The legacy single-signature LimitOrderProtocol
+ * (0x227B0c196eA8db17A665EA6824D972A64202E936) is intentionally not defined here —
+ * it must never be signed for.
+ */
 export const DSLO_PROTOCOL: Address = "0xcab2FA2eeab7065B45CBcF6E3936dDE2506b4f6C";
-
-/** LimitOrderProtocol — only on Ethereum, BSC, Arbitrum, Polygon, Optimism, Avalanche. */
-export const LIMIT_ORDER_PROTOCOL: Address = "0x227B0c196eA8db17A665EA6824D972A64202E936";
 
 export const WETH_UNWRAPPER: Address = "0x37334Cd06DFEcd2e9b3937a6dA17853d637A5b94";
 

@@ -28,6 +28,18 @@ vi.mock("../book/MovesBlock.js", () => ({
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="session-block" />,
 }));
+vi.mock("../book/HyperliquidPositionsBlock.js", () => ({
+  HyperliquidPositionsBlock: () => <div data-testid="hyperliquid-positions-block" />,
+}));
+// The zero-token re-entry door runs a react-query read — mocked out like
+// the other instrument blocks (its own gating has dedicated coverage).
+vi.mock("../workspace/HypervexingEnterButton.js", () => ({
+  HypervexingEnterButton: () => <div data-testid="hypervexing-enter-button" />,
+}));
+
+vi.mock("../book/HyperliquidRiskBlock.js", () => ({
+  HyperliquidRiskBlock: () => <div data-testid="hyperliquid-risk-block" />,
+}));
 vi.mock("../SessionRuntimeBar.js", () => ({
   SessionRuntimeBar: () => <div data-testid="runtime-bar" />,
 }));
@@ -49,9 +61,13 @@ describe("BookPanel chrome", () => {
     expect(
       screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
     ).not.toBeNull();
-    // Instrument blocks render when expanded.
+    // Instrument blocks render when expanded. The risk block MOUNT exists on
+    // an active session — the real component self-gates to pending proposals
+    // (see HyperliquidRiskBlock.test.tsx); the mock here always renders.
     expect(screen.queryByTestId("position-block")).not.toBeNull();
     expect(screen.queryByTestId("moves-block")).not.toBeNull();
+    expect(screen.queryByTestId("hyperliquid-positions-block")).not.toBeNull();
+    expect(screen.queryByTestId("hyperliquid-risk-block")).not.toBeNull();
   });
 
   it("hides the version + blocks when collapsed, keeping the Expand chevron", () => {
@@ -64,6 +80,8 @@ describe("BookPanel chrome", () => {
     ).not.toBeNull();
     expect(screen.queryByTestId("position-block")).toBeNull();
     expect(screen.queryByTestId("moves-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-positions-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-risk-block")).toBeNull();
   });
 
   it("invokes onToggle from the chevron", () => {
@@ -83,5 +101,9 @@ describe("BookPanel chrome", () => {
     // No session-scoped blocks for the global view.
     expect(screen.queryByTestId("moves-block")).toBeNull();
     expect(screen.queryByTestId("session-block")).toBeNull();
+    expect(screen.queryByTestId("hyperliquid-positions-block")).toBeNull();
+    // Owner decree (round 3): no Hyperliquid block on the global/welcome
+    // view — risk setup arrives as a confirmable card only when proposed.
+    expect(screen.queryByTestId("hyperliquid-risk-block")).toBeNull();
   });
 });

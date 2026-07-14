@@ -24,7 +24,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { getPool, queryOne, queryOneWith, execute } from "../client.js";
+import { getPool, query, queryOne, queryOneWith, execute } from "../client.js";
 import { nullableJsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -215,4 +215,63 @@ export async function getPendingForSession(
     [sessionId],
   );
   return row ? mapRow(row) : null;
+}
+
+/** Pending rows with a versioned generic watch payload. */
+export async function getPendingWithWatch(): Promise<LoopWakeRequest[]> {
+  const rows = await query<LoopWakeRow>(
+    `SELECT * FROM loop_wake_requests
+     WHERE status = 'pending'
+       AND payload ? 'watchId'
+       AND payload ? 'conditions'
+     ORDER BY due_at ASC`,
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Move a matching wake deadline to now, never later. The mission-run predicate
+ * prevents a stale tick from promoting a run that was resumed or preempted.
+ */
+export async function promotePendingWake(
+  sessionId: string,
+  missionRunId: string,
+  watchId: string,
+): Promise<boolean> {
+  const affected = await execute(
+    `UPDATE loop_wake_requests AS wake
+     SET due_at = LEAST(wake.due_at, NOW())
+     FROM mission_runs AS run
+     WHERE wake.session_id = $1
+       AND wake.mission_run_id = $2
+       AND wake.status = 'pending'
+       AND wake.payload->>'watchId' = $3
+       AND run.id = wake.mission_run_id
+       AND run.status = 'paused_wake'`,
+    [sessionId, missionRunId, watchId],
+  );
+  return affected > 0;
+}
+
+/**
+ * Safety escalation equivalent of watch promotion. Unlike a price trigger it
+ * deliberately does not inspect a watch payload: a detected protection fault
+ * must advance the one existing pending wake regardless of why it was waiting.
+ */
+export async function promotePendingWakeForSafety(
+  sessionId: string,
+  missionRunId: string,
+): Promise<boolean> {
+  const affected = await execute(
+    `UPDATE loop_wake_requests AS wake
+     SET due_at = LEAST(wake.due_at, NOW())
+     FROM mission_runs AS run
+     WHERE wake.session_id = $1
+       AND wake.mission_run_id = $2
+       AND wake.status = 'pending'
+       AND run.id = wake.mission_run_id
+       AND run.status = 'paused_wake'`,
+    [sessionId, missionRunId],
+  );
+  return affected > 0;
 }

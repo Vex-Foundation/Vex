@@ -45,6 +45,7 @@ const PROTOCOLS: readonly ProtocolMark[] = [
   { name: "Pendle", src: "/protocols/pendle.jpg" },
   { name: "DexScreener", src: "/protocols/dexscreener.jpg" },
   { name: "Khalani", src: "/protocols/khalani.svg", fit: "contain" },
+  { name: "Hyperliquid", src: "/protocols/hl.png" },
   // Integrated agent tool (src/tools/virtuals) — ALSO the backer hallmark
   // below; both roles are true, so it appears in both lines.
   { name: "Virtuals", src: "/logo/virtuals.svg", fit: "contain" },

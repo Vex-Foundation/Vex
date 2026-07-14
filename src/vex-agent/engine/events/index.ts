@@ -17,6 +17,19 @@ export {
 } from "./transcript-bus.js";
 
 export {
+  HyperliquidRiskProposalBus,
+  hyperliquidRiskProposalBus,
+  type HyperliquidRiskProposalEvent,
+} from "./hyperliquid-risk-bus.js";
+
+export {
+  HyperliquidWorkspaceRequestBus,
+  hyperliquidWorkspaceRequestBus,
+  type HyperliquidWorkspaceMode,
+  type HyperliquidWorkspaceRequestEvent,
+} from "./hyperliquid-workspace-bus.js";
+
+export {
   appendMessage,
   appendEngineMessage,
   emitTranscriptAppend,

@@ -15,9 +15,12 @@
  *     significant digits); raw base-unit integers (legacy wei/lamports) and
  *     nulls render nothing,
  *   - the pulse ring is bound ONLY to a pending (in-flight) fill,
- *   - rows whose `chain`+`txRef` resolve through `moveExplorerUrl` render as
+ *   - rows whose `chain`+`txRef` resolve through `explorerTxUrl` render as
  *     external links (href + target=_blank + rel="noopener noreferrer");
- *     unresolvable rows stay non-interactive,
+ *     a row with no `txRef` whose `chain`+`walletAddress` resolve through
+ *     `explorerAccountUrl` (HyperCore) appends a labelled `View account` link
+ *     without turning the row into an anchor; rows that resolve to neither stay
+ *     non-interactive,
  *   - the 10-row display window, fetched-total count badge, and empty/error
  *     copy hold.
  *
@@ -55,6 +58,7 @@ function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem 
     instrumentKey: null,
     chain: "solana",
     txRef: null,
+    walletAddress: null,
     createdAt: "2026-07-02T10:21:00+00:00",
     ...overrides,
   };
@@ -191,6 +195,84 @@ describe("MovesBlock ledger display", () => {
       expect(link.getAttribute("target")).toBe("_blank");
       expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     }
+  });
+
+  it("links a Robinhood Chain row to its Blockscout explorer", () => {
+    mockMoves([move({ id: "1", chain: "robinhood", txRef: "0xrhc123" })]);
+    render(<MovesBlock sessionId={SESSION} />);
+    const link = screen.getByRole("link", {
+      name: "Open transaction on block explorer",
+    });
+    expect(link.getAttribute("href")).toBe(
+      "https://robinhoodchain.blockscout.com/tx/0xrhc123",
+    );
+  });
+
+  it("renders a labelled account link for a HyperCore row without a txRef, keeping the row non-anchored", () => {
+    const WALLET = "0x1234567890abcdef1234567890abcdef12345678";
+    mockMoves([
+      move({
+        id: "1",
+        chain: "hyperliquid",
+        txRef: null,
+        walletAddress: WALLET,
+      }),
+    ]);
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+
+    // The row itself is NOT an anchor — only the distinct account link is.
+    const li = container.querySelector("li");
+    expect(li?.tagName).toBe("LI");
+    expect(li?.getAttribute("href")).toBeNull();
+
+    const account = screen.getByRole("link", {
+      name: "Open account on block explorer",
+    });
+    expect(account.textContent).toContain("View account");
+    expect(account.getAttribute("href")).toBe(
+      `https://app.hyperliquid.xyz/explorer/address/${WALLET}`,
+    );
+    expect(account.getAttribute("target")).toBe("_blank");
+    expect(account.getAttribute("rel")).toBe("noopener noreferrer");
+    // No tx link on this row.
+    expect(
+      screen.queryByRole("link", {
+        name: "Open transaction on block explorer",
+      }),
+    ).toBeNull();
+  });
+
+  it("does not render an account link for a HyperCore row that has a txRef (tx link wins)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        chain: "hyperliquid",
+        txRef: "0xhlHash",
+        walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(
+      screen.getByRole("link", {
+        name: "Open transaction on block explorer",
+      }).getAttribute("href"),
+    ).toBe("https://app.hyperliquid.xyz/explorer/tx/0xhlHash");
+    expect(
+      screen.queryByRole("link", { name: "Open account on block explorer" }),
+    ).toBeNull();
+  });
+
+  it("stays fully inert for an unknown chain even with a walletAddress", () => {
+    mockMoves([
+      move({
+        id: "1",
+        chain: "unknown-venue",
+        txRef: null,
+        walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
+      }),
+    ]);
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+    expect(container.querySelector("a")).toBeNull();
   });
 
   it("keeps rows without a resolvable explorer URL non-interactive", () => {

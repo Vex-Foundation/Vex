@@ -70,6 +70,55 @@
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+/* Instrument Serif — the Hyperliquid serif accent (© 2022 The Instrument
+ * Serif Project Authors, OFL 1.1; license text ships in fonts/licenses/).
+ * Unlike the three brand families above, Instrument Serif has NO weight axis:
+ * it ships as static 400 Regular + 400 Italic, so four subset WOFF2 files
+ * (latin / latin-ext × normal / italic). Same subset unicode-ranges as Inter
+ * Tight (latin-ext covers Polish diacritics), same `font-display: swap`.
+ * Used sparingly as punctuation (wordmark, protocol accents), never for a
+ * scanned numeric column — those stay JetBrains Mono. */
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-latin-ext.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-italic-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-italic-latin-ext.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 @theme {
   /* Vex semantic palette — the landing-page (projectvex.ai) brand family.
    * Ink scale from the landing dark stage (--ink #0a0d18, .frame gradient
@@ -137,6 +186,10 @@
   --font-display:
     "Archivo", "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Serif accent — Instrument Serif, used sparingly as punctuation (the
+   * Hyperliquid protocol wordmark/accents). Falls back to the platform
+   * serifs so a font-load miss still reads as a serif. */
+  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
 }
 
 /* Text selection speaks the accent — same as the landing (::selection). */
@@ -332,6 +385,51 @@
    * footer registry bands. */
   --vex-rail: rgba(11, 15, 29, 0.5);
   --vex-rail-strong: rgba(11, 15, 29, 0.68);
+  /* ---- Trading semantics (Hyperliquid) — navy-compatible base values ----
+   * These families are consumed by the Hyperliquid book blocks + the
+   * per-position chart. They are DELIBERATELY separate from the accent and
+   * from status (success/warning/danger): market direction is not "success/
+   * error", and a coverage badge is a protection fact, not an approval. The
+   * Hypervexing workspace mode (a later scope) re-tints these in its own
+   * theme block; here they carry readable navy-canvas values so every
+   * consumer stays hex-free and nothing renders an undefined token.
+   *
+   * Market direction — long green / short rose (both AA on the ink canvas). */
+  --vex-long: #2fbe8f;
+  --vex-long-fill: color-mix(in oklab, #2fbe8f 12%, transparent);
+  --vex-short: #f46b7c;
+  --vex-short-fill: color-mix(in oklab, #f46b7c 12%, transparent);
+  /* Chart line family (entry / SL / liquidation + grid/crosshair/axis). Read
+   * at runtime by the chart via getComputedStyle, so these stay CONCRETE
+   * (hex / rgba / color-mix — no var() indirection) to survive the read. */
+  --vex-chart-bg: #05070e; /* recessed plot floor — darker than surface-down so candles never blend into the glass */
+  --vex-chart-entry: #8fa2ff; /* light cobalt entry marker on ink */
+  --vex-chart-sl: #ffb84d; /* amber — a chosen plan, not an alarm */
+  --vex-chart-liq: #ff3b5c; /* the one saturated alarm red */
+  --vex-chart-grid: rgba(255, 255, 255, 0.05);
+  --vex-chart-crosshair: rgba(255, 255, 255, 0.24);
+  --vex-chart-axis: #939aad; /* axis text = --vex-text-3 tone, concrete */
+  --vex-chart-last: #f3f4f7; /* last-price chip text = --vex-text tone */
+  /* Volume histogram — kept as a CONCRETE rgba (not color-mix): the chart
+   * reads it via getComputedStyle, and a custom property does not resolve
+   * color-mix() until it is used in a real property. */
+  --vex-chart-volume: rgba(143, 162, 255, 0.26);
+  /* Coverage badge family (protection honesty). UNPROTECTED is the loudest
+   * chrome — loud by COLOR, still by MOTION (an alarm that animates becomes
+   * wallpaper). */
+  --vex-cover-ok: #2fbe8f;
+  --vex-cover-ok-fill: color-mix(in oklab, #2fbe8f 10%, transparent);
+  --vex-cover-none: #ff8a97;
+  --vex-cover-none-border: color-mix(in oklab, #ff3b5c 45%, transparent);
+  --vex-cover-none-fill: color-mix(in oklab, #ff3b5c 12%, transparent);
+  --vex-cover-stale: #ffb84d;
+  --vex-cover-stale-fill: color-mix(in oklab, #ffb84d 10%, transparent);
+  --vex-cover-pending: #939aad;
+  --vex-cover-pending-fill: color-mix(in oklab, #939aad 10%, transparent);
+  /* Brand motion curves as named tokens — CSS and framer share one source
+   * (the landing GSAP engine's Out / InOut). */
+  --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+  --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
   /* shadcn projection — stock Button/Input/Dialog inside the shell speak
    * the brand automatically (same mechanism as the onboarding scope). */
   --color-primary: var(--vex-accent);
@@ -386,6 +484,83 @@
 /* Text selection speaks the active accent in Robinhood mode (the global
  * ::selection is cobalt); ink text keeps contrast on the light lime beam. */
 [data-vex-shell="true"][data-vex-theme="robinhood"] ::selection {
+  background: var(--vex-accent);
+  color: var(--vex-surface-0);
+}
+
+/* HYPERVEXING MODE — the full-screen Hyperliquid trading workspace.
+ *
+ * Palette law (owner redesign, 2026-07-13): "ink first, mint as SIGNAL". The
+ * venue's real language (reference: Screenshot_4) is a near-black charcoal
+ * with the faintest teal cast — turquoise appears ONLY as signal (primary
+ * actions, active states, live numbers), text is pure neutral ivory, and
+ * long/short semantics own green/red exclusively. The previous bottle-green
+ * surface wash drowned all of that ("everything green = nothing green").
+ * Brand green now lives in the wordmark, the HlLiquidVeil blobs, the summon
+ * ritual, and a quiet SignalSky — identity, never wallpaper.
+ *
+ * Status (success/warning/danger) and approval amber (--vex-pin) are
+ * DELIBERATELY untouched — approval chrome must look identical in every mode
+ * (product contract). Raw hex is legal ONLY here (CSS is outside the
+ * design-guard scan); every component reads var(--vex-*). Chart tokens stay
+ * CONCRETE (hex/rgba, no var()/color-mix indirection) so the chart's
+ * getComputedStyle read resolves them (design spec §7). */
+[data-vex-shell="true"][data-vex-theme="hypervexing"] {
+  /* Surfaces — charcoal ink with a whisper of teal (4 steps + recessed). */
+  --vex-surface-0: #0a0f11; /* canvas — near-black, hint of teal */
+  --vex-surface-1: #0d1518; /* working panel: dock, cards, tab strip */
+  --vex-surface-2: #121c20; /* raised/active: popovers, selected tab, wells */
+  --vex-surface-down: #060a0c; /* recessed: price chips, input wells */
+  /* Hairlines — neutral white, NOT tinted: the grid recedes, data advances. */
+  --vex-line: rgba(255, 255, 255, 0.06);
+  --vex-line-strong: rgba(255, 255, 255, 0.11);
+  /* Text — pure neutral trio, zero green cast, NEVER opacity-stacked. */
+  --vex-text: #f2f7f6; /* primary values (≈17:1 on the ink) */
+  --vex-text-2: #a8b3b1; /* metadata: timestamps, sublines, secondary figures */
+  --vex-text-3: #6b7876; /* placeholders, disabled, eyebrows (≈4.9:1) */
+  /* Accent family — the venue turquoise, the ONLY accent in the mode. Solid
+   * fills carry INK text (white-on-turquoise is unreadable), exactly like the
+   * venue's "Enable Trading". */
+  --vex-accent: #4fd1c5;
+  --vex-accent-hover: color-mix(in oklab, #4fd1c5 82%, white);
+  --vex-accent-active: color-mix(in oklab, #4fd1c5 85%, black);
+  --vex-accent-text: #5fe3d6;
+  --vex-accent-border: color-mix(in oklab, #4fd1c5 55%, transparent);
+  --vex-accent-border-strong: color-mix(in oklab, #4fd1c5 85%, transparent);
+  --vex-accent-fill-8: color-mix(in oklab, #4fd1c5 8%, transparent);
+  --vex-accent-fill-12: color-mix(in oklab, #4fd1c5 12%, transparent);
+  --vex-accent-contrast: #06110f; /* ink on solid turquoise fills */
+  --color-primary-foreground: var(--vex-accent-contrast);
+  --color-primary: var(--vex-accent);
+  --color-ring: var(--vex-accent);
+  /* Market direction — trading classic, tuned for the charcoal canvas. These
+   * OVERRIDE the base cobalt-shell values inside the mode only: here green/red
+   * are the ONLY green/red on screen, so they read as pure semantics. */
+  --vex-long: #2ebd85;
+  --vex-long-fill: color-mix(in oklab, #2ebd85 14%, transparent);
+  --vex-short: #f6465d;
+  --vex-short-fill: color-mix(in oklab, #f6465d 14%, transparent);
+  /* Glass + rail re-tints (existing whitelisted surfaces only) — ink alphas. */
+  --vex-glass: rgba(9, 15, 17, 0.72);
+  --vex-glass-strong: rgba(9, 15, 17, 0.86);
+  --vex-rail: rgba(9, 15, 17, 0.55);
+  --vex-rail-strong: rgba(9, 15, 17, 0.72);
+  /* Chart line family — a dark well under neutral furniture; turquoise only
+   * on the entry marker, semantics on the candles themselves. */
+  --vex-chart-bg: #04080a; /* recessed plot floor */
+  --vex-chart-entry: #4fd1c5; /* turquoise entry marker */
+  --vex-chart-grid: rgba(255, 255, 255, 0.04);
+  --vex-chart-crosshair: rgba(255, 255, 255, 0.28);
+  --vex-chart-axis: #8a9694; /* axis text, neutral */
+  --vex-chart-last: #f2f7f6; /* last-price chip text */
+  --vex-chart-volume: rgba(79, 209, 197, 0.2);
+  /* Coverage badge — only `pending` differs from base (neutral, not sage). */
+  --vex-cover-pending: #8a9694;
+  --vex-cover-pending-fill: color-mix(in oklab, #8a9694 10%, transparent);
+}
+
+/* Selection speaks mint in Hypervexing; ink text keeps contrast on the beam. */
+[data-vex-shell="true"][data-vex-theme="hypervexing"] ::selection {
   background: var(--vex-accent);
   color: var(--vex-surface-0);
 }
@@ -1056,4 +1231,230 @@ html {
     animation: none;
     background: linear-gradient(var(--vex-pin-border), var(--vex-pin-border));
   }
+}
+
+/* ============================================================ *
+ *  PENDING RING — the console's traveling accent arc, generalized  *
+ * ------------------------------------------------------------ *
+ *  A masked 1px conic arc circling any host's border, for cards *
+ *  parked on a real pending decision (the Hyperliquid risk-setup *
+ *  proposal awaiting the user's confirm). Same motion law as the *
+ *  console ring: the loop is bound to a verifiable pending state, *
+ *  and the consumer DROPS the class on approve/dismiss. The host  *
+ *  must set its own border-radius (the ring inherits it) and be   *
+ *  a positioned/rounded box; no glass, no glow — the arc is a     *
+ *  clip-masked border band, not a shadow. Reduced motion collapses *
+ *  it to a static faint accent hairline. Token-only: the arc reads *
+ *  var(--vex-accent), so both themes recolor automatically.       *
+ * ============================================================ */
+@property --vex-ring-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.vex-ring-pending {
+  position: relative;
+}
+.vex-ring-pending::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    conic-gradient(
+      from var(--vex-ring-angle),
+      transparent 0deg,
+      transparent 205deg,
+      color-mix(in oklab, var(--vex-accent) 45%, transparent) 300deg,
+      var(--vex-accent) 342deg,
+      transparent 360deg
+    ),
+    linear-gradient(var(--vex-line), var(--vex-line));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: vex-ring-travel 7s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes vex-ring-travel {
+  to {
+    --vex-ring-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-ring-pending::before {
+    animation: none;
+    background: linear-gradient(
+      color-mix(in oklab, var(--vex-accent) 26%, transparent),
+      color-mix(in oklab, var(--vex-accent) 26%, transparent)
+    );
+  }
+}
+
+/* ── Hypervexing workspace cohesion (coordinator UI pass, 2026-07-12) ──────
+   The room reads as ONE poured surface: zones are luminance tiers on a single
+   floor, entrance is a quiet 5-zone stagger, and in-mode scrollbars thin out
+   so panel edges stay unbroken. CSS lives here (out of the component guard's
+   scan scope) so components stay token-only. */
+
+[data-vex-hypervexing-workspace] {
+  /* Raised-tier hover for the Earn cards; falls back to surface-2. */
+  --vex-surface-2-up: color-mix(in oklab, var(--vex-surface-2) 88%, var(--vex-accent) 12%);
+}
+
+/* One-shot zone entrance: top bar leads, dock lands last. Never loops. */
+[data-vex-hypervexing-workspace] > * {
+  animation: hv-zone-in 340ms var(--vex-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+[data-vex-hypervexing-workspace] > *:nth-child(1) { animation-delay: 40ms; }
+[data-vex-hypervexing-workspace] > *:nth-child(2) { animation-delay: 90ms; }
+[data-vex-hypervexing-workspace] > *:nth-child(3) { animation-delay: 140ms; }
+[data-vex-hypervexing-workspace] > *:nth-child(4) { animation-delay: 240ms; }
+[data-vex-hypervexing-workspace] > *:nth-child(5) { animation-delay: 190ms; }
+
+@keyframes hv-zone-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Thin, unobtrusive scrollbars inside the room only. */
+[data-vex-hypervexing-workspace] *::-webkit-scrollbar { width: 6px; height: 6px; }
+[data-vex-hypervexing-workspace] *::-webkit-scrollbar-track { background: transparent; }
+[data-vex-hypervexing-workspace] *::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--vex-accent) 18%, transparent);
+  border-radius: 999px;
+}
+[data-vex-hypervexing-workspace] *::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--vex-accent) 32%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-vex-hypervexing-workspace] > * {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+}
+
+/* ── HlLiquidVeil (design spec §13.8): the Hyperliquid brand liquid ─────────
+   Two blurred blobs drifting in opposite directions. Colors are HARDCODED to
+   the HL brand family (mint/teal from the hypervexing token set) on purpose:
+   the veil is the protocol's ink and must not retint with the shell theme. */
+.hv-liquid-blob {
+  position: absolute;
+  top: -35%;
+  height: 170%;
+  width: 46%;
+  border-radius: 999px;
+  filter: blur(26px);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+.hv-liquid-blob--a {
+  left: 0;
+  background: radial-gradient(closest-side, rgba(79, 209, 197, 0.16), transparent 72%);
+  animation: hv-liquid-drift-a 16s ease-in-out infinite;
+}
+.hv-liquid-blob--b {
+  left: 30%;
+  background: radial-gradient(closest-side, rgba(18, 75, 61, 0.34), transparent 74%);
+  animation: hv-liquid-drift-b 24s ease-in-out infinite;
+}
+@keyframes hv-liquid-drift-a {
+  0%, 100% { transform: translateX(-30%); }
+  50% { transform: translateX(160%); }
+}
+@keyframes hv-liquid-drift-b {
+  0%, 100% { transform: translateX(140%); }
+  50% { transform: translateX(-40%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hv-liquid-blob { animation: none; }
+}
+
+/* ── HypervexingSummon: the composer's summoning ritual ─────────────────────
+   Concentric pill-shaped waves ripple outward while the draft contains the
+   summoning word; the HL logomark surfaces above the pill edge. Brand mint on
+   purpose (protocol ink — does not retint with the shell theme). Border +
+   opacity only: no glow shadows, no blur. */
+.hv-summon-wash {
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  background: radial-gradient(120% 160% at 12% 50%, rgba(79, 209, 197, 0.09), transparent 60%);
+  animation: hv-summon-wash 2.4s ease-in-out infinite;
+}
+.hv-summon-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  border: 1px solid rgba(79, 209, 197, 0.45);
+  opacity: 0;
+  animation: hv-summon-ripple 2.1s ease-out infinite;
+}
+.hv-summon-ring--2 { animation-delay: 0.7s; border-color: rgba(79, 209, 197, 0.3); }
+.hv-summon-ring--3 { animation-delay: 1.4s; border-color: rgba(18, 75, 61, 0.6); }
+.hv-summon-mark {
+  position: absolute;
+  top: -13px;
+  left: 18px;
+  height: 24px;
+  width: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 209, 197, 0.5);
+  animation: hv-summon-mark 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes hv-summon-ripple {
+  0% { transform: scale(1); opacity: 0.55; }
+  70% { transform: scale(1.12); opacity: 0; }
+  100% { transform: scale(1.12); opacity: 0; }
+}
+@keyframes hv-summon-wash {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes hv-summon-mark {
+  from { transform: translateY(8px) scale(0.6); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hv-summon-ring { animation: none; opacity: 0.35; transform: none; }
+  .hv-summon-ring--2, .hv-summon-ring--3 { display: none; }
+  .hv-summon-wash { animation: none; opacity: 0.8; }
+  .hv-summon-mark { animation: none; }
+}
+
+/* The invocation text itself: while the summoning word is present, the whole
+   draft paints as a slow-drifting mint→teal gradient (Chromium honors
+   background-clip:text on textareas; the caret keeps its own color). */
+.hv-summon-input {
+  background-image: linear-gradient(
+    100deg,
+    #5fe3d6 0%,
+    #2ebd85 30%,
+    #124b3d 50%,
+    #2ebd85 70%,
+    #5fe3d6 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  caret-color: #4fd1c5;
+  animation: hv-summon-text-drift 3.2s linear infinite;
+}
+@keyframes hv-summon-text-drift {
+  from { background-position: 0% 0; }
+  to { background-position: 220% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hv-summon-input { animation: none; }
 }

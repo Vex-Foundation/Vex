@@ -50,6 +50,15 @@ export const missionListEntrySchema = z
   .min(1)
   .max(MISSION_DRAFT_LIST_ITEM_MAX);
 
+/** Renderer-safe mirror of the accepted mission-only HL risk envelope. */
+export const hyperliquidMissionRiskTransportSchema = z.object({
+  leverageCap: z.number().int().min(1),
+  perOrderNotionalPct: z.number().min(1).max(50),
+  totalNotionalPct: z.number().min(10).max(200),
+  marketAllowlist: z.array(z.string().trim().min(1).max(64)).min(1).max(100).optional(),
+}).strict();
+export type HyperliquidMissionRiskTransport = z.infer<typeof hyperliquidMissionRiskTransportSchema>;
+
 /**
  * Acceptance four-tuple as a single object. The mapper builds this
  * iff ALL four columns are non-null (mig 023 CHECK constraint), so
@@ -74,6 +83,8 @@ export const missionDraftDtoSchema = z
     title: z.string().max(MISSION_DRAFT_TITLE_MAX).nullable(),
     goal: z.string().max(MISSION_DRAFT_GOAL_MAX).nullable(),
     constraints: missionConstraintsSchema,
+    /** Optional accepted v2 overlay. Omitted for legacy v1 mission DTOs. */
+    hyperliquidRisk: hyperliquidMissionRiskTransportSchema.nullable().optional(),
     successCriteria: z.array(missionListEntrySchema).max(MISSION_DRAFT_LIST_MAX),
     stopConditions: z.array(missionListEntrySchema).max(MISSION_DRAFT_LIST_MAX),
     riskProfile: z.string().max(64).nullable(),

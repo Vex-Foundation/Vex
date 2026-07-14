@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makeTestContext } from "../_test-context.js";
+import { registerWakeWatchEvaluator } from "@vex-agent/engine/wake/watch-registry.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -39,6 +40,12 @@ const { handleLoopDefer } = await import(
 const { getOpenAITools, defaultVisibilityContext } = await import(
   "../../../../vex-agent/tools/registry.js"
 );
+
+registerWakeWatchEvaluator({
+  type: "test_wake",
+  validate: async (condition) => condition,
+  isTriggered: () => false,
+});
 
 // ── Fixtures ───────────────────────────────────────────────────
 
@@ -252,6 +259,39 @@ describe("loop_defer — happy path", () => {
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/pending wake already exists/i);
+  });
+
+  it("persists registered generic watch conditions in the same enqueue", async () => {
+    const result = await handleLoopDefer(
+      {
+        after_ms: 60_000,
+        reason: "wait for test condition",
+        watch: [{ type: "test_wake", key: "value" }],
+      },
+      ctxMissionActive(),
+    );
+
+    expect(result.success).toBe(true);
+    const [input] = mockEnqueue.mock.calls[0];
+    expect(input.payload).toMatchObject({
+      watchVersion: 1,
+      conditions: [{ type: "test_wake", key: "value" }],
+    });
+    expect(typeof input.payload.watchId).toBe("string");
+  });
+
+  it("rejects more than four generic watch conditions before enqueue", async () => {
+    const result = await handleLoopDefer(
+      {
+        after_ms: 60_000,
+        reason: "too many conditions",
+        watch: Array.from({ length: 5 }, () => ({ type: "test_wake" })),
+      },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/at most 4/i);
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });
 

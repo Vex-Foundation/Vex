@@ -307,7 +307,7 @@ describe("kyberswap handlers", () => {
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(20);
+    expect(data.length).toBe(21);
     expect(data[0].slug).toBeDefined();
     expect(data[0].chainId).toBeDefined();
     expect(data[0].aggregator).toBeDefined();

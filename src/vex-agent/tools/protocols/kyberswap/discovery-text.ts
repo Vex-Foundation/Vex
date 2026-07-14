@@ -20,6 +20,9 @@ export const KYBER_SWAP_CHAINS: readonly string[] = [
   "Arbitrum", "Polygon POS", "Matic", "Optimism", "Avalanche",
   "Base", "Linea", "Mantle", "Sonic", "Berachain", "Ronin",
   "Unichain", "HyperEVM", "Plasma", "Etherlink", "Monad", "MegaETH",
+  // Aggregator-only, provisional (see tools/kyberswap/chains.ts). Not in the
+  // limit-order or zap recall lists — 4663 supports neither.
+  "Robinhood", "Robinhood Chain",
 ];
 
 export const KYBER_LIMIT_ORDER_CHAINS: readonly string[] = [

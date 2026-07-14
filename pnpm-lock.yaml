@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@nktkas/hyperliquid':
+        specifier: 0.33.1
+        version: 0.33.1(typescript@5.9.3)
       '@openrouter/sdk':
         specifier: ^0.12.79
         version: 0.12.79
@@ -23,6 +26,9 @@ importers:
       bs58:
         specifier: ^6.0.0
         version: 6.0.0
+      decimal.js:
+        specifier: 10.6.0
+        version: 10.6.0
       ethers:
         specifier: ^6.13.1
         version: 6.16.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -287,6 +293,14 @@ packages:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
 
+  '@nktkas/hyperliquid@0.33.1':
+    resolution: {integrity: sha512-gyc+Mtm6zBOmEYhrBn79ZVU77zP4Q+c0nNO/Bc/hrTdtFh58msoMMawoiGVi95pJHzd2FIBaJSC4s9V2LeIUdg==}
+    engines: {node: '>=22.12.0'}
+
+  '@nktkas/rews@4.1.0':
+    resolution: {integrity: sha512-lPcTIPD2AE8JsJgnI+YGn9hzOhZHW3E0hrzDNUpyuVP5d1NERNz7EugR1IxW4Ly7QsM9/WmVeLif4olZsKVKjQ==}
+    engines: {node: '>=22.12.0'}
+
   '@noble/ciphers@1.3.0':
     resolution: {integrity: sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw==}
     engines: {node: ^14.21.3 || >=16}
@@ -309,6 +323,10 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@noble/hashes@2.2.0':
+    resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -977,6 +995,9 @@ packages:
     peerDependenciesMeta:
       supports-color:
         optional: true
+
+  decimal.js@10.6.0:
+    resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
   delay@5.0.0:
     resolution: {integrity: sha512-ReEBKkIfe4ya47wlPYf/gu5ib6yUG0/Aez0JQZQz94kiWtRQvZIQbTiehsnwHvLSWJnQdhVeqYue7Id1dKr0qw==}
@@ -1931,6 +1952,14 @@ packages:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
     hasBin: true
 
+  valibot@1.4.2:
+    resolution: {integrity: sha512-gjdCvJ6d3RyHAneqxMYMW9QMCwYMb3jpOO0IyHZV1bnRHFBHrX3VkIILt5XYR0WhwHiH7Mty8ovuPZ/O3gamrg==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
   viem@2.54.3:
     resolution: {integrity: sha512-hHXV/MLeGx+A/kHwEejf4TBSmpq2rtpxR3qMH21+BL62CQBLfCoMxQ0RV3V3QLQ1mKC/sAFEci1u83JEq1TQ6g==}
     peerDependencies:
@@ -2304,6 +2333,17 @@ snapshots:
       '@tybys/wasm-util': 0.10.1
     optional: true
 
+  '@nktkas/hyperliquid@0.33.1(typescript@5.9.3)':
+    dependencies:
+      '@nktkas/rews': 4.1.0
+      '@noble/hashes': 2.2.0
+      decimal.js: 10.6.0
+      valibot: 1.4.2(typescript@5.9.3)
+    transitivePeerDependencies:
+      - typescript
+
+  '@nktkas/rews@4.1.0': {}
+
   '@noble/ciphers@1.3.0': {}
 
   '@noble/curves@1.2.0':
@@ -2321,6 +2361,8 @@ snapshots:
   '@noble/hashes@1.3.2': {}
 
   '@noble/hashes@1.8.0': {}
+
+  '@noble/hashes@2.2.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -3022,6 +3064,8 @@ snapshots:
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
+
+  decimal.js@10.6.0: {}
 
   delay@5.0.0: {}
 
@@ -4063,6 +4107,10 @@ snapshots:
   uuid@11.1.0: {}
 
   uuid@8.3.2: {}
+
+  valibot@1.4.2(typescript@5.9.3):
+    optionalDependencies:
+      typescript: 5.9.3
 
   viem@2.54.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6):
     dependencies:

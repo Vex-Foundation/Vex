@@ -21,7 +21,7 @@ export function buildContextPressureBanner(
       return [
         `[ACTION REQUIRED: Context at ${pct}%.`,
         `Your next turn MUST call compact_now(conversation_summary, preserve_md, thread_themes_hints).`,
-        `Other mutating tools are disabled until compaction completes — only read_only and compact_only tools dispatch.`,
+        `Mutations are blocked until compaction completes. Compact first, then trust the current Tool Map for what remains callable.`,
         `]`,
       ].join(" ");
     case "critical":

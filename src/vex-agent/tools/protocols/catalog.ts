@@ -41,6 +41,10 @@ import { PENDLE_TOOLS } from "./pendle/manifest.js";
 import { PENDLE_HANDLERS } from "./pendle/handlers.js";
 import { POLYMARKET_TOOLS } from "./polymarket/manifest.js";
 import { POLYMARKET_HANDLERS } from "./polymarket/handlers.js";
+import { HYPERLIQUID_TOOLS } from "./hyperliquid/manifest.js";
+import { HYPERLIQUID_HANDLERS } from "./hyperliquid/handlers.js";
+import { HYPERLIQUID_MARKET_ANALYSIS_HANDLERS } from "./hyperliquid/market-analysis-handlers.js";
+import { isHlMutationAvailable } from "../../../lib/hyperliquid-policy.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -54,6 +58,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "dexscreener",
   "virtuals",
   "pendle",
+  "hyperliquid",
 ] as const;
 
 export const PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] =
@@ -88,6 +93,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "polymarket", manifests: POLYMARKET_TOOLS, handlers: POLYMARKET_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
+  { namespace: "hyperliquid", manifests: HYPERLIQUID_TOOLS, handlers: { ...HYPERLIQUID_HANDLERS, ...HYPERLIQUID_MARKET_ANALYSIS_HANDLERS } },
 ];
 
 // ── Indices (built eagerly at module load) ───────────────────────
@@ -129,6 +135,7 @@ for (const mod of NAMESPACE_MODULES) {
 export function isProtocolToolAvailable(manifest: ProtocolToolManifest): boolean {
   if (manifest.lifecycle !== "active") return false;
   if (manifest.requiresEnv && !process.env[manifest.requiresEnv]?.trim()) return false;
+  if (manifest.namespace === "hyperliquid" && manifest.mutating && !isHlMutationAvailable()) return false;
   return true;
 }
 
@@ -188,6 +195,7 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   uniswap: "mixed_trading",
   polymarket: "mixed_trading",
   pendle: "mixed_trading",
+  hyperliquid: "mixed_trading",
   khalani: "bridge",
   relay: "bridge",
   dexscreener: "non_portfolio",

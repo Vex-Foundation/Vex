@@ -44,6 +44,11 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { setupHyperliquidPositionsService } from "./market/hyperliquid-positions-service.js";
+import { setupHyperliquidLiveFeedService } from "./market/hyperliquid-live-feed-service.js";
+import { initializeHyperliquidPolicyProvider } from "./hyperliquid/policy-provider.js";
+import { initializeHyperliquidWorkspaceModeProvider } from "./hyperliquid/workspace-mode.js";
+import { loadHyperliquidReleaseConfig } from "./hyperliquid/release-config.js";
 import { lockSecretSession } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
@@ -143,7 +148,14 @@ async function initializeMainRuntime(): Promise<void> {
     : path.resolve(__dirname, "../../dist/renderer");
   installAppProtocolHandler(rendererRoot);
 
-  // 6. IPC surface
+  // 6. Hyperliquid policy must be registered before ANY IPC bridge or agent
+  // worker can dispatch a protocol tool. A missing acknowledgement / failed
+  // overlay hydration resolves unavailable and therefore fails closed.
+  loadHyperliquidReleaseConfig();
+  await initializeHyperliquidPolicyProvider();
+  initializeHyperliquidWorkspaceModeProvider();
+
+  // 7. IPC surface
   registerAllIpcHandlers();
 
   // 6-updater. User-triggered updater (M13): own the electron-updater event
@@ -222,6 +234,22 @@ async function initializeMainRuntime(): Promise<void> {
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {
     await stopMarketService();
+  });
+
+  // Hyperliquid position display push: public allMids plus reconciler-backed
+  // projection reads only. It idles without HL positions or resting orders.
+  const stopHyperliquidPositionsService = setupHyperliquidPositionsService();
+  globalCleanup.add(async () => {
+    await stopHyperliquidPositionsService();
+  });
+
+  // Hyperliquid live WebSocket feed: one shared SDK transport for the whole app.
+  // Session-gated watchLive/unwatchLive IPC refcount candle subscriptions and a
+  // filtered allMids stream; it idles (no transport) until the first watch. Read
+  // -only public market data — no DB, no signing, no engine coupling.
+  const hyperliquidLiveFeed = setupHyperliquidLiveFeedService();
+  globalCleanup.add(async () => {
+    await hyperliquidLiveFeed.stop();
   });
 
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight

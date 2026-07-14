@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   CONTRACT_HASH_VERSION,
+  LEGACY_CONTRACT_HASH_VERSION,
   buildContractMaterial,
   canonicalStringify,
   computeContractHash,
@@ -31,6 +32,36 @@ describe("contract-hash", () => {
   // ── computeContractHash ─────────────────────────────────────────
 
   describe("computeContractHash", () => {
+    it("pins legacy v1 material and hash byte-for-byte", () => {
+      const draft = makeDraft();
+      expect(buildContractMaterial(draft, LEGACY_CONTRACT_HASH_VERSION)).toEqual({
+        v: 1,
+        goal: "Accumulate 10 SOL",
+        capitalSource: "wallet",
+        startingCapital: "500 USDC",
+        riskProfile: "conservative",
+        deadline: "2026-04-04",
+        allowedWallets: ["solana"],
+        allowedChains: ["solana"],
+        allowedProtocols: ["jupiter"],
+        successCriteria: ["Accumulated 10 SOL"],
+        stopConditions: ["capital_depleted", "deadline_reached"],
+      });
+      expect(computeContractHash(draft, LEGACY_CONTRACT_HASH_VERSION)).toBe("5ab63e3ae4613916e47e2bc7f587304c9e7efa7441b4879793faafd2eac24244");
+    });
+
+    it("hashes typed v2 Hyperliquid risk and normalizes its market allowlist", () => {
+      const risk = { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100, marketAllowlist: ["eth", "BTC", "ETH"] };
+      const material = buildContractMaterial(makeDraft({ hyperliquidRisk: risk }));
+      expect(material.v).toBe(2);
+      expect("hyperliquidRisk" in material && material.hyperliquidRisk).toEqual({ ...risk, marketAllowlist: ["BTC", "ETH"] });
+      expect(computeContractHash(makeDraft({ hyperliquidRisk: risk }))).not.toBe(computeContractHash(makeDraft()));
+    });
+
+    it("rejects adding Hyperliquid risk to v1 material", () => {
+      expect(() => buildContractMaterial(makeDraft({ hyperliquidRisk: { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100 } }), LEGACY_CONTRACT_HASH_VERSION)).toThrow(/version 2/i);
+    });
+
     it("returns 64-char lowercase hex (sha256)", () => {
       const hash = computeContractHash(makeDraft());
       expect(hash).toMatch(SHA256_HEX);

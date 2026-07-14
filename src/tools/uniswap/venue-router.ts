@@ -9,10 +9,12 @@
  *
  * Policy (Wave 2, owner decision #2):
  *   - KyberSwap-supported EVM chains → [kyberswap (primary), uniswap (fallback)].
- *   - Robinhood Chain 4663 (no Kyber) → [uniswap] (the only venue).
+ *   - Robinhood Chain 4663 is now KyberSwap-aggregator-supported (provisional),
+ *     so it follows the same rule → [kyberswap (primary), uniswap (fallback)].
  *   - Any EVM chain Uniswap also covers gets uniswap as a fallback option.
  * Kyber stays primary wherever it is supported, so existing Kyber flows are
- * byte-identical; Uniswap is additive.
+ * byte-identical; Uniswap is additive. Priority is driven by the Kyber chain
+ * registry's `aggregator` flag — adding a chain there flips this policy for it.
  */
 
 import { resolveChainSlug, chainSupportsFeature } from "@tools/kyberswap/chains.js";

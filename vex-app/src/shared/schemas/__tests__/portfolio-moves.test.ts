@@ -49,6 +49,7 @@ describe("move item schema (tolerant)", () => {
       instrumentKey: "eth-usdc",
       chain: "ethereum",
       txRef: "0xabc123",
+      walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
       createdAt: ISO,
       ...overrides,
     };
@@ -122,6 +123,17 @@ describe("move item schema (tolerant)", () => {
     ).toBe(true);
   });
 
+  it("accepts a null walletAddress (tolerant)", () => {
+    expect(
+      moveItemSchema.safeParse(itemFixture({ walletAddress: null })).success,
+    ).toBe(true);
+  });
+
+  it("rejects a missing walletAddress (required, nullable)", () => {
+    const { walletAddress: _w, ...withoutWallet } = itemFixture();
+    expect(moveItemSchema.safeParse(withoutWallet).success).toBe(false);
+  });
+
   it("rejects a missing chain (NOT NULL in the DDL)", () => {
     const { chain: _chain, ...withoutChain } = itemFixture();
     expect(moveItemSchema.safeParse(withoutChain).success).toBe(false);
@@ -155,6 +167,7 @@ describe("moves dto schema (array + cap)", () => {
     instrumentKey: null,
     chain: "solana",
     txRef: null,
+    walletAddress: null,
     createdAt: ISO,
   };
 

@@ -125,6 +125,62 @@ export async function getByInstrumentKey(instrumentKey: string): Promise<Activit
   return rows.map(mapRow);
 }
 
+export interface HyperliquidPerpTarget {
+  readonly walletAddress: string;
+  readonly positionKey: string;
+  readonly instrumentKey: string | null;
+  readonly captureStatus: string;
+}
+
+/** Latest tracked HL positions/resting entries that may still be live. */
+export async function getActiveHyperliquidPerpTargets(): Promise<HyperliquidPerpTarget[]> {
+  const rows = await query<{
+    wallet_address: string;
+    position_key: string;
+    instrument_key: string | null;
+    capture_status: string;
+  }>(
+    `WITH latest AS (
+       SELECT DISTINCT ON (position_key) position_key, wallet_address, instrument_key, capture_status
+       FROM proj_activity
+       WHERE namespace = 'hyperliquid'
+         AND product_type = 'perps'
+         AND position_key IS NOT NULL
+         AND wallet_address IS NOT NULL
+       ORDER BY position_key, created_at DESC, id DESC
+     )
+     SELECT wallet_address, position_key, instrument_key, capture_status
+     FROM latest
+     WHERE capture_status IN ('open', 'pending', 'executed')`,
+  );
+  return rows.map((row) => ({
+    walletAddress: row.wallet_address,
+    positionKey: row.position_key,
+    instrumentKey: row.instrument_key,
+    captureStatus: row.capture_status,
+  }));
+}
+
+/** Wallet-only projection used by the websocket lifecycle. */
+export async function getActiveHyperliquidPerpWallets(): Promise<string[]> {
+  return [...new Set((await getActiveHyperliquidPerpTargets()).map((target) => target.walletAddress))];
+}
+
+/** Last session that established a tracked position, used only for a safe wake/notice. */
+export async function getLatestSessionIdForPosition(positionKey: string): Promise<string | null> {
+  const row = await queryOne<{ session_id: string | null }>(
+    `SELECT execution.session_id
+     FROM proj_activity AS activity
+     JOIN protocol_executions AS execution ON execution.id = activity.execution_id
+     WHERE activity.position_key = $1
+       AND execution.session_id IS NOT NULL
+     ORDER BY activity.created_at DESC, activity.id DESC
+     LIMIT 1`,
+    [positionKey],
+  );
+  return row?.session_id ?? null;
+}
+
 /**
  * Distinct hex EVM token addresses this wallet has traded on a given chain —
  * the "tracked tokens" the direct-RPC balance sync scans in addition to the

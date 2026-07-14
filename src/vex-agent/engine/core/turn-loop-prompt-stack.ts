@@ -31,6 +31,7 @@ import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
+import { buildHypervexingTurnStatePrompt } from "../prompts/protocols.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
 import { buildMemorySection } from "../prompts/memory-section.js";
 import { getTurnContext } from "@vex-agent/memory/turn-context.js";
@@ -144,6 +145,7 @@ export async function buildTurnPromptStack(args: {
   // band + memory signal. Constructing it once is the single-source-of-truth
   // guarantee: catalog and tools array cannot drift.
   const base: ToolVisibilityBase = args.baseVisibility ?? {
+    sessionId: args.context.sessionId,
     permission: args.context.sessionPermission,
     role: args.context.isSubagent ? "subagent" : "parent",
     sessionKind: args.context.sessionKind,
@@ -160,6 +162,16 @@ export async function buildTurnPromptStack(args: {
   // unconditional, so the two cannot drift (no stale defaultTools path).
   const tools = toToolDefinitions(getOpenAITools(visibilityCtx));
   promptOptions.toolCatalogPrompt = buildToolCatalogPrompt(visibilityCtx);
+  promptOptions.hypervexingTurnStatePrompt = buildHypervexingTurnStatePrompt(
+    visibilityCtx,
+    {
+      sessionId: args.context.sessionId,
+      missionId: args.context.missionId,
+      ...(args.context.selectedEvmWallet === null
+        ? {}
+        : { walletAddress: args.context.selectedEvmWallet.address }),
+    },
+  );
 
   return {
     promptOptions,

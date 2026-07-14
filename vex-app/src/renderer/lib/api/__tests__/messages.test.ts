@@ -185,6 +185,7 @@ function msg(id: number): SessionMessageDto {
     toolCallId: null,
     toolName: null,
     toolCalls: null,
+    explorerRefs: null,
   };
 }
 

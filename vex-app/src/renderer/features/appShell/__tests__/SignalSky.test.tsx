@@ -155,10 +155,19 @@ describe("SignalSky", () => {
     expect(view.container.querySelector("[data-vex-sky-fallback]")).toBeNull();
 
     // FULL STOP: one frame, at the default (full) intensity, time 0, and the
-    // default (vex/cobalt) accent pair fed to the u_deep/u_bright uniforms.
+    // default (vex/cobalt) 4-band palette fed to the u_ink/u_soft/u_deep/
+    // u_bright uniforms.
     expect(gl.drawArrays).toHaveBeenCalledTimes(1);
     expect(gl.uniform1f.mock.calls).toContainEqual(["u_intensity", 1]);
     expect(gl.uniform1f.mock.calls).toContainEqual(["u_time", 0]);
+    expect(gl.uniform3f.mock.calls).toContainEqual([
+      "u_ink",
+      ...SKY_ACCENTS.vex.ink,
+    ]);
+    expect(gl.uniform3f.mock.calls).toContainEqual([
+      "u_soft",
+      ...SKY_ACCENTS.vex.soft,
+    ]);
     expect(gl.uniform3f.mock.calls).toContainEqual([
       "u_deep",
       ...SKY_ACCENTS.vex.deep,
@@ -244,26 +253,24 @@ describe("signalSkyShaders", () => {
     expect(SKY_FRAGMENT_SHADER).toContain("uniform float u_intensity");
     expect(SKY_FRAGMENT_SHADER).not.toContain("u_scroll");
 
-    // The two SURFACE bands stay baked consts (both themes share the ink
-    // canvas), converted from the JS hex constants.
+    // ALL FOUR posterization bands are now theme-driven uniforms, not baked
+    // consts — Hypervexing re-inks the surface bands (bottle-green), so ink/
+    // soft were promoted alongside deep/bright. vex/robinhood feed the same
+    // navy surface values they baked before, so the change is behavior-
+    // preserving for those themes.
     expect(SKY_FRAGMENT_SHADER).toContain(
-      `const vec3 INK=${hexToGlslVec3(SKY_INK_HEX)};`,
+      "uniform vec3 u_ink; uniform vec3 u_soft; uniform vec3 u_deep; uniform vec3 u_bright;",
     );
-    expect(SKY_FRAGMENT_SHADER).toContain(
-      `const vec3 SOFT=${hexToGlslVec3(SKY_SOFT_HEX)};`,
-    );
-    // The two ACCENT bands are now theme-driven uniforms, not baked consts.
-    expect(SKY_FRAGMENT_SHADER).toContain(
-      "uniform vec3 u_deep; uniform vec3 u_bright;",
-    );
+    expect(SKY_FRAGMENT_SHADER).not.toContain("const vec3 INK");
+    expect(SKY_FRAGMENT_SHADER).not.toContain("const vec3 SOFT");
     expect(SKY_FRAGMENT_SHADER).not.toContain("const vec3 DEEP");
     expect(SKY_FRAGMENT_SHADER).not.toContain("const vec3 BRIGHT");
 
     // Threshold mapping mirrored from the landing: base <0.46, soft <0.72,
-    // deep-accent <0.92, else the bright signal fleck (both accent bands now
+    // deep-accent <0.92, else the bright signal fleck (all four bands now
     // resolve from the uniforms).
     expect(SKY_FRAGMENT_SHADER).toContain(
-      "if(dv<0.46)col=INK; else if(dv<0.72)col=SOFT; else if(dv<0.92)col=u_deep; else col=u_bright;",
+      "if(dv<0.46)col=u_ink; else if(dv<0.72)col=u_soft; else if(dv<0.92)col=u_deep; else col=u_bright;",
     );
 
     expect(SKY_VERTEX_SHADER).toContain("gl_Position");
@@ -276,7 +283,7 @@ describe("signalSkyShaders", () => {
     expect(() => hexToGlslVec3("#fff")).toThrow(/expected #rrggbb/);
   });
 
-  it("exposes per-theme accent triplets for the u_deep/u_bright uniforms", () => {
+  it("exposes per-theme 4-band palettes for the u_ink/u_soft/u_deep/u_bright uniforms", () => {
     // 0..1 RGB triplet form (what uniform3f wants), not the GLSL string form.
     expect(hexToRgbTriplet("#ccff00")).toEqual([204 / 255, 1, 0]);
     expect(() => hexToRgbTriplet("ccff00")).toThrow(/expected #rrggbb/);
@@ -285,5 +292,33 @@ describe("signalSkyShaders", () => {
       hexToRgbTriplet(SKY_ROBINHOOD_BRIGHT_HEX),
     );
     expect(SKY_ACCENTS.vex.bright).toEqual(hexToRgbTriplet(SKY_BRIGHT_HEX));
+    // vex + robinhood share the navy surface pair (ink/soft) — byte-identical
+    // to the values baked before the uniform promotion (behavior-preserving).
+    expect(SKY_ACCENTS.vex.ink).toEqual(hexToRgbTriplet(SKY_INK_HEX));
+    expect(SKY_ACCENTS.vex.soft).toEqual(hexToRgbTriplet(SKY_SOFT_HEX));
+    expect(SKY_ACCENTS.robinhood.ink).toEqual(hexToRgbTriplet(SKY_INK_HEX));
+    expect(SKY_ACCENTS.robinhood.soft).toEqual(hexToRgbTriplet(SKY_SOFT_HEX));
+  });
+
+  it("every SkyTheme has a complete 4-band palette (SignalSky indexes by theme and would crash on a gap)", () => {
+    for (const palette of Object.values(SKY_ACCENTS)) {
+      for (const band of [palette.ink, palette.soft, palette.deep, palette.bright]) {
+        expect(band).toHaveLength(3);
+        for (const channel of band) {
+          expect(channel).toBeGreaterThanOrEqual(0);
+          expect(channel).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+    // The Hypervexing entry MUST exist before the theme value can occur — the
+    // sky indexes accents by theme, so a missing entry is a runtime crash.
+    // Ink-first re-ink (2026-07-13): the bright fleck band is the venue
+    // turquoise #4FD1C5, not the retired pastel mint.
+    expect(SKY_ACCENTS.hypervexing.bright).toEqual([79 / 255, 209 / 255, 197 / 255]);
+    expect(Object.keys(SKY_ACCENTS).sort()).toEqual([
+      "hypervexing",
+      "robinhood",
+      "vex",
+    ]);
   });
 });

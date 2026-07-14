@@ -14,6 +14,10 @@ import {
   MUTATING_PROTOCOL_ALIAS_ROUTERS,
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
+import {
+  HYPERVEXING_ALIAS_TARGETS,
+  isHypervexingProtocolAlias,
+} from "../hypervexing-aliases.js";
 
 /**
  * Phase 4d: does this dispatch run an IRREVERSIBLE (mutating) tool? For
@@ -48,6 +52,14 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
       // alias's registry classification (mutating) so the stamp is conservative.
       return isMutatingTool(call.name);
     }
+  }
+  if (isHypervexingProtocolAlias(call.name)) {
+    // Do not resolve here: this predicate runs before route selection solely
+    // to decide whether a mission needs an irreversible-operation stamp. The
+    // real alias resolver owns the loud missing-target invariant at the
+    // execution boundary. Keeping this lookup passive also lets dispatcher
+    // tests use intentionally partial manifest catalogs.
+    return getProtocolManifest(HYPERVEXING_ALIAS_TARGETS[call.name])?.mutating === true;
   }
   return isMutatingTool(call.name);
 }

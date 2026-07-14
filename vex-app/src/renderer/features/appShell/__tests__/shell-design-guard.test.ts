@@ -134,6 +134,19 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur over the Signal Sky WebGL canvas, like the two rails. " +
       "Glass is allowed on the two side rails AND this composer — nowhere else.",
   },
+  {
+    // Owner-decreed FOURTH sanctioned glass family (Hypervexing v2 redesign,
+    // 2026-07-12: "glass soft jedność" — the trading room must read as one
+    // liquid surface with the Signal Sky showing through the grid gaps).
+    // Deliberately scoped to the SINGLE HvZone wrapper: every workspace zone
+    // composes it, and no other workspace file may carry backdrop-blur.
+    file: "features/appShell/workspace/HvZone.tsx",
+    pattern: "backdrop-blur (glass)",
+    reason:
+      "Owner-sanctioned Hypervexing glass: all workspace grid zones wear " +
+      "translucent ink (--vex-glass) with backdrop-blur over the Signal Sky " +
+      "via this one wrapper. The normal shell's glass law is unchanged.",
+  },
 ];
 
 interface Violation {

@@ -120,6 +120,12 @@ export async function applyMissionPatch(
         }
 
         await missionsRepo.updateDraft(missionId, rowPatch, client);
+        // Any mission-contract field mutation invalidates prior acceptance.
+        // This is essential for the v1→v2 Hyperliquid-risk transition: a
+        // legacy accepted hash can never coexist with new risk material.
+        if (locked.acceptedContractHash !== null) {
+          await missionsRepo.clearAcceptance(client, missionId);
+        }
       });
     }
   }

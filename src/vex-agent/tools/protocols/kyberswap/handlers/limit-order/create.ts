@@ -4,6 +4,7 @@
 
 import { getKyberLimitOrderClient } from "@tools/kyberswap/limit-order/client.js";
 import { signEip712Message } from "@tools/kyberswap/limit-order/signing.js";
+import { verifyCreateOrderSignMessage } from "@tools/kyberswap/limit-order/sign-message-verification.js";
 import { resolveTokenMetadataStrict, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
@@ -60,6 +61,19 @@ export const limitOrderCreate: ProtocolHandler = async (p, ctx) => {
     return walletScopeErrorToResult(err);
   }
   if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
+
+  // Cross-check the returned EIP-712 message against the locally computed order
+  // BEFORE signing — the API response is untrusted, and blind-signing a tampered
+  // verifyingContract / amount / asset is a direct theft vector. Fail closed.
+  verifyCreateOrderSignMessage(eip712, {
+    chainId,
+    maker,
+    makerAsset: makerToken.address,
+    takerAsset: takerToken.address,
+    makingAmount,
+    takingAmount,
+    expiredAt,
+  });
 
   // Sign
   const signature = await signEip712Message(signer.privateKey, eip712);

@@ -4,12 +4,20 @@
  *
  * These gate the SHAPE of zap route/build responses at the HTTP boundary before
  * the values feed transaction signing (`data.callData` + `data.routerAddress`
- * become the EVM zap transaction). The two validators are MIXED:
+ * become the EVM zap transaction). Both validators are MIXED:
  *
- *   - `validateZapRouteResponse` is LENIENT-DEFAULTING: a non-record root throws
- *     the plain `Error("Expected ZaaS route response object")`; every field then
- *     defaults (number→0, string→undefined/raw, sub-records→undefined) and never
- *     rejects.
+ *   - `validateZapRouteResponse` is MIXED: a non-record root throws the plain
+ *     `Error("Expected ZaaS route response object")`; `data.route` and
+ *     `data.routerAddress` are STRICT required non-empty strings (Etap 4 —
+ *     they feed transaction signing: `data.route` is the encoded route replayed
+ *     into `route/build`, and `data.routerAddress` is the approval/tx target, so
+ *     a missing/blank value must fail closed rather than silently default to
+ *     `undefined` and mask shape drift). They throw
+ *     `VexError(KYBER_API_ERROR, "Invalid KyberSwap ZaaS response: missing …")`,
+ *     identical to the build validator's callData/routerAddress checks. The
+ *     handler guards (`if (!routeResp.data.route || !routeResp.data.routerAddress)`)
+ *     remain as defense-in-depth. Every OTHER field stays lenient-defaulting
+ *     (number→0, string→undefined/raw, sub-records→undefined).
  *   - `validateZapBuildResponse` is MIXED: a non-record root throws the same
  *     plain `Error`, `data.callData`/`data.routerAddress` are STRICT and throw
  *     `VexError(KYBER_API_ERROR, "Invalid KyberSwap ZaaS response: missing …")`
@@ -131,8 +139,10 @@ const positionDetailsSchema: z.ZodType<ZapRouteResponse["data"]["positionDetails
 
 /**
  * `data` block. Built from `isRecord(raw.data) ? raw.data : {}` (a non-record
- * `data` collapses to an empty object → every field defaults). All fields are
- * lenient; none rejects.
+ * `data` collapses to an empty object → so a non-record/absent `data` fails the
+ * strict `route`/`routerAddress` checks below with the same `missing data.route`
+ * VexError). Every field is lenient EXCEPT `route`/`routerAddress`, which are
+ * STRICT required non-empty strings (Etap 4).
  */
 const routeDataSchema: z.ZodType<ZapRouteResponse["data"]> = z
   .preprocess(
@@ -153,14 +163,18 @@ const routeDataSchema: z.ZodType<ZapRouteResponse["data"]> = z
             ? (v as unknown as ZapRouteResponse["data"]["zapDetails"])
             : undefined,
         ),
-      route: strOrUndefined,
-      // `typeof === "string" ? … as Address : undefined` (no extra runtime check
-      // in the original beyond the string guard).
+      // Etap 4: STRICT required non-empty string (feeds route/build + signing).
+      // Throws VexError(KYBER_API_ERROR, "missing data.route") via `asString`,
+      // exactly like the build validator's strict fields — a blank/missing route
+      // must fail closed, not default to undefined.
+      route: z.unknown().transform((v) => asString(v, "data.route")),
+      // Etap 4: STRICT required non-empty string — the approval / tx target.
+      // Keeps the same `as Address` cast as before (the checksum is verified
+      // later by `verifyRouterAddress`); only the string guard becomes
+      // fail-closed instead of defaulting to undefined.
       routerAddress: z
         .unknown()
-        .transform((v) =>
-          typeof v === "string" ? (v as ZapRouteResponse["data"]["routerAddress"]) : undefined,
-        ),
+        .transform((v) => asString(v, "data.routerAddress") as ZapRouteResponse["data"]["routerAddress"]),
       poolDetails: poolDetailsSchema,
       positionDetails: positionDetailsSchema,
       gas: strOrUndefined,
@@ -182,9 +196,10 @@ export function validateZapRouteResponse(raw: unknown): ZapRouteResponse {
   if (!isRecordValue(raw)) {
     throw new Error("Expected ZaaS route response object");
   }
-  // The schema never rejects a record root (all fields default), so safeParse
-  // here always succeeds; parse() keeps the typed return without a needless
-  // success branch.
+  // Etap 4: the schema now REJECTS a record root whose `data.route` or
+  // `data.routerAddress` is missing/blank — the strict transforms throw a
+  // VexError(KYBER_API_ERROR) that `parse()` propagates verbatim (Zod does not
+  // wrap thrown transform errors). Every other field still defaults.
   return zapRouteEnvelopeSchema.parse(raw);
 }
 

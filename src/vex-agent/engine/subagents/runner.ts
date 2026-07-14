@@ -124,6 +124,7 @@ export async function runSubagentEngine(
   // tools array AND the Tool Map from the single resulting context, so the
   // catalog and the visible tool set cannot drift (PR3 contract).
   const baseVisibility: ToolVisibilityBase = {
+    sessionId,
     permission: effectivePermission,
     role: "subagent",
     sessionKind: "agent", // subagents run in isolated agent-like sessions

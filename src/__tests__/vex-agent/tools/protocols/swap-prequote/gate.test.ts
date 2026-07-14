@@ -800,4 +800,58 @@ describe("evaluateSwapPrequoteGate", () => {
     expect(added.gateHash).not.toBe(recordedHash);
     expect(added.decision.kind).toBe("block");
   });
+
+  // ── Etap 1: kyberswap quote→BUY slippage alignment (end-to-end) ─────────
+  //
+  // The production bug: kyberswap.swap.quote could not carry slippageBps, so a
+  // recorded quote hashed slippage="" while kyberswap.swap.buy carrying
+  // slippageBps:50 hashed "50" → permanent no_quote loop. These drive the REAL
+  // recorder from a kyberswap.swap.quote AND the REAL gate for a
+  // kyberswap.swap.buy execute (the buy tool the plan names), proving the fixed
+  // flow: quote(50) authorizes buy(50); a quote-omitted slippage still
+  // (correctly) diverges from a buy(50).
+
+  const KYBER_QUOTE_PARAMS = {
+    chain: "base",
+    tokenIn: GATE_TOKEN_IN,
+    tokenOut: GATE_TOKEN_OUT,
+    amountIn: "1",
+  };
+
+  async function recordKyberQuote(quoteParams: Record<string, unknown>): Promise<string> {
+    resetMocks();
+    await mod.recordPrequoteFromQuote(
+      "kyberswap.swap.quote",
+      quoteParams,
+      evmResult({ isHoneypot: false, isFOT: false, tax: 0 }, { isHoneypot: false, isFOT: false, tax: 0 }),
+      ctx(),
+    );
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    return (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
+  }
+
+  async function gateBuy(
+    executeParams: Record<string, unknown>,
+    recordedHash: string,
+  ): Promise<Awaited<ReturnType<typeof mod.evaluatePrequoteGate>>> {
+    resetMocks();
+    mockExistsFail.mockResolvedValue(false);
+    mockFindLatest.mockImplementation(async (_s, h) =>
+      h === recordedHash ? prequoteRow("pass", { matchHash: h }) : null,
+    );
+    return mod.evaluatePrequoteGate("kyberswap.swap.buy", executeParams, ctx());
+  }
+
+  it("(a) quote WITH slippageBps:50 authorizes a kyberswap.swap.buy WITH slippageBps:50 → allow", async () => {
+    const recordedHash = await recordKyberQuote({ ...KYBER_QUOTE_PARAMS, slippageBps: 50 });
+    const d = await gateBuy({ ...KYBER_QUOTE_PARAMS, slippageBps: 50 }, recordedHash);
+    expect(d.kind).toBe("allow");
+  });
+
+  it("(b) quote WITHOUT slippageBps does NOT authorize a kyberswap.swap.buy WITH slippageBps:50 → block(no_quote)", async () => {
+    const recordedHash = await recordKyberQuote({ ...KYBER_QUOTE_PARAMS });
+    const d = await gateBuy({ ...KYBER_QUOTE_PARAMS, slippageBps: 50 }, recordedHash);
+    expect(d.kind).toBe("block");
+    if (d.kind === "block") expect(d.reason).toBe("no_quote");
+  });
 });

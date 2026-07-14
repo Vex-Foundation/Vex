@@ -48,6 +48,7 @@ import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 
 import {
   CONTRACT_HASH_VERSION,
+  LEGACY_CONTRACT_HASH_VERSION,
   computeContractHash,
 } from "./contract-hash.js";
 import { missionToDraft } from "./mapper.js";
@@ -120,13 +121,14 @@ export async function commitMissionStart(
     if (
       mission.acceptedContractHash === null
       || mission.contractHashVersion === null
-      || mission.contractHashVersion !== CONTRACT_HASH_VERSION
+      || (mission.contractHashVersion !== LEGACY_CONTRACT_HASH_VERSION
+        && mission.contractHashVersion !== CONTRACT_HASH_VERSION)
     ) {
       return { outcome: "not_accepted", missionId: mission.id };
     }
 
     // 3. recompute canonical hash on the locked draft
-    const currentHash = computeContractHash(missionToDraft(mission));
+    const currentHash = computeContractHash(missionToDraft(mission), mission.contractHashVersion);
     if (currentHash !== mission.acceptedContractHash) {
       return {
         outcome: "stale_acceptance",

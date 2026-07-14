@@ -47,6 +47,7 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import { computeBand } from "./context-band.js";
+import { deriveExplorerRefs, type ExplorerRef } from "./explorer-refs.js";
 import type { BatchTurnResult, StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 import { buildToolContext } from "./turn-loop-tool-batch/execute.js";
 import {
@@ -77,6 +78,7 @@ export async function processTurnToolBatch(args: {
     toolName: string;
     output: string;
     success: boolean;
+    explorerRefs: readonly ExplorerRef[];
   }> = [];
 
   let toolCallsExecuted = 0;
@@ -131,6 +133,9 @@ export async function processTurnToolBatch(args: {
       toolName: toolCall.name,
       output: result.output,
       success: result.success,
+      // Derive explorer refs from `result.data` HERE — the transcript drops
+      // `data`, so this is the last place the structured capture is available.
+      explorerRefs: deriveExplorerRefs(result.data),
     });
 
     // ── Engine signals: result tracked, then stop ──
@@ -190,6 +195,7 @@ export async function processTurnToolBatch(args: {
             toolName: skipped.name,
             output: BATCH_ABORTED_BY_COMPACT_OUTPUT,
             success: false,
+            explorerRefs: [],
           });
         }
         break;

@@ -81,7 +81,7 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   unresolved_token:
     "Swap blocked: unresolved execute token — pass the exact token address the quote returned, then retry.",
   no_quote:
-    "Swap blocked: no fresh quote for these exact params. Call the swap quote first, then retry.",
+    "Swap blocked: no fresh quote for these exact params — the execute must use EXACTLY the same params as the quote, including slippageBps (same value, or omitted on both sides). Call the swap quote first with those params, then retry.",
   safety_fail:
     "Swap blocked: the quoted token was flagged unsafe (honeypot/scam). Aborting.",
   wallet_setup:
@@ -338,6 +338,13 @@ function maxFotTaxFromSafetyDetail(safetyDetail: Record<string, unknown>): numbe
  * `p.approveExact === true`); the Solana builder pins self/false (Jupiter has no
  * such params). `slippageBps` is bound separately in `computeGateMatch` (read
  * uniformly from the execute params for both families, matching the recorder).
+ *
+ * Etap 4: `approveExact` was REMOVED from the kyberswap swap/zap manifests
+ * (approvals are now always exact — see `ensureKyberAllowance`), so the
+ * dispatcher rejects it as an unknown param before this gate ever runs. The
+ * field is kept in the identity (constant `false` in practice) to keep old
+ * match-hashes stable and to document the doctrine; do NOT rely on it as a live
+ * execute knob for kyberswap.
  */
 interface GateIdentity {
   readonly family: PrequoteFamily;
@@ -371,9 +378,12 @@ function evmLegIdentity(param: string): string {
  *
  * Stage 9: `recipient` mirrors `executeKyberSwap` — `str(p,"recipient")` if a
  * non-empty string, else the selected wallet (self). `approveExact` mirrors
- * `p.approveExact === true`. Both flow into the swap hash, so an execute that
- * redirects the output or flips the allowance behavior produces a different
- * digest than the quote (which defaulted self/false) → the gate blocks.
+ * `p.approveExact === true`; since Etap 4 removed it from the kyberswap manifests
+ * the dispatcher rejects it upstream, so `params.approveExact` is undefined here
+ * and this resolves to constant `false` for kyberswap (recorder pins `false`
+ * too → they still collide). `recipient` still flows into the swap hash, so an
+ * execute that redirects the output produces a different digest than the quote
+ * (which defaulted self) → the gate blocks.
  */
 function buildEvmIdentity(
   params: Record<string, unknown>,

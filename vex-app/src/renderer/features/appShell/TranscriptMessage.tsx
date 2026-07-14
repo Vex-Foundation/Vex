@@ -23,6 +23,7 @@ import { cn } from "../../lib/utils.js";
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
+import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
 import { ToolDisclosure } from "./ToolDisclosure.js";
 import type {
@@ -160,12 +161,16 @@ export function TranscriptMessage({
         // Acts hang in the same 28px gutter as the assistant rows so their box
         // sits right of the tape spine instead of overlapping it.
         return (
-          <div data-vex-message-role="tool" className="pl-7">
+          <div data-vex-message-role="tool" className="flex flex-col gap-1 pl-7">
             <ToolDisclosure
               label={row.label ?? "tool_output"}
               body={row.content}
               emptyHint="(no output)"
             />
+            {/* Orphan result (call scrolled out of the page): its validated
+                explorer refs still surface here — grouped/paired acts get theirs
+                via ToolActRow instead. Inert when nothing resolves. */}
+            <ExplorerRefLinks refs={row.explorerRefs} />
           </div>
         );
       }
@@ -227,7 +232,11 @@ export function TranscriptMessage({
  */
 function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
   if (row.toolActs !== undefined) return row.toolActs;
-  return (row.toolCalls ?? []).map((call) => ({ ...call, output: null }));
+  return (row.toolCalls ?? []).map((call) => ({
+    ...call,
+    output: null,
+    toolDisplayBlock: null,
+  }));
 }
 
 /**

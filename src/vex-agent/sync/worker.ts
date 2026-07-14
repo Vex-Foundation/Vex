@@ -107,6 +107,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const settlementResult = await reconcilePredictionSettlements();
         result = { ...settlementResult };
         rowsAffected = settlementResult.closed;
+      } else if (syncType === "hyperliquid_reconcile") {
+        const { reconcileHyperliquid } = await import("./hyperliquid-reconciler.js");
+        const reconcileResult = await reconcileHyperliquid();
+        result = { ...reconcileResult };
+        rowsAffected = reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled;
       } else {
         result = { skipped: true, reason: `Unknown sync type: ${syncType}` };
         logger.warn("sync.worker.unknown_type", { syncType, runCount: runs.length });
@@ -181,6 +186,14 @@ export async function processNextRun(): Promise<boolean> {
       const { reconcilePredictionSettlements } = await import("./prediction-settlement-sync.js");
       const settlementResult = await reconcilePredictionSettlements();
       await syncRepo.completeRun(run.id, { ...settlementResult }, settlementResult.closed);
+    } else if (job.syncType === "hyperliquid_reconcile") {
+      const { reconcileHyperliquid } = await import("./hyperliquid-reconciler.js");
+      const reconcileResult = await reconcileHyperliquid();
+      await syncRepo.completeRun(
+        run.id,
+        { ...reconcileResult },
+        reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled,
+      );
     } else {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }

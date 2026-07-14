@@ -10,7 +10,7 @@ import { fetchWithTimeout, readJson } from "../../../utils/http.js";
 import { isRecord } from "../../../utils/validation-helpers.js";
 import { mapKyberTransportError } from "../errors.js";
 import { mapLimitOrderError } from "./errors.js";
-import { LIMIT_ORDER_TIMEOUT_MS } from "../constants.js";
+import { KYBER_CLIENT_ID, LIMIT_ORDER_TIMEOUT_MS } from "../constants.js";
 import { validateOrdersResponse, validateOperatorSignature, validateEncodedCalldata, validateTradingPairsResponse } from "./validation.js";
 import logger from "../../../utils/logger.js";
 import type { VexError } from "../../../errors.js";
@@ -41,7 +41,10 @@ export class KyberLimitOrderTakerClient {
 
       const response = await fetchWithTimeout(url, {
         method,
-        headers: options.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+        headers: {
+          "X-Client-Id": KYBER_CLIENT_ID,
+          ...(options.body !== undefined ? { "Content-Type": "application/json" } : undefined),
+        },
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
         timeoutMs: this.timeoutMs,
       });

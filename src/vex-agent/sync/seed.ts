@@ -15,6 +15,10 @@ const SYNC_JOBS = [
   // Prediction settlement reconciliation — every 5 minutes
   { namespace: "_global", syncType: "prediction_settlement", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
+  // Hyperliquid is off-chain state. The reconciler short-circuits before any
+  // venue request when no tracked position or resting entry exists.
+  { namespace: "_global", syncType: "hyperliquid_reconcile", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
@@ -25,6 +29,7 @@ const SYNC_JOBS = [
   // it (enrich/seed) so PT balances appear immediately instead of at the next
   // periodic _global cycle.
   { namespace: "pendle", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
+  { namespace: "hyperliquid", syncType: "hyperliquid_reconcile", readToolId: null, strategy: "post_mutation", intervalSeconds: null },
 ];
 
 /**

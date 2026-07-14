@@ -14,7 +14,13 @@ import {
   sendKyberTransaction,
   verifyRouterAddress,
 } from "@tools/kyberswap/evm-utils.js";
-import { META_AGGREGATION_ROUTER_V2, NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
+import {
+  META_AGGREGATION_ROUTER_V2,
+  NATIVE_TOKEN_ADDRESS,
+  KYBERSWAP_FEE_BPS,
+  KYBERSWAP_FEE_CHARGE_BY,
+  KYBERSWAP_FEE_RECEIVER,
+} from "@tools/kyberswap/constants.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { resolveTokenMetadataStrict, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
 import { formatRouteSummary } from "../helpers.js";
@@ -116,6 +122,21 @@ async function resolveQuoteSafetyLeg(
   }
 }
 
+/**
+ * Vex integrator fee fields for GET /routes. Sourced ONLY from the
+ * product-owner-reviewed venue constants (never from tool/model params) and
+ * spread IDENTICALLY into the quote and the execute re-quote, so the route the
+ * user was shown and the route that broadcasts carry the same fee line. Kyber
+ * echoes these back inside `routeSummary.extraFee`, which POST /route/build
+ * consumes verbatim — we never mutate the summary.
+ */
+const VEX_INTEGRATOR_FEE_ROUTE_PARAMS = {
+  feeAmount: String(KYBERSWAP_FEE_BPS),
+  isInBps: true,
+  chargeFeeBy: KYBERSWAP_FEE_CHARGE_BY,
+  feeReceiver: KYBERSWAP_FEE_RECEIVER,
+} as const;
+
 // ── Shared swap execution (sell + buy use same routing, differ in trade_side) ──
 
 async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell", context: ProtocolExecutionContext): Promise<ToolResult> {
@@ -162,6 +183,7 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     tokenIn: tokenIn.address,
     tokenOut: tokenOut.address,
     amountIn: amountIn.toString(),
+    ...VEX_INTEGRATOR_FEE_ROUTE_PARAMS,
   });
   const { routeSummary, routerAddress } = routeResp.data;
   verifyRouterAddress(routerAddress, META_AGGREGATION_ROUTER_V2);
@@ -189,7 +211,7 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
       decimals: tokenIn.decimals,
       label: tokenIn.symbol,
     });
-    await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn, p.approveExact === true);
+    await ensureKyberAllowance(publicClient, walletClient, tokenIn.address, routerAddress, amountIn);
   }
 
   const slippage = num(p, "slippageBps") ?? 50;
@@ -199,6 +221,12 @@ async function executeKyberSwap(p: Record<string, unknown>, side: "buy" | "sell"
     recipient: (str(p, "recipient") || signer.address) as Address,
     slippageTolerance: slippage,
   });
+
+  // Verify the BUILD-response router before broadcasting: the tx is sent to
+  // buildResp.data.routerAddress (and approvals were granted to the router), so
+  // an attacker-controlled build router is a direct theft vector. Fail closed
+  // on mismatch — the route-response check above only guards the approval step.
+  verifyRouterAddress(buildResp.data.routerAddress, META_AGGREGATION_ROUTER_V2);
 
   const txHash = await sendKyberTransaction(publicClient, walletClient, {
     to: getAddress(buildResp.data.routerAddress),
@@ -275,6 +303,7 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
         tokenIn: tokenIn.address,
         tokenOut: tokenOut.address,
         amountIn,
+        ...VEX_INTEGRATOR_FEE_ROUTE_PARAMS,
       }),
       resolveQuoteSafetyLeg(chainId, tokenIn),
       resolveQuoteSafetyLeg(chainId, tokenOut),

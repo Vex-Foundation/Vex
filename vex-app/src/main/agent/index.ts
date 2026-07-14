@@ -13,6 +13,8 @@ import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupControlBridge } from "./control-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
+import { setupHyperliquidRiskProposalBridge } from "./hyperliquid-risk-bridge.js";
+import { setupHyperliquidWorkspaceBridge } from "./hyperliquid-workspace-bridge.js";
 
 /**
  * Mount every agent-side bridge and return a single teardown that
@@ -28,6 +30,8 @@ export function setupAgentBridges(): () => void {
   teardowns.push(setupControlBridge());
   // Puzzle 09 — ephemeral, sanitized token/tool/usage stream preview.
   teardowns.push(setupStreamBridge());
+  teardowns.push(setupHyperliquidRiskProposalBridge());
+  teardowns.push(setupHyperliquidWorkspaceBridge());
 
   // Puzzle 03 — install the production BugReportSink for engine emit
   // points (turn-loop / wake / compact). Teardown resets to noop.

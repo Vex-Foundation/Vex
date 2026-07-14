@@ -65,6 +65,10 @@ const SYNTHETIC_CONTRACTS: ReadonlyMap<string, SyntheticCaptureContract> = new M
     expectedType: "prediction",
     requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
   }],
+  ["hyperliquid_reconcile.position", {
+    expectedType: "perps",
+    requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
+  }],
 ]);
 
 /**
@@ -73,11 +77,11 @@ const SYNTHETIC_CONTRACTS: ReadonlyMap<string, SyntheticCaptureContract> = new M
  * routed into the synthetic validator and REJECTED there — it must never fall
  * back to the fail-open non-synthetic path. See B-006.
  */
-const SYNTHETIC_TOOL_PREFIX = "settlement_sync.";
+const SYNTHETIC_TOOL_PREFIXES = ["settlement_sync.", "hyperliquid_reconcile."] as const;
 
 /** Whether a tool-id belongs to the synthetic-capture family (by prefix). */
 export function isSyntheticToolId(toolId: string): boolean {
-  return toolId.startsWith(SYNTHETIC_TOOL_PREFIX);
+  return SYNTHETIC_TOOL_PREFIXES.some((prefix) => toolId.startsWith(prefix));
 }
 
 /**
@@ -117,9 +121,10 @@ export function validateSyntheticCapture(
     );
   }
 
-  // instrumentKey optional (claim has exception), but warn if missing for prediction
-  if (type === "prediction" && !capture.instrumentKey) {
-    logger.warn("synthetic_capture.no_instrument_key", { positionKey: capture.positionKey });
+  // instrumentKey optional (claim has exception), but warn for a lifecycle
+  // source that normally carries one. A legacy close remains auditable.
+  if ((type === "prediction" || type === "perps") && !capture.instrumentKey) {
+    logger.warn("synthetic_capture.no_instrument_key", { positionKey: capture.positionKey, type });
   }
 }
 

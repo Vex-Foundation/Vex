@@ -22,10 +22,22 @@ import {
   type MissionAcceptance,
   type MissionConstraints,
   type MissionStatus,
+  hyperliquidMissionRiskTransportSchema,
+  type HyperliquidMissionRiskTransport,
 } from "@shared/schemas/mission.js";
 import { log } from "../logger/index.js";
 
 export const EMPTY_CONSTRAINTS: MissionConstraints = {};
+
+/** Allowlisted mission risk projection; malformed JSONB never reaches the renderer. */
+export function normaliseHyperliquidMissionRisk(
+  raw: unknown,
+): HyperliquidMissionRiskTransport | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const candidate = (raw as Record<string, unknown>)["hyperliquidRisk"];
+  const parsed = hyperliquidMissionRiskTransportSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
 
 /**
  * Allow-listed projection of a `missions` row. Every column the

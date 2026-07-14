@@ -53,9 +53,15 @@ vi.mock("@vex-agent/db/client.js", () => ({
 const { renewMission } = await import(
   "../../../../vex-agent/engine/mission/renew.js"
 );
+const { computeContractHash, LEGACY_CONTRACT_HASH_VERSION } = await import(
+  "../../../../vex-agent/engine/mission/contract-hash.js"
+);
+const { missionToDraft } = await import(
+  "../../../../vex-agent/engine/mission/mapper.js"
+);
 
 function makeMission(overrides: Record<string, unknown> = {}) {
-  return {
+  const mission = {
     id: "mission-source",
     rootSessionId: "session-1",
     status: "completed",
@@ -78,6 +84,14 @@ function makeMission(overrides: Record<string, unknown> = {}) {
     contractHashVersion: 1,
     renewedFromMissionId: null,
     ...overrides,
+  };
+  return {
+    ...mission,
+    // Key-presence check: an explicit `acceptedContractHash: null` override
+    // (the never-accepted case) must survive — `??` would silently re-hash it.
+    acceptedContractHash: "acceptedContractHash" in overrides
+      ? overrides["acceptedContractHash"]
+      : computeContractHash(missionToDraft(mission), LEGACY_CONTRACT_HASH_VERSION),
   };
 }
 

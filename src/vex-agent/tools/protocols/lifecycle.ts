@@ -41,6 +41,7 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   dexscreener: "active",
   virtuals: "active",
   pendle: "active",
+  hyperliquid: "active",
 };
 
 /** True iff the namespace is currently `deprecated_hidden`. */

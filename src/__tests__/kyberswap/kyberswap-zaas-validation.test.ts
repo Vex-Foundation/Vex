@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateZapRouteResponse, validateZapBuildResponse } from "@tools/kyberswap/zaas/validation.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 describe("validateZapRouteResponse", () => {
   it("rejects non-object", () => {
@@ -14,19 +15,45 @@ describe("validateZapRouteResponse", () => {
     expect(result.data.routerAddress).toBe("0x0e97c887b61ccd952a53578b04763e7134429e05");
   });
 
-  it("handles missing optional fields", () => {
-    const raw = { code: 0, data: {} };
+  it("keeps other optional fields lenient when route/routerAddress are present", () => {
+    const raw = { code: 0, data: { route: "r", routerAddress: "0x0e97c887b61ccd952a53578b04763e7134429e05" } };
     const result = validateZapRouteResponse(raw);
     expect(result.data.routeSummary).toBeUndefined();
     expect(result.data.zapDetails).toBeUndefined();
-    expect(result.data.route).toBeUndefined();
-    expect(result.data.routerAddress).toBeUndefined();
+    expect(result.data.poolDetails).toBeUndefined();
+    expect(result.data.gas).toBeUndefined();
   });
 
-  it("defaults code to 0 when missing", () => {
-    const raw = { data: {} };
-    const result = validateZapRouteResponse(raw);
-    expect(result.code).toBe(0);
+  // Etap 4: route/routerAddress are now STRICT required non-empty strings.
+  it("throws VexError(KYBER_API_ERROR) when data.route is missing", () => {
+    try {
+      validateZapRouteResponse({ code: 0, data: { routerAddress: "0x0e97c887b61ccd952a53578b04763e7134429e05" } });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(VexError);
+      expect((err as VexError).code).toBe(ErrorCodes.KYBER_API_ERROR);
+      expect((err as VexError).message).toBe("Invalid KyberSwap ZaaS response: missing data.route");
+    }
+  });
+
+  it("throws VexError(KYBER_API_ERROR) when data.routerAddress is missing", () => {
+    try {
+      validateZapRouteResponse({ code: 0, data: { route: "encoded_route" } });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(VexError);
+      expect((err as VexError).code).toBe(ErrorCodes.KYBER_API_ERROR);
+      expect((err as VexError).message).toBe("Invalid KyberSwap ZaaS response: missing data.routerAddress");
+    }
+  });
+
+  it("throws when data is empty (both strict fields missing; route checked first)", () => {
+    try {
+      validateZapRouteResponse({ code: 0, data: {} });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect((err as VexError).message).toBe("Invalid KyberSwap ZaaS response: missing data.route");
+    }
   });
 });
 

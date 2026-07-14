@@ -49,6 +49,8 @@ export function primitiveSchema(type: ProtocolParamDef["type"]): z.ZodTypeAny {
       return z.number();
     case "boolean":
       return z.boolean();
+    case "object":
+      return z.record(z.string(), z.unknown());
     default:
       // Exhaustiveness guard — a new param `type` must extend this mapping
       // (e.g. nested object/array → recursive schema) rather than fall through.

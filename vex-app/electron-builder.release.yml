@@ -66,6 +66,8 @@ extraResources:
   - from: resources/migrations
     to: migrations
     filter: ["**/*.sql"]
+  - from: resources/hyperliquid-release.json
+    to: hyperliquid-release.json
 
 mac:
   category: public.app-category.finance

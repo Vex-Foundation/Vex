@@ -13,13 +13,14 @@
 | Folder | Protocol / Service | Chain | Files | Docs |
 |--------|--------------------|-------|-------|------|
 | `dexscreener/` | DexScreener analytics (REST + WS) | Multi-chain | 5 | [DexScreener.md](dexscreener/DexScreener.md) |
+| `hyperliquid/` | HyperCore perps, spot, account, vault, and staking client | Hyperliquid | 11 | [Hyperliquid.md](hyperliquid/Hyperliquid.md) |
 | `khalani/` | Khalani cross-chain bridge (40+ chains) | Multi-chain | 7 | [Khalani.md](khalani/Khalani.md) |
 | `kyberswap/` | KyberSwap aggregator, limit orders, ZaaS | 18 EVM chains | 22 | [KyberSwap.md](kyberswap/KyberSwap.md) |
 | `polymarket/` | Polymarket prediction markets (CLOB, Gamma, Relayer) | Polygon | 22 | [Polymarket.md](polymarket/Polymarket.md) |
 | `solana-ecosystem/` | Jupiter (swap, prices, tokens, lend, predict) + shared Solana utils | Solana | 35 | [Jupiter.md](solana-ecosystem/jupiter/Jupiter.md) |
 | `wallet/` | Multi-chain keystore, signing, native balances | EVM + Solana | 12 | [WALLET.md](wallet/WALLET.md) |
 
-**Total: ~123 files across 6 modules**
+**Total: ~134 files across 7 modules**
 
 ---
 
@@ -62,6 +63,7 @@ Some modules extend this with:
 | KyberSwap | https://docs.kyberswap.com/ |
 | Polymarket | https://docs.polymarket.com/api-reference/introduction |
 | DexScreener | https://docs.dexscreener.com/api/reference |
+| Hyperliquid | https://hyperliquid.gitbook.io/hyperliquid-docs |
 
 ---
 

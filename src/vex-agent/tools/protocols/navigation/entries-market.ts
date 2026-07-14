@@ -114,11 +114,11 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     advertised: true,
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
-    summary: "Keyless on-chain Uniswap V2/V3 swaps (best route). The ONLY venue on Robinhood Chain (4663) — where $VEX and Virtuals agent tokens trade against VIRTUAL — and an all-EVM fallback for KyberSwap.",
+    summary: "Keyless on-chain Uniswap V2/V3 swaps (best route). An all-EVM fallback for KyberSwap, including on Robinhood Chain (4663) — where $VEX and Virtuals agent tokens trade against VIRTUAL.",
     whenToUse:
-      "Use for swaps on Robinhood Chain (the only venue there — quote/sell/buy against VIRTUAL/ETH), or as a fallback on any EVM chain when KyberSwap is unavailable. Pass token contract ADDRESSES (no symbol search).",
+      "Use as a fallback on any EVM chain when KyberSwap is unavailable or lacks a route, including Robinhood Chain (quote/sell/buy against VIRTUAL/ETH). Pass token contract ADDRESSES (no symbol search).",
     preferInstead:
-      "Prefer `kyberswap` on the chains it supports (aggregated pricing + token safety flags); use `uniswap` on Robinhood Chain or when Kyber lacks the chain/route.",
+      "Prefer `kyberswap` on the chains it supports (aggregated pricing + token safety flags), incl. Robinhood Chain; use `uniswap` when Kyber lacks the chain/route.",
     exampleQueries: [
       'discover_tools(query="swap on robinhood", namespace="uniswap")',
       'discover_tools(query="uniswap quote", namespace="uniswap")',
@@ -340,6 +340,31 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         toolPrefixes: ["dexscreener.communityTakeovers", "dexscreener.orders", "dexscreener.ads"],
         hints: ["community takeover", "cto", "paid orders", "ads", "promotion"],
       },
+    ],
+  },
+  {
+    namespace: "hyperliquid",
+    advertised: true,
+    groupId: "perps",
+    groupLabel: "Perpetuals",
+    summary: "Hyperliquid Core perpetual and spot trading: market/account research, protected perp orders, leverage and margin controls, funding history, and spot orders.",
+    whenToUse: "Use for Hyperliquid Core. Inspect market depth, funding, account margin, and existing stop coverage before any trade. Stop losses reduce risk but are not guaranteed fills during rapid moves or liquidation.",
+    preferInstead: "Use EVM/Solana venue tools for on-chain swaps; Hyperliquid uses its own signed exchange actions and risk controls.",
+    exampleQueries: [
+      'discover_tools(query="my Hyperliquid positions", namespace="hyperliquid")',
+      'discover_tools(query="open protected BTC perpetual", namespace="hyperliquid")',
+      'discover_tools(query="Hyperliquid funding cost", namespace="hyperliquid")',
+    ],
+    aliases: ["hyperliquid", "hypercore", "perps", "perpetuals", "HL"],
+    discoveryHints: ["perp position", "stop loss", "liquidation", "funding", "Hyperliquid order book"],
+    facets: [
+      { label: "Markets and account", summary: "Read Core/spot markets, L2 depth, account margin, positions, orders, fills, and funding.", toolPrefixes: ["hyperliquid.perp.markets", "hyperliquid.perp.positions", "hyperliquid.perp.orders", "hyperliquid.perp.fills", "hyperliquid.perp.funding", "hyperliquid.account", "hyperliquid.spot.markets", "hyperliquid.spot.balances", "hyperliquid.market.book"], hints: ["markets", "positions", "funding", "margin", "order book"] },
+      { label: "Market analysis and candle scanning", summary: "Watch local candles, read coverage, or scan decimal-safe momentum, volume, moving-average, RSI, and range signals.", toolPrefixes: ["hyperliquid.market.watchCandles", "hyperliquid.market.candles", "hyperliquid.market.scan"], hints: ["watch candles", "RSI", "volume spike", "breakout", "moving average", "candle scan"] },
+      { label: "Protected perpetual trading", summary: "Open, close, protect, amend, cancel, leverage, margin, or TWAP a Core perpetual under policy gates.", toolPrefixes: ["hyperliquid.perp.open", "hyperliquid.perp.close", "hyperliquid.perp.setTpsl", "hyperliquid.perp.modifyOrder", "hyperliquid.perp.cancelOrders", "hyperliquid.perp.setLeverage", "hyperliquid.perp.adjustMargin", "hyperliquid.perp.twap"], hints: ["open perp", "stop loss", "close position", "leverage", "TWAP"] },
+      { label: "Spot trading", summary: "Place Hyperliquid spot orders after checking market and depth.", toolPrefixes: ["hyperliquid.spot.trade"], hints: ["spot order", "buy HYPE", "sell spot"] },
+      { label: "Funding, transfers, and withdrawals", summary: "Deposit native USDC from Arbitrum, move USDC between spot and perp, send assets on HyperCore, or withdraw to Arbitrum — every egress stays approval-gated.", toolPrefixes: ["hyperliquid.deposit", "hyperliquid.transfer", "hyperliquid.withdraw"], hints: ["deposit to Hyperliquid", "move USDC to perp", "withdraw from Hyperliquid", "send USDC", "usd class transfer"] },
+      { label: "Earn, staking, and account setup", summary: "Inspect or move funds in vaults incl. HLP, manage HYPE staking and delegation, claim rewards, propose session risk limits, and approve the builder fee.", toolPrefixes: ["hyperliquid.vault", "hyperliquid.staking", "hyperliquid.rewards", "hyperliquid.risk", "hyperliquid.builder"], hints: ["deposit to HLP", "stake HYPE", "claim rewards", "set risk limits", "builder fee"] },
+      { label: "Hypervexing workspace", summary: "Enter or leave the focused local Hyperliquid workspace without changing trading state.", toolPrefixes: ["hyperliquid.workspace"], hints: ["Hypervexing", "workspace", "focused Hyperliquid view"] },
     ],
   },
   {

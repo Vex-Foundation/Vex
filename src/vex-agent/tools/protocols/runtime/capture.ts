@@ -25,22 +25,28 @@ export async function captureExecution(
   params: Record<string, unknown>,
   result: ToolResult,
   durationMs: number,
+  existingExecutionId?: number,
 ): Promise<void> {
   // Defense-in-depth: preview results are NOT mutations — skip entire capture pipeline
   if (result.data?.dryRun === true) return;
 
-  const { recordExecution } = await import("@vex-agent/db/repos/executions.js");
+  const { completeExecutionIntent, recordExecution } = await import("@vex-agent/db/repos/executions.js");
   const paramsForStorage = sanitizeRecord(params);
   const resultData = sanitizeRecord(result.data ?? {});
   const tradeCapture = isRecord(resultData._tradeCapture) ? resultData._tradeCapture : null;
   const tradeCaptureItems = sanitizeRecordArray(resultData._tradeCaptureItems);
   const externalRefs = extractExternalRefs(resultData);
 
-  const executionId = await recordExecution(
+  const executionId = existingExecutionId ?? await recordExecution(
     toolId, namespace, sessionId, paramsForStorage,
     resultData, result.success,
     tradeCapture, externalRefs, durationMs,
   );
+  if (existingExecutionId !== undefined) {
+    await completeExecutionIntent(
+      existingExecutionId, resultData, result.success, tradeCapture, externalRefs, durationMs,
+    );
+  }
 
   // Enqueue sync runs for this namespace (only on success — failed mutations don't need projection refresh)
   if (result.success && executionId > 0) {
@@ -84,6 +90,19 @@ export async function captureExecution(
       });
     }
   }
+}
+
+/** Insert the Hyperliquid audit record before the handler can reach signing. */
+export async function createHyperliquidExecutionIntent(
+  toolId: string,
+  namespace: string,
+  sessionId: string | null,
+  params: Record<string, unknown>,
+): Promise<number> {
+  const { createExecutionIntent } = await import("@vex-agent/db/repos/executions.js");
+  const executionId = await createExecutionIntent(toolId, namespace, sessionId, sanitizeRecord(params));
+  if (executionId <= 0) throw new Error("durable intent insert returned no execution id");
+  return executionId;
 }
 
 // populateCaptureItems moved to capture-pipeline.ts (shared with replay.ts)

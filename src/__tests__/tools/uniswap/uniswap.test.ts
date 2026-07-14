@@ -68,10 +68,10 @@ describe("uniswap deployment registry", () => {
 // ── Venue router + chain resolution ─────────────────────────────────────────
 
 describe("swap venue router", () => {
-  it("Robinhood Chain resolves to uniswap ONLY (no kyber)", () => {
+  it("Robinhood Chain resolves to kyber PRIMARY with uniswap fallback (KyberSwap now aggregates 4663)", () => {
     const r = resolveSwapVenues("robinhood");
-    expect(r?.primary.venue).toBe("uniswap");
-    expect(r?.options.map((o) => o.venue)).toEqual(["uniswap"]);
+    expect(r?.primary.venue).toBe("kyberswap");
+    expect(r?.options.map((o) => o.venue)).toEqual(["kyberswap", "uniswap"]);
     expect(resolveUniswapChainId("robinhood")).toBe(4663);
     expect(resolveUniswapChainId("4663")).toBe(4663);
   });

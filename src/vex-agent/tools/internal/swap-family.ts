@@ -34,8 +34,8 @@ export type SwapFamily =
 
 /**
  * Decide the swap family + venue from a `chain` arg. Solana is matched FIRST;
- * EVM is resolved through the VENUE ROUTER (KyberSwap primary where supported,
- * Uniswap on Robinhood Chain and as an all-EVM fallback). Anything neither
+ * EVM is resolved through the VENUE ROUTER (KyberSwap primary where supported —
+ * incl. Robinhood Chain — with Uniswap as the all-EVM fallback). Anything neither
  * Solana nor a routable EVM chain is `unknown` → callers fail clearly.
  */
 export function classifySwapFamily(chain: string): SwapFamily {

@@ -4,6 +4,7 @@ export type ProtocolNavigationGroupId =
   | "cross-chain"
   | "evm-trading"
   | "solana"
+  | "perps"
   | "prediction-markets"
   | "market-research";
 
@@ -38,6 +39,7 @@ export const PROTOCOL_NAVIGATION_GROUP_ORDER: readonly ProtocolNavigationGroupId
   "cross-chain",
   "evm-trading",
   "solana",
+  "perps",
   "prediction-markets",
   "market-research",
 ] as const;

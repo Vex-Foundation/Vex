@@ -21,13 +21,18 @@
  * 100% generated in-shader — no source imagery, no network fetch (CSP-safe).
  */
 
-/* Ink palette — the two SURFACE bands stay baked into the shader as consts
- * (#0a0d18 / #11162a are the landing ink scale, --vex-surface-0/-2; both
- * themes share the ink canvas). The two ACCENT bands (deep + bright) are now
- * u_deep / u_bright uniforms fed per-theme by SignalSky, so the theme flip
- * crossfades the sky's signal flecks (cobalt → neon lime) without a recompile.
- * SKY_DEEP_HEX / SKY_BRIGHT_HEX are the VEX (cobalt) accent pair; the
- * Robinhood pair sits alongside. */
+/* Sky palette — ALL FOUR posterization bands are now per-theme u_* uniforms
+ * fed by SignalSky, so a theme flip crossfades the whole scene without a
+ * recompile. The two SURFACE bands (ink / soft) were baked consts while both
+ * themes shared the navy canvas; Hypervexing's canvas is bottle-green, and a
+ * navy cloud band under a green UI reads as a broken screen — so ink/soft were
+ * promoted to u_ink / u_soft alongside the existing u_deep / u_bright. The vex
+ * and robinhood values stay byte-for-byte identical (the shared navy pair), so
+ * this is behavior-preserving for the two existing themes.
+ *
+ * SKY_INK_HEX / SKY_SOFT_HEX = the shared navy surface pair (--vex-surface-0/-2
+ * on the navy canvas); SKY_DEEP_HEX / SKY_BRIGHT_HEX = the VEX (cobalt) accent
+ * pair; the Robinhood and Hypervexing pairs sit alongside. */
 export const SKY_INK_HEX = "#0a0d18";
 export const SKY_SOFT_HEX = "#11162a";
 export const SKY_DEEP_HEX = "#0a23b8";
@@ -35,13 +40,26 @@ export const SKY_BRIGHT_HEX = "#1f44ff";
 /** Robinhood accent pair — a dim olive-lime rising to the neon #ccff00. */
 export const SKY_ROBINHOOD_DEEP_HEX = "#4d6300";
 export const SKY_ROBINHOOD_BRIGHT_HEX = "#ccff00";
+/** Hypervexing — "ink first, mint as signal" (2026-07-13 re-ink): charcoal
+ * bands matched to --vex-surface-0/-2 (#0A0F11/#121C20), one deep-teal accent
+ * band as the brand whisper, rising to sparse turquoise flecks. The sky is
+ * the ONLY place the green identity breathes behind the glass — quiet by
+ * design, never wallpaper. */
+export const SKY_HYPERVEXING_INK_HEX = "#0a0f11";
+export const SKY_HYPERVEXING_SOFT_HEX = "#121c20";
+export const SKY_HYPERVEXING_DEEP_HEX = "#124b3d";
+export const SKY_HYPERVEXING_BRIGHT_HEX = "#4fd1c5";
 
-export type SkyTheme = "vex" | "robinhood";
+export type SkyTheme = "vex" | "robinhood" | "hypervexing";
 
 /** RGB channels normalized to 0..1 — the form uniform3f wants. */
 export type RgbTriplet = readonly [number, number, number];
 
 export interface SkyAccentPalette {
+  /** The base posterization band (dv < 0.46) — the canvas ink. */
+  readonly ink: RgbTriplet;
+  /** The second band (dv 0.46..0.72) — the soft cloud shoulder. */
+  readonly soft: RgbTriplet;
   /** The lower accent band (dv 0.72..0.92). */
   readonly deep: RgbTriplet;
   /** The brightest signal fleck (dv > 0.92). */
@@ -71,15 +89,27 @@ export function hexToRgbTriplet(hex: string): RgbTriplet {
   return [channel(1), channel(3), channel(5)];
 }
 
-/** Per-theme accent pair fed to u_deep / u_bright. */
+/** Per-theme 4-band palette fed to u_ink / u_soft / u_deep / u_bright. vex and
+ * robinhood share the navy surface pair (ink/soft) — identical to the values
+ * baked before ink/soft were promoted to uniforms. */
 export const SKY_ACCENTS: Record<SkyTheme, SkyAccentPalette> = {
   vex: {
+    ink: hexToRgbTriplet(SKY_INK_HEX),
+    soft: hexToRgbTriplet(SKY_SOFT_HEX),
     deep: hexToRgbTriplet(SKY_DEEP_HEX),
     bright: hexToRgbTriplet(SKY_BRIGHT_HEX),
   },
   robinhood: {
+    ink: hexToRgbTriplet(SKY_INK_HEX),
+    soft: hexToRgbTriplet(SKY_SOFT_HEX),
     deep: hexToRgbTriplet(SKY_ROBINHOOD_DEEP_HEX),
     bright: hexToRgbTriplet(SKY_ROBINHOOD_BRIGHT_HEX),
+  },
+  hypervexing: {
+    ink: hexToRgbTriplet(SKY_HYPERVEXING_INK_HEX),
+    soft: hexToRgbTriplet(SKY_HYPERVEXING_SOFT_HEX),
+    deep: hexToRgbTriplet(SKY_HYPERVEXING_DEEP_HEX),
+    bright: hexToRgbTriplet(SKY_HYPERVEXING_BRIGHT_HEX),
   },
 };
 
@@ -92,9 +122,7 @@ export const SKY_VERTEX_SHADER =
 export const SKY_FRAGMENT_SHADER = [
   "precision highp float;",
   "uniform vec2 u_res; uniform float u_time; uniform float u_intensity;",
-  "uniform vec3 u_deep; uniform vec3 u_bright;",
-  `const vec3 INK=${hexToGlslVec3(SKY_INK_HEX)};`,
-  `const vec3 SOFT=${hexToGlslVec3(SKY_SOFT_HEX)};`,
+  "uniform vec3 u_ink; uniform vec3 u_soft; uniform vec3 u_deep; uniform vec3 u_bright;",
   "float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}",
   "float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);",
   "  float a=hash(i),b=hash(i+vec2(1.0,0.0)),c=hash(i+vec2(0.0,1.0)),d=hash(i+vec2(1.0,1.0));",
@@ -122,7 +150,7 @@ export const SKY_FRAGMENT_SHADER = [
   "  float thr=bayer4(gl_FragCoord.xy);",
   "  float dv=clamp(v,0.0,1.0)+(thr-0.5)*0.20;",
   "  vec3 col;",
-  "  if(dv<0.46)col=INK; else if(dv<0.72)col=SOFT; else if(dv<0.92)col=u_deep; else col=u_bright;",
+  "  if(dv<0.46)col=u_ink; else if(dv<0.72)col=u_soft; else if(dv<0.92)col=u_deep; else col=u_bright;",
   "  gl_FragColor=vec4(col,1.0);",
   "}",
 ].join("\n");

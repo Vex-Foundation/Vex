@@ -78,6 +78,10 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Plan mode — author/refine the session's action plan (gated by requiresPlanMode)
   plan_write: async () => (await import("../internal/plan/write.js")).handlePlanWrite,
 
+  // Always-visible Hyperliquid workspace entry; protocol compatibility keeps
+  // `hyperliquid.workspace.enter` available through execute_tool.
+  hyperliquid_enter: async () => (await import("../internal/hyperliquid-enter.js")).handleHyperliquidEnter,
+
   // Subagents — DISABLED (TODO subagent-disabled). Re-enable z registry/subagents.ts.
   // subagent_spawn: async () => (await import("../internal/subagent.js")).handleSubagentSpawn,
   // subagent_status: async () => (await import("../internal/subagent.js")).handleSubagentStatus,

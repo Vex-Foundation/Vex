@@ -40,6 +40,7 @@ import {
   normaliseConstraints,
   normalisePgArray,
   normaliseStatus,
+  normaliseHyperliquidMissionRisk,
   normaliseStringList,
   projectAcceptance,
   toIso,
@@ -122,6 +123,7 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     title: row.title,
     goal: row.goal,
     constraints: normaliseConstraints(row.constraints_json),
+    hyperliquidRisk: normaliseHyperliquidMissionRisk(row.constraints_json),
     successCriteria: normaliseStringList(
       row.success_criteria_json,
       "success_criteria_json",

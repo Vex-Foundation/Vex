@@ -39,6 +39,8 @@ export interface UpsertPositionRow {
   instrumentKey?: string;
   positionKey?: string;
   entryPriceUsd?: string;
+  currentValueUsd?: string;
+  unrealizedPnlUsd?: string;
   notionalUsd?: string;
   feeUsd?: string;
   contracts?: string;
@@ -47,24 +49,37 @@ export interface UpsertPositionRow {
   status?: string;
 }
 
-/** Upsert position — ON CONFLICT updates status and data. */
+/**
+ * Upsert position — ON CONFLICT updates status, capture-derived MTM, and data.
+ *
+ * $9/$10 (current_value_usd / unrealized_pnl_usd, both NUMERIC) are cast to
+ * ::numeric inside every `CASE WHEN $n IS NULL` use. Without the cast Postgres
+ * cannot infer the parameter type from an `IS NULL` test alone, so PREPARE
+ * failed with `could not determine data type of parameter $9` and NO perps
+ * projection row was ever written — the empty POSITIONS panel in the live app
+ * (incident 2026-07-13). The cast pins the type to the real column type.
+ */
 export async function upsertPosition(row: UpsertPositionRow): Promise<void> {
   await execute(
-    `INSERT INTO proj_open_positions (namespace, position_type, chain, external_id, wallet_address, instrument_key, position_key, entry_price_usd, notional_usd, fee_usd, contracts, settlement_asset_key, data, status, opened_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, NOW())
+    `INSERT INTO proj_open_positions (namespace, position_type, chain, external_id, wallet_address, instrument_key, position_key, entry_price_usd, current_value_usd, unrealized_pnl_usd, notional_usd, fee_usd, contracts, settlement_asset_key, data, status, opened_at, last_refresh_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, NOW(), CASE WHEN $9::numeric IS NULL AND $10::numeric IS NULL THEN NULL ELSE NOW() END)
      ON CONFLICT (namespace, position_type, chain, wallet_address, external_id) WHERE external_id IS NOT NULL
-     DO UPDATE SET status = COALESCE($14, proj_open_positions.status),
-       data = COALESCE($13::jsonb, proj_open_positions.data),
+     DO UPDATE SET status = COALESCE($16, proj_open_positions.status),
+       data = COALESCE($15::jsonb, proj_open_positions.data),
        instrument_key = COALESCE($6, proj_open_positions.instrument_key),
        position_key = COALESCE($7, proj_open_positions.position_key),
        entry_price_usd = COALESCE($8, proj_open_positions.entry_price_usd),
-       notional_usd = COALESCE($9, proj_open_positions.notional_usd),
-       fee_usd = COALESCE($10, proj_open_positions.fee_usd),
-       contracts = COALESCE($11, proj_open_positions.contracts),
-       settlement_asset_key = COALESCE($12, proj_open_positions.settlement_asset_key),
+       current_value_usd = COALESCE($9, proj_open_positions.current_value_usd),
+       unrealized_pnl_usd = COALESCE($10, proj_open_positions.unrealized_pnl_usd),
+       notional_usd = COALESCE($11, proj_open_positions.notional_usd),
+       fee_usd = COALESCE($12, proj_open_positions.fee_usd),
+       contracts = COALESCE($13, proj_open_positions.contracts),
+       settlement_asset_key = COALESCE($14, proj_open_positions.settlement_asset_key),
+       last_refresh_at = CASE WHEN $9::numeric IS NULL AND $10::numeric IS NULL THEN proj_open_positions.last_refresh_at ELSE NOW() END,
        synced_at = NOW()`,
     [row.namespace, row.positionType, row.chain, row.externalId, row.walletAddress,
      row.instrumentKey ?? null, row.positionKey ?? null, row.entryPriceUsd ?? null,
+     row.currentValueUsd ?? null, row.unrealizedPnlUsd ?? null,
      row.notionalUsd ?? null, row.feeUsd ?? null,
      row.contracts ?? null, row.settlementAssetKey ?? null,
      jsonb(row.data ?? {}), row.status ?? "open"],

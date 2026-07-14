@@ -18,6 +18,47 @@ import {
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import { isPreviewExecution } from "../capture-validator.js";
 import logger from "@utils/logger.js";
+import { isAddress } from "viem";
+
+export type HyperliquidEgressClass = "foreign" | "own_account" | "none";
+
+/**
+ * Classify only the Hyperliquid flows that can move collateral out of its
+ * current account. A self withdrawal is own-account funding only when both
+ * the selected session EVM snapshot and the requested recipient are valid
+ * addresses. Every absent, malformed, or non-session snapshot fails closed as
+ * foreign egress.
+ */
+export function classifyHyperliquidEgress(
+  toolId: string,
+  params: Record<string, unknown>,
+  context: Pick<ProtocolExecutionContext, "walletResolution">,
+): HyperliquidEgressClass {
+  if (toolId === "hyperliquid.transfer.send") return "foreign";
+  if (toolId === "hyperliquid.deposit") return "own_account";
+  if (toolId === "hyperliquid.transfer.usdClass") return "own_account";
+  if (toolId !== "hyperliquid.withdraw") return "none";
+
+  const destination = params.destination;
+  const wallet = context.walletResolution;
+  const normalizeEvmAddress = (value: string): string | null => {
+    const normalizedPrefix = value.startsWith("0X") ? `0x${value.slice(2)}` : value;
+    return isAddress(normalizedPrefix) ? normalizedPrefix.toLowerCase() : null;
+  };
+  if (
+    typeof destination !== "string"
+    || wallet.source !== "session"
+    || wallet.evm === null
+  ) {
+    return "foreign";
+  }
+  const normalizedDestination = normalizeEvmAddress(destination);
+  const normalizedWallet = normalizeEvmAddress(wallet.evm.address);
+  if (normalizedDestination === null || normalizedWallet === null) return "foreign";
+  return normalizedDestination === normalizedWallet
+    ? "own_account"
+    : "foreign";
+}
 
 /**
  * Outcome of the prequote gate. `allow` carries the matched prequote's safety
@@ -93,8 +134,17 @@ export function evaluateApprovalGate(
   prequoteVerdict: SafetyVerdict | undefined,
   prequoteFotTax: number | undefined,
   prequoteTermLock: { readonly maturityIso: string } | undefined,
+  hyperliquid?: {
+    readonly stopLossVerdict?: "protected_required" | "unprotected_by_user_choice";
+    readonly notionalUsd?: string;
+    readonly estLiquidationPx?: string;
+    readonly destinationClass?: string;
+  },
 ): ToolResult | undefined {
-  if (manifest.mutating && !context.approved && context.sessionPermission === "restricted" && !isPreviewExecution(request.toolId, params)) {
+  const egress = classifyHyperliquidEgress(request.toolId, params, context);
+  const requiresEgressApproval = egress === "foreign";
+  if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
+    && (context.sessionPermission === "restricted" || requiresEgressApproval)) {
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
     // Carry the gate-matched prequote verdict to the restricted-mode approval
     // preview via the TYPED `prequote` field (NOT raw args) so the human sees
@@ -115,6 +165,7 @@ export function evaluateApprovalGate(
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
       pending.prequote = prequote;
     }
+    if (hyperliquid !== undefined) pending.hyperliquid = hyperliquid;
     return pending;
   }
   return undefined;

@@ -127,6 +127,8 @@ describe("result barrel surface", () => {
       "compaction",
       "memory",
       "portfolio",
+      // Hyperliquid adds a dedicated main-owned IPC error domain.
+      "hyperliquid",
       "market",
       "sessions",
       "preload",

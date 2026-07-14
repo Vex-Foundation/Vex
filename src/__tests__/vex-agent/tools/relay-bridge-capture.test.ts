@@ -107,7 +107,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue(quoteWithDetails());
-  mockExecuteRelayBridge.mockResolvedValue({ requestId: "0xreq", finalStatus: "success", txHashes: ["0xhash1"] });
+  mockExecuteRelayBridge.mockResolvedValue({
+    requestId: "0xreq",
+    finalStatus: "success",
+    txHashes: ["0xhash1"],
+    // Per-hop records (origin Base) — the handler maps these to `_explorerRefs`.
+    transactions: [{ chainId: 8453, hash: "0xhash1" }],
+  });
   mockPinTrackedToken.mockResolvedValue({ inserted: true });
 });
 
@@ -177,5 +183,54 @@ describe("relay.bridge trade capture", () => {
     mockPinTrackedToken.mockRejectedValue(new Error("db down"));
     const capture = await runBridge(PARAMS);
     expect(capture.status).toBe("executed");
+  });
+});
+
+// ── Per-hop explorer refs (multi-chain deep links) ────────────────────────────
+
+describe("relay.bridge explorer refs", () => {
+  async function runBridgeData(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(params, SESSION_CTX);
+    expect(result.success).toBe(true);
+    return result.data as Record<string, unknown>;
+  }
+
+  it("emits one `_explorerRefs` entry per broadcast hop, each chained to its own chain id", async () => {
+    // Two-hop bridge: origin Base (8453) + destination Robinhood (4663).
+    mockExecuteRelayBridge.mockResolvedValue({
+      requestId: "0xreq",
+      finalStatus: "success",
+      txHashes: ["0xorigin", "0xdest"],
+      transactions: [
+        { chainId: 8453, hash: "0xorigin" },
+        { chainId: 4663, hash: "0xdest" },
+      ],
+    });
+    const data = await runBridgeData(PARAMS);
+    expect(data._explorerRefs).toEqual([
+      { chain: "8453", txRef: "0xorigin" },
+      { chain: "4663", txRef: "0xdest" },
+    ]);
+  });
+
+  it("`deriveExplorerRefs` merges the per-hop refs (deduped against the origin capture)", async () => {
+    const { deriveExplorerRefs } = await import("@vex-agent/engine/core/explorer-refs.js");
+    mockExecuteRelayBridge.mockResolvedValue({
+      requestId: "0xreq",
+      finalStatus: "success",
+      txHashes: ["0xorigin", "0xdest"],
+      transactions: [
+        { chainId: 8453, hash: "0xorigin" },
+        { chainId: 4663, hash: "0xdest" },
+      ],
+    });
+    const data = await runBridgeData(PARAMS);
+    // The origin capture ref (chain "8453", txRef "0xorigin") and the origin
+    // `_explorerRefs` entry are the SAME identity → one deduped ref; the
+    // destination hop adds the second.
+    expect(deriveExplorerRefs(data)).toEqual([
+      { chain: "8453", txRef: "0xorigin" },
+      { chain: "4663", txRef: "0xdest" },
+    ]);
   });
 });

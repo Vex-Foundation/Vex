@@ -20,6 +20,7 @@ import {
 } from "@vex-agent/engine/mission/stop-contract.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
+import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 
 const MAX_STRING_LENGTH = 2_000;
 const MAX_ARRAY_ITEMS = 50;
@@ -41,6 +42,7 @@ const MissionDraftUpdateArgs = z
     successCriteria: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     stopConditions: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     deadline: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
+    hyperliquidRisk: hyperliquidMissionRiskSchema.nullable().optional(),
   })
   .strict()
   .refine(

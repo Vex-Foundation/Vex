@@ -19,11 +19,17 @@ import {
   MutatingAliasRouteError,
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
+import {
+  isHypervexingProtocolAlias,
+  resolveHypervexingAlias,
+} from "../hypervexing-aliases.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
 import { toResultData } from "../protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
+import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
+import { isHlWorkspaceModeActive } from "../../../lib/hyperliquid-workspace-mode.js";
 
 /**
  * Project a discovery result into its model-facing shape: strip the
@@ -54,7 +60,9 @@ export async function routeToolCall(
   // the mutating handler never executes. Read-only tools and non-mission
   // dispatches (missionRunId === null) skip this. Dynamic import mirrors the
   // protocol runtime's DB-access pattern and avoids a static tool→DB cycle.
-  if (context.missionRunId !== null && dispatchTargetIsMutating(call)) {
+  const inactiveHypervexingAlias = isHypervexingProtocolAlias(call.name)
+    && !isHlWorkspaceModeActive(context.sessionId);
+  if (context.missionRunId !== null && !inactiveHypervexingAlias && dispatchTargetIsMutating(call)) {
     const { markAutoRetryUnsafe } = await import(
       "@vex-agent/db/repos/mission-runs.js"
     );
@@ -103,18 +111,51 @@ export async function routeToolCall(
         contextUsageBand: context.contextUsageBand,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Hydrated only for hyperliquid.* targets — other namespaces must not
+        // depend on (or fail through) the HL policy provider.
+        ...(toolId.startsWith("hyperliquid.")
+          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
+          : {}),
       },
     );
   }
 
   // Hard role enforcement — blocked tools rejected even if model emits them.
-  // Runs BEFORE the mutating-alias branch so `excludeRoles` still gates the
-  // alias name (defense-in-depth for any future subagent-blocked alias).
-  if (isToolBlockedForRole(call.name, context.role)) {
+  // Hypervexing aliases are handled immediately below: resolving their
+  // ToolDef first would force a catalog lookup before the mode hard-deny and
+  // make unrelated dispatcher tests depend on a complete mocked catalog.
+  if (!isHypervexingProtocolAlias(call.name) && isToolBlockedForRole(call.name, context.role)) {
     return {
       success: false,
       output: `Tool "${call.name}" is not available for this session role (${context.role}).`,
     };
+  }
+
+  // Hypervexing hot-set aliases are valid ONLY while main's per-session
+  // workspace controller reports the focused mode. They are direct, lossless
+  // aliases to protocol manifests — do not insert an internal approval path or
+  // any alias-specific gate here. `executeProtocolTool` remains the one
+  // authority for policy, protection, approval, signing, and capture.
+  if (isHypervexingProtocolAlias(call.name)) {
+    if (!isHlWorkspaceModeActive(context.sessionId)) {
+      return {
+        success: false,
+        output: `Tool "${call.name}" is available only in the Hypervexing workspace for this session.`,
+      };
+    }
+    const target = resolveHypervexingAlias(call.name, call.args);
+    return executeProtocolTool(
+      { toolId: target.toolId, params: target.params },
+      {
+        sessionPermission: context.sessionPermission,
+        approved: context.approved,
+        sessionId: context.sessionId,
+        contextUsageBand: context.contextUsageBand,
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)),
+      },
+    );
   }
 
   // Mutating protocol-alias branch (Stage 8b — e.g. `swap`). DEDICATED path:
@@ -150,6 +191,10 @@ export async function routeToolCall(
         contextUsageBand: context.contextUsageBand,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Hydrated only for hyperliquid.* targets (see execute_tool branch).
+        ...(target.toolId.startsWith("hyperliquid.")
+          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
+          : {}),
       },
     );
   }
@@ -160,6 +205,21 @@ export async function routeToolCall(
   }
 
   return routeInternalTool(call, context);
+}
+
+function hyperliquidPolicyScope(context: InternalToolContext): {
+  readonly sessionId: string;
+  readonly missionId: string | null;
+  readonly walletAddress?: string;
+} {
+  const walletAddress = context.walletResolution.source === "session"
+    ? context.walletResolution.evm?.address
+    : undefined;
+  return {
+    sessionId: context.sessionId,
+    missionId: context.missionId,
+    ...(walletAddress === undefined ? {} : { walletAddress }),
+  };
 }
 
 async function routeInternalTool(

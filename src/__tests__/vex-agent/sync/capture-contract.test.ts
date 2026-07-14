@@ -48,8 +48,9 @@ describe("capture contract — structural coverage", () => {
     const spot = getToolsByRole("pnl_spot");
     // solana.swap.execute, kyberswap.swap.sell/buy, uniswap.swap.sell/buy (Wave 2c),
     // pendle.pt.buy/sell/redeem (Wave 5), pendle.yt.buy/sell (P3 YT surface),
-    // pendle.py.mint/redeem (P4 PY — two capture items each).
-    expect(spot.length).toBe(12);
+    // pendle.py.mint/redeem (P4 PY — two capture items each),
+    // hyperliquid.spot.trade (HL Phase 2).
+    expect(spot.length).toBe(13);
     for (const [toolId, c] of spot) {
       expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }

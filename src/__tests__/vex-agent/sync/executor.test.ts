@@ -42,4 +42,18 @@ describe("sync executor", () => {
 
     expect(deps.syncTick).not.toHaveBeenCalled();
   });
+
+  it("owns and tears down the Hyperliquid watcher with the sync executor", async () => {
+    const stopWatcher = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      initSync: vi.fn().mockResolvedValue(undefined),
+      syncTick: vi.fn().mockResolvedValue(undefined),
+      startHyperliquidMarketWatcher: vi.fn(() => ({ stop: stopWatcher })),
+    };
+    const handle = startSyncExecutor({ intervalMs: 1000, deps });
+    await vi.runOnlyPendingTimersAsync();
+    expect(deps.startHyperliquidMarketWatcher).toHaveBeenCalledTimes(1);
+    await handle.stop();
+    expect(stopWatcher).toHaveBeenCalledTimes(1);
+  });
 });

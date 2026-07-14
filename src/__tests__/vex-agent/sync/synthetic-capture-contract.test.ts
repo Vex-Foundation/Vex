@@ -34,10 +34,22 @@ function validCapture(): Record<string, unknown> {
   };
 }
 
+function validHyperliquidCapture(): Record<string, unknown> {
+  return {
+    type: "perps",
+    status: "open",
+    walletAddress: "0x1111111111111111111111111111111111111111",
+    positionKey: "hyperliquid:perp:BTC:0x1111111111111111111111111111111111",
+    instrumentKey: "hyperliquid:perp:BTC",
+    valuationSource: "hyperliquid_clearinghouse",
+  };
+}
+
 describe("isSyntheticToolId", () => {
   it("recognizes the registered synthetic sources", () => {
     expect(isSyntheticToolId("settlement_sync.jupiter")).toBe(true);
     expect(isSyntheticToolId("settlement_sync.polymarket")).toBe(true);
+    expect(isSyntheticToolId("hyperliquid_reconcile.position")).toBe(true);
   });
 
   it("matches by family prefix so unregistered settlement_sync.* still routes to the validator", () => {
@@ -45,6 +57,7 @@ describe("isSyntheticToolId", () => {
     // still "synthetic" so it gets rejected by the validator rather than
     // falling through to the fail-open non-synthetic path.
     expect(isSyntheticToolId("settlement_sync.unknown")).toBe(true);
+    expect(isSyntheticToolId("hyperliquid_reconcile.unknown")).toBe(true);
   });
 
   it("does not match non-synthetic tool-ids or the bare prefix word", () => {
@@ -67,6 +80,10 @@ describe("validateSyntheticCapture — allowlist", () => {
   it("accepts a valid settlement_sync.polymarket capture", () => {
     const cap = { ...validCapture(), walletAddress: "0xEOA", positionKey: "polymarket:0xCOND1:YES" };
     expect(() => validateSyntheticCapture("settlement_sync.polymarket", cap)).not.toThrow();
+  });
+
+  it("accepts a valid Hyperliquid reconciliation capture", () => {
+    expect(() => validateSyntheticCapture("hyperliquid_reconcile.position", validHyperliquidCapture())).not.toThrow();
   });
 });
 

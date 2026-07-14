@@ -84,6 +84,16 @@ export const zapMigrate: ProtocolHandler = async (p, ctx) => {
       await ensureErc721Approval(publicClient, walletClient, srcApprovalTarget, BigInt(sourcePositionRef), routerAddress);
       break;
     case "erc20":
+      // Unlimited standing allowance is intentional here (not the exact-amount
+      // doctrine used by swaps / zap-in). The erc20 approval standard covers
+      // V2-like LP tokens and vault shares (positionRefKind "ownerAddress"),
+      // whose source position is the wallet's on-chain LP/share BALANCE. The
+      // exact amount the router pulls is not determinable pre-build: `liquidity`
+      // is optional ("omit for full"), and `liquidityOut`/positionDetails.
+      // liquidity are concentrated-liquidity units, not the raw ERC-20 amount
+      // the router transfers. Approving an exact amount that undershoots would
+      // revert a money-moving migration, so maxUint256 is passed AS the required
+      // amount.
       await ensureKyberAllowance(publicClient, walletClient, srcApprovalTarget, routerAddress, maxUint256);
       break;
     case "erc1155":
@@ -94,6 +104,10 @@ export const zapMigrate: ProtocolHandler = async (p, ctx) => {
   }
 
   const buildResp = await getKyberZaasClient().buildZapMigrate(slug, { sender: signer.address, recipient: signer.address, route: routeResp.data.route });
+  // Verify the BUILD-response router before broadcasting (fail closed): the tx
+  // target and approvals both flow to this address, so an attacker-controlled
+  // build router is a direct theft vector.
+  verifyRouterAddress(buildResp.data.routerAddress, KS_ZAP_ROUTER_POSITION);
   const { hash: txHash, receipt } = await sendKyberTransactionWithReceipt(publicClient, walletClient, { to: getAddress(buildResp.data.routerAddress), data: buildResp.data.callData as Hex, value: BigInt(buildResp.data.value) });
 
   // Capture new position ref from receipt for destination DEX

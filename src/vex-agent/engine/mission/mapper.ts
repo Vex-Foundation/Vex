@@ -5,6 +5,7 @@
  * Parser produces Partial<MissionDraft>, mapper converts to Partial<MissionDraftRow>.
  */
 
+import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 import type { MissionDraft } from "../types.js";
 import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 
@@ -14,6 +15,7 @@ import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 export function missionToDraft(m: Mission): MissionDraft {
   const src = m.capitalSourceJson as Record<string, unknown>;
   const constraints = m.constraintsJson as Record<string, unknown>;
+  const risk = hyperliquidMissionRiskSchema.safeParse(constraints?.hyperliquidRisk);
   return {
     title: m.title,
     goal: m.goal,
@@ -26,6 +28,7 @@ export function missionToDraft(m: Mission): MissionDraft {
     successCriteria: m.successCriteriaJson.length > 0 ? m.successCriteriaJson : null,
     stopConditions: m.stopConditionsJson.length > 0 ? m.stopConditionsJson : null,
     deadline: constraints?.deadline as string ?? null,
+    hyperliquidRisk: risk.success ? risk.data : null,
   };
 }
 
@@ -54,8 +57,11 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
   // `stopConditionsAccepted` — acceptance lives on
   // `missions.accepted_contract_hash` (mig 023) and is written by the
   // host-only acceptance path, never by the model/draft update flow.
-  if (draft.deadline !== undefined) {
-    row.constraints_json = { deadline: draft.deadline };
+  if (draft.deadline !== undefined || draft.hyperliquidRisk !== undefined) {
+    row.constraints_json = {
+      ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
+      ...(draft.hyperliquidRisk !== undefined ? { hyperliquidRisk: draft.hyperliquidRisk } : {}),
+    };
   }
 
   return row;
@@ -116,6 +122,9 @@ export function draftToPromptContext(m: Mission): string {
     for (const s of draft.stopConditions) lines.push(`- ${s}`);
   }
   if (draft.deadline) lines.push(`**Deadline:** ${draft.deadline}`);
+  if (draft.hyperliquidRisk) {
+    lines.push(`**Hyperliquid risk:** ${draft.hyperliquidRisk.leverageCap}x leverage cap, ${draft.hyperliquidRisk.perOrderNotionalPct}% per order, ${draft.hyperliquidRisk.totalNotionalPct}% total`);
+  }
 
   return lines.join("\n");
 }

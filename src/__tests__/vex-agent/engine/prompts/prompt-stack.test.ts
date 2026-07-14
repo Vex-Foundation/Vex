@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { EngineContext, Permission, SessionKind } from "../../../../vex-agent/engine/types.js";
 import {
   buildPromptStack,
+  buildHypervexingTurnStatePrompt,
   buildProtocolsPrompt,
   resetProtocolsPromptCache,
   buildPermissionPrompt,
@@ -10,6 +11,11 @@ import {
 import type { PromptStackOptions } from "../../../../vex-agent/engine/prompts/index.js";
 import { buildRuntimeClockSnapshot } from "../../../../vex-agent/engine/runtime-clock.js";
 import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST, PROTOCOL_TOOLS } from "../../../../vex-agent/tools/protocols/catalog.js";
+import { defaultVisibilityContext } from "../../../../vex-agent/tools/registry.js";
+import {
+  clearHlWorkspaceModeProvider,
+  registerHlWorkspaceModeProvider,
+} from "../../../../lib/hyperliquid-workspace-mode.js";
 
 function makeContext(overrides: Partial<EngineContext> = {}): EngineContext {
   return {
@@ -70,6 +76,11 @@ describe("prompt-stack", () => {
           expect(joined).toContain("token logo as a Markdown image");
           expect(joined).toContain("never invent or guess an image URL");
           expect(joined).not.toContain("do not embed images");
+          // Tools-are-internal presentation law (user-ordered after the live
+          // hypervexing entry dumped an alias cheat-sheet at the user): tool
+          // names/aliases are never enumerated to the user, in any mode.
+          expect(joined).toContain("## Tools Are Internal Machinery");
+          expect(joined).toContain("never enumerate or tabulate them to the user");
 
           // Tool usage markers
           expect(joined).toContain("discover_tools");
@@ -148,6 +159,35 @@ describe("prompt-stack", () => {
       }
     });
 
+    it("keeps protocols static across workspace modes while mode state lives in the turn layer", () => {
+      const sessionId = "workspace-session";
+      let workspaceMode: "hypervexing" | "normal" = "hypervexing";
+      registerHlWorkspaceModeProvider(() => workspaceMode);
+      try {
+        const activeMode = buildHypervexingTurnStatePrompt(
+          defaultVisibilityContext({ sessionId }),
+        );
+        workspaceMode = "normal";
+        const inactiveMode = buildHypervexingTurnStatePrompt(
+          defaultVisibilityContext({ sessionId }),
+        );
+        const active = buildPromptStack(makeContext({ sessionId }), {
+          hypervexingTurnStatePrompt: activeMode,
+        });
+        const inactive = buildPromptStack(makeContext({ sessionId }), {
+          hypervexingTurnStatePrompt: inactiveMode,
+        });
+
+        expect(active.staticLayers).toEqual(inactive.staticLayers);
+        expect(active.turnLayers.join("\n")).toContain("Hypervexing workspace: ACTIVE");
+        expect(inactive.turnLayers.join("\n")).toContain("Hypervexing workspace: not active");
+        expect(active.staticLayers.join("\n")).not.toContain("Hypervexing workspace: ACTIVE for this session.");
+        expect(active.staticLayers.join("\n")).not.toContain("Hypervexing compact Hyperliquid index");
+      } finally {
+        clearHlWorkspaceModeProvider();
+      }
+    });
+
     it("the Iteration pin lives in the TURN layers (D-SPLIT-MISSION), frozen from missionRunContext", () => {
       const stack = buildPromptStack(
         makeContext({ sessionKind: "mission", missionId: "m-1", missionRunId: "run-1" }),
@@ -210,7 +250,7 @@ describe("prompt-stack", () => {
       expect(prompt).toContain(`Total: ${advertisedToolCount} tools`);
     });
 
-    it("contains all active namespaces from catalog", () => {
+    it("contains all advertised namespaces from catalog", () => {
       const prompt = buildProtocolsPrompt();
 
       // Only advertised namespaces appear in the prompt — non-advertised
@@ -225,6 +265,15 @@ describe("prompt-stack", () => {
       for (const ns of advertisedNamespacesWithTools) {
         expect(prompt).toContain(`### ${ns}`); // P3 heading fix: namespace H3 under group H2
       }
+    });
+
+    it("keeps protocol navigation free of live availability state", () => {
+      const prompt = buildProtocolsPrompt();
+
+      expect(prompt).toContain("Tools: ");
+      expect(prompt).toContain("cataloged.");
+      expect(prompt).not.toContain(" active /");
+      expect(prompt).not.toContain("Requires env:");
     });
 
     it("renders explicit product groups instead of heuristic families", () => {
@@ -316,7 +365,9 @@ describe("prompt-stack", () => {
 
     it("agent / full grants full authority", () => {
       const prompt = buildPermissionPrompt({ mode: "agent", permission: "full" });
-      expect(prompt).toContain("full authority");
+      expect(prompt).toContain("bypasses only the generic session approval gate");
+      expect(prompt).toContain("Hyperliquid mutations fail closed");
+      expect(prompt).toContain("foreign egress always requires approval");
     });
 
     it("mission / restricted requires approval and supports loop_defer", () => {
@@ -327,7 +378,8 @@ describe("prompt-stack", () => {
 
     it("mission / full grants full authority", () => {
       const prompt = buildPermissionPrompt({ mode: "mission", permission: "full" });
-      expect(prompt).toContain("full authority");
+      expect(prompt).toContain("bypasses only the generic session approval gate");
+      expect(prompt).toContain("Per-tool\n  policies always apply");
     });
   });
 
@@ -384,7 +436,10 @@ describe("prompt-stack", () => {
       // `stopConditionsAccepted=true` — acceptance is host-only. The
       // mission-setup prompt instead points the model at the host
       // `Accept contract` step.
-      expect(joined).toContain("Acceptance is a separate host-only step");
+      // Wave-3 P4: one authoritative activation-sequence rule replaces the
+      // old standalone acceptance sentence.
+      expect(joined).toContain("click Accept contract");
+      expect(joined).toContain("Only after that acceptance does the host show Start mission");
     });
 
     it("mission run with context shows mission contract", () => {
@@ -675,8 +730,9 @@ describe("prompt-stack", () => {
       const agentFull = buildPermissionPrompt({ mode: "agent", permission: "full" });
       const missionFull = buildPermissionPrompt({ mode: "mission", permission: "full" });
       for (const policy of [agentFull, missionFull]) {
-        // Authority markers survive.
-        expect(policy).toContain("full authority");
+        // Authority marker (wave-3 P3 rewording: full bypasses ONLY the
+        // generic session approval gate; per-tool policy always applies).
+        expect(policy).toContain("bypasses only the generic session approval gate");
         // The duplicated safety bullets are gone (single home = Safety Contract).
         expect(policy).not.toContain("verify before large trades");
         expect(policy).not.toContain("reserve gas for at least one");
@@ -734,13 +790,17 @@ describe("prompt-stack", () => {
       resetProtocolsPromptCache();
     });
 
-    it("renders 'Requires env' hint for a fully env-gated namespace with 0 available tools", () => {
+    it("static protocols layer is deterministic: no live env/availability info even when a namespace is fully gated", () => {
+      // Wave-3 P2: the static prefix must be KV-cache stable, so live
+      // availability ("N active") and env hints moved out; discovery and the
+      // Tool Map carry the live picture.
       delete process.env.JUPITER_API_KEY;
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
       const solanaSection = prompt.split("### solana")[1]?.split("##")[0] ?? "";
-      expect(solanaSection).toContain("Tools: 0 active");
-      expect(solanaSection).toContain("Requires env: JUPITER_API_KEY");
+      expect(solanaSection).toContain("cataloged.");
+      expect(solanaSection).not.toContain("Requires env:");
+      expect(solanaSection).not.toContain("active");
     });
 
     it("does not render 'Requires env' hint when env is present", () => {

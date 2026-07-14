@@ -15,6 +15,7 @@ import type { Permission, SessionKind } from "@vex-agent/engine/types.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS, getToolDef } from "./lookup.js";
+import { getVisibleHypervexingAliasTools } from "../hypervexing-aliases.js";
 
 /**
  * Session-aware context for tool surface projection. Built by engine runners
@@ -30,6 +31,11 @@ import { TOOLS, getToolDef } from "./lookup.js";
  * are expected to recompute per turn rather than cache.
  */
 export interface ToolVisibilityContext {
+  /**
+   * Active session identity for transient main-owned visibility such as the
+   * Hypervexing hot set. Omitted contexts fail closed to the normal tool menu.
+   */
+  sessionId?: string;
   permission: Permission;
   role: "parent" | "subagent";
   sessionKind: SessionKind;
@@ -103,13 +109,18 @@ export function defaultVisibilityContext(
  *      (drops `mutating` at barrier+, drops `compact_only` below barrier).
  */
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
-  return TOOLS
+  const staticTools = TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
     .filter(t => !t.excludeRoles?.includes(ctx.role))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
+  // Hypervexing aliases are a session-mode projection, not permanent ToolDefs.
+  // The alias projection receives this same band so it shares the catalog's
+  // release, policy, and pressure visibility rather than re-implementing it.
+  const hotSet = getVisibleHypervexingAliasTools(ctx.sessionId, ctx.contextUsageBand);
+  return [...staticTools, ...hotSet];
 }
 
 /**

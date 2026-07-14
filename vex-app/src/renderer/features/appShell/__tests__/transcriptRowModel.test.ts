@@ -24,6 +24,7 @@ function dto(p: {
   readonly toolName?: string | null;
   readonly toolCallId?: string | null;
   readonly toolCalls?: SessionMessageDto["toolCalls"];
+  readonly explorerRefs?: SessionMessageDto["explorerRefs"];
   readonly id?: number;
 }): SessionMessageDto {
   return {
@@ -36,6 +37,7 @@ function dto(p: {
     toolCallId: p.toolCallId ?? null,
     toolName: p.toolName ?? null,
     toolCalls: p.toolCalls ?? null,
+    explorerRefs: p.explorerRefs ?? null,
   };
 }
 
@@ -394,5 +396,69 @@ describe("groupTranscriptRows (S5 act ledger)", () => {
       dto({ id: 4, role: "system", kind: "compaction", content: "c" }),
     ]);
     expect(groupTranscriptRows(rows)).toEqual(rows);
+  });
+});
+
+// ── Stage 2: explorerRefs propagation ───────────────────────────────────────
+
+const HL_REFS = [{ chain: "hyperliquid", txRef: "0xabc" }] as const;
+
+function resultDtoWithRefs(
+  id: number,
+  toolCallId: string,
+  content: string,
+  explorerRefs: SessionMessageDto["explorerRefs"],
+): SessionMessageDto {
+  return dto({ id, role: "tool", kind: "tool_result", content, toolCallId, explorerRefs });
+}
+
+describe("explorerRefs propagation (Stage 2)", () => {
+  it("carries explorerRefs onto a tool_result row model", () => {
+    const row = toTranscriptRow(
+      resultDtoWithRefs(2, "abc", "{}", [...HL_REFS]),
+    );
+    expect(row.toolKind).toBe("result");
+    expect(row.explorerRefs).toEqual(HL_REFS);
+  });
+
+  it("merges the paired result's refs onto its act (individual run)", () => {
+    const entries = groupTranscriptRows(
+      toTranscriptRows([
+        callDto(1, ["kyberswap:swap"]),
+        resultDtoWithRefs(2, "c1-0", "{}", [...HL_REFS]),
+      ]),
+    );
+    expect(entries).toHaveLength(1);
+    const row = entries[0]!;
+    if (row.variant === "tool_group") throw new Error("unexpected group");
+    expect(row.toolActs?.[0]?.explorerRefs).toEqual(HL_REFS);
+  });
+
+  it("merges refs onto the matching act inside a collapsed group", () => {
+    const entries = groupTranscriptRows(
+      toTranscriptRows([
+        callDto(1, ["search:web"]),
+        resultDto(2, "c1-0", "r1"),
+        callDto(3, ["kyberswap:swap"]),
+        resultDtoWithRefs(4, "c3-0", "{}", [...HL_REFS]),
+        callDto(5, ["wallet:read"]),
+      ]),
+    );
+    const g = group(entries)!;
+    const swapAct = g.calls.find((c) => c.toolCallId === "c3-0")!;
+    expect(swapAct.explorerRefs).toEqual(HL_REFS);
+    // Acts without a ref-bearing result carry none.
+    expect(g.calls.find((c) => c.toolCallId === "c1-0")!.explorerRefs).toBeUndefined();
+  });
+
+  it("keeps refs on an ORPHAN result row (call scrolled out of the run)", () => {
+    const entries = groupTranscriptRows(
+      toTranscriptRows([resultDtoWithRefs(9, "missing", "lost", [...HL_REFS])]),
+    );
+    expect(entries).toHaveLength(1);
+    const orphan = entries[0]!;
+    if (orphan.variant === "tool_group") throw new Error("unexpected group");
+    expect(orphan.toolKind).toBe("result");
+    expect(orphan.explorerRefs).toEqual(HL_REFS);
   });
 });

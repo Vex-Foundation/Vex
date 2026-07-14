@@ -58,8 +58,18 @@ describe("ProtocolToolManifest taxonomy — coverage", () => {
 
 describe("ProtocolToolManifest taxonomy — mutating ↔ taxonomy invariant", () => {
   it("non-mutating protocol tools classify as 'read'", () => {
+    // Reviewed exceptions: the Hypervexing workspace tools emit a UI-mode event
+    // only — no approval, no capture, no provider call, no durable state. They
+    // classify as 'local_write' (honest: they change local presentation state),
+    // and stay non-mutating so the agent can switch the mode without friction.
+    const reviewedLocalWrites = new Set([
+      "hyperliquid.workspace.enter",
+      "hyperliquid.workspace.exit",
+      "hyperliquid.market.watchCandles",
+    ]);
     const violations = PROTOCOL_TOOLS
       .filter((m) => !m.mutating && m.actionKind !== "read")
+      .filter((m) => !(reviewedLocalWrites.has(m.toolId) && m.actionKind === "local_write"))
       .map((m) => `${m.toolId}: mutating=false but actionKind=${m.actionKind}`);
     expect(violations, "non-mutating tools mis-classified as something other than read").toEqual([]);
   });
@@ -136,6 +146,9 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["solana.predict.claim", "user_wallet_broadcast"],
     ["solana.predict.closeAll", "user_wallet_broadcast"],
     ["solana.predict.events", "read"],
+
+    // Hyperliquid Bridge2 funding is a direct Arbitrum ERC-20 broadcast.
+    ["hyperliquid.deposit", "user_wallet_broadcast"],
 
     // DexScreener — entirely read-only (no auth, no API key).
     ["dexscreener.search", "read"],

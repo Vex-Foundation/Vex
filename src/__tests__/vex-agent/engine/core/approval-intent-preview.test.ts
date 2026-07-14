@@ -115,6 +115,29 @@ describe("buildIntentPreview", () => {
   });
 });
 
+describe("buildIntentPreview — Hyperliquid signed economics", () => {
+  it.each([
+    ["hyperliquid.spot.trade", { side: "buy", size: "2", price: "101" }, { side: "buy", size: "2", price: "101" }],
+    ["hyperliquid.perp.close", { side: "sell", size: "3", markPrice: "99" }, { side: "sell", size: "3", markPrice: "99" }],
+    ["hyperliquid.perp.twap", { side: "buy", size: "4", minutes: 15, randomize: true }, { side: "buy", size: "4", minutes: 15, randomize: true }],
+    ["hyperliquid.perp.adjustMargin", { ntli: -250 }, { ntli: -250 }],
+    ["hyperliquid.withdraw", { amount: "5", destination: "0xrecipient" }, { amount: "5", destination: "0xrecipient" }],
+    ["hyperliquid.transfer.usdClass", { amount: "6", toPerp: true }, { amount: "6", toPerp: true }],
+    ["hyperliquid.deposit", { amountUsd: "7" }, { amountUsd: "7" }],
+  ] as const)("shows every signed economic and directional field for %s", (toolName, args, expected) => {
+    expect(buildIntentPreview(toolName, args).criticalArgs).toMatchObject(expected);
+  });
+
+  it("renders a trusted destination class without accepting a raw spoof", () => {
+    const preview = buildIntentPreview(
+      "hyperliquid.deposit",
+      { amountUsd: "7", destinationClass: "spoofed" },
+      { hyperliquid: { destinationClass: "Hyperliquid bridge deposit" } },
+    );
+    expect(preview.criticalArgs).toMatchObject({ amountUsd: "7", destinationClass: "Hyperliquid bridge deposit" });
+  });
+});
+
 describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
   it("injects criticalArgs.safety='pass' from the typed extras for a gated swap", () => {
     const preview = buildIntentPreview(

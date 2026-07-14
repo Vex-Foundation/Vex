@@ -84,8 +84,9 @@ export async function enqueueApprovalIntent(args: {
           // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
           // buildIntentPreview renders the fixed lock warning (never from args).
           termLock: result.prequote.termLock,
+          ...(result.hyperliquid ? { hyperliquid: result.hyperliquid } : {}),
         }
-      : undefined,
+      : result.hyperliquid ? { hyperliquid: result.hyperliquid } : undefined,
   );
   const intentPolicy = buildPolicySnapshot(toolContext);
   // Phase 3: stamp `expires_at` at enqueue so the approve gate +

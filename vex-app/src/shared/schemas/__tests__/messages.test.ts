@@ -54,6 +54,7 @@ describe("messages schemas", () => {
       toolCallId: null,
       toolName: null,
       toolCalls: null,
+      explorerRefs: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -72,8 +73,64 @@ describe("messages schemas", () => {
         { toolCallId: "call_1", toolName: "wallet:read", toolArgs: '{\n  "chain": "base"\n}' },
         { toolCallId: "call_2", toolName: "dexscreener:search", toolArgs: null },
       ],
+      explorerRefs: null,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("sessionMessageDtoSchema accepts a bounded explorerRefs array on a tool row", () => {
+    const parsed = sessionMessageDtoSchema.safeParse({
+      id: 20,
+      sessionId: SESSION,
+      role: "tool",
+      kind: "tool_result",
+      content: "{}",
+      createdAt: ISO,
+      toolCallId: "call_1",
+      toolName: null,
+      toolCalls: null,
+      explorerRefs: [
+        { chain: "hyperliquid", txRef: "0xabc" },
+        { chain: "solana", txRef: "5sig" },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects an explorerRefs array over the 8-entry cap", () => {
+    const refs = Array.from({ length: 9 }, (_, i) => ({
+      chain: "solana",
+      txRef: `sig${i}`,
+    }));
+    const parsed = sessionMessageDtoSchema.safeParse({
+      id: 21,
+      sessionId: SESSION,
+      role: "tool",
+      kind: "tool_result",
+      content: "{}",
+      createdAt: ISO,
+      toolCallId: "call_1",
+      toolName: null,
+      toolCalls: null,
+      explorerRefs: refs,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects an explorerRef with an oversize txRef (>128 chars)", () => {
+    const parsed = sessionMessageDtoSchema.safeParse({
+      id: 22,
+      sessionId: SESSION,
+      role: "tool",
+      kind: "tool_result",
+      content: "{}",
+      createdAt: ISO,
+      toolCallId: "call_1",
+      toolName: null,
+      toolCalls: null,
+      explorerRefs: [{ chain: "solana", txRef: "a".repeat(129) }],
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects toolArgs over the 2000-char cap (boundary size limit)", () => {
@@ -89,6 +146,7 @@ describe("messages schemas", () => {
       toolCalls: [
         { toolCallId: "c", toolName: "x:y", toolArgs: "a".repeat(2001) },
       ],
+      explorerRefs: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -109,6 +167,7 @@ describe("messages schemas", () => {
       toolCallId: null,
       toolName: "x:y",
       toolCalls: calls,
+      explorerRefs: null,
     });
     expect(parsed.success).toBe(false);
   });
