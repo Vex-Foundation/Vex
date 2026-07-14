@@ -88,7 +88,7 @@ describe("UpdateToast — available", () => {
         "Downloads the update now. Restart whenever you're ready.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Later")).toBeTruthy();
+    expect(screen.getByText("Later").className).toContain("px-2");
     expect(screen.getByText("Update now")).toBeTruthy();
     const releaseNotes = screen.getByText("Release notes");
     expect(releaseNotes.className).toContain("mr-auto");

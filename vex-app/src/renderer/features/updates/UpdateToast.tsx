@@ -184,7 +184,12 @@ function renderActions(
             Release notes
           </Button>
           {!isCritical(status) ? (
-            <Button variant="ghost" size="sm" onClick={a.onLater}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2"
+              onClick={a.onLater}
+            >
               Later
             </Button>
           ) : null}
