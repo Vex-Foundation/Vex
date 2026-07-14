@@ -85,7 +85,9 @@ describe("UpdateToast — available", () => {
     expect(screen.getByRole("status")).toBeTruthy();
     expect(screen.getByText("Later")).toBeTruthy();
     expect(screen.getByText("Update now")).toBeTruthy();
-    expect(screen.getByText("Release notes")).toBeTruthy();
+    const releaseNotes = screen.getByText("Release notes");
+    expect(releaseNotes.className).toContain("mr-auto");
+    expect(releaseNotes.className).toContain("px-0");
   });
 
   it("fires onUpdateNow / onLater / onReleaseNotes from their buttons", () => {

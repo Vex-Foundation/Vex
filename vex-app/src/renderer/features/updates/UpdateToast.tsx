@@ -142,7 +142,7 @@ export function UpdateToast({
           </button>
         ) : null}
       </div>
-      <div className="mt-3 flex items-center justify-end gap-2">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
         {renderActions(status, {
           busy,
           onLater,
@@ -175,7 +175,12 @@ function renderActions(
     case "available":
       return (
         <>
-          <Button variant="link" size="sm" onClick={a.onReleaseNotes}>
+          <Button
+            variant="link"
+            size="sm"
+            className="mr-auto px-0"
+            onClick={a.onReleaseNotes}
+          >
             Release notes
           </Button>
           {!isCritical(status) ? (
@@ -219,7 +224,12 @@ function renderActions(
     case "error":
       return (
         <>
-          <Button variant="link" size="sm" onClick={a.onReleaseNotes}>
+          <Button
+            variant="link"
+            size="sm"
+            className="mr-auto px-0"
+            onClick={a.onReleaseNotes}
+          >
             Open download page
           </Button>
           <Button size="sm" onClick={a.onTryAgain} disabled={a.busy}>
