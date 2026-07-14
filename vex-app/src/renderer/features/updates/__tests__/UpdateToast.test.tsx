@@ -83,6 +83,11 @@ describe("UpdateToast — available", () => {
   it("renders Later, Update now, and Release notes; role=status", () => {
     renderToast(AVAILABLE as ToastableUpdateStatus);
     expect(screen.getByRole("status")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Downloads the update now. Restart whenever you're ready.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Later")).toBeTruthy();
     expect(screen.getByText("Update now")).toBeTruthy();
     const releaseNotes = screen.getByText("Release notes");

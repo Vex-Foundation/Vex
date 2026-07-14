@@ -262,7 +262,7 @@ function titleFor(status: ToastableUpdateStatus): string {
 function bodyFor(status: ToastableUpdateStatus): string {
   switch (status.kind) {
     case "available":
-      return "Downloads the update. You choose when to restart.";
+      return "Downloads the update now. Restart whenever you're ready.";
     case "downloading":
       return `${Math.round(status.percent)}% complete.`;
     case "downloaded":
