@@ -113,6 +113,9 @@ const healthMock = vi.fn<() => Promise<Result<HealthReport>>>();
 const messagesListMock = vi.fn();
 const missionGetDraftMock = vi.fn();
 const runtimeGetStateMock = vi.fn();
+const hyperliquidEnterWorkspaceMock = vi.fn();
+const hyperliquidGetWorkspaceModeMock = vi.fn();
+const hyperliquidAcknowledgeRiskMock = vi.fn();
 
 beforeAll(() => {
   const proto = HTMLDialogElement.prototype as unknown as {
@@ -163,6 +166,15 @@ beforeEach(() => {
   healthMock.mockReset();
   missionGetDraftMock.mockReset();
   runtimeGetStateMock.mockReset();
+  hyperliquidEnterWorkspaceMock.mockReset().mockResolvedValue({
+    ok: true,
+    data: { accepted: true },
+  });
+  hyperliquidGetWorkspaceModeMock.mockReset().mockResolvedValue({
+    ok: true,
+    data: { mode: "normal", acknowledged: true, everEntered: true },
+  });
+  hyperliquidAcknowledgeRiskMock.mockReset();
   // SessionComposer queries mission.getDraft + runtime.getState as soon as a
   // session is active (Send gate moved to activeSessionId). Benign defaults:
   // no draft, no run status (free text allowed).
@@ -179,6 +191,7 @@ beforeEach(() => {
     appShellView: "session",
     createSessionOpen: false,
     createSessionInitialMessage: null,
+    createSessionPreset: "standard",
     pendingFirstMessage: null,
   });
   sessionsListMock.mockResolvedValue({ ok: true, data: [] });
@@ -271,7 +284,10 @@ beforeEach(() => {
         onPositionsUpdate: () => () => {},
         onRiskProposalUpdate: () => () => {},
         onWorkspaceMode: () => () => {},
+        getWorkspaceMode: hyperliquidGetWorkspaceModeMock,
+        enterWorkspace: hyperliquidEnterWorkspaceMock,
         exitWorkspace: vi.fn(),
+        acknowledgeRisk: hyperliquidAcknowledgeRiskMock,
       },
       // Agent integration puzzle 2/09 + F5: SessionPanel mounts
       // `useTranscriptLiveSync` + `useStreamPreviewSync` +
@@ -302,6 +318,73 @@ describe("AppShell", () => {
 
     await screen.findByRole("heading", { name: "What should I execute?" });
     expect(screen.getByText(/PREVIEW/)).not.toBeNull();
+  });
+
+  it("creates a Hyperliquid-prefilled session directly from the welcome protocol rail", async () => {
+    renderShell();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create Hyperliquid session" }),
+    );
+    await screen.findByRole("heading", { name: "New Hyperliquid session" });
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
+      "Hyperliquid",
+    );
+    expect(screen.getByRole("radio", { name: /Agent/i })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(screen.getByRole("radio", { name: /Restricted/i })).toHaveProperty(
+      "checked",
+      true,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create & open" }));
+
+    await waitFor(() =>
+      expect(hyperliquidEnterWorkspaceMock).toHaveBeenCalledWith({
+        sessionId: "a6bf4f85-e645-4df7-9bc5-70ec2eb0bd51",
+      }),
+    );
+    expect(sessionsCreateMock).toHaveBeenCalledWith({
+      mode: "agent",
+      name: "Hyperliquid",
+      permission: "restricted",
+      selectedEvmWalletId: null,
+      selectedSolanaWalletId: null,
+    });
+  });
+
+  it("retries a failed Hypervexing open without creating a duplicate session", async () => {
+    hyperliquidEnterWorkspaceMock
+      .mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "internal.unexpected",
+          domain: "hyperliquid",
+          message: "Room unavailable.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "c",
+        },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { accepted: true } });
+    renderShell();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create Hyperliquid session" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create & open" }),
+    );
+
+    await screen.findByText(/Room unavailable/);
+    fireEvent.click(screen.getByRole("button", { name: "Retry opening" }));
+    await waitFor(() =>
+      expect(hyperliquidEnterWorkspaceMock).toHaveBeenCalledTimes(2),
+    );
+    expect(sessionsCreateMock).toHaveBeenCalledTimes(1);
   });
 
   it("welcome composer Send opens the creator with the draft carried + name pre-filled (welcome→create)", async () => {

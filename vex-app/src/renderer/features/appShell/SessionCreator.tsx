@@ -61,6 +61,7 @@ export function SessionCreator({
   const createSessionInitialMessage = useUiStore(
     (s) => s.createSessionInitialMessage,
   );
+  const createSessionPreset = useUiStore((s) => s.createSessionPreset);
   const setPendingFirstMessage = useUiStore((s) => s.setPendingFirstMessage);
   const setSigningState = useUiStore((s) => s.setSigningState);
   const createMutation = useCreateSession();
@@ -76,6 +77,9 @@ export function SessionCreator({
   const [selectedEvmWalletId, setSelectedEvmWalletId] = useState<string | null>(null);
   const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [openingWorkspace, setOpeningWorkspace] = useState(false);
+  const [createdHyperliquidSessionId, setCreatedHyperliquidSessionId] =
+    useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
 
   // Reset state on every (re)open so the next opening starts clean.
@@ -84,15 +88,30 @@ export function SessionCreator({
       setName(
         createSessionInitialMessage !== null
           ? deriveSessionName(createSessionInitialMessage)
-          : "",
+          : createSessionPreset === "hyperliquid"
+            ? "Hyperliquid"
+            : "",
       );
-      setMode(sessionModeFilter === "mission" ? "mission" : "agent");
+      setMode(
+        createSessionPreset === "hyperliquid"
+          ? "agent"
+          : sessionModeFilter === "mission"
+            ? "mission"
+            : "agent",
+      );
       setPermission("restricted");
       setSelectedEvmWalletId(null);
       setSelectedSolanaWalletId(null);
       setSubmitError(null);
+      setOpeningWorkspace(false);
+      setCreatedHyperliquidSessionId(null);
     }
-  }, [open, createSessionInitialMessage, sessionModeFilter]);
+  }, [
+    open,
+    createSessionInitialMessage,
+    createSessionPreset,
+    sessionModeFilter,
+  ]);
 
   // Focus the Name input first when the dialog opens — it is the only
   // text field in this modal. Mission goal capture happens in chat.
@@ -106,12 +125,49 @@ export function SessionCreator({
 
   const trimmedName = name.trim();
   const nameInvalid = trimmedName.length === 0;
-  const submitDisabled = nameInvalid || createMutation.isPending;
+  const submitDisabled =
+    (nameInvalid && createdHyperliquidSessionId === null) ||
+    createMutation.isPending ||
+    openingWorkspace;
+
+  const openHyperliquidWorkspace = useCallback(
+    async (sessionId: string): Promise<boolean> => {
+      setOpeningWorkspace(true);
+      setSubmitError(null);
+      try {
+        const result = await window.vex.hyperliquid.enterWorkspace({ sessionId });
+        if (!result.ok) {
+          setSigningState("idle");
+          setSubmitError(
+            `The session was created, but Hypervexing could not open: ${result.error.message}`,
+          );
+          return false;
+        }
+        setSigningState("signed");
+        setActiveSessionId(sessionId);
+        onOpenChange(false);
+        return true;
+      } catch {
+        setSigningState("idle");
+        setSubmitError(
+          "The session was created, but Hypervexing could not open. Retry opening it.",
+        );
+        return false;
+      } finally {
+        setOpeningWorkspace(false);
+      }
+    },
+    [onOpenChange, setActiveSessionId, setSigningState],
+  );
 
   const onSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
       if (submitDisabled) return;
+      if (createdHyperliquidSessionId !== null) {
+        await openHyperliquidWorkspace(createdHyperliquidSessionId);
+        return;
+      }
       setSubmitError(null);
       const input: SessionCreateInput =
         mode === "mission"
@@ -128,6 +184,14 @@ export function SessionCreator({
         if (!outcome.ok) {
           setSigningState("idle");
           setSubmitError(outcome.error.message);
+          return;
+        }
+        if (createSessionPreset === "hyperliquid") {
+          // Create first, then ask main to enter before selecting the session.
+          // When selection changes, the workspace controller's authoritative
+          // mode read sees the completed transition without racing a live push.
+          setCreatedHyperliquidSessionId(outcome.data.id);
+          await openHyperliquidWorkspace(outcome.data.id);
           return;
         }
         setSigningState("signed");
@@ -152,7 +216,10 @@ export function SessionCreator({
     [
       createMutation,
       createSessionInitialMessage,
+      createSessionPreset,
+      createdHyperliquidSessionId,
       mode,
+      openHyperliquidWorkspace,
       onOpenChange,
       permission,
       selectedEvmWalletId,
@@ -165,8 +232,21 @@ export function SessionCreator({
     ],
   );
 
+  const handleOpenChange = useCallback(
+    (next: boolean): void => {
+      if (!next && createdHyperliquidSessionId !== null) {
+        // The database create already succeeded. If opening the room failed or
+        // the user dismisses the retry state, continue in that normal session
+        // instead of leaving an invisible duplicate behind.
+        setActiveSessionId(createdHyperliquidSessionId);
+      }
+      onOpenChange(next);
+    },
+    [createdHyperliquidSessionId, onOpenChange, setActiveSessionId],
+  );
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
        * is the Dialog base since the rebrand — only width is per-modal. */}
       <DialogContent className="max-w-2xl">
@@ -176,7 +256,11 @@ export function SessionCreator({
              * leading rule). Same <h2>, same aria-labelledby id — only the
              * register changes; text stays "New session" (uppercased by
              * CSS) so the accessible name is untouched. */}
-            <DialogTitle className="vex-eyebrow">New session</DialogTitle>
+            <DialogTitle className="vex-eyebrow">
+              {createSessionPreset === "hyperliquid"
+                ? "New Hyperliquid session"
+                : "New session"}
+            </DialogTitle>
             {/* Ceremony line — the retired welcome headline promoted to the
              * display register (landing .prob-card h3: Archivo 700 19px),
              * read once per new act (where ceremony belongs). */}
@@ -184,28 +268,35 @@ export function SessionCreator({
               Your chain. Your rules. I execute.
             </p>
             <DialogDescription className="text-xs text-[var(--vex-text-3)]">
-              Mode and permission are locked once the session is created.
+              {createSessionPreset === "hyperliquid"
+                ? "Public market scans work without a wallet. Select an EVM wallet to trade; mode and permission lock after creation."
+                : "Mode and permission are locked once the session is created."}
             </DialogDescription>
           </DialogHeader>
 
           <DialogBody className="gap-6 px-8">
-            <NameField name={name} onNameChange={setName} nameRef={nameRef} />
+            <fieldset
+              disabled={createdHyperliquidSessionId !== null}
+              className="contents"
+            >
+              <NameField name={name} onNameChange={setName} nameRef={nameRef} />
 
-            <ModeFieldset mode={mode} onModeChange={setMode} />
+              <ModeFieldset mode={mode} onModeChange={setMode} />
 
-            <PermissionFieldset
-              permission={permission}
-              onPermissionChange={setPermission}
-            />
+              <PermissionFieldset
+                permission={permission}
+                onPermissionChange={setPermission}
+              />
 
-            <WalletFieldset
-              selectedEvmWalletId={selectedEvmWalletId}
-              selectedSolanaWalletId={selectedSolanaWalletId}
-              evmOptions={inventory.evm}
-              solanaOptions={inventory.solana}
-              onEvmChange={setSelectedEvmWalletId}
-              onSolanaChange={setSelectedSolanaWalletId}
-            />
+              <WalletFieldset
+                selectedEvmWalletId={selectedEvmWalletId}
+                selectedSolanaWalletId={selectedSolanaWalletId}
+                evmOptions={inventory.evm}
+                solanaOptions={inventory.solana}
+                onEvmChange={setSelectedEvmWalletId}
+                onSolanaChange={setSelectedSolanaWalletId}
+              />
+            </fieldset>
 
             <SubmitError submitError={submitError} />
           </DialogBody>
@@ -214,17 +305,25 @@ export function SessionCreator({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={createMutation.isPending}
+              onClick={() => handleOpenChange(false)}
+              disabled={createMutation.isPending || openingWorkspace}
               className="text-[var(--vex-text-2)] hover:bg-white/[0.06] hover:text-foreground"
             >
-              Cancel
+              {createdHyperliquidSessionId === null ? "Cancel" : "Continue in Vex"}
             </Button>
             {/* THE primary action — the landing's filled cobalt pill
              * (Button default variant: mono uppercase, bg-primary), one
              * step heavier than Cancel (h-10 vs h-9). */}
             <Button type="submit" disabled={submitDisabled} className="h-10 px-6">
-              {createMutation.isPending ? "Creating…" : "Create"}
+              {openingWorkspace
+                ? "Opening…"
+                : createdHyperliquidSessionId !== null
+                  ? "Retry opening"
+                  : createMutation.isPending
+                    ? "Creating…"
+                    : createSessionPreset === "hyperliquid"
+                      ? "Create & open"
+                      : "Create"}
             </Button>
           </DialogFooter>
         </form>

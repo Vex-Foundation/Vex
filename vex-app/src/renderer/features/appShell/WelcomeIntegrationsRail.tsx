@@ -30,6 +30,7 @@ import {
 } from "@shared/chains/display.js";
 import { ChainIcon } from "../../components/common/ChainIcon.js";
 import { cn } from "../../lib/utils.js";
+import { useUiStore } from "../../stores/uiStore.js";
 
 interface ProtocolMark {
   readonly name: string;
@@ -62,9 +63,15 @@ const EVM_STACK: readonly number[] = [
   56, // BNB Chain
 ];
 
-function ProtocolChip({ mark }: { readonly mark: ProtocolMark }): JSX.Element {
-  return (
-    <span className="group flex items-center gap-1.5" title={mark.name}>
+function ProtocolChip({
+  mark,
+  onActivate,
+}: {
+  readonly mark: ProtocolMark;
+  readonly onActivate?: () => void;
+}): JSX.Element {
+  const content = (
+    <>
       <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.04]">
         <img
           src={mark.src}
@@ -81,6 +88,23 @@ function ProtocolChip({ mark }: { readonly mark: ProtocolMark }): JSX.Element {
       <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--vex-text-3)] transition-colors group-hover:text-[var(--vex-text-2)]">
         {mark.name}
       </span>
+    </>
+  );
+  if (onActivate !== undefined) {
+    return (
+      <button
+        type="button"
+        onClick={onActivate}
+        aria-label="Create Hyperliquid session"
+        className="group flex min-h-8 items-center gap-1.5 rounded-sm px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-0)]"
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <span className="group flex items-center gap-1.5" title={mark.name}>
+      {content}
     </span>
   );
 }
@@ -96,6 +120,9 @@ function ChainCoin({ chainId }: { readonly chainId: number }): JSX.Element {
 }
 
 export function WelcomeIntegrationsRail(): JSX.Element {
+  const openCreateHyperliquidSession = useUiStore(
+    (state) => state.openCreateHyperliquidSession,
+  );
   return (
     <div
       data-vex-area="welcome-integrations"
@@ -108,7 +135,15 @@ export function WelcomeIntegrationsRail(): JSX.Element {
       </span>
       <span className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
         {PROTOCOLS.map((mark) => (
-          <ProtocolChip key={mark.name} mark={mark} />
+          <ProtocolChip
+            key={mark.name}
+            mark={mark}
+            onActivate={
+              mark.name === "Hyperliquid"
+                ? openCreateHyperliquidSession
+                : undefined
+            }
+          />
         ))}
       </span>
 

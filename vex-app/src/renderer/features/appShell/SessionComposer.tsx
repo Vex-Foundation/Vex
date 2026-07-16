@@ -109,12 +109,15 @@ export interface SessionComposerProps {
    * and gating are identical in both variants.
    */
   readonly stage?: boolean;
+  /** Monotonic request from the shell to focus the restored composer. */
+  readonly focusRequest?: number;
 }
 
 export function SessionComposer({
   activeSession,
   activeSessionId,
   stage = false,
+  focusRequest = 0,
 }: SessionComposerProps): JSX.Element {
   // Submit/enable gate on the canonical selected id (uiStore), NOT the
   // detail-query object: the engine ingress loads its own session context,
@@ -176,6 +179,7 @@ export function SessionComposer({
   // so it never shuffles under an operator mid-thought.
   const [focused, setFocused] = useState<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const handledFocusRequest = useRef(0);
   const formRef = useRef<HTMLFormElement>(null);
   // Synchronous in-flight mutex (render `submitPending` lags a tick) + a mirror
   // of the latest active session so a submit that settles after a session
@@ -190,6 +194,12 @@ export function SessionComposer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [draft]);
+
+  useEffect(() => {
+    if (focusRequest <= handledFocusRequest.current) return;
+    handledFocusRequest.current = focusRequest;
+    textareaRef.current?.focus();
+  }, [focusRequest]);
 
   // Clear the composer notice when the active session changes so a stale
   // error / Retry from one session never renders on (or resends into) another.

@@ -54,6 +54,7 @@ export type View =
 export type WizardEntryMode = "setup" | "reconfigure";
 export type UnlockReturnView = "wizard" | "appShell";
 export type SessionModeFilter = "all" | "agent" | "mission";
+export type SessionCreationPreset = "standard" | "hyperliquid";
 /**
  * Sub-view of the app shell panel area. `session` is the default chat/
  * welcome panel; `sessionsLibrary` is the dedicated "browse all sessions"
@@ -125,6 +126,7 @@ interface UiState {
    */
   readonly createSessionOpen: boolean;
   readonly createSessionInitialMessage: string | null;
+  readonly createSessionPreset: SessionCreationPreset;
   readonly pendingFirstMessage: PendingFirstMessage | null;
   /**
    * Signing-stroke state for the sidebar's New-session key: "signing"
@@ -160,6 +162,8 @@ interface UiState {
   readonly setAppShellView: (value: AppShellView) => void;
   /** Open the new-session modal, optionally seeding the first message. */
   readonly openCreateSession: (initialMessage?: string | null) => void;
+  /** Open the new-session modal prefilled for a user-requested Hyperliquid room. */
+  readonly openCreateHyperliquidSession: () => void;
   /** Close the modal + clear its draft. Does NOT touch pendingFirstMessage. */
   readonly closeCreateSession: () => void;
   readonly setPendingFirstMessage: (value: PendingFirstMessage) => void;
@@ -190,6 +194,7 @@ export const useUiStore = create<UiState>()(
       appShellView: "session",
       createSessionOpen: false,
       createSessionInitialMessage: null,
+      createSessionPreset: "standard",
       pendingFirstMessage: null,
       signingState: "idle",
       reasoningEffortBySession: {},
@@ -215,10 +220,21 @@ export const useUiStore = create<UiState>()(
         set({
           createSessionOpen: true,
           createSessionInitialMessage: trimmed.length > 0 ? trimmed : null,
+          createSessionPreset: "standard",
         });
       },
+      openCreateHyperliquidSession: () =>
+        set({
+          createSessionOpen: true,
+          createSessionInitialMessage: null,
+          createSessionPreset: "hyperliquid",
+        }),
       closeCreateSession: () =>
-        set({ createSessionOpen: false, createSessionInitialMessage: null }),
+        set({
+          createSessionOpen: false,
+          createSessionInitialMessage: null,
+          createSessionPreset: "standard",
+        }),
       setPendingFirstMessage: (pendingFirstMessage) =>
         set({ pendingFirstMessage }),
       clearPendingFirstMessage: () => set({ pendingFirstMessage: null }),

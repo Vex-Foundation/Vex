@@ -71,7 +71,7 @@ function EarnCard({
 }): JSX.Element {
   const submit = useSubmitChat();
   return (
-    <div className="relative mx-3 mb-2 overflow-hidden rounded-lg bg-[var(--vex-surface-2)] p-3 transition-colors duration-150 hover:bg-[var(--vex-surface-2-up,var(--vex-surface-2))]">
+    <div className="relative mx-3 mb-2 shrink-0 overflow-hidden rounded-lg bg-[var(--vex-surface-2)] p-3 transition-colors duration-150 hover:bg-[var(--vex-surface-2-up,var(--vex-surface-2))]">
       <HlLiquidVeil />
       <p className="relative text-[13px] font-semibold tracking-[0.01em] text-[var(--vex-text)]">
         {title}
@@ -89,7 +89,7 @@ function EarnCard({
             message: `Explain ${title} on Hyperliquid — current APR, how it works, and the risks. Don't move anything.`,
           })
         }
-        className="mt-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-accent-text)] underline-offset-2 hover:underline disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
+        className="relative mt-2.5 block min-h-6 font-mono text-[10px] uppercase leading-6 tracking-[0.12em] text-[var(--vex-accent-text)] underline-offset-2 hover:underline disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
       >
         {submit.isPending ? "Asking…" : `Ask Vex about ${title === "Staking" ? "staking" : "HLP"}`}
       </button>

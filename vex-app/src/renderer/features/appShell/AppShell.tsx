@@ -32,7 +32,8 @@
  * custom).
  */
 
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
+import { AnimatePresence } from "motion/react";
 import type { SkyTheme } from "./signalSkyShaders.js";
 import type { AppShellView } from "../../stores/uiStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -73,11 +74,15 @@ export function AppShell(): JSX.Element {
   // and turns each agent request into the right store transition.
   const workspace = useHypervexingWorkspace();
   const inWorkspace = workspace.workspaceMode === "hypervexing";
+  const [composerFocusRequest, setComposerFocusRequest] = useState(0);
 
   // `data-vex-theme` is DERIVED: while the mode is active it reads
   // "hypervexing"; otherwise it is the user's own persisted theme, so EXIT
   // restores navy vs lime exactly. The mode never overwrites `theme`.
-  const derivedTheme: SkyTheme = deriveShellTheme(workspace.workspaceMode, theme);
+  const derivedTheme: SkyTheme = deriveShellTheme(
+    workspace.visualWorkspaceMode,
+    theme,
+  );
 
   // Stage F responsive: below ~1360px the three columns (sidebar + chat +
   // BOOK) no longer fit, so auto-collapse BOOK on the narrowing edge. One-way on
@@ -90,7 +95,8 @@ export function AppShell(): JSX.Element {
   // dimmed behind an active session transcript OR the Hypervexing chart. The
   // uniform itself eases inside SignalSky, so this can flip freely.
   const skyIntensity =
-    inWorkspace || (activeSessionId !== null && appShellView === "session")
+    workspace.visualWorkspaceMode === "hypervexing" ||
+    (activeSessionId !== null && appShellView === "session")
       ? SKY_DIM_INTENSITY
       : 1;
 
@@ -105,20 +111,32 @@ export function AppShell(): JSX.Element {
     >
       <SignalSky intensity={skyIntensity} theme={derivedTheme} />
 
-      {inWorkspace ? (
-        // The 5-zone trading room replaces the normal columns while active. It
-        // reuses the SAME SessionPanel (docked), so chat context is preserved
-        // and only ONE chat surface is ever mounted.
-        <HypervexingWorkspace onExit={workspace.exit} />
-      ) : (
-        <NormalShell
-          appShellView={appShellView}
-          activeSessionId={activeSessionId}
-          bookOpen={bookOpen}
-          toggleBook={toggleBook}
-          onCreate={() => openCreateSession()}
-        />
-      )}
+      <AnimatePresence
+        initial={false}
+        mode="wait"
+        onExitComplete={() => {
+          if (!workspace.exitTransitionPending) return;
+          workspace.completeExitTransition();
+          setComposerFocusRequest((request) => request + 1);
+        }}
+      >
+        {inWorkspace ? (
+          // The 5-zone trading room replaces the normal columns while active. It
+          // reuses the SAME SessionPanel (docked), so chat context is preserved
+          // and only ONE chat surface is ever mounted.
+          <HypervexingWorkspace key="hypervexing" onExit={workspace.exit} />
+        ) : (
+          <NormalShell
+            key="normal"
+            appShellView={appShellView}
+            activeSessionId={activeSessionId}
+            bookOpen={bookOpen}
+            toggleBook={toggleBook}
+            onCreate={() => openCreateSession()}
+            composerFocusRequest={composerFocusRequest}
+          />
+        )}
+      </AnimatePresence>
 
       <SessionCreator
         open={createSessionOpen}
@@ -148,12 +166,14 @@ function NormalShell({
   bookOpen,
   toggleBook,
   onCreate,
+  composerFocusRequest,
 }: {
   readonly appShellView: AppShellView;
   readonly activeSessionId: string | null;
   readonly bookOpen: boolean;
   readonly toggleBook: () => void;
   readonly onCreate: () => void;
+  readonly composerFocusRequest: number;
 }): JSX.Element {
   return (
     <>
@@ -202,7 +222,7 @@ function NormalShell({
           ) : appShellView === "missionHistory" ? (
             <MissionHistory />
           ) : (
-            <SessionPanel />
+            <SessionPanel composerFocusRequest={composerFocusRequest} />
           )}
         </div>
       </section>

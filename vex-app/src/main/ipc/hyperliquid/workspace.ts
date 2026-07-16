@@ -1,5 +1,5 @@
 import { CH } from "@shared/ipc/channels.js";
-import { err, ok, type Result } from "@shared/ipc/result.js";
+import { ok, type Result } from "@shared/ipc/result.js";
 import {
   hyperliquidWorkspaceEnterAcceptedSchema,
   hyperliquidWorkspaceEnterInputSchema,
@@ -40,18 +40,6 @@ export function registerHyperliquidWorkspaceModeHandler(): () => void {
   });
 }
 
-function manualEntryRejected(message: string, correlationId: string): Result<never> {
-  return err({
-    code: "validation.invalid_input",
-    domain: "hyperliquid",
-    message,
-    retryable: false,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  });
-}
-
 export function registerHyperliquidEnterWorkspaceHandler(): () => void {
   return registerHandler({
     channel: CH.hyperliquid.enterWorkspace,
@@ -62,20 +50,9 @@ export function registerHyperliquidEnterWorkspaceHandler(): () => void {
       const sessionError = await requireExistingHyperliquidSession(input.sessionId, ctx.requestId);
       if (sessionError !== null) return sessionError;
 
-      const preferences = await preferencesStore.load();
-      if (preferences.hyperliquid.riskAcknowledgedAt === null) {
-        return manualEntryRejected(
-          "Acknowledge Hyperliquid risk before manual re-entry, or use the agent path to enter Hypervexing.",
-          ctx.requestId,
-        );
-      }
-      if (!await hasSessionEverEnteredHypervexing(input.sessionId)) {
-        return manualEntryRejected(
-          "Manual re-entry is available only after this session has entered Hypervexing once. Use the agent path for first entry.",
-          ctx.requestId,
-        );
-      }
-
+      // User-requested first entry and re-entry share the same main-owned mode
+      // transition. If risk has not been acknowledged, the emitted event is
+      // ack-gated by the renderer before the workspace becomes visible.
       await requestHyperliquidWorkspaceMode(input.sessionId, "hypervexing");
       return ok(hyperliquidWorkspaceEnterAcceptedSchema.parse({ accepted: true }));
     },
@@ -97,4 +74,3 @@ export function registerHyperliquidExitWorkspaceHandler(): () => void {
     },
   });
 }
-

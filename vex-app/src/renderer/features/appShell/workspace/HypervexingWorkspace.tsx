@@ -141,11 +141,20 @@ export function HypervexingWorkspace({
 
   const motionProps = buildWorkspaceTransition(useReducedMotion() ?? false);
   const wideRoom = useWideRoom();
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    workspaceRef.current?.focus({ preventScroll: true });
+  }, []);
 
   return (
     <motion.div
+      ref={workspaceRef}
+      role="region"
+      aria-label="Hypervexing trading workspace"
+      tabIndex={-1}
       data-vex-hypervexing-workspace
-      className="absolute inset-0 z-10 grid gap-2.5 overflow-hidden p-2.5"
+      className="absolute inset-0 z-10 grid gap-2.5 overflow-hidden p-2.5 focus:outline-none"
       style={wideRoom ? WIDE_GRID_STYLE : NARROW_GRID_STYLE}
       initial={motionProps.initial}
       animate={motionProps.animate}

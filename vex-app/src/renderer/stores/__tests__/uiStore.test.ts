@@ -138,6 +138,16 @@ describe("uiStore", () => {
     expect(useUiStore.getState().createSessionInitialMessage).toBeNull();
   });
 
+  it("opens a Hyperliquid-prefilled creator and resets the preset on close", () => {
+    useUiStore.getState().openCreateHyperliquidSession();
+    expect(useUiStore.getState().createSessionOpen).toBe(true);
+    expect(useUiStore.getState().createSessionInitialMessage).toBeNull();
+    expect(useUiStore.getState().createSessionPreset).toBe("hyperliquid");
+
+    useUiStore.getState().closeCreateSession();
+    expect(useUiStore.getState().createSessionPreset).toBe("standard");
+  });
+
   it("closeCreateSession clears modal state but NOT the pending hand-off", () => {
     useUiStore.getState().openCreateSession("seed");
     useUiStore
@@ -178,6 +188,7 @@ describe("uiStore", () => {
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialMessage).toBeUndefined();
+    expect(parsed.state.createSessionPreset).toBeUndefined();
     expect(parsed.state.pendingFirstMessage).toBeUndefined();
     expect(raw).not.toContain("super secret first message");
   });

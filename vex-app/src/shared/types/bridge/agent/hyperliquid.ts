@@ -82,7 +82,7 @@ export interface HyperliquidBridge {
     input: HyperliquidSessionRiskPolicyReadInput,
   ) => Promise<Result<HyperliquidSessionRiskPolicyDto>>;
   readonly acknowledgeRisk: () => Promise<Result<Preferences>>;
-  /** Manual re-entry is main-gated by acknowledgement and prior entry. */
+  /** User-requested entry; first entry remains risk-acknowledgment gated. */
   readonly enterWorkspace: (
     input: HyperliquidWorkspaceEnterInput,
   ) => Promise<Result<HyperliquidWorkspaceEnterAccepted>>;

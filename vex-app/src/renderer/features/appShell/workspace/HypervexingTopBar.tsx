@@ -127,7 +127,14 @@ export function HypervexingTopBar({
           type="button"
           onClick={requestExit}
           disabled={exitPending}
-          aria-label="Exit Hypervexing"
+          aria-label={
+            exitPending
+              ? "Exiting Hypervexing"
+              : exitFailed
+                ? "Retry exiting Hypervexing"
+                : "Exit Hypervexing"
+          }
+          aria-busy={exitPending}
           className="rounded-md border border-[var(--vex-line-strong)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] hover:border-[var(--vex-accent-border)] hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
         >
           {exitPending ? "Exiting…" : exitFailed ? "Retry exit" : "Exit ✕"}

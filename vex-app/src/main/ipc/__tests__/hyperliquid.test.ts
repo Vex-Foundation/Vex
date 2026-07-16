@@ -275,29 +275,26 @@ describe("Hyperliquid market-data IPC", () => {
 });
 
 describe("Hyperliquid manual workspace entry IPC", () => {
-  it("rejects manual entry without the global risk acknowledgement", async () => {
+  it("accepts first entry without pre-acknowledgement so the renderer can show the risk gate", async () => {
     mocks.preferencesLoad.mockResolvedValueOnce({
       hyperliquid: { riskAcknowledgedAt: null, policy: {} },
     });
 
     const result = await call(CH.hyperliquid.enterWorkspace, { sessionId: SESSION_ID });
 
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("validation.invalid_input");
-    expect(result.error?.message).toMatch(/agent/i);
+    expect(result).toEqual({ ok: true, data: { accepted: true } });
     expect(mocks.hasSessionEverEntered).not.toHaveBeenCalled();
-    expect(mocks.requestWorkspaceMode).not.toHaveBeenCalled();
+    expect(mocks.requestWorkspaceMode).toHaveBeenCalledWith(SESSION_ID, "hypervexing");
   });
 
-  it("rejects manual entry when the session has never entered Hypervexing", async () => {
+  it("accepts user-requested entry when the session has never entered Hypervexing", async () => {
     mocks.hasSessionEverEntered.mockResolvedValueOnce(false);
 
     const result = await call(CH.hyperliquid.enterWorkspace, { sessionId: SESSION_ID });
 
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("validation.invalid_input");
-    expect(result.error?.message).toMatch(/agent/i);
-    expect(mocks.requestWorkspaceMode).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, data: { accepted: true } });
+    expect(mocks.hasSessionEverEntered).not.toHaveBeenCalled();
+    expect(mocks.requestWorkspaceMode).toHaveBeenCalledWith(SESSION_ID, "hypervexing");
   });
 
   it("accepts manual re-entry when acknowledgement and prior entry are both present", async () => {
@@ -307,14 +304,13 @@ describe("Hyperliquid manual workspace entry IPC", () => {
     expect(mocks.requestWorkspaceMode).toHaveBeenCalledWith(SESSION_ID, "hypervexing");
   });
 
-  it("checks the shared session precondition before manual-entry policy", async () => {
+  it("checks the shared session precondition before requesting entry", async () => {
     mocks.getSessionById.mockResolvedValueOnce({ ok: true, data: null });
 
     const result = await call(CH.hyperliquid.enterWorkspace, { sessionId: SESSION_ID });
 
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("validation.invalid_input");
-    expect(mocks.preferencesLoad).not.toHaveBeenCalled();
     expect(mocks.hasSessionEverEntered).not.toHaveBeenCalled();
     expect(mocks.requestWorkspaceMode).not.toHaveBeenCalled();
   });

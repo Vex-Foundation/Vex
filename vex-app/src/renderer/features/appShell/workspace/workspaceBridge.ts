@@ -2,10 +2,9 @@
  * Hypervexing workspace bridge adapter — the ONE place the renderer touches
  * the main-process workspace surface.
  *
- * Product contract: the mode is HIDDEN and AGENT-DRIVEN. Entry is a main→
- * renderer push (`onWorkspaceMode`); the only renderer→main request is EXIT
- * (`exitWorkspace`). There is deliberately NO renderer "enter" invoke — the
- * agent decides.
+ * Product contract: main owns the per-session mode. Agent requests and explicit
+ * user entry both converge on the same main→renderer push (`onWorkspaceMode`),
+ * while renderer requests remain session-scoped and schema-validated.
  *
  * Every access is optional-chained so the renderer never crashes if the bridge
  * surface is absent (older preload, a shell test that stubs a partial

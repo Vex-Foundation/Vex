@@ -376,7 +376,7 @@ export const hyperliquidWorkspaceModeDtoSchema = z.object({
 }).strict();
 export type HyperliquidWorkspaceModeDto = z.infer<typeof hyperliquidWorkspaceModeDtoSchema>;
 
-/** Manual entry is main-gated to acknowledged sessions with prior entry. */
+/** User-requested entry; first entry remains gated by the risk acknowledgment. */
 export const hyperliquidWorkspaceEnterInputSchema = z.object({
   sessionId: z.string().uuid(),
 }).strict();

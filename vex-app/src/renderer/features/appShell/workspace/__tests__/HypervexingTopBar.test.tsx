@@ -12,7 +12,7 @@ describe("HypervexingTopBar exit authority", () => {
     fireEvent.click(screen.getByRole("button", { name: "Exit Hypervexing" }));
     await screen.findByRole("alert");
     expect(screen.getByText("Exit failed. Retry.")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Exit Hypervexing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry exiting Hypervexing" }));
     await waitFor(() => expect(onExit).toHaveBeenCalledTimes(2));
   });
 });

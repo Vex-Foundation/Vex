@@ -128,6 +128,10 @@ describe("useHypervexingWorkspace", () => {
     expect(exitWorkspace).toHaveBeenCalledWith({ sessionId: SESSION_ID });
     emit("normal", true);
     expect(result.current.workspaceMode).toBe("normal");
+    expect(result.current.visualWorkspaceMode).toBe("hypervexing");
+    expect(result.current.exitTransitionPending).toBe(true);
+    act(() => result.current.completeExitTransition());
+    expect(result.current.visualWorkspaceMode).toBe("normal");
   });
 
   it("an agent 'normal' push exits the mode", () => {
@@ -136,6 +140,7 @@ describe("useHypervexingWorkspace", () => {
     expect(result.current.workspaceMode).toBe("hypervexing");
     emit("normal", true);
     expect(result.current.workspaceMode).toBe("normal");
+    expect(result.current.visualWorkspaceMode).toBe("hypervexing");
   });
 
   it("ignores a push for a DIFFERENT session (no cross-session morph)", () => {

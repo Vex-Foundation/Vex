@@ -1,10 +1,10 @@
 /**
- * Hypervexing workspace controller. Bridges agent-driven workspace-mode pushes
+ * Hypervexing workspace controller. Bridges main-owned workspace-mode pushes
  * to the transient `workspaceMode` UI flag, gating first entry on the risk
  * acknowledgment.
  *
  * Ownership split:
- *  - the AGENT decides entry/exit (a main→renderer push, `subscribeWorkspaceMode`);
+ *  - MAIN decides the resulting state for agent- and user-requested transitions;
  *  - the STORE holds the transient flag (`workspaceMode`, never persisted);
  *  - THIS hook holds only the ack-dialog gate state, and turns a decoded action
  *    (`resolveWorkspaceModeEvent`) into the right store/dialog transition.
@@ -29,6 +29,9 @@ import {
 
 export interface HypervexingWorkspaceController {
   readonly workspaceMode: WorkspaceMode;
+  /** Keeps Hypervexing tokens/sky active while the room's exit mask drains. */
+  readonly visualWorkspaceMode: WorkspaceMode;
+  readonly exitTransitionPending: boolean;
   /** The first-entry risk dialog is open (agent asked to enter, not yet acked). */
   readonly ackPending: boolean;
   /** The acknowledgment write is in flight. */
@@ -39,6 +42,8 @@ export interface HypervexingWorkspaceController {
   readonly cancelAck: () => void;
   /** In-mode EXIT: leave the mode (local flip + tell main). */
   readonly exit: () => Promise<boolean>;
+  /** Called by AnimatePresence after the exit mask has completed. */
+  readonly completeExitTransition: () => void;
 }
 
 export function useHypervexingWorkspace(): HypervexingWorkspaceController {
@@ -46,12 +51,14 @@ export function useHypervexingWorkspace(): HypervexingWorkspaceController {
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const [ackPending, setAckPending] = useState(false);
+  const [exitTransitionPending, setExitTransitionPending] = useState(false);
   const acknowledge = useAcknowledgeHyperliquidRisk();
   const modeRead = useHyperliquidWorkspaceModeRead(activeSessionId);
 
   const applyAction = useCallback(
     (action: WorkspaceModeAction): void => {
       if (action.type === "enter") {
+        setExitTransitionPending(false);
         setAckPending(false);
         setWorkspaceMode("hypervexing");
       } else if (action.type === "acknowledge") {
@@ -59,6 +66,12 @@ export function useHypervexingWorkspace(): HypervexingWorkspaceController {
         // the mode activates only once the user accepts (confirmAck below).
         setAckPending(true);
       } else {
+        // Preserve the room's visual tokens until AnimatePresence completes
+        // the exit mask. Otherwise the root rethemes one frame before the
+        // workspace unmounts and produces a color/layout flash.
+        setExitTransitionPending(
+          useUiStore.getState().workspaceMode === "hypervexing",
+        );
         setAckPending(false);
         setWorkspaceMode("normal");
       }
@@ -87,20 +100,20 @@ export function useHypervexingWorkspace(): HypervexingWorkspaceController {
   useEffect(() => {
     if (activeSessionId === null) {
       reconciledSessionId.current = null;
-      setAckPending(false);
-      setWorkspaceMode("normal");
+      applyAction({ type: "exit" });
       return;
     }
     if (reconciledSessionId.current === activeSessionId) return;
     if (modeRead.data?.ok !== true) return;
     reconciledSessionId.current = activeSessionId;
     applyAction(resolveWorkspaceModeEvent(modeRead.data.data));
-  }, [activeSessionId, applyAction, modeRead.data, setWorkspaceMode]);
+  }, [activeSessionId, applyAction, modeRead.data]);
 
   const confirmAck = useCallback(() => {
     acknowledge.mutate(undefined, {
       onSuccess: (result) => {
         if (!result.ok) return;
+        setExitTransitionPending(false);
         setAckPending(false);
         setWorkspaceMode("hypervexing");
       },
@@ -116,12 +129,24 @@ export function useHypervexingWorkspace(): HypervexingWorkspaceController {
   // arrives. A failed invoke leaves the workspace intact for a visible retry.
   const exit = useCallback(() => requestWorkspaceExit(activeSessionId), [activeSessionId]);
 
+  const completeExitTransition = useCallback(() => {
+    setExitTransitionPending(false);
+  }, []);
+
+  const visualWorkspaceMode: WorkspaceMode =
+    workspaceMode === "hypervexing" || exitTransitionPending
+      ? "hypervexing"
+      : "normal";
+
   return {
     workspaceMode,
+    visualWorkspaceMode,
+    exitTransitionPending,
     ackPending,
     ackSaving: acknowledge.isPending,
     confirmAck,
     cancelAck,
     exit,
+    completeExitTransition,
   };
 }
