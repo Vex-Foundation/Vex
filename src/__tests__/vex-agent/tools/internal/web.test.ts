@@ -21,6 +21,19 @@ vi.mock("@tavily/core", () => ({
   tavily: () => ({ search: mockTavilySearch, extract: mockTavilyExtract }),
 }));
 
+// SSRF policy resolves hostnames; pin public A records so tests do not depend
+// on live DNS / NXDOMAIN. Private literals (127.0.0.1) never hit this path.
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async (hostname: string) => {
+    const h = hostname.toLowerCase();
+    if (h === "localhost" || h.endsWith(".localhost")) {
+      return { address: "127.0.0.1", family: 4 };
+    }
+    // Stable public address for *.example.com and any other test host
+    return { address: "93.184.216.34", family: 4 };
+  }),
+}));
+
 const { handleWebResearch } = await import("../../../../vex-agent/tools/internal/web.js");
 import { makeTestContext } from "../_test-context.js";
 
@@ -149,6 +162,87 @@ describe("web_research", () => {
   // ── Fetch branch (replaces old web_fetch) ─────────────────────
 
   describe("fetch branch", () => {
+    // ── SSRF destination policy ─────────────────────────────────
+    it("blocks loopback URL before Tavily or raw fetch (SSRF)", async () => {
+      const origKey = process.env.TAVILY_API_KEY;
+      process.env.TAVILY_API_KEY = "test-key";
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      const result = await handleWebResearch(
+        { url: "http://127.0.0.1:27134/secret" },
+        baseContext,
+      );
+      expect(result.success).toBe(false);
+      expect(result.output.toLowerCase()).toMatch(/private|loopback|refusing/);
+      expect(mockTavilyExtract).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(mockCacheFetchResult).not.toHaveBeenCalled();
+
+      fetchSpy.mockRestore();
+      if (origKey) process.env.TAVILY_API_KEY = origKey;
+      else delete process.env.TAVILY_API_KEY;
+    });
+
+    it("blocks cloud metadata link-local URL (SSRF)", async () => {
+      const result = await handleWebResearch(
+        { url: "http://169.254.169.254/latest/meta-data/" },
+        baseContext,
+      );
+      expect(result.success).toBe(false);
+      expect(result.output.toLowerCase()).toMatch(/private|loopback|refusing/);
+      expect(mockCacheFetchResult).not.toHaveBeenCalled();
+    });
+
+    it("blocks decimal loopback 2130706433 (SSRF encoding)", async () => {
+      const result = await handleWebResearch(
+        { url: "http://2130706433/secret" },
+        baseContext,
+      );
+      expect(result.success).toBe(false);
+      expect(result.output.toLowerCase()).toMatch(/private|loopback|refusing/);
+    });
+
+    it("blocks redirect hop to loopback and does not cache (SSRF)", async () => {
+      const origKey = process.env.TAVILY_API_KEY;
+      delete process.env.TAVILY_API_KEY; // force raw HTTP path
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 302,
+            headers: { Location: "http://127.0.0.1/secret" },
+          }),
+        );
+
+      const result = await handleWebResearch(
+        { url: "https://public.example.com/start" },
+        baseContext,
+      );
+      expect(result.success).toBe(false);
+      expect(result.output.toLowerCase()).toMatch(/private|loopback|refusing/);
+      // First hop may call fetch; must not cache private outcome.
+      expect(mockCacheFetchResult).not.toHaveBeenCalled();
+
+      fetchSpy.mockRestore();
+      if (origKey) process.env.TAVILY_API_KEY = origKey;
+    });
+
+    it("uses redirect:manual on raw HTTP fetch", async () => {
+      const origKey = process.env.TAVILY_API_KEY;
+      delete process.env.TAVILY_API_KEY;
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response("<html><title>OK</title><body>hi</body></html>", { status: 200 }),
+      );
+
+      await handleWebResearch({ url: "https://ok.example.com/" }, baseContext);
+      expect(fetchSpy).toHaveBeenCalled();
+      const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+      expect(init?.redirect).toBe("manual");
+
+      fetchSpy.mockRestore();
+      if (origKey) process.env.TAVILY_API_KEY = origKey;
+    });
+
     it("rejects non-http url at Zod boundary (and skips Tavily entirely)", async () => {
       const origKey = process.env.TAVILY_API_KEY;
       process.env.TAVILY_API_KEY = "test-key";

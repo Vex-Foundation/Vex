@@ -11,6 +11,10 @@
  * uncached URLs (server-side parallelization) with the original query
  * passed through for targeted chunk extraction.
  *
+ * SSRF: every raw HTTP hop (and the url-branch entry) runs
+ * {@link assertPublicHttpUrl} so loopback / private / link-local destinations
+ * never enter tool output or fetch_cache. Redirects are manual and re-checked.
+ *
  * Validation lives in {@link WebResearchParams} so the boundary contract is
  * explicit (rule 20: validate at boundaries; rule 00.8: fail clearly).
  */
@@ -22,6 +26,11 @@ import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { ok, fail } from "./types.js";
 import logger from "@utils/logger.js";
+import {
+  assertPublicHttpUrl,
+  isHttpUrl,
+  PublicHttpUrlError,
+} from "./public-http-url.js";
 
 const DEFAULT_SEARCH_LIMIT = 10;   // search returns up to N results
 const DEFAULT_FETCH_TOP = 5;       // auto-scrape top N when fetchTop is omitted
@@ -29,17 +38,8 @@ const MAX_FETCH_TOP = 10;          // hard cap per call (Tavily allows up to 20)
 const FETCH_TIMEOUT_MS = 15_000;
 const SEARCH_TIMEOUT_S = 30;
 const EXTRACT_TIMEOUT_S = 25;
-
-// Zod's `z.string().url()` accepts every RFC-3986 scheme (ftp, file, mailto,
-// data, …). Tavily and our HTTP fallback only handle http(s); guard explicitly.
-function isHttpUrl(value: string): boolean {
-  try {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
-}
+/** Max redirect hops for raw HTTP (each hop re-validated for public dest). */
+const MAX_REDIRECT_HOPS = 5;
 
 const WebResearchParams = z
   .object({
@@ -108,6 +108,17 @@ type FetchedPage = {
 };
 
 async function fetchUrl(url: string): Promise<ToolResult> {
+  // Fail closed before cache / Tavily / raw HTTP so private destinations never
+  // re-surface from a pre-policy cache entry either.
+  try {
+    await assertPublicHttpUrl(url);
+  } catch (err) {
+    if (err instanceof PublicHttpUrlError) {
+      return fail(`web_research: ${err.message}`);
+    }
+    throw err;
+  }
+
   const cached = await searchRepo.getCachedFetch(url);
   if (cached) {
     logger.debug("web.fetch.cache_hit", { url: url.slice(0, 60) });
@@ -153,23 +164,75 @@ async function fetchUrl(url: string): Promise<ToolResult> {
 
 // Raw HTTP fetch + parse <title> + slice. Returns FetchedPage shape so it can
 // be reused in the batch path's failure recovery without a wrapper.
+// Every hop (initial + redirects) is re-validated with assertPublicHttpUrl.
 async function fetchUrlRawHttp(url: string): Promise<FetchedPage> {
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Vex/2.0" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      return { url, title: null, content: "", ok: false, error: `HTTP ${res.status}` };
+    let current = url;
+    for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+      try {
+        await assertPublicHttpUrl(current);
+      } catch (err) {
+        if (err instanceof PublicHttpUrlError) {
+          return {
+            url: current,
+            title: null,
+            content: "",
+            ok: false,
+            error: err.message,
+          };
+        }
+        throw err;
+      }
+
+      const res = await fetch(current, {
+        headers: { "User-Agent": "Vex/2.0" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        redirect: "manual",
+      });
+
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc) {
+          return {
+            url: current,
+            title: null,
+            content: "",
+            ok: false,
+            error: `HTTP ${res.status}`,
+          };
+        }
+        // Resolve relative Location against the current hop.
+        current = new URL(loc, current).href;
+        if (hop === MAX_REDIRECT_HOPS) {
+          return {
+            url: current,
+            title: null,
+            content: "",
+            ok: false,
+            error: "Too many redirects",
+          };
+        }
+        continue;
+      }
+
+      if (!res.ok) {
+        return { url: current, title: null, content: "", ok: false, error: `HTTP ${res.status}` };
+      }
+      const text = await res.text();
+      const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const title = titleMatch?.[1]?.trim() ?? null;
+      const markdown = text.slice(0, 50_000);
+      // Cache under the original request URL (caller identity) only after a
+      // successful public fetch — never for blocked private hops.
+      await searchRepo.cacheFetchResult(url, markdown, title);
+      const content = `# ${title ?? "Fetched page"}\n\nSource: ${current}\n\n${markdown}`;
+      return { url: current, title, content, ok: true };
     }
-    const text = await res.text();
-    const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch?.[1]?.trim() ?? null;
-    const markdown = text.slice(0, 50_000);
-    await searchRepo.cacheFetchResult(url, markdown, title);
-    const content = `# ${title ?? "Fetched page"}\n\nSource: ${url}\n\n${markdown}`;
-    return { url, title, content, ok: true };
+    return { url, title: null, content: "", ok: false, error: "Too many redirects" };
   } catch (err) {
+    if (err instanceof PublicHttpUrlError) {
+      return { url, title: null, content: "", ok: false, error: err.message };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return { url, title: null, content: "", ok: false, error: msg };
   }
