@@ -51,6 +51,14 @@ export interface SecretPresence {
   readonly secrets: Partial<Record<VaultSecretKey, boolean>>;
 }
 
+/**
+ * Placeholder correlation id for session-layer errors built outside an IPC
+ * handler. `registerHandler` overwrites this with the request's real
+ * `requestId` when the result crosses the IPC boundary (mismatch rewrite).
+ * Must be non-empty so `isValidVexErrorShape` accepts the object.
+ */
+const SESSION_LOCAL_CORRELATION_ID = "secrets-session";
+
 function toPublicError(cause: unknown): Result<never> {
   if (cause instanceof LocalSecretVaultError && cause.code === "invalid_password") {
     return err({
@@ -60,6 +68,33 @@ function toPublicError(cause: unknown): Result<never> {
       retryable: true,
       userActionable: true,
       redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
+    });
+  }
+
+  if (cause instanceof LocalSecretVaultError && cause.code === "incompatible") {
+    return err({
+      code: "wallet.vault_incompatible",
+      domain: "wallet",
+      message:
+        "This vault was created by a newer version of Vex. Update Vex to open it.",
+      retryable: false,
+      userActionable: true,
+      redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
+    });
+  }
+
+  if (cause instanceof LocalSecretVaultError && cause.code === "corrupt") {
+    return err({
+      code: "wallet.keystore_corrupt",
+      domain: "wallet",
+      message:
+        "The secret vault file is unreadable. Restore from backup or contact support — do not wipe your wallet keystores.",
+      retryable: false,
+      userActionable: true,
+      redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
     });
   }
 
@@ -71,6 +106,7 @@ function toPublicError(cause: unknown): Result<never> {
       retryable: false,
       userActionable: true,
       redacted: true,
+      correlationId: SESSION_LOCAL_CORRELATION_ID,
     });
   }
 
@@ -82,6 +118,7 @@ function toPublicError(cause: unknown): Result<never> {
     retryable: true,
     userActionable: true,
     redacted: true,
+    correlationId: SESSION_LOCAL_CORRELATION_ID,
   });
 }
 
@@ -214,6 +251,7 @@ export function requireUnlockedMasterPassword(): Result<string> {
     retryable: false,
     userActionable: true,
     redacted: true,
+    correlationId: SESSION_LOCAL_CORRELATION_ID,
   });
 }
 

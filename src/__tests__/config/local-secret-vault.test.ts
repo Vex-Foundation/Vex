@@ -348,4 +348,112 @@ describe("local secret vault", () => {
       expect(statSync(vaultFile).mtimeMs).toBe(beforeMtime);
     });
   });
+
+  /**
+   * F-03: post-decrypt schema/version failures must NOT be labeled
+   * `invalid_password` (that advances unlock throttle and misleads users).
+   */
+  describe("F-03 password vs incompatible vault classification", () => {
+    const PASSWORD = "correct-horse-battery-staple";
+
+    function writeForgedContentsVault(contents: unknown): void {
+      const salt = randomBytes(16);
+      const iv = randomBytes(12);
+      const key = scryptSync(PASSWORD, salt, CURRENT_KDF_PARAMS.dkLen, {
+        N: CURRENT_KDF_PARAMS.N,
+        r: CURRENT_KDF_PARAMS.r,
+        p: CURRENT_KDF_PARAMS.p,
+        maxmem: 256 * 1024 * 1024,
+      });
+      const cipher = createCipheriv("aes-256-gcm", key, iv);
+      const ciphertext = Buffer.concat([
+        cipher.update(Buffer.from(JSON.stringify(contents), "utf8")),
+        cipher.final(),
+      ]);
+      const file = {
+        version: 1,
+        kdf: CURRENT_KDF_PARAMS,
+        salt: salt.toString("base64"),
+        iv: iv.toString("base64"),
+        tag: cipher.getAuthTag().toString("base64"),
+        ciphertext: ciphertext.toString("base64"),
+      };
+      writeFileSync(vaultFile, `${JSON.stringify(file, null, 2)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+
+    it("unlocks a vault that contains an unknown future secret key (correct password)", () => {
+      writeForgedContentsVault({
+        version: 1,
+        secrets: {
+          OPENROUTER_API_KEY: "sk-known",
+          FUTURE_SECRET_KEY_FROM_NEWER_BUILD: "future-value",
+        },
+      });
+
+      const unlocked = unlockSecretVault(PASSWORD, { filePath: vaultFile });
+      expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-known");
+      expect(unlocked.extraSecrets?.FUTURE_SECRET_KEY_FROM_NEWER_BUILD).toBe(
+        "future-value",
+      );
+    });
+
+    it("throws incompatible (not invalid_password) for contents version > VAULT_VERSION", () => {
+      writeForgedContentsVault({
+        version: 2,
+        secrets: { OPENROUTER_API_KEY: "sk-known" },
+      });
+
+      let caught: unknown = null;
+      try {
+        unlockSecretVault(PASSWORD, { filePath: vaultFile });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(LocalSecretVaultError);
+      if (caught instanceof LocalSecretVaultError) {
+        expect(caught.code).toBe("incompatible");
+        expect(caught.code).not.toBe("invalid_password");
+      }
+    });
+
+    it("still throws invalid_password for a genuinely wrong password", () => {
+      createSecretVault(PASSWORD, { filePath: vaultFile });
+      let caught: unknown = null;
+      try {
+        unlockSecretVault("WRONG-PASSWORD", { filePath: vaultFile });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(LocalSecretVaultError);
+      if (caught instanceof LocalSecretVaultError) {
+        expect(caught.code).toBe("invalid_password");
+      }
+    });
+
+    it("round-trips unknown extra secrets through unlock + write", () => {
+      writeForgedContentsVault({
+        version: 1,
+        secrets: {
+          OPENROUTER_API_KEY: "sk-known",
+          FUTURE_SECRET_KEY_FROM_NEWER_BUILD: "future-value",
+        },
+      });
+
+      writeSecretVaultSecrets(
+        PASSWORD,
+        { JUPITER_API_KEY: "jup-added" },
+        { filePath: vaultFile },
+      );
+
+      const unlocked = unlockSecretVault(PASSWORD, { filePath: vaultFile });
+      expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-known");
+      expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-added");
+      expect(unlocked.extraSecrets?.FUTURE_SECRET_KEY_FROM_NEWER_BUILD).toBe(
+        "future-value",
+      );
+    });
+  });
 });

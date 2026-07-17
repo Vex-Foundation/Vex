@@ -43,14 +43,23 @@ const vaultFileSchema = z
   })
   .strict();
 
-const vaultContentsSchema = z
-  .object({
-    version: z.literal(VAULT_VERSION),
-    secrets: z
-      .partialRecord(z.enum(VAULT_SECRET_KEYS), z.string().min(1))
-      .default({}),
-  })
-  .strict();
+/**
+ * Forward-compatible contents schema.
+ *
+ * - `version` is a positive int (not a pinned literal) so we can distinguish
+ *   "too new" (`incompatible`) from "wrong password".
+ * - `secrets` accepts any string keys so a newer build's unknown keys do not
+ *   reject a correct password. Known keys are projected into `secrets`; the
+ *   rest land in `extraSecrets` for round-trip.
+ * - Extra top-level fields are ignored (not `.strict()`) so minor envelope
+ *   growth from newer builds does not brick unlock.
+ */
+const vaultContentsSchema = z.object({
+  version: z.number().int().positive(),
+  secrets: z.record(z.string(), z.string().min(1)).default({}),
+});
+
+const KNOWN_SECRET_KEY_SET = new Set<string>(VAULT_SECRET_KEYS);
 
 export type VaultFile = z.infer<typeof vaultFileSchema>;
 
@@ -91,7 +100,20 @@ export function encryptContents(
   const iv = randomBytes(12);
   const key = deriveKey(password, salt, CURRENT_KDF_PARAMS);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const plaintext = Buffer.from(JSON.stringify(contents), "utf8");
+  // Merge known + extra secrets into one on-disk map so unknown keys from a
+  // newer build survive a downgrade → unlock → re-encrypt cycle.
+  const secretsOnDisk: Record<string, string> = { ...contents.secrets };
+  if (contents.extraSecrets) {
+    for (const [k, v] of Object.entries(contents.extraSecrets)) {
+      if (!KNOWN_SECRET_KEY_SET.has(k) && typeof v === "string" && v.length > 0) {
+        secretsOnDisk[k] = v;
+      }
+    }
+  }
+  const plaintext = Buffer.from(
+    JSON.stringify({ version: VAULT_VERSION, secrets: secretsOnDisk }),
+    "utf8",
+  );
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
 
@@ -115,6 +137,11 @@ export function vaultFileNeedsKdfUpgrade(file: VaultFile): boolean {
 }
 
 export function decryptContents(file: VaultFile, password: string): LocalSecretVaultContents {
+  // ── Phase 1: cryptography. A failure here — wrong scrypt key or a failed
+  //    AES-GCM auth-tag check — means the password is wrong (or the ciphertext
+  //    was tampered with, which is indistinguishable). ONLY this phase may
+  //    yield `invalid_password`. Never advance unlock throttle on later phases.
+  let plaintext: string;
   try {
     const salt = Buffer.from(file.salt, "base64");
     const iv = Buffer.from(file.iv, "base64");
@@ -123,12 +150,10 @@ export function decryptContents(file: VaultFile, password: string): LocalSecretV
     const key = deriveKey(password, salt, file.kdf);
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
-    const plaintext = Buffer.concat([
+    plaintext = Buffer.concat([
       decipher.update(ciphertext),
       decipher.final(),
     ]).toString("utf8");
-    const parsed = vaultContentsSchema.parse(JSON.parse(plaintext));
-    return { version: parsed.version, secrets: parsed.secrets };
   } catch (cause) {
     throw new LocalSecretVaultError(
       "Secret vault could not be unlocked.",
@@ -136,4 +161,47 @@ export function decryptContents(file: VaultFile, password: string): LocalSecretV
       cause,
     );
   }
+
+  // ── Phase 2: content parsing. GCM auth tag already verified → password is
+  //    PROVEN correct. JSON/schema/version failures are data/compatibility
+  //    problems and MUST NEVER be reported as `invalid_password` (F-03).
+  let parsed: z.infer<typeof vaultContentsSchema>;
+  try {
+    parsed = vaultContentsSchema.parse(JSON.parse(plaintext));
+  } catch (cause) {
+    throw new LocalSecretVaultError(
+      "Secret vault contents are unreadable after decryption.",
+      "corrupt",
+      cause,
+    );
+  }
+
+  if (parsed.version > VAULT_VERSION) {
+    throw new LocalSecretVaultError(
+      "This vault was created by a newer version of Vex. Update Vex to open it.",
+      "incompatible",
+    );
+  }
+  if (parsed.version < 1) {
+    throw new LocalSecretVaultError(
+      "Secret vault contents are unreadable after decryption.",
+      "corrupt",
+    );
+  }
+
+  const secrets: Partial<Record<(typeof VAULT_SECRET_KEYS)[number], string>> = {};
+  const extraSecrets: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed.secrets)) {
+    if (KNOWN_SECRET_KEY_SET.has(key)) {
+      secrets[key as (typeof VAULT_SECRET_KEYS)[number]] = value;
+    } else {
+      extraSecrets[key] = value;
+    }
+  }
+
+  return {
+    version: VAULT_VERSION,
+    secrets,
+    ...(Object.keys(extraSecrets).length > 0 ? { extraSecrets } : {}),
+  };
 }

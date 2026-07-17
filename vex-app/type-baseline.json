@@ -129,7 +129,6 @@
       "src/main/onboarding/wallet-restore.ts::TS2345": 5,
       "src/main/onboarding/wallets-runner.ts::TS2345": 17,
       "src/main/secrets/__tests__/session.test.ts::TS4115": 1,
-      "src/main/secrets/session.ts::TS2345": 4,
       "src/main/support/agent-bug-report-sink.ts::TS2307": 1,
       "src/main/telemetry/sentry-lifecycle.ts::TS2322": 1
     },

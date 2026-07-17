@@ -24,6 +24,7 @@ export const VEX_ERROR_CODES = [
   "wallet.keystore_corrupt",
   "wallet.keystore_missing",
   "wallet.password_invalid",
+  "wallet.vault_incompatible",
   "wallet.vault_not_configured",
   "wallet.cap_reached",
   "wallet.address_exists",

@@ -63,11 +63,12 @@ export function createSecretVault(
  *
  * Throws `LocalSecretVaultError` with code:
  *   - "missing"          — vault file does not exist
- *   - "corrupt"          — file present but JSON/schema-invalid
- *   - "invalid_password" — bit-flipped ciphertext / auth-tag mismatch is
- *                          indistinguishable from a wrong password; this
- *                          covers both cases. Reserved "corrupt" for
- *                          structurally-invalid file shape only (parseVaultFile).
+ *   - "corrupt"          — envelope invalid, or plaintext unreadable after
+ *                          a successful decrypt
+ *   - "incompatible"     — password verified, but vault version is too new
+ *   - "invalid_password" — scrypt/AES-GCM auth-tag failure only (wrong
+ *                          password or tampered ciphertext; indistinguishable).
+ *                          Never used for post-decrypt schema failures (F-03).
  *
  * Returns `undefined` on success — by design no secrets are returned.
  * No disk write on success or failure (no opportunistic KDF upgrade).
@@ -91,7 +92,8 @@ export function verifySecretVaultPassword(
   // parseVaultFile raises `corrupt` on JSON/schema failure — surface as-is.
   const parsedFile = parseVaultFile(raw);
 
-  // decryptContents wraps any AES-GCM/scrypt failure as `invalid_password`.
+  // decryptContents maps ONLY crypto failures to `invalid_password`;
+  // post-decrypt shape issues surface as `corrupt` / `incompatible`.
   // Discard the decrypted payload — verification only needs to confirm the
   // password unwraps the vault; callers MUST NOT use this to harvest secrets.
   decryptContents(parsedFile, password);
@@ -161,6 +163,11 @@ export function writeSecretVaultSecrets(
   const next: LocalSecretVaultContents = {
     version: VAULT_VERSION,
     secrets: nextSecrets,
+    // Preserve unknown keys from a newer vault so a write on an older build
+    // cannot strip them (forward-compat round-trip).
+    ...(current.extraSecrets && Object.keys(current.extraSecrets).length > 0
+      ? { extraSecrets: current.extraSecrets }
+      : {}),
   };
   atomicWriteJson(resolveVaultPath(options), encryptContents(next, password));
   return next;
