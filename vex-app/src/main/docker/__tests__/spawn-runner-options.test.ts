@@ -9,7 +9,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
-vi.mock("../cli-env.js", () => ({ dockerSpawnEnv: mocks.dockerSpawnEnv }));
+// Keep real withoutManagedSecrets so strip behavior is exercised; only stub
+// dockerSpawnEnv (PATH augmentation is orthogonal to secret scrubbing).
+vi.mock("../cli-env.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../cli-env.js")>();
+  return {
+    ...actual,
+    dockerSpawnEnv: mocks.dockerSpawnEnv,
+  };
+});
 
 import { runSpawn } from "../spawn-runner.js";
 
@@ -38,6 +46,13 @@ function fakeChild(errorCode?: string): EventEmitter {
   return child;
 }
 
+function lastSpawnEnv(): NodeJS.ProcessEnv | undefined {
+  const opts = mocks.spawn.mock.calls.at(-1)?.[2] as
+    | { env?: NodeJS.ProcessEnv }
+    | undefined;
+  return opts?.env;
+}
+
 describe("runSpawn environment and spawn errors", () => {
   beforeEach(() => {
     mocks.spawn.mockReset();
@@ -56,28 +71,44 @@ describe("runSpawn environment and spawn errors", () => {
     );
   });
 
-  it("does not augment a non-docker command environment", async () => {
-    await runSpawn("open", ["-a", "Docker"]);
+  it("strips managed secrets from non-docker commands (no parent env inherit)", async () => {
+    const previous = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "sk-parent-leak";
+    process.env.TAVILY_API_KEY = "tvly-parent-leak";
+    try {
+      await runSpawn("open", ["-a", "Docker"]);
 
-    expect(mocks.dockerSpawnEnv).not.toHaveBeenCalled();
-    expect(mocks.spawn).toHaveBeenCalledWith(
-      "open",
-      ["-a", "Docker"],
-      expect.objectContaining({ env: undefined }),
-    );
+      expect(mocks.dockerSpawnEnv).not.toHaveBeenCalled();
+      const env = lastSpawnEnv();
+      expect(env).toBeDefined();
+      expect(env?.OPENROUTER_API_KEY).toBeUndefined();
+      expect(env?.TAVILY_API_KEY).toBeUndefined();
+      // Parent process must still hold secrets for the agent.
+      expect(process.env.OPENROUTER_API_KEY).toBe("sk-parent-leak");
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+      delete process.env.TAVILY_API_KEY;
+    }
   });
 
-  it("keeps a caller-supplied docker environment", async () => {
-    const env = { PATH: "/caller/path", CUSTOM: "yes" };
+  it("strips managed secrets from caller-supplied env without mutating it", async () => {
+    const env: NodeJS.ProcessEnv = {
+      PATH: "/caller/path",
+      CUSTOM: "yes",
+      OPENROUTER_API_KEY: "sk-caller-leak",
+      POLYMARKET_API_SECRET: "poly-leak",
+    };
 
     await runSpawn("docker", ["info"], { env });
 
     expect(mocks.dockerSpawnEnv).not.toHaveBeenCalled();
-    expect(mocks.spawn).toHaveBeenCalledWith(
-      "docker",
-      ["info"],
-      expect.objectContaining({ env }),
-    );
+    const spawned = lastSpawnEnv();
+    expect(spawned?.PATH).toBe("/caller/path");
+    expect(spawned?.CUSTOM).toBe("yes");
+    expect(spawned?.OPENROUTER_API_KEY).toBeUndefined();
+    expect(spawned?.POLYMARKET_API_SECRET).toBeUndefined();
+    expect(env.OPENROUTER_API_KEY).toBe("sk-caller-leak");
   });
 
   it("surfaces ENOENT from the child error event in stderr", async () => {

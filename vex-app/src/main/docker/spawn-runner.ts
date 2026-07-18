@@ -11,7 +11,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { redact } from "../logger/redact.js";
-import { dockerSpawnEnv } from "./cli-env.js";
+import { dockerSpawnEnv, withoutManagedSecrets } from "./cli-env.js";
 
 export interface SpawnRunnerOptions {
   readonly cwd?: string;
@@ -91,7 +91,16 @@ export async function runSpawn(
     onStdoutLine,
     onStderrLine,
   } = options;
-  const spawnEnv = env ?? (command === "docker" ? dockerSpawnEnv() : undefined);
+  // Invariant: no runSpawn child receives vault/keystore secrets from env.
+  // - docker (default): PATH-augmented env already scrubbed by dockerSpawnEnv()
+  // - non-docker (open/systemctl/powershell start paths): scrub process.env
+  // - explicit caller env: scrub too so overrides cannot reintroduce secrets
+  const spawnEnv =
+    env !== undefined
+      ? withoutManagedSecrets(env)
+      : command === "docker"
+        ? dockerSpawnEnv()
+        : withoutManagedSecrets(process.env);
 
   return new Promise((resolve) => {
     let aborted = false;
