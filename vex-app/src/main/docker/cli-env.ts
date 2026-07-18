@@ -2,11 +2,33 @@ import { statSync } from "node:fs";
 import { homedir as getHomedir } from "node:os";
 import { posix } from "node:path";
 
+import { MANAGED_SECRET_ENV_KEYS } from "@vex-lib/secret-keys.js";
+
 export interface BuildDockerPathOptions {
   readonly platform: NodeJS.Platform;
   readonly homedir: string;
   readonly env: NodeJS.ProcessEnv;
   readonly dirExists: (path: string) => boolean;
+}
+
+/**
+ * Shallow-copy `env` with every managed vault/keystore secret removed.
+ * Never mutates the input (required on win32 where `buildDockerPath`
+ * returns the env object by identity — mutating would scrub main-process
+ * secrets after unlock).
+ *
+ * Docker CLI/probe/compose children need PATH / DOCKER_HOST / compose
+ * operational vars — not OpenRouter, Tavily, Polymarket, Jupiter keys,
+ * or the keystore password env key.
+ */
+export function withoutManagedSecrets(
+  env: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env };
+  for (const key of MANAGED_SECRET_ENV_KEYS) {
+    delete next[key];
+  }
+  return next;
 }
 
 function dockerPathCandidates(
@@ -67,10 +89,12 @@ function directoryExists(path: string): boolean {
 
 /** Recomputes Docker CLI candidates per spawn so Recheck sees new installs. */
 export function dockerSpawnEnv(): NodeJS.ProcessEnv {
-  return buildDockerPath({
-    platform: process.platform,
-    homedir: getHomedir(),
-    env: process.env,
-    dirExists: directoryExists,
-  });
+  return withoutManagedSecrets(
+    buildDockerPath({
+      platform: process.platform,
+      homedir: getHomedir(),
+      env: process.env,
+      dirExists: directoryExists,
+    }),
+  );
 }

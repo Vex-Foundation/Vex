@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildDockerPath } from "../cli-env.js";
+import { MANAGED_SECRET_ENV_KEYS } from "@vex-lib/secret-keys.js";
+import { buildDockerPath, withoutManagedSecrets } from "../cli-env.js";
 
 const DARWIN_CANDIDATES = [
   "/usr/local/bin",
@@ -91,5 +92,74 @@ describe("buildDockerPath", () => {
       KEEP: "yes",
     });
     expect(dirExists).not.toHaveBeenCalled();
+  });
+});
+
+describe("withoutManagedSecrets", () => {
+  it("removes every managed secret key and keeps operational docker vars", () => {
+    const env: NodeJS.ProcessEnv = {
+      PATH: "/usr/bin",
+      DOCKER_HOST: "unix:///var/run/docker.sock",
+      HOME: "/Users/test",
+      OPENROUTER_API_KEY: "sk-leak",
+      TAVILY_API_KEY: "tvly-leak",
+      JUPITER_API_KEY: "jup-leak",
+      POLYMARKET_API_KEY: "poly-key",
+      POLYMARKET_API_SECRET: "poly-secret",
+      POLYMARKET_PASSPHRASE: "poly-pass",
+      POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS: '{"0xabc":{"key":"x"}}',
+      RETTIWT_API_KEY: "rettiwt-leak",
+      VEX_KEYSTORE_PASSWORD: "master-leak",
+      KEEP: "yes",
+    };
+
+    const result = withoutManagedSecrets(env);
+
+    for (const key of MANAGED_SECRET_ENV_KEYS) {
+      expect(result[key], `${key} must be stripped`).toBeUndefined();
+    }
+    expect(result.PATH).toBe("/usr/bin");
+    expect(result.DOCKER_HOST).toBe("unix:///var/run/docker.sock");
+    expect(result.HOME).toBe("/Users/test");
+    expect(result.KEEP).toBe("yes");
+  });
+
+  it("does not mutate the input object (win32 identity-return safety)", () => {
+    const env: NodeJS.ProcessEnv = {
+      OPENROUTER_API_KEY: "sk-still-in-parent",
+      PATH: "/bin",
+    };
+    const result = withoutManagedSecrets(env);
+
+    expect(result).not.toBe(env);
+    expect(env.OPENROUTER_API_KEY).toBe("sk-still-in-parent");
+    expect(result.OPENROUTER_API_KEY).toBeUndefined();
+  });
+
+  it("strips secrets after PATH augmentation (unlocked → docker spawn shape)", () => {
+    const unlocked: NodeJS.ProcessEnv = {
+      PATH: "/bin",
+      DOCKER_HOST: "unix:///var/run/docker.sock",
+      OPENROUTER_API_KEY: "sk-or-v1-REPRO-LEAK-TOKEN",
+      TAVILY_API_KEY: "tvly-REPRO-LEAK",
+      POLYMARKET_API_SECRET: "poly-secret-REPRO",
+      VEX_KEYSTORE_PASSWORD: "master-leak",
+    };
+
+    const withPath = buildDockerPath({
+      platform: "linux",
+      homedir: "/home/test",
+      env: unlocked,
+      dirExists: () => false,
+    });
+    const spawnEnv = withoutManagedSecrets(withPath);
+
+    expect(spawnEnv.PATH).toBe("/bin");
+    expect(spawnEnv.DOCKER_HOST).toBe("unix:///var/run/docker.sock");
+    for (const key of MANAGED_SECRET_ENV_KEYS) {
+      expect(spawnEnv[key], `${key} must not reach docker child`).toBeUndefined();
+    }
+    // Main-process analog (unlocked env) still holds secrets for the engine.
+    expect(unlocked.OPENROUTER_API_KEY).toBe("sk-or-v1-REPRO-LEAK-TOKEN");
   });
 });
