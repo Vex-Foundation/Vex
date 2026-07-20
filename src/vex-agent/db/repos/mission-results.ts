@@ -43,6 +43,33 @@ export interface MissionResultRow {
   outcome: MissionResultOutcome;
   stopReason: string | null;
   openPositions: unknown;
+  /**
+   * The agent's own plain-language account of the run, from
+   * `mission_runs.stop_summary`. Null when the run never called
+   * `mission_stop`. Prose ONLY — it must never carry a PnL figure; the
+   * numeric fields above are the sole source of truth for money.
+   */
+  stopSummary: string | null;
+  /**
+   * THE OPERATOR'S OWN WORDS, COMPLETE. `missions.goal` verbatim — NOT the
+   * 240-char `goal_snippet` above, which is a display slice minted at
+   * ledger-open (`mission-results-capture.ts`) and silently loses the tail of
+   * a long prompt. The card clamps for reading but copies THIS, so "copy the
+   * mission prompt" yields exactly what was typed. Null for a goal-less draft.
+   */
+  goalFull: string | null;
+  /** `missions.title` — the operator/setup-authored short label, if any. */
+  missionTitle: string | null;
+  /**
+   * `missions.constraints_json` raw. Structured operator-set limits
+   * (maxSpendUsd, deadlineAt, maxIterations, …). Deterministic: these were
+   * WRITTEN by the contract, never inferred from prose at read time.
+   */
+  constraints: unknown;
+  /** `missions.allowed_chains` — the venue allowlist as accepted. */
+  allowedChains: readonly string[];
+  /** `missions.allowed_protocols` — the protocol allowlist as accepted. */
+  allowedProtocols: readonly string[];
 }
 
 export interface OpenMissionResultInput {
@@ -69,12 +96,40 @@ export interface CloseMissionResultInput {
   openPositions: unknown;
 }
 
+/**
+ * Reads are `mission_results r JOIN mission_runs run`, so every column is
+ * table-qualified (both tables carry `id`/`mission_id`/`session_id`).
+ *
+ * `stop_summary` is the agent-authored prose and lives on `mission_runs`;
+ * the ledger deliberately does NOT copy it. One source of truth, and no
+ * migration needed to surface it. Note the asymmetry this encodes: the
+ * PROSE comes from the run row, the NUMBERS come from the ledger row.
+ */
 const SELECT_COLUMNS = `
-  id, mission_id, mission_run_id, session_id, wallet_address, chain_id, seq_no,
-  goal_snippet, started_at, ended_at, duration_s,
-  bankroll_start_eth, bankroll_end_eth, pnl_eth, pnl_pct,
-  eth_price_usd_start, eth_price_usd_end,
-  trades, outcome, stop_reason, open_positions_json`;
+  r.id, r.mission_id, r.mission_run_id, r.session_id, r.wallet_address, r.chain_id, r.seq_no,
+  r.goal_snippet, r.started_at, r.ended_at, r.duration_s,
+  r.bankroll_start_eth, r.bankroll_end_eth, r.pnl_eth, r.pnl_pct,
+  r.eth_price_usd_start, r.eth_price_usd_end,
+  r.trades, r.outcome, r.stop_reason, r.open_positions_json,
+  run.stop_summary,
+  m.goal AS mission_goal, m.title AS mission_title,
+  m.constraints_json, m.allowed_chains, m.allowed_protocols`;
+
+/**
+ * Reads join the run row for its agent-authored prose, and the mission row
+ * for the ACCEPTED CONTRACT FACTS (see SELECT_COLUMNS).
+ *
+ * Three authors, three sources, deliberately kept apart:
+ *   - `mission_results r` — the NUMBERS (bankroll, PnL, trades). Engine-computed.
+ *   - `mission_runs run`  — the PROSE. Agent-authored, never parsed for money.
+ *   - `missions m`        — the ASK. Operator-authored and frozen at accept.
+ *
+ * The mission join is INNER: `mission_results.mission_id` is NOT NULL and
+ * references `missions(id)`, so it can never drop a ledger row.
+ */
+const RESULTS_FROM = `mission_results r
+       JOIN mission_runs run ON run.id = r.mission_run_id
+       JOIN missions m ON m.id = r.mission_id`;
 
 interface Raw {
   id: string;
@@ -98,7 +153,21 @@ interface Raw {
   outcome: MissionResultOutcome;
   stop_reason: string | null;
   open_positions_json: unknown;
+  stop_summary: string | null;
+  mission_goal: string | null;
+  mission_title: string | null;
+  constraints_json: unknown;
+  allowed_chains: string[] | null;
+  allowed_protocols: string[] | null;
 }
+
+/**
+ * `TEXT[]` comes back as a JS array, but the column is nullable and legacy
+ * rows predate the `DEFAULT '{}'`. Normalise to a real array of strings so
+ * the renderer never has to null-check an allowlist.
+ */
+const strList = (v: string[] | null): readonly string[] =>
+  Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
 
 // pg returns NUMERIC as string to preserve precision; ETH/PnL fit safely in
 // a JS number for display.
@@ -129,6 +198,12 @@ function toRow(r: Raw): MissionResultRow {
     outcome: r.outcome,
     stopReason: r.stop_reason,
     openPositions: r.open_positions_json,
+    stopSummary: r.stop_summary,
+    goalFull: r.mission_goal,
+    missionTitle: r.mission_title,
+    constraints: r.constraints_json,
+    allowedChains: strList(r.allowed_chains),
+    allowedProtocols: strList(r.allowed_protocols),
   };
 }
 
@@ -218,13 +293,38 @@ export async function listResultsForWallet(
 ): Promise<MissionResultRow[]> {
   const rows = await query<Raw>(
     `SELECT ${SELECT_COLUMNS}
-       FROM mission_results
-      WHERE LOWER(wallet_address) = LOWER($1)
-      ORDER BY seq_no DESC
+       FROM ${RESULTS_FROM}
+      WHERE LOWER(r.wallet_address) = LOWER($1)
+      ORDER BY r.seq_no DESC
       LIMIT $2`,
     [walletAddress, limit],
   );
   return rows.map(toRow);
+}
+
+/**
+ * The newest ledger row for a session (null when the session never opened a
+ * run). Session-scoped rather than wallet-scoped because the session view
+ * shows the run that just finished IN THIS SESSION — it has a session id in
+ * hand and no wallet address, and the newest row for the session is exactly
+ * the run whose summary belongs on screen.
+ *
+ * Ordered by `started_at DESC` (not `seq_no`): `seq_no` is minted per WALLET,
+ * so it does not order a single session's runs if the session ever switched
+ * wallets.
+ */
+export async function getLatestResultForSession(
+  sessionId: string,
+): Promise<MissionResultRow | null> {
+  const row = await queryOne<Raw>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM ${RESULTS_FROM}
+      WHERE r.session_id = $1
+      ORDER BY r.started_at DESC
+      LIMIT 1`,
+    [sessionId],
+  );
+  return row ? toRow(row) : null;
 }
 
 /** The ledger row for a single run and wallet (null if never opened or not owned by that wallet). */
@@ -234,9 +334,9 @@ export async function getResultForRun(
 ): Promise<MissionResultRow | null> {
   const row = await queryOne<Raw>(
     `SELECT ${SELECT_COLUMNS}
-       FROM mission_results
-      WHERE mission_run_id = $1
-        AND LOWER(wallet_address) = LOWER($2)`,
+       FROM ${RESULTS_FROM}
+      WHERE r.mission_run_id = $1
+        AND LOWER(r.wallet_address) = LOWER($2)`,
     [missionRunId, walletAddress],
   );
   return row ? toRow(row) : null;

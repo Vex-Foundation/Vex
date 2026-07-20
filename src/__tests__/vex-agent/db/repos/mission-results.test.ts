@@ -141,17 +141,20 @@ describe("history reads", () => {
     await repo.listResultsForWallet("0xAbC", 25);
     const [sql, params] = mockQuery.mock.calls[0]!;
     const s = norm(sql);
-    expect(s).toContain("FROM mission_results");
-    expect(s).toContain("LOWER(wallet_address) = LOWER($1)");
-    expect(s).toContain("ORDER BY seq_no DESC");
+    // Reads JOIN mission_runs for the agent's stop_summary, so every
+    // column reference is table-qualified.
+    expect(s).toContain("FROM mission_results r");
+    expect(s).toContain("JOIN mission_runs run ON run.id = r.mission_run_id");
+    expect(s).toContain("LOWER(r.wallet_address) = LOWER($1)");
+    expect(s).toContain("ORDER BY r.seq_no DESC");
     expect(params).toEqual(["0xAbC", 25]);
   });
 
   it("getResultForRun reads a single row by run_id scoped to its wallet", async () => {
     await repo.getResultForRun("run-1", "0xAbC");
     const [sql, params] = mockQueryOne.mock.calls[0]!;
-    expect(norm(sql)).toContain("WHERE mission_run_id = $1");
-    expect(norm(sql)).toContain("LOWER(wallet_address) = LOWER($2)");
+    expect(norm(sql)).toContain("WHERE r.mission_run_id = $1");
+    expect(norm(sql)).toContain("LOWER(r.wallet_address) = LOWER($2)");
     expect(params).toEqual(["run-1", "0xAbC"]);
   });
 });

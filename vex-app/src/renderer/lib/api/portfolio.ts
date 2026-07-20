@@ -99,3 +99,31 @@ export function useMoves(
 ): UseQueryResult<Result<MovesDto>> {
   return useQuery(movesOptions(sessionId));
 }
+
+/**
+ * MOVES for ONE mission run — the summary card's trade receipts.
+ *
+ * The window filter is applied in SQL (see `moves-db.ts`), reusing the
+ * engine's own run-attribution rule, so this list agrees with the ledger's
+ * trade COUNT. Deliberately NOT a client-side filter of `useMoves`: that
+ * would be a second copy of the attribution rule, free to drift from the one
+ * that produced the count the card renders beside it.
+ *
+ * These rows are terminal history — a finished run's trades never change — so
+ * unlike the live session feed this does not poll.
+ */
+function movesForRunOptions(sessionId: string, missionRunId: string) {
+  return queryOptions({
+    queryKey: portfolioKeys.movesForRun(sessionId, missionRunId),
+    queryFn: () => window.vex.portfolio.listMoves({ sessionId, missionRunId }),
+    staleTime: STALE_MS,
+    enabled: sessionId.length > 0 && missionRunId.length > 0,
+  });
+}
+
+export function useMovesForRun(
+  sessionId: string,
+  missionRunId: string,
+): UseQueryResult<Result<MovesDto>> {
+  return useQuery(movesForRunOptions(sessionId, missionRunId));
+}

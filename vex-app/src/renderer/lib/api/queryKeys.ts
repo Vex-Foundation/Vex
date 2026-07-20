@@ -160,6 +160,14 @@ export const missionKeys = {
   /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
   resultForRun: (missionRunId: string, walletAddress: string) =>
     ["mission", "resultForRun", missionRunId, walletAddress] as const,
+  /**
+   * The session's newest ledger row — the post-mission summary card in the
+   * session view. Session-scoped (the session view has no wallet address),
+   * and invalidated alongside the draft/diff queries so a run that finalizes
+   * swaps the controls over to its summary without a manual refresh.
+   */
+  sessionResult: (sessionId: string) =>
+    ["mission", "sessionResult", sessionId] as const,
 };
 
 export const approvalsKeys = {
@@ -221,6 +229,14 @@ export const portfolioKeys = {
    * `null`/global view has no MOVES (it is session-scoped).
    */
   moves: (sessionId: string) => ["portfolio", "moves", sessionId] as const,
+  /**
+   * MOVES narrowed to ONE mission run — the summary card's trade receipts.
+   * A distinct cache entry from the session feed above (a session can hold
+   * several runs, so the two reads legitimately return different rows and
+   * must never share a key).
+   */
+  movesForRun: (sessionId: string, missionRunId: string) =>
+    ["portfolio", "moves", sessionId, "run", missionRunId] as const,
 };
 
 /**

@@ -16,6 +16,7 @@ import { registerMissionGetDiffHandler } from "./get-diff.js";
 import { registerMissionGetDraftHandler } from "./get-draft.js";
 import { registerMissionGetRenewableSourceHandler } from "./get-renewable-source.js";
 import { registerMissionGetResultForRunHandler } from "./get-result-for-run.js";
+import { registerMissionGetSessionResultHandler } from "./get-session-result.js";
 import { registerMissionListResultsHandler } from "./list-results.js";
 import { registerMissionRecoverHandler } from "./recover.js";
 import { registerMissionRenewHandler } from "./renew.js";
@@ -42,5 +43,6 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionSetAutoRetryHandler(),
     registerMissionListResultsHandler(),
     registerMissionGetResultForRunHandler(),
+    registerMissionGetSessionResultHandler(),
   ];
 }

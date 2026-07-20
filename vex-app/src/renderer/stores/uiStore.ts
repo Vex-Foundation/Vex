@@ -157,6 +157,21 @@ interface UiState {
    * Pure UI preference: rows come from the markets query, this only stars.
    */
   readonly hlFavorites: readonly string[];
+  /**
+   * Mission runs whose finished summary card the operator has dismissed
+   * from the Missions view.
+   *
+   * VIEW STATE ONLY. Dismissing hides a card the user has already read; it
+   * does NOT delete, archive or otherwise touch the `mission_results`
+   * ledger row, the `mission_runs` record, or any trade. That data is the
+   * audit trail of real-money trades and stays intact — the register totals
+   * above the list still count every dismissed run, and "Show hidden"
+   * brings the cards back.
+   *
+   * Persisted (like `hlFavorites`) so a dismissed card does not reappear on
+   * every relaunch.
+   */
+  readonly dismissedMissionRunIds: readonly string[];
   /** See `ReviewModal`. NOT persisted — see partialize. */
   readonly reviewModal: ReviewModal;
   readonly setTheme: (value: VexTheme) => void;
@@ -183,6 +198,10 @@ interface UiState {
   ) => void;
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
   readonly toggleHlFavorite: (coin: string) => void;
+  /** Hide one finished mission's card. Never touches persisted mission data. */
+  readonly dismissMissionRun: (missionRunId: string) => void;
+  /** Bring every dismissed mission card back into the list. */
+  readonly restoreDismissedMissionRuns: () => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
@@ -208,6 +227,7 @@ export const useUiStore = create<UiState>()(
       signingState: "idle",
       reasoningEffortBySession: {},
       hlFavorites: [],
+      dismissedMissionRunIds: [],
       reviewModal: "none",
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
@@ -251,6 +271,18 @@ export const useUiStore = create<UiState>()(
             ? state.hlFavorites.filter((c) => c !== coin)
             : [...state.hlFavorites, coin],
         })),
+      dismissMissionRun: (missionRunId) =>
+        set((state) =>
+          state.dismissedMissionRunIds.includes(missionRunId)
+            ? state
+            : {
+                dismissedMissionRunIds: [
+                  ...state.dismissedMissionRunIds,
+                  missionRunId,
+                ],
+              },
+        ),
+      restoreDismissedMissionRuns: () => set({ dismissedMissionRunIds: [] }),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       appendLog: (entry) =>
         set((state) => ({
@@ -260,13 +292,14 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
         hlFavorites: state.hlFavorites,
+        dismissedMissionRunIds: state.dismissedMissionRunIds,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -275,6 +308,7 @@ export const useUiStore = create<UiState>()(
       //   v3: `theme` added — seed the cobalt default so a pre-theme install
       //       hydrates into `vex`, not `undefined`.
       //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
+      //   v5: `dismissedMissionRunIds` added (hidden mission cards) — seed [].
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -284,6 +318,9 @@ export const useUiStore = create<UiState>()(
         if (version < 3 && !("theme" in next)) next = { ...next, theme: "vex" };
         if (version < 4 && !("hlFavorites" in next)) {
           next = { ...next, hlFavorites: [] };
+        }
+        if (version < 5 && !("dismissedMissionRunIds" in next)) {
+          next = { ...next, dismissedMissionRunIds: [] };
         }
         return next;
       },
@@ -308,7 +345,22 @@ export const useUiStore = create<UiState>()(
               (coin): coin is string => typeof coin === "string",
             )
           : [];
-        return { ...current, ...incoming, theme, hlFavorites };
+        // Same coercion for the dismissed list — a hand-edited payload can
+        // only ever cost the user a hidden card, never a crash.
+        const dismissedMissionRunIds: readonly string[] = Array.isArray(
+          incoming?.dismissedMissionRunIds,
+        )
+          ? incoming.dismissedMissionRunIds.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : [];
+        return {
+          ...current,
+          ...incoming,
+          theme,
+          hlFavorites,
+          dismissedMissionRunIds,
+        };
       },
     }
   )

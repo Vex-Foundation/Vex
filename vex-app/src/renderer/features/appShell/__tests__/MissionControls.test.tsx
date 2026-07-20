@@ -39,6 +39,7 @@ const retryMock = vi.fn();
 const editMock = vi.fn();
 const stopMock = vi.fn();
 const renewMock = vi.fn();
+const getSessionResultMock = vi.fn();
 const chatSubmitMock = vi.fn();
 const getPlanMock = vi.fn();
 const onTranscriptAppendMock = vi.fn(() => vi.fn());
@@ -60,6 +61,7 @@ function setVex(): void {
         edit: editMock,
         stop: stopMock,
         renew: renewMock,
+        getSessionResult: getSessionResultMock,
       },
       chat: { submit: chatSubmitMock },
       engine: { onTranscriptAppend: onTranscriptAppendMock },
@@ -137,8 +139,11 @@ beforeEach(() => {
   // Default: no renewable source. The hook fires for every render (active or
   // not), so give it a safe value; renew-specific tests override it.
   getRenewableMock.mockResolvedValue(ok(null));
+  // Default: no finished run, so the summary card stays out of these tests —
+  // they exercise the controls (see MissionSummaryCard.test.tsx for the card).
+  getSessionResultMock.mockResolvedValue(ok(null));
   getPlanMock.mockResolvedValue(ok({ enabled: false, accepted: false, planMd: "" }));
-  useUiStore.setState({ reviewModal: "none" });
+  useUiStore.setState({ reviewModal: "none", dismissedMissionRunIds: [] });
 });
 
 afterEach(() => {

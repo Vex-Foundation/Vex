@@ -226,9 +226,25 @@ async function resolveSessionAddresses(
  * (activity rows / fills, NOT executions) that are BOTH scoped to the session's
  * wallets AND attributed to this session via an INNER JOIN to
  * `protocol_executions` (`session_id = $2`); newest first.
+ *
+ * OPTIONAL PER-RUN NARROWING (`missionRunId`). A session can hold several
+ * sequential mission runs, so "this session's moves" is too wide for a card
+ * that reports ONE run. When supplied, the read additionally requires the
+ * activity to fall inside that run's own window, using the SAME attribution
+ * rule as the engine's `countMissionTrades` (session match + `created_at`
+ * BETWEEN `started_at` AND `COALESCE(ended_at, NOW())`). Sharing the rule is
+ * deliberate: it is what makes the rendered trade list agree with the ledger's
+ * `trades` COUNT instead of quietly disagreeing with it.
+ *
+ * Fail-closed, like every other predicate here: the `EXISTS` also requires the
+ * run to belong to THIS session, so a run id from another session matches
+ * nothing and yields an empty list rather than another session's trades.
+ * Filtering server-side (not in the renderer) keeps the attribution rule in
+ * one place — a renderer-side window filter would be a second, drifting copy.
  */
 export async function getMovesForSession(
   sessionId: string,
+  missionRunId?: string,
 ): Promise<Result<MovesDto, VexError>> {
   const resolved = await resolveSessionAddresses(sessionId);
   if (!resolved.ok) return resolved;
@@ -319,9 +335,18 @@ export async function getMovesForSession(
             AND ci.execution_id = a.execution_id
           WHERE a.wallet_address = ANY($1::text[])
             AND e.session_id = $2
+            AND ($3::text IS NULL OR EXISTS (
+                  SELECT 1
+                    FROM mission_runs mr
+                   WHERE mr.id = $3
+                     AND mr.session_id = e.session_id
+                     AND a.created_at
+                         BETWEEN mr.started_at
+                             AND COALESCE(mr.ended_at, NOW())
+                ))
           ORDER BY a.created_at DESC, a.id DESC
           LIMIT ${MOVES_MAX}`,
-        [addrParam, sessionId],
+        [addrParam, sessionId, missionRunId ?? null],
       );
 
       const moves: MovesDto = result.rows.map((row) => ({
@@ -346,8 +371,12 @@ export async function getMovesForSession(
         createdAt: toIso(row.created_at),
       }));
 
+      // Run id is an opaque internal identifier (not an address, symbol, or
+      // figure), so it is safe to log; the row COUNT rule is unchanged.
       log.info(
-        `[moves-db] getMovesForSession ok session=${sessionId} moves=${moves.length}`,
+        `[moves-db] getMovesForSession ok session=${sessionId}` +
+          `${missionRunId === undefined ? "" : ` run=${missionRunId}`}` +
+          ` moves=${moves.length}`,
       );
       return ok(moves);
     } catch (cause) {

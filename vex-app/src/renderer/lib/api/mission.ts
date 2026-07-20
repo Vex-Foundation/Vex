@@ -39,6 +39,7 @@ import type {
   MissionGetDraftResult,
   MissionGetRenewableSourceResult,
   MissionGetResultForRunResult,
+  MissionGetSessionResultResult,
   MissionListResultsResult,
   MissionRecoverInput,
   MissionRecoverResult,
@@ -164,6 +165,26 @@ export function useMissionResultForRun(
 }
 
 /**
+ * The session's newest finalized ledger row — the post-mission summary card
+ * the session view shows once a run ends. Session-scoped because that surface
+ * holds a session id and no wallet address.
+ */
+function missionSessionResultOptions(sessionId: string) {
+  return queryOptions({
+    queryKey: missionKeys.sessionResult(sessionId),
+    queryFn: () => window.vex.mission.getSessionResult({ sessionId }),
+    staleTime: STALE_MS,
+    enabled: sessionId.length > 0,
+  });
+}
+
+export function useMissionSessionResult(
+  sessionId: string | null,
+): UseQueryResult<Result<MissionGetSessionResultResult>> {
+  return useQuery(missionSessionResultOptions(sessionId ?? ""));
+}
+
+/**
  * 30s fallback invalidation cadence for the mission draft/diff queries —
  * mirrors `TRANSCRIPT_LIVE_FALLBACK_POLL_MS`/`USAGE_LIVE_FALLBACK_POLL_MS`.
  * Exported for tests.
@@ -190,6 +211,12 @@ export function useMissionLiveSync(sessionId: string | null): void {
       });
       void queryClient.invalidateQueries({
         queryKey: missionKeys.diffsForSession(sessionId),
+      });
+      // The summary card's source. A run finalizes mid-turn, so without this
+      // the session view would keep showing the pre-run controls until the
+      // user blurred the session — the card would arrive late or not at all.
+      void queryClient.invalidateQueries({
+        queryKey: missionKeys.sessionResult(sessionId),
       });
     };
 

@@ -17,18 +17,14 @@
 import type { JSX } from "react";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
-
-/** Vex script monogram (square PNG). */
-const VEX_LOGO_SRC = "/logo_clean.png";
-/** Robinhood white feather mark (portrait SVG). */
-const ROBINHOOD_LOGO_SRC = "/logo/robinhood.svg";
+import { useBrandMarkSrc } from "./brandMark.js";
 
 export function SidebarHomeSigil({
   sidebarOpen,
 }: {
   readonly sidebarOpen: boolean;
 }): JSX.Element {
-  const theme = useUiStore((s) => s.theme);
+  const src = useBrandMarkSrc();
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const appShellView = useUiStore((s) => s.appShellView);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -40,7 +36,6 @@ export function SidebarHomeSigil({
   // Height-driven size; width flows from each mark's own aspect. A light rail
   // crown (~24px open / ~20px collapsed), not a billboard.
   const sizeClass = sidebarOpen ? "h-6" : "h-5";
-  const src = theme === "robinhood" ? ROBINHOOD_LOGO_SRC : VEX_LOGO_SRC;
 
   const mark = (
     <img

@@ -158,6 +158,7 @@ export const CH = {
     setAutoRetry: "vex:mission:setAutoRetry",
     listResults: "vex:mission:listResults",
     getResultForRun: "vex:mission:getResultForRun",
+    getSessionResult: "vex:mission:getSessionResult",
   },
 
   // Approvals — queue browsing + decisions. Pending/get/history are

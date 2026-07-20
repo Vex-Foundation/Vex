@@ -1,10 +1,15 @@
 /**
  * Mission History — a read-only AppShell sub-view (mission-results-ledger,
  * WP-J). Per-wallet ledger of finalized mission runs: a summary register
- * (total missions, win rate, cumulative ETH PnL) then one row per mission,
+ * (total missions, win rate, cumulative ETH PnL) then one card per mission,
  * newest first. Mirrors the MemoryPanel shell grammar (h-12 register header
- * + back key, hairline-separated ledger, `--vex-*` ink) so it reads as one
- * surface with the rest of the desk.
+ * + back key, `--vex-*` ink) so it reads as one surface with the rest of the
+ * desk.
+ *
+ * The cards themselves are `MissionSummaryCard` — the SAME component the
+ * session view renders after a run ends, at `compact` density. This file owns
+ * the register, the query states, and the dismissal view-filter; it owns no
+ * card layout of its own, so the two surfaces cannot drift apart.
  *
  * The ledger is EVM/ETH-specific (bankroll = native ETH + WETH), so this
  * reads the PRIMARY EVM wallet from the inventory — never every wallet.
@@ -23,19 +28,11 @@ import type { MissionListResultsResult, MissionResultDto } from "@shared/schemas
 import { useUiStore } from "../../stores/uiStore.js";
 import { useMissionResults } from "../../lib/api/mission.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
-import { formatPercentDelta, formatUsd } from "../../lib/format.js";
 import { cn } from "../../lib/utils.js";
 import { Empty, ErrorState, Loading } from "./MemoryPanelShared.js";
-import { OutcomeBadge } from "./OutcomeBadge.js";
-import {
-  EM_DASH,
-  computeWinRate,
-  formatDurationS,
-  formatEth,
-  missionDisplayOutcome,
-  pnlUsd,
-  sumPnlEth,
-} from "./missionHistoryModel.js";
+import { MissionSummaryCard } from "./MissionSummaryCard.js";
+import { pnlToneClass } from "./missionSummaryModel.js";
+import { EM_DASH, computeWinRate, formatEth, sumPnlEth } from "./missionHistoryModel.js";
 
 export function MissionHistory(): JSX.Element {
   const setAppShellView = useUiStore((s) => s.setAppShellView);
@@ -98,14 +95,49 @@ function Body({
   return <Ledger results={res.data} />;
 }
 
+/**
+ * Dismissal is a VIEW filter, deliberately applied here and nowhere else.
+ *
+ * The register totals below are computed over `results` — every finished
+ * run, including the dismissed ones. Hiding a card the operator has already
+ * read must not quietly restate their win rate or cumulative PnL: the
+ * numbers are an audit trail of real-money trades, and dismissing a card
+ * changes what is on screen, never what is true.
+ */
 function Ledger({ results }: { readonly results: readonly MissionResultDto[] }): JSX.Element {
+  const dismissed = useUiStore((s) => s.dismissedMissionRunIds);
+  const restore = useUiStore((s) => s.restoreDismissedMissionRuns);
+
+  // Totals over ALL results — see the note above.
   const winRate = computeWinRate(results);
   const cumulative = sumPnlEth(results);
+
+  const visible = results.filter((r) => !dismissed.includes(r.missionRunId));
+  const hiddenCount = results.length - visible.length;
 
   return (
     <>
       <SummaryHeader total={results.length} winRate={winRate} cumulativeEth={cumulative} />
-      <ResultsTable results={results} />
+      {visible.length === 0 && hiddenCount > 0 ? (
+        <Empty label="Every mission is hidden — nothing has been deleted." />
+      ) : (
+        <ResultsLedger results={visible} />
+      )}
+      {hiddenCount > 0 ? (
+        // Sits under the list as a quiet footer rather than as a row inside
+        // it: a hidden card is not a ledger entry, and the list is now a
+        // stack of cards with no row grammar to borrow.
+        <div className="flex items-center gap-3 border-t border-[var(--vex-line)] pt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
+          <span>{hiddenCount} hidden — still counted above</span>
+          <button
+            type="button"
+            onClick={restore}
+            className="rounded-[4px] px-1.5 py-0.5 underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          >
+            Show hidden
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -126,7 +158,7 @@ function SummaryHeader({
       <Stat
         label="Cumulative PnL"
         value={`${formatEth(cumulativeEth, { signed: true })} ETH`}
-        tone={pnlTone(cumulativeEth)}
+        tone={pnlToneClass(cumulativeEth)}
       />
     </section>
   );
@@ -153,87 +185,23 @@ function Stat({
   );
 }
 
-function ResultsTable({
+/**
+ * The ledger is a stack of the SAME card the session view shows after a run
+ * ends — at `compact` density, which scales the type and padding and changes
+ * nothing else. There is no second design for a mission summary.
+ */
+function ResultsLedger({
   results,
 }: {
   readonly results: readonly MissionResultDto[];
 }): JSX.Element {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left text-xs">
-        <thead>
-          <tr className="border-b border-[var(--vex-line)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-3)]">
-            <Th>#</Th>
-            <Th>Goal</Th>
-            <Th>Outcome</Th>
-            <Th align="right">Duration</Th>
-            <Th align="right">Trades</Th>
-            <Th align="right">PnL (ETH)</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r) => (
-            <ResultRow key={r.missionRunId} result={r} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ul className="flex flex-col gap-3">
+      {results.map((r) => (
+        <li key={r.missionRunId}>
+          <MissionSummaryCard result={r} density="compact" />
+        </li>
+      ))}
+    </ul>
   );
-}
-
-function ResultRow({ result }: { readonly result: MissionResultDto }): JSX.Element {
-  const usd = pnlUsd(result.pnlEth, result.ethPriceUsdEnd);
-  const pnlTitle = usd === null ? undefined : `${formatUsd(usd)} at close`;
-
-  return (
-    <tr className="border-b border-[var(--vex-line)] last:border-b-0 hover:bg-white/[0.02]">
-      <td className="py-2.5 pr-3 font-mono tabular-nums text-[var(--vex-text-2)]">
-        #{result.seqNo}
-      </td>
-      <td className="max-w-[220px] truncate py-2.5 pr-3 text-foreground">
-        <span title={result.goalSnippet ?? undefined}>{result.goalSnippet ?? EM_DASH}</span>
-      </td>
-      <td className="py-2.5 pr-3">
-        <OutcomeBadge outcome={missionDisplayOutcome(result)} />
-      </td>
-      <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
-        {formatDurationS(result.durationS)}
-      </td>
-      <td className="py-2.5 pr-3 text-right font-mono tabular-nums text-[var(--vex-text-2)]">
-        {result.trades}
-      </td>
-      <td className="py-2.5 text-right">
-        <span title={pnlTitle} className={cn("font-mono tabular-nums", pnlTone(result.pnlEth))}>
-          {formatEth(result.pnlEth, { signed: true })}
-        </span>
-        {result.pnlPct !== null ? (
-          <span className="ml-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-            {formatPercentDelta(result.pnlPct)}
-          </span>
-        ) : null}
-      </td>
-    </tr>
-  );
-}
-
-function Th({
-  children,
-  align,
-}: {
-  readonly children: string;
-  readonly align?: "right";
-}): JSX.Element {
-  return (
-    <th className={cn("py-2 pr-3 font-normal", align === "right" ? "text-right" : "text-left")}>
-      {children}
-    </th>
-  );
-}
-
-/** Sign -> PnL colour class: positive success, negative destructive, flat/unknown muted. */
-function pnlTone(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "text-[var(--vex-text-3)]";
-  if (value > 0) return "text-[var(--color-success)]";
-  if (value < 0) return "text-destructive";
-  return "text-[var(--vex-text-2)]";
 }

@@ -71,7 +71,7 @@ function registerPortfolioMovesReadHandler(): () => void {
     inputSchema: movesReadInputSchema,
     outputSchema: movesDtoSchema,
     handle: async (input, ctx): Promise<Result<MovesDto>> => {
-      const outcome = await getMovesForSession(input.sessionId);
+      const outcome = await getMovesForSession(input.sessionId, input.missionRunId);
       if (outcome.ok) {
         log.info(
           `[ipc:vex:portfolio:listMoves] ok sessionId=${input.sessionId} ` +

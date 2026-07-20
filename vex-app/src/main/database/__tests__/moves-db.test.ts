@@ -234,8 +234,45 @@ describe("moves-db getMovesForSession — strict per-session attribution (JOIN)"
     const sql = String(call?.[0] ?? "");
     expect(sql).toContain("session_id = $2");
     // $2 is the session id — server-resolved, never renderer-supplied as an
-    // address; bound alongside the address array as [$1, $2].
-    expect(call?.[1]).toEqual([[WALLET_A], SESSION]);
+    // address; bound alongside the address array as [$1, $2]. $3 is the
+    // optional mission-run narrowing, null for a whole-session read.
+    expect(call?.[1]).toEqual([[WALLET_A], SESSION, null]);
+  });
+
+  it("does not narrow to a run unless one was asked for", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await getMovesForSession(SESSION);
+    const call = mocks.query.mock.calls[0];
+
+    // The predicate is present but inert: `$3 IS NULL` short-circuits it, so
+    // the whole-session feed behaves exactly as it did before.
+    expect(String(call?.[0] ?? "")).toContain("$3::text IS NULL");
+    expect(Array.isArray(call?.[1]) ? call?.[1]?.[2] : undefined).toBeNull();
+  });
+
+  it("narrows to ONE run using the engine's own attribution rule", async () => {
+    // A session can hold several sequential runs, so a card reporting run #3
+    // must not list runs #1 and #2's trades as its own. The window predicate
+    // mirrors `countMissionTrades`, which is what makes the rendered list
+    // agree with the ledger's trade COUNT.
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await getMovesForSession(SESSION, "run-3");
+    const call = mocks.query.mock.calls[0];
+    const sql = String(call?.[0] ?? "");
+
+    expect(sql).toContain("FROM mission_runs");
+    expect(sql).toContain("COALESCE(mr.ended_at, NOW())");
+    // Fail closed: the run must belong to THIS session, so a foreign run id
+    // matches nothing rather than leaking another session's trades.
+    expect(sql).toContain("mr.session_id = e.session_id");
+    // The wallet and session predicates are still there — narrowing never widens.
+    expect(sql).toContain("ANY($1::text[])");
+    expect(sql).toContain("session_id = $2");
+    expect(call?.[1]).toEqual([[WALLET_A], SESSION, "run-3"]);
   });
 
   it("keeps the wallet-address scope as defense-in-depth alongside the session filter", async () => {

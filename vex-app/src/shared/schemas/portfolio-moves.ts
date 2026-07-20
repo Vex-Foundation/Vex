@@ -48,9 +48,19 @@ export const MOVE_TOKEN_SYMBOL_MAX = TOKEN_SYMBOL_MAX_LENGTH;
  * IPC input for `vex.portfolio.listMoves`. `.strict()` rejects any extra key;
  * `sessionId` MUST be a UUID. The renderer never supplies a wallet address —
  * main resolves the session's wallet scope server-side.
+ *
+ * `missionRunId` is an OPTIONAL narrowing for the mission summary card, which
+ * reports a single run of a session that may hold several. It never widens the
+ * read: the wallet scope and `session_id` predicates still apply, and main
+ * additionally requires the run to belong to this session (see `moves-db.ts`),
+ * so a foreign run id returns nothing rather than another session's trades.
+ * Omitted → the unchanged whole-session feed.
  */
 export const movesReadInputSchema = z
-  .object({ sessionId: z.string().uuid() })
+  .object({
+    sessionId: z.string().uuid(),
+    missionRunId: z.string().min(1).max(128).optional(),
+  })
   .strict();
 export type MovesReadInput = z.infer<typeof movesReadInputSchema>;
 

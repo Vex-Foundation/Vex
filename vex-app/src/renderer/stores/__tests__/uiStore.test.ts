@@ -193,6 +193,7 @@ describe("uiStore", () => {
       sidebarOpen: true,
       bookOpen: true,
       hlFavorites: [],
+      dismissedMissionRunIds: [],
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialMessage).toBeUndefined();
@@ -279,6 +280,7 @@ describe("uiStore", () => {
       sidebarOpen: false,
       bookOpen: true,
       hlFavorites: [],
+      dismissedMissionRunIds: [],
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

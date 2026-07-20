@@ -52,7 +52,9 @@ import type {
   MissionDraftDto,
   MissionGetDiffResult,
   MissionGetRenewableSourceResult,
+  MissionGetSessionResultResult,
   MissionRenewResult,
+  MissionResultDto,
 } from "@shared/schemas/mission.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -64,6 +66,7 @@ import {
   useMissionLiveSync,
   useMissionRenew,
   useMissionRetry,
+  useMissionSessionResult,
   useMissionStart,
   useMissionStop,
   useRenewableMissionSource,
@@ -73,6 +76,7 @@ import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
 import { planMissing } from "./MissionRail.js";
+import { MissionSummaryCard } from "./MissionSummaryCard.js";
 
 /**
  * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
@@ -207,6 +211,22 @@ function readRenewable(
   return data && data.ok ? data.data : null;
 }
 
+/**
+ * The session's latest FINALIZED ledger row, or null while it is still
+ * running / absent / unreadable.
+ *
+ * Deliberately NOT gated on which terminal outcome it was: a `failed` run
+ * that wrote a summary is exactly the run whose account the operator needs
+ * most, so only a still-`running` row is withheld (it has no result yet).
+ */
+function readFinalizedResult(
+  data: Result<MissionGetSessionResultResult> | undefined,
+): MissionResultDto | null {
+  const result = data && data.ok ? data.data : null;
+  if (result === null || result.outcome === "running") return null;
+  return result;
+}
+
 export function MissionControls({
   sessionId,
 }: MissionControlsProps): JSX.Element | null {
@@ -222,6 +242,12 @@ export function MissionControls({
   const planKnown = planQuery.data?.ok === true;
   const plan = planQuery.data?.ok === true ? planQuery.data.data : null;
   const renewableQuery = useRenewableMissionSource(sessionId);
+  // The finished run's ledger row, for the summary card below the controls.
+  const sessionResultQuery = useMissionSessionResult(sessionId);
+  // View-state only: a dismissed summary stays dismissed here too, so the ×
+  // means the same thing on both surfaces and "Show hidden" in Missions
+  // brings this one back as well.
+  const dismissedRunIds = useUiStore((s) => s.dismissedMissionRunIds);
 
   const start = useMissionStart();
   const cont = useMissionContinue();
@@ -394,8 +420,18 @@ export function MissionControls({
   // acceptance-pending UI below (accept it, then Start).
   if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
+    // A terminal accepted mission has a finalized ledger row — lead with its
+    // summary, at hero density, above the Renew key. This is the moment the
+    // card exists for: the operator has just watched a run end and wants to
+    // know what happened before deciding to run it again.
+    const summary = readFinalizedResult(sessionResultQuery.data);
     return (
       <div data-vex-area="mission-controls" className="mt-3">
+        {summary !== null && !dismissedRunIds.includes(summary.missionRunId) ? (
+          <div className="mb-3">
+            <MissionSummaryCard result={summary} density="hero" />
+          </div>
+        ) : null}
         {pendingAcceptance ? <AcceptancePendingNotice /> : null}
         <button
           type="button"
