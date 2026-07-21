@@ -162,6 +162,7 @@ export async function processMissionSetupTurn(
     // intentionally broader than agent.ts (which threads only pos 11).
     signal, // abortSignal
     signal, // inferenceAbortSignal
+    sessionLease.signal,
   );
 
   // Graceful cap-hit reply (setup): when the loop exhausted maxIterations

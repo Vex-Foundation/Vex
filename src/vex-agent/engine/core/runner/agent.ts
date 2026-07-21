@@ -156,6 +156,7 @@ export async function processAgentTurn(
     { personaSetupHint }, // promptOptions
     undefined, // abortSignal — chat turns have no mission-boundary controller
     signal, // inferenceAbortSignal (9-5a) — chat-turn "stop generating"
+    sessionLease.signal,
   );
 
     // Graceful cap-hit reply: when the loop exhausted maxIterations WITHOUT the

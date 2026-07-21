@@ -62,6 +62,11 @@ import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
 import type { PreparedMissionStart } from "./mission-prepare.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import type { Permission } from "../../types.js";
+import logger from "@utils/logger.js";
+import {
+  isRunnerLeaseLostError,
+  throwIfRunnerLeaseLost,
+} from "../../runtime/lease-loss.js";
 
 type Provider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
 type ProviderConfig = NonNullable<
@@ -180,7 +185,11 @@ export async function runPreparedMissionStart(
       loopConfig,
       promptOptions,
       controller.signal,
+      undefined,
+      prepared.sessionLease.signal,
     );
+
+    throwIfRunnerLeaseLost(prepared.sessionLease.signal);
 
     const missionStatus = await finalizeMissionRunStatus(
       prepared.missionId,
@@ -198,6 +207,13 @@ export async function runPreparedMissionStart(
       missionStatus,
     };
   } catch (err: unknown) {
+    if (isRunnerLeaseLostError(err)) {
+      logger.info("engine.mission.stale_runner_exited", {
+        runId: prepared.runId,
+        sessionId: prepared.sessionId,
+      });
+      throw err;
+    }
     await finalizeMissionRunError(
       prepared.missionId,
       prepared.runId,
@@ -228,6 +244,7 @@ export interface PreparedResumeRun {
   readonly mission: Mission;
   readonly provider: Provider;
   readonly config: ProviderConfig;
+  readonly leaseSignal?: AbortSignal;
 }
 
 export async function resumePreparedMissionRun(
@@ -307,7 +324,11 @@ export async function resumePreparedMissionRun(
       loopConfig,
       promptOptions,
       controller.signal,
+      undefined,
+      prepared.leaseSignal,
     );
+
+    throwIfRunnerLeaseLost(prepared.leaseSignal);
 
     const missionStatus = await finalizeMissionRunStatus(
       prepared.run.missionId,
@@ -325,6 +346,13 @@ export async function resumePreparedMissionRun(
       missionStatus,
     };
   } catch (err: unknown) {
+    if (isRunnerLeaseLostError(err)) {
+      logger.info("engine.mission.stale_runner_exited", {
+        runId: prepared.runId,
+        sessionId: prepared.run.sessionId,
+      });
+      throw err;
+    }
     await finalizeMissionRunError(
       prepared.run.missionId,
       prepared.runId,

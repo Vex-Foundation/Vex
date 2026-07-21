@@ -125,10 +125,9 @@ export async function abortMissionRun(runId: string): Promise<AbortMissionRunRes
     });
   }
 
-  // (a) `running` with live in-process loop → fire AbortSignal. Loop checks
-  // `abortSignal?.aborted` at the top of each iteration (turn-loop.ts:138),
-  // sets `stopReason = "user_stopped"`, breaks, and `finalizeMissionRunStatus`
-  // (mission.ts:329) maps that to `cancelled`.
+  // (a) `running` with live in-process loop → fire AbortSignal. The loop checks
+  // it at iteration and dispatch boundaries, then maps `user_stopped` to the
+  // terminal `cancelled` status.
   if (run.status === "running" && controllers.has(runId)) {
     controllers.get(runId)!.abort();
     logger.info("engine.mission.abort_signaled", {

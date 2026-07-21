@@ -118,7 +118,7 @@ describe("wake.executor.tick", () => {
       lease: makeStubLease(),
       ownerId: "test-owner",
       release: vi.fn().mockResolvedValue(undefined),
-      onLeaseLost: vi.fn(),
+      signal: new AbortController().signal,
     });
     mockReleaseLease.mockReset();
     mockReleaseLease.mockResolvedValue(undefined);
@@ -146,7 +146,10 @@ describe("wake.executor.tick", () => {
         expect.objectContaining({ missionRunId: "run-1", expectedAttempt: 2 }),
       );
       expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
-      expect(deps.resumeMissionRun).toHaveBeenCalledWith("run-1");
+      expect(deps.resumeMissionRun).toHaveBeenCalledWith(
+        "run-1",
+        expect.any(AbortSignal),
+      );
     });
 
     it("CONSUMED-WAKE RACE: a human Recover stamped unsafe → claim ineligible → skip, no resume", async () => {
@@ -211,7 +214,10 @@ describe("wake.executor.tick", () => {
       "continue monitoring",
       "2026-04-20T12:00:00.000Z",
     );
-    expect(deps.resumeMissionRun).toHaveBeenCalledWith("run-1");
+    expect(deps.resumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      expect.any(AbortSignal),
+    );
   });
 
   it("skips when the run is no longer paused_wake (user preempt won the race)", async () => {

@@ -36,7 +36,15 @@ vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/results.js", () => ({
         toolCallsExecuted: args.toolCallsExecuted,
         lastText: args.lastText,
       }
-    : {
+    : args.batchStopReason
+      ? {
+          kind: "engine_stop",
+          stopReason: args.batchStopReason,
+          text: args.lastText,
+          toolCallsExecuted: args.toolCallsExecuted,
+          lastText: args.lastText,
+        }
+      : {
         kind: "normal_complete",
         toolCallsExecuted: args.toolCallsExecuted,
         lastText: args.lastText,
@@ -89,7 +97,10 @@ function context(permission: "restricted" | "full") {
   } as any;
 }
 
-async function run(permission: "restricted" | "full") {
+async function run(
+  permission: "restricted" | "full",
+  controls: { abortSignal?: AbortSignal } = {},
+) {
   return processTurnToolBatch({
     context: context(permission),
     turnResult: {
@@ -110,6 +121,7 @@ async function run(permission: "restricted" | "full") {
     currentTokenCount: 0,
     contextLimit: 128_000,
     lastTextSoFar: null,
+    ...controls,
   });
 }
 
@@ -181,6 +193,29 @@ describe("prepared-action follow-up handoff", () => {
       ],
       systemOriginated: true,
     });
+  });
+
+  it("does not synthesize confirm after operator Stop wins the handoff boundary", async () => {
+    const controller = new AbortController();
+    dispatchTool.mockImplementationOnce(async () => {
+      controller.abort();
+      return prepareResult();
+    });
+
+    const outcome = await run("full", { abortSignal: controller.signal });
+
+    expect(dispatchTool).toHaveBeenCalledOnce();
+    expect(outcome).toMatchObject({
+      kind: "engine_stop",
+      stopReason: "user_stopped",
+      toolCallsExecuted: 1,
+    });
+    expect(persistBatchTranscript).toHaveBeenCalledOnce();
+    expect(persistBatchTranscript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executedCalls: [expect.objectContaining({ name: "wallet_send_prepare" })],
+      }),
+    );
   });
 
   it.each(["restricted", "full"] as const)(

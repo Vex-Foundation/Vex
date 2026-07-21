@@ -4,9 +4,9 @@
  * Wraps a successfully-claimed `runner_leases` row and owns:
  *   - the heartbeat interval (renews `expires_at` every `ttlMs / 3`);
  *   - the release callback (DELETE on terminal/paused/exception);
- *   - the `onLeaseLost` notification when a renewal returns null
- *     (someone else stole the lease after expiry — runner should
- *     treat this as a forced terminal).
+ *   - an abort signal that fires when a renewal returns null (someone else
+ *     stole the lease after expiry). Every runner threads this signal to its
+ *     dispatch boundary so stale owners cannot start more work.
  *
  * Heartbeat ownership lives on the runner that successfully claimed,
  * not on the IPC request that initiated the claim. An IPC handler kicks
@@ -26,10 +26,19 @@ import {
   type RunnerLease,
 } from "../../db/repos/runner-leases.js";
 import logger from "@utils/logger.js";
+import { RunnerLeaseLostError } from "./lease-loss.js";
+export {
+  RunnerLeaseLostError,
+  getRunnerLeaseLostError,
+  isRunnerLeaseLostError,
+  throwIfRunnerLeaseLost,
+} from "./lease-loss.js";
 
 export interface LeaseHandle {
   readonly lease: RunnerLease;
   readonly ownerId: string;
+  /** Aborted exactly once when heartbeat renewal proves ownership was lost. */
+  readonly signal: AbortSignal;
   /** Idempotent. Safe to call multiple times. */
   release(): Promise<void>;
 }
@@ -38,12 +47,6 @@ export interface CreateLeaseHandleOptions {
   readonly lease: RunnerLease;
   readonly ownerId: string;
   readonly ttlMs: number;
-  /**
-   * Fired when a heartbeat renewal returns null (lease stolen because
-   * the previous owner missed too many heartbeats and `expires_at`
-   * lapsed). Runner should treat this as forced pause / stop.
-   */
-  readonly onLeaseLost?: (reason: string) => void;
   /**
    * Override for tests — defaults to `globalThis.setInterval` /
    * `clearInterval`. The injectable timer makes vitest fake-timer tests
@@ -74,6 +77,7 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
 
   let released = false;
   let intervalHandle: ReturnType<typeof setInterval> | null = null;
+  const leaseLostController = new AbortController();
 
   function stopHeartbeat(): void {
     if (intervalHandle !== null) {
@@ -87,21 +91,12 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
     try {
       const renewed = await renew(opts.lease.sessionId, opts.ownerId, opts.ttlMs);
       if (renewed === null) {
-        // Lease stolen — somebody else claimed after our expiry. Stop
-        // the heartbeat and notify the runner; the runner is expected
-        // to terminate its work promptly.
+        // Lease stolen — somebody else claimed after our expiry. Stop the
+        // heartbeat and synchronously revoke this runner at its next guarded
+        // dispatch/persistence boundary.
         released = true;
         stopHeartbeat();
-        if (opts.onLeaseLost) {
-          try {
-            opts.onLeaseLost("lease_stolen_after_expiry");
-          } catch (cbErr) {
-            logger.warn("runner_lease.handle.on_lost_callback_threw", {
-              sessionId: opts.lease.sessionId,
-              error: cbErr instanceof Error ? cbErr.message : String(cbErr),
-            });
-          }
-        }
+        leaseLostController.abort(new RunnerLeaseLostError(opts.lease.sessionId));
       }
     } catch (err) {
       // Transient DB issue — log + keep the interval armed. If renewal
@@ -121,6 +116,7 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
   return {
     lease: opts.lease,
     ownerId: opts.ownerId,
+    signal: leaseLostController.signal,
     async release(): Promise<void> {
       if (released) return;
       released = true;

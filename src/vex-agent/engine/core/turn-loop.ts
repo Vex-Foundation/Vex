@@ -52,6 +52,7 @@ import {
   armPostCompactBridge,
   createBandObserverWithLog,
 } from "./turn-loop-state-init.js";
+import { throwIfRunnerLeaseLost } from "../runtime/lease-loss.js";
 
 /**
  * Run the turn loop.
@@ -74,6 +75,10 @@ export async function runTurnLoop(
   // mission/subagent boundary stop) — only the chat ingress passes this, so
   // mission/subagent callers are behaviour-preserving.
   inferenceAbortSignal?: AbortSignal,
+  // Lease ownership is independent of operator Stop. Losing it throws a
+  // dedicated error so the stale runner exits without finalizing shared
+  // mission state now owned by another process.
+  leaseSignal?: AbortSignal,
 ): Promise<TurnLoopResult> {
   let lastText: string | null = null;
   let totalToolCalls = 0;
@@ -130,6 +135,7 @@ export async function runTurnLoop(
   }
 
   for (let iteration = 0; iteration < loopConfig.maxIterations; iteration++) {
+    throwIfRunnerLeaseLost(leaseSignal);
     // Hard mission deadline — the agent-independent time-box. Checked FIRST
     // each iteration, before any other guard or inference call, so an
     // expired run stops with `deadline_reached` no matter what the agent is
@@ -258,6 +264,18 @@ export async function runTurnLoop(
     currentTokenCount = turnResult.promptTokens;
     observeBand(currentTokenCount, "post_turn_text");
 
+    // Inference can finish after ownership, deadline, or Stop changed. Never
+    // let the already-generated tool batch cross a stale control boundary.
+    throwIfRunnerLeaseLost(leaseSignal);
+
+    if (
+      loopConfig.missionDeadlineMs != null
+      && Date.now() >= loopConfig.missionDeadlineMs
+    ) {
+      stopReason = "deadline_reached";
+      break;
+    }
+
     if (abortSignal?.aborted) {
       stopReason = "user_stopped";
       break;
@@ -287,7 +305,14 @@ export async function runTurnLoop(
         currentTokenCount,
         contextLimit: loopConfig.contextLimit,
         lastTextSoFar: lastText,
+        abortSignal,
+        leaseSignal,
+        missionDeadlineMs: loopConfig.missionDeadlineMs,
       });
+      // Prepared follow-ups and stop-like tool outcomes can return directly
+      // from the batch processor. Revoke stale ownership before handling any
+      // outcome or allowing mission finalization.
+      throwIfRunnerLeaseLost(leaseSignal);
       totalToolCalls += batchOutcome.toolCallsExecuted;
       lastText = batchOutcome.lastText;
 
@@ -341,16 +366,19 @@ export async function runTurnLoop(
         };
       }
       if (batchOutcome.kind === "compact_committed") {
+        throwIfRunnerLeaseLost(leaseSignal);
         await handlePostCompactBookkeeping();
         continue;
       }
 
       // Normal batch complete
+      throwIfRunnerLeaseLost(leaseSignal);
       await mergeOperatorInstructions();
       continue;
     }
 
     if (turnResult.content) {
+      throwIfRunnerLeaseLost(leaseSignal);
       lastText = turnResult.content;
       const textOutcome = await handleTextResponse({
         context,

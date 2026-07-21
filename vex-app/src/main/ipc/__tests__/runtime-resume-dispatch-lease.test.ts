@@ -21,6 +21,7 @@ const mockClaim = vi.fn();
 const mockCreateLeaseHandle = vi.fn();
 const mockResumeMissionRun = vi.fn();
 const mockRelease = vi.fn();
+const leaseSignal = new AbortController().signal;
 
 vi.mock("../../database/mission-runs-db.js", () => ({
   getActiveRunForSession: (...a: unknown[]) => mockGetActiveRun(...a),
@@ -103,7 +104,7 @@ describe("runResumeDispatch — running status + lease liveness", () => {
       previousStatus: "running",
       wakeCancelledCount: 0,
     });
-    mockCreateLeaseHandle.mockReturnValue({});
+    mockCreateLeaseHandle.mockReturnValue({ signal: leaseSignal });
     mockResumeMissionRun.mockResolvedValue({ text: "ok" });
     mockRelease.mockResolvedValue(undefined);
 
@@ -116,7 +117,7 @@ describe("runResumeDispatch — running status + lease liveness", () => {
       expect.objectContaining({ fromStatuses: ["running"], missionRunId: "run-1" }),
     );
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1"),
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1", leaseSignal),
     );
   });
 

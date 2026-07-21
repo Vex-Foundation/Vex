@@ -29,6 +29,7 @@ import { controlFailedError } from "../runtime/_errors.js";
 import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
 import { emitControlStateAfterChange } from "../runtime/_emit-control-state.js";
 import { classifyRunLeaseState } from "./lease-state.js";
+import { resolvePendingApprovalId } from "./pending-approval.js";
 
 export interface RetryFlowInput {
   readonly sessionId: string;
@@ -79,7 +80,15 @@ export async function runRetryDispatch(
       // error_retry wake pending.
     }
     if (status === "paused_approval") {
-      return ok({ outcome: "blocked_approval", pendingApprovalId: runId });
+      const pendingApproval = await resolvePendingApprovalId(
+        input.sessionId,
+        ctx.requestId,
+      );
+      if (!pendingApproval.ok) return pendingApproval;
+      return ok({
+        outcome: "blocked_approval",
+        pendingApprovalId: pendingApproval.data,
+      });
     }
     if (
       status === "completed" ||
@@ -163,7 +172,7 @@ export async function runRetryDispatch(
     void (async () => {
       try {
         const { resumeMissionRun } = await import("@vex-agent/engine/index.js");
-        await resumeMissionRun(runId);
+        await resumeMissionRun(runId, handle.signal);
         await markCleared(auditRequest.id, "resumed");
       } catch (cause) {
         log.warn(

@@ -41,7 +41,7 @@ vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
     },
     ownerId: "test-owner",
     release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
+    signal: new AbortController().signal,
   }),
 }));
 
@@ -138,7 +138,10 @@ describe("retryActiveMissionRun", () => {
   it("flips paused_error → running and resumes the run", async () => {
     mockGetActiveRunBySession.mockResolvedValue(activeRun("paused_error"));
     const result = await retryActiveMissionRun("s-1");
-    expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1");
+    expect(mockResumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      expect.any(AbortSignal),
+    );
     expect(result).toEqual(okTurnResult);
     // Phase 4d: a human Recover cancels any pending error_retry wake first.
     expect(mockCancelForSession).toHaveBeenCalledWith(
@@ -159,7 +162,10 @@ describe("retryActiveMissionRun", () => {
       wakeCancelledCount: 1,
     });
     const result = await retryActiveMissionRun("s-1");
-    expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1");
+    expect(mockResumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      expect.any(AbortSignal),
+    );
     expect(result).toEqual(okTurnResult);
   });
 

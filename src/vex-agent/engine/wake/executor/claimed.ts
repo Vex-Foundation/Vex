@@ -75,7 +75,7 @@ export async function handleClaimed(
   });
   try {
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-    await deps.resumeMissionRun(run.id);
+    await deps.resumeMissionRun(run.id, handle.signal);
     return { kind: "resumed", runId: run.id };
   } finally {
     const { releaseLeaseAndEmitControlState } = await import(

@@ -26,6 +26,8 @@ const mockClaim = vi.fn();
 const mockCreateLeaseHandle = vi.fn();
 const mockResumeMissionRun = vi.fn();
 const mockRelease = vi.fn();
+const mockListPendingForSession = vi.fn();
+const leaseSignal = new AbortController().signal;
 
 vi.mock("electron", () => {
   const handlers = new Map<
@@ -55,6 +57,9 @@ vi.mock("../../../database/mission-runs-db.js", async (importOriginal) => {
       mockGetLatestRunForSession(...a),
   };
 });
+vi.mock("../../../database/approvals-db.js", () => ({
+  listPendingForSession: (...a: unknown[]) => mockListPendingForSession(...a),
+}));
 vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureEngineDbUrl(...a),
 }));
@@ -114,6 +119,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockEnsureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
   mockEmitControlStateAfterChange.mockResolvedValue(undefined);
+  mockListPendingForSession.mockResolvedValue({
+    ok: true,
+    data: [{ id: "approval-1" }],
+  });
   electronMock.__handlers.clear();
   registerMissionRetryHandler();
 });
@@ -151,7 +160,7 @@ describe("mission.retry", () => {
       previousStatus: "running",
       wakeCancelledCount: 0,
     });
-    mockCreateLeaseHandle.mockReturnValueOnce({});
+    mockCreateLeaseHandle.mockReturnValueOnce({ signal: leaseSignal });
     mockResumeMissionRun.mockResolvedValueOnce({ text: "ok" });
     mockRelease.mockResolvedValue(undefined);
 
@@ -167,7 +176,7 @@ describe("mission.retry", () => {
     // paused_error-only wake cancellation must not fire here.
     expect(mockCancelForSession).not.toHaveBeenCalled();
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead"),
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead", leaseSignal),
     );
   });
 
@@ -179,8 +188,22 @@ describe("mission.retry", () => {
     const r = await call({ sessionId: SESSION });
     expect(r.data).toEqual({
       outcome: "blocked_approval",
-      pendingApprovalId: "run-1",
+      pendingApprovalId: "approval-1",
     });
+    expect(mockListPendingForSession).toHaveBeenCalledWith(SESSION);
+  });
+
+  it("fails closed when paused_approval has no pending queue row", async () => {
+    mockGetLatestRunForSession.mockResolvedValueOnce({
+      ok: true,
+      data: { missionRunId: "run-1", status: "paused_approval" },
+    });
+    mockListPendingForSession.mockResolvedValueOnce({ ok: true, data: [] });
+
+    const r = await call({ sessionId: SESSION });
+
+    expect(r.ok).toBe(false);
+    expect(r.error?.code).toBe("internal.unexpected");
   });
 
   it("returns blocked_terminal for a terminal run", async () => {
@@ -213,7 +236,7 @@ describe("mission.retry", () => {
       lease: { ownerId: "owner-x" },
       previousStatus: "paused_error",
     });
-    mockCreateLeaseHandle.mockReturnValueOnce({});
+    mockCreateLeaseHandle.mockReturnValueOnce({ signal: leaseSignal });
     mockResumeMissionRun.mockResolvedValueOnce({ text: "ok" });
     mockRelease.mockResolvedValue(undefined);
 
@@ -227,7 +250,7 @@ describe("mission.retry", () => {
     );
     // Fire-and-forget continuation (dynamic-imports the engine) — poll for it.
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err"),
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", leaseSignal),
     );
   });
 

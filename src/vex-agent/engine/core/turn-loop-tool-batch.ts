@@ -65,6 +65,10 @@ import {
   dispatchPreparedActionFollowUp,
   resolvePreparedActionFollowUp,
 } from "./turn-loop-tool-batch/prepared-follow-up.js";
+import {
+  getRunnerLeaseLostError,
+  type RunnerLeaseLostError,
+} from "../runtime/lease-loss.js";
 
 export type { StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 
@@ -76,6 +80,9 @@ export async function processTurnToolBatch(args: {
   readonly currentTokenCount: number;
   readonly contextLimit: number;
   readonly lastTextSoFar: string | null;
+  readonly abortSignal?: AbortSignal;
+  readonly leaseSignal?: AbortSignal;
+  readonly missionDeadlineMs?: number | null;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
   const executedCalls: ParsedToolCall[] = [];
@@ -93,10 +100,29 @@ export async function processTurnToolBatch(args: {
   let batchStopPayload: StopPayload | undefined;
   let compactCommittedThisBatch = false;
   let approvalId: string | null = null;
+  let leaseLostError: RunnerLeaseLostError | null = null;
 
   const dispatchBand = computeBand(args.currentTokenCount, args.contextLimit);
 
+  function stopAtDispatchBoundary(): boolean {
+    leaseLostError = getRunnerLeaseLostError(args.leaseSignal);
+    if (leaseLostError !== null) return true;
+    if (
+      args.missionDeadlineMs != null
+      && Date.now() >= args.missionDeadlineMs
+    ) {
+      batchStopReason = "deadline_reached";
+      return true;
+    }
+    if (args.abortSignal?.aborted) {
+      batchStopReason = "user_stopped";
+      return true;
+    }
+    return false;
+  }
+
   for (let i = 0; i < turnResult.toolCalls.length; i++) {
+    if (stopAtDispatchBoundary()) break;
     const toolCall = turnResult.toolCalls[i];
     // `i < turnResult.toolCalls.length` guarantees this index is populated;
     // the guard exists only to satisfy `noUncheckedIndexedAccess` (vex-app's
@@ -167,6 +193,10 @@ export async function processTurnToolBatch(args: {
     // execute confirm immediately). Remaining calls in THIS batch are never
     // reached — the model only ever emitted one call when it called prepare.
     if (followUp !== null) {
+      // The synthesized confirm is a second dispatch even though it was not
+      // model-emitted. Re-check ownership, deadline, and operator Stop before
+      // crossing that trusted handoff boundary.
+      if (stopAtDispatchBoundary()) break;
       return dispatchPreparedActionFollowUp({
         context,
         toolContext,
@@ -246,13 +276,20 @@ export async function processTurnToolBatch(args: {
     }
   }
 
-  await persistBatchTranscript({
-    sessionId: context.sessionId,
-    content: turnResult.content,
-    executedCalls,
-    executedResults,
-    liveMessages,
-  });
+  // If ownership was already gone before the first call, discard the model's
+  // unexecuted batch. If some calls completed before loss was observed, keep
+  // their canonical call/result pairs for audit before exiting stale work.
+  if (leaseLostError === null || executedCalls.length > 0) {
+    await persistBatchTranscript({
+      sessionId: context.sessionId,
+      content: turnResult.content,
+      executedCalls,
+      executedResults,
+      liveMessages,
+    });
+  }
+
+  if (leaseLostError !== null) throw leaseLostError;
 
   // Update lastText from current turn (assistant may have content alongside toolCalls)
   const lastText = turnResult.content ?? args.lastTextSoFar;

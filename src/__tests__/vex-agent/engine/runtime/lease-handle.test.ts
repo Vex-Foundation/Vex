@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createLeaseHandle } from "../../../../vex-agent/engine/runtime/lease-handle.js";
+import {
+  createLeaseHandle,
+  RunnerLeaseLostError,
+  throwIfRunnerLeaseLost,
+} from "../../../../vex-agent/engine/runtime/lease-handle.js";
 import type { RunnerLease } from "../../../../vex-agent/db/repos/runner-leases.js";
 
 const SAMPLE_LEASE: RunnerLease = {
@@ -81,12 +85,10 @@ describe("LeaseHandle", () => {
     await handle.release();
   });
 
-  it("calls onLeaseLost when renew returns null + stops the interval", async () => {
+  it("aborts the ownership signal when renew returns null + stops the interval", async () => {
     const timer = makeFakeTimer();
     const renewFn = vi.fn().mockResolvedValue(null);
     const releaseFn = vi.fn().mockResolvedValue(0);
-    const onLeaseLost = vi.fn();
-
     const handle = createLeaseHandle({
       lease: SAMPLE_LEASE,
       ownerId: "owner-1",
@@ -94,12 +96,15 @@ describe("LeaseHandle", () => {
       timer,
       renewFn,
       releaseFn,
-      onLeaseLost,
     });
 
+    expect(handle.signal.aborted).toBe(false);
     await timer.trigger();
-    expect(onLeaseLost).toHaveBeenCalledTimes(1);
-    expect(onLeaseLost).toHaveBeenCalledWith(expect.stringContaining("stolen"));
+    expect(handle.signal.aborted).toBe(true);
+    expect(handle.signal.reason).toBeInstanceOf(RunnerLeaseLostError);
+    expect(() => throwIfRunnerLeaseLost(handle.signal)).toThrow(
+      RunnerLeaseLostError,
+    );
     expect(timer.clearInterval).toHaveBeenCalledTimes(1);
     await handle.release();
     // Already released by the lease-stolen path — second release is a no-op.
