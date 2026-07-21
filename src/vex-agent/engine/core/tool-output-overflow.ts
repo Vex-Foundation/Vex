@@ -15,6 +15,7 @@ const TOOL_OUTPUT_STRUCTURED_PREVIEW_ITEMS = 5;
 const TOOL_OUTPUT_SCALAR_STRING_CHARS = 500;
 /** Cap on `fieldHints` length so the stub/header stay compact (P0-6). */
 const TOOL_OUTPUT_FIELD_HINTS_MAX = 24;
+const TOOL_OUTPUT_FIELD_HINTS_BYTES_MAX = 1024;
 
 const STRUCTURED_PREVIEW_LIST_KEYS = new Set([
   "items",
@@ -26,6 +27,12 @@ const STRUCTURED_PREVIEW_LIST_KEYS = new Set([
   "orders",
   "ads",
   "takeovers",
+  // Common protocol/tool result envelopes.
+  "assets",
+  "tokens",
+  "chains",
+  "markets",
+  "data",
   // Polymarket-data top-level ok() list keys (P0-5): item-preview on overflow
   // instead of collapsing to a bare count in otherArrayCounts.
   "positions",
@@ -104,8 +111,7 @@ export async function persistToolResultWithOverflow(
     `[tool_output_overflow blob_key=${blobKey} bytes=${bytes} shape=${shapeKind}` +
     formatHintsSuffix(hints) +
     ` preview=${JSON.stringify(preview)}]. ` +
-    `Query it with tool_output_read, e.g. tool_output_read(blob_key="${blobKey}", search="cash") ` +
-    `or (path="meta.universe", where={field:"name",contains:"cash"}).`;
+    buildOverflowReadGuidance(blobKey, hints, shapeKind);
 
   let blobWritten = false;
   try {
@@ -254,7 +260,39 @@ export function derivePreviewHints(
 }
 
 function capFieldHints(keys: readonly string[]): string[] {
-  return keys.slice(0, TOOL_OUTPUT_FIELD_HINTS_MAX);
+  // Hints are interpolated into the compact transcript stub. Keep only field
+  // names that are safe and useful to reproduce verbatim in a later where or
+  // sort_by call; exotic/huge JSON keys remain reachable through raw search.
+  const kept: string[] = [];
+  let bytes = 0;
+  for (const key of keys) {
+    if (kept.length >= TOOL_OUTPUT_FIELD_HINTS_MAX) break;
+    if (!/^[A-Za-z0-9_.-]{1,80}$/.test(key)) continue;
+    const addedBytes = Buffer.byteLength(key, "utf8") + (kept.length > 0 ? 1 : 0);
+    if (bytes + addedBytes > TOOL_OUTPUT_FIELD_HINTS_BYTES_MAX) continue;
+    kept.push(key);
+    bytes += addedBytes;
+  }
+  return kept;
+}
+
+/** Payload-specific recovery guidance; never hard-codes a protocol or query. */
+export function buildOverflowReadGuidance(
+  blobKey: string,
+  hints: PreviewHints,
+  shapeKind: ToolOutputShapeKind,
+): string {
+  const callPrefix = `tool_output_read(blob_key="${blobKey}"`;
+  if (hints.primaryPath !== undefined) {
+    const fields = hints.fieldHints && hints.fieldHints.length > 0
+      ? ` Filter or sort on the listed field_hints when useful.`
+      : "";
+    return `Start with ${callPrefix}, path=${JSON.stringify(hints.primaryPath)}, limit=20).${fields}`;
+  }
+  if (shapeKind !== "text" && hints.fieldHints && hints.fieldHints.length > 0) {
+    return `Start with ${callPrefix}, path=${JSON.stringify(hints.fieldHints[0])}); use search for a literal from the request when the target field is unknown.`;
+  }
+  return `Use tool_output_read with search set to a literal from the request, or ${callPrefix}, offset=0) for a byte slice.`;
 }
 
 /**
@@ -264,11 +302,16 @@ function capFieldHints(keys: readonly string[]): string[] {
  */
 export function formatHintsSuffix(hints: PreviewHints): string {
   let suffix = "";
-  if (hints.primaryPath !== undefined) {
+  if (
+    hints.primaryPath !== undefined
+    && hints.primaryPath.length <= 256
+    && /^[A-Za-z0-9_$.\[\]-]+$/.test(hints.primaryPath)
+  ) {
     suffix += ` primary_path=${hints.primaryPath}`;
   }
-  if (hints.fieldHints !== undefined && hints.fieldHints.length > 0) {
-    suffix += ` field_hints=[${hints.fieldHints.join(",")}]`;
+  const safeFieldHints = capFieldHints(hints.fieldHints ?? []);
+  if (safeFieldHints.length > 0) {
+    suffix += ` field_hints=[${safeFieldHints.join(",")}]`;
   }
   return suffix;
 }

@@ -47,19 +47,34 @@ const DEFAULT_READ_BYTES = 8 * 1024;
 export const MAX_READ_BYTES = TOOL_OUTPUT_OVERFLOW_BYTES - 4 * 1024;
 
 /** Header room reserved so header + body always stays under MAX_READ_BYTES. */
-const HEADER_RESERVE_BYTES = 1024;
+const HEADER_RESERVE_BYTES = 2 * 1024;
 const BODY_BUDGET_BYTES = MAX_READ_BYTES - HEADER_RESERVE_BYTES;
 
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 50;
 const DEFAULT_ITEM_LIMIT = 20;
 const MAX_ITEM_LIMIT = 50;
+const MAX_SEARCH_CHARS = 256;
+const MAX_PATH_CHARS = 256;
+const MAX_FIELD_CHARS = 128;
 
 const WhereArgs = z
   .object({
-    field: z.string().min(1, { message: "where.field must be a non-empty string" }),
-    contains: z.string().optional(),
-    equals: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    field: z
+      .string()
+      .min(1, { message: "where.field must be a non-empty string" })
+      .max(MAX_FIELD_CHARS, { message: `where.field must be at most ${MAX_FIELD_CHARS} characters` }),
+    contains: z
+      .string()
+      .max(MAX_SEARCH_CHARS, { message: `where.contains must be at most ${MAX_SEARCH_CHARS} characters` })
+      .optional(),
+    equals: z.union([
+      z.string().max(MAX_SEARCH_CHARS, {
+        message: `where.equals must be at most ${MAX_SEARCH_CHARS} characters`,
+      }),
+      z.number(),
+      z.boolean(),
+    ]).optional(),
   })
   .strict();
 
@@ -81,10 +96,22 @@ const ToolOutputReadArgs = z.object({
     .min(1, { message: "max_bytes must be >= 1" })
     .optional(),
   // ── E8 query params (all optional; byte mode stays the fallback) ──
-  search: z.string().min(1, { message: "search must be a non-empty string" }).optional(),
-  path: z.string().min(1, { message: "path must be a non-empty string" }).optional(),
+  search: z
+    .string()
+    .min(1, { message: "search must be a non-empty string" })
+    .max(MAX_SEARCH_CHARS, { message: `search must be at most ${MAX_SEARCH_CHARS} characters` })
+    .optional(),
+  path: z
+    .string()
+    .min(1, { message: "path must be a non-empty string" })
+    .max(MAX_PATH_CHARS, { message: `path must be at most ${MAX_PATH_CHARS} characters` })
+    .optional(),
   where: WhereArgs.optional(),
-  sort_by: z.string().min(1, { message: "sort_by must be a non-empty field name" }).optional(),
+  sort_by: z
+    .string()
+    .min(1, { message: "sort_by must be a non-empty field name" })
+    .max(MAX_FIELD_CHARS, { message: `sort_by must be at most ${MAX_FIELD_CHARS} characters` })
+    .optional(),
   order: z.enum(["asc", "desc"]).optional(),
   item_offset: z
     .number()
@@ -167,20 +194,30 @@ export async function handleToolOutputRead(
 // ── Byte mode (unchanged fallback) ───────────────────────────────
 
 function runByteSlice(blob: ToolOutputBlob, args: ReadArgs): ToolResult {
-  const offset = args.offset ?? 0;
+  const requestedOffset = args.offset ?? 0;
   const requestedBytes = args.max_bytes ?? DEFAULT_READ_BYTES;
-  const maxBytes = Math.min(requestedBytes, MAX_READ_BYTES);
+  const maxBytes = Math.min(requestedBytes, BODY_BUDGET_BYTES);
 
   const fullBuffer = Buffer.from(blob.payload.fullOutput, "utf8");
   const totalBytes = fullBuffer.byteLength;
-  if (offset > totalBytes) {
+  if (requestedOffset > totalBytes) {
     return fail(
-      `tool_output_read: offset ${offset} is beyond payload size ${totalBytes}.`,
+      `tool_output_read: offset ${requestedOffset} is beyond payload size ${totalBytes}.`,
     );
   }
 
-  const endOffset = Math.min(offset + maxBytes, totalBytes);
-  const content = fullBuffer.subarray(offset, endOffset).toString("utf8");
+  // Byte offsets remain the paging contract, but decoding must never start or
+  // end inside a UTF-8 sequence. Round a caller-supplied interior offset back
+  // to the character start and make the returned end a complete boundary.
+  // Sequential reads using next_offset therefore reconstruct the exact text
+  // without U+FFFD replacement characters or dropped bytes.
+  const offset = alignUtf8Start(fullBuffer, requestedOffset);
+  const endOffset = alignUtf8End(
+    fullBuffer,
+    offset,
+    Math.min(offset + maxBytes, totalBytes),
+  );
+  const content = fullBuffer.toString("utf8", offset, endOffset);
   const bytesReturned = endOffset - offset;
   const nextOffset = endOffset < totalBytes ? endOffset : null;
   const truncated = nextOffset !== null;
@@ -192,7 +229,8 @@ function runByteSlice(blob: ToolOutputBlob, args: ReadArgs): ToolResult {
     ...(blob.payload.fieldHints !== undefined ? { fieldHints: blob.payload.fieldHints } : {}),
   });
   const output =
-    `[tool_output_read blob_key=${blob.blobKey} offset=${offset} ` +
+    `[tool_output_read blob_key=${blob.blobKey} requested_offset=${requestedOffset} ` +
+    `offset=${offset} ` +
     `bytes_returned=${bytesReturned} total_bytes=${totalBytes} ` +
     `shape=${blob.payload.shapeKind} truncated=${truncated} ` +
     `next_offset=${nextOffset ?? "null"}${hintsSuffix}].${continuation}\n` +
@@ -205,6 +243,7 @@ function runByteSlice(blob: ToolOutputBlob, args: ReadArgs): ToolResult {
       blob_key: blob.blobKey,
       shape_kind: blob.payload.shapeKind,
       size_bytes: blob.payload.sizeBytes,
+      requested_offset: requestedOffset,
       offset,
       bytes_returned: bytesReturned,
       next_offset: nextOffset,
@@ -214,6 +253,50 @@ function runByteSlice(blob: ToolOutputBlob, args: ReadArgs): ToolResult {
       expires_at: blob.expiresAt,
     },
   };
+}
+
+function isUtf8ContinuationByte(byte: number | undefined): boolean {
+  return byte !== undefined && (byte & 0xc0) === 0x80;
+}
+
+/** Move an arbitrary byte offset to the start of its containing code point. */
+function alignUtf8Start(buffer: Buffer, offset: number): number {
+  let aligned = offset;
+  while (
+    aligned > 0
+    && aligned < buffer.byteLength
+    && isUtf8ContinuationByte(buffer[aligned])
+  ) {
+    aligned -= 1;
+  }
+  return aligned;
+}
+
+function utf8SequenceBytes(lead: number | undefined): number {
+  if (lead === undefined || (lead & 0x80) === 0) return 1;
+  if ((lead & 0xe0) === 0xc0) return 2;
+  if ((lead & 0xf0) === 0xe0) return 3;
+  if ((lead & 0xf8) === 0xf0) return 4;
+  return 1;
+}
+
+/**
+ * Move a desired end back to a complete boundary. If max_bytes lands inside
+ * the first character, include that one character so pagination progresses.
+ */
+function alignUtf8End(buffer: Buffer, start: number, desiredEnd: number): number {
+  let end = desiredEnd;
+  while (
+    end > start
+    && end < buffer.byteLength
+    && isUtf8ContinuationByte(buffer[end])
+  ) {
+    end -= 1;
+  }
+  if (end === start && start < buffer.byteLength) {
+    return Math.min(buffer.byteLength, start + utf8SequenceBytes(buffer[start]));
+  }
+  return end;
 }
 
 // ── Search mode (raw text, any shape) ────────────────────────────

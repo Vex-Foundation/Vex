@@ -36,7 +36,7 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
       "When a tool returns more than ~16 KiB, the engine stores the full output off-prompt and leaves a short stub with `blob_key=<key>` in the transcript. " +
       "Prefer targeted modes over blind byte-slicing — a needle deep in the payload (e.g. a coin far down a markets list) is easy to miss with byte offsets alone. Three query modes, plus the byte-slice fallback:\n" +
       "• SEARCH: set `search` to find a literal substring (case-insensitive) anywhere in the RAW payload; each hit returns its byte `offset` and a short context window. Works for any payload shape. Not a regex.\n" +
-      "• PATH: set `path` (dot/[index] only, e.g. `meta.universe`, `contexts[1]`, `meta.universe[230]`) to resolve a sub-value inside a JSON payload.\n" +
+      "• PATH: set `path` (dot/[index] only, e.g. `$` for the root value, `meta.universe`, `contexts[1]`, `meta.universe[230]`) to resolve a value inside a JSON payload.\n" +
       "• ARRAY QUERY: when `path` points at an array, add `where` (filter on a scalar field), `sort_by`+`order` (sort on a scalar field), and `item_offset`+`limit` (paginate). The response reports `returned` and `matched` counts so you can see how much was truncated.\n" +
       "• BYTE SLICE (fallback): omit the above and use `offset`/`max_bytes`. " +
       "Every mode reads the original stored snapshot, is scoped to the current session, and is bounded well under the overflow threshold so results never re-overflow. Read the blob before its TTL expires.",
@@ -56,17 +56,17 @@ export const AUTONOMY_TOOLS: readonly ToolDef[] = [
         max_bytes: {
           type: "integer",
           description:
-            "BYTE-SLICE mode: maximum bytes to return. The runtime caps this below the overflow threshold so reads stay inline.",
+            "BYTE-SLICE mode: target maximum bytes to return. The runtime caps this below the overflow threshold and may include up to one complete UTF-8 character past the target rather than corrupting it.",
         },
         search: {
           type: "string",
           description:
-            "SEARCH mode: find this literal substring in the RAW payload text (case-insensitive). Returns each hit's byte offset and a surrounding context window. Not a regular expression.",
+            "SEARCH mode: find this literal substring in the RAW payload text (case-insensitive, max 256 characters). Returns each hit's byte offset and a surrounding context window. Not a regular expression.",
         },
         path: {
           type: "string",
           description:
-            "PATH mode (JSON payloads): dot/[index] path to a sub-value, e.g. `meta.universe`, `contexts[1]`, `meta.universe[230]`. Max 10 segments; no wildcards.",
+            "PATH mode (JSON payloads): `$` selects the root; otherwise use dot/[index], e.g. `meta.universe`, `contexts[1]`, `meta.universe[230]`. Max 10 segments and 256 characters; no wildcards.",
         },
         where: {
           type: "object",

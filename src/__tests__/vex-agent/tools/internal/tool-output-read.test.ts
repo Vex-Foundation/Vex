@@ -133,9 +133,70 @@ describe("tool_output_read handler", () => {
     expect(result.success).toBe(true);
     expect(Buffer.byteLength(result.output, "utf8")).toBeLessThan(16 * 1024);
     expect(result.data).toEqual(expect.objectContaining({
-      bytes_returned: 12_288,
-      next_offset: 12_288,
+      bytes_returned: 10_240,
+      next_offset: 10_240,
       truncated: true,
+    }));
+  });
+
+  it("paginates on UTF-8 boundaries without replacement characters or data loss", async () => {
+    const fullOutput = "A😀B";
+    mockReadBlob.mockResolvedValue({
+      blobKey: validKey,
+      sessionId: "s1",
+      payload: {
+        fullOutput,
+        shapeKind: "text",
+        sizeBytes: Buffer.byteLength(fullOutput, "utf8"),
+      },
+      expiresAt: "2026-04-20T13:00:00.000Z",
+      createdAt: "2026-04-20T12:45:00.000Z",
+    });
+
+    const chunks: string[] = [];
+    let offset = 0;
+    do {
+      const result = await handleToolOutputRead(
+        { blob_key: validKey, offset, max_bytes: 2 },
+        makeCtx("s1"),
+      );
+      expect(result.success).toBe(true);
+      expect(result.output).not.toContain("�");
+      chunks.push(result.output.slice(result.output.indexOf("\n") + 1));
+      offset = (result.data as { next_offset: number | null }).next_offset ?? -1;
+    } while (offset >= 0);
+
+    expect(chunks.join("")).toBe(fullOutput);
+  });
+
+  it("rounds an interior UTF-8 offset back to the containing character", async () => {
+    const fullOutput = "A😀B";
+    mockReadBlob.mockResolvedValue({
+      blobKey: validKey,
+      sessionId: "s1",
+      payload: {
+        fullOutput,
+        shapeKind: "text",
+        sizeBytes: Buffer.byteLength(fullOutput, "utf8"),
+      },
+      expiresAt: "2026-04-20T13:00:00.000Z",
+      createdAt: "2026-04-20T12:45:00.000Z",
+    });
+
+    const result = await handleToolOutputRead(
+      { blob_key: validKey, offset: 3, max_bytes: 2 },
+      makeCtx("s1"),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("requested_offset=3 offset=1");
+    expect(result.output).toMatch(/\n😀$/);
+    expect(result.output).not.toContain("�");
+    expect(result.data).toEqual(expect.objectContaining({
+      requested_offset: 3,
+      offset: 1,
+      bytes_returned: 4,
+      next_offset: 5,
     }));
   });
 
@@ -274,9 +335,48 @@ describe("tool_output_read — search mode (E8)", () => {
     expect(literal.success).toBe(true);
     expect(literal.output).toMatch(/matched=1\b/);
   });
+
+  it("keeps echoed search terms plus match contexts below the read cap", async () => {
+    const query = "q".repeat(256);
+    mockJsonBlob(JSON.stringify({ rows: Array.from({ length: 100 }, () => query) }));
+
+    const result = await handleToolOutputRead(
+      { blob_key: validKey, search: query, limit: 50 },
+      makeCtx("s1"),
+    );
+
+    expect(result.success).toBe(true);
+    expect(Buffer.byteLength(result.output, "utf8")).toBeLessThan(MAX_READ_BYTES);
+    expect(result.output).toContain("truncated=true");
+  });
 });
 
 describe("tool_output_read — path/query mode (E8)", () => {
+  it("resolves bare $ to a root array and supports array querying", async () => {
+    mockJsonBlob(JSON.stringify([
+      { name: "BTC", volume: 10 },
+      { name: "CASHCAT", volume: 5 },
+    ]));
+
+    const result = await handleToolOutputRead(
+      {
+        blob_key: validKey,
+        path: "$",
+        where: { field: "name", contains: "cash" },
+      },
+      makeCtx("s1"),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("mode=query");
+    expect(result.output).toContain("CASHCAT");
+    expect(result.data).toEqual(expect.objectContaining({
+      path: "$",
+      matchedCount: 1,
+      returnedCount: 1,
+    }));
+  });
+
   it("path + where(contains) returns exactly the matching row with matchedCount", async () => {
     const fullOutput = buildMarketsJson({ size: 250, targetIndex: 231, noteRepeat: 5 });
     mockJsonBlob(fullOutput);
@@ -389,6 +489,23 @@ describe("tool_output_read — path/query mode (E8)", () => {
     expect(result.output).toContain("contexts");
   });
 
+  it("bounds failed-path top-level hints for wide objects and huge keys", async () => {
+    const wide: Record<string, number> = {};
+    for (let i = 0; i < 500; i += 1) {
+      wide[`${"k".repeat(500)}-${i}`] = i;
+    }
+    mockJsonBlob(JSON.stringify(wide));
+
+    const result = await handleToolOutputRead(
+      { blob_key: validKey, path: "missing" },
+      makeCtx("s1"),
+    );
+
+    expect(result.success).toBe(false);
+    expect(Buffer.byteLength(result.output, "utf8")).toBeLessThan(MAX_READ_BYTES);
+    expect(result.output).toContain("+488 more");
+  });
+
   it("rejects prototype-chain keys (own-property guard)", async () => {
     mockJsonBlob(JSON.stringify({ meta: { universe: [] } }));
     const result = await handleToolOutputRead(
@@ -462,5 +579,16 @@ describe("tool_output_read — path/query mode (E8)", () => {
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/json/i);
+  });
+
+  it("rejects oversized model-controlled query strings before reading a blob", async () => {
+    const result = await handleToolOutputRead(
+      { blob_key: validKey, search: "x".repeat(257) },
+      makeCtx("s1"),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/at most 256 characters/i);
+    expect(mockReadBlob).not.toHaveBeenCalled();
   });
 });
