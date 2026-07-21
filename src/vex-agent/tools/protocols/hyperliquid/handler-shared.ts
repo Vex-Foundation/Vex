@@ -17,6 +17,11 @@ import { normalizeProviderDecimal, parseDecimalString } from "@tools/hyperliquid
 import type { ProtocolExecutionContext } from "../types.js";
 import type { ToolResult } from "../../types.js";
 import { buildPositionProtectionSnapshot } from "./protection-snapshot.js";
+import {
+  accountSnapshot,
+  parseHyperliquidClearinghouseState,
+  projectOpenCapture,
+} from "@vex-agent/sync/hyperliquid-reconciler/projections.js";
 import { redact } from "../../../../lib/diagnostics/text-redaction.js";
 import logger from "@utils/logger.js";
 
@@ -221,10 +226,42 @@ export async function capturePerp(
   const active = !new Decimal(snapshot.positionSize).isZero();
   const value = positive(string(position, "positionValue"));
   const entry = positive(string(position, "entryPx"));
+  const policyMeta = context.hyperliquidPolicy?.kind === "available" ? {
+    policyVersion: context.hyperliquidPolicy.snapshot.version,
+    policyProvenance: context.hyperliquidPolicy.snapshot.provenance,
+  } : {};
+
+  // A clearinghouse-confirmed position must be renderable immediately. Route
+  // the post-submit state through the same canonical builder as the periodic
+  // reconciler so side, mark, PnL, funding, leverage, and confirmation time do
+  // not drift between the execution and reconciliation paths.
+  if (active) {
+    const projected = projectImmediateOpenCapture(state, address, coin, snapshot, position);
+    if (projected !== null) {
+      const projectedMeta = record(projected["meta"]) ?? {};
+      return {
+        ...projected,
+        meta: {
+          ...projectedMeta,
+          ...(forceUnprotected ? { protectionState: "unprotected_by_user_choice" } : {}),
+          ...policyMeta,
+          ...extraMeta,
+        },
+      };
+    }
+    logger.warn("hyperliquid.post_submit_capture_incomplete", {
+      coin,
+      hint: "Live position could not be normalized; reconciliation will retry.",
+    });
+  }
+
   return {
     type: "perps",
     chain: "hyperliquid",
-    status: active ? "open" : closedWhenFlat ? "closed" : "pending",
+    // The active path reaches this fallback only when the live payload could
+    // not satisfy the canonical renderer projection. Keep it pending so an
+    // incomplete row cannot masquerade as authoritative open-position state.
+    status: !active && closedWhenFlat ? "closed" : "pending",
     walletAddress: address,
     positionKey: `hyperliquid:perp:${coin}:${address}`,
     instrumentKey: `hyperliquid:perp:${coin}`,
@@ -238,13 +275,73 @@ export async function capturePerp(
       entryPx: snapshot.entryPx,
       liquidationPx: snapshot.liquidationPx,
       protectionState: forceUnprotected ? "unprotected_by_user_choice" : snapshot.state,
-      ...(context.hyperliquidPolicy?.kind === "available" ? {
-        policyVersion: context.hyperliquidPolicy.snapshot.version,
-        policyProvenance: context.hyperliquidPolicy.snapshot.provenance,
-      } : {}),
+      ...(active ? { captureState: "normalization_pending" } : {}),
+      ...policyMeta,
       ...extraMeta,
     },
   };
+}
+
+function projectImmediateOpenCapture(
+  stateResponse: unknown,
+  walletAddress: string,
+  coin: string,
+  snapshot: ReturnType<typeof buildPositionProtectionSnapshot>,
+  rawPosition: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  if (rawPosition === undefined) return null;
+  try {
+    const state = parseHyperliquidClearinghouseState(stateResponse);
+    const position = state.assetPositions
+      .map((entry) => entry.position)
+      .find((candidate) => candidate.coin === coin);
+    if (position === undefined) return null;
+    const markPx = immediateMarkPrice(rawPosition, snapshot.positionSize);
+    if (markPx === undefined) return null;
+    const confirmedAt = new Date().toISOString();
+    return projectOpenCapture({
+      walletAddress,
+      coin,
+      position,
+      markPx,
+      account: accountSnapshot(state),
+      marketWatchlist: [],
+      snapshot,
+      fills: [],
+      localPosition: null,
+      confirmedAt,
+      reconcileBucket: Math.floor(Date.parse(confirmedAt) / 60_000),
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** clearinghouseState exposes current notional, so mark = value / |size|. */
+function immediateMarkPrice(
+  position: Record<string, unknown>,
+  positionSize: string,
+): string | undefined {
+  const direct = string(position, "markPx");
+  if (direct !== undefined) {
+    try {
+      return normalizeProviderDecimal(direct, "Hyperliquid position mark price");
+    } catch {
+      // Fall through to the venue's current position value.
+    }
+  }
+  const value = string(position, "positionValue");
+  if (value === undefined) return undefined;
+  try {
+    const size = new Decimal(positionSize).abs();
+    if (size.isZero()) return undefined;
+    return normalizeProviderDecimal(
+      new Decimal(value).div(size).toFixed(),
+      "Hyperliquid position mark price",
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 export async function capturePerpSafely(

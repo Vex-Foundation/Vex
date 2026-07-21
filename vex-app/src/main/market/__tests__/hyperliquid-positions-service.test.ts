@@ -158,6 +158,36 @@ describe("setupHyperliquidPositionsService", () => {
     await stop();
   });
 
+  it("publishes when an empty position state becomes delayed", async () => {
+    const publish = vi.fn();
+    let syncStatus: "syncing" | "delayed" = "syncing";
+    const info = {
+      allMids: vi.fn().mockResolvedValue({ BTC: "100100" }),
+      clearinghouseState: vi.fn().mockResolvedValue(state()),
+    };
+    const stop = setupHyperliquidPositionsService({
+      hasExposure: async () => true,
+      listSessionIds: async () => [SESSION],
+      listHypervexingSessionIds: () => [SESSION],
+      getPositions: async (): Promise<Result<HyperliquidPositionsDto>> => ({
+        ok: true,
+        data: { ...snapshot(), positions: [], syncStatus },
+      }),
+      getSessionWalletScope: async () => scope(),
+      createInfoClient: () => info,
+      publish,
+      now: () => new Date(ISO),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    syncStatus = "delayed";
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ syncStatus: "delayed" }));
+    await stop();
+  });
+
   it("switches the next self-scheduled tick from 15 seconds to 5 seconds when Hypervexing begins", async () => {
     let hypervexing = false;
     const info = {

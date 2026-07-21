@@ -48,6 +48,7 @@ describe("Hyperliquid shared schemas", () => {
     expect(hyperliquidPositionsDtoSchema.safeParse({
       sessionId: "00000000-0000-4000-8000-000000000001",
       positions: [],
+      syncStatus: "syncing",
       account: { equityUsd: "1000", withdrawableUsd: null, totalUnrealizedPnlUsd: "-2.5" },
       watchlist: [{ coin: "BTC", midPx: "100000", change24hPct: "1.25", openInterestUsd: "1000000000" }],
       updatedAt: ISO,

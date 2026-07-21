@@ -115,6 +115,34 @@ describe("HyperliquidPositionsBlock — workspace-mode gate", () => {
     expect(screen.getByText("1 open")).not.toBeNull();
     expect(screen.getByText("0.01 BTC")).not.toBeNull();
   });
+
+  it("shows a live syncing state instead of claiming a recent trade is absent", () => {
+    mockMode("hypervexing");
+    mockUseHyperliquidPositions.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: { positions: [], syncStatus: "syncing" } },
+    });
+
+    render(<HyperliquidPositionsBlock sessionId={SESSION} />);
+
+    expect(screen.getByRole("status").textContent).toContain("waiting for Hyperliquid");
+    expect(screen.queryByText("No open Hyperliquid perpetual positions.")).toBeNull();
+  });
+
+  it("warns before another trade when venue confirmation is delayed", () => {
+    mockMode("hypervexing");
+    mockUseHyperliquidPositions.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: { positions: [], syncStatus: "delayed" } },
+    });
+
+    render(<HyperliquidPositionsBlock sessionId={SESSION} />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Verify your live exposure");
+    expect(screen.queryByText("No open Hyperliquid perpetual positions.")).toBeNull();
+  });
 });
 
 const NOW = Date.parse("2026-07-11T12:03:00.000Z");
