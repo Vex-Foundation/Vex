@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startSyncExecutor } from "../../../vex-agent/sync/executor.js";
+import { requestSyncTick } from "../../../vex-agent/sync/executor-wake.js";
 
 describe("sync executor", () => {
   beforeEach(() => {
@@ -41,6 +42,21 @@ describe("sync executor", () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(deps.syncTick).not.toHaveBeenCalled();
+  });
+
+  it("drains newly enqueued work immediately instead of waiting for the interval", async () => {
+    const deps = {
+      initSync: vi.fn().mockResolvedValue(undefined),
+      syncTick: vi.fn().mockResolvedValue(undefined),
+    };
+    const handle = startSyncExecutor({ intervalMs: 60_000, deps });
+    await vi.advanceTimersByTimeAsync(0);
+
+    requestSyncTick();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(deps.syncTick).toHaveBeenCalledTimes(1);
+    await handle.stop();
   });
 
   it("owns and tears down the Hyperliquid watcher with the sync executor", async () => {

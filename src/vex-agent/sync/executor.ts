@@ -12,6 +12,7 @@
 
 import { initSync, syncTick } from "./index.js";
 import { startHyperliquidMarketWatcher, type HyperliquidMarketWatcherHandle } from "./hyperliquid-market-watcher.js";
+import { subscribeSyncTickWake } from "./executor-wake.js";
 import logger from "@utils/logger.js";
 
 export interface SyncExecutorHandle {
@@ -48,6 +49,7 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
   let marketWatcher: HyperliquidMarketWatcherHandle | null = null;
+  let wakePending = false;
 
   const runOne = async (): Promise<void> => {
     try {
@@ -69,12 +71,28 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
   const schedule = (delayMs: number): void => {
     if (stopped) return;
     timer = setTimeout(() => {
+      timer = null;
       inFlight = runOne().finally(() => {
         inFlight = null;
-        schedule(intervalMs);
+        const nextDelay = wakePending && initialized ? 0 : intervalMs;
+        wakePending = false;
+        schedule(nextDelay);
       });
     }, delayMs);
   };
+
+  const unsubscribeWake = subscribeSyncTickWake(() => {
+    if (stopped) return;
+    if (inFlight !== null || !initialized) {
+      wakePending = true;
+      return;
+    }
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    schedule(0);
+  });
 
   schedule(0);
   logger.info("sync.executor.started", { intervalMs });
@@ -82,6 +100,7 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
   return {
     async stop(): Promise<void> {
       stopped = true;
+      unsubscribeWake();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

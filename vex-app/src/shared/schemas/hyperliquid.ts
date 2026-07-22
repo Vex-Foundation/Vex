@@ -101,10 +101,24 @@ export const hyperliquidWatchlistItemDtoSchema = z.object({
 }).strict();
 export type HyperliquidWatchlistItemDto = z.infer<typeof hyperliquidWatchlistItemDtoSchema>;
 
+/**
+ * Whether an empty position list is authoritative. `syncing` means a recent
+ * accepted/pending capture has not produced a renderable position yet;
+ * `delayed` is the same condition beyond the normal reconciliation window.
+ */
+export const hyperliquidPositionSyncStatusSchema = z.enum([
+  "settled",
+  "syncing",
+  "delayed",
+]);
+export type HyperliquidPositionSyncStatus = z.infer<typeof hyperliquidPositionSyncStatusSchema>;
+
 export const hyperliquidPositionsDtoSchema = z
   .object({
     sessionId: z.string().uuid(),
     positions: z.array(hyperliquidPositionDtoSchema).max(100),
+    /** Optional only so an older main process remains compatible during upgrade handoff. */
+    syncStatus: hyperliquidPositionSyncStatusSchema.optional(),
     /** Present on main reads/pushes; optional only for backward-compatible preload upgrades. */
     account: hyperliquidAccountDtoSchema.optional(),
     /** Present on main reads/pushes; empty only before the reconciler has a market slice. */

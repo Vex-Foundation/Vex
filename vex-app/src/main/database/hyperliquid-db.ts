@@ -23,6 +23,7 @@ import {
   hyperliquidRiskProposalDtoSchema,
   type HyperliquidAccountDto,
   type HyperliquidPositionDto,
+  type HyperliquidPositionSyncStatus,
   type HyperliquidPositionsDto,
   type HyperliquidRiskProposalDto,
   type HyperliquidRiskAdjustment,
@@ -40,6 +41,7 @@ const QUERY_TIMEOUT_MS = 5_000;
 const HYPERLIQUID_DB_CORRELATION_ID = "hyperliquid-db";
 
 interface HyperliquidPositionRow {
+  readonly position_key: string | null;
   readonly contracts: string | number | null;
   readonly entry_price_usd: string | number | null;
   readonly unrealized_pnl_usd: string | number | null;
@@ -47,6 +49,11 @@ interface HyperliquidPositionRow {
   readonly last_refresh_at: string | Date | null;
   readonly synced_at: string | Date | null;
   readonly opened_at: string | Date | null;
+}
+
+interface HyperliquidActiveCaptureRow {
+  readonly capture_status: string;
+  readonly created_at: string | Date;
 }
 
 interface HyperliquidPolicyRow {
@@ -287,11 +294,11 @@ function watchlistFromRows(rows: readonly HyperliquidPositionRow[]): readonly Hy
   return [];
 }
 
-// W6 diagnostic (incident 2026-07-13): a session whose selected wallet has an
-// OPEN perp capture in proj_activity but zero rows in proj_open_positions is the
-// signature of the W7 projection-write defect. Warn once per (session,wallet)
-// per 10 min, via a bounded expiring map — the main process is long-lived and
-// must not grow this unbounded. The warn is redacted (6-char fingerprint only).
+// A recent active capture with no renderable projection means the empty list is
+// not authoritative yet. This covers both a resting/pending venue order and a
+// projection row that is still incomplete. Beyond the normal 60s reconcile +
+// 5s push window, surface `delayed` and emit one bounded diagnostic.
+const EMPTY_POSITION_DELAY_MS = 90_000;
 const MISSING_PROJECTION_WARN_TTL_MS = 10 * 60_000;
 const MISSING_PROJECTION_WARN_MAX = 500;
 const missingProjectionWarnedAt = new Map<string, number>();
@@ -307,40 +314,54 @@ function pruneMissingProjectionWarnMap(now: number): void {
   }
 }
 
-async function warnOnMissingHyperliquidProjection(
+async function emptyPositionSyncStatus(
   client: Client,
   sessionId: string,
   walletAddress: string,
   correlationId: string,
-): Promise<void> {
-  const key = `${sessionId} ${walletAddress}`;
-  const now = Date.now();
-  const existing = missingProjectionWarnedAt.get(key);
-  if (existing !== undefined && existing > now) return;
+): Promise<HyperliquidPositionSyncStatus> {
+  let activeCapture: HyperliquidActiveCaptureRow | undefined;
   try {
-    const probe = await client.query<{ exists: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM (
-           SELECT DISTINCT ON (position_key) capture_status
-           FROM proj_activity
-           WHERE namespace = 'hyperliquid' AND product_type = 'perps'
-             AND wallet_address = $1 AND position_key IS NOT NULL
-           ORDER BY position_key, created_at DESC, id DESC
-         ) latest
-         WHERE capture_status = 'open'
-       ) AS exists`,
+    const probe = await client.query<HyperliquidActiveCaptureRow>(
+      `SELECT capture_status, created_at
+       FROM (
+         SELECT DISTINCT ON (position_key) capture_status, created_at, id
+         FROM proj_activity
+         WHERE namespace = 'hyperliquid' AND product_type = 'perps'
+           AND wallet_address = $1 AND position_key IS NOT NULL
+         ORDER BY position_key, created_at DESC, id DESC
+       ) latest
+       WHERE capture_status IN ('pending', 'open', 'executed')
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
       [walletAddress],
     );
-    if (probe.rows[0]?.exists !== true) return;
+    activeCapture = probe.rows[0];
   } catch (cause) {
-    log.warn("[hyperliquid-db] missing-projection probe failed", cause);
-    return;
+    log.warn("[hyperliquid-db] empty-position status probe failed", cause);
+    return "delayed";
   }
-  pruneMissingProjectionWarnMap(now);
-  missingProjectionWarnedAt.set(key, now + MISSING_PROJECTION_WARN_TTL_MS);
-  log.warn(
-    `[hyperliquid-db] open perp capture present but projection empty wallet=${walletAddress.slice(0, 6)} correlationId=${correlationId}`,
-  );
+  if (activeCapture === undefined) return "settled";
+
+  const now = Date.now();
+  const createdAt = new Date(activeCapture.created_at).getTime();
+  const syncStatus = Number.isFinite(createdAt) && now - createdAt <= EMPTY_POSITION_DELAY_MS
+    ? "syncing"
+    : "delayed";
+
+  // Keep the original W6 projection diagnostic, but include pending captures
+  // and delayed consistency without exposing the full wallet address.
+  const key = `${sessionId}\u0000${walletAddress}`;
+  const existing = missingProjectionWarnedAt.get(key);
+  const shouldWarn = syncStatus === "delayed" || activeCapture.capture_status !== "pending";
+  if (shouldWarn && (existing === undefined || existing <= now)) {
+    pruneMissingProjectionWarnMap(now);
+    missingProjectionWarnedAt.set(key, now + MISSING_PROJECTION_WARN_TTL_MS);
+    log.warn(
+      `[hyperliquid-db] active perp capture has no renderable position status=${activeCapture.capture_status} sync=${syncStatus} wallet=${walletAddress.slice(0, 6)} correlationId=${correlationId}`,
+    );
+  }
+  return syncStatus;
 }
 
 /** Session-scoped positions. An absent EVM selection returns an empty DTO before SQL. */
@@ -355,6 +376,7 @@ export async function getHyperliquidPositions(
   if (walletAddress === undefined) return ok({
     sessionId,
     positions: [],
+    syncStatus: "settled",
     account: emptyAccount(),
     watchlist: [],
     updatedAt: now,
@@ -363,7 +385,7 @@ export async function getHyperliquidPositions(
   return withClient(async (client) => {
     try {
       const result = await client.query<HyperliquidPositionRow>(
-        `SELECT contracts, entry_price_usd, unrealized_pnl_usd, data,
+        `SELECT position_key, contracts, entry_price_usd, unrealized_pnl_usd, data,
                 last_refresh_at, synced_at, opened_at
          FROM proj_open_positions
          WHERE namespace = 'hyperliquid'
@@ -377,12 +399,13 @@ export async function getHyperliquidPositions(
       const positions = result.rows
         .map(positionFromRow)
         .filter((value): value is HyperliquidPositionDto => value !== null);
-      if (positions.length === 0) {
-        await warnOnMissingHyperliquidProjection(client, sessionId, walletAddress, correlationId);
-      }
+      const syncStatus = positions.length === 0
+        ? await emptyPositionSyncStatus(client, sessionId, walletAddress, correlationId)
+        : "settled";
       return ok(hyperliquidPositionsDtoSchema.parse({
         sessionId,
         positions,
+        syncStatus,
         account: accountFromRows(result.rows),
         watchlist: watchlistFromRows(result.rows),
         updatedAt: now,

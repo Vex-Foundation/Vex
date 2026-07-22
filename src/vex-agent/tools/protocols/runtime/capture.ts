@@ -49,12 +49,13 @@ export async function captureExecution(
   }
 
   // Enqueue sync runs for this namespace (only on success — failed mutations don't need projection refresh)
+  let syncEnqueued = false;
   if (result.success && executionId > 0) {
     try {
       const { getJobsForNamespace, enqueueRun } = await import("@vex-agent/db/repos/sync.js");
       const jobs = await getJobsForNamespace(namespace);
       for (const job of jobs) {
-        await enqueueRun(job.id, executionId);
+        if (await enqueueRun(job.id, executionId) > 0) syncEnqueued = true;
       }
     } catch (err) {
       logger.warn("protocol.execute.sync_enqueue_failed", {
@@ -79,6 +80,7 @@ export async function captureExecution(
         toolId, namespace, executionId,
         hint: "Capture blocked by validator — not sent to projection pipeline",
       });
+      await wakeSyncExecutor(syncEnqueued);
       return;
     }
     try {
@@ -89,6 +91,23 @@ export async function captureExecution(
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // Wake only after the inline projection attempt. Hyperliquid reconciliation
+  // can now observe the activity/position row rather than racing the capture
+  // pipeline, while the persisted queue remains the crash-safe backstop.
+  await wakeSyncExecutor(syncEnqueued);
+}
+
+async function wakeSyncExecutor(syncEnqueued: boolean): Promise<void> {
+  if (!syncEnqueued) return;
+  try {
+    const { requestSyncTick } = await import("@vex-agent/sync/executor-wake.js");
+    requestSyncTick();
+  } catch (err) {
+    logger.warn("protocol.execute.sync_wake_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

@@ -100,6 +100,58 @@ describe("Hyperliquid synchronous open safety", () => {
     });
   });
 
+  it("projects a venue-confirmed position into a renderer-complete capture immediately", async () => {
+    const liveState = {
+      marginSummary: { accountValue: "250" },
+      withdrawable: "200",
+      assetPositions: [{ position: {
+        coin: "BTC",
+        szi: "1",
+        entryPx: "100",
+        liquidationPx: "50",
+        positionValue: "101",
+        unrealizedPnl: "1.25",
+        cumFunding: { sinceOpen: "-0.25" },
+        leverage: { type: "isolated", value: 3 },
+      } }],
+    };
+    const capture = await capturePerpSafely(
+      {
+        clearinghouseState: vi.fn().mockResolvedValue(liveState),
+        frontendOpenOrders: vi.fn().mockResolvedValue([full]),
+      } as never,
+      "0xabc",
+      "BTC",
+      {} as never,
+      false,
+    );
+
+    expect(capture).toMatchObject({
+      status: "open",
+      inputValueUsd: "100",
+      currentValueUsd: "101",
+      unrealizedPnlUsd: "1",
+      meta: {
+        coin: "BTC",
+        contracts: "1",
+        signedSize: "1",
+        side: "long",
+        entryPx: "100",
+        markPx: "101",
+        leverage: "3",
+        marginMode: "isolated",
+        liquidationPx: "50",
+        slPrice: "90",
+        protectionState: "PROTECTED",
+        cumFundingSinceOpen: "-0.25",
+        accountEquityUsd: "250",
+        accountWithdrawableUsd: "200",
+        accountTotalUnrealizedPnlUsd: "1.25",
+        confirmedAt: expect.any(String),
+      },
+    });
+  });
+
   it("applies leverage/margin mode before entry and exposes rejection to the caller", async () => {
     const updateLeverage = vi.fn(async () => accepted);
     await expect(applyOpenLeverage({ updateLeverage }, 7, 3, "isolated")).resolves.toEqual(accepted);

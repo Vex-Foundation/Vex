@@ -128,6 +128,7 @@ function stableSerialize(value: unknown): string {
 function snapshotFingerprint(snapshot: HyperliquidPositionsDto): string {
   return stableSerialize({
     positions: snapshot.positions.map(({ updatedAt: _updatedAt, ...position }) => position),
+    syncStatus: snapshot.syncStatus,
     account: snapshot.account,
     watchlist: snapshot.watchlist,
   });

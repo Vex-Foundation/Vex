@@ -142,7 +142,34 @@ export function HyperliquidPositionsBlock({
   }
   const positions = result?.ok ? result.data.positions : [];
   if (positions.length === 0) {
-    return <BookBlock title="Hyperliquid"><p className="text-[11px] text-[var(--vex-text-3)]">No open Hyperliquid perpetual positions.</p></BookBlock>;
+    const syncStatus = result?.ok ? result.data.syncStatus ?? "settled" : "settled";
+    if (syncStatus === "syncing") {
+      return (
+        <BookBlock title="Hyperliquid" trailing="syncing">
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-[11px] text-[var(--vex-text-3)]"
+          >
+            Trade accepted — waiting for Hyperliquid to confirm the position…
+          </p>
+        </BookBlock>
+      );
+    }
+    if (syncStatus === "delayed") {
+      return (
+        <BookBlock title="Hyperliquid" trailing="check venue">
+          <p role="alert" className="text-[11px] text-[var(--vex-warn-text)]">
+            Position status is delayed. Verify your live exposure on Hyperliquid before trading again.
+          </p>
+        </BookBlock>
+      );
+    }
+    return (
+      <BookBlock title="Hyperliquid">
+        <p className="text-[11px] text-[var(--vex-text-3)]">No open Hyperliquid perpetual positions.</p>
+      </BookBlock>
+    );
   }
   return (
     <BookBlock title="Hyperliquid" trailing={`${positions.length} open`}>
