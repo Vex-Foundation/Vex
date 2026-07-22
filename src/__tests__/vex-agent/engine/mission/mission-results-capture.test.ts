@@ -29,6 +29,7 @@ function deps(over: Partial<CaptureDeps> = {}): CaptureDeps {
     closeResult: vi.fn(async () => {}),
     getResult: vi.fn(async () => null),
     countTrades: vi.fn(async () => 3),
+    setStopSummaryIfAbsent: vi.fn(async () => true),
     ...over,
   };
 }

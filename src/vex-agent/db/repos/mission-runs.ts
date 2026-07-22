@@ -163,6 +163,29 @@ export async function updateStatus(
   }
 }
 
+/**
+ * Write a fallback `stop_summary`, but ONLY if the run has none.
+ *
+ * The `WHERE ... AND (stop_summary IS NULL OR btrim(stop_summary) = '')`
+ * guard is the whole point: agent-authored prose always wins, and it wins
+ * in SQL rather than in a caller's read-then-write, so a `mission_stop`
+ * landing concurrently with finalisation can never be overwritten.
+ *
+ * Returns whether a row was actually written, so callers can log honestly.
+ */
+export async function setStopSummaryIfAbsent(
+  id: string,
+  summary: string,
+): Promise<boolean> {
+  const written = await execute(
+    `UPDATE mission_runs SET stop_summary = $2
+      WHERE id = $1
+        AND (stop_summary IS NULL OR btrim(stop_summary) = '')`,
+    [id, summary],
+  );
+  return written > 0;
+}
+
 export async function setLastCheckpoint(id: string): Promise<void> {
   await execute(
     "UPDATE mission_runs SET last_checkpoint_at = NOW() WHERE id = $1",
