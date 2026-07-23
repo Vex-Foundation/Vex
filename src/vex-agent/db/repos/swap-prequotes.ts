@@ -7,12 +7,14 @@
  * trade identity (see `src/vex-agent/tools/protocols/swap-prequote.ts` for the
  * hash + verdict computation and the gate). The Stage-7 gate reads two of the
  * three reads below before a swap EXECUTE: `existsFreshFailByMatch` (any fresh
- * `fail` → block) then `findLatestFreshByMatch` (no fresh row → block; else the
- * verdict authorizes — `pass`/`unknown` allow, a `fail` latest row is a
- * belt-and-suspenders block). All reads are session- AND kind-scoped so a
- * cross-session row or a `bridge` prequote can never authorize/block a `swap`.
+ * `fail` → block) then `findLatestFreshByMatch` (no fresh *unconsumed* row →
+ * block; else the verdict authorizes — `pass`/`unknown` allow, a `fail` latest
+ * row is a belt-and-suspenders block). A successful gated execute CAS-consumes
+ * the matched row (`consumeIfUnconsumed`) so one quote cannot authorize N
+ * broadcasts. All reads are session- AND kind-scoped so a cross-session row or
+ * a `bridge` prequote can never authorize/block a `swap`.
  *
- * Migration: `src/vex-agent/db/migrations/029_swap_prequotes.sql`.
+ * Migrations: `029_swap_prequotes.sql`, `044_swap_prequotes_consumed_at.sql`.
  *
  * **Session ownership invariant** (mirrors wallet-intents): every lookup
  * includes `session_id` in the predicate — a read from a different session
@@ -58,6 +60,8 @@ export interface SwapPrequote {
   routeRef: Record<string, unknown> | null;
   createdAt: string;
   expiresAt: string;
+  /** Set when a gated execute successfully consumed this ticket; null while reusable. */
+  consumedAt: string | null;
 }
 
 export interface CreatePrequoteInput {
@@ -94,7 +98,7 @@ function toIso(value: string | Date): string {
 const SELECT_COLUMNS =
   "prequote_id, session_id, match_hash, kind, family, provider, " +
   "chain_id, wallet_address, token_in, token_out, amount, slippage_bps, " +
-  "safety_verdict, safety_detail, route_ref, created_at, expires_at";
+  "safety_verdict, safety_detail, route_ref, created_at, expires_at, consumed_at";
 
 function mapRow(r: Record<string, unknown>): SwapPrequote {
   return {
@@ -119,6 +123,10 @@ function mapRow(r: Record<string, unknown>): SwapPrequote {
     routeRef: (r.route_ref as Record<string, unknown> | null) ?? null,
     createdAt: toIso(r.created_at as string | Date),
     expiresAt: toIso(r.expires_at as string | Date),
+    consumedAt:
+      r.consumed_at === null || r.consumed_at === undefined
+        ? null
+        : toIso(r.consumed_at as string | Date),
   };
 }
 
@@ -156,11 +164,11 @@ export async function create(input: CreatePrequoteInput): Promise<void> {
 // ── findLatestFreshByMatch (session + kind-scoped) ──────────────────────
 
 /**
- * Newest non-expired prequote row for a (session, match_hash, kind). Returns
- * `null` when no fresh row exists (including cross-session: a row recorded under
- * a different session never matches; and cross-kind: a `bridge` row never
- * authorizes a `swap`). Freshness is `expires_at > NOW()` — an expired row is
- * invisible.
+ * Newest non-expired, **unconsumed** prequote row for a (session, match_hash,
+ * kind). Returns `null` when no usable row exists (including cross-session: a
+ * row recorded under a different session never matches; cross-kind: a `bridge`
+ * row never authorizes a `swap`; and already-consumed: a successful execute
+ * burned the ticket). Freshness is `expires_at > NOW() AND consumed_at IS NULL`.
  *
  * The Stage-7 gate calls this with `kind = "swap"` AFTER `existsFreshFailByMatch`
  * has ruled out any fresh `fail` row, then inspects the returned `safetyVerdict`
@@ -179,11 +187,38 @@ export async function findLatestFreshByMatch(
         AND match_hash = $2
         AND kind = $3
         AND expires_at > NOW()
+        AND consumed_at IS NULL
       ORDER BY created_at DESC
       LIMIT 1`,
     [sessionId, matchHash, kind],
   );
   return row ? mapRow(row) : null;
+}
+
+// ── consumeIfUnconsumed (CAS, session-scoped) ───────────────────────────
+
+/**
+ * Mark a prequote consumed after a successful gated broadcast. Session-scoped
+ * CAS: only the owning session can burn the ticket, and only if it is still
+ * unconsumed. Returns true when this caller won the consume; false when the
+ * row was already consumed, missing, or belongs to another session.
+ *
+ * Call ONLY after `result.success` on a gated execute — never at gate-allow
+ * time (restricted mode would burn the ticket before the human approves).
+ */
+export async function consumeIfUnconsumed(
+  prequoteId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const n = await execute(
+    `UPDATE swap_prequotes
+        SET consumed_at = NOW()
+      WHERE prequote_id = $1
+        AND session_id = $2
+        AND consumed_at IS NULL`,
+    [prequoteId, sessionId],
+  );
+  return n > 0;
 }
 
 // ── existsFreshFailByMatch (session + kind-scoped) ──────────────────────
