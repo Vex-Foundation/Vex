@@ -14,9 +14,11 @@ import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { parseClobTokenIds } from "@tools/polymarket/helpers.js";
 import { type Hex, getAddress } from "viem";
+import type { OrderBookSummary } from "@tools/polymarket/clob/types.js";
 import type { ProtocolHandler } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 import { splitIds } from "./helpers.js";
+
 function usdcToBaseUnits(amount: number): string {
   return Math.round(amount * 10 ** USDC_E_DECIMALS).toString();
 }
@@ -25,6 +27,66 @@ function calcAmounts(side: "BUY" | "SELL", amount: number, price: number): { mak
     return { makerAmount: usdcToBaseUnits(amount * price), takerAmount: usdcToBaseUnits(amount) };
   }
   return { makerAmount: usdcToBaseUnits(amount), takerAmount: usdcToBaseUnits(amount * price) };
+}
+
+/**
+ * Positive finite level price, or null. Used by best-bid/ask so a single
+ * garbage level cannot poison min/max over the book.
+ */
+function positiveLevelPrice(level: { price: string } | undefined): number | null {
+  if (!level) return null;
+  const n = Number(level.price);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Best ask = lowest sell offer. Min over levels (sort-order independent).
+ * Polymarket REST books have historically arrived worst-first; never trust
+ * index 0 / last without min/max.
+ */
+export function bestAskFromBook(
+  asks: OrderBookSummary["asks"] | undefined,
+): number | null {
+  if (!asks?.length) return null;
+  let best: number | null = null;
+  for (const level of asks) {
+    const p = positiveLevelPrice(level);
+    if (p === null) continue;
+    if (best === null || p < best) best = p;
+  }
+  return best;
+}
+
+/**
+ * Best bid = highest buy offer. Max over levels (sort-order independent).
+ */
+export function bestBidFromBook(
+  bids: OrderBookSummary["bids"] | undefined,
+): number | null {
+  if (!bids?.length) return null;
+  let best: number | null = null;
+  for (const level of bids) {
+    const p = positiveLevelPrice(level);
+    if (p === null) continue;
+    if (best === null || p > best) best = p;
+  }
+  return best;
+}
+
+/**
+ * Omit-price "market" take price from the order book.
+ *
+ * BUY must take the **best ask**; SELL must take the **best bid**.
+ * Do NOT use `getPrice(side)` for this: on the live CLOB, `getPrice("BUY")`
+ * returns the best **bid** and `getPrice("SELL")` the best **ask** — the
+ * resting side, not the taking side. Using those prices posts a passive
+ * limit that does not cross the spread (market intent → wrong-side rest).
+ */
+export function marketTakePriceFromBook(
+  book: Pick<OrderBookSummary, "bids" | "asks">,
+  side: "BUY" | "SELL",
+): number | null {
+  return side === "BUY" ? bestAskFromBook(book.asks) : bestBidFromBook(book.bids);
 }
 
 // ── Trading (authenticated) ───────────────────────────────────
@@ -45,14 +107,9 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
     const clob = getPolyClobClient();
     let price = num(p, "price") ?? null;
     if (price === null) {
-      const priceResp = await clob.getPrice(tokenId, "BUY");
-      price = priceResp.price;
-      // Fallback: getPrice returns 0 for some markets — use best ask from orderbook
-      if (!price || price <= 0) {
-        const ob = await clob.getOrderBook(tokenId);
-        const bestAsk = ob.asks?.length ? Number(ob.asks[ob.asks.length - 1]?.price) : 0;
-        if (bestAsk > 0) price = bestAsk;
-      }
+      // Market buy = take best ask from the book (not getPrice("BUY") / bid).
+      const ob = await clob.getOrderBook(tokenId);
+      price = marketTakePriceFromBook(ob, "BUY");
     }
     if (!price || price <= 0) return fail(`Cannot determine price for ${outcome} token — price is ${price}. Market may be illiquid or closed.`);
     const shares = amount / price;
@@ -161,14 +218,9 @@ export const ORDERS_HANDLERS: Record<string, ProtocolHandler> = {
     const clob = getPolyClobClient();
     let price = num(p, "price") ?? null;
     if (price === null) {
-      const priceResp = await clob.getPrice(tokenId, "SELL");
-      price = priceResp.price;
-      // Fallback: getPrice returns 0 for some markets — use best bid from orderbook
-      if (!price || price <= 0) {
-        const ob = await clob.getOrderBook(tokenId);
-        const bestBid = ob.bids?.length ? Number(ob.bids[ob.bids.length - 1]?.price) : 0;
-        if (bestBid > 0) price = bestBid;
-      }
+      // Market sell = take best bid from the book (not getPrice("SELL") / ask).
+      const ob = await clob.getOrderBook(tokenId);
+      price = marketTakePriceFromBook(ob, "SELL");
     }
     if (!price || price <= 0) return fail(`Cannot determine price for ${outcome} token — price is ${price}. Market may be illiquid or closed.`);
 
