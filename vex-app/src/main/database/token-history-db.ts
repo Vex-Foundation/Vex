@@ -621,6 +621,7 @@ function mapEntry(row: PageRow): TokenHistoryEntry {
       providerOrderId: null,
       amountBasis: null,
       legs: [],
+      lastCheckedAt: null,
     };
   }
 
