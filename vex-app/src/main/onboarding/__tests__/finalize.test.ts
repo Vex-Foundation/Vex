@@ -76,7 +76,6 @@ function fullEnvState(): unknown {
       jupiterConfigured: true,
       tavilyConfigured: false,
       rettiwtConfigured: false,
-      polymarketStatus: "missing",
     },
     embeddings: {
       configured: true,
@@ -147,7 +146,6 @@ describe("completeSetup", () => {
         jupiterConfigured: false,
         tavilyConfigured: false,
         rettiwtConfigured: false,
-        polymarketStatus: "missing",
       },
       embeddings: {
         configured: false,

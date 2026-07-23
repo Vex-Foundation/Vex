@@ -214,24 +214,6 @@ describe("config store", () => {
       expect(loaded.services.khalaniApiUrl).toBe(defaults.services.khalaniApiUrl);
     });
 
-    it("adds polymarket block when patch provides one and previous config had none", () => {
-      const result = saveConfigPatch({
-        polymarket: { clobBaseUrl: "https://clob.custom" },
-      });
-
-      expect(result.polymarket?.clobBaseUrl).toBe("https://clob.custom");
-      expect(loadConfig().polymarket?.clobBaseUrl).toBe("https://clob.custom");
-    });
-
-    it("shallow-merges polymarket fields without dropping earlier overrides", () => {
-      saveConfigPatch({ polymarket: { clobBaseUrl: "https://clob.first" } });
-      saveConfigPatch({ polymarket: { gammaBaseUrl: "https://gamma.second" } });
-
-      const loaded = loadConfig();
-      expect(loaded.polymarket?.clobBaseUrl).toBe("https://clob.first");
-      expect(loaded.polymarket?.gammaBaseUrl).toBe("https://gamma.second");
-    });
-
     it("applies wallet inventory patch without touching solana settings", () => {
       const entry = {
         id: "evm_legacy",

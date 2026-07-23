@@ -1,16 +1,20 @@
 /**
  * Point-in-time / no-lookahead gate (S5 §6, role-free under v2 FIX-1).
  *
- * The fundamental no-lookahead guarantee is NOT in this module: the outcome is
- * DERIVED from the immutable ledger by `outcome-resolver.ts` (deref
- * `executionId` → realized PnL), so it is never an anchor and cannot inject a
- * future "fact" as evidence. This module only computes the AUDIT timestamp
- * boundary and a conservative `pointInTimeChecked` flag that DEGRADES `strong`
- * evidence when the boundary is undeterminable — it never rejects a candidate.
+ * This module computes the AUDIT timestamp boundary and a conservative
+ * `pointInTimeChecked` flag that DEGRADES `strong` evidence when the boundary
+ * is undeterminable — it never rejects a candidate. RETIREMENT NOTE (Agent
+ * Scan W4): the ledger-derived outcome resolver this module's original design
+ * paired with (`outcome-resolver.ts`, deref `executionId` → realized PnL) is
+ * deleted; `consolidate.ts` now stamps a neutral placeholder outcome for
+ * every trade-family candidate instead of deriving one. This module is
+ * UNCHANGED and still stamps the same as-of boundary for that placeholder —
+ * the boundary is a bi-temporal audit fact independent of whether the
+ * outcome itself is graded from the ledger or neutral.
  *
  * v2 FIX-1 cut `role` off `evidenceRefs` ({executionId, captureItemId?,
  * instrumentKey?, positionKey?} only), so we cannot exclude an "outcome-role"
- * anchor. We do not need to: the outcome is derived, not anchored.
+ * anchor. We do not need to: nothing here anchors on a derived outcome.
  *
  * Boundary derivation (genesis §677):
  *   - `candidate.eventTime` if the agent supplied it (when the trade happened),

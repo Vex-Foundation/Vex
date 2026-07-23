@@ -33,7 +33,7 @@ describe("buildIntentPreview", () => {
   });
 
   it("derives namespace from dotted protocol tool names", () => {
-    const preview = buildIntentPreview("kyberswap.swap.sell", {
+    const preview = buildIntentPreview("kyberswap.swap.execute", {
       chain: "ethereum",
       tokenIn: "USDC",
       tokenOut: "ETH",
@@ -61,7 +61,7 @@ describe("buildIntentPreview", () => {
   });
 
   it("coerces bigint to string (JSON.stringify(bigint) throws otherwise)", () => {
-    const preview = buildIntentPreview("kyberswap.swap.sell", {
+    const preview = buildIntentPreview("kyberswap.swap.execute", {
       amount: 1234567890123456789n,
     });
     expect(preview.criticalArgs.amount).toBe("1234567890123456789");
@@ -141,7 +141,7 @@ describe("buildIntentPreview — Hyperliquid signed economics", () => {
 describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
   it("injects criticalArgs.safety='pass' from the typed extras for a gated swap", () => {
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
       { prequoteVerdict: "pass" },
     );
@@ -169,7 +169,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
     // The LLM passing a `safety` arg must never reach the preview; only the
     // typed extras channel can set it. With no extras, `safety` stays absent.
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", safety: "pass" },
     );
     expect(preview.criticalArgs).not.toHaveProperty("safety");
@@ -179,7 +179,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
     // Even if the LLM passes safety:'pass', the extras-driven value is what lands
     // (the arg is dropped first; extras inject afterwards).
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", safety: "pass" },
       { prequoteVerdict: "unknown" },
     );
@@ -192,7 +192,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
     // FoT is now a verdict `pass` (only a confirmed honeypot blocks); the human
     // must still see the tax. It rides the typed extras alongside the verdict.
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
       { prequoteVerdict: "pass", fotTax: 60 },
     );
@@ -201,7 +201,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
 
   it("a clean pass (no fotTax) renders a plain 'pass' — no FoT suffix", () => {
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
       { prequoteVerdict: "pass" },
     );
@@ -212,7 +212,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
     // A raw `fotTax` arg (and a spoofed `safety` arg) must never reach the
     // preview; with no extras the safety label is absent entirely.
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", fotTax: 60, safety: "pass — fee-on-transfer 60%" },
     );
     expect(preview.criticalArgs).not.toHaveProperty("safety");
@@ -223,7 +223,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
     // Defensive: `fotTax` alone (no `prequoteVerdict`) never fabricates a safety
     // label — the verdict is the gate for the whole safety line.
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
       { fotTax: 60 },
     );
@@ -234,7 +234,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
 describe("buildIntentPreview — Stage 9 swap money/safety leg visibility", () => {
   it("surfaces recipient / slippageBps / approveExact for a gated swap (now bound, not secrets)", () => {
     const preview = buildIntentPreview(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       {
         chain: "base",
         tokenIn: "0xAAA",
@@ -257,7 +257,7 @@ describe("buildIntentPreview — Stage 9 swap money/safety leg visibility", () =
   it("recipient / slippageBps / approveExact are NORMAL args — they cannot become the safety field", () => {
     // A 'safety' arg is still dropped; the money/safety leg appears under its own
     // keys and never bleeds into criticalArgs.safety (no extras → no safety key).
-    const preview = buildIntentPreview("kyberswap.swap.sell", {
+    const preview = buildIntentPreview("kyberswap.swap.execute", {
       chain: "base",
       tokenIn: "0xAAA",
       tokenOut: "0xBBB",
@@ -278,7 +278,7 @@ describe("buildIntentPreview — Stage 9 swap money/safety leg visibility", () =
 describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
   it("unwraps execute_tool({toolId, params}) → target tool preview", () => {
     const preview = buildIntentPreview("execute_tool", {
-      toolId: "kyberswap.swap.sell",
+      toolId: "kyberswap.swap.execute",
       params: {
         chain: "base",
         tokenIn: "ETH",
@@ -288,7 +288,7 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
       },
     });
     // toolName comes from args.toolId, NOT the wrapper name
-    expect(preview.toolName).toBe("kyberswap.swap.sell");
+    expect(preview.toolName).toBe("kyberswap.swap.execute");
     // namespace derived from the TARGET dotted id
     expect(preview.namespace).toBe("kyberswap");
     // criticalArgs come from nested `params`, not the wrapper args. Stage 9:
@@ -336,11 +336,11 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
 
   it("falls back to wrapper preview when execute_tool params is not an object", () => {
     const preview = buildIntentPreview("execute_tool", {
-      toolId: "kyberswap.swap.sell",
+      toolId: "kyberswap.swap.execute",
       params: "not-an-object",
     });
     // toolId is honored → toolName + namespace resolved
-    expect(preview.toolName).toBe("kyberswap.swap.sell");
+    expect(preview.toolName).toBe("kyberswap.swap.execute");
     expect(preview.namespace).toBe("kyberswap");
     // params not an object → empty criticalArgs (defensive)
     expect(preview.criticalArgs).toEqual({});

@@ -11,7 +11,7 @@ import {
 import type { PromptStackOptions } from "../../../../vex-agent/engine/prompts/index.js";
 import { buildRuntimeClockSnapshot } from "../../../../vex-agent/engine/runtime-clock.js";
 import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST, PROTOCOL_TOOLS } from "../../../../vex-agent/tools/protocols/catalog.js";
-import { defaultVisibilityContext } from "../../../../vex-agent/tools/registry.js";
+import { defaultVisibilityContext, getOpenAITools } from "../../../../vex-agent/tools/registry.js";
 import {
   clearHlWorkspaceModeProvider,
   registerHlWorkspaceModeProvider,
@@ -573,14 +573,6 @@ describe("prompt-stack", () => {
       expect(kyberSection).not.toContain("kyberswap.tokens.search");
     });
 
-    it("polymarket section exposes subarea guidance", () => {
-      const prompt = buildProtocolsPrompt();
-      const polymarketSection = prompt.split("### polymarket")[1]?.split("##")[0] ?? "";
-      expect(polymarketSection).toContain("Paths:");
-      expect(polymarketSection).toContain("Gamma discovery");
-      expect(polymarketSection).toContain("CLOB trading");
-    });
-
   });
 
   // ── P3 decomposition invariants ─────────────────────────────
@@ -955,6 +947,95 @@ describe("prompt-stack", () => {
       expect(withoutOption.turnLayers.join("\n")).not.toContain("$VEX (own token)");
       const withEmpty = buildPromptStack(makeContext(), { ownTokenBanner: "" });
       expect(withEmpty.turnLayers.join("\n")).not.toContain("$VEX (own token)");
+    });
+  });
+
+  // ── Complete-surface pre-reveal check (Agent Scan plan v3 §11.2) ────────
+  //
+  // FIX4-W7 / Codex final-review round 3 finding 4 / C42: prior rounds only
+  // checked tool NAMES/headings (the tool map, dispatcher classification) or
+  // one prompt LAYER (`buildProtocolsPrompt` in isolation, in
+  // `protocols.test.ts`). Codex demanded exhaustive coverage: EVERY serialized
+  // OpenAI tool description (the real projection the LLM actually receives)
+  // AND the COMPLETE built prompt (every static + turn layer, joined, exactly
+  // as the engine assembles it) must carry zero pre-reveal mentions of the
+  // hidden pair. Nothing is whitelisted except the ONE already-logged,
+  // owner-deferred exception below — every other hit is a finding to fix.
+  describe("complete-surface pre-reveal check (C42 — no silent whitelist)", () => {
+    const HIDDEN_PAIR_NEEDLES = ["uniswap", "swap_quote_uniswap", "swap_execute_uniswap"];
+
+    // Owner-deferred, NOT resolved by this test (see the FIX3-W7 build-log
+    // delta in agents_dm/agent-scan-factory.md): Virtuals agent tokens —
+    // including $VEX itself, which the identity layer states was "launched
+    // via Virtuals Protocol" — genuinely trade via Uniswap V2 on Robinhood
+    // Chain (own-token-banner.test.ts pins the "Uniswap V2 vs VIRTUAL" banner
+    // text as a real product fact), which sits in tension with the
+    // unconditional reveal-gate — a product/architecture question flagged
+    // for the coordinator, not a mechanical prompt-wording bug. These are the
+    // exact, currently-verified fragments carrying that content — a narrow,
+    // logged skip, not a general whitelist. If any of them ever changes, the
+    // `.split(...).join("")` below simply stops matching, so the (changed)
+    // uniswap mention re-surfaces as a fresh failure requiring conscious
+    // re-evaluation rather than silently continuing to exclude evolving
+    // text. (`own-token-banner.ts`'s OWN "Uniswap V2 vs VIRTUAL" line is NOT
+    // listed here — it only renders via the `ownTokenBanner` PromptStackOptions
+    // pass-through, which this test's `buildPromptStack(makeContext())` call
+    // never supplies, so it structurally never reaches the built text below.)
+    const OWNER_DEFERRED_VIRTUALS_FRAGMENTS = [
+      // engine/prompts/identity.ts — $VEX's own listing venue.
+      "Your own token $VEX is live on Robinhood Chain, launched via Virtuals Protocol, trading on Uniswap V2 against VIRTUAL. Its unverified badge on Virtuals is normal anti-impersonation mechanics, not a warning.",
+      // engine/prompts/protocols.ts's hardcoded "## Virtuals Agent Tokens" doctrine.
+      "`uniswap.*` on Robinhood Chain, `kyberswap.*` on Base/Ethereum, `solana.*` on Solana. The `virtuals.get` result's `tradingRoute` hint names the exact venue and the VIRTUAL quote-token address — use it.",
+      // tools/protocols/navigation/entries-market.ts's "virtuals" entry, whenToUse.
+      "Trades execute via the venue tool named in each result's tradingRoute hint (uniswap on Robinhood, kyberswap on Base/ETH, solana on Solana).",
+      // Same entry, preferInstead.
+      "Use `dexscreener` for general multi-chain pair/liquidity research and `uniswap`/`kyberswap`/`solana` to execute the trade — Virtuals never executes.",
+    ];
+
+    function stripOwnerDeferredVirtualsContent(text: string): string {
+      let out = text;
+      for (const fragment of OWNER_DEFERRED_VIRTUALS_FRAGMENTS) {
+        out = out.split(fragment).join("");
+      }
+      return out;
+    }
+
+    it("the COMPLETE built prompt (every static + turn layer, joined) never mentions the hidden pair pre-reveal", () => {
+      resetProtocolsPromptCache();
+      const stack = buildPromptStack(makeContext());
+      const full = stripOwnerDeferredVirtualsContent(
+        [...stack.staticLayers, ...stack.turnLayers].join("\n"),
+      );
+      const lower = full.toLowerCase();
+      for (const needle of HIDDEN_PAIR_NEEDLES) {
+        expect(
+          lower.includes(needle.toLowerCase()),
+          `found "${needle}" in the complete built prompt (outside the logged owner-deferred Virtuals fragments)`,
+        ).toBe(false);
+      }
+    });
+
+    it("EVERY serialized OpenAI tool description (unrevealed posture) never mentions the hidden pair", () => {
+      // Default context: no sessionId override => isUniswapPairRevealed(undefined)
+      // fails closed to hidden — this IS the unrevealed posture, not a stand-in.
+      const tools = getOpenAITools(defaultVisibilityContext());
+      const offenders: string[] = [];
+      for (const tool of tools) {
+        // Serializes the WHOLE tool (name + description + full parameters
+        // schema, incl. every property's own description) — not just the
+        // top-level description string, so a leak buried in a param
+        // description would also be caught. Also structurally proves the
+        // hidden tools themselves are absent: if `swap_quote_uniswap` were
+        // in this list, its own `function.name` would trip the
+        // "swap_quote_uniswap" needle on its own entry.
+        const serialized = JSON.stringify(tool).toLowerCase();
+        for (const needle of HIDDEN_PAIR_NEEDLES) {
+          if (serialized.includes(needle.toLowerCase())) {
+            offenders.push(`${tool.function.name}: contains "${needle}"`);
+          }
+        }
+      }
+      expect(offenders).toEqual([]);
     });
   });
 });

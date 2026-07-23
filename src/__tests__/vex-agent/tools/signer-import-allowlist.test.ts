@@ -69,10 +69,7 @@ describe("signer import allowlist", () => {
       "internal/wallet/send-execute-solana.ts",
       "protocols/khalani/handlers/read.ts",
       "protocols/kyberswap/handlers/swap.ts",
-      "protocols/kyberswap/handlers/zap.ts",
-      "protocols/kyberswap/handlers/limit-order.ts",
       "protocols/solana-jupiter/handlers/core.ts",
-      "protocols/polymarket/handlers-clob.ts",
     ];
     for (const rel of migrated) {
       const src = readFileSync(join(TOOLS_DIR, rel), "utf-8");
@@ -127,7 +124,6 @@ describe("src/tools signer import scan", () => {
 const PROTOCOL_PATHS = [
   "src/vex-agent/tools/protocols",
   "src/tools/khalani",
-  "src/tools/polymarket",
   "src/tools/kyberswap",
   "src/tools/solana-ecosystem",
 ].map((p) => join(process.cwd(), p));

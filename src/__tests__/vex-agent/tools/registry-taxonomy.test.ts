@@ -79,7 +79,7 @@ describe("ActionKind — pinned critical classifications", () => {
 
     // Read-only DB / RPC / external API surfaces
     ["chain_read", "read"],
-    ["portfolio", "read"],
+    ["agent_scan", "read"],
     ["session_memory_search", "read"],
     ["tool_output_read", "read"],
     ["long_memory_search", "read"],
@@ -95,7 +95,6 @@ describe("ActionKind — pinned critical classifications", () => {
     ["mission_draft_update", "local_write"],
     ["session_memory_resolve_item", "local_write"],
     ["compact_now", "local_write"],
-    ["polymarket_setup", "local_write"],
 
     // mission_stop is a state transition via engineSignal, not deferred work —
     // classify as local_write (Codex Q2 ruling, puzzle 5/1A).

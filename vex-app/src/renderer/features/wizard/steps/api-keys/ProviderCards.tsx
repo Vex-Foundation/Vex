@@ -1,15 +1,12 @@
 /**
- * ApiKeysStep provider-card bodies — the four `ProviderCard` instances
- * rendered inside the step form (Jupiter / Tavily / Rettiwt / Polymarket).
+ * ApiKeysStep provider-card bodies — the three `ProviderCard` instances
+ * rendered inside the step form (Jupiter / Tavily / Rettiwt).
  *
  * Each component owns the per-provider chrome (icon, copy, external
  * links, status badge) and forwards the parent-owned uncontrolled secret
- * ref into the `PasswordField` for the three keyed providers. The
- * Polymarket body hosts `PolymarketAutoSetupSection` only (PR8 redesign
- * — no manual trio). Markup, copy, hrefs, `data-vex-apikeys-card`
- * selectors, accessibility (sr-only labels, aria-hidden icons), and the
- * Polymarket partial-warning callout are preserved verbatim from the
- * inlined cards.
+ * ref into the `PasswordField`. Markup, copy, hrefs, `data-vex-apikeys-card`
+ * selectors, and accessibility (sr-only labels, aria-hidden icons) are
+ * preserved verbatim from the inlined cards.
  *
  * Presentational: no state, no IPC of their own. Status badges come from
  * the parent (which derives them via `status-helpers`); secret values
@@ -18,12 +15,8 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
-import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
-import { cn } from "../../../../lib/utils.js";
-import { RAIL_WARNING_CHROME } from "../step-chrome.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
-import { PolymarketAutoSetupSection } from "../polymarket-auto-setup/PolymarketAutoSetupSection.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
 
 export interface JupiterCardProps {
@@ -186,84 +179,5 @@ export function RettiwtCard({
         ref={inputRef}
       />
     </ProviderCard>
-  );
-}
-
-export interface PolymarketCardProps {
-  readonly status: ProviderCardStatus;
-  readonly polymarketStatus: PolymarketStatus;
-  readonly polymarketPartial: boolean;
-  readonly evmWalletPresent: boolean;
-  readonly vaultUnlocked: boolean;
-  readonly disabled: boolean;
-  readonly onSuccess: () => void;
-}
-
-export function PolymarketCard({
-  status,
-  polymarketStatus,
-  polymarketPartial,
-  evmWalletPresent,
-  vaultUnlocked,
-  disabled,
-  onSuccess,
-}: PolymarketCardProps): JSX.Element {
-  return (
-    <>
-      {/* Polymarket — optional, auto-setup only. Manual trio entry
-          removed in PR8 redesign. Partial-state repair is the same
-          auto-setup button (PolymarketAutoSetupSection switches to
-          "replaces partial entries" label). Card root preserves the
-          `data-vex-apikeys-polymarket="fieldset"` test selector. */}
-      {polymarketPartial ? (
-        <div
-          role="alert"
-          data-vex-apikeys-warning="polymarket-partial"
-          className={cn(
-            "py-1 text-sm text-[var(--color-warning)]",
-            RAIL_WARNING_CHROME,
-          )}
-        >
-          <strong className="font-semibold">
-            Polymarket needs all three credentials.
-          </strong>{" "}
-          One or two are already saved. Use auto-configure below to repair
-          the partial state.
-        </div>
-      ) : null}
-
-      <div data-vex-apikeys-polymarket="fieldset">
-        <ProviderCard
-          slug="polymarket"
-          iconSlot={
-            <img
-              src="/logo/polymarket.png"
-              alt=""
-              aria-hidden
-              draggable={false}
-              className="h-6 w-6 object-contain"
-            />
-          }
-          name="Polymarket"
-          status={status}
-          description="Trades prediction markets with your EVM wallet."
-          detail={
-            <>
-              Auto-setup signs one authentication request with the selected
-              wallet and derives the API credentials — nothing is typed in
-              or shown on screen. Running it again replaces what is saved.
-            </>
-          }
-        >
-          <PolymarketAutoSetupSection
-            status={polymarketStatus}
-            evmWalletPresent={evmWalletPresent}
-            vaultUnlocked={vaultUnlocked}
-            disabled={disabled}
-            onSuccess={onSuccess}
-          />
-        </ProviderCard>
-      </div>
-    </>
   );
 }

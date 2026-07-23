@@ -6,7 +6,7 @@ export const CHAINS_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "kyberswap.chains",
     namespace: "kyberswap",
     lifecycle: "active",
-    description: "List all 21 KyberSwap-supported EVM chains with feature availability (swap, limit orders, zap).",
+    description: "List all 19 KyberSwap aggregator-supported EVM chains.",
     mutating: false,
     actionKind: "read",
     params: [],

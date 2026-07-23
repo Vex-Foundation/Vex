@@ -31,7 +31,7 @@ describe("mission state prompts", () => {
     expect(prompt).toContain("Capability Orientation");
     expect(prompt).toContain("`discover_tools`");
     expect(prompt).toContain("`wallet_balances`");
-    expect(prompt).toContain("`portfolio`");
+    expect(prompt).toContain("`agent_scan`");
     // Research-category pointer + venue-only recording rule are part of the
     // coherent orientation vocabulary.
     expect(prompt).toContain("`web_research`");

@@ -38,7 +38,6 @@ import type {
   MissionGetDiffResult,
   MissionGetDraftResult,
   MissionGetRenewableSourceResult,
-  MissionGetResultForRunResult,
   MissionRecoverInput,
   MissionRecoverResult,
   MissionRenewInput,
@@ -119,27 +118,6 @@ export function useRenewableMissionSource(
   sessionId: string | null,
 ): UseQueryResult<Result<MissionGetRenewableSourceResult>> {
   return useQuery(renewableSourceOptions(sessionId ?? ""));
-}
-
-/**
- * WP-J — the finalized ledger row for a single run (e.g. the post-mission
- * summary card shown inline after a mission finishes). Returns null while
- * the run hasn't finalized (or was never opened).
- */
-function missionResultForRunOptions(missionRunId: string, walletAddress: string) {
-  return queryOptions({
-    queryKey: missionKeys.resultForRun(missionRunId, walletAddress),
-    queryFn: () => window.vex.mission.getResultForRun({ missionRunId, walletAddress }),
-    staleTime: STALE_MS,
-    enabled: missionRunId.length > 0 && walletAddress.length > 0,
-  });
-}
-
-export function useMissionResultForRun(
-  missionRunId: string | null,
-  walletAddress: string | null,
-): UseQueryResult<Result<MissionGetResultForRunResult>> {
-  return useQuery(missionResultForRunOptions(missionRunId ?? "", walletAddress ?? ""));
 }
 
 /**

@@ -61,6 +61,7 @@ const LONG_MINT = "7jk8UbH339rCgnohpBvqiss4a7bXWmicMPCUCFmDrmYK";
 
 function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem {
   return {
+    source: "success",
     tradeSide: null,
     productType: null,
     venue: null,
@@ -74,6 +75,8 @@ function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem 
     outputAmount: null,
     valueUsd: null,
     captureStatus: "executed",
+    status: null,
+    failureCode: null,
     instrumentKey: null,
     chain: "solana",
     txRef: null,
@@ -313,6 +316,21 @@ describe("MovesBlock ledger display", () => {
     expect(screen.getByText("SWAP")).not.toBeNull();
   });
 
+  it("stamps a venue-qualified SWAP·VENUE for a neutral row with a known venue (agent_activity has no tradeSide at all)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        productType: "spot",
+        venue: "kyberswap",
+        tradeSide: null,
+        status: "pending",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("SWAP·KYBERSWAP")).not.toBeNull();
+  });
+
   it("stamps a bridge move BRIDGE·VENUE (productType beats tradeSide), plain BRIDGE without a venue", () => {
     mockMoves([
       // Venue-qualified: a Relay bridge never renders as SWAP again.
@@ -360,6 +378,41 @@ describe("MovesBlock ledger display", () => {
     expect(screen.getByText("SOL")).not.toBeNull();
   });
 
+  it("renders a whole-number amount (no decimal point) for an agent_activity row — trusted verbatim (Codex final review C27)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        status: "confirmed",
+        inputToken: "USDC",
+        inputAmount: "50",
+        outputToken: "WETH",
+        outputAmount: "0.02",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    // Server-resolved main-process amounts are trusted verbatim for an
+    // agent_activity row — a whole number renders exactly like a dotted one.
+    expect(screen.getByText("50 USDC")).not.toBeNull();
+    expect(screen.getByText("0.02 WETH")).not.toBeNull();
+  });
+
+  it("still hides a whole-number amount for a LEGACY (source: 'success') row — the dot requirement stays for untrusted sources", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "success",
+        inputToken: "usdc",
+        inputAmount: "50",
+        outputToken: "weth",
+        outputAmount: null,
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("USDC")).not.toBeNull();
+    expect(screen.queryByText(/50 USDC/)).toBeNull();
+  });
+
   it("never pulses the status dot (owner decree: no pulsing dots anywhere)", () => {
     mockMoves([
       move({ id: "1", captureStatus: "open" }),
@@ -367,6 +420,51 @@ describe("MovesBlock ledger display", () => {
     ]);
     const { container } = render(<MovesBlock sessionId={SESSION} />);
     expect(container.querySelectorAll(".vex-pulse-dot")).toHaveLength(0);
+  });
+
+  it("shows a pending/failed agent_activity row with its own status-driven dot color, ignoring captureStatus (always null there)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        status: "pending",
+        captureStatus: null,
+      }),
+      move({
+        id: "2",
+        source: "agent_activity",
+        status: "failed",
+        failureCode: "slippage",
+        captureStatus: null,
+      }),
+      move({
+        id: "3",
+        source: "agent_activity",
+        status: "confirmed",
+        captureStatus: null,
+      }),
+    ]);
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+    const dots = container.querySelectorAll('[aria-hidden].rounded-full');
+    expect(dots).toHaveLength(3);
+    expect(dots[0]?.className).toContain("bg-[var(--vex-accent)]");
+    expect(dots[1]?.className).toContain("bg-[var(--color-destructive)]");
+    expect(dots[2]?.className).toContain("bg-[var(--color-success)]");
+  });
+
+  it("surfaces a failed agent_activity row's failureCode as the row title tooltip", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        status: "failed",
+        failureCode: "slippage",
+        instrumentKey: null,
+      }),
+    ]);
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+    const row = container.querySelector("li");
+    expect(row?.getAttribute("title")).toBe("slippage");
   });
 
   it("links a row with a resolvable chain+txRef to its block explorer", () => {

@@ -60,11 +60,6 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
 }));
 
-// Lazy-imported by fullBalanceSync after the snapshot write.
-vi.mock("../../../vex-agent/sync/mtm.js", () => ({
-  refreshPredictionMtm: vi.fn().mockResolvedValue(undefined),
-}));
-
 const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync } = await import(
   "../../../vex-agent/sync/balance-sync.js"
 );

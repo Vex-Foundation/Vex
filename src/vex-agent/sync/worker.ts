@@ -112,6 +112,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const reconcileResult = await reconcileHyperliquid();
         result = { ...reconcileResult };
         rowsAffected = reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled;
+      } else if (syncType === "agent_activity_repair") {
+        const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
+        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        result = { ...repairResult };
+        rowsAffected = repairResult.confirmed + repairResult.failed;
       } else {
         result = { skipped: true, reason: `Unknown sync type: ${syncType}` };
         logger.warn("sync.worker.unknown_type", { syncType, runCount: runs.length });
@@ -144,20 +149,6 @@ export async function drainPendingRuns(): Promise<DrainResult> {
 
   if (processed > 0 || errors > 0) {
     logger.info("sync.worker.drain_completed", { processed, deduped, errors });
-  }
-
-  // Refresh prediction MTM after balance drain (cheap — deduped API calls)
-  if (processed > 0) {
-    try {
-      const { refreshPredictionMtm } = await import("./mtm.js");
-      await refreshPredictionMtm();
-    } catch (err) {
-      const causeCode = extractCauseCode(err);
-      logger.warn("sync.worker.mtm_failed", {
-        error: err instanceof Error ? err.message : String(err),
-        ...(causeCode !== null ? { causeCode } : {}),
-      });
-    }
   }
 
   return { processed, deduped, errors };
@@ -194,6 +185,10 @@ export async function processNextRun(): Promise<boolean> {
         { ...reconcileResult },
         reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled,
       );
+    } else if (job.syncType === "agent_activity_repair") {
+      const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
+      const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.confirmed + repairResult.failed);
     } else {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }

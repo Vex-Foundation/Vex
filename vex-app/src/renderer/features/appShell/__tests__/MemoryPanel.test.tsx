@@ -95,6 +95,7 @@ beforeEach(() => {
         completed: 0,
         failed: 0,
         permanently_failed: 0,
+        retired: 0,
       },
       recentJobs: [],
     }),
@@ -214,6 +215,7 @@ describe("MemoryPanel", () => {
           completed: 0,
           failed: 0,
           permanently_failed: 0,
+          retired: 0,
         },
         recentJobs: [
           {

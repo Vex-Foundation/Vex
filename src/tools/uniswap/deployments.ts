@@ -1,11 +1,15 @@
 /**
  * Uniswap V2 + V3 per-chain deployment registry (keyless quoting + execution).
  *
- * Vex uses Uniswap as an all-EVM fallback where KyberSwap is primary, including
- * on Robinhood Chain (4663), which KyberSwap now aggregates too (venue policy
- * lives in `./venue-router.ts`). Every address below was RE-VERIFIED on-chain before it
- * landed here — a wrong router/factory address moves real funds to the wrong
- * contract, so the registry is treated as maximum sensitivity.
+ * Uniswap is a HIDDEN fallback pair (`swap_quote_uniswap`/`swap_execute_uniswap`,
+ * plan §11.2) — reachable only after an eligible KyberSwap route-not-found
+ * failure reveals it for the session (`tools/registry/uniswap-reveal.ts`), on
+ * every chain listed below, Robinhood Chain (4663) included. There is no
+ * runtime Kyber→Uniswap fallback INSIDE the quote path anymore (the old
+ * silent retry was removed — see `venue-router.ts`'s header). Every address
+ * below was RE-VERIFIED on-chain before it landed here — a wrong router/
+ * factory address moves real funds to the wrong contract, so the registry is
+ * treated as maximum sensitivity.
  *
  * ── Verification method (fund-safety gate) ──────────────────────────────────
  * For every chain we probed the live RPC and asserted the *wiring*, not just

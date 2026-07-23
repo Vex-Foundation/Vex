@@ -5,7 +5,7 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
 // ── Per-session wallet resolution mock (5D-protocols p1) ──────────
 // Handlers now resolve the session wallet via resolve.js (NOT the zero-arg
 // requireEvmWallet primary). Spy on the resolvers to assert the session wallet
-// is used and that preview/dryRun never decrypts a signing key.
+// is used.
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -31,37 +31,17 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
     approved: true,
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
+    sessionId: "session-1",
     ...over,
   };
 }
 
-const mockGetZapInRoute = vi.fn();
-const mockBuildZapIn = vi.fn();
-const mockGetZapOutRoute = vi.fn();
-const mockBuildZapOut = vi.fn();
-const mockGetZapMigrateRoute = vi.fn();
-const mockBuildZapMigrate = vi.fn();
-
-vi.mock("@tools/kyberswap/zaas/client.js", () => ({
-  getKyberZaasClient: () => ({
-    getZapInRoute: (...args: unknown[]) => mockGetZapInRoute(...args),
-    buildZapIn: (...args: unknown[]) => mockBuildZapIn(...args),
-    getZapOutRoute: (...args: unknown[]) => mockGetZapOutRoute(...args),
-    buildZapOut: (...args: unknown[]) => mockBuildZapOut(...args),
-    getZapMigrateRoute: (...args: unknown[]) => mockGetZapMigrateRoute(...args),
-    buildZapMigrate: (...args: unknown[]) => mockBuildZapMigrate(...args),
-  }),
-}));
-
-const mockExtractMintedNftId = vi.fn();
-const mockExtractErc1155Position = vi.fn();
-const mockEnsureKyberAllowance = vi.fn();
+const mockPlanKyberAllowance = vi.fn();
 const mockEnsureErc20Balance = vi.fn();
+const mockSignStageBroadcast = vi.fn();
+const mockDecodeKyberSwapSettlement = vi.fn();
 
-// readErc20Metadata is used by resolveTokenMetadataStrict for address inputs
-// (the quote path is now strict/address-only, matching execute).
-// Default: return plain ERC-20 metadata so non-native token addresses resolve
-// without an on-chain read. Tests override per-case where needed.
+// readErc20Metadata is used by resolveTokenMetadataStrict for address inputs.
 const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address,
   symbol: "TKN",
@@ -75,16 +55,10 @@ vi.mock("@tools/kyberswap/evm-utils.js", () => ({
     publicClient: {},
     walletClient: {},
   }),
-  ensureKyberAllowance: (...args: unknown[]) => mockEnsureKyberAllowance(...args),
-  ensureErc721Approval: vi.fn().mockResolvedValue(null),
-  ensureErc1155ApprovalForAll: vi.fn().mockResolvedValue(null),
-  sendKyberTransaction: vi.fn().mockResolvedValue("0xmockhash"),
-  sendKyberTransactionWithReceipt: vi.fn().mockResolvedValue({
-    hash: "0xzaphash",
-    receipt: { logs: [{ topics: ["0xddf252ad"], data: "0x" }] },
-  }),
-  extractMintedNftId: (...args: unknown[]) => mockExtractMintedNftId(...args),
-  extractErc1155Position: (...args: unknown[]) => mockExtractErc1155Position(...args),
+  planKyberAllowance: (...args: unknown[]) => mockPlanKyberAllowance(...args),
+  buildApproveCalldata: vi.fn(() => "0xapprove"),
+  signStageBroadcast: (...args: unknown[]) => mockSignStageBroadcast(...args),
+  decodeKyberSwapSettlement: (...args: unknown[]) => mockDecodeKyberSwapSettlement(...args),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
 }));
@@ -106,11 +80,29 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 
 // Mock aggregator client so the read-only quote can fetch a route hermetically.
 const mockGetRoute = vi.fn();
+const mockBuildRoute = vi.fn();
 
 vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   getKyberAggregatorClient: () => ({
     getRoute: (...args: unknown[]) => mockGetRoute(...args),
+    buildRoute: (...args: unknown[]) => mockBuildRoute(...args),
   }),
+}));
+
+const mockCreateAgentActivityIntent = vi.fn();
+const mockCreateAgentActivityPreBroadcastFailure = vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } });
+
+vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+  createAgentActivityIntent: (...args: unknown[]) => mockCreateAgentActivityIntent(...args),
+  createAgentActivityPreBroadcastFailure: (...args: unknown[]) => mockCreateAgentActivityPreBroadcastFailure(...args),
+  markActivityBroadcast: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  markBroadcastAccepted: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  confirmActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  failActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+}));
+
+vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
+  pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
 // Spy on logger.warn so the fail-soft safety leg's log payload can be asserted
@@ -129,17 +121,16 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
-import { KYBERSWAP_TOOLS } from "../../../../vex-agent/tools/protocols/kyberswap/manifest.js";
 
-describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
+describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", () => {
   const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC-like
   const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7"; // USDT-like
   const EXEC_CTX = ctx({ sessionPermission: "full", approved: true });
 
-  /** A swap.sell dryRun call: runs the safety gate + route, stops before broadcast. */
-  function sellDryRun() {
-    return KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
-      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1", dryRun: true },
+  /** A real execute call that, once past the safety gate, completes cleanly. */
+  function executeCall() {
+    return KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       EXEC_CTX,
     );
   }
@@ -150,8 +141,18 @@ describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
     mockGetRoute.mockReset();
     mockGetRoute.mockResolvedValue({
       data: {
-        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5" },
+        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1" },
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+      },
+    });
+    mockBuildRoute.mockReset();
+    mockBuildRoute.mockResolvedValue({
+      data: {
+        routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+        data: "0xcalldata",
+        transactionValue: "0",
+        amountIn: "1000000", amountOut: "999000",
+        amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
     });
     mockReadErc20Metadata.mockReset();
@@ -159,23 +160,27 @@ describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
     mockLoggerWarn.mockClear();
-    mockEnsureKyberAllowance.mockReset();
-    mockEnsureKyberAllowance.mockResolvedValue(undefined);
+    mockPlanKyberAllowance.mockReset();
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
     mockEnsureErc20Balance.mockReset();
     mockEnsureErc20Balance.mockResolvedValue(undefined);
+    mockCreateAgentActivityIntent.mockReset();
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 1, events: [{ id: 1 }] });
+    mockCreateAgentActivityPreBroadcastFailure.mockClear();
+    mockSignStageBroadcast.mockReset();
+    mockSignStageBroadcast.mockResolvedValue({ kind: "confirmed", txHash: "0xswaphash", receipt: { logs: [] } });
+    mockDecodeKyberSwapSettlement.mockReset();
+    mockDecodeKyberSwapSettlement.mockReturnValue(null);
   });
 
-  it("an insufficient input balance aborts before allowance mutation or swap build", async () => {
+  it("an insufficient input balance aborts before the swap is planned or broadcast", async () => {
     mockEnsureErc20Balance.mockRejectedValue(new VexError(ErrorCodes.INSUFFICIENT_BALANCE, "short balance"));
 
-    await expect(
-      KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
-        { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
-        EXEC_CTX,
-      ),
-    ).rejects.toMatchObject({ code: ErrorCodes.INSUFFICIENT_BALANCE });
+    const result = await executeCall();
 
-    expect(mockEnsureKyberAllowance).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/short balance/i);
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
   });
 
   it("a CONFIRMED honeypot tokenIn STILL aborts — never reaches the route step", async () => {
@@ -184,7 +189,7 @@ describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
       return { isHoneypot: false, isFOT: false, tax: 0 };
     });
 
-    const result = await sellDryRun();
+    const result = await executeCall();
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/honeypot/i);
     expect(result.output).toMatch(/aborting/i);
@@ -198,23 +203,21 @@ describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
       return { isHoneypot: false, isFOT: false, tax: 0 };
     });
 
-    const result = await sellDryRun();
+    const result = await executeCall();
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/honeypot/i);
     expect(mockGetRoute).not.toHaveBeenCalled();
   });
 
-  it("FoT tax > 50 does NOT abort — proceeds past the gate to the dryRun route step + warns", async () => {
+  it("FoT tax > 50 does NOT abort — proceeds past the gate to a real swap + warns", async () => {
     mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
       if (address.toLowerCase() === TOKEN_A.toLowerCase()) return { isHoneypot: false, isFOT: true, tax: 60 };
       return { isHoneypot: false, isFOT: false, tax: 0 };
     });
 
-    const result = await sellDryRun();
-    // Reached the dryRun route step → the safety gate did NOT abort on FoT.
+    const result = await executeCall();
+    // Reached the route step and completed → the safety gate did NOT abort on FoT.
     expect(result.success).toBe(true);
-    const out = JSON.parse(result.output);
-    expect(out.dryRun).toBe(true);
     expect(mockGetRoute).toHaveBeenCalledTimes(1);
     // A high-tax FoT still emits a (warn-only) structural log.
     const fotWarn = mockLoggerWarn.mock.calls.find((c) => c[0] === "kyberswap.swap.fot_warning");
@@ -230,10 +233,9 @@ describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
       return { isHoneypot: false, isFOT: false, tax: 0 };
     });
 
-    const result = await sellDryRun();
+    const result = await executeCall();
     // A transient external-API failure must NOT abort a legit trade.
     expect(result.success).toBe(true);
-    expect(JSON.parse(result.output).dryRun).toBe(true);
     expect(mockGetRoute).toHaveBeenCalledTimes(1);
 
     // ONE bounded structural warn — reason class only, never raw provider/HTTP text.
@@ -261,7 +263,7 @@ describe("executeKyberSwap inline safety gate (FIX 1, broadcast path)", () => {
       return { isHoneypot: false, isFOT: false, tax: 0 };
     });
 
-    const result = await sellDryRun();
+    const result = await executeCall();
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/honeypot/i);
   });

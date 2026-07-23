@@ -24,6 +24,21 @@ export function nullableJsonb(value: unknown | null): string | null {
   return value === null ? null : jsonb(value);
 }
 
+/**
+ * Measure the serialized JSONB size of a value in bytes. Lives here — not in
+ * a repo — because JSONB serialization is centralized in db/params (pinned by
+ * src/__tests__/vex-agent/db/jsonb-boundary.test.ts); repos needing a size
+ * cap (e.g. the sanitized intent-params echo) call this instead of
+ * JSON.stringify-ing themselves.
+ */
+export function jsonbByteLength(value: unknown): number {
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) {
+    throw new Error("jsonbByteLength: value is not JSON serializable");
+  }
+  return Buffer.byteLength(encoded, "utf8");
+}
+
 export function jsonbPlaceholder(index: number): string {
   if (!Number.isInteger(index) || index <= 0) {
     throw new Error(`jsonbPlaceholder: index must be a positive integer, got ${index}`);

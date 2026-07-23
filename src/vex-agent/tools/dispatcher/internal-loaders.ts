@@ -9,7 +9,7 @@
 // asserts every ToolDef with `kind: "internal"` has a loader entry — EXCEPT
 // the direct-dispatch tools that `routeToolCall` handles via a dedicated
 // branch above: the meta-tools `discover_tools` / `execute_tool` and the
-// MUTATING protocol-aliases (`MUTATING_PROTOCOL_ALIAS_ROUTERS`, e.g. `swap`).
+// MUTATING protocol-aliases (`MUTATING_PROTOCOL_ALIAS_ROUTERS`, e.g. `swap_execute`).
 
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "../internal/types.js";
@@ -28,8 +28,8 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Twitter/X account research
   twitter_account: async () => (await import("../internal/twitter-account.js")).handleTwitterAccount,
 
-  // Portfolio
-  portfolio: async () => (await import("../internal/portfolio-inspect.js")).handlePortfolio,
+  // Agent Scan (renamed from `portfolio`, Agent Scan plan v3 §1.9)
+  agent_scan: async () => (await import("../internal/portfolio-inspect.js")).handleAgentScan,
 
   // Khalani direct read aliases
   khalani_chains_list: async () => (await import("../internal/khalani.js")).handleKhalaniChainsList,
@@ -39,12 +39,13 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
 
   // Action-named read-only aliases (Stage 8a) — quote/preview/status routers
   swap_quote: async () => (await import("../internal/action-aliases.js")).handleSwapQuote,
+  // Hidden Uniswap fallback quote (Agent Scan plan §11.2) — session-scoped
+  // reveal gate is enforced INSIDE the handler (registry/uniswap-reveal.js),
+  // not by tool-list visibility alone.
+  swap_quote_uniswap: async () => (await import("../internal/action-aliases.js")).handleSwapQuoteUniswap,
   token_check: async () => (await import("../internal/action-aliases.js")).handleTokenCheck,
   bridge_status: async () => (await import("../internal/action-aliases.js")).handleBridgeStatus,
   bridge_quote: async () => (await import("../internal/action-aliases.js")).handleBridgeQuote,
-
-  // Setup / Configuration
-  polymarket_setup: async () => (await import("../internal/polymarket-setup.js")).handlePolymarketSetup,
 
   // Mission
   mission_draft_update: async () => (await import("../internal/mission.js")).handleMissionDraftUpdate,

@@ -1,9 +1,9 @@
 /**
- * Prediction settlement sync — closes zombie prediction positions.
+ * Prediction settlement sync — closes zombie Jupiter prediction positions.
  *
- * Jupiter Prediction and Polymarket settle via on-chain keepers, bypassing
- * execute_tool. This module polls read APIs to detect settlements and creates
- * synthetic captures that flow through the standard pipeline.
+ * Jupiter Prediction settles via on-chain keepers, bypassing execute_tool.
+ * This module polls the read API to detect settlements and creates synthetic
+ * captures that flow through the standard pipeline.
  *
  * Algorithm: wallet-grouped. One API call per unique wallet, local matching.
  *
@@ -11,13 +11,9 @@
  *   position_lost              → status "closed", no outputValueUsd
  *   position_won + !claimed    → status "closed", payout in meta only
  *   position_won + claimed     → status "claimed", outputValueUsd = payoutAmountUsd
- *
- * Polymarket settlement semantics:
- *   in closedPositions         → status "closed", realizedPnl in meta
  */
 
 import { query } from "@vex-agent/db/client.js";
-import { parseInstrumentKey } from "./instrument-key.js";
 import { recordSyntheticCapture } from "./synthetic-capture.js";
 import logger from "@utils/logger.js";
 
@@ -63,11 +59,6 @@ export async function reconcilePredictionSettlements(): Promise<SettlementResult
     try {
       if (namespace === "solana") {
         const groupResult = await reconcileJupiterSettlements(walletAddress, groupPositions);
-        result.closed += groupResult.closed;
-        result.skipped += groupResult.skipped;
-        result.errors += groupResult.errors;
-      } else if (namespace === "polymarket") {
-        const groupResult = await reconcilePolymarketSettlements(walletAddress, groupPositions);
         result.closed += groupResult.closed;
         result.skipped += groupResult.skipped;
         result.errors += groupResult.errors;
@@ -196,93 +187,6 @@ async function reconcileJupiterSettlements(
       errors++;
       logger.warn("sync.settlement.jupiter_position_failed", {
         positionKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  return { closed, skipped, errors };
-}
-
-// ── Polymarket ─────────────────────────────────────────────────────
-
-async function reconcilePolymarketSettlements(
-  eoaWalletAddress: string,
-  positions: Record<string, unknown>[],
-): Promise<{ closed: number; skipped: number; errors: number }> {
-  let closed = 0, skipped = 0, errors = 0;
-
-  // Derive proxy wallet from EOA via relayer
-  let proxyWallet: string;
-  try {
-    const { getPolyRelayerClient } = await import("@tools/polymarket/relayer/client.js");
-    const payload = await getPolyRelayerClient().getRelayPayload(eoaWalletAddress, "SAFE");
-    proxyWallet = payload.address;
-    if (!proxyWallet) {
-      logger.warn("sync.settlement.polymarket_no_proxy", { eoaWalletAddress });
-      return { closed: 0, skipped: positions.length, errors: 0 };
-    }
-  } catch (err) {
-    logger.warn("sync.settlement.polymarket_proxy_failed", {
-      eoaWalletAddress,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { closed: 0, skipped: positions.length, errors: 0 };
-  }
-
-  // One API call per proxy wallet
-  const { getPolyDataClient } = await import("@tools/polymarket/data/client.js");
-  const closedPositions = await getPolyDataClient().getClosedPositions({ user: proxyWallet });
-
-  // Build lookup: conditionId:outcome → closedPosition (case-insensitive on outcome)
-  const closedByKey = new Map<string, typeof closedPositions[number]>();
-  for (const cp of closedPositions) {
-    if (cp.conditionId && cp.outcome) {
-      const key = `${cp.conditionId}:${cp.outcome.toUpperCase()}`;
-      closedByKey.set(key, cp);
-    }
-  }
-
-  for (const dbPos of positions) {
-    const instrumentKey = dbPos.instrument_key as string | null;
-    const positionKey = dbPos.position_key as string | null;
-    if (!instrumentKey || !positionKey) { skipped++; continue; }
-
-    const parsed = parseInstrumentKey(instrumentKey);
-    if (parsed.kind !== "prediction" || !parsed.marketId || !parsed.side) { skipped++; continue; }
-
-    // Match: polymarket:{conditionId}:{outcome} → conditionId:OUTCOME (normalized)
-    const lookupKey = `${parsed.marketId}:${parsed.side.toUpperCase()}`;
-    const closedPos = closedByKey.get(lookupKey);
-    if (!closedPos) { skipped++; continue; }
-
-    try {
-      await recordSyntheticCapture({
-        toolId: "settlement_sync.polymarket",
-        namespace: "polymarket",
-        tradeCapture: {
-          type: "prediction",
-          chain: "polygon",
-          status: "closed",
-          walletAddress: eoaWalletAddress,
-          positionKey,
-          instrumentKey,
-          valuationSource: "none",
-          settlementAssetKey: "USDC",
-          meta: {
-            source: "settlement_sync",
-            realizedPnl: closedPos.realizedPnl,
-            avgPrice: closedPos.avgPrice,
-            settledAt: closedPos.timestamp,
-          },
-        },
-        source: "settlement_sync",
-      });
-      closed++;
-    } catch (err) {
-      errors++;
-      logger.warn("sync.settlement.polymarket_position_failed", {
-        positionKey, instrumentKey,
         error: err instanceof Error ? err.message : String(err),
       });
     }

@@ -4,13 +4,20 @@
  * This module is the INPUT STREAM for `e2e-memory-correctness.int.test.ts` (S4):
  * the 90-simulated-day journal of ONE fictional autonomous crypto-trading agent,
  * authored to be fed ONE ITEM AT A TIME through the REAL Vex memory pipeline
- * (handleLongMemorySuggest → live DeepSeek judge → consolidation/graph/decay/
- * reconcile → Gemma retrieval). It carries WHAT THE AGENT DID AND WROTE plus the
+ * (handleLongMemorySuggest → live DeepSeek judge → consolidation/graph/decay →
+ * Gemma retrieval). It carries WHAT THE AGENT DID AND WROTE plus the
  * structural INTENT metadata (which items relate how) so the SEPARATE,
  * independently-authored oracle (`_oracle.ts`) can predict correct behavior.
  *
  * THIS FILE NEVER ENCODES EXPECTED OUTCOMES. The `intent` block is structural
  * ground truth (relationship class), NOT the predicted verdict/tier/decay number.
+ *
+ * RETIREMENT NOTE (Agent Scan W4, FIX2): outcome-driven reconciliation is
+ * removed, not replaced. The former K category (4 items, spot reconcile-flips)
+ * and the S7 PF03/PF04/LQ03/LQ04 perp/liq reconcile-flip mirrors are deleted
+ * from this corpus, along with their dedicated ledger instruments and closing
+ * TradeEvents — the pipeline this corpus now drives is pure consolidate/graph/
+ * decay/retrieval. See the memory README's lost-coverage note.
  *
  * ── NARRATIVE ARC (one agent, three regimes) ────────────────────────────────
  *   Days  0–30  BULL  — momentum trades on Solana memecoins (WIF, BONK, POPCAT)
@@ -18,14 +25,12 @@
  *   Days 31–60  RANGE — momentum stops paying; mean-reversion + Raydium/Kyber LP
  *                       positions; more caution; the bull "add to strength" thesis
  *                       starts failing and is SUPERSEDED.
- *   Days 61–89  BEAR  — risk-off; stop-discipline lessons; painful losses that
- *                       FLIP earlier winners (reconcile); bull-only lessons DECAY.
+ *   Days 61–89  BEAR  — risk-off; stop-discipline lessons; bull-only lessons DECAY.
  *
  * The arc is what ties the structural classes together: a v1→v2→v3 supersession
- * chain tracks one thesis decaying across regimes; reconcile-flips are winners
- * promoted in the bull that a bear closing trade turns into losses; regime-bound
- * decay items are bull-only heuristics that must fade once the bear snapshots
- * dominate the effective regime.
+ * chain tracks one thesis decaying across regimes; regime-bound decay items are
+ * bull-only heuristics that must fade once the bear snapshots dominate the
+ * effective regime.
  *
  * ── DATA-SHAPE FIDELITY (verified against the real system) ───────────────────
  *   - Every `suggest` payload is valid against `candidateSuggestInputSchema`
@@ -42,9 +47,9 @@
  *       'seedGemmaCandidate'      → reach the judge deterministically, not scored
  *                                   at the door.
  *       'seedPromotedLessonDirect'→ deterministic promoted end-state (supersession
- *                                   predecessors F, reconcile targets K, graph-
- *                                   cluster owners H) — oracle scores DOWNSTREAM.
- *   - Trade-anchored items (A/B/K) reference a `TradeEvent` by id; the oracle/
+ *                                   predecessors F, graph-cluster owners H) —
+ *                                   oracle scores DOWNSTREAM.
+ *   - Trade-anchored items (A/B) reference a `TradeEvent` by id; the oracle/
  *     runner resolves its SELL executionId at run time and anchors evidenceRefs
  *     on it FIRST (the resolver reads the first surviving anchor). Because the
  *     real executionId is only known after `seedFaithfulConfirmedSpotTrade`
@@ -59,13 +64,16 @@
  *   FINDING. Each P item's `intent.secretGateExpected` records which gate (if any)
  *   should fire, so the oracle can score "rejected at door" vs "LEAKS (F5)".
  *
- * ── COUNTS (sum to 130; asserted in `assertCorpusCounts` below) ───────────────
- *   RECONCILED MIX (authored): A12 B8 C6 D5 E6 F6 G6 H10 I5 J6 K4 L5 M3 N4 O3
- *     P5 Q2 R4 = 100 memories (the original arc).
- *   + S7 EXPANSION (+30, Solana perp-DEX + memecoin): PF4 LQ4 RG4 PB4 MV3 DP3
- *     XP3 SR3 XV2 = 30 memories → 130 total.
- *   + 42 TradeEvents (30 original + 8 perp/liq reconcile roundtrips/closes + 4
- *     recurrence anchors for the new cross-kind 'suggest' successors).
+ * ── COUNTS (sum to 122; asserted in `assertCorpusCounts` below) ───────────────
+ *   RECONCILED MIX (authored): A12 B8 C6 D5 E6 F6 G6 H10 I5 J6 L5 M3 N4 O3
+ *     P5 Q2 R4 = 96 memories (the original arc, K's 4 reconcile-flip items
+ *     RETIRED — Agent Scan W4 FIX2: outcome-driven reconciliation removed).
+ *   + S7 EXPANSION (+26, Solana perp-DEX + memecoin): PF2 LQ2 RG4 PB4 MV3 DP3
+ *     XP3 SR3 XV2 = 26 memories → 122 total (PF03/PF04/LQ03/LQ04 perp/liq
+ *     reconcile-flip mirrors RETIRED alongside K, same FIX2 change).
+ *   + 28 TradeEvents (the K/PF/LQ reconcile roundtrips + closing trades are
+ *     RETIRED; the surviving trades are the plain win/loss ledger + the
+ *     recurrence anchors for the cross-kind 'suggest' successors).
  *   + 12 RegimeEvents (10 original + 2 perp-vol bull reinforcement snapshots).
  *
  *   ⚠ SPEC DEFECT — OWNER DECISION NEEDED (do NOT trust silently):
@@ -123,41 +131,6 @@ export const INSTRUMENTS = {
   RAY: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
 } as const;
 
-/**
- * DEDICATED reconcile-only ledger instruments for the 4 K flips (S6/C2). The K
- * reconcile WAKE matches on `instrumentKey` against EVERY promoted candidate
- * carrying that key (`findPromotedWakeTargets`). If a K winner reused a real
- * token (WIF/BONK/POPCAT/JUP) and an A-item promoting that same token also
- * landed a promoted candidate, the wake would fan out and `processReconcileForEntry`
- * could claim a reconcile job for the WRONG entry (`wrong_target:*`). These keys
- * are used by NO other corpus item, so each K wake resolves to exactly its own
- * promoted candidate — deterministically, regardless of judge behavior. The K
- * MEMORY items keep their human-token entities/title (WIF/BONK/…) for the graph +
- * retrieval semantics; only the underlying LEDGER key is isolated here.
- */
-export const K_RECONCILE_INSTRUMENTS = {
-  K1: "K1FLiPwifXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  K2: "K2FLiPbonkXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  K3: "K3FLiPpopcatXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  K4: "K4FLiPjupXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-} as const;
-
-/**
- * DEDICATED reconcile-only ledger instruments for the S7 perp/liq flips
- * (PF03/PF04 funding-driven realized losses, LQ03/LQ04 liquidation-driven losses).
- * Same isolation contract as `K_RECONCILE_INSTRUMENTS`: each key is used by NO
- * other corpus item, so its closing-trade wake resolves to exactly its own promoted
- * candidate — the funding/liq flip is deterministic regardless of judge behavior.
- * The MEMORY items keep their human perp-market entities (SOL-PERP/WIF-PERP/…) for
- * graph + retrieval; only the underlying isolated LEDGER key lives here.
- */
-export const PERP_RECONCILE_INSTRUMENTS = {
-  PF3: "PF3FundSolPerpXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  PF4: "PF4FundWifPerpXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  LQ3: "LQ3LiqSolPerpXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  LQ4: "LQ4LiqJupPerpXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-} as const;
-
 /** A fictional scam look-alike mint (homoglyph display name, see Q / D items). */
 export const SCAM_USDCOIN_MINT = "FakeUSDCo1nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" as const;
 
@@ -167,16 +140,20 @@ export const AGENT_WALLET = "AgentVexWa11et1111111111111111111111111111111" as c
 // ── Public types (typed, pure, explicit — no `as any`) ───────────
 
 /**
- * The taxonomy categories. A..R are the original 100-item arc (sum 100); the
- * S7 expansion adds nine Solana-perp/memecoin categories (sum 30) → 130 total:
+ * The taxonomy categories. A..R are the original arc; the S7 expansion adds
+ * nine Solana-perp/memecoin categories:
  *   PF perp funding-rate · LQ liquidation discipline · RG memecoin rug/honeypot ·
  *   PB perp basis/leverage-regime · MV LP/MEV · DP stablecoin depeg ·
  *   XP door-class adversarial perp · SR slow-recurrence perp rules ·
  *   XV cross-venue (spot→perp) supersession.
+ *
+ * RETIREMENT (Agent Scan W4, FIX2): the `K` category (RECONCILE-FLIP, 4 items)
+ * is REMOVED — outcome-driven reconciliation no longer exists. PF and LQ keep
+ * their non-reconcile members (PF01/PF02, LQ01/LQ02) at reduced counts.
  */
 export type CorpusCategory =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I"
-  | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R"
+  | "J" | "L" | "M" | "N" | "O" | "P" | "Q" | "R"
   | "PF" | "LQ" | "RG" | "PB" | "MV" | "DP" | "XP" | "SR" | "XV";
 
 /** Which real door an item enters through (encodes the DOOR-ROUTING RULE). */
@@ -241,9 +218,7 @@ export interface CorpusIntent {
   readonly nearDupOfItemId?: string;
   /** Recurrence sibling (B/E): the OTHER observation that satisfies recurrence≥2. */
   readonly recurrenceSiblingId?: string;
-  /** Reconcile-flip (K): the CLOSING trade (a TradeEvent.id) that flips this win. */
-  readonly reconcileClosesTradeId?: string;
-  /** Trade anchor (A/B/K): the TradeEvent.id whose execution anchors evidence. */
+  /** Trade anchor (A/B): the TradeEvent.id whose execution anchors evidence. */
   readonly anchorTradeId?: string;
   /** Which side of the anchor trade to bind evidence to FIRST. */
   readonly anchorOn?: AnchorOn;
@@ -279,18 +254,21 @@ export interface TradeEvent {
   readonly simDay: number;
   readonly instrumentKey: string;
   readonly walletAddress: string;
-  /** win = sell>buy value; loss = sell<buy value; closing = the K flip trade. */
-  readonly kind: "win" | "loss" | "closing";
-  /** Raw integer string of base-asset units bought (omitted on a closing trade). */
+  /**
+   * win = sell>buy value; loss = sell<buy value. RETIREMENT (Agent Scan W4,
+   * FIX2): the `"closing"` kind (the K reconcile-flip's wake-trigger trade)
+   * is REMOVED along with outcome-driven reconciliation — every surviving
+   * trade is a plain win/loss ledger fact.
+   */
+  readonly kind: "win" | "loss";
+  /** Raw integer string of base-asset units bought. */
   readonly buyQtyRaw?: string;
-  /** Decimal string USD paid (cost basis; omitted on a closing trade). */
+  /** Decimal string USD paid (cost basis). */
   readonly buyValueUsd?: string;
   /** Raw integer string of base-asset units sold. */
   readonly sellQtyRaw: string;
   /** Decimal string USD proceeds → realized_pnl_usd. */
   readonly sellValueUsd: string;
-  /** For a closing trade: the original winning TradeEvent.id it flips. */
-  readonly closesTradeId?: string;
 }
 
 /** One regime snapshot (params consumed by insertRegimeSnapshot + backdate). */
@@ -331,18 +309,6 @@ const TRADES: readonly TradeEvent[] = [
   { id: "T-SOL-02", simDay: 19, instrumentKey: INSTRUMENTS.SOL, walletAddress: AGENT_WALLET, kind: "win", buyQtyRaw: "800000000", buyValueUsd: "130.00", sellQtyRaw: "800000000", sellValueUsd: "171.00" },
   { id: "T-POPCAT-02", simDay: 22, instrumentKey: INSTRUMENTS.POPCAT, walletAddress: AGENT_WALLET, kind: "win", buyQtyRaw: "2500000000", buyValueUsd: "65.00", sellQtyRaw: "2500000000", sellValueUsd: "104.00" },
   { id: "T-JUP-02", simDay: 25, instrumentKey: INSTRUMENTS.JUP, walletAddress: AGENT_WALLET, kind: "win", buyQtyRaw: "3500000000", buyValueUsd: "100.00", sellQtyRaw: "3500000000", sellValueUsd: "139.00" },
-  // ── The 4 K reconcile roundtrips. Mirror reconcile-s7.int.test.ts EXACTLY: ──
-  //    each roundtrip is seeded as a LEDGER LOSS (sellValueUsd < buyValueUsd) on a
-  //    DEDICATED reconcile-only instrument, so resolveOutcome on the candidate's
-  //    SELL anchor resolves NEGATIVE. The lesson nonetheless stores a POSITIVE
-  //    baseline outcome at promote (the recorded "win" the agent believed it had —
-  //    seeded by the runner's linkPromotedCandidateForReconcile). The later closing
-  //    trade is ONLY the wake trigger; the flip = stored-positive-belief vs
-  //    ledger-resolves-negative. `kind:"loss"` reflects the true ledger sign.
-  { id: "T-WIF-K1", simDay: 14, instrumentKey: K_RECONCILE_INSTRUMENTS.K1, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "2000000000", buyValueUsd: "85.00", sellQtyRaw: "2000000000", sellValueUsd: "57.00" },
-  { id: "T-BONK-K2", simDay: 20, instrumentKey: K_RECONCILE_INSTRUMENTS.K2, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "7000000000", buyValueUsd: "95.00", sellQtyRaw: "7000000000", sellValueUsd: "62.00" },
-  { id: "T-POPCAT-K3", simDay: 24, instrumentKey: K_RECONCILE_INSTRUMENTS.K3, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "3000000000", buyValueUsd: "78.00", sellQtyRaw: "3000000000", sellValueUsd: "49.00" },
-  { id: "T-JUP-K4", simDay: 28, instrumentKey: K_RECONCILE_INSTRUMENTS.K4, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "4000000000", buyValueUsd: "110.00", sellQtyRaw: "4000000000", sellValueUsd: "71.00" },
 
   // ── RANGE: mixed (days 33–58) the B risk_rules anchor on ──
   { id: "T-RAY-01", simDay: 34, instrumentKey: INSTRUMENTS.RAY, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "1000000000", buyValueUsd: "90.00", sellQtyRaw: "1000000000", sellValueUsd: "61.00" },
@@ -360,16 +326,6 @@ const TRADES: readonly TradeEvent[] = [
   { id: "T-RAY-03", simDay: 76, instrumentKey: INSTRUMENTS.RAY, walletAddress: AGENT_WALLET, kind: "win", buyQtyRaw: "850000000", buyValueUsd: "58.00", sellQtyRaw: "850000000", sellValueUsd: "67.00" },
   { id: "T-JUP-04", simDay: 82, instrumentKey: INSTRUMENTS.JUP, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "2800000000", buyValueUsd: "88.00", sellQtyRaw: "2800000000", sellValueUsd: "59.00" },
 
-  // ── K CLOSING TRADES (the WAKE trigger): a later SELL carrying the SAME
-  //    dedicated reconcile instrumentKey → fires enqueueLedgerWake. The closing
-  //    trade's proceeds do NOT drive the flip (the candidate's already-LOSS SELL
-  //    anchor is what resolves negative vs the stored positive baseline); the
-  //    closing sell only needs to carry the matching key to wake the lesson.
-  { id: "T-WIF-K1-CLOSE", simDay: 64, instrumentKey: K_RECONCILE_INSTRUMENTS.K1, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "2000000000", sellValueUsd: "28.00", closesTradeId: "T-WIF-K1" },
-  { id: "T-BONK-K2-CLOSE", simDay: 70, instrumentKey: K_RECONCILE_INSTRUMENTS.K2, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "7000000000", sellValueUsd: "33.00", closesTradeId: "T-BONK-K2" },
-  { id: "T-POPCAT-K3-CLOSE", simDay: 78, instrumentKey: K_RECONCILE_INSTRUMENTS.K3, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "3000000000", sellValueUsd: "31.00", closesTradeId: "T-POPCAT-K3" },
-  { id: "T-JUP-K4-CLOSE", simDay: 84, instrumentKey: K_RECONCILE_INSTRUMENTS.K4, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "4000000000", sellValueUsd: "44.00", closesTradeId: "T-JUP-K4" },
-
   // ── F03 / F06 RECURRENCE ANCHORS (S6/C1, faithful route). The chain successors
   //    F03 and F06 are GENERALIZATION kinds (strategy_lesson) → D7 retains them at
   //    recurrence < 2. To clear D7 FAITHFULLY (the realistic "agent observed the
@@ -380,32 +336,8 @@ const TRADES: readonly TradeEvent[] = [
   //    sign of these trades is irrelevant to recurrence (it only affects the
   //    outcome ceiling); they are seeded as small bear losses for narrative
   //    fidelity (F03 "reduce into rallies", F06 "execution certainty in a bear").
-  //    Dedicated instruments so they never collide with a K reconcile wake.
   { id: "T-F03-REC", simDay: 77, instrumentKey: INSTRUMENTS.SOL, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "500000000", buyValueUsd: "60.00", sellQtyRaw: "500000000", sellValueUsd: "48.00" },
   { id: "T-F06-REC", simDay: 79, instrumentKey: INSTRUMENTS.RAY, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "400000000", buyValueUsd: "50.00", sellQtyRaw: "400000000", sellValueUsd: "39.00" },
-
-  // ── S7 EXPANSION: PERP/LIQ RECONCILE ROUNDTRIPS (4). Identical mechanics to the
-  //    four K roundtrips above: each is a LEDGER LOSS (sellValueUsd < buyValueUsd)
-  //    on a DEDICATED PERP_RECONCILE_INSTRUMENTS key, so resolveOutcome on the
-  //    candidate's SELL anchor resolves NEGATIVE. The lesson stores a POSITIVE
-  //    baseline (the perp leg the agent BELIEVED was a win) via the runner's
-  //    linkPromotedCandidateForReconcile; the later closing trade carries the same
-  //    isolated key and is ONLY the wake trigger. `kind:"loss"` = the true ledger
-  //    sign (funding bleed / liquidation realized the loss). PF03/PF04 = funding-
-  //    driven; LQ03/LQ04 = liquidation-driven. ──
-  { id: "T-PF3-FUND", simDay: 31, instrumentKey: PERP_RECONCILE_INSTRUMENTS.PF3, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "1000000000", buyValueUsd: "120.00", sellQtyRaw: "1000000000", sellValueUsd: "83.00" },
-  { id: "T-PF4-FUND", simDay: 36, instrumentKey: PERP_RECONCILE_INSTRUMENTS.PF4, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "1500000000", buyValueUsd: "95.00", sellQtyRaw: "1500000000", sellValueUsd: "64.00" },
-  { id: "T-LQ3-LIQ", simDay: 66, instrumentKey: PERP_RECONCILE_INSTRUMENTS.LQ3, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "800000000", buyValueUsd: "140.00", sellQtyRaw: "800000000", sellValueUsd: "61.00" },
-  { id: "T-LQ4-LIQ", simDay: 73, instrumentKey: PERP_RECONCILE_INSTRUMENTS.LQ4, walletAddress: AGENT_WALLET, kind: "loss", buyQtyRaw: "1200000000", buyValueUsd: "100.00", sellQtyRaw: "1200000000", sellValueUsd: "52.00" },
-
-  // ── S7 EXPANSION: the 4 perp/liq CLOSING TRADES (the WAKE trigger). A later SELL
-  //    carrying the SAME dedicated reconcile key → enqueueLedgerWake. Proceeds do
-  //    NOT drive the flip (the candidate's already-LOSS SELL anchor resolves
-  //    negative vs the stored positive baseline); the close only carries the key. ──
-  { id: "T-PF3-FUND-CLOSE", simDay: 70, instrumentKey: PERP_RECONCILE_INSTRUMENTS.PF3, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "1000000000", sellValueUsd: "40.00", closesTradeId: "T-PF3-FUND" },
-  { id: "T-PF4-FUND-CLOSE", simDay: 72, instrumentKey: PERP_RECONCILE_INSTRUMENTS.PF4, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "1500000000", sellValueUsd: "30.00", closesTradeId: "T-PF4-FUND" },
-  { id: "T-LQ3-LIQ-CLOSE", simDay: 80, instrumentKey: PERP_RECONCILE_INSTRUMENTS.LQ3, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "800000000", sellValueUsd: "25.00", closesTradeId: "T-LQ3-LIQ" },
-  { id: "T-LQ4-LIQ-CLOSE", simDay: 85, instrumentKey: PERP_RECONCILE_INSTRUMENTS.LQ4, walletAddress: AGENT_WALLET, kind: "closing", sellQtyRaw: "1200000000", sellValueUsd: "33.00", closesTradeId: "T-LQ4-LIQ" },
 
   // ── S7 EXPANSION: recurrence anchors for the cross-kind 'suggest' successors that
   //    must clear D7 (premature-generalization) to ESCALATE to the judge. Same
@@ -1273,63 +1205,6 @@ const MEMORIES: readonly MemoryItem[] = [
   },
 
   // ──────────────────────────────────────────────────────────────
-  // K — RECONCILE-FLIP (4). Mirrors reconcile-s7.int.test.ts EXACTLY. Each is a
-  //     trade_lesson the agent BELIEVED was a win and promoted with a STORED
-  //     POSITIVE outcome — but the underlying ledger roundtrip is actually a LOSS
-  //     (sellValueUsd < buyValueUsd on a dedicated reconcile instrument). The
-  //     lesson is promoted via 'seedPromotedLessonDirect' (deterministic active
-  //     entry); the runner's linkPromotedCandidateForReconcile anchors the SELL
-  //     execution FIRST and stores the positive baseline outcome (version 0). The
-  //     LATER closing trade carries the SAME dedicated instrumentKey and ONLY acts
-  //     as the WAKE trigger: on the wake, resolveOutcome re-resolves the SELL
-  //     anchor to NEGATIVE (the real ledger loss) → flips the stored positive
-  //     belief → reconcile. The reconcile (not the seeded promote) is what the
-  //     oracle scores. anchorTradeId = the loss roundtrip; reconcileClosesTradeId
-  //     = the waking 'closing' TradeEvent. The dedicated instrument prevents any
-  //     same-token wake fan-out with an A-item promoting the same human token.
-  // ──────────────────────────────────────────────────────────────
-  {
-    id: "K01", simDay: 15, category: "K", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "Holding WIF for a second leg was the right call",
-      summary:
-        "Holding WIF for a second momentum leg looked correct when it closed a realized gain; promoted as a positive lesson on that win.",
-      entities: ["WIF", "Solana", "momentum"], tags: ["trade-lesson", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-WIF-K1", anchorOn: "sell", reconcileClosesTradeId: "T-WIF-K1-CLOSE", graphClusterId: "WIF", note: "Stored-positive belief + ledger roundtrip resolves negative; T-WIF-K1-CLOSE wakes reconcile → flip." },
-  },
-  {
-    id: "K02", simDay: 21, category: "K", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "Sizing up BONK on continuation was validated by the win",
-      summary:
-        "Sizing up BONK on a continuation setup was validated when it realized a gain; promoted as a positive sizing lesson on that win.",
-      entities: ["BONK", "Solana"], tags: ["trade-lesson", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-BONK-K2", anchorOn: "sell", reconcileClosesTradeId: "T-BONK-K2-CLOSE", graphClusterId: "BONK", note: "Stored-positive belief + ledger resolves negative; T-BONK-K2-CLOSE wakes reconcile → flip." },
-  },
-  {
-    id: "K03", simDay: 25, category: "K", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "Letting the POPCAT runner ride paid off",
-      summary:
-        "Letting a POPCAT runner ride after scaling out looked right when it closed a realized gain; promoted as a positive trade-management lesson.",
-      entities: ["POPCAT", "Solana"], tags: ["trade-lesson", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-POPCAT-K3", anchorOn: "sell", reconcileClosesTradeId: "T-POPCAT-K3-CLOSE", graphClusterId: "POPCAT", note: "Stored-positive belief + ledger resolves negative; T-POPCAT-K3-CLOSE wakes reconcile → flip." },
-  },
-  {
-    id: "K04", simDay: 29, category: "K", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "Rotating into JUP strength was the right rotation",
-      summary:
-        "Rotating into JUP while it led looked correct when it realized a gain; promoted as a positive rotation lesson on that win.",
-      entities: ["JUP", "Jupiter", "rotation"], tags: ["trade-lesson", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-JUP-K4", anchorOn: "sell", reconcileClosesTradeId: "T-JUP-K4-CLOSE", graphClusterId: "JUP", note: "Stored-positive belief + ledger resolves negative; T-JUP-K4-CLOSE wakes reconcile → flip." },
-  },
-
-  // ──────────────────────────────────────────────────────────────
   // L — DECAY REGIME-BOUND (5). Bull-only heuristics that should FADE once the
   //     effective regime is bear (regime-modulated decay). entryVia
   //     'seedPromotedLessonDirect' with regimeTags ['bull'] (so the runner can
@@ -1661,17 +1536,20 @@ const MEMORIES: readonly MemoryItem[] = [
   },
 
   // ════════════════════════════════════════════════════════════════
-  //  S7 EXPANSION (30) — Solana perp-DEX + memecoin lessons. MOSTLY real
+  //  S7 EXPANSION (26) — Solana perp-DEX + memecoin lessons. MOSTLY real
   //  'suggest' traffic (18 suggest + 1 seedGemmaCandidate reach the live judge);
-  //  11 'seedPromotedLessonDirect' ONLY where a precondition needs pre-existing
-  //  state (reconcile baselines PF/LQ, supersede predecessors LQ/DP/XV, the PB
-  //  conflict baseline + PB/DP regime/time decay owners, the RG graph owner).
+  //  7 'seedPromotedLessonDirect' ONLY where a precondition needs pre-existing
+  //  state (supersede predecessors LQ/DP/XV, the PB conflict baseline + PB/DP
+  //  regime/time decay owners, the RG graph owner). RETIREMENT (Agent Scan W4,
+  //  FIX2): this used to be 30/11 with 4 additional seedPromotedLessonDirect
+  //  reconcile baselines (PF03/PF04/LQ03/LQ04) — removed with reconciliation.
   // ════════════════════════════════════════════════════════════════
 
   // ──────────────────────────────────────────────────────────────
-  // PF — PERP FUNDING-RATE lessons (4). PF01/PF02 'suggest' (promote scored);
-  //     PF03/PF04 are reconcile-flips (funding-driven realized loss) seeded as the
-  //     believed-positive baseline + a closing wake → flip+quench (mirror K).
+  // PF — PERP FUNDING-RATE lessons (2). PF01/PF02 'suggest' (promote scored).
+  //     RETIREMENT (Agent Scan W4, FIX2): PF03/PF04 were reconcile-flips
+  //     (funding-driven realized loss) seeded as a believed-positive baseline +
+  //     closing wake; REMOVED along with outcome-driven reconciliation.
   // ──────────────────────────────────────────────────────────────
   {
     id: "PF01", simDay: 30, category: "PF", kind: "strategy_lesson", entryVia: "suggest",
@@ -1695,31 +1573,13 @@ const MEMORIES: readonly MemoryItem[] = [
     },
     intent: { graphClusterId: "DRIFT-PERP", note: "Funding-flip entry-timing lesson; perp cluster member." },
   },
-  {
-    id: "PF03", simDay: 31, category: "PF", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "Holding the SOL-PERP long through positive funding looked like a winner",
-      summary:
-        "A SOL-PERP long held on Drift through a positive-funding stretch was promoted as a winning carry-plus-direction trade; the believed realized outcome was positive.",
-      entities: ["Drift", "SOL-PERP", "funding-rate"], tags: ["perp", "funding", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-PF3-FUND", anchorOn: "sell", reconcileClosesTradeId: "T-PF3-FUND-CLOSE", graphClusterId: "DRIFT-PERP", note: "Stored-positive belief; ledger roundtrip resolves negative (funding bleed); T-PF3-FUND-CLOSE wakes reconcile → flip+quench." },
-  },
-  {
-    id: "PF04", simDay: 36, category: "PF", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "The WIF-PERP funding carry trade was booked as a win",
-      summary:
-        "A WIF-PERP position run for funding carry was promoted as a positive carry trade when it appeared to close green; the believed realized outcome was positive.",
-      entities: ["WIF-PERP", "funding-rate", "carry"], tags: ["perp", "funding", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-PF4-FUND", anchorOn: "sell", reconcileClosesTradeId: "T-PF4-FUND-CLOSE", graphClusterId: "DRIFT-PERP", note: "Stored-positive belief; ledger resolves negative (funding flipped and bled); T-PF4-FUND-CLOSE wakes reconcile → flip+quench." },
-  },
 
   // ──────────────────────────────────────────────────────────────
-  // LQ — LIQUIDATION DISCIPLINE (4). LQ01 seeded predecessor (early margin
-  //     thesis) → LQ02 'suggest' supersedes it (post-mortem refinement). LQ03/LQ04
-  //     reconcile-flips (liquidation realized the loss) → flip+invalidate.
+  // LQ — LIQUIDATION DISCIPLINE (2). LQ01 seeded predecessor (early margin
+  //     thesis) → LQ02 'suggest' supersedes it (post-mortem refinement).
+  //     RETIREMENT (Agent Scan W4, FIX2): LQ03/LQ04 were reconcile-flips
+  //     (liquidation realized the loss); REMOVED along with outcome-driven
+  //     reconciliation.
   // ──────────────────────────────────────────────────────────────
   {
     id: "LQ01", simDay: 33, category: "LQ", kind: "strategy_lesson", entryVia: "seedPromotedLessonDirect",
@@ -1742,26 +1602,6 @@ const MEMORIES: readonly MemoryItem[] = [
       entities: ["Drift", "liquidation", "margin", "bear"], tags: ["perp", "liquidation", "v2"], importance: 9, confidence: 0.85,
     },
     intent: { supersedesItemId: "LQ01", anchorTradeId: "T-LQ02-REC", anchorOn: "sell", graphClusterId: "DRIFT-PERP", note: "Liq-buffer v2 supersedes LQ01; verdict scored. Anchored on T-LQ02-REC (sell+buy = 2 distinct executions) so recurrence ≥ 2 clears D7 and the candidate ESCALATES to the judge." },
-  },
-  {
-    id: "LQ03", simDay: 66, category: "LQ", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "The leveraged SOL-PERP long was booked as a win before the liquidation",
-      summary:
-        "A leveraged SOL-PERP long was promoted as a winning trade on an intraday mark before the position was force-liquidated; the believed realized outcome was positive.",
-      entities: ["SOL-PERP", "liquidation", "leverage"], tags: ["perp", "liquidation", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-LQ3-LIQ", anchorOn: "sell", reconcileClosesTradeId: "T-LQ3-LIQ-CLOSE", graphClusterId: "DRIFT-PERP", note: "Stored-positive belief; the liquidation roundtrip resolves negative; T-LQ3-LIQ-CLOSE wakes reconcile → flip+invalidate (premise was a liquidation loss, not a win)." },
-  },
-  {
-    id: "LQ04", simDay: 73, category: "LQ", kind: "trade_lesson", entryVia: "seedPromotedLessonDirect",
-    suggest: {
-      title: "The JUP-PERP momentum long was logged green before margin call",
-      summary:
-        "A JUP-PERP momentum long was promoted as a winner on a favorable mark before a margin call closed it at a loss; the believed realized outcome was positive.",
-      entities: ["JUP-PERP", "liquidation", "leverage"], tags: ["perp", "liquidation", "reconcile"], importance: 7, confidence: 0.8,
-    },
-    intent: { anchorTradeId: "T-LQ4-LIQ", anchorOn: "sell", reconcileClosesTradeId: "T-LQ4-LIQ-CLOSE", graphClusterId: "DRIFT-PERP", note: "Stored-positive belief; liquidation roundtrip resolves negative; T-LQ4-LIQ-CLOSE wakes reconcile → flip+invalidate." },
   },
 
   // ──────────────────────────────────────────────────────────────
@@ -2055,18 +1895,23 @@ export const WORLD_CORPUS: WorldCorpus = {
 // corpus can never silently feed the runner. Runs once at import.
 
 /**
- * Per-category counts this corpus actually authors (sum = 130). The original
- * 100-item arc (A..R) is the RECONCILED mix after the 5-item trim documented in
- * the header (A 14→12, D 8→5). The S7 expansion appends 30 Solana-perp/memecoin
- * items across nine new categories (PF/LQ/RG/PB/MV/DP/XP/SR/XV = 30). If the owner
- * ratifies a different reconciliation, update these literals AND the items together.
+ * Per-category counts this corpus actually authors (sum = 122). The original
+ * arc (A..R, excluding the retired K) is the RECONCILED mix after the 5-item
+ * trim documented in the header (A 14→12, D 8→5). The S7 expansion appends
+ * Solana-perp/memecoin items across nine categories. If the owner ratifies a
+ * different reconciliation, update these literals AND the items together.
+ *
+ * RETIREMENT (Agent Scan W4, FIX2): `K` (4 reconcile-flip items) is REMOVED
+ * entirely — outcome-driven reconciliation no longer exists. `PF`/`LQ` keep
+ * their non-reconcile members at reduced counts (4→2 each; PF03/PF04 and
+ * LQ03/LQ04 were the S7 reconcile-flip mirrors).
  */
 export const REQUIRED_CATEGORY_COUNTS: Readonly<Record<CorpusCategory, number>> = {
-  // Original 100-item arc.
+  // Original arc (K retired).
   A: 12, B: 8, C: 6, D: 5, E: 6, F: 6, G: 6, H: 10, I: 5,
-  J: 6, K: 4, L: 5, M: 3, N: 4, O: 3, P: 5, Q: 2, R: 4,
-  // S7 expansion (+30): Solana perp-DEX + memecoin.
-  PF: 4, LQ: 4, RG: 4, PB: 4, MV: 3, DP: 3, XP: 3, SR: 3, XV: 2,
+  J: 6, L: 5, M: 3, N: 4, O: 3, P: 5, Q: 2, R: 4,
+  // S7 expansion: Solana perp-DEX + memecoin (PF/LQ reduced from 4 to 2).
+  PF: 2, LQ: 2, RG: 4, PB: 4, MV: 3, DP: 3, XP: 3, SR: 3, XV: 2,
 };
 
 function assertCorpusCounts(): void {
@@ -2093,8 +1938,8 @@ function assertCorpusCounts(): void {
       throw new Error(`world-corpus: ${m.id} kind '${m.kind}' is not valid snake_case ASCII ≤64`);
     }
   }
-  if (MEMORIES.length !== 130) {
-    throw new Error(`world-corpus: expected 130 memories, got ${MEMORIES.length}`);
+  if (MEMORIES.length !== 122) {
+    throw new Error(`world-corpus: expected 122 memories, got ${MEMORIES.length}`);
   }
   for (const [cat, required] of Object.entries(REQUIRED_CATEGORY_COUNTS) as [CorpusCategory, number][]) {
     const got = counts.get(cat) ?? 0;
@@ -2119,18 +1964,6 @@ function assertCorpusCounts(): void {
     }
     if (m.intent.anchorTradeId !== undefined && !tradeIds.has(m.intent.anchorTradeId)) {
       throw new Error(`world-corpus: ${m.id}.anchorTradeId → unknown trade ${m.intent.anchorTradeId}`);
-    }
-    if (m.intent.reconcileClosesTradeId !== undefined && !tradeIds.has(m.intent.reconcileClosesTradeId)) {
-      throw new Error(`world-corpus: ${m.id}.reconcileClosesTradeId → unknown trade ${m.intent.reconcileClosesTradeId}`);
-    }
-  }
-
-  // Trade integrity: closing trades must reference a real, non-closing trade.
-  for (const t of TRADES) {
-    if (t.kind === "closing") {
-      if (t.closesTradeId === undefined || !tradeIds.has(t.closesTradeId)) {
-        throw new Error(`world-corpus: closing trade ${t.id} → unknown closesTradeId ${t.closesTradeId ?? "undefined"}`);
-      }
     }
   }
 }

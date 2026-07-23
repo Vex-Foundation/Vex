@@ -44,34 +44,6 @@ vi.mock("@vex-agent/db/repos/open-positions.js", () => ({
   closePosition: vi.fn().mockResolvedValue(true),
 }));
 
-const mockOpenLot = vi.fn().mockResolvedValue(1);
-const mockGetOpenLots = vi.fn().mockResolvedValue([]);
-const mockReduceLot = vi.fn().mockResolvedValue(undefined);
-vi.mock("@vex-agent/db/repos/pnl-lots.js", () => ({
-  openLot: (...args: unknown[]) => mockOpenLot(...args),
-  getOpenLots: (...args: unknown[]) => mockGetOpenLots(...args),
-  reduceLot: (...args: unknown[]) => mockReduceLot(...args),
-}));
-
-// DB client mock for transactional sell path
-const hardeningQueryResults: Record<string, unknown>[] = [];
-vi.mock("@vex-agent/db/client.js", () => ({
-  getPool: () => ({
-    connect: () => Promise.resolve({
-      query: async (sql: string) => {
-        if (typeof sql === "string" && sql.includes("SELECT * FROM proj_pnl_lots")) {
-          return { rows: hardeningQueryResults.splice(0) };
-        }
-        return { rows: [], rowCount: 1 };
-      },
-      release: vi.fn(),
-    }),
-  }),
-  query: vi.fn().mockResolvedValue([]),
-  queryOne: vi.fn().mockResolvedValue(null),
-  execute: vi.fn().mockResolvedValue(0),
-}));
-
 // ── Catalog mock — inject fake mutating handler ─────────────────
 
 const fakeHandler = vi.fn();
@@ -127,7 +99,6 @@ describe("pre-engine hardening — runtime gate", () => {
     // Projections: NOT touched (gate: result.success)
     expect(mockInsertActivity).not.toHaveBeenCalled();
     expect(mockUpsertPosition).not.toHaveBeenCalled();
-    expect(mockOpenLot).not.toHaveBeenCalled();
   });
 
   // ── Successful execution: audit yes, projections yes ──────────
@@ -256,16 +227,11 @@ describe("pre-engine hardening — runtime gate", () => {
     expect(mockInsertActivity).not.toHaveBeenCalled();
   });
 
-  // ── FIFO insufficient inventory ───────────────────────────────
+  // ── spot projection retired ────────────────────────────────────
 
-  describe("FIFO insufficient inventory", () => {
-    it("partial reduce when sell > open lots, no crash", async () => {
+  describe("spot projection retired", () => {
+    it("a spot sell is a no-op (PnL-lot projection removed; agent_activity is the trade-truth store)", async () => {
       const { projectPosition } = await import("../../../vex-agent/sync/position-projector.js");
-
-      hardeningQueryResults.push(
-        { id: 1, remaining_quantity_raw: "200", quantity_raw: "200", cost_basis_usd: null },
-        { id: 2, remaining_quantity_raw: "100", quantity_raw: "100", cost_basis_usd: null },
-      );
 
       await projectPosition({
         id: 1, namespace: "solana", activityType: "swap", productType: "spot",
@@ -276,9 +242,7 @@ describe("pre-engine hardening — runtime gate", () => {
         createdAt: new Date().toISOString(),
       } as any);
 
-      // Sell path is now transactional (inline SQL), no repo mock calls.
-      // Verify it completed without crash (the test subject is "no crash on shortfall").
-      // The transactional path handles reduce + match + shortfall inline.
+      expect(mockUpsertPosition).not.toHaveBeenCalled();
     });
   });
 

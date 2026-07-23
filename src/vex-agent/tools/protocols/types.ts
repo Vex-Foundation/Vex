@@ -1,7 +1,7 @@
 /**
  * Protocol tool types — manifest-driven discover+execute system.
  *
- * Each protocol (khalani, kyberswap, solana, polymarket) provides:
+ * Each protocol (khalani, kyberswap, solana, hyperliquid) provides:
  * 1. Manifests — declarative tool metadata (params, mutating, description)
  * 2. Handlers — async functions that call TS clients directly
  *
@@ -24,7 +24,6 @@ export type ProtocolNamespace =
   | "uniswap"
   | "relay"
   | "solana"
-  | "polymarket"
   | "dexscreener"
   | "virtuals"
   | "pendle"
@@ -160,6 +159,14 @@ export interface ProtocolDiscoveryRequest {
    * + Tool Map omission already in force at the same bands.
    */
   contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
+  /**
+   * Session id at dispatch time (FIX-SPINE round 1, finding 8/C3) — lets
+   * `discoverProtocolCapabilities` filter the canonical hidden Uniswap swap
+   * manifests out of the result set for a session that has not revealed
+   * them, so discovery never advertises a tool `executeProtocolTool` would
+   * then hard-reject. Omitted/undefined fails closed (hidden).
+   */
+  sessionId?: string;
 }
 
 export interface ProtocolDiscoveryItem {
@@ -254,15 +261,11 @@ export interface ProtocolExecuteRequest {
 }
 
 // ── Coverage matrix types ───────────────────────────────────────
-
-/** Business semantics of a mutation — how downstream treats the capture. */
-export type PortfolioRole =
-  | "pnl_spot"       // lot matching, realized PnL
-  | "pnl_perps"      // perps position lifecycle + PnL
-  | "pnl_prediction" // prediction position lifecycle + PnL
-  | "projection"     // orders, LP — lifecycle, no realized PnL
-  | "audit"          // balance/state impact — audit trail only
-  | "utility";       // no portfolio impact
+//
+// `CaptureKind` (the coarse capture-semantics classification — trade/
+// projection/audit/utility) lives in `mutation-matrix.ts`, the matrix's own
+// module, now that the PnL role split (pnl_spot/pnl_perps/pnl_prediction) and
+// the valuation tri-state are gone (Agent Scan plan §4.3/§11.4).
 
 /** Whether handler produces _tradeCapture today. */
 export type CaptureSupport = "full" | "none";

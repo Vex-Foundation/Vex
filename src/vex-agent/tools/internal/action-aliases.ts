@@ -1,26 +1,40 @@
 /**
- * Action-named READ-ONLY alias handlers (Stage 8a).
+ * Action-named READ-ONLY alias handlers (Stage 8a; Agent Scan plan §4.2/§11.2
+ * rewired the swap quotes).
  *
  * Each handler validates its (untrusted) args with Zod at the boundary,
  * translates them into the TARGET protocol tool's exact param names, and
  * dispatches via `executeProtocolTool`. Because every target is non-mutating,
- * no approval gate fires. `swap_quote` is a family ROUTER (EVM vs Solana); the
- * other three are pass-through / mode selectors.
+ * no approval gate fires. `swap_quote` / `swap_quote_uniswap` are each a
+ * family ROUTER (EVM vs Solana for `swap_quote`; EVM-only for the hidden
+ * Uniswap pair); the other three are pass-through / mode selectors.
  *
  * Param translation is the whole point — the alias presents ONE clean
  * LLM-facing shape and maps to whatever the underlying manifest calls things:
  *
- *   swap_quote (EVM)    { chain, tokenIn, tokenOut, amount, slippageBps? }
- *                       → kyberswap.swap.quote { chain, tokenIn, tokenOut, amountIn: amount, slippageBps? }
- *   swap_quote (Solana) → solana.swap.quote   { inputToken: tokenIn, outputToken: tokenOut, amount: Number(amount), slippageBps? }
+ *   swap_quote (EVM)    { chain, tokenIn, tokenOut, amountIn, slippageBps? }
+ *                       → kyberswap.swap.quote (SAME keys — KyberSwap ONLY, no venue fallback)
+ *   swap_quote (Solana) → solana.swap.quote   { inputToken: tokenIn, outputToken: tokenOut, amount: Number(amountIn), slippageBps? }
+ *   swap_quote_uniswap  → uniswap.swap.quote (SAME keys) — HIDDEN, dispatch-gated on
+ *                         `isUniswapPairRevealed(sessionId)` (plan §11.2)
  *   token_check         { chain, address }      → kyberswap.tokens.check (same keys)
  *   bridge_status (id)  { orderId }              → khalani.orders.get { orderId }
  *   bridge_status (list)→ khalani.orders.list (pass through list filters)
  *   bridge_quote        → khalani.quote.get (same keys)
  *
- * Units: kyber/jupiter swap `amount` is HUMAN decimal (e.g. "1.5"); khalani
- * bridge `amount` is SMALLEST units (wei/lamports). The alias schemas document
- * this and translation preserves it (no unit conversion happens here).
+ * Units: kyber/uniswap/jupiter swap `amountIn` is HUMAN decimal (e.g. "1.5");
+ * khalani bridge `amount` is SMALLEST units (wei/lamports). The alias schemas
+ * document this and translation preserves it (no unit conversion happens here).
+ *
+ * KyberSwap route-not-found reveal (plan §11.2): when `classifySwapFamily`
+ * determines an EVM chain has NO KyberSwap aggregator support at all
+ * (`family.venue === "uniswap"`), `swap_quote` reveals the hidden Uniswap pair
+ * for the session BEFORE failing — this is the "local chain-not-Kyber-
+ * supported, registry gate, pre-call" reveal-eligible case (the ONLY one this
+ * module owns). The other two eligible cases (Kyber codes 4008/4010/4011)
+ * fire from INSIDE the `kyberswap.swap.quote`/`kyberswap.swap.execute`
+ * handlers themselves (they hold the raw failure code + already know
+ * `context.sessionId`) — this module does not re-derive them.
  */
 
 import { z } from "zod";
@@ -31,10 +45,8 @@ import { fail } from "./types.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
-import {
-  isFallbackEligibleQuoteCategory,
-  resolveUniswapFallbackChainKey,
-} from "@tools/uniswap/venue-router.js";
+import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import logger from "@utils/logger.js";
 
 // ── Shared dispatch context projection ───────────────────────────────
@@ -54,19 +66,25 @@ function protocolContext(context: InternalToolContext): Parameters<typeof execut
   };
 }
 
-// ── swap_quote — EVM/Solana family router ────────────────────────────
+// ── swap_quote — EVM (KyberSwap ONLY)/Solana family router ───────────
 //
 // The family classifier (`classifySwapFamily`) is shared with the Stage 8b
-// MUTATING `swap` alias router (`tools/mutating-aliases.ts`) so the read-only
-// quote and the execute can never disagree on which family a chain maps to.
+// MUTATING `swap_execute` alias router (`tools/mutating-aliases.ts`) so the
+// read-only quote and the execute can never disagree on which family/venue a
+// chain maps to.
 
+// `.strict()` (FIX-SPINE round 1, finding 14/C4) — the removed legacy
+// `side`/`recipient`/`amount` fields are REJECTED with a clear message, never
+// silently stripped. Silently dropping `recipient` in particular would be a
+// transaction-safety-significant silent behavior change (the agent believes
+// it redirected output that in fact went to the sender).
 const SwapQuoteArgs = z.object({
   chain: z.string().min(1, { message: "chain is required" }),
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
-  amount: z.string().min(1, { message: "amount is required (human decimal string)" }),
+  amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
   slippageBps: z.number().int().nonnegative().optional(),
-});
+}).strict();
 
 type SwapQuoteArgs = z.infer<typeof SwapQuoteArgs>;
 
@@ -91,9 +109,9 @@ export async function handleSwapQuote(
   if (family.kind === "solana") {
     // Solana quote manifest types `amount` as a NUMBER (human decimal) — coerce
     // the unified string here so the protocol-runtime type check passes.
-    const amount = Number(a.amount);
+    const amount = Number(a.amountIn);
     if (!Number.isFinite(amount) || amount <= 0) {
-      return fail(`swap_quote: amount "${a.amount}" is not a positive number.`);
+      return fail(`swap_quote: amountIn "${a.amountIn}" is not a positive number.`);
     }
     const params: Record<string, unknown> = {
       inputToken: a.tokenIn,
@@ -104,10 +122,9 @@ export async function handleSwapQuote(
     return executeProtocolTool({ toolId: "solana.swap.quote", params }, protocolContext(context));
   }
 
-  // EVM → the VENUE ROUTER's primary venue (KyberSwap where supported, Uniswap on
-  // Robinhood Chain / as an all-EVM fallback). Both quote handlers resolve tokens
-  // strictly (address-only), so DEX symbol search is disabled to avoid
-  // wrong-contract matches (e.g. "USDC" → axlUSDC). Reject a bare symbol here.
+  // EVM → KyberSwap ONLY (plan §11.2 — the silent Uniswap fallback is removed).
+  // Both quote handlers resolve tokens strictly (address-only), so DEX symbol
+  // search is disabled to avoid wrong-contract matches (e.g. "USDC" → axlUSDC).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     return fail(
       "swap_quote: EVM tokens must be a contract address — resolve the symbol " +
@@ -116,56 +133,87 @@ export async function handleSwapQuote(
     );
   }
 
-  // amount → amountIn (both human decimal strings). Route quote to the SAME venue
-  // the `swap` execute alias uses (shared classifier), so the prequote gate's
-  // venue-bound match-hash collides between the quote and the execute.
-  const buildParams = (chain: string): Record<string, unknown> => ({
-    chain,
+  // `family.venue === "uniswap"` means the venue classifier found NO KyberSwap
+  // aggregator support for this chain at all (kyberAggregatorSlug undefined) —
+  // this is the "local chain-not-Kyber-supported, registry gate, pre-call"
+  // reveal-eligible case (plan §11.2). Reveal BEFORE failing so the very next
+  // turn can call swap_quote_uniswap.
+  if (family.venue === "uniswap") {
+    revealUniswapPair(context.sessionId);
+    logger.info("swap_quote.uniswap_reveal", { reason: "chain_unsupported", chain: a.chain });
+    return fail(
+      `swap_quote: KyberSwap does not support chain "${a.chain}". ` +
+        `swap_quote_uniswap is now available for this session as a fallback (Uniswap venue).`,
+    );
+  }
+
+  const params: Record<string, unknown> = {
+    chain: family.chain,
     tokenIn: a.tokenIn,
     tokenOut: a.tokenOut,
-    amountIn: a.amount,
+    amountIn: a.amountIn,
     ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
-  });
-
-  const primaryToolId = family.venue === "uniswap" ? "uniswap.swap.quote" : "kyberswap.swap.quote";
-  const primary = await executeProtocolTool(
-    { toolId: primaryToolId, params: buildParams(family.chain) },
-    protocolContext(context),
-  );
-
-  // Runtime Kyber→Uniswap QUOTE fallback (LOCKED Wave-2 #3). ONLY when KyberSwap
-  // was the primary venue AND its quote FAILED with a transport/API/route error
-  // AND a verified Uniswap deployment exists for the chain. A honeypot/token-
-  // safety verdict is surfaced on a SUCCESSFUL quote (never a throw), so it can
-  // never reach this branch — the fallback can never launder a safety block. The
-  // Uniswap quote records provider "uniswap", so the venue-bound prequote identity
-  // binds a later execute to Uniswap automatically (a KyberSwap execute would
-  // hash to a different identity and fail the gate). Policy (eligible categories +
-  // fallback availability) lives in the single venue-router module.
-  if (primary.success || family.venue !== "kyberswap") return primary;
-  if (!isFallbackEligibleQuoteCategory(runtimeFailureCategory(primary.output))) return primary;
-  const fallbackChain = resolveUniswapFallbackChainKey(a.chain);
-  if (fallbackChain === undefined) return primary;
-  logger.info("swap_quote.venue_fallback", {
-    fromVenue: "kyberswap",
-    toVenue: "uniswap",
-    chain: fallbackChain,
-  });
-  return executeProtocolTool(
-    { toolId: "uniswap.swap.quote", params: buildParams(fallbackChain) },
-    protocolContext(context),
-  );
+  };
+  return executeProtocolTool({ toolId: "kyberswap.swap.quote", params }, protocolContext(context));
 }
 
+// ── swap_quote_uniswap — HIDDEN EVM-only Uniswap fallback quote ──────
+
+const SwapQuoteUniswapArgs = z.object({
+  chain: z.string().min(1, { message: "chain is required" }),
+  tokenIn: z.string().min(1, { message: "tokenIn is required" }),
+  tokenOut: z.string().min(1, { message: "tokenOut is required" }),
+  amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
+  slippageBps: z.number().int().nonnegative().optional(),
+}).strict();
+
+type SwapQuoteUniswapArgs = z.infer<typeof SwapQuoteUniswapArgs>;
+
 /**
- * Extract the coarse runtime error category the protocol runtime embeds in a
- * THROWN handler failure's output (`"<toolId> failed (<category>): <message>"`;
- * see protocols/runtime/errors.ts). Returns "" when the output is not a
- * thrown-failure summary — e.g. a returned validation `fail(...)` carries no
- * category — so a non-transport failure is never treated as fallback-eligible.
+ * Dispatch-side gate (plan §11.2 hard rule): rejected with a clean ToolResult
+ * for a session that has no active reveal — independent of whatever the tool
+ * list showed the model (a direct dispatch attempt is rejected the same way).
  */
-function runtimeFailureCategory(output: string): string {
-  return /\bfailed \(([a-z_]+)\):/.exec(output)?.[1] ?? "";
+export async function handleSwapQuoteUniswap(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  if (!isUniswapPairRevealed(context.sessionId)) {
+    return fail(
+      "swap_quote_uniswap is not available yet for this session — it unlocks after an eligible "
+        + "KyberSwap route-not-found failure (try swap_quote first).",
+    );
+  }
+
+  const parsed = SwapQuoteUniswapArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`swap_quote_uniswap: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a: SwapQuoteUniswapArgs = parsed.data;
+
+  // Resolve DIRECTLY against the Uniswap deployment registry — NOT via
+  // `classifySwapFamily` (which prioritizes KyberSwap whenever it ALSO covers
+  // the chain; the whole point of this fallback is to reach Uniswap even on a
+  // chain Kyber supports, e.g. after a 4011 token-not-found reveal).
+  const deployment = resolveUniswapDeployment(a.chain);
+  if (!deployment) {
+    return fail(`swap_quote_uniswap: "${a.chain}" has no verified Uniswap deployment.`);
+  }
+  if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
+    return fail(
+      "swap_quote_uniswap: EVM tokens must be a contract address — resolve the symbol "
+        + "with token_find first, or pass native ETH/native.",
+    );
+  }
+
+  const params: Record<string, unknown> = {
+    chain: deployment.key,
+    tokenIn: a.tokenIn,
+    tokenOut: a.tokenOut,
+    amountIn: a.amountIn,
+    ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
+  };
+  return executeProtocolTool({ toolId: "uniswap.swap.quote", params }, protocolContext(context));
 }
 
 // ── token_check — EVM honeypot / fee-on-transfer ─────────────────────

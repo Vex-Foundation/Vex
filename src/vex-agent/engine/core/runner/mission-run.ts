@@ -37,7 +37,6 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
-import { captureMissionStart } from "../../mission/mission-results-capture.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import {
@@ -110,13 +109,6 @@ export async function runPreparedMissionStart(
 ): Promise<TurnResult> {
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
-    // Open the mission results ledger row (per-wallet #N + start bankroll
-    // snapshot). Fail-soft inside — never blocks the run.
-    await captureMissionStart({
-      missionId: prepared.missionId,
-      runId: prepared.runId,
-      sessionId: prepared.sessionId,
-    });
     await addMissionActivationMessage({
       sessionId: prepared.sessionId,
       missionId: prepared.missionId,

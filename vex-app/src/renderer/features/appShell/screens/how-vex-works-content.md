@@ -73,10 +73,10 @@ You can also create a session with no wallets attached — a pure research chat 
 Vex reaches real venues under their real names. Here is the map.
 
 ### ![Uniswap](/protocols/uniswap.png) Uniswap
-One of the oldest token-swap exchanges on Ethereum-style chains. Vex quotes and executes swaps directly on-chain (V2/V3) and uses it as the fallback swap route. Example: "Swap 0.1 ETH for USDC" — if the main route is unavailable, Uniswap catches it.
+One of the oldest token-swap exchanges on Ethereum-style chains. Vex quotes and executes swaps directly on-chain (V2/V3). It stays hidden until KyberSwap cannot route a swap (chain or token unsupported) — then Vex offers it to the agent as the backup venue, with its own fresh quote and its own approval. Example: "Swap 0.1 ETH for USDC" — if KyberSwap has no route, Uniswap catches it.
 
 ### ![KyberSwap](/protocols/kyberswap.svg) KyberSwap
-An aggregator that shops roughly 19 EVM chains for the best swap price. Vex's primary swap venue: quotes, execution, limit orders, liquidity-pool moves, and basic token-safety checks. Example: "Swap 250 USDC for ETH on Base" — Vex compares routes and takes the best one.
+An aggregator that shops roughly 19 EVM chains for the best swap price. Vex's primary swap venue: quotes, execution, and basic token-safety checks. Every attempt — pending, confirmed, or failed — is recorded in your activity with its transaction hash. Example: "Swap 250 USDC for ETH on Base" — Vex compares routes and takes the best one.
 
 ### ![Jupiter](/protocols/jupiter.jpg) Jupiter
 The main swap router on Solana. Vex swaps Solana tokens, looks up prices, searches tokens, earns yield through Jupiter Lend, and can browse Jupiter Predict prediction markets. Example: "Put half my SOL into USDC."
@@ -92,9 +92,6 @@ A market-data service — read-only, no funds move. Vex pulls pair and token ana
 
 ### ![Khalani](/protocols/khalani.svg) Khalani
 An intent bridge: you say what should move where, and Khalani works out the route across EVM chains and Solana. Example: "Bridge 500 USDC from Ethereum to Solana" — you never pick the route yourself.
-
-### ![Polymarket](/logo/polymarket.png) Polymarket
-A prediction market on Polygon where people trade on real-world outcomes. Vex browses markets and odds, places buy and sell orders on the order book, and tracks positions and rewards. It also has its own fiat on/off-ramp for USDC. Example: "What odds does Polymarket give the next rate cut? Buy $20 of Yes if it's under 60%."
 
 ### ![Virtuals](/logo/virtuals.svg) Virtuals
 A launchpad for AI-agent tokens. Vex uses it read-only, to discover new agent-token launches. Example: "Any interesting new agent tokens on Virtuals this week?"

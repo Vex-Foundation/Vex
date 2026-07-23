@@ -5,7 +5,6 @@ export type ProtocolNavigationGroupId =
   | "evm-trading"
   | "solana"
   | "perps"
-  | "prediction-markets"
   | "market-research";
 
 export interface ProtocolNavigationFacet {
@@ -40,6 +39,5 @@ export const PROTOCOL_NAVIGATION_GROUP_ORDER: readonly ProtocolNavigationGroupId
   "evm-trading",
   "solana",
   "perps",
-  "prediction-markets",
   "market-research",
 ] as const;

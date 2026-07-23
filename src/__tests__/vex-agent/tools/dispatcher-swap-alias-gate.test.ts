@@ -1,18 +1,25 @@
 /**
- * Stage 8b — `swap` alias × REAL Stage-7 prequote gate + approval gate ordering.
+ * Agent Scan plan v3 §11.2 — `swap_execute` alias × REAL Stage-7 prequote gate
+ * + approval gate ordering. Rewrite of the retired `swap` (buy/sell/amount)
+ * contract against the unified `{chain, tokenIn, tokenOut, amountIn,
+ * slippageBps?}` shape — the gate mechanics under test are unchanged by the
+ * rename (`EXECUTE_GATE_TOOLS["kyberswap.swap.execute"]` carries the SAME
+ * `{kind:"swap", family:"eip155", provider:"kyberswap"}` registration the old
+ * `kyberswap.swap.sell` row did).
  *
  * Uses the REAL `executeProtocolTool` and the REAL `evaluateSwapPrequoteGate`
  * (the gate is the safety chokepoint — mocking it would prove nothing). The
  * boundaries below are mocked: the prequote repo (no DB), the wallet resolver
  * (deterministic address), and the protocol catalog (manifest = the real
- * kyberswap.swap.sell shape; handler = a spy so we can assert it never runs
+ * kyberswap.swap.execute shape; handler = a spy so we can assert it never runs
  * before approval / gate pass).
  *
- * Proves the invariant Codex flagged: a `swap` with no fresh quote hits the
- * Stage-7 BLOCK BEFORE any approval is enqueued; a restricted swap with a fresh
- * pass/unknown prequote yields pendingApproval carrying the TYPED verdict; and
- * approved re-entry STILL re-checks the gate (a missing quote blocks even when
- * approved). All routed through the dedicated dispatcher branch via `swap`.
+ * Proves the invariant Codex flagged: a `swap_execute` with no fresh quote hits
+ * the Stage-7 BLOCK BEFORE any approval is enqueued; a restricted swap with a
+ * fresh pass/unknown prequote yields pendingApproval carrying the TYPED
+ * verdict; and approved re-entry STILL re-checks the gate (a missing quote
+ * blocks even when approved). All routed through the dedicated dispatcher
+ * branch via `swap_execute`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,7 +41,7 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   walletScopeErrorToResult: (err: unknown) => { throw err; },
 }));
 
-// ── Catalog — real kyberswap.swap.sell manifest shape + a spy handler ───────
+// ── Catalog — real kyberswap.swap.execute manifest shape + a spy handler ────
 const swapHandler = vi.fn().mockResolvedValue({ success: true, output: "broadcast ok" });
 const getProtocolManifest = vi.fn();
 const getProtocolHandler = vi.fn();
@@ -62,11 +69,11 @@ const { dispatchTool } = await import("@vex-agent/tools/dispatcher.js");
 
 type DispatchCtx = Parameters<typeof dispatchTool>[1];
 
-const SELL_MANIFEST = {
-  toolId: "kyberswap.swap.sell",
+const EXECUTE_MANIFEST = {
+  toolId: "kyberswap.swap.execute",
   namespace: "kyberswap" as const,
   lifecycle: "active" as const,
-  description: "sell",
+  description: "execute a swap",
   mutating: true,
   actionKind: "user_wallet_broadcast" as const,
   params: [
@@ -75,7 +82,6 @@ const SELL_MANIFEST = {
     { key: "tokenOut", type: "string" as const, required: true, description: "" },
     { key: "amountIn", type: "string" as const, required: true, description: "" },
     { key: "slippageBps", type: "number" as const, description: "" },
-    { key: "recipient", type: "string" as const, description: "" },
   ],
   exampleParams: {},
 };
@@ -103,11 +109,11 @@ const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const WETH_BASE = "0x4200000000000000000000000000000000000006";
 
 function swapArgs(extra: Record<string, unknown> = {}) {
-  return { chain: "base", tokenIn: WETH_BASE, tokenOut: USDC_BASE, amount: "0.5", slippageBps: 50, ...extra };
+  return { chain: "base", tokenIn: WETH_BASE, tokenOut: USDC_BASE, amountIn: "0.5", slippageBps: 50, ...extra };
 }
 
 beforeEach(() => {
-  getProtocolManifest.mockReturnValue(SELL_MANIFEST);
+  getProtocolManifest.mockReturnValue(EXECUTE_MANIFEST);
   getProtocolHandler.mockReturnValue(swapHandler);
   existsFreshFailByMatch.mockResolvedValue(false);
   findLatestFreshByMatch.mockResolvedValue(null);
@@ -115,9 +121,9 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
-describe("swap alias × Stage-7 gate — no fresh quote", () => {
+describe("swap_execute alias × Stage-7 gate — no fresh quote", () => {
   it("BLOCKS before any approval is enqueued (no pendingApproval, handler never called)", async () => {
-    const result = await dispatchTool({ name: "swap", args: swapArgs(), toolCallId: "g1" }, ctx());
+    const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g1" }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/no fresh quote/i);
     // The gate block must short-circuit BEFORE the approval gate.
@@ -128,7 +134,7 @@ describe("swap alias × Stage-7 gate — no fresh quote", () => {
   });
 
   it("still blocks even when approved:true (approved re-entry re-checks the gate)", async () => {
-    const result = await dispatchTool({ name: "swap", args: swapArgs(), toolCallId: "g2" }, ctx({ approved: true }));
+    const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g2" }, ctx({ approved: true }));
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/no fresh quote/i);
     expect(swapHandler).not.toHaveBeenCalled();
@@ -136,14 +142,14 @@ describe("swap alias × Stage-7 gate — no fresh quote", () => {
 
   it("a fresh FAIL prequote blocks with the safety-fail message (handler never called)", async () => {
     existsFreshFailByMatch.mockResolvedValue(true);
-    const result = await dispatchTool({ name: "swap", args: swapArgs(), toolCallId: "g3" }, ctx({ approved: true }));
+    const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g3" }, ctx({ approved: true }));
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/flagged unsafe|honeypot|scam/i);
     expect(swapHandler).not.toHaveBeenCalled();
   });
 });
 
-describe("swap alias × Stage-7 gate — fresh prequote present", () => {
+describe("swap_execute alias × Stage-7 gate — fresh prequote present", () => {
   function freshRow(verdict: "pass" | "unknown") {
     return {
       prequoteId: "prequote-1",
@@ -168,7 +174,7 @@ describe("swap alias × Stage-7 gate — fresh prequote present", () => {
 
   it("restricted + fresh PASS prequote → pendingApproval carrying verdict 'pass' (handler NOT called yet)", async () => {
     findLatestFreshByMatch.mockResolvedValue(freshRow("pass"));
-    const result = await dispatchTool({ name: "swap", args: swapArgs(), toolCallId: "g4" }, ctx());
+    const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g4" }, ctx());
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "pass" });
     expect(result.actionKind).toBe("user_wallet_broadcast");
@@ -177,7 +183,7 @@ describe("swap alias × Stage-7 gate — fresh prequote present", () => {
 
   it("restricted + fresh UNKNOWN prequote → pendingApproval carrying verdict 'unknown' (UNVERIFIED preview)", async () => {
     findLatestFreshByMatch.mockResolvedValue(freshRow("unknown"));
-    const result = await dispatchTool({ name: "swap", args: swapArgs(), toolCallId: "g5" }, ctx());
+    const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g5" }, ctx());
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "unknown" });
     expect(swapHandler).not.toHaveBeenCalled();
@@ -185,11 +191,11 @@ describe("swap alias × Stage-7 gate — fresh prequote present", () => {
 
   it("approved + fresh PASS prequote → gate allows, approval skipped, handler RUNS", async () => {
     findLatestFreshByMatch.mockResolvedValue(freshRow("pass"));
-    const result = await dispatchTool({ name: "swap", args: swapArgs(), toolCallId: "g6" }, ctx({ approved: true }));
+    const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g6" }, ctx({ approved: true }));
     expect(result.success).toBe(true);
     expect(result.output).toContain("broadcast ok");
     expect(swapHandler).toHaveBeenCalledTimes(1);
-    // Handler received the TRANSLATED params (amount → amountIn).
+    // Handler received the translated params (amountIn passes straight through).
     const [params] = swapHandler.mock.calls[0] as [Record<string, unknown>];
     expect(params.amountIn).toBe("0.5");
     expect(params.chain).toBe("base");

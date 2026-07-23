@@ -60,7 +60,7 @@ export function resolveChainWithId(chainInput: string): { slug: KyberChainSlug; 
 }
 
 /** Ensure chain supports a feature, or throw. */
-export function requireFeature(slug: KyberChainSlug, feature: "aggregator" | "limitOrder" | "zaas"): void {
+export function requireFeature(slug: KyberChainSlug, feature: "aggregator"): void {
   const features = getChainFeatures(slug);
   if (!features[feature]) {
     throw new VexError(

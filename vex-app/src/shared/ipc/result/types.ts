@@ -171,7 +171,6 @@ export type VexErrorCode =
   | "provider.invalid_api_key"
   | "provider.insufficient_credits"
   | "provider.model_unsupported"
-  | "provider.polymarket_setup_failed"
   | "provider.unavailable"
   | "provider.test_failed"
   | "support.persist_failed"

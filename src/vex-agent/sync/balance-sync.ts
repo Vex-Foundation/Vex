@@ -331,16 +331,6 @@ export async function fullBalanceSync(): Promise<FullSyncResult> {
     snapshotGroupId,
   });
 
-  // Refresh prediction mark-to-market after balance update
-  try {
-    const { refreshPredictionMtm } = await import("./mtm.js");
-    await refreshPredictionMtm();
-  } catch (err) {
-    logger.warn("sync.balance.mtm_failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
   return { wallets, snapshots, totalUsd: aggregateTotalUsd, snapshotGroupId };
 }
 

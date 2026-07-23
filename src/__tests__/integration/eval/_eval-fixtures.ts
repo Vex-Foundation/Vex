@@ -3,10 +3,19 @@
  *
  * These drive the PRODUCTION seam — `recordExecution` → `populateCaptureItems`
  * (→ activity-populator → projectors → proj_pnl_lots / proj_pnl_matches /
- * proj_open_positions) — exactly like the live runtime, so the S5 outcome
- * resolver and the S7 ledger-wake fire on REAL ledger rows. They are named
- * `seedFaithful*` so they can never be confused with the raw-SQL legacy seeders
- * in `repos/_s4-fixtures.ts` (those are left untouched).
+ * proj_open_positions) — exactly like the live runtime, so downstream ledger
+ * reads see REAL ledger rows. They are named `seedFaithful*` so they can never
+ * be confused with the raw-SQL legacy seeders in `repos/_s4-fixtures.ts`
+ * (those are left untouched).
+ *
+ * RETIREMENT NOTE (Agent Scan W4): the S5 ledger-derived outcome resolver and
+ * the S7 reconcile worker these seeders originally paired with are deleted
+ * (`memory/manager/outcome-resolver.ts`, `engine/memory-manager/reconcile.ts`,
+ * `memory/ledger-wake.ts`). The reconcile-job-driving helpers that lived here
+ * (`driveReconcileForEntry` + its terminal-status types) are removed — their
+ * only callers were the eval suites retired in the same change. The plain
+ * seeders below (spot/perps/closing-trade/etc.) are untouched and still used
+ * by surviving suites.
  *
  * Embeddings: the candidate/knowledge seeders embed title+summary with the REAL
  * Gemma (`embedDocument`) and store the real providerModel + dim 768 — NOT the
@@ -17,9 +26,8 @@
 import { recordExecution } from "@vex-agent/db/repos/executions.js";
 import { populateCaptureItems } from "@vex-agent/tools/protocols/capture-pipeline.js";
 import { extractExternalRefs } from "@vex-agent/tools/protocols/capture-pipeline.js";
-import type { PoolClient } from "pg";
 
-import { execute, query, queryWith } from "@vex-agent/db/client.js";
+import { execute, query } from "@vex-agent/db/client.js";
 import {
   insertCandidate,
   getCandidateById,
@@ -57,7 +65,6 @@ import {
   bumpJobInference,
   getJobById,
 } from "@vex-agent/db/repos/memory-jobs/index.js";
-import { processReconcileJob, defaultReconcileDeps } from "@vex-agent/engine/memory-manager/reconcile.js";
 import { getLatestDecision } from "@vex-agent/db/repos/memory-decisions/index.js";
 import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
@@ -1080,196 +1087,6 @@ export async function measureSameLessonCosine(
   }
   const denom = Math.sqrt(na) * Math.sqrt(nb);
   return denom === 0 ? 0 : dot / denom;
-}
-
-/**
- * Run the REAL consolidate→apply path to a genuine promote so an S7 reconcile
- * can target it: seeds a sibling (recurrence ≥ 2) in the same Gemma neighborhood
- * + a confirmed spot trade whose SELL execution anchors the candidate, then
- * drives the judge. Returns the promoted knowledge id (or throws if the judge
- * did not promote). The promoted entry's evidence_refs carry the instrumentKey
- * semantic key so `findPromotedWakeTargets` matches the later closing trade.
- */
-export interface PromoteForReconcileArgs {
-  instrumentKey: string;
-  walletAddress: string;
-  workerId: string;
-}
-
-export interface PromoteForReconcileResult {
-  knowledgeId: number;
-  candidateId: string;
-  sellExecutionId: number;
-  drive: DriveResult;
-}
-
-export async function promoteLessonForReconcile(
-  args: PromoteForReconcileArgs,
-): Promise<PromoteForReconcileResult> {
-  const session = await makeSession();
-  const spot = await seedFaithfulConfirmedSpotTrade({
-    sessionId: session,
-    instrumentKey: args.instrumentKey,
-    walletAddress: args.walletAddress,
-    buyQtyRaw: "1000000000",
-    buyValueUsd: "50.00",
-    sellQtyRaw: "1000000000",
-    sellValueUsd: "75.00", // win → positive lesson signal
-  });
-
-  // A sibling in the same Gemma neighborhood + a 2nd execution anchor so the
-  // recurrence gate (≥2) is satisfied for the generalization kind.
-  await seedGemmaCandidate({
-    sessionId: session,
-    kind: "trade_lesson",
-    title: `Scaling into ${args.instrumentKey} strength paid off across the run`,
-    summary:
-      "Adding to a winning spot position on confirmed momentum produced realized gains.",
-    evidenceRefs: [
-      { executionId: spot.buyExecutionId, instrumentKey: args.instrumentKey },
-    ],
-    importance: 8,
-  });
-
-  // Main candidate: anchor on the SELL execution FIRST (the resolver reads the
-  // first surviving anchor), trade-family kind, explicit event_time.
-  const { candidateId } = await seedGemmaCandidate({
-    sessionId: session,
-    kind: "trade_lesson",
-    title: `Scaling into ${args.instrumentKey} strength on confirmed momentum`,
-    summary:
-      "Adding to a winning spot position when momentum is confirmed tends to realize gains.",
-    evidenceRefs: [
-      { executionId: spot.sellExecutionId, instrumentKey: args.instrumentKey },
-      { executionId: spot.buyExecutionId, instrumentKey: args.instrumentKey },
-    ],
-    importance: 8,
-    eventTime: new Date(),
-  });
-
-  const drive = await driveConsolidateWithRealJudge(candidateId, args.workerId);
-  if (drive.decisionType !== "promote" || drive.promotedKnowledgeId === null) {
-    throw new Error(
-      `promoteLessonForReconcile: judge did not promote (decision=${drive.decisionType})`,
-    );
-  }
-
-  // Sanity: the promoted entry must be ACTIVE (so findPromotedWakeTargets sees it).
-  const entry = await knowledgeRepo.getById(drive.promotedKnowledgeId);
-  if (!entry || entry.status !== "active") {
-    throw new Error("promoteLessonForReconcile: promoted entry not active");
-  }
-
-  return {
-    knowledgeId: drive.promotedKnowledgeId,
-    candidateId,
-    sellExecutionId: spot.sellExecutionId,
-    drive,
-  };
-}
-
-// ── F31-aware reconcile driver (RECORD terminal status, never throw) ──
-
-/**
- * Bounded reconcile-job terminal status — the durable-queue FSM end states a
- * single `processReconcileJob` pass can leave the job in.
- */
-export type ReconcileTerminalStatus =
-  | "completed"
-  | "failed"
-  | "permanently_failed";
-
-/**
- * Outcome of one reconcile drive that captures F31 (the reconcile judge can
- * throw `judge_schema_invalid` / `judge_timeout` / `judge_malformed` →
- * `processReconcileJob` marks the job `failed` / `permanently_failed` with a
- * bounded `last_error` code; it NEVER throws). This helper RECORDS that — it
- * never throws on a judge failure.
- *
- *   - `jobId` — the claimed reconcile job's id.
- *   - `terminalStatus` — the job's FSM status after the pass (completed = the
- *     reconcile applied or no-op'd; failed/permanently_failed = the reconcile
- *     judge or a write failed and the job will retry / is terminal).
- *   - `lastError` — the bounded errorCode from `processReconcileJob`'s
- *     `mapReconcileErrorCode` (judge_timeout / judge_malformed /
- *     judge_schema_invalid / provider_config / job_error / job_unknown), or null
- *     on a clean completion. NEVER raw model text (memLog-safe).
- *   - `decisionType` — `"reconcile"` when a reconcile decision row was written
- *     (the pass applied a consequence), else null (a no-op completion writes no
- *     decision row, per reconcile.ts §3).
- */
-export interface ReconcileDriveResult {
-  jobId: number;
-  terminalStatus: ReconcileTerminalStatus;
-  lastError: string | null;
-  decisionType: "reconcile" | null;
-}
-
-/**
- * Drive ONE reconcile job for a promoted entry through the production worker:
- * claim the next due job → assert it is a `reconcile` job for THIS entry →
- * `processReconcileJob(job, workerId, defaultReconcileDeps())` (self-finalizing,
- * never throws) → read the job's terminal status + bounded `last_error`, and
- * whether a `reconcile` decision row was written for the entry.
- *
- * Reuses the exact drive pattern from `reconcile-s7.int.test.ts`. The CALLER is
- * responsible for having fired the ledger wake (e.g. via
- * `seedFaithfulClosingTradeForWake`) so a reconcile job is enqueued and due.
- *
- * F31-aware: a reconcile-judge failure leaves the job `failed` /
- * `permanently_failed` with a bounded code — this helper RETURNS that, it does
- * NOT throw. It throws ONLY on a genuine harness error (no due job, or the next
- * due job is not a reconcile job for this entry — a seeding bug).
- */
-export async function driveReconcileForEntry(
-  entryId: number,
-  workerId: string,
-  client?: PoolClient,
-): Promise<ReconcileDriveResult> {
-  const job = await claimNextDueJob(workerId);
-  if (!job) throw new Error("driveReconcileForEntry: no due job to claim");
-  if (job.jobKind !== "reconcile") {
-    throw new Error(
-      `driveReconcileForEntry: claimed job ${job.id} is not a reconcile job (kind=${job.jobKind})`,
-    );
-  }
-  if (job.reconcileEntryId !== entryId) {
-    throw new Error(
-      `driveReconcileForEntry: claimed reconcile job ${job.id} targets entry ${job.reconcileEntryId ?? "null"}, expected ${entryId}`,
-    );
-  }
-
-  // Self-finalizing; never throws — F31 judge failures land as failed/perm-failed
-  // with a bounded last_error, NOT as a thrown error.
-  await processReconcileJob(job, workerId, defaultReconcileDeps());
-
-  const after = await getJobById(job.id);
-  const status = after?.status ?? null;
-  // A reconcile job only ever ends in one of these via a single pass. `pending`
-  // (a D-REARM re-arm after a clean completion) or `running` would be a harness
-  // bug — surface it loudly rather than coerce.
-  if (status !== "completed" && status !== "failed" && status !== "permanently_failed") {
-    throw new Error(
-      `driveReconcileForEntry: reconcile job ${job.id} ended in unexpected status ${status ?? "unknown"}`,
-    );
-  }
-
-  // A `reconcile` decision row is written ONLY when the pass applied a
-  // consequence (a no-op completion writes none, per reconcile.ts §3). Read it
-  // off memory_decisions for this entry — on the caller's tx client when given.
-  const decisionSql = `SELECT count(*)::text AS n FROM memory_decisions
-       WHERE decision_type = 'reconcile' AND reconcile_entry_id = $1`;
-  const decisionRows = client
-    ? await queryWith<{ n: string }>(client, decisionSql, [entryId])
-    : await query<{ n: string }>(decisionSql, [entryId]);
-  const decisionType: "reconcile" | null = Number(decisionRows[0]!.n) > 0 ? "reconcile" : null;
-
-  return {
-    jobId: job.id,
-    terminalStatus: status,
-    lastError: after?.lastError ?? null,
-    decisionType,
-  };
 }
 
 export { getLatestDecision };

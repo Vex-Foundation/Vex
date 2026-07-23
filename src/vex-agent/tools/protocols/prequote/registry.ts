@@ -93,10 +93,12 @@ export type ExecuteGateRegistration =
   | { readonly kind: "lp_remove"; readonly family: PrequoteFamily; readonly provider: string };
 
 export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
-  "kyberswap.swap.sell": { kind: "swap", family: "eip155", provider: "kyberswap" },
-  "kyberswap.swap.buy": { kind: "swap", family: "eip155", provider: "kyberswap" },
-  "uniswap.swap.sell": { kind: "swap", family: "eip155", provider: "uniswap" },
-  "uniswap.swap.buy": { kind: "swap", family: "eip155", provider: "uniswap" },
+  // Agent Scan (plan §11.2): the buy/sell lot-direction split is gone (no PnL
+  // lot tracking survives) — ONE execute toolId per venue. `provider` still
+  // binds the venue-specific identity, so a kyberswap prequote can never
+  // authorize a uniswap execute and vice versa (identity/hash.ts unchanged).
+  "kyberswap.swap.execute": { kind: "swap", family: "eip155", provider: "kyberswap" },
+  "uniswap.swap.execute": { kind: "swap", family: "eip155", provider: "uniswap" },
   "solana.swap.execute": { kind: "swap", family: "solana", provider: "jupiter" },
   "khalani.bridge": { kind: "bridge", provider: "khalani" },
   "relay.bridge": { kind: "bridge", provider: "relay" },

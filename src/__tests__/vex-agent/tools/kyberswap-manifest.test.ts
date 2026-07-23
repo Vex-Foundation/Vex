@@ -4,9 +4,12 @@ import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/param
 
 describe("kyberswap manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
+  //
+  // Agent Scan plan §4.2 deleted limit-order (10) + zap (4) tooling and
+  // collapsed swap.sell/swap.buy into ONE unified swap.execute.
 
-  it("has 20 tools total", () => {
-    expect(KYBERSWAP_TOOLS).toHaveLength(20);
+  it("has 5 tools total", () => {
+    expect(KYBERSWAP_TOOLS).toHaveLength(5);
   });
 
   const EXPECTED_TOOL_IDS = [
@@ -15,32 +18,13 @@ describe("kyberswap manifest", () => {
     "kyberswap.chains.supported",
     // Tokens (1)
     "kyberswap.tokens.check",
-    // Swap (3)
+    // Swap (2)
     "kyberswap.swap.quote",
-    "kyberswap.swap.sell",
-    "kyberswap.swap.buy",
-    // Limit Order — Maker (5)
-    "kyberswap.limitOrder.list",
-    "kyberswap.limitOrder.activeMakingAmount",
-    "kyberswap.limitOrder.create",
-    "kyberswap.limitOrder.cancel",
-    "kyberswap.limitOrder.hardCancel",
-    // Limit Order — Taker (4)
-    "kyberswap.limitOrder.pairs",
-    "kyberswap.limitOrder.takerOrders",
-    "kyberswap.limitOrder.fill",
-    "kyberswap.limitOrder.batchFill",
-    // Limit Order — Cancel All (1)
-    "kyberswap.limitOrder.cancelAll",
-    // Zap (4)
-    "kyberswap.zap.in",
-    "kyberswap.zap.out",
-    "kyberswap.zap.migrate",
-    "kyberswap.zap.list",
+    "kyberswap.swap.execute",
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(20);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(5);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -50,10 +34,23 @@ describe("kyberswap manifest", () => {
     });
   }
 
-  it("has no tools beyond expected list", () => {
+  it("has no tools beyond expected list (limit-order/zap are gone)", () => {
     const expectedSet = new Set(EXPECTED_TOOL_IDS);
     const unexpected = KYBERSWAP_TOOLS.filter(t => !expectedSet.has(t.toolId));
     expect(unexpected).toHaveLength(0);
+  });
+
+  it("does not declare any limitOrder or zap tool", () => {
+    for (const tool of KYBERSWAP_TOOLS) {
+      expect(tool.toolId).not.toMatch(/^kyberswap\.limitOrder\./);
+      expect(tool.toolId).not.toMatch(/^kyberswap\.zap\./);
+    }
+  });
+
+  it("does not declare the retired swap.sell/swap.buy toolIds", () => {
+    const toolIds = KYBERSWAP_TOOLS.map(t => t.toolId);
+    expect(toolIds).not.toContain("kyberswap.swap.sell");
+    expect(toolIds).not.toContain("kyberswap.swap.buy");
   });
 
   // ── Namespace ────────────────────────────────────────────────────
@@ -78,19 +75,7 @@ describe("kyberswap manifest", () => {
 
   // ── Mutating flags ───────────────────────────────────────────────
 
-  const EXPECTED_MUTATING = [
-    "kyberswap.swap.sell",
-    "kyberswap.swap.buy",
-    "kyberswap.limitOrder.create",
-    "kyberswap.limitOrder.cancel",
-    "kyberswap.limitOrder.hardCancel",
-    "kyberswap.limitOrder.fill",
-    "kyberswap.limitOrder.batchFill",
-    "kyberswap.limitOrder.cancelAll",
-    "kyberswap.zap.in",
-    "kyberswap.zap.out",
-    "kyberswap.zap.migrate",
-  ];
+  const EXPECTED_MUTATING = ["kyberswap.swap.execute"];
 
   it("has correct number of mutating tools", () => {
     const mutating = KYBERSWAP_TOOLS.filter(t => t.mutating);
@@ -112,51 +97,20 @@ describe("kyberswap manifest", () => {
     }
   });
 
+  it("kyberswap.swap.execute carries actionKind user_wallet_broadcast", () => {
+    const execute = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
+    expect(execute.actionKind).toBe("user_wallet_broadcast");
+  });
+
   // ── Required params ──────────────────────────────────────────────
 
-  it("kyberswap.swap.sell requires chain, tokenIn, tokenOut, amountIn", () => {
-    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.sell")!;
+  it("kyberswap.swap.execute requires chain, tokenIn, tokenOut, amountIn", () => {
+    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
     expect(required).toContain("chain");
     expect(required).toContain("tokenIn");
     expect(required).toContain("tokenOut");
     expect(required).toContain("amountIn");
-  });
-
-  it("kyberswap.limitOrder.create requires chain, makerAsset, takerAsset, makingAmount, takingAmount, expires", () => {
-    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.limitOrder.create")!;
-    const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chain");
-    expect(required).toContain("makerAsset");
-    expect(required).toContain("takerAsset");
-    expect(required).toContain("makingAmount");
-    expect(required).toContain("takingAmount");
-    expect(required).toContain("expires");
-  });
-
-  it("kyberswap.zap.in requires chain, dex, pool, tokenIn, amountIn", () => {
-    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.in")!;
-    const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chain");
-    expect(required).toContain("dex");
-    expect(required).toContain("pool");
-    expect(required).toContain("tokenIn");
-    expect(required).toContain("amountIn");
-  });
-
-  it("kyberswap.limitOrder.batchFill requires chain, orderIds, takingAmounts, thresholdAmount", () => {
-    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.limitOrder.batchFill")!;
-    const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chain");
-    expect(required).toContain("orderIds");
-    expect(required).toContain("takingAmounts");
-    expect(required).toContain("thresholdAmount");
-  });
-
-  it("kyberswap.limitOrder.cancelAll requires only chain", () => {
-    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.limitOrder.cancelAll")!;
-    const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toEqual(["chain"]);
   });
 
   it("kyberswap.chains has no required params", () => {
@@ -196,50 +150,46 @@ describe("kyberswap manifest", () => {
     }
   });
 
-  // ── Swap hardening: exact-input semantics ─────────────────────
+  // ── Unified swap contract (plan §4.2/§11.2): no side/recipient/dryRun ──
 
-  it("swap.sell and swap.buy describe exact-input semantics", () => {
-    const sell = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.sell")!;
-    const buy = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.buy")!;
-    expect(sell.description).toContain("exact-input");
-    expect(buy.description).toContain("exact-input");
+  it("kyberswap.swap.execute does not declare side, recipient, or dryRun", () => {
+    const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
+    const keys = tool.params.map(p => p.key);
+    expect(keys).not.toContain("side");
+    expect(keys).not.toContain("recipient");
+    expect(keys).not.toContain("dryRun");
+    expect(keys).not.toContain("approveExact");
   });
 
-  it("swap tools reference khalani as resolver, not kyberswap", () => {
-    const sell = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.sell")!;
-    const buy = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.buy")!;
-    expect(sell.description).toContain("khalani.tokens.search");
-    expect(buy.description).toContain("khalani.tokens.search");
+  it("the dispatcher param boundary REJECTS a legacy recipient param on kyberswap.swap.execute", () => {
+    const execute = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
+    const v = validateProtocolParams(execute, {
+      chain: "base",
+      tokenIn: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      tokenOut: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      amountIn: "100",
+      recipient: "0xcccccccccccccccccccccccccccccccccccccc",
+    });
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.reason).toContain('Unknown parameter "recipient"');
   });
 
-  // ── Zap hardening: DEX_* IDs ──────────────────────────────────
-
-  it("zap exampleParams use DEX_* format IDs", () => {
-    const zapIn = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.in")!;
-    const zapOut = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.out")!;
-    const zapMigrate = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.migrate")!;
-    expect(zapIn.exampleParams.dex).toMatch(/^DEX_/);
-    expect(zapOut.exampleParams.dex).toMatch(/^DEX_/);
-    expect(zapMigrate.exampleParams.dexFrom).toMatch(/^DEX_/);
-    expect(zapMigrate.exampleParams.dexTo).toMatch(/^DEX_/);
+  it("swap.execute describes exact-input semantics", () => {
+    const execute = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
+    expect(execute.description).toContain("exact-input");
   });
 
-  it("zap.list is a read-only tool", () => {
-    const zapList = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.list")!;
-    expect(zapList).toBeDefined();
-    expect(zapList.mutating).toBe(false);
+  it("swap.execute requires a fresh matching quote first", () => {
+    const execute = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
+    expect(execute.description.toLowerCase()).toContain("quote");
   });
 
   // ── Etap 1: quote↔execute slippageBps param-surface alignment ──────
   //
   // Regression guard for the deterministic no_quote swap-block loop. The
   // prequote gate binds slippageBps into the match-hash from the QUOTE params
-  // (recorder) and the EXECUTE params (gate). Previously kyberswap.swap.quote
-  // did NOT declare slippageBps, so the dispatcher's strict param boundary
-  // REJECTED a quote carrying it (and the agent never passed it), so every
-  // recorded quote hashed slippage="" while a buy/sell carrying slippageBps:50
-  // hashed "50" → unwinnable no_quote block. The quote must accept the same
-  // optional slippageBps the execute tools accept.
+  // (recorder) and the EXECUTE params (gate). The quote must accept the same
+  // optional slippageBps the execute tool accepts.
 
   const quoteTool = () => KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.quote")!;
 
@@ -264,36 +214,18 @@ describe("kyberswap manifest", () => {
     expect(v.ok).toBe(true);
   });
 
-  it("quote/sell/buy exampleParams all carry a consistent slippageBps", () => {
-    for (const toolId of ["kyberswap.swap.quote", "kyberswap.swap.sell", "kyberswap.swap.buy"]) {
+  it("quote/execute exampleParams both carry a consistent slippageBps", () => {
+    for (const toolId of ["kyberswap.swap.quote", "kyberswap.swap.execute"]) {
       const tool = KYBERSWAP_TOOLS.find(t => t.toolId === toolId)!;
       expect(tool.exampleParams.slippageBps).toBe(50);
     }
   });
 
   // ── Etap 4: always-exact approvals — `approveExact` removed from the surface ──
-  //
-  // Approvals are now always exact (see `ensureKyberAllowance`), so the opt-in
-  // param is gone from the swap sell/buy + zap.in manifests. The prequote gate
-  // already blocked an execute passing `approveExact: true` (it diverges the
-  // match-hash → no_quote), so the tool contract must not advertise it either —
-  // and the strict dispatcher boundary must reject a model that still passes it.
 
-  it("kyberswap.swap.sell/buy no longer declare approveExact", () => {
-    for (const toolId of ["kyberswap.swap.sell", "kyberswap.swap.buy"]) {
-      const tool = KYBERSWAP_TOOLS.find(t => t.toolId === toolId)!;
-      expect(tool.params.some(p => p.key === "approveExact")).toBe(false);
-    }
-  });
-
-  it("kyberswap.zap.in no longer declares approveExact", () => {
-    const zapIn = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.zap.in")!;
-    expect(zapIn.params.some(p => p.key === "approveExact")).toBe(false);
-  });
-
-  it("the dispatcher param boundary REJECTS approveExact on kyberswap.swap.buy", () => {
-    const buy = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.buy")!;
-    const v = validateProtocolParams(buy, {
+  it("the dispatcher param boundary REJECTS approveExact on kyberswap.swap.execute", () => {
+    const execute = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.swap.execute")!;
+    const v = validateProtocolParams(execute, {
       chain: "base",
       tokenIn: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       tokenOut: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

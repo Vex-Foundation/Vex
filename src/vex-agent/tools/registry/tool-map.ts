@@ -29,7 +29,7 @@ export interface ToolMapCategory {
 
 export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Protocol discovery/execution", toolNames: ["discover_tools", "execute_tool"] },
-  { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "portfolio"] },
+  { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
   {
     label: "Khalani read shortcuts",
@@ -42,9 +42,12 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   },
   {
     label: "Swap & bridge previews (read-only)",
-    toolNames: ["swap_quote", "token_check", "bridge_quote", "bridge_status"],
+    toolNames: ["swap_quote", "swap_quote_uniswap", "token_check", "bridge_quote", "bridge_status"],
   },
-  { label: "Swap & bridge execution (on-chain — quote first)", toolNames: ["swap", "bridge"] },
+  {
+    label: "Swap & bridge execution (on-chain — quote first)",
+    toolNames: ["swap_execute", "swap_execute_uniswap", "bridge"],
+  },
   { label: "Research", toolNames: ["web_research", "twitter_account"] },
   { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
   {
@@ -65,7 +68,6 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Mission run stop", toolNames: ["mission_stop"] },
   { label: "Mission run scheduling", toolNames: ["loop_defer"] },
   { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["plan_write"] },
-  { label: "Setup/onboarding", toolNames: ["polymarket_setup"] },
   { label: "Hyperliquid workspace", toolNames: ["hyperliquid_enter"] },
 ];
 

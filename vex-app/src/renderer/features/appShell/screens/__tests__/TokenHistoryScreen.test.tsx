@@ -9,17 +9,21 @@
  *     and NO serif H1 (the chrome's `header` slot replaces it);
  *   - available entries render: LABEL from raw `productType` (fallback:
  *     the entry `kind`), `in → out` legs with policy-gated symbols, a
- *     HUMAN-provenance quantity printed while an ATOMIC one keeps the em
- *     dash (never a blind wei-scale format), USD-at-execution primary +
- *     unit price, venue/chain meta, and an explorer link BUILT from
- *     `{chainId, ref}` via shared/explorer-links (chainId 0 / unknown chain
- *     → NO link);
+ *     HUMAN-provenance quantity printed while an UNKNOWN-provenance one
+ *     keeps the em dash (never a blind wei-scale format), a USD primary
+ *     figure + unit price, venue/chain meta, and an explorer link BUILT
+ *     from `{chainId, ref}` via shared/explorer-links (chainId 0 / unknown
+ *     chain → NO link);
+ *   - the USD primary figure carries `usdProvenance` (Codex final review
+ *     round 2 finding 7 / contract C35): `"estimated"` renders with an
+ *     explicit `~ … est.` marker, `"recorded"` renders bare — never a
+ *     bare-execution-USD read on a quote-time estimate;
  *   - status "unavailable" (query timeout) renders the calm try-again note
  *     and NEVER the empty-history copy;
  *   - empty available history renders the quiet "No Vex-recorded history"
  *     invitation;
- *   - cost basis three ways: lots (summary + lot lines), none ("No open
- *     lots."), unavailable ("Cost basis unavailable." — distinct from none);
+ *   - an `agent_activity`-sourced swap entry's pending/failed status renders
+ *     a status chip (Agent Scan §4.7); `null`/`"confirmed"` renders none;
  *   - Load more appears on hasNextPage, fires fetchNextPage, and appended
  *     pages' entries render;
  *   - Escape/close returns to `returnTo`: "shell" → none, "assets" → the
@@ -32,7 +36,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
-  TokenHistoryCostBasis,
   TokenHistoryDto,
   TokenHistoryEntry,
 } from "@shared/schemas/token-history.js";
@@ -121,17 +124,19 @@ function swapEntry(
       symbol: "TOKA",
       localSymbol: null,
       amount: { value: "1.5", unitProvenance: "human" },
-      valueUsd: "25.00",
+      valueUsd: { value: "25.00", usdProvenance: "recorded" },
     },
     output: {
       token: USDC_BASE,
       symbol: "TOKB",
       localSymbol: null,
-      amount: { value: "25100000", unitProvenance: "atomic" },
-      valueUsd: "25.10",
+      amount: { value: "25100000", unitProvenance: "unknown" },
+      valueUsd: { value: "25.10", usdProvenance: "recorded" },
     },
     unitPriceUsd: "0.52",
     captureStatus: "executed",
+    status: null,
+    failureCode: null,
     txRefs: [{ chainId: 8453, ref: TX_HASH }],
     ...overrides,
   };
@@ -141,7 +146,6 @@ function availablePage(
   entries: readonly TokenHistoryEntry[],
   options?: {
     readonly hasMore?: boolean;
-    readonly costBasis?: TokenHistoryCostBasis;
   },
 ): Result<TokenHistoryDto> {
   return {
@@ -154,7 +158,6 @@ function availablePage(
           ? { createdAt: "2026-07-01T10:21:00.000000Z", sourceRank: 1, sourceId: "1" }
           : null,
       hasMore: options?.hasMore === true,
-      costBasis: options?.costBasis ?? { kind: "none" },
     },
   };
 }
@@ -240,18 +243,18 @@ describe("TokenHistoryScreen — chrome and disclosure", () => {
 });
 
 describe("TokenHistoryScreen — entries", () => {
-  it("renders a swap row: productType label + side, legs with human quantity vs atomic em dash, USD @ unit price, venue meta, and the BUILT explorer href", () => {
+  it("renders a swap row: productType label + side, legs with human quantity vs unknown-provenance em dash, USD @ unit price, venue meta, and the BUILT explorer href", () => {
     mockQuery([availablePage([swapEntry({ id: "a-1" })])]);
     mountScreen();
 
     // LABEL from the raw productType (uppercased) + the buy side.
     expect(screen.getByText("SPOT_SWAP · BUY")).not.toBeNull();
-    // Human-provenance input quantity prints; atomic output quantity keeps
-    // the em dash — never a blind base-unit format.
+    // Human-provenance input quantity prints; unknown-provenance output
+    // quantity keeps the em dash — never a blind base-unit format.
     expect(screen.getByText(/1\.5 TOKA/)).not.toBeNull();
     expect(screen.getByText(/— TOKB/)).not.toBeNull();
     expect(screen.queryByText(/25100000/)).toBeNull();
-    // USD-at-execution primary (output leads) + unit price.
+    // USD primary (output leads, "recorded" provenance renders bare) + unit price.
     expect(screen.getByText(/\$25\.10/)).not.toBeNull();
     expect(screen.getByText(/@ \$0\.5200/)).not.toBeNull();
     // Venue + chain meta line.
@@ -326,14 +329,14 @@ describe("TokenHistoryScreen — entries", () => {
             symbol: "TOKA",
             localSymbol: null,
             amount: { value: "1.0", unitProvenance: "human" },
-            valueUsd: "10.00",
+            valueUsd: { value: "10.00", usdProvenance: "recorded" },
           },
           output: {
             token: null,
             symbol: "TOKA",
             localSymbol: null,
             amount: { value: null, unitProvenance: "unknown" },
-            valueUsd: null,
+            valueUsd: { value: null, usdProvenance: "recorded" },
           },
           captureStatus: "executed",
           txRefs: [],
@@ -396,55 +399,141 @@ describe("TokenHistoryScreen — states matrix", () => {
   });
 });
 
-describe("TokenHistoryScreen — cost basis", () => {
-  it("kind 'lots': summary line + lot rows (atomic lot quantity keeps the em dash; USD figures carry meaning)", () => {
+describe("TokenHistoryScreen — agent_activity swap status chip (Agent Scan §4.7)", () => {
+  it("renders a PENDING chip for a pending agent_activity swap entry", () => {
     mockQuery([
-      availablePage([swapEntry({ id: "a-1" })], {
-        costBasis: {
-          kind: "lots",
-          openLots: [
-            {
-              quantity: { value: "25000000", unitProvenance: "atomic" },
-              priceUsd: "0.52",
-              costBasisUsd: "13.00",
-              openedAt: "2026-06-12T09:00:00+00:00",
-            },
-          ],
-          totalOpenQuantity: "25000000",
-          avgOpenPriceUsd: "0.52",
-        },
-      }),
+      availablePage([swapEntry({ id: "a-1", status: "pending", failureCode: null })]),
     ]);
     mountScreen();
-
-    expect(screen.getByText("Cost basis")).not.toBeNull();
-    // Raw atomic totals/quantities never blind-format — the em dash holds
-    // while avg price + prorated USD basis carry the actual meaning.
-    expect(screen.getByText(/— open/)).not.toBeNull();
-    expect(screen.getAllByText(/\$0\.5200/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/\$13\.00/)).not.toBeNull();
-    expect(screen.getByText(/Jun 12, 2026/)).not.toBeNull();
-    expect(screen.queryByText(/25000000/)).toBeNull();
+    expect(screen.getByText("pending")).not.toBeNull();
   });
 
-  it("kind 'none' renders the quiet 'No open lots.'", () => {
+  it("renders a FAILED chip with the failureCode as its tooltip", () => {
     mockQuery([
-      availablePage([swapEntry({ id: "a-1" })], { costBasis: { kind: "none" } }),
+      availablePage([
+        swapEntry({ id: "a-1", status: "failed", failureCode: "slippage" }),
+      ]),
     ]);
     mountScreen();
-    expect(screen.getByText("No open lots.")).not.toBeNull();
-    expect(screen.queryByText("Cost basis unavailable.")).toBeNull();
+    const chip = screen.getByText("failed");
+    expect(chip.getAttribute("title")).toBe("slippage");
   });
 
-  it("kind 'unavailable' renders 'Cost basis unavailable.' — distinct from none", () => {
+  it("renders NO status chip for a confirmed or null-status swap entry (the quiet default)", () => {
     mockQuery([
-      availablePage([swapEntry({ id: "a-1" })], {
-        costBasis: { kind: "unavailable" },
-      }),
+      availablePage([swapEntry({ id: "a-1", status: "confirmed", failureCode: null })]),
     ]);
     mountScreen();
-    expect(screen.getByText("Cost basis unavailable.")).not.toBeNull();
-    expect(screen.queryByText("No open lots.")).toBeNull();
+    expect(screen.queryByText("pending")).toBeNull();
+    expect(screen.queryByText("failed")).toBeNull();
+    expect(screen.queryByText("confirmed")).toBeNull();
+  });
+});
+
+describe("TokenHistoryScreen — agent_activity amount honesty (Codex final review C20/C27)", () => {
+  it("renders a whole-number human amount (no decimal point) for a confirmed agent_activity leg", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({
+          id: "a-1",
+          status: "confirmed",
+          failureCode: null,
+          tradeSide: null,
+          input: {
+            token: "0x1111111111111111111111111111111111111111",
+            symbol: "TOKA",
+            localSymbol: null,
+            amount: { value: "50", unitProvenance: "human" },
+            valueUsd: { value: "50.00", usdProvenance: "estimated" },
+          },
+        }),
+      ]),
+    ]);
+    mountScreen();
+    // A main-process-resolved executed amount with no fractional part (e.g.
+    // `formatUnits(50_000_000n, 6)` → "50") must still render — the
+    // decimal-point heuristic never applies once `unitProvenance` already
+    // proves the value human (contract C27).
+    expect(screen.getByText(/50 TOKA/)).not.toBeNull();
+  });
+
+  it("renders the em dash for an unknown-provenance leg even when a value string is present (a status the mapper could not resolve, e.g. a failed row)", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({
+          id: "a-1",
+          status: "failed",
+          failureCode: "slippage",
+          input: {
+            token: "0x1111111111111111111111111111111111111111",
+            symbol: "TOKA",
+            localSymbol: null,
+            amount: { value: "50", unitProvenance: "unknown" },
+            valueUsd: { value: null, usdProvenance: "estimated" },
+          },
+        }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText(/— TOKA/)).not.toBeNull();
+    expect(screen.queryByText(/50 TOKA/)).toBeNull();
+  });
+});
+
+describe("TokenHistoryScreen — USD estimate provenance (Codex final review round 2 C35)", () => {
+  it("renders an agent_activity-sourced (estimated) valueUsd with an explicit ~... est. marker, never bare execution USD", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({
+          id: "a-1",
+          status: "confirmed",
+          failureCode: null,
+          output: {
+            token: USDC_BASE,
+            symbol: "TOKB",
+            localSymbol: null,
+            amount: { value: "25100000", unitProvenance: "unknown" },
+            valueUsd: { value: "25.10", usdProvenance: "estimated" },
+          },
+        }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText(/~\$25\.10 est\./)).not.toBeNull();
+  });
+
+  it("keeps a recorded (legacy proj_activity) valueUsd bare, with no est. marker", () => {
+    mockQuery([availablePage([swapEntry({ id: "a-1" })])]);
+    mountScreen();
+    expect(screen.getByText(/\$25\.10/)).not.toBeNull();
+    expect(screen.queryByText(/est\./)).toBeNull();
+  });
+
+  it("omits the USD figure entirely when neither leg has a value, regardless of provenance (never a fabricated $0.00)", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({
+          id: "a-1",
+          unitPriceUsd: null,
+          input: {
+            token: "0x1111111111111111111111111111111111111111",
+            symbol: "TOKA",
+            localSymbol: null,
+            amount: { value: "1.5", unitProvenance: "human" },
+            valueUsd: { value: null, usdProvenance: "estimated" },
+          },
+          output: {
+            token: USDC_BASE,
+            symbol: "TOKB",
+            localSymbol: null,
+            amount: { value: "25100000", unitProvenance: "unknown" },
+            valueUsd: { value: null, usdProvenance: "estimated" },
+          },
+        }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.queryByText(/\$/)).toBeNull();
   });
 });
 

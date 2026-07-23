@@ -1,7 +1,8 @@
 /**
  * JobsSection render tests (memory-system S10).
  *
- * Verifies: the five status counters render from countsByStatus, recent job
+ * Verifies: the six status counters (Agent Scan plan §11.3 added `retired`
+ * for the reconcile-job retirement) render from countsByStatus, recent job
  * rows render kind/status/attempts/item-progress/wake-pending, injected raw
  * `last_error` / lock columns never reach the DOM, the section stays
  * READ-ONLY (no buttons at all — not even filters), and empty/error states
@@ -50,6 +51,7 @@ function summary(jobs: ReadonlyArray<Record<string, unknown>>) {
       completed: 9,
       failed: 2,
       permanently_failed: 0,
+      retired: 3,
     },
     recentJobs: jobs,
   };
@@ -82,7 +84,7 @@ afterEach(() => {
 });
 
 describe("JobsSection", () => {
-  it("renders the five status counters and a sanitized job row, with zero buttons", async () => {
+  it("renders the six status counters and a sanitized job row, with zero buttons", async () => {
     jobsSummaryMock.mockResolvedValue(
       ok(
         summary([
@@ -105,11 +107,12 @@ describe("JobsSection", () => {
     await waitFor(() => {
       expect(screen.getByText("pending 4")).not.toBeNull();
     });
-    // All five counters.
+    // All six counters.
     expect(screen.getByText("running 1")).not.toBeNull();
     expect(screen.getByText("completed 9")).not.toBeNull();
     expect(screen.getByText("failed 2")).not.toBeNull();
     expect(screen.getByText("perm-failed 0")).not.toBeNull();
+    expect(screen.getByText("retired 3")).not.toBeNull();
     // Job row fields.
     expect(screen.getByText("#3")).not.toBeNull();
     expect(screen.getByText("consolidate")).not.toBeNull();

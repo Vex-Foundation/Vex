@@ -22,9 +22,6 @@ export const onboardingKeys = {
   envState: () => ["onboarding", "envState"] as const,
   wizardState: () => ["onboarding", "wizardState"] as const,
   providerModels: () => ["onboarding", "providerModels"] as const,
-  // Puzzle 5 B-UI — lowercased EVM addresses with Polymarket creds configured.
-  polymarketConfiguredAddresses: () =>
-    ["onboarding", "polymarketConfiguredAddresses"] as const,
   // C3 — full-archive restore screen. Metadata-only backup listing (no
   // secrets, no paths). Invalidated after a successful restore so the list
   // refreshes if the archive set changed.
@@ -154,12 +151,6 @@ export const missionKeys = {
    */
   renewableSource: (sessionId: string) =>
     ["mission", "renewableSource", sessionId] as const,
-  /** WP-J — per-wallet mission results ledger history, newest first. */
-  results: (walletAddress: string) =>
-    ["mission", "results", walletAddress] as const,
-  /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
-  resultForRun: (missionRunId: string, walletAddress: string) =>
-    ["mission", "resultForRun", missionRunId, walletAddress] as const,
 };
 
 export const approvalsKeys = {

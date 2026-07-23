@@ -12,16 +12,20 @@ import { PENDLE_TOOLS } from "@vex-agent/tools/protocols/pendle/manifest.js";
 const PENDLE_TOOL_IDS = new Set(PENDLE_TOOLS.map((m) => m.toolId));
 
 describe("pendle alias non-routing", () => {
-  it("registers NO pendle alias — only swap + bridge exist", () => {
-    expect(Object.keys(MUTATING_PROTOCOL_ALIAS_ROUTERS).sort()).toEqual(["bridge", "swap"]);
+  it("registers NO pendle alias — only swap_execute(+uniswap) + bridge exist", () => {
+    expect(Object.keys(MUTATING_PROTOCOL_ALIAS_ROUTERS).sort()).toEqual([
+      "bridge",
+      "swap_execute",
+      "swap_execute_uniswap",
+    ]);
   });
 
   it("the generic swap alias resolves to a venue tool, never pendle", () => {
-    const target = MUTATING_PROTOCOL_ALIAS_ROUTERS.swap!({
+    const target = MUTATING_PROTOCOL_ALIAS_ROUTERS.swap_execute!({
       chain: "ethereum",
       tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       tokenOut: "0x5a19fa369f2895dcd8d2cee62e4ceae58ef92bbb",
-      amount: "1",
+      amountIn: "1",
     });
     expect(PENDLE_TOOL_IDS.has(target.toolId)).toBe(false);
     expect(target.toolId.startsWith("pendle.")).toBe(false);

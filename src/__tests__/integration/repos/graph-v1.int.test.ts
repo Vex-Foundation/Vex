@@ -3,16 +3,24 @@
  * extraction writes (entities / aliases / links / edges in the SAME tx as the
  * lesson), the F2 alias-merge on a second promotion (uniq_me_active_identity),
  * the D-SAVEPOINT seatbelt (an in-tx graph error never takes the promotion
- * down), D-SUPERSEDE-WIRING (predecessor edge retraction on supersede AND on
- * reconcile-invalidate), and the 1-hop `expandViaGraph` read path over the REAL
- * repos. The extraction LLM is ALWAYS stubbed (deterministic `EntityExtraction`
- * or a thrown error — D-FAIL-OPEN); entity-name embeddings are synthetic
- * (`randVector` — no embeddings endpoint, the _s1d precedent).
+ * down), D-SUPERSEDE-WIRING (predecessor edge retraction on supersede), and
+ * the 1-hop `expandViaGraph` read path over the REAL repos. The extraction LLM
+ * is ALWAYS stubbed (deterministic `EntityExtraction` or a thrown error —
+ * D-FAIL-OPEN); entity-name embeddings are synthetic (`randVector` — no
+ * embeddings endpoint, the _s1d precedent).
  *
  * Drives the decision pipeline at the repo level (enqueue → claim → reserve →
  * markProcessing → consolidate → applyDecisionAtomically → markItemDone)
  * exactly as the executor does — the memory-manager-consolidate.int.test.ts
  * harness, extended with the S8 graphPlan seam.
+ *
+ * NOTE (Agent Scan W4): this file previously ALSO covered
+ * D-SUPERSEDE-WIRING's edge-retraction path via reconcile-invalidate (the S7
+ * reconcile worker). That worker (`engine/memory-manager/reconcile.ts`),
+ * `memory/ledger-wake.ts`, and `memory/manager/reconcile-{policy,judge}.ts`
+ * are deleted this phase; the reconcile-invalidate test case + its dedicated
+ * seeders were removed. Supersede-path edge retraction (the OTHER
+ * D-SUPERSEDE-WIRING trigger) is untouched and still covered below.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -31,7 +39,6 @@ import {
 import {
   getCandidateById,
   getCandidateEmbedding,
-  insertCandidate,
 } from "@vex-agent/db/repos/memory-candidates/index.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
 import { findActiveEntity } from "@vex-agent/db/repos/memory-entities/index.js";
@@ -52,14 +59,6 @@ import {
   type GraphPlanDeps,
 } from "@vex-agent/memory/manager/index.js";
 import type { JudgeVerdict } from "@vex-agent/memory/manager/judge-schema.js";
-import {
-  processReconcileJob,
-  defaultReconcileDeps,
-  type ReconcileDeps,
-} from "@vex-agent/engine/memory-manager/reconcile.js";
-import type { ReconcileJudgeResult } from "@vex-agent/memory/manager/reconcile-judge.js";
-import { enqueueLedgerWake } from "@vex-agent/memory/ledger-wake.js";
-import type { MemoryOutcomeSummary } from "@vex-agent/memory/schema/memory-outcome.js";
 import { expandViaGraph } from "@vex-agent/tools/internal/long-memory/search.js";
 import type { LongMemoryKnowledgeResult } from "@vex-agent/memory/long-memory-retrieval-policy.js";
 import { resetDb, randVector } from "../setup/fixtures.js";
@@ -68,7 +67,6 @@ import {
   seedExecution,
   seedCandidate,
   stubJudge,
-  hex64,
   PROMOTE_VERDICT,
   EMBEDDING_DIM,
   EMBEDDING_MODEL,
@@ -76,8 +74,6 @@ import {
 import { seedEntity, seedEdge, seedKnowledgeEntry } from "./_s1d-fixtures.js";
 
 const WORKER = "graph-w";
-const WALLET = "WaLLetAddr111111111111111111111111111111111";
-const INSTRUMENT = "sol:WIF";
 
 // ── Stub extraction → graph-plan deps (LLM stubbed, repos REAL) ────
 
@@ -221,116 +217,6 @@ async function edgesForOrigin(entryId: number): Promise<EdgeProbeRow[]> {
 async function tableCount(table: "memory_entities" | "memory_entry_entities" | "memory_edges"): Promise<number> {
   const rows = await query<{ n: string }>(`SELECT count(*)::text AS n FROM ${table}`);
   return Number(rows[0]!.n);
-}
-
-// ── Reconcile-invalidate seeders (compact reconcile.int.test.ts mirrors) ──
-
-async function seedActiveTradeEntry(seed: string): Promise<number> {
-  const rows = await query<{ id: number }>(
-    `INSERT INTO knowledge_entries
-       (kind, title, summary, content_hash, embedding_model, embedding_dim, embedding,
-        source, maturity_state, activation_strength, decay_policy,
-        first_promoted_at, last_reinforced_at, outcome_version)
-     VALUES ('trade_lesson', 't', 's', $1, $2, $3, $4::vector,
-        'observed', 'probationary', 0.5, 'outcome_aware', NOW(), NOW(), 0)
-     RETURNING id`,
-    [
-      hex64(`graph-ke-${seed}`),
-      EMBEDDING_MODEL,
-      EMBEDDING_DIM,
-      `[${randVector(EMBEDDING_DIM, seed).join(",")}]`,
-    ],
-  );
-  return rows[0]!.id;
-}
-
-function openPositiveOutcome(): MemoryOutcomeSummary {
-  return {
-    status: "open",
-    lessonSignal: "positive",
-    evidenceQuality: "weak",
-    pointInTimeChecked: true,
-    outcomeComputedBy: "memory_manager",
-    outcomeVersion: 0,
-    needsReconciliation: true,
-    pnlSource: "none",
-  };
-}
-
-/** A PROMOTED trade candidate anchored on `executionId` + the instrument key. */
-async function seedPromotedTradeCandidate(args: {
-  sessionId: string;
-  seed: string;
-  entryId: number;
-  executionId: number;
-}): Promise<string> {
-  const { candidate } = await insertCandidate({
-    sessionId: args.sessionId,
-    proposedBy: "parent",
-    kind: "trade_lesson",
-    title: `Lesson ${args.seed}`,
-    summary: "A reconciled trade lesson.",
-    contentMd: "Body.",
-    entities: ["WIF"],
-    tags: ["risk"],
-    sourceRefs: { messageIds: [1] },
-    evidenceRefs: [{ executionId: args.executionId, instrumentKey: INSTRUMENT }],
-    source: "observed",
-    confidence: 0.8,
-    importance: 7,
-    sensitivity: "normal",
-    evidenceStrength: "weak",
-    retrievalVisibility: "not_consolidated",
-    retrievalUntil: null,
-    retainUntil: null,
-    embedding: randVector(EMBEDDING_DIM, `graph-recon-${args.seed}`),
-    embeddingModel: EMBEDDING_MODEL,
-    embeddingDim: EMBEDDING_DIM,
-    contentHash: hex64(`graph-recon-cand-${args.seed}`),
-    eventTime: null,
-    observedAt: null,
-    availableAtDecisionTime: null,
-  });
-  await execute(
-    `UPDATE memory_candidates
-        SET status = 'promoted',
-            promoted_knowledge_id = $2,
-            outcome = $3::jsonb,
-            available_at_decision_time = NOW() - interval '1 day'
-      WHERE id = $1`,
-    [candidate.id, args.entryId, JSON.stringify(openPositiveOutcome())],
-  );
-  return candidate.id;
-}
-
-/** A realized spot close: sell activity + ONE matched pnl row with `pnlUsd`. */
-async function seedRealizedClose(executionId: number, pnlUsd: number): Promise<void> {
-  const rows = await query<{ id: number }>(
-    `INSERT INTO proj_activity
-       (namespace, activity_type, product_type, trade_side, chain,
-        execution_id, wallet_address, instrument_key)
-     VALUES ('solana', 'swap', 'spot', 'sell', 'solana', $1, $2, $3)
-     RETURNING id`,
-    [executionId, WALLET, INSTRUMENT],
-  );
-  await execute(
-    `INSERT INTO proj_pnl_matches
-       (match_kind, sell_activity_id, instrument_key, wallet_address,
-        quantity_matched, realized_pnl_usd, namespace, chain)
-     VALUES ('matched', $1, $2, $3, '100', $4, 'solana', 'solana')`,
-    [rows[0]!.id, INSTRUMENT, WALLET, pnlUsd],
-  );
-}
-
-function reconcileDepsWithInvalidateJudge(): ReconcileDeps {
-  return {
-    ...defaultReconcileDeps(),
-    judge: async (): Promise<ReconcileJudgeResult> => ({
-      verdict: { action: "invalidate", rationale: "realized loss contradicts the claim" },
-      llmCalls: 1,
-      costUsd: null,
-    }),
-  };
 }
 
 // ── Expansion seed builder ─────────────────────────────────────────
@@ -648,47 +534,6 @@ describe("S8 graph v1 (integration)", () => {
     // The predecessor's entry↔entity links STAY (historical record).
     const predecessorLinks = await listEntitiesForEntry(predecessorId);
     expect(predecessorLinks.length).toBeGreaterThan(0);
-  });
-
-  // ── Reconcile-invalidate retracts the lesson's edges (S7 wiring) ──
-
-  it("reconcile flip → invalidate retracts the entry's edges in the same pass; links survive", async () => {
-    const sid = await makeSession();
-    const anchorExec = await seedExecution(sid);
-    const entryId = await seedActiveTradeEntry("recon");
-    await seedPromotedTradeCandidate({
-      sessionId: sid,
-      seed: "recon",
-      entryId,
-      executionId: anchorExec,
-    });
-
-    // The lesson asserted graph state: a link + an edge it originated.
-    const e1 = await seedEntity("recon-wif", { entityType: "token", name: "WIF" });
-    const e2 = await seedEntity("recon-jup", { entityType: "protocol", name: "Jupiter" });
-    await linkEntryEntity(entryId, e1);
-    await seedEdge(e1, e2, "recon-edge", { relation: "traded_on", originEntryId: entryId });
-
-    // Stored outcome says the lesson WON; the realized ledger says it LOST → flip.
-    await seedRealizedClose(anchorExec, -10);
-    await enqueueLedgerWake([{ executionId: anchorExec, instrumentKey: INSTRUMENT }]);
-    const job = await claimNextDueJob(WORKER);
-    expect(job).not.toBeNull();
-    expect(job!.jobKind).toBe("reconcile");
-    await processReconcileJob(job!, WORKER, reconcileDepsWithInvalidateJudge());
-
-    // Entry invalidated AND its asserted edges retracted in the same pass.
-    const entry = await knowledgeRepo.getById(entryId);
-    expect(entry!.status).toBe("invalidated");
-    const edges = await edgesForOrigin(entryId);
-    expect(edges).toHaveLength(1);
-    expect(edges[0]!.invalidated_at).not.toBeNull();
-
-    // The entry↔entity link stays (expansion filters on ke.status='active').
-    expect((await listEntitiesForEntry(entryId)).length).toBe(1);
-
-    // The bulk retraction is idempotent: a re-run touches 0 rows.
-    expect(await invalidateEdgesForOrigin(entryId)).toBe(0);
   });
 
   // ── Expansion read path (REAL repos, 1 hop) ──────────────────────

@@ -1,6 +1,7 @@
 /**
  * Pure functions for extracting token IDs from transaction receipt logs.
- * ERC-721 mint detection and ERC-1155 position extraction.
+ * ERC-721 mint detection (shared with the generic `chain_read` tool's
+ * `erc721_mint` action — see `tools/internal/chain-read.ts`).
  */
 
 // ── ERC-721 mint extraction from receipt ────────────────────────
@@ -48,57 +49,6 @@ export function extractMintedNftId(
       (!expectedLower || log.address.toLowerCase() === expectedLower)
     ) {
       return BigInt(log.topics[3]).toString();
-    }
-  }
-
-  return undefined;
-}
-
-// ── ERC-1155 position extraction from receipt ──────────────────────
-
-const ERC1155_TRANSFER_SINGLE_TOPIC = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
-const ERC1155_TRANSFER_BATCH_TOPIC = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
-
-/**
- * Extract ERC-1155 position token ID from receipt logs.
- * Looks for TransferSingle or TransferBatch events where `to` is the recipient.
- */
-export function extractErc1155Position(
-  logs: Array<{ address: string; topics: string[]; data: string }>,
-  recipientAddress: string,
-): string | undefined {
-  const recipientPadded = `0x000000000000000000000000${recipientAddress.slice(2).toLowerCase()}`;
-
-  // TransferSingle(operator, from, to, id, value) — to is topics[3]
-  for (const log of logs) {
-    if (
-      log.topics[0] === ERC1155_TRANSFER_SINGLE_TOPIC &&
-      log.topics.length === 4 &&
-      log.topics[3]?.toLowerCase() === recipientPadded
-    ) {
-      // id is in data[0:32]
-      const id = BigInt("0x" + log.data.slice(2, 66));
-      return id.toString();
-    }
-  }
-
-  // TransferBatch(operator, from, to, ids[], values[]) — to is topics[3]
-  for (const log of logs) {
-    if (
-      log.topics[0] === ERC1155_TRANSFER_BATCH_TOPIC &&
-      log.topics.length === 4 &&
-      log.topics[3]?.toLowerCase() === recipientPadded
-    ) {
-      // For batch, take the first id from the ABI-encoded array
-      // Offset to ids array starts at data position 0 (offset pointer), then length, then first element
-      try {
-        const dataHex = log.data.slice(2);
-        const idsOffset = Number(BigInt("0x" + dataHex.slice(0, 64))) * 2;
-        const firstId = BigInt("0x" + dataHex.slice(idsOffset + 64, idsOffset + 128));
-        return firstId.toString();
-      } catch {
-        continue;
-      }
     }
   }
 

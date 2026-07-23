@@ -1,5 +1,5 @@
 /**
- * inspectTransactions handler + portfolio router `transactions` dispatch — Stage 9.
+ * inspectTransactions handler + agent_scan router `transactions` dispatch — Stage 9.
  *
  * Pins:
  *   - the router passes addresses + context.sessionId + the parsed params
@@ -35,7 +35,7 @@ vi.mock("../../../../vex-agent/tools/internal/wallet/resolve.js", async () => {
   };
 });
 
-const { handlePortfolio } = await import("../../../../vex-agent/tools/internal/portfolio-inspect.js");
+const { handleAgentScan } = await import("../../../../vex-agent/tools/internal/portfolio-inspect.js");
 const { inspectTransactions } = await import("../../../../vex-agent/tools/internal/inspect-views/transactions.js");
 const { encodeCursor } = await import("../../../../vex-agent/db/repos/transactions-cursor.js");
 import { makeTestContext } from "../_test-context.js";
@@ -50,9 +50,9 @@ beforeEach(() => {
   mockResolveSet.mockReturnValue({ evm: "0xEVM", solana: "SOL", all: ["0xEVM", "SOL"] });
 });
 
-describe("portfolio router → transactions dispatch", () => {
+describe("agent_scan router → transactions dispatch", () => {
   it("passes the wallet set + context.sessionId + parsed params to the repo", async () => {
-    await handlePortfolio(
+    await handleAgentScan(
       { view: "transactions", namespace: "solana", productType: "spot", txHash: "0xDEAD", limit: 5 },
       ctx,
     );
@@ -69,7 +69,7 @@ describe("portfolio router → transactions dispatch", () => {
 
   it("threads a valid cursor through (decoded) to the repo", async () => {
     const cursor = encodeCursor({ cursorTs: "2026-06-04T10:00:00.123456Z", sourceRank: 1, id: 9 });
-    await handlePortfolio({ view: "transactions", cursor }, ctx);
+    await handleAgentScan({ view: "transactions", cursor }, ctx);
     expect(mockGetTransactions).toHaveBeenCalledWith(
       expect.objectContaining({
         cursor: { cursorTs: "2026-06-04T10:00:00.123456Z", sourceRank: 1, id: 9 },
@@ -79,7 +79,7 @@ describe("portfolio router → transactions dispatch", () => {
   });
 
   it("malformed cursor → bounded fail, repo NOT called, no leak", async () => {
-    const r = await handlePortfolio({ view: "transactions", cursor: "totally-garbage" }, ctx);
+    const r = await handleAgentScan({ view: "transactions", cursor: "totally-garbage" }, ctx);
     expect(r.success).toBe(false);
     expect(r.output).toBe("Invalid cursor");
     expect(r.output).not.toContain("garbage");
@@ -93,7 +93,7 @@ describe("portfolio router → transactions dispatch", () => {
       hasMore: true,
       failuresScope: "session",
     });
-    const r = await handlePortfolio({ view: "transactions" }, ctx);
+    const r = await handleAgentScan({ view: "transactions" }, ctx);
     expect(r.success).toBe(true);
     expect(r.data!.view).toBe("transactions");
     expect(r.data!.count).toBe(1);
@@ -105,7 +105,7 @@ describe("portfolio router → transactions dispatch", () => {
 
   it("an empty selected wallet set still scopes the repo call to []", async () => {
     mockResolveSet.mockReturnValueOnce({ evm: null, solana: null, all: [] });
-    await handlePortfolio({ view: "transactions" }, ctx);
+    await handleAgentScan({ view: "transactions" }, ctx);
     expect(mockGetTransactions).toHaveBeenCalledWith(expect.objectContaining({ addresses: [] }));
   });
 });

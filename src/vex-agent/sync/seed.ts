@@ -19,11 +19,15 @@ const SYNC_JOBS = [
   // venue request when no tracked position or resting entry exists.
   { namespace: "_global", syncType: "hyperliquid_reconcile", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
 
+  // Agent Scan repair sweep (plan §4.1/§11.1) — re-checks pending
+  // agent_activity rows by persisted tx_hash. Lookup-only; see
+  // sync/agent-activity-repair.ts.
+  { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "kyberswap", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
-  { namespace: "polymarket", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   // Pendle trades can land on chains Khalani cannot scan; the post-mutation run
   // derives the traded chain from _tradeCapture.chain and selectively refreshes
   // it (enrich/seed) so PT balances appear immediately instead of at the next

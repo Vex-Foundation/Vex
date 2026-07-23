@@ -51,10 +51,6 @@ export interface MemoryJobRow {
   completed_at: string | null;
 }
 
-export interface MemoryJobRowWithInsertFlag extends MemoryJobRow {
-  inserted: boolean;
-}
-
 // ── Domain shape (camelCase) ────────────────────────────────────
 export interface MemoryJob {
   id: number;

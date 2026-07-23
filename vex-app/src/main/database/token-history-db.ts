@@ -30,70 +30,86 @@
  *      `tools/internal/wallet/send/validation.ts`, root `src/`, read-only
  *      reference), so a row whose `token` does not equal the requested
  *      address after normalization is EXCLUDED — never a symbol guess.
+ *  (c) `agent_activity` (Agent Scan plan §4.1/§4.7) — one row per EVM swap
+ *      ATTEMPT (`event_role = 'swap'` only; allowance rows are approval
+ *      plumbing, excluded). Matching is DIRECT and exact — `chain_id` is a
+ *      real BIGINT column (no free-text alias dance) and
+ *      `token_in_address`/`token_out_address` are real columns (no JSONB
+ *      resolution needed): a row matches when `chain_id = $chainId` AND
+ *      (input OR output token address = the requested address). Surfaces
+ *      `status`/`failureCode` so a pending or failed attempt is visible too,
+ *      not just confirmed fills — mirrors `db/repos/transactions.ts`'s
+ *      compatibility feed (root `src/`, read-only reference — NOT imported).
+ *      Dedupe (mirrors that same feed's semantics): the unified
+ *      `kyberswap.swap.execute`/`uniswap.swap.execute` handlers have
+ *      `capture: "none"`, so an execution is written to EXACTLY ONE of
+ *      `proj_activity`/`agent_activity`, never both — no runtime overlap to
+ *      guard against structurally, unlike the root feed's failure half.
  *
  * Total order: `created_at DESC, source_rank DESC, source_id DESC`
- * (source_rank: activity=1, intent=0 — fixed). `source_id` is TEXT in both
- * arms (activity ids are zero-padded so lexicographic order matches numeric
- * order; intent ids are already opaque text) so one UNION column type works
- * for both. Keyset `limit+1` → `nextCursor`/`hasMore`, mirroring
- * `src/vex-agent/db/repos/transactions.ts` (read-only reference).
+ * (source_rank: agent_activity=2, activity=1, intent=0 — fixed). `source_id`
+ * is TEXT in every arm (the two BIGSERIAL/SERIAL arms zero-pad so
+ * lexicographic order matches numeric order; intent ids are already opaque
+ * text) so one UNION column type works for all three. Keyset `limit+1` →
+ * `nextCursor`/`hasMore`, mirroring `src/vex-agent/db/repos/transactions.ts`
+ * (read-only reference).
  *
  * BOUNDED READ WITHOUT A MIGRATION (round-2 negotiated): the read runs inside
  * `BEGIN READ ONLY; SET LOCAL statement_timeout = '2s'` … guaranteed
- * COMMIT/ROLLBACK. The page fetch and the cost-basis fetch are separate
- * statements inside that ONE transaction (SET LOCAL is transaction-scoped),
- * each individually bounded — NOT one end-to-end deadline. A page-phase
- * SQLSTATE 57014 fails the WHOLE read closed (`{status:"unavailable",
- * reason:"query_timeout"}`); a cost-basis-phase timeout degrades ONLY the
- * cost-basis sub-result (`{kind:"unavailable"}`) while the page's entries
- * still return normally — cost basis is supplementary, not load-bearing for
- * "did this token touch my wallet". The IPC handler (not this module) is
- * responsible for checking `ctx.signal.aborted` before trusting an
- * `"unavailable"` page result as a genuine timeout rather than a user cancel
- * (register-handler discipline — this module has no `ctx`).
+ * COMMIT/ROLLBACK. A SQLSTATE 57014 fails the WHOLE read closed
+ * (`{status:"unavailable", reason:"query_timeout"}`). The IPC handler (not
+ * this module) is responsible for checking `ctx.signal.aborted` before
+ * trusting an `"unavailable"` result as a genuine timeout rather than a user
+ * cancel (register-handler discipline — this module has no `ctx`).
  *
- * COST BASIS: candidate lots are `proj_pnl_lots` rows for the resolved
- * wallets with `status IN ('open','partial')`. A lot is AUTHORITATIVELY
- * matched via its `activity_id` link to the acquisition row (exact resolved
- * output address + chain match, same resolution as the activity arm above).
- * A lot with no linked activity row (legacy/synthetic) falls back to parsing
- * `instrument_key` for the AUTHORITATIVE 2-part spot shape (`{chain}:
- * {address}` — see `sync/instrument-key.ts`, root `src/`, read-only
- * reference); any other shape (prediction/lp/limit-order/Hyperliquid-style
- * `hyperliquid:perp:{coin}`, or unparseable) FAILS CLOSED — excluded, never
- * guessed. Remaining cost basis is PRORATED per lot (`cost_basis_usd ×
- * remaining/quantity`, exact `NUMERIC` arithmetic in SQL — `reduceLot` never
- * updates `cost_basis_usd` itself, only `remaining_quantity_raw`, mirroring
- * the exact proration formula `sync/projectors/spot.ts` already uses for the
- * realized-PnL match ledger). Totals (`totalOpenQuantity`, weighted
- * `avgOpenPriceUsd`) are computed in SQL via window aggregates over EVERY
- * matching lot (never just the capped display list) — atomic quantities can
- * exceed 2^53 (18-decimal tokens), so this NEVER touches JS `Number` for the
- * arithmetic. "No open lots" (`{kind:"none"}`) is distinguished from "could
- * not verify" (`{kind:"unavailable"}`).
+ * COST BASIS — RETIRED (Agent Scan plan §4.7): the former cost-basis phase
+ * read `proj_pnl_lots`, which the PnL/lot-projection teardown deletes (the
+ * unified Kyber/Uniswap handlers never populate a lot ledger). No
+ * replacement; the page's `entries` are the whole result now.
+ *
+ * AMOUNT HONESTY (Codex final-review round 1 finding 5 / contract C20): a
+ * `confirmed` agent_activity swap entry NEVER displays the quote-time
+ * REQUESTED amount as if it were settlement. `resolveAgentActivityAmount`
+ * (`./agent-activity-amount.js`, shared with `moves-db.ts`) picks the one
+ * honest value per status: `confirmed` → computed from
+ * `executed_amount_*_raw` + `token_*_decimals` (BigInt-safe, via `viem`'s
+ * `formatUnits` — never `Number` on a wei-scale string, and never the
+ * repair-sweep decoders' human column, which they intentionally leave
+ * unpopulated); `pending` → the requested echo; anything else (`failed`) →
+ * none.
+ *
+ * USD HONESTY (Codex final-review round 2 finding 7 / contract C35): unlike
+ * the amount above, an `agent_activity` leg's `valueUsd` is ALWAYS a
+ * quote-time estimate (`aa.usd_in/out_est`) — there is no settlement-time USD
+ * repricing anywhere in this feed, so the tag does NOT vary with `status` the
+ * way `resolveAgentActivityAmount` does. Every leg's `valueUsd` carries a
+ * `usdProvenance` tag (`usdField()` below): `"estimated"` for the
+ * `agent_activity` arm, `"recorded"` for the legacy `proj_activity` arm (its
+ * own captured USD column). The renderer must show an `"estimated"` figure
+ * with an explicit `~ … est.` marker — never bare "USD at execution".
  *
  * SECURITY: wallet allow-list is the GLOBAL configured inventory only
  * (`inventory-wallets.ts` — the same resolution `portfolio-db.ts` uses for
  * `scope: "global"`); the renderer never supplies an address. Logging records
  * ONLY counts + correlationId-free structural context — a cancellation logs
- * exactly one redacted event (`portfolio.token_history_query_canceled
- * phase=page|cost_basis`), never addresses/amounts.
+ * exactly one redacted event (`portfolio.token_history_query_canceled`),
+ * never addresses/amounts.
  */
 
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import { SOLANA_CHAIN_ID, familyForChainId } from "@shared/chains/display.js";
 import {
-  TOKEN_HISTORY_OPEN_LOTS_MAX,
   TOKEN_HISTORY_PAGE_SIZE,
   type AmountField,
-  type TokenHistoryCostBasis,
   type TokenHistoryCursor,
   type TokenHistoryDto,
   type TokenHistoryEntry,
   type TokenHistoryReadInput,
+  type UsdField,
 } from "@shared/schemas/token-history.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
+import { resolveAgentActivityAmount } from "./agent-activity-amount.js";
 import { resolveInventoryWalletAddresses } from "./inventory-wallets.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -186,8 +202,9 @@ async function rollbackQuietly(client: Client): Promise<void> {
 // ── Chain identity ──────────────────────────────────────────────────────
 
 /**
- * Free-text `proj_activity.chain` / `wallet_intents.chain_alias` / lot
- * `chain` candidates for a numeric chainId. These columns are NOT FKs to any
+ * Free-text `proj_activity.chain` / `wallet_intents.chain_alias` candidates
+ * for a numeric chainId (the `agent_activity` arm below needs none of this —
+ * it has a real `chain_id` BIGINT column). These columns are NOT FKs to any
  * chain-id table (`activity-populator.ts` writes `_tradeCapture.chain`
  * verbatim). Real emitters use two shapes for the same chain — a curated
  * slug (transcribed from `shared/explorer-links.ts`'s documented alias
@@ -261,7 +278,7 @@ function cursorTsExpr(column: string): string {
 function keysetPredicate(
   createdAtColumn: string,
   sourceIdExpr: string,
-  sourceRankLiteral: 0 | 1,
+  sourceRankLiteral: 0 | 1 | 2,
   hasCursor: boolean,
   tsParam: number,
   rankParam: number,
@@ -278,7 +295,7 @@ function keysetPredicate(
 // ── Row shape (wide UNION — NULL placeholders where an arm doesn't apply) ─
 
 interface PageRow {
-  readonly source_kind: "activity" | "intent";
+  readonly source_kind: "activity" | "intent" | "agent_activity";
   readonly source_rank: number;
   readonly source_id: string;
   readonly created_at: string | Date;
@@ -302,15 +319,16 @@ interface PageRow {
   readonly output_token_symbol: string | null;
   readonly output_token_local_symbol: string | null;
   readonly to_address: string | null;
-}
-
-interface LotRow {
-  readonly remaining_quantity_raw: string;
-  readonly prorated_cost_basis_usd: string | null;
-  readonly price_usd: string | null;
-  readonly opened_at: string | Date;
-  readonly total_open_quantity: string;
-  readonly avg_open_price_usd: string | null;
+  /** `agent_activity` only — already collapsed to the DTO's 3-value vocabulary in SQL. */
+  readonly status: string | null;
+  /** `agent_activity` only — the closed failure_code enum. */
+  readonly failure_code: string | null;
+  /** `agent_activity` only — receipt-derived EXECUTED leg, raw base-unit integer text (C20). */
+  readonly executed_amount_in_raw: string | null;
+  readonly executed_amount_out_raw: string | null;
+  /** `agent_activity` only — token decimals, needed to format the raw executed amount. */
+  readonly token_in_decimals: number | null;
+  readonly token_out_decimals: number | null;
 }
 
 function toIso(value: string | Date): string {
@@ -323,20 +341,32 @@ function toUsdStringOrNull(value: number | string | null): string | null {
 }
 
 /**
- * Unit provenance for an amount column, mirroring `MovesBlock.tsx`'s
- * `amountDisplay` discipline exactly: the engine records HUMAN-readable
- * amounts only for some captures (a dotted decimal); older/other captures
- * store raw base-unit integers (no dot) — meaningless to print without
- * decimals this query does not have.
+ * Wrap a leg's USD column with its provenance tag (C35). `provenance` is a
+ * caller-supplied constant per arm — NEVER derived from `status` (see the
+ * module header's USD HONESTY note: unlike the executed amount, there is no
+ * settlement-time repricing to switch to).
+ */
+function usdField(value: number | string | null, provenance: "recorded" | "estimated"): UsdField {
+  return { value: toUsdStringOrNull(value), usdProvenance: provenance };
+}
+
+/**
+ * Unit provenance for a LEGACY (`proj_activity`) amount column, mirroring
+ * `MovesBlock.tsx`'s `amountDisplay` discipline exactly: the engine recorded
+ * HUMAN-readable amounts only for some captures (a dotted decimal that
+ * parses to a finite positive number); anything else — including a raw
+ * base-unit integer with no dot — is honestly `"unknown"` rather than
+ * asserted as a specific-but-unrenderable unit (there is nothing display-side
+ * to gain from distinguishing "atomic" from "unknown": both render the em
+ * dash). `agent_activity` rows never call this — see
+ * `agentActivityAmountField` below.
  */
 function amountField(value: string | null): AmountField {
   if (value === null) return { value: null, unitProvenance: "unknown" };
   if (value.includes(".")) {
     const parsed = Number.parseFloat(value);
     if (Number.isFinite(parsed) && parsed > 0) return { value, unitProvenance: "human" };
-    return { value, unitProvenance: "unknown" };
   }
-  if (/^[0-9]+$/.test(value)) return { value, unitProvenance: "atomic" };
   return { value, unitProvenance: "unknown" };
 }
 
@@ -351,6 +381,47 @@ function humanAmountField(value: string | null): AmountField {
   const parsed = Number.parseFloat(value);
   if (Number.isFinite(parsed) && parsed > 0) return { value, unitProvenance: "human" };
   return { value, unitProvenance: "unknown" };
+}
+
+/**
+ * `agent_activity` amounts are ALREADY human decimals BY CONTRACT (plan
+ * §4.1) — no dot-detection heuristic needed, unlike the legacy `amountField`
+ * above (Codex final review finding 10 / contract C27: a whole-number
+ * human value like "50" is a VALID result, not a rejection). WHICH value is
+ * honest to show depends on the row's status — delegated to
+ * `resolveAgentActivityAmount` (`./agent-activity-amount.js`, shared with
+ * `moves-db.ts` — contract C20): `confirmed` computes from the raw executed
+ * leg + decimals; `pending` uses the requested echo; anything else is
+ * `null`. Never a blind COALESCE of executed/requested in SQL.
+ */
+function agentActivityAmountField(
+  status: TokenHistorySwapStatus | null,
+  requestedHuman: string | null,
+  executedRaw: string | null,
+  decimals: number | null,
+): AmountField {
+  const value = resolveAgentActivityAmount(status, requestedHuman, executedRaw, decimals);
+  return value === null
+    ? { value: null, unitProvenance: "unknown" }
+    : { value, unitProvenance: "human" };
+}
+
+const TOKEN_HISTORY_SWAP_STATUSES = ["pending", "confirmed", "failed"] as const;
+type TokenHistorySwapStatus = (typeof TOKEN_HISTORY_SWAP_STATUSES)[number];
+
+/**
+ * Narrow the SQL-collapsed `agent_activity` status string to the DTO's closed
+ * vocabulary. An unrecognized value fails closed to `null` rather than
+ * risking an output-schema parse failure on a future enum drift.
+ */
+function toTokenHistorySwapStatus(value: string | null): TokenHistorySwapStatus | null {
+  // Tolerate the raw DB value too — the SQL CASE collapses
+  // `definitively_failed` → `failed`, but the mapper must not depend on it.
+  if (value === "definitively_failed") return "failed";
+  return value !== null &&
+    (TOKEN_HISTORY_SWAP_STATUSES as readonly string[]).includes(value)
+    ? (value as TokenHistorySwapStatus)
+    : null;
 }
 
 function mapEntry(row: PageRow): TokenHistoryEntry {
@@ -376,19 +447,70 @@ function mapEntry(row: PageRow): TokenHistoryEntry {
     };
   }
 
+  if (row.source_kind === "agent_activity") {
+    // event_role='swap' only (the SQL WHERE clause already excludes
+    // allowance rows) — always a swap entry, never bridge/transfer. Amount
+    // provenance is status-dependent (C20 — see `agentActivityAmountField`);
+    // no dot-detection heuristic gates a whole-number result (C27). USD
+    // provenance is NOT status-dependent (C35 — see the module header's USD
+    // HONESTY note): `usd_in/out_est` is always a quote-time estimate, so
+    // both legs are tagged `"estimated"` regardless of `status`.
+    // `localSymbol` fallback is unnecessary — `token_in/out_symbol` are
+    // authoritative on-chain reads, not a legacy raw-address gap to fill.
+    const status = toTokenHistorySwapStatus(row.status);
+    return {
+      kind: "swap",
+      id: row.source_id,
+      createdAt: toIso(row.created_at),
+      chain: row.chain ?? "unknown",
+      venue: row.namespace,
+      tradeSide: null,
+      productType: row.product_type,
+      input: {
+        token: row.input_token_address,
+        symbol: sanitizeTokenSymbol(row.input_token_symbol),
+        localSymbol: null,
+        amount: agentActivityAmountField(
+          status,
+          row.input_amount,
+          row.executed_amount_in_raw,
+          row.token_in_decimals,
+        ),
+        valueUsd: usdField(row.input_value_usd, "estimated"),
+      },
+      output: {
+        token: row.output_token_address,
+        symbol: sanitizeTokenSymbol(row.output_token_symbol),
+        localSymbol: null,
+        amount: agentActivityAmountField(
+          status,
+          row.output_amount,
+          row.executed_amount_out_raw,
+          row.token_out_decimals,
+        ),
+        valueUsd: usdField(row.output_value_usd, "estimated"),
+      },
+      unitPriceUsd: toUsdStringOrNull(row.unit_price_usd),
+      captureStatus: null,
+      status,
+      failureCode: row.failure_code,
+      txRefs,
+    };
+  }
+
   const input = {
     token: row.input_token_address,
     symbol: sanitizeTokenSymbol(row.input_token_symbol),
     localSymbol: sanitizeTokenSymbol(row.input_token_local_symbol),
     amount: amountField(row.input_amount),
-    valueUsd: toUsdStringOrNull(row.input_value_usd),
+    valueUsd: usdField(row.input_value_usd, "recorded"),
   };
   const output = {
     token: row.output_token_address,
     symbol: sanitizeTokenSymbol(row.output_token_symbol),
     localSymbol: sanitizeTokenSymbol(row.output_token_local_symbol),
     amount: amountField(row.output_amount),
-    valueUsd: toUsdStringOrNull(row.output_value_usd),
+    valueUsd: usdField(row.output_value_usd, "recorded"),
   };
 
   if (row.product_type === "bridge") {
@@ -418,26 +540,9 @@ function mapEntry(row: PageRow): TokenHistoryEntry {
     output,
     unitPriceUsd: toUsdStringOrNull(row.unit_price_usd),
     captureStatus: row.capture_status,
+    status: null,
+    failureCode: null,
     txRefs,
-  };
-}
-
-// ── Cost basis ────────────────────────────────────────────────────────────
-
-function buildCostBasis(rows: readonly LotRow[]): TokenHistoryCostBasis {
-  if (rows.length === 0) return { kind: "none" };
-  const first = rows[0];
-  if (first === undefined) return { kind: "none" };
-  return {
-    kind: "lots",
-    openLots: rows.slice(0, TOKEN_HISTORY_OPEN_LOTS_MAX).map((row) => ({
-      quantity: { value: row.remaining_quantity_raw, unitProvenance: "atomic" },
-      priceUsd: row.price_usd,
-      costBasisUsd: row.prorated_cost_basis_usd,
-      openedAt: toIso(row.opened_at),
-    })),
-    totalOpenQuantity: first.total_open_quantity,
-    avgOpenPriceUsd: first.avg_open_price_usd,
   };
 }
 
@@ -456,7 +561,6 @@ export async function getTokenHistory(
       entries: [],
       nextCursor: null,
       hasMore: false,
-      costBasis: { kind: "none" },
     });
   }
 
@@ -500,6 +604,7 @@ export async function getTokenHistory(
     const chainAliasesParam = push(chainAliases);
     const addressParam = push(normalizedAddress);
     const networkParam = push(network);
+    const chainIdParam = push(input.chainId);
 
     const hasCursor = cursor !== null;
     const tsParam = cursor !== null ? push(cursor.createdAt) : 0;
@@ -521,6 +626,15 @@ export async function getTokenHistory(
       "wi.created_at",
       "wi.intent_id",
       0,
+      hasCursor,
+      tsParam,
+      rankParam,
+      idParam,
+    );
+    const agentActivityKeyset = keysetPredicate(
+      "aa.created_at",
+      "lpad(aa.id::text, 20, '0')",
+      2,
       hasCursor,
       tsParam,
       rankParam,
@@ -572,7 +686,13 @@ export async function getTokenHistory(
             AND b.token_address = a.output_token
             AND b.token_symbol IS NOT NULL
          HAVING COUNT(DISTINCT b.token_symbol) = 1) AS output_token_local_symbol,
-        NULL::text AS to_address
+        NULL::text AS to_address,
+        NULL::text AS status,
+        NULL::text AS failure_code,
+        NULL::text AS executed_amount_in_raw,
+        NULL::text AS executed_amount_out_raw,
+        NULL::smallint AS token_in_decimals,
+        NULL::smallint AS token_out_decimals
       FROM proj_activity a
       LEFT JOIN protocol_capture_items ci
         ON ci.id = a.capture_item_id AND ci.execution_id = a.execution_id
@@ -587,6 +707,15 @@ export async function getTokenHistory(
             lower(trim(CASE WHEN a.product_type = 'bridge' THEN COALESCE(a.meta->>'destChain', a.chain) ELSE a.chain END)) = ANY($${chainAliasesParam}::text[])
             AND ${addr("COALESCE(NULLIF(ci.trade_capture->>'outputTokenAddress', ''), a.output_token)")} = $${addressParam}
           )
+        )
+        -- Defensive dedupe (mirrors the engine feed's own belt-and-suspenders
+        -- posture, module header): a no-op today — capture:"none" on the
+        -- unified swap.execute handlers means this execution id can never
+        -- also have an agent_activity row — but guards against a future
+        -- capture-matrix change silently double-surfacing one execution.
+        AND NOT EXISTS (
+          SELECT 1 FROM agent_activity aa2
+           WHERE aa2.protocol_execution_id = a.execution_id
         )
         ${activityKeyset}`;
 
@@ -615,7 +744,13 @@ export async function getTokenHistory(
         NULL::text AS input_token_local_symbol,
         NULL::text AS output_token_symbol,
         NULL::text AS output_token_local_symbol,
-        wi.to_address
+        wi.to_address,
+        NULL::text AS status,
+        NULL::text AS failure_code,
+        NULL::text AS executed_amount_in_raw,
+        NULL::text AS executed_amount_out_raw,
+        NULL::smallint AS token_in_decimals,
+        NULL::smallint AS token_out_decimals
       FROM wallet_intents wi
       WHERE wi.wallet_address = ANY($${walletsParam}::text[])
         AND wi.status = 'executed'
@@ -625,9 +760,66 @@ export async function getTokenHistory(
         AND ${addr("wi.token")} = $${addressParam}
         ${intentKeyset}`;
 
+    // agent_activity half (Agent Scan plan §4.1/§4.7): EXACT match on the
+    // real `chain_id` column (no free-text alias dance) and the real
+    // token_in/out_address columns (no JSONB resolution) — `event_role =
+    // 'swap'` excludes allowance-plumbing rows. `status` collapses the DB's
+    // 3-value enum to the DTO's `pending | confirmed | failed` here in SQL
+    // so the JS mapper stays a plain pass-through (mirrors `moves-db.ts`).
+    // `input_amount`/`output_amount` here are ONLY the quote-time REQUESTED
+    // echo — the JS mapper (`agentActivityAmountField`, C20) decides per-row
+    // whether to show that or the raw-computed EXECUTED amount (never both
+    // COALESCE'd in SQL — see the module header).
+    const agentActivityHalf = `
+      SELECT
+        'agent_activity'::text AS source_kind,
+        2 AS source_rank,
+        lpad(aa.id::text, 20, '0') AS source_id,
+        aa.created_at,
+        ${cursorTsExpr("aa.created_at")} AS cursor_ts,
+        aa.protocol AS namespace,
+        'spot'::text AS product_type,
+        NULL::text AS trade_side,
+        COALESCE(aa.chain_slug, aa.chain_id::text) AS chain,
+        NULL::text AS dest_chain,
+        aa.token_in_address AS input_token_address,
+        aa.amount_in_human AS input_amount,
+        aa.token_out_address AS output_token_address,
+        aa.amount_out_human AS output_amount,
+        aa.usd_in_est AS input_value_usd,
+        aa.usd_out_est AS output_value_usd,
+        NULL::numeric AS unit_price_usd,
+        NULL::text AS capture_status,
+        aa.tx_hash AS tx_ref,
+        aa.token_in_symbol AS input_token_symbol,
+        NULL::text AS input_token_local_symbol,
+        aa.token_out_symbol AS output_token_symbol,
+        NULL::text AS output_token_local_symbol,
+        NULL::text AS to_address,
+        CASE aa.status
+          WHEN 'definitively_failed' THEN 'failed'
+          ELSE aa.status
+        END AS status,
+        aa.failure_code,
+        aa.executed_amount_in_raw,
+        aa.executed_amount_out_raw,
+        aa.token_in_decimals,
+        aa.token_out_decimals
+      FROM agent_activity aa
+      WHERE aa.wallet_address = ANY($${walletsParam}::text[])
+        AND aa.event_role = 'swap'
+        AND aa.chain_id = $${chainIdParam}::bigint
+        AND (
+          ${addr("aa.token_in_address")} = $${addressParam}
+          OR ${addr("aa.token_out_address")} = $${addressParam}
+        )
+        ${agentActivityKeyset}`;
+
     const pageSql = `${activityHalf}
       UNION ALL
       ${intentHalf}
+      UNION ALL
+      ${agentActivityHalf}
       ORDER BY created_at DESC, source_rank DESC, source_id DESC
       LIMIT $${limitParam}`;
 
@@ -652,100 +844,25 @@ export async function getTokenHistory(
       hasMore && lastKept !== undefined
         ? {
             createdAt: lastKept.cursor_ts,
-            sourceRank: lastKept.source_rank === 1 ? 1 : 0,
+            sourceRank: normalizeSourceRank(lastKept.source_rank),
             sourceId: lastKept.source_id,
           }
         : null;
 
-    // ── Phase 2: cost basis (supplementary — a failure here degrades only
-    // the cost-basis sub-result, never the page we already fetched). ANY
-    // statement failure aborts the surrounding Postgres transaction (SQLSTATE
-    // 25P02 on the next command until ROLLBACK), so a failed cost-basis
-    // statement must ROLLBACK — never attempt COMMIT — while the already-
-    // fetched `entries`/`nextCursor` (plain JS values by this point) still
-    // return as a successful page.
-    let costBasis: TokenHistoryCostBasis = { kind: "unavailable" };
-    let costBasisFailed = false;
     try {
-      const lotsSql = `
-        WITH candidate_lots AS (
-          SELECT
-            lots.remaining_quantity_raw,
-            lots.quantity_raw,
-            lots.cost_basis_usd,
-            lots.price_usd,
-            lots.opened_at,
-            lots.activity_id,
-            lots.instrument_key,
-            lots.chain,
-            acq.chain AS acq_chain,
-            COALESCE(NULLIF(acq_ci.trade_capture->>'outputTokenAddress', ''), acq.output_token) AS acq_output_token_address
-          FROM proj_pnl_lots lots
-          LEFT JOIN proj_activity acq ON acq.id = lots.activity_id
-          LEFT JOIN protocol_capture_items acq_ci
-            ON acq_ci.id = acq.capture_item_id AND acq_ci.execution_id = acq.execution_id
-          WHERE lots.wallet_address = ANY($1::text[])
-            AND lots.status IN ('open', 'partial')
-        ),
-        matched_lots AS (
-          SELECT *
-          FROM candidate_lots c
-          WHERE
-            (
-              c.activity_id IS NOT NULL
-              AND lower(trim(c.acq_chain)) = ANY($2::text[])
-              AND ${addr("c.acq_output_token_address")} = $3
-            )
-            OR
-            (
-              c.activity_id IS NULL
-              AND array_length(string_to_array(c.instrument_key, ':'), 1) = 2
-              AND lower(trim(split_part(c.instrument_key, ':', 1))) = ANY($2::text[])
-              AND ${addr("split_part(c.instrument_key, ':', 2)")} = $3
-            )
-        )
-        SELECT
-          remaining_quantity_raw,
-          (cost_basis_usd * remaining_quantity_raw::numeric / NULLIF(quantity_raw::numeric, 0))::text AS prorated_cost_basis_usd,
-          price_usd::text AS price_usd,
-          opened_at,
-          SUM(remaining_quantity_raw::numeric) OVER ()::text AS total_open_quantity,
-          (
-            SUM(price_usd * remaining_quantity_raw::numeric) FILTER (WHERE price_usd IS NOT NULL) OVER ()
-            / NULLIF(SUM(remaining_quantity_raw::numeric) FILTER (WHERE price_usd IS NOT NULL) OVER (), 0)
-          )::text AS avg_open_price_usd
-        FROM matched_lots
-        ORDER BY opened_at ASC
-        LIMIT 5000`;
-      const lotsResult = await client.query<LotRow>(lotsSql, [wallets, chainAliases, normalizedAddress]);
-      costBasis = buildCostBasis(lotsResult.rows);
+      await client.query("COMMIT");
     } catch (cause) {
-      costBasisFailed = true;
-      if (isStatementTimeout(cause)) {
-        log.info("portfolio.token_history_query_canceled phase=cost_basis");
-      } else {
-        log.warn("[token-history-db] cost-basis query failed, degrading to unavailable", cause);
-      }
-      costBasis = { kind: "unavailable" };
-    }
-
-    if (costBasisFailed) {
-      // The transaction is already aborted by the failed statement above —
-      // ROLLBACK, never COMMIT. The page's `entries`/`nextCursor` are already
-      // plain JS values, so this still returns as a successful page.
       await rollbackQuietly(client);
-    } else {
-      try {
-        await client.query("COMMIT");
-      } catch (cause) {
-        await rollbackQuietly(client);
-        return dbError("COMMIT failed", cause);
-      }
+      return dbError("COMMIT failed", cause);
     }
 
     log.info(
-      `[token-history-db] getTokenHistory ok entries=${entries.length} hasMore=${hasMore} costBasis=${costBasis.kind}`,
+      `[token-history-db] getTokenHistory ok entries=${entries.length} hasMore=${hasMore}`,
     );
-    return ok({ status: "available", entries, nextCursor, hasMore, costBasis });
+    return ok({ status: "available", entries, nextCursor, hasMore });
   });
+}
+
+function normalizeSourceRank(value: number): 0 | 1 | 2 {
+  return value === 2 ? 2 : value === 1 ? 1 : 0;
 }

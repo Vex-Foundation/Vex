@@ -5,13 +5,12 @@ export const VAULT_SECRET_KEYS = [
   "JUPITER_API_KEY",
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",
-  "POLYMARKET_API_KEY",
-  "POLYMARKET_API_SECRET",
-  "POLYMARKET_PASSPHRASE",
-  // Per-wallet CLOB creds (puzzle 5 B-core): JSON map keyed by normalized EVM
-  // address. Encrypted in the vault, mirrored to process.env at unlock, and
-  // stripped from .env like the other managed secrets.
-  "POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS",
+  // Polymarket integration removed (Agent Scan §4.6): the 4 POLYMARKET_* keys
+  // were dropped from this registry deliberately. Any already-vaulted values
+  // are NOT migrated or purged here — the vault's `extraSecrets` retention
+  // path (local-secret-vault/crypto.ts) leaves them inert on disk forever,
+  // never mirrored to process.env again. A future consent-gated purge is a
+  // separate follow-up; never print or re-derive these values.
 ] as const;
 
 export type VaultSecretKey = (typeof VAULT_SECRET_KEYS)[number];

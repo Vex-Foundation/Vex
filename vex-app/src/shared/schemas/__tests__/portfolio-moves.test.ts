@@ -36,7 +36,10 @@ describe("moves read input schema", () => {
 describe("move item schema (tolerant)", () => {
   function itemFixture(overrides: Record<string, unknown> = {}) {
     return {
-      id: "42",
+      id: "success:42",
+      source: "success",
+      status: null,
+      failureCode: null,
       tradeSide: "buy",
       productType: "spot",
       venue: "kyberswap",
@@ -195,7 +198,10 @@ describe("move item schema (tolerant)", () => {
 
 describe("moves dto schema (array + cap)", () => {
   const row = {
-    id: "1",
+    id: "success:1",
+    source: "success",
+    status: null,
+    failureCode: null,
     tradeSide: null,
     productType: null,
     venue: null,

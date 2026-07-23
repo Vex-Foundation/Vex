@@ -1,6 +1,8 @@
 /**
- * Portfolio inspect — portfolio views: summary, balances, snapshots, executions.
- * Aggregate portfolio state and audit.
+ * Agent Scan — portfolio views: summary, balances, snapshots, executions.
+ * Aggregate balance state and protocol-execution audit (Agent Scan plan v3
+ * §1.9/§4.7 — the profit-computation system is deleted; `summary` is
+ * balances-only, no realized/unrealized PnL).
  */
 
 import type { ToolResult } from "../../types.js";
@@ -13,92 +15,23 @@ import { ok } from "../types.js";
 export async function inspectSummary(addresses: string[]): Promise<ToolResult> {
   const { getTotalUsd, getLatestAggregateSnapshot } = await import("@vex-agent/db/repos/balances.js");
   const { getOpen } = await import("@vex-agent/db/repos/open-positions.js");
-  const { getTotalRealizedPnl } = await import("@vex-agent/db/repos/pnl-matches.js");
-  const { query: dbQuery } = await import("@vex-agent/db/client.js");
-  const { resolvePortfolioChainIds } = await import("@vex-agent/sync/portfolio-chain-map.js");
 
   const totalUsd = await getTotalUsd(addresses);
   const openPositions = await getOpen(addresses);
   const latestSnapshot = await getLatestAggregateSnapshot(addresses);
-  const realizedPnlRaw = await getTotalRealizedPnl(addresses);
-
-  let unrealizedPnlUsd: number | null = null;
-
-  const mtmRow = await dbQuery<{ total: string | null }>(
-    "SELECT SUM(unrealized_pnl_usd) AS total FROM proj_open_positions WHERE status = 'open' AND unrealized_pnl_usd IS NOT NULL AND wallet_address = ANY($1::text[])",
-    [addresses],
-  );
-  const predictionUnrealized = mtmRow[0]?.total != null ? Number(mtmRow[0].total) : null;
-
-  const spotLotRow = await dbQuery<{ count: string }>(
-    "SELECT COUNT(*) AS count FROM proj_pnl_lots WHERE status IN ('open', 'partial') AND wallet_address = ANY($1::text[])",
-    [addresses],
-  );
-  const openSpotLotCount = Number(spotLotRow[0]?.count ?? 0);
-  const spotChainRows = await dbQuery<{ chain: string }>(
-    `SELECT DISTINCT split_part(instrument_key, ':', 1) AS chain
-     FROM proj_pnl_lots
-     WHERE status IN ('open', 'partial') AND wallet_address = ANY($1::text[])`,
-    [addresses],
-  );
-  const chainIds = await resolvePortfolioChainIds(spotChainRows.map((row) => row.chain));
-  const spotUnrealized = chainIds.size > 0
-    ? await calculateSpotUnrealized(chainIds, addresses)
-    : null;
-
-  if (predictionUnrealized != null || spotUnrealized != null) {
-    unrealizedPnlUsd = (predictionUnrealized ?? 0) + (spotUnrealized ?? 0);
-  }
 
   return ok({
     view: "summary",
     totalBalanceUsd: totalUsd,
     openPositionCount: openPositions.length,
-    openSpotLotCount,
     latestSnapshot: latestSnapshot ? {
       totalUsd: latestSnapshot.totalUsd,
       pnlVsPrev: latestSnapshot.pnlVsPrev,
       activeChains: latestSnapshot.activeChains,
       at: latestSnapshot.at,
     } : null,
-    realizedPnlUsd: realizedPnlRaw != null ? Number(realizedPnlRaw) : null,
-    unrealizedPnlUsd,
-    note: "Scoped to this session's selected wallet(s). Spot inventory is FIFO lots, not open_positions. Realized PnL comes from matched lots; unrealized = prediction MTM + spot lots × projected balance prices.",
+    note: "Scoped to this session's selected wallet(s). Balances only — trade history, amounts, and explorer refs live in `transactions`; compute PnL yourself from those recorded numbers if you need it.",
   });
-}
-
-async function calculateSpotUnrealized(
-  chainIds: ReadonlyMap<string, number>,
-  addresses: string[],
-): Promise<number | null> {
-  const { query: dbQuery } = await import("@vex-agent/db/client.js");
-  const params: unknown[] = [];
-  const valuesSql = [...chainIds.entries()].map(([chain, chainId]) => {
-    params.push(chain, chainId);
-    const start = params.length - 1;
-    return `($${start}::text, $${start + 1}::bigint)`;
-  }).join(", ");
-  params.push(addresses);
-  const addrIdx = params.length;
-
-  const spotRow = await dbQuery<{ total: string | null }>(
-    `WITH chain_map(chain_slug, chain_id) AS (VALUES ${valuesSql}),
-     lot_vals AS (
-       SELECT l.cost_basis_usd * l.remaining_quantity_raw::numeric / l.quantity_raw::numeric AS remaining_cost,
-              l.remaining_quantity_raw::numeric / power(10, COALESCE(b.decimals, 18)) * b.price_usd AS current_val
-       FROM proj_pnl_lots l
-       JOIN chain_map cm ON cm.chain_slug = lower(split_part(l.instrument_key, ':', 1))
-       LEFT JOIN proj_balances b ON b.wallet_address = l.wallet_address
-         AND b.token_address = split_part(l.instrument_key, ':', 2)
-         AND b.chain_id = cm.chain_id
-       WHERE l.status IN ('open', 'partial') AND b.price_usd IS NOT NULL AND l.cost_basis_usd IS NOT NULL
-         AND l.wallet_address = ANY($${addrIdx}::text[])
-     )
-     SELECT SUM(current_val - remaining_cost) AS total FROM lot_vals`,
-    params,
-  );
-
-  return spotRow[0]?.total != null ? Number(spotRow[0].total) : null;
 }
 
 export async function inspectBalances(addresses: string[]): Promise<ToolResult> {

@@ -1,0 +1,124 @@
+/**
+ * Staged EVM transaction primitive for KyberSwap — sign locally and hand the
+ * caller the computed hash BEFORE broadcasting, so a DB-backed caller can
+ * persist `tx_hash`/`from`/`nonce` first, THEN the signed payload is sent to
+ * the network and a bounded receipt is awaited.
+ *
+ * Generalizes `sendKyberTransactionWithReceipt`'s send+wait shape (`erc20.ts`)
+ * into the pre-broadcast-durable contract Agent Scan's staged execute needs
+ * (plan §11.1 step 2): "prepare and sign locally; compute the tx hash from
+ * the signed payload; persist tx_hash/from/nonce — THEN broadcast." A crash
+ * between sign and send leaves a discoverable pending `agent_activity` row
+ * instead of a silently lost transaction.
+ *
+ * `ambiguous` covers BOTH a send-time failure (the RPC response never
+ * confirms whether the raw transaction reached the mempool) and a
+ * receipt-wait failure (not yet mined, or the wait itself could not
+ * complete) — in BOTH cases the caller must NOT treat this as a definitive
+ * failure: leave the durable row `pending` for the repair sweep, never
+ * re-broadcast (ambiguity never terminalizes — plan §11.1 / FIX-SPINE C1).
+ */
+
+import type {
+  Address,
+  Chain,
+  Hex,
+  PublicClient,
+  TransactionReceipt,
+  Transport,
+  WalletClient,
+} from "viem";
+import { keccak256 } from "viem";
+
+export interface StagedTxParams {
+  readonly to: Address;
+  readonly data: Hex;
+  readonly value?: bigint;
+}
+
+/** Persisted BEFORE the signed payload is broadcast. */
+export interface StagedSendHandles {
+  readonly txHash: Hex;
+  readonly fromAddress: Address;
+  readonly nonce: number;
+}
+
+export type StagedBroadcastOutcome =
+  | { readonly kind: "confirmed"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
+  | { readonly kind: "reverted"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
+  | { readonly kind: "ambiguous"; readonly txHash: Hex; readonly stage: "send" | "confirm" };
+
+export interface StagedBroadcastHooks {
+  /**
+   * Called AFTER the transaction is signed and its hash computed, BEFORE it
+   * is sent to the network. The caller persists the hash here
+   * (`markActivityBroadcast`) — a throw from this hook aborts the broadcast
+   * entirely (nothing has been sent yet).
+   */
+  readonly onHashStaged: (handles: StagedSendHandles) => Promise<void>;
+  /**
+   * Called once the RPC has accepted the raw-transaction submission
+   * (`markBroadcastAccepted` bookkeeping). Best-effort — a throw here does
+   * NOT roll back the broadcast (the transaction is already in flight).
+   */
+  readonly onAccepted: () => Promise<void>;
+}
+
+/**
+ * Sign `txParams` locally with `walletClient`'s bound account, compute its
+ * hash, invoke `hooks.onHashStaged`, THEN broadcast the signed payload and
+ * wait for a bounded receipt.
+ */
+export async function signStageBroadcast(
+  publicClient: PublicClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain>,
+  txParams: StagedTxParams,
+  hooks: StagedBroadcastHooks,
+): Promise<StagedBroadcastOutcome> {
+  const account = walletClient.account!;
+
+  const request = await walletClient.prepareTransactionRequest({
+    account,
+    chain: walletClient.chain,
+    to: txParams.to,
+    data: txParams.data,
+    value: txParams.value ?? 0n,
+  });
+  const serializedTransaction = await walletClient.signTransaction(request);
+  const txHash = keccak256(serializedTransaction);
+  const nonce = request.nonce;
+  if (nonce === undefined) {
+    throw new Error("signStageBroadcast: prepared transaction request has no nonce");
+  }
+
+  await hooks.onHashStaged({
+    txHash,
+    fromAddress: account.address,
+    nonce,
+  });
+
+  try {
+    await publicClient.sendRawTransaction({ serializedTransaction });
+  } catch {
+    return { kind: "ambiguous", txHash, stage: "send" };
+  }
+
+  // Best-effort bookkeeping (per this function's contract) — a throw here
+  // must NOT be mistaken for the broadcast itself failing: the transaction is
+  // already in flight, so swallow (the caller already logs a miss) and keep
+  // going to the receipt wait.
+  try {
+    await hooks.onAccepted();
+  } catch {
+    // Intentionally swallowed — see comment above.
+  }
+
+  try {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    return receipt.status === "success"
+      ? { kind: "confirmed", txHash, receipt }
+      : { kind: "reverted", txHash, receipt };
+  } catch {
+    return { kind: "ambiguous", txHash, stage: "confirm" };
+  }
+}

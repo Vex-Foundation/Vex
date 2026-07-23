@@ -82,7 +82,7 @@ The vex-app main process consumes shared root runtime code (`/mnt/x/Vex/src/lib/
 
 | Package | Version | Verified | License | Why |
 |---|---|---|---|---|
-| `viem` | `2.45.1` | matches root pin | MIT | Wallet primitives — keystore decryption, `privateKeyToAddress`, chain definitions. Used by `wallet-export`, `polymarket-setup`, `wallet-restore`, `wallets-runner`. |
+| `viem` | `2.45.1` | matches root pin | MIT | Wallet primitives — keystore decryption, `privateKeyToAddress`, chain definitions. Used by `wallet-export`, `wallet-restore`, `wallets-runner`. |
 | `@solana/web3.js` | `~1.98.4` | matches root range | Apache-2.0 / MIT | Solana keystore handling, native balances. Used by root `tools/wallet/solana-create.ts`, `solana-keystore.ts`; also imported directly by vex-app `src/main/onboarding/wallet-restore.ts`. |
 | `@openrouter/sdk` | `^0.9.11` | matches root range | Apache-2.0 | OpenRouter client used by `openrouter-test-client.ts`. |
 

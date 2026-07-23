@@ -1,39 +1,42 @@
 /**
- * Mutating protocol-alias routers (Stage 8b).
+ * Mutating protocol-alias routers (Stage 8b; Agent Scan plan §4.2/§11.2
+ * rewired the swap pair).
  *
- * A MUTATING action-named alias (`swap`, `bridge`) resolves to a TARGET
- * protocol toolId + translated params, then is dispatched DIRECTLY through
- * `executeProtocolTool` by the dispatcher's dedicated branch. This is the whole
- * point of the dedicated path: a mutating alias must NOT travel through the
- * dispatcher's internal mutating-approval gate (`routeInternalTool`), because
- * that gate would enqueue approval BEFORE `executeProtocolTool`'s Stage-7
- * prequote gate runs. `executeProtocolTool` is the single chokepoint and SOLELY
- * owns the ordering: prequote gate → approval gate → capture.
+ * A MUTATING action-named alias (`swap_execute`, `swap_execute_uniswap`,
+ * `bridge`) resolves to a TARGET protocol toolId + translated params, then is
+ * dispatched DIRECTLY through `executeProtocolTool` by the dispatcher's
+ * dedicated branch. This is the whole point of the dedicated path: a mutating
+ * alias must NOT travel through the dispatcher's internal mutating-approval
+ * gate (`routeInternalTool`), because that gate would enqueue approval BEFORE
+ * `executeProtocolTool`'s Stage-7 prequote gate runs. `executeProtocolTool` is
+ * the single chokepoint and SOLELY owns the ordering: prequote gate → approval
+ * gate → capture.
  *
  * Each router:
  *   - validates the (untrusted) alias args with Zod at the boundary,
  *   - classifies the swap family (shared with the read-only `swap_quote` alias
  *     via `classifySwapFamily` so quote and execute can never disagree),
- *   - translates to the target's EXACT param names (verified against the
- *     kyberswap / solana swap manifests),
+ *   - translates to the target's EXACT param names,
  *   - THROWS `MutatingAliasRouteError` on an un-routable request (unknown
- *     family, Solana + EVM-only `side`). The dispatcher turns the throw into a
- *     bounded failure ToolResult — it never dispatches a guessed target.
+ *     family, chain not usable on this venue, a hidden pair not yet revealed
+ *     for the session). The dispatcher turns the throw into a bounded failure
+ *     ToolResult — it never dispatches a guessed target.
  *
- * `side` is EVM-only (KyberSwap buy/sell lots); Jupiter execution has no buy/sell
- * distinction, so a `side` on a Solana swap is REJECTED explicitly rather than
- * silently ignored (Codex: "reject it rather than imply it changes Jupiter
- * execution").
+ * `side` / `recipient` are REMOVED from the unified contract (plan §11.2) — no
+ * lot-direction/PnL tracking survives Agent Scan, and wallet-delta receipt
+ * decoding is the truth invariant for the output leg.
  *
- * Units: `amount` is the HUMAN decimal of `tokenIn` (e.g. "1.5"), matching the
- * kyber `amountIn` string and the Jupiter `amount` number — translation
- * preserves the value, it does not convert units.
+ * Units: `amountIn` is the HUMAN decimal of `tokenIn` (e.g. "1.5"), matching
+ * the kyber/uniswap `amountIn` string and the Jupiter `amount` number —
+ * translation preserves the value, it does not convert units.
  */
 
 import { z } from "zod";
 
 import { classifySwapFamily, isEvmSwapTokenInput } from "./internal/swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
+import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
+import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 
 /** A resolved target for a mutating protocol-alias. */
 export interface ResolvedAliasTarget {
@@ -43,46 +46,72 @@ export interface ResolvedAliasTarget {
 
 /**
  * Thrown by a router when the alias cannot be routed to a concrete target
- * (unknown family, Solana + EVM-only `side`, invalid args). Carries a bounded,
- * agent-facing message — never raw provider/DB text. The dispatcher returns it
- * as a failed ToolResult; the predicate `dispatchTargetIsMutating` swallows it
- * and falls back to the registry mutating flag (the throw is a validation
- * signal, not a side-effect classification signal).
+ * (unknown family, chain not usable on this venue, invalid args, hidden pair
+ * not yet revealed). Carries a bounded, agent-facing message — never raw
+ * provider/DB text. The dispatcher returns it as a failed ToolResult; the
+ * predicate `dispatchTargetIsMutating` swallows it and falls back to the
+ * registry mutating flag (the throw is a validation signal, not a side-effect
+ * classification signal).
+ *
+ * `revealEligible` marks the ONE case a router can determine synchronously,
+ * pre-call, that the hidden Uniswap pair should now be revealed for the
+ * session (`swap_execute`'s "chain has no KyberSwap support at all" case,
+ * plan §11.2). The dispatcher's dedicated branch checks this flag (it has
+ * `context.sessionId`, which a pure router does not) and calls
+ * `revealUniswapPair` before surfacing the failure.
  */
 export class MutatingAliasRouteError extends Error {
-  constructor(message: string) {
+  readonly revealEligible: boolean;
+  constructor(message: string, options?: { readonly revealEligible?: boolean }) {
     super(message);
     this.name = "MutatingAliasRouteError";
+    this.revealEligible = options?.revealEligible ?? false;
   }
 }
 
-/** Router signature: validated-or-raw args → resolved target, or throw. */
-export type MutatingAliasRouter = (args: Record<string, unknown>) => ResolvedAliasTarget;
+/**
+ * Router signature: validated-or-raw args + the calling session id → resolved
+ * target, or throw. `sessionId` is `undefined` for the classification-only
+ * call site (`dispatcher/mutating-targets.ts`) — a router that NEEDS session
+ * scope (the hidden Uniswap pair) then always throws for that call, which
+ * correctly falls back to the registry's static `mutating` flag there.
+ */
+export type MutatingAliasRouter = (
+  args: Record<string, unknown>,
+  sessionId: string | undefined,
+) => ResolvedAliasTarget;
 
-// ── swap — EVM (KyberSwap buy/sell) / Solana (Jupiter execute) router ──────
+// ── swap_execute — EVM (KyberSwap ONLY) / Solana (Jupiter execute) router ──
 
 /**
- * `swap` alias args. `side` is EVM-only (KyberSwap lot direction); `recipient`
- * is EVM-only (the Jupiter execute manifest has no recipient param). Both are
- * optional. `amount` is a HUMAN decimal string for both families.
+ * `swap_execute` alias args. `side` / `recipient` are REMOVED (plan §11.2 — no
+ * lot-direction tracking survives, and the Jupiter execute manifest never had
+ * a recipient param either). `amountIn` is a HUMAN decimal string for both
+ * families.
  */
+// `.strict()` (FIX-SPINE round 1, finding 14/C4) — the removed legacy
+// `side`/`recipient`/`amount` fields are REJECTED with a clear message, never
+// silently stripped. Silently dropping `recipient` in particular would be a
+// transaction-safety-significant silent behavior change.
 const SwapArgs = z.object({
   chain: z.string().min(1, { message: "chain is required" }),
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
-  amount: z.string().min(1, { message: "amount is required (human decimal string)" }),
-  side: z.enum(["sell", "buy"]).optional(),
+  amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
   slippageBps: z.number().int().nonnegative().optional(),
-  recipient: z.string().min(1).optional(),
-});
+}).strict();
 
 type SwapArgs = z.infer<typeof SwapArgs>;
 
 /**
- * Resolve the `swap` alias to a concrete swap EXECUTE toolId + translated
- * params. EVM → kyberswap.swap.buy (`side === "buy"`) / kyberswap.swap.sell
- * (default); Solana → solana.swap.execute. Throws `MutatingAliasRouteError` on
- * invalid args, an unknown family, or a Solana request carrying `side`.
+ * Resolve the `swap_execute` alias to a concrete swap EXECUTE toolId +
+ * translated params. EVM → `kyberswap.swap.execute` ONLY (plan §11.2 — the
+ * silent Uniswap fallback is removed); Solana → `solana.swap.execute`
+ * (unchanged). Throws `MutatingAliasRouteError` on invalid args or an unknown
+ * family; throws with `revealEligible: true` when the chain has NO KyberSwap
+ * aggregator support at all (the "local chain-not-Kyber-supported,
+ * registry gate, pre-call" reveal case, plan §11.2) — the dispatcher's
+ * dedicated branch reveals the hidden Uniswap pair for the session on that flag.
  */
 function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   const parsed = SwapArgs.safeParse(args);
@@ -91,7 +120,7 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
     // the offending key (Zod's default "expected string, received undefined"
     // message omits it).
     throw new MutatingAliasRouteError(
-      `swap: ${parsed.error.issues
+      `swap_execute: ${parsed.error.issues
         .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
         .join("; ")}`,
     );
@@ -101,31 +130,16 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   const family = classifySwapFamily(a.chain);
   if (family.kind === "unknown") {
     throw new MutatingAliasRouteError(
-      `swap: cannot determine swap family for chain "${a.chain}". ` +
+      `swap_execute: cannot determine swap family for chain "${a.chain}". ` +
         `Use a supported EVM chain (e.g. ethereum, base, arbitrum) or "solana".`,
     );
   }
 
   if (family.kind === "solana") {
-    // `side` is an EVM-only (KyberSwap) concept. Jupiter execution has no
-    // buy/sell distinction — reject explicitly rather than imply `side`
-    // changes Jupiter behavior. `recipient` is likewise EVM-only here (the
-    // Jupiter execute manifest has no recipient param), so reject it too.
-    if (a.side !== undefined) {
-      throw new MutatingAliasRouteError(
-        `swap: "side" is EVM-only and does not apply to a Solana (Jupiter) swap. ` +
-          `Omit "side" for chain "solana".`,
-      );
-    }
-    if (a.recipient !== undefined) {
-      throw new MutatingAliasRouteError(
-        `swap: "recipient" is not supported for a Solana (Jupiter) swap. Omit it for chain "solana".`,
-      );
-    }
     // Jupiter execute manifest types `amount` as a NUMBER (human decimal).
-    const amount = Number(a.amount);
+    const amount = Number(a.amountIn);
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new MutatingAliasRouteError(`swap: amount "${a.amount}" is not a positive number.`);
+      throw new MutatingAliasRouteError(`swap_execute: amountIn "${a.amountIn}" is not a positive number.`);
     }
     const params: Record<string, unknown> = {
       inputToken: a.tokenIn,
@@ -143,34 +157,92 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   // resolved on the EVM path; use token_find first).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     throw new MutatingAliasRouteError(
-      "swap: EVM tokens must be a contract address — resolve the symbol with " +
+      "swap_execute: EVM tokens must be a contract address — resolve the symbol with " +
         "token_find first, or pass native ETH/native.",
     );
   }
 
-  // EVM → the VENUE ROUTER's primary venue (KyberSwap where supported, Uniswap on
-  // Robinhood Chain / as an all-EVM fallback). `side === "buy"` → buy (opens a lot
-  // on tokenOut); "sell"/default → sell. amount → amountIn (both human decimal).
-  // Both venues share the same execute param shape (chain, tokenIn, tokenOut,
-  // amountIn, slippageBps?, recipient?), verified against their manifests.
-  const isBuy = a.side === "buy";
-  const toolId =
-    family.venue === "uniswap"
-      ? isBuy
-        ? "uniswap.swap.buy"
-        : "uniswap.swap.sell"
-      : isBuy
-        ? "kyberswap.swap.buy"
-        : "kyberswap.swap.sell";
+  // `family.venue === "uniswap"` means the venue classifier found NO KyberSwap
+  // aggregator support for this chain at all — reveal-eligible pre-call gate.
+  if (family.venue === "uniswap") {
+    throw new MutatingAliasRouteError(
+      `swap_execute: KyberSwap does not support chain "${a.chain}". ` +
+        `swap_execute_uniswap is now available for this session as a fallback (Uniswap venue) — ` +
+        `call swap_quote_uniswap first.`,
+      { revealEligible: true },
+    );
+  }
+
   const params: Record<string, unknown> = {
     chain: family.chain,
     tokenIn: a.tokenIn,
     tokenOut: a.tokenOut,
-    amountIn: a.amount,
+    amountIn: a.amountIn,
     ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
-    ...(a.recipient !== undefined ? { recipient: a.recipient } : {}),
   };
-  return { toolId, params };
+  return { toolId: "kyberswap.swap.execute", params };
+}
+
+// ── swap_execute_uniswap — HIDDEN EVM-only Uniswap fallback execute ────────
+
+const SwapExecuteUniswapArgs = z.object({
+  chain: z.string().min(1, { message: "chain is required" }),
+  tokenIn: z.string().min(1, { message: "tokenIn is required" }),
+  tokenOut: z.string().min(1, { message: "tokenOut is required" }),
+  amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
+  slippageBps: z.number().int().nonnegative().optional(),
+}).strict();
+
+type SwapExecuteUniswapArgs = z.infer<typeof SwapExecuteUniswapArgs>;
+
+/**
+ * Resolve the hidden `swap_execute_uniswap` alias. Dispatch-side hard rule
+ * (plan §11.2): THROWS when the session has no active reveal, independent of
+ * whatever the tool list showed the model. Resolves DIRECTLY against the
+ * Uniswap deployment registry (not `classifySwapFamily`, which would
+ * prioritize KyberSwap on a chain it ALSO covers — the whole point of this
+ * fallback is to reach Uniswap even there).
+ */
+function routeSwapExecuteUniswap(
+  args: Record<string, unknown>,
+  sessionId: string | undefined,
+): ResolvedAliasTarget {
+  if (!isUniswapPairRevealed(sessionId)) {
+    throw new MutatingAliasRouteError(
+      "swap_execute_uniswap is not available yet for this session — it unlocks after an eligible "
+        + "KyberSwap route-not-found failure (try swap_quote first).",
+    );
+  }
+
+  const parsed = SwapExecuteUniswapArgs.safeParse(args);
+  if (!parsed.success) {
+    throw new MutatingAliasRouteError(
+      `swap_execute_uniswap: ${parsed.error.issues
+        .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
+        .join("; ")}`,
+    );
+  }
+  const a: SwapExecuteUniswapArgs = parsed.data;
+
+  const deployment = resolveUniswapDeployment(a.chain);
+  if (!deployment) {
+    throw new MutatingAliasRouteError(`swap_execute_uniswap: "${a.chain}" has no verified Uniswap deployment.`);
+  }
+  if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
+    throw new MutatingAliasRouteError(
+      "swap_execute_uniswap: EVM tokens must be a contract address — resolve the symbol with "
+        + "token_find first, or pass native ETH/native.",
+    );
+  }
+
+  const params: Record<string, unknown> = {
+    chain: deployment.key,
+    tokenIn: a.tokenIn,
+    tokenOut: a.tokenOut,
+    amountIn: a.amountIn,
+    ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
+  };
+  return { toolId: "uniswap.swap.execute", params };
 }
 
 // ── bridge — Khalani cross-chain bridge EXECUTE router ─────────────────────
@@ -285,7 +357,8 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
  * `kind: "internal"` ToolDef, so the exclusion can never hide an orphan.
  */
 export const MUTATING_PROTOCOL_ALIAS_ROUTERS: Readonly<Record<string, MutatingAliasRouter>> = {
-  swap: routeSwap,
+  swap_execute: routeSwap,
+  swap_execute_uniswap: routeSwapExecuteUniswap,
   bridge: routeBridge,
 };
 

@@ -29,13 +29,6 @@ describe("resolveChainSlug", () => {
     expect(resolveChainSlug("op")).toBe("optimism");
     expect(resolveChainSlug("avax")).toBe("avalanche");
     expect(resolveChainSlug("bera")).toBe("berachain");
-    expect(resolveChainSlug("zk")).toBe("zksync");
-    expect(resolveChainSlug("era")).toBe("zksync");
-  });
-
-  it("accepts ZaaS-only chain slugs", () => {
-    expect(resolveChainSlug("scroll")).toBe("scroll");
-    expect(resolveChainSlug("zksync")).toBe("zksync");
   });
 
   it("is case-insensitive", () => {
@@ -55,6 +48,16 @@ describe("resolveChainSlug", () => {
     expect(() => resolveChainSlug("")).toThrow(VexError);
     expect(() => resolveChainSlug("unsupported-chain")).toThrow(VexError);
   });
+
+  // Agent Scan (plan §4.2): Scroll/zkSync were ZaaS-only (aggregator: false).
+  // Deleting zap tooling removed their only KyberSwap feature — dropped from
+  // the registry entirely, not kept as dead aggregator-unsupported entries.
+  it("no longer resolves the deleted ZaaS-only chains or their aliases", () => {
+    expect(() => resolveChainSlug("scroll")).toThrow(VexError);
+    expect(() => resolveChainSlug("zksync")).toThrow(VexError);
+    expect(() => resolveChainSlug("zk")).toThrow(VexError);
+    expect(() => resolveChainSlug("era")).toThrow(VexError);
+  });
 });
 
 describe("chainIdToSlug", () => {
@@ -70,6 +73,11 @@ describe("chainIdToSlug", () => {
   it("returns undefined for unknown IDs", () => {
     expect(chainIdToSlug(999999)).toBeUndefined();
     expect(chainIdToSlug(999998)).toBeUndefined();
+  });
+
+  it("returns undefined for the deleted ZaaS-only chain IDs (534352, 324)", () => {
+    expect(chainIdToSlug(534352)).toBeUndefined();
+    expect(chainIdToSlug(324)).toBeUndefined();
   });
 });
 
@@ -88,32 +96,25 @@ describe("slugToChainId", () => {
 });
 
 describe("getChainFeatures", () => {
-  it("returns all features for Ethereum", () => {
+  it("returns aggregator=true for Ethereum", () => {
     const f = getChainFeatures("ethereum");
     expect(f.aggregator).toBe(true);
-    expect(f.limitOrder).toBe(true);
-    expect(f.zaas).toBe(true);
   });
 
-  it("returns zaas=false for Mantle", () => {
+  it("returns aggregator=true for Mantle", () => {
     const f = getChainFeatures("mantle");
     expect(f.aggregator).toBe(true);
-    expect(f.limitOrder).toBe(true);
-    expect(f.zaas).toBe(false);
   });
 
-  it("returns zaas=false for MegaETH", () => {
+  it("returns aggregator=true for MegaETH", () => {
     const f = getChainFeatures("megaeth");
     expect(f.aggregator).toBe(true);
-    expect(f.zaas).toBe(false);
   });
 
-  it("returns aggregator-only for Robinhood (provisional; no limit order, no zap)", () => {
+  it("returns aggregator=true for Robinhood (provisional)", () => {
     const f = getChainFeatures("robinhood");
     expect(f.chainId).toBe(4663);
     expect(f.aggregator).toBe(true);
-    expect(f.limitOrder).toBe(false);
-    expect(f.zaas).toBe(false);
   });
 
   it("throws for unknown slug", () => {
@@ -122,33 +123,17 @@ describe("getChainFeatures", () => {
 });
 
 describe("chainSupportsFeature", () => {
-  it("returns true for supported features", () => {
+  it("returns true for aggregator-enabled chains", () => {
     expect(chainSupportsFeature("ethereum", "aggregator")).toBe(true);
-    expect(chainSupportsFeature("ethereum", "zaas")).toBe(true);
-    expect(chainSupportsFeature("arbitrum", "limitOrder")).toBe(true);
-  });
-
-  it("returns false for unsupported features", () => {
-    expect(chainSupportsFeature("mantle", "zaas")).toBe(false);
-    expect(chainSupportsFeature("megaeth", "zaas")).toBe(false);
-    expect(chainSupportsFeature("scroll", "aggregator")).toBe(false);
-    expect(chainSupportsFeature("zksync", "limitOrder")).toBe(false);
-    // Robinhood is aggregator-only — limit order + zap are gated OFF.
+    expect(chainSupportsFeature("arbitrum", "aggregator")).toBe(true);
     expect(chainSupportsFeature("robinhood", "aggregator")).toBe(true);
-    expect(chainSupportsFeature("robinhood", "limitOrder")).toBe(false);
-    expect(chainSupportsFeature("robinhood", "zaas")).toBe(false);
-  });
-
-  it("returns true for ZaaS-only chains' zaas feature", () => {
-    expect(chainSupportsFeature("scroll", "zaas")).toBe(true);
-    expect(chainSupportsFeature("zksync", "zaas")).toBe(true);
   });
 });
 
 describe("getKyberChains", () => {
-  it("returns 21 chains", () => {
+  it("returns 19 chains (Scroll/zkSync dropped)", () => {
     const chains = getKyberChains();
-    expect(chains).toHaveLength(21);
+    expect(chains).toHaveLength(19);
   });
 
   it("each chain has required fields", () => {
@@ -157,90 +142,18 @@ describe("getKyberChains", () => {
       expect(chain.chainId).toBeGreaterThan(0);
       expect(chain.name).toBeTruthy();
       expect(typeof chain.aggregator).toBe("boolean");
-      expect(typeof chain.limitOrder).toBe("boolean");
-      expect(typeof chain.zaas).toBe("boolean");
     }
   });
 
-  it("aggregator-enabled chains have aggregator=true", () => {
+  it("every chain is aggregator-enabled (the only surviving feature)", () => {
     const aggregatorChains = getKyberChains().filter((c) => c.aggregator);
     expect(aggregatorChains.length).toBe(19);
   });
 
-  it("ZaaS-only chains have aggregator=false and zaas=true", () => {
-    const zaasOnly = getKyberChains().filter((c) => !c.aggregator && c.zaas);
-    expect(zaasOnly.map((c) => c.slug).sort()).toEqual(["scroll", "zksync"]);
-  });
-});
-
-describe("zaas catalog consistency", () => {
-  it("every zaas:true chain has an entry in zap-dexes catalog", async () => {
-    const { getSupportedZapChains } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
-    const zaasChains = getKyberChains().filter(c => c.zaas).map(c => c.slug);
-    const catalogChains = getSupportedZapChains();
-    const missing = zaasChains.filter(slug => !catalogChains.includes(slug));
-    expect(missing).toEqual([]);
-  });
-
-  it("every catalog entry has valid 5-axis position model", async () => {
-    const { getSupportedZapChains, getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
-    const validRefKinds = new Set(["tokenId", "ownerAddress", "erc1155TokenId", "opaqueRef"]);
-    const validApprovalStandards = new Set(["erc721", "erc20", "erc1155", "none"]);
-    const validApprovalTargets = new Set(["positionManager", "poolAddress", "vaultShare", "binManager", "lpToken", "none"]);
-    const validCaptureKinds = new Set(["receiptNftMint", "receiptErc1155", "shareBalance", "none"]);
-    const validKeyStrategies = new Set(["nftTokenId", "chainPoolWallet", "chainVaultWallet", "erc1155TokenId", "none"]);
-
-    for (const chain of getSupportedZapChains()) {
-      const config = getZapDexConfig(chain);
-      expect(config).toBeDefined();
-      for (const dex of config!.dexes) {
-        expect(validRefKinds.has(dex.positionRefKind), `${chain}/${dex.id} invalid positionRefKind: ${dex.positionRefKind}`).toBe(true);
-        expect(validApprovalStandards.has(dex.approvalStandard), `${chain}/${dex.id} invalid approvalStandard: ${dex.approvalStandard}`).toBe(true);
-        expect(validApprovalTargets.has(dex.approvalTargetKind), `${chain}/${dex.id} invalid approvalTargetKind: ${dex.approvalTargetKind}`).toBe(true);
-        expect(validCaptureKinds.has(dex.captureKind), `${chain}/${dex.id} invalid captureKind: ${dex.captureKind}`).toBe(true);
-        expect(validKeyStrategies.has(dex.positionKeyStrategy), `${chain}/${dex.id} invalid positionKeyStrategy: ${dex.positionKeyStrategy}`).toBe(true);
-        expect(dex.supports.length).toBeGreaterThan(0);
-        expect(dex.id).toMatch(/^DEX_/);
-      }
-    }
-  });
-
-  it("no duplicate DEX IDs within a chain", async () => {
-    const { getSupportedZapChains, getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
-    for (const chain of getSupportedZapChains()) {
-      const config = getZapDexConfig(chain)!;
-      const ids = config.dexes.map(d => d.id);
-      const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
-      expect(duplicates, `${chain} has duplicate DEX IDs`).toEqual([]);
-    }
-  });
-
-  it("5-axis tuples are internally consistent", async () => {
-    const { getSupportedZapChains, getZapDexConfig } = await import("@tools/kyberswap/zaas/zap-dexes/index.js");
-    for (const chain of getSupportedZapChains()) {
-      const config = getZapDexConfig(chain)!;
-      for (const dex of config.dexes) {
-        // NFT CL family: tokenId ref → erc721 approval → positionManager target → receiptNftMint capture → nftTokenId key
-        if (dex.approvalStandard === "erc721") {
-          expect(dex.positionRefKind, `${chain}/${dex.id}`).toBe("tokenId");
-          expect(dex.approvalTargetKind, `${chain}/${dex.id}`).toBe("positionManager");
-          expect(dex.captureKind, `${chain}/${dex.id}`).toBe("receiptNftMint");
-          expect(dex.positionKeyStrategy, `${chain}/${dex.id}`).toBe("nftTokenId");
-        }
-        // ERC-1155 family: erc1155TokenId ref → erc1155 approval → binManager target
-        if (dex.approvalStandard === "erc1155") {
-          expect(dex.positionRefKind, `${chain}/${dex.id}`).toBe("erc1155TokenId");
-          expect(dex.approvalTargetKind, `${chain}/${dex.id}`).toBe("binManager");
-          expect(dex.captureKind, `${chain}/${dex.id}`).toBe("receiptErc1155");
-          expect(dex.positionKeyStrategy, `${chain}/${dex.id}`).toBe("erc1155TokenId");
-        }
-        // Source-only: no capture, no projection key
-        if (dex.supports.length === 1 && dex.supports[0] === "zap-migrate-source") {
-          expect(dex.captureKind, `${chain}/${dex.id}`).toBe("none");
-          expect(dex.positionKeyStrategy, `${chain}/${dex.id}`).toBe("none");
-        }
-      }
-    }
+  it("no chain slug is the deleted Scroll/zkSync entry", () => {
+    const slugs = getKyberChains().map((c) => c.slug);
+    expect(slugs).not.toContain("scroll");
+    expect(slugs).not.toContain("zksync");
   });
 });
 

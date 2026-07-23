@@ -3,11 +3,11 @@
  *
  * Centralises the message + auto-close hint for every error code so the same
  * UX text doesn't drift across modals (ExportPrivateKeyModal, UnlockScreen,
- * PolymarketSudoModal, …). The helper returns ONLY copy — workflow decisions
- * (bubble a confirm modal, route the user to the unlock screen, retry the
- * IPC) stay in the caller. Codes that need special workflow handling are
- * documented per-case below; callers branch on the code first, then fall
- * through to this helper for the message.
+ * …). The helper returns ONLY copy — workflow decisions (bubble a confirm
+ * modal, route the user to the unlock screen, retry the IPC) stay in the
+ * caller. Codes that need special workflow handling are documented per-case
+ * below; callers branch on the code first, then fall through to this helper
+ * for the message.
  */
 import type { VexError } from "@shared/ipc/result.js";
 
@@ -83,16 +83,13 @@ export function getErrorCopy(
       };
     case "wallet.risk_confirmation_required":
       // Workflow-control code — callers should branch on this BEFORE calling
-      // the helper (e.g. PolymarketSudoModal bubbles up to ConfirmModal).
-      // Fallback message is used only if the caller forgot to special-case.
+      // the helper (e.g. a Hyperliquid policy-loosening confirm modal bubbles
+      // up to ConfirmModal). Fallback message is used only if the caller
+      // forgot to special-case.
       return { message: "Risk confirmation required." };
-    case "provider.polymarket_setup_failed":
-      return {
-        message: `Polymarket setup failed. ${error.message}`,
-      };
     case "provider.unavailable":
       return {
-        message: "Polymarket service is unavailable. Try again later.",
+        message: "The connected provider is temporarily unavailable. Try again in a moment.",
       };
     case "onboarding.env_persist_failed":
       return { message: "Failed to save credentials to vault." };

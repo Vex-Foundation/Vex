@@ -61,10 +61,6 @@ const SYNTHETIC_CONTRACTS: ReadonlyMap<string, SyntheticCaptureContract> = new M
     expectedType: "prediction",
     requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
   }],
-  ["settlement_sync.polymarket", {
-    expectedType: "prediction",
-    requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
-  }],
   ["hyperliquid_reconcile.position", {
     expectedType: "perps",
     requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],

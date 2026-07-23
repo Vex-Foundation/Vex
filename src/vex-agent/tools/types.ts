@@ -63,6 +63,17 @@ export interface ToolVisibility {
    * defense-in-depth — this gate only controls what the LLM sees.
    */
   requiresPlanMode?: boolean;
+  /**
+   * True → hide unless the session has an active Uniswap fallback reveal
+   * (`ToolVisibilityContext.sessionId` checked against
+   * `registry/uniswap-reveal.js`'s `isUniswapPairRevealed`). Used by the
+   * hidden `swap_quote_uniswap` / `swap_execute_uniswap` pair (plan §11.2):
+   * absent from the default tool list until an eligible KyberSwap
+   * route-not-found failure reveals it for that session. The dispatcher
+   * ALSO hard-rejects a direct dispatch attempt independent of this gate —
+   * this flag only controls what the LLM sees.
+   */
+  requiresUniswapReveal?: boolean;
 }
 
 /**

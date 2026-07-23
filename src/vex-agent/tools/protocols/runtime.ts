@@ -38,8 +38,22 @@ import { withHyperliquidWalletMutationLock } from "./runtime/hyperliquid-mutatio
 import logger from "@utils/logger.js";
 import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
 import { evaluateHyperliquidCollateralGate, evaluateHyperliquidProtectionGate } from "./hyperliquid/protection-gate.js";
+import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
+
+/**
+ * The canonical dotted Uniswap swap toolIds (FIX-SPINE round 1, finding
+ * 8/C3). Alias-level reveal checks (`swap_quote_uniswap`/
+ * `swap_execute_uniswap`'s handlers) are necessary but NOT sufficient — a
+ * caller can reach these SAME manifests directly via `execute_tool`, which
+ * has no alias to gate it. `executeProtocolTool` is the one chokepoint every
+ * path funnels through, so the hard reveal gate lives HERE too.
+ */
+const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
+  "uniswap.swap.quote",
+  "uniswap.swap.execute",
+]);
 
 // ── Action taxonomy stamp (puzzle 5 phase 1B) ───────────────────
 //
@@ -95,6 +109,21 @@ export async function executeProtocolTool(
   const effectiveActionKind: ActionKind = isPreviewExecution(request.toolId, params)
     ? "read"
     : manifest.actionKind;
+
+  // All-path reveal gate (FIX-SPINE round 1, finding 8/C3) — BEFORE any other
+  // processing. Rejects unless this session's hidden-pair reveal is active,
+  // regardless of how the call reached executeProtocolTool (alias, direct
+  // execute_tool, or anything future). Alias-level checks stay as an
+  // additional, earlier-failing layer — this is the one that cannot be
+  // bypassed.
+  if (REVEAL_GATED_UNISWAP_TOOL_IDS.has(request.toolId) && !isUniswapPairRevealed(context.sessionId)) {
+    logger.info("protocol.execute.uniswap_reveal_denied", { toolId: request.toolId });
+    return withActionKind({
+      success: false,
+      output: `${request.toolId} is not available yet for this session — it unlocks after an eligible `
+        + `KyberSwap route-not-found failure (try swap_quote first).`,
+    }, effectiveActionKind);
+  }
 
   // Normalize the wallet scope so the deny-guard + migrated handlers never see
   // undefined. Both fields are REQUIRED on the type (production is fail-closed

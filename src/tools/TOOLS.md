@@ -1,8 +1,8 @@
 # Tools — Protocol Clients, Wallet, & Service Integrations
 
-> All protocol-specific SDK wrappers, API clients, and on-chain utilities. Each subfolder is a self-contained integration with its own types, validation, and client layer. Commands (`src/commands/`) delegate here for business logic; vex-agent tools (`src/vex-agent/tools/protocols/`) also consume these clients.
+> All protocol-specific SDK wrappers, API clients, and on-chain utilities. Each subfolder is a self-contained integration with its own types, validation, and client layer. vex-agent tools (`src/vex-agent/tools/protocols/`) consume these clients.
 >
-> **Last updated: 2026-03-31**
+> **Last updated: 2026-07-22 (Agent Scan Phase 1)**
 >
 > **LLM maintainers:** If you add/remove a protocol or change a module's scope, update this file AND the subfolder's own .md doc.
 
@@ -15,12 +15,18 @@
 | `dexscreener/` | DexScreener analytics (REST + WS) | Multi-chain | 5 | [DexScreener.md](dexscreener/DexScreener.md) |
 | `hyperliquid/` | HyperCore perps, spot, account, vault, and staking client | Hyperliquid | 11 | [Hyperliquid.md](hyperliquid/Hyperliquid.md) |
 | `khalani/` | Khalani cross-chain bridge (40+ chains) | Multi-chain | 7 | [Khalani.md](khalani/Khalani.md) |
-| `kyberswap/` | KyberSwap aggregator, limit orders, ZaaS | 18 EVM chains | 22 | [KyberSwap.md](kyberswap/KyberSwap.md) |
-| `polymarket/` | Polymarket prediction markets (CLOB, Gamma, Relayer) | Polygon | 22 | [Polymarket.md](polymarket/Polymarket.md) |
+| `kyberswap/` | KyberSwap aggregator swaps (limit orders + ZaaS deleted, Agent Scan Phase 1) | 19 EVM chains | 23 | [KyberSwap.md](kyberswap/KyberSwap.md) |
+| `uniswap/` | Direct on-chain swap quote/execute — hidden pair, reveal-gated behind KyberSwap | EVM | 12 | (no dedicated doc yet) |
 | `solana-ecosystem/` | Jupiter (swap, prices, tokens, lend, predict) + shared Solana utils | Solana | 35 | [Jupiter.md](solana-ecosystem/jupiter/Jupiter.md) |
-| `wallet/` | Multi-chain keystore, signing, native balances | EVM + Solana | 12 | [WALLET.md](wallet/WALLET.md) |
+| `wallet/` | Multi-chain keystore, signing, native balances | EVM + Solana | 29 | [WALLET.md](wallet/WALLET.md) |
 
-**Total: ~134 files across 7 modules**
+`polymarket/` (Polymarket prediction markets — CLOB, Gamma, Relayer, 39 files) was removed
+entirely in Agent Scan Phase 1 (may return someday as a fresh integration). Its `Polymarket.md`
+doc was deleted with it.
+
+**Total: ~122 files across 7 modules** (approximate; `evm-chains/`, `pendle/`, `relay/`,
+`twitter-account/`, `virtuals/` are also present under `src/tools/` but predate this table —
+not re-audited as part of this pass).
 
 ---
 
@@ -40,8 +46,10 @@ Some modules extend this with:
 - `abi/` — Contract ABIs for on-chain interaction
 - `subgraph/` — GraphQL clients for indexed data
 - `ws-client.ts` — WebSocket streaming (DexScreener)
-- `signing.ts` — Protocol-specific cryptographic signing (Polymarket CLOB)
-- `auth.ts` — JWT/HMAC authentication flows (Polymarket)
+
+(The Polymarket CLOB's `signing.ts`/`auth.ts` EIP-712/HMAC examples were removed with the
+Polymarket integration, Agent Scan Phase 1 — no remaining module in this tree uses that
+extension shape.)
 
 ---
 
@@ -49,7 +57,7 @@ Some modules extend this with:
 
 | Chain Family | Chains | Protocols |
 |-------------|--------|-----------|
-| **EVM** | Ethereum, Polygon, Arbitrum, Optimism, BSC, Avalanche, Base, + 11 more | KyberSwap, Khalani, Polymarket, DexScreener |
+| **EVM** | Ethereum, Polygon, Arbitrum, Optimism, BSC, Avalanche, Base, + 12 more | KyberSwap, Uniswap, Khalani, DexScreener |
 | **Solana** | Solana Mainnet | Jupiter (swap, lend, predict, prices, tokens) |
 
 ---
@@ -61,7 +69,6 @@ Some modules extend this with:
 | Jupiter | https://dev.jup.ag/docs/llms.txt |
 | Khalani | https://khalani.gitbook.io/khalani-docs |
 | KyberSwap | https://docs.kyberswap.com/ |
-| Polymarket | https://docs.polymarket.com/api-reference/introduction |
 | DexScreener | https://docs.dexscreener.com/api/reference |
 | Hyperliquid | https://hyperliquid.gitbook.io/hyperliquid-docs |
 
@@ -71,7 +78,7 @@ Some modules extend this with:
 
 | Dependency | Used by |
 |-----------|---------|
-| `viem` | Wallet, Khalani, KyberSwap, Polymarket (EVM reads/writes) |
+| `viem` | Wallet, Khalani, KyberSwap, Uniswap (EVM reads/writes) |
 | `@solana/web3.js` | Wallet, Jupiter, Khalani-Solana |
 | `config/store.ts` | Every module (service URLs, contract addresses) |
 | `utils/http.ts` | Every REST client |

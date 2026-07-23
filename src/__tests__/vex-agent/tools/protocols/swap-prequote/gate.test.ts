@@ -187,7 +187,7 @@ describe("evaluateSwapPrequoteGate", () => {
   it("no fresh prequote → block(no_quote)", async () => {
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(null);
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") {
       expect(d.reason).toBe("no_quote");
@@ -197,7 +197,7 @@ describe("evaluateSwapPrequoteGate", () => {
 
   it("fresh fail → block(safety_fail)", async () => {
     mockExistsFail.mockResolvedValue(true);
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") expect(d.reason).toBe("safety_fail");
     // existsFreshFail short-circuits — latest is never consulted.
@@ -207,7 +207,7 @@ describe("evaluateSwapPrequoteGate", () => {
   it("fresh pass → allow(pass)", async () => {
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("allow");
     if (d.kind === "allow") {
       expect(d.verdict).toBe("pass");
@@ -219,7 +219,7 @@ describe("evaluateSwapPrequoteGate", () => {
     const warnSpy = vi.spyOn((await import("@utils/logger.js")).default, "warn");
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(prequoteRow("unknown"));
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("allow");
     if (d.kind === "allow") expect(d.verdict).toBe("unknown");
     const unknownLog = warnSpy.mock.calls.find(
@@ -239,7 +239,7 @@ describe("evaluateSwapPrequoteGate", () => {
     // existsFreshFail returns true → block BEFORE the latest pass row is read.
     mockExistsFail.mockResolvedValue(true);
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind === "block" && d.reason).toBe("safety_fail");
     expect(mockFindLatest).not.toHaveBeenCalled();
   });
@@ -249,7 +249,7 @@ describe("evaluateSwapPrequoteGate", () => {
     // must still block, never allow a fail verdict through.
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(prequoteRow("fail"));
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind === "block" && d.reason).toBe("safety_fail");
   });
 
@@ -260,7 +260,7 @@ describe("evaluateSwapPrequoteGate", () => {
     // reads — a bridge row never reaches the swap gate (DB filters it out).
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(null);
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind === "block" && d.reason).toBe("no_quote");
     expect(mockExistsFail.mock.calls[0]![2]).toBe("swap");
     expect(mockFindLatest.mock.calls[0]![2]).toBe("swap");
@@ -272,7 +272,7 @@ describe("evaluateSwapPrequoteGate", () => {
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
     await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { ...EVM_PARAMS, tokenIn: "ETH" },
       ctx(),
     );
@@ -280,7 +280,7 @@ describe("evaluateSwapPrequoteGate", () => {
     resetMocks();
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
     await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { ...EVM_PARAMS, tokenIn: NATIVE_TOKEN_ADDRESS },
       ctx(),
     );
@@ -310,7 +310,7 @@ describe("evaluateSwapPrequoteGate", () => {
 
   it("R2: a non-native bare symbol leg → block(unresolved_token), no DB read, no network resolve", async () => {
     const d = await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { ...EVM_PARAMS, tokenIn: "USDC" },
       ctx(),
     );
@@ -339,13 +339,13 @@ describe("evaluateSwapPrequoteGate", () => {
       approveExact: false,
       slippageBps: "",
     });
-    await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(mockFindLatest.mock.calls[0]![1]).toBe(matchHash);
     // A different amount produces a different hash → would miss the recorded row.
     resetMocks();
     mockFindLatest.mockResolvedValue(null);
     await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { ...EVM_PARAMS, amountIn: "2" },
       ctx(),
     );
@@ -408,7 +408,7 @@ describe("evaluateSwapPrequoteGate", () => {
     // DIFFERENT hash — so the kyber prequote row can never match → no_quote.
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(null);
-    const d = await mod.evaluatePrequoteGate("uniswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluatePrequoteGate("uniswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") expect(d.reason).toBe("no_quote");
     expect(mockFindLatest.mock.calls[0]![1]).not.toBe(kyberHash);
@@ -438,7 +438,7 @@ describe("evaluateSwapPrequoteGate", () => {
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(prequoteRow("pass", { provider: "uniswap", chainId: 4663 }));
     const d = await mod.evaluatePrequoteGate(
-      "uniswap.swap.sell",
+      "uniswap.swap.execute",
       { ...EVM_PARAMS, chain: "robinhood" },
       ctx(),
     );
@@ -499,7 +499,7 @@ describe("evaluateSwapPrequoteGate", () => {
       prequoteRow("pass", { provider: "uniswap", chainId: 4663, matchHash: recordedHash }),
     );
     const d = await mod.evaluatePrequoteGate(
-      "uniswap.swap.buy",
+      "uniswap.swap.execute",
       { chain: "robinhood", tokenIn: "native", tokenOut: GATE_TOKEN_OUT, amountIn: "0.001" },
       ctx(),
     );
@@ -530,7 +530,7 @@ describe("evaluateSwapPrequoteGate", () => {
       prequoteRow("pass", { provider: "uniswap", chainId: 4663, matchHash: recordedHash }),
     );
     const d = await mod.evaluatePrequoteGate(
-      "uniswap.swap.sell",
+      "uniswap.swap.execute",
       { chain: "robinhood", tokenIn: GATE_TOKEN_IN, tokenOut: "ETH", amountIn: "5" },
       ctx(),
     );
@@ -541,7 +541,7 @@ describe("evaluateSwapPrequoteGate", () => {
   it("VENUE: kyberswap flows are byte-identical — the kyber gate hash did not change shape", async () => {
     mockExistsFail.mockResolvedValue(false);
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
-    await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     const kyberHash = mod.computePrequoteMatchHash({
       kind: "swap",
       sessionId: SESSION_ID,
@@ -563,7 +563,7 @@ describe("evaluateSwapPrequoteGate", () => {
 
   it("R3: a thrown DB read → block(gate_error), no raw text in message", async () => {
     mockExistsFail.mockRejectedValue(new Error("connection refused at 10.0.0.1:5432 secret=hunter2"));
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") {
       expect(d.reason).toBe("gate_error");
@@ -593,7 +593,7 @@ describe("evaluateSwapPrequoteGate", () => {
     mockResolveSelectedAddress.mockImplementation(() => {
       throw new VexError(ErrorCodes.WALLET_NOT_SELECTED, "no wallet selected");
     });
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") {
       expect(d.reason).toBe("wallet_not_selected");
@@ -633,7 +633,7 @@ describe("evaluateSwapPrequoteGate", () => {
       throw new VexError(ErrorCodes.WALLET_SCOPE_MISMATCH, "not in the allowed wallet set");
     });
     const d = await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       EVM_PARAMS,
       ctx({ walletPolicy: { kind: "mission_allowed", allowedWallets: ["0xOTHER"] } }),
     );
@@ -654,7 +654,7 @@ describe("evaluateSwapPrequoteGate", () => {
     mockResolveSelectedAddress.mockImplementation(() => {
       throw new VexError(ErrorCodes.WALLET_SCOPE_MISMATCH, "The wallet selected for this session is no longer available.");
     });
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") {
       expect(d.reason).toBe("wallet_scope");
@@ -667,7 +667,7 @@ describe("evaluateSwapPrequoteGate", () => {
     mockResolveSelectedAddress.mockImplementation(() => {
       throw new VexError(ErrorCodes.WALLET_NOT_CONFIGURED, "No solana wallet is configured.");
     });
-    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", EVM_PARAMS, ctx());
+    const d = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", EVM_PARAMS, ctx());
     expect(d.kind).toBe("block");
     if (d.kind === "block") {
       expect(d.reason).toBe("wallet_not_selected");
@@ -678,7 +678,7 @@ describe("evaluateSwapPrequoteGate", () => {
 
   it("R3: missing sessionId → block(no_session), no execution", async () => {
     const d = await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       EVM_PARAMS,
       ctx({ sessionId: undefined }),
     );
@@ -690,7 +690,7 @@ describe("evaluateSwapPrequoteGate", () => {
 
   it("an unsupported EVM chain → block(gate_error) (resolveChainSlug throws, caught fail-closed)", async () => {
     const d = await mod.evaluateSwapPrequoteGate(
-      "kyberswap.swap.sell",
+      "kyberswap.swap.execute",
       { ...EVM_PARAMS, chain: "not-a-real-chain" },
       ctx(),
     );
@@ -731,7 +731,7 @@ describe("evaluateSwapPrequoteGate", () => {
       gateHash = h;
       return h === recordedHash ? prequoteRow("pass", { matchHash: h }) : null;
     });
-    const decision = await mod.evaluateSwapPrequoteGate("kyberswap.swap.sell", executeParams, ctx());
+    const decision = await mod.evaluateSwapPrequoteGate("kyberswap.swap.execute", executeParams, ctx());
     return { gateHash, decision };
   }
 
@@ -804,10 +804,10 @@ describe("evaluateSwapPrequoteGate", () => {
   // ── Etap 1: kyberswap quote→BUY slippage alignment (end-to-end) ─────────
   //
   // The production bug: kyberswap.swap.quote could not carry slippageBps, so a
-  // recorded quote hashed slippage="" while kyberswap.swap.buy carrying
+  // recorded quote hashed slippage="" while kyberswap.swap.execute carrying
   // slippageBps:50 hashed "50" → permanent no_quote loop. These drive the REAL
   // recorder from a kyberswap.swap.quote AND the REAL gate for a
-  // kyberswap.swap.buy execute (the buy tool the plan names), proving the fixed
+  // kyberswap.swap.execute execute (the buy tool the plan names), proving the fixed
   // flow: quote(50) authorizes buy(50); a quote-omitted slippage still
   // (correctly) diverges from a buy(50).
 
@@ -839,16 +839,16 @@ describe("evaluateSwapPrequoteGate", () => {
     mockFindLatest.mockImplementation(async (_s, h) =>
       h === recordedHash ? prequoteRow("pass", { matchHash: h }) : null,
     );
-    return mod.evaluatePrequoteGate("kyberswap.swap.buy", executeParams, ctx());
+    return mod.evaluatePrequoteGate("kyberswap.swap.execute", executeParams, ctx());
   }
 
-  it("(a) quote WITH slippageBps:50 authorizes a kyberswap.swap.buy WITH slippageBps:50 → allow", async () => {
+  it("(a) quote WITH slippageBps:50 authorizes a kyberswap.swap.execute WITH slippageBps:50 → allow", async () => {
     const recordedHash = await recordKyberQuote({ ...KYBER_QUOTE_PARAMS, slippageBps: 50 });
     const d = await gateBuy({ ...KYBER_QUOTE_PARAMS, slippageBps: 50 }, recordedHash);
     expect(d.kind).toBe("allow");
   });
 
-  it("(b) quote WITHOUT slippageBps does NOT authorize a kyberswap.swap.buy WITH slippageBps:50 → block(no_quote)", async () => {
+  it("(b) quote WITHOUT slippageBps does NOT authorize a kyberswap.swap.execute WITH slippageBps:50 → block(no_quote)", async () => {
     const recordedHash = await recordKyberQuote({ ...KYBER_QUOTE_PARAMS });
     const d = await gateBuy({ ...KYBER_QUOTE_PARAMS, slippageBps: 50 }, recordedHash);
     expect(d.kind).toBe("block");

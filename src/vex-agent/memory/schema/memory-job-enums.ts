@@ -23,9 +23,13 @@ import { z } from "zod";
 
 // ── job_kind ────────────────────────────────────────────────────
 // What a memory_job processes. `consolidate` = sweep N pending candidates
-// (batch dedup/merge → cheaper LLM, owner choice Q1=B). `reconcile` = re-derive
-// a single knowledge_entries lesson after its outcome changed (S7), keyed by
-// (reconcile_entry_id, reconcile_outcome_version).
+// (batch dedup/merge → cheaper LLM, owner choice Q1=B). `reconcile` = RETIRED
+// (Agent Scan W4): it used to re-derive a single knowledge_entries lesson
+// after its outcome changed (S7), keyed by (reconcile_entry_id,
+// reconcile_outcome_version) — the worker + its enqueue paths are deleted, and
+// migration 044 terminalized every non-terminal reconcile row to `retired`
+// (see MEMORY_JOB_STATUS below). The member stays so historical `reconcile`
+// job rows remain readable; no code path creates a new one.
 export const MEMORY_JOB_KIND = ["consolidate", "reconcile"] as const;
 
 export const memoryJobKindSchema = z.enum(MEMORY_JOB_KIND);
@@ -35,13 +39,17 @@ export type MemoryJobKind = z.infer<typeof memoryJobKindSchema>;
 // Durable-queue FSM, identical to compact_jobs: `pending → running →
 // completed | failed → permanently_failed`. `failed` is the AUTO-RETRY state
 // (next_attempt_at backoff); `permanently_failed` is terminal until an explicit
-// reset (resetReconcileJob / resetPermanentlyFailed precedent).
+// reset (resetReconcileJob / resetPermanentlyFailed precedent). `retired`
+// (Agent Scan migration 044) is a SEPARATE terminal value stamped ONLY on
+// `reconcile` jobs once the async reconcile machinery was removed — claim/
+// reset/recovery paths must never revive a `retired` row back to `pending`.
 export const MEMORY_JOB_STATUS = [
   "pending",
   "running",
   "completed",
   "failed",
   "permanently_failed",
+  "retired",
 ] as const;
 
 export const memoryJobStatusSchema = z.enum(MEMORY_JOB_STATUS);

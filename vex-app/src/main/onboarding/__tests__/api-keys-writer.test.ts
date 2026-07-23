@@ -35,36 +35,11 @@ describe("writeApiKeys", () => {
     });
   });
 
-  it("stores the Polymarket trio together when present", async () => {
-    const result = await writeApiKeys({
-      polymarket: {
-        apiKey: "p-key",
-        apiSecret: "p-secret",
-        passphrase: "p-pass",
-      },
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.fieldsWritten).toEqual([
-        "POLYMARKET_API_KEY",
-        "POLYMARKET_API_SECRET",
-        "POLYMARKET_PASSPHRASE",
-      ]);
-    }
-    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
-      POLYMARKET_API_KEY: "p-key",
-      POLYMARKET_API_SECRET: "p-secret",
-      POLYMARKET_PASSPHRASE: "p-pass",
-    });
-  });
-
   it("returns fieldsWritten in canonical order", async () => {
     const result = await writeApiKeys({
       rettiwtApiKey: "r",
       tavilyApiKey: "t",
       jupiterApiKey: "j",
-      polymarket: { apiKey: "pk", apiSecret: "ps", passphrase: "pp" },
     });
 
     expect(result.ok).toBe(true);
@@ -73,21 +48,8 @@ describe("writeApiKeys", () => {
         "JUPITER_API_KEY",
         "TAVILY_API_KEY",
         "RETTIWT_API_KEY",
-        "POLYMARKET_API_KEY",
-        "POLYMARKET_API_SECRET",
-        "POLYMARKET_PASSPHRASE",
       ]);
     }
-  });
-
-  it("rejects a malformed Polymarket trio before writing", async () => {
-    const result = await writeApiKeys({
-      polymarket: { apiKey: "k", apiSecret: "", passphrase: "p" } as never,
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("validation.invalid_input");
-    expect(sessionMocks.writeUnlockedSecrets).not.toHaveBeenCalled();
   });
 
   it("returns the locked-vault error from the secret session", async () => {

@@ -38,11 +38,6 @@ import {
 import type { KnownKind } from "@vex-agent/db/repos/knowledge.js";
 import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
 import * as executionsRepo from "@vex-agent/db/repos/executions.js";
-import * as activityRepo from "@vex-agent/db/repos/activity.js";
-import * as pnlMatchesRepo from "@vex-agent/db/repos/pnl-matches.js";
-import * as pnlLotsRepo from "@vex-agent/db/repos/pnl-lots.js";
-import * as openPositionsRepo from "@vex-agent/db/repos/open-positions.js";
-import * as lpEventsRepo from "@vex-agent/db/repos/lp-events.js";
 import { isSessionSoftDeleted } from "@vex-agent/db/repos/sessions.js";
 import { computeContentHash } from "@vex-agent/knowledge/content-hash.js";
 import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
@@ -71,7 +66,6 @@ import {
   countRecurrence,
   deriveEvidenceStrengthCeiling,
 } from "./evidence-deref.js";
-import { resolveOutcome, type OutcomeResolverDeps } from "./outcome-resolver.js";
 import {
   deriveDecisionBoundary,
   checkNoLookahead,
@@ -133,17 +127,7 @@ export interface ConsolidateDeps {
     signals: EscalationSignals,
     extras: JudgeContextExtras,
   ) => Promise<{ verdict: JudgeVerdict; llmCalls: number; costUsd: number | null }>;
-  /**
-   * S5 — resolve the ledger-grounded outcome for a trade-family candidate. The
-   * resolver derefs the immutable `executionId` anchor and reads the local
-   * ledger (D-OUTCOME-SRC); `pointInTimeChecked` is computed here and passed in.
-   * Injected so the decision pipeline is testable without the ledger repos.
-   */
-  resolveOutcome: (
-    candidate: MemoryCandidate,
-    pointInTimeChecked: boolean,
-  ) => Promise<MemoryOutcomeSummary | null>;
-  /** S5 — an anchor execution's created_at (drives the as-of decision boundary). */
+  /** An anchor execution's created_at (drives the as-of decision boundary). */
   getExecutionTime: ExecTimeDeref;
   /**
    * S8 — build the graph write-plan for a promote/supersede verdict (F1: the
@@ -210,8 +194,6 @@ export function defaultConsolidateDeps(
       const ctx = await buildJudgeContext(candidate, signals, extras);
       return callJudge(ctx, makeProvider);
     },
-    resolveOutcome: (candidate, pointInTimeChecked) =>
-      resolveOutcome(candidate, pointInTimeChecked, LEDGER_OUTCOME_DEPS),
     getExecutionTime: async (executionId) => {
       const exec = await executionsRepo.getById(executionId);
       return exec ? { createdAt: exec.createdAt } : null;
@@ -222,16 +204,6 @@ export function defaultConsolidateDeps(
     inferenceModel: process.env.AGENT_MODEL ?? null,
   };
 }
-
-/** Production ledger reads for the S5 outcome resolver (read-only). */
-const LEDGER_OUTCOME_DEPS: OutcomeResolverDeps = {
-  getExecutionById: (executionId) => executionsRepo.getById(executionId),
-  getActivitiesByExecution: (executionId) => activityRepo.getByExecution(executionId),
-  getMatchesBySell: (sellActivityId) => pnlMatchesRepo.getMatchesBySell(sellActivityId),
-  getOpenLots: (instrumentKey, walletAddress) => pnlLotsRepo.getOpenLots(instrumentKey, walletAddress),
-  getPositionByKey: (positionKey) => openPositionsRepo.getByPositionKeyAnyStatus(positionKey),
-  getLpEventsByPosition: (positionKey) => lpEventsRepo.getLpEventsByPosition(positionKey),
-};
 
 // ── Verdict → plan mapping ──────────────────────────────────────────
 
@@ -367,10 +339,12 @@ export interface CandidateDecision {
   llmCalls: number;
   costUsd: number | null;
   /**
-   * S5 — the ledger-grounded outcome for a trade-family candidate (null for
-   * non-trade kinds or when no anchor survives). Carried to the atomic apply so
-   * `updateCandidateOutcome` writes it in the SAME tx as the decision (D-ORDER /
-   * §8). Non-trade kinds leave this null and S5 does not touch them.
+   * The stored outcome for a trade-family candidate — always the neutral
+   * `none`/`open` placeholder shape (null for non-trade kinds). Ledger-derived
+   * outcome grading was retired this phase (Agent Scan W4: `outcome-resolver.ts`
+   * deleted); a later phase injects the session's own transaction list into the
+   * judge instead of re-deriving PnL facts here. Carried to the atomic apply so
+   * `updateCandidateOutcome` writes it in the SAME tx as the decision (D-ORDER).
    */
   outcome: MemoryOutcomeSummary | null;
   /** S5 — the as-of decision boundary stamped on `available_at_decision_time`. */
@@ -430,11 +404,11 @@ export async function consolidateCandidate(
     .map((r) => r.evidenceRefs);
   const recurrenceCount = countRecurrence(candidate.evidenceRefs, clusterAnchors);
 
-  // ── S5: outcome resolution BEFORE the deterministic stage / judge (D-ORDER) ──
-  // For trade-family candidates ONLY, deref the immutable anchor → ledger facts
-  // and the no-lookahead boundary, so `deriveEvidenceStrengthCeiling` is
-  // outcome-aware (can reach 'strong') before `clampSourceTier` runs. Non-trade
-  // kinds skip the resolver entirely (S5 leaves them at the S4 ceiling).
+  // ── Decision boundary BEFORE the deterministic stage / judge (D-ORDER) ──
+  // For trade-family candidates ONLY, derive the as-of / no-lookahead boundary
+  // (bi-temporal audit — unrelated to ledger PnL grading, so it survives the
+  // outcome-resolver retirement below unchanged). Non-trade kinds skip this
+  // entirely (S4 leaves them at the anchor/recurrence ceiling).
   const tradeFamily = isTradeKind(candidate.kind);
   let outcome: MemoryOutcomeSummary | null = null;
   let availableAtDecisionTime: Date | null = null;
@@ -443,18 +417,25 @@ export async function consolidateCandidate(
       getExecutionTime: deps.getExecutionTime,
     });
     const pointInTimeChecked = checkNoLookahead(availableAtDecisionTime);
-    outcome = await deps.resolveOutcome(candidate, pointInTimeChecked);
-    if (outcome) {
-      memLog("manager", "outcome_resolved", {
-        candidateId: candidate.id,
-        outcomeStatus: outcome.status,
-        lessonSignal: outcome.lessonSignal,
-        evidenceQuality: outcome.evidenceQuality,
-        pointInTimeChecked: outcome.pointInTimeChecked ? "true" : "false",
-      });
-    } else {
-      memLog("manager", "outcome_no_anchor", { candidateId: candidate.id });
-    }
+    // Ledger-derived outcome grading is retired this phase (Agent Scan W4:
+    // outcome-resolver.ts deleted; a later phase injects the session's own
+    // transaction list into the judge instead of re-deriving PnL facts from
+    // the ledger here — do NOT resurrect a ledger read in this module). Every
+    // trade-family candidate now carries this neutral placeholder — the same
+    // "thin/uncovered venue" shape the old resolver used for honest
+    // no-information cases — so the evidence ceiling can never reach 'strong'
+    // through this path (deriveEvidenceStrengthCeiling requires a
+    // closed/settled status, which this placeholder never carries).
+    outcome = {
+      status: "open",
+      lessonSignal: "neutral",
+      evidenceQuality: "weak",
+      pointInTimeChecked,
+      outcomeComputedBy: "memory_manager",
+      outcomeVersion: 0,
+      pnlSource: "none",
+    };
+    memLog("manager", "outcome_ungraded", { candidateId: candidate.id });
   }
 
   const evidenceStrengthCeiling = deriveEvidenceStrengthCeiling({
@@ -587,14 +568,14 @@ export interface AtomicApplyResult {
 }
 
 /**
- * Owner-check (R1#2) + S5 outcome write + applyDecision + S8 graph writes +
- * recordDecision in ONE transaction (FIX-4 §8 / S5 §8 / S8 D-WRITE). The
+ * Owner-check (R1#2) + outcome write + applyDecision + S8 graph writes +
+ * recordDecision in ONE transaction (FIX-4 §8 / S8 D-WRITE). The
  * owner-check `SELECT … FOR UPDATE OF i,j` proves this worker still holds the
- * item BEFORE any write; a lost claim THROWS before any mutation. When the
- * candidate is trade-family with a resolved outcome, `updateCandidateOutcome`
- * persists the ledger facts + as-of boundary BEFORE promote (so the lesson is
- * grounded), and the boundary becomes the promoted entry's `valid_from` with an
- * explicit `outcome_version=0` (S5 init; S7 bumps).
+ * item BEFORE any write; a lost claim THROWS before any mutation. For a
+ * trade-family candidate, `updateCandidateOutcome` persists the (now neutral
+ * placeholder — see `consolidateCandidate`) outcome + as-of boundary BEFORE
+ * promote, and the boundary becomes the promoted entry's `valid_from` with an
+ * explicit `outcome_version=0` init.
  *
  * S8 graph writes run AFTER `applyDecision` (the promoted entry id comes from
  * `decisionInput.promotedKnowledgeId`) and BEFORE `recordDecision`, inside
@@ -611,9 +592,9 @@ export async function applyDecisionAtomically(args: {
   plan: DecisionPlan;
   jobId: number;
   workerId: string;
-  /** S5 — ledger-grounded outcome (null for non-trade kinds / no surviving anchor). */
+  /** The candidate's outcome (the neutral placeholder for trade-family kinds; null otherwise). */
   outcome?: MemoryOutcomeSummary | null;
-  /** S5 — as-of decision boundary → candidate.available_at_decision_time + valid_from. */
+  /** As-of decision boundary → candidate.available_at_decision_time + valid_from. */
   availableAtDecisionTime?: Date | null;
   /** S6a — reinforce the active entry this duplicate confirms (2nd confirmation). */
   reinforce?: ReinforcementTarget | null;
@@ -648,8 +629,9 @@ export async function applyDecisionAtomically(args: {
       throw new ClaimLostError(args.candidate.id, args.jobId);
     }
 
-    // S5: persist the ledger-grounded outcome + as-of boundary on the candidate
-    // BEFORE promote, in the SAME tx (owner-check already locked item+job).
+    // Persist the outcome (the neutral placeholder for trade-family kinds) +
+    // as-of boundary on the candidate BEFORE promote, in the SAME tx
+    // (owner-check already locked item+job).
     if (outcome) {
       const upd = await updateCandidateOutcome(args.candidate.id, outcome, boundary, tx);
       if (!upd.ok) {
@@ -660,7 +642,7 @@ export async function applyDecisionAtomically(args: {
     }
 
     const applied = await applyDecision(args.candidate, args.plan, args.jobId, tx, {
-      // Trade-family promotions carry the world-time validity boundary + the S5
+      // Trade-family promotions carry the world-time validity boundary + the
       // outcome_version init. Non-trade paths pass nothing (byte-neutral).
       validFrom: outcome ? boundary : null,
       outcomeVersion: outcome ? 0 : undefined,

@@ -4,7 +4,7 @@ import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.
 // ── Per-session wallet resolution mock (5D-protocols p1) ──────────
 // Handlers now resolve the session wallet via resolve.js (NOT the zero-arg
 // requireEvmWallet primary). Spy on the resolvers to assert the session wallet
-// is used and that preview/dryRun never decrypts a signing key.
+// is used and that a rejected dryRun never decrypts a signing key.
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -30,35 +30,11 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
     approved: true,
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
+    sessionId: "session-1",
     ...over,
   };
 }
 
-const mockGetZapInRoute = vi.fn();
-const mockBuildZapIn = vi.fn();
-const mockGetZapOutRoute = vi.fn();
-const mockBuildZapOut = vi.fn();
-const mockGetZapMigrateRoute = vi.fn();
-const mockBuildZapMigrate = vi.fn();
-
-vi.mock("@tools/kyberswap/zaas/client.js", () => ({
-  getKyberZaasClient: () => ({
-    getZapInRoute: (...args: unknown[]) => mockGetZapInRoute(...args),
-    buildZapIn: (...args: unknown[]) => mockBuildZapIn(...args),
-    getZapOutRoute: (...args: unknown[]) => mockGetZapOutRoute(...args),
-    buildZapOut: (...args: unknown[]) => mockBuildZapOut(...args),
-    getZapMigrateRoute: (...args: unknown[]) => mockGetZapMigrateRoute(...args),
-    buildZapMigrate: (...args: unknown[]) => mockBuildZapMigrate(...args),
-  }),
-}));
-
-const mockExtractMintedNftId = vi.fn();
-const mockExtractErc1155Position = vi.fn();
-
-// readErc20Metadata is used by resolveTokenMetadataStrict for address inputs
-// (the quote path is now strict/address-only, matching execute).
-// Default: return plain ERC-20 metadata so non-native token addresses resolve
-// without an on-chain read. Tests override per-case where needed.
 const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address,
   symbol: "TKN",
@@ -72,22 +48,18 @@ vi.mock("@tools/kyberswap/evm-utils.js", () => ({
     publicClient: {},
     walletClient: {},
   }),
-  ensureKyberAllowance: vi.fn().mockResolvedValue(undefined),
-  ensureErc721Approval: vi.fn().mockResolvedValue(null),
-  ensureErc1155ApprovalForAll: vi.fn().mockResolvedValue(null),
-  sendKyberTransaction: vi.fn().mockResolvedValue("0xmockhash"),
-  sendKyberTransactionWithReceipt: vi.fn().mockResolvedValue({
-    hash: "0xzaphash",
-    receipt: { logs: [{ topics: ["0xddf252ad"], data: "0x" }] },
-  }),
-  extractMintedNftId: (...args: unknown[]) => mockExtractMintedNftId(...args),
-  extractErc1155Position: (...args: unknown[]) => mockExtractErc1155Position(...args),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
+  planKyberAllowance: vi.fn().mockResolvedValue({ needsReset: false, needsApprove: false }),
+  buildApproveCalldata: vi.fn(() => "0xapprove"),
+  signStageBroadcast: vi.fn().mockResolvedValue({ kind: "confirmed", txHash: "0xswaphash", receipt: { logs: [] } }),
+  decodeKyberSwapSettlement: vi.fn(() => null),
 }));
 
-// Mock token API for safety gate + quote-time safety surfacing (Stage 6b).
-// Shared spy so individual tests can drive honeypot/FoT/check-failed scenarios.
+vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({
+  ensureErc20Balance: vi.fn().mockResolvedValue(undefined),
+}));
+
 const mockGetHoneypotFotInfo = vi.fn().mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
 
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({
@@ -97,32 +69,38 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
   }),
 }));
 
-// Mock aggregator client so the read-only quote can fetch a route hermetically.
 const mockGetRoute = vi.fn();
+const mockBuildRoute = vi.fn();
 
 vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   getKyberAggregatorClient: () => ({
     getRoute: (...args: unknown[]) => mockGetRoute(...args),
+    buildRoute: (...args: unknown[]) => mockBuildRoute(...args),
   }),
 }));
 
-// Spy on logger.warn so the fail-soft safety leg's log payload can be asserted
-// to contain NO raw provider/HTTP text (Stage 6b fix 1). Other methods are
-// no-ops to keep tests hermetic and quiet.
-const mockLoggerWarn = vi.fn();
+vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+  createAgentActivityIntent: vi.fn().mockResolvedValue({ executionId: 1, events: [{ id: 1 }] }),
+  createAgentActivityPreBroadcastFailure: vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } }),
+  markActivityBroadcast: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  markBroadcastAccepted: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  confirmActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  failActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+}));
+
+vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
+  pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
+}));
 
 vi.mock("@utils/logger.js", () => {
-  const stub = {
-    warn: (...args: unknown[]) => mockLoggerWarn(...args),
-    info: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  };
+  const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
-import { KYBERSWAP_TOOLS } from "../../../../vex-agent/tools/protocols/kyberswap/manifest.js";
+
+const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
 describe("kyberswap session wallet resolution", () => {
   const SESSION_CTX = ctx({
@@ -133,18 +111,30 @@ describe("kyberswap session wallet resolution", () => {
   beforeEach(() => {
     mockResolveSigningWallet.mockClear();
     mockResolveSelectedAddress.mockClear();
+    mockGetHoneypotFotInfo.mockClear();
+    mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
+    mockGetRoute.mockReset();
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1" },
+        routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+      },
+    });
+    mockBuildRoute.mockReset();
+    mockBuildRoute.mockResolvedValue({
+      data: {
+        routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+        data: "0xcalldata",
+        transactionValue: "0",
+        amountIn: "1000000", amountOut: "999000",
+        amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
+      },
+    });
   });
 
-  it("zap.in resolves the SESSION signing wallet (not the zero-arg primary)", async () => {
-    mockGetZapInRoute.mockResolvedValueOnce({
-      data: { route: { r: 1 }, routerAddress: "0x2f1E23e0A5A56e7746E1Ae42d5c3112B2d0cf09B", zapDetails: { initialAmountUsd: "10.00", actions: [] } },
-    });
-    mockBuildZapIn.mockResolvedValueOnce({
-      data: { routerAddress: "0x2f1E23e0A5A56e7746E1Ae42d5c3112B2d0cf09B", callData: "0xabcd", value: "0" },
-    });
-
-    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
-      { chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xPool", tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", amountIn: "1000000000000000000" },
+  it("kyberswap.swap.execute resolves the SESSION signing wallet (not the zero-arg primary)", async () => {
+    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       SESSION_CTX,
     );
 
@@ -155,17 +145,15 @@ describe("kyberswap session wallet resolution", () => {
     );
   });
 
-  it("zap.in dryRun (preview) does NOT decrypt a signing wallet", async () => {
-    mockGetZapInRoute.mockResolvedValueOnce({
-      data: { route: { r: 1 }, routerAddress: "0x2f1E23e0A5A56e7746E1Ae42d5c3112B2d0cf09B", zapDetails: { initialAmountUsd: "10.00", actions: [] } },
-    });
-
-    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
-      { chain: "polygon", dex: "DEX_UNISWAPV3", pool: "0xPool", tokenIn: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", amountIn: "1000000000000000000", dryRun: true },
+  it("kyberswap.swap.execute rejects dryRun WITHOUT ever resolving a signing wallet", async () => {
+    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1", dryRun: true },
       SESSION_CTX,
     );
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/dryRun/i);
     expect(mockResolveSigningWallet).not.toHaveBeenCalled();
+    expect(mockGetRoute).not.toHaveBeenCalled();
   });
 });

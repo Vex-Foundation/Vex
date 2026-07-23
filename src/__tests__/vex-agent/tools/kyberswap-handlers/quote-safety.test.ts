@@ -34,27 +34,6 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
   };
 }
 
-const mockGetZapInRoute = vi.fn();
-const mockBuildZapIn = vi.fn();
-const mockGetZapOutRoute = vi.fn();
-const mockBuildZapOut = vi.fn();
-const mockGetZapMigrateRoute = vi.fn();
-const mockBuildZapMigrate = vi.fn();
-
-vi.mock("@tools/kyberswap/zaas/client.js", () => ({
-  getKyberZaasClient: () => ({
-    getZapInRoute: (...args: unknown[]) => mockGetZapInRoute(...args),
-    buildZapIn: (...args: unknown[]) => mockBuildZapIn(...args),
-    getZapOutRoute: (...args: unknown[]) => mockGetZapOutRoute(...args),
-    buildZapOut: (...args: unknown[]) => mockBuildZapOut(...args),
-    getZapMigrateRoute: (...args: unknown[]) => mockGetZapMigrateRoute(...args),
-    buildZapMigrate: (...args: unknown[]) => mockBuildZapMigrate(...args),
-  }),
-}));
-
-const mockExtractMintedNftId = vi.fn();
-const mockExtractErc1155Position = vi.fn();
-
 // readErc20Metadata is used by resolveTokenMetadataStrict for address inputs
 // (the quote path is now strict/address-only, matching execute).
 // Default: return plain ERC-20 metadata so non-native token addresses resolve
@@ -72,18 +51,12 @@ vi.mock("@tools/kyberswap/evm-utils.js", () => ({
     publicClient: {},
     walletClient: {},
   }),
-  ensureKyberAllowance: vi.fn().mockResolvedValue(undefined),
-  ensureErc721Approval: vi.fn().mockResolvedValue(null),
-  ensureErc1155ApprovalForAll: vi.fn().mockResolvedValue(null),
-  sendKyberTransaction: vi.fn().mockResolvedValue("0xmockhash"),
-  sendKyberTransactionWithReceipt: vi.fn().mockResolvedValue({
-    hash: "0xzaphash",
-    receipt: { logs: [{ topics: ["0xddf252ad"], data: "0x" }] },
-  }),
-  extractMintedNftId: (...args: unknown[]) => mockExtractMintedNftId(...args),
-  extractErc1155Position: (...args: unknown[]) => mockExtractErc1155Position(...args),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
+  planKyberAllowance: vi.fn(),
+  buildApproveCalldata: vi.fn(),
+  signStageBroadcast: vi.fn(),
+  decodeKyberSwapSettlement: vi.fn(),
 }));
 
 // Mock token API for safety gate + quote-time safety surfacing (Stage 6b).
@@ -122,7 +95,6 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
-import { KYBERSWAP_TOOLS } from "../../../../vex-agent/tools/protocols/kyberswap/manifest.js";
 
 describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
   const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC-like

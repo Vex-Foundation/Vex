@@ -94,44 +94,10 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["khalani.bridge", "user_wallet_broadcast"],
     ["khalani.tokens.search", "read"],
 
-    // KyberSwap — split between on-chain wallet broadcasts and off-chain
-    // limit-order relay submissions (gasless EIP-712).
-    ["kyberswap.swap.sell", "user_wallet_broadcast"],
-    ["kyberswap.swap.buy", "user_wallet_broadcast"],
+    // KyberSwap — swap only (Agent Scan plan v3 §1.9/§4.2: limit orders and
+    // zap deleted wholesale; buy/sell unified into one execute toolId).
+    ["kyberswap.swap.execute", "user_wallet_broadcast"],
     ["kyberswap.swap.quote", "read"],
-
-    // Codex 1B Q2 ruling: `cancel` (soft, gasless lapse) is off-chain;
-    // `hardCancel` / `cancelAll` are on-chain.
-    ["kyberswap.limitOrder.create", "external_post"],
-    ["kyberswap.limitOrder.cancel", "external_post"],
-    ["kyberswap.limitOrder.hardCancel", "user_wallet_broadcast"],
-    ["kyberswap.limitOrder.cancelAll", "user_wallet_broadcast"],
-    ["kyberswap.limitOrder.fill", "user_wallet_broadcast"],
-    ["kyberswap.limitOrder.batchFill", "user_wallet_broadcast"],
-
-    // KyberSwap zap — all on-chain LP operations.
-    ["kyberswap.zap.in", "user_wallet_broadcast"],
-    ["kyberswap.zap.out", "user_wallet_broadcast"],
-    ["kyberswap.zap.migrate", "user_wallet_broadcast"],
-    ["kyberswap.zap.list", "read"],
-
-    // Polymarket — Codex 1A Q3: EIP-712 CLOB orders are off-chain.
-    // No `user_wallet_broadcast` in polymarket today (no direct chain settlement
-    // exposed at this layer; bridge funding addresses are off-chain prep).
-    ["polymarket.clob.buy", "external_post"],
-    ["polymarket.clob.sell", "external_post"],
-    ["polymarket.clob.cancel", "external_post"],
-    ["polymarket.clob.cancelAll", "external_post"],
-    ["polymarket.clob.cancelMarket", "external_post"],
-    ["polymarket.clob.cancelOrders", "external_post"],
-    ["polymarket.clob.heartbeat", "external_post"], // keep-alive signal
-    ["polymarket.clob.orderbook", "read"],
-    ["polymarket.bridge.deposit", "external_post"], // address prep, not settlement
-    ["polymarket.bridge.withdraw", "external_post"],
-    ["polymarket.bridge.assets", "read"],
-    ["polymarket.gamma.events", "read"],
-    ["polymarket.data.positions", "read"],
-    ["polymarket.rewards.active", "read"],
 
     // Solana / Jupiter — all mutations are on-chain Solana program writes.
     // Codex 1B Q1 confirmed via handler inspection (executeJupiterPrediction*

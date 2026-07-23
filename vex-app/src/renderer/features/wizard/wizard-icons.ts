@@ -46,7 +46,7 @@ export const WIZARD_STEP_META: Readonly<Record<WizardStepId, WizardStepMeta>> = 
     icon: Key02Icon,
     label: "API keys",
     description:
-      "Connect Jupiter and optional integrations (Tavily, Rettiwt, Polymarket).",
+      "Connect Jupiter and optional integrations (Tavily, Rettiwt).",
   },
   embedding: {
     icon: AiBrain05Icon,

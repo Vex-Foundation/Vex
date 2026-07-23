@@ -16,7 +16,10 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 9 sync jobs (3 global + 6 per-namespace)", async () => {
+  it("inserts 9 sync jobs (4 global + 5 per-namespace)", async () => {
+    // Agent Scan added the _global/agent_activity_repair periodic job and
+    // removed the polymarket/balances post_mutation job (polymarket removed) —
+    // net count is unchanged (9), just redistributed.
     await seedSyncJobs();
     expect(mockExecute).toHaveBeenCalledTimes(9);
   });
@@ -44,7 +47,7 @@ describe("seedSyncJobs", () => {
     const postMutationCalls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[3] === "post_mutation",
     );
-    expect(postMutationCalls).toHaveLength(6); // khalani, solana, kyberswap, polymarket, pendle, hyperliquid
+    expect(postMutationCalls).toHaveLength(5); // khalani, solana, kyberswap, pendle, hyperliquid (polymarket removed)
     for (const call of postMutationCalls) {
       expect((call[1] as unknown[])[4]).toBeNull(); // no interval
     }
@@ -81,6 +84,26 @@ describe("seedSyncJobs", () => {
     expect((settlementCall![1] as unknown[])[2]).toBeNull(); // no readToolId
     expect((settlementCall![1] as unknown[])[3]).toBe("periodic");
     expect((settlementCall![1] as unknown[])[4]).toBe(300);
+  });
+
+  it("seeds agent_activity_repair periodic job with 120s interval (Agent Scan)", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "agent_activity_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((repairCall![1] as unknown[])[0]).toBe("_global");
+    expect((repairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
+    expect((repairCall![1] as unknown[])[3]).toBe("periodic");
+    expect((repairCall![1] as unknown[])[4]).toBe(120);
+  });
+
+  it("no longer seeds a polymarket/balances job (Agent Scan removed Polymarket)", async () => {
+    await seedSyncJobs();
+    const polymarketCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[0] === "polymarket",
+    );
+    expect(polymarketCall).toBeUndefined();
   });
 
   it("seeds Hyperliquid reconciliation for periodic recovery and post-mutation refresh", async () => {

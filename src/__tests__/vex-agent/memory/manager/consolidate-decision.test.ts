@@ -59,9 +59,6 @@ function deps(overrides: Partial<ConsolidateDeps> = {}): ConsolidateDeps {
       llmCalls: 1,
       costUsd: 0.001,
     }),
-    // S5: default to no resolvable outcome (S4-equivalent ceiling). Tests that
-    // exercise the outcome-aware 'strong' path override this.
-    resolveOutcome: async () => null,
     getExecutionTime: async () => ({ createdAt: new Date().toISOString() }),
     // S8: extraction stubbed to fail-open (null plan) — the seam tests override.
     buildGraphPlan: async () => null,

@@ -2,13 +2,13 @@
  * Pendle PY (mint/redeem) two-item capture pipeline (P4, Codex-required).
  *
  * (a) py.mint emits EXACTLY two capture items (a PT leg + a YT leg) → two
- *     protocol_capture_items → two proj_activity rows → two spot lots with
- *     DISTINCT instrument keys. Mirrors the pendle-spot-projection harness (mocked
- *     repos) for the lot-opening leg.
+ *     protocol_capture_items → two proj_activity rows with DISTINCT instrument
+ *     keys. (Lot-opening projection retired with the PnL teardown — capture
+ *     itself is unaffected: agent_activity is the trade-truth store now.)
  * (b) FAIL-CLOSED GUARD: a fanOut:"items" pnl_spot result with MISSING/EMPTY
  *     `_tradeCaptureItems` must NOT silently project its summary `_tradeCapture`
- *     (which carries a single instrumentKey — projecting it would collapse the two
- *     legs into one mislabeled lot).
+ *     (which carries a single instrumentKey — projecting it would collapse the
+ *     two legs into one mislabeled row).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -27,25 +27,9 @@ const mockPopulateActivity = vi.fn(async () => {});
 vi.mock("@vex-agent/sync/activity-populator.js", () => ({
   populateActivity: (...a: unknown[]) => mockPopulateActivity(...a),
 }));
-vi.mock("@vex-agent/memory/ledger-wake.js", () => ({
-  enqueueLedgerWake: vi.fn(async () => {}),
-}));
-
-// ── spot projector repo mocks (part a — lot opening) ──
-const mockOpenLot = vi.fn();
-vi.mock("@vex-agent/db/repos/pnl-lots.js", () => ({
-  openLot: (...a: unknown[]) => mockOpenLot(...a),
-}));
-const mockQuery = vi.fn(async () => ({ rows: [] }));
-const mockClient = { query: (...a: unknown[]) => mockQuery(...a), release: vi.fn() };
-vi.mock("@vex-agent/db/client.js", () => ({
-  getPool: () => ({ connect: async () => mockClient }),
-}));
 
 const { populateCaptureItems } = await import("../../../vex-agent/tools/protocols/capture-pipeline.js");
-const { projectSpotLot } = await import("../../../vex-agent/sync/projectors/spot.js");
 const { validateCaptureContract } = await import("../../../vex-agent/tools/protocols/capture-validator.js");
-import type { Activity } from "@vex-agent/db/repos/activity.js";
 
 const CHAIN = "ethereum";
 const PT = "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c";
@@ -134,7 +118,7 @@ describe("pendle.py mint/redeem capture items pass the runtime validator (projec
   });
 });
 
-describe("pendle.py.mint — two capture items → two activity rows → two spot lots", () => {
+describe("pendle.py.mint — two capture items → two activity rows", () => {
   it("records EXACTLY two capture items and populates two activity rows with DISTINCT instrument keys", async () => {
     const items = [mintItem("pt"), mintItem("yt")];
     await populateCaptureItems(42, "pendle.py.mint", "pendle", MINT_SUMMARY, items, { signature: "0xminthash" });
@@ -150,34 +134,6 @@ describe("pendle.py.mint — two capture items → two activity rows → two spo
       (c) => (c[4] as { instrumentKey: string }).instrumentKey,
     );
     expect(new Set(keys)).toEqual(new Set([`${CHAIN}:${PT.toLowerCase()}`, `${CHAIN}:${YT.toLowerCase()}`]));
-  });
-
-  it("opens two DISTINCT spot lots (PT lot + YT lot) with the raw output quantities", async () => {
-    // Mirror what the activity populator produces per item, then project each.
-    const activity = (instrument: string, qtyRaw: string): Activity =>
-      ({
-        id: 7,
-        executionId: 42,
-        namespace: "pendle",
-        chain: CHAIN,
-        instrumentKey: `${CHAIN}:${instrument.toLowerCase()}`,
-        walletAddress: WALLET,
-        tradeSide: "buy",
-        inputAmount: parseUnits("0.5", 18).toString(),
-        outputAmount: qtyRaw,
-        inputValueUsd: "2000",
-        outputValueUsd: "2000",
-      }) as unknown as Activity;
-
-    await projectSpotLot(activity(PT, PT_OUT));
-    await projectSpotLot(activity(YT, YT_OUT));
-
-    expect(mockOpenLot).toHaveBeenCalledTimes(2);
-    const lots = mockOpenLot.mock.calls.map((c) => c[0] as { instrumentKey: string; quantityRaw: string });
-    expect(new Set(lots.map((l) => l.instrumentKey))).toEqual(
-      new Set([`${CHAIN}:${PT.toLowerCase()}`, `${CHAIN}:${YT.toLowerCase()}`]),
-    );
-    for (const lot of lots) expect(lot.quantityRaw).toBe(PT_OUT);
   });
 });
 

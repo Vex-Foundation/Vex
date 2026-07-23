@@ -1,12 +1,17 @@
 /**
- * Action-named READ-ONLY alias handlers (Stage 8a).
+ * Action-named READ-ONLY alias handlers (Stage 8a; Agent Scan plan §11.2
+ * rewired swap_quote — FIX-SPINE round 1 corrected this file for the
+ * `amount`→`amountIn` rename, the removed silent Kyber→Uniswap fallback, and
+ * the new `.strict()` schemas, none of which were fixed when round 1 first
+ * made those changes).
  *
  * Asserts each alias resolves the correct TARGET protocol toolId and the
  * EXACT translated params, by mocking `executeProtocolTool` to capture its
  * arguments (the underlying protocol runtime is exercised elsewhere). Covers:
  *
- *   - swap_quote family router: EVM → kyberswap.swap.quote, "solana" →
- *     solana.swap.quote, ambiguous chain → clear failure (no dispatch).
+ *   - swap_quote family router: EVM → kyberswap.swap.quote ONLY (no venue
+ *     fallback — plan §11.2), "solana" → solana.swap.quote, ambiguous chain →
+ *     clear failure (no dispatch).
  *   - swap_quote EVM token guard: a bare symbol is rejected (no dispatch) — EVM
  *     tokens must be a contract address or native; symbols resolve via token_find.
  *   - token_check / bridge_quote pass-through translation.
@@ -64,9 +69,9 @@ describe("swap_quote — family router", () => {
   // EVM token addresses (the quote path is now strict: address-or-native only).
   const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
-  it("EVM chain dispatches kyberswap.swap.quote with amount→amountIn (native + address)", async () => {
+  it("EVM chain dispatches kyberswap.swap.quote with amountIn passed through", async () => {
     const result = await handleSwapQuote(
-      { chain: "base", tokenIn: "ETH", tokenOut: USDC, amount: "1.5", slippageBps: 50 },
+      { chain: "base", tokenIn: "ETH", tokenOut: USDC, amountIn: "1.5", slippageBps: 50 },
       CTX,
     );
     expect(result.success).toBe(true);
@@ -82,7 +87,7 @@ describe("swap_quote — family router", () => {
   });
 
   it("EVM alias chain is normalized to the canonical slug (arb → arbitrum)", async () => {
-    await handleSwapQuote({ chain: "arb", tokenIn: "ETH", tokenOut: USDC, amount: "1" }, CTX);
+    await handleSwapQuote({ chain: "arb", tokenIn: "ETH", tokenOut: USDC, amountIn: "1" }, CTX);
     const { toolId, params } = lastCall();
     expect(toolId).toBe("kyberswap.swap.quote");
     expect(params.chain).toBe("arbitrum");
@@ -92,7 +97,7 @@ describe("swap_quote — family router", () => {
 
   it("rejects a bare EVM symbol — clear fail, no dispatch (symbol must be resolved with token_find)", async () => {
     const result = await handleSwapQuote(
-      { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amount: "1" },
+      { chain: "base", tokenIn: "ETH", tokenOut: "USDC", amountIn: "1" },
       CTX,
     );
     expect(result.success).toBe(false);
@@ -103,7 +108,7 @@ describe("swap_quote — family router", () => {
 
   it("accepts the native sentinel address and native keyword on the EVM path", async () => {
     const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
-    await handleSwapQuote({ chain: "base", tokenIn: NATIVE, tokenOut: "native", amount: "1" }, CTX);
+    await handleSwapQuote({ chain: "base", tokenIn: NATIVE, tokenOut: "native", amountIn: "1" }, CTX);
     const { toolId, params } = lastCall();
     expect(toolId).toBe("kyberswap.swap.quote");
     expect(params.tokenIn).toBe(NATIVE);
@@ -112,7 +117,7 @@ describe("swap_quote — family router", () => {
 
   it('chain "solana" dispatches solana.swap.quote with tokenIn→inputToken and numeric amount', async () => {
     await handleSwapQuote(
-      { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amount: "2.0", slippageBps: 30 },
+      { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "2.0", slippageBps: 30 },
       CTX,
     );
     const { toolId, params } = lastCall();
@@ -129,7 +134,7 @@ describe("swap_quote — family router", () => {
 
   it("ambiguous/unknown chain fails clearly and does NOT dispatch", async () => {
     const result = await handleSwapQuote(
-      { chain: "not-a-chain", tokenIn: "A", tokenOut: "B", amount: "1" },
+      { chain: "not-a-chain", tokenIn: "A", tokenOut: "B", amountIn: "1" },
       CTX,
     );
     expect(result.success).toBe(false);
@@ -145,21 +150,30 @@ describe("swap_quote — family router", () => {
 
   it("rejects a non-numeric Solana amount (no dispatch)", async () => {
     const result = await handleSwapQuote(
-      { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amount: "abc" },
+      { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "abc" },
       CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("positive number");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
+
+  it("REJECTS the legacy 'amount' field — .strict() schema, no silent fallback to amountIn (FIX-SPINE finding 14/C4)", async () => {
+    const result = await handleSwapQuote(
+      { chain: "base", tokenIn: "ETH", tokenOut: USDC, amount: "1.5" },
+      CTX,
+    );
+    expect(result.success).toBe(false);
+    expect(executeProtocolTool).not.toHaveBeenCalled();
+  });
 });
 
-describe("swap_quote — Robinhood Chain 4663 routes to KyberSwap primary, Uniswap fallback", () => {
+describe("swap_quote — Robinhood Chain 4663 is KyberSwap-supported (plan §11.2 — EVM is ALWAYS KyberSwap, no fallback)", () => {
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const VEX = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 
-  it("chain 'robinhood' → kyberswap.swap.quote (KyberSwap now aggregates 4663; Uniswap is the fallback)", async () => {
-    await handleSwapQuote({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1.5" }, CTX);
+  it("chain 'robinhood' → kyberswap.swap.quote (KyberSwap aggregates 4663)", async () => {
+    await handleSwapQuote({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, CTX);
     const { toolId, params } = lastCall();
     expect(toolId).toBe("kyberswap.swap.quote");
     expect(params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" });
@@ -167,71 +181,45 @@ describe("swap_quote — Robinhood Chain 4663 routes to KyberSwap primary, Unisw
   });
 
   it("a chain with NO venue (neither kyber nor uniswap) → clean error, NO dispatch", async () => {
-    const result = await handleSwapQuote({ chain: "narnia", tokenIn: VIRTUAL, tokenOut: VEX, amount: "1" }, CTX);
+    const result = await handleSwapQuote({ chain: "narnia", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1" }, CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("swap family");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 });
 
-describe("swap_quote — runtime Kyber→Uniswap QUOTE fallback (LOCKED #3)", () => {
-  // Base is KyberSwap-primary AND has a verified Uniswap deployment → eligible.
+describe("swap_quote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 removed it; Agent Scan hidden pair replaces it)", () => {
   const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
   const WETH = "0x4200000000000000000000000000000000000006";
 
-  it("kyber TRANSPORT failure + Uniswap deployment present → uniswap.swap.quote returned", async () => {
-    executeProtocolTool
-      .mockResolvedValueOnce({ success: false, output: "kyberswap.swap.quote failed (timeout): upstream timed out" })
-      .mockResolvedValueOnce({ success: true, output: "uniswap-ok", data: { chainId: 8453 } });
-
-    const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amount: "1" }, CTX);
-
-    expect(executeProtocolTool).toHaveBeenCalledTimes(2);
-    // First attempt = KyberSwap primary; fallback = Uniswap with the base key.
+  it("kyber TRANSPORT failure on a KyberSwap-supported chain → the Kyber failure is returned VERBATIM, NO second call", async () => {
+    executeProtocolTool.mockResolvedValueOnce({
+      success: false,
+      output: "kyberswap.swap.quote failed (timeout): upstream timed out",
+    });
+    const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" }, CTX);
+    // The old silent Kyber→Uniswap fallback is REMOVED — exactly one call,
+    // and the model sees the raw Kyber failure (its own text may point it at
+    // swap_quote_uniswap once W2a's handler reveals it — that reveal call is
+    // W2a's, not this alias's, for an in-band Kyber API failure).
+    expect(executeProtocolTool).toHaveBeenCalledTimes(1);
     expect((executeProtocolTool.mock.calls[0]![0] as { toolId: string }).toolId).toBe("kyberswap.swap.quote");
-    const fb = executeProtocolTool.mock.calls[1]![0] as { toolId: string; params: Record<string, unknown> };
-    expect(fb.toolId).toBe("uniswap.swap.quote");
-    expect(fb.params).toEqual({ chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" });
-    expect(result.output).toBe("uniswap-ok"); // the Uniswap quote is what the agent sees
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("failed (timeout)");
   });
 
-  it("kyber no-route (provider_error) + Uniswap deployment → falls back", async () => {
-    executeProtocolTool
-      .mockResolvedValueOnce({ success: false, output: "kyberswap.swap.quote failed (provider_error): no route found" })
-      .mockResolvedValueOnce({ success: true, output: "uniswap-ok" });
-    await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amount: "1" }, CTX);
-    expect(executeProtocolTool).toHaveBeenCalledTimes(2);
-    expect((executeProtocolTool.mock.calls[1]![0] as { toolId: string }).toolId).toBe("uniswap.swap.quote");
-  });
-
-  it("kyber SUCCESS with a honeypot/safety verdict → NO fallback (block stands)", async () => {
+  it("kyber SUCCESS with a honeypot/safety verdict passes straight through", async () => {
     executeProtocolTool.mockResolvedValueOnce({
       success: true,
       output: "kyber-ok",
       data: { chainId: 8453, safety: { tokenIn: { isHoneypot: true, isFOT: false, tax: 0 } } },
     });
-    const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amount: "1" }, CTX);
-    // A successful quote is never re-routed — the KyberSwap safety verdict stands.
+    const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" }, CTX);
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
     expect((executeProtocolTool.mock.calls[0]![0] as { toolId: string }).toolId).toBe("kyberswap.swap.quote");
     expect(result.output).toBe("kyber-ok");
   });
 
-  it("kyber failure + NO Uniswap deployment on the chain → clean KyberSwap error, NO fallback", async () => {
-    // Avalanche is KyberSwap-supported but has no verified Uniswap deployment.
-    executeProtocolTool.mockResolvedValueOnce({ success: false, output: "kyberswap.swap.quote failed (timeout): upstream timed out" });
-    const result = await handleSwapQuote({ chain: "avalanche", tokenIn: WETH, tokenOut: USDC, amount: "1" }, CTX);
-    expect(executeProtocolTool).toHaveBeenCalledTimes(1);
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("failed (timeout)");
-  });
-
-  it("kyber failure with a NON-eligible category (auth) → NO fallback", async () => {
-    executeProtocolTool.mockResolvedValueOnce({ success: false, output: "kyberswap.swap.quote failed (auth): forbidden" });
-    const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amount: "1" }, CTX);
-    expect(executeProtocolTool).toHaveBeenCalledTimes(1);
-    expect(result.success).toBe(false);
-  });
 });
 
 describe("token_check — pass-through to kyberswap.tokens.check", () => {

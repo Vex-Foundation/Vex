@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  costBasisSchema,
   tokenHistoryCursorSchema,
   tokenHistoryDtoSchema,
   tokenHistoryEntrySchema,
@@ -94,10 +93,19 @@ describe("tokenHistoryReadInputSchema", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("rejects a cursor with an out-of-range sourceRank", () => {
+  it("accepts sourceRank=2 (Agent Scan §4.7 — the agent_activity arm)", () => {
     const parsed = tokenHistoryCursorSchema.safeParse({
       createdAt: ISO_MICRO,
       sourceRank: 2,
+      sourceId: "42",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects a cursor with an out-of-range sourceRank", () => {
+    const parsed = tokenHistoryCursorSchema.safeParse({
+      createdAt: ISO_MICRO,
+      sourceRank: 3,
       sourceId: "42",
     });
     expect(parsed.success).toBe(false);
@@ -116,7 +124,7 @@ describe("tokenHistoryEntrySchema", () => {
     symbol: "USDC",
     localSymbol: null,
     amount: { value: "1.5", unitProvenance: "human" as const },
-    valueUsd: "1.50",
+    valueUsd: { value: "1.50", usdProvenance: "recorded" as const },
   };
 
   it("round-trips a swap entry", () => {
@@ -131,8 +139,63 @@ describe("tokenHistoryEntrySchema", () => {
       output: leg,
       unitPriceUsd: "1.00",
       captureStatus: "executed",
+      status: null,
+      failureCode: null,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("round-trips a pending agent_activity swap entry (no captureStatus, status+failureCode instead)", () => {
+    const parsed = tokenHistoryEntrySchema.safeParse({
+      ...base,
+      kind: "swap",
+      chain: "8453",
+      venue: "kyberswap",
+      tradeSide: null,
+      productType: "spot",
+      input: leg,
+      output: leg,
+      unitPriceUsd: null,
+      captureStatus: null,
+      status: "pending",
+      failureCode: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("round-trips a failed agent_activity swap entry with a failureCode", () => {
+    const parsed = tokenHistoryEntrySchema.safeParse({
+      ...base,
+      kind: "swap",
+      chain: "8453",
+      venue: "uniswap",
+      tradeSide: null,
+      productType: "spot",
+      input: leg,
+      output: leg,
+      unitPriceUsd: null,
+      captureStatus: null,
+      status: "failed",
+      failureCode: "slippage",
+      txRefs: [],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects a swap entry missing status/failureCode (required, non-optional keys)", () => {
+    const parsed = tokenHistoryEntrySchema.safeParse({
+      ...base,
+      kind: "swap",
+      chain: "base",
+      venue: null,
+      tradeSide: null,
+      productType: null,
+      input: leg,
+      output: leg,
+      unitPriceUsd: null,
+      captureStatus: null,
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("round-trips a bridge entry with a distinct destination chain", () => {
@@ -185,6 +248,8 @@ describe("tokenHistoryEntrySchema", () => {
       output: leg,
       unitPriceUsd: null,
       captureStatus: null,
+      status: null,
+      failureCode: null,
       txRefs: [0, 1, 2, 3, 4].map((n) => ({ chainId: EVM_CHAIN_ID, ref: `0x${n}` })),
     });
     expect(parsed.success).toBe(false);
@@ -202,6 +267,26 @@ describe("tokenHistoryEntrySchema", () => {
       output: leg,
       unitPriceUsd: null,
       captureStatus: null,
+      status: null,
+      failureCode: null,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects a stale 'atomic' unitProvenance value (heuristic retired — Agent Scan §4.7)", () => {
+    const parsed = tokenHistoryEntrySchema.safeParse({
+      ...base,
+      kind: "swap",
+      chain: "base",
+      venue: null,
+      tradeSide: null,
+      productType: null,
+      input: { ...leg, amount: { value: "1", unitProvenance: "atomic" } },
+      output: leg,
+      unitPriceUsd: null,
+      captureStatus: null,
+      status: null,
+      failureCode: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -218,67 +303,84 @@ describe("tokenHistoryEntrySchema", () => {
       output: leg,
       unitPriceUsd: null,
       captureStatus: null,
+      status: null,
+      failureCode: null,
       txRefs: [{ chainId: EVM_CHAIN_ID, ref: "" }],
     });
     expect(parsed.success).toBe(false);
   });
-});
 
-describe("costBasisSchema", () => {
-  it("round-trips a lots result", () => {
-    const parsed = costBasisSchema.safeParse({
-      kind: "lots",
-      openLots: [
-        {
-          quantity: { value: "1000000000000000000", unitProvenance: "atomic" },
-          priceUsd: "2500.00",
-          costBasisUsd: "2500.00",
-          openedAt: ISO,
-        },
-      ],
-      totalOpenQuantity: "1000000000000000000",
-      avgOpenPriceUsd: "2500.00",
-    });
-    expect(parsed.success).toBe(true);
-  });
-
-  it("accepts the none variant with no other fields", () => {
-    expect(costBasisSchema.safeParse({ kind: "none" }).success).toBe(true);
-  });
-
-  it("accepts the unavailable variant with no other fields", () => {
-    expect(costBasisSchema.safeParse({ kind: "unavailable" }).success).toBe(true);
-  });
-
-  it("rejects openLots beyond the 50-lot display cap", () => {
-    const lot = {
-      quantity: { value: "1", unitProvenance: "atomic" as const },
-      priceUsd: null,
-      costBasisUsd: null,
-      openedAt: ISO,
+  describe("valueUsd — usdProvenance tag (Codex final review round 2 finding 7 / contract C35)", () => {
+    const swapBase = {
+      ...base,
+      kind: "swap" as const,
+      chain: "base",
+      venue: null,
+      tradeSide: null,
+      productType: null,
+      unitPriceUsd: null,
+      captureStatus: null,
+      status: null,
+      failureCode: null,
     };
-    const parsed = costBasisSchema.safeParse({
-      kind: "lots",
-      openLots: Array.from({ length: 51 }, () => lot),
-      totalOpenQuantity: "51",
-      avgOpenPriceUsd: null,
-    });
-    expect(parsed.success).toBe(false);
-  });
 
-  it("rejects an unknown cost-basis kind", () => {
-    expect(costBasisSchema.safeParse({ kind: "estimated" }).success).toBe(false);
+    it("round-trips an 'estimated' valueUsd (agent_activity's quote-time usd_in/out_est)", () => {
+      const parsed = tokenHistoryEntrySchema.safeParse({
+        ...swapBase,
+        input: { ...leg, valueUsd: { value: "50.00", usdProvenance: "estimated" } },
+        output: leg,
+      });
+      expect(parsed.success).toBe(true);
+    });
+
+    it("round-trips a null-value 'estimated' valueUsd (unpriced, never a fabricated 0)", () => {
+      const parsed = tokenHistoryEntrySchema.safeParse({
+        ...swapBase,
+        input: { ...leg, valueUsd: { value: null, usdProvenance: "estimated" } },
+        output: leg,
+      });
+      expect(parsed.success).toBe(true);
+    });
+
+    it("rejects a leg missing usdProvenance (the pre-C35 bare-string shape — hostile fixture)", () => {
+      const parsed = tokenHistoryEntrySchema.safeParse({
+        ...swapBase,
+        input: { ...leg, valueUsd: "1.50" },
+        output: leg,
+      });
+      expect(parsed.success).toBe(false);
+    });
+
+    it("rejects an unbounded usdProvenance value (hostile fixture)", () => {
+      const parsed = tokenHistoryEntrySchema.safeParse({
+        ...swapBase,
+        input: { ...leg, valueUsd: { value: "1.50", usdProvenance: "confirmed" } },
+        output: leg,
+      });
+      expect(parsed.success).toBe(false);
+    });
+
+    it("rejects a stray extra key on the valueUsd field (.strict())", () => {
+      const parsed = tokenHistoryEntrySchema.safeParse({
+        ...swapBase,
+        input: {
+          ...leg,
+          valueUsd: { value: "1.50", usdProvenance: "recorded", source: "engine" },
+        },
+        output: leg,
+      });
+      expect(parsed.success).toBe(false);
+    });
   });
 });
 
 describe("tokenHistoryDtoSchema", () => {
-  it("round-trips an available page with no entries and no open lots", () => {
+  it("round-trips an available page with no entries", () => {
     const parsed = tokenHistoryDtoSchema.safeParse({
       status: "available",
       entries: [],
       nextCursor: null,
       hasMore: false,
-      costBasis: { kind: "none" },
     });
     expect(parsed.success).toBe(true);
   });
@@ -307,7 +409,6 @@ describe("tokenHistoryDtoSchema", () => {
       entries: [],
       nextCursor: null,
       hasMore: false,
-      costBasis: { kind: "none" },
       reason: "query_timeout",
     });
     expect(parsed.success).toBe(false);
@@ -330,7 +431,6 @@ describe("tokenHistoryDtoSchema", () => {
       entries: Array.from({ length: 51 }, () => entry),
       nextCursor: null,
       hasMore: true,
-      costBasis: { kind: "none" },
     });
     expect(parsed.success).toBe(false);
   });

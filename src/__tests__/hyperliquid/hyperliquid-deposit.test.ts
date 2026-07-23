@@ -120,7 +120,7 @@ describe("Hyperliquid Bridge2 deposit", () => {
       },
     });
     expect(MUTATION_MATRIX.get("hyperliquid.deposit")).toMatchObject({
-      role: "audit",
+      kind: "audit",
       capture: "full",
       expectedType: "transfer",
     });

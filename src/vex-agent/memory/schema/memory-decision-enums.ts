@@ -25,9 +25,11 @@ import { z } from "zod";
 
 // ── decision_type ───────────────────────────────────────────────
 // The manager's verdict event. `promote/supersede/merge/retain/reject/expire`
-// act on a candidate (candidate_id anchor); `reconcile` re-derives a knowledge
-// lesson after an outcome change (reconcile_entry_id anchor, S7). Exactly one
-// anchor per decision (md_anchor_xor + md_reconcile_type).
+// act on a candidate (candidate_id anchor); `reconcile` RETIRED (Agent Scan
+// W4) — it used to re-derive a knowledge lesson after an outcome change
+// (reconcile_entry_id anchor, S7); the worker that ever wrote one is deleted,
+// so the member stays only for historical `memory_decisions` rows. Exactly
+// one anchor per decision (md_anchor_xor + md_reconcile_type).
 export const MEMORY_DECISION_TYPE = [
   "promote",
   "supersede",

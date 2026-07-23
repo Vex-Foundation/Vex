@@ -72,7 +72,7 @@ const captureValidator = await import("@vex-agent/tools/protocols/capture-valida
 
 function swapManifest(): ProtocolToolManifest {
   return {
-    toolId: "kyberswap.swap.sell",
+    toolId: "kyberswap.swap.execute",
     namespace: "kyberswap",
     lifecycle: "active",
     description: "sell",
@@ -131,7 +131,7 @@ beforeEach(() => {
 
 describe("executeProtocolTool — Stage 7 prequote gate", () => {
   it("blocks a gated swap with NO fresh prequote BEFORE the approval gate (no handler, no pendingApproval)", async () => {
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.success).toBe(false);
     expect(result.pendingApproval).toBeUndefined();
     expect(result.output).toMatch(/no fresh quote/i);
@@ -141,7 +141,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
 
   it("blocks a gated swap with a fresh fail (safety_fail message, no handler)", async () => {
     mockExistsFail.mockResolvedValue(true);
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/flagged unsafe|honeypot|scam/i);
     expect(handlerSpy).not.toHaveBeenCalled();
@@ -149,7 +149,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
 
   it("R5: an allowed (pass) swap in restricted mode → pendingApproval carries prequote.verdict='pass'", async () => {
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "pass" });
     expect(handlerSpy).not.toHaveBeenCalled(); // gate allowed, approval gate paused
@@ -157,7 +157,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
 
   it("R5: an allowed (unknown) swap in restricted mode → pendingApproval carries prequote.verdict='unknown'", async () => {
     mockFindLatest.mockResolvedValue(prequoteRow("unknown"));
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "unknown" });
   });
@@ -175,7 +175,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
         tokenOut: { isHoneypot: false, isFOT: false, tax: 0 },
       }),
     );
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toEqual({ verdict: "pass", fotTax: 60 });
     expect(handlerSpy).not.toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
         tokenOut: { isHoneypot: false, isFOT: true, tax: 75 },
       }),
     );
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.prequote).toEqual({ verdict: "pass", fotTax: 75 });
   });
 
@@ -199,7 +199,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
         tokenOut: { isHoneypot: false, isFOT: false, tax: 0 },
       }),
     );
-    const result = await executeProtocolTool({ toolId: "kyberswap.swap.sell", params: swapParams }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.prequote).toEqual({ verdict: "pass" });
     expect(result.prequote).not.toHaveProperty("fotTax");
   });
@@ -207,7 +207,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
   it("full-auto (approved): an allowed swap passes the gate and runs the handler", async () => {
     mockFindLatest.mockResolvedValue(prequoteRow("unknown"));
     const result = await executeProtocolTool(
-      { toolId: "kyberswap.swap.sell", params: swapParams },
+      { toolId: "kyberswap.swap.execute", params: swapParams },
       { ...restrictedCtx, sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(true);
@@ -216,14 +216,14 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
 
   it("does NOT gate a non-EXECUTE_GATE_TOOLS mutating tool (no repo reads)", async () => {
     // A mutating tool that is NOT in EXECUTE_GATE_TOOLS (swap executes + the
-    // Khalani bridge are gated; a Polymarket order is not).
+    // Khalani bridge are gated; a Pendle claim is not).
     vi.mocked(catalog.getProtocolManifest).mockReturnValue({
       ...swapManifest(),
-      toolId: "polymarket.clob.buy",
-      namespace: "polymarket",
+      toolId: "pendle.claim",
+      namespace: "pendle",
       params: [],
     });
-    const result = await executeProtocolTool({ toolId: "polymarket.clob.buy", params: {} }, restrictedCtx);
+    const result = await executeProtocolTool({ toolId: "pendle.claim", params: {} }, restrictedCtx);
     // Reaches the approval gate WITHOUT a prequote binding (not a gated tool).
     expect(result.pendingApproval).toBe(true);
     expect(result.prequote).toBeUndefined();
@@ -231,10 +231,14 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
     expect(mockFindLatest).not.toHaveBeenCalled();
   });
 
-  it("does NOT gate a dryRun preview of a gated swap", async () => {
+  it("does NOT gate a dryRun preview of a gated (preview-supporting) tool", async () => {
+    // pendle.pt.buy keeps previewSupport:true in the mutation table — the two
+    // agent_activity swap executes deliberately do NOT (C24: their handlers
+    // hard-reject dryRun), so the preview-skips-prequote mechanism is proven
+    // on a tool where preview is a real, allowed mode.
     vi.mocked(captureValidator.isPreviewExecution).mockReturnValue(true);
     const result = await executeProtocolTool(
-      { toolId: "kyberswap.swap.sell", params: { ...swapParams, dryRun: true } },
+      { toolId: "pendle.pt.buy", params: { ...swapParams, dryRun: true } },
       { ...restrictedCtx, sessionPermission: "full", approved: true },
     );
     expect(result.success).toBe(true);

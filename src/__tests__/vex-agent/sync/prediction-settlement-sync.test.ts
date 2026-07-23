@@ -1,7 +1,10 @@
 /**
- * Prediction settlement sync tests — Jupiter + Polymarket reconciliation.
+ * Prediction settlement sync tests — Jupiter reconciliation.
  *
  * Tests: settlement detection, synthetic capture semantics, idempotency, error handling.
+ * Polymarket half removed with the total Polymarket teardown (plan §4.6/§4.3) —
+ * `prediction-settlement-jupiter-boundary.test.ts` additionally pins that the
+ * Jupiter path resolves correctly with zero Polymarket wiring present.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -12,8 +15,6 @@ const mockQuery = vi.fn();
 const mockRecordSyntheticCapture = vi.fn().mockResolvedValue(1);
 const mockGetHistory = vi.fn();
 const mockGetPositions = vi.fn();
-const mockGetClosedPositions = vi.fn();
-const mockGetRelayPayload = vi.fn();
 
 vi.mock("@vex-agent/db/client.js", () => ({
   query: (...args: unknown[]) => mockQuery(...args),
@@ -31,18 +32,6 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/servi
   getJupiterPredictionPositions: (...args: unknown[]) => mockGetPositions(...args),
 }));
 
-vi.mock("@tools/polymarket/data/client.js", () => ({
-  getPolyDataClient: () => ({
-    getClosedPositions: (...args: unknown[]) => mockGetClosedPositions(...args),
-  }),
-}));
-
-vi.mock("@tools/polymarket/relayer/client.js", () => ({
-  getPolyRelayerClient: () => ({
-    getRelayPayload: (...args: unknown[]) => mockGetRelayPayload(...args),
-  }),
-}));
-
 const { reconcilePredictionSettlements } = await import("../../../vex-agent/sync/prediction-settlement-sync.js");
 
 // ── Tests ─────────────────────────────────────────────────────────
@@ -57,7 +46,6 @@ describe("reconcilePredictionSettlements — no positions", () => {
     const result = await reconcilePredictionSettlements();
     expect(result).toEqual({ checked: 0, closed: 0, skipped: 0, errors: 0 });
     expect(mockGetHistory).not.toHaveBeenCalled();
-    expect(mockGetClosedPositions).not.toHaveBeenCalled();
   });
 });
 
@@ -146,53 +134,6 @@ describe("reconcilePredictionSettlements — Jupiter", () => {
     expect(result.skipped).toBe(1);
     expect(result.closed).toBe(0);
     expect(mockRecordSyntheticCapture).not.toHaveBeenCalled();
-  });
-});
-
-describe("reconcilePredictionSettlements — Polymarket", () => {
-  const polyPosition = {
-    id: 2, namespace: "polymarket", instrument_key: "polymarket:0xCOND1:YES",
-    position_key: "polymarket:0xCOND1:YES", wallet_address: "0xEOA123",
-    contracts: "100", notional_usd: "65000000", data: {},
-  };
-
-  it("closes position when found in closedPositions", async () => {
-    mockQuery.mockResolvedValue([polyPosition]);
-    mockGetRelayPayload.mockResolvedValue({ address: "0xPROXY456", nonce: "0" });
-    mockGetClosedPositions.mockResolvedValue([{
-      conditionId: "0xCOND1", outcome: "YES",
-      realizedPnl: 35, avgPrice: 0.65, timestamp: 1712000000,
-    }]);
-
-    const result = await reconcilePredictionSettlements();
-    expect(result.closed).toBe(1);
-    expect(mockGetRelayPayload).toHaveBeenCalledWith("0xEOA123", "SAFE");
-    expect(mockGetClosedPositions).toHaveBeenCalledWith({ user: "0xPROXY456" });
-
-    const capture = mockRecordSyntheticCapture.mock.calls[0][0].tradeCapture;
-    expect(capture.status).toBe("closed");
-    expect(capture.valuationSource).toBe("none");
-    expect(capture.meta.realizedPnl).toBe(35);
-  });
-
-  it("skips when proxy wallet derivation fails", async () => {
-    mockQuery.mockResolvedValue([polyPosition]);
-    mockGetRelayPayload.mockRejectedValue(new Error("Relayer unavailable"));
-
-    const result = await reconcilePredictionSettlements();
-    expect(result.skipped).toBe(1);
-    expect(result.closed).toBe(0);
-    expect(mockGetClosedPositions).not.toHaveBeenCalled();
-  });
-
-  it("skips when no matching closed position found", async () => {
-    mockQuery.mockResolvedValue([polyPosition]);
-    mockGetRelayPayload.mockResolvedValue({ address: "0xPROXY456", nonce: "0" });
-    mockGetClosedPositions.mockResolvedValue([]);
-
-    const result = await reconcilePredictionSettlements();
-    expect(result.skipped).toBe(1);
-    expect(result.closed).toBe(0);
   });
 });
 

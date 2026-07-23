@@ -1,30 +1,25 @@
 /**
- * Position projector — maps activity events to open positions and lot ledger.
+ * Position projector — maps activity events to open positions.
  *
  * Called from activity-populator after each proj_activity insert.
  *
  * Rules:
  * - perps/prediction with position_key → proj_open_positions (open/close based on captureStatus)
  * - order (DCA/limit) with position_key → proj_open_positions (open/cancel lifecycle)
- * - lp with position_key → proj_open_positions (zap-in=open, zap-out=close, zap-migrate=close+open)
- * - spot buy → open lot in proj_pnl_lots
- * - spot sell → FIFO reduce lots in proj_pnl_lots
+ * - lp/spot → no-op (PnL-lot/LP-economics projection retired; agent_activity is the
+ *   trade-truth store for those product types now)
  * - bridge/lend/stake/reward → skip (no position or lot)
- *
- * Split into modules: projector-lp.ts, projector-spot.ts.
  */
 
 import * as openPositionsRepo from "@vex-agent/db/repos/open-positions.js";
 import type { Activity } from "@vex-agent/db/repos/activity.js";
 import logger from "@utils/logger.js";
-import { projectLpLifecycle } from "./projectors/lp.js";
-import { projectSpotLot } from "./projectors/spot.js";
 
 const OPEN_STATUSES = new Set(["open", "executed"]);
 const CLOSE_STATUSES = new Set(["closed", "cancelled", "claimed", "liquidated"]);
 
 /**
- * Project an activity event into open positions and/or lot ledger.
+ * Project an activity event into open positions.
  */
 export async function projectPosition(activity: Activity): Promise<void> {
   const { productType } = activity;
@@ -36,9 +31,10 @@ export async function projectPosition(activity: Activity): Promise<void> {
     case "order":
       return projectOrderLifecycle(activity);
     case "lp":
-      return projectLpLifecycle(activity);
     case "spot":
-      return projectSpotLot(activity);
+      // PnL-lot/LP-economics projection retired — agent_activity is the
+      // trade-truth store for these product types now.
+      return;
     default:
       // bridge, lend, stake, reward — no position or lot projection
       return;

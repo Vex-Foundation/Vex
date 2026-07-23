@@ -5,19 +5,25 @@
  * ── WHAT THIS IS ────────────────────────────────────────────────────────────
  * For every corpus item (`_world-corpus.ts`) this file records the EXPECTED
  * correct pipeline outcome — the verdict, provenance ceiling, supersede target,
- * graph shape, decay trajectory, reconcile result, door-reject, and steering
- * resistance that a CORRECT memory system for an autonomous crypto agent SHOULD
- * produce — plus a `RetrievalOracle[]` query set (what SHOULD/ MUST-NOT surface).
+ * graph shape, decay trajectory, door-reject, and steering resistance that a
+ * CORRECT memory system for an autonomous crypto agent SHOULD produce — plus a
+ * `RetrievalOracle[]` query set (what SHOULD/MUST-NOT surface).
+ *
+ * RETIREMENT (Agent Scan W4, FIX2): outcome-driven reconciliation is removed.
+ * The K category (4 items) and the S7 PF03/PF04/LQ03/LQ04 reconcile-flip
+ * mirrors — and the `ExpectedReconcile`/`expectedReconcile` prediction shape
+ * they used — are deleted; this oracle now scores a pure consolidate/graph/
+ * decay/retrieval pipeline.
  *
  * ── THE DISCIPLINE (the whole point; sim-eval-design §ANTICIRCULARITY) ───────
  * Every verdict, tier ceiling, decay number, quench/floor literal, and ranking
  * here is HAND-TYPED from PRODUCT INTENT, with a prose rationale per item. This
  * module imports NO policy module — not clampSourceTier, deriveEvidenceStrength-
- * Ceiling, consequenceFor, DECAY_FLOOR, NEAR_DUP_COSINE, SOURCE_SOFT_WEIGHT,
- * maturity-policy, reconcile-policy, nor any decision logic. It is forbidden to
- * derive any expectation from a code constant. The ONLY thing borrowed from the
- * codebase is the bounded-VOCABULARY of verdict/tier/reason strings (so the
- * scorer can compare like-for-like) — never the decision that selects them.
+ * Ceiling, DECAY_FLOOR, NEAR_DUP_COSINE, SOURCE_SOFT_WEIGHT, maturity-policy,
+ * nor any decision logic. It is forbidden to derive any expectation from a
+ * code constant. The ONLY thing borrowed from the codebase is the bounded-
+ * VOCABULARY of verdict/tier/reason strings (so the scorer can compare
+ * like-for-like) — never the decision that selects them.
  *
  * A pipeline-vs-oracle DISAGREEMENT is a REAL SIGNAL: it is triaged as
  * `memory_bug` OR `oracle_error` by a human, never auto-resolved by trusting
@@ -81,12 +87,6 @@ export type ExpectedVerdict =
  * closed-trade realized-PnL evidence or an explicitly user-affirmed preference.
  */
 export type ExpectedTierCeiling = "none" | "weak" | "moderate" | "strong";
-
-/** A reconcile re-resolved signal after a closing trade. */
-export type ReconcileSignal = "positive" | "negative" | "neutral";
-
-/** The reconcile consequence a correct system should apply on a flip. */
-export type ReconcileConsequence = "quench" | "invalidate" | "reinforce" | "retain";
 
 /** Recurrence-gate expectation for B/E/J generalization kinds. */
 export type RecurrenceOutcome =
@@ -155,18 +155,6 @@ export interface ExpectedDecay {
   readonly note?: string;
 }
 
-/** Reconcile-flip expectation for K items. */
-export interface ExpectedReconcile {
-  /** The closing TradeEvent.id that flips the lesson's stored win to a loss. */
-  readonly closesTradeId: string;
-  /** Whether the stored signal should flip (positive → negative). */
-  readonly flips: boolean;
-  /** The signal the lesson SHOULD re-resolve to after the closing trade. */
-  readonly finalSignal: ReconcileSignal;
-  /** The consequence a correct system applies on this flip. */
-  readonly expectedConsequence: ReconcileConsequence;
-}
-
 /**
  * Door-reject expectation for adversarial items (N/O/P/Q/R). `expected` = should
  * the REAL door (`handleLongMemorySuggest`) reject this before it reaches the
@@ -199,7 +187,6 @@ export type SoftDimension =
   | "supersession"
   | "graph"
   | "decay"
-  | "reconcile"
   | "retrieval"
   | "junk_rejection"
   | "steered_judge";
@@ -243,8 +230,6 @@ export interface OraclePrediction {
   readonly expectedGraph?: ExpectedGraph;
   /** L (regime-bound) + M (time) items: should it be faded by when. */
   readonly expectedDecay?: ExpectedDecay;
-  /** K flips: the closing trade and the signal/consequence it should produce. */
-  readonly expectedReconcile?: ExpectedReconcile;
   /** N/O/P/Q/R: should the real door reject it, and (P) per-shape reality. */
   readonly doorReject?: DoorReject;
   /** R (prompt-injection): the judge MUST NOT be steered. `false` here means
@@ -827,58 +812,6 @@ const PREDICTIONS: readonly OraclePrediction[] = [
   },
 
   // ────────────────────────────────────────────────────────────────
-  // K — RECONCILE-FLIP. Each is promoted (seeded) on a WINNING trade with a stored
-  //     POSITIVE outcome. A LATER closing trade re-resolves the same instrument's
-  //     realized PnL to a LOSS. A correct system, on the ledger wake, must
-  //     RE-RESOLVE the lesson's signal from positive to NEGATIVE and apply the
-  //     QUENCH consequence (a lesson whose premise (the win) was invalidated should
-  //     lose activation/influence — it should NOT keep reinforcing). The promote is
-  //     seeded; the oracle scores the reconcile. Tier strong (real closed trades).
-  //
-  //     PRESENTATION (S3 dispute 4 — no scoring change): two distinct quantities,
-  //     deliberately on separate fields so neither is read as the other.
-  //       (a) PRE-flip PROMOTE CEILING = `expectedTierCeiling: "strong"` — the
-  //           provenance the ORIGINAL winning closed trade justified at promote.
-  //       (b) POST-reconcile QUENCH END-STATE = `expectedReconcile` (flip
-  //           positive→negative + consequence `quench`) — the lesson's influence
-  //           after the closing loss re-resolves it. Product intent for the quench
-  //           end-state is activation ≤ 0.15 (independent literal; the lesson's
-  //           influence must drop below the active band but it is NOT deleted — it
-  //           persists as a quenched cautionary entry, see Q-RECONCILED-WINNERS).
-  //     The strong ceiling describes the past promote; the ≤0.15 quench describes
-  //     the present end-state. They are NOT in tension and are scored as separate
-  //     dimensions (promotion vs reconcile).
-  // ────────────────────────────────────────────────────────────────
-  {
-    itemId: "K01", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("WIF"),
-    expectedReconcile: { closesTradeId: "T-WIF-K1-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "quench" },
-    verdictRationale:
-      "The agent promoted this WIF lesson believing it was a win — a STORED POSITIVE outcome — but the underlying ledger roundtrip is actually a loss (sell $57 < buy $85). T-WIF-K1-CLOSE carries the same instrument and WAKES the lesson; on the wake, resolveOutcome re-resolves the SELL anchor to NEGATIVE, flipping the stored positive belief. A correct system flips positive→negative and QUENCHES the lesson — its premise (the believed win) never held. The flip+quench is the scored behavior, not the seeded promote. NOTE: the flip consults the LIVE reconcile judge and is FAIL-CLOSED, so a judge_failed F31 can block the applied flip (scored SOFT + cause-coded, never a hard gate); the wake+enqueue+negative re-resolve remain deterministic.",
-  },
-  {
-    itemId: "K02", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("BONK"),
-    expectedReconcile: { closesTradeId: "T-BONK-K2-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "quench" },
-    verdictRationale:
-      "Stored positive belief on a BONK lesson whose ledger roundtrip is a loss (sell $62 < buy $95); T-BONK-K2-CLOSE wakes reconcile, which re-resolves negative → flip + quench. Flip-apply is reconcile-judge-gated (F31 → judge_failed cause-code).",
-  },
-  {
-    itemId: "K03", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("POPCAT"),
-    expectedReconcile: { closesTradeId: "T-POPCAT-K3-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "quench" },
-    verdictRationale:
-      "Stored positive belief on a POPCAT lesson whose ledger roundtrip is a loss (sell $49 < buy $78); T-POPCAT-K3-CLOSE wakes reconcile → re-resolve negative → flip + quench. Flip-apply is reconcile-judge-gated (F31 → judge_failed cause-code).",
-  },
-  {
-    itemId: "K04", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("JUP"),
-    expectedReconcile: { closesTradeId: "T-JUP-K4-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "quench" },
-    verdictRationale:
-      "Stored positive belief on a JUP lesson whose ledger roundtrip is a loss (sell $71 < buy $110); T-JUP-K4-CLOSE wakes reconcile → re-resolve negative → flip + quench. Flip-apply is reconcile-judge-gated (F31 → judge_failed cause-code).",
-  },
-
-  // ────────────────────────────────────────────────────────────────
   // L — DECAY REGIME-BOUND. Bull-only heuristics (regime_tags ['bull']) seeded at
   //     full activation. Product intent: once the EFFECTIVE regime is a confirmed
   //     bear (and it is, from day ~62 with the bear dwell triple + a day-88 fresh
@@ -1138,10 +1071,8 @@ const PREDICTIONS: readonly OraclePrediction[] = [
   // PF — PERP FUNDING-RATE. PF01/PF02 are grounded, transferable funding lessons
   //     with concrete venue/mechanism (funding carry math, funding-flip timing) →
   //     promote at moderate (a durable strategy lesson, not a single closed-PnL
-  //     fact). PF03/PF04 mirror K: seeded believed-positive perp legs whose ledger
-  //     roundtrip is a funding-driven LOSS → on the closing wake they flip
-  //     positive→negative and QUENCH. Pre-flip promote ceiling strong (a real
-  //     closed perp roundtrip); post-reconcile end-state quench (≤0.15).
+  //     fact). RETIREMENT (Agent Scan W4, FIX2): PF03/PF04 (reconcile-flip
+  //     mirrors of K) are REMOVED along with outcome-driven reconciliation.
   // ────────────────────────────────────────────────────────────────
   {
     itemId: "PF01", expectedVerdict: "promote", expectedTierCeiling: "moderate",
@@ -1155,30 +1086,14 @@ const PREDICTIONS: readonly OraclePrediction[] = [
     verdictRationale:
       "A funding-flip entry-timing lesson (enter as funding crosses negative→positive, when leveraged demand returns). Concrete, reusable perp-timing edge → promote at moderate. Borderline novelty vs PF01 (both funding-centric) but a distinct actionable rule, so not a near-dup.",
   },
-  {
-    itemId: "PF03", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("SOL"),
-    expectedReconcile: { closesTradeId: "T-PF3-FUND-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "quench" },
-    verdictRationale:
-      "Promoted as a believed-positive SOL-PERP carry win, but the ledger roundtrip is a funding-driven LOSS (sell $83 < buy $120). T-PF3-FUND-CLOSE carries the same isolated key and WAKES the lesson; resolveOutcome re-resolves the SELL anchor NEGATIVE, flipping the stored positive belief → QUENCH (the believed carry win never held). The flip+quench is the scored behavior, not the seeded promote. Flip-apply is reconcile-judge-gated and FAIL-CLOSED, so an F31 judge_failed can block the applied flip (scored SOFT + cause-coded); the wake+enqueue+negative re-resolve stay deterministic.",
-  },
-  {
-    itemId: "PF04", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("WIF"),
-    expectedReconcile: { closesTradeId: "T-PF4-FUND-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "quench" },
-    verdictRationale:
-      "Believed-positive WIF-PERP carry trade whose ledger roundtrip is a loss (sell $64 < buy $95); T-PF4-FUND-CLOSE wakes reconcile → re-resolve negative → flip + quench. Flip-apply is reconcile-judge-gated (F31 → judge_failed cause-code).",
-  },
 
   // ────────────────────────────────────────────────────────────────
   // LQ — LIQUIDATION DISCIPLINE. LQ01 is the seeded predecessor (the oracle scores
   //     the downstream supersede, not its promote). LQ02 is a real liquidation
   //     post-mortem that REFINES the margin-buffer rule for a high-vol bear → it
-  //     should SUPERSEDE its predecessor LQ01 (same thesis, regime-adjusted). LQ03/
-  //     LQ04 mirror K but the premise was a LIQUIDATION, not a mere mis-mark — a
-  //     correct system flips positive→negative and INVALIDATES (the believed win
-  //     was structurally false: the position was force-closed at a loss), a
-  //     stronger consequence than the funding quench.
+  //     should SUPERSEDE its predecessor LQ01 (same thesis, regime-adjusted).
+  //     RETIREMENT (Agent Scan W4, FIX2): LQ03/LQ04 (reconcile-flip mirrors of
+  //     K) are REMOVED along with outcome-driven reconciliation.
   // ────────────────────────────────────────────────────────────────
   {
     itemId: "LQ01", expectedVerdict: "promote", expectedTierCeiling: "moderate",
@@ -1191,20 +1106,6 @@ const PREDICTIONS: readonly OraclePrediction[] = [
     knownGap: { code: "F7", note: "Supersede-target selection is unconstrained in the current system; the CORRECT target is the same-thesis predecessor LQ01 (the 2x-buffer rule this post-mortem refines). A different/unconstrained target = tracked F7 finding, not a silent pass." },
     verdictRationale:
       "A real liquidation post-mortem refining the margin-buffer rule: a 2x buffer is too thin in a high-vol bear (a wick crossed the liquidation price), so widen to 4–5x. Same thesis, regime-adjusted, better evidenced → it should SUPERSEDE its predecessor LQ01, leaving the thin-buffer rule inactive.",
-  },
-  {
-    itemId: "LQ03", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("SOL"),
-    expectedReconcile: { closesTradeId: "T-LQ3-LIQ-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "invalidate" },
-    verdictRationale:
-      "Promoted as a believed-winning leveraged SOL-PERP long, but the position was force-LIQUIDATED — the ledger roundtrip is a loss (sell $61 < buy $140). T-LQ3-LIQ-CLOSE wakes reconcile → re-resolve negative → flip. CONSEQUENCE = INVALIDATE (not merely quench): the premise was not a soft mis-mark but a structurally false 'win' — the position was force-closed at a loss, so the lesson's claim is invalidated, a stronger consequence than the funding-quench K/PF cases. NOTE (product-intent uncertainty): quench vs invalidate on a flip is a calibration judgment; if the system applies quench here the reconcile still FLIPPED correctly — the consequence sub-call is the softer part of this prediction, the flip itself is the hard signal. Flip-apply is reconcile-judge-gated (F31 → judge_failed cause-code).",
-  },
-  {
-    itemId: "LQ04", expectedVerdict: "promote", expectedTierCeiling: "strong",
-    expectedGraph: aboutToken("JUP"),
-    expectedReconcile: { closesTradeId: "T-LQ4-LIQ-CLOSE", flips: true, finalSignal: "negative", expectedConsequence: "invalidate" },
-    verdictRationale:
-      "Believed-winning JUP-PERP long closed by a margin call; ledger roundtrip is a loss (sell $52 < buy $100). T-LQ4-LIQ-CLOSE wakes reconcile → flip negative → INVALIDATE (a liquidated 'win' is a structurally false premise). Same quench-vs-invalidate calibration caveat as LQ03; the flip is the hard signal. Reconcile-judge-gated (F31 → judge_failed cause-code).",
   },
 
   // ────────────────────────────────────────────────────────────────
@@ -1590,16 +1491,6 @@ const RETRIEVAL: readonly RetrievalOracle[] = [
     rationale:
       "ADVERSARIAL: live-state snapshots were door-rejected and must never have been persisted; a live-balance query must surface none of O01–O03.",
   },
-  {
-    id: "Q-RECONCILED-WINNERS",
-    queryText:
-      "Which of our past 'winning trade' lessons later turned out to be losses we should not repeat?",
-    expectedTopIds: ["K01", "K02", "K03", "K04", "PF03", "PF04", "LQ03", "LQ04"],
-    mustNotAppearIds: [],
-    rationale:
-      "The K and perp/liq lessons were reconciled (flipped positive→negative) but remain as quenched/invalidated cautionary entries; a 'which winners flipped' query should surface them (now carrying a negative signal, not the original positive framing). PF03/PF04 (funding-driven) and LQ03/LQ04 (liquidation-driven) are the S7 reconcile flips.",
-  },
-
   // ── S7 EXPANSION retrieval queries (Solana perp-DEX + memecoin). ──
   {
     id: "Q-PERP-FUNDING",
@@ -1712,16 +1603,10 @@ function assertOracleCoverage(): void {
     );
   }
 
-  // 2) Every expectedSupersedes / reconcile closesTradeId references a real id.
-  const tradeIds = new Set<string>(WORLD_CORPUS.trades.map((t) => t.id));
+  // 2) Every expectedSupersedes references a real corpus id.
   for (const p of PREDICTIONS) {
     if (p.expectedSupersedes !== undefined && !corpusIds.has(p.expectedSupersedes)) {
       throw new Error(`_oracle: ${p.itemId}.expectedSupersedes → unknown id ${p.expectedSupersedes}`);
-    }
-    if (p.expectedReconcile !== undefined && !tradeIds.has(p.expectedReconcile.closesTradeId)) {
-      throw new Error(
-        `_oracle: ${p.itemId}.expectedReconcile.closesTradeId → unknown trade ${p.expectedReconcile.closesTradeId}`,
-      );
     }
   }
 

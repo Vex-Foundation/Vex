@@ -3,9 +3,18 @@
  *
  * Drives the `_world-corpus.ts` stream ONE ITEM AT A TIME through the REAL Vex
  * memory pipeline (handleLongMemorySuggest door → live DeepSeek judge →
- * consolidate/graph/decay/reconcile → Gemma retrieval) over SIMULATED time, and
- * CAPTURES the per-item + final state for the S5 oracle scorer. S4 only RUNS and
+ * consolidate/graph/decay → Gemma retrieval) over SIMULATED time, and CAPTURES
+ * the per-item + final state for the S5 oracle scorer. S4 only RUNS and
  * CAPTURES — it does NOT score against `_oracle.ts` (that is S5).
+ *
+ * RETIREMENT NOTE (Agent Scan W4, FIX2): outcome-driven reconciliation is
+ * removed — the pipeline this runner drives is now pure consolidate/graph/
+ * decay/retrieval. The former reconcile-flip scenario (K01-K04, and the S7
+ * PF03/PF04/LQ03/LQ04 perp/liq mirrors) is REMOVED from the corpus, not
+ * replaced; the ledger-wake → reconcile-job machinery this file used to drive
+ * (`linkPromotedCandidateForReconcile` / `runReconcileForItem` /
+ * `processReconcileForEntry`) is deleted along with it. See the memory
+ * README's lost-coverage note.
  *
  * ── EVENT MODEL ─────────────────────────────────────────────────────────────
  * The corpus is three pure streams (memories / trades / regimes) each tagged with
@@ -28,17 +37,12 @@
  *
  * ── CAPTURE ─────────────────────────────────────────────────────────────────
  * `RunCapture` accumulates one `ItemResult` per memory item (door-reject / judge /
- * seed / reconcile detail) plus the resolved trade/regime ids. S5 consumes it.
+ * seed detail) plus the resolved trade/regime ids. S5 consumes it.
  */
 
 import { runDecaySweep } from "@vex-agent/engine/memory-manager/decay-sweep.js";
 import { listDecayableEntries } from "@vex-agent/db/repos/knowledge/crud.js";
 import { insertRegimeSnapshot } from "@vex-agent/db/repos/regime-snapshots.js";
-import {
-  updateCandidateOutcome,
-  updateCandidateStatus,
-} from "@vex-agent/db/repos/memory-candidates/index.js";
-import { memoryOutcomeSummarySchema } from "@vex-agent/memory/schema/memory-outcome.js";
 import { query } from "@vex-agent/db/client.js";
 import { handleLongMemorySuggest } from "@vex-agent/tools/internal/long-memory/suggest.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
@@ -57,19 +61,9 @@ import {
   type CorpusSuggest,
   type CorpusIntent,
 } from "./_world-corpus.js";
-import {
-  claimNextDueJob,
-  markCompleted,
-  getJobById,
-} from "@vex-agent/db/repos/memory-jobs/index.js";
-import {
-  processReconcileJob,
-  defaultReconcileDeps,
-} from "@vex-agent/engine/memory-manager/reconcile.js";
 
 import {
   seedFaithfulConfirmedSpotTrade,
-  seedFaithfulClosingTradeForWake,
   seedGemmaCandidate,
   seedPromotedLessonDirect,
   seedSupersedingLessonDirect,
@@ -123,10 +117,10 @@ export interface JudgeCapture {
 }
 
 /**
- * Deterministic seed capture (predecessors / reconcile targets / graph owners /
- * decay owners — the residual `seedPromotedLessonDirect` scaffold ONLY). The
- * `seedGemmaCandidate` recurrence siblings no longer produce a seed capture — they
- * are driven through the live judge and produce a `JudgeCapture` instead.
+ * Deterministic seed capture (predecessors / graph owners / decay owners — the
+ * residual `seedPromotedLessonDirect` scaffold ONLY). The `seedGemmaCandidate`
+ * recurrence siblings no longer produce a seed capture — they are driven
+ * through the live judge and produce a `JudgeCapture` instead.
  */
 export interface SeedCapture {
   readonly kind: "seed";
@@ -138,23 +132,11 @@ export interface SeedCapture {
   readonly candidateId: null;
 }
 
-/** Reconcile capture (K flips: a closing trade re-resolves a promoted lesson). */
-export interface ReconcileCapture {
-  readonly kind: "reconcile";
-  /** The reconcile job's terminal FSM status. */
-  readonly terminalStatus: string;
-  /** Bounded last_error code (judge_timeout / …) or null on a clean completion. */
-  readonly lastError: string | null;
-  /** "reconcile" when a consequence was applied (a decision row written), else null. */
-  readonly decisionType: "reconcile" | null;
-}
-
 /** The per-item capture union the scorer reads. */
 export type ItemResult =
   | DoorRejectCapture
   | JudgeCapture
-  | SeedCapture
-  | ReconcileCapture;
+  | SeedCapture;
 
 /**
  * The whole-run capture. `perItem` is keyed by the corpus memory id. `finalSnapshot`
@@ -224,11 +206,10 @@ export function buildEventStream(
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The representative 10-item subset (S4 proof). Spans the funnel-critical classes:
+ * The representative 9-item subset (S4 proof). Spans the funnel-critical classes:
  *   - A01  trade_lesson (judge path, WIF-anchored, graph cluster)     → judge
  *   - F01  supersession predecessor (seedPromotedLessonDirect)        → seed
  *   - F03  supersession successor (suggest → judge, supersedes F02)   → judge
- *   - K02  reconcile-flip (seed + linked promoted candidate → flip)   → reconcile
  *   - H01  graph-cluster owner (seedPromotedLessonDirect)             → seed
  *   - P04  secret door-reject (sk- key → tier1 hard reject)           → door reject
  *   - R01  prompt-injection (suggest → judge; must NOT be steered)    → judge
@@ -236,19 +217,17 @@ export function buildEventStream(
  *   - M01  decay time-only (seedPromotedLessonDirect)                 → seed
  *   - B02  recurrence-2 (suggest → judge, anchored on a range loss)   → judge
  *
- * NOTE on the reconcile pick: K02 anchors BONK (`T-BONK-K2` → flipped by
- * `T-BONK-K2-CLOSE`). The closing-trade wake matches by instrumentKey, so the
- * reconcile target must be the ONLY BONK promoted entry in the subset — K02 is,
- * because no other subset item is a BONK wake target. (K01 anchors WIF, which
- * collides with A01's WIF promote — a real cross-item wake collision; choosing K02
- * keeps the S4 reconcile target unambiguous. The full-100 S6 run resolves all four
- * K flips and the scorer there must tolerate same-token wake fan-out.)
+ * RETIREMENT NOTE (Agent Scan W4, FIX2): this subset previously included a K02
+ * reconcile-flip pick (seed + linked promoted candidate → later closing trade
+ * → ledger-wake → reconcile job → flip). Outcome-driven reconciliation is
+ * removed entirely (not replaced) — the K category (and its S7 PF03/PF04/
+ * LQ03/LQ04 perp/liq mirrors) no longer exists in `_world-corpus.ts`, so this
+ * subset shrank from 10 to 9 items with no substitute pick.
  */
 export const SUBSET_IDS: readonly string[] = [
   "A01",
   "F01",
   "F03",
-  "K02",
   "H01",
   "P04",
   "R01",
@@ -285,15 +264,10 @@ export function resolveSubset(subsetIds: readonly string[]): {
     throw new Error(`resolveSubset: unknown corpus ids ${missing.join(", ")}`);
   }
 
-  // Required trade ids: anchors + their closing trades.
+  // Required trade ids: the anchor trade of each chosen memory.
   const tradeIds = new Set<string>();
   for (const m of memories) {
     if (m.intent.anchorTradeId) tradeIds.add(m.intent.anchorTradeId);
-    if (m.intent.reconcileClosesTradeId) tradeIds.add(m.intent.reconcileClosesTradeId);
-  }
-  // A closing trade pulls in the original winner it closes (the buy lot it flips).
-  for (const t of WORLD_CORPUS.trades) {
-    if (tradeIds.has(t.id) && t.closesTradeId) tradeIds.add(t.closesTradeId);
   }
   const trades = WORLD_CORPUS.trades.filter((t) => tradeIds.has(t.id));
 
@@ -555,13 +529,6 @@ function resolveTradeAnchors(
 
 /** Process one TRADE event: seed the faithful spot trade, key the result by id. */
 async function runTradeEvent(state: RunnerState, trade: TradeEvent): Promise<void> {
-  if (trade.kind === "closing") {
-    // A closing trade is fired at reconcile time (see runReconcile); a bare
-    // closing event with no lesson to flip is still recorded as a ledger fact so
-    // the ledger stays realistic, but for the subset we only fire closings that a
-    // K item references (handled in runMemoryItem's reconcile branch). Skip here.
-    return;
-  }
   const result = await seedFaithfulConfirmedSpotTrade({
     sessionId: state.sessionId,
     instrumentKey: trade.instrumentKey,
@@ -612,7 +579,7 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
   }
 
   // ── seedPromotedLessonDirect: deterministic active entry (predecessors / ──
-  // ── reconcile targets / graph owners / decay owners). Judge bypassed.    ──
+  // ── graph owners / decay owners). Judge bypassed.                        ──
   if (item.entryVia === "seedPromotedLessonDirect") {
     const decayPolicy = decayPolicyFor(item.intent);
     const influenceScope: InfluenceScope = "advisory";
@@ -687,17 +654,6 @@ async function runMemoryItem(state: RunnerState, item: MemoryItem, simNowDay: nu
       knowledgeId: seededId,
       candidateId: null,
     });
-
-    // ── Reconcile (K): the entry must be a WAKE TARGET — i.e. backed by a ──
-    // ── PROMOTED candidate whose evidence_refs carry the instrumentKey, with ──
-    // ── a stored positive outcome to FLIP (findPromotedWakeTargets joins on a ──
-    // ── promoted candidate, NOT on the entry's own refs). seedPromotedLessonDirect ──
-    // ── alone leaves no such candidate, so we link one here using only existing ──
-    // ── repo functions (the reconcile-s7.int.test.ts pattern), then fire the flip. ──
-    if (item.intent.reconcileClosesTradeId) {
-      await linkPromotedCandidateForReconcile(state, item, seededId);
-      await runReconcileForItem(state, item, seededId);
-    }
     return;
   }
 
@@ -816,210 +772,6 @@ async function driveJudgePathForCandidate(
     });
     state.capture.entryIdByItem.set(item.id, drive.promotedKnowledgeId);
   }
-}
-
-/**
- * Make a directly-seeded K entry a genuine reconcile WAKE TARGET. Seeds a Gemma
- * candidate anchored on the K winner's SELL execution + instrumentKey, stores a
- * POSITIVE outcome (the recorded win the later loss will flip against,
- * `outcome_version` 0 to match the entry), and links it as a `promoted` candidate
- * to the entry. Uses only existing repos (the reconcile-s7.int.test.ts shape) — no
- * production change, no new fixture. After this, the closing trade's instrumentKey
- * wake matches THIS candidate → THIS entry, so the reconcile drive claims the right
- * reconcile job.
- */
-async function linkPromotedCandidateForReconcile(
-  state: RunnerState,
-  item: MemoryItem,
-  entryId: number,
-): Promise<void> {
-  const tradeId = item.intent.anchorTradeId;
-  if (!tradeId) throw new Error(`linkPromotedCandidateForReconcile: ${item.id} has no anchorTradeId`);
-  const seeded = state.capture.tradeAnchors.get(tradeId);
-  if (!seeded) throw new Error(`linkPromotedCandidateForReconcile: ${item.id} winner ${tradeId} not seeded`);
-
-  // A pending candidate anchored on the SELL execution + the instrumentKey, so the
-  // wake's instrumentKey probe finds it once it is marked promoted.
-  const { candidateId } = await seedGemmaCandidate({
-    sessionId: state.sessionId,
-    kind: item.kind,
-    title: item.suggest.title,
-    summary: item.suggest.summary,
-    evidenceRefs: [
-      { executionId: seeded.sellExecutionId, instrumentKey: seeded.instrumentKey },
-      { executionId: seeded.buyExecutionId, instrumentKey: seeded.instrumentKey },
-    ],
-    importance: item.suggest.importance ?? 7,
-    eventTime: new Date(),
-  });
-
-  // Store the POSITIVE old outcome (the recorded win) the negative re-resolve flips.
-  const positiveOutcome = memoryOutcomeSummarySchema.parse({
-    status: "closed",
-    lessonSignal: "positive",
-    evidenceQuality: "strong",
-    pointInTimeChecked: true,
-    outcomeComputedBy: "memory_manager",
-    pnlSource: "pnl_matches",
-    outcomeVersion: 0,
-  });
-  const outRes = await updateCandidateOutcome(candidateId, positiveOutcome, new Date());
-  if (!outRes.ok) {
-    throw new Error(`linkPromotedCandidateForReconcile: ${item.id} updateCandidateOutcome failed`);
-  }
-
-  // Link the candidate → the active entry as the wake-target shape.
-  const statusRes = await updateCandidateStatus(candidateId, "promoted", {
-    expectedFromStatus: "pending",
-    promotedKnowledgeId: entryId,
-  });
-  if (!statusRes.ok) {
-    throw new Error(`linkPromotedCandidateForReconcile: ${item.id} updateCandidateStatus failed`);
-  }
-}
-
-/**
- * Fire the closing trade a K item references and drive the reconcile for its
- * promoted entry. Captures the terminal status (F31-aware — never throws on a
- * judge failure). Stored under the SAME corpus item id as a `reconcile` result
- * (overwriting the transient `seed` capture, since the reconcile is what the
- * oracle scores for a K item).
- */
-async function runReconcileForItem(
-  state: RunnerState,
-  item: MemoryItem,
-  entryId: number,
-): Promise<void> {
-  const closingId = item.intent.reconcileClosesTradeId;
-  if (!closingId) return;
-  const closing = WORLD_CORPUS.trades.find((t) => t.id === closingId);
-  if (!closing) throw new Error(`runReconcileForItem: ${item.id} closing trade ${closingId} not found`);
-
-  // The closing sell carries the SAME instrumentKey → enqueueLedgerWake fires.
-  await seedFaithfulClosingTradeForWake({
-    sessionId: state.sessionId,
-    instrumentKey: closing.instrumentKey,
-    walletAddress: closing.walletAddress,
-    sellValueUsd: closing.sellValueUsd,
-    sellQtyRaw: closing.sellQtyRaw,
-  });
-
-  // Verify a reconcile job was enqueued for this entry before draining it.
-  const enqueued = await query<{ n: string }>(
-    `SELECT count(*)::text AS n FROM memory_jobs
-       WHERE job_kind = 'reconcile' AND reconcile_entry_id = $1`,
-    [entryId],
-  );
-  if (Number(enqueued[0]!.n) === 0) {
-    // No wake matched — record it as a reconcile capture with a sentinel status so
-    // the scorer sees the (mis)behavior rather than the run crashing.
-    state.capture.perItem.set(item.id, {
-      kind: "reconcile",
-      terminalStatus: "not_enqueued",
-      lastError: null,
-      decisionType: null,
-    });
-    return;
-  }
-
-  // The reconcile job is the OLDEST due job ONLY if no stale pending consolidate
-  // jobs precede it. Each judge-path drive enqueues a fresh consolidate job and
-  // claims the oldest, so empty consolidate jobs can pile up created BEFORE this
-  // reconcile job. `claimNextDueJob` is FIFO by created_at, so drain those empty
-  // consolidate jobs (claim → markCompleted no-op, exactly what the executor does
-  // for an empty queue) until the reconcile job for THIS entry is the one claimed.
-  const workerId = `e2e-recon-w${state.workerSeq++}`;
-  await processReconcileForEntry(state, item, entryId, workerId);
-}
-
-/**
- * Claim due jobs FIFO until the reconcile job for `entryId` is processed, then
- * capture its terminal state. Draining is FAITHFUL, not selective:
- *   - a stale (empty) consolidate job → no-op completion (what the executor does
- *     for an empty queue),
- *   - a reconcile job for a DIFFERENT entry → genuinely PROCESSED via
- *     `processReconcileJob` (a real, in-order flip for that other entry — exactly
- *     what the production executor would do; NOT a `wrong_target` bail). At
- *     100-item scale several K wakes can have reconcile jobs pending at once and
- *     `claimNextDueJob` is FIFO, so the other-entry job legitimately precedes
- *     THIS one; processing it (instead of bailing) is the drain-isolation fix.
- *
- * `processReconcileJob` is self-finalizing and never throws (F31 lands as a
- * failed/perm-failed status with a bounded last_error). Bounded by a claim budget
- * so a harness bug can never spin forever.
- */
-async function processReconcileForEntry(
-  state: RunnerState,
-  item: MemoryItem,
-  entryId: number,
-  workerId: string,
-): Promise<void> {
-  const MAX_CLAIMS = 256;
-  for (let i = 0; i < MAX_CLAIMS; i++) {
-    const job = await claimNextDueJob(workerId);
-    if (!job) {
-      // No due job at all — the reconcile job was not claimable (a harness bug).
-      state.capture.perItem.set(item.id, {
-        kind: "reconcile",
-        terminalStatus: "no_due_job",
-        lastError: null,
-        decisionType: null,
-      });
-      return;
-    }
-    if (job.jobKind === "consolidate") {
-      // A stale, empty consolidate job (its candidates are already terminal) —
-      // finalize it as a no-op completion and keep draining.
-      await markCompleted(job.id, workerId);
-      continue;
-    }
-    if (job.jobKind !== "reconcile") {
-      // An unknown job kind — surface it rather than silently skip (defensive; the
-      // queue only carries consolidate + reconcile today).
-      state.capture.perItem.set(item.id, {
-        kind: "reconcile",
-        terminalStatus: `unknown_job_kind:${job.jobKind}`,
-        lastError: null,
-        decisionType: null,
-      });
-      return;
-    }
-    if (job.reconcileEntryId !== entryId) {
-      // A reconcile job for ANOTHER entry that legitimately precedes this one in the
-      // FIFO queue (another K wake fired earlier and its job is still pending).
-      // Process it faithfully — a real flip for that entry, exactly as the executor
-      // would — and keep draining until THIS entry's job is the one we process. The
-      // SAME workerId must be passed: claimNextDueJob already locked the row to it,
-      // and processReconcileJob's heartbeat/markCompleted are owner-checked.
-      await processReconcileJob(job, workerId, defaultReconcileDeps());
-      continue;
-    }
-
-    // The reconcile job for THIS entry — process it (self-finalizing, never throws).
-    await processReconcileJob(job, workerId, defaultReconcileDeps());
-    const after = await getJobById(job.id);
-    const status = after?.status ?? "unknown";
-    const decisionRows = await query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM memory_decisions
-         WHERE decision_type = 'reconcile' AND reconcile_entry_id = $1`,
-      [entryId],
-    );
-    const decisionType: "reconcile" | null = Number(decisionRows[0]!.n) > 0 ? "reconcile" : null;
-    state.capture.perItem.set(item.id, {
-      kind: "reconcile",
-      terminalStatus: status,
-      lastError: after?.lastError ?? null,
-      decisionType,
-    });
-    return;
-  }
-  // Exhausted the claim budget without reaching the reconcile job.
-  state.capture.perItem.set(item.id, {
-    kind: "reconcile",
-    terminalStatus: "drain_budget_exhausted",
-    lastError: null,
-    decisionType: null,
-  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════

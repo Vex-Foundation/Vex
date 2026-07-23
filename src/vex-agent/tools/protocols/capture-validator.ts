@@ -55,7 +55,7 @@ export function validateCaptureContract(
   if (!tradeCapture) {
     logger.error("capture.validator.missing_capture", {
       toolId,
-      role: contract.role,
+      kind: contract.kind,
       hint: `Handler returned success without _tradeCapture but matrix requires capture:"full"`,
     });
     return false;
@@ -88,14 +88,14 @@ export function validateCaptureContract(
   if (missingFields.length > 0) {
     logger.error("capture.validator.missing_fields", {
       toolId,
-      role: contract.role,
+      kind: contract.kind,
       missingFields,
-      hint: `Required fields for ${contract.role}: [${contract.requiredFields.join(", ")}]`,
+      hint: `Required fields for ${contract.kind}: [${contract.requiredFields.join(", ")}]`,
     });
     return false;
   }
 
-  // W4: validate required meta fields (e.g. contracts for prediction MTM)
+  // Validate required meta fields (e.g. Hyperliquid protection-gate inputs)
   if (contract.requiredMetaFields && contract.requiredMetaFields.length > 0) {
     const meta = tradeCapture.meta as Record<string, unknown> | undefined;
     const missingMeta: string[] = [];
@@ -110,31 +110,6 @@ export function validateCaptureContract(
         toolId,
         missingMetaFields: missingMeta,
         hint: `Required meta fields: [${contract.requiredMetaFields.join(", ")}]`,
-      });
-      return false;
-    }
-  }
-
-  // W4A valuation guard — hard fail when exact handler omits USD economics.
-  // Blocks projection: capture without valuation from an "exact" handler is a handler regression.
-  if (contract.valuationExpected === "exact") {
-    const hasInputUsd = typeof tradeCapture.inputValueUsd === "string" && tradeCapture.inputValueUsd !== "";
-    const hasOutputUsd = typeof tradeCapture.outputValueUsd === "string" && tradeCapture.outputValueUsd !== "";
-    const vs = typeof tradeCapture.valuationSource === "string" ? tradeCapture.valuationSource : "";
-
-    if (!hasInputUsd && !hasOutputUsd) {
-      logger.error("capture.validator.missing_valuation", {
-        toolId,
-        valuationExpected: "exact",
-        hint: "Handler must emit inputValueUsd or outputValueUsd for exact valuation tools",
-      });
-      return false;
-    }
-    if (!vs || vs === "none") {
-      logger.error("capture.validator.missing_valuation_source", {
-        toolId,
-        valuationExpected: "exact",
-        hint: "Handler must emit valuationSource != 'none' for exact valuation tools",
       });
       return false;
     }

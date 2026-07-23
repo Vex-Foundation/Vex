@@ -1,5 +1,6 @@
 /**
- * Uniswap swap handlers — quote (read) + sell/buy (mutating).
+ * Uniswap swap handlers — quote (read) + the unified `execute` (staged
+ * multi-broadcast, plan §4.2/§11.1/§11.2).
  *
  * Keyless on-chain quoting (QuoterV2 + V2 getAmountsOut, best route) and
  * broadcast (V2 Router02 / V3 SwapRouter02) via the uniswap substrate under
@@ -11,26 +12,69 @@
  * bare symbol is rejected (resolve it with a discovery tool first). This mirrors
  * kyberswap's strict resolution and keeps the quote symmetric with the execute
  * (so the prequote match-hash collides).
+ *
+ * `uniswap.swap.execute` follows the durable staged-broadcast contract
+ * (`db/repos/agent-activity.ts`): metadata reads → `createAgentActivityIntent`
+ * (one `agent_activity` event PER PLANNED BROADCAST — `allowance_reset`/
+ * `allowance` only when the current allowance is short, `swap` always) BEFORE
+ * anything is signed → per-broadcast sign → `markActivityBroadcast` → send →
+ * `markBroadcastAccepted` → confirm/fail from the receipt. A mined revert
+ * (definitively known) fails the row and every not-yet-attempted downstream
+ * event; an AMBIGUOUS confirmation (receipt lookup itself failed) stops the
+ * whole sequence WITHOUT failing anything further — ambiguity never
+ * terminalizes (plan §11.1). A settlement decoder is registered so the repair
+ * sweep can confirm a `pending` row later using the SAME Transfer-delta logic.
  */
 
 import { parseUnits, formatUnits, getAddress, isAddress, type Address, type Hex } from "viem";
 
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import { getUniswapPublicClient, getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
-import { readUniswapErc20Metadata } from "@tools/uniswap/erc20.js";
-import { ensureUniswapAllowanceExact } from "@tools/uniswap/erc20.js";
+import { readUniswapErc20Metadata, validateUniswapSpender, readUniswapAllowance } from "@tools/uniswap/erc20.js";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
-import { buildSwapTx, sendUniswapTransaction, NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
+import {
+  buildSwapTx,
+  buildApproveTx,
+  signUniswapTransaction,
+  broadcastUniswapTransaction,
+  NATIVE_TOKEN_ADDRESS,
+  type BuiltSwapTx,
+  type SignedUniswapTransaction,
+} from "@tools/uniswap/execute.js";
 import { checkRouteFactories, probeFotSignal, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
+import {
+  decodeUniswapExecutedLegs,
+  type UniswapDecodableReceipt,
+} from "@tools/uniswap/receipt-decoder.js";
+import {
+  classifyUniswapRevertError,
+  classifyPreBroadcastFailure,
+} from "@tools/uniswap/revert-mapping.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken, UniswapRoute } from "@tools/uniswap/types.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
+import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import { pinTrackedToken } from "@vex-agent/db/repos/tracked-tokens.js";
+import {
+  createAgentActivityIntent,
+  createAgentActivityPreBroadcastFailure,
+  markActivityBroadcast,
+  markBroadcastAccepted,
+  confirmActivityEvent,
+  failActivityEvent,
+  abortPlannedEvents,
+  type CreatePendingActivityEventInput,
+  type AgentActivityEvent,
+  type AgentActivityFailureCode,
+} from "@vex-agent/db/repos/agent-activity.js";
+import { registerSettlementDecoder, type SettlementDecoderInput, type DecodedSettlement } from "@vex-agent/sync/settlement-decoders.js";
+import { clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
+import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
-import { resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
@@ -50,39 +94,6 @@ function nativeSymbolFor(chainId: number): string {
 function isNativeInput(input: string): boolean {
   const lower = input.toLowerCase();
   return lower === "native" || lower === "eth" || lower === NATIVE_TOKEN_ADDRESS.toLowerCase();
-}
-
-/**
- * Classify the ECONOMIC direction of a swap from the native leg, independent of
- * which tool (`uniswap.swap.buy` vs `uniswap.swap.sell`) was invoked. A token
- * can legitimately be bought via the sell-tool (native-in) or sold via the
- * buy-tool, so the tool name is not a reliable label for accounting.
- *
- * Spending native to acquire a token is a BUY; selling a token back to native
- * is a SELL. Token↔token has no native anchor, so we fall back to the tool's
- * declared side. This is used ONLY for what is recorded/reported — never for
- * routing, quoting, or execution.
- *
- * A leg counts as native either when it is the `eth`/`native` sentinel
- * (`isNative`) OR when the caller funded it with the chain's wrapped-native
- * (WETH) ERC-20 address directly — the manifest documents `tokenIn` as
- * "CONTRACT ADDRESS or native ETH", so a WETH-funded buy arrives as a plain
- * ERC-20 leg with `isNative:false`. Spending WETH is economically identical to
- * spending ETH, so both forms must classify the same way; otherwise a
- * WETH→TOKEN buy routed via `uniswap.swap.sell` is recorded as a sell and the
- * buy-side veto is skipped. The address compare is case-insensitive.
- */
-export function classifyEconomicSide(args: {
-  readonly tokenIn: { readonly address: string; readonly isNative: boolean };
-  readonly tokenOut: { readonly address: string; readonly isNative: boolean };
-  readonly wrappedNative: string;
-  readonly side: "buy" | "sell";
-}): "buy" | "sell" {
-  const isNativeLeg = (leg: { address: string; isNative: boolean }) =>
-    leg.isNative || leg.address.toLowerCase() === args.wrappedNative.toLowerCase();
-  if (isNativeLeg(args.tokenIn)) return "buy"; // spending native/WETH to acquire a token = BUY
-  if (isNativeLeg(args.tokenOut)) return "sell"; // selling a token back to native/WETH = SELL
-  return args.side; // token↔token: fall back to the tool's side
 }
 
 /**
@@ -114,7 +125,7 @@ function requireDeployment(chain: string): UniswapDeployment {
     throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Uniswap has no verified deployment for chain "${chain}".`,
-      "Uniswap is a fallback venue on Robinhood Chain and the major EVM chains; prefer kyberswap, which is primary wherever it is supported.",
+      "Uniswap is a hidden fallback venue, available after an eligible KyberSwap route-not-found failure.",
     );
   }
   return deployment;
@@ -193,13 +204,13 @@ function routerFor(deployment: UniswapDeployment, route: UniswapRoute): Address 
 
 async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
-  if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
+  if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return { success: false, output: "Missing required: chain, tokenIn, tokenOut, amountIn" };
 
   const deployment = requireDeployment(chain);
   const tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
   const tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
   if (tokenIn.address.toLowerCase() === tokenOut.address.toLowerCase() && tokenIn.isNative === tokenOut.isNative) {
-    return fail("tokenIn and tokenOut resolve to the same token.");
+    return { success: false, output: "tokenIn and tokenOut resolve to the same token." };
   }
   const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
   const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
@@ -236,44 +247,308 @@ async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult>
   });
 }
 
-// ── Execute (sell + buy share routing; differ only in trade side) ─────────────
+// ── Execute (staged multi-broadcast) ─────────────────────────────────────────
 
-async function executeUniswapSwap(
+const toolId = "uniswap.swap.execute";
+
+type PlannedEvent = Omit<CreatePendingActivityEventInput, "protocolExecutionId">;
+
+/** A revert-mapping-shaped classification, widened to the full closed enum for repo assignment. */
+interface Classification {
+  readonly failureCode: AgentActivityFailureCode;
+  readonly failureReason: string;
+}
+
+/**
+ * Every caught error's text that reaches a ToolResult `output` string or a
+ * log MUST go through this function, never `err.message` directly (C37,
+ * Codex final-review round 3 finding 1 — supersedes FIX3's local HTML-strip
+ * supplement). `summarizeProtocolError` (`runtime/errors.ts`) is the SOLE,
+ * CENTRALIZED scrub boundary across every venue now — Bearer-before-header
+ * ordering, HTML-document removal, and balanced/nested body removal all live
+ * there (W-SPINE, same C37 contract) — so this handler is a thin delegate and
+ * adds NOTHING of its own on top: a venue-local compensating wrapper was
+ * exactly the shape of the problem Codex flagged, not a fix for it.
+ */
+function uniswapFailureMessage(err: unknown): string {
+  return summarizeProtocolError(err).message;
+}
+
+function legFor(token: UniswapToken): NonNullable<PlannedEvent["tokenIn"]> {
+  return token.isNative
+    ? { tokenSymbol: token.symbol, tokenDecimals: token.decimals }
+    : { tokenAddress: token.address, tokenSymbol: token.symbol, tokenDecimals: token.decimals };
+}
+
+/** A route/validation failure before anything could be signed — hashless `definitively_failed` row. NEVER called once the intent already exists (C18) — see `abortRemainingPlans` for that path. */
+async function failPreBroadcast(
   p: Record<string, unknown>,
-  side: "buy" | "sell",
-  context: ProtocolExecutionContext,
+  event: {
+    chainId: number;
+    chainSlug: string;
+    walletAddress: string;
+    sessionId: string;
+    tokenIn?: UniswapToken;
+    tokenOut?: UniswapToken;
+  },
+  err: unknown,
 ): Promise<ToolResult> {
-  const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
-  if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
-
-  const deployment = requireDeployment(chain);
-  const tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
-  const tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
-  const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
-  const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
-
-  // Economic direction for RECORDING/reporting — derived from the native leg,
-  // not the tool name (`side`). `side` still drives routing/execution below.
-  const economicSide = classifyEconomicSide({
-    tokenIn: { address: tokenIn.address, isNative: tokenIn.isNative },
-    tokenOut: { address: tokenOut.address, isNative: tokenOut.isNative },
-    wrappedNative: deployment.weth,
-    side,
+  const failureCode = classifyPreBroadcastFailure(err).failureCode;
+  const failureReason = uniswapFailureMessage(err);
+  const { executionId } = await createAgentActivityPreBroadcastFailure({
+    toolId,
+    namespace: "uniswap",
+    intentParams: p,
+    event: {
+      eventIndex: 0,
+      eventRole: "swap",
+      kind: "swap",
+      protocol: "uniswap",
+      chainId: event.chainId,
+      chainSlug: event.chainSlug,
+      walletAddress: event.walletAddress,
+      sessionId: event.sessionId,
+      ...(event.tokenIn ? { tokenIn: legFor(event.tokenIn) } : {}),
+      ...(event.tokenOut ? { tokenOut: legFor(event.tokenOut) } : {}),
+      failureCode,
+      failureReason,
+    },
   });
+  return { success: false, output: `${toolId} failed: ${failureReason}.`, data: { _executionId: executionId } };
+}
 
-  const quoted = await computeQuote(deployment, tokenIn, tokenOut, amountIn, slippageBps);
+/**
+ * Finalize every planned event from `fromIndex` onward that was NEVER signed
+ * (C17 / Codex final-review finding 3) — an early return after an
+ * ambiguous/reverted broadcast, or a post-intent failure, must not leave
+ * downstream rows permanently `pending` with no `submit_attempted_at` (the
+ * repair sweep's candidate query excludes exactly those rows forever).
+ * Best-effort: a throw here is logged, never propagated — the caller has
+ * already decided its own return value and must not flip to a misleading
+ * result just because this bookkeeping call failed.
+ */
+async function abortRemainingPlans(executionId: number, fromIndex: number, reason: string): Promise<void> {
+  try {
+    await abortPlannedEvents(executionId, fromIndex, reason);
+  } catch (err) {
+    logger.warn("uniswap.swap.execute.abort_planned_events_failed", {
+      executionId,
+      fromIndex,
+      error: uniswapFailureMessage(err),
+    });
+  }
+}
 
-  if (p.dryRun === true) {
-    return ok({
-      dryRun: true, side: economicSide, chain: deployment.key,
-      route: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
-      amountOut: formatUnits(quoted.amountOut, tokenOut.decimals),
-      minAmountOut: formatUnits(quoted.minAmountOut, tokenOut.decimals),
-      router: routerFor(deployment, quoted.route),
+/** One stage of the staged broadcast: sign → persist hash → broadcast → mark accepted → wait for the receipt. */
+type StageOutcome =
+  | { readonly kind: "confirmed"; readonly receipt: UniswapDecodableReceipt; readonly txHash: Hex }
+  | { readonly kind: "failed"; readonly classification: Classification }
+  | { readonly kind: "ambiguous"; readonly txHash: Hex };
+
+async function runStagedBroadcast(
+  event: AgentActivityEvent,
+  tx: BuiltSwapTx,
+  clients: ReturnType<typeof getUniswapEvmClients>,
+  what: string,
+): Promise<StageOutcome> {
+  let signed: SignedUniswapTransaction;
+  try {
+    signed = await signUniswapTransaction(clients.walletClient, tx);
+  } catch (err) {
+    // Sign-time only (prepare/estimate/local signing) — no `sendRawTransaction`
+    // call has happened yet, so nothing was ever submitted to the network.
+    // Unlike a broadcast failure (C15), a sign-time failure is UNAMBIGUOUSLY
+    // pre-wire — safe to definitively fail.
+    const raw = classifyUniswapRevertError(err);
+    // C37 (Codex final-review round 3, finding 1): `raw.failureReason` can be
+    // a DECODED on-chain revert string (`extractDecodedRevertReason`) —
+    // content a malformed/non-standard contract or a compromised RPC
+    // controls, never text Vex authored. It must cross the SAME scrub
+    // boundary as any other provider-controlled text before it reaches the
+    // DB row (`failActivityEvent`, below) or the ToolResult output (the
+    // "failed" branch in the main loop reads this same object's
+    // `failureReason`).
+    const classification: Classification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason) };
+    await failActivityEvent(event.id, classification);
+    return { kind: "failed", classification };
+  }
+
+  // C14 (Codex final-review round 1, finding 1): a CAS miss here means the
+  // hash could not be durably staged — THROW so this function NEVER reaches
+  // the broadcast call with an untracked signed payload. The caller's outer
+  // catch (C18) finalizes what it can and reports failure without creating a
+  // second execution.
+  const staged = await markActivityBroadcast(event.id, {
+    txHash: signed.txHash,
+    fromAddress: signed.fromAddress,
+    nonce: signed.nonce,
+  });
+  if (!staged.applied) {
+    throw new Error(
+      `agent_activity: markActivityBroadcast CAS miss for event ${event.id} — refusing to broadcast an untracked transaction`,
+    );
+  }
+
+  let broadcastHash: Hex;
+  try {
+    broadcastHash = await broadcastUniswapTransaction(clients.publicClient, signed.serializedTransaction);
+  } catch {
+    // C29 (Codex final-review round 2, finding 1 — supersedes FIX2's C15
+    // implementation): NOTHING `sendRawTransaction` throws here is provably
+    // pre-wire. viem mints its RPC-error classes (e.g.
+    // `InvalidParamsRpcError`/`InvalidInputRpcError`) from the NODE's own
+    // JSON-RPC response, meaning the request already reached the server —
+    // `-32000` in particular can mean "already known" (the transaction may
+    // already be in the mempool from THIS call). There is no independently
+    // branded local error in this flow (a single network round-trip with no
+    // local pre-validation ahead of it), so every rejection here is
+    // unconditionally ambiguous — the row stays `pending` forever for the
+    // repair sweep, never definitively failed. See
+    // `@tools/uniswap/revert-mapping.js`'s file-header comment for the full
+    // viem `buildRequest.ts` evidence trail.
+    return { kind: "ambiguous", txHash: signed.txHash };
+  }
+
+  // C39 (Codex final-review round 3, finding 3): `signed.txHash` is derived
+  // LOCALLY (`keccak256` of the exact signed bytes we submitted) — it is
+  // authoritative end-to-end. `broadcastHash` is only what the NODE echoed
+  // back; a faulty/misconfigured/malicious RPC could echo a different hash
+  // and, if trusted, would redirect our receipt wait/output to an unrelated
+  // transaction while the ALREADY-PERSISTED `agent_activity` row (staged
+  // above with `signed.txHash`) silently disagrees. Never swap to the RPC's
+  // value — log a mismatch and keep going with the locally-derived hash.
+  if (broadcastHash.toLowerCase() !== signed.txHash.toLowerCase()) {
+    logger.warn("uniswap.swap.execute.broadcast_hash_mismatch", {
+      id: event.id,
+      signedTxHash: signed.txHash,
+      rpcEchoedHash: broadcastHash,
     });
   }
 
-  // Per-session signing wallet — resolved AFTER dryRun so a preview never decrypts a key.
+  // C16 (Codex final-review round 1, finding 2): best-effort bookkeeping — a
+  // throw here must NOT be read as a broadcast failure (the transaction IS
+  // already in flight), so we keep going to the receipt wait regardless.
+  try {
+    await markBroadcastAccepted(event.id);
+  } catch (err) {
+    logger.warn("uniswap.swap.execute.mark_accepted_failed", {
+      id: event.id,
+      error: uniswapFailureMessage(err),
+    });
+  }
+
+  try {
+    const receipt = await waitForSuccessfulReceipt(clients.publicClient, signed.txHash, {
+      code: ErrorCodes.SWAP_FAILED,
+      what,
+      hint: "Check the transaction hash before retrying — do not resubmit automatically.",
+    });
+    // `TransactionReceipt.logs` is structurally compatible with
+    // `UniswapDecodableReceipt.logs` (`Address`/`Hex` are `string` subtypes) —
+    // no cast needed.
+    return { kind: "confirmed", receipt, txHash: signed.txHash };
+  } catch (err) {
+    if (err instanceof VexError && err.code === ErrorCodes.SWAP_FAILED) {
+      // A DEFINITIVE mined revert (waitForSuccessfulReceipt's status!=='success' branch).
+      const classification: Classification = {
+        failureCode: "mined_revert",
+        failureReason: "mined revert (synchronous receipt wait)",
+      };
+      await failActivityEvent(event.id, classification);
+      return { kind: "failed", classification };
+    }
+    // CONFIRMATION_UNKNOWN (or anything unexpected) — the receipt lookup itself
+    // failed. Ambiguous NEVER terminalizes: leave the row pending for the
+    // repair sweep, which retries the SAME lookup later.
+    return { kind: "ambiguous", txHash: signed.txHash };
+  }
+}
+
+interface TxBuildContext {
+  readonly deployment: UniswapDeployment;
+  readonly router: Address;
+  readonly tokenIn: UniswapToken;
+  readonly tokenOut: UniswapToken;
+  readonly amountIn: bigint;
+  readonly quoted: QuotedRoute;
+  readonly recipient: Address;
+}
+
+function buildTxForEvent(event: AgentActivityEvent, ctx: TxBuildContext): BuiltSwapTx {
+  if (event.eventRole === "allowance_reset") return buildApproveTx(ctx.tokenIn.address, ctx.router, 0n);
+  if (event.eventRole === "allowance") return buildApproveTx(ctx.tokenIn.address, ctx.router, ctx.amountIn);
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECONDS);
+  return buildSwapTx({
+    deployment: ctx.deployment,
+    route: ctx.quoted.route,
+    amountIn: ctx.amountIn,
+    minAmountOut: ctx.quoted.minAmountOut,
+    recipient: ctx.recipient,
+    deadline,
+    tokenInIsNative: ctx.tokenIn.isNative,
+    tokenOutIsNative: ctx.tokenOut.isNative,
+  });
+}
+
+function describeEventRole(role: AgentActivityEvent["eventRole"]): string {
+  if (role === "allowance_reset") return "Allowance-reset transaction";
+  if (role === "allowance") return "Approval transaction";
+  return "Swap transaction";
+}
+
+async function executeUniswapSwap(
+  p: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<ToolResult> {
+  // C24 (Codex final-review round 1, finding 8): the manifest declares no
+  // `dryRun` param (five-field contract is final) — a caller that still
+  // passes it must NEVER reach a real broadcast just because the runtime's
+  // spine-inherited `previewSupport:true` matrix row treated the call as a
+  // preview (`RESERVED_RUNTIME_PARAM_KEYS` always accepts `dryRun` regardless
+  // of manifest declaration, so the boundary check alone is not sufficient).
+  if (p.dryRun === true) {
+    return fail(`${toolId} does not support dryRun preview — call uniswap.swap.quote instead.`);
+  }
+
+  const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
+  if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
+
+  // The reveal gate + prequote gate (executeProtocolTool) already block this
+  // tool without a session — sessionId is guaranteed present here.
+  const sessionId = context.sessionId;
+  if (!sessionId) return fail(`${toolId} requires an active session.`);
+
+  const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
+
+  // Step 1 — resolve the chain. No wallet/chain known yet on failure, so no
+  // durable row is written (same treatment as a param-validation failure).
+  const deployment = requireDeployment(chain);
+
+  // Step 2 (C22-equivalent for Uniswap) — address-only wallet resolution
+  // (NEVER decrypts) so a failure from here on CAN be durably recorded with
+  // a real walletAddress. The signing key itself is resolved later.
+  let walletAddress: string;
+  try {
+    walletAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
+  } catch (err) {
+    return walletScopeErrorToResult(err);
+  }
+
+  let tokenIn: UniswapToken;
+  let tokenOut: UniswapToken;
+  let amountIn: bigint;
+  let quoted: QuotedRoute;
+  try {
+    tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
+    tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
+    amountIn = parseUnits(amountInRaw, tokenIn.decimals);
+    quoted = await computeQuote(deployment, tokenIn, tokenOut, amountIn, slippageBps);
+  } catch (err) {
+    return failPreBroadcast(p, { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId }, err);
+  }
+
+  // Per-session signing wallet — resolved only now that dryRun is rejected
+  // and the quote succeeded, so a rejected/failed call never decrypts a key.
   let signer: ChainWallet;
   try {
     signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
@@ -282,101 +557,281 @@ async function executeUniswapSwap(
   }
   if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
 
-  const { publicClient, walletClient } = getUniswapEvmClients(deployment, signer.privateKey as Hex);
+  const clients = getUniswapEvmClients(deployment, signer.privateKey as Hex);
   const router = routerFor(deployment, quoted.route);
 
-  // Guard the ERC-20 input balance before changing allowance or broadcasting.
-  if (!tokenIn.isNative) {
-    await ensureErc20Balance(publicClient, {
-      token: tokenIn.address,
-      owner: getAddress(signer.address),
-      required: amountIn,
-      decimals: tokenIn.decimals,
-      label: tokenIn.symbol,
-    });
-    await ensureUniswapAllowanceExact(publicClient, walletClient, tokenIn.address, router, amountIn);
+  let currentAllowance = 0n;
+  try {
+    if (!tokenIn.isNative) {
+      await ensureErc20Balance(clients.publicClient, {
+        token: tokenIn.address,
+        owner: getAddress(signer.address),
+        required: amountIn,
+        decimals: tokenIn.decimals,
+        label: tokenIn.symbol,
+      });
+      validateUniswapSpender(router);
+      currentAllowance = await readUniswapAllowance(clients.publicClient, tokenIn.address, getAddress(signer.address), router);
+    }
+  } catch (err) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      err,
+    );
   }
 
-  const recipientParam = str(p, "recipient");
-  const recipient = recipientParam && isAddress(recipientParam) ? getAddress(recipientParam) : getAddress(signer.address);
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECONDS);
-
-  const tx = buildSwapTx({
-    deployment,
-    route: quoted.route,
-    amountIn,
-    minAmountOut: quoted.minAmountOut,
-    recipient,
-    deadline,
-    tokenInIsNative: tokenIn.isNative,
-    tokenOutIsNative: tokenOut.isNative,
+  // Events plan (plan §11.1 — one row per planned broadcast, created BEFORE
+  // anything is signed): allowance_reset/allowance only when the current
+  // allowance is short (USDT-style reset-before-non-zero-approve), swap always.
+  const needsAllowance = !tokenIn.isNative && currentAllowance < amountIn;
+  const needsReset = needsAllowance && currentAllowance > 0n;
+  const events: PlannedEvent[] = [];
+  let eventIndex = 0;
+  if (needsReset) {
+    events.push({
+      eventIndex: eventIndex++, eventRole: "allowance_reset", kind: "swap", protocol: "uniswap",
+      chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId,
+      tokenIn: legFor(tokenIn),
+    });
+  }
+  if (needsAllowance) {
+    events.push({
+      eventIndex: eventIndex++, eventRole: "allowance", kind: "swap", protocol: "uniswap",
+      chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId,
+      tokenIn: { ...legFor(tokenIn), amountHuman: formatUnits(amountIn, tokenIn.decimals), amountRaw: amountIn.toString() },
+    });
+  }
+  events.push({
+    eventIndex, eventRole: "swap", kind: "swap", protocol: "uniswap",
+    chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId,
+    tokenIn: { ...legFor(tokenIn), amountHuman: amountInRaw, amountRaw: amountIn.toString() },
+    tokenOut: { ...legFor(tokenOut), amountHuman: formatUnits(quoted.amountOut, tokenOut.decimals), amountRaw: quoted.amountOut.toString() },
+    routeProvenance: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
   });
 
-  const txHash = await sendUniswapTransaction(publicClient, walletClient, tx);
-  const amountOutHuman = formatUnits(quoted.amountOut, tokenOut.decimals);
+  const { executionId, events: createdEvents } = await createAgentActivityIntent({
+    toolId, namespace: "uniswap", intentParams: p, events,
+  });
 
-  logger.info("uniswap.swap.executed", { chain: deployment.key, version: quoted.route.version, side });
+  // C18 (Codex final-review round 1, finding 3): once the intent exists, ANY
+  // unexpected failure below (including C14's CAS-miss throw) must finalize
+  // what it can and return the SAME `_executionId` — NEVER call
+  // `failPreBroadcast`/create a second `protocol_executions` row.
+  try {
+    for (let i = 0; i < createdEvents.length; i++) {
+      const event = createdEvents[i]!;
+      const tx = buildTxForEvent(event, { deployment, router, tokenIn, tokenOut, amountIn, quoted, recipient: getAddress(signer.address) });
+      const outcome = await runStagedBroadcast(event, tx, clients, describeEventRole(event.eventRole));
 
-  // Auto-pin (fail-soft): non-native legs of a swap on a LOCAL chain join the
-  // tracked_tokens set (seed ∪ pins) so balance scans and the portfolio keep
-  // seeing them. A DB bookmark — never allowed to fail the swap result.
-  if (getLocalChain(deployment.chainId)) {
-    for (const leg of [tokenIn, tokenOut]) {
-      if (leg.isNative) continue;
+      if (outcome.kind === "ambiguous") {
+        // C17: the events STRICTLY AFTER this one were NEVER signed — finalize
+        // them (this event itself stays pending; ambiguity never terminalizes).
+        const next = createdEvents[i + 1];
+        if (next) {
+          await abortRemainingPlans(executionId, next.eventIndex, `earlier ${event.eventRole} ambiguous`);
+        }
+        logger.info("uniswap.swap.execute.ambiguous", { id: event.id, txHash: outcome.txHash });
+        return {
+          success: false,
+          output: `${toolId}: broadcast of the ${event.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically.`,
+          data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
+        };
+      }
+
+      if (outcome.kind === "failed") {
+        const next = createdEvents[i + 1];
+        if (next) {
+          await abortRemainingPlans(
+            executionId, next.eventIndex,
+            `earlier ${event.eventRole} reverted (${outcome.classification.failureCode})`,
+          );
+        }
+        return {
+          success: false,
+          output: `${toolId}: the ${event.eventRole} transaction failed (${outcome.classification.failureCode}): ${outcome.classification.failureReason}. No further steps were attempted.`,
+          data: { _executionId: executionId, status: "failed" },
+        };
+      }
+
+      // confirmed on-chain
+      if (event.eventRole !== "swap") {
+        try {
+          await confirmActivityEvent(event.id, {});
+        } catch (err) {
+          // C16: bookkeeping-only — never propagated (the approval already succeeded).
+          logger.warn("uniswap.swap.execute.confirm_failed", {
+            id: event.id, role: event.eventRole,
+            error: uniswapFailureMessage(err),
+          });
+        }
+        continue;
+      }
+
+      // Cleared ONLY on a successful broadcast — never on a quote, never on a
+      // failed execute (plan §11.2). The swap DID confirm on-chain at this
+      // point regardless of whether we can decode its executed amounts below.
+      clearUniswapPairReveal(sessionId);
+
+      // Auto-pin (fail-soft) — Codex final-review round 4, finding 3: runs
+      // IMMEDIATELY after on-chain confirmation, BEFORE decoding, so a
+      // confirmed-but-undecodable settlement can never skip it. The spent
+      // token-in is never pinned. Never allowed to fail the swap result.
+      if (getLocalChain(deployment.chainId) && !tokenOut.isNative) {
+        try {
+          await pinTrackedToken({
+            walletAddress: signer.address, chainId: deployment.chainId,
+            tokenAddress: tokenOut.address, source: "swap",
+          });
+        } catch (err) {
+          logger.warn("uniswap.swap.execute.auto_pin_failed", {
+            chain: deployment.key, error: err instanceof Error ? err.name : "unknown",
+          });
+        }
+      }
+
+      // C38 (Codex final-review round 3, finding 2): the swap ALREADY
+      // confirmed on-chain at this point — a throw from the decoder itself
+      // must NEVER escape to the generic outer post-intent catch (C18), which
+      // returns a result WITHOUT `outcome.txHash` and would silently lose the
+      // known hash for a swap that genuinely succeeded. Treat a throw exactly
+      // like a fully-undecoded receipt (falls through to the SAME
+      // `confirmed_pending_amounts` branch below, which already preserves the
+      // tx hash) — mirrors Kyber's identical defensive catch around its own
+      // settlement decoder.
+      let decoded: ReturnType<typeof decodeUniswapExecutedLegs>;
       try {
-        await pinTrackedToken({
-          walletAddress: signer.address,
+        decoded = decodeUniswapExecutedLegs({
+          receipt: outcome.receipt,
           chainId: deployment.chainId,
-          tokenAddress: leg.address,
-          source: "swap",
+          walletAddress: signer.address,
+          tokenInAddress: tokenIn.isNative ? null : tokenIn.address,
+          tokenOutAddress: tokenOut.isNative ? null : tokenOut.address,
         });
       } catch (err) {
-        logger.warn("uniswap.swap.auto_pin_failed", {
-          chain: deployment.key,
-          error: err instanceof Error ? err.name : "unknown",
+        logger.warn("uniswap.swap.execute.settlement_decode_threw", {
+          id: event.id, txHash: outcome.txHash, error: uniswapFailureMessage(err),
+        });
+        decoded = {};
+      }
+
+      if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
+        logger.warn("uniswap.swap.execute.settlement_undecodable", { id: event.id, txHash: outcome.txHash });
+        return {
+          success: true,
+          output: `${toolId}: swap confirmed on-chain (tx ${outcome.txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.`,
+          data: { txHash: outcome.txHash, _executionId: executionId, status: "confirmed_pending_amounts" },
+        };
+      }
+
+      // C34 (Codex final-review round 2, finding 6): the DECODED net
+      // settlement amount, never the request echo (`amountInRaw`, the raw
+      // requested-string param) — a fee-on-transfer token or partial fill can
+      // make the executed input differ from what was requested, and the
+      // success message must never contradict the persisted `agent_activity`
+      // truth.
+      const amountInHuman = formatUnits(decoded.executedAmountInRaw, tokenIn.decimals);
+      const amountOutHuman = formatUnits(decoded.executedAmountOutRaw, tokenOut.decimals);
+      // C16: the swap already confirmed on-chain — a DB write hiccup recording
+      // that MUST NEVER read as the swap itself failing. `status` distinguishes
+      // "confirmed" (our own record matches) from "confirmed_unrecorded"
+      // (on-chain truth is settled; only our bookkeeping write failed) so a
+      // caller can tell the two apart without this ever becoming a failure.
+      let status: "confirmed" | "confirmed_unrecorded" = "confirmed";
+      try {
+        const confirmResult = await confirmActivityEvent(event.id, {
+          executedAmountInHuman: amountInHuman,
+          executedAmountInRaw: decoded.executedAmountInRaw.toString(),
+          executedAmountOutHuman: amountOutHuman,
+          executedAmountOutRaw: decoded.executedAmountOutRaw.toString(),
+        });
+        // C41 (Codex final-review round 3, finding 6): a CAS MISS (the row
+        // was no longer `pending`) is not automatically a success just
+        // because nothing threw — a conflicting terminal row (e.g. a
+        // concurrent repair-sweep write) must NOT be reported as an ordinary
+        // confirmed swap. The one exception is a genuine idempotent retry:
+        // the row is already `confirmed` with the SAME executed amounts this
+        // call just computed — real recorded confirmation, not a conflict.
+        if (!confirmResult.applied) {
+          const alreadyRecorded = confirmResult.row.status === "confirmed"
+            && confirmResult.row.executedAmountInRaw === decoded.executedAmountInRaw.toString()
+            && confirmResult.row.executedAmountOutRaw === decoded.executedAmountOutRaw.toString();
+          if (!alreadyRecorded) {
+            status = "confirmed_unrecorded";
+            logger.warn("uniswap.swap.execute.confirm_cas_miss", {
+              id: event.id, rowStatus: confirmResult.row.status,
+            });
+          }
+        }
+      } catch (err) {
+        status = "confirmed_unrecorded";
+        logger.warn("uniswap.swap.execute.confirm_failed", {
+          id: event.id, error: uniswapFailureMessage(err),
         });
       }
-    }
-  }
 
+      logger.info("uniswap.swap.executed", { chain: deployment.key, version: quoted.route.version });
+
+      return {
+        success: true,
+        output: JSON.stringify({
+          txHash: outcome.txHash, chain: deployment.key,
+          tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
+          amountIn: amountInHuman, amountOut: amountOutHuman,
+          route: { version: quoted.route.version, path: quoted.route.path },
+        }, null, 2),
+        data: { txHash: outcome.txHash, _executionId: executionId, status },
+      };
+    }
+
+    // Unreachable — `createdEvents` always has at least the swap entry, and
+    // the loop above returns on every branch. Kept for exhaustiveness.
+    throw new Error("uniswap.swap.execute: staged broadcast loop exited without a result");
+  } catch (err) {
+    // C18: the intent already exists — finalize what's left, SAME
+    // `_executionId`, never a second execution (never `failPreBroadcast` here).
+    await abortRemainingPlans(executionId, 0, `execute aborted: ${uniswapFailureMessage(err)}`);
+    logger.warn("uniswap.swap.execute.unexpected_error", {
+      executionId, error: uniswapFailureMessage(err),
+    });
+    return {
+      success: false,
+      output: `${toolId} failed unexpectedly: ${uniswapFailureMessage(err)}`,
+      data: { _executionId: executionId },
+    };
+  }
+}
+
+// ── Settlement decoder registration (repair-sweep seam, FIX-SPINE C2) ───────
+
+function isDecodableReceipt(value: unknown): value is UniswapDecodableReceipt {
+  return typeof value === "object" && value !== null && Array.isArray((value as { logs?: unknown }).logs);
+}
+
+function decodeUniswapSettlement(input: SettlementDecoderInput): DecodedSettlement | null {
+  if (!isDecodableReceipt(input.receipt)) return null;
+  const decoded = decodeUniswapExecutedLegs({
+    receipt: input.receipt,
+    chainId: input.chainId,
+    walletAddress: input.walletAddress,
+    tokenInAddress: input.tokenInAddress,
+    tokenOutAddress: input.tokenOutAddress,
+  });
+  if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) return null;
+  // Repair-sweep confirms have no token decimals in this input shape — raw
+  // amounts are the CHECK-enforced minimum; human amounts are left unset
+  // rather than guessed.
   return {
-    success: true,
-    output: JSON.stringify({
-      txHash, side: economicSide, chain: deployment.key,
-      tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
-      amountIn: amountInRaw, amountOut: amountOutHuman,
-      route: { version: quoted.route.version, path: quoted.route.path },
-    }, null, 2),
-    data: {
-      txHash,
-      _tradeCapture: {
-        type: "swap",
-        chain: deployment.key, // aligned with tools/evm-chains activityChainKeys ("robinhood")
-        status: "executed",
-        inputToken: tokenIn.symbol,
-        outputToken: tokenOut.symbol,
-        inputTokenAddress: tokenIn.address,
-        outputTokenAddress: tokenOut.address,
-        inputAmount: amountInRaw,
-        // Quote-derived output can overstate an FoT recipient amount; receipt-log
-        // or balance-delta settlement measurement is tracked separately.
-        outputAmount: amountOutHuman,
-        signature: txHash,
-        walletAddress: signer.address,
-        tradeSide: economicSide,
-        instrumentKey: `${deployment.key}:${economicSide === "buy" ? tokenOut.address : tokenIn.address}`,
-        valuationSource: "none",
-        settlementAssetKey: economicSide === "buy" ? tokenIn.symbol : tokenOut.symbol,
-        meta: { dex: "uniswap", version: quoted.route.version, side: economicSide },
-      },
-    },
+    executedAmountInRaw: decoded.executedAmountInRaw.toString(),
+    executedAmountOutRaw: decoded.executedAmountOutRaw.toString(),
   };
 }
+
+registerSettlementDecoder("uniswap", decodeUniswapSettlement);
 
 // ── Handler map ──────────────────────────────────────────────────────────────
 
 export const UNISWAP_SWAP_HANDLERS: Record<string, ProtocolHandler> = {
   "uniswap.swap.quote": (p) => uniswapSwapQuote(p),
-  "uniswap.swap.sell": (p, ctx) => executeUniswapSwap(p, "sell", ctx),
-  "uniswap.swap.buy": (p, ctx) => executeUniswapSwap(p, "buy", ctx),
+  "uniswap.swap.execute": (p, ctx) => executeUniswapSwap(p, ctx),
 };

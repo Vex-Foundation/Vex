@@ -24,32 +24,21 @@ export const KYBERSWAP_SWAP_DISCOVERY = {
     chains: KYBER_SWAP_CHAINS,
   },
 
-  "kyberswap.swap.sell": {
+  "kyberswap.swap.execute": {
     embeddingText: embeddingText(
-      `Sell a token on Ethereum, Base, Arbitrum, BNB Chain, Polygon, Optimism, Avalanche and other EVM chains — routes through 400+ DEXes for the best price. ` +
-      `Use this when the user wants to sell a coin, dump a holding, exit a position, swap out of a token, get out of a memecoin, or trade one token for another with the input fixed. ` +
-      `Example queries: sell eth for usdc on base, swap pepe to usdc, dump my doge, exit my shitcoin position, swap out of bnb, get rid of this token.`,
+      `Execute a real on-chain swap on Ethereum, Base, Arbitrum, BNB Chain, Polygon, Optimism, Avalanche and other EVM chains — exact-input, routes through 400+ DEXes for the best price. ` +
+      `Use this when the user wants to buy or sell a coin, ape into a memecoin, exit a position, dump a holding, swap one token for another, or acquire a token with stables. ` +
+      `Example queries: swap eth for usdc on base, buy pepe with usdc, sell my doge, exit my shitcoin position, ape into this memecoin, acquire some link. ` +
+      `Requires a fresh matching kyberswap.swap.quote first.`,
     ),
-    aliases: ["sell token", "swap out", "exit position", "reduce position"],
-    exampleIntents: ["sell ETH for USDC on arbitrum", "swap token on bnb", "exit token position on base"],
-    preferredFor: ["sell token", "exit position", "reduce position", "exact input swap"],
-    chains: KYBER_SWAP_CHAINS,
-  },
-
-  "kyberswap.swap.buy": {
-    embeddingText: embeddingText(
-      `Buy a token on Ethereum, Base, Arbitrum, BNB Chain, Polygon and other EVM chains using stablecoins or another asset as input — routes through 400+ DEXes for the best price. ` +
-      `Use this when the user wants to buy a coin, ape into a memecoin, get into a position, acquire a token, swap stables into something, or open a spot position. ` +
-      `Example queries: buy eth with usdc on base, ape into pepe, get me bnb, buy this memecoin with usdt, open a spot position in arb, acquire some link.`,
-    ),
-    aliases: ["buy token", "acquire token", "swap into token"],
-    exampleIntents: ["buy ETH with USDC on base", "buy token on bnb", "swap stablecoin into token"],
-    preferredFor: ["buy token", "acquire token", "open spot position", "exact input swap"],
+    aliases: ["execute swap", "sell token", "buy token", "swap out", "exit position", "acquire token"],
+    exampleIntents: ["swap ETH for USDC on arbitrum", "buy token on bnb", "exit token position on base"],
+    preferredFor: ["execute swap", "sell token", "buy token", "exit position", "exact input swap"],
     chains: KYBER_SWAP_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 3;
+const EXPECTED_COUNT = 2;
 if (Object.keys(KYBERSWAP_SWAP_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `KYBERSWAP_SWAP_DISCOVERY has ${Object.keys(KYBERSWAP_SWAP_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

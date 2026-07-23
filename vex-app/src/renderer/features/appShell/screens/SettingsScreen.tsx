@@ -79,7 +79,7 @@ const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     id: "apiKeys",
     stepId: "apiKeys",
     name: "API keys",
-    hint: "Jupiter, Tavily, Rettiwt, and Polymarket integrations",
+    hint: "Jupiter, Tavily, and Rettiwt integrations",
   },
   {
     id: "model",
@@ -143,9 +143,6 @@ export function settingsSectionStatus(
     case "apiKeys": {
       if (!env.apiKeys.jupiterConfigured) {
         return { word: "Jupiter missing", tone: "warning" };
-      }
-      if (env.apiKeys.polymarketStatus === "partial") {
-        return { word: "Partial", tone: "warning" };
       }
       return { word: "Configured", tone: "success" };
     }

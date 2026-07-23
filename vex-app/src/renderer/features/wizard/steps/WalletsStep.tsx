@@ -261,9 +261,8 @@ export function WalletsStep({
   // First-pass with at least one wallet still missing: wallets are
   // OPTIONAL (configure later in Settings), so the operator may continue.
   // We surface a consequence alert (no wallet → no trading / on-chain
-  // activity; Polymarket auto-setup needs an EVM wallet) and a
-  // "Continue without …" action alongside the management UI. Copy adapts
-  // to whether one chain is already present or neither is.
+  // activity) and a "Continue without …" action alongside the management
+  // UI. Copy adapts to whether one chain is already present or neither is.
   const showConfigureLater = flowMode === "first-pass" && !bothReady;
   const continueLaterLabel = anyWallet
     ? "Continue without the other wallet"
@@ -312,8 +311,7 @@ export function WalletsStep({
           {anyWallet
             ? "With only one chain, Vex can only trade or act on that chain. "
             : "Without a wallet, Vex can't trade or take any on-chain action. "}
-          Polymarket auto-setup needs an EVM key in particular. You can add or
-          import wallets later from Settings.
+          You can add or import wallets later from Settings.
         </p>
       ) : null}
       <Tabs defaultValue="evm">

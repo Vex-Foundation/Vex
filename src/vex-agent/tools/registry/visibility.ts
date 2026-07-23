@@ -16,6 +16,7 @@ import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS } from "./lookup.js";
 import { getVisibleHypervexingAliasTools } from "../hypervexing-aliases.js";
+import { isUniswapPairRevealed } from "./uniswap-reveal.js";
 
 /**
  * Session-aware context for tool surface projection. Built by engine runners
@@ -192,6 +193,11 @@ function passesVisibility(
   // yields: visible in agent + active mission runs (plan-mode on), hidden in
   // mission setup and whenever plan-mode is off.
   if (v.requiresPlanMode && !ctx.planMode) return false;
+
+  // Uniswap fallback reveal gate (plan §11.2) — the hidden swap_quote_uniswap /
+  // swap_execute_uniswap pair joins the catalog only for a session with an
+  // active, fresh reveal. Absent sessionId fails closed to hidden.
+  if (v.requiresUniswapReveal && !isUniswapPairRevealed(ctx.sessionId)) return false;
 
   return true;
 }

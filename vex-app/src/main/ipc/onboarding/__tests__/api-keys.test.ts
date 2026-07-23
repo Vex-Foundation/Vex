@@ -113,18 +113,6 @@ describe("apiKeysSet handler", () => {
     expect(mockWriter).not.toHaveBeenCalled();
   });
 
-  it("rejects polymarket trio when only 1-2 fields supplied (Zod strict)", async () => {
-    registerApiKeysHandler();
-    const fn = handlers.get(CH.onboarding.apiKeysSet)!;
-    const result = (await fn(trustedSender, {
-      requestId: "r4",
-      payload: { polymarket: { apiKey: "k" } },
-    })) as { ok: boolean; error?: { code: string } };
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("validation.invalid_input");
-    expect(mockWriter).not.toHaveBeenCalled();
-  });
-
   it("does NOT log the secret values — only canonical key names + correlationId", async () => {
     mockWriter.mockResolvedValue({
       ok: true,

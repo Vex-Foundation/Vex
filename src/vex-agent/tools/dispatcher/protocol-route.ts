@@ -19,6 +19,7 @@ import {
   MutatingAliasRouteError,
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
+import { revealUniswapPair } from "../registry/uniswap-reveal.js";
 import {
   isHypervexingProtocolAlias,
   resolveHypervexingAlias,
@@ -76,6 +77,9 @@ export async function routeToolCall(
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
       contextUsageBand: context.contextUsageBand,
+      // FIX-SPINE round 1, finding 8/C3 — lets discovery hide the canonical
+      // hidden Uniswap swap manifests for a session that has not revealed them.
+      sessionId: context.sessionId,
     };
     const result = await discoverProtocolCapabilities(discoveryRequest);
     // Telemetry reads the FULL result (incl. embeddingModel/embeddingDim).
@@ -147,7 +151,7 @@ export async function routeToolCall(
     );
   }
 
-  // Mutating protocol-alias branch (Stage 8b — e.g. `swap`). DEDICATED path:
+  // Mutating protocol-alias branch (Stage 8b — e.g. `swap_execute`). DEDICATED path:
   // resolve the TARGET protocol toolId + translated params via the router, then
   // dispatch DIRECTLY through `executeProtocolTool`. This deliberately SKIPS
   // `routeInternalTool`'s internal mutating-approval gate so approval is owned
@@ -164,9 +168,12 @@ export async function routeToolCall(
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
     let target: ReturnType<typeof router>;
     try {
-      target = router(call.args);
+      target = router(call.args, context.sessionId);
     } catch (err) {
       if (err instanceof MutatingAliasRouteError) {
+        // Agent Scan plan §11.2: the ONE reveal case a router can determine
+        // synchronously, pre-call (chain has no KyberSwap support at all).
+        if (err.revealEligible) revealUniswapPair(context.sessionId);
         return { success: false, output: err.message };
       }
       throw err; // unexpected — let dispatchTool's catch produce a failed result

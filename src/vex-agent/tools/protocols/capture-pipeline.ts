@@ -9,8 +9,6 @@
  */
 
 import { sanitizeJsonbValue } from "@vex-agent/db/params.js";
-import { memLog } from "@vex-agent/memory/observability/logger.js";
-import type { LedgerWakeKey } from "@vex-agent/memory/ledger-wake.js";
 import { MUTATION_MATRIX } from "./mutation-matrix.js";
 import logger from "@utils/logger.js";
 
@@ -72,16 +70,16 @@ export async function populateCaptureItems(
 ): Promise<void> {
   const hasItems = Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0;
 
-  // FAIL-CLOSED GUARD (P4): a spot fanOut:"items" tool MUST provide per-item
-  // captures. Its summary `_tradeCapture` carries a SINGLE instrumentKey, so
-  // falling back to project it would collapse the tool's N distinct spot legs
-  // (e.g. a mint's PT lot AND YT lot) into one mislabeled lot — a portfolio-
-  // integrity bug. When such a tool yields no items, skip projection entirely
-  // rather than silently project the summary. Scoped to `pnl_spot` so the
-  // projection/prediction batch tools' existing zero-item summary behavior is
-  // unchanged.
+  // FAIL-CLOSED GUARD: a `strictItemsRequired` fanOut:"items" tool MUST
+  // provide per-item captures. Its summary `_tradeCapture` carries a SINGLE
+  // instrumentKey, so falling back to project it would collapse the tool's N
+  // distinct legs (e.g. a mint's PT lot AND YT lot) into one mislabeled lot —
+  // a portfolio-integrity bug. When such a tool yields no items, skip
+  // projection entirely rather than silently project the summary. Other
+  // fanOut:"items" tools (e.g. the prediction batch close-all) leave this
+  // unset — their zero-item summary fallback is safe.
   const contract = MUTATION_MATRIX.get(toolId);
-  if (contract?.fanOut === "items" && contract.role === "pnl_spot" && !hasItems) {
+  if (contract?.fanOut === "items" && contract.strictItemsRequired && !hasItems) {
     logger.warn("protocol.capture.items_fanout_missing_items", {
       toolId,
       hint: "spot fanOut:items tool emitted no _tradeCaptureItems — summary NOT projected (fail-closed)",
@@ -107,37 +105,17 @@ export async function populateCaptureItems(
     })),
   );
 
-  const wakeKeys: LedgerWakeKey[] = [];
   for (let i = 0; i < sanitizedItems.length; i++) {
     const itemRefs = extractExternalRefs({ _tradeCapture: sanitizedItems[i] });
     const mergedRefs = { ...executionExternalRefs, ...itemRefs };
     await populateActivity(executionId, captureItemIds[i] ?? null, toolId, namespace, sanitizedItems[i], mergedRefs);
-    wakeKeys.push({
-      executionId,
-      ...(mergedRefs.instrumentKey ? { instrumentKey: mergedRefs.instrumentKey } : {}),
-      ...(mergedRefs.positionKey ? { positionKey: mergedRefs.positionKey } : {}),
-    });
   }
 
-  // ── S7 D-SEAM: ledger→memory wake (the ONLY call site) ────────────────────
-  // The projections above are committed, so a reconcile pass triggered by this
-  // wake reads the post-write ledger. This single seam covers agent trades AND
-  // settlement sync (recordSyntheticCapture → populateCaptureItems), while
-  // replayActivityFromCapture below structurally bypasses it (no wake storm on
-  // replay). F3 (owner fork): wallet_intents are deliberately OUT of the wake
-  // path — nothing here (or in the outcome resolver) reads wallet_intents; an
-  // intent-driven wake would be a dead coupling with nothing to recompute, and
-  // the real fill data lands in proj_* through sync anyway. Best-effort: a wake
-  // failure NEVER breaks the capture/sync pipeline — the ledger is the source
-  // of truth and memory catches up on the next wake for the same keys.
-  try {
-    const { enqueueLedgerWake } = await import("@vex-agent/memory/ledger-wake.js");
-    await enqueueLedgerWake(wakeKeys);
-  } catch (err: unknown) {
-    memLog.warn("reconcile", "wake_failed", {
-      errorCode: err instanceof Error ? "wake_error" : "wake_unknown",
-    });
-  }
+  // NOTE: the ledger→memory wake call that used to live here
+  // (`memory/ledger-wake.js`'s `enqueueLedgerWake`) is REMOVED — the async
+  // reconcile machinery it fed is retired this phase (plan §4.4). Memory
+  // teardown (W4) deletes the ledger-wake module itself; this removal lands
+  // first so that deletion cannot leave a dangling import here.
 }
 
 /**

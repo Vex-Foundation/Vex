@@ -110,6 +110,15 @@ export async function syncTick(): Promise<void> {
           { ...reconcileResult, periodic: true },
           reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled,
         );
+      } else if (job.syncType === "agent_activity_repair") {
+        const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
+        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...repairResult, periodic: true },
+          repairResult.confirmed + repairResult.failed,
+        );
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });
       }

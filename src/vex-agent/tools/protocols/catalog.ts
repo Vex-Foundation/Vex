@@ -39,8 +39,6 @@ import { VIRTUALS_TOOLS } from "./virtuals/manifest.js";
 import { VIRTUALS_HANDLERS } from "./virtuals/handlers.js";
 import { PENDLE_TOOLS } from "./pendle/manifest.js";
 import { PENDLE_HANDLERS } from "./pendle/handlers.js";
-import { POLYMARKET_TOOLS } from "./polymarket/manifest.js";
-import { POLYMARKET_HANDLERS } from "./polymarket/handlers.js";
 import { HYPERLIQUID_TOOLS } from "./hyperliquid/manifest.js";
 import { HYPERLIQUID_HANDLERS } from "./hyperliquid/handlers.js";
 import { HYPERLIQUID_MARKET_ANALYSIS_HANDLERS } from "./hyperliquid/market-analysis-handlers.js";
@@ -54,7 +52,6 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "uniswap",
   "relay",
   "solana",
-  "polymarket",
   "dexscreener",
   "virtuals",
   "pendle",
@@ -91,7 +88,6 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "relay", manifests: RELAY_TOOLS, handlers: RELAY_HANDLERS },
   { namespace: "dexscreener", manifests: DEXSCREENER_TOOLS, handlers: DEXSCREENER_HANDLERS },
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
-  { namespace: "polymarket", manifests: POLYMARKET_TOOLS, handlers: POLYMARKET_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
   { namespace: "hyperliquid", manifests: HYPERLIQUID_TOOLS, handlers: { ...HYPERLIQUID_HANDLERS, ...HYPERLIQUID_MARKET_ANALYSIS_HANDLERS } },
 ];
@@ -184,7 +180,7 @@ export function getProtocolManifest(toolId: string): ProtocolToolManifest | unde
 
 // ── Namespace defaults ──────────────────────────────────────────
 // Helper for "pure" namespaces. NOT runtime truth: mixed namespaces
-// have tools in multiple PortfolioRole classes. Per-tool matrix in
+// have tools in multiple capture-kind classes. Per-tool matrix in
 // mutation-matrix.ts (MUTATION_MATRIX) is the canonical source-of-truth.
 
 export type NamespaceDefault = "mixed_trading" | "bridge" | "non_portfolio";
@@ -193,7 +189,6 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   solana: "mixed_trading",
   kyberswap: "mixed_trading",
   uniswap: "mixed_trading",
-  polymarket: "mixed_trading",
   pendle: "mixed_trading",
   hyperliquid: "mixed_trading",
   khalani: "bridge",

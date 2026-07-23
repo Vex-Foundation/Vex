@@ -19,7 +19,6 @@ import { ACTION_ALIAS_TOOLS } from "./action-aliases.js";
 import { WEB_TOOLS } from "./web.js";
 import { TWITTER_ACCOUNT_TOOLS } from "./twitter-account.js";
 import { PORTFOLIO_TOOLS } from "./portfolio.js";
-import { SETUP_TOOLS } from "./setup.js";
 import { MISSION_TOOLS } from "./mission.js";
 import { AUTONOMY_TOOLS } from "./autonomy.js";
 import { EVM_TOOLS } from "./evm.js";
@@ -41,7 +40,6 @@ export const TOOLS: readonly ToolDef[] = [
   ...WEB_TOOLS,
   ...TWITTER_ACCOUNT_TOOLS,
   ...PORTFOLIO_TOOLS,
-  ...SETUP_TOOLS,
   ...MISSION_TOOLS,
   ...AUTONOMY_TOOLS,
   ...EVM_TOOLS,

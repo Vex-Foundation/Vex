@@ -12,10 +12,10 @@
  *   - optional "Get key" link (target="_blank", rel="noopener noreferrer")
  *   - body slot (children) — the actual input or auto-setup section
  *
- * Kept generic on purpose: the four providers (Jupiter / Tavily /
- * Rettiwt / Polymarket) differ in iconography and CTA wiring, but the
- * outer chrome is identical so this primitive avoids a 4× duplication
- * inside ApiKeysStep (rule 18 — "stop duplication early").
+ * Kept generic on purpose: the three providers (Jupiter / Tavily /
+ * Rettiwt) differ in iconography and CTA wiring, but the outer chrome
+ * is identical so this primitive avoids a 3× duplication inside
+ * ApiKeysStep (rule 18 — "stop duplication early").
  *
  * Colors ride the gate/shell token re-projection (`--color-text-*`),
  * so the same card reads correctly on the cobalt plate and inside the
@@ -27,7 +27,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "../../../../lib/utils.js";
 
-export type ProviderCardSlug = "jupiter" | "tavily" | "rettiwt" | "polymarket";
+export type ProviderCardSlug = "jupiter" | "tavily" | "rettiwt";
 
 export type ProviderCardStatusTone = "set" | "partial" | "unset";
 

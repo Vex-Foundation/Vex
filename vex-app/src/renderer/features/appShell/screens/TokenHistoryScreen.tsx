@@ -13,8 +13,14 @@
  *
  * Honesty rules (plan v2/v3):
  *  - quantities render ONLY with proven unit provenance
- *    (`unitProvenance === "human"`); atomic/unknown values show the em dash —
- *    USD-at-execution stays the primary figure;
+ *    (`unitProvenance === "human"`); unknown values show the em dash;
+ *  - the primary USD figure carries a `usdProvenance` tag (Codex final
+ *    review round 2 finding 7 / contract C35): `"recorded"` (legacy
+ *    `proj_activity` capture) renders plain; `"estimated"`
+ *    (`agent_activity`'s quote-time `usd_in/out_est` — never re-priced from
+ *    the settled fill, regardless of the swap's status) renders with an
+ *    explicit `~ … est.` marker — it must NEVER read as bare
+ *    execution-time USD;
  *  - leg token identity goes through the shared token-leg policy
  *    (`lib/token-leg-display.ts`) — a known mint address is the only thing
  *    that authorizes a brand ticker/logo; hostile symbols degrade safely;
@@ -22,7 +28,13 @@
  *    `shared/explorer-links.ts` (hosts already allow-listed in main);
  *    unknown chains / unresolved ids (0) render no link, never a guess;
  *  - the subtitle disclosure scopes the feed honestly: protocol captures +
- *    Vex-executed sends — external transfers/airdrops are not locally known.
+ *    Vex-executed sends — external transfers/airdrops are not locally known;
+ *  - a swap entry sourced from the new-format `agent_activity` table (Agent
+ *    Scan plan §4.7) carries `status`/`failureCode` — a pending or failed
+ *    attempt renders a small status badge next to the kind/side stamp; a
+ *    `null`/`"confirmed"` status renders nothing extra (the quiet default).
+ *    Cost basis was retired in the same pass — this screen's Activity feed
+ *    is the whole page now.
  */
 
 import type { JSX } from "react";
@@ -36,10 +48,10 @@ import {
 } from "@hugeicons/core-free-icons";
 import type {
   AmountField,
-  TokenHistoryCostBasis,
   TokenHistoryDto,
   TokenHistoryEntry,
   TokenHistoryTxRef,
+  UsdField,
 } from "@shared/schemas/token-history.js";
 import type { Result } from "@shared/ipc/result.js";
 import { chainDisplay, SOLANA_CHAIN_ID } from "@shared/chains/display.js";
@@ -75,20 +87,40 @@ function availablePage(
 
 /**
  * Quantity honesty (plan v2, the MovesBlock discipline): a figure prints
- * ONLY when the DTO proves human units (`unitProvenance: "human"` AND the
- * value passes the dotted-decimal guard). Atomic/unknown provenance — raw
- * wei/lamports-scale integers — renders the em dash, never a blind format.
+ * ONLY when the DTO proves human units (`unitProvenance: "human"`).
+ * Unknown provenance — raw wei/lamports-scale integers, or an
+ * agent_activity leg the main-process mapper could not resolve for its
+ * status (C20) — renders the em dash, never a blind format. Once
+ * `unitProvenance === "human"` is established, `amountDisplay` is called
+ * with `trustedHuman: true` — the DTO's own typed provenance tag is
+ * authoritative, so a whole-number result (no decimal point) still renders
+ * instead of being blanked by a redundant dot-heuristic (Codex final review
+ * finding 10 / contract C27).
  */
 function quantityText(field: AmountField): string {
   if (field.unitProvenance !== "human") return "—";
-  return amountDisplay(field.value) ?? "—";
+  return amountDisplay(field.value, true) ?? "—";
 }
 
-/** USD decimal string → compact display; null/unparseable → em dash (never $0.00). */
-function usdText(value: string | null): string {
-  if (value === null) return "—";
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? formatUsd(parsed) : "—";
+/**
+ * USD figure → compact display, honoring its provenance tag (contract C35):
+ * an `"estimated"` figure (`agent_activity`'s quote-time `usd_in/out_est`)
+ * renders `~$X est.` — it must never read as bare execution-time USD, since
+ * it was priced BEFORE dispatch and never re-derived from the settled fill.
+ * `"recorded"` (the legacy `proj_activity` capture) renders plain.
+ * `value: null`/unparseable → em dash (never $0.00).
+ */
+function usdText(field: UsdField): string {
+  if (field.value === null) return "—";
+  const parsed = Number.parseFloat(field.value);
+  if (!Number.isFinite(parsed)) return "—";
+  const formatted = formatUsd(parsed);
+  return field.usdProvenance === "estimated" ? `~${formatted} est.` : formatted;
+}
+
+/** Prefer the output leg's USD figure; fall back to the input leg when the output has no value. */
+function primaryUsdField(input: UsdField, output: UsdField): UsdField {
+  return output.value !== null ? output : input;
 }
 
 /** Unit-price decimal string → adaptive display; null/unparseable → null (omitted). */
@@ -108,17 +140,6 @@ function entryDateText(iso: string): string | null {
   });
   const clock = formatClock(iso);
   return clock === null ? day : `${day} · ${clock}`;
-}
-
-/** "Jun 12, 2025" for a cost-basis lot (lots can span years); null if unparseable. */
-function lotDateText(iso: string): string | null {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 /**
@@ -148,6 +169,18 @@ const STAMP_TONE: Record<SideTone, string> = {
   buy: "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success",
   sell: "border-[var(--vex-line-strong)] text-[var(--vex-text-2)]",
   neutral: "border-[var(--vex-line)] text-[var(--vex-text-3)]",
+};
+
+/**
+ * `agent_activity`-sourced swap status chip (Agent Scan §4.7) — a pending
+ * or failed swap ATTEMPT is now visible in this feed, not just confirmed
+ * fills; a `null`/`"confirmed"` status renders nothing extra (the quiet
+ * default, matching `captureStatus`'s existing "no badge unless it needs
+ * attention" posture).
+ */
+const SWAP_STATUS_TONE: Record<"pending" | "failed", string> = {
+  pending: "border-[var(--vex-line)] text-[var(--vex-accent)]",
+  failed: "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] text-[var(--color-destructive)]",
 };
 
 /**
@@ -196,7 +229,6 @@ export function TokenHistoryScreen({
 
   const pages = query.data?.pages ?? [];
   const firstPage = pages[0];
-  const firstAvailable = availablePage(firstPage);
   const entries = pages.flatMap((page) => availablePage(page)?.entries ?? []);
   // A LATER page can fail or time out after entries already rendered —
   // pagination stops (getNextPageParam) and a quiet note appears by the
@@ -293,13 +325,6 @@ export function TokenHistoryScreen({
       }
     >
       <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6">
-        <CostBasisBlock
-          page={firstAvailable}
-          loading={query.isLoading}
-          failed={
-            (firstPage !== undefined && !firstPage.ok) || query.isError
-          }
-        />
         <section aria-label="Activity">
           <h2 className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
             Activity
@@ -308,72 +333,6 @@ export function TokenHistoryScreen({
         </section>
       </div>
     </ShellScreen>
-  );
-}
-
-/**
- * Cost-basis header block — the three-way honesty split (plan v2): `lots`
- * lists open FIFO lots (display capped server-side at 50; totals cover ALL
- * matching lots), `none` means the check RAN and found nothing open, and
- * `unavailable` means it could not be verified — never conflated with none.
- * Lot quantities are raw atomic integers today, so the quantity slot keeps
- * the em dash (provenance rule) and the USD figures carry the meaning.
- */
-function CostBasisBlock({
-  page,
-  loading,
-  failed,
-}: {
-  readonly page: TokenHistoryPage | null;
-  readonly loading: boolean;
-  readonly failed: boolean;
-}): JSX.Element | null {
-  // While loading, degraded ("unavailable" DTO → page null), or failed, the
-  // activity body already narrates the screen's state — no duplicate note.
-  if (loading || failed || page === null) return null;
-  const costBasis: TokenHistoryCostBasis = page.costBasis;
-
-  return (
-    <section aria-label="Cost basis">
-      <h2 className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-        Cost basis
-      </h2>
-      {costBasis.kind === "none" ? (
-        <p className="text-[12px] text-[var(--vex-text-3)]">No open lots.</p>
-      ) : costBasis.kind === "unavailable" ? (
-        <p className="text-[12px] text-[var(--vex-text-3)]">
-          Cost basis unavailable.
-        </p>
-      ) : (
-        <>
-          <p className="font-mono text-[12px] tabular-nums text-[var(--vex-text)]">
-            {amountDisplay(costBasis.totalOpenQuantity) ?? "—"} open
-            <span className="text-[var(--vex-text-3)]"> · avg </span>
-            {unitPriceText(costBasis.avgOpenPriceUsd) ?? "—"}
-          </p>
-          <ul className="mt-1.5 flex flex-col">
-            {costBasis.openLots.map((lot, index) => (
-              <li
-                // Lots carry no id; the list is a stable server-ordered cap.
-                key={`${lot.openedAt}:${index}`}
-                className="flex items-baseline justify-between gap-3 border-b border-[var(--vex-line)] py-1 font-mono text-[11px] tabular-nums text-[var(--vex-text-2)] last:border-b-0"
-              >
-                <span>
-                  {quantityText(lot.quantity)}
-                  <span className="text-[var(--vex-text-3)]"> @ </span>
-                  {unitPriceText(lot.priceUsd) ?? "—"}
-                </span>
-                <span className="shrink-0 text-[var(--vex-text-3)]">
-                  {usdText(lot.costBasisUsd)}
-                  {" · "}
-                  {lotDateText(lot.openedAt) ?? "—"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </section>
   );
 }
 
@@ -438,12 +397,14 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
     if (entry.status.length > 0) meta.push(entry.status.toLowerCase());
   }
 
-  // Primary USD-at-execution figure (swap/bridge legs; transfers carry no
-  // trade economics). Output value leads; input value is the fallback.
+  // Primary USD figure (swap/bridge legs; transfers carry no trade
+  // economics). Output value leads; input value is the fallback. Carries its
+  // own `usdProvenance` tag (C35) — `usdText` renders an `"estimated"` figure
+  // with an explicit `~ … est.` marker, never as bare execution-time USD.
   const usdPrimary =
     entry.kind === "transfer"
       ? null
-      : (entry.output.valueUsd ?? entry.input.valueUsd);
+      : primaryUsdField(entry.input.valueUsd, entry.output.valueUsd);
   const unitPrice = entry.kind === "swap" ? unitPriceText(entry.unitPriceUsd) : null;
 
   return (
@@ -463,6 +424,17 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
         >
           {stamp.text}
         </span>
+        {entry.kind === "swap" && (entry.status === "pending" || entry.status === "failed") ? (
+          <span
+            title={entry.status === "failed" ? (entry.failureCode ?? undefined) : undefined}
+            className={cn(
+              "inline-flex h-4 shrink-0 items-center justify-center rounded-[3px] border px-1.5 font-mono text-[9px] uppercase tracking-[0.14em]",
+              SWAP_STATUS_TONE[entry.status],
+            )}
+          >
+            {entry.status}
+          </span>
+        ) : null}
         <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-[var(--vex-text)]">
           {entry.kind === "transfer" ? (
             <>
@@ -490,7 +462,7 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
             </>
           )}
         </span>
-        {usdPrimary !== null ? (
+        {usdPrimary !== null && usdPrimary.value !== null ? (
           <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-[var(--vex-text)]">
             {usdText(usdPrimary)}
             {unitPrice !== null ? (

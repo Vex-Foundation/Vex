@@ -7,7 +7,7 @@
  * - the wallet/position/valuation triple is required and each missing field
  *   is reported,
  * - the type discriminator must match the registered contract,
- * - the real settlement_sync.jupiter / .polymarket captures pass.
+ * - the real settlement_sync.jupiter capture passes.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -48,7 +48,6 @@ function validHyperliquidCapture(): Record<string, unknown> {
 describe("isSyntheticToolId", () => {
   it("recognizes the registered synthetic sources", () => {
     expect(isSyntheticToolId("settlement_sync.jupiter")).toBe(true);
-    expect(isSyntheticToolId("settlement_sync.polymarket")).toBe(true);
     expect(isSyntheticToolId("hyperliquid_reconcile.position")).toBe(true);
   });
 
@@ -75,11 +74,6 @@ describe("validateSyntheticCapture — allowlist", () => {
 
   it("accepts a valid settlement_sync.jupiter capture", () => {
     expect(() => validateSyntheticCapture("settlement_sync.jupiter", validCapture())).not.toThrow();
-  });
-
-  it("accepts a valid settlement_sync.polymarket capture", () => {
-    const cap = { ...validCapture(), walletAddress: "0xEOA", positionKey: "polymarket:0xCOND1:YES" };
-    expect(() => validateSyntheticCapture("settlement_sync.polymarket", cap)).not.toThrow();
   });
 
   it("accepts a valid Hyperliquid reconciliation capture", () => {

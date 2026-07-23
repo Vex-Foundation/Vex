@@ -136,16 +136,36 @@ const AMOUNT_FORMAT = new Intl.NumberFormat("en-US", {
 });
 
 /**
- * Compact leg amount. The engine records HUMAN-readable amounts only for
- * newer captures (relay bridge, uniswap spot); older captures store raw
- * base-unit integers (wei/lamports) that are meaningless to print. Tolerant
- * guard: render ONLY dotted-decimal strings that parse to a finite positive
- * number (a raw base-unit integer never carries a `.`); everything else —
- * null, integers, non-numeric — renders nothing, so legacy rows keep their
- * amount-less legs.
+ * Compact leg amount.
+ *
+ * `trustedHuman` (Codex final-review round 1 finding 10 / contract C27):
+ * pass `true` ONLY when a typed, upstream provenance signal has ALREADY
+ * proven `amount` is a genuine human-readable decimal — an `agent_activity`
+ * -sourced value (`MoveItem.source === "agent_activity"`, or a
+ * `TokenHistoryEntry`'s `AmountField.unitProvenance === "human"`, which by
+ * construction is now only ever set for a value `resolveAgentActivityAmount`
+ * / `agentActivityAmountField` on the main-process side already resolved —
+ * see `main/database/agent-activity-amount.ts`). A whole-number string like
+ * `"50"` is then accepted verbatim: `viem`'s `formatUnits` (used to compute
+ * a CONFIRMED row's executed amount from raw + decimals) omits the decimal
+ * point entirely when the fractional part is zero, so requiring a `.` would
+ * silently blank out an honest, fully-proven amount.
+ *
+ * Default (`trustedHuman: false`, every OTHER/legacy source): the engine
+ * records HUMAN-readable amounts only for some captures (relay bridge,
+ * legacy uniswap spot); older captures store raw base-unit integers
+ * (wei/lamports) with NO typed provenance signal at all — a dotted decimal
+ * is the only way this codebase can distinguish "human" from "raw atomic
+ * integer" for those. Render ONLY dotted-decimal strings that parse to a
+ * finite positive number; everything else — null, integers, non-numeric —
+ * renders nothing, so legacy rows keep their amount-less legs.
  */
-export function amountDisplay(amount: string | null): string | null {
-  if (amount === null || !amount.includes(".")) return null;
+export function amountDisplay(
+  amount: string | null,
+  trustedHuman = false,
+): string | null {
+  if (amount === null) return null;
+  if (!trustedHuman && !amount.includes(".")) return null;
   const parsed = Number.parseFloat(amount);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return AMOUNT_FORMAT.format(parsed);

@@ -327,6 +327,7 @@ describe("getJobsSummary", () => {
         completed: 5,
         failed: 0,
         permanently_failed: 0,
+        retired: 0,
       });
       expect(res.data.recentJobs[0]).toEqual({
         id: 3,

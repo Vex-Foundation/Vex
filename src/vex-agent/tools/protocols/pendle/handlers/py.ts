@@ -344,8 +344,8 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
       output: JSON.stringify({ txHash, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address, amountIn: amountInRaw, ptOut: humanAmount(ptOut, ptDec).toString(), ytOut: humanAmount(ytOut, ytDec).toString() }, null, 2),
       data: {
         txHash,
-        // Audit-record summary (NOT projected — the fanOut:"items" pnl_spot guard
-        // uses the items below for projection). Represents the whole mint.
+        // Audit-record summary (NOT projected — the fanOut:"items" strictItemsRequired
+        // guard uses the items below for projection). Represents the whole mint.
         _tradeCapture: {
           type: "swap",
           chain: chainSlug,
