@@ -25,6 +25,7 @@ import type { ActionKind } from "../taxonomy.js";
 import { getProtocolHandler, getProtocolManifest } from "./catalog.js";
 import { isPreviewExecution } from "./capture-validator.js";
 import {
+  EXECUTE_GATE_TOOLS,
   PREQUOTE_QUOTE_TOOLS,
   recordPrequoteFromQuote,
 } from "./swap-prequote.js";
@@ -240,6 +241,7 @@ export async function executeProtocolTool(
   let prequoteVerdict: SafetyVerdict | undefined;
   let prequoteFotTax: number | undefined;
   let prequoteTermLock: { readonly maturityIso: string } | undefined;
+  let matchedPrequoteId: string | undefined;
   const prequoteDecision = await evaluatePrequoteGateDecision(request.toolId, params, scopedContext);
   if (prequoteDecision.kind === "block") {
     return withActionKind({ success: false, output: prequoteDecision.message }, effectiveActionKind);
@@ -247,6 +249,7 @@ export async function executeProtocolTool(
   prequoteVerdict = prequoteDecision.verdict;
   prequoteFotTax = prequoteDecision.fotTax;
   prequoteTermLock = prequoteDecision.termLock;
+  matchedPrequoteId = prequoteDecision.prequoteId;
 
   // Approval gate — mutating tools require approval under restricted permission.
   // Preview (dryRun) is read-only simulation — skip approval. The pending
@@ -331,6 +334,37 @@ export async function executeProtocolTool(
       success: result.success,
       durationMs,
     });
+
+    // Single-use prequote: burn the matched ticket only after a successful
+    // gated broadcast. Never at gate-allow time — restricted mode would
+    // consume before the human approves and strand the next dispatch.
+    if (
+      result.success
+      && matchedPrequoteId !== undefined
+      && scopedContext.sessionId
+      && request.toolId in EXECUTE_GATE_TOOLS
+    ) {
+      try {
+        const { consumeIfUnconsumed } = await import(
+          "@vex-agent/db/repos/swap-prequotes.js"
+        );
+        const burned = await consumeIfUnconsumed(
+          matchedPrequoteId,
+          scopedContext.sessionId,
+        );
+        if (!burned) {
+          logger.warn("protocol.execute.prequote_consume_miss", {
+            toolId: request.toolId,
+            prequoteIdPrefix: matchedPrequoteId.slice(0, 16),
+          });
+        }
+      } catch (err) {
+        logger.warn("protocol.execute.prequote_consume_failed", {
+          toolId: request.toolId,
+          reason: err instanceof Error ? err.constructor.name : typeof err,
+        });
+      }
+    }
 
     // Record a swap prequote on a successful QUOTE (Stage 6c). Quote tools are
     // `mutating:false`, so the `shouldCapture` pipeline below never fires for

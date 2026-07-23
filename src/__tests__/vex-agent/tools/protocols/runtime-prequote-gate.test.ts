@@ -53,10 +53,12 @@ vi.mock("@vex-agent/db/params.js", () => ({ sanitizeJsonbValue: (v: unknown) => 
 // Gate leaf deps.
 const mockFindLatest = vi.fn<(s: string, h: string, k: string) => Promise<SwapPrequote | null>>();
 const mockExistsFail = vi.fn<(s: string, h: string, k: string) => Promise<boolean>>();
+const mockConsume = vi.fn<(id: string, sessionId: string) => Promise<boolean>>();
 vi.mock("@vex-agent/db/repos/swap-prequotes.js", () => ({
   create: vi.fn(),
   findLatestFreshByMatch: (s: string, h: string, k: string) => mockFindLatest(s, h, k),
   existsFreshFailByMatch: (s: string, h: string, k: string) => mockExistsFail(s, h, k),
+  consumeIfUnconsumed: (id: string, sessionId: string) => mockConsume(id, sessionId),
 }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => "0xWALLET"),
@@ -115,6 +117,7 @@ function prequoteRow(
     walletAddress: "0xWALLET", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amount: "1",
     slippageBps: 50, safetyVerdict: verdict, safetyDetail, routeRef: null,
     createdAt: "2026-06-04T10:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+    consumedAt: null,
   };
 }
 
@@ -127,6 +130,7 @@ beforeEach(() => {
   handlerSpy.mockClear();
   mockFindLatest.mockReset().mockResolvedValue(null);
   mockExistsFail.mockReset().mockResolvedValue(false);
+  mockConsume.mockReset().mockResolvedValue(true);
 });
 
 describe("executeProtocolTool — Stage 7 prequote gate", () => {
@@ -212,6 +216,27 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
     );
     expect(result.success).toBe(true);
     expect(handlerSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("single-use: successful gated execute consumes the matched prequote", async () => {
+    mockFindLatest.mockResolvedValue(prequoteRow("pass"));
+    const result = await executeProtocolTool(
+      { toolId: "kyberswap.swap.sell", params: swapParams },
+      { ...restrictedCtx, sessionPermission: "full", approved: true },
+    );
+    expect(result.success).toBe(true);
+    expect(mockConsume).toHaveBeenCalledTimes(1);
+    expect(mockConsume).toHaveBeenCalledWith("prequote-1", SESSION_ID);
+  });
+
+  it("single-use: restricted pendingApproval does NOT consume the ticket", async () => {
+    mockFindLatest.mockResolvedValue(prequoteRow("pass"));
+    const result = await executeProtocolTool(
+      { toolId: "kyberswap.swap.sell", params: swapParams },
+      restrictedCtx,
+    );
+    expect(result.pendingApproval).toBe(true);
+    expect(mockConsume).not.toHaveBeenCalled();
   });
 
   it("does NOT gate a non-EXECUTE_GATE_TOOLS mutating tool (no repo reads)", async () => {

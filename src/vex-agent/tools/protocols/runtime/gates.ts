@@ -74,6 +74,12 @@ export type PrequoteGateDecision =
       readonly fotTax: number | undefined;
       /** Pendle term-lock maturity for the approval preview (typed, unspoofable). */
       readonly termLock: { readonly maturityIso: string } | undefined;
+      /**
+       * Matched prequote id when this allow came from a real gate hit.
+       * Consumed on successful execute so the ticket is single-use.
+       * Undefined when the tool is not gated / is a preview.
+       */
+      readonly prequoteId: string | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
 
@@ -111,9 +117,16 @@ export async function evaluatePrequoteGateDecision(
       // Fee-on-transfer tax + Pendle term-lock ride the same TYPED channel.
       fotTax: decision.fotTax,
       termLock: decision.termLock,
+      prequoteId: decision.prequoteId,
     };
   }
-  return { kind: "allow", verdict: undefined, fotTax: undefined, termLock: undefined };
+  return {
+    kind: "allow",
+    verdict: undefined,
+    fotTax: undefined,
+    termLock: undefined,
+    prequoteId: undefined,
+  };
 }
 
 /**

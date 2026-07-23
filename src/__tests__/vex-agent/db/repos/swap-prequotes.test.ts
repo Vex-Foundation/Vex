@@ -5,8 +5,9 @@
  *   - INSERT shape (16 params order matches migration 029 columns)
  *   - safety_detail / route_ref bound via jsonb()::jsonb
  *   - findLatestFreshByMatch predicate: session_id AND match_hash AND kind AND
- *     expires_at > NOW() ORDER BY created_at DESC LIMIT 1 (cross-session +
- *     expired + cross-kind rows miss) — Stage 7 R1 adds the kind predicate
+ *     expires_at > NOW() AND consumed_at IS NULL ORDER BY created_at DESC
+ *     LIMIT 1 (cross-session + expired + consumed + cross-kind rows miss)
+ *   - consumeIfUnconsumed CAS: session-scoped, only unconsumed rows
  *   - existsFreshFailByMatch predicate: session_id AND match_hash AND kind AND
  *     safety_verdict='fail' AND expires_at > NOW() LIMIT 1 (boolean) — Stage 7
  *   - TIMESTAMPTZ Date → ISO normalisation; BIGINT chain_id string → number
@@ -75,6 +76,7 @@ function fullRow(overrides: Partial<Record<string, unknown>> = {}): Record<strin
     route_ref: null,
     created_at: CREATED_AT,
     expires_at: EXPIRES_AT,
+    consumed_at: null,
     ...overrides,
   };
 }
@@ -155,7 +157,7 @@ describe("create", () => {
 // ── findLatestFreshByMatch ──────────────────────────────────────────────
 
 describe("findLatestFreshByMatch", () => {
-  it("SELECTs newest fresh row with session_id + match_hash + kind + expires_at predicate", async () => {
+  it("SELECTs newest fresh unconsumed row (session + match + kind + expires + not consumed)", async () => {
     mockQueryOne.mockResolvedValueOnce(null);
     await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "swap");
     const [sql, params] = mockQueryOne.mock.calls[0]!;
@@ -164,6 +166,7 @@ describe("findLatestFreshByMatch", () => {
     expect(sql).toContain("AND match_hash = $2");
     expect(sql).toContain("AND kind = $3");
     expect(sql).toContain("AND expires_at > NOW()");
+    expect(sql).toContain("AND consumed_at IS NULL");
     expect(sql).toContain("ORDER BY created_at DESC");
     expect(sql).toContain("LIMIT 1");
     expect(params).toEqual([SESSION_ID, MATCH_HASH, "swap"]);
@@ -199,6 +202,7 @@ describe("findLatestFreshByMatch", () => {
       routeRef: null,
       createdAt: CREATED_AT,
       expiresAt: EXPIRES_AT,
+      consumedAt: null,
     });
   });
 
@@ -256,5 +260,36 @@ describe("existsFreshFailByMatch", () => {
     // of expired, cross-session, or cross-kind surfaces as the same null → false.
     mockQueryOne.mockResolvedValueOnce(null);
     expect(await repo.existsFreshFailByMatch(SESSION_ID, MATCH_HASH, "swap")).toBe(false);
+  });
+});
+
+// ── consumeIfUnconsumed (single-use ticket) ─────────────────────────────
+
+describe("consumeIfUnconsumed", () => {
+  it("CAS-updates only the owning session's unconsumed row", async () => {
+    mockExecute.mockResolvedValueOnce(1);
+    const won = await repo.consumeIfUnconsumed(PREQUOTE_ID, SESSION_ID);
+    expect(won).toBe(true);
+    const [sql, params] = mockExecute.mock.calls[0]!;
+    expect(sql).toContain("UPDATE swap_prequotes");
+    expect(sql).toContain("SET consumed_at = NOW()");
+    expect(sql).toContain("WHERE prequote_id = $1");
+    expect(sql).toContain("AND session_id = $2");
+    expect(sql).toContain("AND consumed_at IS NULL");
+    expect(params).toEqual([PREQUOTE_ID, SESSION_ID]);
+  });
+
+  it("returns false when another caller already consumed (or wrong session)", async () => {
+    mockExecute.mockResolvedValueOnce(0);
+    expect(await repo.consumeIfUnconsumed(PREQUOTE_ID, SESSION_ID)).toBe(false);
+  });
+
+  it("maps consumed_at on findLatestFreshByMatch when present", async () => {
+    mockQueryOne.mockResolvedValueOnce(
+      fullRow({ consumed_at: "2026-06-04T10:05:00.000Z" }),
+    );
+    // Note: the SQL predicate excludes consumed rows; this only pins mapRow.
+    const row = await repo.findLatestFreshByMatch(SESSION_ID, MATCH_HASH, "swap");
+    expect(row?.consumedAt).toBe("2026-06-04T10:05:00.000Z");
   });
 });
