@@ -30,7 +30,11 @@ import {
   getSolanaConnection,
   signAndSubmitLegacyTxStaged,
 } from "@tools/solana-ecosystem/shared/solana-transaction.js";
-import { solanaExplorerUrl } from "@tools/solana-ecosystem/shared/solana-validation.js";
+import {
+  parsePositiveDecimalToAtomic,
+  solanaExplorerUrl,
+  SOL_DECIMALS,
+} from "@tools/solana-ecosystem/shared/solana-validation.js";
 import { resolveJupiterToken } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
 
 import type { WalletIntent } from "@vex-agent/db/repos/wallet-intents.js";
@@ -72,7 +76,9 @@ export async function executeSolanaTransfer(
       || intent.token === "native"
       || intent.token.toUpperCase() === "SOL"
     ) {
-      const lamports = BigInt(Math.round(Number(intent.amount) * 1e9));
+      // String → lamports (no float). Zero atomic is rejected so a
+      // positive-looking amount cannot become a zero-size transfer.
+      const lamports = parsePositiveDecimalToAtomic(intent.amount, SOL_DECIMALS);
       const balance = await connection.getBalance(keypair.publicKey);
       if (BigInt(balance) < lamports) {
         return preBroadcastFailed(
@@ -122,16 +128,15 @@ export async function executeSolanaTransfer(
         keypair.publicKey,
       );
       const sourceAccount = await getAccount(connection, sourceAtaAddress);
-      const atomicAmount = BigInt(
-        Math.round(Number(intent.amount) * 10 ** tokenMeta.decimals),
-      );
+      const mintInfo = await getMint(connection, mintPubkey);
+      const decimals = tokenMeta.decimals || mintInfo.decimals;
+      // String → atoms (no float); reject zero atomic before balance check.
+      const atomicAmount = parsePositiveDecimalToAtomic(intent.amount, decimals);
       if (sourceAccount.amount < atomicAmount) {
         return preBroadcastFailed(
           new Error(`Insufficient token balance for ${intent.token}`),
         );
       }
-      const mintInfo = await getMint(connection, mintPubkey);
-      const decimals = tokenMeta.decimals || mintInfo.decimals;
 
       transaction = new Transaction();
       if (!destinationAtaExists) {
