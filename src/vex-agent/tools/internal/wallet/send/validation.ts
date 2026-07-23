@@ -8,6 +8,11 @@
  * in the executors.
  */
 
+import {
+  parsePositiveDecimalToAtomic,
+  SOL_DECIMALS,
+} from "@tools/solana-ecosystem/shared/solana-validation.js";
+
 import type { ToolResult } from "../../../types.js";
 import { str } from "../../types.js";
 
@@ -52,6 +57,26 @@ export function validatePrepareParams(
   const numAmount = Number(amount);
   if (!Number.isFinite(numAmount) || numAmount <= 0) {
     return { ok: false, result: fail(`Invalid amount: ${amount}`) };
+  }
+
+  // Solana native/SOL: decimals are known at prepare. Reject amounts that
+  // cannot become at least one lamport so we never create an intent that
+  // later executes as a zero-size transfer. SPL mints need token metadata
+  // for decimals — those are checked at execute with the same converter.
+  if (network === "solana") {
+    const isNative =
+      token === null
+      || token === "native"
+      || token.toUpperCase() === "SOL";
+    if (isNative) {
+      try {
+        parsePositiveDecimalToAtomic(amount, SOL_DECIMALS);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : `Invalid amount: ${amount}`;
+        return { ok: false, result: fail(message) };
+      }
+    }
   }
 
   return { ok: true, values: { network, to, amount, token, chain } };
