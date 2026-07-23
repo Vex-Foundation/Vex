@@ -46,6 +46,10 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   token_check: async () => (await import("../internal/action-aliases.js")).handleTokenCheck,
   bridge_status: async () => (await import("../internal/action-aliases.js")).handleBridgeStatus,
   bridge_quote: async () => (await import("../internal/action-aliases.js")).handleBridgeQuote,
+  // Hidden Relay-fallback bridge preview (bridge factory W5) — route-bound reveal
+  // gate is enforced INSIDE the handler + at the executeProtocolTool chokepoint,
+  // not by tool-list visibility alone.
+  bridge_quote_relay: async () => (await import("../internal/action-aliases.js")).handleBridgeQuoteRelay,
 
   // Mission
   mission_draft_update: async () => (await import("../internal/mission.js")).handleMissionDraftUpdate,

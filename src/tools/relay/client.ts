@@ -1,9 +1,14 @@
 /**
  * Relay (api.relay.link) HTTP client — KEYLESS cross-chain bridge.
  *
- * GET /chains (cached, TTL 1h), POST /quote, GET /intents/status/v3. No API key
- * anywhere (Relay's public rate limit — 50 quotes/min/IP — fits a per-user
+ * GET /chains (cached, TTL 1h), POST /quote/v2, GET /intents/status/v3. No API
+ * key anywhere (Relay's public rate limit — 50 quotes/min/IP — fits a per-user
  * desktop). Every response is Zod-validated at this boundary (see ./types.ts).
+ *
+ * QUOTE MIGRATION (Wave-2 W2): quotes go to `POST /quote/v2` — v1 `POST /quote`
+ * is deprecated. v2 adds a top-level `requestId` and per-side USD under
+ * `details{}`; the step/status shapes are unchanged, so this is endpoint-path +
+ * response-schema only (no signature change).
  */
 
 import { loadConfig } from "../../config/store.js";
@@ -25,7 +30,9 @@ const CHAINS_TTL_MS = 60 * 60 * 1000; // 1h
 /**
  * Canonical Relay intent-status path. Single source of truth: used both to build
  * the status request AND to validate a quote's step `check.endpoint` before we
- * trust the requestId it carries (see relay/execute deriveRequestId).
+ * trust the requestId it carries (see relay/execute
+ * `parseRequestIdFromCheckEndpoint` and the correlation contract in
+ * relay/correlation.ts).
  */
 export const RELAY_INTENT_STATUS_PATH = "/intents/status/v3";
 
@@ -84,7 +91,7 @@ export class RelayClient {
   }
 
   getQuote(request: RelayQuoteRequest): Promise<RelayQuoteResponse> {
-    return this.request("/quote", (raw) => RelayQuoteResponseSchema.parse(raw), {
+    return this.request("/quote/v2", (raw) => RelayQuoteResponseSchema.parse(raw), {
       method: "POST",
       body: request,
     });

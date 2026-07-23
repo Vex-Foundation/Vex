@@ -36,6 +36,7 @@ import { z } from "zod";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./internal/swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
+import { evaluateRelayRevealGate } from "./registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 
 /** A resolved target for a mutating protocol-alias. */
@@ -343,6 +344,77 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
   return { toolId: "khalani.bridge", params };
 }
 
+// ── bridge_execute_relay — HIDDEN Relay-only bridge EXECUTE (route-bound reveal) ──
+
+/**
+ * `bridge_execute_relay` alias args — the Relay subset of the bridge contract
+ * (no referrer/fee/filler/fromAddress surface; those are Khalani-only). Mirrors
+ * the Relay branch of the generic `bridge` router so quote↔execute currencies
+ * and chains collide on the venue-bound prequote identity.
+ */
+const BridgeExecuteRelayArgs = z
+  .object({
+    fromChain: z.string().min(1, { message: "fromChain is required" }),
+    fromToken: z.string().min(1, { message: "fromToken is required" }),
+    toChain: z.string().min(1, { message: "toChain is required" }),
+    toToken: z.string().min(1, { message: "toToken is required" }),
+    amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+    tradeType: z.string().min(1).optional(),
+    recipient: z.string().min(1).optional(),
+    refundTo: z.string().min(1).optional(),
+    slippageBps: z.string().min(1).optional(),
+  })
+  .strict();
+
+type BridgeExecuteRelayArgs = z.infer<typeof BridgeExecuteRelayArgs>;
+
+/**
+ * Resolve the hidden `bridge_execute_relay` alias to `relay.bridge` + translated
+ * params (bridge factory W5; plan R7/R8). ALWAYS targets Relay (the generic
+ * `bridge` router stays Khalani-routed except its local-chain exception). The
+ * ROUTE-BOUND reveal gate is checked here for an early, clean rejection (throws
+ * `MutatingAliasRouteError` on deny); `executeProtocolTool`'s own gate on
+ * `relay.bridge` is the un-bypassable backstop. Local (Robinhood) routes pass
+ * via the always-allowed carve-out. `sessionId === undefined` (the
+ * classification-only call site) makes the non-local branch throw, which
+ * correctly falls back to the registry's static `mutating` flag there.
+ */
+function routeBridgeExecuteRelay(
+  args: Record<string, unknown>,
+  sessionId: string | undefined,
+): ResolvedAliasTarget {
+  if (evaluateRelayRevealGate(args, sessionId).decision === "deny") {
+    throw new MutatingAliasRouteError(
+      "bridge_execute_relay is not available for this route yet — it unlocks after an eligible "
+        + "Khalani no-route failure for this exact route (Robinhood routes are always available via "
+        + "bridge). Preview with bridge_quote_relay first.",
+    );
+  }
+
+  const parsed = BridgeExecuteRelayArgs.safeParse(args);
+  if (!parsed.success) {
+    throw new MutatingAliasRouteError(
+      `bridge_execute_relay: ${parsed.error.issues
+        .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
+        .join("; ")}`,
+    );
+  }
+  const a: BridgeExecuteRelayArgs = parsed.data;
+
+  const params: Record<string, unknown> = {
+    fromChain: a.fromChain,
+    fromToken: a.fromToken,
+    toChain: a.toChain,
+    toToken: a.toToken,
+    amount: a.amount,
+  };
+  if (a.tradeType !== undefined) params.tradeType = a.tradeType;
+  if (a.recipient !== undefined) params.recipient = a.recipient;
+  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
+  if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
+  return { toolId: "relay.bridge", params };
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────
 
 /**
@@ -360,6 +432,7 @@ export const MUTATING_PROTOCOL_ALIAS_ROUTERS: Readonly<Record<string, MutatingAl
   swap_execute: routeSwap,
   swap_execute_uniswap: routeSwapExecuteUniswap,
   bridge: routeBridge,
+  bridge_execute_relay: routeBridgeExecuteRelay,
 };
 
 /** True iff `name` is a registered mutating protocol-alias (dedicated dispatch). */

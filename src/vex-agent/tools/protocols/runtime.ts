@@ -39,6 +39,7 @@ import logger from "@utils/logger.js";
 import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
 import { evaluateHyperliquidCollateralGate, evaluateHyperliquidProtectionGate } from "./hyperliquid/protection-gate.js";
 import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { REVEAL_GATED_RELAY_TOOL_IDS, evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
 
@@ -123,6 +124,27 @@ export async function executeProtocolTool(
       output: `${request.toolId} is not available yet for this session — it unlocks after an eligible `
         + `KyberSwap route-not-found failure (try swap_quote first).`,
     }, effectiveActionKind);
+  }
+
+  // All-path ROUTE-BOUND reveal gate for the hidden Relay bridge pair (bridge
+  // factory W5; plan R7/R8/R9). Same chokepoint rationale as Uniswap above:
+  // `execute_tool` can forward `relay.quote.get` / `relay.bridge` straight here,
+  // bypassing the alias-level checks. Local-chain (Robinhood) routes are the
+  // static Relay path and ALWAYS pass; every other route needs an active reveal
+  // for that EXACT normalized route in this session. `evaluateRelayRevealGate`
+  // runs its OWN strict param parse (R8) and fail-closes on an unresolvable or
+  // incomplete route — the raw params never decide the gate un-parsed.
+  if (REVEAL_GATED_RELAY_TOOL_IDS.has(request.toolId)) {
+    const relayGate = evaluateRelayRevealGate(params, context.sessionId);
+    if (relayGate.decision === "deny") {
+      logger.info("protocol.execute.relay_reveal_denied", { toolId: request.toolId, reason: relayGate.reason });
+      return withActionKind({
+        success: false,
+        output: `${request.toolId} is not available for this route yet — general-purpose Relay bridging `
+          + `unlocks only after an eligible Khalani no-route failure for this exact route (bridges to/from `
+          + `Robinhood Chain are always available). Try bridge_quote first.`,
+      }, effectiveActionKind);
+    }
   }
 
   // Normalize the wallet scope so the deny-guard + migrated handlers never see

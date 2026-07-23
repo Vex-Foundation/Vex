@@ -39,7 +39,7 @@ describe("RelayClient", () => {
     expect(chains.map((c) => c.id)).toEqual([4663, 8453]);
   });
 
-  it("getQuote validates the step tx shape (to/value/data/chainId) + tolerant details legs", async () => {
+  it("getQuote hits /quote/v2 and validates steps + v2 requestId + tolerant details/USD", async () => {
     okResponse({
       steps: [{
         id: "deposit", kind: "transaction", requestId: "0xreq",
@@ -48,9 +48,10 @@ describe("RelayClient", () => {
       fees: { gas: {} },
       details: {
         operation: "bridge",
-        currencyIn: { currency: { symbol: "ETH", decimals: 18 }, amount: "1000", amountFormatted: "0.000000000000001" },
+        currencyIn: { currency: { symbol: "ETH", decimals: 18 }, amount: "1000", amountFormatted: "0.000000000000001", amountUsd: "2.50" },
         currencyOut: { currency: { symbol: "ETH", decimals: 18 } },
       },
+      requestId: "0xtop",
     });
     const q = await client.getQuote({
       user: "0x1111111111111111111111111111111111111111",
@@ -58,15 +59,23 @@ describe("RelayClient", () => {
       refundTo: "0x1111111111111111111111111111111111111111",
       originChainId: 8453, destinationChainId: 4663,
       originCurrency: RELAY_NATIVE_CURRENCY, destinationCurrency: RELAY_NATIVE_CURRENCY,
-      amount: "1000", tradeType: "EXACT_INPUT",
+      amount: "1000", tradeType: "EXPECTED_OUTPUT",
     });
+    // Deprecated v1 `/quote` is gone — the migration must POST /quote/v2.
+    const requestedUrl = String(http.fetchWithTimeout.mock.calls[0]![0]);
+    expect(requestedUrl).toContain("/quote/v2");
+    expect(http.fetchWithTimeout.mock.calls[0]![1]).toMatchObject({ method: "POST" });
     expect(q.steps[0]!.kind).toBe("transaction");
     expect(q.steps[0]!.items[0]!.data?.chainId).toBe(8453);
     expect(q.steps[0]!.requestId).toBe("0xreq");
+    // v2 top-level requestId + per-side USD survive the tolerant schema.
+    expect(q.requestId).toBe("0xtop");
+    expect(q.details?.currencyIn?.amountUsd).toBe("2.50");
     // details legs (symbol + human amount) survive the tolerant schema.
     expect(q.details?.currencyIn?.currency?.symbol).toBe("ETH");
     expect(q.details?.currencyIn?.amountFormatted).toBe("0.000000000000001");
     expect(q.details?.currencyOut?.amountFormatted).toBeUndefined();
+    expect(q.details?.currencyOut?.amountUsd).toBeUndefined();
   });
 
   it("rejects a malformed step (non-address `to`)", async () => {

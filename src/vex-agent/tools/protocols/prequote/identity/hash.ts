@@ -327,8 +327,15 @@ export type PrequoteMatchInput =
   | LpAddMatchInput
   | LpRemoveMatchInput;
 
-/** Canonical bridge trade direction; mirrors `parseTradeType` in khalani/request. */
-export type BridgeTradeType = "EXACT_INPUT" | "EXACT_OUTPUT";
+/**
+ * Canonical bridge trade direction. `EXACT_INPUT`/`EXACT_OUTPUT` mirror
+ * `parseTradeType` in khalani/request; `EXPECTED_OUTPUT` is a DISTINCT Relay
+ * value (Wave-2 W2, R10) — Relay's recommended plain-bridge mode. Bound verbatim
+ * into `bridgeHashMaterial`, so an `EXPECTED_OUTPUT` quote↔execute produces a
+ * digest distinct from `EXACT_INPUT` (no longer collapsed). Widening this union
+ * is additive: Khalani's `parseBridgeTradeType` still returns only the first two.
+ */
+export type BridgeTradeType = "EXACT_INPUT" | "EXACT_OUTPUT" | "EXPECTED_OUTPUT";
 
 /**
  * Canonicalize an address/mint for the match-hash. EVM addresses are

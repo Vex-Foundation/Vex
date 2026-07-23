@@ -109,7 +109,11 @@ import {
   type UsdField,
 } from "@shared/schemas/token-history.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
-import { resolveAgentActivityAmount } from "./agent-activity-amount.js";
+import { coerceBridgeLegs } from "@shared/schemas/bridge-legs.js";
+import {
+  resolveAgentActivityAmount,
+  resolveBridgeActivityAmount,
+} from "./agent-activity-amount.js";
 import { resolveInventoryWalletAddresses } from "./inventory-wallets.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -329,6 +333,21 @@ interface PageRow {
   /** `agent_activity` only — token decimals, needed to format the raw executed amount. */
   readonly token_in_decimals: number | null;
   readonly token_out_decimals: number | null;
+  /** `agent_activity` BRIDGE logical row only — provider order id; `null` otherwise. */
+  readonly provider_order_id: string | null;
+  /**
+   * `agent_activity` BRIDGE logical row only — `jsonb_agg(...)` of every
+   * sibling leg (parsed to a JS array by node-postgres), or `null`. Coerced
+   * via `coerceBridgeLegs`; carries the per-leg chain + hash the renderer turns
+   * into explorer links (NEVER truncated — OWNER RULE).
+   */
+  readonly legs: unknown;
+  /**
+   * `agent_activity` only — last SUCCESSFUL sweep check (`last_checked_at`),
+   * surfaced on the DTO for BRIDGE logical rows only (R12 tracking-delay);
+   * `null`/absent on the legacy arms. `Date`/string per node-postgres.
+   */
+  readonly last_checked_at?: string | Date | null;
 }
 
 function toIso(value: string | Date): string {
@@ -406,6 +425,19 @@ function agentActivityAmountField(
     : { value, unitProvenance: "human" };
 }
 
+/**
+ * Wrap a BRIDGE amount value (already resolved via `resolveBridgeActivityAmount`
+ * per BINDING Q2) as an `AmountField`. A resolved value is ALWAYS a human
+ * decimal (executed truth or a labelled quote estimate); the `estimated` vs
+ * `executed` distinction rides the entry-level `amountBasis`, not the unit
+ * provenance (both are honest human units, unlike a raw wei string).
+ */
+function bridgeAmountField(value: string | null): AmountField {
+  return value === null
+    ? { value: null, unitProvenance: "unknown" }
+    : { value, unitProvenance: "human" };
+}
+
 const TOKEN_HISTORY_SWAP_STATUSES = ["pending", "confirmed", "failed"] as const;
 type TokenHistorySwapStatus = (typeof TOKEN_HISTORY_SWAP_STATUSES)[number];
 
@@ -448,16 +480,71 @@ function mapEntry(row: PageRow): TokenHistoryEntry {
   }
 
   if (row.source_kind === "agent_activity") {
-    // event_role='swap' only (the SQL WHERE clause already excludes
-    // allowance rows) — always a swap entry, never bridge/transfer. Amount
-    // provenance is status-dependent (C20 — see `agentActivityAmountField`);
-    // no dot-detection heuristic gates a whole-number result (C27). USD
-    // provenance is NOT status-dependent (C35 — see the module header's USD
-    // HONESTY note): `usd_in/out_est` is always a quote-time estimate, so
-    // both legs are tagged `"estimated"` regardless of `status`.
-    // `localSymbol` fallback is unnecessary — `token_in/out_symbol` are
-    // authoritative on-chain reads, not a legacy raw-address gap to fill.
     const status = toTokenHistorySwapStatus(row.status);
+
+    // A bridge's LOGICAL row (`event_role = 'bridge_fill_expected'`, migration
+    // 045) → a `kind: "bridge"` entry: from→to chains from the route endpoints
+    // (`chain` = origin, `dest_chain` = destination — set in SQL), status
+    // (`pending` = still settling, tracked; `bridge_refunded` distinguishes a
+    // money-returned outcome), amounts per BINDING Q2, and `legs[]` carrying
+    // every sibling leg's chain + hash (the renderer builds per-leg explorer
+    // links from `legs`, NEVER truncated — OWNER RULE — so `txRefs` stays empty
+    // for bridges; legacy `proj_activity` bridges keep using `txRefs`).
+    if (row.product_type === "bridge") {
+      const inRes = resolveBridgeActivityAmount(
+        status,
+        row.input_amount,
+        row.executed_amount_in_raw,
+        row.token_in_decimals,
+      );
+      const outRes = resolveBridgeActivityAmount(
+        status,
+        row.output_amount,
+        row.executed_amount_out_raw,
+        row.token_out_decimals,
+      );
+      return {
+        kind: "bridge",
+        id: row.source_id,
+        createdAt: toIso(row.created_at),
+        originChain: row.chain ?? "unknown",
+        destinationChain: row.dest_chain,
+        venue: row.namespace,
+        input: {
+          token: row.input_token_address,
+          symbol: sanitizeTokenSymbol(row.input_token_symbol),
+          localSymbol: null,
+          amount: bridgeAmountField(inRes.value),
+          valueUsd: usdField(row.input_value_usd, "estimated"),
+        },
+        output: {
+          token: row.output_token_address,
+          symbol: sanitizeTokenSymbol(row.output_token_symbol),
+          localSymbol: null,
+          amount: bridgeAmountField(outRes.value),
+          valueUsd: usdField(row.output_value_usd, "estimated"),
+        },
+        captureStatus: null,
+        txRefs: [],
+        status,
+        failureCode: row.failure_code,
+        providerOrderId: row.provider_order_id ?? null,
+        // executed_* are populated together (B4); prefer the output basis.
+        amountBasis: outRes.basis ?? inRes.basis,
+        legs: coerceBridgeLegs(row.legs),
+        // R12: last successful sweep check — the renderer flags a stale pending
+        // bridge "tracking delayed". `null` when never checked.
+        lastCheckedAt: row.last_checked_at != null ? toIso(row.last_checked_at) : null,
+      };
+    }
+
+    // event_role='swap' → a swap entry. Amount provenance is status-dependent
+    // (C20 — see `agentActivityAmountField`); no dot-detection heuristic gates
+    // a whole-number result (C27). USD provenance is NOT status-dependent (C35
+    // — see the module header's USD HONESTY note): `usd_in/out_est` is always a
+    // quote-time estimate, so both legs are tagged `"estimated"` regardless of
+    // `status`. `localSymbol` fallback is unnecessary — `token_in/out_symbol`
+    // are authoritative on-chain reads, not a legacy raw-address gap to fill.
     return {
       kind: "swap",
       id: row.source_id,
@@ -514,6 +601,10 @@ function mapEntry(row: PageRow): TokenHistoryEntry {
   };
 
   if (row.product_type === "bridge") {
+    // Legacy `proj_activity` bridge (pre-migration-045, success-only): no
+    // durable lifecycle, no provider order id, no per-leg breakdown — the new
+    // agent_activity-only fields are null/empty here (the DTO defaults them so
+    // pre-existing payloads still parse).
     return {
       kind: "bridge",
       id: row.source_id,
@@ -525,6 +616,11 @@ function mapEntry(row: PageRow): TokenHistoryEntry {
       output,
       captureStatus: row.capture_status,
       txRefs,
+      status: null,
+      failureCode: null,
+      providerOrderId: null,
+      amountBasis: null,
+      legs: [],
     };
   }
 
@@ -692,7 +788,10 @@ export async function getTokenHistory(
         NULL::text AS executed_amount_in_raw,
         NULL::text AS executed_amount_out_raw,
         NULL::smallint AS token_in_decimals,
-        NULL::smallint AS token_out_decimals
+        NULL::smallint AS token_out_decimals,
+        NULL::text AS provider_order_id,
+        NULL::jsonb AS legs,
+        NULL::timestamptz AS last_checked_at
       FROM proj_activity a
       LEFT JOIN protocol_capture_items ci
         ON ci.id = a.capture_item_id AND ci.execution_id = a.execution_id
@@ -750,7 +849,10 @@ export async function getTokenHistory(
         NULL::text AS executed_amount_in_raw,
         NULL::text AS executed_amount_out_raw,
         NULL::smallint AS token_in_decimals,
-        NULL::smallint AS token_out_decimals
+        NULL::smallint AS token_out_decimals,
+        NULL::text AS provider_order_id,
+        NULL::jsonb AS legs,
+        NULL::timestamptz AS last_checked_at
       FROM wallet_intents wi
       WHERE wi.wallet_address = ANY($${walletsParam}::text[])
         AND wi.status = 'executed'
@@ -760,16 +862,24 @@ export async function getTokenHistory(
         AND ${addr("wi.token")} = $${addressParam}
         ${intentKeyset}`;
 
-    // agent_activity half (Agent Scan plan §4.1/§4.7): EXACT match on the
-    // real `chain_id` column (no free-text alias dance) and the real
-    // token_in/out_address columns (no JSONB resolution) — `event_role =
-    // 'swap'` excludes allowance-plumbing rows. `status` collapses the DB's
-    // 3-value enum to the DTO's `pending | confirmed | failed` here in SQL
-    // so the JS mapper stays a plain pass-through (mirrors `moves-db.ts`).
-    // `input_amount`/`output_amount` here are ONLY the quote-time REQUESTED
-    // echo — the JS mapper (`agentActivityAmountField`, C20) decides per-row
-    // whether to show that or the raw-computed EXECUTED amount (never both
-    // COALESCE'd in SQL — see the module header).
+    // agent_activity half (Agent Scan plan §4.1/§4.7 + Phase 2 bridges):
+    // surfaces a SWAP row (`event_role = 'swap'`) OR a bridge's LOGICAL row
+    // (`event_role = 'bridge_fill_expected'`, migration 045) — allowance/
+    // deposit/observed-fill/refund rows are execution detail carried only
+    // inside `legs`. `product_type` derives from `kind`. Match is EXACT (real
+    // BIGINT `chain_id` + real token address columns, no free-text dance):
+    //  - a SWAP matches its single `chain_id`;
+    //  - a BRIDGE matches LEG-AWARE — the origin leg (`from_chain_id` +
+    //    `token_in_address`) OR the destination leg (`to_chain_id` +
+    //    `token_out_address`) — because a bridge's two legs live on DIFFERENT
+    //    chains (mirrors the leg-aware match on the legacy `proj_activity`
+    //    half). For a bridge, `chain` is the ORIGIN and `dest_chain` the
+    //    destination (route endpoints), while the per-leg hashes ride `legs`.
+    // `status` collapses the DB's 3-value enum here; `input_amount`/
+    // `output_amount` are the quote-time REQUESTED echo — the JS mapper
+    // (`agentActivityAmountField` C20 for swaps / `resolveBridgeActivityAmount`
+    // Q2 for bridges) decides what to show. `legs` (jsonb_agg, NO LIMIT — OWNER
+    // RULE) aggregates every sibling leg of a bridge execution.
     const agentActivityHalf = `
       SELECT
         'agent_activity'::text AS source_kind,
@@ -778,10 +888,14 @@ export async function getTokenHistory(
         aa.created_at,
         ${cursorTsExpr("aa.created_at")} AS cursor_ts,
         aa.protocol AS namespace,
-        'spot'::text AS product_type,
+        CASE aa.kind WHEN 'bridge' THEN 'bridge' ELSE 'spot' END AS product_type,
         NULL::text AS trade_side,
-        COALESCE(aa.chain_slug, aa.chain_id::text) AS chain,
-        NULL::text AS dest_chain,
+        CASE WHEN aa.kind = 'bridge'
+          THEN COALESCE(aa.from_chain_slug, aa.from_chain_id::text)
+          ELSE COALESCE(aa.chain_slug, aa.chain_id::text) END AS chain,
+        CASE WHEN aa.kind = 'bridge'
+          THEN COALESCE(aa.to_chain_slug, aa.to_chain_id::text)
+          ELSE NULL END AS dest_chain,
         aa.token_in_address AS input_token_address,
         aa.amount_in_human AS input_amount,
         aa.token_out_address AS output_token_address,
@@ -804,14 +918,43 @@ export async function getTokenHistory(
         aa.executed_amount_in_raw,
         aa.executed_amount_out_raw,
         aa.token_in_decimals,
-        aa.token_out_decimals
+        aa.token_out_decimals,
+        aa.provider_order_id,
+        CASE WHEN aa.kind = 'bridge' THEN (
+          SELECT jsonb_agg(jsonb_build_object(
+            'role', leg.event_role,
+            'chainId', leg.chain_id,
+            'chainFamily', leg.chain_family,
+            'txHash', leg.tx_hash,
+            'status', CASE leg.status WHEN 'definitively_failed' THEN 'failed' ELSE leg.status END,
+            'failureCode', leg.failure_code
+          ) ORDER BY leg.event_index)
+          FROM agent_activity leg
+          WHERE leg.protocol_execution_id = aa.protocol_execution_id
+        ) END AS legs,
+        -- R12: last SUCCESSFUL sweep check of a pending bridge's order status
+        -- (surfaced on the DTO for bridge logical rows only in the mapper).
+        aa.last_checked_at
       FROM agent_activity aa
       WHERE aa.wallet_address = ANY($${walletsParam}::text[])
-        AND aa.event_role = 'swap'
-        AND aa.chain_id = $${chainIdParam}::bigint
+        AND aa.event_role IN ('swap', 'bridge_fill_expected')
         AND (
-          ${addr("aa.token_in_address")} = $${addressParam}
-          OR ${addr("aa.token_out_address")} = $${addressParam}
+          (
+            aa.event_role = 'swap'
+            AND aa.chain_id = $${chainIdParam}::bigint
+            AND (
+              ${addr("aa.token_in_address")} = $${addressParam}
+              OR ${addr("aa.token_out_address")} = $${addressParam}
+            )
+          )
+          OR
+          (
+            aa.event_role = 'bridge_fill_expected'
+            AND (
+              (aa.from_chain_id = $${chainIdParam}::bigint AND ${addr("aa.token_in_address")} = $${addressParam})
+              OR (aa.to_chain_id = $${chainIdParam}::bigint AND ${addr("aa.token_out_address")} = $${addressParam})
+            )
+          )
         )
         ${agentActivityKeyset}`;
 

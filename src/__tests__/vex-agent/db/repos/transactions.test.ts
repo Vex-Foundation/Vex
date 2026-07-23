@@ -208,6 +208,168 @@ describe("agent_activity display amount (FIX2-SPINE C20, finding 5)", () => {
   });
 });
 
+// ── bridge feed (Agent Scan Phase 2, migration 045) ───────────────────────
+
+describe("agent_activity bridge feed (R14/B8/Q2)", () => {
+  it("emits product_type from kind and the legs jsonb_agg subquery (canonical row INCLUDED, no LIMIT)", async () => {
+    await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
+    const activityHalf = lastSql().split("FROM proj_activity")[0]!;
+    expect(activityHalf).toContain("CASE WHEN kind = 'bridge' THEN 'bridge' ELSE 'spot' END AS product_type");
+    // The legs subquery aggregates EVERY sibling leg keyed by the execution
+    // (the canonical bridge_fill_expected row included) — NO LIMIT (OWNER RULE).
+    expect(activityHalf).toContain("jsonb_agg(jsonb_build_object");
+    expect(activityHalf).toContain("leg.protocol_execution_id = agent_activity.protocol_execution_id");
+    expect(activityHalf).not.toMatch(/jsonb_agg[\s\S]*LIMIT/);
+    // Route + provider columns selected.
+    expect(activityHalf).toContain("from_chain_id");
+    expect(activityHalf).toContain("to_chain_id");
+    expect(activityHalf).toContain("provider_order_id");
+  });
+
+  it("maps a CONFIRMED bridge with executed evidence → executed amounts + route + legs", async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        source: "agent_activity", source_rank: 0, id: 20, namespace: "khalani",
+        product_type: "bridge", trade_side: null, chain: "arbitrum",
+        input_token: "USDC", input_amount: null, output_token: "USDC", output_amount: null,
+        value_usd: "2.0", capture_status: null, status: "confirmed",
+        failure_code: null, chain_id: 42161, protocol: "khalani",
+        tool_id: null, duration_ms: null,
+        amount_in_raw: "2000000", amount_out_raw: "1990000",
+        executed_amount_in_raw: "2000000", executed_amount_out_raw: "1988000",
+        token_in_decimals: 6, token_out_decimals: 6,
+        from_chain_id: 8453, from_chain_slug: "base",
+        to_chain_id: 42161, to_chain_slug: "arbitrum",
+        chain_family: "eip155", provider_order_id: "ord_123", provider_status: "filled",
+        legs: [
+          { eventIndex: 0, role: "bridge_deposit", chainId: 8453, chainSlug: "base", chainFamily: "eip155", txHash: "0xdeposit", status: "confirmed", failureCode: null },
+          { eventIndex: 1, role: "bridge_fill_expected", chainId: 42161, chainSlug: "arbitrum", chainFamily: "eip155", txHash: "0xfill", status: "confirmed", failureCode: null },
+        ],
+        tx_hash: "0xfill", created_at: "2026-07-22T10:00:00.000000Z",
+        cursor_ts: "2026-07-22T10:00:00.000000Z",
+      },
+    ]);
+    const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
+    const row = res.items[0]! as Record<string, unknown>;
+    expect(row.productType).toBe("bridge");
+    expect(row.amountBasis).toBe("executed");
+    expect(row.inputAmount).toBe("2"); // 2000000 / 10^6
+    expect(row.outputAmount).toBe("1.988"); // executed, NOT the 1.99 quote
+    expect(row.fromChainId).toBe(8453);
+    expect(row.fromChainSlug).toBe("base");
+    expect(row.toChainId).toBe(42161);
+    expect(row.chainFamily).toBe("eip155");
+    expect(row.providerOrderId).toBe("ord_123");
+    expect(row.providerStatus).toBe("filled");
+    const legs = row.legs as Array<Record<string, unknown>>;
+    expect(legs).toHaveLength(2);
+    expect(legs[0]?.role).toBe("bridge_deposit");
+    expect(legs[0]?.txHash).toBe("0xdeposit");
+    expect(legs[1]?.role).toBe("bridge_fill_expected");
+    expect(legs[1]?.chainId).toBe(42161);
+  });
+
+  it("maps a PENDING bridge → quoted amounts labelled 'estimated' (still settling, never blanked)", async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        source: "agent_activity", source_rank: 0, id: 21, namespace: "relay",
+        product_type: "bridge", trade_side: null, chain: "optimism",
+        input_token: "ETH", input_amount: null, output_token: "ETH", output_amount: null,
+        value_usd: null, capture_status: null, status: "pending",
+        failure_code: null, chain_id: 10, protocol: "relay",
+        tool_id: null, duration_ms: null,
+        amount_in_raw: "1000000000000000", amount_out_raw: "990000000000000",
+        executed_amount_in_raw: null, executed_amount_out_raw: null,
+        token_in_decimals: 18, token_out_decimals: 18,
+        from_chain_id: 8453, from_chain_slug: "base",
+        to_chain_id: 10, to_chain_slug: "optimism",
+        chain_family: "eip155", provider_order_id: "req_abc", provider_status: "pending",
+        legs: [
+          { eventIndex: 0, role: "bridge_deposit", chainId: 8453, chainSlug: "base", chainFamily: "eip155", txHash: "0xdep2", status: "confirmed", failureCode: null },
+          { eventIndex: 1, role: "bridge_fill_expected", chainId: 10, chainSlug: "optimism", chainFamily: "eip155", txHash: null, status: "pending", failureCode: null },
+        ],
+        tx_hash: null, created_at: "2026-07-22T10:00:00.000000Z",
+        cursor_ts: "2026-07-22T10:00:00.000000Z",
+      },
+    ]);
+    const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
+    const row = res.items[0]! as Record<string, unknown>;
+    expect(row.status).toBe("pending");
+    expect(row.amountBasis).toBe("estimated");
+    expect(row.inputAmount).toBe("0.001"); // the QUOTE, shown as estimate
+    expect(row.outputAmount).toBe("0.00099");
+    // The pending fill leg carries a null hash but is preserved (never dropped).
+    const legs = row.legs as Array<Record<string, unknown>>;
+    expect(legs).toHaveLength(2);
+    expect(legs[1]?.txHash).toBeNull();
+  });
+
+  it("maps a definitively_failed/refunded bridge → NO amount, failureCode preserved (money back ≠ success)", async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        source: "agent_activity", source_rank: 0, id: 22, namespace: "khalani",
+        product_type: "bridge", trade_side: null, chain: "arbitrum",
+        input_token: "USDC", input_amount: null, output_token: "USDC", output_amount: null,
+        value_usd: null, capture_status: null, status: "definitively_failed",
+        failure_code: "bridge_refunded", chain_id: 42161, protocol: "khalani",
+        tool_id: null, duration_ms: null,
+        amount_in_raw: "2000000", amount_out_raw: "1990000",
+        executed_amount_in_raw: null, executed_amount_out_raw: null,
+        token_in_decimals: 6, token_out_decimals: 6,
+        from_chain_id: 8453, from_chain_slug: "base",
+        to_chain_id: 42161, to_chain_slug: "arbitrum",
+        chain_family: "eip155", provider_order_id: "ord_ref", provider_status: "refunded",
+        legs: [
+          { eventIndex: 0, role: "bridge_deposit", chainId: 8453, chainSlug: "base", chainFamily: "eip155", txHash: "0xdep3", status: "confirmed", failureCode: null },
+          { eventIndex: 1, role: "bridge_fill_expected", chainId: 42161, chainSlug: "arbitrum", chainFamily: "eip155", txHash: null, status: "definitively_failed", failureCode: "bridge_refunded" },
+          { eventIndex: 2, role: "bridge_refund", chainId: 8453, chainSlug: "base", chainFamily: "eip155", txHash: "0xrefund", status: "confirmed", failureCode: null },
+        ],
+        tx_hash: null, created_at: "2026-07-22T10:00:00.000000Z",
+        cursor_ts: "2026-07-22T10:00:00.000000Z",
+      },
+    ]);
+    const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
+    const row = res.items[0]! as Record<string, unknown>;
+    expect(row.status).toBe("definitively_failed");
+    expect(row.failureCode).toBe("bridge_refunded");
+    expect(row.amountBasis).toBeNull();
+    expect(row.inputAmount).toBeNull();
+    expect(row.outputAmount).toBeNull();
+    // Every leg preserved, incl. the refund evidence row.
+    const legs = row.legs as Array<Record<string, unknown>>;
+    expect(legs).toHaveLength(3);
+    expect(legs[2]?.role).toBe("bridge_refund");
+    expect(legs[2]?.txHash).toBe("0xrefund");
+  });
+
+  it("a swap row carries null bridge fields (legs null) — swap shape unchanged", async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        source: "agent_activity", source_rank: 0, id: 23, namespace: "kyberswap",
+        product_type: "spot", trade_side: null, chain: "base",
+        input_token: "USDC", input_amount: null, output_token: "WETH", output_amount: null,
+        value_usd: null, capture_status: null, status: "pending",
+        failure_code: null, chain_id: 8453, protocol: "kyberswap",
+        tool_id: null, duration_ms: null,
+        amount_in_raw: "5000000", amount_out_raw: "2000000000000000",
+        executed_amount_in_raw: null, executed_amount_out_raw: null,
+        token_in_decimals: 6, token_out_decimals: 18,
+        from_chain_id: null, from_chain_slug: null, to_chain_id: null, to_chain_slug: null,
+        chain_family: null, provider_order_id: null, provider_status: null, legs: null,
+        tx_hash: null, created_at: "2026-07-22T10:00:00.000000Z",
+        cursor_ts: "2026-07-22T10:00:00.000000Z",
+      },
+    ]);
+    const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
+    const row = res.items[0]! as Record<string, unknown>;
+    expect(row.productType).toBe("spot");
+    expect(row.amountBasis).toBe("requested"); // swap rule, unchanged
+    expect(row.legs).toBeNull();
+    expect(row.fromChainId).toBeNull();
+    expect(row.providerOrderId).toBeNull();
+  });
+});
+
 // ── session scoping ────────────────────────────────────────────────────────
 
 describe("session scoping", () => {
@@ -245,7 +407,10 @@ describe("session scoping", () => {
   it("agent_activity is wallet-scoped, NOT session-scoped — present even without a session", async () => {
     await repo.getTransactions({ addresses: ADDRS, sessionId: null, limit: 20 });
     const sql = lastSql();
-    const activityHalf = sql.split("FROM agent_activity")[1]!;
+    // Anchor on the MAIN half's bare `FROM agent_activity\n` — the legs
+    // subquery (`FROM agent_activity leg`) and the legacy NOT EXISTS
+    // (`FROM agent_activity aa`) must not satisfy this split.
+    const activityHalf = sql.split("FROM agent_activity\n")[1]!;
     expect(activityHalf).toMatch(/wallet_address = ANY\(\$\d+::text\[\]\)/);
   });
 
@@ -281,11 +446,31 @@ describe("filters", () => {
     expect(hasAllowlistParam, "spot failure-tool allowlist bound as a param").toBe(true);
   });
 
-  it("a non-'spot' productType excludes agent_activity entirely (FALSE, no param bind)", async () => {
+  it("productType='bridge' includes agent_activity via kind='bridge' (NOT excluded) and only the logical row", async () => {
+    // Agent Scan Phase 2 (migration 045): 'bridge' now maps to `kind='bridge'`
+    // — it must NOT exclude the half (the pre-045 behavior). Only the LOGICAL
+    // row surfaces (its per-leg siblings ride `legs[]`).
     await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, productType: "bridge", limit: 20 });
     const sql = lastSql();
     const activityHalf = sql.split("FROM proj_activity")[0]!;
+    expect(activityHalf).not.toContain("FALSE");
+    expect(activityHalf).toContain("kind = 'bridge'");
+    // Bridges collapse to the logical row; swaps still emit every leg row.
+    expect(activityHalf).toContain("(kind = 'swap' OR event_role = 'bridge_fill_expected')");
+  });
+
+  it("a productType with NO agent_activity representation (perps) still excludes the half (FALSE, no param bind)", async () => {
+    await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, productType: "perps", limit: 20 });
+    const sql = lastSql();
+    const activityHalf = sql.split("FROM proj_activity")[0]!;
     expect(activityHalf).toContain("FALSE");
+  });
+
+  it("productType='spot' maps to kind='swap' on the agent_activity half", async () => {
+    await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, productType: "spot", limit: 20 });
+    const activityHalf = lastSql().split("FROM proj_activity")[0]!;
+    expect(activityHalf).toContain("kind = 'swap'");
+    expect(activityHalf).not.toContain("FALSE");
   });
 
   it("txHash filters ALL THREE halves", async () => {
@@ -296,7 +481,26 @@ describe("filters", () => {
     // success + failure both filter via external_refs->>'txHash'.
     const occurrences = sql.split("external_refs->>'txHash' = $").length - 1;
     expect(occurrences).toBe(2);
+    // The agent_activity half binds the hash param ONCE (reused across the
+    // own-hash + sibling-EXISTS disjunct); success + failure bind it once each.
     expect(lastParams().filter((p) => p === "0xDEAD")).toHaveLength(3);
+  });
+
+  it("txHash lookup is LEG-AWARE on the agent_activity half — a bridge matches by ANY sibling leg hash (m7)", async () => {
+    // Codex FIX-ROUND-1 m7: `agent_scan txHash=<deposit|refund|extra-fill>` must
+    // return the bridge's LOGICAL row (legs included), not miss it because the
+    // logical row's own tx_hash is only the FILL hash. The half matches the
+    // logical row when ANY leg of the same execution carries the hash, gated on
+    // the logical role so a swap leg's own-hash match is never widened.
+    await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, txHash: "0xDEP", limit: 20 });
+    const activityHalf = lastSql().split("FROM proj_activity")[0]!;
+    expect(activityHalf).toContain("event_role = 'bridge_fill_expected' AND EXISTS (");
+    expect(activityHalf).toContain(
+      "sib.protocol_execution_id = agent_activity.protocol_execution_id",
+    );
+    expect(activityHalf).toContain("sib.tx_hash = $");
+    // The own-hash disjunct still covers swap legs (each is its own feed row).
+    expect(activityHalf).toContain("tx_hash = $");
   });
 
   it("namespace filters ALL THREE halves", async () => {

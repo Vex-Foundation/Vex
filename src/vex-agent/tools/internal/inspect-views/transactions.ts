@@ -35,14 +35,29 @@ export interface InspectTransactionsParams {
 function buildExplorerRefs(items: readonly TransactionRow[]): Array<{ chain: string; txRef: string }> {
   const seen = new Set<string>();
   const refs: Array<{ chain: string; txRef: string }> = [];
-  for (const item of items) {
-    if (!item.txHash) continue;
-    const chain = item.chain ?? (item.chainId != null ? String(item.chainId) : null);
-    if (!chain) continue;
-    const key = `${chain}:${item.txHash}`;
-    if (seen.has(key)) continue;
+  const add = (chain: string | null, txRef: string | null | undefined): void => {
+    if (!chain || !txRef) return;
+    const key = `${chain}:${txRef}`;
+    if (seen.has(key)) return;
     seen.add(key);
-    refs.push({ chain, txRef: item.txHash });
+    refs.push({ chain, txRef });
+  };
+  for (const item of items) {
+    // A bridge logical row fans its on-chain hashes across its legs (deposit,
+    // fill, refund, extra fills) — each on its OWN chain. Derive a ref from
+    // EVERY leg, not only the row's top-level fill hash, so a pending deposit /
+    // refund / extra-fill link is never invisible (Codex FIX-ROUND-1 finding
+    // 13). The canonical fill leg is included in `legs`, so the top-level hash
+    // is still covered. Non-bridge rows keep the top-level-hash derivation.
+    if (item.legs && item.legs.length > 0) {
+      for (const leg of item.legs) {
+        const chain = leg.chainSlug ?? (leg.chainId != null ? String(leg.chainId) : null);
+        add(chain, leg.txHash);
+      }
+      continue;
+    }
+    const chain = item.chain ?? (item.chainId != null ? String(item.chainId) : null);
+    add(chain, item.txHash);
   }
   return refs;
 }
@@ -56,8 +71,53 @@ function leg(amount: string | null | undefined, token: string | null | undefined
   return amount != null && token != null ? `${amount} ${token}` : null;
 }
 
+/**
+ * A bridge amount leg. When the amount is a quote (Q2 `amountBasis:'estimated'`)
+ * it is marked explicitly (`~… est.`) so a quoted bridge amount never reads as
+ * an executed quantity (Codex FIX-ROUND-1 finding 12 / R14).
+ */
+function bridgeLeg(
+  amount: string | null | undefined,
+  token: string | null | undefined,
+  estimated: boolean,
+): string | null {
+  if (amount == null || token == null) return null;
+  return estimated ? `~${amount} ${token} est.` : `${amount} ${token}`;
+}
+
 function usdEstimate(value: number | null | undefined): string | null {
   return value != null && Number.isFinite(value) ? `~$${value.toFixed(2)} est.` : null;
+}
+
+/** Chain display for a bridge route endpoint — slug preferred, numeric id as fallback. */
+function routeEndpoint(slug: string | null | undefined, id: number | null | undefined): string | null {
+  return slug ?? (id != null ? String(id) : null);
+}
+
+/**
+ * Compact human line for a bridge logical row (Codex FIX-ROUND-1 finding 13):
+ * origin→destination route + amount marked by `amountBasis` + venue + status +
+ * the fill hash. A refund/failed row surfaces its failure code and drops the
+ * amount (money-back is not a settled quantity).
+ */
+function summarizeBridge(row: TransactionRow, hash: string | null): string {
+  const from = routeEndpoint(row.fromChainSlug, row.fromChainId);
+  const to = routeEndpoint(row.toChainSlug, row.toChainId);
+  const route = from && to ? `${from} → ${to}` : (from ?? to ?? "unknown route");
+  const venue = row.protocol ?? row.namespace;
+  const status = row.status ?? "pending";
+  const estimated = row.amountBasis === "estimated";
+  const inLeg = bridgeLeg(row.inputAmount, row.inputToken, estimated);
+  const outLeg = bridgeLeg(row.outputAmount, row.outputToken, estimated);
+  const amount = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? null);
+  const head = amount != null ? `Bridging ${amount} (${route})` : `Bridge ${route}`;
+
+  const parts = [`${head} via ${venue} — ${status}`];
+  const usd = usdEstimate(row.valueUsd ?? null);
+  if (usd) parts.push(usd);
+  if (row.failureCode) parts.push(`(${row.failureCode})`);
+  if (hash) parts.push(`tx ${hash}`);
+  return parts.join(" — ");
 }
 
 /** Compact human line for one row — leads the item, full fields follow. */
@@ -68,6 +128,14 @@ function summarize(row: TransactionRow): string {
     // Failure rows carry no economics (never produced a fill).
     const label = row.toolId ?? row.namespace;
     return hash ? `${label} failed (tx ${hash})` : `${label} failed — no tx broadcast`;
+  }
+
+  // Only the agent_activity bridge LOGICAL row carries the route endpoints,
+  // legs, and amountBasis the bridge line needs. A legacy `success`-sourced
+  // bridge (proj_activity, product_type 'bridge') has none of those and is a
+  // settled fill, so it keeps the generic line (its prior behavior).
+  if (row.source === "agent_activity" && row.productType === "bridge") {
+    return summarizeBridge(row, hash);
   }
 
   const chain = row.chain ?? "unknown chain";

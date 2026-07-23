@@ -16,12 +16,13 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 9 sync jobs (4 global + 5 per-namespace)", async () => {
+  it("inserts 11 sync jobs (5 global + 6 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
-    // removed the polymarket/balances post_mutation job (polymarket removed) —
-    // net count is unchanged (9), just redistributed.
+    // removed the polymarket/balances post_mutation job (polymarket removed).
+    // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
+    // and the relay/balances post_mutation job (khalani parity) — net 11.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(9);
+    expect(mockExecute).toHaveBeenCalledTimes(11);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -47,7 +48,7 @@ describe("seedSyncJobs", () => {
     const postMutationCalls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[3] === "post_mutation",
     );
-    expect(postMutationCalls).toHaveLength(5); // khalani, solana, kyberswap, pendle, hyperliquid (polymarket removed)
+    expect(postMutationCalls).toHaveLength(6); // khalani, solana, kyberswap, pendle, hyperliquid, relay (polymarket removed)
     for (const call of postMutationCalls) {
       expect((call[1] as unknown[])[4]).toBeNull(); // no interval
     }
@@ -84,6 +85,30 @@ describe("seedSyncJobs", () => {
     expect((settlementCall![1] as unknown[])[2]).toBeNull(); // no readToolId
     expect((settlementCall![1] as unknown[])[3]).toBe("periodic");
     expect((settlementCall![1] as unknown[])[4]).toBe(300);
+  });
+
+  it("seeds a relay post_mutation balances job (bridge balance refresh parity, W7b/B8)", async () => {
+    await seedSyncJobs();
+    const relayCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[0] === "relay",
+    );
+    expect(relayCall).toBeDefined();
+    expect((relayCall![1] as unknown[])[1]).toBe("balances"); // sync_type
+    expect((relayCall![1] as unknown[])[2]).toBe("khalani.tokens.balances"); // readToolId (khalani-backed reads)
+    expect((relayCall![1] as unknown[])[3]).toBe("post_mutation"); // strategy
+    expect((relayCall![1] as unknown[])[4]).toBeNull(); // no interval
+  });
+
+  it("seeds bridge_activity_repair periodic job with 120s interval (Phase-2 W4)", async () => {
+    await seedSyncJobs();
+    const bridgeCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "bridge_activity_repair",
+    );
+    expect(bridgeCall).toBeDefined();
+    expect((bridgeCall![1] as unknown[])[0]).toBe("_global");
+    expect((bridgeCall![1] as unknown[])[2]).toBeNull(); // no readToolId
+    expect((bridgeCall![1] as unknown[])[3]).toBe("periodic");
+    expect((bridgeCall![1] as unknown[])[4]).toBe(120);
   });
 
   it("seeds agent_activity_repair periodic job with 120s interval (Agent Scan)", async () => {

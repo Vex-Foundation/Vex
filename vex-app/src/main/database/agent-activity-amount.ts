@@ -68,3 +68,42 @@ export function resolveAgentActivityAmount(
   }
   return null;
 }
+
+/** Bridge amount + its provenance basis (BINDING Q2 — see `resolveBridgeActivityAmount`). */
+export interface BridgeAmountResolution {
+  readonly value: string | null;
+  readonly basis: "executed" | "estimated" | null;
+}
+
+/**
+ * Bridge amount rule (Agent Scan Phase 2, BINDING Q2 — DISTINCT from the swap
+ * rule above). A bridge's destination fill is SOLVER-signed and externally
+ * observed, so the executed amount is populated ONLY when the sweep decoded
+ * transfer/value evidence against the stored token+recipient (migration-045
+ * B4). Therefore:
+ *   - an independently-verified `executed_*` amount is shown as `"executed"`;
+ *   - otherwise, while the attempt is still live (`pending`) OR confirmed
+ *     without a decodable amount, the QUOTED amount is shown, explicitly
+ *     labelled `"estimated"` — never as settlement (unlike a swap, a bridge
+ *     never blanks a pending amount: "~X TOKEN est., still settling");
+ *   - a `failed`/refunded attempt shows NOTHING (the attempt did not complete;
+ *     the requested amount would misrepresent it — `bridge_refunded` is carried
+ *     separately as a status, not as a fake amount).
+ *
+ * Executed formatting reuses the same BigInt-safe `formatExecutedAmountHuman`
+ * as swaps (never `Number`/`parseFloat` on a base-unit integer string).
+ */
+export function resolveBridgeActivityAmount(
+  status: AgentActivitySwapStatus | null,
+  requestedHuman: string | null,
+  executedRaw: string | null,
+  decimals: number | null,
+): BridgeAmountResolution {
+  const executed = formatExecutedAmountHuman(executedRaw, decimals);
+  if (executed !== null) return { value: executed, basis: "executed" };
+  if (status === "failed") return { value: null, basis: null };
+  return {
+    value: requestedHuman,
+    basis: requestedHuman !== null ? "estimated" : null,
+  };
+}

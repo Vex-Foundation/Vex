@@ -106,6 +106,16 @@ export interface PromptStackOptions {
    */
   toolCatalogPrompt?: string;
   /**
+   * Pre-rendered DYNAMIC bridge-routing capability section from
+   * `buildBridgeCapabilityPrompt` — the live Khalani chain list (single-flight
+   * snapshot) plus a Relay-health-gated Robinhood line. TURN-STATE: the chain
+   * list is live, so it must NOT sit behind buildProtocolsPrompt()'s permanent
+   * cache (R13/B7). Built fail-soft in `buildTurnPromptStack`; a cold/absent
+   * snapshot renders the conservative "verify by quoting" fallback. Empty/
+   * undefined omits the section.
+   */
+  bridgeCapabilityPrompt?: string;
+  /**
    * Session-mode Hypervexing state generated from the same visibility context
    * as the Tool Map. TURN-STATE because workspace mode and policy can change
    * between turns.
@@ -233,6 +243,13 @@ export function buildPromptStack(
   // cannot drift.
   if (options.toolCatalogPrompt && options.toolCatalogPrompt.length > 0) {
     turnLayers.push(options.toolCatalogPrompt);
+  }
+  // Bridge routing (DYNAMIC): live Khalani chain list + gated Robinhood line.
+  // Sits with the Tool Map — capability/routing guidance the model reads
+  // together. Kept out of the static prefix so the live list never busts the
+  // KV-cache prefix.
+  if (options.bridgeCapabilityPrompt && options.bridgeCapabilityPrompt.length > 0) {
+    turnLayers.push(options.bridgeCapabilityPrompt);
   }
   if (options.hypervexingTurnStatePrompt && options.hypervexingTurnStatePrompt.length > 0) {
     turnLayers.push(options.hypervexingTurnStatePrompt);

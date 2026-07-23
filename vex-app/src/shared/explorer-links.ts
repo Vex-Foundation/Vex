@@ -31,6 +31,20 @@
  * coverage audit in `__tests__/explorer-links.test.ts` pins that every runtime
  * chain identity (KyberSwap CHAINS, evm-chains activityChainKeys, Solana,
  * HyperCore, HyperEVM) resolves through this map.
+ *
+ * BRIDGE resolution (Agent Scan Phase 2, R14): a bridge leg's explorer link is
+ * resolved ONLY through this curated map — provider (Khalani `/v1/chains`
+ * blockExplorers.default.url / Relay `explorerUrl`+`explorerPaths.transaction`)
+ * URLs are NEVER passed through raw; the renderer resolves each leg by its
+ * `chainFamily` (a `solana`-family leg → the `solana` explorer path, a signed
+ * base58 signature not a 0x hash — the provider-native Solana chain id, which
+ * differs across providers, is DELIBERATELY not used as a key). This phase's
+ * bridge routes (Base 8453, Arbitrum 42161, Optimism 10, Robinhood 4663,
+ * Solana) are ALL already curated above. A Khalani chain not yet curated
+ * (e.g. abstract/0g/katana/jovay — no verified explorer host in the repo or the
+ * research dossier) FAILS CLOSED to a non-interactive row (null), never a
+ * guessed or raw provider URL; adding it requires transcribing its VERIFIED
+ * explorer host here AND into `EXPLORER_EXTERNAL_ALLOW`.
  */
 
 /** Normalized chain alias → explorer tx-path base (trailing slash included). */

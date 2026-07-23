@@ -17,7 +17,11 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "relay.quote.get",
     namespace: "relay",
     lifecycle: "active",
-    description: "Preview a cross-chain bridge via Relay — routes, fees, ETA. The ONLY bridge to/from Robinhood Chain (Khalani doesn't cover it). Resolve token addresses first. `amount` is in smallest units (wei). Read-only.",
+    // Wording anchored on the Robinhood/local route (the always-allowed path) —
+    // the general-purpose non-local fallback is reveal-gated (W5) and surfaces
+    // only after an eligible Khalani no-route failure, never from this static
+    // manifest (no static leakage of the hidden pair).
+    description: "Preview a Relay bridge to/from Robinhood Chain (4663) — routes, fees, ETA, USD estimates. Relay is the direct bridge for Robinhood Chain (Khalani does not cover it). Resolve token addresses first. `amount` is in smallest units (wei). Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -37,7 +41,10 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "relay.bridge",
     namespace: "relay",
     lifecycle: "active",
-    description: "Execute a REAL cross-chain bridge via Relay (signs + broadcasts on the source chain). The ONLY bridge to/from Robinhood Chain (Khalani doesn't cover it). REQUIRES a fresh matching relay.quote.get first. `amount` is in smallest units (wei).",
+    // Robinhood/local-anchored wording (see relay.quote.get). Also states the
+    // truthful async contract: the call returns while the destination fill is
+    // still in progress — a returned bridge is NOT yet confirmed.
+    description: "Execute a REAL Relay bridge to/from Robinhood Chain (4663) — signs + broadcasts the origin-chain deposit; the solver fills on the destination. Relay is the direct bridge for Robinhood Chain (Khalani does not cover it). REQUIRES a fresh matching relay.quote.get first. `amount` is in smallest units (wei). The call returns while the destination fill is still IN PROGRESS — Vex tracks it automatically and finalizes the record when the fill is verified; a returned bridge is NOT yet confirmed.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

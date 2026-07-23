@@ -36,6 +36,10 @@
 
 import { z } from "zod";
 import { TOKEN_SYMBOL_MAX_LENGTH } from "../token-symbol-sanitizer.js";
+import {
+  bridgeAmountBasisSchema,
+  bridgeLegsSchema,
+} from "./bridge-legs.js";
 
 /**
  * Fixed server-side row cap. Shared by BOTH the SQL `LIMIT` and the DTO
@@ -180,6 +184,40 @@ export const moveItemSchema = z
     chain: z.string(),
     txRef: z.string().nullable(),
     walletAddress: z.string().nullable(),
+    /**
+     * BRIDGE ROWS ONLY (Agent Scan Phase 2 / R14). A bridge is a from→to
+     * event: `chain` above carries the logical row's own execution chain (the
+     * destination, where the fill hash lives), while `fromChain`/`toChain`
+     * carry the route endpoints for display. `null` on every swap/legacy row.
+     */
+    fromChain: z.string().nullable().default(null),
+    toChain: z.string().nullable().default(null),
+    /** Bridge rows only — the provider order id (Khalani orderId / Relay requestId); `null` otherwise. */
+    providerOrderId: z.string().max(128).nullable().default(null),
+    /**
+     * Bridge rows only (BINDING Q2) — whether `inputAmount`/`outputAmount` are
+     * the independently-verified executed amounts (`"executed"`) or the quoted
+     * amounts shown as an estimate (`"estimated"`); `null` when no honest
+     * amount is shown. Swap rows leave this `null` (their honesty is C20's
+     * status-driven `resolveAgentActivityAmount`).
+     */
+    amountBasis: bridgeAmountBasisSchema.nullable().default(null),
+    /**
+     * Bridge rows only (B8) — every leg (allowances, deposit, the canonical
+     * expected fill, extra observed fills, refunds) preserved for audit so a
+     * multi-leg bridge shows ONCE with its legs available. `[]` on swap/legacy
+     * rows. NEVER truncated (OWNER RULE).
+     */
+    legs: bridgeLegsSchema.default([]),
+    /**
+     * Bridge rows only (R12) — the timestamp of the last SUCCESSFUL sweep check
+     * of this pending bridge's provider order status (`agent_activity.
+     * last_checked_at`); `null` when never checked or on a swap/legacy row. The
+     * renderer flags a pending bridge as "tracking delayed" when this (or, when
+     * null, `createdAt`) is stale — see `shared/bridge-tracking.ts`. Defaults to
+     * `null` so legacy/swap payloads still parse.
+     */
+    lastCheckedAt: z.string().datetime({ offset: true }).nullable().default(null),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();

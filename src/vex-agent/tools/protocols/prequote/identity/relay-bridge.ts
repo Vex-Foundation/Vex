@@ -26,8 +26,19 @@ function relayStr(params: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * Parse the (untrusted) relay `tradeType` param into a DISTINCT identity value.
+ * `EXPECTED_OUTPUT` (Relay's recommended plain-bridge mode) is kept distinct from
+ * `EXACT_INPUT` (R10) so a quote and an execute that disagree on the trade
+ * direction produce different digests → the gate blocks. Applied IDENTICALLY at
+ * record-time and gate-time (both go through `buildRelayBridgeIdentity`), so a
+ * matching param still collides. Unknown/absent → `EXACT_INPUT` (unchanged
+ * default; the handler defaults the same way).
+ */
 function parseTradeType(raw: string): BridgeTradeType {
-  return raw === "EXACT_OUTPUT" ? "EXACT_OUTPUT" : "EXACT_INPUT";
+  if (raw === "EXACT_OUTPUT") return "EXACT_OUTPUT";
+  if (raw === "EXPECTED_OUTPUT") return "EXPECTED_OUTPUT";
+  return "EXACT_INPUT";
 }
 
 /**

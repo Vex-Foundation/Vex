@@ -14,7 +14,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.chains.list",
     namespace: "khalani",
     lifecycle: "active",
-    description: "List all Khalani-supported chains with metadata (40+ chains, EVM + Solana).",
+    description: "List all Khalani-supported chains with metadata (live registry, EVM + Solana).",
     mutating: false,
     actionKind: "read",
     params: [

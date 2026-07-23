@@ -340,6 +340,12 @@ describe("TokenHistoryScreen — entries", () => {
           },
           captureStatus: "executed",
           txRefs: [],
+          status: null,
+          failureCode: null,
+          providerOrderId: null,
+          amountBasis: null,
+          legs: [],
+          lastCheckedAt: null,
         },
       ]),
     ]);
@@ -349,6 +355,142 @@ describe("TokenHistoryScreen — entries", () => {
     expect(screen.getByText(/RELAY · base → arbitrum/)).not.toBeNull();
     // No output value → input USD is the fallback primary.
     expect(screen.getByText(/\$10\.00/)).not.toBeNull();
+  });
+
+  function bridgeEntry(
+    overrides: Partial<Extract<TokenHistoryEntry, { kind: "bridge" }>> & { readonly id: string },
+  ): TokenHistoryEntry {
+    return {
+      kind: "bridge",
+      createdAt: "2026-07-20T08:00:00+00:00",
+      originChain: "base",
+      destinationChain: "arbitrum",
+      venue: "khalani",
+      input: {
+        token: null,
+        symbol: "USDC",
+        localSymbol: null,
+        amount: { value: "2.0", unitProvenance: "human" },
+        valueUsd: { value: "2.00", usdProvenance: "estimated" },
+      },
+      output: {
+        token: null,
+        symbol: "USDC",
+        localSymbol: null,
+        amount: { value: "2.0", unitProvenance: "human" },
+        valueUsd: { value: "2.00", usdProvenance: "estimated" },
+      },
+      captureStatus: null,
+      txRefs: [],
+      status: null,
+      failureCode: null,
+      providerOrderId: "ord_1",
+      amountBasis: "estimated",
+      legs: [],
+      // Freshly checked by default so a pending bridge reads "settling"; the
+      // tracking-delay test overrides this with a long-past timestamp.
+      lastCheckedAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it("renders a PENDING bridge with the 'settling' chip (tracked, NOT a failure)", () => {
+    mockQuery([availablePage([bridgeEntry({ id: "b-p", status: "pending" })])]);
+    mountScreen();
+    expect(screen.getByText("settling")).not.toBeNull();
+    // A pending bridge is not a failure — no destructive 'failed' chip.
+    expect(screen.queryByText("failed")).toBeNull();
+  });
+
+  it("marks an ESTIMATED bridge amount with ~ and an 'est.' tag (R14 — quoted amount never reads as executed)", () => {
+    mockQuery([availablePage([bridgeEntry({ id: "b-est", status: "pending" })])]);
+    mountScreen();
+    // Both legs (input + output) carry the ~ estimate prefix; a single trailing
+    // "est." marker labels the row's quoted amounts. The amount cell is the
+    // `truncate` span whose text is "<amount> <symbol-fallback>" (the fixture's
+    // token=null renders the "?" display fallback), so match by element.
+    const estCells = screen.getAllByText((_, el) =>
+      el instanceof HTMLElement && el.classList.contains("truncate")
+      && /^~2\b/.test(el.textContent?.trim() ?? ""));
+    expect(estCells.length).toBe(2);
+    expect(screen.getByText("est.")).not.toBeNull();
+  });
+
+  it("renders an EXECUTED bridge amount bare — settled truth carries no estimate marker", () => {
+    mockQuery([
+      availablePage([
+        bridgeEntry({
+          id: "b-exec",
+          status: "confirmed",
+          amountBasis: "executed",
+        }),
+      ]),
+    ]);
+    mountScreen();
+    const bareCells = screen.getAllByText((_, el) =>
+      el instanceof HTMLElement && el.classList.contains("truncate")
+      && /^2\b/.test(el.textContent?.trim() ?? ""));
+    expect(bareCells.length).toBe(2);
+    expect(screen.queryByText(/~2/)).toBeNull();
+    expect(screen.queryByText("est.")).toBeNull();
+  });
+
+  it("reads 'tracking delayed' for a pending bridge whose sweep check is stale (R12), not the reassuring 'settling'", () => {
+    mockQuery([
+      availablePage([
+        bridgeEntry({
+          id: "b-delay",
+          status: "pending",
+          lastCheckedAt: "2020-01-01T00:00:00+00:00",
+        }),
+      ]),
+    ]);
+    mountScreen();
+    const chip = screen.getByText("tracking delayed");
+    expect(chip.getAttribute("title")).toContain("Tracking delayed");
+    expect(screen.queryByText("settling")).toBeNull();
+  });
+
+  it("renders a REFUNDED bridge as 'refunded' (money returned ≠ success, distinct from 'failed')", () => {
+    mockQuery([
+      availablePage([bridgeEntry({ id: "b-r", status: "failed", failureCode: "bridge_refunded", amountBasis: null })]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("refunded")).not.toBeNull();
+    expect(screen.queryByText("failed")).toBeNull();
+  });
+
+  it("renders a non-refund failed bridge as 'failed'", () => {
+    mockQuery([
+      availablePage([bridgeEntry({ id: "b-f", status: "failed", failureCode: "bridge_failed", amountBasis: null })]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("failed")).not.toBeNull();
+    expect(screen.queryByText("refunded")).toBeNull();
+  });
+
+  it("legs are collapsed by default and expand on click, listing each leg with an explorer link", () => {
+    mockQuery([
+      availablePage([
+        bridgeEntry({
+          id: "b-legs",
+          status: "confirmed",
+          legs: [
+            { role: "bridge_deposit", chainId: 8453, chainFamily: "eip155", txHash: "0xdep", status: "confirmed", failureCode: null },
+            { role: "bridge_fill_expected", chainId: 42161, chainFamily: "eip155", txHash: "0xfill", status: "confirmed", failureCode: null },
+          ],
+        }),
+      ]),
+    ]);
+    mountScreen();
+    // Collapsed: leg role labels not yet shown.
+    expect(screen.queryByText("DEPOSIT")).toBeNull();
+    const toggle = screen.getByText(/Show 2 legs/);
+    fireEvent.click(toggle);
+    expect(screen.getByText("DEPOSIT")).not.toBeNull();
+    expect(screen.getByText("FILL")).not.toBeNull();
+    // Each hashed leg exposes a curated-allowlist explorer link (never a raw URL).
+    expect(screen.getAllByLabelText(/Open .* leg on block explorer/).length).toBe(2);
   });
 });
 

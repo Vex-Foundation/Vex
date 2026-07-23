@@ -15,8 +15,11 @@
  *    numeric chain than the origin `chain` column);
  *  - `wallet_intents` inclusion (executed + hash) and exclusion
  *    (non-address token, wrong network);
- *  - `agent_activity` inclusion (Agent Scan plan §4.7): exact chain_id +
- *    token address match, event_role='swap' only, status collapse
+ *  - `agent_activity` inclusion (Agent Scan plan §4.7 + Phase 2 bridges):
+ *    a SWAP row matches its exact chain_id + token address; a BRIDGE logical
+ *    row (`event_role = 'bridge_fill_expected'`) matches LEG-AWARE (origin
+ *    from_chain_id+token_in OR dest to_chain_id+token_out) and maps to a
+ *    `kind: "bridge"` entry with legs/status/route; status collapse
  *    (definitively_failed → failed), failureCode passthrough, pending/failed
  *    rows surfaced (not just confirmed);
  *  - keyset pagination (limit+1 → nextCursor/hasMore) across all three arms;
@@ -693,5 +696,154 @@ describe("getTokenHistory — page-phase failure classification", () => {
       cursor: null,
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("getTokenHistory — agent_activity bridge (Agent Scan Phase 2)", () => {
+  function bridgeAgentRow(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      source_kind: "agent_activity",
+      source_rank: 2,
+      source_id: "00000000000000000030",
+      created_at: new Date("2026-07-20T10:00:00.000Z"),
+      cursor_ts: "2026-07-20T10:00:00.000000Z",
+      namespace: "khalani",
+      product_type: "bridge",
+      trade_side: null,
+      chain: "base", // origin (SQL sets chain = from_chain for bridges)
+      dest_chain: "arbitrum", // destination (to_chain)
+      input_token_address: TOKEN_ADDR_LOWER,
+      input_amount: "2.0",
+      output_token_address: "0xUSDCarb",
+      output_amount: "1.99",
+      input_value_usd: "2.00",
+      output_value_usd: "1.99",
+      unit_price_usd: null,
+      capture_status: null,
+      tx_ref: "0xfill",
+      input_token_symbol: "USDC",
+      input_token_local_symbol: null,
+      output_token_symbol: "USDC",
+      output_token_local_symbol: null,
+      to_address: null,
+      status: "confirmed",
+      failure_code: null,
+      executed_amount_in_raw: "2000000",
+      executed_amount_out_raw: "1988000",
+      token_in_decimals: 6,
+      token_out_decimals: 6,
+      provider_order_id: "ord_1",
+      legs: [
+        { role: "bridge_deposit", chainId: 8453, chainFamily: "eip155", txHash: "0xdep", status: "confirmed", failureCode: null },
+        { role: "bridge_fill_expected", chainId: 42161, chainFamily: "eip155", txHash: "0xfill", status: "confirmed", failureCode: null },
+      ],
+      last_checked_at: "2026-07-20T10:05:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("the agent_activity half surfaces bridge logical rows LEG-AWARE + product_type from kind + legs subquery", async () => {
+    scriptTransaction({ page: [] });
+    await getTokenHistory({ chainId: BASE_CHAIN_ID, tokenAddress: TOKEN_ADDR_LOWER, cursor: null });
+    const pageCall = mocks.query.mock.calls[2];
+    const sql = String(pageCall?.[0] ?? "");
+    expect(sql).toContain("aa.event_role IN ('swap', 'bridge_fill_expected')");
+    expect(sql).toContain("CASE aa.kind WHEN 'bridge' THEN 'bridge' ELSE 'spot' END AS product_type");
+    // Leg-aware bridge match: origin leg (from_chain_id + token_in) OR dest leg.
+    expect(sql).toContain("aa.from_chain_id = $");
+    expect(sql).toContain("aa.to_chain_id = $");
+    // R12: last successful sweep check surfaced for the tracking-delay UX.
+    expect(sql).toContain("aa.last_checked_at");
+    // Legs aggregation (no LIMIT — OWNER RULE).
+    expect(sql).toContain("jsonb_agg(jsonb_build_object");
+    // Bounded to the legs SUBQUERY — the outer pagination LIMIT after the UNION
+    // is legitimate and must not trip this.
+    const legsSubquery = sql.slice(sql.indexOf("jsonb_agg"), sql.indexOf(") END AS legs"));
+    expect(legsSubquery).not.toMatch(/\bLIMIT\b/);
+  });
+
+  it("maps a CONFIRMED bridge → kind:'bridge', from→to, executed amounts, legs, providerOrderId, basis 'executed'", async () => {
+    scriptTransaction({ page: [bridgeAgentRow()] });
+    const result = await getTokenHistory({ chainId: BASE_CHAIN_ID, tokenAddress: TOKEN_ADDR_LOWER, cursor: null });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.status !== "available") return;
+    const entry = result.data.entries[0];
+    expect(entry?.kind).toBe("bridge");
+    if (entry?.kind !== "bridge") return;
+    expect(entry.originChain).toBe("base");
+    expect(entry.destinationChain).toBe("arbitrum");
+    expect(entry.venue).toBe("khalani");
+    expect(entry.status).toBe("confirmed");
+    expect(entry.providerOrderId).toBe("ord_1");
+    expect(entry.amountBasis).toBe("executed");
+    // executed 2000000/10^6 = 2 ; 1988000/10^6 = 1.988 (NOT the 1.99 quote).
+    expect(entry.input.amount).toEqual({ value: "2", unitProvenance: "human" });
+    expect(entry.output.amount).toEqual({ value: "1.988", unitProvenance: "human" });
+    // USD is always a quote-time estimate for agent_activity (C35).
+    expect(entry.input.valueUsd.usdProvenance).toBe("estimated");
+    expect(entry.legs).toHaveLength(2);
+    expect(entry.legs[1]?.role).toBe("bridge_fill_expected");
+    // Per-leg hashes ride `legs`; the top-level txRefs stays empty for bridges.
+    expect(entry.txRefs).toEqual([]);
+    // R12: the last successful sweep check is surfaced for the tracking-delay UX.
+    expect(entry.lastCheckedAt).toBe("2026-07-20T10:05:00.000Z");
+  });
+
+  it("maps a PENDING bridge → estimated (quoted) amounts, status pending, fill leg hashless but preserved", async () => {
+    scriptTransaction({
+      page: [
+        bridgeAgentRow({
+          status: "pending",
+          tx_ref: null,
+          executed_amount_in_raw: null,
+          executed_amount_out_raw: null,
+          legs: [
+            { role: "bridge_deposit", chainId: 8453, chainFamily: "eip155", txHash: "0xdep", status: "confirmed", failureCode: null },
+            { role: "bridge_fill_expected", chainId: 42161, chainFamily: "eip155", txHash: null, status: "pending", failureCode: null },
+          ],
+        }),
+      ],
+    });
+    const result = await getTokenHistory({ chainId: BASE_CHAIN_ID, tokenAddress: TOKEN_ADDR_LOWER, cursor: null });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.status !== "available") return;
+    const entry = result.data.entries[0];
+    if (entry?.kind !== "bridge") return;
+    expect(entry.status).toBe("pending");
+    expect(entry.amountBasis).toBe("estimated");
+    expect(entry.input.amount).toEqual({ value: "2.0", unitProvenance: "human" }); // the QUOTE
+    expect(entry.legs).toHaveLength(2);
+    expect(entry.legs[1]?.txHash).toBeNull();
+  });
+
+  it("maps a refunded bridge → status failed + failureCode 'bridge_refunded' (money back ≠ success), no amount", async () => {
+    scriptTransaction({
+      page: [
+        bridgeAgentRow({
+          status: "definitively_failed",
+          failure_code: "bridge_refunded",
+          tx_ref: null,
+          executed_amount_in_raw: null,
+          executed_amount_out_raw: null,
+          legs: [
+            { role: "bridge_deposit", chainId: 8453, chainFamily: "eip155", txHash: "0xdep", status: "confirmed", failureCode: null },
+            { role: "bridge_fill_expected", chainId: 42161, chainFamily: "eip155", txHash: null, status: "definitively_failed", failureCode: "bridge_refunded" },
+            { role: "bridge_refund", chainId: 8453, chainFamily: "eip155", txHash: "0xrefund", status: "confirmed", failureCode: null },
+          ],
+        }),
+      ],
+    });
+    const result = await getTokenHistory({ chainId: BASE_CHAIN_ID, tokenAddress: TOKEN_ADDR_LOWER, cursor: null });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data.status !== "available") return;
+    const entry = result.data.entries[0];
+    if (entry?.kind !== "bridge") return;
+    expect(entry.status).toBe("failed");
+    expect(entry.failureCode).toBe("bridge_refunded");
+    expect(entry.amountBasis).toBeNull();
+    expect(entry.input.amount).toEqual({ value: null, unitProvenance: "unknown" });
+    expect(entry.legs).toHaveLength(3);
+    expect(entry.legs[2]?.role).toBe("bridge_refund");
+    expect(entry.legs[2]?.txHash).toBe("0xrefund");
   });
 });

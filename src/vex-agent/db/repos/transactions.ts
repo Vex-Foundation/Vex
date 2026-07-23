@@ -58,13 +58,29 @@
  *
  * Filters: productType filters proj_activity.product_type on the success half
  * and the DERIVED PRODUCT (via the failure-tool allowlist, current + legacy)
- * on the failure half — NEVER trade_side. The agent_activity half has no
- * productType concept yet (kind is always 'swap' in phase 1, which derives to
- * "spot") and is excluded entirely for any other requested productType.
- * namespace + txHash filter all three halves where applicable. A null/empty
- * sessionId OMITS the failure half entirely (successes + agent_activity only)
- * — a failure feed is meaningless without a session to scope it to, and must
- * never leak another session's failures.
+ * on the failure half — NEVER trade_side. On the agent_activity half it maps to
+ * `kind` (Agent Scan Phase 2, migration 045): 'spot' → swap rows, 'bridge' →
+ * bridge rows; any other requested productType (perps/prediction/order) has no
+ * agent_activity representation and excludes the half. namespace + txHash
+ * filter all three halves where applicable. A null/empty sessionId OMITS the
+ * failure half entirely (successes + agent_activity only) — a failure feed is
+ * meaningless without a session to scope it to, and must never leak another
+ * session's failures.
+ *
+ * BRIDGE ROWS (migration 045): a bridge fans out into per-leg agent_activity
+ * rows, but the feed emits ONE logical row per bridge — its
+ * `event_role = 'bridge_fill_expected'` row (productType 'bridge') — with a
+ * `legs[]` array carrying that canonical row AND every sibling leg (allowances,
+ * deposit, extra observed fills, refunds), each with its own chain + hash +
+ * status. Legs are NEVER truncated (OWNER RULE). Swap rows are unchanged (still
+ * one feed row per leg). A bridge logical row's `chain`/`chainId` are its own
+ * (destination) chain — where the fill hash lives — while `fromChain*`/
+ * `toChain*` carry the route endpoints. Bridge display amounts follow BINDING
+ * Q2 (executed-if-independently-verified, else the quote shown as an estimate).
+ * A `txHash=` lookup is LEG-AWARE for bridges: the logical row surfaces when
+ * ANY of its legs (deposit / fill / refund / extra fill) carries the hash, not
+ * only its top-level fill hash — so an operator can find a bridge by any of its
+ * on-chain hashes (Codex FIX-ROUND-1 m7).
  *
  * Pagination: keyset over the tuple (created_at, sourceRank, id), DESC. The
  * cursor timestamp is the DB-side microsecond rendering of created_at (see
@@ -87,6 +103,35 @@ import {
 } from "./transactions-failure-tools.js";
 
 export type TransactionSource = "agent_activity" | "success" | "failure";
+
+/**
+ * One leg of a bridge execution (Agent Scan Phase 2, migration 045). A bridge
+ * logical row (`event_role = 'bridge_fill_expected'`) carries `legs[]` — the
+ * canonical expected-fill row INCLUDED, plus its allowance/deposit/observed-
+ * fill/refund siblings — so the agent sees every leg's chain + hash + status
+ * WITHOUT the feed emitting one row per leg. Each leg carries the on-chain
+ * `txHash` (a public reference) and the chain identity needed to resolve an
+ * explorer link; it deliberately does NOT carry a pre-built explorer URL — the
+ * curated allowlist that validates explorer hosts lives in the desktop app
+ * (`vex-app/src/shared/explorer-links.ts`, R14), and the consumer builds
+ * `_explorerRefs` from `{chain, txHash}` exactly as it already does for the
+ * top-level hash (`tools/internal/inspect-views/transactions.ts`). NEVER
+ * truncated (OWNER RULE).
+ */
+export interface BridgeLegRow {
+  eventIndex: number | null;
+  /** 'allowance_reset' | 'allowance' | 'bridge_deposit' | 'bridge_fill_expected' | 'bridge_fill_observed' | 'bridge_refund'. */
+  role: string | null;
+  /** The leg's OWN execution chain id (provider-native; pair with `chainFamily`). */
+  chainId: number | null;
+  chainSlug: string | null;
+  /** 'eip155' | 'solana'. */
+  chainFamily: string | null;
+  txHash: string | null;
+  /** Raw lifecycle status of the leg's row ('pending' | 'confirmed' | 'definitively_failed'). */
+  status: string | null;
+  failureCode: string | null;
+}
 
 /**
  * One bounded, camelCase row in the unified feed. Failure rows carry no
@@ -112,8 +157,14 @@ export interface TransactionRow {
   inputAmount?: string | null;
   outputToken?: string | null;
   outputAmount?: string | null;
-  /** agent_activity only — which raw amount `inputAmount`/`outputAmount` was derived from, or `null` when neither applies (FIX2-SPINE C20). */
-  amountBasis?: "executed" | "requested" | null;
+  /**
+   * agent_activity only — which raw amount `inputAmount`/`outputAmount` was
+   * derived from (FIX2-SPINE C20 for swaps), or `null` when neither applies.
+   * Swaps use `executed`/`requested`; bridges (BINDING Q2) use `executed` (an
+   * independently-verified fill) or `estimated` (the quoted amount shown
+   * explicitly as an estimate — a bridge never blanks a pending amount).
+   */
+  amountBasis?: "executed" | "requested" | "estimated" | null;
   valueUsd?: number | null;
   captureStatus?: string | null;
   /** agent_activity: 'pending' | 'confirmed' | 'definitively_failed'. failure half: always 'failed'. */
@@ -154,6 +205,20 @@ export interface TransactionRow {
   usdOutEst?: string | null;
   usdFeeEst?: string | null;
   usdSource?: string | null;
+  /** agent_activity BRIDGE logical row only (migration 045) — route origin chain. */
+  fromChainId?: number | null;
+  fromChainSlug?: string | null;
+  /** agent_activity BRIDGE logical row only — route destination chain. `chainId` (above) is this row's own chain (the destination, where the fill hash lives). */
+  toChainId?: number | null;
+  toChainSlug?: string | null;
+  /** agent_activity BRIDGE only — 'eip155' | 'solana' (this row's own leg family). */
+  chainFamily?: string | null;
+  /** agent_activity BRIDGE logical row only — provider order id (Khalani orderId / Relay requestId). */
+  providerOrderId?: string | null;
+  /** agent_activity BRIDGE logical row only — last provider-native status (sweep feed; "tracking delayed" UX). */
+  providerStatus?: string | null;
+  /** agent_activity BRIDGE logical row only — every leg of the execution (B8); `null` on swaps. NEVER truncated (OWNER RULE). */
+  legs?: BridgeLegRow[] | null;
   txHash: string | null;
   createdAt: string;
 }
@@ -233,12 +298,37 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
   // ── AGENT_ACTIVITY half (agent_activity) ──────────────────────────────
   const activityConds: string[] = [`wallet_address = ANY($${push(addresses)}::text[])`];
   if (namespace !== undefined) activityConds.push(`protocol = $${push(namespace)}`);
-  if (txHash !== undefined) activityConds.push(`tx_hash = $${push(txHash)}`);
-  // agent_activity.kind is always 'swap' this phase, which derives to the SAME
-  // "spot" product the success half stores (TYPE_TO_PRODUCT convention) — a
-  // productType filter for anything else must exclude this half entirely (no
-  // param bind needed).
-  if (productType !== undefined && productType !== "spot") activityConds.push("FALSE");
+  if (txHash !== undefined) {
+    // A bridge's logical row (`bridge_fill_expected`) carries the FILL hash; its
+    // deposit / refund / extra-fill hashes live on sibling legs. Match the row
+    // when its OWN tx_hash matches (this alone covers swaps — each swap leg is
+    // its own feed row) OR — for a bridge logical row only — when ANY sibling
+    // leg of the same execution carries the hash, so `agent_scan txHash=` finds
+    // a bridge by a deposit / refund / extra-fill hash and returns the logical
+    // row with its legs (Codex FIX-ROUND-1 m7). The EXISTS is gated on the
+    // logical role so it never widens a swap leg's own-hash match.
+    const txHashParam = push(txHash);
+    activityConds.push(
+      `(tx_hash = $${txHashParam}` +
+        ` OR (event_role = 'bridge_fill_expected' AND EXISTS (` +
+        `SELECT 1 FROM agent_activity sib` +
+        ` WHERE sib.protocol_execution_id = agent_activity.protocol_execution_id` +
+        ` AND sib.tx_hash = $${txHashParam})))`,
+    );
+  }
+  // A bridge (migration 045) fans out into per-leg rows; only its LOGICAL row
+  // (`event_role = 'bridge_fill_expected'`) is a feed row — its allowance/
+  // deposit/observed-fill/refund siblings ride the row's `legs[]` array, never
+  // as their own feed rows. Swaps keep emitting every leg row (allowance +
+  // swap) exactly as before (behavior preserved).
+  activityConds.push("(kind = 'swap' OR event_role = 'bridge_fill_expected')");
+  // productType now maps to `kind`: 'spot' → swap rows (derive to the same
+  // "spot" product the success half stores), 'bridge' → bridge logical rows.
+  // Any OTHER productType (perps/prediction/order) has no agent_activity
+  // representation → exclude the half entirely (no param bind needed).
+  if (productType === "spot") activityConds.push("kind = 'swap'");
+  else if (productType === "bridge") activityConds.push("kind = 'bridge'");
+  else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
 
   const activityHalf = `
@@ -247,7 +337,7 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
       0 AS source_rank,
       id,
       protocol AS namespace,
-      'spot'::text AS product_type,
+      CASE WHEN kind = 'bridge' THEN 'bridge' ELSE 'spot' END AS product_type,
       NULL::text AS trade_side,
       COALESCE(chain_slug, chain_id::text) AS chain,
       COALESCE(token_in_symbol, token_in_address) AS input_token,
@@ -288,6 +378,30 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
       usd_out_est,
       usd_fee_est,
       usd_source,
+      from_chain_id,
+      from_chain_slug,
+      to_chain_id,
+      to_chain_slug,
+      chain_family,
+      provider_order_id,
+      provider_status,
+      -- Bridge legs (B8): every leg of the execution, the canonical expected
+      -- fill INCLUDED (REVISION 4), aggregated with NO LIMIT (OWNER RULE — never
+      -- truncated). NULL on swap rows.
+      CASE WHEN kind = 'bridge' THEN (
+        SELECT jsonb_agg(jsonb_build_object(
+          'eventIndex', leg.event_index,
+          'role', leg.event_role,
+          'chainId', leg.chain_id,
+          'chainSlug', leg.chain_slug,
+          'chainFamily', leg.chain_family,
+          'txHash', leg.tx_hash,
+          'status', leg.status,
+          'failureCode', leg.failure_code
+        ) ORDER BY leg.event_index)
+        FROM agent_activity leg
+        WHERE leg.protocol_execution_id = agent_activity.protocol_execution_id
+      ) END AS legs,
       tx_hash,
       created_at,
       ${CURSOR_TS_EXPR} AS cursor_ts
@@ -346,6 +460,14 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
       NULL::numeric AS usd_out_est,
       NULL::numeric AS usd_fee_est,
       NULL::text AS usd_source,
+      NULL::bigint AS from_chain_id,
+      NULL::text AS from_chain_slug,
+      NULL::bigint AS to_chain_id,
+      NULL::text AS to_chain_slug,
+      NULL::text AS chain_family,
+      NULL::text AS provider_order_id,
+      NULL::text AS provider_status,
+      NULL::jsonb AS legs,
       external_refs->>'txHash' AS tx_hash,
       created_at,
       ${CURSOR_TS_EXPR} AS cursor_ts
@@ -421,6 +543,14 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
       NULL::numeric AS usd_out_est,
       NULL::numeric AS usd_fee_est,
       NULL::text AS usd_source,
+      NULL::bigint AS from_chain_id,
+      NULL::text AS from_chain_slug,
+      NULL::bigint AS to_chain_id,
+      NULL::text AS to_chain_slug,
+      NULL::text AS chain_family,
+      NULL::text AS provider_order_id,
+      NULL::text AS provider_status,
+      NULL::jsonb AS legs,
       external_refs->>'txHash' AS tx_hash,
       created_at,
       ${CURSOR_TS_EXPR} AS cursor_ts
@@ -512,6 +642,65 @@ function deriveDisplayAmounts(
   return { inputAmount: null, outputAmount: null, amountBasis: null };
 }
 
+/**
+ * BRIDGE display-amount rule (Agent Scan Phase 2, BINDING Q2 — DISTINCT from
+ * the swap rule above). A bridge's destination fill is solver-signed and
+ * externally observed, so `executed_*` is populated ONLY when the sweep decoded
+ * transfer/value evidence (migration-045 B4). Therefore:
+ *   - an independently-verified executed amount → `executed`;
+ *   - otherwise, while pending OR confirmed-without-a-decodable-amount, the
+ *     QUOTED amount is shown, explicitly labelled `estimated` (a bridge never
+ *     blanks a pending amount — "~X TOKEN est., still settling");
+ *   - a `definitively_failed`/refunded attempt shows NOTHING (the requested
+ *     amount would misrepresent it; the refund is carried as status, not as a
+ *     fake amount).
+ */
+function deriveBridgeDisplayAmounts(
+  status: string | null,
+  requestedInRaw: string | null,
+  requestedOutRaw: string | null,
+  executedInRaw: string | null,
+  executedOutRaw: string | null,
+  tokenInDecimals: number | null,
+  tokenOutDecimals: number | null,
+): { inputAmount: string | null; outputAmount: string | null; amountBasis: "executed" | "estimated" | null } {
+  const execIn = rawToHuman(executedInRaw, tokenInDecimals);
+  const execOut = rawToHuman(executedOutRaw, tokenOutDecimals);
+  if (execIn !== null || execOut !== null) {
+    return { inputAmount: execIn, outputAmount: execOut, amountBasis: "executed" };
+  }
+  if (status === "definitively_failed") {
+    return { inputAmount: null, outputAmount: null, amountBasis: null };
+  }
+  const reqIn = rawToHuman(requestedInRaw, tokenInDecimals);
+  const reqOut = rawToHuman(requestedOutRaw, tokenOutDecimals);
+  const amountBasis = reqIn !== null || reqOut !== null ? "estimated" : null;
+  return { inputAmount: reqIn, outputAmount: reqOut, amountBasis };
+}
+
+/**
+ * Coerce the `jsonb_agg(...)` bridge legs (already parsed to a JS array by the
+ * pg driver) into typed `BridgeLegRow`s. Our own agent_activity rows, so the
+ * shape is well-formed by construction; every leg is preserved (OWNER RULE —
+ * no truncation). `null`/non-array (a swap row) → `null`.
+ */
+function coerceLegs(raw: unknown): BridgeLegRow[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.map((item) => {
+    const o = (item ?? {}) as Record<string, unknown>;
+    return {
+      eventIndex: num(o.eventIndex),
+      role: str(o.role),
+      chainId: num(o.chainId),
+      chainSlug: str(o.chainSlug),
+      chainFamily: str(o.chainFamily),
+      txHash: str(o.txHash),
+      status: str(o.status),
+      failureCode: str(o.failureCode),
+    };
+  });
+}
+
 function mapRow(r: Record<string, unknown>): TransactionRow {
   const toolId = r.tool_id as string | null;
 
@@ -537,15 +726,28 @@ function mapRow(r: Record<string, unknown>): TransactionRow {
 
   if (r.source === "agent_activity") {
     const status = r.status as string | null;
-    const { inputAmount, outputAmount, amountBasis } = deriveDisplayAmounts(
-      status,
-      str(r.amount_in_raw),
-      str(r.amount_out_raw),
-      str(r.executed_amount_in_raw),
-      str(r.executed_amount_out_raw),
-      num(r.token_in_decimals),
-      num(r.token_out_decimals),
-    );
+    const isBridge = r.product_type === "bridge";
+    // Swaps use the C20 rule (confirmed→executed, pending→requested); bridges
+    // use the Q2 rule (executed-if-verified, else quoted-as-estimate).
+    const { inputAmount, outputAmount, amountBasis } = isBridge
+      ? deriveBridgeDisplayAmounts(
+          status,
+          str(r.amount_in_raw),
+          str(r.amount_out_raw),
+          str(r.executed_amount_in_raw),
+          str(r.executed_amount_out_raw),
+          num(r.token_in_decimals),
+          num(r.token_out_decimals),
+        )
+      : deriveDisplayAmounts(
+          status,
+          str(r.amount_in_raw),
+          str(r.amount_out_raw),
+          str(r.executed_amount_in_raw),
+          str(r.executed_amount_out_raw),
+          num(r.token_in_decimals),
+          num(r.token_out_decimals),
+        );
     return {
       source: "agent_activity",
       id: Number(r.id),
@@ -584,6 +786,14 @@ function mapRow(r: Record<string, unknown>): TransactionRow {
       usdOutEst: str(r.usd_out_est),
       usdFeeEst: str(r.usd_fee_est),
       usdSource: str(r.usd_source),
+      fromChainId: isBridge ? num(r.from_chain_id) : null,
+      fromChainSlug: isBridge ? str(r.from_chain_slug) : null,
+      toChainId: isBridge ? num(r.to_chain_id) : null,
+      toChainSlug: isBridge ? str(r.to_chain_slug) : null,
+      chainFamily: isBridge ? str(r.chain_family) : null,
+      providerOrderId: isBridge ? str(r.provider_order_id) : null,
+      providerStatus: isBridge ? str(r.provider_status) : null,
+      legs: isBridge ? coerceLegs(r.legs) : null,
       txHash: str(r.tx_hash),
       createdAt: toIso(r.created_at),
     };

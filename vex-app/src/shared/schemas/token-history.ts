@@ -70,6 +70,10 @@
 import { z } from "zod";
 import { familyForChainId } from "../chains/display.js";
 import { evmAddressSchema } from "./wallets.js";
+import {
+  bridgeAmountBasisSchema,
+  bridgeLegsSchema,
+} from "./bridge-legs.js";
 
 // Solana base58 shape — mirrors `wallets/base-chain.ts`'s PRIVATE
 // `solanaAddressSchema` (deliberately not re-exported by the `wallets.js`
@@ -235,15 +239,56 @@ const bridgeEntrySchema = z
     kind: z.literal("bridge"),
     id: z.string().min(1).max(64),
     createdAt: z.string().datetime({ offset: true }),
-    /** Origin chain (`proj_activity.chain` — bridges record the SOURCE chain here). */
+    /** Origin chain (legacy: `proj_activity.chain`; agent_activity: `from_chain_slug`/`from_chain_id`). */
     originChain: z.string().max(CHAIN_DISPLAY_MAX_LENGTH),
-    /** Destination chain, when the capture recorded one (`meta.destChain`); `null` if absent. */
+    /** Destination chain (legacy: `meta.destChain`; agent_activity: `to_chain_slug`/`to_chain_id`); `null` if absent. */
     destinationChain: z.string().max(CHAIN_DISPLAY_MAX_LENGTH).nullable(),
     venue: z.string().max(CHAIN_DISPLAY_MAX_LENGTH).nullable(),
     input: tokenLegSchema,
     output: tokenLegSchema,
     captureStatus: z.string().max(32).nullable(),
     txRefs: txRefsSchema,
+    /**
+     * agent_activity-sourced bridges (Agent Scan Phase 2) — the durable
+     * lifecycle of the logical `bridge_fill_expected` row: `pending` (still
+     * settling, tracked automatically), `confirmed`, or `failed`. `null` on a
+     * legacy `proj_activity`-sourced bridge (which is success-only). Defaults
+     * to `null` so legacy payloads still parse.
+     */
+    status: tokenHistorySwapStatusSchema.nullable().default(null),
+    /**
+     * agent_activity bridges only — the closed `failure_code` enum when
+     * `status === "failed"`. `"bridge_refunded"` distinguishes a
+     * money-returned outcome (NOT a success) from `"bridge_failed"`. Tolerant
+     * string (same doctrine as the swap `failureCode`). `null` otherwise.
+     */
+    failureCode: z.string().nullable().default(null),
+    /** agent_activity bridges only — provider order id (Khalani orderId / Relay requestId); `null` otherwise. */
+    providerOrderId: z.string().max(128).nullable().default(null),
+    /**
+     * agent_activity bridges only (BINDING Q2) — whether the leg amounts are
+     * the independently-verified executed amounts (`"executed"`) or the quoted
+     * amounts shown as an estimate (`"estimated"`); `null` when no honest
+     * amount is shown. The renderer marks an `"estimated"` amount so it never
+     * reads as settled truth.
+     */
+    amountBasis: bridgeAmountBasisSchema.nullable().default(null),
+    /**
+     * agent_activity bridges only (B8) — every leg (allowances, deposit, the
+     * canonical expected fill, extra observed fills, refunds), each carrying
+     * its chain + hash + status for per-leg explorer links and audit. `[]` on
+     * a legacy bridge. NEVER truncated (OWNER RULE).
+     */
+    legs: bridgeLegsSchema.default([]),
+    /**
+     * agent_activity bridges only (R12) — the timestamp of the last SUCCESSFUL
+     * sweep check of a pending bridge's provider order status
+     * (`agent_activity.last_checked_at`); `null` when never checked or on a
+     * legacy bridge. The renderer flags a pending bridge "tracking delayed" when
+     * this (or `createdAt` if null) is stale (see `shared/bridge-tracking.ts`).
+     * Defaults to `null` so legacy payloads still parse.
+     */
+    lastCheckedAt: z.string().datetime({ offset: true }).nullable().default(null),
   })
   .strict();
 

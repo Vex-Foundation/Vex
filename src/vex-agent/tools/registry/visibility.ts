@@ -17,6 +17,7 @@ import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 import { TOOLS } from "./lookup.js";
 import { getVisibleHypervexingAliasTools } from "../hypervexing-aliases.js";
 import { isUniswapPairRevealed } from "./uniswap-reveal.js";
+import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-reveal.js";
 
 /**
  * Session-aware context for tool surface projection. Built by engine runners
@@ -111,6 +112,12 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
+    // Hidden Relay bridge pair (bridge factory W5) — the route-bound reveal has
+    // no route context here, so visibility is the session-level predicate
+    // (`hasAnyRelayRouteReveal`); the exact-route enforcement lives at dispatch
+    // (`evaluateRelayRevealGate`). Gated by name rather than a `ToolVisibility`
+    // flag so the reveal subsystem owns its own surface list end-to-end.
+    .filter(t => !RELAY_REVEAL_GATED_ALIAS_NAMES.has(t.name) || hasAnyRelayRouteReveal(ctx.sessionId))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
   // Hypervexing aliases are a session-mode projection, not permanent ToolDefs.

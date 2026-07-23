@@ -24,6 +24,19 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
+ * Optional string array: `undefined` when the key is absent or not an array,
+ * else the string elements (element-wise filter). Distinct from
+ * `asStringArray` (which collapses an absent field to `[]`) so an omitted
+ * `supportedDepositMethods` stays `undefined` rather than a misleading empty
+ * "no methods supported" array.
+ */
+const optionalStringArray: z.ZodType<string[] | undefined> = z
+  .unknown()
+  .transform((v) =>
+    Array.isArray(v) ? v.filter((entry): entry is string => typeof entry === "string") : undefined,
+  );
+
+/**
  * Inner `quote` block. `prefix` is "route.quote" or "stream.quote" so the
  * field-path messages exactly match the original.
  */
@@ -39,6 +52,10 @@ function quoteBlockSchema(prefix: string) {
         .transform((v) => (typeof v === "number" ? v : undefined)),
       estimatedGas: asOptionalString,
       tags: asStringArray,
+      // Live drift (undocumented): route-supported deposit methods. Lenient —
+      // undefined when omitted, string elements otherwise (not the closed
+      // DepositMethod union: it is untrusted provider data).
+      supportedDepositMethods: optionalStringArray,
     },
     { message: "Invalid Khalani response: route must include quote" },
   );

@@ -211,15 +211,19 @@ describe("registry", () => {
     expect(namespace?.description).not.toContain("uniswap");
   });
 
-  it("mutating tools are bridge, swap_execute, swap_execute_uniswap, wallet_send_confirm", () => {
+  it("mutating tools are bridge, bridge_execute_relay, swap_execute, swap_execute_uniswap, wallet_send_confirm", () => {
     // `swap_execute`/`swap_execute_uniswap` (Stage 8b; Agent Scan plan §11.2
     // renamed `swap` in place and added the hidden Uniswap pair) and `bridge`
     // (Stage 8c) are MUTATING action-aliases that dispatch through the
-    // dedicated branch (executeProtocolTool owns approval). Hidden-by-default
-    // visibility does not affect this list — `getAllTools()` is unfiltered.
+    // dedicated branch (executeProtocolTool owns approval). Phase-2 bridge
+    // factory W5 added the hidden Relay pair — `bridge_execute_relay` is the
+    // mutating half (route-bound reveal; `bridge_quote_relay` is read-only).
+    // Hidden-by-default visibility does not affect this list — `getAllTools()`
+    // is unfiltered.
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
     expect(mutating).toEqual([
       "bridge",
+      "bridge_execute_relay",
       "swap_execute",
       "swap_execute_uniswap",
       "wallet_send_confirm",

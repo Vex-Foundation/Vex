@@ -37,7 +37,7 @@
  *    is the whole page now.
  */
 
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import {
@@ -53,6 +53,8 @@ import type {
   TokenHistoryTxRef,
   UsdField,
 } from "@shared/schemas/token-history.js";
+import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
+import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import type { Result } from "@shared/ipc/result.js";
 import { chainDisplay, SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
@@ -336,19 +338,28 @@ export function TokenHistoryScreen({
   );
 }
 
-/** One leg's inline display: optional safe icon + quantity + policy-gated symbol text. */
+/**
+ * One leg's inline display: optional safe icon + quantity + policy-gated symbol
+ * text. When `estimated` (a Q2 bridge quote), a renderable quantity is prefixed
+ * `~` so it never reads as a settled quantity (R14) — paired with a single row
+ * "est." marker in `EntryRow`.
+ */
 function LegText({
   token,
   symbol,
   localSymbol,
   amount,
+  estimated = false,
 }: {
   readonly token: string | null;
   readonly symbol: string | null;
   readonly localSymbol: string | null;
   readonly amount: AmountField;
+  readonly estimated?: boolean;
 }): JSX.Element {
   const display = tokenDisplay(token, symbol, localSymbol);
+  const quantity = quantityText(amount);
+  const shown = estimated && quantity !== "—" ? `~${quantity}` : quantity;
   return (
     <span
       title={display.full ?? undefined}
@@ -358,15 +369,149 @@ function LegText({
         <TokenIcon symbol={display.iconSymbol} size={12} />
       ) : null}
       <span className="truncate">
-        {quantityText(amount)} {display.text}
+        {shown} {display.text}
       </span>
     </span>
+  );
+}
+
+/**
+ * Bridge status chip (Agent Scan Phase 2). A `pending` bridge reads "settling"
+ * (the durable sweep tracks it — it is NOT a failure); a `bridge_refunded`
+ * failure reads "refunded" in a NEUTRAL tone (money returned ≠ a completed
+ * bridge, but ≠ a loss either — distinct from a destructive `failed`); any
+ * other failure reads "failed" (destructive). `confirmed`/`null` → no chip.
+ */
+const BRIDGE_STATUS_TONE: Record<"settling" | "refunded" | "failed", string> = {
+  settling: "border-[var(--vex-line)] text-[var(--vex-accent)]",
+  refunded: "border-[var(--vex-line-strong)] text-[var(--vex-text-2)]",
+  failed:
+    "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] text-[var(--color-destructive)]",
+};
+
+function bridgeStatusChip(
+  entry: Extract<TokenHistoryEntry, { kind: "bridge" }>,
+): { readonly text: string; readonly tone: keyof typeof BRIDGE_STATUS_TONE; readonly title: string | undefined } | null {
+  if (entry.status === "pending") {
+    // R12: a pending bridge is normally "settling — tracked automatically", BUT
+    // if the sweep has not successfully checked its order status in a long time
+    // (last_checked_at, or createdAt before the first check, is stale) the
+    // tracking is DELAYED — say so honestly instead of the reassuring default.
+    if (isBridgeTrackingStale(entry.lastCheckedAt, entry.createdAt)) {
+      const checked =
+        entry.lastCheckedAt !== null
+          ? (entryDateText(entry.lastCheckedAt) ?? "an unknown time")
+          : null;
+      return {
+        text: "tracking delayed",
+        tone: "settling",
+        title:
+          checked !== null
+            ? `Tracking delayed — last checked ${checked}`
+            : "Tracking delayed — not yet checked since the bridge started",
+      };
+    }
+    return { text: "settling", tone: "settling", title: "Still settling — tracked automatically" };
+  }
+  if (entry.status === "failed") {
+    if (entry.failureCode === "bridge_refunded") {
+      return {
+        text: "refunded",
+        tone: "refunded",
+        title: "Funds returned to the origin chain — not a completed bridge",
+      };
+    }
+    return { text: "failed", tone: "failed", title: entry.failureCode ?? undefined };
+  }
+  return null;
+}
+
+/** Short leg-role label for the expandable per-leg audit list. */
+function legRoleLabel(role: BridgeLegRole): string {
+  switch (role) {
+    case "allowance_reset":
+    case "allowance":
+      return "APPROVE";
+    case "bridge_deposit":
+      return "DEPOSIT";
+    case "bridge_fill_expected":
+    case "bridge_fill_observed":
+      return "FILL";
+    case "bridge_refund":
+      return "REFUND";
+  }
+}
+
+/**
+ * Explorer URL for one bridge leg — built through the SAME curated allowlist
+ * (`explorerTxUrl`) as every other link, keyed by the leg's `chainFamily`
+ * (`solana` → the signature path; else the leg's own bare decimal chain id).
+ * `null` (no hash yet / uncurated chain) → the leg renders non-interactive.
+ */
+function bridgeLegUrl(leg: BridgeLeg): string | null {
+  if (leg.txHash === null) return null;
+  const chain = leg.chainFamily === "solana" ? "solana" : String(leg.chainId);
+  return explorerTxUrl(chain, leg.txHash);
+}
+
+/**
+ * Expandable per-leg audit list for a bridge (B8) — every leg (approvals,
+ * deposit, the canonical fill, extra fills, refunds) with its own chain +
+ * explorer link. Collapsed by default; NEVER truncated (OWNER RULE).
+ */
+function BridgeLegs({ legs }: { readonly legs: readonly BridgeLeg[] }): JSX.Element | null {
+  const [open, setOpen] = useState(false);
+  if (legs.length === 0) return null;
+  return (
+    <div className="mt-1 pl-[21px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      >
+        {open ? "Hide" : "Show"} {legs.length} leg{legs.length === 1 ? "" : "s"}
+      </button>
+      {open ? (
+        <ul className="mt-1 flex flex-col gap-1">
+          {legs.map((leg, index) => {
+            const url = bridgeLegUrl(leg);
+            const legStatus = leg.status === "definitively_failed" ? "failed" : leg.status;
+            return (
+              <li
+                key={`${leg.role}:${index}:${leg.txHash ?? "none"}`}
+                className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]"
+              >
+                <span className="inline-flex h-3.5 min-w-[52px] shrink-0 items-center justify-center rounded-[3px] border border-[var(--vex-line)] px-1 uppercase tracking-[0.14em]">
+                  {legRoleLabel(leg.role)}
+                </span>
+                <span className="shrink-0">{leg.chainFamily === "solana" ? "solana" : leg.chainId}</span>
+                {legStatus !== null ? <span className="shrink-0">{legStatus}</span> : null}
+                {url !== null ? (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${legRoleLabel(leg.role)} leg on block explorer`}
+                    className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+                  >
+                    TX
+                    <HugeiconsIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
+                  </a>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
 function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element {
   const stamp = entryStamp(entry);
   const date = entryDateText(entry.createdAt);
+  const bridgeChip = entry.kind === "bridge" ? bridgeStatusChip(entry) : null;
   const links = entry.txRefs
     .map((ref) => ({ ref, url: txRefUrl(ref) }))
     .filter(
@@ -406,6 +551,10 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
       ? null
       : primaryUsdField(entry.input.valueUsd, entry.output.valueUsd);
   const unitPrice = entry.kind === "swap" ? unitPriceText(entry.unitPriceUsd) : null;
+  // R14: a bridge whose displayed amounts are the QUOTE (not an independently
+  // verified fill) marks both legs `~…` + a single trailing "est." tag, so a
+  // quoted bridge amount never reads as an executed quantity.
+  const bridgeEstimated = entry.kind === "bridge" && entry.amountBasis === "estimated";
 
   return (
     <li className="border-b border-[var(--vex-line)] py-2 last:border-b-0">
@@ -435,6 +584,17 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
             {entry.status}
           </span>
         ) : null}
+        {bridgeChip !== null ? (
+          <span
+            title={bridgeChip.title}
+            className={cn(
+              "inline-flex h-4 shrink-0 items-center justify-center rounded-[3px] border px-1.5 font-mono text-[9px] uppercase tracking-[0.14em]",
+              BRIDGE_STATUS_TONE[bridgeChip.tone],
+            )}
+          >
+            {bridgeChip.text}
+          </span>
+        ) : null}
         <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-[var(--vex-text)]">
           {entry.kind === "transfer" ? (
             <>
@@ -451,6 +611,7 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
                 symbol={entry.input.symbol}
                 localSymbol={entry.input.localSymbol}
                 amount={entry.input.amount}
+                estimated={bridgeEstimated}
               />
               <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
               <LegText
@@ -458,7 +619,13 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
                 symbol={entry.output.symbol}
                 localSymbol={entry.output.localSymbol}
                 amount={entry.output.amount}
+                estimated={bridgeEstimated}
               />
+              {bridgeEstimated ? (
+                <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                  est.
+                </span>
+              ) : null}
             </>
           )}
         </span>
@@ -488,6 +655,11 @@ function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.Element
           </a>
         ))}
       </div>
+      {/* Per-leg audit (bridges) — deposit/approvals/fill/refund, each with its
+       * own chain + explorer link, expandable so a multi-leg bridge shows once
+       * (B8). agent_activity bridges carry per-leg hashes in `legs` (never
+       * truncated); legacy bridges carry none and render nothing here. */}
+      {entry.kind === "bridge" ? <BridgeLegs legs={entry.legs} /> : null}
     </li>
   );
 }

@@ -17,11 +17,12 @@
  * (no portfolio impact).
  *
  * `kyberswap.swap.execute` / `uniswap.swap.execute` (the new unified Kyber/
- * Uniswap swap executes, replacing the deleted buy/sell pairs) are
- * `capture: "none"` — their handler writes the durable truth DIRECTLY to
- * `agent_activity` (via `db/repos/agent-activity.ts`) before/during/after
- * broadcast, so the legacy `proj_activity` projection pipeline below must
- * never also run for them. `capture: "none"` + no `_tradeCapture` on the
+ * Uniswap swap executes, replacing the deleted buy/sell pairs) — and, from
+ * Agent Scan Phase 2, `khalani.bridge` / `relay.bridge` — are `capture: "none"`:
+ * their handler writes the durable truth DIRECTLY to `agent_activity` (via
+ * `db/repos/agent-activity.ts`) before/during/after broadcast, so the legacy
+ * `proj_activity` projection pipeline below must never also run for them.
+ * `capture: "none"` + no `_tradeCapture` on the
  * handler's `ToolResult.data` already makes `capture-pipeline.ts`'s existing
  * "no items → no-op" path skip projection for these tools with ZERO special
  * casing — the entries below exist so this classification is still
@@ -161,8 +162,16 @@ const entries: [string, MutationContract][] = [
   ["pendle.lp.remove",              { kind: "projection", capture: "full", expectedType: "lp", previewSupport: true, fanOut: "single", requiredFields: PROJECTION_FIELDS }],
 
   // ── audit (capture: full) ─────────────────────────────────
-  ["khalani.bridge",           { kind: "audit", capture: "full", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS }],
-  ["relay.bridge",             { kind: "audit", capture: "full", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS }],
+  // Khalani/Relay bridges (Agent Scan Phase 2, migration 045) write their durable
+  // truth DIRECTLY to `agent_activity` (via `db/repos/agent-activity.ts`) across
+  // the full staged lifecycle, so `capture: "none"` here — the legacy
+  // `proj_activity` projection pipeline must NEVER also run for them (exactly the
+  // Phase-1 kyberswap/uniswap flip). The Relay hidden-pair aliases
+  // (bridge_quote_relay / bridge_execute_relay) resolve to `relay.bridge`, so
+  // flipping it covers them too. Entries stay listed so the classification is
+  // explicit (every mutating tool classified exactly once).
+  ["khalani.bridge",           { kind: "audit", capture: "none", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["relay.bridge",             { kind: "audit", capture: "none", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.lend.deposit",      { kind: "audit", capture: "full", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS }],
   ["solana.lend.withdraw",     { kind: "audit", capture: "full", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS }],
   // Pendle income sweep — claims accrued YT interest + rewards / LP rewards to

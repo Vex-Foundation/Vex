@@ -1,15 +1,42 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { VexError, ErrorCodes } from "../../errors.js";
-import { parseBigintish } from "@tools/khalani/bridge-executor.js";
-import type {
-  ContractCallDepositPlan,
-  DepositPlan,
-  KhalaniChain,
-  Permit2DepositPlan,
-  TransferDepositPlan,
-} from "@tools/khalani/types.js";
+/**
+ * Khalani bridge-executor unit coverage — RE-PINNED for the Phase-2 W3a staged
+ * rewrite (`src/tools/khalani/bridge-executor.ts`).
+ *
+ * The pre-W3a executor exposed a monolithic `executeDepositPlan` (+ its
+ * `executeEvm*` / `executeSolana*` / `executeTransfer*` internals) that signed
+ * AND broadcast AND submitted in one call. W3a removed all of those in favour of
+ * two primitives: the pure planner `planKhalaniDepositLegs` and the staged
+ * per-leg signer `signStageKhalaniLeg`. This suite keeps the still-valid pure
+ * coverage and re-pins the executor-level intents that the new green suites do
+ * NOT already own.
+ *
+ * WHERE EACH REMOVED `executeDepositPlan` TEST WENT (no coverage lost silently):
+ *   - "blocks PERMIT2"                     → executor-staged-leg.test.ts "blocks PERMIT2"
+ *   - "routes EVM CONTRACT_CALL"           → executor-staged-leg.test.ts "classifies roles" + "stages hash BEFORE broadcast, then confirms"
+ *   - "submits the hash from deposit=true" → executor-staged-leg.test.ts "classifies roles" (isDeposit == 1) + staged-execute-safety.test.ts happy path (submits depositTxHash)
+ *   - "never submits a reverted deposit"   → staged-execute-safety.test.ts "reverted deposit → fails the leg + aborts, no submit"
+ *   - "routes Solana CONTRACT_CALL"        → executor-staged-leg.test.ts "Solana staged leg" (executor signs) + staged-execute-safety.test.ts "Solana source is refused" (handler refusal)
+ *   - "no deposit txHash (only switch)"    → executor-staged-leg.test.ts "skips a wallet_switchEthereumChain approval" + "requires exactly one deposit leg"
+ *   - "omits deposit=true"                 → executor-staged-leg.test.ts "requires exactly one deposit leg"
+ *   - "EVM source + Solana signer guard"   → executor-staged-leg.test.ts "family mismatch fails closed (Solana leg, EVM signer)" (same guard, mirror direction)
+ *   - "broadcast-only approval no-wait"    → DELETED (obsolete by design): W3a's staged discipline (R4) ALWAYS waits a bounded receipt per leg; the old conditional `waitForReceipt:false` fast-path no longer exists.
+ *
+ * RE-PINNED HERE (planner intents the green suites do not cover): the
+ * `wallet_switchEthereumChain` CHAIN_MISMATCH guard, TRANSFER-plan planning
+ * (EVM ERC20, EVM native, Solana-not-implemented), and the unsupported-method
+ * rejection — all now expressed against the pure `planKhalaniDepositLegs`.
+ */
+import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getAddress } from "viem";
+import { VexError, ErrorCodes } from "../../errors.js";
+import { parseBigintish, planKhalaniDepositLegs } from "@tools/khalani/bridge-executor.js";
+import type {
+  ContractCallDepositPlan,
+  KhalaniChain,
+  TransferDepositPlan,
+} from "@tools/khalani/types.js";
 
 const ETH_CHAIN: KhalaniChain = {
   type: "eip155",
@@ -28,55 +55,22 @@ const SOL_CHAIN: KhalaniChain = {
   rpcUrls: { default: { http: ["https://solana.example"] } },
 };
 
-const CHAINS: KhalaniChain[] = [ETH_CHAIN, SOL_CHAIN];
+const TOKEN = "0x4444444444444444444444444444444444444444";
+const DEPOSIT_ADDR = "0x3333333333333333333333333333333333333333";
 
-// We test parseBigintish directly (already imported at top-level).
-// For executeDepositPlan and friends, we mock the heavy dependencies.
-
-// 5D-protocols p4: executeDepositPlan now takes an explicit source-family signer
-// (the executor no longer resolves a wallet itself).
-const EVM_SIGNER = {
-  family: "eip155" as const,
-  address: "0x9f7cF98a82462575a3b25C664BfBE5dCeCF3dec2" as `0x${string}`,
-  privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
-};
-const SOL_SIGNER = {
-  family: "solana" as const,
-  address: "11111111111111111111111111111111",
-  secretKey: new Uint8Array(64),
-};
-
-const mockSendTransaction = vi.fn(async (): Promise<`0x${string}`> => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
-const mockWriteContract = vi.fn(async (): Promise<`0x${string}`> => "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
-const mockWaitForTransactionReceipt = vi.fn(async () => ({ status: "success" as const }));
-const mockSubmitDeposit = vi.fn(async () => ({
-  orderId: "order-123",
-  txHash: "0xdeadbeef",
-}));
-
-vi.mock("@tools/khalani/evm-client.js", () => ({
-  createDynamicWalletClient: vi.fn(() => ({
-    sendTransaction: mockSendTransaction,
-    writeContract: mockWriteContract,
-  })),
-  createDynamicPublicClient: vi.fn(() => ({
-    waitForTransactionReceipt: mockWaitForTransactionReceipt,
-  })),
-}));
-
-vi.mock("@tools/khalani/solana-signer.js", () => ({
-  signAndSendSolanaTransaction: vi.fn(async () => "5xFakeSignature123456789"),
-}));
-
-vi.mock("@tools/khalani/client.js", () => ({
-  getKhalaniClient: vi.fn(() => ({
-    submitDeposit: mockSubmitDeposit,
-  })),
-}));
-
-vi.mock("@tools/khalani/chains.js", () => ({
-  getChainRpcUrl: vi.fn(() => "https://eth.example"),
-}));
+/** Assert a synchronous `planKhalaniDepositLegs` call throws a `VexError` with `code`. */
+function expectPlanThrowsCode(fn: () => unknown, code: string): void {
+  let caught: unknown;
+  try {
+    fn();
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught).toBeInstanceOf(VexError);
+  if (caught instanceof VexError) {
+    expect(caught.code).toBe(code);
+  }
+}
 
 describe("parseBigintish", () => {
   it("returns undefined for null/undefined", () => {
@@ -105,183 +99,8 @@ describe("parseBigintish", () => {
   });
 });
 
-describe("executeDepositPlan", () => {
-  let executeDepositPlan: typeof import("@tools/khalani/bridge-executor.js").executeDepositPlan;
-
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
-    mockSubmitDeposit.mockResolvedValue({
-      orderId: "order-123",
-      txHash: "0xdeadbeef",
-    });
-    const mod = await import("@tools/khalani/bridge-executor.js");
-    executeDepositPlan = mod.executeDepositPlan;
-  });
-
-  // Adapter: positional call sites → object args, with a source-family signer.
-  function run(plan: DepositPlan, sourceChain: KhalaniChain, signer: typeof EVM_SIGNER | typeof SOL_SIGNER = EVM_SIGNER) {
-    return executeDepositPlan({ plan, sourceChain, chains: CHAINS, quoteId: "q1", routeId: "r1", signer });
-  }
-
-  it("blocks PERMIT2 plans with KHALANI_PERMIT2_BLOCKED", async () => {
-    const permit2Plan: Permit2DepositPlan = {
-      kind: "PERMIT2",
-      permit: { domain: {} },
-      transferDetails: { to: "0x1" },
-    };
-
-    await expect(
-      run(permit2Plan, ETH_CHAIN),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.KHALANI_PERMIT2_BLOCKED,
-    });
-  });
-
-  it("routes EVM CONTRACT_CALL to executeEvmContractCallPlan", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "eip1193_request",
-          request: {
-            method: "eth_sendTransaction",
-            params: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0x0" }],
-          },
-          deposit: true,
-        },
-      ],
-    };
-
-    const result = await run(plan, ETH_CHAIN);
-    expect(result).toHaveProperty("orderId");
-    expect(result).toHaveProperty("txHash");
-  });
-
-  it("submits the hash from the action flagged as deposit=true", async () => {
-    mockSendTransaction
-      .mockResolvedValueOnce("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-      .mockResolvedValueOnce("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "eip1193_request",
-          request: {
-            method: "eth_sendTransaction",
-            params: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0x0" }],
-          },
-        },
-        {
-          type: "eip1193_request",
-          request: {
-            method: "eth_sendTransaction",
-            params: [{ to: "0x3333333333333333333333333333333333333333", data: "0x", value: "0x0" }],
-          },
-          deposit: true,
-        },
-      ],
-    };
-
-    await run(plan, ETH_CHAIN);
-
-    expect(mockSubmitDeposit).toHaveBeenCalledWith(expect.objectContaining({
-      txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    }));
-  });
-
-  it("does not wait when Khalani marks an EVM approval broadcast-only", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [{
-        type: "eip1193_request",
-        request: {
-          method: "eth_sendTransaction",
-          params: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0x0" }],
-        },
-        waitForReceipt: false,
-        deposit: true,
-      }],
-    };
-
-    await run(plan, ETH_CHAIN);
-    expect(mockWaitForTransactionReceipt).not.toHaveBeenCalled();
-  });
-
-  it("never submits a reverted EVM transfer deposit to Khalani", async () => {
-    mockWaitForTransactionReceipt.mockResolvedValue({ status: "reverted" });
-    const plan: TransferDepositPlan = {
-      kind: "TRANSFER",
-      token: "native",
-      amount: "1",
-      depositAddress: "0x2222222222222222222222222222222222222222",
-    };
-
-    await expect(run(plan, ETH_CHAIN)).rejects.toMatchObject({ code: ErrorCodes.KHALANI_DEPOSIT_FAILED });
-    expect(mockSubmitDeposit).not.toHaveBeenCalled();
-  });
-
-  it("routes Solana CONTRACT_CALL to executeSolanaContractCallPlan", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "solana_sendTransaction",
-          transaction: "base64txdata",
-          deposit: true,
-        },
-      ],
-    };
-
-    const result = await run(plan, SOL_CHAIN, SOL_SIGNER);
-    expect(result).toHaveProperty("orderId");
-    expect(result).toHaveProperty("txHash");
-  });
-
-  it("throws when EVM CONTRACT_CALL yields no deposit txHash (only wallet_switchEthereumChain)", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "eip1193_request",
-          request: {
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: "0x1" }],
-          },
-        },
-      ],
-    };
-
-    await expect(
-      run(plan, ETH_CHAIN),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
-    });
-  });
-
-  it("throws when EVM CONTRACT_CALL omits deposit=true", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "eip1193_request",
-          request: {
-            method: "eth_sendTransaction",
-            params: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0x0" }],
-          },
-        },
-      ],
-    };
-
-    await expect(
-      run(plan, ETH_CHAIN),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
-    });
-  });
-
-  it("throws CHAIN_MISMATCH when wallet_switchEthereumChain requests a different chain", async () => {
+describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () => {
+  it("throws CHAIN_MISMATCH when wallet_switchEthereumChain requests a different chain", () => {
     const plan: ContractCallDepositPlan = {
       kind: "CONTRACT_CALL",
       approvals: [
@@ -294,29 +113,63 @@ describe("executeDepositPlan", () => {
         },
       ],
     };
-
-    await expect(
-      run(plan, ETH_CHAIN),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.CHAIN_MISMATCH,
-    });
+    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, ETH_CHAIN), ErrorCodes.CHAIN_MISMATCH);
   });
 
-  it("executes TRANSFER plan for EVM chain", async () => {
+  it("rejects an unsupported EVM approval method", () => {
+    const plan: ContractCallDepositPlan = {
+      kind: "CONTRACT_CALL",
+      approvals: [
+        {
+          type: "eip1193_request",
+          request: { method: "personal_sign", params: [] },
+        },
+      ],
+    };
+    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, ETH_CHAIN), ErrorCodes.KHALANI_DEPOSIT_FAILED);
+  });
+
+  it("plans an EVM ERC20 TRANSFER as a single bridge_deposit leg with transfer calldata", () => {
     const plan: TransferDepositPlan = {
       kind: "TRANSFER",
-      depositAddress: "0x3333333333333333333333333333333333333333",
+      depositAddress: DEPOSIT_ADDR,
       amount: "1000000",
-      token: "0x4444444444444444444444444444444444444444",
+      token: TOKEN,
       chainId: 1,
     };
-
-    const result = await run(plan, ETH_CHAIN);
-    expect(result).toHaveProperty("orderId");
-    expect(result).toHaveProperty("txHash");
+    const legs = planKhalaniDepositLegs(plan, ETH_CHAIN);
+    expect(legs).toHaveLength(1);
+    const leg = legs[0]!;
+    expect(leg.role).toBe("bridge_deposit");
+    expect(leg.isDeposit).toBe(true);
+    expect(leg.kind).toBe("evm");
+    if (leg.kind !== "evm") throw new Error("expected an EVM leg");
+    // ERC20 transfer → contract call (data set), never a native value transfer.
+    expect(leg.tx.to).toBe(getAddress(TOKEN));
+    expect(leg.tx.data).toBeDefined();
+    expect(leg.tx.value).toBeUndefined();
   });
 
-  it("rejects TRANSFER plan for Solana chain (not implemented)", async () => {
+  it("plans an EVM native TRANSFER (zero-address token) as a value transfer, no calldata", () => {
+    const plan: TransferDepositPlan = {
+      kind: "TRANSFER",
+      depositAddress: DEPOSIT_ADDR,
+      amount: "1000000",
+      token: "0x0000000000000000000000000000000000000000",
+      chainId: 1,
+    };
+    const legs = planKhalaniDepositLegs(plan, ETH_CHAIN);
+    expect(legs).toHaveLength(1);
+    const leg = legs[0]!;
+    expect(leg.role).toBe("bridge_deposit");
+    expect(leg.kind).toBe("evm");
+    if (leg.kind !== "evm") throw new Error("expected an EVM leg");
+    expect(leg.tx.to).toBe(getAddress(DEPOSIT_ADDR));
+    expect(leg.tx.value).toBe(1000000n);
+    expect(leg.tx.data).toBeUndefined();
+  });
+
+  it("rejects a Solana TRANSFER plan (not implemented)", () => {
     const plan: TransferDepositPlan = {
       kind: "TRANSFER",
       depositAddress: "11111111111111111111111111111111",
@@ -324,68 +177,7 @@ describe("executeDepositPlan", () => {
       token: "native",
       chainId: 20011000000,
     };
-
-    await expect(
-      run(plan, SOL_CHAIN, SOL_SIGNER),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
-    });
-  });
-
-  it("sends native transfer when token is the zero address", async () => {
-    const plan: TransferDepositPlan = {
-      kind: "TRANSFER",
-      depositAddress: "0x3333333333333333333333333333333333333333",
-      amount: "1000000",
-      token: "0x0000000000000000000000000000000000000000",
-      chainId: 1,
-    };
-
-    const result = await run(plan, ETH_CHAIN);
-    expect(result).toHaveProperty("orderId");
-  });
-
-  it("handles EVM approval with unsupported method", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "eip1193_request",
-          request: {
-            method: "personal_sign",
-            params: [],
-          },
-        },
-      ],
-    };
-
-    await expect(
-      run(plan, ETH_CHAIN),
-    ).rejects.toMatchObject({
-      code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
-    });
-  });
-
-  it("rejects an EVM source paired with a Solana signer (family guard, no submit)", async () => {
-    const plan: ContractCallDepositPlan = {
-      kind: "CONTRACT_CALL",
-      approvals: [
-        {
-          type: "eip1193_request",
-          request: {
-            method: "eth_sendTransaction",
-            params: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0x0" }],
-          },
-          deposit: true,
-        },
-      ],
-    };
-    // EVM source dispatches to the EVM executor, whose family guard rejects a
-    // Solana signer before any broadcast — never falls back to a primary wallet.
-    await expect(run(plan, ETH_CHAIN, SOL_SIGNER)).rejects.toMatchObject({
-      code: ErrorCodes.KHALANI_DEPOSIT_FAILED,
-    });
-    expect(mockSubmitDeposit).not.toHaveBeenCalled();
+    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, SOL_CHAIN), ErrorCodes.KHALANI_DEPOSIT_FAILED);
   });
 });
 

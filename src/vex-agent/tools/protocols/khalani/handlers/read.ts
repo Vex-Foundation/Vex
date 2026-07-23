@@ -15,6 +15,7 @@ import {
 } from "@tools/khalani/balances.js";
 import { walletAddressesEqual, familyToInventory } from "@tools/wallet/inventory.js";
 import { prepareQuoteRequest } from "@tools/khalani/request.js";
+import { classifyKhalaniQuoteResponse } from "@tools/khalani/quote-result.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
 
@@ -22,6 +23,9 @@ import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
 import { projectChain, projectChains, projectToken, projectTokens } from "../projectors.js";
+import { revealOnEligibleKhalaniFailure } from "./reveal.js";
+import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
+import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
@@ -183,6 +187,31 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
     }
 
+    // Pre-quote route guard (R9 — same wiring as the execute handler): a local
+    // chain routes statically to Relay; a nonlocal endpoint absent from the
+    // LIVE registry is a typed no-route that surfaces the route-bound Relay
+    // reveal (previously the raw resolver throw returned a bare message with
+    // no reveal — coordinator live-smoke finding, 2026-07-23).
+    let prequote: Awaited<ReturnType<typeof resolveKhalaniPrequoteRoute>>;
+    try {
+      prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
+    } catch (err) {
+      return { success: false, output: `khalani.quote.get failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (prequote.outcome === "static_relay") {
+      return {
+        success: false,
+        output: "This route touches a local chain (e.g. Robinhood) that Khalani does not serve — use the Relay bridge tools directly for it.",
+      };
+    }
+    if (prequote.outcome === "no_route") {
+      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
+      return {
+        success: false,
+        output: `khalani.quote.get failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${revealSuffix}`,
+      };
+    }
+
     // Per-session wallet scope (5D-protocols p4) — the quote uses the session's
     // selected source/dest wallets, not the primary. Read-only (no signing).
     const chains = await getCachedKhalaniChains();
@@ -230,14 +259,28 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       filler: str(params, "filler") || undefined,
     });
 
-    const quoteResponse = await getKhalaniClient().getQuotes(prepared.request);
+    // Read-only quote: a Khalani no-route (empty routes[]) or a reveal-eligible
+    // exception is a FAILURE that surfaces the route-bound Relay reveal. No
+    // activity row is written (a read miss records nothing — R15).
+    let outcome: ReturnType<typeof classifyKhalaniQuoteResponse>;
+    try {
+      outcome = classifyKhalaniQuoteResponse(await getKhalaniClient().getQuotes(prepared.request));
+    } catch (err) {
+      const externalName = err instanceof VexError ? err.externalName : undefined;
+      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "exception", externalName }, context.sessionId, params);
+      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}.${revealSuffix}` };
+    }
+    if (outcome.outcome === "no_route") {
+      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
+      return { success: false, output: `khalani.quote.get: Khalani has no route for this pair.${revealSuffix}` };
+    }
 
     return {
       success: true,
       output: JSON.stringify({
-        quoteId: quoteResponse.quoteId,
-        routeCount: quoteResponse.routes.length,
-        routes: quoteResponse.routes.map(r => ({
+        quoteId: outcome.quoteId,
+        routeCount: outcome.routes.length,
+        routes: outcome.routes.map(r => ({
           routeId: r.routeId,
           type: r.type,
           amountIn: r.quote.amountIn,
@@ -246,7 +289,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
           tags: r.quote.tags,
         })),
       }, null, 2),
-      data: { quoteId: quoteResponse.quoteId, routes: quoteResponse.routes },
+      data: { quoteId: outcome.quoteId, routes: outcome.routes },
     };
   },
 

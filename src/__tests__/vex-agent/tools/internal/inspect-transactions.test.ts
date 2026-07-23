@@ -130,3 +130,69 @@ describe("inspectTransactions handler (direct)", () => {
     expect(mockGetTransactions).not.toHaveBeenCalled();
   });
 });
+
+describe("inspectTransactions bridge output (Codex FIX-ROUND-1 finding 13)", () => {
+  const bridgeRow = {
+    source: "agent_activity",
+    id: 40,
+    namespace: "khalani",
+    productType: "bridge",
+    chain: "arbitrum",
+    chainId: 42161,
+    protocol: "khalani",
+    status: "pending",
+    inputToken: "USDC",
+    inputAmount: "2",
+    outputToken: "USDC",
+    outputAmount: "1.99",
+    amountBasis: "estimated",
+    valueUsd: 2,
+    fromChainId: 8453,
+    fromChainSlug: "base",
+    toChainId: 42161,
+    toChainSlug: "arbitrum",
+    chainFamily: "eip155",
+    providerOrderId: "ord_1",
+    legs: [
+      { eventIndex: 0, role: "bridge_deposit", chainId: 8453, chainSlug: "base", chainFamily: "eip155", txHash: "0xdeposit", status: "confirmed", failureCode: null },
+      { eventIndex: 1, role: "bridge_fill_expected", chainId: 42161, chainSlug: "arbitrum", chainFamily: "eip155", txHash: null, status: "pending", failureCode: null },
+      { eventIndex: 2, role: "bridge_refund", chainId: 8453, chainSlug: "base", chainFamily: "eip155", txHash: "0xrefund", status: "confirmed", failureCode: null },
+    ],
+    txHash: null,
+    createdAt: "2026-07-22T10:00:00.000000Z",
+  };
+
+  function mockBridge(): void {
+    mockGetTransactions.mockResolvedValueOnce({
+      items: [bridgeRow],
+      nextCursor: null,
+      hasMore: false,
+      failuresScope: "session",
+    });
+  }
+
+  it("summarizes origin→destination + estimate-marked amount + venue + status", async () => {
+    mockBridge();
+    const r = await inspectTransactions(["0xEVM"], "s1", {});
+    const tx = (r.data!.transactions as Array<{ summary: string }>)[0]!;
+    // Route endpoints, venue, and status all lead the compact line.
+    expect(tx.summary).toContain("base → arbitrum");
+    expect(tx.summary).toContain("via khalani");
+    expect(tx.summary).toContain("pending");
+    // The quoted amount is explicitly marked (R14) — never a bare executed
+    // quantity for a not-yet-verified bridge fill.
+    expect(tx.summary).toContain("~2 USDC");
+    expect(tx.summary).toContain("est.");
+  });
+
+  it("derives _explorerRefs from EVERY leg (deposit + refund), not only the top-level fill hash", async () => {
+    mockBridge();
+    const r = await inspectTransactions(["0xEVM"], "s1", {});
+    const refs = r.data!._explorerRefs as Array<{ chain: string; txRef: string }>;
+    // Deposit and refund legs each yield a ref keyed by their OWN chain; the
+    // still-pending (hashless) fill leg contributes none — never a half link.
+    expect(refs).toContainEqual({ chain: "base", txRef: "0xdeposit" });
+    expect(refs).toContainEqual({ chain: "base", txRef: "0xrefund" });
+    expect(refs).toHaveLength(2);
+  });
+});

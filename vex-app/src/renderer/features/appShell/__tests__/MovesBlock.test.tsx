@@ -81,6 +81,12 @@ function move(overrides: Partial<MoveItem> & { readonly id: string }): MoveItem 
     chain: "solana",
     txRef: null,
     walletAddress: null,
+    fromChain: null,
+    toChain: null,
+    providerOrderId: null,
+    amountBasis: null,
+    legs: [],
+    lastCheckedAt: null,
     createdAt: "2026-07-02T10:21:00+00:00",
     ...overrides,
   };
@@ -411,6 +417,86 @@ describe("MovesBlock ledger display", () => {
     render(<MovesBlock sessionId={SESSION} />);
     expect(screen.getByText("USDC")).not.toBeNull();
     expect(screen.queryByText(/50 USDC/)).toBeNull();
+  });
+
+  // ── bridge estimate labeling (R14) + tracking delay (R12) ───────────────
+
+  it("marks an ESTIMATED bridge amount with ~ and an 'est.' tag (R14 — never a bare executed quantity)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        productType: "bridge",
+        venue: "relay",
+        status: "pending",
+        amountBasis: "estimated",
+        inputToken: "USDC",
+        inputAmount: "2",
+        outputToken: "USDC",
+        outputAmount: "1.99",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("~2 USDC")).not.toBeNull();
+    expect(screen.getByText("~1.99 USDC")).not.toBeNull();
+    expect(screen.getByText("est.")).not.toBeNull();
+  });
+
+  it("renders an EXECUTED bridge amount bare — settled truth carries no estimate marker", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        productType: "bridge",
+        venue: "khalani",
+        status: "confirmed",
+        amountBasis: "executed",
+        inputToken: "USDC",
+        inputAmount: "2",
+        outputToken: "USDC",
+        outputAmount: "1.988",
+      }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("2 USDC")).not.toBeNull();
+    expect(screen.getByText("1.988 USDC")).not.toBeNull();
+    expect(screen.queryByText("est.")).toBeNull();
+  });
+
+  it("surfaces a 'tracking delayed' row tooltip for a STALE pending bridge (R12)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        productType: "bridge",
+        venue: "relay",
+        status: "pending",
+        // Last successful sweep check is long past → tracking is delayed.
+        lastCheckedAt: "2020-01-01T00:00:00+00:00",
+        createdAt: "2020-01-01T00:00:00+00:00",
+      }),
+    ]);
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+    const row = container.querySelector("li");
+    expect(row?.getAttribute("title")).toContain("Tracking delayed");
+  });
+
+  it("does NOT flag a freshly-checked pending bridge as delayed (no tooltip)", () => {
+    mockMoves([
+      move({
+        id: "1",
+        source: "agent_activity",
+        productType: "bridge",
+        venue: "relay",
+        status: "pending",
+        lastCheckedAt: new Date().toISOString(),
+        createdAt: "2020-01-01T00:00:00+00:00",
+      }),
+    ]);
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+    const row = container.querySelector("li");
+    // No failureCode, no delay, no instrumentKey → no title at all.
+    expect(row?.getAttribute("title")).toBeNull();
   });
 
   it("never pulses the status dot (owner decree: no pulsing dots anywhere)", () => {

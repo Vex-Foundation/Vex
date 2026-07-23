@@ -289,4 +289,67 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
       required: ["fromChain", "fromToken", "toChain", "toToken", "amount"],
     },
   },
+  {
+    // HIDDEN Relay-fallback bridge PREVIEW (bridge factory W5; plan R7). Hidden
+    // from the default tool list until the session has an active route reveal —
+    // `registry/visibility.ts` filters `RELAY_REVEAL_GATED_ALIAS_NAMES` out of
+    // `getVisibleToolDefs` (a route-bound reveal has no route context at
+    // visibility time, so this is the session-level predicate; the EXACT-route
+    // enforcement is at dispatch). Unlike generic `bridge_quote` (Khalani except
+    // the local-chain exception), this ALWAYS targets Relay.
+    name: "bridge_quote_relay",
+    kind: "internal",
+    mutating: false,
+    pressureSafety: "read_only",
+    actionKind: "read",
+    description:
+      "Preview a cross-chain bridge via Relay WITHOUT executing — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route (or for a Robinhood-Chain route, always available). Resolve fromToken/toToken addresses via token_find first. `amount` is in SMALLEST units (wei/lamports). Call this BEFORE bridge_execute_relay: a fresh matching quote on Relay is what unlocks execution.",
+    parameters: {
+      type: "object",
+      properties: {
+        fromChain: { type: "string", description: "Source chain ID or alias." },
+        fromToken: { type: "string", description: "Source token address, or native ETH/native." },
+        toChain: { type: "string", description: "Destination chain ID or alias." },
+        toToken: { type: "string", description: "Destination token address, or native ETH/native." },
+        amount: { type: "string", description: "Amount in smallest units (wei/lamports)." },
+        tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
+        recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
+        refundTo: { type: "string", description: "Refund address override (defaults to your wallet)." },
+        slippageBps: { type: "string", description: "Slippage tolerance in basis points." },
+      },
+      required: ["fromChain", "fromToken", "toChain", "toToken", "amount"],
+    },
+  },
+  {
+    // HIDDEN Relay-fallback bridge EXECUTE (bridge factory W5; plan R7/R8).
+    // Hidden pre-reveal exactly like bridge_quote_relay above. Dispatched via the
+    // dedicated mutating-alias branch (`MUTATING_PROTOCOL_ALIAS_ROUTERS`), so it
+    // needs NO INTERNAL_TOOL_LOADERS entry. The route-bound reveal is enforced by
+    // the router AND by `executeProtocolTool`'s gate on `relay.bridge`.
+    name: "bridge_execute_relay",
+    kind: "internal",
+    mutating: true,
+    pressureSafety: "mutating",
+    // SAME actionKind the target relay.bridge manifest carries — do NOT invent
+    // one. Dispatcher fallback stamp; on dispatch the result already carries the
+    // target's actionKind from executeProtocolTool.
+    actionKind: "user_wallet_broadcast",
+    description:
+      "Execute a REAL cross-chain bridge via Relay (spends funds, signs + broadcasts on the source chain) — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route (or for a Robinhood-Chain route, always available). REQUIRES a fresh matching bridge_quote_relay FIRST on Relay. Resolve fromToken/toToken addresses via token_find first. `amount` is in SMALLEST units (wei/lamports). Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
+    parameters: {
+      type: "object",
+      properties: {
+        fromChain: { type: "string", description: "Source chain ID or alias." },
+        fromToken: { type: "string", description: "Source token address, or native ETH/native." },
+        toChain: { type: "string", description: "Destination chain ID or alias." },
+        toToken: { type: "string", description: "Destination token address, or native ETH/native." },
+        amount: { type: "string", description: "Amount in smallest units (wei/lamports)." },
+        tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
+        recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
+        refundTo: { type: "string", description: "Refund address override (defaults to your wallet)." },
+        slippageBps: { type: "string", description: "Slippage tolerance in basis points." },
+      },
+      required: ["fromChain", "fromToken", "toChain", "toToken", "amount"],
+    },
+  },
 ];

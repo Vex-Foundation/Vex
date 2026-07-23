@@ -97,6 +97,11 @@ export interface QuoteRoute {
     quoteExpiresAt?: number;
     estimatedGas?: string;
     tags?: string[];
+    // Live drift (undocumented): the quote endpoint returns the deposit methods
+    // this route actually supports. Kept as raw strings — it is undocumented,
+    // untrusted provider data, so it is NOT coerced into the closed
+    // `DepositMethod` union. Absent when the provider omits it.
+    supportedDepositMethods?: string[];
   };
 }
 
@@ -204,6 +209,10 @@ export interface KhalaniOrder {
   author: string;
   recipient: string | null;
   refundTo: string | null;
+  // Live drift: present on live orders (the address of the filler that settled
+  // the destination leg), `null` before a filler is assigned. Modeled as
+  // string | null, mirroring recipient/refundTo.
+  fillerAddress: string | null;
   depositTxHash: string;
   externalOrderId?: string;
   createdAt: string;

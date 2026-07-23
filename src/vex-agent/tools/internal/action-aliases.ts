@@ -46,6 +46,7 @@ import { executeProtocolTool } from "../protocols/runtime.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import logger from "@utils/logger.js";
 
@@ -343,4 +344,58 @@ export async function handleBridgeQuote(
   if (a.referrerFeeBps !== undefined) params.referrerFeeBps = a.referrerFeeBps;
   if (a.filler !== undefined) params.filler = a.filler;
   return executeProtocolTool({ toolId: "khalani.quote.get", params }, protocolContext(context));
+}
+
+// ── bridge_quote_relay — HIDDEN Relay-only bridge preview (route-bound reveal) ──
+//
+// The read half of the hidden Relay fallback pair (bridge factory W5; plan R7).
+// Unlike the generic `bridge_quote` (which stays Khalani-routed except the
+// local-chain static exception), this alias ALWAYS targets `relay.quote.get`. It
+// is dispatch-gated on the ROUTE-BOUND reveal (`evaluateRelayRevealGate`) here as
+// an early, clean rejection; `executeProtocolTool`'s own gate on
+// `relay.quote.get` is the un-bypassable backstop. Robinhood/local routes pass
+// the gate via the always-allowed carve-out.
+
+const BridgeQuoteRelayArgs = z.object({
+  fromChain: z.string().min(1, { message: "fromChain is required" }),
+  fromToken: z.string().min(1, { message: "fromToken is required" }),
+  toChain: z.string().min(1, { message: "toChain is required" }),
+  toToken: z.string().min(1, { message: "toToken is required" }),
+  amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+  tradeType: z.string().min(1).optional(),
+  recipient: z.string().min(1).optional(),
+  refundTo: z.string().min(1).optional(),
+  slippageBps: z.string().min(1).optional(),
+});
+
+export async function handleBridgeQuoteRelay(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  if (evaluateRelayRevealGate(args, context.sessionId).decision === "deny") {
+    return fail(
+      "bridge_quote_relay is not available for this route yet — it unlocks after an eligible "
+        + "Khalani no-route failure for this exact route (Robinhood routes are always available via "
+        + "bridge_quote). Try bridge_quote first.",
+    );
+  }
+
+  const parsed = BridgeQuoteRelayArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`bridge_quote_relay: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a = parsed.data;
+
+  const params: Record<string, unknown> = {
+    fromChain: a.fromChain,
+    fromToken: a.fromToken,
+    toChain: a.toChain,
+    toToken: a.toToken,
+    amount: a.amount,
+  };
+  if (a.tradeType !== undefined) params.tradeType = a.tradeType;
+  if (a.recipient !== undefined) params.recipient = a.recipient;
+  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
+  if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
+  return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
 }

@@ -67,6 +67,7 @@ import {
   explorerAccountUrl,
   explorerTxUrl,
 } from "@shared/explorer-links.js";
+import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { TokenIcon } from "../../../components/common/TokenIcon.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
 import { formatClock } from "../../../lib/format.js";
@@ -249,6 +250,10 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const trustedHuman = move.source === "agent_activity";
   const inputAmount = amountDisplay(move.inputAmount, trustedHuman);
   const outputAmount = amountDisplay(move.outputAmount, trustedHuman);
+  // R14: a bridge whose shown amounts are the QUOTE (not an independently
+  // verified fill) marks both legs `~…` + a single trailing "est." tag, so a
+  // quoted bridge amount never reads as an executed quantity.
+  const estimated = move.amountBasis === "estimated";
   const time = formatClock(move.createdAt);
   const explorerUrl = explorerTxUrl(move.chain, move.txRef);
   // No tx ref (e.g. a HyperCore fill) → offer a distinct account link instead
@@ -257,9 +262,20 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
     explorerUrl === null
       ? explorerAccountUrl(move.chain, move.walletAddress)
       : null;
-  // A failed agent_activity row's failureCode is the more useful tooltip
-  // when present; instrumentKey (legacy rows only) is the fallback.
-  const rowTitle = move.failureCode ?? move.instrumentKey ?? undefined;
+  // R12: a pending bridge whose sweep check has fallen far behind
+  // (last_checked_at — or createdAt before the first check — is stale) surfaces
+  // a "tracking delayed" tooltip in the compact ledger (the fuller
+  // TokenHistoryScreen shows a chip). Priority: failureCode wins, then the
+  // tracking-delay note, then the legacy instrumentKey.
+  const bridgeDelayTitle =
+    move.productType === "bridge" &&
+    move.status === "pending" &&
+    isBridgeTrackingStale(move.lastCheckedAt, move.createdAt)
+      ? move.lastCheckedAt !== null
+        ? `Tracking delayed — last checked ${formatClock(move.lastCheckedAt) ?? "recently"}`
+        : "Tracking delayed — not yet checked since the bridge started"
+      : null;
+  const rowTitle = move.failureCode ?? bridgeDelayTitle ?? move.instrumentKey ?? undefined;
 
   // Shared row cells. The `group` sits on the hoverable wrapper (anchor for
   // linked rows, <li> for plain rows) so legs lighten on row hover in both.
@@ -288,7 +304,9 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
             <TokenIcon symbol={input.iconSymbol} size={12} />
           ) : null}
           <span className="truncate">
-            {inputAmount !== null ? `${inputAmount} ${input.text}` : input.text}
+            {inputAmount !== null
+              ? `${estimated ? "~" : ""}${inputAmount} ${input.text}`
+              : input.text}
           </span>
         </span>
         <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
@@ -300,9 +318,16 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
             <TokenIcon symbol={output.iconSymbol} size={12} />
           ) : null}
           <span className="truncate">
-            {outputAmount !== null ? `${outputAmount} ${output.text}` : output.text}
+            {outputAmount !== null
+              ? `${estimated ? "~" : ""}${outputAmount} ${output.text}`
+              : output.text}
           </span>
         </span>
+        {estimated ? (
+          <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            est.
+          </span>
+        ) : null}
       </span>
       {time !== null ? (
         <span className="shrink-0 text-right font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">

@@ -2,9 +2,9 @@
  * Faithful eval-only seeders (Phase 0). NOT a test file (underscore prefix).
  *
  * These drive the PRODUCTION seam — `recordExecution` → `populateCaptureItems`
- * (→ activity-populator → projectors → proj_pnl_lots / proj_pnl_matches /
- * proj_open_positions) — exactly like the live runtime, so downstream ledger
- * reads see REAL ledger rows. They are named `seedFaithful*` so they can never
+ * (→ activity-populator → projectors) — exactly like the live runtime, so
+ * downstream ledger reads see REAL ledger rows. (The legacy PnL projections
+ * proj_pnl_lots/proj_pnl_matches were dropped in migration 047.) They are named `seedFaithful*` so they can never
  * be confused with the raw-SQL legacy seeders in `repos/_s4-fixtures.ts`
  * (those are left untouched).
  *
@@ -109,9 +109,9 @@ export interface FaithfulSpotResult {
 }
 
 /**
- * Drive a real confirmed spot trade through the production capture seam. The buy
- * opens a `proj_pnl_lots` lot; the sell creates a `proj_pnl_matches`
- * `match_kind='matched'` row with non-null `realized_pnl_usd`.
+ * Drive a real confirmed spot trade through the production capture seam.
+ * (The legacy lot/match projections were dropped in migration 047; the seam
+ * still exercises the capture/activity path.)
  *
  * Token amounts are RAW INTEGER STRINGS; USD values are DECIMAL STRINGS (numbers
  * would leave the NUMERIC column NULL and break the projector math). The
@@ -200,20 +200,6 @@ export async function seedFaithfulConfirmedSpotTrade(
     instrumentKey: args.instrumentKey,
     walletAddress: args.walletAddress,
   };
-}
-
-/** Probe the live projector: did a matched, realized row land for this instrument? */
-export async function countMatchedRealized(
-  instrumentKey: string,
-  walletAddress: string,
-): Promise<number> {
-  const rows = await query<{ n: string }>(
-    `SELECT count(*)::text AS n FROM proj_pnl_matches
-       WHERE instrument_key = $1 AND wallet_address = $2
-         AND match_kind = 'matched' AND realized_pnl_usd IS NOT NULL`,
-    [instrumentKey, walletAddress],
-  );
-  return Number(rows[0]!.n);
 }
 
 // ── Faithful CLOSED perps position (open → close → signed MTM) ──────

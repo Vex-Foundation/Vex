@@ -24,10 +24,20 @@ const SYNC_JOBS = [
   // sync/agent-activity-repair.ts.
   { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
 
+  // Phase-2 bridge order-status sweep — re-checks pending bridge logical rows by
+  // provider_order_id (Khalani/Relay), independently verifies fills before
+  // confirming, never ages pending→failed. Lookup-only; see
+  // sync/bridge-activity-repair.ts. Cadence mirrors the Phase-1 repair sweep.
+  { namespace: "_global", syncType: "bridge_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "kyberswap", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
+  // Relay bridge post-mutation balance refresh (khalani parity, B8). The W4 sweep
+  // enqueues this job by execution id on a verified pending→confirmed; this
+  // post_mutation entry is the job the enqueue targets (getJobsForNamespace("relay")).
+  { namespace: "relay", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   // Pendle trades can land on chains Khalani cannot scan; the post-mutation run
   // derives the traded chain from _tradeCapture.chain and selectively refreshes
   // it (enrich/seed) so PT balances appear immediately instead of at the next
