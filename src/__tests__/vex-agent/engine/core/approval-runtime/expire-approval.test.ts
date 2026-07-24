@@ -137,6 +137,12 @@ vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+const mockCancelIfPending = vi.fn().mockResolvedValue(null);
+vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
+  cancelIfPending: (...a: unknown[]) => mockCancelIfPending(...a),
+  getById: vi.fn(),
+}));
+
 // approval-intents repo: keep markExecutionStatus mockable so we can pin
 // the non-tx audit calls. getExpired is mocked per-test for sweep cases.
 const mockMarkExecutionStatus = vi.fn().mockResolvedValue(undefined);
@@ -293,6 +299,8 @@ beforeEach(() => {
   mockCreateLeaseHandle.mockReset();
   mockResumeMissionRun.mockReset();
   mockReleaseLeaseAndEmit.mockReset();
+  mockCancelIfPending.mockReset();
+  mockCancelIfPending.mockResolvedValue(null);
 
   // Default lease claim path — happy: claim succeeds, handle returned.
   mockClaimRunLeaseAndFlipToRunning.mockResolvedValue({
@@ -339,5 +347,21 @@ describe("expireApproval", () => {
 
     const outcome = await expireApproval(APPROVAL_ID);
     expect(outcome.kind).toBe("already_approved");
+  });
+
+  it("wallet_send_confirm expire cancels the linked pending wallet intent", async () => {
+    const intentId = "intent-00000000-0000-4000-8000-000000000077";
+    programSnapshotOnly(
+      buildSnapshotRow({
+        queue_tool_call: {
+          command: "wallet_send_confirm",
+          args: { network: "eip155", intentId },
+        },
+      }),
+    );
+
+    const outcome = await expireApproval(APPROVAL_ID);
+    expect(outcome.kind).toBe("rejected");
+    expect(mockCancelIfPending).toHaveBeenCalledWith(intentId, SESSION_ID);
   });
 });

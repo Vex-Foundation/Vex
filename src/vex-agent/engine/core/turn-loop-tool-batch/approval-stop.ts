@@ -24,6 +24,7 @@ import {
   buildPolicySnapshot,
   type IntentPreview,
 } from "../approval-intent-preview.js";
+import { bindWalletSendConfirmApproval } from "../wallet-send-approval.js";
 
 /**
  * Puzzle 5 phase 3 — TTL stamped at enqueue (not at approve). The approve
@@ -93,25 +94,45 @@ export async function enqueueApprovalIntent(args: {
 
   const approvalId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const intentRiskLevel = riskLevelFromActionKind(intentActionKind);
-  // Stage 7 R5: carry the gate-matched swap safety verdict (typed, off the
-  // ToolResult — NOT raw args) into the preview so restricted-mode approval
-  // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
-  const intentPreview =
-    trustedPreview ??
-    buildIntentPreview(
-      toolCall.name,
+
+  // wallet_send_confirm: ALWAYS bind preview + expiry to the durable
+  // wallet_intents row (session-scoped). Tool args are only {network,intentId};
+  // building from args alone yields a blind card, and model-supplied to/amount
+  // keys must never paint a lying preview. Fail closed if the intent is not a
+  // live pending row — never enqueue without enough context to decide.
+  // trustedPreview from prepare→follow-up is ignored here on purpose: the row
+  // is the source of truth (and matches the prepare-time preview when healthy).
+  let intentPreview: IntentPreview;
+  let boundWalletExpiresAt: string | undefined;
+  if (toolCall.name === "wallet_send_confirm") {
+    const bound = await bindWalletSendConfirmApproval(
+      context.sessionId,
       toolCall.arguments,
-      result.prequote
-        ? {
-            prequoteVerdict: result.prequote.verdict,
-            fotTax: result.prequote.fotTax,
-            // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
-            // buildIntentPreview renders the fixed lock warning (never from args).
-            termLock: result.prequote.termLock,
-            ...(result.hyperliquid ? { hyperliquid: result.hyperliquid } : {}),
-          }
-        : result.hyperliquid ? { hyperliquid: result.hyperliquid } : undefined,
     );
+    intentPreview = bound.preview;
+    boundWalletExpiresAt = bound.expiresAt;
+  } else {
+    // Stage 7 R5: carry the gate-matched swap safety verdict (typed, off the
+    // ToolResult — NOT raw args) into the preview so restricted-mode approval
+    // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
+    intentPreview =
+      trustedPreview ??
+      buildIntentPreview(
+        toolCall.name,
+        toolCall.arguments,
+        result.prequote
+          ? {
+              prequoteVerdict: result.prequote.verdict,
+              fotTax: result.prequote.fotTax,
+              // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
+              // buildIntentPreview renders the fixed lock warning (never from args).
+              termLock: result.prequote.termLock,
+              ...(result.hyperliquid ? { hyperliquid: result.hyperliquid } : {}),
+            }
+          : result.hyperliquid ? { hyperliquid: result.hyperliquid } : undefined,
+      );
+  }
+
   const intentPolicy = buildPolicySnapshot(toolContext);
   // Phase 3: stamp `expires_at` at enqueue so the approve gate +
   // scheduled sweep have a DB-visible TTL boundary (see APPROVAL_TTL_MS
@@ -119,14 +140,20 @@ export async function enqueueApprovalIntent(args: {
   // phase 3 to accept the structured builder shapes directly — no
   // `as unknown as Record<string, unknown>` cast needed. A trusted prepared
   // action's own expiry floors this so the approval can never outlive the
-  // underlying wallet intent.
+  // underlying wallet intent. wallet_send_confirm always floors at the
+  // live intent row expiry as well.
   const defaultExpiresAtMs = Date.now() + APPROVAL_TTL_MS;
   const trustedExpiresAtMs =
     trustedExpiresAt === undefined ? Number.POSITIVE_INFINITY : Date.parse(trustedExpiresAt);
+  const boundWalletExpiresAtMs =
+    boundWalletExpiresAt === undefined
+      ? Number.POSITIVE_INFINITY
+      : Date.parse(boundWalletExpiresAt);
   const intentExpiresAt = new Date(
     Math.min(
       defaultExpiresAtMs,
       Number.isFinite(trustedExpiresAtMs) ? trustedExpiresAtMs : defaultExpiresAtMs,
+      Number.isFinite(boundWalletExpiresAtMs) ? boundWalletExpiresAtMs : defaultExpiresAtMs,
     ),
   ).toISOString();
 

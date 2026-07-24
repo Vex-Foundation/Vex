@@ -27,6 +27,7 @@ import {
   type PreparedContinuation,
   type RejectPrepareOutcome,
 } from "../types.js";
+import { cancelWalletIntentAfterApprovalRejection } from "../../wallet-send-approval.js";
 
 import { flipRunToPausedError, RESUME_CLAIM_ERROR_KIND } from "./recovery.js";
 
@@ -59,6 +60,11 @@ async function runRejectionSideEffects(
   const toolCallId = row.queue_tool_call_id ?? row.tool_call_id ?? approvalId;
 
   try {
+    // Reject/expire/policy-drift of wallet_send_confirm must kill the
+    // underlying wallet intent. Otherwise a later direct confirm call can
+    // re-enqueue a thin approval card for the still-pending transfer.
+    await cancelWalletIntentAfterApprovalRejection(sessionId, row.queue_tool_call);
+
     await refreshBlobTtlForRecentMessages(sessionId);
 
     await appendMessage(

@@ -137,6 +137,14 @@ vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// wallet_send_confirm reject must CAS-cancel the linked wallet intent so a
+// later thin re-confirm cannot revive a user-rejected transfer.
+const mockCancelIfPending = vi.fn().mockResolvedValue(null);
+vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
+  cancelIfPending: (...a: unknown[]) => mockCancelIfPending(...a),
+  getById: vi.fn(),
+}));
+
 // approval-intents repo: keep markExecutionStatus mockable so we can pin
 // the non-tx audit calls. getExpired is mocked per-test for sweep cases.
 const mockMarkExecutionStatus = vi.fn().mockResolvedValue(undefined);
@@ -293,6 +301,8 @@ beforeEach(() => {
   mockCreateLeaseHandle.mockReset();
   mockResumeMissionRun.mockReset();
   mockReleaseLeaseAndEmit.mockReset();
+  mockCancelIfPending.mockReset();
+  mockCancelIfPending.mockResolvedValue(null);
 
   // Default lease claim path — happy: claim succeeds, handle returned.
   mockClaimRunLeaseAndFlipToRunning.mockResolvedValue({
@@ -337,6 +347,37 @@ describe("prepareReject", () => {
     );
 
     expect(mockClaimRunLeaseAndFlipToRunning).toHaveBeenCalled();
+  });
+
+  it("wallet_send_confirm reject cancels the linked pending wallet intent", async () => {
+    const intentId = "intent-00000000-0000-4000-8000-000000000099";
+    programSnapshotOnly(
+      buildSnapshotRow({
+        queue_tool_call: {
+          command: "wallet_send_confirm",
+          args: { network: "eip155", intentId },
+        },
+      }),
+    );
+
+    await prepareReject(APPROVAL_ID, "No");
+
+    expect(mockCancelIfPending).toHaveBeenCalledWith(intentId, SESSION_ID);
+  });
+
+  it("non-wallet reject does not touch wallet_intents", async () => {
+    programSnapshotOnly(
+      buildSnapshotRow({
+        queue_tool_call: {
+          command: "kyberswap.swap.sell",
+          args: { amountIn: "1" },
+        },
+      }),
+    );
+
+    await prepareReject(APPROVAL_ID, "No");
+
+    expect(mockCancelIfPending).not.toHaveBeenCalled();
   });
 
   it("default reason 'No reason provided' when not supplied", async () => {
