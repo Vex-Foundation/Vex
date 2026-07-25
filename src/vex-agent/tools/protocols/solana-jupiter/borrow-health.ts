@@ -197,6 +197,25 @@ function parseRawAmount(raw: string): bigint | null {
 }
 
 /**
+ * `10 ** decimals` — the divisor that turns a raw atomic amount into token
+ * units — or `null` when the provider's `decimals` cannot produce a usable one.
+ *
+ * `decimals` reaches here as a plain JSON number off a provider row whose only
+ * contract is a compile-time `interface`
+ * (`jupiter-lend/borrow-api/types.ts`), so it is untrusted like the prices
+ * beside it. Checking the DIVISOR rather than the decimals value keeps one rule
+ * instead of a decimals-range policy, and catches the case a result-only check
+ * cannot: `10 ** 400` is `Infinity`, so every amount divided by it becomes a
+ * FINITE `0` — a real position reported as empty at 0.00% LTV, which is a
+ * fabrication an agent would read as "borrow more". The other direction,
+ * `10 ** -400 === 0`, divides by zero into `Infinity`.
+ */
+function tokenUnitDivisor(decimals: number): number | null {
+  const divisor = 10 ** decimals;
+  return Number.isFinite(divisor) && divisor > 0 ? divisor : null;
+}
+
+/**
  * USD estimate for display. `"<0.01"` rather than `"0.00"` for a real but
  * sub-cent value: `"0.00"` would assert the position holds nothing, which is
  * the kind of claim `rules/90-vex-project.md` forbids ("never claim more than
@@ -257,8 +276,30 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
     );
   }
 
-  const collateralUsd = (Number(collateralRaw) / 10 ** input.collateralDecimals) * collateralPrice;
-  const debtUsd = (Number(debtRaw) / 10 ** input.debtDecimals) * debtPrice;
+  const collateralDivisor = tokenUnitDivisor(input.collateralDecimals);
+  const debtDivisor = tokenUnitDivisor(input.debtDecimals);
+  if (collateralDivisor === null || debtDivisor === null) {
+    return unknown(
+      `Vault ${input.vaultId} reported token decimals that cannot scale its raw amounts (collateral `
+      + `${input.collateralDecimals}, debt ${input.debtDecimals}), so no LTV could be computed and the raw amounts `
+      + `cannot be read as token quantities either. Re-read solana.lend.borrowVaults for a usable vault row.`,
+    );
+  }
+
+  const collateralUsd = (Number(collateralRaw) / collateralDivisor) * collateralPrice;
+  const debtUsd = (Number(debtRaw) / debtDivisor) * debtPrice;
+  // THE RESULT, not just the inputs. Every input above is individually finite
+  // and still the product can overflow — a 15-digit amount against a divisor of
+  // `1e-323` is `Infinity`. Reaching `"computed"` with a non-finite value emits
+  // `"NaN"`/`"Infinity"` through `toFixed`, under the exact discriminant that
+  // tells an autonomous agent the number is usable.
+  if (!Number.isFinite(collateralUsd) || !Number.isFinite(debtUsd)) {
+    return unknown(
+      `Vault ${input.vaultId}'s collateral or debt valuation overflowed to a number this reader cannot represent, `
+      + `so no LTV could be computed. Compare the raw amounts against the vault's maxLtvPercent / `
+      + `liquidationThresholdPercent yourself, or re-read solana.lend.borrowVaults for fresher prices and decimals.`,
+    );
+  }
 
   if (collateralUsd <= 0 && debtUsd > 0) {
     return {
@@ -274,6 +315,20 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
 
   // Both zero: an empty position. 0% LTV is the true answer, not an unknown.
   const ltvPercent = collateralUsd > 0 ? (debtUsd / collateralUsd) * 100 : 0;
+  // The QUOTIENT can overflow where neither operand did: a denormal collateral
+  // valuation under an ordinary debt divides to `Infinity`. `Infinity.toFixed(2)`
+  // is the string `"Infinity"`, and `"Infinity%"` under `status: "computed"` is
+  // a liquidation risk presented as a usable measurement.
+  if (!Number.isFinite(ltvPercent)) {
+    return unknown(
+      `Vault ${input.vaultId}'s debt-to-collateral ratio overflowed to a number this reader cannot represent — the `
+      + `collateral valuation is too small relative to the debt to express as a percentage — so no LTV was `
+      + `computed. Treat this position as at least severely overleveraged: repay it or add collateral before any `
+      + `operation that increases debt or reduces collateral.`,
+    );
+  }
+  // `liquidationThreshold` and `ltvPercent` are both finite and non-negative
+  // here, so their difference cannot overflow — no further guard is reachable.
   return {
     status: "computed",
     collateralUsd: formatUsdEstimate(collateralUsd),

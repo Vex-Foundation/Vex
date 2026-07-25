@@ -114,15 +114,6 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
-// The execute re-reads its own persisted quote-time price floor before signing
-// (`swap-price-floor.ts`). These cases pin staged-broadcast bookkeeping, not
-// the floor, so it is supplied as satisfied; the floor's own refusals live in
-// `price-floor-gate.test.ts`.
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 const mockLoggerWarn = vi.fn();
 
 vi.mock("@utils/logger.js", () => {
@@ -132,10 +123,7 @@ vi.mock("@utils/logger.js", () => {
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
-import {
-  compliantSwapCalldata,
-  matchedPrequoteWithFloor,
-} from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -188,8 +176,6 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
     });
-    mockFindFreshMatchedSwapPrequote.mockReset();
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }] });
     // `vi.clearAllMocks()` clears call history but NOT a configured
     // implementation/once-queue — reset the mocks whose EXACT per-test

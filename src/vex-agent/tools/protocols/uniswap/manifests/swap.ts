@@ -12,7 +12,7 @@ const SWAP_EXECUTION_PARAMS = [
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search." },
   { key: "tokenOut", type: "string" as const, required: true, description: "Output token CONTRACT ADDRESS or native ETH/native." },
   { key: "amountIn", type: "string" as const, required: true, description: "Amount in human-readable units." },
-  { key: "slippageBps", type: "number" as const, unit: "bps" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%)." },
+  { key: "slippageBps", type: "number" as const, unit: "bps" as const, description: "Slippage tolerance in basis points (1 bps = 0.01%); default 50 = 0.5%, which fits deep, liquid pairs. It sets the minimum output written into the swap calldata, and is the ONLY price protection on the trade. Must match the uniswap.swap.quote value (or be omitted on both) — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 50 bps often fails at execution: the router REVERTS with \"Too little received\" / \"INSUFFICIENT_OUTPUT_AMOUNT\", the activity row records failure code slippage, and the gas is spent. That is the signal to retry with more tolerance, not to give up on the pair: re-quote with a higher slippageBps and pass the same value here. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps — no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept." },
 ];
 
 export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
@@ -28,7 +28,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenIn", type: "string", required: true, description: "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search — resolve a symbol to its address first." },
       { key: "tokenOut", type: "string", required: true, description: "Output token CONTRACT ADDRESS or native ETH/native." },
       { key: "amountIn", type: "string", required: true, description: "Amount in human-readable units." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default: 50 = 0.5%)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (1 bps = 0.01%); default 50 = 0.5%, which fits deep, liquid pairs. It pins the minimum output the resulting swap will enforce, and is the ONLY price protection that trade has. Pass the SAME value to uniswap.swap.execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 50 bps often fails at execute time: the router REVERTS with \"Too little received\" / \"INSUFFICIENT_OUTPUT_AMOUNT\", the activity row records failure code slippage, and the gas is spent. After such a revert, re-quote with a higher slippageBps rather than abandoning the pair. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept." },
     ],
     exampleParams: { chain: "robinhood", tokenIn: "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31", tokenOut: "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b", amountIn: "10" },
     discovery: UNISWAP_SWAP_DISCOVERY["uniswap.swap.quote"],

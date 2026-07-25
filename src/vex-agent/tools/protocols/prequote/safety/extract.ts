@@ -11,8 +11,7 @@
 
 import { z } from "zod";
 
-import { NATIVE_TOKEN_ADDRESS, KYBERSWAP_DEFAULT_SLIPPAGE_BPS } from "@tools/kyberswap/constants.js";
-import { buildApprovedPriceFloor, toRouteRef } from "@tools/kyberswap/swap-price-floor.js";
+import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import { jupiterFeePreviewSchema } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
@@ -161,12 +160,6 @@ export interface ExtractedQuote {
   readonly slippageBps: number | null;
   readonly verdict: SafetyVerdict;
   readonly safetyDetail: Record<string, unknown>;
-  /**
-   * Structural-only route facts for the `route_ref` column, or null. Today
-   * only `kyberswap.swap.quote` populates it, with the Vex-computed price
-   * floor the execute is held to (`@tools/kyberswap/swap-price-floor`).
-   */
-  readonly routeRef?: Record<string, unknown> | null;
 }
 
 // EVM quote result (kyberswap.swap.quote) — token addresses + chainId + safety.
@@ -176,25 +169,6 @@ const EvmQuoteResultSchema = z.object({
   tokenOut: z.object({ address: z.string() }),
   safety: EvmSafetySchema,
 });
-
-/**
- * KyberSwap's RAW atomic-unit quoted output, already net of the Vex integrator
- * fee (it is charged on the input side) — the exact quantity the approved price
- * floor is computed from.
- *
- * Read DEFENSIVELY rather than through the schema above: a quote result whose
- * `routeSummary` is missing or shaped unexpectedly must still record a prequote
- * (with no floor, which `kyberswap.swap.execute` then refuses), never fail
- * extraction outright and leave the trade with no prequote at all. Any value
- * that is not a raw integer string is passed through as `undefined` and
- * `buildApprovedPriceFloor` declines it.
- */
-function readQuotedNetOutRaw(data: Record<string, unknown>): unknown {
-  const routeSummary = data.routeSummary;
-  return typeof routeSummary === "object" && routeSummary !== null
-    ? (routeSummary as Record<string, unknown>).amountOut
-    : undefined;
-}
 
 function extractEvm(
   params: Record<string, unknown>,
@@ -209,19 +183,12 @@ function extractEvm(
   const inLeg = evmLegVerdict(parsed.data.safety.tokenIn);
   const outLeg = evmLegVerdict(parsed.data.safety.tokenOut);
 
-  // Vex's OWN price floor, computed from the output the user was just shown
-  // and persisted so `kyberswap.swap.execute` can hold the opaque build
-  // calldata to it. The slippage MUST be resolved exactly as the execute
-  // resolves it — an omitted value takes the same venue default — or an
-  // omitted-slippage quote would persist a floor the execute is not measured
-  // against. A non-integer/out-of-range value never reaches here (both
-  // handlers reject it first); `buildApprovedPriceFloor` returns null rather
-  // than throwing if it somehow does, and the execute then refuses.
-  const floor = buildApprovedPriceFloor(
-    readQuotedNetOutRaw(data),
-    slippage ?? KYBERSWAP_DEFAULT_SLIPPAGE_BPS,
-  );
-
+  // No route facts are persisted here. A quote-time price floor used to ride
+  // the `route_ref` column so `kyberswap.swap.execute` could hold the build to
+  // it; that comparison was a zero tolerance stacked on the caller's own
+  // `slippageBps` and was removed by owner decision (2026-07-25) — see
+  // `@tools/kyberswap/swap-price-floor.js`. The execute now derives its floor
+  // from the FRESH route it just fetched, so nothing needs carrying across.
   return {
     tokenIn: parsed.data.tokenIn.address,
     tokenOut: parsed.data.tokenOut.address,
@@ -230,7 +197,6 @@ function extractEvm(
     slippageBps: slippage,
     verdict: aggregateVerdict([inLeg.verdict, outLeg.verdict]),
     safetyDetail: { tokenIn: inLeg.detail, tokenOut: outLeg.detail },
-    routeRef: floor ? toRouteRef(floor) : null,
   };
 }
 

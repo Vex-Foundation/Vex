@@ -41,6 +41,11 @@ Supports both **EVM chains** (Ethereum, Arbitrum, Base, etc.) and **Solana**.
 | `chains.ts` | Chain alias map (40+ entries), chain cache (24h TTL), `resolveChainId()`, `getChain()`, `getChainFamily()`, `getChainRpcUrl()` |
 | `evm-client.ts` | Dynamic viem wallet/public client creation from Khalani chain metadata + private key |
 | `solana-signer.ts` | `signSolanaTransaction()` and `signAndSendSolanaTransaction()` for Solana deposit execution |
+| `bridge-executor.ts` | PUBLIC ENTRY POINT for deposit-plan planning + staged per-leg signing. Re-export surface only; the implementation is the folder below |
+| `bridge-executor/staged-leg.ts` | The leg model: roles, purposes, staged outcomes, stage handles/hooks, and `khalaniLegNativeValueCall` |
+| `bridge-executor/approval-normalization.ts` | Pure parsing + fail-closed validation of Khalani's untrusted `approvals` wire shape |
+| `bridge-executor/deposit-plan.ts` | Network-free planning: `planKhalaniDepositLegs` — ordered legs, Vex fee leg appended last |
+| `bridge-executor/leg-signing.ts` | `signStageKhalaniLeg` — the only module holding signing keys: sign → stage → broadcast → bounded receipt |
 
 ### Commands (`src/commands/khalani/`)
 

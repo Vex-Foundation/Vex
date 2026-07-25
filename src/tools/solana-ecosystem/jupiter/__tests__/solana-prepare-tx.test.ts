@@ -32,7 +32,6 @@ const {
   VersionedTransaction,
 } = await import("@solana/web3.js");
 type Connection = import("@solana/web3.js").Connection;
-type SimulatedTransactionResponse = import("@solana/web3.js").SimulatedTransactionResponse;
 
 const SIGNER = Keypair.generate();
 const OTHER_SIGNER = Keypair.generate();
@@ -45,14 +44,10 @@ const ORIGINAL_BLOCKHASH = PublicKey.default.toBase58();
 const FRESH_BLOCKHASH = "11111111111111111111111111111112";
 
 /**
- * Every fixture in this file declares an explicit `SetComputeUnitLimit`.
- *
- * Two reasons. It matches reality — a Jupiter `/build` swap and a Prediction
- * transaction both bake one in. And it keeps these tests, whose subject is the
- * SIGNER and BLOCKHASH contracts, independent of the pre-sign gate's
- * default-budget arithmetic for limit-less transactions (SIMD-0170, see
- * `inferDefaultComputeUnitBudget`), which is exercised in
- * `src/__tests__/solana/solana-compute-budget-sufficiency.test.ts` instead.
+ * Every fixture in this file declares an explicit `SetComputeUnitLimit`,
+ * because that matches reality: a Jupiter `/build` swap and a Prediction
+ * transaction both bake one in. Nothing in the sign path reads it — the
+ * subject here is the SIGNER and BLOCKHASH contracts.
  */
 const FIXTURE_COMPUTE_UNIT_LIMIT = 200_000;
 
@@ -118,23 +113,6 @@ function buildProviderCoSignedTx(
   return tx;
 }
 
-/** A Jupiter-shaped transaction that declares its OWN compute-unit limit, so the pre-sign gate has a real bound to check. */
-function buildBudgetedSoleSignerTx(computeUnitLimit: number): InstanceType<typeof VersionedTransaction> {
-  const message = new TransactionMessage({
-    payerKey: SIGNER.publicKey,
-    recentBlockhash: ORIGINAL_BLOCKHASH,
-    instructions: [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }),
-      SystemProgram.transfer({
-        fromPubkey: SIGNER.publicKey,
-        toPubkey: new PublicKey("11111111111111111111111111111112"),
-        lamports: 1,
-      }),
-    ],
-  }).compileToV0Message();
-  return new VersionedTransaction(message);
-}
-
 function coSigned(requiredSigners: readonly string[]) {
   return {
     connection: makeFakeConnection(),
@@ -148,41 +126,13 @@ function toBase64(tx: InstanceType<typeof VersionedTransaction>): string {
 }
 
 /**
- * Since 2026-07-25 `prepareVersionedTx` runs a pre-sign compute-budget gate
- * (`assertComputeBudgetSufficientToSign`), so EVERY path — including VERIFY
- * mode, which previously made no network call at all — performs one
- * `simulateTransaction`. These fakes therefore answer it. The default
- * `unitsConsumed` is far below anything these fixtures declare or default to,
- * so the gate passes and the signer/blockhash contracts stay the subject.
+ * The only RPC call the sign path makes is REPLACE mode's `getLatestBlockhash`.
+ * VERIFY mode needs no `Connection` at all.
  */
-function makeFakeConnection(
-  blockhash: string = FRESH_BLOCKHASH,
-  lastValidBlockHeight = 1,
-  simulation: Partial<SimulatedTransactionResponse> = {},
-) {
+function makeFakeConnection(blockhash: string = FRESH_BLOCKHASH, lastValidBlockHeight = 1) {
   const getLatestBlockhash = vi.fn(async () => ({ blockhash, lastValidBlockHeight }));
-  /**
-   * Signature slots COPIED at simulation time, one entry per call.
-   * `mock.calls` only retains a REFERENCE to the transaction, which
-   * `signVersionedTx` mutates immediately afterwards — asserting on it later
-   * would prove nothing about the ordering. This snapshot is what proves the
-   * gate ran BEFORE any signing.
-   */
-  const signaturesAtSimulation: Uint8Array[][] = [];
-  const simulateTransaction = vi.fn(async (
-    tx: InstanceType<typeof VersionedTransaction>,
-    _config?: import("@solana/web3.js").SimulateTransactionConfig,
-  ) => {
-    signaturesAtSimulation.push(tx.signatures.map((sig) => Uint8Array.from(sig)));
-    return {
-      context: { slot: 1 },
-      value: { err: null, logs: [], unitsConsumed: 1_000, ...simulation },
-    };
-  });
-  return { getLatestBlockhash, simulateTransaction, signaturesAtSimulation } as unknown as Connection & {
+  return { getLatestBlockhash } as unknown as Connection & {
     getLatestBlockhash: typeof getLatestBlockhash;
-    simulateTransaction: typeof simulateTransaction;
-    signaturesAtSimulation: typeof signaturesAtSimulation;
   };
 }
 
@@ -207,6 +157,22 @@ describe("prepareVersionedTx", () => {
       // The returned bytes must deserialize to a tx carrying a real (non-zero) signature.
       const resigned = VersionedTransaction.deserialize(prepared.serialized);
       expect(resigned.signatures[0]!.some((byte) => byte !== 0)).toBe(true);
+    });
+
+    /**
+     * VERIFY mode has FRESH blockhash evidence tied to these exact bytes, so
+     * signing needs nothing from the network. Pinned by omitting `connection`
+     * entirely: any RPC call on this path would fall back to
+     * `getSolanaConnection()` and reach for `http://localhost:8899`, so a
+     * network round-trip cannot hide behind an injected fake here.
+     */
+    it("signs with no Connection at all — VERIFY mode makes no network call", async () => {
+      const prepared = await prepareVersionedTx(toBase64(buildSoleSignerTx()), SIGNER, {
+        knownBlockhash: { blockhash: ORIGINAL_BLOCKHASH, lastValidBlockHeight: 12345 },
+      });
+
+      expect(prepared.recentBlockhash).toBe(ORIGINAL_BLOCKHASH);
+      expect(prepared.signature.length).toBeGreaterThan(0);
     });
 
     it("refuses when the given evidence does not match the transaction's embedded blockhash", async () => {
@@ -407,89 +373,6 @@ describe("prepareVersionedTx", () => {
           toBase64(buildProviderCoSignedTx(SIGNER, false)), SIGNER, coSigned([SIGNER.publicKey.toBase58()]),
         ),
       ).rejects.toBeInstanceOf(VexError);
-    });
-  });
-
-  /**
-   * PRE-SIGN COMPUTE-BUDGET GATE — the THIRD invariant, alongside the signer
-   * contract and the blockhash evidence (2026-07-25). A Jupiter `/build`
-   * transaction declaring 606,000 CU consumed all of it and mined-reverted
-   * `{"InstructionError":[3,"ProgramFailedToComplete"]}` for a real 15,023
-   * lamport fee, because the provider's declared limit was signed unchecked.
-   * The gate's own arithmetic is pinned in
-   * `src/__tests__/solana/solana-compute-budget-sufficiency.test.ts`; what is
-   * pinned HERE is that `prepareVersionedTx` runs it, runs it on the exact
-   * bytes it is about to sign, and refuses BEFORE signing. The gate is an
-   * admission check, not a guarantee that an admitted transaction lands.
-   */
-  describe("pre-sign compute-budget gate", () => {
-    it("simulates the exact UNSIGNED bytes it is about to sign, then signs", async () => {
-      const connection = makeFakeConnection(FRESH_BLOCKHASH, 1, { unitsConsumed: 45_665 });
-      const prepared = await prepareVersionedTx(toBase64(buildBudgetedSoleSignerTx(606_000)), SIGNER, {
-        connection,
-        knownBlockhash: { blockhash: ORIGINAL_BLOCKHASH, lastValidBlockHeight: 12345 },
-      });
-
-      expect(connection.simulateTransaction).toHaveBeenCalledTimes(1);
-      // The gate must see the message we are about to sign — same blockhash,
-      // no signature yet (which is exactly why `sigVerify:false` is required).
-      expect(connection.simulateTransaction.mock.calls[0]![0].message.recentBlockhash).toBe(ORIGINAL_BLOCKHASH);
-      expect(connection.signaturesAtSimulation[0]!.every((sig) => sig.every((byte) => byte === 0))).toBe(true);
-      expect(prepared.signature.length).toBeGreaterThan(0);
-    });
-
-    it("REFUSES a compute-starved transaction — the live defect, caught before anything is signed", async () => {
-      // 600,000 consumed needs 660,000 at the 110% margin; the transaction
-      // declares 606,000. This is execution 209's exact shape.
-      const connection = makeFakeConnection(FRESH_BLOCKHASH, 1, { unitsConsumed: 600_000 });
-
-      await expect(
-        prepareVersionedTx(toBase64(buildBudgetedSoleSignerTx(606_000)), SIGNER, {
-          connection,
-          knownBlockhash: { blockhash: ORIGINAL_BLOCKHASH, lastValidBlockHeight: 12345 },
-        }),
-      ).rejects.toMatchObject({ code: ErrorCodes.SOLANA_TX_COMPUTE_BUDGET_INSUFFICIENT });
-
-      // No `PreparedSolanaTx` was returned, and the bytes the gate inspected
-      // carried no signature — nothing was signed.
-      expect(connection.signaturesAtSimulation[0]!.every((sig) => sig.every((byte) => byte === 0))).toBe(true);
-    });
-
-    it("applies to the coSigned contract too — PROBE B showed sigVerify:false makes a co-signed transaction simulatable", async () => {
-      const connection = makeFakeConnection(FRESH_BLOCKHASH, 1, { unitsConsumed: 450 });
-      const tx = buildProviderCoSignedTx();
-      const before = tx.signatures.map((s) => Uint8Array.from(s));
-
-      const prepared = await prepareVersionedTx(toBase64(tx), SIGNER, {
-        connection,
-        knownBlockhash: { blockhash: ORIGINAL_BLOCKHASH, lastValidBlockHeight: 413108534 },
-        signerContract: { kind: "coSigned", requiredSigners: [SIGNER.publicKey.toBase58()] },
-      });
-
-      expect(connection.simulateTransaction).toHaveBeenCalledTimes(1);
-      expect(connection.simulateTransaction.mock.calls[0]![1]).toMatchObject({ sigVerify: false });
-      // Simulated BEFORE our signature: the provider's slots are filled, ours is not.
-      const atSimulation = connection.signaturesAtSimulation[0]!;
-      expect(atSimulation[0]!.some((byte) => byte !== 0)).toBe(true);
-      expect(atSimulation[1]!.some((byte) => byte !== 0)).toBe(true);
-      expect(atSimulation[2]!.every((byte) => byte === 0)).toBe(true);
-      // ...and the co-signed contract still holds afterwards.
-      const after = VersionedTransaction.deserialize(prepared.serialized);
-      expect(Array.from(after.signatures[0]!)).toEqual(Array.from(before[0]!));
-      expect(Array.from(after.signatures[1]!)).toEqual(Array.from(before[1]!));
-      expect(after.signatures[2]!.some((byte) => byte !== 0)).toBe(true);
-    });
-
-    it("REFUSES when the simulation cannot be performed at all — an RPC outage must not mean signing blind", async () => {
-      const connection = makeFakeConnection();
-      connection.simulateTransaction.mockRejectedValueOnce(new Error("fetch failed"));
-
-      await expect(
-        prepareVersionedTx(toBase64(buildBudgetedSoleSignerTx(606_000)), SIGNER, {
-          connection,
-          knownBlockhash: { blockhash: ORIGINAL_BLOCKHASH, lastValidBlockHeight: 12345 },
-        }),
-      ).rejects.toMatchObject({ code: ErrorCodes.SOLANA_TX_COMPUTE_BUDGET_INSUFFICIENT });
     });
   });
 

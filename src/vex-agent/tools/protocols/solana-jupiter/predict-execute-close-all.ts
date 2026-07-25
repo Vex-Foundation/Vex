@@ -35,12 +35,16 @@ import {
   resolveManagedExecution,
   type JupiterPredictionManagedExecution,
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
-import { JUPITER_PREDICTION_USDC_MINT } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
 import type { JupiterPredictionCloseAllPositionsItem } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types.js";
 import { createAgentActivityIntent } from "@vex-agent/db/repos/agent-activity.js";
 
 import type { ProtocolHandler } from "../types.js";
 import { num, fail } from "../handler-helpers.js";
+import {
+  PREDICTION_PAYOUT_ASSET,
+  PREDICTION_PAYOUT_LEG,
+  PREDICTION_PAYOUT_SETTLEMENT_NOTE,
+} from "./predict-payout-asset.js";
 import {
   failPreBroadcast,
   isToolResult,
@@ -123,10 +127,10 @@ export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
     toolId, namespace: NAMESPACE, intentParams: p,
     events: plans.map((plan, i) => ({
       ...sharedFields({ eventRole: plan.role, walletAddress: addr, sessionId }), eventIndex: i,
-      tokenOut: {
-        tokenAddress: JUPITER_PREDICTION_USDC_MINT, tokenSymbol: "USDC", tokenDecimals: 6,
-        amountHuman: usdEst(plan.payoutUsd), amountRaw: plan.payoutUsd ?? undefined,
-      },
+      // Payout ASSET only, for BOTH fan-out roles. `newPayoutUsd`/
+      // `payoutAmountUsd` are USD estimates, not atomic JupUSD quantities —
+      // see `predict-payout-asset.ts`. The estimate stays in `usdOutEst`.
+      tokenOut: PREDICTION_PAYOUT_LEG,
       usdOutEst: usdEst(plan.payoutUsd),
       usdVenueFeeEst: usdEst(plan.venueFeeUsd),
       usdSource: "jupiter_prediction_order_preview",
@@ -162,7 +166,11 @@ export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
     output: `${toolId}: ${pendingCount} of ${results.length} close/claim transaction(s) broadcast (confirmation pending, tracked automatically)`
       + (rejectedCount > 0 ? `; ${rejectedCount} rejected before broadcast (nothing went on-chain)` : "")
       + (failedCount > 0 ? `; ${failedCount} failed before broadcast` : "")
-      + ". Do not retry — check individual results.",
-    data: { _executionId: executionId, count: results.length, results },
+      + ". Do not retry — check individual results. "
+      + PREDICTION_PAYOUT_SETTLEMENT_NOTE,
+    data: {
+      _executionId: executionId, count: results.length, results,
+      settlementAsset: PREDICTION_PAYOUT_ASSET,
+    },
   };
 };

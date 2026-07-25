@@ -695,8 +695,8 @@ export async function evaluateSwapPrequoteGate(
 
 /**
  * Re-fetch the SAME fresh matched `swap` prequote row `evaluatePrequoteGate`
- * already validated exists, for the EXECUTE HANDLER's own economic
- * revalidation (W5 design §6 R4/R4b) — the floor/knob/fee-policy checks must
+ * already validated exists, for the EXECUTE HANDLER's own trade-shape
+ * revalidation (W5 design §6 R4) — the fee-policy/swap-mode checks must
  * run on EVERY execute, not only when restricted-mode approval fires (a
  * full/autonomous-permission session skips the approval gate entirely, but
  * never the revalidation). Reuses `computeGateMatch` so the identity is

@@ -143,9 +143,9 @@ export interface PreparedFeeBearingSwap {
   readonly feeAmountRaw: string;
   /** Same value as `feeAmountRaw`, formatted as an exact decimal string (input mint's own decimals) for human disclosure. */
   readonly feeAmountDecimal: string;
-  /** Decoded straight off the RESPONSE's own ComputeBudget instructions (`build-response-guard.ts`) — an honest, response-derived estimate, not a guessed number; 0 when the response carries no compute-unit-price instruction. May be a conservative UPPER BOUND rather than an honest computation — see `priorityFeeIsUpperBound`. */
+  /** Decoded straight off the RESPONSE's own ComputeBudget instructions (`build-response-guard.ts`) — an honest, response-derived number, not a guess; 0 when the response carries no compute-unit-price instruction. When the response declared no compute-unit limit the denominator is the budget SIMD-0170 grants this exact transaction — see `priorityFeeIsUpperBound`. */
   readonly priorityFeeLamportsEstimate: number;
-  /** True when `priorityFeeLamportsEstimate` is the conservative worst-case bound `build-response-guard.ts` computes for the documented normal `/build` response shape (price instruction present, no explicit compute-unit limit) rather than an honest `limit × price` computation. */
+  /** True when the `/build` response declared NO compute-unit limit (the documented normal shape), so the denominator was INFERRED from SIMD-0170 rather than read out of an instruction. Not a worst case: Solana charges the priority fee on the granted budget, so the number is what the transaction costs. The field name predates the fix and is kept because `jupiterFeePreviewSchema` persists it — see `build-response-guard.ts`. */
   readonly priorityFeeIsUpperBound: boolean;
   /**
    * Landing-lane evidence minted by `assertBuildResponseSafeToSign` (design
@@ -219,18 +219,9 @@ export async function prepareFeeBearingJupiterSwap(params: {
   };
   const raw = await jupiterSwapBuild(buildParams);
 
-  // Hostile-response validation (Codex batch-4 closure blocker C2) — BEFORE
-  // any instruction from `raw` is assembled into signable bytes. Any
-  // violation throws; the priority-fee estimate it decodes feeds the
-  // disclosure below (honest, response-derived — not a guess), and the tip
-  // proof it mints selects the landing lane (design D1).
-  const verdict = assertBuildResponseSafeToSign({
-    raw,
-    request: { inputMint, outputMint, amountRaw },
-    feeAccount: feeAccount.toBase58(),
-    approvedTipLamports: knobs.tipLamports,
-  });
-
+  // Built BEFORE the guard runs because the guard needs them: the priority fee
+  // is charged on the granted compute budget of the WHOLE signed transaction,
+  // and this instruction is part of it. Nothing is assembled or signed yet.
   const preSwapInstructions: TransactionInstruction[] = feeAccountExists
     ? []
     : [
@@ -242,6 +233,19 @@ export async function prepareFeeBearingJupiterSwap(params: {
           tokenProgramId,
         ),
       ];
+
+  // Hostile-response validation (Codex batch-4 closure blocker C2) — BEFORE
+  // any instruction from `raw` is assembled into signable bytes. Any
+  // violation throws; the priority-fee estimate it decodes feeds the
+  // disclosure below (honest, response-derived — not a guess), and the tip
+  // proof it mints selects the landing lane (design D1).
+  const verdict = assertBuildResponseSafeToSign({
+    raw,
+    request: { inputMint, outputMint, amountRaw },
+    feeAccount: feeAccount.toBase58(),
+    approvedTipLamports: knobs.tipLamports,
+    splicedInstructionProgramIds: preSwapInstructions.map((ix) => ix.programId.toBase58()),
+  });
 
   const unsignedTx = assembleFeeBearingSwapTransaction(raw, preSwapInstructions, new PublicKey(taker));
 
@@ -284,9 +288,9 @@ export async function prepareFeeBearingJupiterSwap(params: {
  * straight off the RESPONSE's own ComputeBudget instructions — an honest,
  * response-derived number (0 when the response carries no compute-unit-price
  * instruction), not a fabricated guess. `priorityFeeIsUpperBound` (C6) flags
- * when that number is a conservative worst case (price instruction present,
- * no explicit compute-unit limit — the documented normal `/build` shape)
- * rather than an honest `limit × price` computation.
+ * when its compute-unit denominator was INFERRED from SIMD-0170's default-
+ * budget rule because the response declared no limit (the documented normal
+ * `/build` shape) rather than read out of a limit instruction.
  */
 export const jupiterFeePreviewSchema = z.object({
   inAmountRaw: z.string(),

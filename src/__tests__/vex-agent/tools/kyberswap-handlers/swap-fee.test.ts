@@ -35,17 +35,6 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   }),
 }));
 
-// `kyberswap.swap.execute` re-reads its persisted quote-time price floor
-// (`swap-price-floor.ts`) BEFORE the route call, so a trade with no approved
-// floor is refused without touching the provider at all. This file asserts the
-// fee params of that very route call, so without a satisfied floor the execute
-// returns "no approved price floor is on record" and `getRoute` is NEVER
-// reached — the mock has no recorded call to read the fee params from.
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
     sessionPermission: "full",
@@ -122,7 +111,6 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { matchedPrequoteWithFloor } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -138,10 +126,6 @@ const EXPECTED_FEE = {
 
 describe("Vex integrator fee on KyberSwap route calls", () => {
   beforeEach(() => {
-    // Quoted 999000 out at the venue-default 50 bps — the same numbers the
-    // route mock below returns, so the floor the execute re-reads is
-    // consistent with the route whose fee params these tests assert.
-    mockFindFreshMatchedSwapPrequote.mockReset().mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockGetHoneypotFotInfo.mockReset();
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockGetRoute.mockReset();

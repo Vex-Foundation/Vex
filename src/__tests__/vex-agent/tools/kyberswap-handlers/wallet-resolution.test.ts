@@ -23,16 +23,6 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   }),
 }));
 
-// `kyberswap.swap.execute` now re-reads its persisted quote-time price floor
-// before it will resolve a signing wallet (`swap-price-floor.ts`). This file is
-// about WHICH wallet gets resolved, not about the floor, so the floor is
-// supplied as satisfied — without it the execute refuses earlier and never
-// reaches the resolver these assertions exist to check.
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 /** Type-complete ProtocolExecutionContext for handler tests. */
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -107,7 +97,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { compliantSwapCalldata, matchedPrequoteWithFloor } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -120,9 +110,6 @@ describe("kyberswap session wallet resolution", () => {
   });
 
   beforeEach(() => {
-    // Quoted 999000 out at 50 bps — the same shape the route mock below returns,
-    // so the persisted floor the execute re-reads is consistent with the route.
-    mockFindFreshMatchedSwapPrequote.mockReset().mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockResolveSigningWallet.mockClear();
     mockResolveSelectedAddress.mockClear();
     mockGetHoneypotFotInfo.mockClear();

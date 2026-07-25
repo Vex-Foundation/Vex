@@ -39,7 +39,6 @@ const h = vi.hoisted(() => ({
   getHoneypotFotInfo: vi.fn().mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 }),
   createAgentActivityPreBroadcastFailure: vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } }),
   createAgentActivityIntent: vi.fn().mockResolvedValue({ executionId: 1, events: [{ id: 1 }] }),
-  findFreshMatchedSwapPrequote: vi.fn(),
 }));
 
 const SESSION_EVM = {
@@ -100,21 +99,12 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
-// `kyberswap.swap.execute` re-reads its persisted quote-time price floor
-// (`swap-price-floor.ts`) BEFORE the route call. This file is about the BUILD
-// response's router address, not about the floor, so the floor is supplied as
-// satisfied — without it both cases refuse with "no approved price floor is on
-// record" and never reach `buildRoute` at all.
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...a: unknown[]) => h.findFreshMatchedSwapPrequote(...a),
-}));
-
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
-import { compliantSwapCalldata, matchedPrequoteWithFloor } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 function ctx(): ProtocolExecutionContext {
@@ -146,9 +136,6 @@ describe("FIX 1 — swap build-response router verification", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // The persisted quote-time floor the execute re-reads before the route
-    // call — consistent with the route mock below. See the mock's note above.
-    h.findFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     h.verifyRouterAddress.mockImplementation((actual: string, expected: string) => {
       if (actual.toLowerCase() !== expected.toLowerCase()) {
         throw new Error(`Router address mismatch: ${actual} != ${expected}`);

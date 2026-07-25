@@ -27,7 +27,7 @@
  * rejection — all now expressed against the pure `planKhalaniDepositLegs`.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAddress } from "viem";
 import { VexError, ErrorCodes } from "../../errors.js";
@@ -182,8 +182,29 @@ describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () 
 });
 
 describe("bridge-executor source-family signer regression", () => {
-  it("bridge-executor.ts no longer imports the zero-arg signer primitives", () => {
-    const src = readFileSync(join(process.cwd(), "src/tools/khalani/bridge-executor.ts"), "utf-8");
-    expect(/\brequireEvmWallet\b/.test(src) || /\brequireSolanaWallet\b/.test(src)).toBe(false);
+  /**
+   * Walks the FOLDER, not just the facade. `bridge-executor.ts` became a
+   * re-export surface when the 749-line module was split into
+   * `bridge-executor/`; asserting only against the facade would have made this
+   * regression pass vacuously the moment the implementation moved.
+   */
+  it("no bridge-executor module imports the zero-arg signer primitives", () => {
+    const root = join(process.cwd(), "src/tools/khalani");
+    const files = [
+      join(root, "bridge-executor.ts"),
+      ...readdirSync(join(root, "bridge-executor"))
+        .filter((name) => name.endsWith(".ts"))
+        .map((name) => join(root, "bridge-executor", name)),
+    ];
+    // The split must not have emptied the walk — a folder that stops matching
+    // would silently turn this assertion into a no-op.
+    expect(files.length).toBeGreaterThan(1);
+    for (const file of files) {
+      const src = readFileSync(file, "utf-8");
+      expect(
+        /\brequireEvmWallet\b/.test(src) || /\brequireSolanaWallet\b/.test(src),
+        `${file} imports a zero-arg signer primitive`,
+      ).toBe(false);
+    }
   });
 });

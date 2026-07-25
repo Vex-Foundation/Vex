@@ -263,6 +263,51 @@ describe("bridge-executor — EVM staged leg gas limit", () => {
     expect(signedGas()).toBe(PROVIDER_HIGHER);
   });
 
+  /**
+   * The INVERSE of the lowball defect (phase-3 W6/6a). Before the ceiling,
+   * `max(providerGas, ownEstimate x 2)` had no upper bound, so a provider could
+   * raise Vex's signed gas exposure without limit. Live Base measurements
+   * (2026-07-25) put every real Khalani route at 1.00-1.20x our own estimate,
+   * so 4x is far outside anything observed.
+   */
+  it("refuses a provider gas number above the ceiling before signing, staging, or broadcasting", async () => {
+    const overCeiling = OWN_ESTIMATE * 5n;
+    const staged: unknown[] = [];
+
+    await expect(signStageKhalaniLeg(
+      evmLegOf("bridge_deposit", { gas: overCeiling }),
+      BASE_CHAIN, [BASE_CHAIN], EVM,
+      { onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
+    )).rejects.toMatchObject({ code: ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE });
+
+    // A refusal that costs nothing: no signature, no staged row, no broadcast.
+    expect(staged).toHaveLength(0);
+    expect(mockPrepare).not.toHaveBeenCalled();
+    expect(mockSign).not.toHaveBeenCalled();
+    expect(mockSendRaw).not.toHaveBeenCalled();
+  });
+
+  it("refuses the ceiling breach on an ALLOWANCE leg too, not just the deposit", async () => {
+    // Both Vex-signed legs reach the same signer, so both must be bounded.
+    await expect(signStageKhalaniLeg(
+      evmLegOf("allowance", { gas: OWN_ESTIMATE * 5n }),
+      BASE_CHAIN, [BASE_CHAIN], EVM, noopHooks,
+    )).rejects.toMatchObject({ code: ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE });
+
+    expect(mockSign).not.toHaveBeenCalled();
+  });
+
+  it("still signs the provider figure at exactly 4x our fresh estimate", () => {
+    // The boundary belongs to the admitted side — a legitimate provider figure
+    // sitting on the ceiling must not be refused.
+    return signStageKhalaniLeg(
+      evmLegOf("bridge_deposit", { gas: OWN_ESTIMATE * 4n }),
+      BASE_CHAIN, [BASE_CHAIN], EVM, noopHooks,
+    ).then(() => {
+      expect(signedGas()).toBe(OWN_ESTIMATE * 4n);
+    });
+  });
+
   it("keeps the limit when preparation hands back the node's own unbuffered gas", async () => {
     // viem's `attemptFill` is true whenever nonce or fees still need filling,
     // and the `wallet_fillTransaction` reply spreads the node's `gas` over

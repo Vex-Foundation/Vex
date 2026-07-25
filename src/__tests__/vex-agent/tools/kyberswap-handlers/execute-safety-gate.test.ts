@@ -24,17 +24,6 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   }),
 }));
 
-// `kyberswap.swap.execute` re-reads its persisted quote-time price floor
-// (`swap-price-floor.ts`) right after the safety gate and BEFORE the route
-// call. This file is about the honeypot/FoT gate and the balance guard, not
-// about the floor, so the floor is supplied as satisfied — without it every
-// case here refuses with "no approved price floor is on record" before
-// reaching the behaviour it exists to assert.
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 /** Type-complete ProtocolExecutionContext for handler tests. */
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -131,7 +120,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { compliantSwapCalldata, matchedPrequoteWithFloor } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", () => {
@@ -150,7 +139,6 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
   beforeEach(() => {
     // Quoted 999000 out at the venue-default 50 bps — identical to the route
     // mock below, so the re-read floor is consistent with the route.
-    mockFindFreshMatchedSwapPrequote.mockReset().mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockGetHoneypotFotInfo.mockReset();
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockGetRoute.mockReset();

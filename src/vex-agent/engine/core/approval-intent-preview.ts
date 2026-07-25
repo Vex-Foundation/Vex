@@ -304,10 +304,14 @@ export function buildIntentPreview(
       `Vex fee: ${fp.feeBps / 100}% of the input (~${fp.feeAmountDecimal} of the input token, raw ${fp.feeAmountRaw}), `
       + `paid to treasury ATA ${fp.feeAccount}${rentNote}. `
       + `Tip: ${fp.tipLamports} lamports. Priority-fee strategy: ${fp.priorityFeeStrategy} `
-      // C6: when the /build response carried a CU price WITHOUT a CU limit,
-      // the estimate is computed against Solana's 1.4M-CU maximum — say so.
+      // When the /build response carried a CU price WITHOUT a CU limit, the
+      // denominator is the budget SIMD-0170 grants the transaction. Do NOT
+      // relabel this an UPPER BOUND (it was, until 2026-07-25, when the
+      // denominator was Solana's 1.4M-CU maximum): Solana charges the priority
+      // fee on the granted budget, so the number is what the swap costs — the
+      // only thing worth disclosing is where the limit came from.
       + (fp.priorityFeeIsUpperBound
-        ? `(UPPER BOUND ~${fp.priorityFeeLamportsEstimate} lamports — response set no compute-unit limit). `
+        ? `(~${fp.priorityFeeLamportsEstimate} lamports at the default compute budget — response set no compute-unit limit). `
         : `(estimated ~${fp.priorityFeeLamportsEstimate} lamports). `)
       + `Landing: ${fp.landingMode}.`;
   }

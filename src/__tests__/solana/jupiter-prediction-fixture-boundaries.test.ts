@@ -36,10 +36,8 @@ import type {
   JupiterPredictionMarket,
   JupiterPredictionPosition,
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types.js";
-import {
-  convertPredictionHistoryEventMoney,
-  toPredictView,
-} from "@vex-agent/tools/protocols/solana-jupiter/predict-projector.js";
+import { toPredictView } from "@vex-agent/tools/protocols/solana-jupiter/predict-projector.js";
+import { convertPredictionHistoryEventMoney } from "@vex-agent/tools/protocols/solana-jupiter/predict-money.js";
 
 function loadFixture(name: string): unknown {
   const path = resolve(import.meta.dirname, "fixtures", "prediction", name);

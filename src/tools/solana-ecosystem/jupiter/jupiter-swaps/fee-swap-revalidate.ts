@@ -1,11 +1,22 @@
 /**
  * Execute-time revalidation of a FRESH `/build` response against the
- * PERSISTED quote (W5 design `w5-design.md` §6 R4/R4b).
+ * PERSISTED quote (W5 design `w5-design.md` §6 R4).
  *
- * Execute may fetch a fresh `/build` (new blockhash), but every economically
- * relevant parameter must still match what the human approved at quote time.
- * Mismatch → abort, NEVER a silent re-quote — the caller must fail the
- * intent and tell the agent to re-quote explicitly.
+ * Execute may fetch a fresh `/build` (new blockhash), but the SHAPE of the
+ * trade — its mints, its input amount, its knobs, its fee destination, its
+ * swap mode — must still be what was quoted. A shape mismatch → abort, NEVER
+ * a silent re-quote: the caller fails the intent and tells the agent to
+ * re-quote explicitly.
+ *
+ * What this module deliberately does NOT check is the PRICE. R4b used to
+ * require `fresh.otherAmountThreshold >= persisted.otherAmountThreshold`;
+ * since both thresholds are `out × (1 − slippage)` with the same slippage,
+ * that reduced to `freshOut >= quotedOut` — a zero-tolerance rule that the
+ * market breaks on its own, stacked on top of the tolerance the caller
+ * already chose. It refused a real swap over a 0.0033% move and a re-quote
+ * hits the same wall, so an autonomous agent could never converge. Removed by
+ * owner decision (2026-07-25): `slippageBps` is the price protection, and the
+ * agent raises it by parameter when a trade needs more room.
  */
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
@@ -14,39 +25,27 @@ import type { JupiterFeePreview } from "./fee-swap.js";
 import type { JupiterSwapBuildResponse } from "./types.js";
 
 /**
- * R4b: MANDATORY `fresh.otherAmountThreshold >= persisted.otherAmountThreshold`
- * — the fresh transaction must enforce a floor AT LEAST as strict as what was
- * quoted (threshold-to-threshold; the fresh tx enforces ITS OWN floor
- * on-chain). Validated atomic-unit BIGINTs — never a lexicographic string or
- * float compare. `outAmount` is checked too as an additional harmless sanity
- * check (never the primary gate — a worse quote could still hash-match on
- * `outAmount` alone).
+ * The fresh `/build` must still be the EXACT-INPUT swap that was quoted.
  *
- * Pinned regression (K4 card): persisted floor 99, fresh outAmount 100, fresh
- * floor 98 → BLOCK (a fresh quote can look "better" on `outAmount` while
- * quietly weakening the actual floor the signed transaction enforces).
+ * This is a trade-shape surprise, not a price event: an exact-output build
+ * spends an amount Vex never approved to reach a fixed output, which is a
+ * different trade from the exact-in one the agent asked for. `swapMode` absent
+ * is Jupiter's documented default (ExactIn) and passes.
+ *
+ * Not retryable at a different tolerance — raising `slippageBps` cannot turn
+ * an ExactOut build into an ExactIn one — so the message sends the agent to a
+ * fresh quote rather than to a wider tolerance.
  */
-export function assertEconomicFloorHolds(
-  fresh: JupiterSwapBuildResponse,
-  persistedOtherAmountThresholdRaw: string,
-): void {
-  const freshFloor = parseAtomicBigint("fresh.otherAmountThreshold", fresh.otherAmountThreshold);
-  const persistedFloor = parseAtomicBigint("persisted.otherAmountThreshold", persistedOtherAmountThresholdRaw);
-  if (freshFloor < persistedFloor) {
-    throw new VexError(
-      ErrorCodes.SOLANA_SWAP_FAILED,
-      `Fresh /build floor (${fresh.otherAmountThreshold}) is below the persisted quote floor (${persistedOtherAmountThresholdRaw}). Aborting — re-quote required.`,
-    );
-  }
+export function assertExactInSwapMode(fresh: JupiterSwapBuildResponse): void {
   if (fresh.swapMode !== undefined && fresh.swapMode !== "ExactIn") {
     throw new VexError(
       ErrorCodes.SOLANA_SWAP_FAILED,
-      `Fresh /build swapMode is ${fresh.swapMode}, expected ExactIn. Aborting — re-quote required.`,
+      `Jupiter's /build returned swapMode ${fresh.swapMode}, not the ExactIn swap that was quoted. Nothing was signed. Get a fresh solana.swap.quote; do not retry this build.`,
     );
   }
 }
 
-/** Exported for reuse by `build-response-guard.ts` — the same "atomic-unit string → bigint, never lexicographic/float" parsing rule applies to both response-identity checks and floor comparisons. */
+/** Exported for reuse by `build-response-guard.ts` — the "atomic-unit string → bigint, never lexicographic/float" parsing rule every response-identity check shares. */
 export function parseAtomicBigint(label: string, value: string): bigint {
   if (!/^\d+$/.test(value)) {
     throw new VexError(ErrorCodes.SOLANA_SWAP_FAILED, `${label} is not a valid atomic-unit integer: ${value}`);
@@ -57,10 +56,9 @@ export function parseAtomicBigint(label: string, value: string): bigint {
 /**
  * R4: every normalized knob bound at quote time must equal the fresh
  * execute-time knob — canonicalized excludeDexes/dexes, CU strategy,
- * `maxAccounts`, wrap behavior, `forJitoBundle`. A parameter-equality check
- * alone is insufficient without the floor check above (a worse quote could
- * still hash-match), so this runs ALONGSIDE `assertEconomicFloorHolds`, never
- * instead of it.
+ * `maxAccounts`, wrap behavior, `forJitoBundle`. Bounds the ROUTE SHAPE the
+ * fresh build is allowed to take; the price it comes back with is bounded by
+ * `slippageBps` on-chain, not here.
  */
 export function assertKnobsUnchanged(persisted: JupiterFeeSwapKnobs, fresh: JupiterFeeSwapKnobs): void {
   const mismatches: string[] = [];

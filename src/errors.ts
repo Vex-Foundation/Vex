@@ -110,6 +110,15 @@ export const ErrorCodes = {
    * See `src/tools/evm-chains/native-value-authorization`.
    */
   NATIVE_VALUE_UNAUTHORIZED: "NATIVE_VALUE_UNAUTHORIZED",
+  /**
+   * A provider quoted a gas limit so far above Vex's own fresh
+   * `eth_estimateGas` for the same call that Vex will not sign it. The inverse
+   * of the lowball defect: our floor stops a provider lowering the limit, this
+   * stops one raising Vex's signed exposure without bound. A PRE-SIGN refusal —
+   * nothing is signed, staged, or broadcast.
+   * See `src/tools/evm-chains/gas-limit-headroom.ts`.
+   */
+  PROVIDER_GAS_LIMIT_EXCESSIVE: "PROVIDER_GAS_LIMIT_EXCESSIVE",
 
   // Relay (api.relay.link) — keyless cross-chain bridge
   RELAY_API_ERROR: "RELAY_API_ERROR",
@@ -235,14 +244,6 @@ export const ErrorCodes = {
   // W5 staged seam: caller-supplied blockhash evidence (VERIFY mode) does not
   // match the transaction's own embedded `recentBlockhash`.
   SOLANA_TX_BLOCKHASH_MISMATCH: "SOLANA_TX_BLOCKHASH_MISMATCH",
-  // Pre-sign compute-budget ADMISSION GATE: a free `simulateTransaction` did
-  // not SHOW the transaction's compute-unit budget — declared, or granted by
-  // default — covering the work it is about to do (starved, unmeasurable, or
-  // unreachable). Admission is never a guarantee the transaction will land:
-  // simulation runs at a different slot against different account state.
-  // Names the gate, not one finding — the message says which, and whether a
-  // retry can help. See `shared/solana-transaction/compute-budget-sufficiency.ts`.
-  SOLANA_TX_COMPUTE_BUDGET_INSUFFICIENT: "SOLANA_TX_COMPUTE_BUDGET_INSUFFICIENT",
   SOLANA_TOKEN_NOT_FOUND: "SOLANA_TOKEN_NOT_FOUND",
   SOLANA_RPC_ERROR: "SOLANA_RPC_ERROR",
   SOLANA_QUOTE_FAILED: "SOLANA_QUOTE_FAILED",

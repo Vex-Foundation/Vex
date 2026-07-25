@@ -331,25 +331,33 @@ describe("solana.predict.buy/.sell/.claim/.closeAll — staged Solana seam (K5)"
 
   // ── sell / claim ─────────────────────────────────────────────────
 
-  it("sell: records tokenOut (payout estimate) with role predict_sell (NOT predict_close — that role is reserved for closeAll's fan-out)", async () => {
+  // CORRECTED 2026-07-25 (phase-3 W2): both used to require `tokenOut.amountRaw`
+  // to equal the provider's micro-USD payout ESTIMATE — pinning the defect, a USD
+  // figure stored as an atomic token quantity. Payout-leg identity is now owned by
+  // `predict-payout-asset-labelling.test.ts`; these two keep their subject, ROLE.
+  it("sell: records the payout tokenOut with role predict_sell (NOT predict_close — that role is reserved for closeAll's fan-out)", async () => {
     const result = await PREDICT_HANDLERS["solana.predict.sell"]!({ positionPubkey: "pos-1" }, ctx());
 
     expect(mockRequestSell).toHaveBeenCalledWith("pos-1", { ownerPubkey: WALLET_ADDRESS });
     const intentArg = mockCreateAgentActivityIntent.mock.calls[0][0];
     expect(intentArg.events[0]).toMatchObject({ eventRole: "predict_sell", kind: "prediction" });
     expect(intentArg.events[0].tokenIn).toBeUndefined();
-    expect(intentArg.events[0].tokenOut).toMatchObject({ amountRaw: "18000000" });
+    expect(intentArg.events[0].tokenOut).toMatchObject({ tokenSymbol: "JupUSD" });
+    expect(intentArg.events[0].tokenOut.amountRaw).toBeUndefined();
+    expect(intentArg.events[0].usdOutEst).toBe("18.000000");
     expect(result.success).toBe(false);
     expect((result.data as Record<string, unknown>).status).toBe("pending");
   });
 
-  it("claim: records tokenOut (payout) with role predict_claim", async () => {
+  it("claim: records the payout tokenOut with role predict_claim", async () => {
     const result = await PREDICT_HANDLERS["solana.predict.claim"]!({ positionPubkey: "pos-1" }, ctx());
 
     expect(mockRequestClaim).toHaveBeenCalledWith("pos-1", { ownerPubkey: WALLET_ADDRESS });
     const intentArg = mockCreateAgentActivityIntent.mock.calls[0][0];
     expect(intentArg.events[0]).toMatchObject({ eventRole: "predict_claim", kind: "prediction" });
-    expect(intentArg.events[0].tokenOut).toMatchObject({ amountRaw: "20000000" });
+    expect(intentArg.events[0].tokenOut).toMatchObject({ tokenSymbol: "JupUSD" });
+    expect(intentArg.events[0].tokenOut.amountRaw).toBeUndefined();
+    expect(intentArg.events[0].usdOutEst).toBe("20.000000");
     expect(result.success).toBe(false);
   });
 

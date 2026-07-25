@@ -1,14 +1,21 @@
 /**
- * Execute-time revalidation unit tests (W5 design §6 R4/R4b). Pins the
- * pinned regression: persisted floor 99, fresh outAmount 100, fresh floor 98
- * → BLOCK before signing (a "better-looking" outAmount must never mask a
- * weakened on-chain floor).
+ * Execute-time revalidation unit tests (W5 design §6 R4).
+ *
+ * These pin the TRADE-SHAPE checks a fresh `/build` must still satisfy: exact-
+ * input mode, unchanged knobs, unchanged fee destination, unchanged mints and
+ * input amount. They deliberately pin NO price comparison: the quote-to-quote
+ * floor check (`assertEconomicFloorHolds`) was removed by owner decision
+ * (2026-07-25) because `persistedFloor = quotedOut × (1−s)` and
+ * `freshFloor = freshOut × (1−s)` made it equivalent to `freshOut >= quotedOut`
+ * — a zero tolerance on price movement stacked on top of the caller's own
+ * `slippageBps`, which no re-quote on a thin pair could ever satisfy.
  */
 
 import { describe, expect, it } from "vitest";
 
 const {
-  assertEconomicFloorHolds,
+  assertExactInSwapMode,
+  parseAtomicBigint,
   assertKnobsUnchanged,
   assertFeePolicyUnchanged,
   assertMintsAndAmountUnchanged,
@@ -26,41 +33,46 @@ function buildResp(otherAmountThreshold: string, outAmount = "100", swapMode: st
   };
 }
 
-describe("assertEconomicFloorHolds", () => {
-  it("pinned regression: persisted floor 99, fresh outAmount 100, fresh floor 98 -> BLOCK", () => {
-    expect(() => assertEconomicFloorHolds(buildResp("98", "100"), "99")).toThrow(VexError);
-  });
-
-  it("allows a fresh floor equal to the persisted floor", () => {
-    expect(() => assertEconomicFloorHolds(buildResp("99"), "99")).not.toThrow();
-  });
-
-  it("allows a fresh floor strictly above the persisted floor", () => {
-    expect(() => assertEconomicFloorHolds(buildResp("150"), "99")).not.toThrow();
-  });
-
-  it("compares as bigint, not lexicographically (100 > 99 despite '100' < '99' as strings, and '9' < '10' numerically must still hold)", () => {
-    // Lexicographic string compare would say "100" < "99" (since '1' < '9'),
-    // which would wrongly BLOCK a genuinely-higher floor. Bigint compare must
-    // not make this mistake.
-    expect(() => assertEconomicFloorHolds(buildResp("100"), "99")).not.toThrow();
-  });
-
-  it("rejects a non-numeric otherAmountThreshold rather than coercing", () => {
-    expect(() => assertEconomicFloorHolds(buildResp("not-a-number"), "99")).toThrow(VexError);
-  });
-
+describe("assertExactInSwapMode", () => {
   it("rejects a fresh swapMode other than ExactIn", () => {
-    expect(() => assertEconomicFloorHolds(buildResp("99", "100", "ExactOut"), "99")).toThrow(VexError);
+    expect(() => assertExactInSwapMode(buildResp("99", "100", "ExactOut"))).toThrow(VexError);
   });
 
-  it("throws SOLANA_SWAP_FAILED on violation", () => {
+  it("throws SOLANA_SWAP_FAILED, and says a fresh quote — not a wider tolerance — is the way out", () => {
     try {
-      assertEconomicFloorHolds(buildResp("98"), "99");
+      assertExactInSwapMode(buildResp("99", "100", "ExactOut"));
       throw new Error("expected a throw");
     } catch (err) {
-      expect((err as InstanceType<typeof VexError>).code).toBe(ErrorCodes.SOLANA_SWAP_FAILED);
+      const e = err as InstanceType<typeof VexError>;
+      expect(e.code).toBe(ErrorCodes.SOLANA_SWAP_FAILED);
+      expect(e.message).toContain("Nothing was signed");
+      expect(e.message).toContain("solana.swap.quote");
     }
+  });
+
+  it("passes ExactIn, and an absent swapMode (Jupiter's documented default)", () => {
+    expect(() => assertExactInSwapMode(buildResp("99", "100", "ExactIn"))).not.toThrow();
+    expect(() => assertExactInSwapMode(buildResp("99", "100", undefined))).not.toThrow();
+  });
+
+  it("does NOT look at the price: a fresh floor far below the quoted one proceeds", () => {
+    // The removed R4b gate blocked exactly this shape (persisted floor 99,
+    // fresh outAmount 100, fresh floor 98). Slippage is the price protection
+    // now, so a repriced-but-well-formed build must reach the signer.
+    expect(() => assertExactInSwapMode(buildResp("1", "100"))).not.toThrow();
+  });
+});
+
+describe("parseAtomicBigint", () => {
+  // Kept from the deleted floor-gate suite: `build-response-guard.ts` consumes
+  // this parser for its own response-identity checks, so its "never
+  // lexicographic, never coerced" contract still needs pinning.
+  it("parses as bigint, not lexicographically ('100' < '99' as strings, 100n > 99n as numbers)", () => {
+    expect(parseAtomicBigint("x", "100") > parseAtomicBigint("x", "99")).toBe(true);
+  });
+
+  it("rejects a non-numeric atomic amount rather than coercing it", () => {
+    expect(() => parseAtomicBigint("fresh.otherAmountThreshold", "not-a-number")).toThrow(VexError);
   });
 });
 

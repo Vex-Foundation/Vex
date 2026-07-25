@@ -81,7 +81,12 @@ import type { ProtocolHandler, ProtocolExecutionContext } from "../types.js";
 import { str, num, fail } from "../handler-helpers.js";
 import { broadcastStagedSolanaTx } from "./staged-broadcast.js";
 import { walletAddress, walletSecret } from "./handlers/core.js";
-import { microUsdToDollarString } from "./predict-projector.js";
+import { microUsdToDollarString } from "./predict-money.js";
+import {
+  PREDICTION_PAYOUT_ASSET,
+  PREDICTION_PAYOUT_LEG,
+  PREDICTION_PAYOUT_SETTLEMENT_NOTE,
+} from "./predict-payout-asset.js";
 import logger from "@utils/logger.js";
 
 const PROTOCOL = "jupiter";
@@ -271,6 +276,8 @@ interface PreparedMutation {
   readonly eventPatch: EventPatch;
   readonly successNote: string;
   readonly successFields: Record<string, unknown>;
+  /** Appended to the broadcast output for a PAYOUT mutation — see `predict-payout-asset.ts`. Absent on `buy`, which pays rather than receives. */
+  readonly settlementNote?: string;
 }
 
 /** Shared runner for the three SINGLE-ROW mutations (buy/sell/claim). Phase A (caller's `buildIntent`) requests the unsigned tx — a throw there is pre-broadcast (nothing recorded). Phase B creates the intent row, then signs/stages/submits — a throw or CAS miss there is POST-intent (`stageAndSubmit` finalizes the existing row). */
@@ -319,7 +326,8 @@ async function runStagedPredictionMutation(
   }
   return {
     success: false,
-    output: `${prepared.successNote} broadcast — signature ${staged.signature}. Confirmation pending, tracked automatically. Do not retry.`,
+    output: `${prepared.successNote} broadcast — signature ${staged.signature}. Confirmation pending, tracked automatically. Do not retry.`
+      + (prepared.settlementNote ? ` ${prepared.settlementNote}` : ""),
     data: {
       _executionId: executionId, status: "pending",
       signature: staged.signature, explorerUrl: staged.explorerUrl,
@@ -402,14 +410,12 @@ export const executePredictSell: ProtocolHandler = async (p, ctx) => {
       transaction,
       managed,
       eventPatch: {
-        // Payout leg estimate: prediction settles in USDC, so the projected
-        // micro-USD payout is numerically the raw USDC unit amount (both
-        // 1e6-scaled) — an ESTIMATE from the provider's order preview, not
-        // decoder-proven executed truth (K3's sweep owns that correction).
-        tokenOut: {
-          tokenAddress: JUPITER_PREDICTION_USDC_MINT, tokenSymbol: "USDC", tokenDecimals: 6,
-          amountHuman: usdEst(order.newPayoutUsd), amountRaw: order.newPayoutUsd,
-        },
+        // Payout ASSET only — no token amount. `newPayoutUsd` is a
+        // USD-denominated estimate from the order preview; writing it into
+        // `amountRaw` only ever looked right because JupUSD is 6-decimal and
+        // dollar-pegged. The estimate lives in `usdOutEst`, whose name says
+        // what it is. See `predict-payout-asset.ts`.
+        tokenOut: PREDICTION_PAYOUT_LEG,
         usdOutEst: usdEst(order.newPayoutUsd),
         // See the buy path: provider venue fee, dual-written during the
         // migration-050 window.
@@ -418,7 +424,12 @@ export const executePredictSell: ProtocolHandler = async (p, ctx) => {
         usdSource: "jupiter_prediction_order_preview",
       },
       successNote: `Close of position ${pk}`,
-      successFields: { positionPubkey: pk, estimatedPayoutUsd: usdEst(order.newPayoutUsd) ?? null },
+      settlementNote: PREDICTION_PAYOUT_SETTLEMENT_NOTE,
+      successFields: {
+        positionPubkey: pk,
+        estimatedPayoutUsd: usdEst(order.newPayoutUsd) ?? null,
+        settlementAsset: PREDICTION_PAYOUT_ASSET,
+      },
     };
   });
 };
@@ -447,15 +458,19 @@ export const executePredictClaim: ProtocolHandler = async (p, ctx) => {
       // when the provider genuinely returned no `execution` object.
       managed: resolveManagedExecution(raw, "Claim position"),
       eventPatch: {
-        tokenOut: {
-          tokenAddress: JUPITER_PREDICTION_USDC_MINT, tokenSymbol: "USDC", tokenDecimals: 6,
-          amountHuman: usdEst(position.payoutAmountUsd), amountRaw: position.payoutAmountUsd,
-        },
+        // Payout ASSET only — `payoutAmountUsd` is a USD estimate, never an
+        // atomic JupUSD quantity. See the sell path and `predict-payout-asset.ts`.
+        tokenOut: PREDICTION_PAYOUT_LEG,
         usdOutEst: usdEst(position.payoutAmountUsd),
         usdSource: "jupiter_prediction_order_preview",
       },
       successNote: `Claim for position ${pk}`,
-      successFields: { positionPubkey: pk, estimatedPayoutUsd: usdEst(position.payoutAmountUsd) ?? null },
+      settlementNote: PREDICTION_PAYOUT_SETTLEMENT_NOTE,
+      successFields: {
+        positionPubkey: pk,
+        estimatedPayoutUsd: usdEst(position.payoutAmountUsd) ?? null,
+        settlementAsset: PREDICTION_PAYOUT_ASSET,
+      },
     };
   });
 };

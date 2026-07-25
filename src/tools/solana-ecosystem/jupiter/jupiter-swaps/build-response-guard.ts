@@ -26,8 +26,8 @@
  *    exposure cap — (C6) INCLUDING when the response carries a price
  *    instruction but no explicit limit instruction (the documented normal
  *    `/build` shape: "does not include compute unit limit"), where the prior
- *    guard silently computed ZERO exposure. A conservative UPPER BOUND is
- *    now computed against Solana's transaction-wide max CU instead.
+ *    guard silently computed ZERO exposure. The compute-unit limit is then
+ *    the budget SIMD-0170 grants the assembled transaction, not a guess.
  *
  * Out of scope (flagged, not silently assumed safe): the swap instruction's
  * OWN internal fee cut is opaque aggregator-program instruction data — this
@@ -43,6 +43,7 @@
 import { ComputeBudgetInstruction, ComputeBudgetProgram, SystemInstruction, SystemProgram } from "@solana/web3.js";
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
+import { inferDefaultComputeUnitBudget } from "../../shared/solana-transaction/default-compute-unit-budget.js";
 import {
   JUPITER_SWAP_MAX_PRIORITY_FEE_LAMPORTS,
   JUPITER_SWAP_TIP_MAX_LAMPORTS,
@@ -143,26 +144,35 @@ export function assertFeeAccountPresentInSwapInstruction(
 }
 
 export interface DecodedPriorityFeeEstimate {
+  /** The limit the response DECLARED, or `null` when it declared none (the documented normal `/build` shape). Never the inferred default — see `priorityFeeIsUpperBound`. */
   readonly computeUnitLimit: number | null;
   readonly computeUnitPriceMicroLamports: bigint | null;
   /**
-   * Ceiling-rounded `computeUnitLimit × computeUnitPriceMicroLamports / 1e6`.
-   * 0 when the response carries no compute-unit-PRICE instruction (no
-   * priority fee is paid regardless of any limit). When a price instruction
-   * is present but no compute-unit-LIMIT instruction is — the documented
-   * NORMAL `/build` response shape — `computeUnitLimit` is substituted with
-   * `SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION` (1,400,000) as a conservative
-   * worst case, since the signed transaction still runs under Solana's
-   * default per-instruction CU allocation with no cap tighter than that
-   * maximum. See `priorityFeeIsUpperBound`.
+   * Ceiling-rounded `effectiveComputeUnitLimit × computeUnitPriceMicroLamports
+   * / 1e6` — the same arithmetic Jupiter bills by (its own
+   * `prioritizationFeeLamports` matched this formula to within one lamport on
+   * all twelve rows of `shared/solana-transaction/priority-fee-exposure-
+   * measurement.md`; ours rounds up).
+   *
+   * 0 when the response carries no compute-unit-PRICE instruction (no priority
+   * fee is paid regardless of any limit). When a price instruction is present
+   * but no compute-unit-LIMIT instruction is, the effective limit is the budget
+   * SIMD-0170 grants the assembled transaction
+   * (`inferDefaultComputeUnitBudget`), because Solana charges the priority fee
+   * on the REQUESTED/granted units, not the consumed ones.
    */
   readonly priorityFeeLamports: bigint;
   /**
-   * True when `priorityFeeLamports` is the conservative worst-case bound
-   * described above (price instruction present, limit instruction absent)
-   * rather than an honest `limit × price` computation. Callers disclosing
-   * `priorityFeeLamports` to the user/approval layer should label it as an
-   * upper bound when this is true.
+   * True when the response declared NO compute-unit limit, so the denominator
+   * above was INFERRED from SIMD-0170 rather than read out of an instruction.
+   *
+   * The field name is now narrower than the truth and is kept anyway: it is
+   * persisted inside `prequote.safetyDetail` through `jupiterFeePreviewSchema`,
+   * so renaming it would break stored rows for no behavioural gain. What it
+   * means today is "inferred, not declared" — and an inferred number is exact
+   * rather than an upper bound, since the fee is charged on the granted budget.
+   * Callers disclosing `priorityFeeLamports` must therefore not label it a
+   * worst case; say the response set no compute-unit limit instead.
    */
   readonly priorityFeeIsUpperBound: boolean;
 }
@@ -172,21 +182,58 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
 }
 
 /**
+ * Every instruction that ends up in the SIGNED transaction, as program ids —
+ * the input the SIMD-0170 default-budget rule needs.
+ *
+ * MUST STAY IN STEP with `assembleFeeBearingSwapTransaction`, which is the one
+ * place that decides what is signed. `signedTransactionProgramIds` enumerates
+ * the same set (order is irrelevant to a sum), and a test asserts the two agree
+ * instruction-for-instruction — a comment alone would not survive someone
+ * adding a lane to the assembly.
+ *
+ * `splicedInstructionProgramIds` are the caller's OWN pre-swap instructions
+ * (today: the idempotent treasury fee-ATA create). They are not in the `/build`
+ * response but they are in the signed transaction, and each one the chain
+ * grants 200,000 CU is ~2M lamports of unaccounted exposure at the priority
+ * prices seen on 2026-07-25.
+ */
+export function signedTransactionProgramIds(
+  raw: Pick<
+    JupiterSwapBuildResponse,
+    "computeBudgetInstructions" | "setupInstructions" | "swapInstruction" | "otherInstructions" | "tipInstruction" | "cleanupInstruction"
+  >,
+  splicedInstructionProgramIds: readonly string[],
+): string[] {
+  const programIds = [
+    ...raw.computeBudgetInstructions.map((ix) => ix.programId),
+    ...raw.setupInstructions.map((ix) => ix.programId),
+    ...splicedInstructionProgramIds,
+    raw.swapInstruction.programId,
+    ...raw.otherInstructions.map((ix) => ix.programId),
+  ];
+  if (raw.tipInstruction) programIds.push(raw.tipInstruction.programId);
+  if (raw.cleanupInstruction) programIds.push(raw.cleanupInstruction.programId);
+  return programIds;
+}
+
+/**
  * (4) Every `computeBudgetInstructions` entry must be a REAL ComputeBudget-program instruction (never something else disguised there); the decoded priority-fee estimate must stay within the owner exposure cap. Returns the decoded estimate for reuse in the disclosure.
  *
- * PULLS THE OPPOSITE WAY FROM THE PRE-SIGN SUFFICIENCY GATE, ON PURPOSE. This
- * bounds the fee CEILING (`limit × price ≤ exposure cap`) and therefore rewards
- * a LOW compute-unit limit — which is precisely what makes compute starvation
- * more likely, the failure that
- * `shared/solana-transaction/compute-budget-sufficiency.ts` refuses to sign.
- * One caps what a transaction may COST; the other refuses a transaction that
- * cannot AFFORD to finish. Do not "optimize" either one against the other.
+ * WHAT THIS BOUNDS, PRECISELY: the fee CEILING (`limit × price ≤ exposure
+ * cap`) — SOL that leaves the wallet. It says nothing about whether the
+ * compute-unit limit is large enough for the route to finish; a transaction
+ * that runs out of compute reverts atomically and costs only the network fee.
  */
 export function assertComputeBudgetWithinPolicy(
   computeBudgetInstructions: readonly JupiterSwapInstruction[],
+  signedInstructionProgramIds: readonly string[],
 ): DecodedPriorityFeeEstimate {
   let computeUnitLimit: number | null = null;
   let computeUnitPriceMicroLamports: bigint | null = null;
+  // The deprecated `RequestUnits` variant ALSO carries a compute-unit limit.
+  // If one is present we cannot tell what the runtime grants, so the default
+  // rule does not apply and we fall back to the conservative maximum.
+  let sawDeprecatedRequestUnits = false;
 
   for (const wire of computeBudgetInstructions) {
     if (wire.programId !== COMPUTE_BUDGET_PROGRAM_ID) {
@@ -203,30 +250,76 @@ export function assertComputeBudgetWithinPolicy(
       computeUnitLimit = ComputeBudgetInstruction.decodeSetComputeUnitLimit(ix).units;
     } else if (kind === "SetComputeUnitPrice") {
       computeUnitPriceMicroLamports = BigInt(ComputeBudgetInstruction.decodeSetComputeUnitPrice(ix).microLamports);
+    } else if (kind === "RequestUnits") {
+      sawDeprecatedRequestUnits = true;
     }
-    // RequestUnits/RequestHeapFrame: no lamport exposure, pass through unchecked.
+    // RequestHeapFrame: no lamport exposure, pass through unchecked.
   }
 
-  // (C6) A price instruction with NO limit instruction is the documented
-  // normal `/build` shape ("does not include compute unit limit") — the
-  // prior guard treated this as computeUnitLimit===null and silently
-  // computed ZERO exposure. Substitute Solana's transaction-wide max CU as a
-  // conservative upper bound instead of trusting an absent limit as "no
-  // exposure".
+  // A price instruction with NO limit instruction is the documented normal
+  // `/build` shape ("does not include compute unit limit") — re-confirmed live
+  // 2026-07-25 on all four probed pairs. C6 substituted Solana's 1,400,000-CU
+  // transaction MAXIMUM here. The chain grants no such thing: it grants the
+  // SIMD-0170 default, `builtin x 3,000 + other x 200,000` capped at
+  // 1,400,000, which for a real 4-instruction Jupiter build is 406,000 CU. The
+  // substitution therefore overstated exposure ~3.4x and refused a legitimate
+  // JupUSD->USDC swap on 2026-07-25 at 13,766,234 lamports, where the granted
+  // budget puts the same transaction at 3,992,208 — inside the cap.
+  //
+  // The bound is unchanged and the denominator is now the one the chain bills
+  // by, so this is strictly TIGHTER than the substitution it replaces
+  // (`inferDefaultComputeUnitBudget` can never exceed 1,400,000): nothing the
+  // shipped guard admitted starts being refused.
   const priorityFeeIsUpperBound = computeUnitPriceMicroLamports !== null && computeUnitLimit === null;
-  const effectiveComputeUnitLimit = computeUnitLimit ?? SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION;
+  const effectiveComputeUnitLimit = resolveEffectiveComputeUnitLimit(
+    computeUnitLimit,
+    sawDeprecatedRequestUnits,
+    signedInstructionProgramIds,
+  );
   const priorityFeeLamports =
     computeUnitPriceMicroLamports !== null
-      ? ceilDiv(BigInt(effectiveComputeUnitLimit) * computeUnitPriceMicroLamports, 1_000_000n)
+      ? ceilDiv(BigInt(effectiveComputeUnitLimit.units) * computeUnitPriceMicroLamports, 1_000_000n)
       : 0n;
   if (priorityFeeLamports > BigInt(JUPITER_SWAP_MAX_PRIORITY_FEE_LAMPORTS)) {
+    // BUDGETED FOR 200 CHARACTERS, like `evm-chains/gas-limit-headroom.ts`.
+    // `summarizeProtocolError` joins message and hint and truncates the pair at
+    // 200, so the order here IS the priority order. What must survive: the fee,
+    // the cap, that nothing was spent, the agent-settable lever
+    // (`computeUnitPricePercentile`), and that a re-quote can genuinely work
+    // because the price is congestion-driven — the same pair was measured at
+    // 13,766,234 -> 465,330 -> 14,601 lamports within minutes on 2026-07-25.
+    // The `Basis:` tail is diagnostics and is deliberately last, so truncation
+    // eats it first.
     fail(
-      `/build response's estimated priority fee (${priorityFeeLamports} lamports` +
-        `${priorityFeeIsUpperBound ? ", upper bound — no explicit compute-unit limit in the response" : ""}) ` +
-        `exceeds the approved exposure cap of ${JUPITER_SWAP_MAX_PRIORITY_FEE_LAMPORTS} lamports. Refusing to sign.`,
+      `Refusing to sign: priority fee ${priorityFeeLamports} lamports exceeds the ${JUPITER_SWAP_MAX_PRIORITY_FEE_LAMPORTS}-lamport cap. `
+        + "Nothing signed or spent. Lower computeUnitPricePercentile or re-quote — priority fees swing by the minute. "
+        + `Basis: ${effectiveComputeUnitLimit.units} CU ${effectiveComputeUnitLimit.origin} x ${computeUnitPriceMicroLamports} microLamports/CU.`,
     );
   }
   return { computeUnitLimit, computeUnitPriceMicroLamports, priorityFeeLamports, priorityFeeIsUpperBound };
+}
+
+/** The compute-unit count the priority fee is actually charged on, plus the phrase that says WHERE it came from (never "declares" about a number we inferred — the agent acts on this text). */
+function resolveEffectiveComputeUnitLimit(
+  declaredComputeUnitLimit: number | null,
+  sawDeprecatedRequestUnits: boolean,
+  signedInstructionProgramIds: readonly string[],
+): { readonly units: number; readonly origin: string } {
+  if (declaredComputeUnitLimit !== null) {
+    return { units: declaredComputeUnitLimit, origin: "declared by the response" };
+  }
+  if (sawDeprecatedRequestUnits) {
+    // `RequestUnits` sets a limit too. Inferring the DEFAULT budget while the
+    // response declared one another way would UNDER-state the fee, which is
+    // exactly what a hostile response would want, so fall back to the
+    // conservative maximum rather than guess. Jupiter has never been observed
+    // emitting this deprecated variant.
+    return { units: SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION, origin: "assumed (response used a deprecated RequestUnits directive)" };
+  }
+  return {
+    units: inferDefaultComputeUnitBudget(signedInstructionProgramIds),
+    origin: "granted by default (response declared no compute-unit limit)",
+  };
 }
 
 /** What the guard PROVED about a `/build` response — the decoded priority-fee estimate plus the landing-lane evidence (design D1). */
@@ -253,10 +346,22 @@ export function assertBuildResponseSafeToSign(params: {
   readonly request: { readonly inputMint: string; readonly outputMint: string; readonly amountRaw: string };
   readonly feeAccount: string;
   readonly approvedTipLamports: number;
+  /**
+   * Program ids of the caller's OWN pre-swap instructions, which
+   * `assembleFeeBearingSwapTransaction` will splice into the same signed
+   * transaction (today: the idempotent treasury fee-ATA create, present only
+   * when that ATA does not exist yet). Required rather than optional: the
+   * priority fee is charged on the whole transaction's granted compute budget,
+   * and an instruction nobody declared is budget the estimate cannot see.
+   */
+  readonly splicedInstructionProgramIds: readonly string[];
 }): BuildResponseSafetyVerdict {
   assertBuildResponseMatchesRequest(params.raw, params.request);
   assertFeeAccountPresentInSwapInstruction(params.raw.swapInstruction, params.feeAccount);
   const submitTipProof = assertTipInstructionWithinPolicy(params.raw.tipInstruction, params.approvedTipLamports);
-  const priorityFee = assertComputeBudgetWithinPolicy(params.raw.computeBudgetInstructions);
+  const priorityFee = assertComputeBudgetWithinPolicy(
+    params.raw.computeBudgetInstructions,
+    signedTransactionProgramIds(params.raw, params.splicedInstructionProgramIds),
+  );
   return { ...priorityFee, submitTipProof };
 }

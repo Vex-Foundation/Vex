@@ -43,12 +43,10 @@ import {
 import { verifyBuiltKyberSwap } from "@tools/kyberswap/evm/swap-calldata-guard.js";
 import {
   computeApprovedMinOut,
-  parseRouteRefPriceFloor,
   KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
 } from "@tools/kyberswap/swap-price-floor.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
 import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
-import { findFreshMatchedSwapPrequote } from "@vex-agent/tools/protocols/swap-prequote.js";
 import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
@@ -83,7 +81,7 @@ import { mapKyberFailureToActivityCode, deriveKyberRevealFailure, deriveKyberMin
 
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
-import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
+import type { ProtocolHandler } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 const PROTOCOL = "kyberswap";
@@ -251,18 +249,19 @@ function kyberFailureMessage(toolId: string, err: unknown): string {
   return summarizeProtocolError(err).message;
 }
 
-// ── Slippage + price floor ───────────────────────────────────────────
+// ── Slippage ─────────────────────────────────────────────────────────
 
 /**
  * Resolve the slippage this call will apply, or a rejection reason.
  *
  * `slippageBps` is BOTH the number handed to `/route/build` and the number the
- * approved price floor is computed from, so it is resolved identically at quote
- * time and execute time — an omitted value takes the SAME venue default on both
- * sides, which is what lets a quote-without-slippage authorize an
- * execute-without-slippage. The Vex ceiling is applied here (and only here for
- * this venue): the manifest `unit: "bps"` gate proves integrality but
- * deliberately applies no maximum.
+ * build's embedded floor is re-derived from, so it is resolved identically at
+ * quote time and execute time — an omitted value takes the SAME venue default
+ * on both sides, which is what lets a quote-without-slippage authorize an
+ * execute-without-slippage. It is also the ONLY price protection on this
+ * trade: the Vex ceiling is applied here (and only here for this venue), while
+ * the manifest `unit: "bps"` gate proves integrality but deliberately applies
+ * no maximum.
  */
 function resolveKyberSlippageBps(
   toolId: string,
@@ -276,39 +275,6 @@ function resolveKyberSlippageBps(
     KYBERSWAP_MAX_SLIPPAGE_BPS,
   );
   return violation ? { ok: false, reason: violation } : { ok: true, bps };
-}
-
-/**
- * The persisted quote-time floor for THIS execute, or a refusal.
- *
- * Re-reads the SAME fresh matched prequote row the gate already proved exists
- * (mirrors `solana.swap.execute`), and pulls the `route_ref` price floor Vex
- * computed when the user was shown the quote. Fail-closed: no row, or a row
- * without a floor (a pre-upgrade quote, or one whose route output was
- * unusable), refuses rather than signing with no independent floor at all.
- */
-async function requireApprovedMinOut(
-  toolId: string,
-  sessionId: string,
-  p: Record<string, unknown>,
-  context: ProtocolExecutionContext,
-): Promise<{ readonly ok: true; readonly approvedMinOutRaw: bigint } | { readonly ok: false; readonly reason: string }> {
-  const noFloor = {
-    ok: false,
-    reason:
-      "no approved price floor is on record for this trade. "
-      + "Call kyberswap.swap.quote with the exact same params, then retry.",
-  } as const;
-  let matched: Awaited<ReturnType<typeof findFreshMatchedSwapPrequote>>;
-  try {
-    matched = await findFreshMatchedSwapPrequote(toolId, sessionId, p, context);
-  } catch {
-    return noFloor;
-  }
-  if (!matched) return noFloor;
-  const floor = parseRouteRefPriceFloor(matched.routeRef);
-  if (!floor) return noFloor;
-  return { ok: true, approvedMinOutRaw: BigInt(floor.approvedMinOutRaw) };
 }
 
 // ── Settlement decoding (registered once at module load) ───────────
@@ -478,8 +444,9 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
 
     // Rejected HERE, not only at the execute: this quote seeds the prequote
-    // whose persisted price floor the execute is held to, so a slippage the
-    // execute would refuse must never produce a quote (or a floor) at all.
+    // the execute is matched against, and `slippageBps` is part of that
+    // identity — so a tolerance the execute would refuse must never produce a
+    // quote that appears to authorize it.
     const quoteSlippage = resolveKyberSlippageBps("kyberswap.swap.quote", p);
     if (!quoteSlippage.ok) return fail(quoteSlippage.reason);
 
@@ -653,19 +620,6 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     }
     const slippage = resolvedSlippage.bps;
 
-    // The floor Vex computed and persisted when the user was shown the quote.
-    // Read BEFORE the route call so a trade with no approved floor is refused
-    // without touching the provider at all.
-    const approvedFloor = await requireApprovedMinOut(toolId, sessionId, p, context);
-    if (!approvedFloor.ok) {
-      return failPreBroadcast(
-        toolId, p, sessionId, walletAddress, chainId, slug,
-        legInput(tokenIn), legInput(tokenOut),
-        new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, `${toolId} refused: ${approvedFloor.reason}`),
-        true,
-      );
-    }
-
     let routerAddress: Address;
     let routeSummaryRaw: KyberGetRouteResponse["data"]["routeSummary"];
     try {
@@ -717,11 +671,13 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
 
       // ── Pre-sign calldata assertion (the ONE gate on the opaque blob) ──
       // KyberSwap embeds the price protection inside calldata WE did not
-      // build, so it is decoded and held to the floor Vex approved at quote
-      // time AND to the floor this fresh route implies — plus the fee line,
-      // the flags, the target, the spender and the native value. Runs BEFORE
-      // the intent is created, so a refusal is a clean pre-broadcast failure
-      // with nothing signed and nothing broadcast.
+      // build, so it is decoded and held to the floor THIS fresh route implies
+      // at the caller's own slippage — plus the fee line, the flags, the
+      // target, the spender and the native value. Runs BEFORE the intent is
+      // created, so a refusal is a clean pre-broadcast failure with nothing
+      // signed and nothing broadcast. It bounds what the BUILD may do to the
+      // trade; it does not second-guess where the market moved since the
+      // quote — `slippageBps` owns that.
       const verdict = verifyBuiltKyberSwap(
         {
           calldata: buildResp.data.data as Hex,
@@ -735,7 +691,6 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
           dstToken: getAddress(tokenOut.address),
           amountIn,
           srcIsNative: tokenIn.isNative,
-          approvedMinOutRaw: approvedFloor.approvedMinOutRaw,
           freshMinOutRaw: computeApprovedMinOut(routeSummaryRaw.amountOut, slippage),
           floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
         },

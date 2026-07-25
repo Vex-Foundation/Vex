@@ -135,8 +135,10 @@ beforeEach(() => {
 // W5 (design §6/R4): `solana.swap.execute` writes durable truth DIRECTLY to
 // `agent_activity` via the K2 staged Solana seam (capture:"none") instead of
 // the legacy `_tradeCapture` pipeline — these tests pin the staged write
-// order + the R4b economic-floor revalidation, not the (separately unit-
-// tested) fee-bearing engine itself.
+// order + the R4 trade-SHAPE revalidation, not the (separately unit-tested)
+// fee-bearing engine itself. There is no quote-to-quote price revalidation
+// left to pin: it was removed by owner decision (2026-07-25) because it
+// refused any build that repriced at all, which no re-quote could fix.
 const SWAP_SESSION_CTX: ProtocolExecutionContext = { ...SESSION_CTX, sessionId: "sess-1" };
 
 const VALID_FEE_PREVIEW = {
@@ -312,9 +314,35 @@ describe("solana.swap.execute capture", () => {
     expect(mockMarkBroadcastAccepted).not.toHaveBeenCalled();
   });
 
-  it("R4b: a fresh /build whose floor is BELOW the persisted quote's floor blocks pre-broadcast with failureCode:slippage (K1's stage/error mapping table), never signs", async () => {
+  it("a fresh /build whose floor is far BELOW the persisted quote's floor now PROCEEDS — the price moved, and slippageBps is what bounds that", async () => {
+    // The inverse of the deleted R4b assertion. That gate compared
+    // `freshOut × (1−s)` against `quotedOut × (1−s)`, i.e. demanded
+    // `freshOut >= quotedOut`: a zero tolerance for price movement stacked on
+    // top of the caller's own, which strands an autonomous agent on any pair
+    // that reprices between quote and build. Owner decision 2026-07-25.
     mockPrepareFeeBearingJupiterSwap.mockResolvedValue(
       preparedFeeBearingSwap({ raw: { inAmount: "1000000000", outAmount: "100000000", otherAmountThreshold: "1", swapMode: "ExactIn" } }),
+    );
+
+    const result = await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+      SWAP_SESSION_CTX,
+    );
+
+    expect(mockCreateAgentActivityPreBroadcastFailure).not.toHaveBeenCalled();
+    expect(mockCreateAgentActivityIntent).toHaveBeenCalledTimes(1);
+    expect(mockPrepareVersionedTx).toHaveBeenCalledTimes(1);
+    expect(result.data?.status).toBe("pending");
+  });
+
+  it("R4: a fresh /build that came back ExactOut blocks pre-broadcast with failureCode:route_not_found — a trade-shape surprise, never a slippage event", async () => {
+    // Retained from the deleted floor suite: the swap-mode check is a genuine
+    // build-integrity surprise (an exact-output build spends an amount Vex
+    // never approved), and it is NOT answerable by widening the tolerance —
+    // so it must not be filed as `slippage`, which would invite exactly that
+    // retry.
+    mockPrepareFeeBearingJupiterSwap.mockResolvedValue(
+      preparedFeeBearingSwap({ raw: { inAmount: "1000000000", outAmount: "100000000", otherAmountThreshold: "99000000", swapMode: "ExactOut" } }),
     );
     mockCreateAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 99, event: {} });
 
@@ -324,12 +352,8 @@ describe("solana.swap.execute capture", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalled();
-    // The economic floor has its OWN dedicated failure_code per K1's stage/
-    // error mapping table (validation.ts) — never the generic build-rejection
-    // bucket (`route_not_found`).
     const call = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0]![0] as { event: { failureCode: string } };
-    expect(call.event.failureCode).toBe("slippage");
+    expect(call.event.failureCode).toBe("route_not_found");
     expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
     expect(mockPrepareVersionedTx).not.toHaveBeenCalled();
     expect(mockMarkActivitySolanaBroadcast).not.toHaveBeenCalled();

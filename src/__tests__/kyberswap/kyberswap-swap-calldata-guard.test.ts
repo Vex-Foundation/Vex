@@ -10,99 +10,26 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { decodeFunctionData, encodeFunctionData, getAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, getAddress, type Address } from "viem";
 
 import {
   verifyBuiltKyberSwap,
   META_AGGREGATION_ROUTER_V2_SWAP_ABI,
-  type ApprovedKyberSwap,
-  type BuiltKyberSwap,
 } from "@tools/kyberswap/evm/swap-calldata-guard.js";
-import {
-  computeApprovedMinOut,
-  KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
-} from "@tools/kyberswap/swap-price-floor.js";
-import {
-  META_AGGREGATION_ROUTER_V2,
-  KYBERSWAP_FEE_RECEIVER,
-  NATIVE_TOKEN_ADDRESS,
-} from "@tools/kyberswap/constants.js";
+import { computeApprovedMinOut, KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW } from "@tools/kyberswap/swap-price-floor.js";
+import { KYBERSWAP_FEE_RECEIVER, NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 
+import { harnessFor } from "./fixtures/route-build/capture-harness.js";
 import capture from "./fixtures/route-build/base-usdc-to-native-50bps.json" with { type: "json" };
 
 const SLIPPAGE_BPS = capture.request.slippageTolerance;
 const RECIPIENT = getAddress(capture.request.recipient) as Address;
-const SRC_TOKEN = getAddress(capture.request.tokenIn) as Address;
-const DST_TOKEN = getAddress(capture.request.tokenOut) as Address;
-const AMOUNT_IN = BigInt(capture.routeSummary.amountIn);
 
-/** The captured transaction, exactly as the provider returned it. */
-function builtFromCapture(over: Partial<BuiltKyberSwap> = {}): BuiltKyberSwap {
-  return {
-    calldata: capture.build.data as Hex,
-    routerAddress: capture.routerAddress,
-    transactionValue: capture.build.transactionValue,
-    ...over,
-  };
-}
-
-/** What Vex approved for that capture: the floor computed from the ROUTE output. */
-function approvedFromCapture(over: Partial<ApprovedKyberSwap> = {}): ApprovedKyberSwap {
-  const floor = computeApprovedMinOut(capture.routeSummary.amountOut, SLIPPAGE_BPS);
-  return {
-    expectedRouter: META_AGGREGATION_ROUTER_V2,
-    recipient: RECIPIENT,
-    srcToken: SRC_TOKEN,
-    dstToken: DST_TOKEN,
-    amountIn: AMOUNT_IN,
-    srcIsNative: false,
-    approvedMinOutRaw: floor,
-    freshMinOutRaw: floor,
-    floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
-    ...over,
-  };
-}
-
-type MutableDescription = {
-  srcToken: Address;
-  dstToken: Address;
-  srcReceivers: readonly Address[];
-  srcAmounts: readonly bigint[];
-  feeReceivers: readonly Address[];
-  feeAmounts: readonly bigint[];
-  dstReceiver: Address;
-  amount: bigint;
-  minReturnAmount: bigint;
-  flags: bigint;
-  permit: Hex;
-};
-
-interface DecodedCapture {
-  readonly callTarget: Address;
-  readonly approveTarget: Address;
-  readonly targetData: Hex;
-  readonly desc: MutableDescription;
-  readonly clientData: Hex;
-}
-
-function decodeCapture(): DecodedCapture {
-  const decoded = decodeFunctionData({
-    abi: META_AGGREGATION_ROUTER_V2_SWAP_ABI,
-    data: capture.build.data as Hex,
-  });
-  expect(decoded.functionName).toBe("swap");
-  return decoded.args[0] as unknown as DecodedCapture;
-}
-
-/** Re-encode the capture with a patched `SwapDescriptionV2`. */
-function reencode(patch: Partial<MutableDescription>): Hex {
-  const execution = decodeCapture();
-  return encodeFunctionData({
-    abi: META_AGGREGATION_ROUTER_V2_SWAP_ABI,
-    functionName: "swap",
-    args: [{ ...execution, desc: { ...execution.desc, ...patch } }],
-  } as never);
-}
+const base = harnessFor(capture);
+const decodeCapture = base.decode;
+const reencode = base.reencode;
+const builtFromCapture = base.built;
+const approvedFromCapture = base.approved;
 
 describe("verifyBuiltKyberSwap — real captured build", () => {
   it("the capture decodes to the fee line, flags and floor Vex expects", () => {
@@ -123,7 +50,9 @@ describe("verifyBuiltKyberSwap — real captured build", () => {
     expect(verifyBuiltKyberSwap(builtFromCapture(), approvedFromCapture())).toEqual({ ok: true });
   });
 
-  it("refuses when minReturnAmount is below the APPROVED quote-time floor", () => {
+  it("refuses when minReturnAmount is one unit below what the fresh route's own floor allows", () => {
+    // The allowance is exactly the provider's measured 1-unit re-derivation,
+    // so shaving one more unit off is the smallest possible real weakening.
     const { desc } = decodeCapture();
     const calldata = reencode({ minReturnAmount: desc.minReturnAmount - 1n });
     const verdict = verifyBuiltKyberSwap(builtFromCapture({ calldata }), approvedFromCapture());
@@ -131,7 +60,24 @@ describe("verifyBuiltKyberSwap — real captured build", () => {
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.kind).toBe("price_floor");
-    expect(verdict.reason).toContain("you approved");
+    expect(verdict.reason).toContain("the route now allows");
+  });
+
+  it("does NOT refuse a route that simply repriced since the quote — slippage owns that, not this guard", () => {
+    // A build whose whole route came back 10% worse still carries an honest
+    // floor for ITS OWN output, so it must pass. The quote-to-quote comparison
+    // that used to refuse this (`approvedMinOutRaw`) was removed by owner
+    // decision (2026-07-25): it was equivalent to "the price must not have
+    // moved", which no re-quote on a thin pair can satisfy.
+    const { desc } = decodeCapture();
+    const repricedOut = (desc.minReturnAmount * 90n) / 100n;
+    const calldata = reencode({ minReturnAmount: repricedOut });
+    const verdict = verifyBuiltKyberSwap(
+      builtFromCapture({ calldata }),
+      approvedFromCapture({ freshMinOutRaw: repricedOut }),
+    );
+
+    expect(verdict).toEqual({ ok: true });
   });
 
   it("refuses a floor weakened to a 50% tolerance, the range the provider actually accepts", () => {
@@ -145,12 +91,11 @@ describe("verifyBuiltKyberSwap — real captured build", () => {
     expect(verdict.kind).toBe("price_floor");
   });
 
-  it("refuses when minReturnAmount is below the FRESH route's floor even if the persisted floor is stale-low", () => {
+  it("refuses when minReturnAmount is below the FRESH route's floor — the build widened the tolerance we asked for", () => {
     const { desc } = decodeCapture();
     const verdict = verifyBuiltKyberSwap(
       builtFromCapture(),
       approvedFromCapture({
-        approvedMinOutRaw: 0n, // a permissive persisted floor must not rescue it
         freshMinOutRaw: desc.minReturnAmount + KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW + 1n,
       }),
     );

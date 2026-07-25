@@ -777,6 +777,20 @@ export async function executeKhalaniBridge(
         legs: recordedLegs,
       });
     }
+    // The signer's gas-ceiling backstop (W6/6a), same shape and same reasoning
+    // as the native-value branch above: a PRE-SIGN refusal that signed nothing
+    // must never be reported as an interruption of unknown scope. Carried here
+    // rather than left to the generic tail because `safeMessage` is capped at
+    // 200 characters — the cap holds the numbers, this sentence holds the
+    // action.
+    if (err instanceof VexError && err.code === ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE) {
+      const refusedRole = stagedLegs[currentIndex]?.role ?? "bridge_deposit";
+      return bridgeResult({
+        ...pendingBase, success: false, status: "not_attempted",
+        message: `The ${refusedRole} leg asked for far more gas than Vex measured for that exact call, so it was refused before signing and no bridge was initiated. ${safeMessage} Re-quote for a fresh deposit plan; a gas estimate does not move with congestion, so waiting will not change this. If a fresh quote asks for the same limit, bridge over a different route instead of retrying this one.`,
+        legs: recordedLegs,
+      });
+    }
     return bridgeResult({
       ...pendingBase, success: false, status: "pending",
       message: `An internal error interrupted the bridge after it was recorded — ${safeMessage}. Check the record (execution ${executionId}) before any further action; do not re-bridge.`,

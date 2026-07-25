@@ -57,9 +57,12 @@ function defaultComputeBudgetInstructions() {
   ];
 }
 
+/** Jupiter's real v6 aggregator program — the id a live `/build` response carries (probed 2026-07-25). It is NOT a Solana builtin, so the default-budget rule credits it 200,000 CU; a placeholder builtin id here would make the priority-fee arithmetic below meaningless. */
+const JUPITER_V6_PROGRAM_ID = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+
 function swapInstructionWithFeeAccount(feeAccount: PublicKey) {
   return {
-    programId: "11111111111111111111111111111111",
+    programId: JUPITER_V6_PROGRAM_ID,
     accounts: [{ pubkey: feeAccount.toBase58(), isWritable: true, isSigner: false }],
     data: "",
   };
@@ -254,7 +257,7 @@ describe("prepareFeeBearingJupiterSwap", () => {
     expect(preview.priorityFeeIsUpperBound).toBe(false);
   });
 
-  it("discloses a conservative UPPER-BOUND priority fee when the response carries only a price instruction (the documented normal /build shape — no explicit compute-unit limit)", async () => {
+  it("prices a price-only response (the documented normal /build shape — no explicit compute-unit limit) at the budget SIMD-0170 grants it", async () => {
     const expected = getAssociatedTokenAddressSync(new PublicKey(USDC_MINT), new PublicKey(TREASURY), false, TOKEN_PROGRAM_ID);
     mockFetchJson.mockResolvedValueOnce(
       fakeBuildResponse(expected, { computeBudgetInstructions: [wireIx(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }))] }),
@@ -264,12 +267,34 @@ describe("prepareFeeBearingJupiterSwap", () => {
       connection, inputMint: USDC_MINT, outputMint: SOL_MINT, amountRaw: "1000000", taker: TAKER,
       knobs: resolveJupiterFeeSwapKnobs({}), inputDecimals: 6,
     });
-    // 1,400,000 CU (Solana tx max) x 1,000 microLamports / 1e6 = 1,400 lamports.
-    expect(prepared.priorityFeeLamportsEstimate).toBe(1_400);
+    // Signed instruction set: ComputeBudget price (builtin 3,000) + Jupiter
+    // swap (200,000) + System tip transfer (builtin 3,000) = 206,000 CU.
+    // 206,000 x 1,000 microLamports / 1e6 = 206 lamports. The pre-fix guard
+    // substituted Solana's 1,400,000 maximum here and disclosed 1,400 — 6.8x
+    // the fee this transaction is actually charged.
+    expect(prepared.priorityFeeLamportsEstimate).toBe(206);
     expect(prepared.priorityFeeIsUpperBound).toBe(true);
     const preview = buildJupiterFeePreview(prepared);
-    expect(preview.priorityFeeLamportsEstimate).toBe(1_400);
+    expect(preview.priorityFeeLamportsEstimate).toBe(206);
     expect(preview.priorityFeeIsUpperBound).toBe(true);
+  });
+
+  it("counts the spliced treasury fee-ATA create in the priority-fee denominator when that ATA does not exist yet", async () => {
+    const expected = getAssociatedTokenAddressSync(new PublicKey(USDC_MINT), new PublicKey(TREASURY), false, TOKEN_PROGRAM_ID);
+    mockFetchJson.mockResolvedValueOnce(
+      fakeBuildResponse(expected, { computeBudgetInstructions: [wireIx(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }))] }),
+    );
+    const connection = fakeConnection({ mintOwner: TOKEN_PROGRAM_ID, feeAccountExists: false });
+    const prepared = await prepareFeeBearingJupiterSwap({
+      connection, inputMint: USDC_MINT, outputMint: SOL_MINT, amountRaw: "1000000", taker: TAKER,
+      knobs: resolveJupiterFeeSwapKnobs({}), inputDecimals: 6,
+    });
+    // Vex splices an idempotent associated-token-account create (NOT builtin,
+    // 200,000 CU) into the same signed transaction, so the granted budget is
+    // 206,000 + 200,000 = 406,000. Omitting it would understate the fee — the
+    // direction that lets a transaction past the cap.
+    expect(prepared.priorityFeeLamportsEstimate).toBe(406);
+    expect(prepared.priorityFeeIsUpperBound).toBe(true);
   });
 });
 
@@ -342,12 +367,12 @@ describe("prepareFeeBearingJupiterSwap — hostile /build response (never signs 
     ).rejects.toThrow(VexError);
   });
 
-  it("refuses a price-only compute-budget response (the documented normal /build shape) whose upper-bound exposure exceeds the cap", async () => {
-    // 1,400,000 CU (Solana tx max, assumed since no limit instruction is
-    // present) x 8,000,000 microLamports / 1e6 = 11,200,000 lamports, over
-    // the 10,000,000-lamport cap. The pre-fix guard treated the missing
-    // limit as zero exposure and would have let this through.
-    const priceOnly = [wireIx(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 8_000_000 }))];
+  it("refuses a price-only compute-budget response (the documented normal /build shape) whose exposure exceeds the cap", async () => {
+    // 206,000 CU (the budget SIMD-0170 grants this 3-instruction transaction,
+    // since no limit instruction is present) x 48,543,690 microLamports / 1e6
+    // = 10,000,001 lamports — one over the 10,000,000-lamport cap. An extreme
+    // price still refuses; only the denominator was recalibrated.
+    const priceOnly = [wireIx(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 48_543_690 }))];
     mockFetchJson.mockResolvedValueOnce(fakeBuildResponse(expectedFeeAccount(), { computeBudgetInstructions: priceOnly }));
     await expect(
       prepareFeeBearingJupiterSwap({

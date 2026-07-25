@@ -487,11 +487,12 @@ async function recordSwapPrequote(
     slippageBps: extracted.slippageBps,
     safetyVerdict: extracted.verdict,
     safetyDetail: extracted.safetyDetail,
-    // Structural-only route facts — today the Vex-computed KyberSwap price
-    // floor `kyberswap.swap.execute` holds the built calldata to. Null for
-    // every other swap venue (they build their own calldata, so the floor
-    // never leaves the handler).
-    routeRef: extracted.routeRef ?? null,
+    // Structural-only route facts. No swap venue writes any today: the one
+    // producer was KyberSwap's quote-time price floor, removed by owner
+    // decision (2026-07-25) because comparing it against the build reduced to
+    // "the price must not have moved", which stranded autonomous retries. The
+    // column stays for a future structural fact; nothing derives from it now.
+    routeRef: null,
     expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
   };
 

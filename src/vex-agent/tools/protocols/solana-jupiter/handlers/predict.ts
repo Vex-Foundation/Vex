@@ -16,11 +16,8 @@ import type { ProtocolHandler } from "../../types.js";
 import { str, num, bool, ok, fail } from "../../handler-helpers.js";
 import { walletAddress } from "./core.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
-import {
-  toPredictView,
-  projectMarketPricing,
-  convertPredictionHistoryEventMoney,
-} from "../predict-projector.js";
+import { toPredictView, projectMarketPricing } from "../predict-projector.js";
+import { convertPredictionHistoryEventMoney } from "../predict-money.js";
 import { resolvePredictionWindow, resolveSearchWindow, strictEnumField } from "../predict-params.js";
 import { wrapPredictionRead } from "../predict-region-block.js";
 import { executePredictBuy, executePredictSell, executePredictClaim } from "../predict-execute.js";

@@ -438,7 +438,7 @@ describe("decodeSolanaBalanceSettlement", () => {
     expect(decoded).toEqual({ executedAmountInRaw: "5000000" });
   });
 
-  it("predict_claim proves only the named output mint", () => {
+  it("a non-swap role proves only the named output mint (prediction PAYOUT rows never reach this generic arm — see solana-prediction-payout-settlement.ts)", () => {
     const tx = parseSolanaTransactionResult(
       fixtureRawTransaction({
         preTokenBalances: [{ owner: WALLET, mint: USDC_MINT, amount: "0" }],

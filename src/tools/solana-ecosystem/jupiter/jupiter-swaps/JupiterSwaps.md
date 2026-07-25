@@ -104,8 +104,12 @@ The two main paths are:
     reconstruction)
 - `fee-swap-revalidate.ts` (W5)
   - execute-time revalidation of a FRESH `/build` response against the
-    PERSISTED quote (R4/R4b): economic floor, knob equality, fee-policy match,
-    mint/amount equality
+    PERSISTED quote (R4): exact-in swap mode, knob equality, fee-policy match,
+    mint/amount equality — the trade's SHAPE. It deliberately checks no PRICE:
+    R4b's quote-to-quote floor comparison was arithmetically
+    `freshOut >= quotedOut`, a zero tolerance stacked on the caller's own
+    `slippageBps` that no re-quote on a thin pair could satisfy. Removed by
+    owner decision (2026-07-25); `slippageBps` is the price protection
 - `build-response-guard.ts` (Codex batch-4 closure blocker C2)
   - hostile-`/build`-RESPONSE validation, called from `fee-swap.ts`'s
     `prepareFeeBearingJupiterSwap` right after the response arrives and

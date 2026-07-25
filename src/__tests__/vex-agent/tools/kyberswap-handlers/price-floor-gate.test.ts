@@ -9,6 +9,15 @@
  * response, so "the build was refused" means the actual decoder rejected
  * actual provider bytes.
  *
+ * The floor the build is held to is derived from the FRESH route summary at
+ * the caller's own `slippageBps`. There is no longer a second, quote-time
+ * floor: comparing `freshOut × (1−s)` against `quotedOut × (1−s)` reduced to
+ * `freshOut >= quotedOut`, i.e. a zero tolerance for price movement stacked
+ * on top of the caller's own, which stranded an autonomous agent on any pair
+ * that repriced between quote and build. Removed by owner decision
+ * (2026-07-25) — `slippageBps` is the price protection, and the first case
+ * below pins that a repriced route now signs.
+ *
  * The load-bearing property in every refusal case: `signStageBroadcast` is
  * never called. Nothing is signed, so nothing can be broadcast.
  */
@@ -79,12 +88,6 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   }),
 }));
 
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 const mockCreateAgentActivityIntent = vi.fn();
 const mockCreateAgentActivityPreBroadcastFailure = vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } });
 
@@ -109,7 +112,7 @@ vi.mock("@utils/logger.js", () => {
 
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
 import { META_AGGREGATION_ROUTER_V2_SWAP_ABI } from "@tools/kyberswap/evm/swap-calldata-guard.js";
-import { computeApprovedMinOut, toRouteRef } from "@tools/kyberswap/swap-price-floor.js";
+import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
 const TOKEN_OUT = capture.request.tokenOut;
@@ -133,18 +136,6 @@ function execute(params: Record<string, unknown> = {}) {
     { chain: "base", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amountIn: AMOUNT_IN_HUMAN, ...params },
     ctx(),
   );
-}
-
-/** A persisted prequote row carrying the floor Vex approved at quote time. */
-function prequoteWithFloor(slippageBps: number, quotedNetOutRaw: string = ROUTE_OUT) {
-  return {
-    prequoteId: "prequote-1",
-    routeRef: toRouteRef({
-      quotedNetOutRaw,
-      slippageBps,
-      approvedMinOutRaw: computeApprovedMinOut(quotedNetOutRaw, slippageBps).toString(),
-    }),
-  };
 }
 
 /** Re-encode the captured build with one patched `SwapDescriptionV2` field. */
@@ -189,7 +180,7 @@ function recordedFailure(): { failureCode: string; failureReason: string } {
   return call.event;
 }
 
-describe("kyberswap.swap.execute — approved price floor", () => {
+describe("kyberswap.swap.execute — build calldata price floor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
@@ -208,7 +199,6 @@ describe("kyberswap.swap.execute — approved price floor", () => {
       },
     });
     mockBuildRoute.mockResolvedValue(buildResponse());
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(prequoteWithFloor(50));
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }] });
     mockCreateAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 7, event: { id: 7 } });
     mockSignStageBroadcast.mockReset();
@@ -225,20 +215,32 @@ describe("kyberswap.swap.execute — approved price floor", () => {
     expect(mockSignStageBroadcast).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses when the calldata floor is below the APPROVED floor — nothing signed, recorded as slippage", async () => {
-    // The market moved: the persisted floor was set against a materially
-    // higher quoted output than the build now promises.
-    const richerQuote = (BigInt(ROUTE_OUT) * 110n / 100n).toString();
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(prequoteWithFloor(50, richerQuote));
+  it("a route that repriced against the user since the quote SIGNS — the removed gate refused exactly this", async () => {
+    // The whole route now returns 10% less than the quote did, and the build
+    // carries an honest floor for that worse output. Under the deleted
+    // quote-to-quote comparison this was a refusal the agent could not act on:
+    // a re-quote hits the same repriced market. `slippageBps` is what bounds
+    // the loss now, so this must reach the signer.
+    const repricedOut = ((BigInt(ROUTE_OUT) * 90n) / 100n).toString();
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: {
+          amountIn: capture.routeSummary.amountIn,
+          amountOut: repricedOut,
+          gasUsd: "0.01", routeID: "r1", checksum: "c1",
+        },
+        routerAddress: capture.routerAddress,
+      },
+    });
+    mockBuildRoute.mockResolvedValue(
+      buildResponse(patchedCalldata({ minReturnAmount: computeApprovedMinOut(repricedOut, 50) })),
+    );
 
     const result = await execute();
 
-    expect(result.success).toBe(false);
-    expectNothingSigned();
-    const failure = recordedFailure();
-    expect(failure.failureCode).toBe("slippage");
-    expect(result.output).toContain("Refused before signing");
-    expect(result.output).toContain("fresh kyberswap.swap.quote");
+    expect(result.success).toBe(true);
+    expect(mockCreateAgentActivityPreBroadcastFailure).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a build whose embedded floor was widened to a 50% tolerance", async () => {
@@ -281,27 +283,6 @@ describe("kyberswap.swap.execute — approved price floor", () => {
     expect(recordedFailure().failureCode).toBe("route_not_found");
   });
 
-  it("refuses when no approved floor is on record — never signs an unprotected build", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(null);
-
-    const result = await execute();
-
-    expect(result.success).toBe(false);
-    expectNothingSigned();
-    // Refused before the provider was even asked for a route.
-    expect(mockGetRoute).not.toHaveBeenCalled();
-    expect(recordedFailure().failureCode).toBe("slippage");
-    expect(result.output).toContain("kyberswap.swap.quote");
-  });
-
-  it("refuses when the persisted prequote carries no price floor (a pre-upgrade quote)", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue({ prequoteId: "prequote-1", routeRef: null });
-
-    const result = await execute();
-
-    expect(result.success).toBe(false);
-    expectNothingSigned();
-  });
 });
 
 describe("kyberswap.swap.execute — slippage ceiling", () => {
@@ -332,8 +313,6 @@ describe("kyberswap.swap.execute — slippage ceiling", () => {
   });
 
   it("accepts 1000 bps — exactly the owner-pinned ceiling", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(prequoteWithFloor(1000));
-
     const result = await execute({ slippageBps: 1000 });
 
     expect(result.success).toBe(true);
@@ -342,8 +321,6 @@ describe("kyberswap.swap.execute — slippage ceiling", () => {
   });
 
   it("rejects 1001 bps — one basis point over the ceiling, never clamped down to it", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(prequoteWithFloor(1001));
-
     const result = await execute({ slippageBps: 1001 });
 
     expect(result.success).toBe(false);

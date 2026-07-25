@@ -50,7 +50,7 @@ export const CLOSED_FAILURE_CODES: ReadonlySet<string> = new Set<AgentActivityFa
  * | Stage                                   | Scenario                                                         | failure_code               | Notes |
  * |------------------------------------------|-------------------------------------------------------------------|-----------------------------|-------|
  * | Pre-broadcast (param/quote validation)    | invalid params, provider rejects the quote/build before signing   | `route_not_found`           | matches 044's existing swap-quote-rejected semantics |
- * | Pre-broadcast (economic floor)            | fresh quote fails the persisted threshold floor (R4b)              | `slippage`                  | reused verbatim, no new code |
+ * | Pre-broadcast (economic floor)            | REMOVED 2026-07-25 — no pre-broadcast row files `slippage` any more | —                           | the quote-to-quote floor (R4b) was `freshOut >= quotedOut` in disguise; owner removed it, slippageBps is the protection. `slippage` now reaches a row only from an on-chain revert the venue classifies as one (see `uniswap/revert-mapping.ts`) |
  * | Pre-broadcast (deadline)                  | quote/build expired before signing                                 | `deadline_expired`          | reused verbatim |
  * | Pre-broadcast (sign refusal, R2b)         | provider-built tx already carries a nonzero signature (sole-signer check failed) | `unknown` + structured reason | the refusal itself is not chain-specific; the reason string carries the "why" |
  * | On-chain (mined revert)                   | `getTransaction` shows `err` set                                    | `mined_revert`              | K3's registered-decoder path (R3) |

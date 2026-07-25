@@ -182,3 +182,137 @@ describe("computeBorrowPositionRisk — named non-computable states", () => {
     }
   });
 });
+
+/**
+ * PEER-REVIEW DEFECT, 2026-07-25: individual INPUTS were validated for
+ * finiteness but the products and the quotient built out of them were not, so a
+ * degenerate combination emitted `currentLtvPercent: "NaN%"` — or `"Infinity%"`
+ * — under `status: "computed"`, the discriminant that tells an autonomous agent
+ * the number is USABLE. Under DISCLOSE-DO-NOT-BLOCK there is no gate behind
+ * this output to catch it: the agent sizes a borrow off whatever it reads.
+ *
+ * `decimals` and the prices arrive on a provider JSON row typed only by a
+ * compile-time `interface` (`jupiter-lend/borrow-api/types.ts`), so none of
+ * these shapes are hypothetical — they are what an untyped wire field can carry.
+ *
+ * Each test below reaches a DIFFERENT arithmetic step, because a single guard
+ * at one step does not cover the others.
+ */
+describe("computeBorrowPositionRisk — non-finite arithmetic can never reach 'computed'", () => {
+  it("a decimals value that cannot scale a raw amount is a named unknown, not a valuation", () => {
+    // `10 ** NaN` is `NaN`: every USD figure derived from it is NaN.
+    const risk = computeBorrowPositionRisk({ ...BASE, collateralDecimals: Number.NaN });
+    expect(risk.status).toBe("unknown");
+    if (risk.status !== "unknown") throw new Error("unreachable");
+    expect(risk.reason).toMatch(/decimals/i);
+    expect(risk.reason).toMatch(/not a statement that this position is safe/i);
+  });
+
+  it("a decimals value whose scale overflows does NOT silently report the position as empty", () => {
+    // `10 ** 400` is `Infinity`, so `raw / Infinity` is `0` — FINITE, and
+    // therefore survives a result-only finiteness check while reporting a real
+    // 1 WSOL of collateral and 50 USDC of debt as 0.00% LTV, 85 points clear.
+    // That fabrication is worse than the NaN it replaces.
+    const risk = computeBorrowPositionRisk({ ...BASE, collateralDecimals: 400, debtDecimals: 400 });
+    expect(risk.status).toBe("unknown");
+    if (risk.status !== "unknown") throw new Error("unreachable");
+    expect(risk.reason).toMatch(/decimals/i);
+  });
+
+  it("a valuation that overflows to non-finite is a named unknown, not a computed USD figure", () => {
+    // Divisor `10 ** -323` is finite and positive, so a decimals guard alone
+    // admits it — but 999,999,999,999,999 / 1e-323 overflows to Infinity.
+    const risk = computeBorrowPositionRisk({
+      ...BASE,
+      collateralRaw: "999999999999999",
+      collateralDecimals: -323,
+    });
+    expect(risk.status).toBe("unknown");
+    if (risk.status !== "unknown") throw new Error("unreachable");
+    expect(risk.reason).toMatch(/not a statement that this position is safe/i);
+  });
+
+  it("an LTV ratio that overflows is a named unknown — never the string 'Infinity%'", () => {
+    // Both USD figures are finite: collateral 1e-320 (a denormal, still > 0),
+    // debt 1e12. Their QUOTIENT is Infinity, and only a check on the quotient
+    // catches it.
+    const risk = computeBorrowPositionRisk({
+      ...BASE,
+      collateralRaw: "1", collateralDecimals: 300, collateralPriceUsd: "1e-20",
+      debtRaw: "1000000", debtDecimals: 0, debtPriceUsd: "1000000",
+    });
+    expect(risk.status).toBe("unknown");
+    if (risk.status !== "unknown") throw new Error("unreachable");
+    expect(risk.reason).toMatch(/not a statement that this position is safe/i);
+  });
+
+  /**
+   * The invariant, stated once over every shape: no field an agent reads as a
+   * MEASUREMENT ever carries `NaN` or `Infinity`. Asserted on the emitted
+   * strings, because `"NaN%"` is what actually reached the agent — not on the
+   * intermediate floats.
+   *
+   * `reason`/`note` are deliberately exempt. They are diagnostics, and echoing
+   * the provider's own broken value back ("collateral NaN") is the honest
+   * report of what arrived; suppressing it would hide the cause. The danger was
+   * never the characters, it was a fabricated number under `status: "computed"`.
+   */
+  it("no input produces a measurement field carrying NaN or Infinity", () => {
+    const hostile: readonly Partial<BorrowPositionRiskInput>[] = [
+      { collateralDecimals: Number.NaN },
+      { debtDecimals: Number.NaN },
+      { collateralDecimals: 400 },
+      { debtDecimals: 400 },
+      { collateralDecimals: -400 },
+      { debtDecimals: -400 },
+      { collateralDecimals: Number.POSITIVE_INFINITY },
+      { collateralRaw: "999999999999999", collateralDecimals: -323 },
+      { debtRaw: "999999999999999", debtDecimals: -323 },
+      {
+        collateralRaw: "1", collateralDecimals: 300, collateralPriceUsd: "1e-20",
+        debtRaw: "1000000", debtDecimals: 0, debtPriceUsd: "1000000",
+      },
+    ];
+    // Healthy shapes ride along so the `computed` branch is covered by the same
+    // invariant — otherwise a regression that deleted a guard would be caught
+    // only by the status assertion.
+    const healthy: readonly Partial<BorrowPositionRiskInput>[] = [
+      {},
+      { debtRaw: "0" },
+      { collateralRaw: "0" },
+      { collateralDecimals: 0, collateralRaw: "100", collateralPriceUsd: "1" },
+    ];
+
+    for (const patch of [...hostile, ...healthy]) {
+      const risk = computeBorrowPositionRisk({ ...BASE, ...patch });
+      const measurements = risk.status === "unknown"
+        ? []
+        : risk.status === "undercollateralized"
+          ? [risk.collateralUsd, risk.debtUsd]
+          : [risk.collateralUsd, risk.debtUsd, risk.currentLtvPercent, risk.ltvPercentagePointsToLiquidation];
+      for (const measurement of measurements) {
+        expect(measurement).not.toMatch(/NaN|Infinity/);
+      }
+    }
+
+    for (const patch of hostile) {
+      expect(computeBorrowPositionRisk({ ...BASE, ...patch }).status).not.toBe("computed");
+    }
+  });
+
+  it("still computes the ordinary position — the guards refuse degenerate input, not healthy input", () => {
+    expect(computeBorrowPositionRisk(BASE)).toEqual({
+      status: "computed",
+      collateralUsd: "100.00",
+      debtUsd: "50.00",
+      currentLtvPercent: "50.00%",
+      ltvPercentagePointsToLiquidation: "35.00",
+    });
+    // Zero decimals is legitimate (a 0-decimal SPL mint), not a degenerate scale.
+    expect(computeBorrowPositionRisk({
+      ...BASE,
+      collateralRaw: "100", collateralDecimals: 0, collateralPriceUsd: "1",
+      debtRaw: "50", debtDecimals: 0, debtPriceUsd: "1",
+    })).toMatchObject({ status: "computed", currentLtvPercent: "50.00%" });
+  });
+});

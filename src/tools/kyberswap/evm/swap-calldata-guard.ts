@@ -15,10 +15,22 @@
  *     `approveTarget` — is what we approved (no new spender, no new target);
  *  3. the native `value` matches the leg (zero for an ERC-20 sell);
  *  4. src/dst token, `dstReceiver` and input `amount` are ours;
- *  5. `minReturnAmount` clears BOTH the persisted quote-time floor and the
- *     floor the fresh route implies;
- *  6. the fee line is EXACTLY the Vex constant, charged in bps on the source,
- *     with no partial fill.
+ *  5. the fee line is EXACTLY the Vex constant, charged in bps on the source,
+ *     with no partial fill;
+ *  6. the SOURCE-side transfer list sends the input only to the executor this
+ *     build calls, and only the approved amount net of fee;
+ *  7. `minReturnAmount` clears the floor the FRESH route implies at the
+ *     caller's own `slippageBps` — i.e. the blob really does enforce the
+ *     tolerance we asked for, rather than a wider one of the provider's
+ *     choosing.
+ *
+ * There is deliberately NO quote-to-quote comparison here. A second bound
+ * against the floor persisted at quote time reduced to "the price must not
+ * have moved against the user by one unit between quote and build", which is
+ * not a floor guard at all: it stacked a zero tolerance on top of the
+ * `slippageBps` that exists to absorb exactly that movement, and on a thin
+ * pair no re-quote could ever satisfy it. Removed by owner decision
+ * (2026-07-25) — slippage is the price protection.
  *
  * Returns a discriminated verdict instead of throwing: the caller decides how
  * a refusal is recorded (a price-floor breach and a tampered fee line are
@@ -106,6 +118,48 @@ const FLAG_FEE_ON_DST = 0x40n;
  */
 const FLAG_PARTIAL_FILL = 0x01n;
 
+// ── Source-side transfer semantics ───────────────────────────────────
+//
+// `srcReceivers`/`srcAmounts` are the router's INPUT-side transfer list, and on
+// the exact path our builds take they are a live exfiltration primitive. In the
+// verified `MetaAggregationRouterV2`, `swap()` with `_SIMPLE_SWAP` (0x20) clear
+// — our builds carry `flags == 640`, so it IS clear — runs:
+//
+//     for (i in srcReceivers) { total += srcAmounts[i];
+//       _doTransferERC20(srcToken, msg.sender, srcReceivers[i], srcAmounts[i]); }
+//     require(total <= desc.amount, 'Exceeded desc.amount');
+//
+// A `transferFrom` out of the USER's wallet to an address taken verbatim from
+// the description. The router bounds only the total and never asks who the
+// receiver is, so a build can keep the pair, the amount, the `dstReceiver`, the
+// fee line and the floor all correct while diverting the input.
+//
+// The honest shape, measured across 21 real `/route/build` responses on
+// 2026-07-25 (base/ethereum/arbitrum/polygon/bsc, 1–19 paths, 1–3 hops, 25–300
+// bps, both input kinds; three checked in under `fixtures/route-build/`):
+//
+//   ERC-20 input → EXACTLY one receiver, equal to `callTarget`, taking EXACTLY
+//                  `amount - floor(amount * feeBps / 10000)`.
+//   native input → BOTH arrays empty; the input rides in `msg.value` and the
+//                  loop above is a no-op for the native sentinel.
+//
+// Path count does not widen the list: a 19-path split still uses one receiver,
+// because the split happens inside the executor, not in this description.
+const ROUTER_BPS_BASE = 10_000n;
+
+/**
+ * What an honest build routes to the executor: the input net of the integrator
+ * fee, derived the way the router derives it. `_takeFee` reassigns
+ * `desc.amount = amount - floor(amount * bps / BPS)` BEFORE the transfer loop,
+ * so the FEE floors, not the remainder. Measured, not assumed: at
+ * `amount = 10000001` the provider embeds 9975001, where
+ * `floor(amount * 9975 / 10000)` would give 9975000 — a one-unit error that
+ * would refuse every honest swap.
+ */
+function expectedSourceNetAmount(amount: bigint): bigint {
+  return amount - (amount * BigInt(KYBERSWAP_FEE_BPS)) / ROUTER_BPS_BASE;
+}
+
 // ── Verdict ──────────────────────────────────────────────────────────
 
 /**
@@ -139,12 +193,13 @@ export interface ApprovedKyberSwap {
   readonly amountIn: bigint;
   /** True when the input leg is the native sentinel (value-bearing call). */
   readonly srcIsNative: boolean;
-  /** Persisted quote-time floor (`swap-price-floor.ts`). */
-  readonly approvedMinOutRaw: bigint;
-  /** Floor implied by the fresh execute-time route summary. */
+  /**
+   * Floor implied by the fresh execute-time route summary at the caller's own
+   * `slippageBps` (`computeApprovedMinOut` in `swap-price-floor.ts`).
+   */
   readonly freshMinOutRaw: bigint;
   /**
-   * Slack allowed on BOTH floor comparisons, in raw output units — the
+   * Slack allowed on the floor comparison, in raw output units — the
    * provider's measured build re-derivation (see
    * `KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW`). Never a percentage.
    */
@@ -154,6 +209,9 @@ export interface ApprovedKyberSwap {
 interface DecodedSwapDescription {
   readonly srcToken: string;
   readonly dstToken: string;
+  /** Input-token transfer list — see "Source-side transfer semantics" above. */
+  readonly srcReceivers: readonly string[];
+  readonly srcAmounts: readonly bigint[];
   readonly feeReceivers: readonly string[];
   readonly feeAmounts: readonly bigint[];
   readonly dstReceiver: string;
@@ -167,6 +225,12 @@ interface DecodedSwapCall {
   readonly desc: DecodedSwapDescription;
   /** Only the generic entry points carry one; `swapSimpleMode` does not. */
   readonly approveTarget: string | null;
+  /**
+   * The executor the router hands the input to. `null` for `swapSimpleMode`,
+   * which names its callee in a separate argument and moves the input from
+   * inside `executorData` instead of from `srcReceivers`.
+   */
+  readonly callTarget: string | null;
 }
 
 function sameAddress(a: string, b: string): boolean {
@@ -217,6 +281,8 @@ function narrowSwapDescription(value: unknown): DecodedSwapDescription | null {
   const srcToken = readAddress(value, "srcToken");
   const dstToken = readAddress(value, "dstToken");
   const dstReceiver = readAddress(value, "dstReceiver");
+  const srcReceivers = readAddressArray(value, "srcReceivers");
+  const srcAmounts = readUintArray(value, "srcAmounts");
   const feeReceivers = readAddressArray(value, "feeReceivers");
   const feeAmounts = readUintArray(value, "feeAmounts");
   const amount = readUint(value, "amount");
@@ -224,12 +290,16 @@ function narrowSwapDescription(value: unknown): DecodedSwapDescription | null {
   const flags = readUint(value, "flags");
   if (
     srcToken === null || dstToken === null || dstReceiver === null
+    || srcReceivers === null || srcAmounts === null
     || feeReceivers === null || feeAmounts === null
     || amount === null || minReturnAmount === null || flags === null
   ) {
     return null;
   }
-  return { srcToken, dstToken, feeReceivers, feeAmounts, dstReceiver, amount, minReturnAmount, flags };
+  return {
+    srcToken, dstToken, srcReceivers, srcAmounts,
+    feeReceivers, feeAmounts, dstReceiver, amount, minReturnAmount, flags,
+  };
 }
 
 /**
@@ -250,15 +320,74 @@ function decodeSwapCall(calldata: Hex): DecodedSwapCall | null {
 
   if (functionName === "swapSimpleMode") {
     const desc = narrowSwapDescription(args[1]);
-    return desc ? { functionName, desc, approveTarget: null } : null;
+    return desc ? { functionName, desc, approveTarget: null, callTarget: null } : null;
   }
 
   const execution = args[0];
   if (!isRecord(execution)) return null;
   const desc = narrowSwapDescription(execution.desc);
   const approveTarget = readAddress(execution, "approveTarget");
-  if (!desc || approveTarget === null) return null;
-  return { functionName, desc, approveTarget };
+  const callTarget = readAddress(execution, "callTarget");
+  if (!desc || approveTarget === null || callTarget === null) return null;
+  return { functionName, desc, approveTarget, callTarget };
+}
+
+/**
+ * Bind the input-token transfer list to the one shape honest builds use.
+ *
+ * This is the SOURCE-side counterpart to the `dstReceiver` check: without it a
+ * build can satisfy every other assertion and still hand the user's input to a
+ * third party. Fails closed — a shape not modelled here is refused, never
+ * passed, because the router will execute it verbatim.
+ *
+ * `amount` must already be bound to the approved input and the fee line to the
+ * Vex constants; the net-of-fee expectation below is derived from both.
+ */
+function verifySourceTransfers(
+  desc: DecodedSwapDescription,
+  callTarget: string,
+  srcIsNative: boolean,
+): KyberBuildVerdict {
+  const { srcReceivers, srcAmounts } = desc;
+  if (srcReceivers.length !== srcAmounts.length) {
+    return refuse(
+      "build_integrity",
+      `it lists ${srcReceivers.length} input receivers against ${srcAmounts.length} input amounts`,
+    );
+  }
+
+  // A native sell forwards the input as `msg.value`; the transfer loop is a
+  // no-op for the native sentinel, so an honest build leaves the list empty.
+  // Anything in it is a shape we have never seen and cannot account for.
+  if (srcIsNative) {
+    if (srcReceivers.length !== 0) {
+      return refuse(
+        "build_integrity",
+        `it adds ${srcReceivers.length} input transfer(s) to a native sell, which needs none`,
+      );
+    }
+    return { ok: true };
+  }
+
+  if (srcReceivers.length !== 1) {
+    return refuse(
+      "build_integrity",
+      `it splits the input across ${srcReceivers.length} receivers, not the single executor an honest build uses`,
+    );
+  }
+
+  const receiver = srcReceivers[0] ?? "";
+  const moved = srcAmounts[0] ?? 0n;
+  if (!sameAddress(receiver, callTarget)) {
+    return refuse("build_integrity", `it sends ${moved} of the input to ${receiver}, not to the executor it calls`);
+  }
+
+  const expected = expectedSourceNetAmount(desc.amount);
+  if (moved !== expected) {
+    return refuse("build_integrity", `it moves ${moved} of the input where ${expected} is approved net of fee`);
+  }
+
+  return { ok: true };
 }
 
 /**
@@ -300,6 +429,15 @@ export function verifyBuiltKyberSwap(
     return refuse("build_integrity", "Vex could not decode it as a router swap");
   }
 
+  // `swapSimpleMode` moves the input from inside `executorData` (the router's
+  // `firstPools`/`firstSwapAmounts`) rather than from `srcReceivers`, so its
+  // source transfers are not expressible in the fields decoded here and cannot
+  // be bound. No observed Vex build uses it — all 21 captures are `swap` — so
+  // refusing it costs no honest traffic and is the fail-closed choice.
+  if (call.callTarget === null) {
+    return refuse("build_integrity", "it uses the simple-mode entry point, whose input transfers Vex cannot verify");
+  }
+
   // The generic entry points can grant an ERC-20 allowance to an arbitrary
   // address before calling the executor. Every observed Vex build leaves it
   // zero; a non-zero value is a new spender and is refused.
@@ -338,14 +476,17 @@ export function verifyBuiltKyberSwap(
     return refuse("build_integrity", "it permits a partial fill, charging the fee on unswapped funds");
   }
 
-  // 5. Price floor — both bounds. Checked LAST so a tampered build is reported
-  //    as tampering rather than as a market move.
-  if (desc.minReturnAmount + approved.floorAllowanceRaw < approved.approvedMinOutRaw) {
-    return refuse(
-      "price_floor",
-      `the swap would accept ${desc.minReturnAmount} out, below the ${approved.approvedMinOutRaw} you approved`,
-    );
-  }
+  // 5. Source-side transfers. Checked after the fee line, because the
+  //    net-of-fee amount an honest build routes is derived from the bps
+  //    constant the step above has just pinned.
+  const sourceVerdict = verifySourceTransfers(desc, call.callTarget, approved.srcIsNative);
+  if (!sourceVerdict.ok) return sourceVerdict;
+
+  // 6. Price floor — the fresh route's own bound. Checked LAST so a tampered
+  //    build is reported as tampering rather than as a market move. This
+  //    catches a build that widened the tolerance beyond what the caller
+  //    asked for; a route that simply repriced between quote and build is NOT
+  //    refused here (see the module header).
   if (desc.minReturnAmount + approved.floorAllowanceRaw < approved.freshMinOutRaw) {
     return refuse(
       "price_floor",

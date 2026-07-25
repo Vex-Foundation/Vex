@@ -149,14 +149,6 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
-// The execute now re-reads its own persisted quote-time price floor before it
-// will sign anything (`swap-price-floor.ts`). These cases are about the staged
-// broadcast, not the floor, so the floor is supplied as satisfied.
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
@@ -164,7 +156,6 @@ vi.mock("@utils/logger.js", () => {
 
 const {
   compliantSwapCalldata,
-  matchedPrequoteWithFloor,
 } = await import("../../kyberswap/fixtures/route-build/compliant-swap-build.js");
 
 const { KYBERSWAP_HANDLERS } = await import("../../../vex-agent/tools/protocols/kyberswap/handlers.js");
@@ -204,7 +195,6 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
     });
-    mockFindFreshMatchedSwapPrequote.mockReset().mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockReadErc20Metadata.mockReset().mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));

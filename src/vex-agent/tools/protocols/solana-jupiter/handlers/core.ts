@@ -36,7 +36,7 @@ import {
   jupiterFeePreviewSchema,
   type JupiterFeeSwapKnobs,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
-import { assertEconomicFloorHolds, assertFeePolicyUnchanged } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap-revalidate.js";
+import { assertExactInSwapMode, assertFeePolicyUnchanged } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap-revalidate.js";
 import { buildSolanaSettlementRouteProvenance } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/settlement-profile.js";
 import {
   getSolanaConnection,
@@ -266,7 +266,7 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     return ok(projectJupiterTokens(tokens, { statsInterval }));
   },
 
-  // ── Swap (W5 design §6/R4/R4b — fee-bearing /build atomic flip) ───
+  // ── Swap (W5 design §6/R4 — fee-bearing /build atomic flip) ───
   //
   // Both quote and execute build via `prepareFeeBearingJupiterSwap` (the ONE
   // place `platformFeeBps`/`feeAccount` are set — always the hardcoded 25bps
@@ -373,13 +373,13 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     ]);
     const amountRaw = uiToTokenAmount(amount, inputToken.decimals).toString();
 
-    // R4/R4b: re-fetch the SAME fresh matched quote the prequote gate
+    // R4: re-fetch the SAME fresh matched quote the prequote gate
     // (executeProtocolTool, BEFORE this handler runs) already proved exists.
     // The gate's hash match already proves every REQUEST param (mints,
     // amount, fee/tip/CU-strategy/DEX-filter/maxAccounts/wrap knobs) is
-    // identical to the quote; what it CANNOT prove is that a FRESH /build
-    // response (fetched below) still offers an acceptable floor, or that
-    // this fresh fee derivation didn't drift — those checks run explicitly.
+    // identical to the quote; what it CANNOT prove is that this fresh fee
+    // derivation still lands on the same treasury ATA — that check runs
+    // explicitly below, against the persisted preview read here.
     const matched = await findFreshMatchedSwapPrequote(toolId, sessionId, p, ctx);
     const persistedFeePreview = matched
       ? jupiterFeePreviewSchema.safeParse((matched.safetyDetail as Record<string, unknown>).feePreview)
@@ -408,13 +408,14 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
       }),
     };
 
-    // Phase A (pre-intent): fresh /build + R4b revalidation. ANY failure here
-    // is pre-broadcast — nothing has been signed or recorded yet. Per K1's
-    // stage/error mapping table (validation.ts): a `/build` request/param
-    // rejection is `route_not_found`, but the R4b economic-floor check has
-    // its OWN dedicated code — `slippage` — reused verbatim, never lumped
-    // into the generic build-rejection bucket (a floor violation is not "no
-    // route found"; it is a genuine slippage-style abort).
+    // Phase A (pre-intent): fresh /build + R4 shape revalidation. ANY failure
+    // here is pre-broadcast — nothing has been signed or recorded yet. Per
+    // K1's stage/error mapping table (validation.ts) every rejection at this
+    // stage is `route_not_found`, the generic build-rejection bucket: what
+    // remains are trade-SHAPE divergences (swap mode, fee destination), and
+    // none of them is a slippage event the agent could answer by widening its
+    // tolerance. The quote-to-quote price floor that used to file `slippage`
+    // here was removed by owner decision — see `fee-swap-revalidate.ts`.
     const preBroadcastFail = async (failureCode: AgentActivityFailureCode, err: unknown): Promise<ToolResult> => {
       const reason = swapFailureMessage(err);
       const { executionId } = await createAgentActivityPreBroadcastFailure({
@@ -446,9 +447,9 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
       return preBroadcastFail("route_not_found", err);
     }
     try {
-      assertEconomicFloorHolds(prepared.raw, persistedFeePreview.data.otherAmountThresholdRaw);
+      assertExactInSwapMode(prepared.raw);
     } catch (err) {
-      return preBroadcastFail("slippage", err);
+      return preBroadcastFail("route_not_found", err);
     }
     try {
       assertFeePolicyUnchanged(persistedFeePreview.data, prepared.feeMint, prepared.feeAccount);

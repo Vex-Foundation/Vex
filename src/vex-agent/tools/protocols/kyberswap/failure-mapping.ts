@@ -52,9 +52,11 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
       // the route we were handed is not the route we approved.
       case ErrorCodes.KYBER_UNSAFE_BUILD:
         return "route_not_found";
-      // The built calldata's own `minReturnAmount` sits below the price floor
-      // Vex approved. A genuine slippage abort — the SAME code the Solana
-      // economic-floor check uses, never the generic build-rejection bucket.
+      // The built calldata's own `minReturnAmount` sits below the floor the
+      // FRESH route implies at the caller's own `slippageBps` — the build
+      // widened the tolerance we asked for. A genuine slippage abort, never
+      // the generic build-rejection bucket. It is NOT a "the price moved"
+      // refusal: that comparison was removed (see `swap-price-floor.ts`).
       case ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED:
         return "slippage";
       case ErrorCodes.KYBER_AMOUNT_TOO_LARGE:

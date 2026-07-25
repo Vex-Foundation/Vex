@@ -63,33 +63,14 @@
  *     blockhash. Prediction therefore uses VERIFY mode, which it must: see the
  *     `coSigned` contract above.
  *
- * THIRD PRE-SIGN INVARIANT — COMPUTE-BUDGET SUFFICIENCY (2026-07-25), added
- * alongside the signer contract and the blockhash evidence. A Jupiter `/build`
- * swap declaring 606,000 CU consumed all of it and mined-reverted
- * `{"InstructionError":[3,"ProgramFailedToComplete"]}` for a real 15,023
- * lamport fee, because the provider's declared limit was signed unchecked. So
- * every path now runs one free `simulateTransaction` through
- * `assertComputeBudgetSufficientToSign` (see that module for the calibrated
- * margin and the cost/sufficiency tension with the `/build` fee-ceiling guard)
- * and REFUSES a budget it cannot show sufficient. It is an ADMISSION GATE, not
- * a guarantee: simulation runs at a different slot against different account
- * state, so an admitted transaction can still fail.
- *
- * It applies to `coSigned` too. PROBE B (2026-07-25) settled that: a
- * 2-required-signer v0 transaction with both signature slots zeroed simulated
- * successfully under `sigVerify:false`, returning a genuine runtime outcome
- * rather than a signature rejection — and filling one slot with garbage bytes
- * gave the identical result. `replaceRecentBlockhash:true` is applied to the
- * node's copy only, so the provider's pre-signatures are never at risk.
- *
- * BEHAVIOR NOTE: VERIFY mode previously made NO network call. It now makes
- * exactly one. Call sites that pass no `connection` use `getSolanaConnection()`.
- *
- * A transaction that declares NO `SetComputeUnitLimit` — `tools/bridge-fee/
- * solana-fee-transfer.ts`, or a provider response carrying a compute-unit PRICE
- * but no LIMIT — is checked against the budget Solana grants by default under
- * SIMD-0170. That rule lives in exactly one function,
- * `inferDefaultComputeUnitBudget`.
+ * NO COMPUTE-BUDGET CHECK HAPPENS HERE (owner decision, 2026-07-25). A
+ * pre-sign gate that simulated the transaction and refused an insufficient
+ * compute budget shipped and was removed the same day: Jupiter sets the limit
+ * itself via `dynamicComputeUnitLimit`, a starved transaction reverts
+ * ATOMICALLY so no funds move, and the entire cost of the live failure that
+ * motivated it was 15,023 lamports (~$0.0011). Refusing a trade worth orders of
+ * magnitude more to avoid a tenth of a cent is the wrong trade, and the chain
+ * already enforces the limit. Do not reintroduce it without an owner decision.
  *
  * A throw from this function is a POST-INTENT failure whenever the caller
  * has already run `createAgentActivityIntent` (the W5 write-protocol order is
@@ -111,7 +92,6 @@ import { VexError, ErrorCodes } from "../../../../errors.js";
 import { deserializeVersionedTx } from "./deserialize.js";
 import { signVersionedTx } from "./sign.js";
 import { getSolanaConnection } from "./connection.js";
-import { assertComputeBudgetSufficientToSign } from "./compute-budget-sufficiency.js";
 
 /** Fresh blockhash evidence already tied to the transaction's bytes (e.g. Jupiter `/build`'s `blockhashWithMetadata`). */
 export interface KnownSolanaBlockhash {
@@ -176,10 +156,6 @@ export async function prepareVersionedTx(
   const evidence = options.knownBlockhash
     ? verifyKnownBlockhash(tx, options.knownBlockhash)
     : await replaceWithFreshBlockhash(tx, options.connection ?? getSolanaConnection());
-
-  // AFTER the blockhash is settled and BEFORE signing, so the bytes we check
-  // are the bytes we sign. See the module doc's third pre-sign invariant.
-  await assertComputeBudgetSufficientToSign(tx, options.connection ?? getSolanaConnection());
 
   signVersionedTx(tx, [signer]);
   assertOnlyOurSlotChanged(tx, slotsBefore, ourSlot);

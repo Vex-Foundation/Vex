@@ -88,12 +88,6 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   }),
 }));
 
-const mockFindFreshMatchedSwapPrequote = vi.fn();
-
-vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
-}));
-
 const mockCreateAgentActivityIntent = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
@@ -116,7 +110,6 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
-import { computeApprovedMinOut, toRouteRef } from "@tools/kyberswap/swap-price-floor.js";
 import { KYBERSWAP_FEE_BPS } from "@tools/kyberswap/constants.js";
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
@@ -206,14 +199,6 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
       },
     });
     mockBuildRoute.mockResolvedValue(buildResponse());
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue({
-      prequoteId: "prequote-1",
-      routeRef: toRouteRef({
-        quotedNetOutRaw: ROUTE_OUT,
-        slippageBps: 50,
-        approvedMinOutRaw: computeApprovedMinOut(ROUTE_OUT, 50).toString(),
-      }),
-    });
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }, { id: 101 }] });
     mockSignStageBroadcast.mockResolvedValue({ kind: "confirmed", txHash: "0xswap", receipt: { logs: [] } });
     mockDecodeKyberSwapSettlement.mockReturnValue({

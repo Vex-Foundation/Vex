@@ -18,7 +18,8 @@
 import { decodeFunctionData, encodeFunctionData, getAddress, type Hex } from "viem";
 
 import { META_AGGREGATION_ROUTER_V2_SWAP_ABI } from "@tools/kyberswap/evm/swap-calldata-guard.js";
-import { computeApprovedMinOut, toRouteRef } from "@tools/kyberswap/swap-price-floor.js";
+import { KYBERSWAP_FEE_BPS, NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
+import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 
 import capture from "./base-usdc-to-native-50bps.json" with { type: "json" };
 
@@ -36,8 +37,8 @@ export interface CompliantSwapBuildInput {
 /**
  * Real captured calldata with the identity + floor fields swapped for the
  * caller's. The embedded floor is derived the way the provider derives it, so
- * the result satisfies both floor comparisons for a quote of
- * `quotedNetOutRaw`.
+ * the result satisfies the guard's floor comparison for a route whose output
+ * is `quotedNetOutRaw`.
  */
 export function compliantSwapCalldata(input: CompliantSwapBuildInput): Hex {
   const decoded = decodeFunctionData({
@@ -58,22 +59,27 @@ export function compliantSwapCalldata(input: CompliantSwapBuildInput): Hex {
         dstReceiver: getAddress(input.dstReceiver),
         amount: input.amountIn,
         minReturnAmount: computeApprovedMinOut(input.quotedNetOutRaw, input.slippageBps),
+        ...sourceTransfersFor(input.srcToken, input.amountIn, execution.callTarget as string),
       },
     }],
   } as never);
 }
 
 /**
- * The persisted prequote row `kyberswap.swap.execute` re-reads for its approved
- * floor — the shape `findFreshMatchedSwapPrequote` returns.
+ * The input-token transfer list a real build carries for `amountIn`, which the
+ * pre-sign guard binds: one transfer to the executor being called, for the
+ * amount net of the integrator fee — or nothing at all when the input is
+ * native and rides in `msg.value` instead. Patching `amount` without this would
+ * leave the capture's original figure behind and the guard would (correctly)
+ * refuse the result.
  */
-export function matchedPrequoteWithFloor(quotedNetOutRaw: string, slippageBps: number) {
+function sourceTransfersFor(srcToken: string, amountIn: bigint, callTarget: string) {
+  if (getAddress(srcToken) === getAddress(NATIVE_TOKEN_ADDRESS)) {
+    return { srcReceivers: [], srcAmounts: [] };
+  }
   return {
-    prequoteId: "prequote-test",
-    routeRef: toRouteRef({
-      quotedNetOutRaw,
-      slippageBps,
-      approvedMinOutRaw: computeApprovedMinOut(quotedNetOutRaw, slippageBps).toString(),
-    }),
+    srcReceivers: [getAddress(callTarget)],
+    // Fee floors, then the remainder — the router's own `_takeFee` order.
+    srcAmounts: [amountIn - (amountIn * BigInt(KYBERSWAP_FEE_BPS)) / 10_000n],
   };
 }

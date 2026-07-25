@@ -69,25 +69,14 @@ export const JUPITER_SWAP_DEFAULT_CU_PERCENTILE = "high";
 export const JUPITER_SWAP_LANDING_MODE = "self_managed_submit" as const;
 
 /**
- * Solana's hard per-transaction compute-unit ceiling (protocol constant, not
- * Jupiter-specific): https://solana.com/docs/core/fees/compute-budget —
- * "each transaction is capped at 1,400,000 CUs". Used by
- * `build-response-guard.ts` as the CONSERVATIVE assumed compute-unit limit
- * when a `/build` response carries a compute-unit-PRICE instruction but no
- * compute-unit-LIMIT instruction — the documented normal shape of a `/build`
- * response (`/docs/swap/build`: `computeBudgetInstructions` is "compute unit
- * price instruction (does not include compute unit limit)"), which the
- * signed transaction still executes under Solana's default per-instruction
- * CU allocation with no cap tighter than this maximum. Live-reverified 2026-
- * 07-24 (Codex batch-4 turn-2 closure, C6).
- *
- * DEFINED in `shared/solana-transaction/compute-budget-sufficiency.ts` since
- * 2026-07-25, because the pre-sign sufficiency gate needs the same protocol
- * constant and two copies of a chain limit is exactly how they drift apart.
- * Re-exported here so every existing importer of this venue module is
- * unaffected; the direction (venue → shared) is the correct one.
+ * Solana's hard per-transaction compute-unit ceiling — a CHAIN constant, not a
+ * Jupiter one, so it is DEFINED in `shared/solana-transaction/constants.ts`
+ * (two copies of a chain limit is exactly how venues drift apart) and
+ * re-exported here so every existing importer of this venue module is
+ * unaffected. The direction (venue → shared) is the correct one. See that
+ * module for the source and for why `build-response-guard.ts` substitutes it.
  */
-export { SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION } from "../../shared/solana-transaction/compute-budget-sufficiency.js";
+export { SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION } from "../../shared/solana-transaction/constants.js";
 
 /**
  * Jupiter's published tip-receiver accounts for `/tx/v1/submit`-style
