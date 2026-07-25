@@ -17,6 +17,33 @@ Local reference for `src/tools/solana-ecosystem/jupiter/jupiter-swaps`.
 - `https://dev.jup.ag/docs/swap/advanced/reduce-latency.md`
 - `https://dev.jup.ag/portal/migrate-from-lite-api`
 - Verified on `2026-03-30`
+- `/build` param/response additions (`tipAmount`, `computeUnitPricePercentile`,
+  `forJitoBundle`, `tipInstruction`) and `POST /tx/v1/submit` verified against
+  `https://developers.jup.ag/docs/swap/build/index.md`,
+  `https://developers.jup.ag/docs/transaction/submit.md`, and a live-recorded
+  `GET /build` response, on `2026-07-23`.
+- `2026-07-24`: `/tx/v1/submit` request hardening — `signedTransaction` now
+  validated as base64, `tipAmount` as a non-negative integer. No new API
+  research; internal review pass on the SDK layer added `2026-07-23`.
+- `2026-07-24` (W5 design §6/R4, migration 049): the `/build` + `/tx/v1/submit`
+  atomic flip. `solana.swap.quote`/`solana.swap.execute` (the only production
+  callers of this module) now build EVERY quote/execute through `/build` with
+  a pinned 25bps platform fee to the Vex treasury ATA (see `fee-swap.ts`), and
+  submit exclusively through `/tx/v1/submit` (see `submit-prepared-tx.ts`) —
+  `/build` and `/tx/v1/submit` are consequently no longer "unreachable from the
+  agent" (the note below under `POST /tx/v1/submit` is now stale — kept as a
+  record of the SDK-layer-only period, see the Local Module Map for the
+  current wiring). `/order` + `/execute` (`service.ts`) have NO production
+  caller left — see "Migration Notes".
+- `2026-07-24` (B2, legacy cleanup): `service.ts` (the `/order`+`/execute`
+  wrapper layer flagged above as callerless) DELETED — `getJupiterSwapQuote`/
+  `executeJupiterSwap`/`buildSwapTransaction` and their `getSwapQuote`/
+  `executeSwap`/`getSwapBuild` aliases, plus the file's own test
+  (`jupiter-swap-v2-service.test.ts`), confirmed zero production callers by a
+  fresh full-tree grep before deletion. `client.ts`'s low-level
+  `jupiterSwapOrder`/`jupiterSwapExecute` bindings were left in place
+  (`jupiterSwapBuild` is still live, used by `fee-swap.ts`) — out of this
+  card's named scope; see "Migration Notes".
 
 ## Overview
 Jupiter Swap API V2 unifies two swap paths behind:
@@ -27,19 +54,30 @@ Jupiter Swap API V2 unifies two swap paths behind:
 The two main paths are:
 
 - `/order` + `/execute`
-  - Best default integration path
+  - Jupiter's own "best default" integration path
   - Returns an assembled transaction
   - Competes across Metis, JupiterZ, Dflow, OKX
   - Managed landing via `/execute`
+  - **W5 (2026-07-24): no production caller in this repo; B2 (2026-07-24):
+    the wrapper layer deleted.** `service.ts`'s `getJupiterSwapQuote`/
+    `executeJupiterSwap`/`buildSwapTransaction` (and their `getSwapQuote`/
+    `executeSwap`/`getSwapBuild` aliases) are gone since the atomic flip
+    below left them callerless; see "Migration Notes". The raw
+    `jupiterSwapOrder`/`jupiterSwapExecute` bindings still exist in
+    `client.ts` (unused, out of B2's scope)
 - `/build`
-  - Advanced path for custom transactions
-  - Returns raw instructions
+  - Advanced path for custom transactions — returns raw instructions, you
+    assemble/sign/send yourself
   - Metis only
-  - You assemble, sign, and send yourself
+  - **W5 (2026-07-24): THIS is Vex's production swap path.**
+    `solana.swap.quote`/`solana.swap.execute` build every quote and execute
+    through `/build` via `fee-swap.ts` (pinned 25bps platform fee to the Vex
+    treasury ATA) and land exclusively through `/tx/v1/submit` via
+    `submit-prepared-tx.ts` — see the Local Module Map below
 
 ## Local Module Map
 - `types.ts`
-  - Full wire contracts for `/order`, `/build`, `/execute`
+  - Full wire contracts for `/order`, `/build`, `/execute`, `/tx/v1/submit`
   - Local summary result types for service helpers
 - `validation.ts`
   - API key enforcement
@@ -49,11 +87,43 @@ The two main paths are:
   - Low-level HTTP bindings
   - no UI amount conversion
   - no token symbol lookup
-- `service.ts`
-  - token resolution
-  - UI amount conversion
-  - transaction signing for `/execute`
-  - derived summaries while preserving `raw`
+- `constants.ts` (W5)
+  - product-owner-reviewed, hardcoded `/build` economics: `platformFeeBps=25`,
+    default/max SOL tip, default CU-price strategy, landing mode
+  - never derived from model/tool params
+- `fee-swap.ts` (W5)
+  - the ONE place that constructs a real fee-bearing `/build` request
+    (`prepareFeeBearingJupiterSwap`) — `platformFeeBps`/`feeAccount` are ALWAYS
+    the hardcoded constant + the derived treasury ATA, never caller-supplied
+  - agent-controlled knob parsing/bounds (`resolveJupiterFeeSwapKnobs`)
+  - the persisted fee disclosure (`jupiterFeePreviewSchema`/`buildJupiterFeePreview`)
+    consumed by the approval preview and the prequote gate
+- `build-assembly.ts` (W5)
+  - turns a `/build` response's raw wire instructions into a real, unsigned
+    `VersionedTransaction` (instruction ordering, address-lookup-table
+    reconstruction)
+- `fee-swap-revalidate.ts` (W5)
+  - execute-time revalidation of a FRESH `/build` response against the
+    PERSISTED quote (R4/R4b): economic floor, knob equality, fee-policy match,
+    mint/amount equality
+- `build-response-guard.ts` (Codex batch-4 closure blocker C2)
+  - hostile-`/build`-RESPONSE validation, called from `fee-swap.ts`'s
+    `prepareFeeBearingJupiterSwap` right after the response arrives and
+    BEFORE any instruction is assembled/signed (both quote and execute):
+    request-identity echo (mints/inAmount), the tip instruction's amount
+    (decoded as a real System Program transfer, never trusted from
+    label/position), the treasury fee ATA's presence in the swap
+    instruction's own accounts, and every `computeBudgetInstructions` entry
+    actually being a ComputeBudget-program instruction within an owner
+    exposure cap. Fixes the gap `fee-swap-revalidate.ts`/the prequote
+    hash-match gate never covered: those check the RESPONSE against a
+    PERSISTED quote or a request hash — nothing previously checked the
+    response against reality itself.
+- `submit-prepared-tx.ts` (W5)
+  - the ONLY consumer of `jupiterSwapSubmit` for a signed, staged transaction;
+    compares the `/tx/v1/submit` response signature against the local
+    (canonical) one — see `../shared/solana-transaction/prepare.ts` for the
+    sign-without-send seam this feeds
 
 ## Endpoint Coverage
 
@@ -123,16 +193,9 @@ Covered response fields:
 - `error`
 
 Local service helper:
-- `getJupiterSwapQuote(inputToken, outputToken, amount, opts)`
-
-Returns:
-- `quote`
-  - normalized UI amounts
-  - route labels
-  - provider string
-  - full `raw`
-- `raw`
-  - untouched `/order` response
+- none (B2, 2026-07-24: `getJupiterSwapQuote` deleted, callerless since the
+  `/build` atomic flip) — only the raw `jupiterSwapOrder(params)` binding
+  above remains, itself unused in production
 
 ### `GET /build`
 Purpose:
@@ -158,6 +221,9 @@ Covered request fields:
 - `destinationTokenAccount`
 - `nativeDestinationAccount`
 - `blockhashSlotsToExpiry`
+- `tipAmount` (SOL tip in lamports; adds `tipInstruction` for `/tx/v1/submit`)
+- `computeUnitPricePercentile` (`"medium"` / `"high"` / `"veryHigh"` / integer 0-10000 bps)
+- `forJitoBundle`
 
 Covered response fields:
 - `inputMint`
@@ -167,27 +233,23 @@ Covered response fields:
 - `otherAmountThreshold`
 - `swapMode`
 - `slippageBps`
+- `priceImpactPct` (DOCS-GAP: the live API returns this on `/build` too; the
+  official `/build` reference page does not list it — only `/order` does)
 - `routePlan`
 - `computeBudgetInstructions`
 - `setupInstructions`
 - `swapInstruction`
 - `cleanupInstruction`
 - `otherInstructions`
+- `tipInstruction` (present, possibly `null`, only reliably observed when `tipAmount` was requested)
 - `addressesByLookupTableAddress`
 - `blockhashWithMetadata`
 
 Local service helper:
-- `buildSwapTransaction(inputToken, outputToken, amount, opts)`
-
-Returns:
-- `build`
-  - normalized UI amounts
-  - route labels
-  - instruction counts
-  - lookup table count
-  - full `raw`
-- `raw`
-  - untouched `/build` response
+- none (B2, 2026-07-24: `buildSwapTransaction` deleted, callerless since the
+  `/build` atomic flip) — production `/build` calls go through `fee-swap.ts`'s
+  `prepareFeeBearingJupiterSwap` (see the Local Module Map), not a
+  `service.ts` wrapper
 
 ### `POST /execute`
 Purpose:
@@ -210,15 +272,36 @@ Covered response fields:
 - `error`
 
 Local service helper:
-- `executeJupiterSwap(inputToken, outputToken, amount, secretKey, opts)`
+- none (B2, 2026-07-24: `executeJupiterSwap` deleted, callerless since the
+  `/build` atomic flip). Its old flow (resolve tokens → convert UI amount →
+  `/order` with `taker` → sign locally → `/execute` → combined result) is
+  superseded by `solana.swap.execute`'s `/build` + `/tx/v1/submit` staged
+  write protocol (`handlers/core.ts`).
 
-Execution flow:
-1. Resolve token metadata
-2. Convert UI amount to atomic input
-3. Request `/order` with `taker`
-4. Sign the returned versioned transaction locally
-5. Call `/execute`
-6. Return combined `order + execute` result with normalized display fields
+### `POST /tx/v1/submit`
+Purpose:
+- submit ANY signed Solana transaction (not tied to a prior `/order`) through
+  Jupiter's self-managed, tip-based landing pipeline
+- the only way to land a `/build`-assembled transaction: `/build` output has
+  no `requestId`, so it cannot go through `/execute`
+
+Local low-level function:
+- `jupiterSwapSubmit(request)`
+
+Covered request fields:
+- `signedTransaction`
+
+Covered response fields:
+- `signature`
+
+**W5 (2026-07-24): wired.** `submit-prepared-tx.ts`'s `submitPreparedTx` is the
+ONE caller — `solana.swap.execute` submits every fee-bearing `/build`
+transaction through it (see the Local Module Map). Building the transaction,
+computing the required ≥0.001 SOL tip to one of Jupiter's 16 designated tip
+accounts (done in `fee-swap.ts`, owner-reviewed default/cap), and staying
+within Solana's 1232-byte transaction limit remain the caller's
+responsibility; this module still only validates that `signedTransaction` is
+non-empty and base64-encoded before calling the endpoint.
 
 ## Validation Rules Implemented
 - `JUPITER_API_KEY` is mandatory
@@ -229,6 +312,9 @@ Execution flow:
 - atomic `amount` must be a positive integer string
 - supported `swapMode` is `ExactIn`
 - supported build `mode` is `fast`
+- `computeUnitPricePercentile` must be `medium`/`high`/`veryHigh` or a numeric value in range 0-10000 bps
+- `tipAmount` must be a non-negative integer (lamports)
+- `/tx/v1/submit`'s `signedTransaction` must be non-empty and base64-encoded
 - Solana public keys are normalized and validated for wallet/account params
 
 ## Routing Notes
@@ -271,11 +357,32 @@ Use:
 - Old Ultra `/order` + `/execute` logic should be treated as replaced by Swap V2 `/order` + `/execute`
 - `lite-api.jup.ag` should not be used for this module
 - future rewiring should migrate legacy consumers to `src/tools/solana-ecosystem/jupiter/jupiter-swaps`
+- **W5 (2026-07-24, design §6/R4, migration 049) — the `/build` atomic flip:**
+  `solana.swap.quote`/`solana.swap.execute` moved from `service.ts`'s
+  `getJupiterSwapQuote`/`executeJupiterSwap` (`/order` + `/execute`) to
+  `fee-swap.ts`'s `prepareFeeBearingJupiterSwap` (`/build` +
+  `/tx/v1/submit`), so the quote and execute paths share the exact same
+  pinned economics (25bps fee, treasury ATA, tip/CU/DEX-filter knobs) by
+  construction.
+- **B2 (2026-07-24, legacy cleanup) — `service.ts` deleted:** the `/order`+
+  `/execute` wrapper functions (`getJupiterSwapQuote`/`executeJupiterSwap`/
+  `buildSwapTransaction` and their `getSwapQuote`/`executeSwap`/`getSwapBuild`
+  aliases) had zero production callers left as of the flip above (confirmed
+  by the K4 delta log, re-confirmed by a fresh full-tree grep before
+  deletion) — removed along with their own test file
+  (`jupiter-swap-v2-service.test.ts`) and the `index.ts` barrel export. The
+  raw `jupiterSwapOrder`/`jupiterSwapExecute` bindings in `client.ts` are now
+  also unreferenced by production code as a consequence, but were left in
+  place — out of this card's named scope (`jupiterSwapBuild` stays live via
+  `fee-swap.ts`).
 
 ## Local Usage Guidance
 - Use `client.ts` when exact wire payloads matter
-- Use `service.ts` when local tools need:
-  - symbol-to-mint resolution
-  - UI amount input
-  - signed `/execute`
-  - normalized summaries with `raw` preserved
+- Use `fee-swap.ts` for the production Vex swap path (`/build` +
+  `/tx/v1/submit`, fee-bearing, wallet-scoped)
+- `service.ts` (the `/order` + `/execute` wrapper layer — symbol-to-mint
+  resolution, UI amount conversion, signed `/execute`, normalized summaries
+  with `raw` preserved) was deleted (B2, 2026-07-24, no production caller).
+  A FUTURE consumer needing the plain `/order` + `/execute` path would build
+  a new wrapper on `client.ts`'s `jupiterSwapOrder`/`jupiterSwapExecute`
+  rather than resurrecting the deleted file verbatim.

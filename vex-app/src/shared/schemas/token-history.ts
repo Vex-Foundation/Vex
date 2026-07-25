@@ -43,7 +43,11 @@
  * `status`/`failureCode` (both `null` for a legacy `proj_activity`-sourced
  * swap): `pending`/`failed` attempts are surfaced here too, not just
  * confirmed fills — mirrors `db/repos/transactions.ts`'s compatibility feed
- * naming (root `src/`, read-only reference — NOT imported). Quantities
+ * naming (root `src/`, read-only reference — NOT imported). Jupiter Lend
+ * deposit/withdraw and Jupiter prediction buy/sell/claim/close (migration
+ * 049, W5) reuse this SAME `kind: "swap"` shape — one role per on-chain tx,
+ * like a plain swap — distinguished only by `productType` (`lend`/
+ * `prediction`), never a dedicated `kind` variant. Quantities
  * travel as DECIMAL STRINGS (never floats — some are raw base-unit integers
  * up to 78 digits, well past JS safe-integer range) and carry a
  * `unitProvenance` tag: `"human"` (a dotted decimal the engine already
@@ -219,12 +223,20 @@ const swapEntrySchema = z
     chain: z.string().max(CHAIN_DISPLAY_MAX_LENGTH),
     venue: z.string().max(CHAIN_DISPLAY_MAX_LENGTH).nullable(),
     tradeSide: z.string().max(16).nullable(),
+    /**
+     * Tolerant string, NOT an enum: `spot` (a real swap) or, for an
+     * `agent_activity` row, derived from `kind` — `lend`/`prediction`
+     * (migration 049, W5) share this SAME `kind: "swap"` entry shape (no
+     * dedicated DTO variant — they are one-role-per-tx like a swap, unlike a
+     * bridge's multi-leg shape), distinguished only by this field, mirroring
+     * `portfolio-moves.ts`'s `MoveItem.productType` convention.
+     */
     productType: z.string().max(32).nullable(),
     input: tokenLegSchema,
     output: tokenLegSchema,
     unitPriceUsd: usdValueSchema,
     captureStatus: z.string().max(32).nullable(),
-    /** `agent_activity` only — a pending/failed swap ATTEMPT, not just fills. */
+    /** `agent_activity` only — a pending/failed swap/lend/prediction ATTEMPT, not just fills. */
     status: tokenHistorySwapStatusSchema.nullable(),
     /** `agent_activity` only — tolerant string (same doctrine as `captureStatus`
      * above: a closed re-declared enum here would risk an empty-page-on-drift

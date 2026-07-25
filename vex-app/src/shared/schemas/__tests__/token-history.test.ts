@@ -145,6 +145,40 @@ describe("tokenHistoryEntrySchema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("round-trips a lend/prediction entry (W5, migration 049) sharing the swap entry shape, distinguished by productType", () => {
+    const lend = tokenHistoryEntrySchema.safeParse({
+      ...base,
+      kind: "swap",
+      chain: "solana",
+      venue: "jupiter",
+      tradeSide: null,
+      productType: "lend",
+      input: leg,
+      output: leg,
+      unitPriceUsd: null,
+      captureStatus: null,
+      status: "confirmed",
+      failureCode: null,
+    });
+    expect(lend.success).toBe(true);
+
+    const prediction = tokenHistoryEntrySchema.safeParse({
+      ...base,
+      kind: "swap",
+      chain: "solana",
+      venue: "jupiter",
+      tradeSide: null,
+      productType: "prediction",
+      input: leg,
+      output: leg,
+      unitPriceUsd: null,
+      captureStatus: null,
+      status: "pending",
+      failureCode: null,
+    });
+    expect(prediction.success).toBe(true);
+  });
+
   it("round-trips a pending agent_activity swap entry (no captureStatus, status+failureCode instead)", () => {
     const parsed = tokenHistoryEntrySchema.safeParse({
       ...base,

@@ -15,12 +15,6 @@ import {
 } from "@vex-agent/tools/protocols/descriptions.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import type { BridgeCapabilityView } from "@vex-agent/tools/protocols/khalani/capability-snapshot.js";
-import {
-  getVisibleHypervexingAliasTools,
-} from "@vex-agent/tools/hypervexing-aliases.js";
-import { isHlWorkspaceModeActive } from "../../../lib/hyperliquid-workspace-mode.js";
-import { resolveHlPolicy, type HlPolicyScope } from "../../../lib/hyperliquid-policy.js";
-import type { ToolVisibilityContext } from "@vex-agent/tools/registry.js";
 
 // ── Auto-generation from manifests ──────────────────────────────
 
@@ -61,48 +55,6 @@ function buildNamespaceSummaries(): Map<ProtocolNamespace, NamespaceSummary> {
 
 /** Cached result — built once per process. */
 let cached: string | null = null;
-
-/**
- * Per-turn Hypervexing state. Its aliases come from the same session +
- * pressure projection as the Tool Map, so prompt text never advertises a
- * release-gated or pressure-filtered capability.
- */
-export function buildHypervexingTurnStatePrompt(
-  visibility: ToolVisibilityContext,
-  policyScope: HlPolicyScope = {},
-): string {
-  if (!isHlWorkspaceModeActive(visibility.sessionId)) {
-    return "Hypervexing workspace: not active. Offer `hyperliquid_enter` when the user wants to trade Hyperliquid perps; do not push it otherwise.";
-  }
-
-  const aliases = getVisibleHypervexingAliasTools(
-    visibility.sessionId,
-    visibility.contextUsageBand,
-  );
-  const lines = [
-    "Hypervexing workspace: ACTIVE for this session.",
-    "",
-    "## Hypervexing compact Hyperliquid index",
-    "",
-    aliases.length > 0
-      ? `Currently callable direct aliases: ${aliases.map((tool) => tool.name).join(", ")}.`
-      : "No Hypervexing direct aliases are currently callable.",
-    "For any other Hyperliquid capability, discover with `discover_tools(namespace=\"hyperliquid\")` before execution. Aliases do not bypass any gate.",
-    "In this workspace a bare token or ticker mention (\"cashcat?\", \"co z BTC?\") means the HYPERLIQUID market by default — analyze the HL perp (book/candles/funding), not a same-name token on another chain or protocol; leave HL context only when the user explicitly names another chain, protocol, or spot venue.",
-    "To check one market, call `perp.markets` with `query=<ticker>` (or `hl_book`) — never conclude a market doesn't exist from a truncated full listing.",
-    "These aliases are for YOU, not the user — never list or tabulate them in a reply; after entering the workspace, orient the user in one sentence (account state or what you can now do) and ask what they want.",
-  ];
-
-  const policy = resolveHlPolicy(policyScope);
-  if (policy.kind === "available") {
-    const { leverageCapDefault, requireStopLoss, perOrderNotionalPct, totalNotionalPct } = policy.snapshot.policy;
-    lines.push(
-      `Active Hyperliquid policy: leverage cap ${leverageCapDefault}x; requireStopLoss=${requireStopLoss}; per-order notional <=${perOrderNotionalPct}%; total notional <=${totalNotionalPct}%.`,
-    );
-  }
-
-  return lines.join("\n");
-}
 
 export function buildProtocolsPrompt(): string {
   if (cached) return cached;
@@ -164,7 +116,7 @@ export function buildProtocolsPrompt(): string {
   lines.push("");
   lines.push("Swap venue by chain:");
   lines.push("- On KyberSwap-supported EVM chains, prefer `kyberswap.*` (aggregated pricing plus honeypot/fee-on-transfer flags).");
-  lines.push("- If KyberSwap cannot route a swap (no aggregator support for the chain, or a route/token-not-found class failure), its failure output tells you a backup venue is now available for this session and how to reach it — do not try to reach it yourself, and do not treat a mined revert or a bad KyberSwap quote as a trigger; only that specific failure output unlocks it.");
+  lines.push("- If KyberSwap cannot route a swap (no aggregator support for the chain, a route/token-not-found class failure, or the swap execute transaction reverting on-chain), its failure output tells you a backup venue is now available for this session and how to reach it — do not try to reach it yourself. Only that specific failure output unlocks it, and only as a QUOTE candidate: request a fresh quote from the backup venue before considering execution, and never resubmit the identical failing KyberSwap route. A bad KyberSwap price quote is never a trigger by itself.");
   lines.push("- On Robinhood Chain (4663), `kyberswap.*` is primary (provisional aggregator support). $VEX and other Virtuals agent tokens trade against VIRTUAL there, so route through VIRTUAL (or WETH) as the base pair.");
   lines.push("- Robinhood caution: KyberSwap's indexed reserves can be stale on thin pairs there. A quote whose priceImpact is strongly NEGATIVE (output supposedly worth more than input), or an execute reverting with 'Return amount is not enough', means the quote overestimated the pool — do NOT retry with higher slippage; re-quote, or tell the user KyberSwap's pricing looks unreliable for this pair.");
   lines.push("- Quote and execute on the SAME venue: a swap execute runs only against a fresh quote from the exact venue it will broadcast on (same rule for any revealed backup venue, not just `kyberswap`). The runtime enforces this.");
@@ -195,17 +147,6 @@ export function buildProtocolsPrompt(): string {
   lines.push("- `pendle.lp.add` provides single-token liquidity (one token → the market's LP), which earns swap fees and rewards; `pendle.lp.remove` burns the LP back to one token. LP is NOT a fixed-rate lock: after expiry it stops earning and only the principal side remains removable. Both need a fresh matching `pendle.lp.quote`; approval-gated.");
   lines.push("- NEVER present points as yield. A `pointsWarning` on a market means it pays speculative points, not a guaranteed return.");
   lines.push("- Check liquidity before sizing — thin markets mean high price impact on exit. Always preview with `pendle.pt.quote` (or `pendle.yt.quote` for YT) first; PT/YT buy/sell/redeem require a fresh matching quote and are approval-gated.");
-  lines.push("");
-
-  lines.push("## Hyperliquid Core Perpetuals");
-  lines.push("");
-  lines.push("`hyperliquid.*` signs exchange actions with the selected EVM master key; it never creates an agent wallet. Read markets, L2 depth, account margin, positions, orders, and funding before proposing a trade.");
-  lines.push("- With the default policy, every perp entry has an atomic reduce-only stop-loss child and later a server-side full-position stop. A stop loss is not a guaranteed fill: gaps, liquidation, and venue conditions can still cause losses.");
-  lines.push("- If the user explicitly disabled stop-loss protection in settings, warn them that the resulting entry is unprotected before using `perp.open`; the model cannot make or change that setting. A supplied stop always remains protected even under that opt-out.");
-  lines.push("- Treat leverage as liquidation risk, not buying power. Stay within the user policy and market maximum, account for funding, and do not cancel the sole protective stop. TWAP scale-ins need a standing full-position stop.");
-  lines.push("- When a Hyperliquid position reports `CONSOLIDATING`, use `perp.setTpsl` to consolidate its full-position stop before any other Hyperliquid action; pass `tpPrice` in the same call to restore the intended take-profit when the entry specified one.");
-  lines.push("- If the user explicitly asks for Hypervexing mode (for example: ‘hypervexing’, ‘uruchom HL’, or ‘enter HL mode’), call `hyperliquid_enter` in THAT turn. Do not merely describe the mode or ask a confirmation question.");
-  lines.push("- Before any external Hyperliquid withdrawal or send, show the recipient and amount. First-entry acknowledgment discloses the 0.025% builder fee on filled notional; order flow seeks the venue allowance best-effort and omits the builder field if it is unavailable.");
   lines.push("");
 
   cached = lines.join("\n");

@@ -4,7 +4,6 @@ export type ProtocolNavigationGroupId =
   | "cross-chain"
   | "evm-trading"
   | "solana"
-  | "perps"
   | "market-research";
 
 export interface ProtocolNavigationFacet {
@@ -38,6 +37,5 @@ export const PROTOCOL_NAVIGATION_GROUP_ORDER: readonly ProtocolNavigationGroupId
   "cross-chain",
   "evm-trading",
   "solana",
-  "perps",
   "market-research",
 ] as const;

@@ -16,6 +16,17 @@
  *   - `CannotFillException`, `NotSupportedChainException`,
  *     `NotSupportedTokenException`, `NotSupportedContractException`,
  *     `NotSupportedAssetReverseContractException`.
+ *   - `deposit_mined_revert` (REVISION 1 — reveal-on-execute-revert design) —
+ *     the `bridge_deposit` leg of `khalani.bridge`'s staged broadcast was
+ *     signed, broadcast, MINED, and reverted on-chain (`outcome.kind ===
+ *     "reverted"`). Produced by the caller ONLY for the `bridge_deposit` leg
+ *     role (REVISION 1 R1) — an `allowance`/`allowance_reset` leg reverting is
+ *     an ERC-20 approve failure, never a route/venue signal. A failed receipt
+ *     proves the exact signed deposit tx was included and reverted — distinct
+ *     from the `BroadcastException` submit-ambiguity below — but it does NOT
+ *     prove Relay would succeed (REVISION 1 R2/R3): the reveal only unlocks
+ *     `bridge_quote_relay` (a route-bound, read-only quote probe), never an
+ *     automatic Relay execution.
  *
  * Not eligible (handle inside Khalani / fix the request — a fallback would not
  * help). Each carries the in-Khalani handling category so a caller (W3a
@@ -47,9 +58,13 @@
  * the bridge handlers (W3a) read the handling category.
  */
 
-/** Exact reveal triggers (an exception `externalName`, or the empty-routes signal). */
+/**
+ * Exact reveal triggers (an exception `externalName`, the empty-routes
+ * signal, or the role-scoped `deposit_mined_revert` mined-revert signal).
+ */
 export type KhalaniRevealTrigger =
   | "empty_routes"
+  | "deposit_mined_revert"
   | "CannotFillException"
   | "NotSupportedChainException"
   | "NotSupportedTokenException"
@@ -67,13 +82,18 @@ export type KhalaniInKhalaniHandling =
   | "deny";
 
 /**
- * The failure signal a Khalani quote/build attempt produced. `empty_routes` is
- * a value (zero routes), `exception` carries the mapped `externalName` (which
- * may be `undefined` for a transport/unnamed error → classified `deny`).
+ * The failure signal a Khalani quote/build/execute attempt produced.
+ * `empty_routes` is a value (zero routes), `exception` carries the mapped
+ * `externalName` (which may be `undefined` for a transport/unnamed error →
+ * classified `deny`), and `deposit_mined_revert` is the MINED on-chain revert
+ * of the staged `bridge_deposit` leg (REVISION 1) — never a caught exception,
+ * so it carries no `externalName`. Callers construct `deposit_mined_revert`
+ * ONLY when the reverted leg's role is `bridge_deposit` (REVISION 1 R1).
  */
 export type KhalaniFailureSignal =
   | { readonly kind: "empty_routes" }
-  | { readonly kind: "exception"; readonly externalName: string | undefined };
+  | { readonly kind: "exception"; readonly externalName: string | undefined }
+  | { readonly kind: "deposit_mined_revert" };
 
 /** The closed-set classification result. */
 export type KhalaniFailureClassification =
@@ -112,6 +132,9 @@ const IN_KHALANI_HANDLING: ReadonlyMap<string, KhalaniInKhalaniHandling> = new M
 export function classifyKhalaniFailure(signal: KhalaniFailureSignal): KhalaniFailureClassification {
   if (signal.kind === "empty_routes") {
     return { outcome: "reveal_eligible", trigger: "empty_routes" };
+  }
+  if (signal.kind === "deposit_mined_revert") {
+    return { outcome: "reveal_eligible", trigger: "deposit_mined_revert" };
   }
 
   const name = signal.externalName;

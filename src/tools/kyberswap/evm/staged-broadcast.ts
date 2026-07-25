@@ -30,6 +30,12 @@ import type {
 } from "viem";
 import { keccak256 } from "viem";
 
+import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
+import {
+  estimateGasForPlanLeg,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+
 export interface StagedTxParams {
   readonly to: Address;
   readonly data: Hex;
@@ -68,23 +74,51 @@ export interface StagedBroadcastHooks {
  * Sign `txParams` locally with `walletClient`'s bound account, compute its
  * hash, invoke `hooks.onHashStaged`, THEN broadcast the signed payload and
  * wait for a bounded receipt.
+ *
+ * `priorLeg` is the receipt anchor of the leg this plan confirmed immediately
+ * before (the ERC-20 approval, in practice). Supplying it lets the pre-sign
+ * estimate survive an estimating node that has not yet applied that approval
+ * (`dependent-leg-gas-estimate.ts`); omitting it keeps the single-shot
+ * estimate. Either way a leg whose estimate never succeeds is still refused
+ * before anything is signed.
  */
 export async function signStageBroadcast(
   publicClient: PublicClient<Transport, Chain>,
   walletClient: WalletClient<Transport, Chain>,
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
+  priorLeg?: ConfirmedPriorLeg,
 ): Promise<StagedBroadcastOutcome> {
   const account = walletClient.account!;
+  const value = txParams.value ?? 0n;
+
+  // Estimated explicitly rather than left to `prepareTransactionRequest`,
+  // which signs viem's bare estimate with no headroom. Same call shape as the
+  // signed transaction (`value` included, so a native-input swap is priced as
+  // the call that actually runs), so a route that can no longer execute still
+  // throws HERE — before anything is signed, staged, or broadcast.
+  const gasEstimate = await estimateGasForPlanLeg(
+    publicClient,
+    { account, to: txParams.to, data: txParams.data, value },
+    priorLeg,
+  );
+
+  const gasLimit = gasLimitWithHeadroom(gasEstimate);
 
   const request = await walletClient.prepareTransactionRequest({
     account,
     chain: walletClient.chain,
     to: txParams.to,
     data: txParams.data,
-    value: txParams.value ?? 0n,
+    value,
+    gas: gasLimit,
   });
-  const serializedTransaction = await walletClient.signTransaction(request);
+  // Re-asserted on the request that is actually serialized: when fees/nonce
+  // still need filling, viem may route preparation through the node's
+  // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
+  // unbuffered figure. The signed bytes are what the chain enforces, so the
+  // headroom has to survive to exactly here.
+  const serializedTransaction = await walletClient.signTransaction({ ...request, gas: gasLimit });
   const txHash = keccak256(serializedTransaction);
   const nonce = request.nonce;
   if (nonce === undefined) {

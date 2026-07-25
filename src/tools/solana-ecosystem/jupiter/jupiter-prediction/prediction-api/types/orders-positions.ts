@@ -42,12 +42,20 @@ export interface JupiterPredictionOrder {
   isBuy: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Legacy floored whole-contract count (docs: "must not be used for accounting"). See `contractsMicro`/`contractsDecimal`. */
   contracts: string;
+  /** Exact contract count, 1,000,000 = 1 contract (docs-documented sibling; not yet confirmed against a live order response). */
+  contractsMicro?: string;
+  /** Exact contract count as a decimal string (docs-documented sibling; see `contractsMicro`). */
+  contractsDecimal?: string;
   maxFillPriceUsd: string;
   maxBuyPriceUsd: string | null;
   minSellPriceUsd: string | null;
   filledAt: number;
+  /** Legacy floored whole-contract count. See `filledContractsMicro`/`filledContractsDecimal`. */
   filledContracts: string;
+  filledContractsMicro?: string;
+  filledContractsDecimal?: string;
   avgFillPriceUsd: string;
   settled: boolean;
   orderId: string;
@@ -95,7 +103,10 @@ export interface JupiterPredictionPosition {
   marketId: string;
   marketIdHash: string;
   isYes: boolean;
+  /** Legacy floored whole-contract count. See `contractsMicro`/`contractsDecimal`. */
   contracts: string;
+  contractsMicro?: string;
+  contractsDecimal?: string;
   totalCostUsd: string;
   sizeUsd: string;
   valueUsd: string | null;
@@ -147,9 +158,16 @@ export interface JupiterPredictionHistoryEvent {
   orderId: string;
   isBuy: boolean;
   isYes: boolean;
+  /** Legacy floored whole-contract count. See `contractsMicro`/`contractsDecimal`. */
   contracts: string;
+  contractsMicro?: string;
+  contractsDecimal?: string;
   filledContracts: string;
+  filledContractsMicro?: string;
+  filledContractsDecimal?: string;
   contractsSettled: string;
+  contractsSettledMicro?: string;
+  contractsSettledDecimal?: string;
   maxFillPriceUsd: string;
   avgFillPriceUsd: string;
   maxBuyPriceUsd: string | null;

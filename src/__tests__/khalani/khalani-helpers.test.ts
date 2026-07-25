@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveRouteBestIndex } from "@tools/khalani/helpers.js";
-import { parseTradeType, parseReferrerFeeBps, parseAmountInSmallestUnits } from "@tools/khalani/request.js";
+import { parseTradeType, parseAmountInSmallestUnits } from "@tools/khalani/request.js";
 import { parseBigintish } from "@tools/khalani/bridge-executor.js";
 import { mapKhalaniError } from "@tools/khalani/errors.js";
 import { ErrorCodes } from "../../errors.js";
@@ -42,27 +42,10 @@ describe("parseTradeType", () => {
   });
 });
 
-describe("parseReferrerFeeBps", () => {
-  it("returns undefined for no value", () => {
-    expect(parseReferrerFeeBps(undefined)).toBeUndefined();
-  });
-
-  it("parses valid integer", () => {
-    expect(parseReferrerFeeBps("50")).toBe(50);
-  });
-
-  it("throws for negative value", () => {
-    expect(() => parseReferrerFeeBps("-1")).toThrow();
-  });
-
-  it("throws for value above 9999", () => {
-    expect(() => parseReferrerFeeBps("10000")).toThrow();
-  });
-
-  it("throws for non-integer", () => {
-    expect(() => parseReferrerFeeBps("3.5")).toThrow();
-  });
-});
+// `parseReferrerFeeBps` was DELETED with the referral-fee surface: Vex no longer
+// accepts (or sends) `referrer`/`referrerFeeBps` at all, so there is no bps
+// value left to parse. The replacement contract — a caller-supplied fee param is
+// rejected by name — is covered by `khalani-referrer-fee-rejection.test.ts`.
 
 describe("parseAmountInSmallestUnits", () => {
   it("accepts valid positive integer", () => {

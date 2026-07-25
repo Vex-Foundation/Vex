@@ -152,12 +152,13 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     pressureSafety: "read_only",
     actionKind: "read",
     // Hidden by default — visibility.ts's requiresUniswapReveal gate only shows
-    // this once an eligible KyberSwap route-not-found failure revealed it for
-    // the session (registry/uniswap-reveal.js). discover_tools can still find
-    // it by toolId/description regardless of catalog visibility.
+    // this once an eligible KyberSwap route-not-found failure (or a swap-role
+    // mined revert, REVISION 1) revealed it for the session
+    // (registry/uniswap-reveal.js). discover_tools can still find it by
+    // toolId/description regardless of catalog visibility.
     visibility: { requiresUniswapReveal: true },
     description:
-      "Preview a token swap on Uniswap WITHOUT executing — the KyberSwap fallback venue. Only usable after a KyberSwap swap_quote/swap_execute failure revealed it for this session (route-not-found class failure). EVM ONLY (chain must NOT be \"solana\"). Tokens must be a CONTRACT ADDRESS or native ETH/native. `amountIn` is the HUMAN decimal of tokenIn. Call this BEFORE swap_execute_uniswap: a fresh matching quote unlocks execution, and only on THIS venue (a KyberSwap quote cannot authorize a Uniswap execute).",
+      "Preview a token swap on Uniswap WITHOUT executing — the KyberSwap fallback venue. Only usable after a KyberSwap swap_quote/swap_execute failure revealed it for this session (a route-not-found class failure, or the Kyber swap transaction reverting on-chain). EVM ONLY (chain must NOT be \"solana\"). Tokens must be a CONTRACT ADDRESS or native ETH/native. `amountIn` is the HUMAN decimal of tokenIn. Call this BEFORE swap_execute_uniswap: a fresh matching quote unlocks execution, and only on THIS venue (a KyberSwap quote cannot authorize a Uniswap execute).",
     parameters: {
       type: "object",
       properties: UNISWAP_SWAP_SCHEMA_PROPERTIES,
@@ -206,9 +207,13 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromAddress: { type: "string", description: "Source wallet address override." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
         refundTo: { type: "string", description: "Refund address override (defaults to fromAddress)." },
-        referrer: { type: "string", description: "EVM referrer address for fee sharing." },
-        referrerFeeBps: { type: "string", description: "Referrer fee in basis points (0-9999)." },
         filler: { type: "string", description: "Restrict quotes to a specific filler." },
+        // NOTE: referrer / referrerFeeBps are intentionally NOT exposed. They
+        // set a referral fee (up to 99.99%) deducted from the bridged output
+        // and paid to an arbitrary address, invisible in Khalani's quote
+        // response and in the approval preview. Vex never derives a fee from
+        // model params (same doctrine as the KyberSwap integrator fee). The
+        // alias router and both Khalani handlers reject them BY NAME.
         // NOTE: routeId / depositMethod are intentionally NOT exposed. They are
         // EXECUTE-ONLY (the bridge quote has no counterpart), so they can never be
         // bound to a quote — the bridge auto-selects the best route. The execute
@@ -282,8 +287,9 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromAddress: { type: "string", description: "Source wallet address override." },
         recipient: { type: "string", description: "Destination recipient override." },
         refundTo: { type: "string", description: "Refund address override (defaults to fromAddress)." },
-        referrer: { type: "string", description: "EVM referrer address for fee sharing." },
-        referrerFeeBps: { type: "string", description: "Referrer fee in basis points (0-9999)." },
+        // referrer / referrerFeeBps intentionally NOT exposed — see the note on
+        // the `bridge` alias above. A fee-bearing quote is what would later let
+        // a matching fee-bearing execute through the prequote gate.
         filler: { type: "string", description: "Restrict quotes to a specific filler." },
       },
       required: ["fromChain", "fromToken", "toChain", "toToken", "amount"],
@@ -303,7 +309,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Preview a cross-chain bridge via Relay WITHOUT executing — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route (or for a Robinhood-Chain route, always available). Resolve fromToken/toToken addresses via token_find first. `amount` is in SMALLEST units (wei/lamports). Call this BEFORE bridge_execute_relay: a fresh matching quote on Relay is what unlocks execution.",
+      "Preview a cross-chain bridge via Relay WITHOUT executing — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route, or the Khalani deposit transaction reverting on-chain for this exact route (or for a Robinhood-Chain route, always available). Resolve fromToken/toToken addresses via token_find first. `amount` is in SMALLEST units (wei/lamports). Call this BEFORE bridge_execute_relay: a fresh matching quote on Relay is what unlocks execution.",
     parameters: {
       type: "object",
       properties: {
@@ -335,7 +341,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     // target's actionKind from executeProtocolTool.
     actionKind: "user_wallet_broadcast",
     description:
-      "Execute a REAL cross-chain bridge via Relay (spends funds, signs + broadcasts on the source chain) — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route (or for a Robinhood-Chain route, always available). REQUIRES a fresh matching bridge_quote_relay FIRST on Relay. Resolve fromToken/toToken addresses via token_find first. `amount` is in SMALLEST units (wei/lamports). Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
+      "Execute a REAL cross-chain bridge via Relay (spends funds, signs + broadcasts on the source chain) — the Khalani fallback venue. Only usable after a Khalani no-route failure revealed it for this exact route, or the Khalani deposit transaction reverting on-chain for this exact route (or for a Robinhood-Chain route, always available). REQUIRES a fresh matching bridge_quote_relay FIRST on Relay. Resolve fromToken/toToken addresses via token_find first. `amount` is in SMALLEST units (wei/lamports). Failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones.",
     parameters: {
       type: "object",
       properties: {

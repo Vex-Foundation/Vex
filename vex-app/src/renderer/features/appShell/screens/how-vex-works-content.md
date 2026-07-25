@@ -43,9 +43,9 @@ The app is three columns on one screen.
 
 **Left rail — your sessions.** The "New session" button starts a fresh conversation. ALL / AGENT / MISSION tabs filter the list. Rows can be pinned or deleted (deletion is blocked while a mission runs or an approval waits — the app tells you why). A slim $VEX card shows the live token price. The footer avatar opens a menu: Personalize, Memory, Sessions, this very guide, Settings — and the runtime status row at the bottom.
 
-**Center — the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box right below, and quick-action chips like "Hunt trending memecoins" or "Turn on Hypervexing". Chips only fill the message box; nothing sends until you press send. In a session, this column is the transcript: replies stream live, every tool call appears as a collapsible row with stamps like "Awaiting signature" or "Confirmed", and approval cards appear between the transcript and the composer.
+**Center — the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box right below, and quick-action chips like "Hunt trending memecoins" or "Scout Pendle yields". Chips only fill the message box; nothing sends until you press send. In a session, this column is the transcript: replies stream live, every tool call appears as a collapsible row with stamps like "Awaiting signature" or "Confirmed", and approval cards appear between the transcript and the composer.
 
-**Right — the BOOK panel.** The instruments dashboard. Top to bottom with a session open: Position (what this session's wallets hold), Hyperliquid blocks (only once a session has used Hypervexing), Moves (real executed trades, each linking to a block explorer), Runtime & Cost (model in use, tokens, how full the conversation is), and Session details. With no session open, BOOK shows your whole Portfolio. Mission setup never lives here — that's the center column.
+**Right — the BOOK panel.** The instruments dashboard. Top to bottom with a session open: Position (what this session's wallets hold), Moves (real executed trades, each linking to a block explorer), Runtime & Cost (model in use, tokens, how full the conversation is), and Session details. With no session open, BOOK shows your whole Portfolio. Mission setup never lives here — that's the center column.
 
 ## Sessions and modes
 
@@ -80,9 +80,6 @@ An aggregator that shops roughly 19 EVM chains for the best swap price. Vex's pr
 
 ### ![Jupiter](/protocols/jupiter.jpg) Jupiter
 The main swap router on Solana. Vex swaps Solana tokens, looks up prices, searches tokens, earns yield through Jupiter Lend, and can browse Jupiter Predict prediction markets. Example: "Put half my SOL into USDC."
-
-### ![Hyperliquid](/protocols/hyperliquid.jpg) Hyperliquid
-A perpetual-futures exchange (leveraged trading) — Vex's deepest integration. Vex reads markets, opens and closes leveraged positions, places TWAP orders, and manages leverage and margin. Opening a position uses an atomic "entry plus stop-loss" order by default; skipping the stop-loss requires your explicit choice and is labelled as such. Stop-losses reduce risk but do not guarantee an exit price — leveraged positions can be liquidated. Example: "Open a small ETH long with a stop-loss 5% below entry."
 
 ### ![Pendle](/protocols/pendle.jpg) Pendle
 A protocol that splits yield-bearing tokens into a principal part and a yield part, on about 11 chains. Vex trades PT and YT tokens, manages LP positions, and claims yield. Example: "Scout Pendle yields and show me the best fixed rates."
@@ -165,6 +162,5 @@ In the profile menu, Personalize is where you tell Vex about yourself: what to c
 - In Agent sessions, a text reply from Vex ends its turn. Send the next instruction to continue.
 - In a Mission run, chatting does not interrupt it. Use Stop or Pause; a pause lands at the next safe checkpoint, never mid-signing.
 - If swap and send tools grey out mid-conversation, the context is nearly full and Vex must compact first. It resolves itself within a turn or two.
-- Hypervexing (the full-screen Hyperliquid trading room) opens only when Vex asks and you accept a one-time risk dialog — "Real leverage. Real funds." — which also discloses the 0.025% builder fee. The same approval and stop-loss rules apply inside; you can exit any time.
 - Check the AWAITING badge when several sessions are open — an approval may be waiting where you aren't looking.
 - Stop-losses, prequotes, and approval cards reduce risk; none of them guarantees profit. Self-custody means the wins and the losses are genuinely yours.

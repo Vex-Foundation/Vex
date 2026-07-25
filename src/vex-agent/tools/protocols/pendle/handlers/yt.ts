@@ -10,7 +10,9 @@
  *
  * Claim is an INCOME SWEEP (`redeemDueInterestAndRewardsV2`): it collects accrued
  * YT interest + rewards and LP rewards for the wallet's positions on ONE chain in
- * a single tx. There is nothing to quote (no prequote), but it is approval-gated,
+ * a single tx. Which markets it sweeps — and which eligible ones the
+ * per-transaction cap leaves out, always reported, never silent — is owned by
+ * `../claim-targets.ts`. There is nothing to quote (no prequote), but it is approval-gated,
  * Router-pinned, and FULL-decoded via `assertClaimSafe` before signing — funds
  * land on the wallet by protocol (no receiver arg exists), the only external-call
  * surface (`swaps`) is bound empty, and the ONLY allowance a claim may grant is
@@ -26,8 +28,6 @@ import { PENDLE_ROUTER } from "@tools/pendle/constants.js";
 import { getPendleEvmClients } from "@tools/pendle/evm-client.js";
 import { ensurePendleAllowanceExact } from "@tools/pendle/erc20.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
-import { stripChainPrefix } from "@tools/pendle/validation.js";
-import type { PendleMarket } from "@tools/pendle/types.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
@@ -36,14 +36,14 @@ import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
-import { resolveMarketByYt, resolveMarketByAddress, buildAssetMap } from "../market-lookup.js";
+import { resolveMarketByYt, buildAssetMap } from "../market-lookup.js";
+import { buildPendleClaimTargets, describePendleClaimSkips } from "../claim-targets.js";
 import {
   selectSafeRoute,
   assertClaimSafe,
   type PendleAction,
   type PendleTxIntent,
   type PendleClaimIntent,
-  type PendleClaimYtBind,
 } from "../calldata.js";
 import {
   failureDetail,
@@ -61,9 +61,6 @@ import {
  */
 const YT_DECAY_WARNING =
   "A YT decays toward zero as expiry approaches — it is variable, leveraged yield exposure, not a fixed return, and is worth nothing after expiry. This is not fixed yield; size and time it accordingly.";
-
-/** Max positions a single claim will sweep (keeps the tx + CU spend bounded). */
-const MAX_CLAIM_MARKETS = 10;
 
 // ── Quote ────────────────────────────────────────────────────────────
 
@@ -135,6 +132,7 @@ async function pendleYtQuote(p: Record<string, unknown>, context: ProtocolExecut
       expiry: market.expiry ?? null,
       liquidityUsd: market.details.liquidity ?? null,
       priceImpact: best.data.priceImpact,
+      feeUsdEstimate: best.data.feeUsd,
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDecimals).toString(),
       aggregator: best.data.aggregatorType,
@@ -183,7 +181,7 @@ async function executePendleYtSwap(
         slippage,
       });
       const best = response?.routes[0];
-      return ok({ dryRun: true, side: tradeSide, instrument: "yt", market: expectedMarket, expiry: market.expiry, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, decayWarning: YT_DECAY_WARNING });
+      return ok({ dryRun: true, side: tradeSide, instrument: "yt", market: expectedMarket, expiry: market.expiry, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null, decayWarning: YT_DECAY_WARNING });
     }
 
     // Signer AFTER dryRun so a preview never decrypts a key.
@@ -303,75 +301,6 @@ async function executePendleYtSwap(
 
 // ── Claim (income sweep — YT interest + rewards, LP rewards) ──────────
 
-/** The wallet's intended claim sets on a chain (lowercase, with bind material). */
-interface ClaimTargets {
-  intendedYts: Map<string, PendleClaimYtBind>;
-  intendedMarkets: Set<string>;
-}
-
-/**
- * Register one market's YT leg as claimable, WITH the bind material the claim
- * safety check needs: the market's underlyingAsset (the only allowed
- * tokenRedeemSy — the SDK redeems accrued SY interest into it) and its SY (the
- * only token an interest claim may approve). A market missing either cannot be
- * bound → its YT leg is skipped (fail-closed; LP rewards are unaffected).
- */
-function addYtTarget(intendedYts: Map<string, PendleClaimYtBind>, m: PendleMarket): boolean {
-  if (!m.yt || !m.underlyingAsset || !m.sy) return false;
-  intendedYts.set(m.yt.toLowerCase(), {
-    tokenRedeemSy: m.underlyingAsset.toLowerCase(),
-    sy: m.sy.toLowerCase(),
-  });
-  return true;
-}
-
-/**
- * Build the wallet's intended claim sets. With an explicit `market`, scope to that
- * one market's YT + LP; otherwise derive from the dashboard positions (markets
- * where the wallet holds a YT or LP balance), bounded to `MAX_CLAIM_MARKETS`.
- * Addresses are lowercased for the subset bind.
- */
-async function buildClaimTargets(chainId: number, wallet: string, marketParam: string): Promise<ClaimTargets> {
-  const client = getPendleClient();
-  const intendedYts = new Map<string, PendleClaimYtBind>();
-  const intendedMarkets = new Set<string>();
-
-  if (marketParam) {
-    const m = await resolveMarketByAddress(chainId, requireTokenAddress(marketParam));
-    if (m) {
-      addYtTarget(intendedYts, m);
-      intendedMarkets.add(m.address.toLowerCase());
-    }
-    return { intendedYts, intendedMarkets };
-  }
-
-  const [positionsByChain, markets] = await Promise.all([
-    client.getPositions(wallet),
-    client.getActiveMarkets(chainId),
-  ]);
-  const marketByAddress = new Map<string, PendleMarket>();
-  for (const m of markets) marketByAddress.set(m.address.toLowerCase(), m);
-  const chainPositions = positionsByChain.find((p) => p.chainId === chainId);
-
-  let count = 0;
-  for (const pos of chainPositions?.openPositions ?? []) {
-    if (count >= MAX_CLAIM_MARKETS) break;
-    const marketAddr = stripChainPrefix(pos.marketId);
-    const m = marketAddr ? marketByAddress.get(marketAddr.toLowerCase()) : undefined;
-    if (!m) continue;
-    let added = false;
-    if (pos.yt && pos.yt.balance !== "0" && addYtTarget(intendedYts, m)) {
-      added = true;
-    }
-    if (pos.lp && pos.lp.balance !== "0") {
-      intendedMarkets.add(m.address.toLowerCase());
-      added = true;
-    }
-    if (added) count++;
-  }
-  return { intendedYts, intendedMarkets };
-}
-
 async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain");
   if (!chain) return fail("Missing required: chain");
@@ -382,13 +311,32 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
     const chainSlug = chainEntry.slug;
     const wallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
 
-    const { intendedYts, intendedMarkets } = await buildClaimTargets(chainId, wallet, marketParam);
+    const targets = await buildPendleClaimTargets(
+      chainId, wallet, marketParam ? requireTokenAddress(marketParam) : null,
+    );
+    const { intendedYts, intendedMarkets } = targets;
+    const skipNote = describePendleClaimSkips(targets);
     if (intendedYts.size === 0 && intendedMarkets.size === 0) {
-      return ok({ claimed: false, chain: chainSlug, reason: "no Pendle YT/LP positions to claim on this chain" });
+      return ok({
+        claimed: false, chain: chainSlug,
+        reason: skipNote ?? "no Pendle YT/LP positions to claim on this chain",
+        eligibleMarkets: targets.eligibleMarketCount,
+      });
     }
 
+    // Every claim states what it is NOT claiming (eligible total + the exact
+    // markets left out) — a sweep that silently stops at its cap is a lie by
+    // omission when the manifest says "every held market".
     if (p.dryRun === true) {
-      return ok({ dryRun: true, chain: chainSlug, yts: intendedYts.size, markets: intendedMarkets.size });
+      return ok({
+        dryRun: true, chain: chainSlug,
+        yts: intendedYts.size, markets: intendedMarkets.size,
+        eligibleMarkets: targets.eligibleMarketCount,
+        selectedMarkets: targets.selectedMarketCount,
+        marketCap: targets.marketCap,
+        skippedMarkets: targets.skipped,
+        ...(skipNote ? { skippedNote: skipNote } : {}),
+      });
     }
 
     // Signer AFTER dryRun so a preview never decrypts a key.
@@ -442,7 +390,15 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
 
     return {
       success: true,
-      output: JSON.stringify({ txHash, claimed: true, chain: chainSlug, yts: claimedYts, markets: claimedMarkets }, null, 2),
+      output: JSON.stringify({
+        txHash, claimed: true, chain: chainSlug,
+        yts: claimedYts, markets: claimedMarkets,
+        eligibleMarkets: targets.eligibleMarketCount,
+        claimedMarkets: targets.selectedMarketCount,
+        marketCap: targets.marketCap,
+        skippedMarkets: targets.skipped,
+        ...(skipNote ? { skippedNote: skipNote } : {}),
+      }, null, 2),
       data: {
         txHash,
         _tradeCapture: {

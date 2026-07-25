@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
-import { VexError } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 
 describe("summarizeProtocolError — VexError hint surfacing (P0-1)", () => {
   it("folds a VexError hint into the message so the agent sees the next action", () => {
@@ -239,5 +239,128 @@ describe("summarizeProtocolError — scrub-core canaries (FIX5-SPINE)", () => {
     const err = new Error("<html><body>gateway error</body></html> retry after 30s");
     const s = summarizeProtocolError(err);
     expect(s.message).toBe("(html) retry after 30s");
+  });
+});
+
+// ── Honest failure attribution ──────────────────────────────────────────────
+//
+// `provider_error` for ANY Error instance told the agent that OUR OWN parameter
+// validation was a provider malfunction, which points it at retrying instead of
+// fixing its input. Live proof (2026-07-24): `uniswap.swap.quote failed
+// (provider_error): Cannot read decimals for 0x0000…0000 — not a valid ERC-20
+// contract on this chain`.
+
+describe("summarizeProtocolError — who actually rejected the call", () => {
+  it("labels OUR OWN parameter validation as invalid_request, not the provider's fault", () => {
+    // The exact live case: thrown by `uniswap/erc20.ts` after the address the
+    // model supplied failed to answer `decimals()`.
+    const err = new VexError(
+      ErrorCodes.KYBER_TOKEN_NOT_FOUND,
+      "Cannot read decimals for 0x0000000000000000000000000000000000000000 — not a valid ERC-20 contract on this chain",
+      "Verify the token address and chain are correct.",
+    );
+    expect(summarizeProtocolError(err).category).toBe("invalid_request");
+  });
+
+  it("labels every other local validation code the same way", () => {
+    for (const code of [
+      ErrorCodes.AGENT_VALIDATION_ERROR,
+      ErrorCodes.INVALID_ADDRESS,
+      ErrorCodes.SOLANA_INVALID_ADDRESS,
+      ErrorCodes.INVALID_AMOUNT,
+      ErrorCodes.CHAIN_MISMATCH,
+      ErrorCodes.INVALID_SPENDER,
+    ]) {
+      expect(summarizeProtocolError(new VexError(code, "bad parameter")).category)
+        .toBe("invalid_request");
+    }
+  });
+
+  it("keeps provider_error when a PROVIDER answered — httpStatus proves the verdict was theirs", () => {
+    // Same code, but `parseJsonResponse` stamped a status: the provider parsed
+    // our request and refused it, so the label must stay theirs.
+    const err = new VexError(ErrorCodes.KYBER_TOKEN_NOT_FOUND, "token not found");
+    err.httpStatus = 400;
+    expect(summarizeProtocolError(err).category).toBe("provider_error");
+  });
+
+  it("keeps provider_error when externalName proves a provider error mapper produced it", () => {
+    // KyberSwap code 4011 → KYBER_TOKEN_NOT_FOUND via `mapAggregatorError`,
+    // which always stamps the raw provider code on externalName.
+    const err = new VexError(ErrorCodes.KYBER_TOKEN_NOT_FOUND, "token not found");
+    err.externalName = "4011";
+    expect(summarizeProtocolError(err).category).toBe("provider_error");
+  });
+
+  it("keeps today's label for an unrecognized code rather than guessing", () => {
+    expect(summarizeProtocolError(new VexError("SOME_UNMAPPED_CODE", "boom")).category)
+      .toBe("provider_error");
+    expect(summarizeProtocolError(new Error("boom")).category).toBe("provider_error");
+  });
+
+  it("still classifies transport shapes first — a local code does not mask a timeout", () => {
+    // Non-VexError throws are untouched by the new branch.
+    expect(summarizeProtocolError(new Error("request timed out")).category).toBe("timeout");
+    expect(summarizeProtocolError(new Error("ECONNREFUSED")).category).toBe("network");
+  });
+});
+
+// ── First-party instructions must stay followable ───────────────────────────
+//
+// Redaction protects secrets and untrusted provider text. It was also erasing
+// the portal link out of `jupiter-auth.ts`'s hint, so the agent was told to
+// generate a key at "[url]" — an instruction it had been made unable to follow.
+
+describe("summarizeProtocolError — hint links (FIX4)", () => {
+  it("keeps a credential-free portal link in a first-party hint", () => {
+    // Verbatim from `requireJupiterApiKey` in `jupiter-auth.ts`.
+    const err = new VexError(
+      ErrorCodes.HTTP_REQUEST_FAILED,
+      "JUPITER_API_KEY is required for Jupiter Prediction.",
+      "Generate a key at https://portal.jup.ag and add it through Vex setup.",
+    );
+    const s = summarizeProtocolError(err);
+    expect(s.message).toContain("https://portal.jup.ag");
+    expect(s.message).not.toContain("[url]");
+  });
+
+  it("keeps a link that ends a sentence, punctuation and all", () => {
+    const err = new VexError("X", "boom", "Read the docs at https://docs.example.com/setup.");
+    expect(summarizeProtocolError(err).message).toContain("https://docs.example.com/setup.");
+  });
+
+  it("still collapses a hint link that CAN carry a credential (query / userinfo / fragment)", () => {
+    for (const hint of [
+      "see https://api.provider.com/v1?key=SECRETVALUE",
+      "see https://user:p4ssw0rd@api.provider.com/v1",
+      "see https://api.provider.com/v1#token=SECRETVALUE",
+    ]) {
+      const s = summarizeProtocolError(new VexError("X", "boom", hint));
+      expect(s.message).toContain("[url]");
+      expect(s.message).not.toContain("SECRETVALUE");
+      expect(s.message).not.toContain("p4ssw0rd");
+      expect(s.message).not.toContain("api.provider.com");
+    }
+  });
+
+  it("still collapses a non-https hint link (no transport guarantee, no carve-out)", () => {
+    const s = summarizeProtocolError(new VexError("X", "boom", "see http://portal.jup.ag"));
+    expect(s.message).toContain("[url]");
+    expect(s.message).not.toContain("portal.jup.ag");
+  });
+
+  it("does NOT extend the carve-out to the MESSAGE lane, which is provider-written", () => {
+    // The message may be the provider's own words; a bare host there is still
+    // an internal we do not emit.
+    const s = summarizeProtocolError(new Error("upstream refused at https://portal.jup.ag"));
+    expect(s.message).toContain("[url]");
+    expect(s.message).not.toContain("portal.jup.ag");
+  });
+
+  it("keeps the rest of the hint pipeline intact — secrets in a hint still die", () => {
+    const err = new VexError("X", "boom", "use apiKey=sk-or-v1-abc at https://portal.jup.ag");
+    const s = summarizeProtocolError(err);
+    expect(s.message).not.toContain("sk-or-v1-abc");
+    expect(s.message).toContain("https://portal.jup.ag");
   });
 });

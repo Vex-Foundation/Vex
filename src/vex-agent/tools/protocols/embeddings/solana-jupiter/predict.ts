@@ -261,9 +261,225 @@ export const SOLANA_PREDICT_DISCOVERY = {
     ],
     chains: SOLANA_CHAINS,
   },
+  // ── Pre-trade visibility & order tools (W1-D) ───────────────────
+
+  "solana.predict.orderbook": {
+    canonicalSummary:
+      "Get bid/ask order-book depth for a Jupiter prediction-market outcome on Solana — YES/NO price levels and sizes.",
+    embeddingText: embeddingText(
+      `Get order-book depth for a Jupiter prediction market on Solana — YES/NO bid/ask price levels and sizes before placing an order. ` +
+      `Use this when the user wants to check market depth, see available liquidity at each price, gauge slippage before betting, or inspect the order book for a market. ` +
+      `Example queries: order book for this prediction market, bid ask depth on jupiter predict, liquidity at this price level, market depth before I bet, yes no order book.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "order book", "market depth", "bid ask",
+      "price levels", "liquidity depth",
+      "yes share", "no share", "outcome shares",
+    ],
+    exampleIntents: [
+      "order book for this jupiter prediction market",
+      "bid ask depth on solana predict",
+      "market depth before betting on jupiter",
+    ],
+    preferredFor: ["prediction order book", "prediction market depth"],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.tradingStatus": {
+    canonicalSummary:
+      "Check whether Jupiter Prediction Markets trading is currently active on Solana.",
+    embeddingText: embeddingText(
+      `Check whether Jupiter Prediction Markets trading is currently active on Solana, before placing a bet. ` +
+      `Use this when the user wants to confirm trading is open, check if the exchange is halted, or verify the market is live before submitting an order. ` +
+      `Example queries: is jupiter predict trading right now, is trading halted, check trading status before I bet, is the prediction market open.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "trading status", "trading active", "trading halted",
+      "exchange status",
+    ],
+    exampleIntents: [
+      "is jupiter prediction trading active",
+      "check trading status before betting on solana",
+      "is trading halted on jupiter predict",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.orders": {
+    canonicalSummary:
+      "List a wallet's Jupiter prediction orders on Solana — the buy/sell order lifecycle, not settled positions.",
+    embeddingText: embeddingText(
+      `List a wallet's Jupiter prediction orders on Solana — pending, filled, or failed buy/sell orders, distinct from open positions. ` +
+      `Use this when the user wants to review their order history, check whether an order filled, audit past order submissions, or see order-level detail beyond positions. ` +
+      `Example queries: my jupiter prediction orders, did my order fill, list my prediction order history, order lifecycle for my bets.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "my orders", "order history", "order lifecycle",
+      "yes share", "no share", "outcome shares",
+    ],
+    exampleIntents: [
+      "list my jupiter prediction orders",
+      "did my prediction order fill on solana",
+      "order history for my jupiter predict bets",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.order": {
+    embeddingText: embeddingText(
+      `Get a single Jupiter prediction order on Solana by its pubkey — status, fill price, size, contracts. ` +
+      `Use this when the user wants the deep detail on one specific order they placed, check its fill status by pubkey, or look up one order's terms. ` +
+      `Example queries: details for this prediction order, look up order by pubkey, status of this specific bet order, order detail on jupiter predict.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "order by pubkey", "order details", "order lookup",
+    ],
+    exampleIntents: [
+      "details for this jupiter prediction order",
+      "look up prediction order by pubkey",
+      "status of this order on solana predict",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.orderStatus": {
+    embeddingText: embeddingText(
+      `Get a Jupiter prediction order's durable status and fill-event history on Solana — survives the order account closing after it fills, unlike a direct order lookup. ` +
+      `Use this when the user wants to track an order that may have already closed, see its full fill-event history, or confirm final status after the order account is gone. ` +
+      `Example queries: order status after it filled, track this order's fill history, confirm my order went through, durable order status lookup.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "order status", "fill history", "durable order lookup",
+    ],
+    exampleIntents: [
+      "check jupiter prediction order status after fill",
+      "track order fill history on solana predict",
+      "confirm my prediction order went through",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.trades": {
+    canonicalSummary:
+      "Browse the global Jupiter prediction-market trade feed on Solana — all traders, all markets.",
+    embeddingText: embeddingText(
+      `Browse the global Jupiter prediction-market trade feed on Solana — every trader's recent buys and sells across every market, not scoped to one wallet. ` +
+      `Use this when the user wants to see overall market activity, gauge what other traders are betting on, browse the global prediction trade feed, or check recent platform-wide trades. ` +
+      `Example queries: recent trades on jupiter predict, what is everyone betting on, global prediction trade feed, platform-wide prediction activity.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "global trades", "trade feed", "market activity",
+      "yes share", "no share", "outcome shares",
+    ],
+    exampleIntents: [
+      "recent trades on jupiter prediction markets",
+      "what is everyone betting on solana predict",
+      "global prediction trade feed",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+  // ── Discovery & social tools (W1-F) ─────────────────────────────
+
+  "solana.predict.profile": {
+    embeddingText: embeddingText(
+      `Get a trader's aggregate Jupiter prediction-market stats on Solana — realized PnL, total volume, correct and wrong prediction counts. ` +
+      `Use this when the user wants their overall prediction track record, lifetime stats, win/loss counts, or total volume traded on Jupiter predict. ` +
+      `Example queries: my jupiter prediction stats, my overall prediction track record, how much have I won on predictions, my prediction win rate.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict", "trader stats",
+      "prediction profile", "track record", "win loss record",
+    ],
+    exampleIntents: [
+      "my jupiter prediction trader stats",
+      "overall prediction track record on solana",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.pnlHistory": {
+    embeddingText: embeddingText(
+      `Get a wallet's realized-PnL time series on Jupiter prediction markets on Solana over an interval (24 hours, 1 week, or 1 month). ` +
+      `Use this when the user wants to chart their prediction PnL over time, see how their prediction performance has trended, or review historical realized PnL by period. ` +
+      `Example queries: my prediction pnl over time, chart my jupiter predict earnings, pnl history for the last week, how has my prediction performance trended.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict", "pnl history",
+      "pnl over time", "pnl chart", "realized pnl",
+    ],
+    exampleIntents: [
+      "my jupiter prediction pnl history",
+      "chart my prediction earnings over a week",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.leaderboards": {
+    canonicalSummary:
+      "Get ranked Jupiter prediction-market traders on Solana by period and metric — PnL, volume, or win rate.",
+    embeddingText: embeddingText(
+      `Get ranked Jupiter prediction-market traders on Solana by period (all-time, weekly, monthly) and metric (PnL, volume, or win rate). ` +
+      `Use this when the user wants to see top prediction traders, check the leaderboard, compare their performance to other traders, or find the best predictors this week. ` +
+      `Example queries: top jupiter prediction traders, prediction leaderboard this week, who has the best pnl on predictions, top predictors by volume.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "leaderboard", "top traders", "rankings",
+      "top predictors",
+    ],
+    exampleIntents: [
+      "top jupiter prediction traders this week",
+      "prediction leaderboard by pnl",
+      "who has the best win rate on solana predict",
+    ],
+    preferredFor: ["prediction leaderboard", "top prediction traders"],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.vaultInfo": {
+    embeddingText: embeddingText(
+      `Get the Jupiter prediction-market vault's on-chain public key and balance on Solana. ` +
+      `Use this when the user wants to check the prediction vault's balance, verify the vault account, or inspect protocol-level vault state. ` +
+      `Read-only protocol infrastructure lookup: it takes no wallet or position parameters and returns the vault account identity with its current balance. ` +
+      `Example queries: jupiter prediction vault balance, prediction vault pubkey, check the predict vault state, inspect the jupiter prediction vault account.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict",
+      "vault info", "vault balance", "vault state",
+    ],
+    exampleIntents: [
+      "jupiter prediction vault balance",
+      "check the predict vault state on solana",
+    ],
+    chains: SOLANA_CHAINS,
+  },
+
+  "solana.predict.suggestedEvents": {
+    embeddingText: embeddingText(
+      `Get personalized Jupiter prediction-market event recommendations for a wallet pubkey on Solana. ` +
+      `Use this when the user wants event suggestions tailored to a wallet, personalized prediction picks, or recommended markets based on a pubkey's activity. ` +
+      `Read-only discovery feed: pass an explicit wallet pubkey and receive suggested prediction events ranked for that address. ` +
+      `Example queries: suggested prediction events for my wallet, recommended jupiter predict markets, personalized prediction picks, events suggested for this pubkey.`,
+    ),
+    aliases: [
+      "prediction market", "jupiter predict", "suggested events",
+      "recommended markets", "personalized picks",
+    ],
+    exampleIntents: [
+      "suggested jupiter prediction events for my wallet",
+      "recommended prediction markets on solana",
+    ],
+    chains: SOLANA_CHAINS,
+  },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 11;
+const EXPECTED_COUNT = 22;
 if (Object.keys(SOLANA_PREDICT_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `SOLANA_PREDICT_DISCOVERY has ${Object.keys(SOLANA_PREDICT_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

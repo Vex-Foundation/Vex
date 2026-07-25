@@ -109,6 +109,7 @@ async function pendlePtQuote(p: Record<string, unknown>, context: ProtocolExecut
       expiry: market?.expiry ?? null,
       liquidityUsd: market?.details.liquidity ?? null,
       priceImpact: best.data.priceImpact,
+      feeUsdEstimate: best.data.feeUsd,
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDecimals).toString(),
       aggregator: best.data.aggregatorType,
@@ -155,7 +156,7 @@ async function executePendleSwap(
         slippage,
       });
       const best = response?.routes[0];
-      return ok({ dryRun: true, side, market: expectedMarket, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null });
+      return ok({ dryRun: true, side, market: expectedMarket, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null });
     }
 
     // Signer AFTER dryRun so a preview never decrypts a key.

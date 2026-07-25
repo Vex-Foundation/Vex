@@ -83,7 +83,7 @@ describe("bridge alias — routing + translation", () => {
     });
   });
 
-  it("forwards the bound money/fee overrides (tradeType, recipient, refundTo, referrer, referrerFeeBps, filler)", async () => {
+  it("forwards the bound money overrides (tradeType, recipient, refundTo, filler)", async () => {
     await dispatchTool(
       {
         name: "bridge",
@@ -92,8 +92,6 @@ describe("bridge alias — routing + translation", () => {
           tradeType: "EXACT_OUTPUT",
           recipient: "0x" + "ab".repeat(20),
           refundTo: "0x" + "cd".repeat(20),
-          referrer: "0x" + "ef".repeat(20),
-          referrerFeeBps: "100",
           filler: "native-filler",
         },
         toolCallId: "b2",
@@ -104,9 +102,30 @@ describe("bridge alias — routing + translation", () => {
     expect(req.params.tradeType).toBe("EXACT_OUTPUT");
     expect(req.params.recipient).toBe("0x" + "ab".repeat(20));
     expect(req.params.refundTo).toBe("0x" + "cd".repeat(20));
-    expect(req.params.referrer).toBe("0x" + "ef".repeat(20));
-    expect(req.params.referrerFeeBps).toBe("100");
     expect(req.params.filler).toBe("native-filler");
+  });
+
+  it("REJECTS a model-supplied referrer / referrerFeeBps BY NAME (NOT dropped, NOT dispatched)", async () => {
+    // The fee is deducted from the bridged output and paid to an arbitrary
+    // address, and the approval preview never shows it — so the alias must
+    // refuse audibly rather than strip the key and dispatch a clean-looking
+    // bridge. A silent drop would hide the attempt entirely.
+    for (const bad of [
+      { referrer: "0x" + "ef".repeat(20) },
+      { referrerFeeBps: "9999" },
+      { referrer: "0x" + "ef".repeat(20), referrerFeeBps: "100" },
+    ]) {
+      executeProtocolTool.mockClear();
+      const result = await dispatchTool(
+        { name: "bridge", args: { ...BRIDGE_ARGS, ...bad }, toolCallId: "bfee" },
+        ctx(),
+      );
+      expect(result.success).toBe(false);
+      expect(result.output).toMatch(/^bridge:/);
+      expect(result.output).toMatch(/referrer/);
+      expect(result.output).toContain("not an accepted parameter");
+      expect(executeProtocolTool).not.toHaveBeenCalled();
+    }
   });
 
   it("REJECTS the execute-only routeId / depositMethod at the alias boundary (NOT forwarded)", async () => {
@@ -151,8 +170,9 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
           toChain: "robinhood",
           toToken: VIRTUAL,
           amount: "1000000",
-          // Khalani-only knobs — must NOT reach the Relay target.
-          referrer: "0x" + "ef".repeat(20),
+          // Khalani-only knob — must NOT reach the Relay target. (`referrer` is
+          // no longer part of the alias surface at all: it is rejected by name
+          // before routing, so it cannot be exercised here.)
           filler: "native-filler",
           // Relay-only slippage — SHOULD pass through.
           slippageBps: "50",
@@ -173,6 +193,7 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
       slippageBps: "50",
     });
     expect(req.params).not.toHaveProperty("referrer");
+    expect(req.params).not.toHaveProperty("referrerFeeBps");
     expect(req.params).not.toHaveProperty("filler");
   });
 

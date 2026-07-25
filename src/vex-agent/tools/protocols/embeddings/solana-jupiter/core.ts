@@ -17,11 +17,12 @@ export const SOLANA_CORE_DISCOVERY = {
     embeddingText: embeddingText(
       `Get real-time USD prices for Solana SPL token mints — SOL, USDC, JUP, BONK, memecoins, LSTs, or any mint. ` +
       `Use this when the user wants the current price of one or more solana tokens, value their portfolio, or monitor price movements on Solana. ` +
+      `Accepts either mint addresses or token symbols/names directly (e.g. "SOL,BONK") — no need to look up the mint first. ` +
       `Example queries: what's sol price now, current price of bonk, usd price for these spl mints, value my solana portfolio, price for this memecoin, sol token price.`,
     ),
-    aliases: ["jupiter price lookup", "solana price lookup", "token price lookup", "current token price"],
-    exampleIntents: ["jupiter price lookup", "current price of bonk", "usd price for solana mint"],
-    preferredFor: ["price lookup", "token prices", "current usd price"],
+    aliases: ["jupiter price lookup", "solana price lookup", "token price lookup", "current token price", "price by symbol"],
+    exampleIntents: ["jupiter price lookup", "current price of bonk", "usd price for solana mint", "price by token symbol"],
+    preferredFor: ["price lookup", "token prices", "current usd price", "price by symbol or name"],
     chains: SOLANA_CHAINS,
   },
 
@@ -37,9 +38,9 @@ export const SOLANA_CORE_DISCOVERY = {
 
   "solana.tokens.trending": {
     embeddingText: embeddingText(
-      `Find trending and popular tokens on Solana — top traded SPL tokens, top trending memes, recently launched solana tokens, popular liquid staking tokens (LSTs), or verified tokens with the most attention. ` +
-      `Use this when the user wants to see what's pumping on sol, what's hot on solana, top sol memes, new solana launches, or popular spl tokens. ` +
-      `Example queries: trending tokens on solana, what's hot on sol right now, top sol memes, new solana launches, popular spl tokens, top traded sol coins. ` +
+      `Find trending and popular tokens on Solana — top traded SPL tokens, top trending memes, recently launched solana tokens, popular liquid staking tokens (LSTs), verified tokens with the most attention, or tokenized stocks (e.g. Ondo, Remora). ` +
+      `Use this when the user wants to see what's pumping on sol, what's hot on solana, top sol memes, new solana launches, popular spl tokens, or tokenized equities on solana. ` +
+      `Example queries: trending tokens on solana, what's hot on sol right now, top sol memes, new solana launches, popular spl tokens, top traded sol coins, tokenized stocks on solana. ` +
       `Filter by 5m, 1h, 6h, 24h windows.`,
     ),
     chains: SOLANA_CHAINS,

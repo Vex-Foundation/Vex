@@ -6,7 +6,7 @@ const SWAP_PARAMS = [
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS (ERC-20; use WETH for ETH). Buy: the payment token. Sell: the PT address." },
   { key: "tokenOut", type: "string" as const, required: true, description: "Output token CONTRACT ADDRESS. Buy: the PT address. Sell: the payment token." },
   { key: "amountIn", type: "string" as const, required: true, description: "Amount of tokenIn in human-readable units." },
-  { key: "slippageBps", type: "number" as const, description: "Slippage tolerance in basis points (default 50 = 0.5%)." },
+  { key: "slippageBps", type: "number" as const, unit: "bps" as const, description: "Slippage tolerance in basis points (default 50 = 0.5%)." },
   // NO `recipient` param (Codex cleanup): the receiver is ALWAYS the session
   // wallet — the calldata intent binding asserts it, and the quote could never
   // bind a divergent recipient anyway.
@@ -19,7 +19,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Preview a Pendle PT trade — quote buying a PT with a payment token, selling a PT early, or redeeming a matured PT (output, price impact, aggregator, liquidity). Records the safety preview the buy/sell/redeem tools require before they broadcast. Read-only.",
+      "Preview a Pendle PT trade — quote buying a PT with a payment token, selling a PT early, or redeeming a matured PT (output, price impact, feeUsdEstimate — Pendle's own estimated route fee in USD — aggregator, liquidity). Records the safety preview the buy/sell/redeem tools require before they broadcast. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -27,7 +27,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenIn", type: "string", required: true, description: "Input token address (payment token for a buy; PT address for a sell/redeem)." },
       { key: "tokenOut", type: "string", required: true, description: "Output token address (PT for a buy; payment/underlying for a sell/redeem)." },
       { key: "amountIn", type: "string", required: true, description: "Amount of tokenIn in human-readable units." },
-      { key: "slippageBps", type: "number", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
     ],
     exampleParams: { chain: "ethereum", tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", tokenOut: "0x5a19fa369f2895dcd8d2cee62e4ceae58ef92bbb", amountIn: "100" },
     discovery: PENDLE_PT_DISCOVERY["pendle.pt.quote"],
@@ -68,7 +68,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "chain", type: "string", required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
       { key: "tokenIn", type: "string", required: true, description: "The matured PT CONTRACT ADDRESS to redeem." },
       { key: "amountIn", type: "string", required: true, description: "Amount of PT to redeem in human-readable units." },
-      { key: "slippageBps", type: "number", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
       // NO `recipient` param (Codex cleanup): the redeemed asset always lands on
       // the session wallet — asserted by the calldata intent binding.
       { key: "dryRun", type: "boolean", description: "Preview without executing." },

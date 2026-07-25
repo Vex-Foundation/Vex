@@ -20,10 +20,6 @@ import {
   type SessionMessageDto,
   type ToolCallDisplay,
 } from "@shared/schemas/messages.js";
-import {
-  hyperliquidDisplayBlockSchema,
-  type HyperliquidDisplayBlock,
-} from "@shared/schemas/hyperliquid.js";
 import { sanitizeToolArgs } from "./redaction.js";
 
 export interface MessageRow {
@@ -117,27 +113,6 @@ function extractToolCalls(raw: unknown): ToolCallDisplay[] | null {
 }
 
 /**
- * Tool output is normally plain text. Only a bounded JSON payload containing
- * a strict shared display block may render in the Hyperliquid protocol frame.
- * Model prose and malformed values remain ordinary text.
- */
-function extractHyperliquidDisplayBlock(
-  content: string | null,
-): HyperliquidDisplayBlock | null {
-  if (content === null || content.length === 0 || content.length > 20_000) return null;
-  try {
-    const parsed: unknown = JSON.parse(content);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const result = hyperliquidDisplayBlockSchema.safeParse(
-      (parsed as Record<string, unknown>)["_displayBlock"],
-    );
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Tool names whose assistant tool-call row renders as a static recall
  * indicator (`kind: "recall"`, stage 8-4 + S9 rename). `session_memory_search`
  * is per-session narrative memory; the `long_memory_*` reads are durable
@@ -225,8 +200,6 @@ export function toDto(row: MessageRow): SessionMessageDto {
     // `null` on every non-call row (extractToolCalls returns null for
     // null/empty `tool_calls`).
     toolCalls: extractToolCalls(row.tool_calls),
-    toolDisplayBlock:
-      row.role === "tool" ? extractHyperliquidDisplayBlock(row.content) : null,
     explorerRefs: extractExplorerRefs(row),
   };
 }

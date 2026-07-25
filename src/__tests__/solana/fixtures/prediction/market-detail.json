@@ -1,0 +1,45 @@
+{
+  "provider": "polymarket",
+  "marketId": "POLY-2470848",
+  "status": "open",
+  "result": null,
+  "marketResultPubkey": null,
+  "title": "Yes",
+  "openTime": 1780932627,
+  "closeTime": 1784519940,
+  "isTeamMarket": false,
+  "rulesPrimary": "This market will resolve to “Yes” if Donald Trump is visibly in the frame for the winning team's official team photo following the 2026 FIFA World Cup Final. Otherwise, this market will resolve to “No”.\n\nIf Trump does not attend the 2026 FIFA World Cup Final, this market will resolve to “No”.\n\nIf the 2026 FIFA World Cup Final is cancelled or postponed beyond August 2, 2026, 11:59 PM ET, this market will resolve to “No”.\n\nThe resolution source for this market will be a consensus of credible reporting.",
+  "rulesSecondary": "",
+  "resolveAt": null,
+  "pricing": {
+    "buyYesPriceUsd": 1000000,
+    "sellYesPriceUsd": 999000,
+    "sellNoPriceUsd": 0,
+    "buyNoPriceUsd": 1000,
+    "volume": 26003599
+  },
+  "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-trump-be-in-the-wc-champions-photo-20260608152527021-eJaeDFLpXz06.jpg",
+  "team": null,
+  "outcomes": [
+    "Yes",
+    "No"
+  ],
+  "clobTokenIds": [
+    "64778757908501179476331390591326653229579537200061619395979045269181713848562",
+    "69222761152567422456550754954182616722608546823277879350969354961713727175064"
+  ],
+  "marketOptions": [
+    {
+      "label": "Yes",
+      "buyYes": true
+    },
+    {
+      "label": "No",
+      "buyYes": false
+    }
+  ],
+  "sportsMarketType": null,
+  "sportsLine": null,
+  "gameNumber": null,
+  "eventId": "POLY-572993"
+}

@@ -27,8 +27,6 @@ import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
-import { HYPERLIQUID_INTERNAL_TOOLS } from "./hyperliquid.js";
-import { getHypervexingAliasToolDef } from "../hypervexing-aliases.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -48,7 +46,6 @@ export const TOOLS: readonly ToolDef[] = [
   ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
-  ...HYPERLIQUID_INTERNAL_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
@@ -56,7 +53,7 @@ export const TOOLS: readonly ToolDef[] = [
 const byName = new Map<string, ToolDef>(TOOLS.map(t => [t.name, t]));
 
 export function getToolDef(name: string): ToolDef | undefined {
-  return byName.get(name) ?? getHypervexingAliasToolDef(name);
+  return byName.get(name);
 }
 
 export function isInternalTool(name: string): boolean {

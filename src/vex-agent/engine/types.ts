@@ -257,8 +257,6 @@ export interface MissionDraft {
    * default. Distinct from `deadline` (free-text, informational only).
    */
   durationMinutes: number | null;
-  /** Optional, host-accepted Hyperliquid envelope for an autonomous mission. */
-  hyperliquidRisk?: import("../../lib/hyperliquid-policy.js").HyperliquidMissionRisk | null;
 }
 
 /**

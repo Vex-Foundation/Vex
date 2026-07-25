@@ -26,6 +26,12 @@ import {
   type StagedBroadcastOutcome,
 } from "@tools/kyberswap/evm-utils.js";
 import {
+  DependentLegGasEstimateError,
+  dependentLegEstimateGuidance,
+  priorLegAnchorFrom,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import {
   META_AGGREGATION_ROUTER_V2,
   NATIVE_TOKEN_ADDRESS,
   KYBERSWAP_FEE_BPS,
@@ -36,7 +42,7 @@ import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { resolveTokenMetadataStrict, type ResolvedKyberTokenMetadata, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
-import { formatRouteSummary } from "../helpers.js";
+import { formatRouteSummary, sanitizeProviderNote } from "../helpers.js";
 import logger from "@utils/logger.js";
 import { isRecord } from "@utils/validation-helpers.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
@@ -61,7 +67,7 @@ import {
 import { registerSettlementDecoder } from "@vex-agent/sync/settlement-decoders.js";
 import { revealUniswapPair } from "../../../registry/uniswap-reveal.js";
 import { isRevealEligibleKyberFailure } from "../../../registry/uniswap-reveal-eligibility.js";
-import { mapKyberFailureToActivityCode, deriveKyberRevealFailure } from "../failure-mapping.js";
+import { mapKyberFailureToActivityCode, deriveKyberRevealFailure, deriveKyberMinedRevertRevealFailure } from "../failure-mapping.js";
 
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
@@ -194,6 +200,23 @@ function revealOnEligibleFailure(
   }
   revealUniswapPair(sessionId);
   return " Uniswap (swap_quote_uniswap / swap_execute_uniswap) is now available for this session as a fallback venue.";
+}
+
+/**
+ * REVISION 1 (reveal-on-execute-revert design) — on a `swap`-role MINED
+ * on-chain revert (`outcome.kind === "reverted"` in the staged broadcast
+ * loop), reveal the hidden Uniswap pair and return the EXECUTE-stage suffix
+ * (R5) — distinct wording from `revealOnEligibleFailure`'s quote-stage suffix
+ * so the agent does not blindly resubmit the identical failing Kyber route on
+ * the fallback. `eventRole` gates construction of the reveal signal at
+ * `deriveKyberMinedRevertRevealFailure` (R1): an allowance/allowance_reset
+ * leg reverting NEVER reaches `revealUniswapPair`.
+ */
+function revealOnSwapMinedRevert(eventRole: AgentActivityEventRole, sessionId: string): string {
+  const revealFailure = deriveKyberMinedRevertRevealFailure(eventRole);
+  if (!revealFailure || !isRevealEligibleKyberFailure(revealFailure)) return "";
+  revealUniswapPair(sessionId);
+  return " The Kyber swap transaction reverted on-chain. Do not retry that Kyber route. Uniswap quoting is now unlocked for this session — request a fresh swap_quote_uniswap before considering execution.";
 }
 
 /**
@@ -436,6 +459,9 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const summary =
       `Quote: ${amountInRaw} ${tokenIn.symbol} → ~${route.amountOut} ${tokenOut.symbol} `
       + `(~$${route.amountOutUsd} est.) on ${slug}. Gas ~$${route.gasUsd} est.`
+      // On an L2 the L1 data fee can rival or exceed execution gas — quoting
+      // only `gasUsd` understated the real cost of the trade.
+      + (route.l1FeeUsd !== null ? ` L1 data fee ~$${route.l1FeeUsd} est.` : "")
       + (route.priceImpact !== null ? ` Price impact ${(route.priceImpact * 100).toFixed(2)}%.` : "");
 
     return ok({
@@ -661,6 +687,11 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     // the remaining never-signed rows instead and returns with the SAME
     // `_executionId`.
     let currentIndex = 0;
+    // Read-after-write anchor for the NEXT leg: an allowance this loop just
+    // confirmed is state the swap leg's pre-sign estimate depends on, and the
+    // estimating node does not always have it yet (see
+    // `dependent-leg-gas-estimate.ts`).
+    let priorLeg: ConfirmedPriorLeg | undefined;
     try {
       for (let i = 0; i < plans.length; i++) {
         currentIndex = i;
@@ -684,6 +715,7 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
               if (!res.applied) logger.warn("kyberswap.swap.execute.broadcast_accept_miss", { id: eventRow.id });
             },
           },
+          priorLeg,
         );
 
         if (outcome.kind === "ambiguous") {
@@ -702,9 +734,11 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
             failureReason: `${plan.eventRole} transaction ${outcome.txHash} reverted on-chain.`,
           });
           await abortRemainingPlans(executionId, i + 1, `earlier ${plan.eventRole} reverted`);
+          // REVISION 1 R1: reveal ONLY for the swap leg (never allowance/allowance_reset).
+          const revealSuffix = revealOnSwapMinedRevert(plan.eventRole, sessionId);
           return {
             success: false,
-            output: `${toolId}: the ${plan.eventRole} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted.`,
+            output: `${toolId}: the ${plan.eventRole} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted.${revealSuffix}`,
             data: { _executionId: executionId, txHash: outcome.txHash, status: "reverted" },
           };
         }
@@ -714,6 +748,7 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
         // already moved). `confirmActivityEvent` throws only forwarded via
         // this bounded try/catch — logged, not propagated to the outer
         // post-intent failure handler.
+        priorLeg = priorLegAnchorFrom(outcome.receipt.blockNumber);
         if (plan.eventRole !== "swap") {
           try {
             await confirmActivityEvent(eventRow.id, {});
@@ -841,6 +876,13 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
           `Swapped ${amountInHuman} ${tokenIn.symbol} → ${amountOutHuman} ${tokenOut.symbol} on ${slug}. `
           + `Tx: ${outcome.txHash}` + (buildResp.data.amountInUsd ? ` (~$${buildResp.data.amountInUsd} in / ~$${buildResp.data.amountOutUsd} out, estimated).` : ".");
 
+        // The build response's own cost disclosure was validated and then
+        // dropped: `additionalCostUsd` is a real charge on this settlement
+        // (gaslessness/positive-slippage handling), and the provider's
+        // message explains it. Both are provider-authored, so the prose goes
+        // through `sanitizeProviderNote` (control chars only — never
+        // truncated) before it reaches model context.
+        const additionalCostMessage = sanitizeProviderNote(buildResp.data.additionalCostMessage);
         const successData = {
           summary,
           chain: slug, chainId,
@@ -849,6 +891,10 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
           tokenOut: tokenOut.symbol,
           amountIn: amountInHuman,
           amountOut: amountOutHuman,
+          ...(buildResp.data.additionalCostUsd
+            ? { additionalCostUsd: buildResp.data.additionalCostUsd }
+            : {}),
+          ...(additionalCostMessage ? { additionalCostMessage } : {}),
           // C33: a failed confirm-write means Vex's own record of the
           // (real, on-chain) settlement did not persist — never claim
           // ordinary "confirmed".
@@ -871,6 +917,20 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
       const safeMessage = kyberFailureMessage(toolId, err);
       await abortRemainingPlans(executionId, currentIndex, safeMessage);
       logger.warn("kyberswap.swap.execute.post_intent_failure", { executionId, index: currentIndex, error: safeMessage });
+      // A leg refused because its estimate never succeeded after an allowance
+      // this same execute confirmed is NOT the same event as an internal
+      // interruption of unknown scope: nothing was signed for it, the planned
+      // rows are finalized "not attempted", and re-running is safe. Saying
+      // otherwise is what made a transient RPC lag permanent for an agent
+      // (live 2026-07-24/25 — `dependent-leg-gas-estimate.ts`).
+      if (err instanceof DependentLegGasEstimateError) {
+        const refusedRole = plans[currentIndex]?.eventRole ?? "swap";
+        return {
+          success: false,
+          output: `${toolId}: the ${refusedRole} step could not be gas-estimated, so it was refused before signing. ${dependentLegEstimateGuidance(err)} Recorded as execution ${executionId}; the node reported: ${safeMessage}`,
+          data: { _executionId: executionId, status: "not_attempted", retryable: true },
+        };
+      }
       return {
         success: false,
         output: `${toolId}: an internal error interrupted the swap after it was already recorded — ${safeMessage}. Check the record (execution ${executionId}) before taking any further action.`,

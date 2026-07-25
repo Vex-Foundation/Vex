@@ -49,17 +49,28 @@ import type {
 /** Either a string or a number — upstream is inconsistent on some scalars. */
 const stringOrNumber = z.union([z.string(), z.number()]);
 
-/** `JupiterLendEarnAssetInfo` — read-only display, permissive. */
+/**
+ * `JupiterLendEarnAssetInfo` — read-only display, permissive.
+ *
+ * LIVE-GATE FIX 1 (2026-07-24): confirmed live against `GET /earn/tokens`
+ * that the provider renamed this whole sub-object to camelCase
+ * (`chainId`/`logoUrl`/`coingeckoId`) — NOT a type change on the snake_case
+ * fields as first suspected; the old keys are simply absent now. All three
+ * are display-only (never read by any handler/projector — grep-confirmed),
+ * so per the tolerant-reader doctrine they become optional rather than
+ * chasing the rename; `.passthrough()` already carries the new camelCase
+ * keys through untyped for any future consumer.
+ */
 const earnAssetInfoSchema = z
   .object({
     address: z.string(),
-    chain_id: stringOrNumber,
+    chain_id: stringOrNumber.optional(),
     name: z.string(),
     symbol: z.string(),
     decimals: z.number(),
-    logo_url: z.string(),
+    logo_url: z.string().optional(),
     price: stringOrNumber,
-    coingecko_id: z.string(),
+    coingecko_id: z.string().optional(),
   })
   .passthrough();
 
@@ -120,12 +131,24 @@ const earnUserPositionSchema = z
 export const jupiterLendEarnPositionsResponseSchema: z.ZodType<JupiterLendEarnPositionsResponse> =
   z.array(earnUserPositionSchema);
 
-/** `JupiterLendEarnEarningsItem` — read-only display, permissive. */
+/**
+ * `JupiterLendEarnEarningsItem` — read-only display, permissive.
+ *
+ * LIVE-GATE FIX 2 (2026-07-24): confirmed live against `GET /earn/earnings`
+ * that `earnings` is now a numeric STRING (e.g. `"0"`), not a JSON number —
+ * this is the actual root cause behind the `solana.lend.positions` schema
+ * failure (that handler always calls `/earnings` as a sub-step once any
+ * position row exists), not a shape drift on `/earn/positions` itself, which
+ * still parses cleanly. Display-only (never read by any handler/projector —
+ * grep-confirmed, `handlers/lend.ts` passes the array straight through), so
+ * per the tolerant-reader doctrine it becomes `stringOrNumber` rather than
+ * a strict `z.number()`.
+ */
 const earnEarningsItemSchema = z
   .object({
     address: z.string(),
     ownerAddress: z.string(),
-    earnings: z.number(),
+    earnings: stringOrNumber,
     slot: z.number(),
   })
   .passthrough();

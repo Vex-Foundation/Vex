@@ -74,8 +74,8 @@ export async function enqueueApprovalIntent(args: {
   /**
    * Handler-authored preview for a registry-validated prepared follow-up
    * (`resolvePreparedActionFollowUp`). When present it REPLACES the
-   * args-derived preview entirely — including any hyperliquid/prequote
-   * enrichment below, which only applies to a direct (non-handoff) dispatch.
+   * args-derived preview entirely — including any prequote enrichment below,
+   * which only applies to a direct (non-handoff) dispatch.
    */
   readonly trustedPreview?: IntentPreview;
   /** Optional prepared-action expiry; approval must not outlive it. */
@@ -101,16 +101,23 @@ export async function enqueueApprovalIntent(args: {
     buildIntentPreview(
       toolCall.name,
       toolCall.arguments,
-      result.prequote
+      (result.prequote || result.riskPreview !== undefined)
         ? {
-            prequoteVerdict: result.prequote.verdict,
-            fotTax: result.prequote.fotTax,
+            prequoteVerdict: result.prequote?.verdict,
+            fotTax: result.prequote?.fotTax,
             // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
             // buildIntentPreview renders the fixed lock warning (never from args).
-            termLock: result.prequote.termLock,
-            ...(result.hyperliquid ? { hyperliquid: result.hyperliquid } : {}),
+            termLock: result.prequote?.termLock,
+            // W5 (design §6 R4): the Jupiter fee-bearing disclosure rides the
+            // same typed channel; buildIntentPreview renders it (never from args).
+            feePreview: result.prequote?.feePreview,
+            // B1/B3 (Batch 5): the Jupiter Lend Borrow LTV/health disclosure
+            // rides its OWN top-level `ToolResult.riskPreview` sibling field
+            // (it has no matched swap/bridge `prequote` at all) into the same
+            // typed channel; buildIntentPreview renders it (never from args).
+            riskPreview: result.riskPreview,
           }
-        : result.hyperliquid ? { hyperliquid: result.hyperliquid } : undefined,
+        : undefined,
     );
   const intentPolicy = buildPolicySnapshot(toolContext);
   // Phase 3: stamp `expires_at` at enqueue so the approve gate +

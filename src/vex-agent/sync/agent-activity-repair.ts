@@ -62,8 +62,8 @@ export const REPAIR_CANDIDATE_AGE_MS = 90_000;
 /**
  * Bounded batch per sweep run (FIX-SPINE C11 — finding 12): the sweep does
  * serial RPC calls per run inside the shared sync worker — an unbounded
- * backlog would starve balance/Jupiter/Hyperliquid sync sharing the same
- * drain. Any remainder is picked up on the NEXT periodic tick.
+ * backlog would starve balance/Jupiter sync sharing the same drain. Any
+ * remainder is picked up on the NEXT periodic tick.
  */
 export const REPAIR_BATCH_LIMIT = 25;
 
@@ -95,7 +95,11 @@ export interface RepairSweepResult {
 }
 
 export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSweepResult> {
-  const candidates = await listPendingOlderThan(REPAIR_CANDIDATE_AGE_MS, REPAIR_BATCH_LIMIT);
+  // W5 design REVISION 1 R3: this sweep owns ONLY EVM ('eip155') rows — the
+  // NEW Solana activity sweep (`solana-activity-repair.ts`, K3) owns every
+  // chain_family='solana' staged row via its own disjoint candidate query
+  // (`listSolanaStagedPending`), closing the non-disjointness Codex found here.
+  const candidates = await listPendingOlderThan(REPAIR_CANDIDATE_AGE_MS, REPAIR_BATCH_LIMIT, "eip155");
   let confirmed = 0;
   let failed = 0;
   let stillPending = 0;

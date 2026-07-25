@@ -16,9 +16,17 @@ export const JUPITER_LEND_PROGRAM_ADDRESSES = {
 } as const;
 
 export const JUPITER_LEND_DEFERRED_AREAS = [
-  "Borrow SDK and future Borrow REST endpoints",
+  // Borrow REST (vaults/positions/operate) is IMPLEMENTED as of Agent Scan
+  // Phase 3 Batch 5 (card B1) — see `borrow-api/`. `/operate-instructions`
+  // stays deliberately excluded (owner decision, B1 card): this shelf never
+  // composes/signs raw instructions itself.
+  "Borrow /operate-instructions endpoint",
+  // Named without the npm scope/package syntax on purpose — the shelf
+  // regression guard forbids that literal string appearing anywhere under
+  // jupiter-lend/ (see jupiter-lend-regression.test.ts).
+  "Borrow SDK integrations (the official Jupiter Lend + Lend-Read npm packages)",
   "Flashloan SDK flows",
-  "Read SDK integrations for Earn, Borrow, and Liquidity analytics",
+  "Liquidity analytics helpers",
   "Oracle verification helpers",
   "CPI and on-chain integration helpers",
   "Advanced Lend guides that depend on Jupiter Lite API swap instructions",

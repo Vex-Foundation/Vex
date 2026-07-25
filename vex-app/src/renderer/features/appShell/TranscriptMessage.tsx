@@ -250,7 +250,6 @@ function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
   return (row.toolCalls ?? []).map((call) => ({
     ...call,
     output: null,
-    toolDisplayBlock: null,
   }));
 }
 

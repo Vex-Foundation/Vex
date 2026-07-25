@@ -1,0 +1,156 @@
+/**
+ * `solana.predict.closeAll` — the N-row fan-out prediction mutation (W5
+ * design `w5-design.md` §5/R5). Split out of the sibling `predict-execute.ts`
+ * (buy/sell/claim single-row mutations) purely for the 500-line cap; imports
+ * that file's shared staged-write primitives (`sharedFields`/
+ * `failPreBroadcast`/`stageAndSubmit`/`resolveSessionAndWallet`/
+ * `isToolResult`/`usdEst`) rather than duplicating them.
+ *
+ * R5 exact contract: validate-all -> create-all-rows -> item-wise. Each item
+ * gets its OWN `agent_activity` row (event_index 0..N-1) inside ONE
+ * `protocol_execution`, created atomically BEFORE the first signature. A
+ * per-item failure (post-intent sign refusal) finalizes ONLY that item's row
+ * and the loop continues — no all-or-nothing pretense, no aggregate success
+ * claim. `N=0` (no open positions) is an explicit success with zero rows.
+ *
+ * MANAGED EXECUTION (corrected 2026-07-25): a close/claim item whose build
+ * carries an `execution` object routes through the provider's managed execute
+ * endpoint (`resolveManagedExecution` / `stageAndSubmit` in
+ * `predict-execute.ts`), signed under the co-signed contract. This applies to
+ * keeper-filled items too, not just Forecast — the previous "keeper-filled
+ * orders stay on the generic path" rule was proven false against the live API.
+ *
+ * `minSellPriceSlippageBps` is a REQUIRED agent param (no Vex-side default —
+ * coordinator decision, Batch-4-closure blocker 2): the provider's own
+ * `CloseAllPositionsRequest` marks it `required` with no documented min/max
+ * (DOCS-GAP — see `validation/body.ts`'s bound comment for the Vex-side
+ * 0-10,000 bps product-safety range this card applies).
+ */
+
+import { Keypair } from "@solana/web3.js";
+
+import {
+  requestJupiterPredictionCloseAllPositionsTransactions,
+  requireTransaction,
+  resolveManagedExecution,
+  type JupiterPredictionManagedExecution,
+} from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
+import { JUPITER_PREDICTION_USDC_MINT } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
+import type { JupiterPredictionCloseAllPositionsItem } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types.js";
+import { createAgentActivityIntent } from "@vex-agent/db/repos/agent-activity.js";
+
+import type { ProtocolHandler } from "../types.js";
+import { num, fail } from "../handler-helpers.js";
+import {
+  failPreBroadcast,
+  isToolResult,
+  resolveSessionAndWallet,
+  sharedFields,
+  stageAndSubmit,
+  usdEst,
+  type SharedEventInput,
+} from "./predict-execute.js";
+
+const NAMESPACE = "solana";
+
+interface CloseAllPlan {
+  readonly role: "predict_close" | "predict_claim";
+  readonly transaction: string;
+  /** Non-null whenever the item's build carried an `execution` object — see `resolveManagedExecution`. */
+  readonly managed: JupiterPredictionManagedExecution | null;
+  readonly positionPubkey: string;
+  readonly payoutUsd: string | null | undefined;
+}
+
+function planCloseAllItem(item: JupiterPredictionCloseAllPositionsItem): CloseAllPlan {
+  if ("order" in item) {
+    return {
+      role: "predict_close", transaction: requireTransaction(item.transaction, "Close all positions"),
+      managed: resolveManagedExecution(item, "Close all positions"),
+      positionPubkey: item.order.positionPubkey, payoutUsd: item.order.newPayoutUsd,
+    };
+  }
+  return {
+    role: "predict_claim", transaction: requireTransaction(item.transaction, "Close all positions"),
+    managed: resolveManagedExecution(item, "Close all positions"),
+    positionPubkey: item.position.positionPubkey, payoutUsd: item.position.payoutAmountUsd,
+  };
+}
+
+export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
+  const toolId = "solana.predict.closeAll";
+  const minSellPriceSlippageBps = num(p, "minSellPriceSlippageBps");
+  if (minSellPriceSlippageBps == null) return fail("Missing required: minSellPriceSlippageBps");
+
+  const resolved = resolveSessionAndWallet(toolId, p, ctx);
+  if (isToolResult(resolved)) return resolved;
+  const { sessionId, addr, secret } = resolved;
+  const shared: SharedEventInput = { eventRole: "predict_close", walletAddress: addr, sessionId };
+
+  let raw: { data: JupiterPredictionCloseAllPositionsItem[] };
+  try {
+    raw = await requestJupiterPredictionCloseAllPositionsTransactions({ ownerPubkey: addr, minSellPriceSlippageBps });
+  } catch (err) {
+    return failPreBroadcast(toolId, p, shared, err);
+  }
+
+  if (raw.data.length === 0) {
+    return { success: true, output: JSON.stringify({ count: 0, message: "No open positions to close." }), data: { count: 0 } };
+  }
+
+  // Validate ALL items BEFORE creating any row (R5) — a malformed item
+  // aborts the whole batch pre-broadcast; nothing was recorded yet.
+  let plans: CloseAllPlan[];
+  try {
+    plans = raw.data.map(planCloseAllItem);
+  } catch (err) {
+    return failPreBroadcast(toolId, p, shared, err);
+  }
+
+  // Create ALL N rows atomically BEFORE the first signature (R5).
+  const { executionId, events } = await createAgentActivityIntent({
+    toolId, namespace: NAMESPACE, intentParams: p,
+    events: plans.map((plan, i) => ({
+      ...sharedFields({ eventRole: plan.role, walletAddress: addr, sessionId }), eventIndex: i,
+      tokenOut: {
+        tokenAddress: JUPITER_PREDICTION_USDC_MINT, tokenSymbol: "USDC", tokenDecimals: 6,
+        amountHuman: usdEst(plan.payoutUsd), amountRaw: plan.payoutUsd ?? undefined,
+      },
+      usdOutEst: usdEst(plan.payoutUsd),
+      usdSource: "jupiter_prediction_order_preview",
+    })),
+  });
+
+  const signer = Keypair.fromSecretKey(secret);
+  const results: Array<{
+    role: string; positionPubkey: string; status: "pending" | "rejected_before_broadcast" | "failed";
+    signature?: string; explorerUrl?: string; reason?: string;
+  }> = [];
+  for (let i = 0; i < plans.length; i++) {
+    const plan = plans[i]!;
+    const rowId = events[i]!.id;
+    const staged = await stageAndSubmit(toolId, rowId, plan.transaction, signer, plan.managed);
+    const base = { role: plan.role, positionPubkey: plan.positionPubkey };
+    if (staged.status === "failed") {
+      results.push({ ...base, status: "failed", reason: staged.reason });
+    } else if (staged.status === "rejected") {
+      // The landing service answered and refused — nothing went on-chain for
+      // this item. Never counted as broadcast.
+      results.push({ ...base, status: "rejected_before_broadcast", reason: staged.reason });
+    } else {
+      results.push({ ...base, status: "pending", signature: staged.signature, explorerUrl: staged.explorerUrl });
+    }
+  }
+
+  const pendingCount = results.filter(r => r.status === "pending").length;
+  const rejectedCount = results.filter(r => r.status === "rejected_before_broadcast").length;
+  const failedCount = results.length - pendingCount - rejectedCount;
+  return {
+    success: false, // R5: never an aggregate success claim while any item is unconfirmed
+    output: `${toolId}: ${pendingCount} of ${results.length} close/claim transaction(s) broadcast (confirmation pending, tracked automatically)`
+      + (rejectedCount > 0 ? `; ${rejectedCount} rejected before broadcast (nothing went on-chain)` : "")
+      + (failedCount > 0 ? `; ${failedCount} failed before broadcast` : "")
+      + ". Do not retry — check individual results.",
+    data: { _executionId: executionId, count: results.length, results },
+  };
+};

@@ -1,16 +1,16 @@
 /* ============================================================ *
  *  PENDING RING — the console's traveling accent arc, generalized  *
  * ------------------------------------------------------------ *
- *  A masked 1px conic arc circling any host's border, for cards *
- *  parked on a real pending decision (the Hyperliquid risk-setup *
- *  proposal awaiting the user's confirm). Same motion law as the *
- *  console ring: the loop is bound to a verifiable pending state, *
- *  and the consumer DROPS the class on approve/dismiss. The host  *
- *  must set its own border-radius (the ring inherits it) and be   *
- *  a positioned/rounded box; no glass, no glow — the arc is a     *
- *  clip-masked border band, not a shadow. Reduced motion collapses *
- *  it to a static faint accent hairline. Token-only: the arc reads *
- *  var(--vex-accent), so both themes recolor automatically.       *
+ *  A masked 1px conic arc circling any host's border, for cards   *
+ *  parked on a real pending decision awaiting the user's confirm. *
+ *  Same motion law as the console ring: the loop is bound to a    *
+ *  verifiable pending state, and the consumer DROPS the class on  *
+ *  approve/dismiss. The host must set its own border-radius (the  *
+ *  ring inherits it) and be a positioned/rounded box; no glass,   *
+ *  no glow — the arc is a clip-masked border band, not a shadow.  *
+ *  Reduced motion collapses it to a static faint accent hairline. *
+ *  Token-only: the arc reads var(--vex-accent), so both themes    *
+ *  recolor automatically.                                        *
  * ============================================================ */
 @property --vex-ring-angle {
   syntax: "<angle>";

@@ -119,4 +119,72 @@ describe("preferencesStore", () => {
     const prefs = await store.load();
     expect(prefs.telemetry.enabled).toBe(false);
   });
+
+  describe("retired `hyperliquid` key forward migration (Agent Scan Phase 3)", () => {
+    // Every install since app version 037 persisted a `hyperliquid` block
+    // that `preferencesSchema` no longer declares. A naive strict-parse
+    // failure on that legacy key would fall through to the full-defaults
+    // reset and silently wipe telemetry consent, window bounds, and the
+    // updater throttle timestamp too — not just the retired key.
+    const LEGACY_ON_DISK = {
+      version: 1,
+      telemetry: { enabled: true, consentedAt: "2026-05-07T00:00:00.000Z" },
+      window: { width: 1600, height: 900, x: 12, y: 34, maximized: true },
+      updater: { lastCheckedAt: "2026-07-01T00:00:00.000Z" },
+      ui: { reducedMotion: "always" },
+      hyperliquid: {
+        policy: {
+          requireStopLoss: true,
+          egressAlwaysApprove: true,
+          leverageCapDefault: 3,
+        },
+        riskAcknowledgedAt: "2026-06-01T00:00:00.000Z",
+      },
+    };
+
+    async function writeLegacyPreferences(): Promise<void> {
+      await fs.mkdir(userDataDir, { recursive: true });
+      await fs.writeFile(
+        path.join(userDataDir, "preferences.json"),
+        JSON.stringify(LEGACY_ON_DISK, null, 2),
+        "utf8",
+      );
+    }
+
+    it("strips the retired key and preserves every other field, instead of resetting to defaults", async () => {
+      await writeLegacyPreferences();
+      const store = await loadStoreModule();
+      const prefs = await store.load();
+
+      expect(prefs).not.toHaveProperty("hyperliquid");
+      expect(prefs.telemetry.enabled).toBe(true);
+      expect(prefs.telemetry.consentedAt).toBe("2026-05-07T00:00:00.000Z");
+      expect(prefs.window.width).toBe(1600);
+      expect(prefs.window.maximized).toBe(true);
+      expect(prefs.updater.lastCheckedAt).toBe("2026-07-01T00:00:00.000Z");
+      expect(prefs.ui.reducedMotion).toBe("always");
+
+      const onDisk = JSON.parse(
+        await fs.readFile(path.join(userDataDir, "preferences.json"), "utf8"),
+      );
+      expect(onDisk).not.toHaveProperty("hyperliquid");
+      expect(onDisk.window.width).toBe(1600);
+    });
+
+    it("a second fresh load after the migration parses cleanly without re-migrating or resetting", async () => {
+      await writeLegacyPreferences();
+      const first = await loadStoreModule();
+      await first.load();
+
+      // Fresh module + fresh in-memory cache, reading the file the first
+      // load already rewrote — proves the migration is idempotent and the
+      // stripped file round-trips through strict parsing on its own.
+      const second = await loadStoreModule();
+      const prefs = await second.load();
+
+      expect(prefs).not.toHaveProperty("hyperliquid");
+      expect(prefs.window.width).toBe(1600);
+      expect(prefs.telemetry.enabled).toBe(true);
+    });
+  });
 });

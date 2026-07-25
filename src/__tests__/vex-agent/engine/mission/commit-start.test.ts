@@ -62,10 +62,10 @@ vi.mock("@vex-agent/db/client.js", () => ({
 const { commitMissionStart } = await import(
   "../../../../vex-agent/engine/mission/commit-start.js"
 );
-const { computeContractHash } = await import(
+const { computeContractHash, CONTRACT_HASH_VERSION, LEGACY_V2_CONTRACT_HASH_VERSION } = await import(
   "../../../../vex-agent/engine/mission/contract-hash.js"
 );
-const { missionToDraft } = await import(
+const { extractLegacyHyperliquidRiskV2, missionToDraft } = await import(
   "../../../../vex-agent/engine/mission/mapper.js"
 );
 
@@ -107,7 +107,7 @@ function makeAcceptedMission(overrides: Record<string, unknown> = {}) {
     acceptedContractHash: hash,
     acceptedContractAt: "2026-05-22T11:00:00.000Z",
     acceptedContractBy: "host",
-    contractHashVersion: 2,
+    contractHashVersion: CONTRACT_HASH_VERSION,
   };
 }
 
@@ -253,6 +253,40 @@ describe("commitMissionStart", () => {
     // 4th arg = options object; 5th arg = tx client.
     expect(createArgs[4]).toBeDefined();
     expect(typeof createArgs[4]).toBe("object");
+  });
+
+  // Agent Scan Phase 3 (Hyperliquid removal): a mission accepted while
+  // `CONTRACT_HASH_VERSION` was 2 must still be startable — the frozen v2
+  // legacy material (`contract-hash-legacy-v2.ts`) reproduces its exact
+  // original hash from the raw `constraints_json.hyperliquidRisk` this
+  // mission still carries, even though `MissionDraft` no longer surfaces it.
+  it("commits a mission accepted under the frozen legacy v2 contract hash (historical Hyperliquid risk)", async () => {
+    const hyperliquidRisk = { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100 };
+    const mission = makeMission({
+      constraintsJson: { deadline: "2026-04-04", hyperliquidRisk },
+    });
+    const legacyHash = computeContractHash(
+      missionToDraft(mission),
+      LEGACY_V2_CONTRACT_HASH_VERSION,
+      extractLegacyHyperliquidRiskV2(mission),
+    );
+    const acceptedMission = {
+      ...mission,
+      acceptedContractHash: legacyHash,
+      acceptedContractAt: "2026-05-22T11:00:00.000Z",
+      acceptedContractBy: "host",
+      contractHashVersion: LEGACY_V2_CONTRACT_HASH_VERSION,
+    };
+    mockGetMissionForUpdate.mockResolvedValueOnce(acceptedMission);
+    mockGetActiveRun.mockResolvedValueOnce(null);
+
+    const outcome = await commitMissionStart({ missionId: "mission-1", runId: "run-1" });
+
+    expect(outcome.outcome).toBe("committed");
+    if (outcome.outcome === "committed") {
+      expect(outcome.runId).toBe("run-1");
+    }
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
   });
 
   it("opens and closes a single tx (BEGIN + COMMIT)", async () => {

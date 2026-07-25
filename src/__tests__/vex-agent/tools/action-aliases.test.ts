@@ -319,7 +319,7 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
         toChain: "robinhood",
         toToken: VIRTUAL,
         amount: "1000000",
-        referrer: "0x" + "ef".repeat(20), // Khalani-only — must be dropped
+        filler: "native-filler", // Khalani-only — must be dropped
         slippageBps: "50", // Relay-only — must pass through
       },
       CTX,
@@ -335,7 +335,36 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
       amount: "1000000",
       slippageBps: "50",
     });
-    expect(params).not.toHaveProperty("referrer");
+    expect(params).not.toHaveProperty("filler");
+  });
+
+  it("REJECTS a model-supplied referrer / referrerFeeBps BY NAME (NOT dropped, NOT dispatched)", async () => {
+    // `BridgeQuoteArgs` is not `.strict()`, so without an explicit guard Zod
+    // would silently strip these and dispatch a clean-looking quote. A recorded
+    // fee-bearing QUOTE is what the prequote gate would later bind a fee-bearing
+    // EXECUTE against, so the quote side must refuse just as loudly.
+    for (const bad of [
+      { referrer: "0x" + "ef".repeat(20) },
+      { referrerFeeBps: "9999" },
+    ]) {
+      executeProtocolTool.mockClear();
+      const result = await handleBridgeQuote(
+        {
+          fromChain: "ethereum",
+          fromToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          toChain: "base",
+          toToken: BASE_USDC,
+          amount: "1000000",
+          ...bad,
+        },
+        CTX,
+      );
+      expect(result.success).toBe(false);
+      expect(result.output).toMatch(/^bridge_quote:/);
+      expect(result.output).toMatch(/referrer/);
+      expect(result.output).toContain("not an accepted parameter");
+      expect(executeProtocolTool).not.toHaveBeenCalled();
+    }
   });
 
   it("fromChain '4663' → relay.quote.get (either side local routes to Relay)", async () => {

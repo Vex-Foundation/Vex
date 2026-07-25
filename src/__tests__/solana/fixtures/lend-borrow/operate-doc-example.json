@@ -1,0 +1,14 @@
+{
+  "_provenance": "This file is a DOC EXAMPLE copied verbatim from https://developers.jup.ag/docs/api-reference/lend/borrow/operate (fetched 2026-07-24, Batch 5 card B3) — NOT a live recording. /borrow/operate requires a real funded, signing-capable wallet to exercise safely; that is out of scope for a builder card with no live wallet. The request/response SHAPE below (integer vaultId/positionId/nftId, signed base-10 colAmount/debtAmount strings, base64 unsigned transaction) is the ground truth for JupiterLendBorrowOperateRequest/Response in ../../../../../tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/types.ts. Do not treat the transaction blob as valid for signing — it is the docs' own illustrative example.",
+  "request": {
+    "vaultId": 1,
+    "positionId": 0,
+    "signer": "4AwWnVxWKdZCZ8zVGdD7S3EwzRHkVRiXJxQKzwjbBayj",
+    "colAmount": "10000",
+    "debtAmount": "100"
+  },
+  "response": {
+    "nftId": 9062,
+    "transaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAgSLx7tPDvhw1CP7ZRClws8DN/LJyixatJZus2rQZ5pAG4cj71J70/rvu0J/yTO1674UGxqeljWsbxMzyBLGGTIhSXDKb3wVHYzXo0QFPryr6iEn/iNAYzX5PAlDQtaHW8lZfXf/XyEr3Wopfe9zqFiLis6v4f8U6hxuQhWGjqLG94CERPvP3H/BclenozhcxbxUXvL+eHEhCG764X4ME0EGHl8szytbAyAc7IdpMQ3ZAWF7Tn2sEZyyHpR1gWMtyb6oAuWSMFFuPlFmrZgneVXPFM1IT/BLHA9RbwtgiUIANaxKCIpkUG7pyNCcpG772SuCkkknsAKWSbiImP8gVvFqPeA4oganO3BaPj9y3TzLqfiwk9dDCxaIuRcmdJ+MiQSCv4el+RWy7kuZColtQumOW/ySBZLynRpY6hFkqzWzMMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEcn8RD5rZyCj3b2Rq49ZiVsmScRvvn3bU9qhBHACBPVR6mnvvwFsKRZEO8A58f97e1/yRiQ5ahJERwinC6lqslJomRsm5Gr9y9W+wdHAcnDKneVfnQTMTEQq+wdbs8IgIyXJY9OJInxuz0QKRSODYMLWhOZ2v8QhASOe9jb6fhZxvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWEK/huRLkhelf0V6yk33/xLN6MW0KY4Ev8Cukm0xsGNHgbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpjWK6m/JZmhh7wDcE7nwe+sC7C7VoO3NCsHbuaiJo3IYBEBEABwIPCwEFBAgMBgMJDREOChDyI8aJUuHythAnAAAAAAAA"
+  }
+}

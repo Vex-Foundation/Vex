@@ -43,6 +43,12 @@ import { assertRelayQuoteCorrelation } from "@tools/relay/correlation.js";
 import { classifyRelayBridgeSteps, type RelayStepRole } from "@tools/relay/step-policy.js";
 import { planRelayStepTx, resolveRelayStepClients, pollRelayIntentStatus, type RelayPollResult, type RelayStepClients } from "@tools/relay/execute.js";
 import { signStageBroadcast } from "@tools/kyberswap/evm/staged-broadcast.js";
+import {
+  DependentLegGasEstimateError,
+  dependentLegEstimateGuidance,
+  priorLegAnchorFrom,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import type { RelayChain, RelayQuoteRequest, RelayQuoteResponse, RelayTradeType } from "@tools/relay/types.js";
 import { loadConfig } from "@config/store.js";
 import { pinTrackedToken } from "@vex-agent/db/repos/tracked-tokens.js";
@@ -102,6 +108,14 @@ function stepSummaries(quote: RelayQuoteResponse): Array<{ id: string; kind: str
   });
 }
 
+/**
+ * Both callers route this function's throws through `summarizeProtocolError`.
+ * The text is locally authored, but `resolveRelayChainId`/`toRelayCurrency`
+ * echo the MODEL-SUPPLIED `fromChain`/`toChain`/token values verbatim
+ * (`Relay does not support chain "<input>".`), so a model-injected URL or
+ * key-shaped string would otherwise reach tool output unredacted — untrusted
+ * input at an output sink.
+ */
 async function resolveLegs(
   params: Record<string, unknown>,
   chains: readonly RelayChain[],
@@ -200,7 +214,7 @@ async function relayQuoteGet(
   try {
     legs = await resolveLegs(params, chains);
   } catch (err) {
-    return fail(err instanceof Error ? err.message : String(err));
+    return fail(summarizeProtocolError(err).message);
   }
   let user: string;
   try {
@@ -435,7 +449,7 @@ async function relayBridge(
   try {
     legs = await resolveLegs(params, chains);
   } catch (err) {
-    return fail(err instanceof Error ? err.message : String(err));
+    return fail(summarizeProtocolError(err).message);
   }
 
   const from = relayChainDisplay(legs.originChainId, chains);
@@ -610,6 +624,11 @@ async function relayBridge(
   // execution). ──
   const broadcasts: OriginBroadcast[] = [];
   let currentIndex = 0;
+  // Read-after-write anchor for the NEXT origin leg: the approve leg this loop
+  // just confirmed is exactly the state the deposit leg's pre-sign estimate
+  // depends on, and the estimating node does not always have it yet (live
+  // 2026-07-25, deposit `0xc96bfee1…` — `dependent-leg-gas-estimate.ts`).
+  let priorLeg: ConfirmedPriorLeg | undefined;
   try {
     for (let i = 0; i < signable.length; i++) {
       currentIndex = i;
@@ -630,7 +649,7 @@ async function relayBridge(
           const res = await markBroadcastAccepted(legRow.id);
           if (!res.applied) logger.warn("relay.bridge.broadcast_accept_miss", { id: legRow.id });
         },
-      });
+      }, priorLeg);
 
       if (outcome.kind === "reverted") {
         broadcasts.push({ role: stepEntry.role, txHash: outcome.txHash, status: "reverted" });
@@ -703,6 +722,7 @@ async function relayBridge(
       // repair sweep beat us) and stays ordinary; any other state is surfaced as
       // `confirmed_unrecorded`.
       let legStatus: OriginBroadcast["status"] = "confirmed";
+      priorLeg = priorLegAnchorFrom(outcome.receipt.blockNumber);
       try {
         const confirmResult = await confirmActivityEvent(legRow.id, {});
         if (!confirmResult.applied && confirmResult.row.status !== "confirmed") {
@@ -724,6 +744,26 @@ async function relayBridge(
     const safe = summarizeProtocolError(err).message;
     await abortRemaining(executionId, currentIndex, safe);
     logger.warn("relay.bridge.post_intent_failure", { executionId, index: currentIndex, error: safe });
+    // A leg refused because its estimate never succeeded after an approve this
+    // same bridge confirmed is NOT an interruption of unknown scope: nothing
+    // was signed for it, every remaining row (including the logical fill row,
+    // so the in-flight guard is released) is finalized "not attempted", and
+    // re-running is safe. Telling an agent otherwise is what turned a
+    // transient RPC lag into a permanent refusal (live 2026-07-25).
+    if (err instanceof DependentLegGasEstimateError) {
+      const refusedRole = signable[currentIndex]?.role ?? "bridge_deposit";
+      const body = {
+        status: "not_attempted",
+        summary: `Relay bridge not attempted: the origin ${refusedRole} could not be gas-estimated.`,
+        message: `The origin ${refusedRole} could not be gas-estimated, so it was refused before signing. ${dependentLegEstimateGuidance(err)} The node reported: ${safe}`,
+        fromChain: from,
+        toChain: to,
+        requestId,
+        legs: outputLegs(broadcasts, from, to, "not_reached", null),
+        inTxHashes: broadcasts.map((b) => b.txHash),
+      };
+      return { success: false, output: JSON.stringify(body, null, 2), data: { ...body, _executionId: executionId, retryable: true } };
+    }
     const body = {
       status: "interrupted",
       summary: "Relay bridge was interrupted after it was already recorded.",

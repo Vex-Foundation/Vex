@@ -71,28 +71,15 @@ export interface SessionPanelProps {
   /**
    * Optional content-agnostic slot forwarded to the active-session header's
    * trailing edge (see `SessionContext.trailing`). The normal shell mounts
-   * `<SessionPanel />` with no slot, so its header is unchanged; the Hypervexing
-   * dock passes the mission badge cluster here so the panel stays mode-unaware.
+   * `<SessionPanel />` with no slot, so its header is unchanged.
    */
   readonly headerTrailing?: ReactNode;
-  /**
-   * Forwarded to the composer unchanged — see `SessionComposer`'s
-   * `focusRequest` doc. This panel stays agnostic to WHY a focus handoff is
-   * requested (e.g. returning from Hypervexing); it only threads the signal.
-   */
-  readonly focusRequest?: boolean;
-  readonly onFocusRequestHandled?: () => void;
 }
 
 export function SessionPanel({
   headerTrailing,
-  focusRequest,
-  onFocusRequestHandled,
 }: SessionPanelProps = {}): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
-  // In the Hypervexing dock the composer is ALWAYS bottom-pinned (user
-  // decree): the welcome/idle stage's vertical centering never applies there.
-  const inHypervexing = useUiStore((s) => s.workspaceMode) === "hypervexing";
   // Puzzle 02/06: keep the active session's transcript + usage queries fresh
   // (transcript-append event + 30s fallback poll). Puzzle 09: drive the
   // ephemeral streaming preview from the engine stream spine. F5: push
@@ -134,10 +121,7 @@ export function SessionPanel({
     !transcriptQuery.isLoading &&
     preview === null &&
     transcriptPages !== undefined &&
-    flattenTranscriptPages(transcriptPages).length === 0 &&
-    // The dock never plays the centered idle stage — tape layout from the
-    // first frame, composer pinned to the bottom like an active session.
-    !inHypervexing;
+    flattenTranscriptPages(transcriptPages).length === 0;
 
   // No active session → the welcome stage. The panel is the stage frame:
   // relative (the hero's absolute bottom band resolves against it)
@@ -169,32 +153,21 @@ export function SessionPanel({
             crown zone above and spacer below split a CONSTANT leftover.
             When the pill auto-grows, the extra height overflows the band
             DOWNWARD into the empty spacer zone instead of re-centering the
-            column, so the crown never moves. In the Hypervexing dock the
-            composer bottom-docks and grows upward, so the band stays
-            natural-height there. The live $VEX widget used to sit below the
-            composer here; it moved to the sessions rail (SessionsList) to
-            keep the welcome stage clean. */}
+            column, so the crown never moves. The live $VEX widget used to
+            sit below the composer here; it moved to the sessions rail
+            (SessionsList) to keep the welcome stage clean. */}
         <div
           data-vex-composer-band
-          className={cn(
-            "relative z-10 shrink-0",
-            inHypervexing ? undefined : "h-[140px]",
-          )}
+          className="relative z-10 h-[140px] shrink-0"
         >
           <div className="vex-rise vex-rise-d2 mx-auto w-[min(760px,92%)]">
-            <SessionComposer
-              activeSession={null}
-              activeSessionId={null}
-              focusRequest={focusRequest}
-              onFocusRequestHandled={onFocusRequestHandled}
-            />
+            <SessionComposer activeSession={null} activeSessionId={null} />
           </div>
         </div>
         {/* Trailing spacer — balances the crown zone above (vertical
             centering) and reserves the band the hero's absolute bottom row
-            occupies, so chips and the row never collide. Skipped in the
-            Hypervexing dock, where the composer docks to the very bottom. */}
-        {inHypervexing ? null : <div aria-hidden className="min-h-16 flex-1" />}
+            occupies, so chips and the row never collide. */}
+        <div aria-hidden className="min-h-16 flex-1" />
       </div>
     );
   }
@@ -300,8 +273,6 @@ export function SessionPanel({
             <SessionComposer
               activeSession={activeSession}
               activeSessionId={activeSessionId}
-              focusRequest={focusRequest}
-              onFocusRequestHandled={onFocusRequestHandled}
             />
           </div>
         </div>

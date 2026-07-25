@@ -1,0 +1,314 @@
+{
+  "data": [
+    {
+      "eventId": "POLY-25487",
+      "isActive": true,
+      "isLive": false,
+      "category": "crypto",
+      "subcategory": "crypto",
+      "tags": [
+        "taxes",
+        "other",
+        "trump-presidency",
+        "politics",
+        "crypto",
+        "trump",
+        "economics",
+        "economy",
+        "fiscal",
+        "crypto-legal"
+      ],
+      "metadata": {
+        "slug": "trump-eliminates-capital-gains-tax-on-crypto-in-2025",
+        "title": "Trump eliminates capital gains tax on crypto by ___?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-25487",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/trump-eliminates-capital-gains-tax-on-crypto-in-2025-_d4c7AqsRTXO.png",
+        "subtitle": "",
+        "closeTime": "2025-12-31T12:00:00Z"
+      },
+      "volumeUsd": "112898000000",
+      "volume24hr": "33000000",
+      "beginAt": "1748555553.385",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-33705",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "politics",
+      "tags": [
+        "epstein",
+        "politics",
+        "trump",
+        "maxwell",
+        "ghislaine-maxwell",
+        "earn-4"
+      ],
+      "metadata": {
+        "slug": "will-trump-pardon-ghislaine-maxwell",
+        "title": "Will Trump pardon Ghislaine Maxwell by end of 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-33705",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/epstein-or-maxwell-confirmed-mossad-opperatives-in-2025-Bexyf2rZ6y0V.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "735875000000",
+      "volume24hr": "556000000",
+      "beginAt": "1753248604.45",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-34348",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "politics",
+      "tags": [
+        "trump",
+        "trump-presidency",
+        "politics",
+        "earn-4"
+      ],
+      "metadata": {
+        "slug": "will-trump-be-impeached-by-december-31-2026",
+        "title": "Trump impeached by end of 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-34348",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-trump-be-impeached-in-2025-bm5xwPQil7AC.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "978326000000",
+      "volume24hr": "1412000000",
+      "beginAt": "1753469968.523",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-34349",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "politics",
+      "tags": [
+        "trump",
+        "trump-presidency",
+        "politics"
+      ],
+      "metadata": {
+        "slug": "will-trump-resign-by-december-31-2026",
+        "title": "Will Trump resign by December 31, 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-34349",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-trump-resign-in-2025-xcz2AkFjPF5X.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "517549000000",
+      "volume24hr": "0",
+      "beginAt": "1753469968.524",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-43352",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "politics",
+      "tags": [
+        "trump",
+        "trump-presidency",
+        "politics"
+      ],
+      "metadata": {
+        "slug": "who-will-trump-endorse",
+        "title": "Who will Trump endorse?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-43352",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/who-will-trump-endorse-tOuQx53odnHo.jpg",
+        "subtitle": "",
+        "closeTime": "2026-11-04T00:00:00Z"
+      },
+      "volumeUsd": "230949000000",
+      "volume24hr": "20000000",
+      "beginAt": "1757709523.679",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-73079",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "geopolitics",
+      "tags": [
+        "trump",
+        "politics",
+        "foreign-policy",
+        "world",
+        "geopolitics"
+      ],
+      "metadata": {
+        "slug": "which-countries-will-donald-trump-visit-in-2026",
+        "title": "Which countries will Donald Trump visit in 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-73079",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/which-countries-will-donald-trump-visit-in-2025-MFgaFiz7YhFu.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "603067000000",
+      "volume24hr": "344000000",
+      "beginAt": "1762360322.677",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-73105",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "geopolitics",
+      "tags": [
+        "trump",
+        "geopolitics",
+        "politics",
+        "h-1b"
+      ],
+      "metadata": {
+        "slug": "how-many-gold-cards-will-trump-sell-in-2026",
+        "title": "How many Gold Cards will Trump sell in 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-73105",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/how-many-gold-cards-will-trump-sell-in-2025-UlOBdrjUX5Go.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "287309000000",
+      "volume24hr": "0",
+      "beginAt": "1762360891.038",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-73866",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "geopolitics",
+      "tags": [
+        "geopolitics",
+        "politics",
+        "immigration",
+        "trump"
+      ],
+      "metadata": {
+        "slug": "how-many-people-will-trump-deport-in-2026-823",
+        "title": "How many people will Trump deport in 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-73866",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/how-many-people-will-trump-deport-in-2025-0f3mpbc_YDbk.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "117439000000",
+      "volume24hr": "600000000",
+      "beginAt": "1762361456.564",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-73897",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "",
+      "tags": [
+        "trump",
+        "politics"
+      ],
+      "metadata": {
+        "slug": "who-will-leave-trump-administration-before-2027",
+        "title": "Who will leave Trump Administration before 2027?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-73897",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/who-will-leave-trump-administration-in-2025-I6Rk9u0UMDav.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "1310300000000",
+      "volume24hr": "2012000000",
+      "beginAt": "1762364271.896",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-73128",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "",
+      "tags": [
+        "politics",
+        "trump",
+        "approval"
+      ],
+      "metadata": {
+        "slug": "how-low-will-trumps-approval-rating-go-in-2026",
+        "title": "How low will Trump's approval rating go in 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-73128",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/how-low-will-trumps-approval-rating-go-in-2025-krOTGoCQAmSJ.jpg",
+        "subtitle": "",
+        "closeTime": "2026-12-31T00:00:00Z"
+      },
+      "volumeUsd": "94688000000",
+      "volume24hr": "397000000",
+      "beginAt": "1762365424.078",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [],
+      "sportsMarketGroups": []
+    }
+  ],
+  "pagination": {
+    "start": 0,
+    "end": 10,
+    "total": 91,
+    "hasNext": true
+  }
+}

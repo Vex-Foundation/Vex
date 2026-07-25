@@ -30,6 +30,9 @@ Local source-of-truth for Jupiter Tokens API V2 under `src/tools/solana-ecosyste
   2. local file cache,
   3. Jupiter Tokens API V2.
 - Fail loud on API/auth issues. Only return `undefined` when the token truly is not found.
+- `/tag` accepts three values: `lst`, `verified`, `stocks` (tokenized equities, e.g. Ondo, Remora). `stocks` was added 2026-07-23 (W1-G) — it existed upstream from the start but was unmodeled in `JupiterTokenTag`.
+- `token-filters.ts` applies Vex-side `minOrganicScore`/`verifiedOnly`/`minLiquidity` thresholds to an already-fetched array. Jupiter has no server-side equivalent on any read endpoint — these are Vex's own filters, never sent to the wire (W1-G).
+- The protocol layer's `projectJupiterToken(s)` (`vex-agent/tools/protocols/solana-jupiter/projectors.ts`) accepts a `statsInterval` option to keep a single stats window instead of all four, shrinking the common-case payload for `solana.tokens.search`/`solana.tokens.trending` (W1-G).
 
 ## Related
 - `content/` for Jupiter Token Content API

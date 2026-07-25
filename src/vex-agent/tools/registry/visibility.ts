@@ -15,7 +15,6 @@ import type { Permission, SessionKind } from "@vex-agent/engine/types.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS } from "./lookup.js";
-import { getVisibleHypervexingAliasTools } from "../hypervexing-aliases.js";
 import { isUniswapPairRevealed } from "./uniswap-reveal.js";
 import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-reveal.js";
 
@@ -34,8 +33,9 @@ import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-
  */
 export interface ToolVisibilityContext {
   /**
-   * Active session identity for transient main-owned visibility such as the
-   * Hypervexing hot set. Omitted contexts fail closed to the normal tool menu.
+   * Active session identity for session-scoped reveal gates (the hidden
+   * Uniswap fallback pair, the hidden Relay bridge pair). Omitted contexts
+   * fail closed to the normal tool menu.
    */
   sessionId?: string;
   permission: Permission;
@@ -108,7 +108,7 @@ export function defaultVisibilityContext(
  *      (drops `mutating` at barrier+, drops `compact_only` below barrier).
  */
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
-  const staticTools = TOOLS
+  return TOOLS
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
@@ -120,11 +120,6 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
     .filter(t => !RELAY_REVEAL_GATED_ALIAS_NAMES.has(t.name) || hasAnyRelayRouteReveal(ctx.sessionId))
     .filter(t => passesVisibility(t.visibility, ctx))
     .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
-  // Hypervexing aliases are a session-mode projection, not permanent ToolDefs.
-  // The alias projection receives this same band so it shares the catalog's
-  // release, policy, and pressure visibility rather than re-implementing it.
-  const hotSet = getVisibleHypervexingAliasTools(ctx.sessionId, ctx.contextUsageBand);
-  return [...staticTools, ...hotSet];
 }
 
 /**

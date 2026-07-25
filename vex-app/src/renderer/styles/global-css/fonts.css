@@ -70,8 +70,9 @@
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Instrument Serif — the Hyperliquid serif accent (© 2022 The Instrument
- * Serif Project Authors, OFL 1.1; license text ships in fonts/licenses/).
+/* Instrument Serif — the editorial display serif accent (© 2022 The
+ * Instrument Serif Project Authors, OFL 1.1; license text ships in
+ * fonts/licenses/).
  * Unlike the three brand families above, Instrument Serif has NO weight axis:
  * it ships as static 400 Regular + 400 Italic, so four subset WOFF2 files
  * (latin / latin-ext × normal / italic). Same subset unicode-ranges as Inter

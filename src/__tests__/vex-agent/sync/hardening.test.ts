@@ -13,9 +13,10 @@ const mockRecordExecution = vi.fn().mockResolvedValue(1);
 vi.mock("@vex-agent/db/repos/executions.js", () => ({
   recordExecution: (...args: unknown[]) => mockRecordExecution(...args),
   getById: vi.fn().mockResolvedValue(null),
-  // Wave-2 durable-intent lifecycle (Hyperliquid-only path; inert for the
-  // generic tools under test, but the mocked module must still export them --
-  // Vitest throws on access to an undefined mock export).
+  // Durable-intent lifecycle (general infra: Kyber/Uniswap staged swaps,
+  // Khalani/Relay staged bridges via runtime/capture.ts's `completeExecutionIntent`
+  // call) — inert for the fake tool under test, but the mocked module must
+  // still export them -- Vitest throws on access to an undefined mock export.
   createExecutionIntent: vi.fn().mockResolvedValue(1),
   completeExecutionIntent: vi.fn().mockResolvedValue(undefined),
 }));

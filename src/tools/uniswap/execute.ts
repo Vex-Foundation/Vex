@@ -35,6 +35,11 @@ import {
 } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
+import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
+import {
+  estimateGasForPlanLeg,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   UNISWAP_ERC20_ABI,
   UNISWAP_V2_ROUTER_ABI,
@@ -217,25 +222,53 @@ export interface SignedUniswapTransaction {
 }
 
 /**
- * STAGE 1 — prepare + sign a built tx (fills nonce/gas/fees, signs locally,
- * derives the tx hash). No RPC submission happens here; the caller persists
- * the returned hash (`markActivityBroadcast`) before calling
- * `broadcastUniswapTransaction`. Any failure here (including a would-revert
- * simulation surfaced through gas estimation) throws the raw error — callers
- * classify it with `revert-mapping.ts`, never a signed payload is persisted.
+ * STAGE 1 — prepare + sign a built tx (estimates gas with headroom, fills
+ * nonce/fees, signs locally, derives the tx hash). No RPC submission happens
+ * here; the caller persists the returned hash (`markActivityBroadcast`) before
+ * calling `broadcastUniswapTransaction`. Any failure here (including a
+ * would-revert simulation surfaced through gas estimation) throws the raw
+ * error — callers classify it with `revert-mapping.ts`, never a signed payload
+ * is persisted.
  */
 export async function signUniswapTransaction(
+  publicClient: PublicClient<Transport, Chain>,
   walletClient: WalletClient<Transport, Chain, Account>,
   tx: BuiltSwapTx,
+  priorLeg?: ConfirmedPriorLeg,
 ): Promise<SignedUniswapTransaction> {
+  const account = walletClient.account;
+
+  // Estimated explicitly rather than left to `prepareTransactionRequest`,
+  // which signs viem's bare estimate with no headroom (`gasLimitWithHeadroom`
+  // documents the on-chain loss that proves why that is unsafe). Same call
+  // shape as the signed transaction (`value` included, so a native-input swap
+  // is priced as the call that actually runs), so a route that can no longer
+  // execute still throws HERE — before anything is signed, staged, or
+  // broadcast. `priorLeg` (the approval this plan just confirmed) additionally
+  // lets the estimate survive an estimating node that has not applied that
+  // approval yet — bounded, and never by signing an unestimated leg
+  // (`dependent-leg-gas-estimate.ts`).
+  const gasEstimate = await estimateGasForPlanLeg(
+    publicClient,
+    { account, to: tx.to, data: tx.data, value: tx.value },
+    priorLeg,
+  );
+  const gasLimit = gasLimitWithHeadroom(gasEstimate);
+
   const prepared = await walletClient.prepareTransactionRequest({
-    account: walletClient.account,
+    account,
     chain: walletClient.chain,
     to: tx.to,
     data: tx.data,
     value: tx.value,
+    gas: gasLimit,
   });
-  const serializedTransaction = await walletClient.signTransaction(prepared);
+  // Re-asserted on the request that is actually serialized: when fees/nonce
+  // still need filling, viem may route preparation through the node's
+  // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
+  // unbuffered figure. The signed bytes are what the chain enforces, so the
+  // headroom has to survive to exactly here.
+  const serializedTransaction = await walletClient.signTransaction({ ...prepared, gas: gasLimit });
   const nonce = prepared.nonce;
   if (nonce === undefined) {
     throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap transaction signing did not resolve a nonce.");

@@ -40,7 +40,6 @@ export type { VexShellBridge } from "./shell/index.js";
 export type {
   ApprovalsBridge,
   ChatBridge,
-  HyperliquidBridge,
   MessagesBridge,
   MissionBridge,
   ModelsBridge,

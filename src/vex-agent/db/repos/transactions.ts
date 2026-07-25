@@ -59,13 +59,27 @@
  * Filters: productType filters proj_activity.product_type on the success half
  * and the DERIVED PRODUCT (via the failure-tool allowlist, current + legacy)
  * on the failure half — NEVER trade_side. On the agent_activity half it maps to
- * `kind` (Agent Scan Phase 2, migration 045): 'spot' → swap rows, 'bridge' →
- * bridge rows; any other requested productType (perps/prediction/order) has no
- * agent_activity representation and excludes the half. namespace + txHash
- * filter all three halves where applicable. A null/empty sessionId OMITS the
- * failure half entirely (successes + agent_activity only) — a failure feed is
- * meaningless without a session to scope it to, and must never leak another
- * session's failures.
+ * `kind`: 'spot' → swap rows (migration 044), 'bridge' → bridge rows (migration
+ * 045), 'lend' → lend rows, 'prediction' → prediction rows (migration 049, W5);
+ * any other requested productType (perps/order) has no agent_activity
+ * representation and excludes the half. namespace + txHash filter all three
+ * halves where applicable. A null/empty sessionId OMITS the failure half
+ * entirely (successes + agent_activity only) — a failure feed is meaningless
+ * without a session to scope it to, and must never leak another session's
+ * failures.
+ *
+ * LEND/PREDICTION ROWS (migration 049, W5): one role per on-chain tx — no
+ * logical/leg fan-out like bridges. `lend_deposit`/`lend_withdraw`/
+ * `lend_borrow_operate` and `predict_buy`/`predict_sell`/`predict_claim`/
+ * `predict_close` each surface as their OWN feed row (closeAll's N independent
+ * closes each get their own row, per R5 — never aggregated or summarized as
+ * one partial-success outcome). They share the swap C20 amount rule (below)
+ * with one correction (R5): a `confirmed` lend/prediction row is NOT
+ * guaranteed decoder-proven (the Solana settlement decoder may confirm
+ * on-chain landing without decodable balance deltas for every protocol/role)
+ * — when executed amounts are absent on a confirmed row, the mapper falls
+ * back to the quoted amount labelled `amountBasis:"estimated"` rather than
+ * showing nothing for an attempt that DID land on-chain.
  *
  * BRIDGE ROWS (migration 045): a bridge fans out into per-leg agent_activity
  * rows, but the feed emits ONE logical row per bridge — its
@@ -87,185 +101,34 @@
  * `transactions-cursor.ts`) so sub-millisecond ties paginate correctly. Fetches
  * limit+1 to detect `hasMore`; `nextCursor` is minted from the last KEPT row.
  *
- * Migrations: `030_transactions_indexes.sql`, `044_agent_activity.sql`.
+ * Migrations: `030_transactions_indexes.sql`, `044_agent_activity.sql`,
+ * `045_bridge_activity.sql`, `049_agent_activity_solana_vocabulary.sql`.
+ *
+ * Public API module (these types + `getTransactions`). Internals split into
+ * sibling files by concern: `transactions-types.ts` (row/option types),
+ * `transactions-mappers.ts` (row → `TransactionRow` mapping),
+ * `transactions-query-builder.ts` (per-half SQL builders + keyset predicate).
+ * Consumers import from this module — the siblings are implementation detail.
  */
-
-import { formatUnits } from "viem";
 
 import { query } from "../client.js";
+import { encodeCursor } from "./transactions-cursor.js";
+import { mapRow } from "./transactions-mappers.js";
 import {
-  encodeCursor,
-  type DecodedCursor,
-} from "./transactions-cursor.js";
-import {
-  FAILURE_TOOL_PRODUCTS,
-  failureToolsForProduct,
-} from "./transactions-failure-tools.js";
+  buildActivityHalf,
+  buildFailureHalf,
+  buildSuccessHalf,
+  normalizeSourceRank,
+} from "./transactions-query-builder.js";
+import type { GetTransactionsOptions, GetTransactionsResult } from "./transactions-types.js";
 
-export type TransactionSource = "agent_activity" | "success" | "failure";
-
-/**
- * One leg of a bridge execution (Agent Scan Phase 2, migration 045). A bridge
- * logical row (`event_role = 'bridge_fill_expected'`) carries `legs[]` — the
- * canonical expected-fill row INCLUDED, plus its allowance/deposit/observed-
- * fill/refund siblings — so the agent sees every leg's chain + hash + status
- * WITHOUT the feed emitting one row per leg. Each leg carries the on-chain
- * `txHash` (a public reference) and the chain identity needed to resolve an
- * explorer link; it deliberately does NOT carry a pre-built explorer URL — the
- * curated allowlist that validates explorer hosts lives in the desktop app
- * (`vex-app/src/shared/explorer-links.ts`, R14), and the consumer builds
- * `_explorerRefs` from `{chain, txHash}` exactly as it already does for the
- * top-level hash (`tools/internal/inspect-views/transactions.ts`). NEVER
- * truncated (OWNER RULE).
- */
-export interface BridgeLegRow {
-  eventIndex: number | null;
-  /** 'allowance_reset' | 'allowance' | 'bridge_deposit' | 'bridge_fill_expected' | 'bridge_fill_observed' | 'bridge_refund'. */
-  role: string | null;
-  /** The leg's OWN execution chain id (provider-native; pair with `chainFamily`). */
-  chainId: number | null;
-  chainSlug: string | null;
-  /** 'eip155' | 'solana'. */
-  chainFamily: string | null;
-  txHash: string | null;
-  /** Raw lifecycle status of the leg's row ('pending' | 'confirmed' | 'definitively_failed'). */
-  status: string | null;
-  failureCode: string | null;
-}
-
-/**
- * One bounded, camelCase row in the unified feed. Failure rows carry no
- * economics. Every field below `toolId` is additive over the original
- * (Stage 9) shape — populated on the `agent_activity` half only, `undefined`/
- * `null` elsewhere, so an existing reader that only knew the original fields
- * is unaffected.
- */
-export interface TransactionRow {
-  source: TransactionSource;
-  id: number;
-  namespace: string;
-  productType: string;
-  tradeSide?: string | null;
-  chain?: string | null;
-  /** Convenience: symbol-or-address (prefer the granular fields below for anything precise). */
-  inputToken?: string | null;
-  /**
-   * agent_activity only (FIX2-SPINE C20) — derived from raw + decimals per
-   * `amountBasis`: `confirmed` → executed truth; `pending` → the requested
-   * quote (never settlement); any other status → `null` (no display value).
-   */
-  inputAmount?: string | null;
-  outputToken?: string | null;
-  outputAmount?: string | null;
-  /**
-   * agent_activity only — which raw amount `inputAmount`/`outputAmount` was
-   * derived from (FIX2-SPINE C20 for swaps), or `null` when neither applies.
-   * Swaps use `executed`/`requested`; bridges (BINDING Q2) use `executed` (an
-   * independently-verified fill) or `estimated` (the quoted amount shown
-   * explicitly as an estimate — a bridge never blanks a pending amount).
-   */
-  amountBasis?: "executed" | "requested" | "estimated" | null;
-  valueUsd?: number | null;
-  captureStatus?: string | null;
-  /** agent_activity: 'pending' | 'confirmed' | 'definitively_failed'. failure half: always 'failed'. */
-  status?: string | null;
-  /** agent_activity only — the closed failure_code enum (plan §4.1). */
-  failureCode?: string | null;
-  /** agent_activity only — sanitized (redact()+capped) failure detail. */
-  failureReason?: string | null;
-  /** agent_activity only — numeric chain id (explorer-link derivation). */
-  chainId?: number | null;
-  /** agent_activity only — provider slug (e.g. "kyberswap" | "uniswap"). */
-  protocol?: string | null;
-  toolId?: string | null;
-  durationMs?: number | null;
-  /** agent_activity: its own protocol_execution_id. success: proj_activity.execution_id. failure: its own id. */
-  protocolExecutionId?: number | null;
-  /** agent_activity only — position within the execution's event group. */
-  eventIndex?: number | null;
-  /** agent_activity only — 'allowance_reset' | 'allowance' | 'swap'. */
-  eventRole?: string | null;
-  tokenInAddress?: string | null;
-  tokenInSymbol?: string | null;
-  tokenInDecimals?: number | null;
-  tokenOutAddress?: string | null;
-  tokenOutSymbol?: string | null;
-  tokenOutDecimals?: number | null;
-  /** agent_activity only — quote-time REQUESTED legs (may be present even on a pre-broadcast failure). */
-  amountInHuman?: string | null;
-  amountInRaw?: string | null;
-  amountOutHuman?: string | null;
-  amountOutRaw?: string | null;
-  /** agent_activity only — receipt-derived EXECUTED legs (confirmed rows only). */
-  executedAmountInHuman?: string | null;
-  executedAmountInRaw?: string | null;
-  executedAmountOutHuman?: string | null;
-  executedAmountOutRaw?: string | null;
-  usdInEst?: string | null;
-  usdOutEst?: string | null;
-  usdFeeEst?: string | null;
-  usdSource?: string | null;
-  /** agent_activity BRIDGE logical row only (migration 045) — route origin chain. */
-  fromChainId?: number | null;
-  fromChainSlug?: string | null;
-  /** agent_activity BRIDGE logical row only — route destination chain. `chainId` (above) is this row's own chain (the destination, where the fill hash lives). */
-  toChainId?: number | null;
-  toChainSlug?: string | null;
-  /** agent_activity BRIDGE only — 'eip155' | 'solana' (this row's own leg family). */
-  chainFamily?: string | null;
-  /** agent_activity BRIDGE logical row only — provider order id (Khalani orderId / Relay requestId). */
-  providerOrderId?: string | null;
-  /** agent_activity BRIDGE logical row only — last provider-native status (sweep feed; "tracking delayed" UX). */
-  providerStatus?: string | null;
-  /** agent_activity BRIDGE logical row only — every leg of the execution (B8); `null` on swaps. NEVER truncated (OWNER RULE). */
-  legs?: BridgeLegRow[] | null;
-  txHash: string | null;
-  createdAt: string;
-}
-
-export interface GetTransactionsOptions {
-  addresses: string[];
-  sessionId: string | null;
-  productType?: string;
-  namespace?: string;
-  txHash?: string;
-  cursor?: DecodedCursor | null;
-  limit: number;
-}
-
-export interface GetTransactionsResult {
-  items: TransactionRow[];
-  nextCursor: string | null;
-  hasMore: boolean;
-  /** Always 'session' — failures are scoped to the current session only. */
-  failuresScope: "session";
-}
-
-// Microsecond-precision UTC render of created_at, used BOTH as the keyset
-// boundary value (compared via ::timestamptz) and as the minted cursor's
-// cursorTs. Round-trips losslessly through ::timestamptz.
-const CURSOR_TS_EXPR = `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
-
-/**
- * Build the per-half keyset predicate for DESC ordering on
- * (created_at, sourceRank, id). `sourceRank` is a constant per half so the
- * comparison is specialised (index-friendly) rather than a row-value compare.
- * Returns "" when no cursor (first page).
- */
-function keysetPredicate(
-  sourceRank: 0 | 1 | 2,
-  cursor: DecodedCursor | null | undefined,
-  tsParam: number,
-  rankParam: number,
-  idParam: number,
-): string {
-  if (!cursor) return "";
-  return (
-    `AND (created_at < $${tsParam}::timestamptz` +
-    ` OR (created_at = $${tsParam}::timestamptz AND ${sourceRank} < $${rankParam}::int)` +
-    ` OR (created_at = $${tsParam}::timestamptz AND ${sourceRank} = $${rankParam}::int AND id < $${idParam}::int))`
-  );
-}
+export type {
+  TransactionSource,
+  BridgeLegRow,
+  TransactionRow,
+  GetTransactionsOptions,
+  GetTransactionsResult,
+} from "./transactions-types.js";
 
 /**
  * Fetch the unified transaction feed for the session's wallet set. See module
@@ -295,267 +158,17 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
   const rankParam = cursor ? push(cursor.sourceRank) : 0;
   const idParam = cursor ? push(cursor.id) : 0;
 
-  // ── AGENT_ACTIVITY half (agent_activity) ──────────────────────────────
-  const activityConds: string[] = [`wallet_address = ANY($${push(addresses)}::text[])`];
-  if (namespace !== undefined) activityConds.push(`protocol = $${push(namespace)}`);
-  if (txHash !== undefined) {
-    // A bridge's logical row (`bridge_fill_expected`) carries the FILL hash; its
-    // deposit / refund / extra-fill hashes live on sibling legs. Match the row
-    // when its OWN tx_hash matches (this alone covers swaps — each swap leg is
-    // its own feed row) OR — for a bridge logical row only — when ANY sibling
-    // leg of the same execution carries the hash, so `agent_scan txHash=` finds
-    // a bridge by a deposit / refund / extra-fill hash and returns the logical
-    // row with its legs (Codex FIX-ROUND-1 m7). The EXISTS is gated on the
-    // logical role so it never widens a swap leg's own-hash match.
-    const txHashParam = push(txHash);
-    activityConds.push(
-      `(tx_hash = $${txHashParam}` +
-        ` OR (event_role = 'bridge_fill_expected' AND EXISTS (` +
-        `SELECT 1 FROM agent_activity sib` +
-        ` WHERE sib.protocol_execution_id = agent_activity.protocol_execution_id` +
-        ` AND sib.tx_hash = $${txHashParam})))`,
-    );
-  }
-  // A bridge (migration 045) fans out into per-leg rows; only its LOGICAL row
-  // (`event_role = 'bridge_fill_expected'`) is a feed row — its allowance/
-  // deposit/observed-fill/refund siblings ride the row's `legs[]` array, never
-  // as their own feed rows. Swaps keep emitting every leg row (allowance +
-  // swap) exactly as before (behavior preserved).
-  activityConds.push("(kind = 'swap' OR event_role = 'bridge_fill_expected')");
-  // productType now maps to `kind`: 'spot' → swap rows (derive to the same
-  // "spot" product the success half stores), 'bridge' → bridge logical rows.
-  // Any OTHER productType (perps/prediction/order) has no agent_activity
-  // representation → exclude the half entirely (no param bind needed).
-  if (productType === "spot") activityConds.push("kind = 'swap'");
-  else if (productType === "bridge") activityConds.push("kind = 'bridge'");
-  else if (productType !== undefined) activityConds.push("FALSE");
-  const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
-
-  const activityHalf = `
-    SELECT
-      'agent_activity'::text AS source,
-      0 AS source_rank,
-      id,
-      protocol AS namespace,
-      CASE WHEN kind = 'bridge' THEN 'bridge' ELSE 'spot' END AS product_type,
-      NULL::text AS trade_side,
-      COALESCE(chain_slug, chain_id::text) AS chain,
-      COALESCE(token_in_symbol, token_in_address) AS input_token,
-      -- FIX2-SPINE C20 (finding 5): no human-amount COALESCE here — the TS
-      -- mapper derives inputAmount from raw + decimals per the row's status
-      -- (see module doc). This column stays a placeholder so the UNION ALL's
-      -- column count/order matches the success half exactly.
-      NULL::text AS input_amount,
-      COALESCE(token_out_symbol, token_out_address) AS output_token,
-      NULL::text AS output_amount,
-      COALESCE(usd_out_est, usd_in_est) AS value_usd,
-      NULL::text AS capture_status,
-      status AS status,
-      failure_code,
-      failure_reason,
-      chain_id,
-      protocol,
-      NULL::text AS tool_id,
-      NULL::int AS duration_ms,
-      protocol_execution_id,
-      event_index,
-      event_role,
-      token_in_address,
-      token_in_symbol,
-      token_in_decimals,
-      token_out_address,
-      token_out_symbol,
-      token_out_decimals,
-      amount_in_human,
-      amount_in_raw,
-      amount_out_human,
-      amount_out_raw,
-      executed_amount_in_human,
-      executed_amount_in_raw,
-      executed_amount_out_human,
-      executed_amount_out_raw,
-      usd_in_est,
-      usd_out_est,
-      usd_fee_est,
-      usd_source,
-      from_chain_id,
-      from_chain_slug,
-      to_chain_id,
-      to_chain_slug,
-      chain_family,
-      provider_order_id,
-      provider_status,
-      -- Bridge legs (B8): every leg of the execution, the canonical expected
-      -- fill INCLUDED (REVISION 4), aggregated with NO LIMIT (OWNER RULE — never
-      -- truncated). NULL on swap rows.
-      CASE WHEN kind = 'bridge' THEN (
-        SELECT jsonb_agg(jsonb_build_object(
-          'eventIndex', leg.event_index,
-          'role', leg.event_role,
-          'chainId', leg.chain_id,
-          'chainSlug', leg.chain_slug,
-          'chainFamily', leg.chain_family,
-          'txHash', leg.tx_hash,
-          'status', leg.status,
-          'failureCode', leg.failure_code
-        ) ORDER BY leg.event_index)
-        FROM agent_activity leg
-        WHERE leg.protocol_execution_id = agent_activity.protocol_execution_id
-      ) END AS legs,
-      tx_hash,
-      created_at,
-      ${CURSOR_TS_EXPR} AS cursor_ts
-    FROM agent_activity
-    WHERE ${activityConds.join(" AND ")} ${activityKeyset}`;
-
-  const halves: string[] = [activityHalf];
-
-  // ── SUCCESS half (proj_activity) ──────────────────────────────────────
-  const successConds: string[] = [`wallet_address = ANY($${push(addresses)}::text[])`];
-  if (productType !== undefined) successConds.push(`product_type = $${push(productType)}`);
-  if (namespace !== undefined) successConds.push(`namespace = $${push(namespace)}`);
-  if (txHash !== undefined) successConds.push(`external_refs->>'txHash' = $${push(txHash)}`);
-  const successKeyset = keysetPredicate(1, cursor, tsParam, rankParam, idParam);
-
-  halves.push(`
-    SELECT
-      'success'::text AS source,
-      1 AS source_rank,
-      id,
-      namespace,
-      product_type AS product_type,
-      trade_side,
-      chain,
-      input_token,
-      input_amount,
-      output_token,
-      output_amount,
-      value_usd,
-      capture_status,
-      NULL::text AS status,
-      NULL::text AS failure_code,
-      NULL::text AS failure_reason,
-      NULL::bigint AS chain_id,
-      NULL::text AS protocol,
-      NULL::text AS tool_id,
-      NULL::int AS duration_ms,
-      execution_id AS protocol_execution_id,
-      NULL::smallint AS event_index,
-      NULL::text AS event_role,
-      NULL::text AS token_in_address,
-      NULL::text AS token_in_symbol,
-      NULL::smallint AS token_in_decimals,
-      NULL::text AS token_out_address,
-      NULL::text AS token_out_symbol,
-      NULL::smallint AS token_out_decimals,
-      NULL::text AS amount_in_human,
-      NULL::text AS amount_in_raw,
-      NULL::text AS amount_out_human,
-      NULL::text AS amount_out_raw,
-      NULL::text AS executed_amount_in_human,
-      NULL::text AS executed_amount_in_raw,
-      NULL::text AS executed_amount_out_human,
-      NULL::text AS executed_amount_out_raw,
-      NULL::numeric AS usd_in_est,
-      NULL::numeric AS usd_out_est,
-      NULL::numeric AS usd_fee_est,
-      NULL::text AS usd_source,
-      NULL::bigint AS from_chain_id,
-      NULL::text AS from_chain_slug,
-      NULL::bigint AS to_chain_id,
-      NULL::text AS to_chain_slug,
-      NULL::text AS chain_family,
-      NULL::text AS provider_order_id,
-      NULL::text AS provider_status,
-      NULL::jsonb AS legs,
-      external_refs->>'txHash' AS tx_hash,
-      created_at,
-      ${CURSOR_TS_EXPR} AS cursor_ts
-    FROM proj_activity
-    WHERE ${successConds.join(" AND ")} ${successKeyset}`);
+  const halves: string[] = [
+    buildActivityHalf({ addresses, namespace, txHash, productType, cursor, tsParam, rankParam, idParam, push }),
+    buildSuccessHalf({ addresses, productType, namespace, txHash, cursor, tsParam, rankParam, idParam, push }),
+  ];
 
   // ── FAILURE half (protocol_executions) ─────────────────────────────────
   // Omitted entirely without a session — never leak another session's failures.
   if (hasSession) {
-    const failTools = failureToolsForProduct(productType);
-    // An empty allowlist (unknown productType) means the failure half matches
-    // nothing; ANY('{}') achieves that without a special case.
-    const failConds: string[] = [
-      // FIX-SPINE C9 (finding 1) — NOT `success = false` alone: a freshly
-      // created intent row (execution_status='intent') ALSO has
-      // success=false until it completes, so filtering on success alone
-      // would show every in-flight intent as an already-failed transaction.
-      "execution_status = 'failed'",
-      `session_id = $${push(sessionId)}`,
-      `tool_id = ANY($${push(failTools)}::text[])`,
-      // FIX-SPINE C9 (finding 2) — this toolId's failure-tool-allowlist
-      // membership exists precisely so a PRE-agent_activity failure (before
-      // any row could be created) still surfaces; once an agent_activity row
-      // exists for this SAME execution, IT is the source of truth — never
-      // show the same attempt twice under two different sources.
-      "NOT EXISTS (SELECT 1 FROM agent_activity aa WHERE aa.protocol_execution_id = protocol_executions.id)",
-    ];
-    if (namespace !== undefined) failConds.push(`namespace = $${push(namespace)}`);
-    if (txHash !== undefined) failConds.push(`external_refs->>'txHash' = $${push(txHash)}`);
-    const failureKeyset = keysetPredicate(2, cursor, tsParam, rankParam, idParam);
-
-    // NOTE: select ONLY bounded columns — NEVER params, result, or trade_capture.
-    halves.push(`
-    SELECT
-      'failure'::text AS source,
-      2 AS source_rank,
-      id,
-      namespace,
-      NULL::text AS product_type,
-      NULL::text AS trade_side,
-      NULL::text AS chain,
-      NULL::text AS input_token,
-      NULL::text AS input_amount,
-      NULL::text AS output_token,
-      NULL::text AS output_amount,
-      NULL::numeric AS value_usd,
-      NULL::text AS capture_status,
-      'failed'::text AS status,
-      NULL::text AS failure_code,
-      NULL::text AS failure_reason,
-      NULL::bigint AS chain_id,
-      NULL::text AS protocol,
-      tool_id,
-      duration_ms,
-      id AS protocol_execution_id,
-      NULL::smallint AS event_index,
-      NULL::text AS event_role,
-      NULL::text AS token_in_address,
-      NULL::text AS token_in_symbol,
-      NULL::smallint AS token_in_decimals,
-      NULL::text AS token_out_address,
-      NULL::text AS token_out_symbol,
-      NULL::smallint AS token_out_decimals,
-      NULL::text AS amount_in_human,
-      NULL::text AS amount_in_raw,
-      NULL::text AS amount_out_human,
-      NULL::text AS amount_out_raw,
-      NULL::text AS executed_amount_in_human,
-      NULL::text AS executed_amount_in_raw,
-      NULL::text AS executed_amount_out_human,
-      NULL::text AS executed_amount_out_raw,
-      NULL::numeric AS usd_in_est,
-      NULL::numeric AS usd_out_est,
-      NULL::numeric AS usd_fee_est,
-      NULL::text AS usd_source,
-      NULL::bigint AS from_chain_id,
-      NULL::text AS from_chain_slug,
-      NULL::bigint AS to_chain_id,
-      NULL::text AS to_chain_slug,
-      NULL::text AS chain_family,
-      NULL::text AS provider_order_id,
-      NULL::text AS provider_status,
-      NULL::jsonb AS legs,
-      external_refs->>'txHash' AS tx_hash,
-      created_at,
-      ${CURSOR_TS_EXPR} AS cursor_ts
-    FROM protocol_executions
-    WHERE ${failConds.join(" AND ")} ${failureKeyset}`);
+    halves.push(
+      buildFailureHalf({ sessionId, productType, namespace, txHash, cursor, tsParam, rankParam, idParam, push }),
+    );
   }
 
   const limitParam = push(limit + 1);
@@ -579,247 +192,4 @@ export async function getTransactions(opts: GetTransactionsOptions): Promise<Get
     : null;
 
   return { items, nextCursor, hasMore, failuresScope: "session" };
-}
-
-function normalizeSourceRank(value: unknown): 0 | 1 | 2 {
-  const n = Number(value);
-  return n === 1 ? 1 : n === 2 ? 2 : 0;
-}
-
-function num(value: unknown): number | null {
-  return value === null || value === undefined ? null : Number(value);
-}
-
-function str(value: unknown): string | null {
-  return (value as string | null) ?? null;
-}
-
-/**
- * BigInt-safe raw→human conversion (FIX2-SPINE C20) — the ONLY place the
- * agent_activity half's display amount is computed; the SQL never does this
- * arithmetic (see module doc). Returns `null` when either input is
- * missing/malformed — a missing display amount is safer than a wrong one.
- */
-function rawToHuman(raw: string | null, decimals: number | null): string | null {
-  if (raw === null || decimals === null) return null;
-  try {
-    return formatUnits(BigInt(raw), decimals);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Derive the agent_activity half's convenience amount fields from raw +
- * decimals per the row's status (FIX2-SPINE C20): `confirmed` → executed
- * truth only; `pending` → the requested quote only (labelled, never
- * settlement); anything else (`definitively_failed`) → no display amount —
- * the attempt is over and nothing settled, so no value here would be honest.
- */
-function deriveDisplayAmounts(
-  status: string | null,
-  requestedInRaw: string | null,
-  requestedOutRaw: string | null,
-  executedInRaw: string | null,
-  executedOutRaw: string | null,
-  tokenInDecimals: number | null,
-  tokenOutDecimals: number | null,
-): { inputAmount: string | null; outputAmount: string | null; amountBasis: "executed" | "requested" | null } {
-  if (status === "confirmed") {
-    return {
-      inputAmount: rawToHuman(executedInRaw, tokenInDecimals),
-      outputAmount: rawToHuman(executedOutRaw, tokenOutDecimals),
-      amountBasis: "executed",
-    };
-  }
-  if (status === "pending") {
-    return {
-      inputAmount: rawToHuman(requestedInRaw, tokenInDecimals),
-      outputAmount: rawToHuman(requestedOutRaw, tokenOutDecimals),
-      amountBasis: "requested",
-    };
-  }
-  return { inputAmount: null, outputAmount: null, amountBasis: null };
-}
-
-/**
- * BRIDGE display-amount rule (Agent Scan Phase 2, BINDING Q2 — DISTINCT from
- * the swap rule above). A bridge's destination fill is solver-signed and
- * externally observed, so `executed_*` is populated ONLY when the sweep decoded
- * transfer/value evidence (migration-045 B4). Therefore:
- *   - an independently-verified executed amount → `executed`;
- *   - otherwise, while pending OR confirmed-without-a-decodable-amount, the
- *     QUOTED amount is shown, explicitly labelled `estimated` (a bridge never
- *     blanks a pending amount — "~X TOKEN est., still settling");
- *   - a `definitively_failed`/refunded attempt shows NOTHING (the requested
- *     amount would misrepresent it; the refund is carried as status, not as a
- *     fake amount).
- */
-function deriveBridgeDisplayAmounts(
-  status: string | null,
-  requestedInRaw: string | null,
-  requestedOutRaw: string | null,
-  executedInRaw: string | null,
-  executedOutRaw: string | null,
-  tokenInDecimals: number | null,
-  tokenOutDecimals: number | null,
-): { inputAmount: string | null; outputAmount: string | null; amountBasis: "executed" | "estimated" | null } {
-  const execIn = rawToHuman(executedInRaw, tokenInDecimals);
-  const execOut = rawToHuman(executedOutRaw, tokenOutDecimals);
-  if (execIn !== null || execOut !== null) {
-    return { inputAmount: execIn, outputAmount: execOut, amountBasis: "executed" };
-  }
-  if (status === "definitively_failed") {
-    return { inputAmount: null, outputAmount: null, amountBasis: null };
-  }
-  const reqIn = rawToHuman(requestedInRaw, tokenInDecimals);
-  const reqOut = rawToHuman(requestedOutRaw, tokenOutDecimals);
-  const amountBasis = reqIn !== null || reqOut !== null ? "estimated" : null;
-  return { inputAmount: reqIn, outputAmount: reqOut, amountBasis };
-}
-
-/**
- * Coerce the `jsonb_agg(...)` bridge legs (already parsed to a JS array by the
- * pg driver) into typed `BridgeLegRow`s. Our own agent_activity rows, so the
- * shape is well-formed by construction; every leg is preserved (OWNER RULE —
- * no truncation). `null`/non-array (a swap row) → `null`.
- */
-function coerceLegs(raw: unknown): BridgeLegRow[] | null {
-  if (!Array.isArray(raw)) return null;
-  return raw.map((item) => {
-    const o = (item ?? {}) as Record<string, unknown>;
-    return {
-      eventIndex: num(o.eventIndex),
-      role: str(o.role),
-      chainId: num(o.chainId),
-      chainSlug: str(o.chainSlug),
-      chainFamily: str(o.chainFamily),
-      txHash: str(o.txHash),
-      status: str(o.status),
-      failureCode: str(o.failureCode),
-    };
-  });
-}
-
-function mapRow(r: Record<string, unknown>): TransactionRow {
-  const toolId = r.tool_id as string | null;
-
-  if (r.source === "failure") {
-    // Failure rows carry no per-leg economics. Derive the product from the
-    // allowlist (current + legacy — matches what the success half stores /
-    // what the tool used to store before deletion) so the model can group
-    // both halves by the same productType. Unknown tools fall back to "unknown".
-    const product = (toolId !== null && FAILURE_TOOL_PRODUCTS.get(toolId)) || "unknown";
-    return {
-      source: "failure",
-      id: Number(r.id),
-      namespace: r.namespace as string,
-      productType: product,
-      status: str(r.status) ?? "failed",
-      toolId,
-      durationMs: num(r.duration_ms),
-      protocolExecutionId: num(r.protocol_execution_id),
-      txHash: str(r.tx_hash),
-      createdAt: toIso(r.created_at),
-    };
-  }
-
-  if (r.source === "agent_activity") {
-    const status = r.status as string | null;
-    const isBridge = r.product_type === "bridge";
-    // Swaps use the C20 rule (confirmed→executed, pending→requested); bridges
-    // use the Q2 rule (executed-if-verified, else quoted-as-estimate).
-    const { inputAmount, outputAmount, amountBasis } = isBridge
-      ? deriveBridgeDisplayAmounts(
-          status,
-          str(r.amount_in_raw),
-          str(r.amount_out_raw),
-          str(r.executed_amount_in_raw),
-          str(r.executed_amount_out_raw),
-          num(r.token_in_decimals),
-          num(r.token_out_decimals),
-        )
-      : deriveDisplayAmounts(
-          status,
-          str(r.amount_in_raw),
-          str(r.amount_out_raw),
-          str(r.executed_amount_in_raw),
-          str(r.executed_amount_out_raw),
-          num(r.token_in_decimals),
-          num(r.token_out_decimals),
-        );
-    return {
-      source: "agent_activity",
-      id: Number(r.id),
-      namespace: r.namespace as string,
-      productType: r.product_type as string,
-      chain: str(r.chain),
-      inputToken: str(r.input_token),
-      inputAmount,
-      outputToken: str(r.output_token),
-      outputAmount,
-      amountBasis,
-      valueUsd: num(r.value_usd),
-      status,
-      failureCode: str(r.failure_code),
-      failureReason: str(r.failure_reason),
-      chainId: num(r.chain_id),
-      protocol: str(r.protocol),
-      protocolExecutionId: num(r.protocol_execution_id),
-      eventIndex: num(r.event_index),
-      eventRole: str(r.event_role),
-      tokenInAddress: str(r.token_in_address),
-      tokenInSymbol: str(r.token_in_symbol),
-      tokenInDecimals: num(r.token_in_decimals),
-      tokenOutAddress: str(r.token_out_address),
-      tokenOutSymbol: str(r.token_out_symbol),
-      tokenOutDecimals: num(r.token_out_decimals),
-      amountInHuman: str(r.amount_in_human),
-      amountInRaw: str(r.amount_in_raw),
-      amountOutHuman: str(r.amount_out_human),
-      amountOutRaw: str(r.amount_out_raw),
-      executedAmountInHuman: str(r.executed_amount_in_human),
-      executedAmountInRaw: str(r.executed_amount_in_raw),
-      executedAmountOutHuman: str(r.executed_amount_out_human),
-      executedAmountOutRaw: str(r.executed_amount_out_raw),
-      usdInEst: str(r.usd_in_est),
-      usdOutEst: str(r.usd_out_est),
-      usdFeeEst: str(r.usd_fee_est),
-      usdSource: str(r.usd_source),
-      fromChainId: isBridge ? num(r.from_chain_id) : null,
-      fromChainSlug: isBridge ? str(r.from_chain_slug) : null,
-      toChainId: isBridge ? num(r.to_chain_id) : null,
-      toChainSlug: isBridge ? str(r.to_chain_slug) : null,
-      chainFamily: isBridge ? str(r.chain_family) : null,
-      providerOrderId: isBridge ? str(r.provider_order_id) : null,
-      providerStatus: isBridge ? str(r.provider_status) : null,
-      legs: isBridge ? coerceLegs(r.legs) : null,
-      txHash: str(r.tx_hash),
-      createdAt: toIso(r.created_at),
-    };
-  }
-
-  return {
-    source: "success",
-    id: Number(r.id),
-    namespace: r.namespace as string,
-    productType: r.product_type as string,
-    tradeSide: str(r.trade_side),
-    chain: str(r.chain),
-    inputToken: str(r.input_token),
-    inputAmount: str(r.input_amount),
-    outputToken: str(r.output_token),
-    outputAmount: str(r.output_amount),
-    valueUsd: num(r.value_usd),
-    captureStatus: str(r.capture_status),
-    protocolExecutionId: num(r.protocol_execution_id),
-    txHash: str(r.tx_hash),
-    createdAt: toIso(r.created_at),
-  };
-}
-
-// TIMESTAMPTZ comes back as a Date (node-postgres) or a string; normalise to ISO.
-function toIso(value: unknown): string {
-  if (value instanceof Date) return value.toISOString();
-  return String(value);
 }

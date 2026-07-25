@@ -11,12 +11,16 @@ import type {
 import type { JupiterTokenSafety } from "../jupiter-tokens/types.js";
 
 export const JUPITER_SWAP_V2_BASE_URL = "https://api.jup.ag/swap/v2";
+/** Different host path prefix than swap (`tx/v1`, not `swap/v2`), same `api.jup.ag` domain. */
+export const JUPITER_TX_SUBMIT_BASE_URL = "https://api.jup.ag/tx/v1";
 
 export type JupiterSwapRouter = "iris" | "jupiterz" | "dflow" | "okx" | (string & {});
 export type JupiterSwapOrderMode = "ultra" | "manual" | (string & {});
 export type JupiterSwapBuildMode = "fast";
 export type JupiterSwapExactInMode = "ExactIn";
 export type JupiterSwapBroadcastFeeType = "maxCap" | "exactFee";
+/** `"medium"` (25th pct) / `"high"` (50th, default) / `"veryHigh"` (75th), or an explicit 0-10000 bps integer. */
+export type JupiterSwapComputeUnitPricePercentile = "medium" | "high" | "veryHigh" | number;
 
 export interface JupiterSwapRouteSwapInfo {
   ammKey: string;
@@ -125,6 +129,11 @@ export interface JupiterSwapBuildParams {
   destinationTokenAccount?: string;
   nativeDestinationAccount?: string;
   blockhashSlotsToExpiry?: number;
+  /** SOL tip in lamports; adds a `tipInstruction` to the response for `/tx/v1/submit`. */
+  tipAmount?: number;
+  computeUnitPricePercentile?: JupiterSwapComputeUnitPricePercentile;
+  /** Excludes DEXes incompatible with Jito bundles. */
+  forJitoBundle?: boolean;
 }
 
 export interface JupiterSwapBuildResponse {
@@ -135,12 +144,16 @@ export interface JupiterSwapBuildResponse {
   otherAmountThreshold: string;
   swapMode?: string;
   slippageBps?: number;
+  /** Live `/build` responses carry this alongside `/order`'s; undocumented on the `/build` reference page (DOCS-GAP). */
+  priceImpactPct?: string;
   routePlan: JupiterSwapRoutePlanStep[];
   computeBudgetInstructions: JupiterSwapInstruction[];
   setupInstructions: JupiterSwapInstruction[];
   swapInstruction: JupiterSwapInstruction;
   cleanupInstruction: JupiterSwapInstruction | null;
   otherInstructions: JupiterSwapInstruction[];
+  /** Present only when `tipAmount` was requested; `null` otherwise. */
+  tipInstruction?: JupiterSwapInstruction | null;
   addressesByLookupTableAddress?: Record<string, string[]> | null;
   blockhashWithMetadata?: JupiterSwapBuildBlockhashWithMetadata;
 }
@@ -158,6 +171,20 @@ export interface JupiterSwapExecuteResponse {
   inputAmountResult: string;
   outputAmountResult: string;
   error?: string;
+}
+
+/**
+ * `POST /tx/v1/submit` — submits ANY signed Solana transaction (not tied to a
+ * prior `/order`) through Jupiter's self-managed, tip-based landing pipeline.
+ * Distinct from `/execute`: `/build` output has no `requestId` and cannot use
+ * `/execute`, so a `/build`-assembled transaction must go through `/submit`.
+ */
+export interface JupiterSwapSubmitRequest {
+  signedTransaction: string;
+}
+
+export interface JupiterSwapSubmitResponse {
+  signature: string;
 }
 
 export interface JupiterSwapOrderOptions {
@@ -189,6 +216,9 @@ export interface JupiterSwapBuildOptions {
   destinationTokenAccount?: string;
   nativeDestinationAccount?: string;
   blockhashSlotsToExpiry?: number;
+  tipAmount?: number;
+  computeUnitPricePercentile?: JupiterSwapComputeUnitPricePercentile;
+  forJitoBundle?: boolean;
 }
 
 /**

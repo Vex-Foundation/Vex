@@ -39,17 +39,15 @@ export async function captureExecution(
 
   // Agent Scan (plan §11.1 step 4): a handler that already created its OWN
   // `protocol_executions` intent row BEFORE broadcasting (the Kyber/Uniswap
-  // execute handlers, mirroring the Hyperliquid `intentExecutionId` pattern)
-  // embeds that id as `_executionId` on the returned ToolResult.data — the
-  // SAME underscore-prefixed internal-metadata convention as `_tradeCapture`.
-  // Reusing it here (exactly like the explicit `existingExecutionId` param)
-  // keeps post-handler capture from creating a SECOND audit row for the same
-  // attempt.
+  // execute handlers) embeds that id as `_executionId` on the returned
+  // ToolResult.data — the SAME underscore-prefixed internal-metadata
+  // convention as `_tradeCapture`. Reusing it here (exactly like the explicit
+  // `existingExecutionId` param) keeps post-handler capture from creating a
+  // SECOND audit row for the same attempt.
   //
   // PROVENANCE CHECK (FIX-SPINE round 1, finding 13/C10): unlike
-  // `existingExecutionId` (a trusted internal call parameter — the runtime
-  // itself computed it, e.g. for Hyperliquid), `_executionId` arrives on an
-  // OPEN result payload a handler constructs, so it is untrusted input. It is
+  // `existingExecutionId` (a trusted internal call parameter the runtime
+  // itself computes before invoking a handler), `_executionId` arrives on an
   // adopted ONLY when the referenced `protocol_executions` row's own
   // `tool_id`/`namespace` match the tool CURRENTLY executing — a mismatch
   // (or a missing row) is logged and this capture falls through to creating
@@ -122,19 +120,6 @@ export async function captureExecution(
       });
     }
   }
-}
-
-/** Insert the Hyperliquid audit record before the handler can reach signing. */
-export async function createHyperliquidExecutionIntent(
-  toolId: string,
-  namespace: string,
-  sessionId: string | null,
-  params: Record<string, unknown>,
-): Promise<number> {
-  const { createExecutionIntent } = await import("@vex-agent/db/repos/executions.js");
-  const executionId = await createExecutionIntent(toolId, namespace, sessionId, sanitizeRecord(params));
-  if (executionId <= 0) throw new Error("durable intent insert returned no execution id");
-  return executionId;
 }
 
 // populateCaptureItems moved to capture-pipeline.ts (shared with replay.ts)

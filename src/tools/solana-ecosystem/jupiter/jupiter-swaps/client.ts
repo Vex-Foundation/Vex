@@ -11,18 +11,22 @@ import type {
   JupiterSwapExecuteResponse,
   JupiterSwapOrderParams,
   JupiterSwapOrderResponse,
+  JupiterSwapSubmitRequest,
+  JupiterSwapSubmitResponse,
 } from "./types.js";
-import { JUPITER_SWAP_V2_BASE_URL } from "./types.js";
+import { JUPITER_SWAP_V2_BASE_URL, JUPITER_TX_SUBMIT_BASE_URL } from "./types.js";
 import {
   jupiterSwapBuildResponseSchema,
   jupiterSwapExecuteResponseSchema,
   jupiterSwapOrderResponseSchema,
+  jupiterSwapSubmitResponseSchema,
 } from "./schemas.js";
 import {
   getJupiterSwapHeaders,
   normalizeBuildQueryParams,
   normalizeOrderQueryParams,
   validateJupiterSwapExecuteRequest,
+  validateJupiterSwapSubmitRequest,
 } from "./validation.js";
 
 function toQueryString(query: Record<string, string>): string {
@@ -60,5 +64,28 @@ export async function jupiterSwapExecute(
       body: JSON.stringify(request),
     },
     jupiterSwapExecuteResponseSchema,
+  );
+}
+
+/**
+ * `POST /tx/v1/submit` — self-managed landing pipeline for any signed
+ * transaction (not just `/order`/`/build` output). No handler/manifest wires
+ * this yet: the Router (`/build`) path has no agent entry point today, and
+ * `/submit` only has a purpose once `/build` does (its output cannot use
+ * `/execute`, which requires a `requestId`).
+ */
+export async function jupiterSwapSubmit(
+  request: JupiterSwapSubmitRequest,
+): Promise<JupiterSwapSubmitResponse> {
+  validateJupiterSwapSubmitRequest(request);
+
+  return fetchJson<JupiterSwapSubmitResponse>(
+    `${JUPITER_TX_SUBMIT_BASE_URL}/submit`,
+    {
+      method: "POST",
+      headers: getJupiterSwapHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(request),
+    },
+    jupiterSwapSubmitResponseSchema,
   );
 }

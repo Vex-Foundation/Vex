@@ -125,6 +125,37 @@ describe("pendle.yt.quote — instrument guard", () => {
     expect(data.instrument).toBe("yt");
   });
 
+  // 2026-07-25 restoration: `PendleConvertRouteData.feeUsd` was validated and
+  // dropped at every quote/dryRun site while its sibling `priceImpact` was
+  // surfaced — the route's own fee estimate never reached the agent.
+  it("surfaces the route's feeUsdEstimate next to priceImpact", async () => {
+    mockResolveMarketByYt.mockImplementation(async (_chainId: unknown, addr: unknown) =>
+      String(addr).toLowerCase() === YT ? MARKET : null,
+    );
+    mockConvert.mockResolvedValue({
+      ...CONVERT_OK,
+      routes: [{
+        ...CONVERT_OK.routes[0],
+        data: { aggregatorType: "KYBERSWAP", priceImpact: 0.0001, feeUsd: 0.37 },
+      }],
+    });
+
+    const res = await PENDLE_YT_HANDLERS["pendle.yt.quote"]!(params, ctx);
+
+    expect(res.success).toBe(true);
+    const data = res.data as Record<string, unknown>;
+    expect(data.feeUsdEstimate).toBe(0.37);
+    expect(data.priceImpact).toBe(0.0001);
+  });
+
+  it("reports feeUsdEstimate as null when Pendle quoted no fee", async () => {
+    mockResolveMarketByYt.mockImplementation(async (_chainId: unknown, addr: unknown) =>
+      String(addr).toLowerCase() === YT ? MARKET : null,
+    );
+    const res = await PENDLE_YT_HANDLERS["pendle.yt.quote"]!(params, ctx);
+    expect((res.data as Record<string, unknown>).feeUsdEstimate).toBeNull();
+  });
+
   it("resolves the sell direction when only the IN leg is a YT", async () => {
     mockResolveMarketByYt.mockImplementation(async (_chainId: unknown, addr: unknown) =>
       String(addr).toLowerCase() === YT ? MARKET : null,

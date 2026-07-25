@@ -309,7 +309,7 @@ describe("bridge repo — markActivitySolanaBroadcast (B1 nonce matrix, coordina
     return result;
   }
 
-  it("stages a base58 signature on a Solana leg with nonce NULL", async () => {
+  it("stages a base58 signature + blockhash evidence on a Solana leg with nonce NULL (W5 §2/R2b)", async () => {
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
     const result = await createSolanaOriginIntent(repo);
     if (result.outcome !== "created") throw new Error("unreachable");
@@ -317,17 +317,23 @@ describe("bridge repo — markActivitySolanaBroadcast (B1 nonce matrix, coordina
 
     const staged = await repo.markActivitySolanaBroadcast(solanaLeg.id, {
       txHash: "5VfYtdmEZ9kQqvL1Sig58Base58Sig", fromAddress: "SoLFromAddr1111111111111111111111111111111",
+      recentBlockhash: "FreshBlockhash1111111111111111111111111111", lastValidBlockHeight: 123456789,
     });
     expect(staged.applied).toBe(true);
     expect(staged.row?.txHash).toBe("5VfYtdmEZ9kQqvL1Sig58Base58Sig");
     expect(staged.row?.nonce).toBeNull();
+    // The evidence pair is set atomically in the SAME CAS write (no second write).
+    expect(staged.row?.recentBlockhash).toBe("FreshBlockhash1111111111111111111111111111");
+    expect(staged.row?.lastValidBlockHeight).toBe(123456789);
 
     // Second stage attempt: CAS miss (tx_hash already set), never overwrite.
     const again = await repo.markActivitySolanaBroadcast(solanaLeg.id, {
       txHash: "OtherSig", fromAddress: "SoLFromAddr1111111111111111111111111111111",
+      recentBlockhash: "OtherBlockhash11111111111111111111111111111", lastValidBlockHeight: 999,
     });
     expect(again.applied).toBe(false);
     expect(again.row?.txHash).toBe("5VfYtdmEZ9kQqvL1Sig58Base58Sig");
+    expect(again.row?.recentBlockhash).toBe("FreshBlockhash1111111111111111111111111111");
   });
 
   it("refuses the Solana CAS on an EVM-family row (predicate miss, no write)", async () => {
@@ -338,6 +344,7 @@ describe("bridge repo — markActivitySolanaBroadcast (B1 nonce matrix, coordina
 
     const staged = await repo.markActivitySolanaBroadcast(evmLeg.id, {
       txHash: "5NotAllowedOnEvm", fromAddress: "SoLFromAddr1111111111111111111111111111111",
+      recentBlockhash: "FreshBlockhash1111111111111111111111111111", lastValidBlockHeight: 123456789,
     });
     expect(staged.applied).toBe(false);
     expect(staged.row?.txHash).toBeNull();

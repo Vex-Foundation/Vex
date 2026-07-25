@@ -81,12 +81,6 @@ export function getErrorCopy(
       return {
         message: "Master password is not configured. Complete setup first.",
       };
-    case "wallet.risk_confirmation_required":
-      // Workflow-control code — callers should branch on this BEFORE calling
-      // the helper (e.g. a Hyperliquid policy-loosening confirm modal bubbles
-      // up to ConfirmModal). Fallback message is used only if the caller
-      // forgot to special-case.
-      return { message: "Risk confirmation required." };
     case "provider.unavailable":
       return {
         message: "The connected provider is temporarily unavailable. Try again in a moment.",

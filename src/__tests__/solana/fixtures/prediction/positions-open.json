@@ -1,0 +1,100 @@
+{
+  "data": [
+    {
+      "pubkey": "hTwfKXXMToHTbyDMB5ssHVsFTMX7fXMqRKwbb73smhdZ",
+      "owner": "mo1HTVV7PFHRB9MMRfooyP3umjq77B1yPXo15uBhHZwd",
+      "market": "bVjuZPXMbHVsoKVHouFDo1myHDZZKhMMbDdwDhhdHXKZ",
+      "marketId": "POLY-1654958",
+      "marketIdHash": "MuX3wKsofhZ7j7R5juTbPDhHPPhV59ym",
+      "isYes": true,
+      "contracts": "6",
+      "contractsMicro": "6400000",
+      "contractsDecimal": "6.4",
+      "totalCostUsd": "4665593",
+      "openOrders": 0,
+      "feesPaidUsd": "63280",
+      "realizedPnlUsd": 0,
+      "claimed": false,
+      "claimedUsd": "0",
+      "openedAt": 1784951134,
+      "updatedAt": 1784951134,
+      "bump": 254,
+      "ownerPubkey": "mo1HTVV7PFHRB9MMRfooyP3umjq77B1yPXo15uBhHZwd",
+      "eventId": "POLY-287395",
+      "sizeUsd": "4665593",
+      "valueUsd": "4678400",
+      "avgPriceUsd": "728998",
+      "markPriceUsd": "731000",
+      "maxSlippageBps": 2500,
+      "pnlUsd": "12807",
+      "pnlUsdPercent": 0.27,
+      "pnlUsdAfterFees": "-50473",
+      "pnlUsdAfterFeesPercent": -1.06,
+      "eventMetadata": {
+        "eventId": "POLY-287395",
+        "title": "Fed Decision in July?",
+        "subtitle": "",
+        "isActive": true,
+        "beginAt": null,
+        "category": "economics",
+        "subcategory": "",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/jerome+powell+glasses1.png",
+        "isLive": false,
+        "closeCondition": "",
+        "tags": [
+          "fomc",
+          "economic-policy",
+          "economy",
+          "jerome-powell",
+          "fed",
+          "fed-rates",
+          "politics",
+          "economics",
+          "finance",
+          "cpi-release"
+        ],
+        "closeTime": 1785283200
+      },
+      "marketMetadata": {
+        "marketId": "POLY-1654958",
+        "eventId": "POLY-287395",
+        "provider": "polymarket",
+        "title": "No change",
+        "subtitle": "No change",
+        "description": "No change",
+        "status": "open",
+        "result": null,
+        "closeTime": 1785283200,
+        "openTime": 1773965564,
+        "isTeamMarket": false,
+        "sportsLine": null,
+        "providerSportsLine": null,
+        "sportsMarketType": null,
+        "gameNumber": null,
+        "marketOptions": [
+          {
+            "label": "Yes",
+            "buyYes": true
+          },
+          {
+            "label": "No",
+            "buyYes": false
+          }
+        ]
+      },
+      "claimable": false,
+      "claimableAt": null,
+      "payoutUsd": "6400000",
+      "settlementDate": 1785283200,
+      "sellPriceUsd": "731000",
+      "integratorFeeUsd": "0",
+      "source": "program"
+    }
+  ],
+  "pagination": {
+    "start": 0,
+    "end": 1,
+    "total": 1,
+    "hasNext": false
+  }
+}

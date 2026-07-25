@@ -78,8 +78,9 @@ describe("signer import allowlist", () => {
   });
 
   it("protocol manifest actionKinds stay within the deny-covered census", () => {
-    // "local_write" reviewed for hyperliquid.risk.proposeSetup (HL Phase 4a):
-    // writes a local session-policy proposal row only — no signing, no provider call.
+    // "local_write" is allowed for a tool that changes local state only — no
+    // signing, no provider call, no approval. Currently unused by any live
+    // manifest; kept as a reviewed, allowed kind for the next tool that needs it.
     const allowedKinds = new Set(["read", "user_wallet_broadcast", "external_post", "local_write"]);
     const seen = new Set<string>();
     for (const file of walk(join(TOOLS_DIR, "protocols"))) {

@@ -32,9 +32,13 @@
  * `failureCode` and a chain+txHash pair the renderer resolves to an
  * explorer link via the existing `explorerTxUrl` (unchanged — the derived
  * `chain` column already carries what that helper expects). ONLY the
- * `event_role = 'swap'` row of an execution is surfaced — the
- * `allowance_reset`/`allowance` rows are approval plumbing with no
+ * `event_role = 'swap'` row of an execution is surfaced for `kind = 'swap'` —
+ * the `allowance_reset`/`allowance` rows are approval plumbing with no
  * meaningful IN→OUT legs and would read as a confusing "trade" if shown.
+ * `kind = 'lend'`/`'prediction'` rows (migration 049, W5 — Jupiter Lend
+ * deposit/withdraw, Jupiter Perp prediction buy/sell/claim/close) have no
+ * such sub-events — Solana carries no allowance legs — so EVERY row of those
+ * kinds is its own move, mapped to `productType: "lend"` / `"prediction"`.
  *
  * DEDUPE (mirrors the engine feed's semantics): the two sources cannot
  * naturally overlap by construction — the unified `kyberswap.swap.execute` /
@@ -53,10 +57,15 @@
  * `COALESCE(executed_human, requested_human)` would silently show the wrong
  * value for any row confirmed via repair. `resolveAgentActivityAmount`
  * (`./agent-activity-amount.js`, shared with `token-history-db.ts`) picks
- * the one honest value per status: `confirmed` → computed from
- * `executed_amount_*_raw` + `token_*_decimals` (BigInt-safe, via `viem`'s
- * `formatUnits` — never `Number` on a wei-scale string); `pending` → the
- * requested echo (nothing has settled yet); anything else (`failed`) → none.
+ * the one honest value per status for a PLAIN SWAP: `confirmed` → computed
+ * from `executed_amount_*_raw` + `token_*_decimals` (BigInt-safe, via
+ * `viem`'s `formatUnits` — never `Number` on a wei-scale string); `pending` →
+ * the requested echo (nothing has settled yet); anything else (`failed`) →
+ * none. BRIDGE rows (Q2) and W5 `lend`/`prediction` rows (design REVISION 1
+ * R3/R5) instead use `resolveAmountWithEstimateBasis`, which additionally
+ * falls back to the quoted amount labelled `amountBasis: "estimated"` for a
+ * confirmed-but-undecoded row, rather than going blank — see that function's
+ * own doc comment for why plain swaps do not need this fallback.
  *
  * STRICT PER-SESSION attribution differs by source (no execution_id/session
  * join needed for the new half — `agent_activity` carries both columns
@@ -128,203 +137,26 @@
  *    below).
  *  - logging records sessionId + the row COUNT only; NEVER raw addresses,
  *    USD figures, token symbols, or tx hashes.
+ *
+ * Internals split into siblings (Card C5, move-only, once this file crossed
+ * the repo's 500-line cap): `moves-db-types.ts` (the `MoveRow` shape),
+ * `moves-db-query.ts` (connection helpers + the two SQL-half builders),
+ * `moves-db-mappers.ts` (row → `MoveItem` mapping). This file stays the
+ * public gate — `getMovesForSession` is the only export.
  */
 
-import { Client, type ClientConfig } from "pg";
-import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
-import {
-  MOVES_MAX,
-  MOVE_TOKEN_SYMBOL_MAX,
-  type MoveItem,
-  type MovesDto,
-} from "@shared/schemas/portfolio-moves.js";
-import { coerceBridgeLegs } from "@shared/schemas/bridge-legs.js";
-import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
-import {
-  resolveAgentActivityAmount,
-  resolveBridgeActivityAmount,
-} from "./agent-activity-amount.js";
-import { getSessionWalletScope } from "./sessions-db.js";
-import { buildPoolConfig } from "./db-config.js";
+import { ok, type Result, type VexError } from "@shared/ipc/result.js";
+import { MOVES_MAX, type MovesDto } from "@shared/schemas/portfolio-moves.js";
 import { log } from "../logger/index.js";
-
-const CONNECT_TIMEOUT_MS = 2_000;
-const QUERY_TIMEOUT_MS = 5_000;
-
-// `correlationId` intentionally omitted; `registerHandler` stamps
-// `ctx.requestId` downstream. Domain is `portfolio` (MOVES reuses the
-// portfolio VexDomain — no separate `moves` domain). Mirrors `portfolio-db.ts`.
-function dbUnavailable(): Result<never, VexError> {
-  return err({
-    code: "internal.unexpected",
-    domain: "portfolio",
-    message: "Database unavailable. Verify services are running and retry.",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-  });
-}
-
-function dbError(reason: string, cause?: unknown): Result<never, VexError> {
-  log.warn(`[moves-db] ${reason}`, cause);
-  return err({
-    code: "internal.unexpected",
-    domain: "portfolio",
-    message: "Unable to load moves.",
-    retryable: true,
-    userActionable: false,
-    redacted: true,
-  });
-}
-
-async function withClient<T>(
-  fn: (client: Client) => Promise<Result<T, VexError>>,
-): Promise<Result<T, VexError>> {
-  let cfg: Awaited<ReturnType<typeof buildPoolConfig>>;
-  try {
-    cfg = await buildPoolConfig();
-  } catch (cause) {
-    log.warn("[moves-db] buildPoolConfig threw", cause);
-    return dbUnavailable();
-  }
-  if (cfg === null) return dbUnavailable();
-
-  const clientConfig: ClientConfig = {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    password: cfg.password,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: QUERY_TIMEOUT_MS,
-  };
-  const client = new Client(clientConfig);
-  try {
-    await client.connect();
-  } catch (cause) {
-    log.warn("[moves-db] client.connect failed", cause);
-    return dbUnavailable();
-  }
-  try {
-    return await fn(client);
-  } finally {
-    try {
-      await client.end();
-    } catch (cause) {
-      log.warn("[moves-db] client.end failed (non-fatal)", cause);
-    }
-  }
-}
-
-interface MoveRow {
-  readonly id: number | string;
-  readonly trade_side: string | null;
-  readonly product_type: string | null;
-  readonly venue: string | null;
-  readonly input_token: string | null;
-  readonly input_token_symbol: string | null;
-  readonly input_token_local_symbol: string | null;
-  readonly input_amount: string | null;
-  readonly output_token: string | null;
-  readonly output_token_symbol: string | null;
-  readonly output_token_local_symbol: string | null;
-  readonly output_amount: string | null;
-  readonly value_usd: number | string | null;
-  readonly capture_status: string | null;
-  readonly instrument_key: string | null;
-  readonly chain: string;
-  readonly tx_ref: string | null;
-  readonly wallet_address: string | null;
-  readonly created_at: string | Date;
-  /** 'success' (legacy proj_activity) | 'agent_activity' (new-format truth). */
-  readonly source: string;
-  /** agent_activity only — already collapsed to the DTO's 3-value vocabulary in SQL. */
-  readonly status: string | null;
-  /** agent_activity only — the closed failure_code enum. */
-  readonly failure_code: string | null;
-  /** agent_activity only — receipt-derived EXECUTED leg, raw base-unit integer text (C20). */
-  readonly executed_amount_in_raw: string | null;
-  readonly executed_amount_out_raw: string | null;
-  /** agent_activity only — token decimals, needed to format the raw executed amount. */
-  readonly token_in_decimals: number | null;
-  readonly token_out_decimals: number | null;
-  /**
-   * agent_activity BRIDGE logical row only (`kind = 'bridge'`) — the route
-   * endpoints for from→to display; `chain` (above) stays the leg's own
-   * execution chain (the destination, where the fill hash lives). `null` on a
-   * swap / legacy row.
-   */
-  readonly from_chain: string | null;
-  readonly to_chain: string | null;
-  /** agent_activity BRIDGE logical row only — provider order id; `null` otherwise. */
-  readonly provider_order_id: string | null;
-  /**
-   * agent_activity BRIDGE logical row only — `jsonb_agg(...)` of every sibling
-   * leg (already parsed to a JS array by node-postgres), or `null` for a
-   * swap/legacy row. Coerced via `coerceBridgeLegs`.
-   */
-  readonly legs: unknown;
-  /**
-   * agent_activity only — last SUCCESSFUL sweep check (`last_checked_at`),
-   * surfaced on the DTO for BRIDGE logical rows only (R12 tracking-delay);
-   * `null`/absent on legacy rows. `Date`/string per node-postgres.
-   */
-  readonly last_checked_at: string | Date | null;
-}
-
-/**
- * `value_usd` (`NUMERIC`) comes back from `pg` as a string or number. Coerce
- * to a finite JS number, preserving the "absent" distinction as `null` (no
- * fabricated 0 — the column is genuinely nullable when the engine could not
- * price the trade).
- */
-function toNumberOrNull(value: number | string | null): number | null {
-  if (value === null) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/** TIMESTAMPTZ comes back as a Date (node-postgres) or string; normalise to ISO. */
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-const MOVE_STATUSES = ["pending", "confirmed", "failed"] as const;
-type MoveStatus = (typeof MOVE_STATUSES)[number];
-
-/**
- * Narrow the SQL-collapsed `agent_activity` status string to the DTO's closed
- * vocabulary. `null` (the legacy `proj_activity` half, which has no status
- * concept) stays `null`; an unrecognized value fails closed to `null` rather
- * than risking an output-schema parse failure on a future enum drift.
- */
-function toMoveStatus(value: string | null): MoveStatus | null {
-  // Tolerate the raw DB value too — the SQL CASE collapses
-  // `definitively_failed` → `failed`, but the mapper must not depend on it
-  // (defense in depth against a future half added without the CASE).
-  if (value === "definitively_failed") return "failed";
-  return value !== null && (MOVE_STATUSES as readonly string[]).includes(value)
-    ? (value as MoveStatus)
-    : null;
-}
-
-/**
- * Resolve the session's wallet address allow-list (raw strings, NO lowercasing
- * so the `proj_activity.wallet_address` filter matches the engine's stored
- * form). A failed scope read propagates as an error (fail closed); an empty
- * scope resolves to `[]` (→ empty DTO before SQL).
- */
-async function resolveSessionAddresses(
-  sessionId: string,
-): Promise<Result<readonly string[], VexError>> {
-  const scope = await getSessionWalletScope(sessionId);
-  if (!scope.ok) return scope;
-  const addrs = [scope.data.evm?.address, scope.data.solana?.address].filter(
-    (a): a is string => typeof a === "string",
-  );
-  return ok([...new Set(addrs)]);
-}
+import { mapMoveRow } from "./moves-db-mappers.js";
+import {
+  buildAgentActivityMovesHalf,
+  buildLegacyMovesHalf,
+  dbError,
+  resolveSessionAddresses,
+  withClient,
+} from "./moves-db-query.js";
+import type { MoveRow } from "./moves-db-types.js";
 
 /**
  * Read the session's executed-trade MOVES, newest first.
@@ -354,271 +186,16 @@ export async function getMovesForSession(
 
   return withClient(async (client) => {
     try {
-      // STRICT PER-SESSION attribution. INNER JOIN protocol_executions on
-      // execution_id and filter session_id = $2:
-      //  - the INNER JOIN drops rows with a NULL execution_id (never a session);
-      //  - session_id = $2 drops rows whose execution belongs to another
-      //    session OR carries a NULL session_id (both comparisons evaluate to
-      //    UNKNOWN → excluded). Fail-closed: externally-detected / historical
-      //    activity without a matching session execution never leaks in.
-      // The wallet_address filter is KEPT as defense-in-depth (never omitted).
-      // Columns are qualified with the `a` alias because proj_activity and
-      // protocol_executions share `id`, `created_at`, and `external_refs`.
-      // The LEFT JOIN to protocol_capture_items resolves the EXACT capture
-      // item for this activity row (batch captures produce N items per
-      // execution) — both `capture_item_id` AND `execution_id` must match,
-      // so a row can never pick up a sibling execution's capture item. The
-      // symbol CASE expressions extract ONLY string-typed, length-bounded
-      // scalars from `trade_capture`; the raw JSONB itself never leaves SQL.
-      // The two `input_token_local_symbol`/`output_token_local_symbol` scalar
-      // AGGREGATE subqueries resolve a FALLBACK display symbol from THIS
-      // WALLET's own `proj_balances` (used when the capture item recorded no
-      // symbol — legacy raw-address rows). Each is a single bounded value per
-      // row (no JOIN fan-out) AND deterministic: `MIN(...)` guarded by
-      // `HAVING COUNT(DISTINCT token_symbol) = 1` declines when the same
-      // address carries different symbols across chains — see the docblock.
-      // NOT EXISTS (agent_activity …) is the defensive dedupe guard described
-      // in the module header — a no-op today (capture:"none" means the two
-      // sources never share an execution id) but mirrors the engine feed's
-      // own belt-and-suspenders posture.
-      const legacyHalf = `
-        SELECT a.id,
-               a.trade_side,
-               a.product_type,
-               a.namespace AS venue,
-               a.input_token,
-               CASE
-                 WHEN jsonb_typeof(ci.trade_capture->'inputToken') = 'string'
-                  AND char_length(ci.trade_capture->>'inputToken')
-                      BETWEEN 1 AND ${MOVE_TOKEN_SYMBOL_MAX}
-                 THEN LEFT(ci.trade_capture->>'inputToken', ${MOVE_TOKEN_SYMBOL_MAX})
-                 ELSE NULL
-               END AS input_token_symbol,
-               (SELECT LEFT(MIN(b.token_symbol), ${MOVE_TOKEN_SYMBOL_MAX})
-                  FROM proj_balances b
-                 WHERE b.wallet_address = a.wallet_address
-                   AND b.token_address = a.input_token
-                   AND b.token_symbol IS NOT NULL
-                HAVING COUNT(DISTINCT b.token_symbol) = 1)
-                 AS input_token_local_symbol,
-               a.input_amount,
-               a.output_token,
-               CASE
-                 WHEN jsonb_typeof(ci.trade_capture->'outputToken') = 'string'
-                  AND char_length(ci.trade_capture->>'outputToken')
-                      BETWEEN 1 AND ${MOVE_TOKEN_SYMBOL_MAX}
-                 THEN LEFT(ci.trade_capture->>'outputToken', ${MOVE_TOKEN_SYMBOL_MAX})
-                 ELSE NULL
-               END AS output_token_symbol,
-               (SELECT LEFT(MIN(b.token_symbol), ${MOVE_TOKEN_SYMBOL_MAX})
-                  FROM proj_balances b
-                 WHERE b.wallet_address = a.wallet_address
-                   AND b.token_address = a.output_token
-                   AND b.token_symbol IS NOT NULL
-                HAVING COUNT(DISTINCT b.token_symbol) = 1)
-                 AS output_token_local_symbol,
-               a.output_amount,
-               a.value_usd,
-               a.capture_status,
-               a.instrument_key,
-               a.chain,
-               COALESCE(a.external_refs->>'txHash', a.external_refs->>'signature')
-                 AS tx_ref,
-               a.wallet_address,
-               a.created_at,
-               'success'::text AS source,
-               NULL::text AS status,
-               NULL::text AS failure_code,
-               NULL::text AS executed_amount_in_raw,
-               NULL::text AS executed_amount_out_raw,
-               NULL::smallint AS token_in_decimals,
-               NULL::smallint AS token_out_decimals,
-               NULL::text AS from_chain,
-               NULL::text AS to_chain,
-               NULL::text AS provider_order_id,
-               NULL::jsonb AS legs,
-               NULL::timestamptz AS last_checked_at
-          FROM proj_activity a
-          JOIN protocol_executions e ON e.id = a.execution_id
-          LEFT JOIN protocol_capture_items ci
-            ON ci.id = a.capture_item_id
-           AND ci.execution_id = a.execution_id
-         WHERE a.wallet_address = ANY($1::text[])
-           AND e.session_id = $2
-           AND NOT EXISTS (
-             SELECT 1 FROM agent_activity aa
-              WHERE aa.protocol_execution_id = e.id
-           )`;
-
-      // agent_activity half: the swap row (`event_role = 'swap'`) OR a bridge's
-      // LOGICAL row (`event_role = 'bridge_fill_expected'`, migration 045) —
-      // allowance_reset/allowance/deposit/observed-fill/refund rows are
-      // execution detail, surfaced only inside `legs` (below), never as their
-      // own ledger row. `product_type` derives from `kind` ('bridge' → the
-      // BRIDGE chip; else 'spot'). For a bridge logical row `chain` is the
-      // leg's OWN execution chain (the DESTINATION, where the fill hash lives,
-      // so `explorerTxUrl(chain, tx_ref)` resolves), while `from_chain`/
-      // `to_chain` carry the route endpoints for from→to display.
-      // `input_amount`/`output_amount` here are ONLY the quote-time REQUESTED
-      // echo — the JS mapper (`resolveAgentActivityAmount` for swaps / C20,
-      // `resolveBridgeActivityAmount` for bridges / Q2) decides per-row whether
-      // to show that or the raw-computed EXECUTED amount (never COALESCE'd in
-      // SQL). `status` collapses the 3-value DB enum to `pending | confirmed |
-      // failed` here so the JS mapper stays a plain pass-through. `legs`
-      // aggregates EVERY sibling leg of a bridge execution (deposit/allowances/
-      // the canonical expected fill/extra fills/refunds) — NEVER truncated
-      // (OWNER RULE): jsonb_agg has no LIMIT.
-      const agentActivityHalf = `
-        SELECT aa.id,
-               NULL::text AS trade_side,
-               CASE aa.kind WHEN 'bridge' THEN 'bridge' ELSE 'spot' END AS product_type,
-               aa.protocol AS venue,
-               aa.token_in_address AS input_token,
-               aa.token_in_symbol AS input_token_symbol,
-               NULL::text AS input_token_local_symbol,
-               aa.amount_in_human AS input_amount,
-               aa.token_out_address AS output_token,
-               aa.token_out_symbol AS output_token_symbol,
-               NULL::text AS output_token_local_symbol,
-               aa.amount_out_human AS output_amount,
-               COALESCE(aa.usd_out_est, aa.usd_in_est) AS value_usd,
-               NULL::text AS capture_status,
-               NULL::text AS instrument_key,
-               COALESCE(aa.chain_slug, aa.chain_id::text) AS chain,
-               aa.tx_hash AS tx_ref,
-               aa.wallet_address,
-               aa.created_at,
-               'agent_activity'::text AS source,
-               CASE aa.status
-                 WHEN 'definitively_failed' THEN 'failed'
-                 ELSE aa.status
-               END AS status,
-               aa.failure_code,
-               aa.executed_amount_in_raw,
-               aa.executed_amount_out_raw,
-               aa.token_in_decimals,
-               aa.token_out_decimals,
-               CASE WHEN aa.kind = 'bridge'
-                 THEN COALESCE(aa.from_chain_slug, aa.from_chain_id::text) END AS from_chain,
-               CASE WHEN aa.kind = 'bridge'
-                 THEN COALESCE(aa.to_chain_slug, aa.to_chain_id::text) END AS to_chain,
-               aa.provider_order_id,
-               CASE WHEN aa.kind = 'bridge' THEN (
-                 SELECT jsonb_agg(jsonb_build_object(
-                   'role', leg.event_role,
-                   'chainId', leg.chain_id,
-                   'chainFamily', leg.chain_family,
-                   'txHash', leg.tx_hash,
-                   'status', CASE leg.status WHEN 'definitively_failed' THEN 'failed' ELSE leg.status END,
-                   'failureCode', leg.failure_code
-                 ) ORDER BY leg.event_index)
-                 FROM agent_activity leg
-                 WHERE leg.protocol_execution_id = aa.protocol_execution_id
-               ) END AS legs,
-               -- R12: last SUCCESSFUL sweep check of a pending bridge's order
-               -- status (surfaced for bridge logical rows only in the mapper).
-               aa.last_checked_at
-          FROM agent_activity aa
-         WHERE aa.wallet_address = ANY($1::text[])
-           AND aa.session_id = $2
-           AND aa.event_role IN ('swap', 'bridge_fill_expected')`;
-
       const result = await client.query<MoveRow>(
-        `${legacyHalf}
+        `${buildLegacyMovesHalf()}
           UNION ALL
-          ${agentActivityHalf}
+          ${buildAgentActivityMovesHalf()}
           ORDER BY created_at DESC, id DESC
           LIMIT ${MOVES_MAX}`,
         [addrParam, sessionId],
       );
 
-      const moves: MovesDto = result.rows.map((row) => {
-        const isAgentActivity = row.source === "agent_activity";
-        // `product_type` is computed in SQL ('bridge' iff the row is a bridge
-        // logical row, else 'spot'); the legacy half echoes proj_activity's
-        // own product_type, which for a legacy bridge is also 'bridge' — so
-        // the BRIDGE amount rule applies ONLY to the agent_activity half.
-        const isBridge = isAgentActivity && row.product_type === "bridge";
-        const moveStatus = toMoveStatus(row.status);
-
-        // Amount honesty by source:
-        //  - agent_activity SWAP (C20): status-driven — never a blind COALESCE;
-        //  - agent_activity BRIDGE (Q2): executed when independently verified,
-        //    else the quoted amount shown explicitly as an estimate;
-        //  - legacy `success`: its own column IS the fill (unambiguous).
-        let inputAmount: string | null;
-        let outputAmount: string | null;
-        let amountBasis: MoveItem["amountBasis"] = null;
-        if (isBridge) {
-          const inRes = resolveBridgeActivityAmount(
-            moveStatus,
-            row.input_amount,
-            row.executed_amount_in_raw,
-            row.token_in_decimals,
-          );
-          const outRes = resolveBridgeActivityAmount(
-            moveStatus,
-            row.output_amount,
-            row.executed_amount_out_raw,
-            row.token_out_decimals,
-          );
-          inputAmount = inRes.value;
-          outputAmount = outRes.value;
-          // executed_* are populated together (B4), so the two bases agree in
-          // practice; prefer the output (destination-fill) basis, then input.
-          amountBasis = outRes.basis ?? inRes.basis;
-        } else if (isAgentActivity) {
-          inputAmount = resolveAgentActivityAmount(
-            moveStatus,
-            row.input_amount,
-            row.executed_amount_in_raw,
-            row.token_in_decimals,
-          );
-          outputAmount = resolveAgentActivityAmount(
-            moveStatus,
-            row.output_amount,
-            row.executed_amount_out_raw,
-            row.token_out_decimals,
-          );
-        } else {
-          inputAmount = row.input_amount;
-          outputAmount = row.output_amount;
-        }
-
-        return {
-          id: `${row.source}:${row.id}`,
-          source: isAgentActivity ? "agent_activity" : "success",
-          tradeSide: row.trade_side,
-          productType: row.product_type,
-          venue: row.venue,
-          inputToken: row.input_token,
-          inputTokenSymbol: sanitizeTokenSymbol(row.input_token_symbol),
-          inputTokenLocalSymbol: sanitizeTokenSymbol(row.input_token_local_symbol),
-          inputAmount,
-          outputToken: row.output_token,
-          outputTokenSymbol: sanitizeTokenSymbol(row.output_token_symbol),
-          outputTokenLocalSymbol: sanitizeTokenSymbol(row.output_token_local_symbol),
-          outputAmount,
-          valueUsd: toNumberOrNull(row.value_usd),
-          captureStatus: row.capture_status,
-          status: moveStatus,
-          failureCode: row.failure_code ?? null,
-          instrumentKey: row.instrument_key,
-          chain: row.chain,
-          txRef: row.tx_ref,
-          walletAddress: row.wallet_address,
-          fromChain: row.from_chain ?? null,
-          toChain: row.to_chain ?? null,
-          providerOrderId: row.provider_order_id ?? null,
-          amountBasis,
-          legs: isBridge ? coerceBridgeLegs(row.legs) : [],
-          // R12: surface the last successful sweep check for bridge logical
-          // rows only — the renderer flags a stale pending bridge "tracking
-          // delayed". Swap/legacy rows leave it null.
-          lastCheckedAt: isBridge && row.last_checked_at != null ? toIso(row.last_checked_at) : null,
-          createdAt: toIso(row.created_at),
-        };
-      });
+      const moves: MovesDto = result.rows.map(mapMoveRow);
 
       log.info(
         `[moves-db] getMovesForSession ok session=${sessionId} moves=${moves.length}`,

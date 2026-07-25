@@ -68,6 +68,17 @@ export interface AutocompleteResponse {
   nextSlots?: string[];
 }
 
+/**
+ * Outbound POST /v1/quotes body.
+ *
+ * Khalani's API also accepts `referrer` + `referrerFeeBps` (an integrator
+ * referral fee skimmed off the bridged amount and paid to an arbitrary EVM
+ * address). Vex charges NO bridge referral fee and deliberately OMITS both
+ * fields from this type, so no code path — and in particular no model/tool
+ * param — can put a fee-bearing field on the wire. See the fee policy in
+ * `request.ts`; the same doctrine governs KyberSwap in
+ * `src/tools/kyberswap/constants.ts`.
+ */
 export interface QuoteRequest {
   tradeType: TradeType;
   fromChainId: number;
@@ -78,8 +89,6 @@ export interface QuoteRequest {
   fromAddress: string;
   recipient?: string;
   refundTo?: string;
-  referrer?: string;
-  referrerFeeBps?: number;
   filler?: string;
 }
 

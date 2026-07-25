@@ -79,6 +79,23 @@ describe("jupiterMintInformationSchema", () => {
   });
 });
 
+describe("jupiterMintInformationSchema — LIVE-GATE FIX 1 regression (apy.jupEarn drift)", () => {
+  it("accepts an empty apy object (live 2026-07-24: /tokens/v2/search?query=SOL returned 19/20 tokens with apy:{})", () => {
+    const r = jupiterMintInformationSchema.safeParse({ ...validToken(), apy: {} });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.apy?.jupEarn).toBeUndefined();
+  });
+
+  it("still accepts apy.jupEarn when the provider does supply it", () => {
+    const r = jupiterMintInformationSchema.safeParse({
+      ...validToken(),
+      apy: { jupEarn: 4.06 },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.apy?.jupEarn).toBe(4.06);
+  });
+});
+
 describe("jupiterMintInformationListSchema", () => {
   it("accepts an array of valid tokens", () => {
     const r = jupiterMintInformationListSchema.safeParse([validToken(), validToken()]);

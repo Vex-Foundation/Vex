@@ -22,6 +22,13 @@
  *   (c) the alias routers — `internal/action-aliases.ts` and `mutating-aliases.ts`
  *       call the same `evaluateRelayRevealGate` for an early, clean rejection.
  *
+ * REVISION 1 (reveal-on-execute-revert design): a route may also reveal on a
+ * `deposit_mined_revert` — the `bridge_deposit` leg of `khalani.bridge`'s
+ * staged broadcast was MINED and reverted on-chain. This is a distinct,
+ * terminal signal from the no-route/exception failures above (see W1's
+ * `khalani/failure-mapping.ts`); the same route-bound, fail-closed contract
+ * applies either way.
+ *
  * LOCAL-CHAIN CARVE-OUT (dossier §3, plan card #4): a route touching a LOCAL
  * chain (Robinhood 4663 — Khalani does not cover it) is the STATIC Relay path
  * and is ALWAYS allowed with no prior failure, exactly mirroring
@@ -206,7 +213,8 @@ function resolvedRouteTouchesLocalChain(route: BridgeRouteEndpoints): boolean {
 
 /**
  * Reveal the hidden Relay pair for EXACTLY this route in this session. Call ONLY
- * on a W1-classified reveal-eligible Khalani no-route failure (see
+ * on a W1-classified reveal-eligible Khalani failure — a no-route/exception
+ * signal, or (REVISION 1) a role-scoped `deposit_mined_revert` (see
  * `relay-reveal-eligibility.ts`). Idempotent per (session, route).
  */
 export function revealRelayRoute(sessionId: string, route: BridgeRouteEndpoints): void {

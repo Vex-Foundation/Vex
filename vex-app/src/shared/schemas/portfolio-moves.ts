@@ -99,9 +99,11 @@ export type MoveStatus = z.infer<typeof moveStatusSchema>;
  *                      "failed"`; `null` otherwise.
  *  - `tradeSide`     — `buy`/`sell` for EVM spot; `null` for neutral swaps.
  *  - `productType`   — `proj_activity.product_type` (`spot`, `bridge`, `perps`,
- *                      `send`, …) — tolerant string, NOT an enum; drives the
- *                      renderer's chip (`bridge` → BRIDGE). Nullable for
- *                      tolerance even though the DDL is NOT NULL.
+ *                      `send`, …) or, for an `agent_activity` row, derived from
+ *                      `kind` (`spot`/`bridge`/`lend`/`prediction` — migration
+ *                      049, W5, added the last two) — tolerant string, NOT an
+ *                      enum; drives the renderer's chip (`bridge` → BRIDGE).
+ *                      Nullable for tolerance even though the DDL is NOT NULL.
  *  - `venue`         — `proj_activity.namespace`: the protocol namespace that
  *                      executed the move (e.g. `relay`, `khalani`, `uniswap`) —
  *                      distinguishes bridge venues in the chip. Nullable for
@@ -195,11 +197,13 @@ export const moveItemSchema = z
     /** Bridge rows only — the provider order id (Khalani orderId / Relay requestId); `null` otherwise. */
     providerOrderId: z.string().max(128).nullable().default(null),
     /**
-     * Bridge rows only (BINDING Q2) — whether `inputAmount`/`outputAmount` are
-     * the independently-verified executed amounts (`"executed"`) or the quoted
-     * amounts shown as an estimate (`"estimated"`); `null` when no honest
-     * amount is shown. Swap rows leave this `null` (their honesty is C20's
-     * status-driven `resolveAgentActivityAmount`).
+     * Bridge rows (BINDING Q2) AND `lend`/`prediction` rows (migration 049,
+     * W5 design REVISION 1 R3/R5) — whether `inputAmount`/`outputAmount` are
+     * the independently-verified executed amounts (`"executed"`) or the
+     * quoted amounts shown as an estimate (`"estimated"`); `null` when no
+     * honest amount is shown. A PLAIN swap row leaves this `null` (its
+     * honesty is C20's status-driven `resolveAgentActivityAmount`, which
+     * never needs the estimate label — see that function's doc for why).
      */
     amountBasis: bridgeAmountBasisSchema.nullable().default(null),
     /**

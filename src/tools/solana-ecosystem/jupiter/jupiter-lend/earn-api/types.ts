@@ -34,13 +34,16 @@ export interface JupiterLendEarnEarningsParams {
 
 export interface JupiterLendEarnAssetInfo {
   address: string;
-  chain_id: string | number;
+  /** Absent since the provider renamed this sub-object to camelCase (`chainId`) — kept optional, display-only. */
+  chain_id?: string | number;
   name: string;
   symbol: string;
   decimals: number;
-  logo_url: string;
+  /** Absent since the provider renamed this sub-object to camelCase (`logoUrl`) — kept optional, display-only. */
+  logo_url?: string;
   price: string | number;
-  coingecko_id: string;
+  /** Absent since the provider renamed this sub-object to camelCase (`coingeckoId`) — kept optional, display-only. */
+  coingecko_id?: string;
 }
 
 export interface JupiterLendLiquiditySupplyData {
@@ -90,7 +93,8 @@ export type JupiterLendEarnPositionsResponse = JupiterLendEarnUserPosition[];
 export interface JupiterLendEarnEarningsItem {
   address: string;
   ownerAddress: string;
-  earnings: number;
+  /** Numeric string live (confirmed `GET /earn/earnings`, LIVE-GATE FIX 2) — kept `string | number`, display-only. */
+  earnings: string | number;
   slot: number;
 }
 

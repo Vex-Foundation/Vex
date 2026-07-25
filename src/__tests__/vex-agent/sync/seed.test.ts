@@ -16,13 +16,17 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 11 sync jobs (5 global + 6 per-namespace)", async () => {
+  it("inserts 10 sync jobs (5 global + 5 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
-    // and the relay/balances post_mutation job (khalani parity) — net 11.
+    // and the relay/balances post_mutation job (khalani parity). Agent Scan
+    // Phase 3 removed both Hyperliquid reconciliation rows (namespace
+    // "_global" periodic + namespace "hyperliquid" post_mutation). W5 (K1,
+    // migration 049) added the _global/solana_activity_repair periodic
+    // sweep seed — net 10.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(11);
+    expect(mockExecute).toHaveBeenCalledTimes(10);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -48,7 +52,7 @@ describe("seedSyncJobs", () => {
     const postMutationCalls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[3] === "post_mutation",
     );
-    expect(postMutationCalls).toHaveLength(6); // khalani, solana, kyberswap, pendle, hyperliquid, relay (polymarket removed)
+    expect(postMutationCalls).toHaveLength(5); // khalani, solana, kyberswap, pendle, relay (polymarket, hyperliquid removed)
     for (const call of postMutationCalls) {
       expect((call[1] as unknown[])[4]).toBeNull(); // no interval
     }
@@ -123,6 +127,18 @@ describe("seedSyncJobs", () => {
     expect((repairCall![1] as unknown[])[4]).toBe(120);
   });
 
+  it("seeds solana_activity_repair periodic job with 60s interval (W5, migration 049)", async () => {
+    await seedSyncJobs();
+    const solanaRepairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "solana_activity_repair",
+    );
+    expect(solanaRepairCall).toBeDefined();
+    expect((solanaRepairCall![1] as unknown[])[0]).toBe("_global");
+    expect((solanaRepairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
+    expect((solanaRepairCall![1] as unknown[])[3]).toBe("periodic");
+    expect((solanaRepairCall![1] as unknown[])[4]).toBe(60);
+  });
+
   it("no longer seeds a polymarket/balances job (Agent Scan removed Polymarket)", async () => {
     await seedSyncJobs();
     const polymarketCall = mockExecute.mock.calls.find(
@@ -131,13 +147,11 @@ describe("seedSyncJobs", () => {
     expect(polymarketCall).toBeUndefined();
   });
 
-  it("seeds Hyperliquid reconciliation for periodic recovery and post-mutation refresh", async () => {
+  it("no longer seeds Hyperliquid reconciliation jobs (Agent Scan Phase 3 removed Hyperliquid)", async () => {
     await seedSyncJobs();
     const calls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[1] === "hyperliquid_reconcile",
     );
-    expect(calls).toHaveLength(2);
-    expect((calls[0]![1] as unknown[]).slice(0, 5)).toEqual(["_global", "hyperliquid_reconcile", null, "periodic", 60]);
-    expect((calls[1]![1] as unknown[]).slice(0, 5)).toEqual(["hyperliquid", "hyperliquid_reconcile", null, "post_mutation", null]);
+    expect(calls).toHaveLength(0);
   });
 });

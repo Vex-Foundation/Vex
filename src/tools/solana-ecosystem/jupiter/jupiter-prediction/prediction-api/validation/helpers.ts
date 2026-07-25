@@ -15,7 +15,7 @@ import type {
   JupiterPredictionSortDirection,
 } from "../types.js";
 
-export const PREDICTION_PROVIDERS: JupiterPredictionProvider[] = ["kalshi", "polymarket"];
+export const PREDICTION_PROVIDERS: JupiterPredictionProvider[] = ["kalshi", "polymarket", "bisonfi"];
 export const PREDICTION_CATEGORIES: JupiterPredictionCategory[] = [
   "all",
   "crypto",
@@ -26,7 +26,7 @@ export const PREDICTION_CATEGORIES: JupiterPredictionCategory[] = [
   "economics",
   "tech",
 ];
-export const PREDICTION_FILTERS: JupiterPredictionFilter[] = ["new", "live", "trending"];
+export const PREDICTION_FILTERS: JupiterPredictionFilter[] = ["new", "live", "trending", "upcoming"];
 export const PREDICTION_SORT_BY: JupiterPredictionSortBy[] = ["volume", "beginAt"];
 export const PREDICTION_SORT_DIRECTIONS: JupiterPredictionSortDirection[] = ["asc", "desc"];
 export const PREDICTION_PNL_INTERVALS: JupiterPredictionPnlInterval[] = ["24h", "1w", "1m"];

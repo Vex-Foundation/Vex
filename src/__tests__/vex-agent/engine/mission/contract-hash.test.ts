@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   CONTRACT_HASH_VERSION,
   LEGACY_CONTRACT_HASH_VERSION,
+  LEGACY_V2_CONTRACT_HASH_VERSION,
   buildContractMaterial,
   canonicalStringify,
   computeContractHash,
@@ -51,16 +52,45 @@ describe("contract-hash", () => {
       expect(computeContractHash(draft, LEGACY_CONTRACT_HASH_VERSION)).toBe("5ab63e3ae4613916e47e2bc7f587304c9e7efa7441b4879793faafd2eac24244");
     });
 
-    it("hashes typed v2 Hyperliquid risk and normalizes its market allowlist", () => {
+    // ── Frozen v2 (Agent Scan Phase 3 — Hyperliquid removal) ──────
+    //
+    // v2 is a FROZEN historical shape: MissionDraft no longer carries
+    // `hyperliquidRisk` (removed from the live agent), so the risk material
+    // is passed as a separate raw `legacyHyperliquidRisk` argument, sourced
+    // in production from `mapper.extractLegacyHyperliquidRiskV2`. These
+    // golden hashes were captured from the PRE-removal implementation
+    // (draft.hyperliquidRisk + CanonicalContractMaterialV2Schema) so they
+    // prove a mission accepted under the old v2 shape still reproduces its
+    // exact original `accepted_contract_hash` byte-for-byte.
+    it("reproduces a stored v2 hash byte-for-byte via the frozen legacy material (backward-compat proof)", () => {
       const risk = { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100, marketAllowlist: ["eth", "BTC", "ETH"] };
-      const material = buildContractMaterial(makeDraft({ hyperliquidRisk: risk }));
+      const material = buildContractMaterial(makeDraft(), LEGACY_V2_CONTRACT_HASH_VERSION, risk);
       expect(material.v).toBe(2);
       expect("hyperliquidRisk" in material && material.hyperliquidRisk).toEqual({ ...risk, marketAllowlist: ["BTC", "ETH"] });
-      expect(computeContractHash(makeDraft({ hyperliquidRisk: risk }))).not.toBe(computeContractHash(makeDraft()));
+      expect(computeContractHash(makeDraft(), LEGACY_V2_CONTRACT_HASH_VERSION, risk)).toBe(
+        "0fa117eca4bbed8d2d4bff9ea68381b80e6b71bab1da307fe47235385935722e",
+      );
+      expect(computeContractHash(makeDraft(), LEGACY_V2_CONTRACT_HASH_VERSION, null)).toBe(
+        "f0462053bcc83f3bfe0bb127016b1dad92265aab2a5677261de01b9ddf641a22",
+      );
     });
 
-    it("rejects adding Hyperliquid risk to v1 material", () => {
-      expect(() => buildContractMaterial(makeDraft({ hyperliquidRisk: { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100 } }), LEGACY_CONTRACT_HASH_VERSION)).toThrow(/version 2/i);
+    it("drops invalid legacy v2 risk material to null instead of throwing", () => {
+      const material = buildContractMaterial(makeDraft(), LEGACY_V2_CONTRACT_HASH_VERSION, { leverageCap: "not-a-number" });
+      expect("hyperliquidRisk" in material && material.hyperliquidRisk).toBeNull();
+    });
+
+    it("v1 and v3 material ignore a legacyHyperliquidRisk argument entirely", () => {
+      const risk = { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100 };
+      const v1WithRisk = buildContractMaterial(makeDraft(), LEGACY_CONTRACT_HASH_VERSION, risk);
+      const v1Without = buildContractMaterial(makeDraft(), LEGACY_CONTRACT_HASH_VERSION);
+      expect(v1WithRisk).toEqual(v1Without);
+      expect("hyperliquidRisk" in v1WithRisk).toBe(false);
+
+      const v3WithRisk = buildContractMaterial(makeDraft(), CONTRACT_HASH_VERSION, risk);
+      const v3Without = buildContractMaterial(makeDraft(), CONTRACT_HASH_VERSION);
+      expect(v3WithRisk).toEqual(v3Without);
+      expect("hyperliquidRisk" in v3WithRisk).toBe(false);
     });
 
     it("returns 64-char lowercase hex (sha256)", () => {

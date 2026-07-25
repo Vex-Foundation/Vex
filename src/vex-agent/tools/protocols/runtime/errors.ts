@@ -17,7 +17,7 @@
 
 import { redact } from "@vex-agent/memory/redaction.js";
 
-import { VexError } from "../../../../errors.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 
 // ── Provider-safe error summarisation (B-003) ────────────────────
 //
@@ -34,6 +34,17 @@ export type ErrorCategory =
   | "network"
   | "rate_limit"
   | "auth"
+  /**
+   * WE rejected the call before (or instead of) trusting it — a parameter the
+   * caller or the model supplied did not survive our own validation. Distinct
+   * from `provider_error` because the two imply opposite next actions: a
+   * provider malfunction invites a retry, a bad parameter invites a FIX. Live
+   * proof of the confusion this removes (2026-07-24): `uniswap.swap.quote
+   * failed (provider_error): Cannot read decimals for 0x0000…0000 — not a
+   * valid ERC-20 contract on this chain` — our own address validation,
+   * reported to the agent as the provider's malfunction.
+   */
+  | "invalid_request"
   | "provider_error"
   | "unknown";
 
@@ -102,9 +113,14 @@ const HTML_DOCUMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
 // pattern's value now consumes the REST OF THE LINE (`[^\r\n]+`, not just one
 // token) so no multi-word scheme or multi-part value can leave a raw tail —
 // consistent with this module's "prefer removing too much" posture.
+//
+// The URL pattern is applied SEPARATELY, immediately before this list, because
+// the two lanes below disagree about URLs and about nothing else. Its position
+// in the pipeline is unchanged: it still runs first, so the Bearer-before-
+// header-name ordering documented above still holds.
+const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+
 const SENSITIVE_FRAGMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  // URLs — provider endpoints often carry tokens/ids in path or query.
-  [/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]"],
   // Bearer tokens — BEFORE the header-name pattern below. See ordering note above.
   [/\bbearer\s+\S+/gi, "[auth]"],
   // Auth headers (header: value OR header=value) — value consumes to
@@ -176,8 +192,52 @@ function stripBalancedBodies(text: string): string {
   return out;
 }
 
+/**
+ * Error codes this repo throws from its OWN validation of caller/model-supplied
+ * parameters — an address that is not an address, an amount that is not an
+ * amount, a chain we do not serve, a token contract that does not answer
+ * `decimals()`. Deliberately a CLOSED, small set: a code that is ALSO used to
+ * carry a provider's verdict must stay out of it unless the provider-answered
+ * case is separable, which `isLocallyAuthoredValidationFailure` handles below.
+ *
+ * `KYBER_TOKEN_NOT_FOUND` is in the set despite being reachable from both
+ * sides: locally from `uniswap/erc20.ts`, `kyberswap/evm/erc20.ts` and
+ * `kyberswap/helpers.ts`, and from KyberSwap's own code 4011 via
+ * `mapAggregatorError` — which always stamps `externalName`, the discriminator
+ * used below.
+ */
+const LOCAL_VALIDATION_ERROR_CODES: ReadonlySet<string> = new Set<string>([
+  ErrorCodes.AGENT_VALIDATION_ERROR,
+  ErrorCodes.INVALID_ADDRESS,
+  ErrorCodes.SOLANA_INVALID_ADDRESS,
+  ErrorCodes.INVALID_AMOUNT,
+  ErrorCodes.CHAIN_MISMATCH,
+  ErrorCodes.INVALID_SPENDER,
+  ErrorCodes.KYBER_TOKEN_NOT_FOUND,
+]);
+
+/**
+ * True only when WE authored the rejection. Conservative by construction: any
+ * evidence that a provider ANSWERED disqualifies the error, and an unrecognized
+ * code keeps today's label rather than guessing.
+ *
+ * The two disqualifiers are the repo's only markers of a provider verdict:
+ * `httpStatus` is set exclusively by `utils/http.ts` on a non-ok response, and
+ * `externalName` exclusively by a provider error mapper (Khalani, KyberSwap) or
+ * by a provider-supplied error code lifted from a response body.
+ */
+function isLocallyAuthoredValidationFailure(err: unknown): boolean {
+  if (!(err instanceof VexError)) return false;
+  if (err.httpStatus !== undefined || err.externalName !== undefined) return false;
+  return LOCAL_VALIDATION_ERROR_CODES.has(err.code);
+}
+
 /** Coarse, non-sensitive classification from the error's shape/text. */
 export function classifyError(raw: string, err: unknown): ErrorCategory {
+  // Checked FIRST, ahead of the text heuristics: a typed code we ourselves
+  // attached is direct evidence of who rejected the call, whereas the keyword
+  // scans below are guesses about prose that a provider may have written.
+  if (isLocallyAuthoredValidationFailure(err)) return "invalid_request";
   const name = err instanceof Error ? err.name.toLowerCase() : "";
   const text = raw.toLowerCase();
   if (name.includes("abort") || text.includes("timeout") || text.includes("timed out")) {
@@ -203,6 +263,74 @@ export function classifyError(raw: string, err: unknown): ErrorCategory {
 }
 
 /**
+ * A link that cannot carry a credential: `https`, a plain host, an optional
+ * path, and NOTHING else — no userinfo (`user:pass@`), no query, no fragment.
+ * Those three are where a token rides in a URL, so a link without them leaks
+ * nothing by surviving. Used ONLY by the hint lane (see `scrub`).
+ */
+const CREDENTIAL_FREE_HTTPS_LINK =
+  /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?(?:\/[a-z0-9._~%-]*)*\/?$/i;
+
+/** Every URL collapses — the message may be provider-written, so nothing survives. */
+function redactEveryUrl(): string {
+  return "[url]";
+}
+
+/**
+ * Hint lane: keep a credential-free https link, collapse anything else.
+ *
+ * WHY THE LANES DIFFER. A `VexError.hint` is FIRST-PARTY text — every hint in
+ * this repo is a literal authored beside its `throw` (see `jupiter-auth.ts`,
+ * `khalani/errors.ts`, `kyberswap/aggregator/errors.ts`); provider prose lands
+ * in the MESSAGE, never here. Redaction exists to protect secrets and untrusted
+ * provider text, and it was doing neither when it turned "Generate a key at
+ * https://portal.jup.ag and add it through Vex setup" into "…at [url]…": the
+ * agent was handed an instruction it had been made unable to follow.
+ *
+ * WHERE THE LINE IS DRAWN, and why it holds even if a hint were ever built from
+ * untrusted text: the carve-out is a property of the LINK, not of who wrote it.
+ * A link with no userinfo, no query and no fragment has nowhere to put a
+ * credential, and `redact()` has already run over the whole hint, so a
+ * key-shaped path segment is gone before this is reached. Everything else —
+ * and every URL in the message lane — still collapses to `[url]`.
+ */
+function redactUnlessCredentialFreeLink(match: string): string {
+  // A sentence-final "." or "," belongs to the prose, not the link; strip it
+  // before judging, then give it back, so ordinary punctuation cannot force an
+  // otherwise-safe link to be redacted.
+  const trailing = /[.,;:!?)\]]+$/.exec(match)?.[0] ?? "";
+  const link = trailing ? match.slice(0, match.length - trailing.length) : match;
+  return CREDENTIAL_FREE_HTTPS_LINK.test(link) ? `${link}${trailing}` : "[url]";
+}
+
+/**
+ * Defense-in-depth, applied in order (FIX4-SPINE C37 hardened steps 2-3):
+ *  1. redact known SECRET shapes (keys, JWTs, mnemonics, addresses),
+ *  2. remove whole embedded HTML documents (gateway/proxy error pages),
+ *  3. remove balanced/nested {..}/[..] bodies (JSON request/response payloads),
+ *  4. strip remaining structured provider INTERNALS (URLs, auth headers,
+ *     Bearer tokens, key/token/secret assignments) the B-003 note forbids
+ *     emitting — placeholder-replaced, not just secret-matched.
+ * We never trust the provider not to embed internals, so we keep only this
+ * bounded summary regardless of what the raw text contained.
+ *
+ * `urlReplacement` is the ONLY difference between the two lanes; every other
+ * step, and their order, is identical for message and hint.
+ */
+function scrub(text: string, urlReplacement: (match: string) => string): string {
+  let cleaned = redact(text).text;
+  for (const [pattern, replacement] of HTML_DOCUMENT_PATTERNS) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+  cleaned = stripBalancedBodies(cleaned);
+  cleaned = cleaned.replace(URL_PATTERN, urlReplacement);
+  for (const [pattern, replacement] of SENSITIVE_FRAGMENT_PATTERNS) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+  return cleaned;
+}
+
+/**
  * Reduce any thrown value to a `{ category, message }` summary that is safe to
  * log, return to the agent, and forward to the renderer. Bounded + redacted.
  */
@@ -211,33 +339,20 @@ export function summarizeProtocolError(err: unknown): SafeErrorSummary {
   const category = classifyError(raw, err);
 
   // A VexError carries an authored, agent-actionable `hint` (e.g. "Pass the exact
-  // contract address the quote returned, then retry."). Fold it into the SAME
-  // redaction pipeline as the message, CONCATENATED BEFORE the cap — so the hint
-  // is secret-redacted, internals-stripped (URLs/bodies/auth), and length-bounded
-  // exactly like the message, never appended raw after the cap (B-003). Category
-  // is classified on the message alone. Non-VexError throws are byte-unchanged.
+  // contract address the quote returned, then retry."). It is scrubbed on its own
+  // lane and CONCATENATED BEFORE the cap — so the hint is secret-redacted,
+  // internals-stripped, and length-bounded exactly like the message, never
+  // appended raw after the cap (B-003). Category is classified on the message
+  // alone. Non-VexError throws are byte-unchanged.
   const hint = err instanceof VexError ? err.hint?.trim() : undefined;
-  const combined = hint ? `${raw} — ${hint}` : raw;
+  const scrubbedMessage = scrub(raw, redactEveryUrl);
+  const scrubbedHint = hint ? scrub(hint, redactUnlessCredentialFreeLink) : undefined;
+  const combined = scrubbedHint ? `${scrubbedMessage} — ${scrubbedHint}` : scrubbedMessage;
 
-  // Defense-in-depth, applied in order (FIX4-SPINE C37 hardened steps 2-3):
-  //  1. redact known SECRET shapes (keys, JWTs, mnemonics, addresses),
-  //  2. remove whole embedded HTML documents (gateway/proxy error pages),
-  //  3. remove balanced/nested {..}/[..] bodies (JSON request/response payloads),
-  //  4. strip remaining structured provider INTERNALS (URLs, auth headers,
-  //     Bearer tokens, key/token/secret assignments) the B-003 note forbids
-  //     emitting — placeholder-replaced, not just secret-matched,
-  //  5. collapse whitespace and hard-cap the length (UNCHANGED cap semantics).
-  // We never trust the provider not to embed internals, so we keep only this
-  // bounded summary regardless of what the raw text contained.
-  let cleaned = redact(combined).text;
-  for (const [pattern, replacement] of HTML_DOCUMENT_PATTERNS) {
-    cleaned = cleaned.replace(pattern, replacement);
-  }
-  cleaned = stripBalancedBodies(cleaned);
-  for (const [pattern, replacement] of SENSITIVE_FRAGMENT_PATTERNS) {
-    cleaned = cleaned.replace(pattern, replacement);
-  }
-  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  // Whitespace collapse + hard cap run on the JOINED text (UNCHANGED cap
+  // semantics): the bound covers message and hint together, so a long hint can
+  // never smuggle text past the limit.
+  const cleaned = combined.replace(/\s+/g, " ").trim();
   const bounded = cleaned.length > MAX_SAFE_ERROR_MESSAGE
     ? `${cleaned.slice(0, MAX_SAFE_ERROR_MESSAGE)}…`
     : cleaned;

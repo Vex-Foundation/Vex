@@ -31,10 +31,12 @@
  * (`family.venue === "uniswap"`), `swap_quote` reveals the hidden Uniswap pair
  * for the session BEFORE failing — this is the "local chain-not-Kyber-
  * supported, registry gate, pre-call" reveal-eligible case (the ONLY one this
- * module owns). The other two eligible cases (Kyber codes 4008/4010/4011)
- * fire from INSIDE the `kyberswap.swap.quote`/`kyberswap.swap.execute`
- * handlers themselves (they hold the raw failure code + already know
- * `context.sessionId`) — this module does not re-derive them.
+ * module owns). The other eligible cases — Kyber codes 4008/4010/4011, and
+ * (REVISION 1 — reveal-on-execute-revert design) a `swap`-role MINED on-chain
+ * revert of `kyberswap.swap.execute`'s staged broadcast — fire from INSIDE the
+ * `kyberswap.swap.quote`/`kyberswap.swap.execute` handlers themselves (they
+ * hold the raw failure code/outcome + already know `context.sessionId`) —
+ * this module does not re-derive them.
  */
 
 import { z } from "zod";
@@ -45,6 +47,7 @@ import { fail } from "./types.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
+import { findCallerSuppliedFeeParam } from "@tools/khalani/request.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -182,7 +185,8 @@ export async function handleSwapQuoteUniswap(
   if (!isUniswapPairRevealed(context.sessionId)) {
     return fail(
       "swap_quote_uniswap is not available yet for this session — it unlocks after an eligible "
-        + "KyberSwap route-not-found failure (try swap_quote first).",
+        + "KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting "
+        + "on-chain at execute time (try swap_quote first).",
     );
   }
 
@@ -295,8 +299,6 @@ const BridgeQuoteArgs = z.object({
   fromAddress: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
   refundTo: z.string().min(1).optional(),
-  referrer: z.string().min(1).optional(),
-  referrerFeeBps: z.string().min(1).optional(),
   filler: z.string().min(1).optional(),
   slippageBps: z.string().min(1).optional(),
 });
@@ -305,6 +307,18 @@ export async function handleBridgeQuote(
   args: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
+  // Fee params are rejected BY NAME, never silently stripped. This schema is not
+  // `.strict()`, so dropping the keys alone would let an attempted overcharge
+  // pass unnoticed — and a fee-bearing QUOTE is precisely what the prequote gate
+  // would later bind a fee-bearing execute against. See the policy in
+  // `@tools/khalani/request.js`.
+  const suppliedFeeParam = findCallerSuppliedFeeParam(args);
+  if (suppliedFeeParam !== null) {
+    return fail(
+      `bridge_quote: ${suppliedFeeParam} is not an accepted parameter — Vex never charges a bridge referral fee and never takes fee parameters from tool input. Remove it and retry.`,
+    );
+  }
+
   const parsed = BridgeQuoteArgs.safeParse(args);
   if (!parsed.success) {
     return fail(`bridge_quote: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
@@ -340,8 +354,6 @@ export async function handleBridgeQuote(
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
   if (a.recipient !== undefined) params.recipient = a.recipient;
   if (a.refundTo !== undefined) params.refundTo = a.refundTo;
-  if (a.referrer !== undefined) params.referrer = a.referrer;
-  if (a.referrerFeeBps !== undefined) params.referrerFeeBps = a.referrerFeeBps;
   if (a.filler !== undefined) params.filler = a.filler;
   return executeProtocolTool({ toolId: "khalani.quote.get", params }, protocolContext(context));
 }
@@ -375,8 +387,9 @@ export async function handleBridgeQuoteRelay(
   if (evaluateRelayRevealGate(args, context.sessionId).decision === "deny") {
     return fail(
       "bridge_quote_relay is not available for this route yet — it unlocks after an eligible "
-        + "Khalani no-route failure for this exact route (Robinhood routes are always available via "
-        + "bridge_quote). Try bridge_quote first.",
+        + "Khalani no-route failure for this exact route, or the Khalani deposit transaction reverting "
+        + "on-chain for this exact route (Robinhood routes are always available via bridge_quote). "
+        + "Try bridge_quote first.",
     );
   }
 

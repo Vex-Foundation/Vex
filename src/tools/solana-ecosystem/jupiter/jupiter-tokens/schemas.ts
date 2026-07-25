@@ -24,9 +24,17 @@
 import { z } from "zod";
 import { solanaPubkey } from "../../shared/schemas.js";
 
+/**
+ * LIVE-GATE FIX 1 (2026-07-24): `jupEarn` is absent (empty `apy: {}`) for the
+ * large majority of live `/tokens/v2/search` results — only tokens with a
+ * Jupiter Lend Earn market populate it. Confirmed live: `query=SOL` returned
+ * 20 tokens, 19 with `apy: {}` and only the SOL entry itself carrying
+ * `jupEarn`. Display-only (never fed to signing), so optional per the
+ * tolerant-reader doctrine rather than a required financial field.
+ */
 const jupiterTokenApySchema = z
   .object({
-    jupEarn: z.number(),
+    jupEarn: z.number().optional(),
   })
   .passthrough();
 

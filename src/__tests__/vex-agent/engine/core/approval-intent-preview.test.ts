@@ -115,29 +115,6 @@ describe("buildIntentPreview", () => {
   });
 });
 
-describe("buildIntentPreview — Hyperliquid signed economics", () => {
-  it.each([
-    ["hyperliquid.spot.trade", { side: "buy", size: "2", price: "101" }, { side: "buy", size: "2", price: "101" }],
-    ["hyperliquid.perp.close", { side: "sell", size: "3", markPrice: "99" }, { side: "sell", size: "3", markPrice: "99" }],
-    ["hyperliquid.perp.twap", { side: "buy", size: "4", minutes: 15, randomize: true }, { side: "buy", size: "4", minutes: 15, randomize: true }],
-    ["hyperliquid.perp.adjustMargin", { ntli: -250 }, { ntli: -250 }],
-    ["hyperliquid.withdraw", { amount: "5", destination: "0xrecipient" }, { amount: "5", destination: "0xrecipient" }],
-    ["hyperliquid.transfer.usdClass", { amount: "6", toPerp: true }, { amount: "6", toPerp: true }],
-    ["hyperliquid.deposit", { amountUsd: "7" }, { amountUsd: "7" }],
-  ] as const)("shows every signed economic and directional field for %s", (toolName, args, expected) => {
-    expect(buildIntentPreview(toolName, args).criticalArgs).toMatchObject(expected);
-  });
-
-  it("renders a trusted destination class without accepting a raw spoof", () => {
-    const preview = buildIntentPreview(
-      "hyperliquid.deposit",
-      { amountUsd: "7", destinationClass: "spoofed" },
-      { hyperliquid: { destinationClass: "Hyperliquid bridge deposit" } },
-    );
-    expect(preview.criticalArgs).toMatchObject({ amountUsd: "7", destinationClass: "Hyperliquid bridge deposit" });
-  });
-});
-
 describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
   it("injects criticalArgs.safety='pass' from the typed extras for a gated swap", () => {
     const preview = buildIntentPreview(
@@ -272,6 +249,43 @@ describe("buildIntentPreview — Stage 9 swap money/safety leg visibility", () =
     expect(preview.criticalArgs.approveExact).toBe(false);
     // No typed extras → no safety field; the spoofed arg is not allow-listed.
     expect(preview.criticalArgs).not.toHaveProperty("safety");
+  });
+
+  // 2026-07-25 restoration: the Borrow disclosure printed raw amounts against
+  // bare mint addresses, so a human approver could not tell whether a debt of
+  // "1047061" was 1.05 or 0.00105 of the debt token.
+  it("names each Borrow leg's symbol and decimals next to its raw amount", () => {
+    const preview = buildIntentPreview(
+      "solana.lend.borrowOperate",
+      { vaultId: 1 },
+      {
+        riskPreview: {
+          vaultId: 1,
+          market: "main",
+          positionId: 0,
+          supplyTokenAddress: "So11111111111111111111111111111111111111112",
+          supplyTokenSymbol: "WSOL",
+          supplyTokenDecimals: 9,
+          borrowTokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          borrowTokenSymbol: "USDC",
+          borrowTokenDecimals: 6,
+          maxLtvPercent: "80.0%",
+          liquidationThresholdPercent: "85.0%",
+          existingSupplyRaw: "0",
+          existingBorrowRaw: "0",
+          projectedSupplyRaw: "1000000000",
+          projectedBorrowRaw: "1047061",
+          estimatedLtvPercent: "1.05%",
+          riskNote: "Estimated LTV uses current Jupiter market prices and is APPROXIMATE.",
+        },
+      },
+    );
+    const disclosure = String(preview.criticalArgs.lendBorrowRisk);
+    expect(disclosure).toContain("1000000000 raw units of WSOL (9 decimals");
+    expect(disclosure).toContain("1047061 raw units of USDC (6 decimals");
+    // The mint addresses stay — symbol alone is not an identity.
+    expect(disclosure).toContain("So11111111111111111111111111111111111111112");
+    expect(disclosure).toContain("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
   });
 });
 

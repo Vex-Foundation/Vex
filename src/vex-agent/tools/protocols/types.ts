@@ -1,7 +1,7 @@
 /**
  * Protocol tool types — manifest-driven discover+execute system.
  *
- * Each protocol (khalani, kyberswap, solana, hyperliquid) provides:
+ * Each protocol (khalani, kyberswap, solana, ...) provides:
  * 1. Manifests — declarative tool metadata (params, mutating, description)
  * 2. Handlers — async functions that call TS clients directly
  *
@@ -14,7 +14,6 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
-import type { HlPolicyResolution } from "../../../lib/hyperliquid-policy.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -26,8 +25,7 @@ export type ProtocolNamespace =
   | "solana"
   | "dexscreener"
   | "virtuals"
-  | "pendle"
-  | "hyperliquid";
+  | "pendle";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -72,6 +70,23 @@ export interface ProtocolParamDef {
   type: "string" | "number" | "boolean" | "object";
   required?: boolean;
   description: string;
+  /**
+   * Domain unit of a NUMERIC param, when the bare `type` is too weak to
+   * express the contract. Only meaningful on `type: "number"`.
+   *
+   * `"bps"` — basis points: a WHOLE, non-negative number (1 bps = 0.01%).
+   * Enforced at the manifest boundary by `runtime/bps-param.ts`, called from
+   * `validateProtocolParams`. This exists because `z.number()` happily accepts
+   * `0.5`, and a fractional bps is not a smaller tolerance — Jupiter answers a
+   * non-integer `slippageBps` with `otherAmountThreshold = 0`, i.e. a swap that
+   * accepts ANY output including near-zero. The failure is silent: the quote
+   * looks normal. Declare this on EVERY basis-point param so a model-supplied
+   * `0.5` is rejected before it can reach a provider or a signing path.
+   *
+   * Single-member union on purpose (same convention as {@link ToolLifecycle}):
+   * a second unit must be added here deliberately, with its own enforcement.
+   */
+  unit?: "bps";
 }
 
 export interface ProtocolToolManifest {
@@ -131,8 +146,6 @@ export interface ProtocolExecutionContext {
    */
   walletResolution: WalletResolution;
   walletPolicy: WalletPolicy;
-  /** Fresh, main-owned Hyperliquid policy resolution for this execution. */
-  hyperliquidPolicy?: HlPolicyResolution;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
   /**

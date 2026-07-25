@@ -98,7 +98,8 @@ export function assertUniswapPairRevealed(sessionId: string | undefined): void {
   if (!isUniswapPairRevealed(sessionId)) {
     throw new Error(
       "swap_quote_uniswap/swap_execute_uniswap is not available yet for this session — "
-        + "reveal requires an eligible KyberSwap route-not-found failure first.",
+        + "reveal requires an eligible KyberSwap route-not-found failure, or the Kyber swap "
+        + "transaction reverting on-chain, first.",
     );
   }
 }

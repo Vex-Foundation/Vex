@@ -13,7 +13,7 @@ import type {
   JupiterTokenTag,
 } from "./types.js";
 
-const JUPITER_TOKEN_TAGS = new Set<JupiterTokenTag>(["lst", "verified"]);
+const JUPITER_TOKEN_TAGS = new Set<JupiterTokenTag>(["lst", "verified", "stocks"]);
 const JUPITER_TOKEN_CATEGORIES = new Set<JupiterTokenCategory>([
   "toporganicscore",
   "toptraded",
@@ -56,7 +56,7 @@ export function validateJupiterTokenTag(tag: string): JupiterTokenTag {
     throw new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       `Unsupported Jupiter token tag: ${tag}`,
-      "Supported tags: verified, lst.",
+      "Supported tags: verified, lst, stocks.",
     );
   }
 

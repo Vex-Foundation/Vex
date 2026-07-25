@@ -132,6 +132,7 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
         expiry: market.expiry ?? null,
         liquidityUsd: market.details.liquidity ?? null,
         priceImpact: best.data.priceImpact,
+        feeUsdEstimate: best.data.feeUsd,
         amountIn: amountInRaw,
         amountOut: humanAmount(lpOut, lpDec).toString(),
         aggregator: best.data.aggregatorType,
@@ -174,6 +175,7 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
       expiry: market.expiry ?? null,
       liquidityUsd: market.details.liquidity ?? null,
       priceImpact: best.data.priceImpact,
+      feeUsdEstimate: best.data.feeUsd,
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDec).toString(),
       aggregator: best.data.aggregatorType,
@@ -213,7 +215,7 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
         slippage,
       });
       const best = response?.routes[0];
-      return ok({ dryRun: true, action: "add", market: marketAddr, tokenIn: tokenIn.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null });
+      return ok({ dryRun: true, action: "add", market: marketAddr, tokenIn: tokenIn.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null });
     }
 
     // Signer AFTER dryRun so a preview never decrypts a key.

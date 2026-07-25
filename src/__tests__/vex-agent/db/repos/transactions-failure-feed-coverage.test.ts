@@ -95,15 +95,21 @@ const CATEGORY_TOOLS: ReadonlyArray<readonly [string, string]> = [
   ["kyberswap.swap.execute", "spot"],
   ["uniswap.swap.execute", "spot"],
   ["solana.swap.execute", "spot"],
-  ["hyperliquid.perp.open", "perps"],
   ["solana.predict.buy", "prediction"],
   ["khalani.bridge", "bridge"],
   ["relay.bridge", "bridge"],
+  // Agent Scan Phase 3/W5 (migration 049): lend joined TRANSACTION_PRODUCTS —
+  // a failed Jupiter Lend deposit/withdraw attempt now round-trips too.
+  ["solana.lend.deposit", "lend"],
+  ["solana.lend.withdraw", "lend"],
   // Legacy (deleted tools whose HISTORY must still surface — C9)
   ["kyberswap.swap.sell", "spot"],
   ["kyberswap.limitOrder.create", "order"],
   ["kyberswap.zap.in", "lp"],
   ["polymarket.clob.buy", "prediction"],
+  // Agent Scan Phase 3 removed the whole Hyperliquid protocol — perps history
+  // must still surface via LEGACY_TOOL_PRODUCTS, same as the other deleted tools above.
+  ["hyperliquid.perp.open", "perps"],
 ];
 
 describe("compatibility feed — failure half surfaces every surviving + legacy trade category", () => {

@@ -1,10 +1,10 @@
 /**
- * Starter chips — one horizontal row of three compact hairline chips DETACHED
+ * Starter chips — one horizontal row of compact hairline chips DETACHED
  * below the Signal Console. Each chip pairs a small intent icon with a mono
  * label; picking a chip seeds the draft via the parent's `onPick`. The 01–03
- * numbering was dropped in the redesign — these are three parallel starters,
- * not an ordered sequence, so a number would encode order that isn't there.
- * Real buttons → keyboard focusable.
+ * numbering was dropped in the redesign — these are parallel starters, not an
+ * ordered sequence, so a number would encode order that isn't there. Real
+ * buttons → keyboard focusable.
  *
  * The row only ever renders on the welcome/idle stage (empty conversation)
  * while the draft is EMPTY — the parent (`SessionComposer`) fades it out the

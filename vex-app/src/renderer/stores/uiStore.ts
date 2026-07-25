@@ -33,19 +33,6 @@ export const MAX_RENDER_LOGS = 500;
 export type VexTheme = "chronos";
 
 /**
- * Hypervexing workspace mode. This is a SEPARATE flag layered over `theme`,
- * NOT a third `VexTheme` value:
- *  - it is agent-driven and transient (entered via an agent tool push, exited
- *    via the in-mode EXIT control), so it must NOT persist — a relaunch always
- *    starts in `normal` mode (excluded from the persist whitelist below);
- *  - `data-vex-theme` is DERIVED from it in AppShell
- *    (`workspaceMode === "hypervexing" ? "hypervexing" : theme`), so EXIT
- *    restores the user's persisted theme (navy vs lime) exactly.
- * `theme` stays the user's own choice; the mode never overwrites it.
- */
-export type WorkspaceMode = "normal" | "hypervexing";
-
-/**
  * Which mission/plan review dialog (if any) the DESK RULE header cluster
  * (`MissionRail`) should show. Lifted out of `MissionRail`'s local state so a
  * DIFFERENT component in a different tree branch — `MissionControls`' "Review
@@ -181,13 +168,6 @@ interface UiState {
    * Defaults to `chronos`.
    */
   readonly theme: VexTheme;
-  /**
-   * Hypervexing workspace mode. Defaults to `normal` and is NOT persisted
-   * (see partialize) — a relaunch always starts in `normal`, never inside the
-   * mode. Drives the DERIVED `data-vex-theme` in AppShell without touching the
-   * user's own `theme`.
-   */
-  readonly workspaceMode: WorkspaceMode;
   readonly sidebarOpen: boolean;
   /**
    * The on-demand right-side BOOK panel (per-session instrument: MOVES /
@@ -258,12 +238,6 @@ interface UiState {
    * partialize), so a fresh launch re-derives from the model's default.
    */
   readonly reasoningEffortBySession: Readonly<Record<string, ReasoningEffort>>;
-  /**
-   * Hypervexing market-picker favorites (starred coins). Persisted — a
-   * trader's watch set is a deliberate choice that must survive relaunch.
-   * Pure UI preference: rows come from the markets query, this only stars.
-   */
-  readonly hlFavorites: readonly string[];
   /** See `ReviewModal`. NOT persisted — see partialize. */
   readonly reviewModal: ReviewModal;
   /**
@@ -277,7 +251,6 @@ interface UiState {
    * Persisted (see partialize) — a relaunch keeps the user's choice.
    */
   readonly hideDustBalances: boolean;
-  readonly setWorkspaceMode: (value: WorkspaceMode) => void;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
@@ -340,7 +313,6 @@ interface UiState {
     effort: ReasoningEffort,
   ) => void;
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
-  readonly toggleHlFavorite: (coin: string) => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly setHideDustBalances: (value: boolean) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
@@ -351,7 +323,6 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       theme: "chronos",
-      workspaceMode: "normal",
       sidebarOpen: true,
       bookOpen: true,
       currentView: "splash",
@@ -367,10 +338,8 @@ export const useUiStore = create<UiState>()(
       createSessionInitialTurn: null,
       signingState: "idle",
       reasoningEffortBySession: {},
-      hlFavorites: [],
       reviewModal: "none",
       hideDustBalances: true,
-      setWorkspaceMode: (workspaceMode) => set({ workspaceMode }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
@@ -415,12 +384,6 @@ export const useUiStore = create<UiState>()(
           },
         })),
       setSigningState: (signingState) => set({ signingState }),
-      toggleHlFavorite: (coin) =>
-        set((state) => ({
-          hlFavorites: state.hlFavorites.includes(coin)
-            ? state.hlFavorites.filter((c) => c !== coin)
-            : [...state.hlFavorites, coin],
-        })),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
       appendLog: (entry) =>
@@ -437,7 +400,6 @@ export const useUiStore = create<UiState>()(
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
-        hlFavorites: state.hlFavorites,
         hideDustBalances: state.hideDustBalances,
       }),
       // Expand-only migrations, oldest first:
@@ -447,6 +409,9 @@ export const useUiStore = create<UiState>()(
       //   v3: `theme` added — seed the then-default so a pre-theme install
       //       hydrates into a defined value, not `undefined`.
       //   v4: `hlFavorites` added (Hypervexing market-picker stars) — seed [].
+      //       Removed by the Hyperliquid deletion: the field no longer exists
+      //       on `UiState`, so a leftover `hlFavorites` key in an old payload
+      //       is simply ignored by `merge` below, never seeded again.
       //   v5: Chronos rebrand — the retired `vex`/`robinhood` theme pair
       //       collapses to `chronos` (the merge coercion below also enforces
       //       this on every rehydrate).
@@ -460,9 +425,6 @@ export const useUiStore = create<UiState>()(
         }
         let next = persisted as Record<string, unknown>;
         if (version < 2) next = { ...next, bookOpen: true };
-        if (version < 4 && !("hlFavorites" in next)) {
-          next = { ...next, hlFavorites: [] };
-        }
         if (version < 5) next = { ...next, theme: "chronos" };
         if (version < 6 && !("hideDustBalances" in next)) {
           next = { ...next, hideDustBalances: true };
@@ -480,15 +442,6 @@ export const useUiStore = create<UiState>()(
             ? (persisted as Partial<UiState>)
             : undefined;
         const theme: VexTheme = "chronos";
-        // Same hand-edited-payload coercion for the favorites list: anything
-        // that is not a string array degrades to no stars, never a crash.
-        const hlFavorites: readonly string[] = Array.isArray(
-          incoming?.hlFavorites,
-        )
-          ? incoming.hlFavorites.filter(
-              (coin): coin is string => typeof coin === "string",
-            )
-          : [];
         // Same coercion for the dust filter: anything that is not a boolean
         // degrades to the TRUE default, never a crash or a stray non-boolean
         // reaching the checkbox's `checked` prop.
@@ -496,7 +449,7 @@ export const useUiStore = create<UiState>()(
           typeof incoming?.hideDustBalances === "boolean"
             ? incoming.hideDustBalances
             : true;
-        return { ...current, ...incoming, theme, hlFavorites, hideDustBalances };
+        return { ...current, ...incoming, theme, hideDustBalances };
       },
     }
   )

@@ -13,7 +13,6 @@
  * the security regression guard.
  */
 
-import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 import type { MissionDraft, MissionPatch } from "../types.js";
 
 // ── Allowed keys ────────────────────────────────────────────────
@@ -41,7 +40,6 @@ const ALL_ALLOWED_KEYS = new Set<string>([
   ...ALLOWED_STRING_KEYS,
   ...ALLOWED_ARRAY_KEYS,
   ...ALLOWED_NUMBER_KEYS,
-  "hyperliquidRisk",
 ]);
 
 /** Max string field length (prevents unbounded model output). */
@@ -104,11 +102,6 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
-    } else if (key === "hyperliquidRisk") {
-      const parsed = value === null
-        ? { success: true as const, data: null }
-        : hyperliquidMissionRiskSchema.safeParse(value);
-      if (parsed.success) result.hyperliquidRisk = parsed.data;
     }
   }
 

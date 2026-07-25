@@ -23,6 +23,23 @@ export function tokenAmountToUi(rawAmount: string | bigint, decimals: number): n
   return Number(BigInt(rawAmount)) / 10 ** decimals;
 }
 
+/**
+ * Format a raw atomic-unit integer as an EXACT decimal string — no float
+ * division, so no precision loss for amounts beyond `Number.MAX_SAFE_INTEGER`
+ * (money convention: string math only, `parseFloat`/`Number` division
+ * forbidden on money). Use for agent-visible exact-decimal disclosures (e.g.
+ * a fee amount); use `tokenAmountToUi` only where an approximate UI number is
+ * genuinely fine.
+ */
+export function atomicToExactDecimalString(atomic: bigint, decimals: number): string {
+  const negative = atomic < 0n;
+  const abs = negative ? -atomic : atomic;
+  const base = 10n ** BigInt(decimals);
+  const whole = abs / base;
+  const frac = (abs % base).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return `${negative ? "-" : ""}${whole.toString()}${frac ? `.${frac}` : ""}`;
+}
+
 export function uiToTokenAmount(uiAmount: number, decimals: number): bigint {
   if (!Number.isFinite(uiAmount) || uiAmount <= 0) {
     throw new VexError(

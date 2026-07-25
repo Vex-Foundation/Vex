@@ -13,7 +13,6 @@
 | Folder | Protocol / Service | Chain | Files | Docs |
 |--------|--------------------|-------|-------|------|
 | `dexscreener/` | DexScreener analytics (REST + WS) | Multi-chain | 5 | [DexScreener.md](dexscreener/DexScreener.md) |
-| `hyperliquid/` | HyperCore perps, spot, account, vault, and staking client | Hyperliquid | 11 | [Hyperliquid.md](hyperliquid/Hyperliquid.md) |
 | `khalani/` | Khalani cross-chain bridge (40+ chains) | Multi-chain | 7 | [Khalani.md](khalani/Khalani.md) |
 | `kyberswap/` | KyberSwap aggregator swaps (limit orders + ZaaS deleted, Agent Scan Phase 1) | 19 EVM chains | 23 | [KyberSwap.md](kyberswap/KyberSwap.md) |
 | `uniswap/` | Direct on-chain swap quote/execute — hidden pair, reveal-gated behind KyberSwap | EVM | 12 | (no dedicated doc yet) |
@@ -24,9 +23,10 @@
 entirely in Agent Scan Phase 1 (may return someday as a fresh integration). Its `Polymarket.md`
 doc was deleted with it.
 
-**Total: ~122 files across 7 modules** (approximate; `evm-chains/`, `pendle/`, `relay/`,
+**Total: ~111 files across 6 modules** (approximate; `evm-chains/`, `pendle/`, `relay/`,
 `twitter-account/`, `virtuals/` are also present under `src/tools/` but predate this table —
-not re-audited as part of this pass).
+not re-audited as part of this pass). `hyperliquid/` (11 files) was removed entirely in
+Agent Scan Phase 3 (total Hyperliquid deletion); its `Hyperliquid.md` doc was deleted with it.
 
 ---
 
@@ -70,7 +70,6 @@ extension shape.)
 | Khalani | https://khalani.gitbook.io/khalani-docs |
 | KyberSwap | https://docs.kyberswap.com/ |
 | DexScreener | https://docs.dexscreener.com/api/reference |
-| Hyperliquid | https://hyperliquid.gitbook.io/hyperliquid-docs |
 
 ---
 

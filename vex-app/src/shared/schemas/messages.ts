@@ -13,7 +13,6 @@
  */
 
 import { z } from "zod";
-import { hyperliquidDisplayBlockSchema } from "./hyperliquid.js";
 
 export const MESSAGES_TAIL_DEFAULT_LIMIT = 50;
 export const MESSAGES_TAIL_MAX_LIMIT = 100;
@@ -144,8 +143,6 @@ export const sessionMessageDtoSchema = z
      * `tool_result` row `<toolName>_output`.
      */
     toolCalls: z.array(toolCallDisplaySchema).max(32).nullable(),
-    /** Main-validated card data; renderer never brands model-authored text. */
-    toolDisplayBlock: hyperliquidDisplayBlockSchema.nullable().optional(),
     /**
      * Validated block-explorer refs for a `tool_result` row (the first
      * narrowly allow-listed projection of `messages.metadata`). Required and

@@ -50,7 +50,16 @@ export const missionListEntrySchema = z
   .min(1)
   .max(MISSION_DRAFT_LIST_ITEM_MAX);
 
-/** Renderer-safe mirror of the accepted mission-only HL risk envelope. */
+/**
+ * Renderer-safe mirror of the accepted mission-only Hyperliquid risk
+ * envelope. HISTORICAL ONLY (Hyperliquid removed, Agent Scan Phase 3): a
+ * mission accepted while `CONTRACT_HASH_VERSION` was 2 may still carry this
+ * in its `constraints_json.hyperliquidRisk` (see
+ * `engine/mission/contract-hash-legacy-v2.ts` — a frozen, standalone copy of
+ * the same shape used for hash reproduction on the root side). New missions
+ * can never populate it again; keep this schema for reading OLD rows, never
+ * as a live write path.
+ */
 export const hyperliquidMissionRiskTransportSchema = z.object({
   leverageCap: z.number().int().min(1),
   perOrderNotionalPct: z.number().min(1).max(50),
@@ -83,7 +92,11 @@ export const missionDraftDtoSchema = z
     title: z.string().max(MISSION_DRAFT_TITLE_MAX).nullable(),
     goal: z.string().max(MISSION_DRAFT_GOAL_MAX).nullable(),
     constraints: missionConstraintsSchema,
-    /** Optional accepted v2 overlay. Omitted for legacy v1 mission DTOs. */
+    /**
+     * HISTORICAL ONLY: present only for a mission accepted under the frozen
+     * v2 contract shape while Hyperliquid mutations were live. Omitted for
+     * v1/v3 mission DTOs (v3 is current post-removal).
+     */
     hyperliquidRisk: hyperliquidMissionRiskTransportSchema.nullable().optional(),
     successCriteria: z.array(missionListEntrySchema).max(MISSION_DRAFT_LIST_MAX),
     stopConditions: z.array(missionListEntrySchema).max(MISSION_DRAFT_LIST_MAX),

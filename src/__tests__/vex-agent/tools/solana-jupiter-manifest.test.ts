@@ -4,8 +4,8 @@ import { SOLANA_JUPITER_TOOLS } from "../../../vex-agent/tools/protocols/solana-
 describe("solana-jupiter manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
 
-  it("has 20 tools total", () => {
-    expect(SOLANA_JUPITER_TOOLS).toHaveLength(20);
+  it("has 34 tools total", () => {
+    expect(SOLANA_JUPITER_TOOLS).toHaveLength(34);
   });
 
   // ── All expected toolIds present ─────────────────────────────────
@@ -30,15 +30,32 @@ describe("solana-jupiter manifest", () => {
     "solana.predict.sell",
     "solana.predict.claim",
     "solana.predict.closeAll",
-    // Lend (4)
+    // Predict — pre-trade visibility & order tools (W1-D) (6)
+    "solana.predict.orderbook",
+    "solana.predict.tradingStatus",
+    "solana.predict.orders",
+    "solana.predict.order",
+    "solana.predict.orderStatus",
+    "solana.predict.trades",
+    // Predict — discovery & social tools (W1-F) (5)
+    "solana.predict.profile",
+    "solana.predict.pnlHistory",
+    "solana.predict.leaderboards",
+    "solana.predict.vaultInfo",
+    "solana.predict.suggestedEvents",
+    // Lend — Earn (4)
     "solana.lend.rates",
     "solana.lend.positions",
     "solana.lend.deposit",
     "solana.lend.withdraw",
+    // Lend — Borrow (3, Batch 5 card B1)
+    "solana.lend.borrowVaults",
+    "solana.lend.borrowPositions",
+    "solana.lend.borrowOperate",
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(20);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(34);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -86,6 +103,7 @@ describe("solana-jupiter manifest", () => {
     "solana.predict.closeAll",
     "solana.lend.deposit",
     "solana.lend.withdraw",
+    "solana.lend.borrowOperate",
   ];
 
   it("has correct number of mutating tools", () => {
@@ -134,6 +152,31 @@ describe("solana-jupiter manifest", () => {
     expect(required).toContain("amountUsdc");
   });
 
+  // ── Tokens output redesign (W1-G) ─────────────────────────────────
+  // statsInterval selector + client-side threshold filters, on both
+  // solana.tokens.search and solana.tokens.trending.
+
+  for (const toolId of ["solana.tokens.search", "solana.tokens.trending"]) {
+    it(`${toolId} declares statsInterval + threshold filter params`, () => {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const byKey = new Map(tool.params.map(p => [p.key, p]));
+
+      expect(byKey.get("statsInterval")?.type).toBe("string");
+      expect(byKey.get("minOrganicScore")?.type).toBe("number");
+      expect(byKey.get("verifiedOnly")?.type).toBe("boolean");
+      expect(byKey.get("minLiquidity")?.type).toBe("number");
+      for (const key of ["statsInterval", "minOrganicScore", "verifiedOnly", "minLiquidity"]) {
+        expect(byKey.get(key)?.required, `${toolId}.${key} should be optional`).toBeFalsy();
+      }
+    });
+  }
+
+  it("solana.tokens.trending's category param lists stocks (tokenized equities)", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.tokens.trending")!;
+    const category = tool.params.find(p => p.key === "category")!;
+    expect(category.description).toContain("stocks");
+  });
+
   // ── Pagination on unbounded list tools (P1-11) ───────────────────
   // events + positions are unbounded lists and MUST expose limit/offset;
   // history already did. Both params are optional numbers.
@@ -151,6 +194,189 @@ describe("solana-jupiter manifest", () => {
       expect(offset!.required).toBeFalsy();
     });
   }
+
+  // ── Prediction filters + limits (W1-C, Packet C) ─────────────────
+  // Full SDK-validated param passthrough on events/search/event/positions/
+  // history, plus the owner-wide limit cap (default 20, max 100 — search
+  // stays provider-bounded 1-20).
+
+  it("solana.predict.events declares provider/subcategory/tags/sortBy/sortDirection/includeMarkets, all optional", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.events")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("provider")?.type).toBe("string");
+    expect(byKey.get("subcategory")?.type).toBe("string");
+    expect(byKey.get("tags")?.type).toBe("string");
+    expect(byKey.get("sortBy")?.type).toBe("string");
+    expect(byKey.get("sortDirection")?.type).toBe("string");
+    expect(byKey.get("includeMarkets")?.type).toBe("boolean");
+    for (const key of ["provider", "subcategory", "tags", "sortBy", "sortDirection", "includeMarkets"]) {
+      expect(byKey.get(key)?.required, `solana.predict.events.${key} should be optional`).toBeFalsy();
+    }
+    // filter gained the `upcoming` value (W1-A/W1-C) — the description must
+    // say so, not just the underlying validator.
+    expect(byKey.get("filter")?.description).toContain("upcoming");
+  });
+
+  it("solana.predict.search declares provider/includeMarkets/limit, all optional; limit description discloses local enforcement (F2)", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.search")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("provider")?.type).toBe("string");
+    expect(byKey.get("includeMarkets")?.type).toBe("boolean");
+    expect(byKey.get("limit")?.type).toBe("number");
+    for (const key of ["provider", "includeMarkets", "limit"]) {
+      expect(byKey.get(key)?.required, `solana.predict.search.${key} should be optional`).toBeFalsy();
+    }
+    // The provider ignores its own `limit` param live — Vex enforces the
+    // agent's requested window locally, and the manifest must say so.
+    expect(byKey.get("limit")?.description.toLowerCase()).toContain("locally");
+  });
+
+  it("solana.predict.event declares an optional includeMarkets boolean", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.event")!;
+    const includeMarkets = tool.params.find(p => p.key === "includeMarkets")!;
+    expect(includeMarkets.type).toBe("boolean");
+    expect(includeMarkets.required).toBeFalsy();
+  });
+
+  it("solana.predict.positions declares optional marketPubkey/marketId/isYes filters", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.positions")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("marketPubkey")?.type).toBe("string");
+    expect(byKey.get("marketId")?.type).toBe("string");
+    expect(byKey.get("isYes")?.type).toBe("boolean");
+    for (const key of ["marketPubkey", "marketId", "isYes"]) {
+      expect(byKey.get(key)?.required, `solana.predict.positions.${key} should be optional`).toBeFalsy();
+    }
+  });
+
+  it("solana.predict.history declares optional positionPubkey/id filters", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.history")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("positionPubkey")?.type).toBe("string");
+    expect(byKey.get("id")?.type).toBe("number");
+    expect(byKey.get("positionPubkey")?.required).toBeFalsy();
+    expect(byKey.get("id")?.required).toBeFalsy();
+  });
+
+  it("events/positions/history limit descriptions state the owner-wide 1-100 cap", () => {
+    for (const toolId of ["solana.predict.events", "solana.predict.positions", "solana.predict.history"]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const limit = tool.params.find(p => p.key === "limit")!;
+      expect(limit.description, `${toolId}.limit description`).toContain("100");
+    }
+  });
+
+  // ── Pre-trade visibility & order tools (W1-D, Packet D) ──────────
+
+  it("solana.predict.orderbook requires marketId", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.orderbook")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toEqual(["marketId"]);
+  });
+
+  it("solana.predict.tradingStatus takes no params", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.tradingStatus")!;
+    expect(tool.params).toHaveLength(0);
+  });
+
+  it("solana.predict.orders requires address and declares optional limit/offset", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.orders")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("address")?.required).toBe(true);
+    expect(byKey.get("limit")?.type).toBe("number");
+    expect(byKey.get("offset")?.type).toBe("number");
+    expect(byKey.get("limit")?.required).toBeFalsy();
+    expect(byKey.get("offset")?.required).toBeFalsy();
+  });
+
+  for (const toolId of ["solana.predict.order", "solana.predict.orderStatus"]) {
+    it(`${toolId} requires orderPubkey`, () => {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const required = tool.params.filter(p => p.required).map(p => p.key);
+      expect(required).toEqual(["orderPubkey"]);
+    });
+  }
+
+  it("solana.predict.trades requires limit (F2 — no default-N truncation on an unscoped global feed) and declares optional offset", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.trades")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toEqual(["limit"]);
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("limit")?.type).toBe("number");
+    expect(byKey.get("offset")?.type).toBe("number");
+    expect(byKey.get("offset")?.required).toBeFalsy();
+  });
+
+  it("W1-D tools are all read-only", () => {
+    for (const toolId of [
+      "solana.predict.orderbook", "solana.predict.tradingStatus", "solana.predict.orders",
+      "solana.predict.order", "solana.predict.orderStatus", "solana.predict.trades",
+    ]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      expect(tool.mutating).toBe(false);
+      expect(tool.actionKind).toBe("read");
+    }
+  });
+
+  // ── Discovery & social tools (W1-F, Packet F) ────────────────────
+
+  it("solana.predict.profile requires address", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.profile")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toEqual(["address"]);
+  });
+
+  it("solana.predict.pnlHistory requires address and interval, declares optional count capped at 100 (F2 owner-wide limit)", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.pnlHistory")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("address")?.required).toBe(true);
+    expect(byKey.get("interval")?.required).toBe(true);
+    expect(byKey.get("count")?.type).toBe("number");
+    expect(byKey.get("count")?.required).toBeFalsy();
+    expect(byKey.get("count")?.description).toContain("100");
+  });
+
+  it("solana.predict.leaderboards requires period, metric, and limit", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.leaderboards")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toEqual(expect.arrayContaining(["period", "metric", "limit"]));
+    expect(required).toHaveLength(3);
+  });
+
+  // P1: winRatePct's scale is not confirmed by any fixture or doc — the
+  // manifest description must say so rather than let an agent present it as
+  // a settled percent.
+  it("solana.predict.leaderboards description flags winRatePct as unit-unconfirmed", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.leaderboards")!;
+    expect(tool.description).toContain("winRatePct");
+    expect(tool.description).toContain("unit-unconfirmed");
+  });
+
+  it("solana.predict.vaultInfo takes no params", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.vaultInfo")!;
+    expect(tool.params).toHaveLength(0);
+  });
+
+  it("solana.predict.suggestedEvents requires pubkey and declares optional provider/includeMarkets", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.suggestedEvents")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("pubkey")?.required).toBe(true);
+    expect(byKey.get("provider")?.type).toBe("string");
+    expect(byKey.get("includeMarkets")?.type).toBe("boolean");
+    expect(byKey.get("provider")?.required).toBeFalsy();
+    expect(byKey.get("includeMarkets")?.required).toBeFalsy();
+  });
+
+  it("W1-F tools are all read-only", () => {
+    for (const toolId of [
+      "solana.predict.profile", "solana.predict.pnlHistory", "solana.predict.leaderboards",
+      "solana.predict.vaultInfo", "solana.predict.suggestedEvents",
+    ]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      expect(tool.mutating).toBe(false);
+      expect(tool.actionKind).toBe("read");
+    }
+  });
 
   // ── Descriptions quality ─────────────────────────────────────────
 
@@ -220,6 +446,49 @@ describe("solana-jupiter manifest", () => {
     expect(deposit.discovery!.embeddingText).toContain("earn yield");
     expect(withdraw.discovery!.embeddingText).toContain("vault");
     expect(withdraw.discovery!.embeddingText?.toLowerCase()).toContain("withdraw");
+  });
+
+  // ── Lend Borrow (Batch 5, card B1) ───────────────────────────────
+
+  it("solana.lend.borrowVaults takes only optional market/vaultIds params", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.borrowVaults")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toEqual([]);
+    expect(tool.mutating).toBe(false);
+    expect(tool.actionKind).toBe("read");
+  });
+
+  it("solana.lend.borrowPositions is read-only with optional address/market/vaultIds", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.borrowPositions")!;
+    const required = tool.params.filter(p => p.required).map(p => p.key);
+    expect(required).toEqual([]);
+    expect(tool.mutating).toBe(false);
+    expect(tool.actionKind).toBe("read");
+  });
+
+  it("solana.lend.borrowOperate requires vaultId and declares the six mutually-exclusive leg params", () => {
+    const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.borrowOperate")!;
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("vaultId")?.required).toBe(true);
+    expect(byKey.get("vaultId")?.type).toBe("number");
+    for (const key of ["depositAmount", "withdrawAmount", "borrowAmount", "repayAmount"]) {
+      expect(byKey.get(key)?.type, key).toBe("string");
+      expect(byKey.get(key)?.required, key).toBeFalsy();
+    }
+    for (const key of ["withdrawAll", "repayAll"]) {
+      expect(byKey.get(key)?.type, key).toBe("boolean");
+      expect(byKey.get(key)?.required, key).toBeFalsy();
+    }
+    expect(tool.mutating).toBe(true);
+    expect(tool.actionKind).toBe("user_wallet_broadcast");
+  });
+
+  it("lend-borrow embeddings mention collateral/debt semantics, distinct from Earn", () => {
+    const vaults = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.borrowVaults")!;
+    const operate = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.lend.borrowOperate")!;
+    expect(vaults.discovery!.embeddingText).toContain("LTV");
+    expect(operate.discovery!.embeddingText?.toLowerCase()).toContain("collateral");
+    expect(operate.discovery!.embeddingText?.toLowerCase()).toContain("borrow");
   });
 
   it("prediction embeddings mention YES NO markets and portfolio intent", () => {

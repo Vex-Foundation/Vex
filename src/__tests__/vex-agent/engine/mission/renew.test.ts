@@ -69,10 +69,10 @@ vi.mock("@vex-agent/db/client.js", () => ({
 const { renewMission } = await import(
   "../../../../vex-agent/engine/mission/renew.js"
 );
-const { computeContractHash, LEGACY_CONTRACT_HASH_VERSION } = await import(
+const { computeContractHash, LEGACY_CONTRACT_HASH_VERSION, LEGACY_V2_CONTRACT_HASH_VERSION } = await import(
   "../../../../vex-agent/engine/mission/contract-hash.js"
 );
-const { missionToDraft } = await import(
+const { extractLegacyHyperliquidRiskV2, missionToDraft } = await import(
   "../../../../vex-agent/engine/mission/mapper.js"
 );
 
@@ -210,6 +210,36 @@ describe("renewMission", () => {
     // (client, sourceMissionId, newMissionId, targetSessionId)
     expect(args[1]).toBe("mission-source");
     expect(args[3]).toBe("session-1");
+  });
+
+  // Agent Scan Phase 3 (Hyperliquid removal): a mission accepted while
+  // `CONTRACT_HASH_VERSION` was 2 must still be renewable — the frozen v2
+  // legacy material (`contract-hash-legacy-v2.ts`) reproduces its exact
+  // original hash from the raw `constraints_json.hyperliquidRisk` this
+  // source mission still carries, even though `MissionDraft` no longer
+  // surfaces it.
+  it("renews a source mission accepted under the frozen legacy v2 contract hash (historical Hyperliquid risk)", async () => {
+    const hyperliquidRisk = { leverageCap: 3, perOrderNotionalPct: 20, totalNotionalPct: 100 };
+    const source = makeMission({
+      constraintsJson: { deadline: "2026-04-04", hyperliquidRisk },
+      contractHashVersion: LEGACY_V2_CONTRACT_HASH_VERSION,
+    });
+    const legacyHash = computeContractHash(
+      missionToDraft(source),
+      LEGACY_V2_CONTRACT_HASH_VERSION,
+      extractLegacyHyperliquidRiskV2(source),
+    );
+    mockGetMissionForUpdate.mockResolvedValueOnce({ ...source, acceptedContractHash: legacyHash });
+    mockGetActiveRun.mockResolvedValueOnce(null);
+    mockGetActiveRunBySession.mockResolvedValueOnce(null);
+
+    const outcome = await renewMission({
+      sessionId: "session-1",
+      previousMissionId: "mission-source",
+    });
+
+    expect(outcome.outcome).toBe("renewed");
+    expect(mockCloneMissionAsDraft).toHaveBeenCalledTimes(1);
   });
 
   it("reconciles the NEW mission's draft readiness in the SAME tx client as the clone", async () => {

@@ -8,6 +8,8 @@
 
 import type { ActionKind } from "./taxonomy.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 
 // ── Tool definition (what LLM sees) ─────────────────────────────
 
@@ -228,6 +230,15 @@ export interface ToolResult {
    * EVM-only, omitted when there is no fee-on-transfer leg.
    */
   prequote?: {
+    /**
+     * REQUIRED (reverted in card B3 — Codex batch-5 blocker on B1's
+     * required→optional widening): every caller that sets `prequote` has a
+     * matched swap/bridge safety verdict. `solana.lend.borrowOperate` has NO
+     * matched swap/bridge prequote at all (it is not a swap-gated tool), so
+     * its LTV/health disclosure rides its OWN top-level `riskPreview` sibling
+     * field below instead of living inside `prequote` — see `runtime/gates.ts`'s
+     * `evaluateRiskPreview`.
+     */
     readonly verdict: SafetyVerdict;
     readonly fotTax?: number;
     /**
@@ -238,17 +249,29 @@ export interface ToolResult {
      * before approving. Unspoofable by construction (never read from args).
      */
     readonly termLock?: { readonly maturityIso: string };
+    /**
+     * Jupiter fee-bearing swap disclosure (W5 design §6 R4) — the 25bps fee,
+     * fee mint + treasury ATA, ATA rent (if the account does not yet exist),
+     * tip, and priority-fee strategy for a `solana.swap.execute`. Sourced from
+     * the matched prequote's persisted `safetyDetail` (NOT raw args), it rides
+     * this typed channel into `buildIntentPreview` so a restricted human sees
+     * the full economic disclosure before approving.
+     */
+    readonly feePreview?: JupiterFeePreview;
   };
   /**
-   * Trusted Hyperliquid gate output for approval display. Never sourced from
-   * model params; it is computed from policy plus live exchange state.
+   * Jupiter Lend Borrow LTV/health disclosure (Agent Scan Phase 3 Batch 5,
+   * card B1 owner decision: "Approval preview MUST show LTV/health risk
+   * semantics before approval") for a `solana.lend.borrowOperate` call. A
+   * SIBLING of `prequote` (card B3 — `solana.lend.borrowOperate` has no
+   * matched swap/bridge verdict, so `prequote.verdict` stays required for
+   * every OTHER caller instead of being widened to accommodate this one).
+   * Computed fresh (never persisted) by `runtime/gates.ts`'s
+   * `evaluateRiskPreview`, sourced from a live vault/position/price read —
+   * NOT from raw args — so it rides this unspoofable typed channel into
+   * `buildIntentPreview`.
    */
-  hyperliquid?: {
-    readonly stopLossVerdict?: "protected_required" | "unprotected_by_user_choice";
-    readonly notionalUsd?: string;
-    readonly estLiquidationPx?: string;
-    readonly destinationClass?: string;
-  };
+  riskPreview?: LendBorrowRiskPreview;
   /**
    * Trusted one-step handoff from a successful non-mutating prepare tool to
    * its mutating execution tool. The turn loop validates the source→target

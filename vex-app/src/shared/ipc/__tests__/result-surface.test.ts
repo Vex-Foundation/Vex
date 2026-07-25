@@ -52,7 +52,6 @@ describe("result barrel surface", () => {
       "permissions.denied",
       "wallet.insufficient_funds",
       "wallet.user_rejected",
-      "wallet.risk_confirmation_required",
       "wallet.policy_blocked",
       "wallet.export_throttled",
       "wallet.keystore_locked",
@@ -129,8 +128,6 @@ describe("result barrel surface", () => {
       "compaction",
       "memory",
       "portfolio",
-      // Hyperliquid adds a dedicated main-owned IPC error domain.
-      "hyperliquid",
       "market",
       "sessions",
       "preload",

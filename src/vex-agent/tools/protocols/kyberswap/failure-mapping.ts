@@ -1,22 +1,29 @@
 /**
- * KyberSwap failure → Agent Scan mapping (plan §4.1/§11.2).
+ * KyberSwap failure → Agent Scan mapping (plan §4.1/§11.2; REVISION 1 —
+ * reveal-on-execute-revert design).
  *
- * Two independent classifications of the SAME caught error:
+ * Three classifications, the first two of the SAME caught (pre-broadcast)
+ * error, the third of a MINED on-chain outcome (never a caught error):
  *   - `mapKyberFailureToActivityCode` — the closed 11-member `agent_activity`
  *     `failure_code` enum (`db/repos/agent-activity.ts`), for recording.
  *   - `deriveKyberRevealFailure` — the coordinator-fixed reveal-eligible input
  *     shape (`tools/registry/uniswap-reveal-eligibility.ts`'s
  *     `KyberRevealFailure`), for deciding whether to reveal the hidden
- *     `swap_quote_uniswap`/`swap_execute_uniswap` pair.
+ *     `swap_quote_uniswap`/`swap_execute_uniswap` pair from a caught
+ *     PRE-BROADCAST VexError.
+ *   - `deriveKyberMinedRevertRevealFailure` — the same reveal-eligible input
+ *     shape, but derived from the staged broadcast loop's `outcome.kind ===
+ *     "reverted"` (a MINED revert has no caught error to read). Role-scoped
+ *     (REVISION 1 R1): produces the signal ONLY for the `swap` leg role.
  *
- * Neither re-derives `mapAggregatorError`'s VexError mapping
+ * Neither of the first two re-derives `mapAggregatorError`'s VexError mapping
  * (`tools/kyberswap/aggregator/errors.ts`) — both read the ALREADY-MAPPED
  * VexError's `code` + the raw numeric Kyber code carried in `externalName`
  * (set by `withMeta` at the mapping site).
  */
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
-import type { AgentActivityFailureCode } from "@vex-agent/db/repos/agent-activity.js";
+import type { AgentActivityFailureCode, AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
 import type { KyberRevealFailure } from "../../registry/uniswap-reveal-eligibility.js";
 
 /** The raw numeric Kyber error code, when the caught error carries one (`mapAggregatorError`'s `externalName`). */
@@ -74,4 +81,23 @@ export function deriveKyberRevealFailure(
   const code = rawKyberCode(err);
   if (code === undefined) return null;
   return { kind: "kyber_code", code, tokenInputsValidated };
+}
+
+/**
+ * Derive the `swap_mined_revert` reveal signal for a MINED on-chain revert of
+ * the staged broadcast loop (`outcome.kind === "reverted"` in
+ * `kyberswap.swap.execute`) — a structurally different signal from
+ * `deriveKyberRevealFailure` above (which reads a caught PRE-BROADCAST
+ * VexError; a mined revert is a `StagedBroadcastOutcome`, never thrown).
+ *
+ * Produced ONLY for the `swap` leg role (REVISION 1 R1 — the shared-branch
+ * bug): an `allowance`/`allowance_reset` leg reverting is an ERC-20 approve
+ * failure, categorically unrelated to route/venue selection, and must NEVER
+ * reveal. The role is encoded in this function's input (coordinator-fixed),
+ * not left to an informal caller check at the call site.
+ */
+export function deriveKyberMinedRevertRevealFailure(
+  eventRole: AgentActivityEventRole,
+): KyberRevealFailure | null {
+  return eventRole === "swap" ? { kind: "swap_mined_revert" } : null;
 }

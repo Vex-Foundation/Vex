@@ -67,16 +67,14 @@ function shortHash(hash: string | null | undefined): string | null {
   return hash.length <= 14 ? hash : `${hash.slice(0, 8)}…${hash.slice(-4)}`;
 }
 
-function leg(amount: string | null | undefined, token: string | null | undefined): string | null {
-  return amount != null && token != null ? `${amount} ${token}` : null;
-}
-
 /**
- * A bridge amount leg. When the amount is a quote (Q2 `amountBasis:'estimated'`)
- * it is marked explicitly (`~… est.`) so a quoted bridge amount never reads as
- * an executed quantity (Codex FIX-ROUND-1 finding 12 / R14).
+ * One amount leg (`amount token`). When the row's `amountBasis` is a quote
+ * (`estimated` — Q2 for bridges, R5 for a lend/prediction/swap confirmation
+ * without decoder-proven executed legs) it is marked explicitly (`~… est.`)
+ * so a quoted amount never reads as an executed quantity (Codex FIX-ROUND-1
+ * finding 12 / R14, extended to every kind by W5/R5).
  */
-function bridgeLeg(
+function formatLeg(
   amount: string | null | undefined,
   token: string | null | undefined,
   estimated: boolean,
@@ -107,8 +105,8 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   const venue = row.protocol ?? row.namespace;
   const status = row.status ?? "pending";
   const estimated = row.amountBasis === "estimated";
-  const inLeg = bridgeLeg(row.inputAmount, row.inputToken, estimated);
-  const outLeg = bridgeLeg(row.outputAmount, row.outputToken, estimated);
+  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated);
+  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated);
   const amount = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? null);
   const head = amount != null ? `Bridging ${amount} (${route})` : `Bridge ${route}`;
 
@@ -140,8 +138,12 @@ function summarize(row: TransactionRow): string {
 
   const chain = row.chain ?? "unknown chain";
   const venue = row.protocol ?? row.namespace;
-  const inLeg = leg(row.inputAmount, row.inputToken);
-  const outLeg = leg(row.outputAmount, row.outputToken);
+  // Swap/lend/prediction rows (R5): a confirmed row without decoder-proven
+  // executed legs falls back to the quote, marked `~… est.` — never a bare
+  // executed-looking quantity for an attempt the decoder couldn't prove.
+  const estimated = row.amountBasis === "estimated";
+  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated);
+  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated);
   const route = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? venue);
   const status = row.status ?? "confirmed";
 

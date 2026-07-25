@@ -69,7 +69,19 @@ const mockPrepareQuoteRequest = vi.fn(async (input: { fromAddress: string; recip
   toFamily: "eip155",
   request: { fromAddress: input.fromAddress, recipient: input.recipient },
 }));
-vi.mock("@tools/khalani/request.js", () => ({ prepareQuoteRequest: (...a: unknown[]) => mockPrepareQuoteRequest(...(a as [{ fromAddress: string; recipient: string }])) }));
+vi.mock("@tools/khalani/request.js", () => ({
+  prepareQuoteRequest: (...a: unknown[]) => mockPrepareQuoteRequest(...(a as [{ fromAddress: string; recipient: string }])),
+  // Kept faithful to the real guard so the handler's fee rejection stays live.
+  findCallerSuppliedFeeParam: (params: Record<string, unknown>) => {
+    for (const key of ["referrer", "referrerFeeBps"]) {
+      const value = params[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value === "string" && value.trim() === "") continue;
+      return key;
+    }
+    return null;
+  },
+}));
 
 vi.mock("@tools/khalani/helpers.js", () => ({ resolveRouteBestIndex: () => 0 }));
 

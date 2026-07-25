@@ -98,6 +98,8 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 }));
 
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
+const { DependentLegGasEstimateError, DEPENDENT_LEG_ESTIMATE_MARKER } =
+  await import("@tools/evm-chains/dependent-leg-gas-estimate.js");
 
 const CTX: ProtocolExecutionContext = {
   sessionPermission: "full",
@@ -401,6 +403,108 @@ describe("relay.bridge — staging failure modes", () => {
   });
 });
 
+/**
+ * Live 2026-07-25 regression: the origin approve
+ * `0x68dec753bc925c2d255104e22a27cc0c62ea9b5c85160fd99661a0009f378548`
+ * CONFIRMED, then the deposit leg was refused pre-sign with `Execution
+ * reverted for an unknown reason`; an immediate retry of the unchanged
+ * transaction landed (`0xc96bfee1…`). The refusal was reported as an
+ * unexplained interruption, which is what makes a transient RPC lag permanent
+ * for an autonomous agent.
+ */
+describe("relay.bridge — deposit refused because its estimate never succeeded after a confirmed approve", () => {
+  const APPROVE_BLOCK = 34_567_890n;
+  const LIVE_DEPOSIT_REVERT = "Execution reverted for an unknown reason.";
+
+  /** approve confirms (carrying its receipt block), then the deposit leg throws `err`. */
+  function approveThenDepositThrows(err: Error) {
+    let leg = 0;
+    return async (
+      _p: unknown, _w: unknown, _tx: unknown,
+      hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> },
+    ) => {
+      if (leg++ === 0) {
+        await hooks.onHashStaged({ txHash: "0xapprove", fromAddress: SEL_EVM, nonce: 1 });
+        await hooks.onAccepted();
+        return { kind: "confirmed", txHash: "0xapprove", receipt: { blockNumber: APPROVE_BLOCK } };
+      }
+      throw err;
+    };
+  }
+
+  beforeEach(() => {
+    mockStepPolicy.mockReturnValue({ ok: true, steps: [approveStep, depositStep] });
+  });
+
+  it("threads the confirmed approve's receipt block into the deposit leg's estimate", async () => {
+    mockSign.mockImplementation(approveThenDepositThrows(new Error(LIVE_DEPOSIT_REVERT)));
+
+    await runBridge();
+
+    expect(mockSign).toHaveBeenCalledTimes(2);
+    expect(mockSign.mock.calls[0]![4]).toBeUndefined(); // the approve has nothing before it
+    expect(mockSign.mock.calls[1]![4]).toEqual({ blockNumber: APPROVE_BLOCK });
+  });
+
+  it("reports a stale-estimate refusal as not_attempted + safe to re-run, and records the marker", async () => {
+    mockSign.mockImplementation(approveThenDepositThrows(new DependentLegGasEstimateError({
+      attempts: 3,
+      priorLegBlockNumber: APPROVE_BLOCK,
+      observedHeadBlock: APPROVE_BLOCK,
+      cause: new Error(LIVE_DEPOSIT_REVERT),
+    })));
+
+    const result = await runBridge();
+    const body = outputOf(result);
+
+    expect(result.success).toBe(false);
+    expect(body.status).toBe("not_attempted");
+    expect(String(body.message)).toContain("Nothing was signed or broadcast");
+    expect(String(body.message)).toContain("reasonable");
+    // The durable reason (via abortPlannedEvents) carries the same discriminator.
+    expect(mockAbort).toHaveBeenCalledWith(100, 1, expect.stringContaining(DEPENDENT_LEG_ESTIMATE_MARKER));
+    // Aborting from the deposit index onward finalizes the logical fill row too,
+    // which is what releases the in-flight guard so re-running is actually possible.
+    expect(mockFail).not.toHaveBeenCalled();
+  });
+
+  it("a genuine failure at the same point still reads as an interruption — the two are NOT the same message", async () => {
+    mockSign.mockImplementation(approveThenDepositThrows(new Error(LIVE_DEPOSIT_REVERT)));
+    const genuine = outputOf(await runBridge());
+
+    vi.clearAllMocks();
+    mockGetCachedRelayChains.mockResolvedValue(CHAINS);
+    mockGetQuote.mockResolvedValue(quote());
+    mockAdapt.mockReturnValue(adaptedOk());
+    mockHealth.mockReturnValue({ serviceable: true, origin: CHAINS[0], destination: CHAINS[1] });
+    mockCorrelation.mockReturnValue({ ok: true, requestId: "0xreq" });
+    mockStepPolicy.mockReturnValue({ ok: true, steps: [approveStep, depositStep] });
+    mockCheckInFlight.mockResolvedValue({ inFlight: false, existing: null });
+    mockResolveStepClients.mockResolvedValue({ publicClient: {}, walletClient: {} });
+    mockPlanStepTx.mockReturnValue({ to: "0x2222222222222222222222222222222222222222", data: "0x", value: 0n });
+    mockCreateIntent.mockImplementation(async (input: { legs: unknown[] }) => ({
+      outcome: "created", executionId: 100,
+      legs: input.legs.map((_l, i) => ({ id: 200 + i })), expectedFill: { id: 300 },
+    }));
+    mockMarkBroadcast.mockResolvedValue({ applied: true, row: { id: 0 } });
+    mockMarkAccepted.mockResolvedValue({ applied: true, row: { id: 0 } });
+    mockConfirm.mockResolvedValue({ applied: true, row: { id: 0 } });
+    mockAbort.mockResolvedValue([]);
+    mockSign.mockImplementation(approveThenDepositThrows(new DependentLegGasEstimateError({
+      attempts: 3,
+      priorLegBlockNumber: APPROVE_BLOCK,
+      observedHeadBlock: APPROVE_BLOCK,
+      cause: new Error(LIVE_DEPOSIT_REVERT),
+    })));
+    const stale = outputOf(await runBridge());
+
+    expect(genuine.status).toBe("interrupted");
+    expect(String(genuine.message)).toContain("An internal error interrupted the bridge");
+    expect(String(genuine.message)).not.toContain("Nothing was signed or broadcast");
+    expect(String(stale.message)).not.toEqual(String(genuine.message));
+  });
+});
+
 // ── USD nullable propagation ──
 describe("relay.bridge — USD nullable end-to-end (Q2)", () => {
   it("null quote USD → expectedFill usd*Est undefined + output usd null (never fabricated)", async () => {
@@ -457,5 +561,53 @@ describe("relay.quote.get — read preview keeps the prequote structural shape +
     expect(mockCreateIntent).not.toHaveBeenCalled();
     expect(mockPreFail).not.toHaveBeenCalled();
     expect(mockSign).not.toHaveBeenCalled();
+  });
+});
+
+// ── Scrub boundary on the leg-resolution path (FIX5) ──
+//
+// `resolveLegs` throws locally-authored text, but `resolveRelayChainId` echoes
+// the MODEL-SUPPLIED chain value verbatim (`Relay does not support chain
+// "<input>".`). Both handlers returned that raw `err.message`, so a
+// model-injected URL or key-shaped string reached tool output without ever
+// passing the sanitisation boundary. Chain resolution is real here (only the
+// Relay client/gates are mocked), so these exercise the true throw.
+describe("relay leg resolution — model-supplied params reach output only through the scrub boundary", () => {
+  const INJECTED_URL = "https://evil.example.com/x?key=LEAKEDKEY123";
+
+  it("relay.quote.get redacts a URL injected through fromChain", async () => {
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(
+      { ...PARAMS, fromChain: INJECTED_URL },
+      CTX,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).not.toContain("LEAKEDKEY123");
+    expect(result.output).not.toContain("evil.example.com");
+    expect(result.output).toContain("[url]");
+    // The honest part of the message still reaches the agent.
+    expect(result.output).toMatch(/does not support chain/i);
+  });
+
+  it("relay.bridge redacts a URL injected through toChain — before any quote or signing", async () => {
+    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(
+      { ...PARAMS, toChain: INJECTED_URL },
+      CTX,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).not.toContain("LEAKEDKEY123");
+    expect(result.output).not.toContain("evil.example.com");
+    expect(result.output).toContain("[url]");
+    expect(mockGetQuote).not.toHaveBeenCalled();
+    expect(mockCreateIntent).not.toHaveBeenCalled();
+    expect(mockSign).not.toHaveBeenCalled();
+  });
+
+  it("redacts a key-shaped string injected through a chain param", async () => {
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(
+      { ...PARAMS, fromChain: "apiKey=sk-or-v1-abcdef0123456789" },
+      CTX,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).not.toContain("sk-or-v1-abcdef0123456789");
   });
 });

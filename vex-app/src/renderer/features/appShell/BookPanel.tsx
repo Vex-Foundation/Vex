@@ -47,9 +47,6 @@ import { BookBlock } from "./book/BookBlock.js";
 import { MovesBlock } from "./book/MovesBlock.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionBlock } from "./book/SessionBlock.js";
-import { HyperliquidPositionsBlock } from "./book/HyperliquidPositionsBlock.js";
-import { HyperliquidRiskBlock } from "./book/HyperliquidRiskBlock.js";
-import { HypervexingEnterButton } from "./workspace/HypervexingEnterButton.js";
 import { SidebarIconButton } from "./SessionRows.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
 
@@ -120,17 +117,11 @@ export function BookPanel({
         // rhythm) — no gap here, so the rules run edge to edge as one column.
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <PositionBlock activeSessionId={activeSessionId} hero />
-          <HyperliquidPositionsBlock sessionId={activeSessionId} />
-          <HyperliquidRiskBlock sessionId={activeSessionId} />
           <MovesBlock sessionId={activeSessionId} />
           <BookBlock title="Runtime & Cost">
             <SessionRuntimeBar sessionId={activeSessionId} layout="stack" />
           </BookBlock>
           <SessionBlock sessionId={activeSessionId} />
-          {/* Zero-token door back into the room (owner feature): shows
-              only for acknowledged sessions with mode history — main
-              re-verifies both fail-closed on the invoke. */}
-          <HypervexingEnterButton sessionId={activeSessionId} />
         </div>
       ) : null}
     </aside>

@@ -31,7 +31,7 @@ import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
-import { buildHypervexingTurnStatePrompt, buildBridgeCapabilityPrompt } from "../prompts/protocols.js";
+import { buildBridgeCapabilityPrompt } from "../prompts/protocols.js";
 import { getBridgeCapabilityView } from "@vex-agent/tools/protocols/khalani/capability-snapshot.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
 import { buildMemorySection } from "../prompts/memory-section.js";
@@ -170,16 +170,6 @@ export async function buildTurnPromptStack(args: {
   // unconditional, so the two cannot drift (no stale defaultTools path).
   const tools = toToolDefinitions(getOpenAITools(visibilityCtx));
   promptOptions.toolCatalogPrompt = buildToolCatalogPrompt(visibilityCtx);
-  promptOptions.hypervexingTurnStatePrompt = buildHypervexingTurnStatePrompt(
-    visibilityCtx,
-    {
-      sessionId: args.context.sessionId,
-      missionId: args.context.missionId,
-      ...(args.context.selectedEvmWallet === null
-        ? {}
-        : { walletAddress: args.context.selectedEvmWallet.address }),
-    },
-  );
 
   return {
     promptOptions,

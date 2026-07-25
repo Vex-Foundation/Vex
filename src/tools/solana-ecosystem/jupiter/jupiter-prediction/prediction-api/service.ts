@@ -1,12 +1,20 @@
 /**
  * High-level Jupiter Prediction service.
- * Preserves full wire responses and adds signing helpers for transaction-returning endpoints.
+ *
+ * Preserves full wire responses. The `request*Transaction` functions return
+ * the provider's UNSIGNED transaction (+ order/position preview fields)
+ * without signing or broadcasting — W5 (migration 049) moved sign/persist/
+ * submit orchestration to the staged `agent_activity` write path
+ * (`vex-agent/tools/protocols/solana-jupiter/predict-execute.ts`, built on
+ * the K2 primitives: `prepareVersionedTx` + `markActivitySolanaBroadcast` +
+ * `submitPreparedTx`). The OLD monolithic sign-and-send wrappers
+ * (`executeJupiterPredictionCreateOrder`/`ClosePosition`/`CloseAllPositions`/
+ * `ClaimPosition`) were removed — they persisted nothing before broadcasting,
+ * which the W5 recording-before-broadcast doctrine forbids for a Vex-signed
+ * mutation.
  */
 
-import { Keypair } from "@solana/web3.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
-import { signAndSendVersionedTx } from "../../../shared/solana-transaction.js";
-import { solanaExplorerUrl } from "../../../shared/solana-validation.js";
 import {
   jupiterPredictionClaimPosition,
   jupiterPredictionCloseAllPositions,
@@ -35,9 +43,6 @@ import {
 } from "./client.js";
 import type {
   JupiterPredictionClaimPositionResponse,
-  JupiterPredictionCloseAllExecutionItem,
-  JupiterPredictionCloseAllExecutionResult,
-  JupiterPredictionCloseAllPositionsItem,
   JupiterPredictionCloseAllPositionsResponse,
   JupiterPredictionCloseAllPositionsRequest,
   JupiterPredictionClaimPositionRequest,
@@ -49,7 +54,6 @@ import type {
   JupiterPredictionEventMarketsResponse,
   JupiterPredictionEventsParams,
   JupiterPredictionEventsResponse,
-  JupiterPredictionExecutionResult,
   JupiterPredictionGetEventParams,
   JupiterPredictionHistoryParams,
   JupiterPredictionHistoryResponse,
@@ -76,7 +80,14 @@ import type {
   JupiterPredictionVaultInfoResponse,
 } from "./types.js";
 
-function requireTransaction(
+/**
+ * Fail-closed accessor for a provider response's `transaction` field — used
+ * by every W5 mutation caller (`predict-execute.ts`) BEFORE any
+ * `agent_activity` row is created, so a missing/empty transaction is a
+ * PRE-broadcast failure (nothing was ever recorded), never a null passed
+ * silently into `prepareVersionedTx`.
+ */
+export function requireTransaction(
   transaction: string | null | undefined,
   feature: string,
 ): string {
@@ -89,29 +100,16 @@ function requireTransaction(
   return transaction;
 }
 
-function itemKind(item: JupiterPredictionCloseAllPositionsItem): "order" | "claim" {
-  return "order" in item ? "order" : "claim";
-}
-
-async function executePredictionTransaction<T extends { transaction: string | null | undefined }>(
-  signer: Keypair,
-  raw: T,
-  feature: string,
-): Promise<JupiterPredictionExecutionResult<T>> {
-  // `signAndSendVersionedTx` is idempotency-safe (B-007): `sendRawTransaction`
-  // runs at most once. A post-broadcast confirmation-unknown state throws a
-  // non-retryable error carrying the signature rather than re-broadcasting, so
-  // the multi-step close-all loop halts on the unknown item instead of blindly
-  // resending the remaining ones.
-  const signature = await signAndSendVersionedTx(requireTransaction(raw.transaction, feature), [signer]);
-
-  return {
-    signature,
-    explorerUrl: solanaExplorerUrl(signature),
-    signer: signer.publicKey.toBase58(),
-    raw,
-  };
-}
+// Managed-execution routing (`resolveManagedExecution`) lives in the sibling
+// `./managed-execution.js` — it owns the endpoint allowlist and the
+// `requiredSigners`/blockhash-evidence validation, a distinct reason to change
+// from this file's request/response plumbing. It REPLACED
+// `resolveForecastExecutionContext`, whose `executionModel === "atomic_swap"`
+// gate was proven wrong against the live API on 2026-07-25 (see that module).
+export {
+  resolveManagedExecution,
+  type JupiterPredictionManagedExecution,
+} from "./managed-execution.js";
 
 export async function getJupiterPredictionEvents(
   params: JupiterPredictionEventsParams = {},
@@ -253,62 +251,4 @@ export async function requestJupiterPredictionClaimPositionTransaction(
   request: JupiterPredictionClaimPositionRequest,
 ): Promise<JupiterPredictionClaimPositionResponse> {
   return jupiterPredictionClaimPosition(positionPubkey, request);
-}
-
-export async function executeJupiterPredictionCreateOrder(
-  secretKey: Uint8Array,
-  request: Omit<JupiterPredictionCreateOrderRequest, "ownerPubkey">,
-): Promise<JupiterPredictionExecutionResult<JupiterPredictionCreateOrderResponse>> {
-  const signer = Keypair.fromSecretKey(secretKey);
-  const raw = await jupiterPredictionCreateOrder({
-    ...request,
-    ownerPubkey: signer.publicKey.toBase58(),
-  });
-
-  return executePredictionTransaction(signer, raw, "Create order");
-}
-
-export async function executeJupiterPredictionClosePosition(
-  secretKey: Uint8Array,
-  positionPubkey: string,
-): Promise<JupiterPredictionExecutionResult<JupiterPredictionCreateOrderResponse>> {
-  const signer = Keypair.fromSecretKey(secretKey);
-  const raw = await jupiterPredictionClosePosition(positionPubkey, {
-    ownerPubkey: signer.publicKey.toBase58(),
-  });
-
-  return executePredictionTransaction(signer, raw, "Close position");
-}
-
-export async function executeJupiterPredictionCloseAllPositions(
-  secretKey: Uint8Array,
-): Promise<JupiterPredictionCloseAllExecutionResult> {
-  const signer = Keypair.fromSecretKey(secretKey);
-  const raw = await jupiterPredictionCloseAllPositions({
-    ownerPubkey: signer.publicKey.toBase58(),
-  });
-
-  const results: JupiterPredictionCloseAllExecutionItem[] = [];
-  for (const item of raw.data) {
-    const executed = await executePredictionTransaction(signer, item, "Close all positions");
-    results.push({ ...executed, kind: itemKind(item) });
-  }
-
-  return {
-    signer: signer.publicKey.toBase58(),
-    results,
-    raw,
-  };
-}
-
-export async function executeJupiterPredictionClaimPosition(
-  secretKey: Uint8Array,
-  positionPubkey: string,
-): Promise<JupiterPredictionExecutionResult<JupiterPredictionClaimPositionResponse>> {
-  const signer = Keypair.fromSecretKey(secretKey);
-  const raw = await jupiterPredictionClaimPosition(positionPubkey, {
-    ownerPubkey: signer.publicKey.toBase58(),
-  });
-
-  return executePredictionTransaction(signer, raw, "Claim position");
 }

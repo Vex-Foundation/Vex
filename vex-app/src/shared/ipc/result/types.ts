@@ -70,12 +70,6 @@ export type VexDomain =
    */
   | "portfolio"
   /**
-   * Main-owned Hyperliquid position reads, user risk acknowledgement, and
-   * durable risk-proposal confirmation. Exchange/signing authority never
-   * crosses this renderer IPC domain.
-   */
-  | "hyperliquid"
-  /**
    * T1 — read-only VEX market snapshot for the welcome-screen price widget
    * (`market.getVexSnapshot`). Main owns the external poll (DexScreener /
    * GeckoTerminal / Virtuals) and broadcasts sanitized snapshots on
@@ -114,7 +108,6 @@ export type VexErrorCode =
   | "permissions.denied"
   | "wallet.insufficient_funds"
   | "wallet.user_rejected"
-  | "wallet.risk_confirmation_required"
   | "wallet.policy_blocked"
   | "wallet.export_throttled"
   | "wallet.keystore_locked"

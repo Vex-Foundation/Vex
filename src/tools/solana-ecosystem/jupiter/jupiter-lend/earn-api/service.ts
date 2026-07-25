@@ -143,40 +143,6 @@ export async function requestJupiterLendEarnRedeemInstructions(
   return { instructions: normalizeJupiterLendEarnInstructions(raw), raw };
 }
 
-export async function executeJupiterLendEarnDeposit(
-  secretKey: Uint8Array,
-  asset: string,
-  amount: string,
-): Promise<JupiterLendEarnExecutionResult> {
-  const signer = Keypair.fromSecretKey(secretKey);
-  return executeEarnTransaction(
-    signer,
-    asset,
-    jupiterLendEarnDepositTransaction({
-      asset,
-      amount,
-      signer: signer.publicKey.toBase58(),
-    }),
-  );
-}
-
-export async function executeJupiterLendEarnWithdraw(
-  secretKey: Uint8Array,
-  asset: string,
-  amount: string,
-): Promise<JupiterLendEarnExecutionResult> {
-  const signer = Keypair.fromSecretKey(secretKey);
-  return executeEarnTransaction(
-    signer,
-    asset,
-    jupiterLendEarnWithdrawTransaction({
-      asset,
-      amount,
-      signer: signer.publicKey.toBase58(),
-    }),
-  );
-}
-
 export async function executeJupiterLendEarnMint(
   secretKey: Uint8Array,
   asset: string,
@@ -218,8 +184,6 @@ export const requestLendEarnDepositTransaction = requestJupiterLendEarnDepositTr
 export const requestLendEarnWithdrawTransaction = requestJupiterLendEarnWithdrawTransaction;
 export const requestLendEarnMintTransaction = requestJupiterLendEarnMintTransaction;
 export const requestLendEarnRedeemTransaction = requestJupiterLendEarnRedeemTransaction;
-export const executeLendEarnDeposit = executeJupiterLendEarnDeposit;
-export const executeLendEarnWithdraw = executeJupiterLendEarnWithdraw;
 export const executeLendEarnMint = executeJupiterLendEarnMint;
 export const executeLendEarnRedeem = executeJupiterLendEarnRedeem;
 

@@ -1,0 +1,85 @@
+{
+  "data": [
+    {
+      "eventId": "POLY-701422",
+      "isActive": true,
+      "isLive": false,
+      "category": "culture",
+      "subcategory": "",
+      "tags": [
+        "culture",
+        "pop-culture",
+        "politics",
+        "tweets-markets"
+      ],
+      "metadata": {
+        "slug": "elon-musk-of-tweets-july-17-july-24",
+        "title": "Elon Musk # tweets July 17 - July 24, 2026?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-701422",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/elon-musk-of-tweets-nov-22-29-apMPG21-pzx_.jpg",
+        "subtitle": "",
+        "closeTime": "2026-07-24T16:00:00Z"
+      },
+      "volumeUsd": "3641144000000",
+      "volume24hr": "1084531000000",
+      "beginAt": "1784304000",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [
+        {
+          "provider": "polymarket",
+          "marketId": "POLY-2916649",
+          "status": "closed",
+          "result": "no",
+          "marketResultPubkey": "G3KJLN8aey12hZbvSoR3bmSjybtqKePoFCCqfiZBPke8",
+          "title": "160-179",
+          "openTime": 1784001647,
+          "closeTime": 1784908800,
+          "isTeamMarket": false,
+          "rulesPrimary": "This market will resolve according to the number of times Elon Musk (@elonmusk), posts on X from July 17 12:00 PM ET to July 24, 2026 12:00 PM ET.\n\nFor the purposes of this market, only main feed posts, quote posts and reposts will count.\n\nReplies will NOT count towards the total - however, replies on the main feed such as https://x.com/elonmusk/status/1786073478711353576 will be counted by the tracker.\n\nDeleted posts will count as long as they remain available long enough to be captured by the tracker (~5 minutes).\n\nCommunity reposts which are not counted by the tracker not count toward the total.\n\nThe resolution source for this market is the 'Post Counter' figure for posts found at https://xtracker.polymarket.com. Individual posts can be viewed by clicking \"Export Data\". If the tracker does not update correctly in accordance with the rules, X itself may be used as a secondary resolution source.",
+          "rulesSecondary": "",
+          "resolveAt": "2026-07-24T05:14:12.365Z",
+          "pricing": {
+            "buyYesPriceUsd": 0,
+            "sellYesPriceUsd": 0,
+            "sellNoPriceUsd": 0,
+            "buyNoPriceUsd": 0,
+            "volume": 319595
+          },
+          "imageUrl": null,
+          "team": null,
+          "outcomes": [
+            "Yes",
+            "No"
+          ],
+          "clobTokenIds": [
+            "89335958176022800627863617998315559009541951932895853458593262935520436566430",
+            "73619845909664544170510473067470298186540289131525832441136382448007100487803"
+          ],
+          "marketOptions": [
+            {
+              "label": "Yes",
+              "buyYes": true
+            },
+            {
+              "label": "No",
+              "buyYes": false
+            }
+          ],
+          "sportsMarketType": null,
+          "sportsLine": null,
+          "gameNumber": null
+        }
+      ],
+      "sportsMarketGroups": []
+    }
+  ],
+  "pagination": {
+    "start": 0,
+    "end": 1,
+    "total": 1,
+    "hasNext": false
+  }
+}

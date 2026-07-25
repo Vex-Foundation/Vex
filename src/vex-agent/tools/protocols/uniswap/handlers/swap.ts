@@ -41,6 +41,12 @@ import {
   type BuiltSwapTx,
   type SignedUniswapTransaction,
 } from "@tools/uniswap/execute.js";
+import {
+  DependentLegGasEstimateError,
+  dependentLegEstimateGuidance,
+  priorLegAnchorFrom,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { checkRouteFactories, probeFotSignal, UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
 import {
   decodeUniswapExecutedLegs,
@@ -125,7 +131,7 @@ function requireDeployment(chain: string): UniswapDeployment {
     throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Uniswap has no verified deployment for chain "${chain}".`,
-      "Uniswap is a hidden fallback venue, available after an eligible KyberSwap route-not-found failure.",
+      "Uniswap is a hidden fallback venue, available after an eligible KyberSwap route-not-found failure, or the Kyber swap transaction reverting on-chain.",
     );
   }
   return deployment;
@@ -339,9 +345,14 @@ async function abortRemainingPlans(executionId: number, fromIndex: number, reaso
   }
 }
 
-/** One stage of the staged broadcast: sign → persist hash → broadcast → mark accepted → wait for the receipt. */
+/**
+ * One stage of the staged broadcast: sign → persist hash → broadcast → mark
+ * accepted → wait for the receipt. `settledAtBlock` on a confirmed stage is
+ * the receipt block the caller threads into the NEXT stage as its
+ * read-after-write anchor (`dependent-leg-gas-estimate.ts`).
+ */
 type StageOutcome =
-  | { readonly kind: "confirmed"; readonly receipt: UniswapDecodableReceipt; readonly txHash: Hex }
+  | { readonly kind: "confirmed"; readonly receipt: UniswapDecodableReceipt; readonly txHash: Hex; readonly settledAtBlock: bigint }
   | { readonly kind: "failed"; readonly classification: Classification }
   | { readonly kind: "ambiguous"; readonly txHash: Hex };
 
@@ -350,11 +361,20 @@ async function runStagedBroadcast(
   tx: BuiltSwapTx,
   clients: ReturnType<typeof getUniswapEvmClients>,
   what: string,
+  priorLeg: ConfirmedPriorLeg | undefined,
 ): Promise<StageOutcome> {
   let signed: SignedUniswapTransaction;
   try {
-    signed = await signUniswapTransaction(clients.walletClient, tx);
+    signed = await signUniswapTransaction(clients.publicClient, clients.walletClient, tx, priorLeg);
   } catch (err) {
+    // A leg whose estimate never succeeded after an approval THIS execute
+    // confirmed is not a classifiable revert — the whole point of
+    // `DependentLegGasEstimateError` is that we could not obtain an answer we
+    // trust. Classifying it (the allowance revert string maps straight to
+    // `allowance_or_balance`) would assert exactly the conclusion we cannot
+    // support, so it goes to the outer C18 handler, which finalizes the
+    // never-signed rows as "not attempted" and says so honestly.
+    if (err instanceof DependentLegGasEstimateError) throw err;
     // Sign-time only (prepare/estimate/local signing) — no `sendRawTransaction`
     // call has happened yet, so nothing was ever submitted to the network.
     // Unlike a broadcast failure (C15), a sign-time failure is UNAMBIGUOUSLY
@@ -446,7 +466,7 @@ async function runStagedBroadcast(
     // `TransactionReceipt.logs` is structurally compatible with
     // `UniswapDecodableReceipt.logs` (`Address`/`Hex` are `string` subtypes) —
     // no cast needed.
-    return { kind: "confirmed", receipt, txHash: signed.txHash };
+    return { kind: "confirmed", receipt, txHash: signed.txHash, settledAtBlock: receipt.blockNumber };
   } catch (err) {
     if (err instanceof VexError && err.code === ErrorCodes.SWAP_FAILED) {
       // A DEFINITIVE mined revert (waitForSuccessfulReceipt's status!=='success' branch).
@@ -618,11 +638,17 @@ async function executeUniswapSwap(
   // unexpected failure below (including C14's CAS-miss throw) must finalize
   // what it can and return the SAME `_executionId` — NEVER call
   // `failPreBroadcast`/create a second `protocol_executions` row.
+  // Read-after-write anchor for the NEXT event: an allowance this loop just
+  // confirmed is state the swap leg's pre-sign estimate depends on, and the
+  // estimating node does not always have it yet (`dependent-leg-gas-estimate.ts`).
+  let priorLeg: ConfirmedPriorLeg | undefined;
+  let refusedRole: AgentActivityEvent["eventRole"] = "swap";
   try {
     for (let i = 0; i < createdEvents.length; i++) {
       const event = createdEvents[i]!;
+      refusedRole = event.eventRole;
       const tx = buildTxForEvent(event, { deployment, router, tokenIn, tokenOut, amountIn, quoted, recipient: getAddress(signer.address) });
-      const outcome = await runStagedBroadcast(event, tx, clients, describeEventRole(event.eventRole));
+      const outcome = await runStagedBroadcast(event, tx, clients, describeEventRole(event.eventRole), priorLeg);
 
       if (outcome.kind === "ambiguous") {
         // C17: the events STRICTLY AFTER this one were NEVER signed — finalize
@@ -655,6 +681,7 @@ async function executeUniswapSwap(
       }
 
       // confirmed on-chain
+      priorLeg = priorLegAnchorFrom(outcome.settledAtBlock);
       if (event.eventRole !== "swap") {
         try {
           await confirmActivityEvent(event.id, {});
@@ -794,6 +821,18 @@ async function executeUniswapSwap(
     logger.warn("uniswap.swap.execute.unexpected_error", {
       executionId, error: uniswapFailureMessage(err),
     });
+    // A leg refused because its estimate never succeeded after an allowance
+    // this same execute confirmed is not an unexpected internal failure:
+    // nothing was signed for it, the never-signed rows are finalized "not
+    // attempted" (the confirmed approval row is untouched — it has a hash),
+    // and re-running is safe.
+    if (err instanceof DependentLegGasEstimateError) {
+      return {
+        success: false,
+        output: `${toolId}: the ${refusedRole} step could not be gas-estimated, so it was refused before signing. ${dependentLegEstimateGuidance(err)} Recorded as execution ${executionId}; the node reported: ${uniswapFailureMessage(err)}`,
+        data: { _executionId: executionId, status: "not_attempted", retryable: true },
+      };
+    }
     return {
       success: false,
       output: `${toolId} failed unexpectedly: ${uniswapFailureMessage(err)}`,

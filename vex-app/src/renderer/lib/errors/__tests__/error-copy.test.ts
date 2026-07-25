@@ -90,12 +90,4 @@ describe("getErrorCopy", () => {
     );
     expect(c.message).toBe("unspecified runtime failure");
   });
-
-  it("returns fallback copy for wallet.risk_confirmation_required (caller is expected to branch first)", () => {
-    const c = getErrorCopy(
-      makeError({ code: "wallet.risk_confirmation_required" }),
-    );
-    expect(c.message).toBe("Risk confirmation required.");
-    expect(c.autoCloseMs).toBeUndefined();
-  });
 });

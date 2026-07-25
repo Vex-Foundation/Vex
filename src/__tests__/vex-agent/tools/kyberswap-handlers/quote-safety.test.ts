@@ -114,8 +114,15 @@ describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
           amountOut: "999000",
           amountOutUsd: "0.99",
           gasUsd: "0.5",
+          // L2 data fee + integrator fee: dropped by the old projection,
+          // restored 2026-07-25 (most supported chains are L2s).
+          l1FeeUsd: "0.12",
+          extraFee: { feeAmount: "25", chargeFeeBy: "currency_in", isInBps: true, feeReceiver: "0xTreasury" },
           // Two non-null hops across one path — drives routeHops projection.
-          route: [[{ pool: "0xpool1" }, { pool: "0xpool2" }]],
+          route: [[
+            { pool: "0xpool1", exchange: "uniswapv3", swapAmount: "1000000" },
+            { pool: "0xpool2", exchange: "curve", swapAmount: "999500" },
+          ]],
         },
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
       },
@@ -146,21 +153,32 @@ describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
     // Both non-native legs were checked, in parallel.
     expect(mockGetHoneypotFotInfo).toHaveBeenCalledTimes(2);
     // routeSummary is the compact formatRouteSummary projection: amounts +
-    // USD legs + gasUsd + derived priceImpact + routeHops; route/poolExtra/
-    // extra/routeID/checksum/tokenIn/tokenOut/l1FeeUsd/extraFee/gas/gasPrice
-    // are dropped. priceImpact is a derived float, asserted approximately.
+    // USD legs + gasUsd + derived priceImpact + routeHops; poolExtra/extra/
+    // routeID/checksum/tokenIn/tokenOut/gas/gasPrice stay dropped.
+    // 2026-07-25: `l1FeeUsd`, `extraFee`, and the per-path venue list are NO
+    // LONGER dropped — the old key-set assertion below encoded that loss, and
+    // on an L2 an omitted L1 data fee understates the true cost of the trade.
+    // priceImpact is a derived float, asserted approximately.
     expect(out.routeSummary).toMatchObject({
       amountIn: "1000000",
       amountInUsd: "1.00",
       amountOut: "999000",
       amountOutUsd: "0.99",
       gasUsd: "0.5",
+      l1FeeUsd: "0.12",
+      extraFee: { feeAmount: "25", chargeFeeBy: "currency_in", isInBps: true, feeReceiver: "0xTreasury" },
       routeHops: 2,
+      routePaths: [{ exchanges: ["uniswapv3", "curve"], amountInRaw: "1000000" }],
     });
     expect(out.routeSummary.priceImpact).toBeCloseTo(0.01, 10);
     expect(Object.keys(out.routeSummary).sort()).toEqual(
-      ["amountIn", "amountInUsd", "amountOut", "amountOutUsd", "gasUsd", "priceImpact", "routeHops"].sort(),
+      [
+        "amountIn", "amountInUsd", "amountOut", "amountOutUsd", "gasUsd",
+        "l1FeeUsd", "extraFee", "priceImpact", "routeHops", "routePaths",
+      ].sort(),
     );
+    // The L1 fee reaches the human-readable summary too, labeled an estimate.
+    expect(out.summary).toContain("L1 data fee ~$0.12 est.");
     expect(out.routerAddress).toBe("0x6131B5fae19EA4f9D964eAc0408E4408b66337b5");
   });
 

@@ -1,5 +1,5 @@
 /**
- * Khalani concise token/chain projectors (P0-4).
+ * Khalani concise token/chain/quote-route projectors (P0-4).
  *
  * Khalani read tools ship heavy upstream payloads the model never acts on:
  * `chains.list` returns a full `KhalaniChain[]` with `rpcUrls`/`blockExplorers`,
@@ -32,7 +32,7 @@
  * `KhalaniToken`, so it is intentionally NOT routed through `projectToken`.
  */
 
-import type { ChainFamily, KhalaniChain, KhalaniToken } from "@tools/khalani/types.js";
+import type { ChainFamily, KhalaniChain, KhalaniToken, QuoteRoute } from "@tools/khalani/types.js";
 
 // ── Concise output shapes ────────────────────────────────────────
 
@@ -72,11 +72,63 @@ export interface ConciseKhalaniChain {
   nativeDecimals: number | null;
 }
 
+/**
+ * Concise Khalani quote-route row.
+ *
+ * KEEPS the route identity/pricing/ETA an agent picks a route with, PLUS the
+ * quote's own DEADLINE. The deadline used to be dropped even though
+ * `handlers/bridge-execute.ts` hard-fails (`deadline_expired`) on exactly it
+ * — so `khalani.quote.get` told the agent nothing about how long its quote
+ * was good for. Both raw provider timestamps are surfaced alongside the
+ * single EFFECTIVE deadline the executor enforces, so the agent never has to
+ * re-derive the precedence rule (see {@link khalaniRouteExpiryUnixSeconds}).
+ * DROPS `icon`, `exactOutMethod`, `depositMethods`/`supportedDepositMethods`
+ * (deposit-method selection is an execute-time concern, not a route choice).
+ */
+export interface ConciseKhalaniQuoteRoute {
+  routeId: string;
+  type: string;
+  amountIn: string;
+  amountOut: string;
+  etaSeconds: number;
+  /**
+   * The deadline `khalani.bridge.execute` actually enforces, unix SECONDS.
+   * `null` means the provider set none (both timestamps absent or 0) — the
+   * executor skips the freshness check in exactly that case.
+   */
+  expiresAtUnixSeconds: number | null;
+  /** Seconds left on {@link expiresAtUnixSeconds} at projection time; `0` when already expired, `null` when no deadline was set. */
+  expiresInSeconds: number | null;
+  /** Raw provider `quote.validBefore`, unix seconds (the fallback deadline). */
+  validBeforeUnixSeconds: number;
+  /** Raw provider `quote.quoteExpiresAt`, unix seconds; takes precedence over `validBefore` when present. `null` when the provider omitted it. */
+  quoteExpiresAtUnixSeconds: number | null;
+  /** Provider gas estimate for the deposit leg, raw provider string (units are the provider's own, unlabeled — not a USD figure). `null` when absent. */
+  estimatedGas: string | null;
+  tags: string[] | null;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 /** Narrow an `unknown` to a plain record so optional nested reads are type-safe. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/**
+ * The ONE owner of Khalani's quote-freshness rule: `quoteExpiresAt` when the
+ * provider sent one, else `validBefore`; a non-positive/absent value means no
+ * deadline is enforced (`null`).
+ *
+ * `handlers/bridge-execute.ts` (the hard `deadline_expired` gate) and the
+ * `khalani.quote.get` / dryRun previews all read it through here, so the
+ * deadline an agent is SHOWN can never drift from the deadline that is
+ * ENFORCED. Values are untrusted provider numbers — non-finite is treated as
+ * "no deadline", never as `NaN` arithmetic.
+ */
+export function khalaniRouteExpiryUnixSeconds(route: QuoteRoute): number | null {
+  const raw = route.quote.quoteExpiresAt ?? route.quote.validBefore;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
 }
 
 // ── Projectors ───────────────────────────────────────────────────
@@ -149,6 +201,40 @@ export function projectChain(c: KhalaniChain): ConciseKhalaniChain {
     nativeSymbol,
     nativeDecimals,
   };
+}
+
+/**
+ * Project a raw `QuoteRoute` to a concise row that carries its own deadline.
+ *
+ * `nowMs` is injected (never read from the clock here) so the projection
+ * stays pure and the countdown is deterministic under test; callers pass
+ * `Date.now()` at the moment they build the output.
+ */
+export function projectQuoteRoute(route: QuoteRoute, nowMs: number): ConciseKhalaniQuoteRoute {
+  const expiresAtUnixSeconds = khalaniRouteExpiryUnixSeconds(route);
+  return {
+    routeId: route.routeId,
+    type: route.type,
+    amountIn: route.quote.amountIn,
+    amountOut: route.quote.amountOut,
+    etaSeconds: route.quote.expectedDurationSeconds,
+    expiresAtUnixSeconds,
+    expiresInSeconds: expiresAtUnixSeconds === null
+      ? null
+      : Math.max(0, Math.floor(expiresAtUnixSeconds - nowMs / 1000)),
+    validBeforeUnixSeconds: route.quote.validBefore,
+    quoteExpiresAtUnixSeconds: route.quote.quoteExpiresAt ?? null,
+    estimatedGas: route.quote.estimatedGas ?? null,
+    tags: route.quote.tags ?? null,
+  };
+}
+
+/** Project an array of raw quote routes defensively (tolerates a non-array input). */
+export function projectQuoteRoutes(
+  routes: readonly QuoteRoute[] | null | undefined,
+  nowMs: number,
+): ConciseKhalaniQuoteRoute[] {
+  return (Array.isArray(routes) ? routes : []).map((route) => projectQuoteRoute(route, nowMs));
 }
 
 /** Project an array of raw chains defensively (tolerates a non-array input). */

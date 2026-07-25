@@ -278,6 +278,46 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
     expect((call![1] as { error: string }).error).toBe(summarizeProtocolError(new Error(RAW)).message);
   });
 
+  // 2026-07-25 restoration: the build response's own cost disclosure was
+  // validated (`aggregator/validation.ts`) and then referenced nowhere, so a
+  // real extra charge on the settlement never reached the agent.
+  it("surfaces the build response's additionalCostUsd + provider message on the confirmed result", async () => {
+    mockBuildRoute.mockResolvedValue({
+      data: {
+        routerAddress: ROUTER,
+        data: "0xcalldata",
+        transactionValue: "0",
+        amountIn: "1000000", amountOut: "999000",
+        amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
+        additionalCostUsd: "0.42",
+        // Provider-authored prose with an embedded newline — content is kept
+        // verbatim (never truncated), control chars collapse to spaces.
+        additionalCostMessage: "Positive slippage\nrecouped by the router.",
+      },
+    });
+    mockMarkActivityBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });
+    mockSignStageBroadcast.mockResolvedValueOnce({ kind: "confirmed", txHash: "0xswaphash", receipt: { logs: [] } });
+    mockDecodeKyberSwapSettlement.mockReturnValueOnce({ amountInRaw: "1000000000000000000", amountOutRaw: "999000000000000000" });
+
+    const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.status).toBe("confirmed");
+    expect(result.data?.additionalCostUsd).toBe("0.42");
+    expect(result.data?.additionalCostMessage).toBe("Positive slippage recouped by the router.");
+  });
+
+  it("omits the additional-cost keys entirely when the build response carries none", async () => {
+    mockMarkActivityBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });
+    mockSignStageBroadcast.mockResolvedValueOnce({ kind: "confirmed", txHash: "0xswaphash", receipt: { logs: [] } });
+    mockDecodeKyberSwapSettlement.mockReturnValueOnce({ amountInRaw: "1000000000000000000", amountOutRaw: "999000000000000000" });
+
+    const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
+
+    expect(result.data).not.toHaveProperty("additionalCostUsd");
+    expect(result.data).not.toHaveProperty("additionalCostMessage");
+  });
+
   it("C33: a confirmActivityEvent write failure after a successful decode reports confirmed_unrecorded, never confirmed", async () => {
     const RAW = "db write failed: Authorization: Bearer confirm-failed-canary";
     mockMarkActivityBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });

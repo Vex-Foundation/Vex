@@ -75,6 +75,18 @@ vi.mock("@tools/khalani/prequote-route-guard.js", () => ({
 const mockPrepareQuoteRequest = vi.fn();
 vi.mock("@tools/khalani/request.js", () => ({
   prepareQuoteRequest: (...args: unknown[]) => mockPrepareQuoteRequest(...(args as [])),
+  // Real implementation (not a stub): the handler's fee-param rejection must
+  // stay live in this suite, so a regression that starts accepting a caller
+  // fee cannot hide behind a permissive mock.
+  findCallerSuppliedFeeParam: (params: Record<string, unknown>) => {
+    for (const key of ["referrer", "referrerFeeBps"]) {
+      const value = params[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value === "string" && value.trim() === "") continue;
+      return key;
+    }
+    return null;
+  },
 }));
 
 const mockResolveRouteBestIndex = vi.fn(() => 0);
@@ -457,18 +469,25 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     expect(mockAttachProviderOrderId).toHaveBeenCalledWith({ executionId: 42, providerOrderId: "existing-1" });
   });
 
-  it("Solana source stages the base58 signature via the Solana CAS (nonce NULL) — never the EVM CAS", async () => {
+  it("Solana source stages the base58 signature + blockhash evidence via the Solana CAS (nonce NULL) — never the EVM CAS", async () => {
     mockGetChainFamily.mockImplementation((id: number) => (id === 8453 ? "solana" : "eip155"));
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });
     mockSignStageKhalaniLeg.mockImplementation(async (_leg, _sc, _ch, _signer, hooks) => {
-      await hooks.onHashStaged({ txHash: "5SoLSigBase58", fromAddress: "SoLFromAddr", nonce: null });
+      await hooks.onHashStaged({
+        txHash: "5SoLSigBase58", fromAddress: "SoLFromAddr", nonce: null,
+        recentBlockhash: "FreshBlockhash1111111111111111111111111111", lastValidBlockHeight: 123456789,
+      });
       await hooks.onAccepted();
       return { kind: "confirmed", txHash: "5SoLSigBase58" };
     });
     const result = await execute();
     expect(mockCreateBridgeActivityIntent).toHaveBeenCalledTimes(1);
+    // W5 §2/R2b: the evidence-carrying CAS now REQUIRES both fields in the
+    // SAME atomic write — the handler's onHashStaged callback threads them
+    // straight through from the staged-hash handles, no second write.
     expect(mockMarkActivitySolanaBroadcast).toHaveBeenCalledWith(100, {
       txHash: "5SoLSigBase58", fromAddress: "SoLFromAddr",
+      recentBlockhash: "FreshBlockhash1111111111111111111111111111", lastValidBlockHeight: 123456789,
     });
     expect(mockMarkActivityBroadcast).not.toHaveBeenCalled();
     // Truthful in-turn contract unchanged: never success:true before a

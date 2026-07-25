@@ -11,7 +11,6 @@
  */
 
 import { initSync, syncTick } from "./index.js";
-import { startHyperliquidMarketWatcher, type HyperliquidMarketWatcherHandle } from "./hyperliquid-market-watcher.js";
 import logger from "@utils/logger.js";
 
 export interface SyncExecutorHandle {
@@ -22,8 +21,6 @@ export interface SyncExecutorHandle {
 export interface SyncExecutorDeps {
   initSync(): Promise<void>;
   syncTick(): Promise<void>;
-  /** Production owns this external watch lease beside the sync scheduler. */
-  startHyperliquidMarketWatcher?(): HyperliquidMarketWatcherHandle;
 }
 
 export interface SyncStartOptions {
@@ -36,7 +33,7 @@ export interface SyncStartOptions {
 const DEFAULT_SYNC_INTERVAL_MS = 60_000;
 
 function buildProductionDeps(): SyncExecutorDeps {
-  return { initSync, syncTick, startHyperliquidMarketWatcher };
+  return { initSync, syncTick };
 }
 
 export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorHandle {
@@ -47,14 +44,12 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
   let initialized = false;
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
-  let marketWatcher: HyperliquidMarketWatcherHandle | null = null;
 
   const runOne = async (): Promise<void> => {
     try {
       if (!initialized) {
         await deps.initSync();
         initialized = true;
-        marketWatcher = deps.startHyperliquidMarketWatcher?.() ?? null;
         return;
       }
       await deps.syncTick();
@@ -89,11 +84,6 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
         } catch {
           // Already logged by runOne.
         }
-      }
-      if (marketWatcher) {
-        const active = marketWatcher;
-        marketWatcher = null;
-        await active.stop();
       }
       logger.info("sync.executor.stopped");
     },

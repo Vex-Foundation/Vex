@@ -14,7 +14,7 @@ import {
   parseBalanceChainSelection,
 } from "@tools/khalani/balances.js";
 import { walletAddressesEqual, familyToInventory } from "@tools/wallet/inventory.js";
-import { prepareQuoteRequest } from "@tools/khalani/request.js";
+import { findCallerSuppliedFeeParam, prepareQuoteRequest } from "@tools/khalani/request.js";
 import { classifyKhalaniQuoteResponse } from "@tools/khalani/quote-result.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
@@ -22,7 +22,7 @@ import type { ChainFamily } from "@tools/khalani/types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
-import { projectChain, projectChains, projectToken, projectTokens } from "../projectors.js";
+import { projectChain, projectChains, projectQuoteRoutes, projectToken, projectTokens } from "../projectors.js";
 import { revealOnEligibleKhalaniFailure } from "./reveal.js";
 import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -187,6 +187,19 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
     }
 
+    // Fee params are never accepted from tool input (see the bridge referral-fee
+    // policy in `@tools/khalani/request.js`). Rejecting here matters as much as
+    // on the execute: the prequote gate binds the money/fee leg, so a quote
+    // carrying a fee is what would later let a matching execute through. No
+    // quote with a caller-supplied fee can be recorded in the first place.
+    const suppliedFeeParam = findCallerSuppliedFeeParam(params);
+    if (suppliedFeeParam !== null) {
+      return {
+        success: false,
+        output: `khalani.quote.get failed: ${suppliedFeeParam} is not an accepted parameter — Vex never charges a bridge referral fee and never takes fee parameters from tool input. Remove it and retry.`,
+      };
+    }
+
     // Pre-quote route guard (R9 — same wiring as the execute handler): a local
     // chain routes statically to Relay; a nonlocal endpoint absent from the
     // LIVE registry is a typed no-route that surfaces the route-bound Relay
@@ -196,7 +209,10 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     try {
       prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
     } catch (err) {
-      return { success: false, output: `khalani.quote.get failed: ${err instanceof Error ? err.message : String(err)}` };
+      // Route resolution reads Khalani's live registry, so this catch can hold
+      // PROVIDER-controlled text (`mapKhalaniError` builds its message from the
+      // response body). Raw `err.message` bypassed the scrub boundary entirely.
+      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}` };
     }
     if (prequote.outcome === "static_relay") {
       return {
@@ -221,7 +237,10 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       fromFamily = getChainFamily(resolveChainId(fromChain, chains), chains);
       toFamily = getChainFamily(resolveChainId(toChain, chains), chains);
     } catch (err) {
-      return { success: false, output: err instanceof Error ? err.message : String(err) };
+      // Locally authored, but it echoes the MODEL-SUPPLIED fromChain/toChain
+      // verbatim — untrusted input reaching an output sink, so it goes through
+      // the same boundary as provider text.
+      return { success: false, output: summarizeProtocolError(err).message };
     }
     const explicitFrom = str(params, "fromAddress") || undefined;
     let fromAddress: string;
@@ -254,8 +273,6 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       fromAddress,
       recipient,
       refundTo: str(params, "refundTo") || undefined,
-      referrer: str(params, "referrer") || undefined,
-      referrerFeeBps: str(params, "referrerFeeBps") || undefined,
       filler: str(params, "filler") || undefined,
     });
 
@@ -280,14 +297,9 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       output: JSON.stringify({
         quoteId: outcome.quoteId,
         routeCount: outcome.routes.length,
-        routes: outcome.routes.map(r => ({
-          routeId: r.routeId,
-          type: r.type,
-          amountIn: r.quote.amountIn,
-          amountOut: r.quote.amountOut,
-          etaSeconds: r.quote.expectedDurationSeconds,
-          tags: r.quote.tags,
-        })),
+        routes: projectQuoteRoutes(outcome.routes, Date.now()),
+        expiryNote: "khalani.bridge.execute re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
+          + "passes — treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
       }, null, 2),
       data: { quoteId: outcome.quoteId, routes: outcome.routes },
     };

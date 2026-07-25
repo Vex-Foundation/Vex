@@ -116,6 +116,14 @@ export async function buildBridgeIdentity(
   // resolved fromAddress under a session); referrer/referrerFeeBps/filler are
   // absent → "". referrerFeeBps is canonicalized to the handler's numeric
   // identity (throws on an invalid value → recorder skip / gate fail-closed).
+  //
+  // NOTE: `referrer`/`referrerFeeBps` can no longer be SUPPLIED — the tool and
+  // alias surfaces dropped them and both Khalani handlers reject them by name
+  // (bridge referral-fee policy in `@tools/khalani/request.js`), so in practice
+  // these always read "". The binding is kept deliberately: it costs nothing,
+  // keeps persisted match-hashes stable, and means a stray fee arriving by any
+  // future path still fails the quote↔execute collision instead of sliding
+  // through. It is a second barrier, not the primary defense.
   const explicitRefundTo = bridgeStr(params, "refundTo");
   const refundTo = explicitRefundTo !== "" ? explicitRefundTo : sourceWallet;
   const referrer = bridgeStr(params, "referrer");

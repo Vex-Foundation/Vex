@@ -32,11 +32,10 @@
   --vex-accent-fill-8: color-mix(in oklab, #1f44ff 8%, transparent);
   --vex-accent-fill-12: color-mix(in oklab, #1f44ff 12%, transparent);
   /* Foreground on a SOLID accent fill (text, icon, knob, dot painted directly
-   * on `--vex-accent`). White reads on the dark cobalt fill; theme scopes
-   * with a light accent (e.g. Hypervexing turquoise) flip this to ink. Every
-   * shell element that sits on a solid accent surface reads this token
-   * instead of a raw `white`, so a theme flip carries the contrast
-   * automatically. */
+   * on `--vex-accent`). White reads on the dark cobalt fill; a future
+   * light-accent theme scope would flip this to ink. Every shell element
+   * that sits on a solid accent surface reads this token instead of a raw
+   * `white`, so a theme flip carries the contrast automatically. */
   --vex-accent-contrast: #ffffff;
   /* pin flag — tokenized warm semantic; the landing's alert amber
    * (#ffce5a, .ws-alert-t). A sanctioned NON-blue status (like
@@ -66,47 +65,6 @@
    * grain overlay riding on top. */
   --vex-rail: rgba(10, 13, 24, 0.55);
   --vex-rail-strong: rgba(10, 13, 24, 0.7);
-  /* ---- Trading semantics (Hyperliquid) — navy-compatible base values ----
-   * These families are consumed by the Hyperliquid book blocks + the
-   * per-position chart. They are DELIBERATELY separate from the accent and
-   * from status (success/warning/danger): market direction is not "success/
-   * error", and a coverage badge is a protection fact, not an approval. The
-   * Hypervexing workspace mode (a later scope) re-tints these in its own
-   * theme block; here they carry readable navy-canvas values so every
-   * consumer stays hex-free and nothing renders an undefined token.
-   *
-   * Market direction — long green / short rose (both AA on the ink canvas). */
-  --vex-long: #2fbe8f;
-  --vex-long-fill: color-mix(in oklab, #2fbe8f 12%, transparent);
-  --vex-short: #f46b7c;
-  --vex-short-fill: color-mix(in oklab, #f46b7c 12%, transparent);
-  /* Chart line family (entry / SL / liquidation + grid/crosshair/axis). Read
-   * at runtime by the chart via getComputedStyle, so these stay CONCRETE
-   * (hex / rgba / color-mix — no var() indirection) to survive the read. */
-  --vex-chart-bg: #05070e; /* recessed plot floor — darker than surface-down so candles never blend into the glass */
-  --vex-chart-entry: #8fa2ff; /* light cobalt entry marker on ink */
-  --vex-chart-sl: #ffb84d; /* amber — a chosen plan, not an alarm */
-  --vex-chart-liq: #ff3b5c; /* the one saturated alarm red */
-  --vex-chart-grid: rgba(255, 255, 255, 0.05);
-  --vex-chart-crosshair: rgba(255, 255, 255, 0.24);
-  --vex-chart-axis: #939aad; /* axis text = --vex-text-3 tone, concrete */
-  --vex-chart-last: #f3f4f7; /* last-price chip text = --vex-text tone */
-  /* Volume histogram — kept as a CONCRETE rgba (not color-mix): the chart
-   * reads it via getComputedStyle, and a custom property does not resolve
-   * color-mix() until it is used in a real property. */
-  --vex-chart-volume: rgba(143, 162, 255, 0.26);
-  /* Coverage badge family (protection honesty). UNPROTECTED is the loudest
-   * chrome — loud by COLOR, still by MOTION (an alarm that animates becomes
-   * wallpaper). */
-  --vex-cover-ok: #2fbe8f;
-  --vex-cover-ok-fill: color-mix(in oklab, #2fbe8f 10%, transparent);
-  --vex-cover-none: #ff8a97;
-  --vex-cover-none-border: color-mix(in oklab, #ff3b5c 45%, transparent);
-  --vex-cover-none-fill: color-mix(in oklab, #ff3b5c 12%, transparent);
-  --vex-cover-stale: #ffb84d;
-  --vex-cover-stale-fill: color-mix(in oklab, #ffb84d 10%, transparent);
-  --vex-cover-pending: #939aad;
-  --vex-cover-pending-fill: color-mix(in oklab, #939aad 10%, transparent);
   /* Brand motion curves as named tokens — CSS and framer share one source
    * (the landing GSAP engine's Out / InOut). */
   --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);

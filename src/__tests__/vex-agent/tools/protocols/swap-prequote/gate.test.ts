@@ -381,6 +381,15 @@ describe("evaluateSwapPrequoteGate", () => {
       recipient: "0xWALLET",
       approveExact: false,
       slippageBps: "",
+      // W5 (design §6 R4): the Jupiter fee-bearing tail — the execute params
+      // carry none of the knobs, so every one resolves to its canonical
+      // default (tip 0.001 SOL, CU strategy "high", no DEX filters, wrap on,
+      // not a Jito bundle), matching `resolveJupiterFeeSwapKnobs`'s defaults.
+      feeBps: "25",
+      feeMint: SOLANA_MINT_A,
+      tipLamports: "1000000",
+      cuStrategy: "high",
+      routeKnobs: "|||1|0",
     });
     expect(mockFindLatest.mock.calls[0]![1]).toBe(expected);
     expect(mockFindLatest.mock.calls[0]![2]).toBe("swap");

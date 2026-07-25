@@ -10,7 +10,6 @@
 @import "./global-css/base.css";
 @import "./global-css/onboarding.css";
 @import "./global-css/shell.css";
-@import "./global-css/hypervexing-theme.css";
 @import "./global-css/landing-motifs.css";
 @import "./global-css/motion-primitives.css";
 @import "./global-css/chronos-motion.css";
@@ -18,4 +17,3 @@
 @import "./global-css/console.css";
 @import "./global-css/pending-ring.css";
 @import "./global-css/setup-gate.css";
-@import "./global-css/hypervexing-workspace.css";

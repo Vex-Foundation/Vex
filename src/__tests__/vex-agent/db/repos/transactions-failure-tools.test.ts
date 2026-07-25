@@ -45,7 +45,7 @@ describe("transactions failure classifier", () => {
     }
   });
 
-  it("includes trade-impacting tools across spot/perps + prediction + bridge", () => {
+  it("includes trade-impacting tools across spot/perps + prediction + bridge + lend", () => {
     // Spot (swaps) — Jupiter (untouched) + the two Agent Scan unified executes.
     // KyberSwap/Uniswap failures are ALSO visible via this legacy half for the
     // (rare) case a failure happens before any agent_activity row could be
@@ -60,12 +60,17 @@ describe("transactions failure classifier", () => {
     expect(FAILURE_TOOL_PRODUCTS.get("solana.predict.buy")).toBe("prediction");
     // Bridge
     expect(FAILURE_TOOL_PRODUCTS.get("khalani.bridge")).toBe("bridge");
+    // Lend (Agent Scan Phase 3/W5, migration 049)
+    expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.deposit")).toBe("lend");
+    expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.withdraw")).toBe("lend");
   });
 
-  it("excludes non-trade mutating tools (lend, lp, utility)", () => {
-    // lend → "lend" (not a tx product)
-    expect(FAILURE_TOOL_PRODUCTS.has("solana.lend.deposit")).toBe(false);
-    expect(FAILURE_TOOL_PRODUCTS.has("solana.lend.withdraw")).toBe(false);
+  it("excludes non-trade mutating tools (lp, utility) but INCLUDES lend (Agent Scan Phase 3/W5)", () => {
+    // lend was added to TRANSACTION_PRODUCTS (migration 049, W5) — Jupiter
+    // Lend deposit/withdraw are real wallet-impacting mutations with the same
+    // pending/confirmed/definitively_failed lifecycle as swaps.
+    expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.deposit")).toBe("lend");
+    expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.withdraw")).toBe("lend");
     // lp (Pendle plain LP records) → "lp" (not a tx product)
     expect(FAILURE_TOOL_PRODUCTS.has("pendle.lp.add")).toBe(false);
     // utility → "social" (not in TYPE_TO_PRODUCT as a tx product)
@@ -87,6 +92,37 @@ describe("transactions failure classifier", () => {
     expect(FAILURE_TOOL_PRODUCTS.get("kyberswap.zap.in")).toBe("lp");
     expect(FAILURE_TOOL_PRODUCTS.get("polymarket.clob.buy")).toBe("prediction");
     expect(FAILURE_TOOL_PRODUCTS.get("polymarket.clob.cancel")).toBe("order");
+  });
+
+  it("Hyperliquid trade tools' HISTORY is preserved in the legacy map ahead of Agent Scan Phase 3's deletion", () => {
+    // These entries are added to LEGACY_TOOL_PRODUCTS BEFORE the live
+    // MUTATION_MATRIX rows are removed (cross-card sequencing), so today the
+    // LIVE derivation still wins (identical product) — this pins the value
+    // that must keep holding once the live rows are gone.
+    for (const [toolId, product] of [
+      ["hyperliquid.spot.trade", "spot"],
+      ["hyperliquid.perp.open", "perps"],
+      ["hyperliquid.perp.close", "perps"],
+      ["hyperliquid.perp.setTpsl", "perps"],
+      ["hyperliquid.perp.modifyOrder", "perps"],
+      ["hyperliquid.perp.cancelOrders", "perps"],
+      ["hyperliquid.perp.setLeverage", "perps"],
+      ["hyperliquid.perp.adjustMargin", "perps"],
+      ["hyperliquid.perp.twap", "perps"],
+    ] as const) {
+      expect(FAILURE_TOOL_PRODUCTS.get(toolId)).toBe(product);
+      expect(LEGACY_TOOL_PRODUCTS.get(toolId)).toBe(product);
+    }
+    // Non-trade Hyperliquid mutations (audit-only) and the utility risk-setup
+    // tool never qualified for this feed — no legacy entry, same as
+    // polymarket.clob.heartbeat and solana.lend.deposit above.
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.risk.proposeSetup")).toBe(false);
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.deposit")).toBe(false);
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.withdraw")).toBe(false);
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.vault.transfer")).toBe(false);
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.staking.delegate")).toBe(false);
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.rewards.claim")).toBe(false);
+    expect(LEGACY_TOOL_PRODUCTS.has("hyperliquid.builder.approveFee")).toBe(false);
   });
 
   it("a deleted UTILITY tool (never trade-impacting) does NOT reappear — the legacy map is trade-only", () => {
@@ -117,6 +153,15 @@ describe("transactions failure classifier", () => {
 
   it("failureToolsForProduct(unknown) returns an empty list (failure half matches nothing)", () => {
     expect(failureToolsForProduct("definitely-not-a-product")).toEqual([]);
-    expect(failureToolsForProduct("lend")).toEqual([]); // lend is excluded from the allowlist
+    expect(failureToolsForProduct("stake")).toEqual([]); // stake is excluded from the allowlist
+  });
+
+  it("failureToolsForProduct('lend') intersects to the lend tools (Agent Scan Phase 3/W5)", () => {
+    const lendTools = failureToolsForProduct("lend");
+    expect(lendTools).toContain("solana.lend.deposit");
+    expect(lendTools).toContain("solana.lend.withdraw");
+    for (const toolId of lendTools) {
+      expect(FAILURE_TOOL_PRODUCTS.get(toolId)).toBe("lend");
+    }
   });
 });

@@ -63,8 +63,8 @@ const EVM_ACTIVITY_CHAIN_KEYS: readonly string[] = [
   "4663",
 ];
 
-// Non-EVM + L1 identities the wallet/HyperCore paths emit directly.
-const OTHER_IDENTITIES: readonly string[] = ["solana", "hyperliquid", "hyperevm"];
+// Non-EVM + L1 identities the wallet paths emit directly.
+const OTHER_IDENTITIES: readonly string[] = ["solana", "hyperevm"];
 
 function everyRuntimeIdentity(): string[] {
   const ids = new Set<string>();

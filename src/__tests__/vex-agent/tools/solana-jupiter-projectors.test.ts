@@ -109,14 +109,22 @@ describe("solana-jupiter projectJupiterToken (P0-3c concise)", () => {
   it("drops every noise field (URLs, social links, raw sub-objects, passthrough)", () => {
     const out = projectJupiterToken(fullToken());
 
+    // `priceBlockId` and `updatedAt` are deliberately NOT in this list: both
+    // are price-STALENESS signals the agent needs to judge how old a quote is,
+    // and the 2026-07-25 truncation audit restored them. Everything below is
+    // genuine noise — links, authorities, and raw provider sub-objects.
     for (const dropped of [
       "icon", "twitter", "telegram", "website", "discord", "instagram", "tiktok",
       "otherUrl", "dev", "mintAuthority", "freezeAuthority", "tokenProgram",
-      "partnerConfig", "graduatedPool", "graduatedAt", "priceBlockId", "apy",
-      "firstPool", "updatedAt", "someUnknownProviderField",
+      "partnerConfig", "graduatedPool", "graduatedAt", "apy",
+      "firstPool", "someUnknownProviderField",
     ]) {
       expect(out).not.toHaveProperty(dropped);
     }
+    // Pinned as PRESENT so a future "tidy the output" pass cannot silently
+    // re-drop the staleness signals.
+    expect(out).toHaveProperty("priceBlockId");
+    expect(out).toHaveProperty("updatedAt");
   });
 
   it("handles a token with missing optional fields (defensive normalisation)", () => {
@@ -157,6 +165,59 @@ describe("solana-jupiter projectJupiterToken (P0-3c concise)", () => {
     const arr = projectJupiterTokens([fullToken(), fullToken()]);
     expect(arr).toHaveLength(2);
     expect(arr[0]!.symbol).toBe("SOL");
+  });
+});
+
+/**
+ * `options.statsInterval` (W1-G) — the raw shape always carries all four
+ * stats windows; this option narrows the projected row to one, cutting the
+ * common-case payload without touching row count (recon-impl-tokens.md §3).
+ */
+describe("projectJupiterToken — statsInterval option (W1-G)", () => {
+  it("defaults to 'all' when omitted, preserving every stats block (pre-existing behaviour)", () => {
+    const out = projectJupiterToken(fullToken());
+    expect(out.stats5m).not.toBeNull();
+    expect(out.stats1h).not.toBeNull();
+    expect(out.stats6h).not.toBeNull();
+    expect(out.stats24h).not.toBeNull();
+  });
+
+  it("explicit 'all' keeps every stats block", () => {
+    const out = projectJupiterToken(fullToken(), { statsInterval: "all" });
+    expect(out.stats5m).not.toBeNull();
+    expect(out.stats1h).not.toBeNull();
+    expect(out.stats6h).not.toBeNull();
+    expect(out.stats24h).not.toBeNull();
+  });
+
+  it("a single interval keeps only that block and nulls the other three", () => {
+    const out = projectJupiterToken(fullToken(), { statsInterval: "1h" });
+    expect(out.stats1h).not.toBeNull();
+    expect(out.stats1h?.priceChange).toBe(1.2);
+    expect(out.stats5m).toBeNull();
+    expect(out.stats6h).toBeNull();
+    expect(out.stats24h).toBeNull();
+  });
+
+  it("selecting an interval the token has no data for yields all-null stats", () => {
+    const minimal: JupiterMintInformation = {
+      id: "MintMin1111111111111111111111111111111111111",
+      name: "Minimal",
+      symbol: "MIN",
+      decimals: 6,
+      stats24h: { priceChange: 3.4 },
+    };
+    const out = projectJupiterToken(minimal, { statsInterval: "1h" });
+    expect(out.stats1h).toBeNull();
+    expect(out.stats24h).toBeNull();
+  });
+
+  it("projectJupiterTokens forwards the option to every row", () => {
+    const arr = projectJupiterTokens([fullToken(), fullToken()], { statsInterval: "24h" });
+    for (const row of arr) {
+      expect(row.stats1h).toBeNull();
+      expect(row.stats24h).not.toBeNull();
+    }
   });
 });
 

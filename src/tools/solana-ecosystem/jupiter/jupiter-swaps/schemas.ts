@@ -129,6 +129,13 @@ export const jupiterSwapOrderResponseSchema = z
     },
   );
 
+// DOCS-GAP: the docs (`/docs/swap/build/index.md`) describe an additional
+// `fetchedAt: string (ISO8601)` field here, but the live 2026-07-23 fixture
+// returns `fetchedAt: { secs_since_epoch: number, nanos_since_epoch: number }`
+// instead — the two sources disagree on its shape. Nothing in this module
+// consumes `fetchedAt`, so it is deliberately left off `JupiterSwapBuildBlockhashWithMetadata`
+// (the canonical type) rather than modeled with an uncertain shape; `.passthrough()`
+// still accepts it either way.
 const blockhashWithMetadataSchema = z
   .object({
     blockhash: z.array(z.number()),
@@ -149,12 +156,18 @@ export const jupiterSwapBuildResponseSchema = z
     otherAmountThreshold: nonEmptyString,
     swapMode: z.string().optional(),
     slippageBps: z.number().optional(),
+    // Undocumented on the /build reference page, but the live API returns it
+    // (2026-07-23 fixture) — see JupiterSwapBuildResponse.priceImpactPct.
+    priceImpactPct: z.string().optional(),
     routePlan: z.array(routePlanStepSchema),
     computeBudgetInstructions: z.array(swapInstructionSchema),
     setupInstructions: z.array(swapInstructionSchema),
     swapInstruction: swapInstructionSchema,
     cleanupInstruction: swapInstructionSchema.nullable(),
     otherInstructions: z.array(swapInstructionSchema),
+    // Present (possibly null) only when `tipAmount` was requested; optional
+    // here so responses recorded before this field existed still validate.
+    tipInstruction: swapInstructionSchema.nullable().optional(),
     addressesByLookupTableAddress: z
       .record(z.string(), z.array(z.string()))
       .nullable()
@@ -184,3 +197,14 @@ export const jupiterSwapExecuteResponseSchema = z
     message: "Success execute response is missing a signature",
     path: ["signature"],
   });
+
+/**
+ * `/tx/v1/submit` — self-managed landing pipeline for any signed transaction.
+ * Success only ever returns a bare signature; failures come back as a 400
+ * with `{ error }`, handled generically by `fetchJson`'s non-2xx path.
+ */
+export const jupiterSwapSubmitResponseSchema = z
+  .object({
+    signature: nonEmptyString,
+  })
+  .passthrough();

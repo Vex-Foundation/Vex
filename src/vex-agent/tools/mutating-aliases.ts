@@ -35,6 +35,7 @@ import { z } from "zod";
 
 import { classifySwapFamily, isEvmSwapTokenInput } from "./internal/swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
+import { findCallerSuppliedFeeParam } from "@tools/khalani/request.js";
 import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "./registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -211,7 +212,8 @@ function routeSwapExecuteUniswap(
   if (!isUniswapPairRevealed(sessionId)) {
     throw new MutatingAliasRouteError(
       "swap_execute_uniswap is not available yet for this session — it unlocks after an eligible "
-        + "KyberSwap route-not-found failure (try swap_quote first).",
+        + "KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting "
+        + "on-chain at execute time (try swap_quote first).",
     );
   }
 
@@ -260,6 +262,11 @@ function routeSwapExecuteUniswap(
  * security fix): the quote can never bind them, so the bridge auto-selects the
  * best route and the execute gate fail-closes them on the direct path.
  *
+ * `referrer`/`referrerFeeBps` are likewise not accepted: they set a referral fee
+ * deducted from the bridged output and paid to an arbitrary address, and Vex
+ * never derives a fee from model params. `routeBridge` rejects them by name
+ * before parsing. See the policy in `@tools/khalani/request.js`.
+ *
  * Units: `amount` is in SMALLEST units (wei/lamports), matching the khalani
  * bridge manifest — translation preserves the value, it does not convert.
  */
@@ -280,8 +287,6 @@ const BridgeArgs = z
     fromAddress: z.string().min(1).optional(),
     recipient: z.string().min(1).optional(),
     refundTo: z.string().min(1).optional(),
-    referrer: z.string().min(1).optional(),
-    referrerFeeBps: z.string().min(1).optional(),
     filler: z.string().min(1).optional(),
     // Relay-only slippage (bps string). Ignored on the Khalani path.
     slippageBps: z.string().min(1).optional(),
@@ -299,6 +304,16 @@ type BridgeArgs = z.infer<typeof BridgeArgs>;
  * gate (kind 'bridge', venue-bound) → approval gate → capture.
  */
 function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
+  // Fee params are rejected BY NAME before anything else, so an attempted
+  // overcharge reads as an explicit refusal rather than a generic unknown-key
+  // error. `.strict()` below would also reject them, but not legibly.
+  const suppliedFeeParam = findCallerSuppliedFeeParam(args);
+  if (suppliedFeeParam !== null) {
+    throw new MutatingAliasRouteError(
+      `bridge: ${suppliedFeeParam} is not an accepted parameter — Vex never charges a bridge referral fee and never takes fee parameters from tool input. Remove it and retry.`,
+    );
+  }
+
   const parsed = BridgeArgs.safeParse(args);
   if (!parsed.success) {
     throw new MutatingAliasRouteError(
@@ -336,8 +351,6 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
   if (a.recipient !== undefined) params.recipient = a.recipient;
   if (a.refundTo !== undefined) params.refundTo = a.refundTo;
-  if (a.referrer !== undefined) params.referrer = a.referrer;
-  if (a.referrerFeeBps !== undefined) params.referrerFeeBps = a.referrerFeeBps;
   if (a.filler !== undefined) params.filler = a.filler;
   // routeId / depositMethod are NOT forwarded — they are absent from BridgeArgs
   // (.strict() rejects them). See the BridgeArgs schema note (8c security fix).
@@ -386,8 +399,9 @@ function routeBridgeExecuteRelay(
   if (evaluateRelayRevealGate(args, sessionId).decision === "deny") {
     throw new MutatingAliasRouteError(
       "bridge_execute_relay is not available for this route yet — it unlocks after an eligible "
-        + "Khalani no-route failure for this exact route (Robinhood routes are always available via "
-        + "bridge). Preview with bridge_quote_relay first.",
+        + "Khalani no-route failure for this exact route, or the Khalani deposit transaction reverting "
+        + "on-chain for this exact route (Robinhood routes are always available via bridge). Preview "
+        + "with bridge_quote_relay first.",
     );
   }
 

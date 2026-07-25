@@ -46,6 +46,9 @@ const CLOSED_FAILURE_CODES = [
   "confirmation_timeout",
   "unknown",
   "mined_revert",
+  // W5 (migration 049, K1): a locally-staged Solana tx whose blockhash
+  // proved expired before any signature status was ever observed.
+  "solana_signature_expired",
 ] as const;
 
 describe("agent_activity.failure_code — closed enum", () => {

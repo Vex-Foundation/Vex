@@ -18,6 +18,19 @@
  * `DepositPlan` into the ordered list of broadcast legs (with their
  * `agent_activity` roles) WITHOUT signing, so the handler can create every
  * planned row before anything is signed.
+ *
+ * SOLANA LEG (W5 design `w5-design.md` §2/R2/R2b, migration 049): Khalani's
+ * provider-built Solana transaction carries no separate blockhash-height
+ * evidence (no `blockhashWithMetadata`-style field, unlike Jupiter `/build`),
+ * so it follows the same MANDATORY-HEIGHT/REPLACE doctrine K2 built for
+ * Jupiter lend/prediction: `prepareVersionedTx` (the shared
+ * `src/tools/solana-ecosystem/shared/solana-transaction` primitive) enforces
+ * the STRICT sole-signer check, fetches a FRESH `{blockhash,
+ * lastValidBlockHeight}` pair from Khalani's own already-trusted per-chain RPC
+ * (`getChainRpcUrl` — the same endpoint this module already uses to broadcast
+ * and confirm), and bakes it into the transaction BEFORE signing. Both values
+ * are surfaced through `onHashStaged` alongside the signature so the caller
+ * can persist them via `markActivitySolanaBroadcast`'s evidence-carrying CAS.
  */
 
 import {
@@ -28,15 +41,19 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { Connection, Keypair } from "@solana/web3.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import { ERC20_ABI } from "../../constants/chain.js";
 import { getChainRpcUrl } from "./chains.js";
-import { createDynamicPublicClient, createDynamicWalletClient } from "./evm-client.js";
+import { gasLimitForProviderHintedCall } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
-  broadcastSignedSolanaTransaction,
-  confirmSolanaSignature,
-  signSolanaTransactionWithSignature,
-} from "./solana-signer.js";
+  estimateGasForPlanLeg,
+  priorLegAnchorFrom,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import { createDynamicPublicClient, createDynamicWalletClient } from "./evm-client.js";
+import { broadcastSignedSolanaTransaction, confirmSolanaSignature } from "./solana-signer.js";
+import { prepareVersionedTx } from "@tools/solana-ecosystem/shared/solana-transaction.js";
 import type {
   Approval,
   ChainFamily,
@@ -116,18 +133,37 @@ function isNativeTransferToken(token: string): boolean {
 
 export type KhalaniLegRole = "allowance_reset" | "allowance" | "bridge_deposit";
 
-/** The three staged outcomes — mirrors the EVM `signStageBroadcast` contract. */
+/**
+ * The three staged outcomes — mirrors the EVM `signStageBroadcast` contract.
+ *
+ * `settledAtBlock` is the confirmed EVM leg's receipt block, which the caller
+ * threads into the NEXT leg as its read-after-write anchor
+ * (`dependent-leg-gas-estimate.ts`). `null` for Solana legs, mirroring the
+ * `nonce: null` discriminant `KhalaniStageHandles` already uses for that
+ * family — a Solana plan has no EVM block to anchor on.
+ */
 export type KhalaniStagedOutcome =
-  | { readonly kind: "confirmed"; readonly txHash: string }
+  | { readonly kind: "confirmed"; readonly txHash: string; readonly settledAtBlock: bigint | null }
   | { readonly kind: "reverted"; readonly txHash: string }
   | { readonly kind: "ambiguous"; readonly txHash: string; readonly stage: "send" | "confirm" };
 
-/** Persisted BEFORE broadcast — `nonce` is a number for EVM, `null` for Solana (B1 nonce matrix). */
-export interface KhalaniStageHandles {
-  readonly txHash: string;
-  readonly fromAddress: string;
-  readonly nonce: number | null;
-}
+/**
+ * Persisted BEFORE broadcast — `nonce` is a number for EVM, `null` for Solana
+ * (B1 nonce matrix). A `null` nonce always carries the fresh Solana blockhash
+ * evidence `markActivitySolanaBroadcast` requires (W5 §2/R2b): the discriminant
+ * on `nonce` mirrors the check every caller already performs
+ * (`h.nonce === null`), so the evidence fields narrow in automatically instead
+ * of needing a separate tag.
+ */
+export type KhalaniStageHandles =
+  | { readonly txHash: string; readonly fromAddress: string; readonly nonce: number }
+  | {
+      readonly txHash: string;
+      readonly fromAddress: string;
+      readonly nonce: null;
+      readonly recentBlockhash: string;
+      readonly lastValidBlockHeight: number;
+    };
 
 export interface KhalaniStageHooks {
   /** Persist the computed hash/signature (`markActivityBroadcast`) — a throw aborts BEFORE any broadcast. */
@@ -140,7 +176,12 @@ interface NormalizedEvmTx {
   readonly to: Address;
   readonly data?: Hex;
   readonly value?: bigint;
-  /** Khalani's gas/nonce hints are honored; fees are left to viem's estimator (parity with the swap staged path). */
+  /**
+   * Khalani's gas figure is a HINT that can only RAISE the signed limit, never
+   * lower it below our own headroomed estimate (`gasLimitForProviderHintedCall`).
+   * The nonce hint is honored as-is; fees are left to viem's estimator (parity
+   * with the swap staged path).
+   */
   readonly gas?: bigint;
   readonly nonce?: number;
   /** If Khalani declared a sender, it MUST equal the signing wallet (fail-closed). */
@@ -313,6 +354,7 @@ async function signStageEvmLeg(
   chains: KhalaniChain[],
   privateKey: Hex,
   hooks: KhalaniStageHooks,
+  priorLeg: ConfirmedPriorLeg | undefined,
 ): Promise<KhalaniStagedOutcome> {
   const walletClient = createDynamicWalletClient(chain, chains, privateKey);
   const publicClient = createDynamicPublicClient(chain, chains);
@@ -325,16 +367,43 @@ async function signStageEvmLeg(
     );
   }
 
+  // Estimated explicitly for EVERY leg (allowance AND bridge deposit) rather
+  // than signing either Khalani's `tx.gas` verbatim or viem's bare estimate —
+  // both are the out-of-gas defect `gasLimitWithHeadroom` documents. Same call
+  // shape as the signed transaction (`value` included), so a leg that can no
+  // longer execute still throws HERE, before anything is signed, staged, or
+  // broadcast, and the raw error reaches the handler's classifier unchanged.
+  // `priorLeg` (the approval leg this plan just confirmed) additionally lets
+  // the estimate survive a node that has not applied that approval yet —
+  // bounded, and never at the cost of signing an unestimated leg
+  // (`dependent-leg-gas-estimate.ts`).
+  const gasEstimate = await estimateGasForPlanLeg(
+    publicClient,
+    {
+      account,
+      to: tx.to,
+      ...(tx.data ? { data: tx.data } : {}),
+      value: tx.value ?? 0n,
+    },
+    priorLeg,
+  );
+  const gasLimit = gasLimitForProviderHintedCall(gasEstimate, tx.gas);
+
   const request = await walletClient.prepareTransactionRequest({
     account,
     chain: walletClient.chain,
     to: tx.to,
     ...(tx.data ? { data: tx.data } : {}),
     value: tx.value ?? 0n,
-    ...(tx.gas !== undefined ? { gas: tx.gas } : {}),
+    gas: gasLimit,
     ...(tx.nonce !== undefined ? { nonce: tx.nonce } : {}),
   });
-  const serializedTransaction = await walletClient.signTransaction(request);
+  // Re-asserted on the request that is actually serialized: when fees/nonce
+  // still need filling, viem may route preparation through the node's
+  // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
+  // unbuffered figure. The signed bytes are what the chain enforces, so the
+  // limit has to survive to exactly here.
+  const serializedTransaction = await walletClient.signTransaction({ ...request, gas: gasLimit });
   const txHash = keccak256(serializedTransaction);
   const nonce = request.nonce;
   if (nonce === undefined) {
@@ -357,8 +426,11 @@ async function signStageEvmLeg(
 
   try {
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    // Same validator the estimator uses, so a receipt without a usable block
+    // number degrades to "no anchor" rather than to a bad one.
+    const settledAtBlock = priorLegAnchorFrom(receipt.blockNumber)?.blockNumber ?? null;
     return receipt.status === "success"
-      ? { kind: "confirmed", txHash }
+      ? { kind: "confirmed", txHash, settledAtBlock }
       : { kind: "reverted", txHash };
   } catch {
     return { kind: "ambiguous", txHash, stage: "confirm" };
@@ -373,13 +445,26 @@ async function signStageSolanaLeg(
   hooks: KhalaniStageHooks,
 ): Promise<KhalaniStagedOutcome> {
   const rpcUrl = getChainRpcUrl(chain.id, chains);
-  // Signature (base58) is derived from the SIGNED transaction — available BEFORE
-  // broadcast, so it stages exactly like the EVM hash. Khalani's `txHash` field
-  // carries this Solana signature by API contract; the row's chain_family is
-  // 'solana' and its nonce stays NULL (B1).
-  const { signedBase64, signature } = signSolanaTransactionWithSignature(signer.secretKey, base64Tx);
+  // Sole-signer check + fresh-blockhash REPLACE (module doc) — refuses a
+  // transaction that is not exactly sole-signed by `signer`, then signs over a
+  // FRESH blockhash fetched from Khalani's own per-chain RPC. The derived
+  // signature (base58) is available BEFORE broadcast, so it stages exactly
+  // like the EVM hash. Khalani's `txHash` field carries this Solana signature
+  // by API contract; the row's chain_family is 'solana' and its nonce stays
+  // NULL (B1) — now paired with the blockhash evidence W5 §2/R2b requires.
+  const prepared = await prepareVersionedTx(base64Tx, Keypair.fromSecretKey(signer.secretKey), {
+    connection: new Connection(rpcUrl, "confirmed"),
+  });
+  const signedBase64 = Buffer.from(prepared.serialized).toString("base64");
+  const signature = prepared.signature;
 
-  await hooks.onHashStaged({ txHash: signature, fromAddress: signer.address, nonce: null });
+  await hooks.onHashStaged({
+    txHash: signature,
+    fromAddress: signer.address,
+    nonce: null,
+    recentBlockhash: prepared.recentBlockhash,
+    lastValidBlockHeight: prepared.lastValidBlockHeight,
+  });
 
   try {
     await broadcastSignedSolanaTransaction(rpcUrl, signedBase64);
@@ -399,7 +484,7 @@ async function signStageSolanaLeg(
     // `value.err`, surfaced as `reverted`) is a revert, never a confirmed deposit.
     return confirmation.status === "reverted"
       ? { kind: "reverted", txHash: signature }
-      : { kind: "confirmed", txHash: signature };
+      : { kind: "confirmed", txHash: signature, settledAtBlock: null };
   } catch {
     return { kind: "ambiguous", txHash: signature, stage: "confirm" };
   }
@@ -409,6 +494,10 @@ async function signStageSolanaLeg(
  * Sign, stage (via `hooks.onHashStaged`), broadcast, and await a bounded receipt
  * for ONE planned leg. The leg's family selects the signer path; the caller's
  * `signer` MUST match that family (fail-closed otherwise).
+ *
+ * `priorLeg` is the `settledAtBlock` anchor of the leg this plan confirmed
+ * immediately before (the allowance leg). It only affects gas ESTIMATION for
+ * EVM legs — see `signStageEvmLeg`.
  */
 export async function signStageKhalaniLeg(
   leg: KhalaniStagedLeg,
@@ -416,12 +505,13 @@ export async function signStageKhalaniLeg(
   chains: KhalaniChain[],
   signer: ChainWallet,
   hooks: KhalaniStageHooks,
+  priorLeg?: ConfirmedPriorLeg,
 ): Promise<KhalaniStagedOutcome> {
   if (leg.kind === "evm") {
     if (signer.family !== "eip155") {
       throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "EVM deposit requires an EVM signing wallet.");
     }
-    return signStageEvmLeg(leg.tx, sourceChain, chains, signer.privateKey, hooks);
+    return signStageEvmLeg(leg.tx, sourceChain, chains, signer.privateKey, hooks, priorLeg);
   }
   if (signer.family !== "solana") {
     throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Solana deposit requires a Solana signing wallet.");

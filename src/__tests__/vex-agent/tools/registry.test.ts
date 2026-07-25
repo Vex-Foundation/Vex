@@ -201,7 +201,6 @@ describe("registry", () => {
     const namespace = discover?.parameters.properties?.namespace;
     expect(namespace).toBeDefined();
     expect(namespace?.description).toContain("dexscreener");
-    expect(namespace?.description).toContain("hyperliquid");
     expect(namespace?.description).toContain("khalani");
     // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
     // C30): the hidden Uniswap fallback is a KNOWN but non-ADVERTISED

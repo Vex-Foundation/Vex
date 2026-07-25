@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import type { ProtocolParamDef, ProtocolToolManifest } from "../types.js";
+import { checkBpsParam } from "./bps-param.js";
 
 // ── Strict param-boundary validation (B-002) ─────────────────────
 //
@@ -83,9 +84,16 @@ export type ParamValidation =
  *     an empty optional is allowed and an empty required is rejected).
  *  3. TYPE — a PRESENT param whose value fails its declared primitive schema is
  *     rejected. Missing optionals are not type-checked.
+ *  4. UNIT — a param declaring a domain unit (`unit: "bps"`) must additionally
+ *     satisfy that unit's contract. `z.number()` accepts `0.5`, but a
+ *     fractional basis-point value is meaningless at every venue and is
+ *     actively dangerous at Jupiter (see `./bps-param.ts`). Runs LAST so the
+ *     value is already proven to be a number.
  *
  * Messages are agent-actionable and contain only the offending KEY + declared
- * type — never a value (which could carry untrusted/secret-adjacent content).
+ * type — never a string value (which could carry untrusted/secret-adjacent
+ * content). The `unit` rejection additionally echoes the offending NUMBER,
+ * which is inert by construction; see `checkBpsParam`.
  */
 export function validateProtocolParams(
   manifest: ProtocolToolManifest,
@@ -131,6 +139,14 @@ export function validateProtocolParams(
           `Parameter "${param.key}" for ${manifest.toolId} has invalid type: `
           + `expected ${param.type}, got ${typeof value}`,
       };
+    }
+
+    // 4. Domain-unit contract. `unit` is only meaningful on a numeric param;
+    // the `typeof` guard keeps a mis-declared manifest from crashing the gate
+    // (`protocol-manifest-bps-units.test.ts` fails the build for that case).
+    if (param.unit === "bps" && typeof value === "number") {
+      const violation = checkBpsParam(manifest.toolId, param.key, value);
+      if (violation) return { ok: false, reason: violation };
     }
   }
 

@@ -85,6 +85,29 @@ describe("move item schema (tolerant)", () => {
     ).toBe(true);
   });
 
+  it("accepts lend/prediction rows (W5, migration 049) with an 'estimated' amountBasis", () => {
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({
+          tradeSide: null,
+          productType: "lend",
+          venue: "jupiter",
+          amountBasis: "estimated",
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({
+          tradeSide: null,
+          productType: "prediction",
+          venue: "jupiter",
+          amountBasis: "executed",
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
   it("accepts a tolerant captureStatus value not in any enum (filled)", () => {
     expect(
       moveItemSchema.safeParse(itemFixture({ captureStatus: "filled" })).success,

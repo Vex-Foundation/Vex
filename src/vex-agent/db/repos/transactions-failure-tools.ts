@@ -17,9 +17,10 @@
  *     matches what the success half stores in proj_activity.product_type.
  *   - `LEGACY_TOOL_PRODUCTS` — a static, hand-maintained map for tools DELETED
  *     from the live matrix by Agent Scan (limitOrder, zap, the old kyber/
- *     uniswap buy/sell split, Polymarket). Without this, a historical failed
- *     attempt for one of these tools would silently disappear from the feed
- *     the moment its matrix row was deleted — the allowlist is SQL-filtered
+ *     uniswap buy/sell split, Polymarket, Hyperliquid trade tools — Phase 3
+ *     total removal). Without this, a historical failed attempt for one of
+ *     these tools would silently disappear from the feed the moment its
+ *     matrix row was deleted — the allowlist is SQL-filtered
  *     (`tool_id = ANY($allowlist)`), so a tool absent from the allowlist never
  *     reaches the query result at all, regardless of what the row mapper does
  *     with it. This map is NEVER a source for the LIVE matrix — it only adds
@@ -38,10 +39,17 @@ import { TYPE_TO_PRODUCT } from "@vex-agent/sync/activity-populator.js";
 
 /**
  * Products that count as transactions for the unified feed. A failed mutation
- * whose derived product is NOT in this set (e.g. lend/stake/lp/reward, or a
+ * whose derived product is NOT in this set (e.g. stake/lp/reward, or a
  * utility tool) is excluded from the failure half. Gates ONLY the LIVE
  * `MUTATION_MATRIX` derivation below — unchanged by FIX-SPINE round 1
  * (Pendle's live `pendle.lp.add`/`.remove` stay excluded, exactly as before).
+ *
+ * `lend` added (Agent Scan Phase 3/W5, migration 049): Jupiter Lend
+ * deposit/withdraw are real wallet-impacting mutations with the same
+ * pending/confirmed/definitively_failed lifecycle as swaps — a failed
+ * `solana.lend.deposit`/`.withdraw` attempt now surfaces here, matching what
+ * `TYPE_TO_PRODUCT` (sync/activity-populator.ts) already stores as the
+ * success half's `product_type` for the same tools.
  */
 export const TRANSACTION_PRODUCTS: ReadonlySet<string> = new Set([
   "spot",
@@ -49,6 +57,7 @@ export const TRANSACTION_PRODUCTS: ReadonlySet<string> = new Set([
   "prediction",
   "bridge",
   "order",
+  "lend",
 ]);
 
 /**
@@ -102,6 +111,21 @@ export const LEGACY_TOOL_PRODUCTS: ReadonlyMap<string, string> = new Map([
   ["polymarket.clob.cancelOrders", "order"],
   ["polymarket.clob.cancelAll", "order"],
   ["polymarket.clob.cancelMarket", "order"],
+  // Hyperliquid — removed entirely (Agent Scan Phase 3). Only the
+  // trade-impacting tools (spot + perps) ever qualified for this feed;
+  // funding/vault/staking/reward/builder-fee mutations were always audit-only
+  // (expectedType outside TRANSACTION_PRODUCTS) and `risk.proposeSetup` was a
+  // non-portfolio-impacting utility tool — none of those get a legacy entry,
+  // matching how `polymarket.clob.heartbeat` (also utility) stays absent.
+  ["hyperliquid.spot.trade", "spot"],
+  ["hyperliquid.perp.open", "perps"],
+  ["hyperliquid.perp.close", "perps"],
+  ["hyperliquid.perp.setTpsl", "perps"],
+  ["hyperliquid.perp.modifyOrder", "perps"],
+  ["hyperliquid.perp.cancelOrders", "perps"],
+  ["hyperliquid.perp.setLeverage", "perps"],
+  ["hyperliquid.perp.adjustMargin", "perps"],
+  ["hyperliquid.perp.twap", "perps"],
 ]);
 
 /** Derive a tool's transaction product from its expectedType, or null. */

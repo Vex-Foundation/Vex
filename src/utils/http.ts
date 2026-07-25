@@ -13,6 +13,65 @@ export interface FetchOptions extends RequestInit {
 }
 
 /**
+ * Field names an error body may carry its human-readable reason under, in
+ * precedence order. `error` stays FIRST so a body that has it behaves exactly
+ * as it did before this widening.
+ *
+ * Why the others exist: reading `error` alone discarded the provider's own
+ * words whenever it named the field differently. Live proof (funded gate,
+ * 2026-07-24): `solana.predict.buy` showed the agent `HTTP 400: Bad Request`
+ * while Jupiter Prediction had actually answered
+ * `{"type":"invalid_request_error","message":"Minimum order is $5",
+ *   "code":"create_order_failed", ...}` — an actionable limit replaced by a
+ * status line. `detail`/`details` is the same field under the naming
+ * convention other JSON APIs use.
+ *
+ * Only non-empty STRING values are lifted. An object/array value is provider
+ * STRUCTURE, not a sentence, and must never be stringified into agent-visible
+ * output — that is why a `{error:{...}}` body still degrades to the status
+ * line rather than leaking a serialized payload.
+ */
+const ERROR_BODY_MESSAGE_FIELDS = ["error", "message", "detail", "details"] as const;
+
+/**
+ * Field names a provider may carry a MACHINE-readable error code under (e.g.
+ * Jupiter Prediction's `"code":"create_order_failed"`). `VexError.externalName`
+ * is this repo's existing carrier for exactly that — the Khalani and KyberSwap
+ * error mappers already populate it — so classification code can key on the
+ * provider's stable code instead of parsing prose.
+ */
+const ERROR_BODY_CODE_FIELDS = ["code", "errorCode"] as const;
+
+/** First non-empty string among `fields`, or undefined. Untrusted body input. */
+function readErrorBodyText(
+  body: Record<string, unknown>,
+  fields: readonly string[],
+): string | undefined {
+  for (const field of fields) {
+    const value = body[field];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+/**
+ * First usable machine code among `fields`. Accepts a string or a finite number
+ * (KyberSwap-style numeric codes) and normalizes to the string `externalName`
+ * carries; anything else is provider structure and is ignored.
+ */
+function readErrorBodyCode(
+  body: Record<string, unknown>,
+  fields: readonly string[],
+): string | undefined {
+  for (const field of fields) {
+    const value = body[field];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}
+
+/**
  * Fetch with timeout and standardized error handling.
  */
 export async function fetchWithTimeout(
@@ -65,16 +124,26 @@ export async function parseJsonResponse<T>(
 ): Promise<T> {
   if (!response.ok) {
     let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+    let externalName: string | undefined;
     try {
       // Treat the error body as untrusted `unknown` — never assume a shape.
       const errorBody: unknown = await response.json();
-      if (isRecord(errorBody) && typeof errorBody.error === "string") {
-        errorMessage = errorBody.error;
+      if (isRecord(errorBody)) {
+        errorMessage = readErrorBodyText(errorBody, ERROR_BODY_MESSAGE_FIELDS) ?? errorMessage;
+        externalName = readErrorBodyCode(errorBody, ERROR_BODY_CODE_FIELDS);
       }
     } catch {
       // Ignore JSON parse errors for error response
     }
-    throw new VexError(ErrorCodes.HTTP_REQUEST_FAILED, errorMessage);
+    const error = new VexError(ErrorCodes.HTTP_REQUEST_FAILED, errorMessage);
+    // Preserve the status: the message alone loses it whenever the provider
+    // supplies its own reason string, and callers acting on money need to
+    // tell a definitive 4xx refusal from an ambiguous 5xx/transport failure.
+    // It is also the ONLY reliable way to branch on a status — never re-parse
+    // it out of the message, which the provider's own text now replaces.
+    error.httpStatus = response.status;
+    if (externalName) error.externalName = externalName;
+    throw error;
   }
 
   let json: unknown;

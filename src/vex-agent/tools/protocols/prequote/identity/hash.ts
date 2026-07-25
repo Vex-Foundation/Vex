@@ -80,6 +80,26 @@ export interface SwapMatchInput {
    * diverge → block.
    */
   readonly slippageBps: string;
+  /**
+   * Jupiter fee-bearing `/build` tail (W5 design §6 R4: "prequote identity
+   * hash extended with: feeBps, feeMint, tip, CU strategy, dexes,
+   * maxAccounts, wrap"). ALL FIVE are `undefined` (→ "" in the hash material)
+   * for every non-Jupiter swap (kyberswap/uniswap/pendle) — their
+   * quote↔execute pairs still collide unchanged, since both sides omit them
+   * identically. Only `solana.swap.quote`/`solana.swap.execute` (provider
+   * "jupiter") populate real values, via
+   * `fee-swap.ts`'s `canonicalizeJupiterFeeTail` on BOTH the recorder and the
+   * gate, so a fee/tip/DEX-filter/maxAccounts/wrap substitution between quote
+   * and execute produces a different digest → BLOCK. `routeKnobs` bundles
+   * dexes/excludeDexes/maxAccounts/wrap/forJitoBundle into one canonical
+   * string (see `canonicalizeJupiterFeeTail`) rather than five separate
+   * fields.
+   */
+  readonly feeBps?: string;
+  readonly feeMint?: string;
+  readonly tipLamports?: string;
+  readonly cuStrategy?: string;
+  readonly routeKnobs?: string;
 }
 
 /**
@@ -566,6 +586,13 @@ function swapHashMaterial(input: SwapMatchInput): string {
     // Wave-2c venue binding (LOCKED #4): the quoting provider/venue, so a
     // kyber quote and a uniswap quote for the same identity hash differently.
     input.provider.trim().toLowerCase(),
+    // W5 (design §6 R4) Jupiter fee-bearing tail — "" for every non-Jupiter
+    // swap (both sides omit it identically, so their collision is unaffected).
+    input.feeBps ?? "",
+    input.feeMint ?? "",
+    input.tipLamports ?? "",
+    input.cuStrategy ?? "",
+    input.routeKnobs ?? "",
   ].join(" ");
 }
 

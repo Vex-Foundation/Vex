@@ -6,7 +6,7 @@ const SWAP_EXECUTE_PARAMS = [
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Symbols are rejected here." },
   { key: "tokenOut", type: "string" as const, required: true, description: "Output token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Symbols are rejected here." },
   { key: "amountIn", type: "string" as const, required: true, description: "Amount in human-readable units." },
-  { key: "slippageBps", type: "number" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%). Must match the kyberswap.swap.quote value exactly (or be omitted on both) — a mismatch blocks execution." },
+  { key: "slippageBps", type: "number" as const, unit: "bps" as const, description: "Slippage tolerance in basis points (default: 50 = 0.5%). Must match the kyberswap.swap.quote value exactly (or be omitted on both) — a mismatch blocks execution." },
 ];
 
 export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
@@ -22,7 +22,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenIn", type: "string", required: true, description: "Input token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Symbols are not resolved here." },
       { key: "tokenOut", type: "string", required: true, description: "Output token CONTRACT ADDRESS (resolve a symbol with token_find first) or native ETH/native. Symbols are not resolved here." },
       { key: "amountIn", type: "string", required: true, description: "Amount in human-readable units." },
-      { key: "slippageBps", type: "number", description: "Slippage tolerance in basis points (default: 50 = 0.5%). Pass the SAME value on kyberswap.swap.execute, or omit it on both — a mismatch blocks the execute (the prequote match requires identical params). Not sent to the quote route; it only pins slippage so the execute matches this quote." },
+      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default: 50 = 0.5%). Pass the SAME value on kyberswap.swap.execute, or omit it on both — a mismatch blocks the execute (the prequote match requires identical params). Not sent to the quote route; it only pins slippage so the execute matches this quote." },
     ],
     exampleParams: { chain: "ethereum", tokenIn: "ETH", tokenOut: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", amountIn: "1.0", slippageBps: 50 },
     discovery: KYBERSWAP_SWAP_DISCOVERY["kyberswap.swap.quote"],

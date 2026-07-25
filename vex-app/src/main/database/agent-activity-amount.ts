@@ -1,22 +1,35 @@
 /**
- * Shared amount-resolution logic for `agent_activity`-sourced swap legs,
- * used by BOTH `moves-db.ts` and `token-history-db.ts` (Agent Scan plan
- * §4.1/§11.1; Codex final-review round 1 finding 5 / coordinator contract
- * C20). Kept here — not duplicated — because the business rule (which
- * amount a given lifecycle status may honestly show) is identical in both
- * readers; only the caller's output SHAPE differs (a plain string for
- * `MoveItem`, an `AmountField`-wrapped value for `TokenHistoryEntry`).
+ * Shared amount-resolution logic for `agent_activity`-sourced legs, used by
+ * BOTH `moves-db.ts` and `token-history-db.ts` (Agent Scan plan §4.1/§11.1;
+ * Codex final-review round 1 finding 5 / coordinator contract C20; extended
+ * to W5 lend/prediction rows — migration 049, design REVISION 1 R3/R5 — by
+ * `resolveAmountWithEstimateBasis` below). Kept here — not duplicated —
+ * because the business rule (which amount a given lifecycle status may
+ * honestly show) is identical across every reader/kind that needs it; only
+ * the caller's output SHAPE differs (a plain string for `MoveItem`, an
+ * `AmountField`-wrapped value for `TokenHistoryEntry`).
  *
- * THE RULE: a `confirmed` row shows the raw-computed EXECUTED amount ONLY
- * (receipt Transfer-delta truth) — NEVER the quote-time REQUESTED echo,
- * closing the "quote masquerading as settlement" bug the repair-sweep
- * decoders exposed (they intentionally return raw amounts without a human
- * value, so a naive `COALESCE(executed_human, requested_human)` would
- * silently fall through to the wrong value for any row confirmed via
- * repair). A `pending` row shows the REQUESTED echo instead — nothing has
- * settled yet, so the quote is the only honest value available. Anything
- * else (`failed`, or an unrecognized status) shows NOTHING — a failed
- * attempt's legs are moot; showing a near-miss amount would misrepresent it.
+ * THE PLAIN-SWAP RULE (`resolveAgentActivityAmount`): a `confirmed` row shows
+ * the raw-computed EXECUTED amount ONLY (receipt Transfer-delta truth) —
+ * NEVER the quote-time REQUESTED echo, closing the "quote masquerading as
+ * settlement" bug the repair-sweep decoders exposed (they intentionally
+ * return raw amounts without a human value, so a naive
+ * `COALESCE(executed_human, requested_human)` would silently fall through to
+ * the wrong value for any row confirmed via repair). A `pending` row shows
+ * the REQUESTED echo instead — nothing has settled yet, so the quote is the
+ * only honest value available. Anything else (`failed`, or an unrecognized
+ * status) shows NOTHING — a failed attempt's legs are moot; showing a
+ * near-miss amount would misrepresent it. This rule relies on an invariant
+ * that holds ONLY for plain swaps: the repair sweep never marks a swap
+ * `confirmed` without both legs decoder-proven (design R3), so the
+ * confirmed-without-decode case is unreachable and never needs a fallback.
+ *
+ * THE ESTIMATE-BASIS RULE (`resolveAmountWithEstimateBasis`): bridges and W5
+ * lend/prediction rows do NOT carry that invariant (a bridge fill is
+ * solver-signed/externally observed; a lend/prediction confirmation is not
+ * guaranteed decoder-proven), so a confirmed-without-decode row falls back to
+ * the quoted amount EXPLICITLY labelled `"estimated"` rather than going
+ * blank — see that function's own doc for the full rule.
  *
  * Human formatting from raw is BigInt-safe (`viem`'s `formatUnits` — already
  * a `vex-app` dependency, the same audited base-unit-shift primitive wallet
@@ -69,36 +82,49 @@ export function resolveAgentActivityAmount(
   return null;
 }
 
-/** Bridge amount + its provenance basis (BINDING Q2 — see `resolveBridgeActivityAmount`). */
-export interface BridgeAmountResolution {
+/**
+ * An amount + its provenance basis (BINDING Q2, bridges; extended to W5
+ * lend/prediction rows — migration 049 — by the same rule; see
+ * `resolveAmountWithEstimateBasis`).
+ */
+export interface AmountEstimateResolution {
   readonly value: string | null;
   readonly basis: "executed" | "estimated" | null;
 }
 
 /**
- * Bridge amount rule (Agent Scan Phase 2, BINDING Q2 — DISTINCT from the swap
- * rule above). A bridge's destination fill is SOLVER-signed and externally
- * observed, so the executed amount is populated ONLY when the sweep decoded
- * transfer/value evidence against the stored token+recipient (migration-045
- * B4). Therefore:
+ * Executed-vs-estimated amount rule — DISTINCT from the plain swap rule
+ * above (`resolveAgentActivityAmount`), which never labels a fallback value.
+ * Originated as the bridge rule (Agent Scan Phase 2, BINDING Q2): a bridge's
+ * destination fill is SOLVER-signed and externally observed, so the executed
+ * amount is populated ONLY when the sweep decoded transfer/value evidence
+ * against the stored token+recipient (migration-045 B4). W5 (migration 049)
+ * reuses this SAME rule for `lend`/`prediction` rows — the repair sweep's
+ * settlement decoders are NOT guaranteed to prove every confirmed lend/
+ * prediction row (design REVISION 1 R3: "for lend/prediction the deltas fill
+ * executed_* fields where meaningful, else amounts stay estimated"), unlike a
+ * plain swap, whose both-legs-required invariant guarantees a confirmed row
+ * always has decoder-proven data (so `resolveAgentActivityAmount`'s
+ * confirmed-without-decode case is provably unreachable there and does not
+ * need this basis tag). Rule:
  *   - an independently-verified `executed_*` amount is shown as `"executed"`;
  *   - otherwise, while the attempt is still live (`pending`) OR confirmed
  *     without a decodable amount, the QUOTED amount is shown, explicitly
- *     labelled `"estimated"` — never as settlement (unlike a swap, a bridge
- *     never blanks a pending amount: "~X TOKEN est., still settling");
+ *     labelled `"estimated"` — never as settlement (unlike a plain swap,
+ *     which blanks rather than mislabels: "~X TOKEN est., still settling");
  *   - a `failed`/refunded attempt shows NOTHING (the attempt did not complete;
- *     the requested amount would misrepresent it — `bridge_refunded` is carried
- *     separately as a status, not as a fake amount).
+ *     the requested amount would misrepresent it — a terminal failure code is
+ *     carried separately as a status, not as a fake amount).
  *
  * Executed formatting reuses the same BigInt-safe `formatExecutedAmountHuman`
  * as swaps (never `Number`/`parseFloat` on a base-unit integer string).
  */
-export function resolveBridgeActivityAmount(
+export function resolveAmountWithEstimateBasis(
   status: AgentActivitySwapStatus | null,
   requestedHuman: string | null,
   executedRaw: string | null,
   decimals: number | null,
-): BridgeAmountResolution {
+): AmountEstimateResolution {
   const executed = formatExecutedAmountHuman(executedRaw, decimals);
   if (executed !== null) return { value: executed, basis: "executed" };
   if (status === "failed") return { value: null, basis: null };

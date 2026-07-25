@@ -71,9 +71,14 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
 }));
 
-// The controllable "network" — only these two calls stand in for the wire.
+// The controllable "network" — these three calls stand in for the wire.
+// `estimateGas` is required because the REAL `signStageBroadcast` estimates
+// explicitly and signs `gasLimitWithHeadroom(estimate)` (the fix for the Base
+// out-of-gas losses); without it these adversarial cases would throw at
+// estimation and never reach the broadcast behaviour they exist to pin.
 const sendRawTransaction = vi.fn();
 const waitForTransactionReceipt = vi.fn();
+const estimateGas = vi.fn();
 const prepareTransactionRequest = vi.fn().mockResolvedValue({ nonce: 1 });
 const signTransaction = vi.fn().mockResolvedValue("0x1234");
 const fakeWalletClient = {
@@ -85,6 +90,7 @@ const fakeWalletClient = {
 const fakePublicClient = {
   sendRawTransaction: (...a: unknown[]) => sendRawTransaction(...a),
   waitForTransactionReceipt: (...a: unknown[]) => waitForTransactionReceipt(...a),
+  estimateGas: (...a: unknown[]) => estimateGas(...a),
 };
 
 // `signStageBroadcast` stays REAL (importActual) — only the client factory
@@ -195,6 +201,8 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     signTransaction.mockReset().mockResolvedValue("0x1234");
     sendRawTransaction.mockReset().mockResolvedValue(undefined);
     waitForTransactionReceipt.mockReset().mockResolvedValue({ status: "success", logs: [] });
+    // A router-call-sized estimate; the signer doubles it (headroom policy).
+    estimateGas.mockReset().mockResolvedValue(1_026_236n);
   });
 
   it("(a) C14 — a CAS miss on markActivityBroadcast ABORTS before any network send", async () => {

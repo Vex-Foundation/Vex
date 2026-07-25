@@ -2,6 +2,10 @@
 
 Wire-first local reference for `src/tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api`.
 
+See `JupiterPredictionUnits.md` for the field-by-field money/quantity unit
+matrix (micro-USD string vs. micro-USD number vs. whole-dollar vs. the
+contracts-micro family) plus the fixture-corrected `Market` object shape.
+
 ## Base URL
 - `https://api.jup.ag/prediction/v1`
 

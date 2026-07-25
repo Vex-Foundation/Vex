@@ -84,7 +84,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.quote.get",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Get cross-chain bridge quote with routes, pricing, and ETA. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
+    description: "Get cross-chain bridge quote with routes, pricing, ETA, and each route's DEADLINE (expiresAtUnixSeconds plus expiresInSeconds remaining). khalani.bridge.execute hard-fails with deadline_expired past that deadline, so check the remaining window before acting and re-quote if it has run out. Resolve fromToken/toToken addresses via khalani.tokens.search first.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -97,8 +97,10 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
       { key: "recipient", type: "string", description: "Destination recipient override." },
       { key: "refundTo", type: "string", description: "Refund address override (defaults to fromAddress)." },
-      { key: "referrer", type: "string", description: "EVM referrer address for fee sharing." },
-      { key: "referrerFeeBps", type: "string", description: "Referrer fee in basis points (0-9999)." },
+      // `referrer` / `referrerFeeBps` are deliberately NOT exposed: they set a
+      // referral fee (bps of the bridged amount) payable to an arbitrary
+      // address, and Vex never derives a fee from tool params. Both handlers
+      // reject them by name. See the policy in `@tools/khalani/request.js`.
       { key: "filler", type: "string", description: "Restrict quotes to a specific filler." },
     ],
     exampleParams: {
@@ -160,8 +162,8 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
       { key: "recipient", type: "string", description: "Destination recipient override." },
       { key: "refundTo", type: "string", description: "Refund address override (defaults to fromAddress)." },
-      { key: "referrer", type: "string", description: "EVM referrer address for fee sharing." },
-      { key: "referrerFeeBps", type: "string", description: "Referrer fee in basis points (0-9999)." },
+      // `referrer` / `referrerFeeBps` deliberately NOT exposed — see the note on
+      // `khalani.quote.get` above. `executeKhalaniBridge` rejects them by name.
       { key: "filler", type: "string", description: "Restrict quotes to a specific filler." },
       { key: "routeId", type: "string", description: "Specific route ID (default: best route)." },
       { key: "depositMethod", type: "string", description: "CONTRACT_CALL, PERMIT2, or TRANSFER." },

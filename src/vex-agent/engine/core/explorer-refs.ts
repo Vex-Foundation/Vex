@@ -12,10 +12,12 @@
  *     - EVM swaps (kyberswap, pendle, relay): `{ chain, signature: <txHash> }`
  *       — the tx hash is stored under `signature` inside the capture.
  *     - Solana (jupiter, wallet send): `{ chain: "solana", signature }`.
- *     - HyperCore deposit: `{ chain: "arbitrum", signature: <txHash> }`.
- *     - HyperCore perps (`capturePerp`): `{ chain: "hyperliquid", ... }` with
- *       NO txHash/signature — these correctly yield NO ref (position rows have
- *       no single tx; the app links to the account page from a different path).
+ *     - HISTORICAL (Hyperliquid removed, Agent Scan Phase 3 — kept for reading
+ *       old capture rows, never produced by a live handler again): HyperCore
+ *       deposit `{ chain: "arbitrum", signature: <txHash> }`; HyperCore perps
+ *       (`capturePerp`) `{ chain: "hyperliquid", ... }` with NO txHash/
+ *       signature — these correctly yielded NO ref (position rows have no
+ *       single tx; the app linked to the account page from a different path).
  *   `txRef = capture.txHash ?? capture.signature`. A capture's chain is NEVER
  *   paired with an unrelated top-level `data.txHash`: verification of the real
  *   handlers (2026-07, src/vex-agent/tools/protocols/*, src/tools/*) showed the

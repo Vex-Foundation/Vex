@@ -30,6 +30,20 @@
  *     + `startingCapital` strings (per codex review on the canonical
  *     contract material)
  *
+ * Version history (Agent Scan Phase 3 — Hyperliquid removal):
+ *
+ *   - v1 — the original shape above, no Hyperliquid material.
+ *   - v2 — added a `hyperliquidRisk` envelope while Hyperliquid mutations
+ *     were live. FROZEN, never produced for a new draft: the shape and
+ *     normalization now live in `contract-hash-legacy-v2.ts`, a standalone
+ *     module with zero imports from any live Hyperliquid code. It exists
+ *     ONLY so a mission accepted while v2 was current still reproduces its
+ *     original hash (`buildContractMaterial`'s `legacyHyperliquidRisk` param,
+ *     sourced from `mapper.extractLegacyHyperliquidRiskV2` — `MissionDraft`
+ *     itself no longer carries the field).
+ *   - v3 — CURRENT. Identical to v1's shape; the version bump exists only so
+ *     a mission accepted under v2 is never silently reinterpreted as v3.
+ *
  * Normalization rules:
  *
  *   - whitespace is trimmed; empty strings collapse to `null` (so
@@ -51,13 +65,26 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
-import { hyperliquidMissionRiskSchema, type HyperliquidMissionRisk } from "../../../lib/hyperliquid-policy.js";
 import type { MissionDraft } from "../types.js";
+import {
+  CanonicalContractMaterialLegacyV2Schema,
+  normalizeLegacyHyperliquidRiskV2,
+  type CanonicalContractMaterialLegacyV2,
+} from "./contract-hash-legacy-v2.js";
 
-/** Bumped when the canonical shape or hashing rules change. */
-export const CONTRACT_HASH_VERSION = 2;
+/** Bumped when the canonical shape or hashing rules change. Produced for every new draft. */
+export const CONTRACT_HASH_VERSION = 3;
 export const LEGACY_CONTRACT_HASH_VERSION = 1;
-export type ContractHashVersion = typeof LEGACY_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION;
+/**
+ * Frozen historical version — see the "Version history" note above. Accepted
+ * ONLY for verifying/renewing a mission that was accepted while it was
+ * current; `buildContractMaterial` never produces it for a new draft.
+ */
+export const LEGACY_V2_CONTRACT_HASH_VERSION = 2;
+export type ContractHashVersion =
+  | typeof LEGACY_CONTRACT_HASH_VERSION
+  | typeof LEGACY_V2_CONTRACT_HASH_VERSION
+  | typeof CONTRACT_HASH_VERSION;
 
 const CanonicalContractMaterialV1Schema = z.object({
   v: z.literal(LEGACY_CONTRACT_HASH_VERSION),
@@ -73,12 +100,14 @@ const CanonicalContractMaterialV1Schema = z.object({
   stopConditions: z.array(z.string()),
 }).strict();
 
-const CanonicalContractMaterialV2Schema = CanonicalContractMaterialV1Schema.omit({ v: true }).extend({
+const CanonicalContractMaterialV3Schema = CanonicalContractMaterialV1Schema.omit({ v: true }).extend({
   v: z.literal(CONTRACT_HASH_VERSION),
-  hyperliquidRisk: hyperliquidMissionRiskSchema.nullable(),
 }).strict();
 
-export type CanonicalContractMaterial = z.infer<typeof CanonicalContractMaterialV1Schema> | z.infer<typeof CanonicalContractMaterialV2Schema>;
+export type CanonicalContractMaterial =
+  | z.infer<typeof CanonicalContractMaterialV1Schema>
+  | CanonicalContractMaterialLegacyV2
+  | z.infer<typeof CanonicalContractMaterialV3Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -108,6 +137,13 @@ function normalizeChainArray(values: readonly string[] | null | undefined): stri
 export function buildContractMaterial(
   draft: MissionDraft,
   version: ContractHashVersion = CONTRACT_HASH_VERSION,
+  /**
+   * Raw, untrusted legacy Hyperliquid risk material — consulted ONLY when
+   * `version === LEGACY_V2_CONTRACT_HASH_VERSION`. Comes straight off the
+   * mission row's `constraints_json` (see `mapper.extractLegacyHyperliquidRiskV2`);
+   * `MissionDraft` no longer carries this field for any other version.
+   */
+  legacyHyperliquidRisk?: unknown,
 ): CanonicalContractMaterial {
   const base = {
     goal: normalizeNullableString(draft.goal),
@@ -123,29 +159,16 @@ export function buildContractMaterial(
     stopConditions: normalizeStringArray(draft.stopConditions),
   };
   if (version === LEGACY_CONTRACT_HASH_VERSION) {
-    // A v1 contract cannot carry risk: accepting it would omit safety-critical
-    // material from the hash. Existing accepted v1 rows have `null` by design.
-    if (draft.hyperliquidRisk !== null && draft.hyperliquidRisk !== undefined) {
-      throw new Error("Hyperliquid mission risk requires contract hash version 2.");
-    }
     return CanonicalContractMaterialV1Schema.parse({ v: LEGACY_CONTRACT_HASH_VERSION, ...base });
   }
-  return CanonicalContractMaterialV2Schema.parse({
-    v: CONTRACT_HASH_VERSION,
-    ...base,
-    hyperliquidRisk: normalizeHyperliquidRisk(draft.hyperliquidRisk),
-  });
-}
-
-function normalizeHyperliquidRisk(value: HyperliquidMissionRisk | null | undefined): HyperliquidMissionRisk | null {
-  if (value === null || value === undefined) return null;
-  const parsed = hyperliquidMissionRiskSchema.parse(value);
-  return {
-    ...parsed,
-    ...(parsed.marketAllowlist === undefined
-      ? {}
-      : { marketAllowlist: [...new Set(parsed.marketAllowlist.map((coin) => coin.trim().toUpperCase()))].sort() }),
-  };
+  if (version === LEGACY_V2_CONTRACT_HASH_VERSION) {
+    return CanonicalContractMaterialLegacyV2Schema.parse({
+      v: LEGACY_V2_CONTRACT_HASH_VERSION,
+      ...base,
+      hyperliquidRisk: normalizeLegacyHyperliquidRiskV2(legacyHyperliquidRisk),
+    });
+  }
+  return CanonicalContractMaterialV3Schema.parse({ v: CONTRACT_HASH_VERSION, ...base });
 }
 
 /**
@@ -176,8 +199,9 @@ export function canonicalStringify(value: unknown): string {
 export function computeContractHash(
   draft: MissionDraft,
   version: ContractHashVersion = CONTRACT_HASH_VERSION,
+  legacyHyperliquidRisk?: unknown,
 ): string {
-  const material = buildContractMaterial(draft, version);
+  const material = buildContractMaterial(draft, version, legacyHyperliquidRisk);
   const canonical = canonicalStringify(material);
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }

@@ -12,9 +12,13 @@ import { PENDLE_TOOLS } from "@vex-agent/tools/protocols/pendle/manifest.js";
 const PENDLE_TOOL_IDS = new Set(PENDLE_TOOLS.map((m) => m.toolId));
 
 describe("pendle alias non-routing", () => {
-  it("registers NO pendle alias — only swap_execute(+uniswap) + bridge exist", () => {
+  it("registers NO pendle alias — only swap_execute(+uniswap) + bridge(+relay) exist", () => {
+    // `bridge_execute_relay` is the hidden, route-bound Relay reveal pair's
+    // mutating half (mirrors the `swap_execute_uniswap` reveal pattern) —
+    // still never a pendle route.
     expect(Object.keys(MUTATING_PROTOCOL_ALIAS_ROUTERS).sort()).toEqual([
       "bridge",
+      "bridge_execute_relay",
       "swap_execute",
       "swap_execute_uniswap",
     ]);

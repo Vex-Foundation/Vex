@@ -59,7 +59,7 @@ describe("capture contract — structural coverage", () => {
     }
   });
 
-  it("no deleted-tool matrix row survives (limitOrder, zap, Polymarket, old kyber/uniswap buy/sell)", () => {
+  it("no deleted-tool matrix row survives (limitOrder, zap, Polymarket, old kyber/uniswap buy/sell, Hyperliquid)", () => {
     for (const toolId of [
       "kyberswap.limitOrder.create", "kyberswap.limitOrder.cancel", "kyberswap.limitOrder.hardCancel",
       "kyberswap.limitOrder.fill", "kyberswap.limitOrder.batchFill", "kyberswap.limitOrder.cancelAll",
@@ -68,13 +68,24 @@ describe("capture contract — structural coverage", () => {
       "polymarket.clob.cancelOrders", "polymarket.clob.cancelAll", "polymarket.clob.cancelMarket",
       "polymarket.clob.heartbeat", "polymarket.bridge.deposit", "polymarket.bridge.withdraw",
       "kyberswap.swap.buy", "kyberswap.swap.sell", "uniswap.swap.buy", "uniswap.swap.sell",
+      // Agent Scan Phase 3 (Hyperliquid total removal) — spot/perp/risk/account rows.
+      "hyperliquid.spot.trade", "hyperliquid.perp.open", "hyperliquid.perp.close",
+      "hyperliquid.perp.setTpsl", "hyperliquid.perp.modifyOrder", "hyperliquid.perp.cancelOrders",
+      "hyperliquid.perp.setLeverage", "hyperliquid.perp.adjustMargin", "hyperliquid.perp.twap",
+      "hyperliquid.risk.proposeSetup", "hyperliquid.deposit", "hyperliquid.transfer.usdClass",
+      "hyperliquid.withdraw", "hyperliquid.transfer.send", "hyperliquid.vault.transfer",
+      "hyperliquid.staking.delegate", "hyperliquid.staking.transfer", "hyperliquid.rewards.claim",
+      "hyperliquid.builder.approveFee",
     ]) {
       expect(MUTATION_MATRIX.has(toolId), `${toolId} should have been deleted from the matrix`).toBe(false);
     }
   });
 
-  it("the new unified kyberswap.swap.execute / uniswap.swap.execute rows exist, capture:none", () => {
-    for (const toolId of ["kyberswap.swap.execute", "uniswap.swap.execute"]) {
+  it("the unified kyberswap.swap.execute / uniswap.swap.execute / solana.swap.execute rows exist, capture:none", () => {
+    // solana.swap.execute flipped full->none in W5 (design §3/§6, migration
+    // 049) with the fee-bearing /build atomic flip — same K2 staged Solana
+    // seam kyberswap/uniswap already use on EVM.
+    for (const toolId of ["kyberswap.swap.execute", "uniswap.swap.execute", "solana.swap.execute"]) {
       const c = MUTATION_MATRIX.get(toolId);
       expect(c, `${toolId} missing from matrix`).toBeDefined();
       expect(c!.kind).toBe("trade");
@@ -84,31 +95,54 @@ describe("capture contract — structural coverage", () => {
     }
   });
 
-  it("'trade' kind tools with capture:full total 21 (no PnL role split — just the coarse kind)", () => {
-    // solana.swap.execute (1); pendle.pt.buy/sell/redeem (3); pendle.yt.buy/sell (2);
-    // pendle.py.mint/redeem (2); hyperliquid.spot.trade (1); solana.predict.buy/sell/
-    // claim/closeAll (4); hyperliquid.perp.* (8: open/close/setTpsl/modifyOrder/
-    // cancelOrders/setLeverage/adjustMargin/twap) = 21. The two Agent Scan unified
-    // executes are ALSO kind:"trade" but capture:"none" — excluded here on purpose.
+  it("solana.predict.buy/.sell/.claim/.closeAll are capture:none (W5 staged Solana seam, migration 049)", () => {
+    for (const toolId of ["solana.predict.buy", "solana.predict.sell", "solana.predict.claim", "solana.predict.closeAll"]) {
+      const c = MUTATION_MATRIX.get(toolId);
+      expect(c, `${toolId} missing from matrix`).toBeDefined();
+      expect(c!.kind).toBe("trade");
+      expect(c!.capture).toBe("none");
+      expect(c!.expectedType).toBe("prediction");
+      expect(c!.requiredFields).toEqual([]);
+    }
+    expect(MUTATION_MATRIX.get("solana.predict.closeAll")!.fanOut).toBe("items");
+  });
+
+  it("'trade' kind tools with capture:full total 7 (no PnL role split — just the coarse kind)", () => {
+    // pendle.pt.buy/sell/redeem (3); pendle.yt.buy/sell (2); pendle.py.mint/redeem
+    // (2) = 7. Agent Scan Phase 3 removed the 9 hyperliquid.spot.trade/perp.*
+    // rows that used to bring this total to 21; W5 (migration 049) flipped
+    // solana.predict.buy/sell/claim/closeAll AND solana.swap.execute (the
+    // fee-bearing /build atomic flip, §6) to capture:"none" — those five,
+    // plus the two Agent Scan unified EVM executes, are ALSO kind:"trade" but
+    // capture:"none" — excluded here on purpose.
     const trade = getToolsByKind("trade").filter(([, c]) => c.capture === "full");
-    expect(trade.length).toBe(21);
+    expect(trade.length).toBe(7);
     for (const [toolId, c] of trade) {
       expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }
   });
 
-  it("utility tools all have capture:none (only hyperliquid.risk.proposeSetup survives)", () => {
-    const utility = getToolsByKind("utility");
-    expect(utility.map(([id]) => id)).toEqual(["hyperliquid.risk.proposeSetup"]);
-    for (const [toolId, c] of utility) {
-      expect(c.capture, `${toolId} should have capture:none`).toBe("none");
-    }
+  it("no utility-kind tools are currently classified (Hyperliquid removal deleted the only one)", () => {
+    // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio impact)
+    // entry; Agent Scan Phase 3 deleted it along with the rest of the protocol.
+    // The `utility` CaptureKind stays in the type for the next protocol that needs it.
+    expect(getToolsByKind("utility")).toEqual([]);
   });
 
-  it("audit tools are ALL capture:full (the two Polymarket bridge capture:none rows were deleted)", () => {
+  it("audit tools are capture:full EXCEPT the staged agent_activity write paths (Phase 2 bridges + W5/Batch5 lend)", () => {
     const audit = getToolsByKind("audit");
     expect(audit.length).toBeGreaterThan(0);
+    // khalani.bridge / relay.bridge record their full staged lifecycle in
+    // agent_activity directly (migration 045); solana.lend.deposit/withdraw
+    // and solana.lend.borrowOperate (Batch 5, card B1) do the same via the K2
+    // staged Solana seam (migration 049) — capture is intentionally off for
+    // exactly these five.
+    const captureNone = audit.filter(([, c]) => c.capture === "none").map(([id]) => id).sort();
+    expect(captureNone).toEqual([
+      "khalani.bridge", "relay.bridge", "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",
+    ]);
     for (const [toolId, c] of audit) {
+      if (captureNone.includes(toolId)) continue;
       expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }
   });
@@ -160,18 +194,6 @@ describe("capture contract — contract invariants", () => {
     expect(MUTATION_MATRIX.get("solana.predict.closeAll")!.strictItemsRequired).toBeUndefined();
   });
 
-  it("solana.predict.claim has exception for instrumentKey", () => {
-    const c = MUTATION_MATRIX.get("solana.predict.claim")!;
-    expect(c.exceptions).toBeDefined();
-    expect(c.exceptions!.some(e => e.includes("instrumentKey"))).toBe(true);
-  });
-
-  it("solana.predict.closeAll has exception for instrumentKey (claim items match via positionKey)", () => {
-    const c = MUTATION_MATRIX.get("solana.predict.closeAll")!;
-    expect(c.exceptions).toBeDefined();
-    expect(c.exceptions!.some(e => /no instrumentKey/i.test(e))).toBe(true);
-  });
-
   it("isExpectedType supports dual-type contracts (synthetic fixture — no LIVE matrix tool is dual-type anymore)", () => {
     // Agent Scan deleted the only dual-type tool (polymarket.clob.buy/sell,
     // expectedType: ["prediction", "order"]). The array-handling branch stays
@@ -189,9 +211,21 @@ describe("capture contract — contract invariants", () => {
 
 // ── Capture validator tests ────────────────────────────────────
 
+// W5 (design §6): solana.swap.execute flipped capture:"full"->"none" — the
+// generic capture:"full" validator tests below now use `pendle.pt.buy`
+// (same requiredFields/expectedType shape) as their live-matrix example
+// instead. NOTE: the two former "neutral swap" tests (stableSwap/
+// ambiguousSwap `tradeSide` exception) are REMOVED here, not ported — that
+// `exceptions` entry existed ONLY on solana.swap.execute's row (no other
+// matrix entry ever declared it), so with solana.swap.execute now
+// capture:"none" there is no remaining live row to exercise it. The
+// `hasRequiredFieldException` stableSwap/ambiguousSwap branch in
+// `capture-validator.ts` is consequently dead code with no matrix consumer —
+// flagged for the coordinator rather than silently removed (out of this
+// card's stated scope).
 describe("capture contract — runtime validator", () => {
   it("validates a trade capture with all required fields", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
+    const valid = validateCaptureContract("pendle.pt.buy", {
       type: "swap", walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
@@ -199,62 +233,28 @@ describe("capture contract — runtime validator", () => {
     expect(valid).toBe(true);
   });
 
-  it("rejects trade capture missing tradeSide without a neutral Solana swap marker", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("accepts neutral Solana swaps without tradeSide as activity-only captures", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x",
-      instrumentKey: "solana:USDT", inputTokenAddress: "0xUSDC", outputTokenAddress: "0xUSDT",
-      inputAmount: "100", outputAmount: "100",
-      meta: { stableSwap: true },
-    });
-    expect(valid).toBe(true);
-  });
-
   it("rejects capture:full with null tradeCapture", () => {
-    expect(validateCaptureContract("solana.swap.execute", null)).toBe(false);
+    expect(validateCaptureContract("pendle.pt.buy", null)).toBe(false);
   });
 
   it("passes capture:none regardless of tradeCapture (e.g. the Agent Scan unified executes)", () => {
     expect(validateCaptureContract("kyberswap.swap.execute", null)).toBe(true);
     expect(validateCaptureContract("kyberswap.swap.execute", { type: "swap" })).toBe(true);
-    expect(validateCaptureContract("hyperliquid.risk.proposeSetup", null)).toBe(true);
+    expect(validateCaptureContract("solana.swap.execute", null)).toBe(true);
   });
 
   it("passes unknown toolId (not in matrix)", () => {
     expect(validateCaptureContract("unknown.tool", null)).toBe(true);
   });
 
-  it("solana.predict.claim passes without instrumentKey (exception)", () => {
-    const valid = validateCaptureContract("solana.predict.claim", {
-      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("solana.predict.closeAll item passes without instrumentKey (exception)", () => {
-    const valid = validateCaptureContract("solana.predict.closeAll", {
-      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("solana.predict.closeAll item missing positionKey is REJECTED (exception is instrumentKey-only)", () => {
-    const valid = validateCaptureContract("solana.predict.closeAll", {
-      type: "prediction", walletAddress: "0x", status: "claimed",
-    });
-    expect(valid).toBe(false);
+  it("passes capture:none regardless of tradeCapture — solana.predict.claim/closeAll (W5 staged Solana seam)", () => {
+    expect(validateCaptureContract("solana.predict.claim", null)).toBe(true);
+    expect(validateCaptureContract("solana.predict.claim", { type: "prediction" })).toBe(true);
+    expect(validateCaptureContract("solana.predict.closeAll", null)).toBe(true);
   });
 
   it("rejects unexpected type", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
+    const valid = validateCaptureContract("pendle.pt.buy", {
       type: "prediction", walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
@@ -263,7 +263,7 @@ describe("capture contract — runtime validator", () => {
   });
 
   it("rejects capture without type field (type is required for all capture:full)", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
+    const valid = validateCaptureContract("pendle.pt.buy", {
       walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
@@ -283,49 +283,40 @@ describe("capture contract — runtime validator", () => {
     })).toBe(true);
   });
 
-  it("validates real matrix tools — khalani.bridge requires type+walletAddress+status", () => {
-    expect(validateCaptureContract("khalani.bridge", {
-      type: "bridge", status: "pending",
+  it("validates real matrix tools — pendle.claim requires type+walletAddress+status", () => {
+    // khalani.bridge flipped to capture:none in Phase 2, and
+    // solana.lend.deposit/withdraw flipped to capture:none in Phase 3/W5
+    // (both own their lifecycle directly in agent_activity now) — pendle.claim
+    // is the live capture:full audit tool that carries this pin today.
+    expect(validateCaptureContract("pendle.claim", {
+      type: "reward", status: "open",
     })).toBe(false);
 
-    expect(validateCaptureContract("khalani.bridge", {
-      type: "bridge", status: "pending", walletAddress: "0x123",
+    expect(validateCaptureContract("pendle.claim", {
+      type: "reward", status: "open", walletAddress: "0x123",
     })).toBe(true);
+  });
+
+  it("passes capture:none regardless of tradeCapture — solana.lend.deposit/withdraw (W5 staged Solana seam)", () => {
+    expect(validateCaptureContract("solana.lend.deposit", null)).toBe(true);
+    expect(validateCaptureContract("solana.lend.deposit", { type: "lend" })).toBe(true);
+    expect(validateCaptureContract("solana.lend.withdraw", null)).toBe(true);
+  });
+
+  it("passes capture:none regardless of tradeCapture — solana.lend.borrowOperate (Batch 5, card B1)", () => {
+    expect(validateCaptureContract("solana.lend.borrowOperate", null)).toBe(true);
+    expect(validateCaptureContract("solana.lend.borrowOperate", { type: "lend" })).toBe(true);
   });
 });
 
-// ── Meta fields regression guard (Hyperliquid protection-gate inputs) ──
-
-describe("capture contract — required meta fields", () => {
-  it("solana.predict.buy requires meta.contracts", () => {
-    const c = MUTATION_MATRIX.get("solana.predict.buy")!;
-    expect(c.requiredMetaFields).toContain("contracts");
-  });
-
-  it("prediction buy with contracts in meta passes", () => {
-    const valid = validateCaptureContract("solana.predict.buy", {
-      type: "prediction", walletAddress: "0x", status: "open",
-      positionKey: "pk", instrumentKey: "solana:predict:m1:yes",
-      meta: { contracts: "3.5" },
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("hyperliquid.perp.open requires coin+contracts+protectionState in meta", () => {
-    const c = MUTATION_MATRIX.get("hyperliquid.perp.open")!;
-    expect(c.requiredMetaFields).toEqual(["coin", "contracts", "protectionState"]);
-
-    expect(validateCaptureContract("hyperliquid.perp.open", {
-      type: "perps", walletAddress: "0x", status: "open", positionKey: "pk", instrumentKey: "ik",
-      meta: { coin: "ETH", contracts: "1.5" }, // protectionState missing
-    })).toBe(false);
-
-    expect(validateCaptureContract("hyperliquid.perp.open", {
-      type: "perps", walletAddress: "0x", status: "open", positionKey: "pk", instrumentKey: "ik",
-      meta: { coin: "ETH", contracts: "1.5", protectionState: "protected" },
-    })).toBe(true);
-  });
-});
+// requiredMetaFields (nested-invariant support in capture-validator.ts) has no
+// LIVE matrix example anymore: Hyperliquid's perp.* rows (deleted, Agent Scan
+// Phase 3) and solana.predict.buy (flipped to capture:"none", W5 migration
+// 049 — requiredMetaFields no longer set) were its only two users. Left
+// dormant-but-reserved for the next protocol that needs it, same treatment as
+// the (also currently empty) "utility" CaptureKind above — no dedicated
+// mechanism test without a real `validateCaptureContract` entry point that
+// accepts a synthetic contract.
 
 // ── Preview detection tests ────────────────────────────────────
 
@@ -347,6 +338,5 @@ describe("capture contract — preview detection", () => {
   it("does not detect preview for tools without previewSupport", () => {
     expect(isPreviewExecution("solana.swap.execute", { dryRun: true })).toBe(false);
     expect(isPreviewExecution("solana.predict.buy", { dryRun: true })).toBe(false);
-    expect(isPreviewExecution("hyperliquid.perp.open", { dryRun: true })).toBe(false);
   });
 });

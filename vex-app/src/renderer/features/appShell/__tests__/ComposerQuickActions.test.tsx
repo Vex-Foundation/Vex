@@ -19,25 +19,22 @@ vi.mock("@hugeicons/react", () => ({
 
 vi.mock("@hugeicons/core-free-icons", () => ({
   FireIcon: "FireIcon",
-  ChartLineData01Icon: "ChartLineData01Icon",
   PercentSquareIcon: "PercentSquareIcon",
 }));
 
 const { ComposerQuickActions } = await import("../ComposerQuickActions.js");
 
 describe("ComposerQuickActions", () => {
-  it("renders three intent chips with icons, no 01–03 numbering", () => {
+  it("renders the intent chips with icons, no 01–03 numbering", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // Three starter chips, each a real focusable button.
+    // Two starter chips (Hyperliquid deletion retired the perp-market
+    // prompt), each a real focusable button.
     const chips = screen.getAllByRole("button");
-    expect(chips).toHaveLength(3);
+    expect(chips).toHaveLength(2);
 
-    // Each intent icon is present (flame / chart / percent square).
+    // Each intent icon is present (flame / percent square).
     expect(container.querySelector('[data-icon="FireIcon"]')).not.toBeNull();
-    expect(
-      container.querySelector('[data-icon="ChartLineData01Icon"]'),
-    ).not.toBeNull();
     expect(
       container.querySelector('[data-icon="PercentSquareIcon"]'),
     ).not.toBeNull();

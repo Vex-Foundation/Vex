@@ -47,8 +47,6 @@ const {
   getJupiterLendEarnEarnings,
   requestJupiterLendEarnDepositInstructions,
   requestJupiterLendEarnMintInstructions,
-  executeJupiterLendEarnDeposit,
-  executeJupiterLendEarnWithdraw,
   executeJupiterLendEarnMint,
   executeJupiterLendEarnRedeem,
 } = await import("@tools/solana-ecosystem/jupiter/jupiter-lend/earn-api/service.js");
@@ -125,32 +123,22 @@ describe("jupiter lend earn api service", () => {
     expect(mint.raw).toEqual(instructionEnvelope);
   });
 
-  it("derives the signer correctly for all transaction execution helpers", async () => {
-    mockDepositTx.mockResolvedValueOnce({ transaction: "dep-base64" });
-    mockWithdrawTx.mockResolvedValueOnce({ transaction: "wd-base64" });
+  it("derives the signer correctly for the remaining transaction execution helpers (mint/redeem)", async () => {
+    // Deposit/withdraw execution (executeJupiterLendEarnDeposit/Withdraw) was
+    // deleted (B2, legacy cleanup): the K6 staged-seam conversion replaced them
+    // with the request-only requestJupiterLendEarnDepositTransaction/
+    // WithdrawTransaction + the K2 prepare/persist/submit pipeline in
+    // handlers/lend.ts — covered there, not here. Mint/redeem still use this
+    // monolithic sign-and-send path and keep full coverage.
     mockMintTx.mockResolvedValueOnce({ transaction: "mint-base64" });
     mockRedeemTx.mockResolvedValueOnce({ transaction: "redeem-base64" });
     mockSignAndSend
-      .mockResolvedValueOnce("sig-dep")
-      .mockResolvedValueOnce("sig-wd")
       .mockResolvedValueOnce("sig-mint")
       .mockResolvedValueOnce("sig-redeem");
 
-    const deposit = await executeJupiterLendEarnDeposit(USER.secretKey, USDC, "1000000");
-    const withdraw = await executeJupiterLendEarnWithdraw(USER.secretKey, USDC, "500000");
     const mint = await executeJupiterLendEarnMint(USER.secretKey, USDC, "1000000");
     const redeem = await executeJupiterLendEarnRedeem(USER.secretKey, USDC, "500000");
 
-    expect(mockDepositTx).toHaveBeenCalledWith({
-      asset: USDC,
-      amount: "1000000",
-      signer: USER_ADDRESS,
-    });
-    expect(mockWithdrawTx).toHaveBeenCalledWith({
-      asset: USDC,
-      amount: "500000",
-      signer: USER_ADDRESS,
-    });
     expect(mockMintTx).toHaveBeenCalledWith({
       asset: USDC,
       shares: "1000000",
@@ -162,20 +150,15 @@ describe("jupiter lend earn api service", () => {
       signer: USER_ADDRESS,
     });
 
-    expect(mockSignAndSend).toHaveBeenCalledTimes(4);
-    expect(mockSignAndSend.mock.calls[0][0]).toBe("dep-base64");
-    expect(mockSignAndSend.mock.calls[1][0]).toBe("wd-base64");
-    expect(mockSignAndSend.mock.calls[2][0]).toBe("mint-base64");
-    expect(mockSignAndSend.mock.calls[3][0]).toBe("redeem-base64");
+    expect(mockSignAndSend).toHaveBeenCalledTimes(2);
+    expect(mockSignAndSend.mock.calls[0][0]).toBe("mint-base64");
+    expect(mockSignAndSend.mock.calls[1][0]).toBe("redeem-base64");
     for (const call of mockSignAndSend.mock.calls) {
       expect(call[1][0].publicKey.toBase58()).toBe(USER_ADDRESS);
     }
 
-    expect(deposit.signature).toBe("sig-dep");
-    expect(withdraw.signature).toBe("sig-wd");
     expect(mint.signature).toBe("sig-mint");
     expect(redeem.signature).toBe("sig-redeem");
-    expect(deposit.raw.transaction).toBe("dep-base64");
     expect(redeem.raw.transaction).toBe("redeem-base64");
   });
 });

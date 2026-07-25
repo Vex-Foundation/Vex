@@ -95,7 +95,7 @@ export function validateCaptureContract(
     return false;
   }
 
-  // Validate required meta fields (e.g. Hyperliquid protection-gate inputs)
+  // Validate required meta fields (per-protocol capture-specific invariants)
   if (contract.requiredMetaFields && contract.requiredMetaFields.length > 0) {
     const meta = tradeCapture.meta as Record<string, unknown> | undefined;
     const missingMeta: string[] = [];

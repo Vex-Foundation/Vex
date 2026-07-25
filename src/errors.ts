@@ -4,6 +4,16 @@
 export class VexError extends Error {
   retryable?: boolean;
   externalName?: string;
+  /**
+   * HTTP status of the response that produced this error, when it came from a
+   * provider that ANSWERED (set by `utils/http.ts` on a non-ok response).
+   * Absent for network/timeout/parse failures, where no status exists.
+   *
+   * Callers use it to tell a definitive provider refusal (4xx — the request
+   * was understood and rejected, nothing was acted on) from an ambiguous
+   * transport failure. Never assume its absence means success.
+   */
+  httpStatus?: number;
 
   constructor(
     public readonly code: string,
@@ -91,9 +101,6 @@ export const ErrorCodes = {
   KHALANI_SOLANA_KEYSTORE_NOT_FOUND: "KHALANI_SOLANA_KEYSTORE_NOT_FOUND",
   KHALANI_ADDRESS_MISMATCH: "KHALANI_ADDRESS_MISMATCH",
   KHALANI_UNSUPPORTED_DEPOSIT_METHOD: "KHALANI_UNSUPPORTED_DEPOSIT_METHOD",
-
-  // Hyperliquid Bridge2 funding
-  HYPERLIQUID_DEPOSIT_FAILED: "HYPERLIQUID_DEPOSIT_FAILED",
 
   // Relay (api.relay.link) — keyless cross-chain bridge
   RELAY_API_ERROR: "RELAY_API_ERROR",
@@ -196,6 +203,13 @@ export const ErrorCodes = {
   SOLANA_TRANSFER_FAILED: "SOLANA_TRANSFER_FAILED",
   SOLANA_TX_FAILED: "SOLANA_TX_FAILED",
   SOLANA_TX_TIMEOUT: "SOLANA_TX_TIMEOUT",
+  // W5 staged seam (design §2/R2b): the strict sole-signer check refused to
+  // sign (wrong required-signer count, signer mismatch, or a preserved
+  // nonzero signature that a blockhash replacement would invalidate).
+  SOLANA_TX_SOLE_SIGNER_VIOLATION: "SOLANA_TX_SOLE_SIGNER_VIOLATION",
+  // W5 staged seam: caller-supplied blockhash evidence (VERIFY mode) does not
+  // match the transaction's own embedded `recentBlockhash`.
+  SOLANA_TX_BLOCKHASH_MISMATCH: "SOLANA_TX_BLOCKHASH_MISMATCH",
   SOLANA_TOKEN_NOT_FOUND: "SOLANA_TOKEN_NOT_FOUND",
   SOLANA_RPC_ERROR: "SOLANA_RPC_ERROR",
   SOLANA_QUOTE_FAILED: "SOLANA_QUOTE_FAILED",
