@@ -38,8 +38,15 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * vocabulary). `bridge_fill_expected` is the LOGICAL-row marker (B2) — exactly
  * one per execution, carrying the route endpoints + amounts +
  * `provider_order_id` that every feed/dedup/in-flight-guard keys on.
- * `bridge_deposit` is the Vex-signed origin leg; `bridge_fill_observed`/
- * `bridge_refund` are externally-observed (solver-signed) evidence rows.
+ * `bridge_deposit` is the Vex-signed origin leg; `bridge_fee` (migration 050)
+ * is the Vex integrator-fee transfer — the FINAL Vex-signed origin leg, taken
+ * only after the deposit succeeded, so a bridge that never lands never pays a
+ * fee. It was recorded as `allowance` until 050 (see
+ * `src/tools/bridge-fee/constants.ts`); `bridge_deposit` was and remains
+ * disqualified for it because the bridge repair sweep correlates the provider
+ * order by selecting the sibling `bridge_deposit` row.
+ * `bridge_fill_observed`/`bridge_refund` are externally-observed
+ * (solver-signed) evidence rows.
  * `predict_sell` is a SINGLE-position close (`solana.predict.sell` ->
  * `DELETE /positions/{positionPubkey}`, one activity row); `predict_close`
  * is reserved for the `closeAll` bulk fan-out (`DELETE /positions`, N
@@ -52,6 +59,7 @@ export type AgentActivityEventRole =
   | "allowance"
   | "swap"
   | "bridge_deposit"
+  | "bridge_fee"
   | "bridge_fill_expected"
   | "bridge_fill_observed"
   | "bridge_refund"
@@ -111,6 +119,35 @@ export interface AgentActivityLegInput {
   amountRaw?: string;
 }
 
+/**
+ * The Vex integrator fee an IN-TRANSACTION venue took, in token units
+ * (migration 050 Part 2) — the FACT behind the nullable `usdVexFeeEst`
+ * estimate, so a missing USD price can no longer read as "no fee was charged".
+ *
+ * Only for venues that take the fee INSIDE the transaction being recorded (the
+ * KyberSwap swap leg, a Jupiter swap), where the fee has no row of its own. A
+ * BRIDGE fee is a separate transfer with its own `bridge_fee` row whose
+ * `tokenIn`/`amountIn` already record it exactly — that row must NOT also set
+ * this, or the same money is stored twice.
+ *
+ * Every field except `tokenSymbol` is REQUIRED, deliberately: a fee amount
+ * whose decimals are unknown is unreadable (`"25000"` is 0.025 at 6 decimals
+ * and 0.000025 at 9), so a writer that cannot state all of them has no business
+ * claiming it knows the fee. `tokenSymbol` is display-only and may be omitted.
+ */
+export interface AgentActivityVexFeeCharge {
+  /** The token the fee was taken IN — the source token on both current venues. */
+  readonly tokenAddress: string;
+  /** Display only. */
+  readonly tokenSymbol?: string;
+  /** Decimals of `tokenAddress`, needed to read `amountRaw` at all. */
+  readonly tokenDecimals: number;
+  /** Atomic units as digits. Never a `number`: a u64/u128 fee exceeds `MAX_SAFE_INTEGER`. */
+  readonly amountRaw: string;
+  /** Exact-decimal rendering of `amountRaw` at `tokenDecimals`. */
+  readonly amountHuman: string;
+}
+
 export interface AgentActivityEvent {
   id: number;
   protocolExecutionId: number;
@@ -140,7 +177,54 @@ export interface AgentActivityEvent {
   executedAmountOutRaw: string | null;
   usdInEst: string | null;
   usdOutEst: string | null;
+  /**
+   * DEPRECATED (migration 050) — the mixed-meaning column: network gas on a
+   * `kyberswap_quote` row, the provider's venue fee on a
+   * `jupiter_prediction_order_preview` row, NULL on bridges. Still dual-written
+   * with its EXACT historical value so old readers are unaffected; a later
+   * contract migration drops it. Read the four `usd*Est` fields below instead.
+   */
   usdFeeEst: string | null;
+  /**
+   * Network gas only, in USD — NOT part of `tx.value`. Kyber records
+   * `gasUsd + l1FeeUsd`, so on an OP-stack chain this is legitimately GREATER
+   * than the frozen `usdFeeEst`; rows backfilled from before migration 050
+   * carry L2-only gas because the L1 component was never recorded.
+   */
+  usdNetworkGasEst: string | null;
+  /** The VENUE's own protocol fee, in USD (Jupiter's prediction order total; Kyber's `extraFee`). Never gas, never the Vex fee. */
+  usdVenueFeeEst: string | null;
+  /** Destination-chain execution prepay, in USD. No venue currently supplies an honest figure — see migration 050. */
+  usdDestinationPrepayEst: string | null;
+  /**
+   * VEX's OWN integrator fee, in USD. Written on the row whose own on-chain
+   * outcome decides whether the fee was actually collected — the `swap` leg for
+   * an aggregator swap, the `bridge_fee` leg for a bridge — so
+   * `SUM(usd_vex_fee_est) WHERE status='confirmed'` is honest revenue and never
+   * double-counts. NULL where the fee is known in token units but has no
+   * trustworthy USD price (recording nothing beats recording a guess).
+   */
+  usdVexFeeEst: string | null;
+  /**
+   * The Vex fee in TOKEN units (migration 050 Part 2) — exact, not an estimate.
+   *
+   * Read WITH `usdVexFeeEst`: an amount here plus a null USD means "fee
+   * charged, USD unknown"; BOTH null means no Vex fee on this row — EXCEPT on
+   * an `eventRole: 'bridge_fee'` row, where the fee IS the row and lives in
+   * `amountInRaw`/`tokenInAddress`, and except on rows written before migration
+   * 050, where null means "never recorded".
+   *
+   * Do NOT add this to `amountInRaw`: on the in-transaction venues the fee is
+   * taken out of the input, so it is already a component of that amount.
+   */
+  vexFeeTokenAddress: string | null;
+  vexFeeTokenSymbol: string | null;
+  /** Decimals of `vexFeeTokenAddress` — `vexFeeAmountRaw` is unreadable without it. */
+  vexFeeTokenDecimals: number | null;
+  /** Atomic units as digits (TEXT column — a u64 fee exceeds `MAX_SAFE_INTEGER`). */
+  vexFeeAmountRaw: string | null;
+  /** Exact-decimal sibling of `vexFeeAmountRaw`. */
+  vexFeeAmountHuman: string | null;
   usdSource: string | null;
   txHash: string | null;
   fromAddress: string | null;

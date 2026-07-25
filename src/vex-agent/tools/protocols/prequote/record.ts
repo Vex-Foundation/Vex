@@ -487,7 +487,11 @@ async function recordSwapPrequote(
     slippageBps: extracted.slippageBps,
     safetyVerdict: extracted.verdict,
     safetyDetail: extracted.safetyDetail,
-    routeRef: null,
+    // Structural-only route facts — today the Vex-computed KyberSwap price
+    // floor `kyberswap.swap.execute` holds the built calldata to. Null for
+    // every other swap venue (they build their own calldata, so the floor
+    // never leaves the handler).
+    routeRef: extracted.routeRef ?? null,
     expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
   };
 

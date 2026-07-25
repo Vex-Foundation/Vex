@@ -121,6 +121,7 @@ describe("swap-prequote façade surface", () => {
       referrer: "",
       referrerFeeBps: "",
       filler: "",
+      slippageBps: "",
     };
     const match: PrequoteMatchInput = swap;
     const gateReg: ExecuteGateRegistration = { kind: "bridge" };

@@ -133,6 +133,18 @@ describe("quoteBestRoute", () => {
     expect(applySlippage(1000n, 0)).toBe(1000n);
     expect(applySlippage(1000n, 10000)).toBe(0n);
   });
+
+  // Phase-3 W3: this used to `Math.max(0, Math.min(10_000, Math.floor(bps)))`,
+  // so a caller's 50_000 silently became a 100% tolerance — a minAmountOut of
+  // zero, accepting any output at all, with no error and a normal-looking
+  // quote. Reject, never coerce, at a price-protection boundary. (Vex's own
+  // 1000 bps product ceiling is enforced a layer up, in the handler.)
+  it("applySlippage REJECTS an out-of-domain tolerance instead of clamping it", () => {
+    expect(() => applySlippage(1000n, 10_001)).toThrow(/slippageBps/i);
+    expect(() => applySlippage(1000n, 50_000)).toThrow(/slippageBps/i);
+    expect(() => applySlippage(1000n, -1)).toThrow(/slippageBps/i);
+    expect(() => applySlippage(1000n, 0.5)).toThrow(/slippageBps/i);
+  });
 });
 
 // ── Calldata builders (pure) ────────────────────────────────────────────────

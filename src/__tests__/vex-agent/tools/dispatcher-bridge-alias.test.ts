@@ -83,7 +83,9 @@ describe("bridge alias — routing + translation", () => {
     });
   });
 
-  it("forwards the bound money overrides (tradeType, recipient, refundTo, filler)", async () => {
+  it("forwards the bound money overrides (tradeType, recipient, filler)", async () => {
+    // `refundTo` is NOT in this list any more — it is derived from the selected
+    // source wallet and rejected by name (see the test below).
     await dispatchTool(
       {
         name: "bridge",
@@ -91,7 +93,6 @@ describe("bridge alias — routing + translation", () => {
           ...BRIDGE_ARGS,
           tradeType: "EXACT_OUTPUT",
           recipient: "0x" + "ab".repeat(20),
-          refundTo: "0x" + "cd".repeat(20),
           filler: "native-filler",
         },
         toolCallId: "b2",
@@ -101,8 +102,25 @@ describe("bridge alias — routing + translation", () => {
     const [req] = executeProtocolTool.mock.calls[0] as [{ params: Record<string, unknown> }];
     expect(req.params.tradeType).toBe("EXACT_OUTPUT");
     expect(req.params.recipient).toBe("0x" + "ab".repeat(20));
-    expect(req.params.refundTo).toBe("0x" + "cd".repeat(20));
     expect(req.params.filler).toBe("native-filler");
+    expect(req.params).not.toHaveProperty("refundTo");
+  });
+
+  it("REJECTS a model-supplied refundTo BY NAME (NOT dropped, NOT dispatched)", async () => {
+    // `refundTo` decides where funds land when a bridge FAILS, and it is absent
+    // from the approval preview's allowlist — so a human approving a bridge
+    // would never see a redirected refund. Same shape as the referral-fee
+    // vector below, and prequote binding does not help: an attacker setting the
+    // same address on the quote AND the execute collides the hashes.
+    const result = await dispatchTool(
+      { name: "bridge", args: { ...BRIDGE_ARGS, refundTo: "0x" + "cd".repeat(20) }, toolCallId: "b2r" },
+      ctx(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/refundTo/);
+    expect(result.output).toMatch(/not an accepted parameter/);
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   it("REJECTS a model-supplied referrer / referrerFeeBps BY NAME (NOT dropped, NOT dispatched)", async () => {

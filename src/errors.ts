@@ -101,6 +101,15 @@ export const ErrorCodes = {
   KHALANI_SOLANA_KEYSTORE_NOT_FOUND: "KHALANI_SOLANA_KEYSTORE_NOT_FOUND",
   KHALANI_ADDRESS_MISMATCH: "KHALANI_ADDRESS_MISMATCH",
   KHALANI_UNSUPPORTED_DEPOSIT_METHOD: "KHALANI_UNSUPPORTED_DEPOSIT_METHOD",
+  /**
+   * An EVM transaction's `tx.value` could not be fully attributed to proven
+   * cost components, or the transaction reaching the signer is not the one
+   * whose value was authorized. An AUTHORIZATION failure, not an economics one
+   * — maps to the `agent_activity` failure code `allowance_or_balance` with a
+   * structured reason. Nothing is signed.
+   * See `src/tools/evm-chains/native-value-authorization`.
+   */
+  NATIVE_VALUE_UNAUTHORIZED: "NATIVE_VALUE_UNAUTHORIZED",
 
   // Relay (api.relay.link) — keyless cross-chain bridge
   RELAY_API_ERROR: "RELAY_API_ERROR",
@@ -126,6 +135,22 @@ export const ErrorCodes = {
   KYBER_FEE_EXCEEDS_AMOUNT: "KYBER_FEE_EXCEEDS_AMOUNT",
   KYBER_AMOUNT_TOO_LARGE: "KYBER_AMOUNT_TOO_LARGE",
   KYBER_WETH_NOT_CONFIGURED: "KYBER_WETH_NOT_CONFIGURED",
+  /**
+   * The built swap calldata's embedded `minReturnAmount` is below the price
+   * floor Vex approved at quote time (or below the floor the fresh route
+   * implies). A genuine slippage abort — maps to the `agent_activity`
+   * failure code `slippage`. Nothing is signed.
+   */
+  KYBER_PRICE_FLOOR_VIOLATED: "KYBER_PRICE_FLOOR_VIOLATED",
+  /**
+   * The built swap calldata does not match the transaction Vex approved in a
+   * NON-price way: wrong router/target, an unexpected approve spender, an
+   * unexpected native value, a fee line that is not the Vex constant, or a
+   * flag set (partial fill / fee-on-destination) we never approve. Maps to
+   * `route_not_found`, mirroring Solana's fee-policy divergence abort.
+   * Nothing is signed.
+   */
+  KYBER_UNSAFE_BUILD: "KYBER_UNSAFE_BUILD",
 
   // KyberSwap Token API
   KYBER_TOKEN_SEARCH_FAILED: "KYBER_TOKEN_SEARCH_FAILED",
@@ -210,6 +235,14 @@ export const ErrorCodes = {
   // W5 staged seam: caller-supplied blockhash evidence (VERIFY mode) does not
   // match the transaction's own embedded `recentBlockhash`.
   SOLANA_TX_BLOCKHASH_MISMATCH: "SOLANA_TX_BLOCKHASH_MISMATCH",
+  // Pre-sign compute-budget ADMISSION GATE: a free `simulateTransaction` did
+  // not SHOW the transaction's compute-unit budget — declared, or granted by
+  // default — covering the work it is about to do (starved, unmeasurable, or
+  // unreachable). Admission is never a guarantee the transaction will land:
+  // simulation runs at a different slot against different account state.
+  // Names the gate, not one finding — the message says which, and whether a
+  // retry can help. See `shared/solana-transaction/compute-budget-sufficiency.ts`.
+  SOLANA_TX_COMPUTE_BUDGET_INSUFFICIENT: "SOLANA_TX_COMPUTE_BUDGET_INSUFFICIENT",
   SOLANA_TOKEN_NOT_FOUND: "SOLANA_TOKEN_NOT_FOUND",
   SOLANA_RPC_ERROR: "SOLANA_RPC_ERROR",
   SOLANA_QUOTE_FAILED: "SOLANA_QUOTE_FAILED",

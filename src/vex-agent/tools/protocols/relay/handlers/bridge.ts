@@ -32,7 +32,7 @@
  * exists here, so the in-turn poll is INFORMATIONAL only.
  */
 
-import { getAddress, isAddress, type Hex } from "viem";
+import { formatUnits, getAddress, isAddress, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getCachedRelayChains, getRelayClient } from "@tools/relay/client.js";
@@ -42,7 +42,19 @@ import { evaluateRelayRouteHealth, type RelayRouteHealth } from "@tools/relay/he
 import { assertRelayQuoteCorrelation } from "@tools/relay/correlation.js";
 import { classifyRelayBridgeSteps, type RelayStepRole } from "@tools/relay/step-policy.js";
 import { planRelayStepTx, resolveRelayStepClients, pollRelayIntentStatus, type RelayPollResult, type RelayStepClients } from "@tools/relay/execute.js";
+import { relayNativeValueGuidance, relayStepLabel } from "@tools/relay/native-value.js";
 import { signStageBroadcast } from "@tools/kyberswap/evm/staged-broadcast.js";
+import {
+  BRIDGE_FEE_ACTIVITY_EVENT_ROLE,
+  BRIDGE_FEE_RECEIVER_EVM,
+  buildBridgeFeeDisclosure,
+  buildBridgeFeeSkippedDisclosure,
+  buildEvmBridgeFeeTransfer,
+  evaluateEvmBridgeFeeEligibility,
+  splitBridgeAmountForFee,
+  type BridgeFeeDisclosure,
+  type BridgeFeeSplit,
+} from "@tools/bridge-fee/index.js";
 import {
   DependentLegGasEstimateError,
   dependentLegEstimateGuidance,
@@ -71,7 +83,10 @@ import {
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { parseSlippageBpsString } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
+import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, ok, fail } from "../../handler-helpers.js";
@@ -79,6 +94,7 @@ import {
   relayChainDisplay,
   bridgeSideDisplay,
   bridgeSummaryLine,
+  relayFeeUsdEstimate,
   type BridgeAmountDisplay,
   type BridgeEndpointDisplay,
   type BridgeOutputLeg,
@@ -93,8 +109,26 @@ interface RelayLegs {
   destinationChainId: number;
   originCurrency: string;
   destinationCurrency: string;
+  /**
+   * The amount Relay is quoted for and deposits: the caller's `amount` MINUS
+   * the Vex fee (`@tools/bridge-fee`), so `amountOut` is what the user
+   * actually receives. Equal to `requestedAmount` when no fee is taken.
+   */
   amount: string;
+  /** The caller's `amount` verbatim — the TOTAL debited across all legs. */
+  requestedAmount: string;
+  feeSplit: BridgeFeeSplit;
+  /** Non-null when no fee is taken; the plain-language reason, disclosed to the agent. */
+  feeSkipReason: string | null;
   tradeType: RelayTradeType;
+  /**
+   * Validated slippage tolerance, or `null` when the caller omitted it (Relay
+   * then applies its own default and we send no `slippageTolerance`). Resolved
+   * ONCE in `resolveLegs` so the quote and the execute cannot disagree, and so
+   * the value that reaches the provider is the same one the prequote identity
+   * bound.
+   */
+  slippageBps: number | null;
 }
 
 /** Distinct tx chainIds per step — the structural shape the prequote recorder re-validates. */
@@ -135,20 +169,93 @@ async function resolveLegs(
     tradeTypeRaw === "EXACT_OUTPUT" ? "EXACT_OUTPUT"
     : tradeTypeRaw === "EXPECTED_OUTPUT" ? "EXPECTED_OUTPUT"
     : "EXACT_INPUT";
+  const originChainId = resolveRelayChainId(fromChain, chains);
+  const originCurrency = toRelayCurrency(fromToken);
+
+  // Vex integrator fee (`@tools/bridge-fee`) — resolved HERE so the quote
+  // handler and the execute handler can never disagree about what Relay was
+  // asked for. Relay is quoted for the POST-fee amount; the fee leaves later,
+  // as Vex's own transfer, only if the deposit actually lands.
+  const feeSplit = splitBridgeAmountForFee(amount);
+  let feeSkipReason: string | null = feeSplit.charged
+    ? null
+    : "25 bps of the requested amount floors to 0 in smallest units";
+  if (feeSplit.charged) {
+    const eligibility = await evaluateEvmBridgeFeeEligibility(originChainId, originCurrency);
+    if (!eligibility.charge) feeSkipReason = eligibility.reason;
+  }
+
   return {
-    originChainId: resolveRelayChainId(fromChain, chains),
+    originChainId,
     destinationChainId: resolveRelayChainId(toChain, chains),
-    originCurrency: toRelayCurrency(fromToken),
+    originCurrency,
     destinationCurrency: toRelayCurrency(toToken),
-    amount,
+    amount: (feeSkipReason === null ? feeSplit.bridgedRaw : feeSplit.totalRaw).toString(),
+    requestedAmount: feeSplit.totalRaw.toString(),
+    feeSplit,
+    feeSkipReason,
     tradeType,
+    slippageBps: resolveSlippageBps(params),
   };
+}
+
+/**
+ * The fee, as the agent must see it on EVERY Relay surface (quote, dryRun,
+ * execute). Pure projection of the already-resolved split — no second
+ * derivation, so the disclosed number and the transferred number are the same
+ * number by construction.
+ */
+function relayFeeDisclosure(legs: RelayLegs, inSide: RelayQuoteSide): BridgeFeeDisclosure {
+  if (legs.feeSkipReason !== null) {
+    return buildBridgeFeeSkippedDisclosure({ reason: legs.feeSkipReason, totalRaw: legs.feeSplit.totalRaw });
+  }
+  return buildBridgeFeeDisclosure({
+    tokenAddress: legs.originCurrency,
+    tokenSymbol: inSide.symbol ?? undefined,
+    tokenDecimals: inSide.decimals ?? undefined,
+    feeRaw: legs.feeSplit.feeRaw,
+    bridgedRaw: legs.feeSplit.bridgedRaw,
+    totalRaw: legs.feeSplit.totalRaw,
+    receiver: BRIDGE_FEE_RECEIVER_EVM,
+    feeUsdEstimate: relayFeeUsdEstimate(inSide, legs.feeSplit.feeRaw) ?? undefined,
+  });
+}
+
+/**
+ * Validate the (untrusted) `slippageBps` param before it can reach Relay.
+ *
+ * Relay declares it as a manifest STRING, so the numeric `unit: "bps"` gate at
+ * the protocol boundary never inspects it, and Relay itself performs no local
+ * validation — before this check a caller could forward any string straight
+ * through to `slippageTolerance`. Uses the SAME parser as the prequote identity
+ * (`prequote/identity/relay-bridge.ts`) so the value the gate bound and the
+ * value the provider receives can never disagree, and so Vex's slippage ceiling
+ * applies here too. Omitted → `null` (Relay's own default; nothing is sent).
+ * Invalid or over-ceiling → throw, which both callers already surface as a
+ * clean `fail(...)` before any quote or signing.
+ */
+function resolveSlippageBps(params: Record<string, unknown>): number | null {
+  const raw = str(params, "slippageBps");
+  if (!raw) return null;
+  const parsed = parseSlippageBpsString(`Parameter "slippageBps" for ${BRIDGE_TOOL_ID}`, raw);
+  if (!parsed.ok) throw new VexError(ErrorCodes.AGENT_VALIDATION_ERROR, parsed.reason);
+  return parsed.bps;
 }
 
 function buildRequest(legs: RelayLegs, user: string, params: Record<string, unknown>): RelayQuoteRequest {
   const recipient = str(params, "recipient") || user;
-  const refundTo = str(params, "refundTo") || user;
-  const slippage = str(params, "slippageBps");
+  // DERIVED, never read from params — the same refund-destination policy the
+  // Khalani path applies (`@tools/khalani/request.js`). `refundTo` decides where
+  // funds land when a bridge FAILS and is absent from the approval preview's
+  // allowlist, so a model-chosen value would redirect a refund with no human
+  // ever seeing it. `user` is the resolved source wallet: the money goes back
+  // where it came from, which needs no authorization. Callers that supply the
+  // key are rejected by name upstream.
+  const refundTo = user;
+  // The VALIDATED value from `resolveLegs`, never the raw param — this is the
+  // last hop before the provider, and it must carry exactly what the prequote
+  // identity bound.
+  const slippage = legs.slippageBps === null ? "" : String(legs.slippageBps);
   return {
     user,
     recipient,
@@ -254,9 +361,11 @@ async function relayQuoteGet(
     destinationChainId: legs.destinationChainId,
     fromToken: legs.originCurrency,
     toToken: legs.destinationCurrency,
-    amount: legs.amount,
+    amount: legs.requestedAmount,
+    bridgedAmount: legs.amount,
     tradeType: legs.tradeType,
     amounts: { in: inSide, out: outSide },
+    vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
     feeUsdByBucket: adapted.feeUsdByBucket,
     estimatedTimeSeconds: adapted.timeEstimateSeconds,
     steps: stepSummaries(quote),
@@ -334,7 +443,13 @@ async function maybeAutoPin(walletAddress: string, legs: RelayLegs): Promise<voi
 }
 
 interface OriginBroadcast {
-  readonly role: RelayStepRole;
+  /**
+   * `vex_fee` is Vex's OWN treasury transfer, not a Relay step — surfaced with
+   * its own display role so the agent can tell it apart from a real approval
+   * (the durable row records it under `allowance`, the closest existing
+   * `event_role`; see `BRIDGE_FEE_ACTIVITY_EVENT_ROLE`).
+   */
+  readonly role: RelayStepRole | "vex_fee";
   readonly txHash: string;
   // `confirmed_unrecorded` (m5-relay / Phase-1 C41): the origin tx confirmed
   // on-chain but Vex's durable confirm write did NOT apply — never present it as
@@ -379,6 +494,8 @@ function pendingResult(args: {
   broadcasts: readonly OriginBroadcast[];
   poll: RelayPollResult | null;
   depositUnconfirmed: boolean;
+  vexFee: BridgeFeeDisclosure;
+  feeCollection: RelayFeeCollection;
 }): ToolResult {
   const { executionId, requestId, from, to, inSide, outSide, feeUsdByBucket, broadcasts, poll } = args;
   const providerStatus = poll?.observed ? poll.status : null;
@@ -424,6 +541,9 @@ function pendingResult(args: {
     inTxHashes,
     txHashes: destinationTxHashes,
     amounts: { in: inSide, out: outSide },
+    // Disclosure + collection outcome. `collection` describes Vex's revenue
+    // only — it never qualifies whether the user's bridge worked.
+    vexFee: { ...args.vexFee, ...args.feeCollection },
     feeUsdByBucket,
   };
   return {
@@ -516,6 +636,7 @@ async function relayBridge(
       fromChain: from,
       toChain: to,
       amounts: { in: inSide, out: outSide },
+      vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
       feeUsdByBucket: adapted.feeUsdByBucket,
       estimatedTimeSeconds: adapted.timeEstimateSeconds,
       steps: stepSummaries(quote),
@@ -574,6 +695,29 @@ async function relayBridge(
   }
 
   // ── Atomic intent + all legs + ONE planned logical row, BEFORE any signing ──
+  //
+  // The Vex fee transfer is planned as the FINAL Vex-signed leg, after the
+  // deposit — a bridge that never lands never pays a fee. It is recorded under
+  // its own `bridge_fee` event_role (migration 050; `allowance` before that —
+  // see `BRIDGE_FEE_ACTIVITY_EVENT_ROLE`); its token, amount, USD estimate and
+  // hash are the real ones, so the movement is neither hidden nor mislabeled.
+  const chargeFee = legs.feeSkipReason === null;
+  /** Disclosure for every path where the bridge did not complete — nothing is ever charged there. */
+  const feeNotTaken = () => ({
+    ...buildBridgeFeeSkippedDisclosure({
+      reason: "the bridge did not complete, so no Vex fee was taken",
+      totalRaw: legs.feeSplit.totalRaw,
+    }),
+    collection: "not_attempted",
+    collectionNote: "No Vex fee was taken: the bridge did not complete.",
+  });
+  const feeLegInput: AgentActivityLegInput = {
+    ...originLeg,
+    amountRaw: legs.feeSplit.feeRaw.toString(),
+    ...(adapted.currencyIn.decimals !== null
+      ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, adapted.currencyIn.decimals) }
+      : { amountHuman: undefined }),
+  };
   const activityLegs: BridgeActivityLeg[] = signable.map((s, i) => ({
     eventIndex: i,
     eventRole: s.role,
@@ -582,6 +726,29 @@ async function relayBridge(
     chainFamily: BRIDGE_FAMILY,
     tokenIn: originLeg,
   }));
+  const feeLegIndex = chargeFee ? activityLegs.length : -1;
+  if (chargeFee) {
+    activityLegs.push({
+      eventIndex: feeLegIndex,
+      eventRole: BRIDGE_FEE_ACTIVITY_EVENT_ROLE,
+      chainId: legs.originChainId,
+      chainSlug: fromSlug,
+      chainFamily: BRIDGE_FAMILY,
+      tokenIn: feeLegInput,
+      // Vex's own 25 bps, recorded for the first time (migration 050), via the
+      // SAME `relayFeeUsdEstimate` derivation that produces the agent-facing
+      // disclosure — so the disclosed and the recorded number are one number.
+      // `undefined` (never 0) when the origin side carries no readable USD.
+      // It belongs on THIS leg rather than the logical row: the fee transfer
+      // runs after the deposit, so this row's own status is what says whether
+      // Vex was actually paid, which keeps a SUM over confirmed rows honest.
+      // Pass `adapted.currencyIn` (the RelayQuoteSide every `relayFeeDisclosure`
+      // call site passes), NOT the local `inSide` — that is the display
+      // projection and a different type.
+      usdVexFeeEst: relayFeeUsdEstimate(adapted.currencyIn, legs.feeSplit.feeRaw) ?? undefined,
+      usdSource: adapted.usdSource,
+    });
+  }
   const created = await createBridgeActivityIntent({
     toolId: BRIDGE_TOOL_ID,
     namespace: PROTOCOL,
@@ -600,7 +767,7 @@ async function relayBridge(
     },
     legs: activityLegs,
     expectedFill: {
-      eventIndex: signable.length,
+      eventIndex: activityLegs.length,
       chainId: legs.destinationChainId,
       chainSlug: toSlug,
       chainFamily: BRIDGE_FAMILY,
@@ -610,6 +777,11 @@ async function relayBridge(
       usdOutEst: adapted.currencyOut.amountUsd ?? undefined,
       // No total fee USD is derived (Relay's fee buckets overlap — a sum
       // double-counts). Per-bucket USD is surfaced VERBATIM in the output.
+      // Migration 050 changes nothing here: `usd_venue_fee_est` stays NULL for
+      // the same reason, because a summed bucket total would be a guess, and
+      // `usd_destination_prepay_est` stays NULL because Relay's buckets are
+      // provider-named with no bucket Vex can honestly call a destination
+      // prepay. The Vex fee is on the `bridge_fee` leg above.
       usdFeeEst: undefined,
       usdSource: adapted.usdSource,
     },
@@ -634,7 +806,17 @@ async function relayBridge(
       currentIndex = i;
       const stepEntry = signable[i]!;
       const legRow = legRows[i]!;
-      const txParams = planRelayStepTx(stepEntry.step, legs.originChainId, expectedFrom);
+      // The native-value context is what Vex DERIVED for this bridge, never an
+      // echo of the quote: `legs.amount` is the post-fee amount Vex asked Relay
+      // for, and `legs.originCurrency` is the resolved origin asset. The planner
+      // refuses the step if the provider's `tx.value` carries anything beyond
+      // it (`@tools/relay/native-value.ts`).
+      const txParams = planRelayStepTx(stepEntry.step, legs.originChainId, expectedFrom, {
+        role: stepEntry.role,
+        originCurrency: legs.originCurrency,
+        tradeType: legs.tradeType,
+        bridgedAmountRaw: legs.amount,
+      });
       const outcome = await signStageBroadcast(clients.publicClient, clients.walletClient, txParams, {
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(legRow.id, handles);
@@ -670,6 +852,7 @@ async function relayBridge(
           fromChain: from,
           toChain: to,
           requestId,
+          vexFee: feeNotTaken(),
           legs: outputLegs(broadcasts, from, to, "not_reached", null),
           inTxHashes: broadcasts.map((b) => b.txHash),
         };
@@ -688,9 +871,19 @@ async function relayBridge(
           // uncertain). Deposit is the last signable step, so nothing follows.
           await attachRequestIdBestEffort(executionId, requestId);
           await maybeAutoPin(walletAddress, legs);
+          // An unconfirmed deposit is never charged: finalize ONLY the fee row
+          // (bounded), leaving the logical row pending for the W4 sweep.
+          if (feeLegIndex !== -1) {
+            await abortRemaining(executionId, feeLegIndex, "deposit unconfirmed; fee not attempted", feeLegIndex + 1);
+          }
           return pendingResult({
             executionId, requestId, from, to, inSide, outSide, feeUsdByBucket: adapted.feeUsdByBucket,
             broadcasts, poll: null, depositUnconfirmed: true,
+            vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
+            feeCollection: {
+              collection: "not_attempted",
+              collectionNote: "No Vex fee was taken: the origin deposit is not confirmed, so the bridge has not been charged.",
+            },
           });
         }
         // An ambiguous APPROVE means the deposit will not be signed → the bridge
@@ -704,6 +897,7 @@ async function relayBridge(
             `The token approval (${outcome.txHash}) could not be confirmed on-chain, so the bridge deposit was NOT signed and no funds were bridged. The approval may still settle; do NOT retry until you have verified its status.`,
           fromChain: from,
           toChain: to,
+          vexFee: feeNotTaken(),
           legs: outputLegs(broadcasts, from, to, "not_reached", null),
           inTxHashes: broadcasts.map((b) => b.txHash),
         };
@@ -759,10 +953,46 @@ async function relayBridge(
         fromChain: from,
         toChain: to,
         requestId,
+        vexFee: feeNotTaken(),
         legs: outputLegs(broadcasts, from, to, "not_reached", null),
         inTxHashes: broadcasts.map((b) => b.txHash),
       };
       return { success: false, output: JSON.stringify(body, null, 2), data: { ...body, _executionId: executionId, retryable: true } };
+    }
+    // A step refused because Vex could not attribute its `tx.value` is NOT an
+    // interruption of unknown scope, and must never be reported as one: the
+    // generic body below says "check the record before any further action",
+    // which an autonomous agent cannot act on and which reads as "funds may be
+    // in flight". Nothing was signed for the refused step, every remaining row
+    // is finalized "not attempted", and the agent is told the one thing that
+    // can change the outcome — a fresh quote.
+    if (err instanceof VexError && err.code === ErrorCodes.NATIVE_VALUE_UNAUTHORIZED) {
+      const refusedRole = signable[currentIndex]?.role ?? "bridge_deposit";
+      const body = {
+        status: "not_attempted",
+        summary: `Relay bridge not attempted: the origin ${relayStepLabel(refusedRole)} carried native currency Vex could not account for.`,
+        message: `${safe} ${relayNativeValueGuidance(refusedRole)}`,
+        fromChain: from,
+        toChain: to,
+        requestId,
+        vexFee: feeNotTaken(),
+        legs: outputLegs(broadcasts, from, to, "not_reached", null),
+        inTxHashes: broadcasts.map((b) => b.txHash),
+      };
+      return {
+        success: false,
+        output: JSON.stringify(body, null, 2),
+        data: {
+          ...body,
+          _executionId: executionId,
+          // A retry only helps with a DIFFERENT quote — never a re-send of this
+          // one, which is deterministically refused again.
+          retryable: false,
+          ...(broadcasts.length > 0
+            ? { _explorerRefs: broadcasts.map((b) => ({ chain: String(from.id), txRef: b.txHash })) }
+            : {}),
+        },
+      };
     }
     const body = {
       status: "interrupted",
@@ -770,6 +1000,7 @@ async function relayBridge(
       message: `An internal error interrupted the bridge after it was recorded (${safe}). Check the record (execution ${executionId}) before any further action.`,
       fromChain: from,
       toChain: to,
+      vexFee: feeNotTaken(),
     };
     return { success: false, output: JSON.stringify(body, null, 2), data: { ...body, _executionId: executionId } };
   }
@@ -783,11 +1014,135 @@ async function relayBridge(
     destinationChainId: legs.destinationChainId,
     executionId,
   });
+
+  // Vex fee leg — LAST, and only now: the deposit is confirmed and its
+  // requestId is attached, so collecting the fee cannot delay or alter Relay's
+  // own fill tracking (separate lifecycles sharing one plan). Its outcome
+  // NEVER changes the bridge's: a fee that does not land is missed Vex
+  // revenue on a bridge that DID happen.
+  const feeCollection = feeLegIndex === -1
+    ? NO_FEE_COLLECTION
+    : await runRelayVexFeeLeg({
+        executionId,
+        legRowId: legRows[feeLegIndex]?.id,
+        feeLegIndex,
+        tokenAddress: legs.originCurrency,
+        feeRaw: legs.feeSplit.feeRaw,
+        clients,
+        broadcasts,
+      });
+
   const poll = await pollRelayIntentStatus(requestId);
   return pendingResult({
     executionId, requestId, from, to, inSide, outSide, feeUsdByBucket: adapted.feeUsdByBucket,
     broadcasts, poll, depositUnconfirmed: false,
+    vexFee: relayFeeDisclosure(legs, adapted.currencyIn), feeCollection,
   });
+}
+
+/** No fee applies to this bridge — the disclosure already states why. */
+const NO_FEE_COLLECTION: RelayFeeCollection = {
+  collection: "not_charged",
+  collectionNote: "No Vex fee applies to this bridge.",
+};
+
+interface RelayFeeCollection {
+  readonly collection: string;
+  readonly collectionNote: string;
+}
+
+/**
+ * Sign, stage, broadcast and record the Vex fee transfer on the origin chain.
+ * Never throws and never touches the logical fill row: the bridge already
+ * happened, so every failure path here is missed revenue reported honestly,
+ * not a bridge failure and not a claim that user funds are at risk.
+ */
+async function runRelayVexFeeLeg(input: {
+  readonly executionId: number;
+  readonly legRowId: number | undefined;
+  readonly feeLegIndex: number;
+  readonly tokenAddress: string;
+  readonly feeRaw: bigint;
+  readonly clients: RelayStepClients;
+  readonly broadcasts: OriginBroadcast[];
+}): Promise<RelayFeeCollection> {
+  const { executionId, legRowId, feeLegIndex, broadcasts } = input;
+  if (legRowId === undefined) {
+    logger.warn("relay.bridge.fee_leg_row_missing", { executionId, index: feeLegIndex });
+    return {
+      collection: "not_attempted",
+      collectionNote: "The bridge went through. The Vex fee had no recorded row, so no fee was taken.",
+    };
+  }
+  try {
+    const transfer = buildEvmBridgeFeeTransfer(input.tokenAddress, input.feeRaw);
+    const outcome = await signStageBroadcast(
+      input.clients.publicClient,
+      input.clients.walletClient,
+      {
+        to: transfer.to,
+        data: transfer.kind === "erc20" ? transfer.data : "0x",
+        value: transfer.value,
+      },
+      {
+        onHashStaged: async (handles) => {
+          const res = await markActivityBroadcast(legRowId, handles);
+          if (!res.applied) {
+            throw new Error(`markActivityBroadcast CAS miss for Vex fee leg ${legRowId} — refusing to broadcast untracked`);
+          }
+        },
+        onAccepted: async () => {
+          const res = await markBroadcastAccepted(legRowId);
+          if (!res.applied) logger.warn("relay.bridge.fee_accept_miss", { id: legRowId });
+        },
+      },
+    );
+
+    if (outcome.kind === "reverted") {
+      broadcasts.push({ role: "vex_fee", txHash: outcome.txHash, status: "reverted" });
+      await failActivityEvent(legRowId, {
+        failureCode: "mined_revert",
+        failureReason: `Vex fee transfer ${outcome.txHash} reverted on-chain; the bridge itself was unaffected.`,
+      });
+      return {
+        collection: "reverted",
+        collectionNote: "The bridge went through. The Vex fee transfer reverted, so no fee was collected — your bridge is unaffected.",
+      };
+    }
+    if (outcome.kind === "ambiguous") {
+      // Left PENDING with its staged hash for the receipt sweep. NEVER retried
+      // here: a blind retry could charge the user twice.
+      broadcasts.push({ role: "vex_fee", txHash: outcome.txHash, status: "broadcast_unconfirmed" });
+      return {
+        collection: "unconfirmed",
+        collectionNote: "The bridge went through. The Vex fee transfer was broadcast but not confirmed this turn; it is tracked automatically and is never re-sent.",
+      };
+    }
+
+    let legStatus: OriginBroadcast["status"] = "confirmed";
+    try {
+      const confirmResult = await confirmActivityEvent(legRowId, {});
+      if (!confirmResult.applied && confirmResult.row.status !== "confirmed") {
+        legStatus = "confirmed_unrecorded";
+        logger.warn("relay.bridge.fee_confirm_cas_miss", { id: legRowId, rowStatus: confirmResult.row.status });
+      }
+    } catch (err) {
+      legStatus = "confirmed_unrecorded";
+      logger.warn("relay.bridge.fee_confirm_failed", { id: legRowId, error: summarizeProtocolError(err).message });
+    }
+    broadcasts.push({ role: "vex_fee", txHash: outcome.txHash, status: legStatus });
+    return {
+      collection: legStatus,
+      collectionNote: "The bridge went through and the Vex fee was transferred to the treasury.",
+    };
+  } catch (err) {
+    logger.warn("relay.bridge.fee_leg_failed", { executionId, error: summarizeProtocolError(err).message });
+    await abortRemaining(executionId, feeLegIndex, "vex fee leg refused before signing", feeLegIndex + 1);
+    return {
+      collection: "not_attempted",
+      collectionNote: "The bridge went through. The Vex fee transfer was refused before signing, so no fee was collected — your bridge is unaffected.",
+    };
+  }
 }
 
 /** Attach the Relay requestId to the logical row (best-effort; also persisted in route_provenance for W4 recovery). */
@@ -802,16 +1157,52 @@ async function attachRequestIdBestEffort(executionId: number, requestId: string)
   }
 }
 
-/** Abort never-signed downstream rows (best-effort; a throw here must not flip the caller's result). */
-async function abortRemaining(executionId: number, fromIndex: number, reason: string): Promise<void> {
+/**
+ * Abort never-signed downstream rows (best-effort; a throw here must not flip
+ * the caller's result). `toIndexExclusive` bounds the abort to
+ * `event_index < toIndexExclusive` — used to finalize ONLY the Vex fee row
+ * while leaving the logical `bridge_fill_expected` row pending for the W4
+ * sweep, since an in-flight bridge must keep its guard.
+ */
+async function abortRemaining(
+  executionId: number,
+  fromIndex: number,
+  reason: string,
+  toIndexExclusive?: number,
+): Promise<void> {
   try {
-    await abortPlannedEvents(executionId, fromIndex, reason);
+    if (toIndexExclusive === undefined) {
+      await abortPlannedEvents(executionId, fromIndex, reason);
+    } else {
+      await abortPlannedEvents(executionId, fromIndex, reason, toIndexExclusive);
+    }
   } catch (err) {
     logger.warn("relay.bridge.abort_planned_failed", { executionId, fromIndex, error: summarizeProtocolError(err).message });
   }
 }
 
+/**
+ * Reject a caller-supplied refund destination BY NAME, on BOTH Relay entry
+ * points, before anything else runs.
+ *
+ * Rejecting on the QUOTE matters as much as on the execute: the prequote gate
+ * binds the money leg, so an attacker who set the same address on both would
+ * collide the hashes and pass the gate. A silent drop would hide the attempt
+ * entirely. `relay.bridge` and `relay.quote.get` are directly reachable through
+ * `execute_tool`, so the alias-level rejection is not sufficient on its own.
+ */
+function rejectCallerSuppliedDestination(toolId: string, params: Record<string, unknown>): ToolResult | null {
+  const forbidden = findCallerSuppliedForbiddenParam(params);
+  if (forbidden === null) return null;
+  return {
+    success: false,
+    output: `${toolId} failed: ${forbidden.param} is not an accepted parameter — ${forbidden.reason} Remove it and retry.`,
+  };
+}
+
 export const RELAY_BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
-  "relay.quote.get": (p, ctx) => relayQuoteGet(p, ctx),
-  "relay.bridge": (p, ctx) => relayBridge(p, ctx),
+  "relay.quote.get": async (p, ctx) =>
+    rejectCallerSuppliedDestination("relay.quote.get", p) ?? relayQuoteGet(p, ctx),
+  "relay.bridge": async (p, ctx) =>
+    rejectCallerSuppliedDestination("relay.bridge", p) ?? relayBridge(p, ctx),
 };

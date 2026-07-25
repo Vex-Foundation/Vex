@@ -9,6 +9,12 @@
  * rows keyed by `(protocol_execution_id, event_index)`:
  *   - `allowance_reset` / `allowance` — Vex-signed EVM approvals;
  *   - `bridge_deposit`                — the Vex-signed origin leg;
+ *   - `bridge_fee`                    — the Vex integrator-fee transfer
+ *                                       (migration 050; recorded as
+ *                                       `allowance` before that), the FINAL
+ *                                       Vex-signed origin leg — taken only
+ *                                       after the deposit, so its own status
+ *                                       is what says whether Vex was paid;
  *   - `bridge_fill_expected`          — the LOGICAL row (one per execution): it
  *                                       carries the route endpoints + requested
  *                                       amounts + `provider_order_id`, and is
@@ -40,11 +46,12 @@ export const BRIDGE_LEGS_MAX = 64;
 
 const LEG_REF_MAX_LENGTH = 128;
 
-/** The migration-045 bridge `event_role` vocabulary (closed set). */
+/** The bridge `event_role` vocabulary (closed set) — migration 045, widened by 050 with `bridge_fee`. */
 export const bridgeLegRoleSchema = z.enum([
   "allowance_reset",
   "allowance",
   "bridge_deposit",
+  "bridge_fee",
   "bridge_fill_expected",
   "bridge_fill_observed",
   "bridge_refund",

@@ -1,0 +1,133 @@
+/**
+ * Vex's slippage ceiling is GLOBAL — Jupiter and Uniswap included (phase-3 W3).
+ *
+ * WHY THIS SUITE EXISTS. `VEX_MAX_SLIPPAGE_BPS = 1000` reads as repo-wide policy
+ * in `slippage-policy.ts`, but it had exactly two consumers (kyberswap.swap.* and
+ * relay.bridge). Jupiter's own validation permits 0–10,000 bps and Uniswap's
+ * `applySlippage` silently CLAMPED to 10,000 — so a model could authorise a
+ * 5,000 bps swap (the worst-case loss the ceiling exists to bound) on those two
+ * venues while the identical KyberSwap request was refused.
+ *
+ * REJECT, NEVER CLAMP. A silent clamp hides an attempted over-tolerance instead
+ * of surfacing it — the same failure class as silently dropping a
+ * caller-supplied fee parameter. Every case below asserts a refusal that NAMES
+ * the supplied value and the ceiling, because that is what makes it actionable
+ * for an agent running a mission with no user present.
+ *
+ * The refusals here are param-only and fire BEFORE any wallet resolution or
+ * provider call, which is why these handlers can be driven with no mocks at all.
+ *
+ * Pendle's 5,000 bps cap is deliberately NOT covered: it is owner-deferred to
+ * phase 4 (`pendle/handlers/shared.ts`).
+ */
+import { describe, it, expect } from "vitest";
+
+import { SOLANA_JUPITER_HANDLERS } from "@vex-agent/tools/protocols/solana-jupiter/handlers.js";
+import { UNISWAP_HANDLERS } from "@vex-agent/tools/protocols/uniswap/handlers.js";
+import { checkSlippageBps, VEX_MAX_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+
+const CTX: ProtocolExecutionContext = {
+  sessionPermission: "full",
+  approved: true,
+  walletResolution: { source: "default" },
+  walletPolicy: { kind: "none" },
+  sessionId: "sess-1",
+};
+
+const WETH = "0x4200000000000000000000000000000000000006";
+const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+const JUPITER_SWAP = { inputToken: "SOL", outputToken: "USDC", amount: 1 };
+const UNISWAP_SWAP = { chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" };
+
+/** Every tool that takes a caller slippage and reaches a signable route. */
+const CASES = [
+  {
+    toolId: "solana.swap.quote",
+    run: (slippageBps: number) =>
+      SOLANA_JUPITER_HANDLERS["solana.swap.quote"]!({ ...JUPITER_SWAP, slippageBps }, CTX),
+  },
+  {
+    toolId: "solana.swap.execute",
+    run: (slippageBps: number) =>
+      SOLANA_JUPITER_HANDLERS["solana.swap.execute"]!({ ...JUPITER_SWAP, slippageBps }, CTX),
+  },
+  {
+    toolId: "uniswap.swap.quote",
+    run: (slippageBps: number) => UNISWAP_HANDLERS["uniswap.swap.quote"]!({ ...UNISWAP_SWAP, slippageBps }, CTX),
+  },
+  {
+    toolId: "uniswap.swap.execute",
+    run: (slippageBps: number) => UNISWAP_HANDLERS["uniswap.swap.execute"]!({ ...UNISWAP_SWAP, slippageBps }, CTX),
+  },
+] as const;
+
+describe("the Vex slippage ceiling binds on Jupiter and Uniswap, not only KyberSwap", () => {
+  for (const { toolId, run } of CASES) {
+    it(`${toolId} REFUSES 5000 bps — the venue would have accepted it`, async () => {
+      const result = await run(5000);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("slippageBps");
+      // The supplied value and the ceiling, both named.
+      expect(result.output).toContain("5000");
+      expect(result.output).toContain(String(VEX_MAX_SLIPPAGE_BPS));
+    });
+
+    it(`${toolId} refusal names the parameter to change AND the value that will be accepted`, async () => {
+      const result = await run(5000);
+      // Not "retry" as a word — the concrete instruction, with the number the
+      // agent can put in the next call. A refusal it cannot act on strands the
+      // mission just as surely as a wrong number loses money.
+      expect(result.output).toMatch(
+        new RegExp(`Retry the same call with slippageBps ${VEX_MAX_SLIPPAGE_BPS} or lower`, "i"),
+      );
+      // And the fallback when the route genuinely needs more tolerance.
+      expect(result.output).toMatch(/split the trade into smaller amounts/i);
+    });
+
+    it(`${toolId} REFUSES exactly one bps over the ceiling (the boundary is not off by one)`, async () => {
+      const result = await run(VEX_MAX_SLIPPAGE_BPS + 1);
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("must not exceed");
+    });
+
+    it(`${toolId} does NOT refuse a legal tolerance — the gate is a ceiling, not a block`, async () => {
+      // The call still fails downstream (no wallet, no network in this suite);
+      // what matters is that it is never the ceiling that stopped it.
+      const legal = await run(50);
+      expect(legal.output).not.toContain("must not exceed");
+      const atCeiling = await run(VEX_MAX_SLIPPAGE_BPS);
+      expect(atCeiling.output).not.toContain("must not exceed");
+    });
+  }
+});
+
+describe("checkSlippageBps — the message an autonomous agent has to act on", () => {
+  const subject = 'Parameter "slippageBps" for solana.swap.execute';
+
+  it("names the supplied value, the ceiling, and a retry that can succeed", () => {
+    const reason = checkSlippageBps(subject, 5000);
+    expect(reason).toContain("(got 5000)");
+    expect(reason).toContain("must not exceed 1000 basis points");
+    expect(reason).toContain("Retry the same call with slippageBps 1000 or lower");
+  });
+
+  it("moves the named retry value with the venue bound, never quoting a value that will be refused", () => {
+    // A venue stricter than Vex must not be told to retry at Vex's ceiling.
+    expect(checkSlippageBps(subject, 900, 500)).toContain("Retry the same call with slippageBps 500 or lower");
+  });
+
+  it("permits the ceiling itself and everything below it", () => {
+    expect(checkSlippageBps(subject, VEX_MAX_SLIPPAGE_BPS)).toBeNull();
+    expect(checkSlippageBps(subject, 0)).toBeNull();
+    expect(checkSlippageBps(subject, 50)).toBeNull();
+  });
+
+  it("holds a venue to the LOWER of its own maximum and Vex's", () => {
+    // Jupiter publishes 10,000 — above Vex's, so Vex's binds.
+    expect(checkSlippageBps(subject, 1001, 10_000)).toContain("1000");
+    // A venue stricter than Vex binds instead.
+    expect(checkSlippageBps(subject, 600, 500)).toContain("500");
+  });
+});

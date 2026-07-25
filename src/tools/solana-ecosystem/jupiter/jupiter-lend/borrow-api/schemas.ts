@@ -107,6 +107,16 @@ const borrowPositionSchema = z
     supply: unsignedDigitString,
     borrow: unsignedDigitString,
     dustBorrow: unsignedDigitString,
+    // W4 — TOLERANT on presence, STRICT on type. The provider's liquidation
+    // flag is a safety signal the projector reads, but the only recorded live
+    // response for this endpoint is `[]`, so the field's presence on a real
+    // row is documented, not proven: requiring it would fail an entire
+    // positions read over a missing display field (`rules/90-vex-project.md`'s
+    // tolerant-reader rule, written after three live outages of exactly that
+    // shape). A non-boolean VALUE is still rejected — silently coercing
+    // `"false"`/`0` into a liquidation verdict is the failure this guards.
+    // Absent/null becomes the named `"unknown"` status, never `false`.
+    isLiquidated: z.boolean().nullish(),
   })
   .passthrough();
 

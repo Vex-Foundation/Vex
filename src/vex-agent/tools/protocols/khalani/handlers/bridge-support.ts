@@ -11,6 +11,7 @@
 import { getKhalaniClient } from "@tools/khalani/client.js";
 import { getChainExplorerUrl } from "@tools/khalani/chains.js";
 import type { KhalaniChain } from "@tools/khalani/types.js";
+import type { BridgeFeeDisclosure } from "@tools/bridge-fee/index.js";
 import { abortPlannedEvents, type AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import type { ToolResult } from "../../../types.js";
@@ -51,6 +52,23 @@ export interface AmountView {
   readonly usdEst?: string;
 }
 
+/** What happened to the Vex fee transfer, kept separate from the bridge's own outcome. */
+export interface VexFeeCollection {
+  /**
+   * `not_charged` (no fee applies) | `not_attempted` | `confirmed` |
+   * `confirmed_unrecorded` | `unconfirmed` | `reverted`. NEVER folded into the
+   * bridge's `status`: a bridge that went through is a bridge that went
+   * through, whether or not Vex managed to collect.
+   */
+  readonly collection: string;
+  readonly collectionNote: string;
+}
+
+/** The fee as the agent sees it: what was disclosed, plus whether it was collected. */
+export interface BridgeVexFeeView extends VexFeeCollection {
+  readonly disclosure: BridgeFeeDisclosure;
+}
+
 /**
  * Build the agent-grade result. OWNER RULE: never truncated — every leg, hash,
  * amount, and USD estimate is projected as a structured field. USD is always
@@ -70,6 +88,14 @@ export function bridgeResult(input: {
   etaSeconds: number;
   amountIn: AmountView;
   amountOut: AmountView;
+  vexFee: BridgeVexFeeView;
+  /**
+   * Every wei of NATIVE currency the plan's legs send, attributed to a proven
+   * cost component (`@tools/evm-chains/native-value-authorization`). Distinct
+   * from `vexFee` (which is denominated in the bridged token) and from gas
+   * (which is not part of any `tx.value` at all). Already JSON-safe.
+   */
+  nativeCost: Record<string, unknown>;
   legs: readonly RecordedLeg[];
   orderId?: string;
   depositTxHash?: string;
@@ -102,6 +128,14 @@ export function bridgeResult(input: {
       usdEstimate: input.amountOut.usdEst ?? null,
     },
     usdNote: "USD figures are estimates from a Khalani token-price lookup, not provider-quoted values.",
+    // Disclosure + collection outcome in ONE field. `collection` is about
+    // Vex's revenue, never about whether the user's bridge worked.
+    vexFee: {
+      ...input.vexFee.disclosure,
+      collection: input.vexFee.collection,
+      collectionNote: input.vexFee.collectionNote,
+    },
+    nativeCost: input.nativeCost,
     legs: input.legs,
     ...(input.orderId ? { orderId: input.orderId } : {}),
     ...(input.depositTxHash ? { depositTxHash: input.depositTxHash } : {}),

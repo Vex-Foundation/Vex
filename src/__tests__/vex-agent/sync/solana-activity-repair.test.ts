@@ -289,6 +289,64 @@ describe("repairPendingSolanaActivity", () => {
     expect(result.failed).toBe(1);
   });
 
+  /**
+   * LIVE DEFECT (execution 209, signature `5RGuPzqE…tbS11gW`, 2026-07-25). The
+   * sweep terminalized the row with `failure_reason="Solana activity sweep:
+   * getSignatureStatuses reported an on-chain error."` and DISCARDED
+   * `{"InstructionError":[3,"ProgramFailedToComplete"]}` — the only evidence of
+   * what actually happened. `failure_code` stays `mined_revert`: the code is
+   * right, it was the reason that was empty.
+   */
+  it("carries the DECODED on-chain error into failure_reason (getSignatureStatuses path)", async () => {
+    const event = candidateEvent({ submitAttemptedAt: new Date(Date.now() - 120_000).toISOString() });
+    mockListSolanaStagedPending.mockResolvedValueOnce([event]);
+    const deps = noopDeps({
+      getSignatureStatus: vi.fn().mockResolvedValue({
+        outcome: "found",
+        value: { err: { InstructionError: [3, "ProgramFailedToComplete"] }, confirmationStatus: "confirmed" },
+      }),
+    });
+
+    await repairPendingSolanaActivity(deps);
+
+    expect(mockFailActivityEvent).toHaveBeenCalledWith(event.id, {
+      failureCode: "mined_revert",
+      failureReason:
+        "Solana activity sweep: getSignatureStatuses reported an on-chain error: "
+        + '{"InstructionError":[3,"ProgramFailedToComplete"]}.',
+    });
+  });
+
+  it("carries the DECODED on-chain error into failure_reason (getTransaction meta.err path)", async () => {
+    const event = candidateEvent({ submitAttemptedAt: new Date(Date.now() - 120_000).toISOString() });
+    mockListSolanaStagedPending.mockResolvedValueOnce([event]);
+    const rawTx = {
+      meta: {
+        err: { InstructionError: [3, "ProgramFailedToComplete"] },
+        fee: 5000,
+        preBalances: [1],
+        postBalances: [1],
+        preTokenBalances: [],
+        postTokenBalances: [],
+        loadedAddresses: {},
+      },
+      transaction: { message: { accountKeys: [] } },
+    };
+    const deps = noopDeps({
+      getSignatureStatus: vi.fn().mockResolvedValue({ outcome: "not_found" }),
+      getFinalizedTransaction: vi.fn().mockResolvedValue({ outcome: "found", value: rawTx }),
+    });
+
+    await repairPendingSolanaActivity(deps);
+
+    expect(mockFailActivityEvent).toHaveBeenCalledWith(event.id, {
+      failureCode: "mined_revert",
+      failureReason:
+        "Solana activity sweep: getTransaction reported meta.err: "
+        + '{"InstructionError":[3,"ProgramFailedToComplete"]}.',
+    });
+  });
+
   it("confirms via decoded settlement once landed + fetched", async () => {
     const event = candidateEvent({ submitAttemptedAt: new Date(Date.now() - 120_000).toISOString() });
     mockListSolanaStagedPending.mockResolvedValueOnce([event]);

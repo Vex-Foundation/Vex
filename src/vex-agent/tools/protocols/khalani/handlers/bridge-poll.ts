@@ -10,7 +10,7 @@
 import { pollKhalaniOrderToTerminal } from "@tools/khalani/order-status.js";
 import type { ToolResult } from "../../../types.js";
 import logger from "@utils/logger.js";
-import { type AmountView, bridgeResult, type RecordedLeg } from "./bridge-support.js";
+import { type AmountView, type BridgeVexFeeView, bridgeResult, type RecordedLeg } from "./bridge-support.js";
 
 // ── Poll interpretation ──────────────────────────────────────────────
 
@@ -21,6 +21,8 @@ export interface InterpretPollInput {
   pendingBase: {
     executionId: number; fromChainName: string; toChainName: string;
     routeType: string; etaSeconds: number; amountIn: AmountView; amountOut: AmountView;
+    vexFee: BridgeVexFeeView;
+    nativeCost: Record<string, unknown>;
   };
   recordedLegs: RecordedLeg[];
   toChainName: string;

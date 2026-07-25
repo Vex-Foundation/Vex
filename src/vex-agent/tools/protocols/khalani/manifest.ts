@@ -96,7 +96,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
       { key: "recipient", type: "string", description: "Destination recipient override." },
-      { key: "refundTo", type: "string", description: "Refund address override (defaults to fromAddress)." },
+      // `refundTo` is deliberately NOT exposed: it decides where funds land
+      // when a bridge fails, and a model-chosen fund destination is the same
+      // vector as a model-chosen fee. Vex derives it from the selected source
+      // wallet; both handlers reject it by name. See the refund-destination
+      // policy in `@tools/khalani/request.js`.
       // `referrer` / `referrerFeeBps` are deliberately NOT exposed: they set a
       // referral fee (bps of the bridged amount) payable to an arbitrary
       // address, and Vex never derives a fee from tool params. Both handlers
@@ -161,7 +165,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT." },
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
       { key: "recipient", type: "string", description: "Destination recipient override." },
-      { key: "refundTo", type: "string", description: "Refund address override (defaults to fromAddress)." },
+      // `refundTo` is deliberately NOT exposed: it decides where funds land
+      // when a bridge fails, and a model-chosen fund destination is the same
+      // vector as a model-chosen fee. Vex derives it from the selected source
+      // wallet; both handlers reject it by name. See the refund-destination
+      // policy in `@tools/khalani/request.js`.
       // `referrer` / `referrerFeeBps` deliberately NOT exposed — see the note on
       // `khalani.quote.get` above. `executeKhalaniBridge` rejects them by name.
       { key: "filler", type: "string", description: "Restrict quotes to a specific filler." },

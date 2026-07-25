@@ -74,6 +74,14 @@ export const HASHLESS_INTENT_RECOVERY_LEASE_MS = 15 * 60 * 1000;
 const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   "swap",
   "bridge_deposit",
+  // `bridge_fee` (migration 050) is the Vex integrator-fee transfer — the FINAL
+  // Vex-signed origin leg. It was recorded as `allowance` before 050 and was
+  // therefore already reapable through this allowlist; giving it its own role
+  // must NOT quietly remove that. A fee leg planned but never signed (the
+  // bridge aborted, or the process died between intent creation and staging) is
+  // exactly "definitely not attempted", and leaving it pending would also pin
+  // the session's bridge in-flight slot open.
+  "bridge_fee",
   "allowance",
   "allowance_reset",
   "lend_deposit",

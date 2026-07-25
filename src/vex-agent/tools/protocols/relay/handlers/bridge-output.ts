@@ -51,6 +51,32 @@ export interface BridgeOutputLeg {
   readonly status: string;
 }
 
+/**
+ * USD ESTIMATE for a Vex fee amount, derived from the quote side's own
+ * per-side USD: `feeUsd = (sideUsd / sideHumanAmount) × feeHumanAmount`. Relay
+ * prices the side, not the fee, so this is a proration and is labelled an
+ * estimate everywhere it surfaces. Returns null — never a fabricated figure —
+ * whenever decimals, USD, or a positive human amount is missing.
+ */
+export function relayFeeUsdEstimate(side: RelayQuoteSide, feeRaw: bigint): string | null {
+  const { decimals, amountUsd } = side;
+  if (decimals === null || amountUsd === null) return null;
+
+  const humanAmount = side.amountFormatted
+    ?? (side.amountRaw !== null && /^\d+$/.test(side.amountRaw) ? formatUnits(BigInt(side.amountRaw), decimals) : null);
+  if (humanAmount === null) return null;
+
+  const sideAmount = Number(humanAmount);
+  const sideUsd = Number(amountUsd);
+  const feeAmount = Number(formatUnits(feeRaw, decimals));
+  if (!Number.isFinite(sideAmount) || sideAmount <= 0) return null;
+  if (!Number.isFinite(sideUsd) || !Number.isFinite(feeAmount)) return null;
+
+  const feeUsd = (sideUsd / sideAmount) * feeAmount;
+  if (!Number.isFinite(feeUsd)) return null;
+  return feeUsd.toFixed(6).replace(/\.?0+$/, "") || "0";
+}
+
 /** Curated display name for a chain from the live Relay registry (displayName → name → id). */
 export function relayChainDisplayName(chainId: number, chains: readonly RelayChain[]): string {
   const chain = chains.find((c) => c.id === chainId);

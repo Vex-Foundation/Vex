@@ -164,12 +164,77 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
   });
 
   it("borrowPositions resolves the wallet and projects positions", async () => {
+    mockGetVaults.mockResolvedValue([VAULT]);
     mockGetPositions.mockResolvedValue([
       { id: 42, vaultId: 1, ownerAddress: WALLET_ADDRESS, supply: "30000000", borrow: "5000000", dustBorrow: "1" },
     ]);
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
     expect(mockGetPositions).toHaveBeenCalledWith(WALLET_ADDRESS, "main");
     expect(result.success).toBe(true);
+  });
+
+  // W4 (owner ruling: DISCLOSE, DO NOT BLOCK). A `full` autonomous session has
+  // no approval preview, so the ONLY place an agent can learn a leveraged
+  // position's health is this read. It therefore fetches the vault row the
+  // health numbers need — decimals, provider prices, thresholds — instead of
+  // telling the agent to go and cross-reference them itself.
+  it("borrowPositions reads the vault list too, and attaches LTV + distance to liquidation", async () => {
+    mockGetVaults.mockResolvedValue([{
+      ...VAULT,
+      supplyToken: { ...VAULT.supplyToken, price: "100" },
+      borrowToken: { ...VAULT.borrowToken, price: "1" },
+    }]);
+    mockGetPositions.mockResolvedValue([
+      { id: 42, vaultId: 1, ownerAddress: WALLET_ADDRESS, supply: "1000000000", borrow: "50000000", dustBorrow: "0", isLiquidated: false },
+    ]);
+
+    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+
+    expect(mockGetVaults).toHaveBeenCalledWith("main");
+    const data = result.data as unknown as { positions: Array<Record<string, unknown>>; howToReadRisk: string };
+    expect(data.positions[0]).toMatchObject({
+      liquidationStatus: "not_liquidated",
+      supplyTokenDecimals: 9,
+      borrowTokenDecimals: 6,
+      totalDebtRaw: "50000000",
+      maxLtvPercent: "80.0%",
+      liquidationThresholdPercent: "85.0%",
+      risk: {
+        status: "computed",
+        currentLtvPercent: "50.00%",
+        ltvPercentagePointsToLiquidation: "35.00",
+      },
+    });
+    expect(data.howToReadRisk).toMatch(/NOT a statement that the position is safe/i);
+  });
+
+  it("borrowPositions still returns the positions when the vault read fails — disclosed, never refused", async () => {
+    mockGetVaults.mockRejectedValue(new Error("vault endpoint exploded"));
+    mockGetPositions.mockResolvedValue([
+      { id: 42, vaultId: 1, ownerAddress: WALLET_ADDRESS, supply: "30000000", borrow: "5000000", dustBorrow: "1" },
+    ]);
+
+    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+
+    expect(result.success).toBe(true);
+    const data = result.data as unknown as {
+      vaultDataStatus: string;
+      vaultDataReason: string | null;
+      positions: Array<{ risk: { status: string; reason?: string } }>;
+    };
+    expect(data.vaultDataStatus).toBe("unavailable");
+    expect(data.vaultDataReason).toContain("vault endpoint exploded");
+    expect(data.positions[0]!.risk.status).toBe("unknown");
+    expect(data.positions[0]!.risk.reason).toMatch(/not a statement that this position is safe/i);
+  });
+
+  it("borrowPositions fetches positions and vaults concurrently — one round trip, not two", async () => {
+    const order: string[] = [];
+    mockGetVaults.mockImplementation(async () => { order.push("vaults:start"); return [VAULT]; });
+    mockGetPositions.mockImplementation(async () => { order.push("positions:start"); return []; });
+    await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+    // Both started before either resolved.
+    expect(order).toEqual(["positions:start", "vaults:start"]);
   });
 });
 
@@ -322,7 +387,13 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 
     expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
     const failArg = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0][0];
-    expect(failArg.event).toMatchObject({ failureCode: "route_not_found", kind: "lend", chainFamily: "solana" });
+    // W4: a collateral shortfall is `allowance_or_balance` + a named reason —
+    // the row the repo's own mapping table (`db/repos/agent-activity/
+    // validation.ts`) already prescribed. It used to be filed as
+    // `route_not_found`, which tells an autonomous agent to go looking for a
+    // route that was never the problem.
+    expect(failArg.event).toMatchObject({ failureCode: "allowance_or_balance", kind: "lend", chainFamily: "solana" });
+    expect(failArg.event.failureReason).toMatch(/^insufficient_collateral: /);
     // The rejected call's audit trail carries the SAME normalized effects
     // shape a succeeded one would (w5-design.md §1).
     expect(failArg.intentParams).toEqual({

@@ -88,6 +88,7 @@ import type {
   AgentActivityGenericKind,
   AgentActivityLegInput,
   AgentActivityFailureCode,
+  AgentActivityVexFeeCharge,
   BridgeChainFamily,
 } from "./types.js";
 
@@ -113,8 +114,30 @@ export interface CreatePendingActivityEventInput {
   tokenIn?: AgentActivityLegInput;
   tokenOut?: AgentActivityLegInput;
   usdInEst?: string;
-  usdOutEst?: string;
+  /**
+   * DEPRECATED (migration 050) — the mixed-meaning column. Keep dual-writing it
+   * with the SAME value the writer used before 050 so old readers are
+   * unaffected; put the honest figure in the four fields below. A later
+   * contract migration drops it.
+   */
   usdFeeEst?: string;
+  /** Network gas only (USD) — not part of `tx.value`. Include the L1 data fee where the chain has one. */
+  usdNetworkGasEst?: string;
+  /** The VENUE's own protocol fee (USD). Never gas, never the Vex fee. */
+  usdVenueFeeEst?: string;
+  /** Destination-chain execution prepay (USD). */
+  usdDestinationPrepayEst?: string;
+  /** Vex's OWN integrator fee (USD) — set only on the row whose on-chain outcome decides whether it was collected. Omit rather than guess. */
+  usdVexFeeEst?: string;
+  /**
+   * Vex's OWN integrator fee in TOKEN units — the exact amount taken (migration
+   * 050 Part 2). Set it on EVERY row of an in-transaction venue that charges
+   * one, whether or not `usdVexFeeEst` could be derived: that is what makes a
+   * null USD mean "price unknown" instead of "no fee". Omitting it on a row
+   * that did charge a fee reintroduces exactly the ambiguity it exists to end.
+   */
+  vexFee?: AgentActivityVexFeeCharge;
+  usdOutEst?: string;
   usdSource?: string;
   routeProvenance?: Record<string, unknown>;
 }
@@ -155,13 +178,21 @@ export async function createPendingActivityEvent(
        chain_id, chain_slug, chain_family, wallet_address, session_id,
        token_in_address, token_in_symbol, token_in_decimals, amount_in_human, amount_in_raw,
        token_out_address, token_out_symbol, token_out_decimals, amount_out_human, amount_out_raw,
-       usd_in_est, usd_out_est, usd_fee_est, usd_source, route_provenance
+       usd_in_est, usd_out_est, usd_fee_est,
+       usd_network_gas_est, usd_venue_fee_est, usd_destination_prepay_est, usd_vex_fee_est,
+       vex_fee_token_address, vex_fee_token_symbol, vex_fee_token_decimals,
+       vex_fee_amount_raw, vex_fee_amount_human,
+       usd_source, route_provenance
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9, $10,
        $11, $12, $13, $14, $15,
        $16, $17, $18, $19, $20,
-       $21::numeric, $22::numeric, $23::numeric, $24, $25::jsonb
+       $21::numeric, $22::numeric, $23::numeric,
+       $24::numeric, $25::numeric, $26::numeric, $27::numeric,
+       $28, $29, $30,
+       $31, $32,
+       $33, $34::jsonb
      ) RETURNING *`;
   const bindParams = [
     input.protocolExecutionId,
@@ -187,6 +218,17 @@ export async function createPendingActivityEvent(
     input.usdInEst ?? null,
     input.usdOutEst ?? null,
     input.usdFeeEst ?? null,
+    input.usdNetworkGasEst ?? null,
+    input.usdVenueFeeEst ?? null,
+    input.usdDestinationPrepayEst ?? null,
+    input.usdVexFeeEst ?? null,
+    // All five move together: a fee amount without its decimals is unreadable,
+    // so the row records the whole charge or none of it.
+    input.vexFee?.tokenAddress ?? null,
+    input.vexFee?.tokenSymbol ?? null,
+    input.vexFee?.tokenDecimals ?? null,
+    input.vexFee?.amountRaw ?? null,
+    input.vexFee?.amountHuman ?? null,
     input.usdSource ?? null,
     nullableJsonb(input.routeProvenance ?? null),
   ];

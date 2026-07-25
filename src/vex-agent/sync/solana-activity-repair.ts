@@ -41,6 +41,15 @@
  * never be expired — it stays pending forever, matching R3's "malformed/
  * missing evidence fails closed" instruction verbatim.
  *
+ * MINED FAILURE CARRIES THE ERROR (2026-07-25): a terminalized mined failure
+ * quotes the chain's OWN `err` in `failure_reason`, serialized by
+ * `solana-transaction/onchain-error-summary.js` (deterministic, 200-char
+ * bounded). Before this, execution 209 recorded only "getSignatureStatuses
+ * reported an on-chain error." and DISCARDED
+ * `{"InstructionError":[3,"ProgramFailedToComplete"]}`, leaving a row that said
+ * something failed and nothing about what. `failure_code` is unchanged
+ * (`mined_revert`) — the code was already right; the reason was empty.
+ *
  * SETTLEMENT DECODING (`solana-settlement-dispatch.js`): a landed transaction
  * with `meta.err===null` is decoded by the decoder the ROW selects — its
  * persisted settlement profile picks a protocol-aware decoder, everything else
@@ -80,6 +89,7 @@ import { parseSolanaTransactionResult } from "./solana-settlement-decoders.js";
 import { decodeSolanaSettlement } from "./solana-settlement-dispatch.js";
 import { withExactExecutedAmountHuman } from "./solana-executed-amount-human.js";
 import { confirmSolanaMainnetGenesis, solanaRpcCall } from "./solana-rpc-safety.js";
+import { summarizeSolanaOnChainError } from "@tools/solana-ecosystem/shared/solana-transaction/onchain-error-summary.js";
 import { loadConfig } from "@config/store.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
@@ -232,7 +242,10 @@ async function processSolanaCandidate(
 
   if (statusLookup.outcome === "found") {
     if (isOnChainError(statusLookup.value.err)) {
-      return finalizeMinedFailure(event, "getSignatureStatuses reported an on-chain error");
+      return finalizeMinedFailure(
+        event,
+        `getSignatureStatuses reported an on-chain error: ${summarizeSolanaOnChainError(statusLookup.value.err)}`,
+      );
     }
     if (isLandedStatus(statusLookup.value.confirmationStatus)) {
       return handleLandedTransaction(event, deps);
@@ -287,7 +300,10 @@ async function finalizeFromParsedTransaction(
     return "pending";
   }
   if (isOnChainError(parsed.err)) {
-    return finalizeMinedFailure(event, "getTransaction reported meta.err");
+    return finalizeMinedFailure(
+      event,
+      `getTransaction reported meta.err: ${summarizeSolanaOnChainError(parsed.err)}`,
+    );
   }
   const decoded = decodeSolanaSettlement({
     parsedTransaction: parsed,

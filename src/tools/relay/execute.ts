@@ -10,7 +10,10 @@
  * exposes only the KEYLESS EVM primitives the handler composes with the shared
  * `signStageBroadcast` primitive:
  *   - `resolveRelayStepClients` — per-chain viem public + wallet clients;
- *   - `planRelayStepTx` — per-step, fail-closed tx extraction (ORIGIN-ONLY, B3);
+ *   - `planRelayStepTx` — per-step, fail-closed tx extraction (ORIGIN-ONLY, B3)
+ *     AND the native-value authorization gate (`./native-value.ts`): the last
+ *     point before `signStageBroadcast`, so a `tx.value` Vex cannot attribute to
+ *     a proven cost is refused rather than signed verbatim;
  *   - `pollRelayIntentStatus` — the bounded, INFORMATIONAL in-turn status poll;
  *   - `parseRequestIdFromCheckEndpoint` — the poll-source trust parser.
  *
@@ -40,10 +43,17 @@ import {
   createDynamicPublicClient,
   createDynamicWalletClient,
 } from "@tools/khalani/evm-client.js";
+import { checkNativeValueAuthorizedForCall } from "@tools/evm-chains/native-value-authorization/index.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 import { getRelayClient, RELAY_INTENT_STATUS_PATH } from "./client.js";
 import { resolveRelayOnlyStepClients } from "./chain-client.js";
+import {
+  classifyRelayStepNativeValue,
+  relayNativeValueRefusal,
+  relayStepNativeValueCall,
+  type RelayStepNativeValueContext,
+} from "./native-value.js";
 import { RELAY_TERMINAL_STATUSES, type RelayChain, type RelayStep } from "./types.js";
 
 /** Origin-chain viem clients for a signable Relay step. */
@@ -112,12 +122,23 @@ export interface PlannedRelayStepTx {
  *     one tx — zero or many is an unexpected shape → reject rather than guess);
  *   - the tx `chainId` === originChainId (Vex never signs a destination step);
  *   - `data.from`, when present, equals the selected wallet;
- *   - `to`/`value` canonicalize — a malformed field throws here, pre-broadcast.
+ *   - `to`/`value` canonicalize — a malformed field throws here, pre-broadcast;
+ *   - every wei of `tx.value` is attributed to a proven cost component
+ *     (`./native-value.ts` + the shared classifier) — an unattributable native
+ *     charge refuses HERE, which is the LAST point before the tx reaches
+ *     `signStageBroadcast`. Nothing else stands between this function and a
+ *     signature, so the gate is a property of the planner rather than a
+ *     convention every caller has to remember (Khalani puts the same check
+ *     inside its own signer, `signStageEvmLeg`).
+ *
+ * `nativeValue` is REQUIRED: what Vex derived about this step's outflow cannot
+ * be inferred from the step, and a caller who omits it must not compile.
  */
 export function planRelayStepTx(
   step: RelayStep,
   originChainId: number,
   expectedFrom: `0x${string}`,
+  nativeValue: RelayStepNativeValueContext,
 ): PlannedRelayStepTx {
   if (step.kind !== "transaction") {
     throw new VexError(
@@ -157,6 +178,29 @@ export function planRelayStepTx(
   } catch {
     throw new VexError(ErrorCodes.RELAY_BRIDGE_FAILED, `Relay step "${step.id}" has a malformed transaction value.`);
   }
+
+  // THE LAST GATE. Classify every wei the provider asked Vex to send, then
+  // re-validate the authorization against the exact call about to be signed —
+  // the fingerprint binds `(chain, to, calldata, value)`, so an authorization
+  // can never be read as covering a different transaction. A zero-value step
+  // (every ERC-20 approve and ERC-20 deposit) authorizes with no components and
+  // costs nothing.
+  const call = relayStepNativeValueCall(originChainId, { to, data: data.data as Hex, value });
+  const authorized = checkNativeValueAuthorizedForCall(
+    classifyRelayStepNativeValue(call, nativeValue),
+    call,
+  );
+  if (!authorized.ok) {
+    // The message stays short on purpose — `summarizeProtocolError` caps a
+    // surfaced error at 200 characters, and the unattributed amount plus
+    // "nothing was signed" must never be the parts that get truncated. The
+    // handler composes `relayNativeValueGuidance` alongside it.
+    throw new VexError(
+      ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
+      relayNativeValueRefusal(nativeValue.role, authorized.reason),
+    );
+  }
+
   return { to, data: data.data as Hex, value };
 }
 

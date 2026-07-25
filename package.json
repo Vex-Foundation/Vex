@@ -26,6 +26,7 @@
     "knowledge-reembed": "tsx src/vex-agent/scripts/knowledge-reembed.ts",
     "tool-reembed": "tsx src/vex-agent/scripts/tool-reembed.ts",
     "tool-embeddings:health": "tsx src/vex-agent/scripts/tool-embeddings-health.ts",
+    "measure:solana-cu-margin": "tsx src/vex-agent/scripts/measure-solana-compute-unit-margin.ts",
     "benchmark-cross-lingual": "tsx src/vex-agent/scripts/cross-lingual-benchmark.ts",
     "vex:dev": "pnpm --dir vex-app install && pnpm --dir vex-app dev",
     "vex:make": "pnpm --dir vex-app make",

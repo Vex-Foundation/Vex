@@ -285,13 +285,23 @@ describe("relay.bridge — staged broadcast (R4) + truthful pending (B5/C3)", ()
     const out = outputOf(result);
     expect(out.status).toBe("pending");
     expect(out.requestId).toBe("0xreq");
-    expect(out.inTxHashes).toEqual(["0xdep"]);
+    // TWO origin broadcasts now: the deposit, then Vex's own 25 bps treasury
+    // transfer (`@tools/bridge-fee`). The fee leg is a real movement of user
+    // funds, so it is surfaced here rather than hidden. `mockSign` returns the
+    // same stub hash for both.
+    expect(out.inTxHashes).toEqual(["0xdep", "0xdep"]);
     expect(String(out.message)).toMatch(/track(?:ed|ing)(?: it)? automatically/i);
 
-    // Full staging discipline ran for the deposit leg.
-    expect(mockMarkBroadcast).toHaveBeenCalledTimes(1);
-    expect(mockMarkAccepted).toHaveBeenCalledTimes(1);
+    // Full staging discipline ran for the deposit leg AND the fee leg.
+    expect(mockMarkBroadcast).toHaveBeenCalledTimes(2);
+    expect(mockMarkAccepted).toHaveBeenCalledTimes(2);
     expect(mockConfirm).toHaveBeenCalledWith(200, {});
+    // The fee is disclosed on the execute output, never silent.
+    const vexFee = out.vexFee as Record<string, unknown>;
+    expect(vexFee.charged).toBe(true);
+    expect(vexFee.bps).toBe(25);
+    expect(vexFee.feeAmountRaw).toBe("2500000000000"); // 25 bps of 1e15 wei
+    expect(vexFee.collection).toBe("confirmed");
     // requestId attached AFTER submission (R5).
     expect(mockAttach).toHaveBeenCalledWith({ executionId: 100, providerOrderId: "0xreq" });
     // The logical fill row is NEVER confirmed in-turn (W4 owns verified confirm).

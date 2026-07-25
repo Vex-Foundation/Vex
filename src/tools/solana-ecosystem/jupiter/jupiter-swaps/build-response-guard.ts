@@ -171,7 +171,17 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
 
-/** (4) Every `computeBudgetInstructions` entry must be a REAL ComputeBudget-program instruction (never something else disguised there); the decoded priority-fee estimate must stay within the owner exposure cap. Returns the decoded estimate for reuse in the disclosure. */
+/**
+ * (4) Every `computeBudgetInstructions` entry must be a REAL ComputeBudget-program instruction (never something else disguised there); the decoded priority-fee estimate must stay within the owner exposure cap. Returns the decoded estimate for reuse in the disclosure.
+ *
+ * PULLS THE OPPOSITE WAY FROM THE PRE-SIGN SUFFICIENCY GATE, ON PURPOSE. This
+ * bounds the fee CEILING (`limit × price ≤ exposure cap`) and therefore rewards
+ * a LOW compute-unit limit — which is precisely what makes compute starvation
+ * more likely, the failure that
+ * `shared/solana-transaction/compute-budget-sufficiency.ts` refuses to sign.
+ * One caps what a transaction may COST; the other refuses a transaction that
+ * cannot AFFORD to finish. Do not "optimize" either one against the other.
+ */
 export function assertComputeBudgetWithinPolicy(
   computeBudgetInstructions: readonly JupiterSwapInstruction[],
 ): DecodedPriorityFeeEstimate {

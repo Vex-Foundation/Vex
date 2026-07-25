@@ -277,11 +277,18 @@ describe("recoverStaleHashlessIntents", () => {
     // stops applying once the sweep covers EVM rows.
     expect(allowedRoles).toContain("allowance");
     expect(allowedRoles).toContain("allowance_reset");
+    // `bridge_fee` (migration 050) IS allowlisted: it is the FINAL Vex-SIGNED
+    // origin leg (`bridge-fee/constants.ts`'s BRIDGE_FEE_ACTIVITY_EVENT_ROLE),
+    // recorded as `allowance` before 050 and therefore already reapable here —
+    // giving it its own role must not quietly drop that recovery, or a fee leg
+    // planned-but-never-signed pins the session's bridge in-flight slot open.
+    expect(allowedRoles).toContain("bridge_fee");
     expect(allowedRoles.slice().sort()).toEqual(
       [
         "allowance",
         "allowance_reset",
         "bridge_deposit",
+        "bridge_fee",
         "lend_borrow_operate",
         "lend_deposit",
         "lend_withdraw",
@@ -309,7 +316,13 @@ describe("recoverStaleHashlessIntents", () => {
 
     const evmOnlyRoles = ["allowance", "allowance_reset"];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
-    const sharedRoles = ["swap", "bridge_deposit"];
+    // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee
+    // leg is planned for either origin family — `khalani/bridge-executor.ts`'s
+    // `planVexFeeLeg` returns `family: "solana"` (a `solana_fee` descriptor,
+    // built by `bridge-fee/solana-fee-transfer.ts`) or `family: "eip155"`, and
+    // `khalani/handlers/bridge-execute.ts` picks the receiver with
+    // `fromFamily === "solana" ? BRIDGE_FEE_RECEIVER_SOLANA : ..._EVM`.
+    const sharedRoles = ["swap", "bridge_deposit", "bridge_fee"];
 
     for (const role of [...evmOnlyRoles, ...solanaOnlyRoles, ...sharedRoles]) {
       expect(allowedRoles).toContain(role);

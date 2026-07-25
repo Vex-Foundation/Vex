@@ -18,6 +18,7 @@ import { resolveRelayChainId, toRelayCurrency } from "@tools/relay/chains.js";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { parseSlippageBpsString } from "../../slippage-policy.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { BridgeMatchInput, BridgeTradeType } from "./hash.js";
 
@@ -39,6 +40,32 @@ function parseTradeType(raw: string): BridgeTradeType {
   if (raw === "EXACT_OUTPUT") return "EXACT_OUTPUT";
   if (raw === "EXPECTED_OUTPUT") return "EXPECTED_OUTPUT";
   return "EXACT_INPUT";
+}
+
+/**
+ * Canonicalize the relay `slippageBps` param into hash material.
+ *
+ * Relay types the param as a STRING, so the manifest's numeric `unit: "bps"`
+ * gate never sees it — this and the handler's own check (`relay/handlers/bridge.ts`'s
+ * `resolveLegs`) are the only validation that path gets, and they share one
+ * parser (`parseSlippageBpsString`) so the identity can never bind a value the
+ * handler would have refused.
+ *
+ * ABSENT/empty → the stable `""` sentinel, meaning "Relay's own default": the
+ * handler genuinely sends no `slippageTolerance` in that case, so there is no
+ * Vex-side default to bind, and a quote↔execute that both omit it collide.
+ * PRESENT → the canonical integer string, so `"50"` and `" 50"`-style drift can
+ * never hash apart while a 50↔5000 substitution always does. Invalid or
+ * over-ceiling → THROW (recorder skips the row, gate fail-closes to BLOCK).
+ */
+function canonRelaySlippageBps(params: Record<string, unknown>): string {
+  const raw = relayStr(params, "slippageBps");
+  if (raw === "") return "";
+  const parsed = parseSlippageBpsString("Relay slippageBps", raw);
+  if (!parsed.ok) {
+    throw new VexError(ErrorCodes.AGENT_VALIDATION_ERROR, parsed.reason);
+  }
+  return String(parsed.bps);
 }
 
 /**
@@ -70,8 +97,13 @@ export async function buildRelayBridgeIdentity(
   const sourceWallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
   const explicitRecipient = relayStr(params, "recipient");
   const recipient = explicitRecipient !== "" ? explicitRecipient : sourceWallet;
-  const explicitRefundTo = relayStr(params, "refundTo");
-  const refundTo = explicitRefundTo !== "" ? explicitRefundTo : sourceWallet;
+  // DERIVED, never read from params — same refund-destination policy as the
+  // Khalani identity (`./bridge.ts`). Binding it from PARAMS could not stop the
+  // vector it was meant to stop: an attacker setting the SAME address on the
+  // quote AND the execute collides the hashes and passes the gate. Unchanged
+  // for every legitimate call (an omitted `refundTo` already resolved to the
+  // source wallet), so persisted hashes do not move.
+  const refundTo = sourceWallet;
 
   return {
     kind: "bridge",
@@ -92,6 +124,9 @@ export async function buildRelayBridgeIdentity(
     referrer: "",
     referrerFeeBps: "",
     filler: "",
+    // Relay DOES forward slippage (`slippageTolerance`), so it must be bound —
+    // this was the one identity where the doctrine had been missed.
+    slippageBps: canonRelaySlippageBps(params),
   };
 }
 

@@ -75,15 +75,26 @@ vi.mock("@tools/khalani/prequote-route-guard.js", () => ({
 const mockPrepareQuoteRequest = vi.fn();
 vi.mock("@tools/khalani/request.js", () => ({
   prepareQuoteRequest: (...args: unknown[]) => mockPrepareQuoteRequest(...(args as [])),
-  // Real implementation (not a stub): the handler's fee-param rejection must
-  // stay live in this suite, so a regression that starts accepting a caller
-  // fee cannot hide behind a permissive mock.
-  findCallerSuppliedFeeParam: (params: Record<string, unknown>) => {
-    for (const key of ["referrer", "referrerFeeBps"]) {
+  // Real implementation (not a stub): the handler's rejection of caller-supplied
+  // fee params AND of a caller-supplied refund destination must stay live in
+  // this suite, so a regression that starts accepting either cannot hide behind
+  // a permissive mock.
+  findCallerSuppliedForbiddenParam: (params: Record<string, unknown>) => {
+    const supplied = (key: string) => {
       const value = params[key];
-      if (value === undefined || value === null) continue;
-      if (typeof value === "string" && value.trim() === "") continue;
-      return key;
+      if (value === undefined || value === null) return false;
+      return !(typeof value === "string" && value.trim() === "");
+    };
+    for (const key of ["referrer", "referrerFeeBps"]) {
+      if (supplied(key)) return { param: key, reason: "Vex never takes fee parameters from tool input." };
+    }
+    if (supplied("refundTo")) {
+      return {
+        param: "refundTo",
+        reason:
+          "Vex always refunds a failed bridge to the wallet the funds left, derived from the selected "
+          + "source wallet — a refund destination is never taken from tool input.",
+      };
     }
     return null;
   },
@@ -163,6 +174,18 @@ vi.mock("@utils/logger.js", () => {
 import { BRIDGE_HANDLERS } from "@vex-agent/tools/protocols/khalani/handlers/bridge.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { VexError } from "../../../../errors.js";
+import { classifyNativeValue } from "@tools/evm-chains/native-value-authorization/index.js";
+
+/**
+ * The native-value authorization a zero-value EVM leg carries. `signStageEvmLeg`
+ * re-validates this before signing, so a mocked plan must supply one; a leg that
+ * sends no native currency has nothing to attribute and authorizes trivially.
+ */
+function zeroValueAuthorization(to: string) {
+  return classifyNativeValue({
+    call: { chainId: 8453, to: to as `0x${string}`, data: undefined, valueWei: 0n },
+  });
+}
 
 const FROM_TOKEN = "0xAAA0000000000000000000000000000000000000";
 const TO_TOKEN = "0xBBB0000000000000000000000000000000000000";
@@ -208,7 +231,13 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     mockResolveRouteBestIndex.mockReturnValue(0);
     mockBuildDeposit.mockResolvedValue({ kind: "CONTRACT_CALL", approvals: [] });
     mockPlanKhalaniDepositLegs.mockReturnValue([
-      { role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm", tx: { to: FROM_TOKEN } },
+      {
+        role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm",
+        tx: { to: FROM_TOKEN },
+        // Every EVM leg carries a native-value authorization; this one sends
+        // no value, so it authorizes with no components at all.
+        nativeValue: zeroValueAuthorization(FROM_TOKEN),
+      },
     ]);
     mockSearchTokens.mockImplementation(async (address: string) => ({
       data: [{ address, chainId: address === FROM_TOKEN ? 8453 : 42161, symbol: address === FROM_TOKEN ? "USDC" : "USDC", name: "USD Coin", decimals: 6, extensions: { price: { usd: "1.0001" } } }],

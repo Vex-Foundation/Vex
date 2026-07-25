@@ -23,6 +23,16 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   }),
 }));
 
+// `kyberswap.swap.execute` now re-reads its persisted quote-time price floor
+// before it will resolve a signing wallet (`swap-price-floor.ts`). This file is
+// about WHICH wallet gets resolved, not about the floor, so the floor is
+// supplied as satisfied — without it the execute refuses earlier and never
+// reaches the resolver these assertions exist to check.
+const mockFindFreshMatchedSwapPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
+  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
+}));
+
 /** Type-complete ProtocolExecutionContext for handler tests. */
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -97,6 +107,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
+import { compliantSwapCalldata, matchedPrequoteWithFloor } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -109,6 +120,9 @@ describe("kyberswap session wallet resolution", () => {
   });
 
   beforeEach(() => {
+    // Quoted 999000 out at 50 bps — the same shape the route mock below returns,
+    // so the persisted floor the execute re-reads is consistent with the route.
+    mockFindFreshMatchedSwapPrequote.mockReset().mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockResolveSigningWallet.mockClear();
     mockResolveSelectedAddress.mockClear();
     mockGetHoneypotFotInfo.mockClear();
@@ -124,7 +138,15 @@ describe("kyberswap session wallet resolution", () => {
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
-        data: "0xcalldata",
+        // Real router calldata from a captured build. The execute now DECODES
+        // this before signing (fee receivers/amounts, bps + source flags, no
+        // partial fill, and both price floors), so a `"0xcalldata"` placeholder
+        // is refused as "could not decode it as a router swap" long before the
+        // wallet resolution these tests assert.
+        data: compliantSwapCalldata({
+          srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
+          amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
+        }),
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
@@ -138,7 +160,7 @@ describe("kyberswap session wallet resolution", () => {
       SESSION_CTX,
     );
 
-    expect(result.success).toBe(true);
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
     // Signer resolved from the SESSION resolution + policy, family eip155.
     expect(mockResolveSigningWallet).toHaveBeenCalledWith(
       SESSION_CTX.walletResolution, SESSION_CTX.walletPolicy, "eip155",

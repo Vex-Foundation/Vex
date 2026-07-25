@@ -121,9 +121,14 @@ describe("no fee-bearing field originates from tool params", () => {
       const keys = (tool?.params ?? []).map((p) => p.key);
       expect(keys).not.toContain("referrer");
       expect(keys).not.toContain("referrerFeeBps");
+      // `refundTo` was removed for the SAME reason, one card later: it is a
+      // fund destination the model could choose, invisible to the approving
+      // human, and unprotected by prequote binding (an attacker sets the same
+      // address on the quote and the execute, so the hashes collide). Vex now
+      // derives it from the selected source wallet.
+      expect(keys).not.toContain("refundTo");
       // The legitimate money leg must survive the removal.
       expect(keys).toContain("recipient");
-      expect(keys).toContain("refundTo");
     }
   });
 

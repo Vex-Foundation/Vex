@@ -47,7 +47,7 @@ import { fail } from "./types.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
-import { findCallerSuppliedFeeParam } from "@tools/khalani/request.js";
+import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -298,7 +298,9 @@ const BridgeQuoteArgs = z.object({
   tradeType: z.string().min(1).optional(),
   fromAddress: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
-  refundTo: z.string().min(1).optional(),
+  // No `refundTo` — the refund destination is derived from the selected
+  // source wallet, never taken from tool input (refund-destination policy in
+  // `@tools/khalani/request.js`).
   filler: z.string().min(1).optional(),
   slippageBps: z.string().min(1).optional(),
 });
@@ -307,15 +309,16 @@ export async function handleBridgeQuote(
   args: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  // Fee params are rejected BY NAME, never silently stripped. This schema is not
-  // `.strict()`, so dropping the keys alone would let an attempted overcharge
-  // pass unnoticed — and a fee-bearing QUOTE is precisely what the prequote gate
-  // would later bind a fee-bearing execute against. See the policy in
-  // `@tools/khalani/request.js`.
-  const suppliedFeeParam = findCallerSuppliedFeeParam(args);
-  if (suppliedFeeParam !== null) {
+  // Fee params and the refund destination are rejected BY NAME, never silently
+  // stripped. This schema is not `.strict()`, so dropping the keys alone would
+  // let the attempt pass unnoticed — and the QUOTE is precisely what the
+  // prequote gate would later bind a matching execute against, so an attacker
+  // who sets the same value on both would collide the hashes and pass the gate.
+  // See the two policy blocks in `@tools/khalani/request.js`.
+  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  if (forbiddenParam !== null) {
     return fail(
-      `bridge_quote: ${suppliedFeeParam} is not an accepted parameter — Vex never charges a bridge referral fee and never takes fee parameters from tool input. Remove it and retry.`,
+      `bridge_quote: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
@@ -338,7 +341,6 @@ export async function handleBridgeQuote(
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
     if (a.recipient !== undefined) params.recipient = a.recipient;
-    if (a.refundTo !== undefined) params.refundTo = a.refundTo;
     if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
     return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
   }
@@ -353,7 +355,6 @@ export async function handleBridgeQuote(
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
   if (a.recipient !== undefined) params.recipient = a.recipient;
-  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
   if (a.filler !== undefined) params.filler = a.filler;
   return executeProtocolTool({ toolId: "khalani.quote.get", params }, protocolContext(context));
 }
@@ -376,7 +377,9 @@ const BridgeQuoteRelayArgs = z.object({
   amount: z.string().min(1, { message: "amount is required (smallest units)" }),
   tradeType: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
-  refundTo: z.string().min(1).optional(),
+  // No `refundTo` — the refund destination is derived from the selected
+  // source wallet, never taken from tool input (refund-destination policy in
+  // `@tools/khalani/request.js`).
   slippageBps: z.string().min(1).optional(),
 });
 
@@ -390,6 +393,15 @@ export async function handleBridgeQuoteRelay(
         + "Khalani no-route failure for this exact route, or the Khalani deposit transaction reverting "
         + "on-chain for this exact route (Robinhood routes are always available via bridge_quote). "
         + "Try bridge_quote first.",
+    );
+  }
+
+  // This schema is not `.strict()` either, so the same by-name refusal applies
+  // — otherwise a redirected refund address would be dropped here in silence.
+  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  if (forbiddenParam !== null) {
+    return fail(
+      `bridge_quote_relay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
@@ -408,7 +420,6 @@ export async function handleBridgeQuoteRelay(
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.recipient !== undefined) params.recipient = a.recipient;
-  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
   if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
   return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
 }

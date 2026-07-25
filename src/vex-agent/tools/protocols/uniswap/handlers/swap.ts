@@ -78,6 +78,7 @@ import {
 import { registerSettlementDecoder, type SettlementDecoderInput, type DecodedSettlement } from "@vex-agent/sync/settlement-decoders.js";
 import { clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
@@ -200,6 +201,31 @@ async function computeQuote(
   };
 }
 
+/**
+ * Resolve the slippage this call applies, or Vex's rejection reason.
+ *
+ * The manifest `unit: "bps"` gate (`runtime/bps-param.ts`) proves the value is a
+ * whole, non-negative number of basis points but deliberately applies no
+ * maximum; the maximum is product policy with one owner
+ * (`slippage-policy.ts`). No `venueMaxBps` is passed — Uniswap publishes no
+ * venue maximum below Vex's ceiling (`applySlippage` is pure arithmetic over
+ * `[0, 10000]`), so the ceiling binds on its own.
+ *
+ * REJECTED, never clamped. `applySlippage` used to fold an out-of-range value
+ * to 10,000 bps, which silently authorised a total-loss tolerance instead of
+ * surfacing the caller's mistake — the same failure class as silently dropping
+ * a caller-supplied fee parameter. Resolved identically for the quote and the
+ * execute so the pair cannot disagree about what was authorised.
+ */
+function resolveUniswapSlippageBps(
+  handlerToolId: string,
+  p: Record<string, unknown>,
+): { readonly ok: true; readonly bps: number } | { readonly ok: false; readonly reason: string } {
+  const bps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
+  const violation = checkSlippageBps(`Parameter "slippageBps" for ${handlerToolId}`, bps);
+  return violation ? { ok: false, reason: violation } : { ok: true, bps };
+}
+
 function routerFor(deployment: UniswapDeployment, route: UniswapRoute): Address {
   const router = route.version === "v2" ? deployment.v2?.router02 : deployment.v3?.swapRouter02;
   if (!router) throw new VexError(ErrorCodes.SWAP_FAILED, `No ${route.version} router on ${deployment.name}.`);
@@ -212,6 +238,12 @@ async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult>
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return { success: false, output: "Missing required: chain, tokenIn, tokenOut, amountIn" };
 
+  // Pure param policy first — cheapest check, and it must not depend on a chain
+  // or a network round trip to tell the caller their tolerance is out of range.
+  const slippage = resolveUniswapSlippageBps("uniswap.swap.quote", p);
+  if (!slippage.ok) return { success: false, output: slippage.reason };
+  const slippageBps = slippage.bps;
+
   const deployment = requireDeployment(chain);
   const tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
   const tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
@@ -219,7 +251,6 @@ async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult>
     return { success: false, output: "tokenIn and tokenOut resolve to the same token." };
   }
   const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
-  const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
 
   const quoted = await computeQuote(deployment, tokenIn, tokenOut, amountIn, slippageBps);
 
@@ -533,12 +564,16 @@ async function executeUniswapSwap(
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
 
+  // Vex's slippage ceiling — pure, and BEFORE the session/chain/wallet steps so
+  // an out-of-range tolerance never reaches a durable row or a signing key.
+  const slippage = resolveUniswapSlippageBps(toolId, p);
+  if (!slippage.ok) return fail(slippage.reason);
+  const slippageBps = slippage.bps;
+
   // The reveal gate + prequote gate (executeProtocolTool) already block this
   // tool without a session — sessionId is guaranteed present here.
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${toolId} requires an active session.`);
-
-  const slippageBps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
 
   // Step 1 — resolve the chain. No wallet/chain known yet on failure, so no
   // durable row is written (same treatment as a param-validation failure).

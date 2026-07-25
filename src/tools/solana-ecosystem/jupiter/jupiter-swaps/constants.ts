@@ -80,8 +80,14 @@ export const JUPITER_SWAP_LANDING_MODE = "self_managed_submit" as const;
  * signed transaction still executes under Solana's default per-instruction
  * CU allocation with no cap tighter than this maximum. Live-reverified 2026-
  * 07-24 (Codex batch-4 turn-2 closure, C6).
+ *
+ * DEFINED in `shared/solana-transaction/compute-budget-sufficiency.ts` since
+ * 2026-07-25, because the pre-sign sufficiency gate needs the same protocol
+ * constant and two copies of a chain limit is exactly how they drift apart.
+ * Re-exported here so every existing importer of this venue module is
+ * unaffected; the direction (venue → shared) is the correct one.
  */
-export const SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION = 1_400_000;
+export { SOLANA_MAX_COMPUTE_UNITS_PER_TRANSACTION } from "../../shared/solana-transaction/compute-budget-sufficiency.js";
 
 /**
  * Jupiter's published tip-receiver accounts for `/tx/v1/submit`-style

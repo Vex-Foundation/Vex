@@ -8,7 +8,11 @@ const BRIDGE_PARAMS = [
   { key: "toToken", type: "string" as const, required: true, description: "Destination token address, or native ETH/native." },
   { key: "amount", type: "string" as const, required: true, description: "Amount in smallest units (wei)." },
   { key: "recipient", type: "string" as const, description: "Destination recipient (default: your wallet)." },
-  { key: "refundTo", type: "string" as const, description: "Refund address (default: your wallet)." },
+  // `refundTo` is deliberately NOT exposed: it decides where funds land when a
+  // bridge FAILS, and a model-chosen fund destination is the same vector as a
+  // model-chosen fee. Vex derives it from the selected source wallet; the
+  // handler rejects a caller-supplied value by name. See the refund-destination
+  // policy in `@tools/khalani/request.js`.
   { key: "slippageBps", type: "string" as const, description: "Slippage tolerance in basis points." },
 ];
 
@@ -31,7 +35,7 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "toToken", type: "string", required: true, description: "Destination token address, or native ETH/native." },
       { key: "amount", type: "string", required: true, description: "Amount in smallest units (wei)." },
       { key: "recipient", type: "string", description: "Destination recipient (default: your wallet)." },
-      { key: "refundTo", type: "string", description: "Refund address (default: your wallet)." },
+      // `refundTo` deliberately NOT exposed — see the note on BRIDGE_PARAMS above.
       { key: "slippageBps", type: "string", description: "Slippage tolerance in basis points." },
     ],
     exampleParams: { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: "native", amount: "1000000000000000" },

@@ -50,6 +50,8 @@ const baseIdentity: BridgeMatchInput = {
   referrer: "",
   referrerFeeBps: "",
   filler: "",
+  // Bound since the relay slippage fix — "" is the omitted-slippage sentinel.
+  slippageBps: "",
 };
 
 const hashOf = (tradeType: BridgeTradeType) => computePrequoteMatchHash({ ...baseIdentity, tradeType });

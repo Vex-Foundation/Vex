@@ -19,6 +19,16 @@
  * `agent_activity` roles) WITHOUT signing, so the handler can create every
  * planned row before anything is signed.
  *
+ * VEX FEE LEG (`src/tools/bridge-fee`): when a fee is charged, the plan gains
+ * ONE extra leg APPENDED AFTER the deposit — Vex's own transfer of 25 bps of
+ * the input token to the treasury. It is last on purpose: the deposit is
+ * quoted and broadcast for `amount − fee`, so a bridge that never happens
+ * never charges a fee. The Solana variant is planned as a DESCRIPTOR
+ * (`kind:"solana_fee"`) because building it needs the mint's owner program and
+ * the treasury ATA's existence — both network reads — and this planner is
+ * network-free; `signStageKhalaniLeg` materializes it against the same
+ * per-chain RPC it already signs and broadcasts on.
+ *
  * SOLANA LEG (W5 design `w5-design.md` §2/R2/R2b, migration 049): Khalani's
  * provider-built Solana transaction carries no separate blockhash-height
  * evidence (no `blockhashWithMetadata`-style field, unlike Jupiter `/build`),
@@ -54,6 +64,17 @@ import {
 import { createDynamicPublicClient, createDynamicWalletClient } from "./evm-client.js";
 import { broadcastSignedSolanaTransaction, confirmSolanaSignature } from "./solana-signer.js";
 import { prepareVersionedTx } from "@tools/solana-ecosystem/shared/solana-transaction.js";
+import {
+  BRIDGE_FEE_ACTIVITY_EVENT_ROLE,
+  buildEvmBridgeFeeTransfer,
+  buildSolanaBridgeFeeTransfer,
+} from "@tools/bridge-fee/index.js";
+import {
+  checkNativeValueAuthorizedForCall,
+  classifyNativeValue,
+  type NativeValueAuthorization,
+  type ProvenComponent,
+} from "@tools/evm-chains/native-value-authorization/index.js";
 import type {
   Approval,
   ChainFamily,
@@ -131,7 +152,19 @@ function isNativeTransferToken(token: string): boolean {
 
 // ── Staged leg model ──────────────────────────────────────────────────
 
-export type KhalaniLegRole = "allowance_reset" | "allowance" | "bridge_deposit";
+export type KhalaniLegRole = "allowance_reset" | "allowance" | "bridge_deposit" | "bridge_fee";
+
+/**
+ * WHY the leg carries a purpose separate from its role: before migration 050
+ * the Vex fee leg was recorded under the `allowance` `event_role`, so the role
+ * alone could not tell a real approval apart from the fee transfer. The
+ * dedicated `bridge_fee` role now can, but callers still branch on this
+ * purpose — it is the one discriminator that also covers the Solana fee leg
+ * while it is still an unbuilt descriptor (`kind: "solana_fee"`), before any
+ * role-bearing row exists. Collapsing the two is a follow-up cleanup, not part
+ * of the 050 change.
+ */
+export type KhalaniLegPurpose = "bridge" | "vex_fee";
 
 /**
  * The three staged outcomes — mirrors the EVM `signStageBroadcast` contract.
@@ -188,10 +221,51 @@ interface NormalizedEvmTx {
   readonly expectedFrom?: Address;
 }
 
-/** One planned Vex-signed broadcast leg derived (no signing) from a `DepositPlan`. */
+/**
+ * One planned Vex-signed broadcast leg derived (no signing) from a
+ * `DepositPlan`.
+ *
+ * `nativeValue` is REQUIRED on every EVM leg and is the authorization for that
+ * leg's `tx.value`: `signStageEvmLeg` re-checks it against the transaction it
+ * is about to serialize and refuses on any mismatch, so a leg cannot reach the
+ * signer without one. The planner is network-free, so a PROVIDER-supplied value
+ * starts out `unclassified` — `authorizeKhalaniLegNativeValue`
+ * (`./deposit-native-value.ts`) is what upgrades it with a proof, and a leg
+ * that is never upgraded is refused rather than signed.
+ */
 export type KhalaniStagedLeg =
-  | { readonly role: KhalaniLegRole; readonly family: "eip155"; readonly isDeposit: boolean; readonly kind: "evm"; readonly tx: NormalizedEvmTx }
-  | { readonly role: KhalaniLegRole; readonly family: "solana"; readonly isDeposit: boolean; readonly kind: "solana"; readonly base64Tx: string };
+  | {
+      readonly role: KhalaniLegRole;
+      readonly purpose: KhalaniLegPurpose;
+      readonly family: "eip155";
+      readonly isDeposit: boolean;
+      readonly kind: "evm";
+      readonly tx: NormalizedEvmTx;
+      readonly nativeValue: NativeValueAuthorization;
+    }
+  | { readonly role: KhalaniLegRole; readonly purpose: KhalaniLegPurpose; readonly family: "solana"; readonly isDeposit: boolean; readonly kind: "solana"; readonly base64Tx: string }
+  /**
+   * The Solana Vex fee leg, still unbuilt: materialized inside
+   * `signStageKhalaniLeg` (see the module doc) because it needs the mint's
+   * owner program and the treasury ATA's existence, and this planner is
+   * network-free.
+   */
+  | {
+      readonly role: KhalaniLegRole;
+      readonly purpose: "vex_fee";
+      readonly family: "solana";
+      readonly isDeposit: false;
+      readonly kind: "solana_fee";
+      readonly mint: string;
+      readonly feeRaw: bigint;
+    };
+
+/** The Vex integrator fee to append as the FINAL leg. `feeRaw` must be positive. */
+export interface KhalaniVexFeeLeg {
+  /** The source-chain token/mint the user is bridging — the fee is taken from it. */
+  readonly tokenAddress: string;
+  readonly feeRaw: bigint;
+}
 
 const APPROVE_ABI = [
   {
@@ -263,6 +337,34 @@ function normalizeEvmApproval(approval: EvmApproval, chain: KhalaniChain): Norma
   };
 }
 
+/**
+ * The call an EVM leg's native-value authorization covers. Kept in ONE place so
+ * the tuple the planner classifies and the tuple `signStageEvmLeg` re-checks
+ * can never drift apart — a fingerprint computed over two different shapes
+ * would refuse every honest leg.
+ */
+export function khalaniLegNativeValueCall(chainId: number, tx: NormalizedEvmTx) {
+  return { chainId, to: tx.to, data: tx.data, valueWei: tx.value ?? 0n } as const;
+}
+
+/**
+ * Classify an EVM leg's `tx.value` with only what the planner can prove
+ * offline. A provider-supplied value gets no Vex-derived component, so it lands
+ * in the unclassified remainder and stays refused until a prover upgrades it.
+ */
+function planLegNativeValue(
+  chainId: number,
+  tx: NormalizedEvmTx,
+  vexDerived?: { readonly nativePrincipal?: ProvenComponent; readonly platformFee?: ProvenComponent },
+): NativeValueAuthorization {
+  return classifyNativeValue({
+    call: khalaniLegNativeValueCall(chainId, tx),
+    nativePrincipal: vexDerived?.nativePrincipal,
+    vexPlatformFee: vexDerived?.platformFee,
+    provenProtocolFee: null,
+  });
+}
+
 function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain): KhalaniStagedLeg[] {
   const family: ChainFamily = chain.type;
   const legs: KhalaniStagedLeg[] = [];
@@ -277,6 +379,7 @@ function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain
       }
       legs.push({
         role: solanaApproval.deposit ? "bridge_deposit" : "allowance",
+        purpose: "bridge",
         family: "solana",
         isDeposit: solanaApproval.deposit === true,
         kind: "solana",
@@ -289,10 +392,15 @@ function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain
     if (tx === null) continue; // chain-switch — not a broadcast
     legs.push({
       role: approval.deposit ? "bridge_deposit" : classifyEvmApprovalRole(tx.data),
+      purpose: "bridge",
       family: "eip155",
       isDeposit: approval.deposit === true,
       kind: "evm",
       tx,
+      // Provider-supplied value — nothing is proven offline. A non-zero value
+      // is unclassified here BY DESIGN and must be upgraded by a prover before
+      // it can be signed.
+      nativeValue: planLegNativeValue(chain.id, tx),
     });
   }
   return legs;
@@ -306,7 +414,8 @@ function planTransferLeg(plan: TransferDepositPlan, chain: KhalaniChain): Khalan
       "Retry with --deposit-method CONTRACT_CALL.",
     );
   }
-  const tx: NormalizedEvmTx = isNativeTransferToken(plan.token)
+  const isNative = isNativeTransferToken(plan.token);
+  const tx: NormalizedEvmTx = isNative
     ? { to: getAddress(plan.depositAddress), value: BigInt(plan.amount) }
     : {
         to: getAddress(plan.token),
@@ -316,15 +425,99 @@ function planTransferLeg(plan: TransferDepositPlan, chain: KhalaniChain): Khalan
           args: [getAddress(plan.depositAddress), BigInt(plan.amount)],
         }),
       };
-  return [{ role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm", tx }];
+  // A native TRANSFER deposit is fully proven right here: Vex builds the whole
+  // transaction, and its entire value IS the principal being bridged. This is
+  // also why the fixed-fee rule must be `value − principal == fee` — a
+  // `value == fee` rule would refuse this legitimate leg outright.
+  const nativeValue = planLegNativeValue(
+    chain.id,
+    tx,
+    isNative
+      ? {
+          nativePrincipal: {
+            amountWei: BigInt(plan.amount),
+            recipient: getAddress(plan.depositAddress),
+            refund: "refunded_to_source_on_failure",
+            evidence: {
+              source: "vex_constructed",
+              detail: "the whole value is the deposit amount of a Vex-built native TRANSFER leg",
+            },
+          },
+        }
+      : undefined,
+  );
+  return [{
+    role: "bridge_deposit", purpose: "bridge", family: "eip155",
+    isDeposit: true, kind: "evm", tx, nativeValue,
+  }];
+}
+
+/**
+ * Plan the Vex fee leg for `sourceChain`'s family. EVM is fully built here
+ * (pure); Solana is a descriptor materialized at sign time (module doc).
+ */
+function planVexFeeLeg(fee: KhalaniVexFeeLeg, sourceChain: KhalaniChain): KhalaniStagedLeg {
+  if (sourceChain.type === "solana") {
+    return {
+      role: BRIDGE_FEE_ACTIVITY_EVENT_ROLE,
+      purpose: "vex_fee",
+      family: "solana",
+      isDeposit: false,
+      kind: "solana_fee",
+      mint: fee.tokenAddress,
+      feeRaw: fee.feeRaw,
+    };
+  }
+  const transfer = buildEvmBridgeFeeTransfer(fee.tokenAddress, fee.feeRaw);
+  const tx: NormalizedEvmTx = transfer.kind === "native"
+    ? { to: transfer.to, value: transfer.value }
+    : { to: transfer.to, data: transfer.data };
+  // Vex's own transfer: on the native branch the entire value is the Vex
+  // platform fee, computed by `splitBridgeAmountForFee` from the user's own
+  // amount. The ERC-20 branch sends no value at all.
+  const nativeValue = planLegNativeValue(
+    sourceChain.id,
+    tx,
+    transfer.kind === "native"
+      ? {
+          platformFee: {
+            amountWei: transfer.value,
+            recipient: transfer.to,
+            refund: "spent_not_recoverable",
+            evidence: {
+              source: "vex_constructed",
+              detail: "the whole value is the Vex integrator fee of a Vex-built native transfer leg",
+            },
+          },
+        }
+      : undefined,
+  );
+  return {
+    role: BRIDGE_FEE_ACTIVITY_EVENT_ROLE,
+    purpose: "vex_fee",
+    family: "eip155",
+    isDeposit: false,
+    kind: "evm",
+    tx,
+    nativeValue,
+  };
 }
 
 /**
  * Convert a `DepositPlan` into the ordered Vex-signed broadcast legs, WITHOUT
  * signing. PERMIT2 is intentionally blocked; the plan MUST contain exactly one
  * `deposit` leg (the hash the caller later submits to Khalani).
+ *
+ * `vexFee`, when present, is APPENDED as the final leg — see the module doc for
+ * why it must run after the deposit and never before it. Pass `null` (or omit)
+ * when the fee floors to zero: a zero-value transfer would burn gas and move
+ * nothing.
  */
-export function planKhalaniDepositLegs(plan: DepositPlan, sourceChain: KhalaniChain): KhalaniStagedLeg[] {
+export function planKhalaniDepositLegs(
+  plan: DepositPlan,
+  sourceChain: KhalaniChain,
+  vexFee: KhalaniVexFeeLeg | null = null,
+): KhalaniStagedLeg[] {
   if (plan.kind === "PERMIT2") {
     throw new VexError(
       ErrorCodes.KHALANI_PERMIT2_BLOCKED,
@@ -343,6 +536,9 @@ export function planKhalaniDepositLegs(plan: DepositPlan, sourceChain: KhalaniCh
   if (depositCount > 1) {
     throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Khalani marked more than one action with deposit=true.");
   }
+  if (vexFee && vexFee.feeRaw > 0n) {
+    legs.push(planVexFeeLeg(vexFee, sourceChain));
+  }
   return legs;
 }
 
@@ -350,12 +546,32 @@ export function planKhalaniDepositLegs(plan: DepositPlan, sourceChain: KhalaniCh
 
 async function signStageEvmLeg(
   tx: NormalizedEvmTx,
+  nativeValue: NativeValueAuthorization,
   chain: KhalaniChain,
   chains: KhalaniChain[],
   privateKey: Hex,
   hooks: KhalaniStageHooks,
   priorLeg: ConfirmedPriorLeg | undefined,
 ): Promise<KhalaniStagedOutcome> {
+  // THE LAST GATE. Re-validated here, against the exact transaction about to be
+  // serialized, rather than trusted from plan time: the authorization is bound
+  // to a `(chain, to, calldata, value)` fingerprint, so a value that grew — or
+  // a target that changed — after classification cannot be signed. A leg whose
+  // native charge was never proven fails here too, which is what makes
+  // "never sign a value you could not classify" a property of the signer and
+  // not a convention callers have to remember.
+  const authorized = checkNativeValueAuthorizedForCall(
+    nativeValue,
+    khalaniLegNativeValueCall(chain.id, tx),
+  );
+  if (!authorized.ok) {
+    throw new VexError(
+      ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
+      `Refused before signing: ${authorized.reason}.`,
+      "Nothing was signed. Re-quote the bridge; do not retry this deposit plan.",
+    );
+  }
+
   const walletClient = createDynamicWalletClient(chain, chains, privateKey);
   const publicClient = createDynamicPublicClient(chain, chains);
   const account = walletClient.account;
@@ -511,10 +727,23 @@ export async function signStageKhalaniLeg(
     if (signer.family !== "eip155") {
       throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "EVM deposit requires an EVM signing wallet.");
     }
-    return signStageEvmLeg(leg.tx, sourceChain, chains, signer.privateKey, hooks, priorLeg);
+    return signStageEvmLeg(leg.tx, leg.nativeValue, sourceChain, chains, signer.privateKey, hooks, priorLeg);
   }
   if (signer.family !== "solana") {
     throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Solana deposit requires a Solana signing wallet.");
+  }
+  if (leg.kind === "solana_fee") {
+    // Materialized here, not in the planner: resolving the mint's owner
+    // program and the treasury ATA's existence are network reads, and the
+    // planner is network-free. The RPC is the same per-chain endpoint this
+    // module already signs and broadcasts on.
+    const fee = await buildSolanaBridgeFeeTransfer({
+      connection: new Connection(getChainRpcUrl(sourceChain.id, chains), "confirmed"),
+      mint: leg.mint,
+      feeRaw: leg.feeRaw,
+      owner: signer.address,
+    });
+    return signStageSolanaLeg(fee.base64Tx, sourceChain, chains, signer, hooks);
   }
   return signStageSolanaLeg(leg.base64Tx, sourceChain, chains, signer, hooks);
 }

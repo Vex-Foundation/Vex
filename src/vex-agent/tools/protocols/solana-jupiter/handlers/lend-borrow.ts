@@ -57,6 +57,7 @@ import {
   buildBorrowOperateIntentParams,
   type BorrowOperateLeg,
 } from "../borrow-operate-params.js";
+import { classifyJupiterProviderFailure } from "../provider-failure-mapping.js";
 import { validateJupiterLendBorrowMarket } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/validation.js";
 import type {
   JupiterLendBorrowToken,
@@ -193,8 +194,32 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(borrowFailureMessage(err));
     }
     const vaultIds = strArray(p, "vaultIds");
-    const positions = await getJupiterLendBorrowPositions(addr, market);
-    return ok(projectJupiterLendBorrowPositions(positions, { vaultIds }));
+
+    // W4 (owner ruling 2026-07-25 — DISCLOSE, DO NOT BLOCK). A `full`
+    // autonomous session never sees the restricted-mode approval preview, so
+    // this READ is the only place the agent can obtain an LTV, a distance to
+    // liquidation, or the provider's liquidation flag. The vault row carries
+    // every input those need (both legs' decimals, both provider prices, the
+    // thresholds), so it is fetched here CONCURRENTLY with the positions —
+    // both endpoints are free reads and neither depends on the other.
+    //
+    // A vault-read failure must NOT fail the positions read: the agent still
+    // needs to see that the positions exist. It is passed through as a
+    // disclosed `unavailable` lookup, and every affected row says plainly
+    // that its risk is unknown rather than absent.
+    const [positions, vaults] = await Promise.all([
+      getJupiterLendBorrowPositions(addr, market),
+      getJupiterLendBorrowVaults(market).then(
+        (rows) => ({ status: "read" as const, vaults: rows }),
+        (err: unknown) => ({ status: "unavailable" as const, reason: borrowFailureMessage(err) }),
+      ),
+    ]);
+    return ok(projectJupiterLendBorrowPositions({
+      positions,
+      market,
+      vaults,
+      filters: { vaultIds },
+    }));
   },
 
   "solana.lend.borrowOperate": async (p, ctx): Promise<ToolResult> => {
@@ -249,11 +274,10 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
     // the raw agent params) of which legs moved which way. Recorded on BOTH
     // the pre-broadcast-failure path and the intent-creation path, so a
     // rejected call's audit trail carries the SAME shape a succeeded one would.
-    // Cast is structural-only (mirrors `handler-helpers.ts`'s `toResultData`
-    // rationale): `BorrowOperateIntentParams` has no index signature, but
-    // every field is a plain JSON-safe value the `intentParams` boundary
-    // accepts and sanitizes generically (`createExecutionIntent`).
-    const intentParams = buildBorrowOperateIntentParams(resolved) as unknown as Record<string, unknown>;
+    // No cast: `BorrowOperateIntentParams` is a type alias, so TypeScript gives
+    // it an implicit index signature and it is directly assignable to the
+    // `Record<string, unknown>` the `intentParams` boundary takes.
+    const intentParams = buildBorrowOperateIntentParams(resolved);
     const sharedEventFields = {
       eventRole: "lend_borrow_operate" as const,
       protocol: PROTOCOL,
@@ -281,7 +305,12 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
         resolved.market,
       );
     } catch (err) {
-      const reason = borrowFailureMessage(err);
+      // W4: classified on what the provider actually SAID, not filed as a
+      // blanket `route_not_found`. `failureReason` carries the named scenario
+      // plus the provider's own (scrubbed, bounded) words, and the SAME
+      // string goes to the agent so the activity row and the tool output
+      // cannot disagree.
+      const { failureCode, failureReason } = classifyJupiterProviderFailure(err);
       const { executionId } = await createAgentActivityPreBroadcastFailure({
         toolId,
         namespace: NAMESPACE,
@@ -290,11 +319,11 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
           ...sharedEventFields,
           kind: "lend",
           eventIndex: 0,
-          failureCode: "route_not_found",
-          failureReason: reason,
+          failureCode,
+          failureReason,
         },
       });
-      return { success: false, output: `${toolId} failed: ${reason}`, data: { _executionId: executionId } };
+      return { success: false, output: `${toolId} failed: ${failureReason}`, data: { _executionId: executionId } };
     }
 
     // 2. Record the intent BEFORE signing.

@@ -16,12 +16,16 @@
  *     execute → SAME match-hash (allow); a different chain/token/amount/recipient/
  *     tradeType → different hash (block).
  *   - Money/fee binding (8c security fix): refundTo/referrer/referrerFeeBps/filler
- *     are bound into the identity. EXPLOIT GUARD — a quote without refundTo does
- *     NOT authorize an execute that changes refundTo (or referrer/feeBps/filler):
- *     hash misses → block(no_quote). Matching money/fee params (both omit →
- *     defaults, or both explicit, incl. numeric "0100"≡"100") collide → allow.
- *     Per-field canonicalization: refundTo source-family, referrer EVM-lowercase,
- *     filler case-PRESERVED (opaque provider name), referrerFeeBps numeric.
+ *     are bound into the identity. EXPLOIT GUARD — a quote does NOT authorize an
+ *     execute that changes referrer/feeBps/filler: hash misses → block(no_quote).
+ *     Matching money/fee params (both omit → defaults, or both explicit, incl.
+ *     numeric "0100"≡"100") collide → allow. Per-field canonicalization: referrer
+ *     EVM-lowercase, filler case-PRESERVED (opaque provider name), referrerFeeBps
+ *     numeric.
+ *   - `refundTo` is now DERIVED from the source wallet, never read from params
+ *     (refund-destination policy in `@tools/khalani/request.js`). Binding it
+ *     from params could not stop the vector it was meant to stop: an attacker
+ *     setting the SAME address on quote and execute collides the hashes.
  *   - Unbindable execute-only params: a non-empty routeId/depositMethod on the
  *     bridge EXECUTE → block(unbindable_param) BEFORE any prequote lookup
  *     (fail-closed; protects the direct execute_tool path too).
@@ -227,18 +231,31 @@ describe("buildBridgeIdentity — defaults", () => {
     expect(id.filler).toBe("");
   });
 
+  it("IGNORES a caller-supplied refundTo — it is always the source wallet", async () => {
+    // Binding `refundTo` from PARAMS was the hole this closes: an attacker who
+    // set the same address on the QUOTE and the EXECUTE produced two colliding
+    // hashes, so the gate passed a redirected refund. The tool/alias surfaces
+    // no longer accept the key and both handlers reject it by name; the
+    // identity binds the DERIVED value, so even a param that reached here
+    // cannot move the hash.
+    const id = await mod.buildBridgeIdentity(
+      SESSION_ID,
+      bridgeParams({ refundTo: "0xRefundElsewhere" }),
+      ctx(),
+    );
+    expect(id.refundTo).toBe("0xEVMWALLET");
+  });
+
   it("honors explicit money/fee params (and canonicalizes referrerFeeBps)", async () => {
     const id = await mod.buildBridgeIdentity(
       SESSION_ID,
       bridgeParams({
-        refundTo: "0xRefundElsewhere",
         referrer: "0xReferrer",
         referrerFeeBps: "0100", // leading zero → canonical "100"
         filler: "native-filler",
       }),
       ctx(),
     );
-    expect(id.refundTo).toBe("0xRefundElsewhere");
     expect(id.referrer).toBe("0xReferrer");
     expect(id.referrerFeeBps).toBe("100");
     expect(id.filler).toBe("native-filler");

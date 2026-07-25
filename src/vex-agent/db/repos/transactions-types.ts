@@ -26,7 +26,7 @@ export type TransactionSource = "agent_activity" | "success" | "failure";
  */
 export interface BridgeLegRow {
   eventIndex: number | null;
-  /** 'allowance_reset' | 'allowance' | 'bridge_deposit' | 'bridge_fill_expected' | 'bridge_fill_observed' | 'bridge_refund'. */
+  /** 'allowance_reset' | 'allowance' | 'bridge_deposit' | 'bridge_fee' (migration 050) | 'bridge_fill_expected' | 'bridge_fill_observed' | 'bridge_refund'. */
   role: string | null;
   /** The leg's OWN execution chain id (provider-native; pair with `chainFamily`). */
   chainId: number | null;
@@ -95,9 +95,11 @@ export interface TransactionRow {
   eventIndex?: number | null;
   /**
    * agent_activity only — 'allowance_reset' | 'allowance' | 'swap' |
-   * 'bridge_*' | 'lend_deposit' | 'lend_withdraw' | 'lend_borrow_operate'
-   * (migration 049) | 'predict_buy' | 'predict_sell' | 'predict_claim' |
-   * 'predict_close' (migration 049).
+   * 'bridge_deposit' | 'bridge_fee' (migration 050 — the Vex integrator-fee
+   * transfer, recorded as 'allowance' before that) | 'bridge_fill_expected' |
+   * 'bridge_fill_observed' | 'bridge_refund' | 'lend_deposit' |
+   * 'lend_withdraw' | 'lend_borrow_operate' (migration 049) | 'predict_buy' |
+   * 'predict_sell' | 'predict_claim' | 'predict_close' (migration 049).
    */
   eventRole?: string | null;
   /**
@@ -125,7 +127,52 @@ export interface TransactionRow {
   executedAmountOutRaw?: string | null;
   usdInEst?: string | null;
   usdOutEst?: string | null;
+  /**
+   * DEPRECATED (migration 050) — meant NETWORK GAS on a `kyberswap_quote` row
+   * and the PROVIDER's venue fee on a `jupiter_prediction_order_preview` row,
+   * with `usdSource` the only way to tell which. Never summable across sources.
+   * Still populated with its exact historical value; a later contract migration
+   * drops it. Read the four fields below instead.
+   */
   usdFeeEst?: string | null;
+  /** agent_activity only — estimated NETWORK GAS in USD (incl. the L1 data fee where the chain has one). Not part of `tx.value`; not a fee Vex or the venue charges. */
+  usdNetworkGasEst?: string | null;
+  /** agent_activity only — the VENUE's own protocol fee in USD (e.g. a Jupiter prediction order's total fee). Never gas, never Vex's cut. */
+  usdVenueFeeEst?: string | null;
+  /** agent_activity only — destination-chain execution prepay in USD. */
+  usdDestinationPrepayEst?: string | null;
+  /**
+   * agent_activity only — VEX's OWN integrator fee in USD (25 bps). Carried by
+   * the row whose on-chain outcome decides whether the fee was actually
+   * collected: the `swap` leg for an aggregator swap, the `bridge_fee` leg for
+   * a bridge. `null` when the fee is known in token units but no trustworthy
+   * USD price exists — an absent value means "not known", never "no fee".
+   */
+  usdVexFeeEst?: string | null;
+  /**
+   * agent_activity only — VEX's OWN integrator fee in TOKEN units (migration
+   * 050 Part 2). EXACT, not an estimate, and the field that disambiguates
+   * `usdVexFeeEst: null`:
+   *
+   *   amount set + USD null → fee charged, no trustworthy USD price existed
+   *   amount set + USD set  → fee charged, USD estimated
+   *   both null             → NO Vex fee on this row … unless `eventRole` is
+   *                           `bridge_fee`, where the fee IS the row and is
+   *                           reported in `amountInRaw`/`tokenInSymbol`, or the
+   *                           row predates migration 050 (never recorded).
+   *
+   * Not additive with `amountInRaw`: the in-transaction venues take the fee out
+   * of the input, so it is already inside that amount.
+   */
+  vexFeeTokenAddress?: string | null;
+  vexFeeTokenSymbol?: string | null;
+  /** Decimals of the fee token — `vexFeeAmountRaw` cannot be read without them. */
+  vexFeeTokenDecimals?: number | null;
+  /** Atomic units as digits (a u64 fee exceeds `MAX_SAFE_INTEGER`). */
+  vexFeeAmountRaw?: string | null;
+  /** Exact-decimal sibling of `vexFeeAmountRaw`. */
+  vexFeeAmountHuman?: string | null;
+  /** Provenance marker for every `usd*Est` figure on this row (e.g. `kyberswap_quote`, `khalani_token_price`). */
   usdSource?: string | null;
   /** agent_activity BRIDGE logical row only (migration 045) — route origin chain. */
   fromChainId?: number | null;

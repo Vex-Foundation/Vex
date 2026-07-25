@@ -22,6 +22,7 @@ import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveYtForPt } from "../../pendle/market-lookup.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { RedeemMatchInput } from "./hash.js";
 
@@ -29,20 +30,16 @@ import type { RedeemMatchInput } from "./hash.js";
  * Default slippage (bps) when the caller omits it — MUST match the handler's
  * default (`handlers/pt.ts` DEFAULT_SLIPPAGE_BPS) so a quote-without-slippage
  * authorizes an execute-without-slippage. Both sides go through THIS builder, so
- * the default is applied identically by construction.
+ * the default is applied identically by construction. A PRESENT but invalid
+ * value is refused by `canonSlippageBpsWithDefault` rather than replaced by
+ * this default — a silent fallback would fold the default into the digest and
+ * let an out-of-contract slippage hash like an omitted one.
  */
 const DEFAULT_SLIPPAGE_BPS = 50;
 
 function pStr(params: Record<string, unknown>, key: string): string {
   const v = params[key];
   return typeof v === "string" ? v.trim() : "";
-}
-
-/** Normalize `slippageBps` to the bound integer-string (default 50). */
-function normalizeSlippageBps(params: Record<string, unknown>): string {
-  const v = params.slippageBps;
-  const bps = typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : DEFAULT_SLIPPAGE_BPS;
-  return String(bps);
 }
 
 /**
@@ -95,6 +92,6 @@ export async function buildPendleRedeemIdentity(
     ytAddress: yt,
     amount,
     receiver: wallet,
-    slippageBps: normalizeSlippageBps(params),
+    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
   };
 }

@@ -21,6 +21,7 @@ import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveMarketByPt } from "../../pendle/market-lookup.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { MintMatchInput, RedeemPyMatchInput } from "./hash.js";
 
@@ -35,13 +36,6 @@ const DEFAULT_SLIPPAGE_BPS = 50;
 function pStr(params: Record<string, unknown>, key: string): string {
   const v = params[key];
   return typeof v === "string" ? v.trim() : "";
-}
-
-/** Normalize `slippageBps` to the bound integer-string (default 50). */
-function normalizeSlippageBps(params: Record<string, unknown>): string {
-  const v = params.slippageBps;
-  const bps = typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : DEFAULT_SLIPPAGE_BPS;
-  return String(bps);
 }
 
 /** Resolve + checksum an address param, or throw a bounded token error. */
@@ -109,7 +103,7 @@ export async function buildPendleMintIdentity(
     ptAddress: leg.ptAddress,
     ytAddress: leg.ytAddress,
     market: leg.marketAddress,
-    slippageBps: normalizeSlippageBps(params),
+    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
   };
 }
 
@@ -146,6 +140,6 @@ export async function buildPendleRedeemPyIdentity(
     ytAddress: leg.ytAddress,
     amount: leg.amount,
     outputToken,
-    slippageBps: normalizeSlippageBps(params),
+    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
   };
 }

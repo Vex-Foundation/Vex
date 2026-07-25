@@ -253,7 +253,11 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
 
     expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
     const failArg = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0][0];
-    expect(failArg.event).toMatchObject({ failureCode: "route_not_found", kind: "lend", chainFamily: "solana" });
+    // W4: classified on what the provider actually said. A balance shortfall
+    // is `allowance_or_balance` (the repo's own mapping table), not the
+    // blanket `route_not_found` every Jupiter rejection used to be filed as.
+    expect(failArg.event).toMatchObject({ failureCode: "allowance_or_balance", kind: "lend", chainFamily: "solana" });
+    expect(failArg.event.failureReason).toMatch(/^insufficient_balance: /);
     expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
     expect(mockPrepareVersionedTx).not.toHaveBeenCalled();
     expect(result.success).toBe(false);

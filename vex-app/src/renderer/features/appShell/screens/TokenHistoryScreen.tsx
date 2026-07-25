@@ -434,6 +434,8 @@ function legRoleLabel(role: BridgeLegRole): string {
       return "APPROVE";
     case "bridge_deposit":
       return "DEPOSIT";
+    case "bridge_fee":
+      return "VEX FEE";
     case "bridge_fill_expected":
     case "bridge_fill_observed":
       return "FILL";

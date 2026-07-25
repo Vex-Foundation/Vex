@@ -257,7 +257,10 @@ export function isToolResult(value: unknown): value is ToolResult {
 }
 
 type EventPatch = Partial<
-  Pick<CreatePendingActivityEventInput, "tokenIn" | "tokenOut" | "usdInEst" | "usdOutEst" | "usdFeeEst" | "usdSource">
+  Pick<
+    CreatePendingActivityEventInput,
+    "tokenIn" | "tokenOut" | "usdInEst" | "usdOutEst" | "usdFeeEst" | "usdVenueFeeEst" | "usdSource"
+  >
 >;
 
 /** Phase-A result for a single-row mutation — the unsigned tx + the agent_activity/output fields it feeds. */
@@ -360,7 +363,13 @@ export const executePredictBuy: ProtocolHandler = async (p, ctx) => {
           amountHuman: amount.toFixed(depositDecimals), amountRaw: String(depositAmount),
         },
         usdInEst: usdEst(order.orderCostUsd),
+        // `usd_fee_est` is FROZEN for the migration-050 dual-write window (old
+        // readers unaffected); `usd_venue_fee_est` is where this figure
+        // belongs — it is the PROVIDER's protocol+venue fee, not network gas
+        // and not a Vex fee, and the single old column could not say which.
+        // Vex charges no fee on predictions, so `usd_vex_fee_est` stays NULL.
         usdFeeEst: usdEst(order.estimatedTotalFeeUsd),
+        usdVenueFeeEst: usdEst(order.estimatedTotalFeeUsd),
         usdSource: "jupiter_prediction_order_preview",
       },
       successNote: `Buy order for market ${marketId} (${normalizedSide.toUpperCase()})`,
@@ -402,7 +411,10 @@ export const executePredictSell: ProtocolHandler = async (p, ctx) => {
           amountHuman: usdEst(order.newPayoutUsd), amountRaw: order.newPayoutUsd,
         },
         usdOutEst: usdEst(order.newPayoutUsd),
+        // See the buy path: provider venue fee, dual-written during the
+        // migration-050 window.
         usdFeeEst: usdEst(order.estimatedTotalFeeUsd),
+        usdVenueFeeEst: usdEst(order.estimatedTotalFeeUsd),
         usdSource: "jupiter_prediction_order_preview",
       },
       successNote: `Close of position ${pk}`,

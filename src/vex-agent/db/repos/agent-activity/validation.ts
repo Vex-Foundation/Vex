@@ -59,6 +59,23 @@ export const CLOSED_FAILURE_CODES: ReadonlySet<string> = new Set<AgentActivityFa
  * | Domain (prediction: market closed)        | Jupiter Prediction rejects because the market already resolved     | `unknown` + reason "market_closed: …"      | reason, not a code (R1) |
  * | Domain (prediction: position not found)   | claim/close references a position that no longer exists            | `unknown` + reason "position_not_found: …" | reason, not a code (R1) |
  * | Domain (lend: insufficient collateral)    | Jupiter Lend/Borrow rejects a withdraw/operate for collateral       | `allowance_or_balance` + reason "insufficient_collateral: …" | closest existing semantic match (R1); K6 confirms against the live API shape when it lands |
+ * | Domain (lend/prediction: size limit)      | provider refuses the amount itself ("Minimum order is $5")          | `unknown` + reason "order_size_rejected: …" | reason, not a code (R1) — a size limit is NOT a routing failure |
+ * | Pre-broadcast (Jupiter, unrecognized)     | provider refused but the prose matches no known scenario            | `unknown` + reason "provider_rejected: …"   | see the W4 note below |
+ *
+ * W4 CLARIFICATION (2026-07-25, from a live production row). The
+ * pre-broadcast row above resolves to `route_not_found` because that matches
+ * "044's existing swap-quote-rejected semantics" — true for a SWAP, where a
+ * rejected quote does mean no route. It does NOT generalize: Jupiter Lend,
+ * Borrow and Prediction have no quote and no route, and filing every one of
+ * their rejections as `route_not_found` told the agent a routing failure when
+ * the provider had said "Minimum order is $5". `failure_code` is agent-visible
+ * (`tools/internal/inspect-views/transactions.ts` renders it back into the
+ * activity feed), so a specific WRONG code is worse than the honest catch-all.
+ * Those three venues now classify on the provider's actual response via
+ * `vex-agent/tools/protocols/solana-jupiter/provider-failure-mapping.ts`,
+ * which reserves `route_not_found` for a refusal that names routing or fill
+ * and defaults to `unknown` — the same posture as
+ * `protocols/kyberswap/failure-mapping.ts`. No code was added to the enum.
  */
 
 /** Fail-closed runtime guard for the closed `failure_code` enum (never reaches SQL on a miss). */

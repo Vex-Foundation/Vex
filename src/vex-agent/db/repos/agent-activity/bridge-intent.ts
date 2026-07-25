@@ -84,16 +84,29 @@ export function buildNormalizedBridgeRoute(route: BridgeRouteEndpoints): string 
   );
 }
 
-/** A Vex-signed bridge leg (approvals + the origin deposit). Staged/broadcast via the swap CAS primitives (R4). */
+/** A Vex-signed bridge leg (approvals, the origin deposit, the Vex fee transfer). Staged/broadcast via the swap CAS primitives (R4). */
 export interface BridgeActivityLeg {
   readonly eventIndex: number;
-  readonly eventRole: "allowance_reset" | "allowance" | "bridge_deposit";
+  readonly eventRole: "allowance_reset" | "allowance" | "bridge_deposit" | "bridge_fee";
   /** The leg's OWN execution chain (origin for these Vex-signed legs). */
   readonly chainId: number;
   readonly chainSlug?: string;
   readonly chainFamily: BridgeChainFamily;
   readonly tokenIn?: AgentActivityLegInput;
   readonly tokenOut?: AgentActivityLegInput;
+  /**
+   * Vex's own integrator fee in USD — set ONLY on the `bridge_fee` leg
+   * (migration 050), never on the logical row. THIS row's status is what
+   * decides whether the fee was actually collected (the fee transfer is the
+   * final leg, after the deposit), so keeping the figure here makes
+   * `SUM(usd_vex_fee_est) WHERE status='confirmed'` honest revenue instead of a
+   * count of fees Vex merely planned to take. Omitted when the token has no
+   * trustworthy USD price — the leg's real token and raw amount are recorded
+   * regardless.
+   */
+  readonly usdVexFeeEst?: string;
+  /** Provenance for `usdVexFeeEst` (the venue's own price marker, e.g. `khalani_token_price`). */
+  readonly usdSource?: string;
 }
 
 /** The single planned logical row (R2). Carries the route amounts + USD estimates. */
@@ -170,7 +183,12 @@ export interface BridgeRowInsert {
   tokenOut?: AgentActivityLegInput;
   usdInEst?: string;
   usdOutEst?: string;
+  /** DEPRECATED (migration 050) — the mixed-meaning column, dual-written verbatim. Use the four below. */
   usdFeeEst?: string;
+  usdNetworkGasEst?: string;
+  usdVenueFeeEst?: string;
+  usdDestinationPrepayEst?: string;
+  usdVexFeeEst?: string;
   usdSource?: string;
   providerOrderId?: string;
   /** Set ONLY on the logical row — the biconditional CHECK enforces this. */
@@ -212,7 +230,9 @@ export async function insertBridgeRow(input: BridgeRowInsert): Promise<AgentActi
        wallet_address, session_id,
        token_in_address, token_in_symbol, token_in_decimals, amount_in_human, amount_in_raw,
        token_out_address, token_out_symbol, token_out_decimals, amount_out_human, amount_out_raw,
-       usd_in_est, usd_out_est, usd_fee_est, usd_source,
+       usd_in_est, usd_out_est, usd_fee_est,
+       usd_network_gas_est, usd_venue_fee_est, usd_destination_prepay_est, usd_vex_fee_est,
+       usd_source,
        provider_order_id, normalized_route, provider_status, evidence_source, observed_at,
        status, failure_code, failure_reason,
        tx_hash,
@@ -226,13 +246,15 @@ export async function insertBridgeRow(input: BridgeRowInsert): Promise<AgentActi
        $12, $13,
        $14, $15, $16, $17, $18,
        $19, $20, $21, $22, $23,
-       $24::numeric, $25::numeric, $26::numeric, $27,
-       $28, $29, $30, $31, $32::timestamptz,
-       $33, $34, $35,
-       $36,
-       $37, $38,
-       $39, $40,
-       ${confirmedAtExpr}, $41::jsonb
+       $24::numeric, $25::numeric, $26::numeric,
+       $27::numeric, $28::numeric, $29::numeric, $30::numeric,
+       $31,
+       $32, $33, $34, $35, $36::timestamptz,
+       $37, $38, $39,
+       $40,
+       $41, $42,
+       $43, $44,
+       ${confirmedAtExpr}, $45::jsonb
      ) RETURNING *`;
   const bindParams = [
     input.protocolExecutionId,
@@ -261,6 +283,10 @@ export async function insertBridgeRow(input: BridgeRowInsert): Promise<AgentActi
     input.usdInEst ?? null,
     input.usdOutEst ?? null,
     input.usdFeeEst ?? null,
+    input.usdNetworkGasEst ?? null,
+    input.usdVenueFeeEst ?? null,
+    input.usdDestinationPrepayEst ?? null,
+    input.usdVexFeeEst ?? null,
     input.usdSource ?? null,
     input.providerOrderId ?? null,
     input.normalizedRoute ?? null,
@@ -324,6 +350,11 @@ export async function createBridgeActivityIntent(
           sessionId: input.sessionId,
           tokenIn: leg.tokenIn,
           tokenOut: leg.tokenOut,
+          // Set only on the `bridge_fee` leg (migration 050) — see
+          // `BridgeActivityLeg.usdVexFeeEst` for why the figure lives on the
+          // leg whose own status proves collection, not on the logical row.
+          usdVexFeeEst: leg.usdVexFeeEst,
+          usdSource: leg.usdSource,
           status: "pending",
         }));
       }

@@ -149,6 +149,30 @@ describe("jupiterLendBorrowPositionsResponseSchema (financial: ownerAddress feed
     const r = jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition({ supply: "1.5" })]);
     expect(r.success).toBe(false);
   });
+
+  // W4: `isLiquidated` is a SAFETY signal, but the only live recording of
+  // this endpoint is `[]`, so its presence on a real row is documented and
+  // not proven. Tolerant-reader doctrine (`rules/90-vex-project.md`): a
+  // display/signal field the provider may legitimately omit or null must not
+  // be strict, or one absent flag fails the whole positions read. Absence is
+  // carried downstream as the NAMED `"unknown"` liquidation status, never as
+  // `false`.
+  it("accepts isLiquidated as a boolean, and tolerates it missing or null", () => {
+    expect(jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition({ isLiquidated: true })]).success).toBe(true);
+    expect(jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition({ isLiquidated: false })]).success).toBe(true);
+    expect(jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition({ isLiquidated: null })]).success).toBe(true);
+    expect(jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition()]).success).toBe(true);
+  });
+
+  it("preserves a parsed isLiquidated instead of stripping it (the projector reads it)", () => {
+    const r = jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition({ isLiquidated: true })]);
+    expect(r.success).toBe(true);
+    expect(r.data?.[0]?.isLiquidated).toBe(true);
+  });
+
+  it("rejects a non-boolean isLiquidated rather than coercing it", () => {
+    expect(jupiterLendBorrowPositionsResponseSchema.safeParse([validPosition({ isLiquidated: "yes" })]).success).toBe(false);
+  });
 });
 
 describe("jupiterLendBorrowOperateResponseSchema (financial: transaction is signed; nftId becomes a positionId)", () => {

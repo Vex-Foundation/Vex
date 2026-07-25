@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { encodeFunctionData, keccak256, type Hex } from "viem";
+import { encodeFunctionData, keccak256, type Address, type Hex } from "viem";
 import { Keypair } from "@solana/web3.js";
 
 const EVM = { family: "eip155" as const, address: "0x1234567890AbcdEF1234567890aBcdef12345678", privateKey: ("0x" + "ab".repeat(32)) as `0x${string}` };
@@ -66,6 +66,7 @@ vi.mock("@tools/khalani/chains.js", () => ({
 
 import { planKhalaniDepositLegs, signStageKhalaniLeg } from "@tools/khalani/bridge-executor.js";
 import type { KhalaniStagedLeg } from "@tools/khalani/bridge-executor.js";
+import { classifyNativeValue } from "@tools/evm-chains/native-value-authorization/index.js";
 import {
   DependentLegGasEstimateError,
   DEPENDENT_LEG_ESTIMATE_ATTEMPTS,
@@ -77,20 +78,48 @@ const BASE_CHAIN = { id: 8453, name: "Base", type: "eip155" as const, nativeCurr
 const SOL_CHAIN = { id: 20011000000, name: "Solana", type: "solana" as const, nativeCurrency: { name: "SOL", symbol: "SOL", decimals: 9 } };
 const SERIALIZED = "0xabcdef";
 
+/**
+ * Every EVM leg now carries a native-value authorization, re-validated inside
+ * `signStageEvmLeg` before anything is signed. These helpers authorize whatever
+ * value they are handed so the suites below keep testing what they are about —
+ * gas discipline and staging order — instead of tripping the value gate. The
+ * gate itself is pinned separately in `khalani/khalani-native-value-gate.test.ts`.
+ */
+function authorizedNativeValue(tx: { to: string; data?: Hex; value?: bigint }) {
+  const valueWei = tx.value ?? 0n;
+  return classifyNativeValue({
+    call: { chainId: BASE_CHAIN.id, to: tx.to as Address, data: tx.data, valueWei },
+    nativePrincipal: valueWei > 0n
+      ? {
+          amountWei: valueWei,
+          recipient: null,
+          refund: "spent_not_recoverable" as const,
+          evidence: { source: "vex_constructed" as const, detail: "test fixture" },
+        }
+      : undefined,
+  });
+}
+
 function evmLeg(): KhalaniStagedLeg {
-  return { role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm", tx: { to: EVM.address } };
+  const tx = { to: EVM.address };
+  return {
+    role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm", tx,
+    nativeValue: authorizedNativeValue(tx),
+  };
 }
 /** An EVM leg in either role — the gas discipline must cover approvals AND the deposit. */
 function evmLegOf(
   role: "allowance" | "bridge_deposit",
-  tx: { data?: Hex; value?: bigint; gas?: bigint } = {},
+  txOverrides: { data?: Hex; value?: bigint; gas?: bigint } = {},
 ): KhalaniStagedLeg {
+  const tx = { to: EVM.address, ...txOverrides };
   return {
     role,
     family: "eip155",
     isDeposit: role === "bridge_deposit",
     kind: "evm",
-    tx: { to: EVM.address, ...tx },
+    tx,
+    nativeValue: authorizedNativeValue(tx),
   };
 }
 function solLeg(): KhalaniStagedLeg {

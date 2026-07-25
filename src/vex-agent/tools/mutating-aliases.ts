@@ -35,7 +35,7 @@ import { z } from "zod";
 
 import { classifySwapFamily, isEvmSwapTokenInput } from "./internal/swap-family.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
-import { findCallerSuppliedFeeParam } from "@tools/khalani/request.js";
+import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "./registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -286,7 +286,6 @@ const BridgeArgs = z
     tradeType: z.string().min(1).optional(),
     fromAddress: z.string().min(1).optional(),
     recipient: z.string().min(1).optional(),
-    refundTo: z.string().min(1).optional(),
     filler: z.string().min(1).optional(),
     // Relay-only slippage (bps string). Ignored on the Khalani path.
     slippageBps: z.string().min(1).optional(),
@@ -304,13 +303,15 @@ type BridgeArgs = z.infer<typeof BridgeArgs>;
  * gate (kind 'bridge', venue-bound) → approval gate → capture.
  */
 function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
-  // Fee params are rejected BY NAME before anything else, so an attempted
-  // overcharge reads as an explicit refusal rather than a generic unknown-key
-  // error. `.strict()` below would also reject them, but not legibly.
-  const suppliedFeeParam = findCallerSuppliedFeeParam(args);
-  if (suppliedFeeParam !== null) {
+  // Fee params and the refund destination are rejected BY NAME before anything
+  // else, so an attempted overcharge or refund redirection reads as an explicit
+  // refusal rather than a generic unknown-key error. `.strict()` below would
+  // also reject them, but not legibly — and a silent drop would hide the
+  // attempt entirely.
+  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  if (forbiddenParam !== null) {
     throw new MutatingAliasRouteError(
-      `bridge: ${suppliedFeeParam} is not an accepted parameter — Vex never charges a bridge referral fee and never takes fee parameters from tool input. Remove it and retry.`,
+      `bridge: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
@@ -335,7 +336,6 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
     if (a.recipient !== undefined) params.recipient = a.recipient;
-    if (a.refundTo !== undefined) params.refundTo = a.refundTo;
     if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
     return { toolId: "relay.bridge", params };
   }
@@ -350,7 +350,6 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
   if (a.recipient !== undefined) params.recipient = a.recipient;
-  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
   if (a.filler !== undefined) params.filler = a.filler;
   // routeId / depositMethod are NOT forwarded — they are absent from BridgeArgs
   // (.strict() rejects them). See the BridgeArgs schema note (8c security fix).
@@ -374,7 +373,9 @@ const BridgeExecuteRelayArgs = z
     amount: z.string().min(1, { message: "amount is required (smallest units)" }),
     tradeType: z.string().min(1).optional(),
     recipient: z.string().min(1).optional(),
-    refundTo: z.string().min(1).optional(),
+    // No `refundTo` — the refund destination is derived from the selected
+    // source wallet on both venues (refund-destination policy in
+    // `@tools/khalani/request.js`).
     slippageBps: z.string().min(1).optional(),
   })
   .strict();
@@ -405,6 +406,16 @@ function routeBridgeExecuteRelay(
     );
   }
 
+  // Same by-name refusal as the generic `bridge` router: `.strict()` below
+  // would reject these too, but as an opaque unknown-key error that reads like
+  // a typo rather than like a blocked redirection attempt.
+  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  if (forbiddenParam !== null) {
+    throw new MutatingAliasRouteError(
+      `bridge_execute_relay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+    );
+  }
+
   const parsed = BridgeExecuteRelayArgs.safeParse(args);
   if (!parsed.success) {
     throw new MutatingAliasRouteError(
@@ -424,7 +435,6 @@ function routeBridgeExecuteRelay(
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.recipient !== undefined) params.recipient = a.recipient;
-  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
   if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
   return { toolId: "relay.bridge", params };
 }

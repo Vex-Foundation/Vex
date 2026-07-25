@@ -59,19 +59,11 @@ import type { ProtocolExecutionContext } from "../types.js";
 import { summarizeProtocolError } from "../runtime/errors.js";
 import { walletAddress } from "./handlers/core.js";
 import { resolveBorrowOperateRequest, type BorrowOperateResolvedRequest } from "./borrow-operate-params.js";
-
-/** raw/10 = percent (see borrow-projector.ts's `formatTenthsAsPercent` — duplicated locally at this small size rather than exported/shared across two independent evaluators; see that file's own doc for the confirmed-vs-assumed scale note). */
-function formatTenthsAsPercent(raw: string): string | null {
-  const match = /^(-?)(\d+)$/.exec(raw);
-  if (!match) return null;
-  const sign = match[1] ?? "";
-  const digits = match[2];
-  if (digits === undefined) return null;
-  const padded = digits.padStart(2, "0");
-  const whole = padded.slice(0, -1).replace(/^0+(?=\d)/, "");
-  const frac = padded.slice(-1);
-  return `${sign}${whole}.${frac}%`;
-}
+// The provider's raw/10 percent scale. Was hand-copied here AND into
+// `./borrow-projector.ts`; W4 gave it one owner in `./borrow-health.ts`,
+// which the autonomous-mode read path also uses. Same function, same
+// confirmed-vs-assumed scale caveat — see that module's doc.
+import { formatTenthsAsPercent } from "./borrow-health.js";
 
 /** Amounts with more digits than this are not converted to `Number` for the USD estimate — the estimate degrades to unavailable rather than risk float-precision drift on an enormous position. Exact raw strings are never affected by this guard. */
 const MAX_SAFE_ESTIMATE_DIGITS = 15;

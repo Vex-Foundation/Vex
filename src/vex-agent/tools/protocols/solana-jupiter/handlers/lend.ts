@@ -66,6 +66,7 @@ import { str, strArray, num, ok, fail } from "../../handler-helpers.js";
 import { walletAddress, walletSecret } from "./core.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { resolveActivityTokenLeg } from "../activity-token-leg.js";
+import { classifyJupiterProviderFailure } from "../provider-failure-mapping.js";
 import { broadcastStagedSolanaTx } from "../staged-broadcast.js";
 import { projectJupiterLendRates } from "../lend-projector.js";
 import logger from "@utils/logger.js";
@@ -129,7 +130,11 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
   // 1. The unsigned provider tx was requested BEFORE anything was recorded —
   // a rejection is pre-broadcast (nothing to record was ever signed).
   if (!requested.ok) {
-    const reason = lendFailureMessage(requested.error);
+    // W4: classified on what the provider actually SAID. Filing every
+    // rejection as `route_not_found` told an autonomous agent to hunt for a
+    // route when the real answer was a balance, a size limit, or a closed
+    // market. The same named reason goes to the row and to the agent.
+    const { failureCode, failureReason } = classifyJupiterProviderFailure(requested.error);
     const { executionId } = await createAgentActivityPreBroadcastFailure({
       toolId: input.toolId,
       namespace: NAMESPACE,
@@ -138,11 +143,11 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
         ...sharedEventFields,
         kind: "lend",
         eventIndex: 0,
-        failureCode: "route_not_found",
-        failureReason: reason,
+        failureCode,
+        failureReason,
       },
     });
-    return { success: false, output: `${input.toolId} failed: ${reason}`, data: { _executionId: executionId } };
+    return { success: false, output: `${input.toolId} failed: ${failureReason}`, data: { _executionId: executionId } };
   }
   const raw = requested.raw;
 

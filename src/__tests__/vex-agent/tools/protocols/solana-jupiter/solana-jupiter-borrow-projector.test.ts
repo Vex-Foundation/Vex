@@ -70,6 +70,32 @@ const POSITION: JupiterLendBorrowPosition = {
   dustBorrow: "5001",
 };
 
+/** Exact-arithmetic health fixture: 1 WSOL @ $100 collateral, 50 USDC @ $1 debt → 50.00% LTV. */
+const HEALTH_VAULT: JupiterLendBorrowVault = {
+  ...VAULT,
+  supplyToken: { ...SOL_TOKEN, price: "100" },
+  borrowToken: { ...USDC_TOKEN, price: "1" },
+};
+const HEALTH_POSITION: JupiterLendBorrowPosition = {
+  ...POSITION,
+  supply: "1000000000",
+  borrow: "50000000",
+  dustBorrow: "0",
+};
+
+function readPositions(
+  positions: readonly JupiterLendBorrowPosition[] | null | undefined,
+  vaults: readonly JupiterLendBorrowVault[] = [VAULT],
+  filters?: { vaultIds?: readonly string[] },
+) {
+  return projectJupiterLendBorrowPositions({
+    positions,
+    market: "main",
+    vaults: { status: "read", vaults },
+    ...(filters ? { filters } : {}),
+  });
+}
+
 describe("projectJupiterLendBorrowVaults", () => {
   it("formats collateralFactor/liquidationThreshold as exact percent strings (verified raw/10 scale)", () => {
     const [projected] = projectJupiterLendBorrowVaults([VAULT]);
@@ -144,26 +170,110 @@ describe("projectJupiterLendBorrowVaults", () => {
 });
 
 describe("projectJupiterLendBorrowPositions", () => {
-  // Deliberately still identity + raw amounts only: a `/borrow/positions` row
-  // carries NO token descriptor on the wire (only `vaultId`), so symbol/
-  // decimals here would require a second `/borrow/vaults` fetch. The vault
-  // read is where that identity lives, and it now carries decimals — the
-  // manifest points the agent at that cross-reference.
-  it("carries position id, vaultId, and raw amounts through unchanged", () => {
-    const [projected] = projectJupiterLendBorrowPositions([POSITION]);
-    expect(projected).toEqual({
-      positionId: "42", vaultId: "1", supplyRaw: "30000000", borrowRaw: "5000000", dustBorrowRaw: "5001",
+  // W4 (owner ruling 2026-07-25 — DISCLOSE, DO NOT BLOCK): in a `full`
+  // autonomous session there is no approval preview, so THIS read is the only
+  // place an agent can learn a leveraged position's health. The identity the
+  // row previously told the agent to fetch separately is now carried inline —
+  // a raw amount must never travel without the decimals needed to read it.
+  it("carries position id, vaultId, raw amounts AND both legs' identity from the vault", () => {
+    const [projected] = readPositions([POSITION]).positions;
+    expect(projected).toMatchObject({
+      positionId: "42",
+      vaultId: "1",
+      supplyRaw: "30000000",
+      borrowRaw: "5000000",
+      dustBorrowRaw: "5001",
+      supplyTokenSymbol: "WSOL",
+      supplyTokenDecimals: 9,
+      borrowTokenSymbol: "USDC",
+      borrowTokenDecimals: 6,
+      maxLtvPercent: "80.0%",
+      liquidationThresholdPercent: "85.0%",
     });
+  });
+
+  it("sums accrued dust into totalDebtRaw — the figure LTV is computed from", () => {
+    const [projected] = readPositions([POSITION]).positions;
+    expect(projected!.totalDebtRaw).toBe("5005001");
+  });
+
+  it("computes a current LTV and a distance to liquidation on the READ", () => {
+    const [projected] = readPositions([HEALTH_POSITION], [HEALTH_VAULT]).positions;
+    expect(projected!.risk).toEqual({
+      status: "computed",
+      collateralUsd: "100.00",
+      debtUsd: "50.00",
+      currentLtvPercent: "50.00%",
+      ltvPercentagePointsToLiquidation: "35.00",
+    });
+  });
+
+  it("surfaces the provider's isLiquidated flag, and 'unknown' when it is absent", () => {
+    const rows = readPositions([
+      { ...POSITION, id: 1, isLiquidated: true },
+      { ...POSITION, id: 2, isLiquidated: false },
+      { ...POSITION, id: 3 },
+    ]).positions;
+    expect(rows.map((r) => r.liquidationStatus)).toEqual(["liquidated", "not_liquidated", "unknown"]);
+  });
+
+  it("names the state when the vault list could not be read — never a silent absence", () => {
+    const readout = projectJupiterLendBorrowPositions({
+      positions: [POSITION],
+      market: "main",
+      vaults: { status: "unavailable", reason: "provider timed out" },
+    });
+    expect(readout.vaultDataStatus).toBe("unavailable");
+    expect(readout.vaultDataReason).toContain("provider timed out");
+    const [projected] = readout.positions;
+    // Identity is explicitly null, not omitted, and the raw amounts survive.
+    expect(projected).toMatchObject({
+      supplyTokenDecimals: null,
+      borrowTokenDecimals: null,
+      maxLtvPercent: null,
+      liquidationThresholdPercent: null,
+      supplyRaw: "30000000",
+    });
+    expect(projected!.risk.status).toBe("unknown");
+    if (projected!.risk.status !== "unknown") throw new Error("unreachable");
+    expect(projected!.risk.reason).toMatch(/not a statement that this position is safe/i);
+  });
+
+  it("names the state when this position's vault is missing from the list", () => {
+    const [projected] = readPositions([{ ...POSITION, vaultId: 999 }], [VAULT]).positions;
+    expect(projected!.risk.status).toBe("unknown");
+    if (projected!.risk.status !== "unknown") throw new Error("unreachable");
+    expect(projected!.risk.reason).toMatch(/vault 999/i);
+    expect(projected!.supplyTokenDecimals).toBeNull();
+  });
+
+  it("keeps each leg bound to ITS OWN token on a swapped-leg vault", () => {
+    const swapped: JupiterLendBorrowPosition = { ...POSITION, vaultId: 77 };
+    const [projected] = readPositions([swapped], [WSOL_DEBT_VAULT]).positions;
+    expect(projected!.supplyTokenSymbol).toBe("USDC");
+    expect(projected!.supplyTokenDecimals).toBe(6);
+    expect(projected!.borrowTokenSymbol).toBe("WSOL");
+    expect(projected!.borrowTokenDecimals).toBe(9);
+  });
+
+  it("states once, in the readout, how to read the risk fields", () => {
+    const readout = readPositions([POSITION]);
+    expect(readout.market).toBe("main");
+    // The guidance is the safety control in autonomous mode — it must tell the
+    // agent that 'unknown' is not 'safe' and what raises/lowers LTV.
+    expect(readout.howToReadRisk).toMatch(/NOT a statement that the position is safe/i);
+    expect(readout.howToReadRisk).toMatch(/liquidat/i);
+    expect(readout.howToReadRisk).toMatch(/raw atomic units/i);
   });
 
   it("vaultIds filter narrows positions by their vaultId", () => {
     const other: JupiterLendBorrowPosition = { ...POSITION, id: 43, vaultId: 2 };
-    const filtered = projectJupiterLendBorrowPositions([POSITION, other], { vaultIds: ["1"] });
+    const filtered = readPositions([POSITION, other], [VAULT], { vaultIds: ["1"] }).positions;
     expect(filtered).toHaveLength(1);
     expect(filtered[0]!.positionId).toBe("42");
   });
 
   it("tolerates a non-array input defensively", () => {
-    expect(projectJupiterLendBorrowPositions(null)).toEqual([]);
+    expect(readPositions(null).positions).toEqual([]);
   });
 });

@@ -178,6 +178,12 @@ function preparedFeeBearingSwap(overrides: Record<string, unknown> = {}) {
     knobs: {},
     recentBlockhash: "freshBlockhash",
     lastValidBlockHeight: 555,
+    // 25 bps of `raw.inAmount`, exactly as the real `prepareFeeBearingJupiterSwap`
+    // returns it (and matching VALID_FEE_PREVIEW above). Present because the row
+    // records the fee in TOKEN units (migration 050 Part 2) — a mock missing
+    // these would let a writer regression pass unnoticed.
+    feeAmountRaw: "2500000",
+    feeAmountDecimal: "2.5",
     // Honestly minted: only a tip on Jupiter's published receiver allowlist,
     // at/above the documented minimum, can certify — this is what unlocks the
     // `/tx/v1/submit` lane for the fee-bearing `/build` swap.
@@ -430,6 +436,61 @@ describe("solana.swap.execute capture", () => {
     expect(result.success).toBe(false);
     expect(result.data?.status).toBe("pending");
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
+  });
+
+  // ── Vex's own 25 bps, recorded as a token amount (migration 050 Part 2) ──
+  //
+  // This path fetches NO USD price, so `usdVexFeeEst` is NULL on every Jupiter
+  // swap row. Before these columns the row was therefore indistinguishable
+  // from one where Vex charged nothing.
+
+  it("records the Vex fee in TOKEN units even though no USD value exists for it", async () => {
+    await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+      SWAP_SESSION_CTX,
+    );
+
+    const intent = mockCreateAgentActivityIntent.mock.calls[0]![0] as {
+      events: Array<{
+        usdVexFeeEst?: string;
+        vexFee?: { tokenAddress: string; tokenSymbol?: string; tokenDecimals: number; amountRaw: string; amountHuman: string };
+      }>;
+    };
+    const event = intent.events[0]!;
+
+    // The USD column stays empty — deliberately, and that is a finished answer.
+    expect(event.usdVexFeeEst).toBeUndefined();
+    // The fee itself is a recorded fact: the input mint, its decimals, and the
+    // exact atomic amount `fee-swap.ts` derived and the approval disclosed.
+    expect(event.vexFee).toEqual({
+      tokenAddress: "BonkMint",
+      tokenSymbol: "BonkMint",
+      tokenDecimals: 6,
+      amountRaw: "2500000",
+      amountHuman: "2.5",
+    });
+  });
+
+  it("keeps a u64-scale fee digit-exact — never routed through a float", async () => {
+    // Beyond Number.MAX_SAFE_INTEGER: a fee that survived a `number` hop would
+    // come back with a corrupted tail.
+    const hugeFeeRaw = "18446744073709551615";
+    mockPrepareFeeBearingJupiterSwap.mockResolvedValue(
+      preparedFeeBearingSwap({ feeAmountRaw: hugeFeeRaw, feeAmountDecimal: "18446744073709.551615" }),
+    );
+
+    await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+      SWAP_SESSION_CTX,
+    );
+
+    const intent = mockCreateAgentActivityIntent.mock.calls[0]![0] as {
+      events: Array<{ vexFee?: { amountRaw: string; amountHuman: string } }>;
+    };
+    expect(intent.events[0]!.vexFee?.amountRaw).toBe(hugeFeeRaw);
+    expect(intent.events[0]!.vexFee?.amountHuman).toBe("18446744073709.551615");
+    // Digits preserved, not merely "close enough".
+    expect(String(Number(hugeFeeRaw))).not.toBe(hugeFeeRaw);
   });
 });
 

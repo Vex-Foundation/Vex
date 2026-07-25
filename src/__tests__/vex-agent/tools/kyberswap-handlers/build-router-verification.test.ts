@@ -39,6 +39,7 @@ const h = vi.hoisted(() => ({
   getHoneypotFotInfo: vi.fn().mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 }),
   createAgentActivityPreBroadcastFailure: vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } }),
   createAgentActivityIntent: vi.fn().mockResolvedValue({ executionId: 1, events: [{ id: 1 }] }),
+  findFreshMatchedSwapPrequote: vi.fn(),
 }));
 
 const SESSION_EVM = {
@@ -99,11 +100,21 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// `kyberswap.swap.execute` re-reads its persisted quote-time price floor
+// (`swap-price-floor.ts`) BEFORE the route call. This file is about the BUILD
+// response's router address, not about the floor, so the floor is supplied as
+// satisfied — without it both cases refuse with "no approved price floor is on
+// record" and never reach `buildRoute` at all.
+vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
+  findFreshMatchedSwapPrequote: (...a: unknown[]) => h.findFreshMatchedSwapPrequote(...a),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { compliantSwapCalldata, matchedPrequoteWithFloor } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 function ctx(): ProtocolExecutionContext {
@@ -120,8 +131,24 @@ describe("FIX 1 — swap build-response router verification", () => {
   const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
   const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
+  /**
+   * Real captured router calldata, identity fields matching the handler call
+   * below (TOKEN_A→TOKEN_B, 18-decimal `amountIn: "1"`, output to the session
+   * wallet) and the route mock's quoted 999000 out at the venue-default 50 bps.
+   * Both cases use it so the ONLY difference between them is the build's
+   * `routerAddress` — a `"0xcalldata"` placeholder would make the positive
+   * control refuse at the pre-sign calldata decode instead of broadcasting.
+   */
+  const COMPLIANT_BUILD_CALLDATA = compliantSwapCalldata({
+    srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
+    amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    // The persisted quote-time floor the execute re-reads before the route
+    // call — consistent with the route mock below. See the mock's note above.
+    h.findFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     h.verifyRouterAddress.mockImplementation((actual: string, expected: string) => {
       if (actual.toLowerCase() !== expected.toLowerCase()) {
         throw new Error(`Router address mismatch: ${actual} != ${expected}`);
@@ -144,7 +171,7 @@ describe("FIX 1 — swap build-response router verification", () => {
     h.buildRoute.mockResolvedValue({
       data: {
         routerAddress: ATTACKER_ROUTER,
-        data: "0xcalldata",
+        data: COMPLIANT_BUILD_CALLDATA,
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
@@ -166,7 +193,7 @@ describe("FIX 1 — swap build-response router verification", () => {
     h.buildRoute.mockResolvedValue({
       data: {
         routerAddress: META_AGGREGATION_ROUTER_V2,
-        data: "0xcalldata",
+        data: COMPLIANT_BUILD_CALLDATA,
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",

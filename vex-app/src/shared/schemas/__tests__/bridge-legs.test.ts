@@ -3,8 +3,9 @@
  *
  * PARITY (Phase-1 column-list-parity discipline, mirrors
  * `messages-archive-column-parity`): the leg `role` and `chainFamily`
- * vocabularies are the RENDERER-side mirror of migration 045's `event_role`
- * (bridge subset) and `chain_family` CHECK constraints. If a migration adds a
+ * vocabularies are the RENDERER-side mirror of the `event_role` (bridge
+ * subset, migration 045 + 050's `bridge_fee`) and `chain_family` CHECK
+ * constraints. If a migration adds a
  * bridge role or family, this list AND the DTO MUST be updated in the same
  * change, or a real leg would silently drop out of `coerceBridgeLegs` (the leg
  * would fail `safeParse` and be omitted). This test is the source-of-truth pin.
@@ -20,30 +21,41 @@ import {
   type BridgeLeg,
 } from "../bridge-legs.js";
 
-// The migration-045 bridge `event_role` vocabulary (the subset a leg can carry)
-// and `chain_family` vocabulary — kept in lockstep with
-// `src/vex-agent/db/migrations/045_bridge_activity.sql`.
-const MIGRATION_045_BRIDGE_ROLES = [
+// The bridge `event_role` vocabulary (the subset a leg can carry) and
+// `chain_family` vocabulary — kept in lockstep with
+// `src/vex-agent/db/migrations/045_bridge_activity.sql` and
+// `050_agent_activity_cost_breakdown.sql` (which added `bridge_fee`: the Vex
+// integrator-fee transfer, recorded as `allowance` before 050).
+const MIGRATION_BRIDGE_ROLES = [
   "allowance_reset",
   "allowance",
   "bridge_deposit",
+  "bridge_fee",
   "bridge_fill_expected",
   "bridge_fill_observed",
   "bridge_refund",
 ] as const;
-const MIGRATION_045_CHAIN_FAMILIES = ["eip155", "solana"] as const;
+const MIGRATION_CHAIN_FAMILIES = ["eip155", "solana"] as const;
 
-describe("bridge leg vocabulary parity with migration 045", () => {
-  it("bridgeLegRoleSchema pins exactly the migration-045 bridge event roles", () => {
+describe("bridge leg vocabulary parity with the migrations", () => {
+  it("bridgeLegRoleSchema pins exactly the migration bridge event roles", () => {
     expect([...bridgeLegRoleSchema.options].sort()).toEqual(
-      [...MIGRATION_045_BRIDGE_ROLES].sort(),
+      [...MIGRATION_BRIDGE_ROLES].sort(),
     );
   });
 
-  it("bridgeChainFamilySchema pins exactly the migration-045 chain families", () => {
+  it("bridgeChainFamilySchema pins exactly the migration chain families", () => {
     expect([...bridgeChainFamilySchema.options].sort()).toEqual(
-      [...MIGRATION_045_CHAIN_FAMILIES].sort(),
+      [...MIGRATION_CHAIN_FAMILIES].sort(),
     );
+  });
+
+  it("accepts a bridge_fee leg — a fee row must never drop out of coerceBridgeLegs", () => {
+    const legs = coerceBridgeLegs([
+      { role: "bridge_fee", chainId: 8453, chainFamily: "eip155", txHash: "0xfee", status: "confirmed", failureCode: null },
+    ]);
+    expect(legs).toHaveLength(1);
+    expect(legs[0]?.role).toBe("bridge_fee");
   });
 });
 

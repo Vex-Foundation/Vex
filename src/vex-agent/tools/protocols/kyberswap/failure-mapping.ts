@@ -45,7 +45,18 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
         return "chain_unsupported";
       case ErrorCodes.KYBER_ROUTE_NOT_FOUND:
       case ErrorCodes.KYBER_TOKEN_NOT_FOUND:
+      // A built swap that diverges from the approved transaction in a
+      // NON-price way (wrong target/spender/fee line/flags/native value).
+      // Mirrors `solana.swap.execute`, which records its fee-policy
+      // divergence abort as `route_not_found` rather than inventing a code:
+      // the route we were handed is not the route we approved.
+      case ErrorCodes.KYBER_UNSAFE_BUILD:
         return "route_not_found";
+      // The built calldata's own `minReturnAmount` sits below the price floor
+      // Vex approved. A genuine slippage abort — the SAME code the Solana
+      // economic-floor check uses, never the generic build-rejection bucket.
+      case ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED:
+        return "slippage";
       case ErrorCodes.KYBER_AMOUNT_TOO_LARGE:
       case ErrorCodes.KYBER_FEE_EXCEEDS_AMOUNT:
         return "insufficient_liquidity";

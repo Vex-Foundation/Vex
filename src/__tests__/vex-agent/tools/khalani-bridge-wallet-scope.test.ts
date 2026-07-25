@@ -29,6 +29,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
+import { classifyNativeValue } from "@tools/evm-chains/native-value-authorization/index.js";
+
+/**
+ * The native-value authorization a zero-value EVM leg carries. `signStageEvmLeg`
+ * re-validates this before signing, so a mocked plan must supply one; a leg that
+ * sends no native currency has nothing to attribute and authorizes trivially.
+ */
+function zeroValueAuthorization(to: string) {
+  return classifyNativeValue({
+    call: { chainId: 8453, to: to as `0x${string}`, data: undefined, valueWei: 0n },
+  });
+}
+
 const SEL_EVM = "0x1111111111111111111111111111111111111111";
 const SEL_SOL = "So1anaSe1ectedAddr1111111111111111111111111";
 
@@ -67,11 +80,31 @@ const mockPrepareQuoteRequest = vi.fn(async (input: { fromAddress: string; recip
   toChainId: 1,
   fromFamily: "eip155",
   toFamily: "eip155",
-  request: { fromAddress: input.fromAddress, recipient: input.recipient },
+  // `amount` is always present on a real prepared request — the Vex bridge fee
+  // (`@tools/bridge-fee`) splits it before the quote, so the mock must carry it.
+  request: { fromAddress: input.fromAddress, recipient: input.recipient, amount: "1000000" },
 }));
+// The bridge-fee eligibility check consults KyberSwap's honeypot/fee-on-transfer
+// oracle before the quote. Stubbed clean so this suite stays offline and
+// deterministic — FoT behaviour has its own coverage.
+vi.mock("@tools/kyberswap/token-api/client.js", () => ({
+  getKyberTokenApiClient: () => ({
+    getHoneypotFotInfo: async () => ({ isHoneypot: false, isFOT: false, tax: 0 }),
+  }),
+}));
+
 vi.mock("@tools/khalani/request.js", () => ({
   prepareQuoteRequest: (...a: unknown[]) => mockPrepareQuoteRequest(...(a as [{ fromAddress: string; recipient: string }])),
   // Kept faithful to the real guard so the handler's fee rejection stays live.
+  findCallerSuppliedForbiddenParam: (params: Record<string, unknown>) => {
+    for (const key of ["referrer", "referrerFeeBps"]) {
+      const value = params[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value === "string" && value.trim() === "") continue;
+      return { param: key, reason: "Vex never takes fee parameters from tool input." };
+    }
+    return null;
+  },
   findCallerSuppliedFeeParam: (params: Record<string, unknown>) => {
     for (const key of ["referrer", "referrerFeeBps"]) {
       const value = params[key];
@@ -176,7 +209,13 @@ beforeEach(() => {
   mockBuildDeposit.mockResolvedValue({ kind: "CONTRACT_CALL", approvals: [] });
   mockSearchTokens.mockResolvedValue({ data: [] });
   mockPlanKhalaniDepositLegs.mockReturnValue([
-    { role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm", tx: { to: SEL_EVM } },
+    {
+      role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm",
+      tx: { to: SEL_EVM },
+      // Every EVM leg carries a native-value authorization; this one sends no
+      // value, so it authorizes with no components at all.
+      nativeValue: zeroValueAuthorization(SEL_EVM),
+    },
   ]);
   mockCheckBridgeInFlight.mockResolvedValue({ inFlight: false, existing: null });
   mockCreateBridgeActivityIntent.mockResolvedValue({ outcome: "created", executionId: 42, legs: [{ id: 100 }], expectedFill: { id: 200 } });

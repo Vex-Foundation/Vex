@@ -114,6 +114,15 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute re-reads its own persisted quote-time price floor before signing
+// (`swap-price-floor.ts`). These cases pin staged-broadcast bookkeeping, not
+// the floor, so it is supplied as satisfied; the floor's own refusals live in
+// `price-floor-gate.test.ts`.
+const mockFindFreshMatchedSwapPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
+  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
+}));
+
 const mockLoggerWarn = vi.fn();
 
 vi.mock("@utils/logger.js", () => {
@@ -123,6 +132,10 @@ vi.mock("@utils/logger.js", () => {
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import {
+  compliantSwapCalldata,
+  matchedPrequoteWithFloor,
+} from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -138,6 +151,10 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const ROUTER = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5";
+const COMPLIANT_CALLDATA = compliantSwapCalldata({
+  srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
+  amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
+});
 
 function execute(params: Record<string, unknown>) {
   return KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(params, ctx());
@@ -159,15 +176,20 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
         routerAddress: ROUTER,
       },
     });
+    // REAL router calldata (re-encoded from a captured build): the handler
+    // decodes and asserts it before signing, so a placeholder string would be
+    // refused at the pre-sign gate and never reach the staged loop.
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: ROUTER,
-        data: "0xcalldata",
+        data: COMPLIANT_CALLDATA,
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
     });
+    mockFindFreshMatchedSwapPrequote.mockReset();
+    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequoteWithFloor("999000", 50));
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }] });
     // `vi.clearAllMocks()` clears call history but NOT a configured
     // implementation/once-queue — reset the mocks whose EXACT per-test
@@ -285,7 +307,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: ROUTER,
-        data: "0xcalldata",
+        data: COMPLIANT_CALLDATA,
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",

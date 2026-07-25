@@ -48,6 +48,18 @@ export function mapRow(r: Record<string, unknown>): AgentActivityEvent {
     usdInEst: r.usd_in_est as string | null,
     usdOutEst: r.usd_out_est as string | null,
     usdFeeEst: r.usd_fee_est as string | null,
+    usdNetworkGasEst: r.usd_network_gas_est as string | null,
+    usdVenueFeeEst: r.usd_venue_fee_est as string | null,
+    usdDestinationPrepayEst: r.usd_destination_prepay_est as string | null,
+    usdVexFeeEst: r.usd_vex_fee_est as string | null,
+    vexFeeTokenAddress: r.vex_fee_token_address as string | null,
+    vexFeeTokenSymbol: r.vex_fee_token_symbol as string | null,
+    vexFeeTokenDecimals:
+      r.vex_fee_token_decimals === null || r.vex_fee_token_decimals === undefined
+        ? null
+        : Number(r.vex_fee_token_decimals),
+    vexFeeAmountRaw: r.vex_fee_amount_raw as string | null,
+    vexFeeAmountHuman: r.vex_fee_amount_human as string | null,
     usdSource: r.usd_source as string | null,
     txHash: r.tx_hash as string | null,
     fromAddress: r.from_address as string | null,

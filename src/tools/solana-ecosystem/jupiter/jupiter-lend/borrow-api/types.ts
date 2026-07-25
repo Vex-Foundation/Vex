@@ -129,6 +129,17 @@ export interface JupiterLendBorrowPosition {
   readonly supply: string;
   readonly borrow: string;
   readonly dustBorrow: string;
+  /**
+   * The protocol's own liquidation flag (W4). Listed in the interactive API
+   * reference's example row — see the fixture README — but NOT confirmed by a
+   * recorded live response, because the only recording of this endpoint is
+   * `[]`. Optional/nullable for exactly that reason: a safety signal must not
+   * be strict enough to fail the whole positions read when the provider omits
+   * it. Absence is NEVER `false` downstream — `../../../../../vex-agent/tools/
+   * protocols/solana-jupiter/borrow-health.ts`'s `readLiquidationStatus` maps
+   * it to the named `"unknown"` state instead.
+   */
+  readonly isLiquidated?: boolean | null;
 }
 
 export type JupiterLendBorrowPositionsResponse = JupiterLendBorrowPosition[];

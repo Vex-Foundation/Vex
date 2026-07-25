@@ -19,9 +19,18 @@
  * tool params could have routed up to 99.99% of a bridge to an attacker with the
  * approving human seeing nothing.
  *
- * The fix removes the surface entirely (Vex charges no bridge referral fee) and
- * fails closed by name. This suite asserts the ACTUAL request body the client
- * would POST, not merely that a handler returned an error.
+ * The fix removes the surface entirely and fails closed by name. This suite
+ * asserts the ACTUAL request body the client would POST, not merely that a
+ * handler returned an error.
+ *
+ * NOTE (2026-07-25): Vex DOES now charge a bridge fee — a hard-coded 25 bps of
+ * the input token, taken as Vex's own transfer leg after the deposit
+ * (`src/tools/bridge-fee`). That changes nothing here. The invariant this suite
+ * protects was never "Vex charges nothing"; it is that a fee and its recipient
+ * are PRODUCT-OWNER CONSTANTS and are NEVER derived from model or tool input.
+ * The referral fields stay unsendable and rejected by name, and the Khalani
+ * referral mechanism specifically stays unused (it was measured dead — see
+ * `src/tools/bridge-fee/constants.ts`).
  *
  * Companion coverage: alias-boundary rejection lives in
  * `vex-agent/tools/dispatcher-bridge-alias.test.ts` (execute) and

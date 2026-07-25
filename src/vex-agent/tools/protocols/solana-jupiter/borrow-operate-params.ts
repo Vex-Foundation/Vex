@@ -87,13 +87,21 @@ export interface BorrowOperateEffect {
   readonly closeAll: boolean;
 }
 
-export interface BorrowOperateIntentParams {
+/**
+ * A `type` alias, deliberately NOT an `interface`. TypeScript gives an object
+ * type alias an implicit index signature but withholds one from an interface,
+ * so this shape is assignable to the `Record<string, unknown>` that the
+ * `intentParams` boundary takes — without the `as unknown as` cast the call
+ * site used to need. Same fields, same strictness, one fewer escape hatch on a
+ * money path.
+ */
+export type BorrowOperateIntentParams = {
   readonly effectsVersion: typeof BORROW_OPERATE_EFFECTS_VERSION;
   readonly vaultId: number;
   readonly positionId: number;
   readonly market: JupiterLendBorrowMarket;
   readonly effects: readonly BorrowOperateEffect[];
-}
+};
 
 function toEffect(leg: BorrowOperateLeg, kind: BorrowOperateEffect["leg"]): BorrowOperateEffect {
   return { leg: kind, direction: leg.direction, amountRaw: leg.amountRaw, closeAll: leg.closeAll };

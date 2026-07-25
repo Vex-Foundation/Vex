@@ -30,12 +30,26 @@ vi.mock("@tools/relay/client.js", () => ({
 }));
 
 import { planRelayStepTx, pollRelayIntentStatus, parseRequestIdFromCheckEndpoint } from "@tools/relay/execute.js";
+import type { RelayStepNativeValueContext } from "@tools/relay/native-value.js";
 import type { RelayStep } from "@tools/relay/types.js";
 
 const ORIGIN = 8453;
 const DESTINATION = 4663;
 const FROM = getAddress("0x1111111111111111111111111111111111111111");
 const TO = "0x2222222222222222222222222222222222222222";
+
+/**
+ * A native-in bridge of exactly the value these fixtures carry, so the
+ * native-value gate (added phase-3 W3) attributes the whole `tx.value` to the
+ * bridged principal and these ORIGIN-ONLY/shape cases keep testing what they
+ * were written to test. The gate itself is covered in `native-value-gate.test.ts`.
+ */
+const NATIVE_IN: RelayStepNativeValueContext = {
+  role: "bridge_deposit",
+  originCurrency: "0x0000000000000000000000000000000000000000",
+  tradeType: "EXACT_INPUT",
+  bridgedAmountRaw: "1000",
+};
 
 function step(id: string, chainId: number, extra: Record<string, unknown> = {}): RelayStep {
   return { id, kind: "transaction", items: [{ data: { to: TO, value: "1000", data: "0xabcd", chainId, ...extra } }] } as unknown as RelayStep;
@@ -44,39 +58,39 @@ function step(id: string, chainId: number, extra: Record<string, unknown> = {}):
 // ── planRelayStepTx — fail-closed, ORIGIN-ONLY per-step extraction (B3) ──
 describe("planRelayStepTx — origin-only, fail-closed", () => {
   it("a valid origin-chain step canonicalizes to { to, data, value }", () => {
-    const tx = planRelayStepTx(step("deposit", ORIGIN), ORIGIN, FROM);
+    const tx = planRelayStepTx(step("deposit", ORIGIN), ORIGIN, FROM, NATIVE_IN);
     expect(tx).toEqual({ to: getAddress(TO), data: "0xabcd", value: 1000n });
   });
 
   it("a DESTINATION-chain step is REJECTED (origin-only — the pre-B3 leniency is gone)", () => {
-    expect(() => planRelayStepTx(step("deposit", DESTINATION), ORIGIN, FROM)).toThrow(/RELAY_STEP_CHAIN_MISMATCH|origin/i);
+    expect(() => planRelayStepTx(step("deposit", DESTINATION), ORIGIN, FROM, NATIVE_IN)).toThrow(/RELAY_STEP_CHAIN_MISMATCH|origin/i);
   });
 
   it("a non-transaction (signature) step is rejected", () => {
     const sig = { id: "permit", kind: "signature", items: [{}] } as unknown as RelayStep;
-    expect(() => planRelayStepTx(sig, ORIGIN, FROM)).toThrow(/RELAY_UNSUPPORTED_STEP|signable/i);
+    expect(() => planRelayStepTx(sig, ORIGIN, FROM, NATIVE_IN)).toThrow(/RELAY_UNSUPPORTED_STEP|signable/i);
   });
 
   it("a step with MORE than one tx item is rejected (unexpected shape, never guess)", () => {
     const multi = { id: "deposit", kind: "transaction", items: [{ data: { to: TO, value: "1", data: "0x", chainId: ORIGIN } }, { data: { to: TO, value: "2", data: "0x", chainId: ORIGIN } }] } as unknown as RelayStep;
-    expect(() => planRelayStepTx(multi, ORIGIN, FROM)).toThrow();
+    expect(() => planRelayStepTx(multi, ORIGIN, FROM, NATIVE_IN)).toThrow();
   });
 
   it("a step with NO tx item is rejected", () => {
     const none = { id: "deposit", kind: "transaction", items: [{}] } as unknown as RelayStep;
-    expect(() => planRelayStepTx(none, ORIGIN, FROM)).toThrow();
+    expect(() => planRelayStepTx(none, ORIGIN, FROM, NATIVE_IN)).toThrow();
   });
 
   it("a sender that does not match the selected wallet is rejected", () => {
-    expect(() => planRelayStepTx(step("deposit", ORIGIN, { from: "0x9999999999999999999999999999999999999999" }), ORIGIN, FROM))
+    expect(() => planRelayStepTx(step("deposit", ORIGIN, { from: "0x9999999999999999999999999999999999999999" }), ORIGIN, FROM, NATIVE_IN))
       .toThrow(/sender/i);
   });
 
   it("a malformed recipient/value is rejected pre-broadcast", () => {
     const badTo = { id: "deposit", kind: "transaction", items: [{ data: { to: "0xNOTANADDRESS", value: "1", data: "0x", chainId: ORIGIN } }] } as unknown as RelayStep;
-    expect(() => planRelayStepTx(badTo, ORIGIN, FROM)).toThrow(/recipient/i);
+    expect(() => planRelayStepTx(badTo, ORIGIN, FROM, NATIVE_IN)).toThrow(/recipient/i);
     const badValue = { id: "deposit", kind: "transaction", items: [{ data: { to: TO, value: "not-a-number", data: "0x", chainId: ORIGIN } }] } as unknown as RelayStep;
-    expect(() => planRelayStepTx(badValue, ORIGIN, FROM)).toThrow(/value/i);
+    expect(() => planRelayStepTx(badValue, ORIGIN, FROM, NATIVE_IN)).toThrow(/value/i);
   });
 });
 

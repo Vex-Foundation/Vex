@@ -37,12 +37,24 @@ import {
   KYBERSWAP_FEE_BPS,
   KYBERSWAP_FEE_CHARGE_BY,
   KYBERSWAP_FEE_RECEIVER,
+  KYBERSWAP_DEFAULT_SLIPPAGE_BPS,
+  KYBERSWAP_MAX_SLIPPAGE_BPS,
 } from "@tools/kyberswap/constants.js";
+import { verifyBuiltKyberSwap } from "@tools/kyberswap/evm/swap-calldata-guard.js";
+import {
+  computeApprovedMinOut,
+  parseRouteRefPriceFloor,
+  KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
+} from "@tools/kyberswap/swap-price-floor.js";
+import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
+import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { findFreshMatchedSwapPrequote } from "@vex-agent/tools/protocols/swap-prequote.js";
 import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { resolveTokenMetadataStrict, type ResolvedKyberTokenMetadata, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
 import { formatRouteSummary, sanitizeProviderNote } from "../helpers.js";
+import { estimateKyberSwapCostsUsd } from "../swap-cost-estimate.js";
 import logger from "@utils/logger.js";
 import { isRecord } from "@utils/validation-helpers.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
@@ -71,7 +83,7 @@ import { mapKyberFailureToActivityCode, deriveKyberRevealFailure, deriveKyberMin
 
 import { parseUnits, formatUnits, getAddress, type Address, type Hex } from "viem";
 import type { ToolResult } from "../../../types.js";
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 const PROTOCOL = "kyberswap";
@@ -237,6 +249,66 @@ function revealOnSwapMinedRevert(eventRole: AgentActivityEventRole, sessionId: s
  */
 function kyberFailureMessage(toolId: string, err: unknown): string {
   return summarizeProtocolError(err).message;
+}
+
+// ── Slippage + price floor ───────────────────────────────────────────
+
+/**
+ * Resolve the slippage this call will apply, or a rejection reason.
+ *
+ * `slippageBps` is BOTH the number handed to `/route/build` and the number the
+ * approved price floor is computed from, so it is resolved identically at quote
+ * time and execute time — an omitted value takes the SAME venue default on both
+ * sides, which is what lets a quote-without-slippage authorize an
+ * execute-without-slippage. The Vex ceiling is applied here (and only here for
+ * this venue): the manifest `unit: "bps"` gate proves integrality but
+ * deliberately applies no maximum.
+ */
+function resolveKyberSlippageBps(
+  toolId: string,
+  p: Record<string, unknown>,
+): { readonly ok: true; readonly bps: number } | { readonly ok: false; readonly reason: string } {
+  const raw = num(p, "slippageBps");
+  const bps = raw ?? KYBERSWAP_DEFAULT_SLIPPAGE_BPS;
+  const violation = checkSlippageBps(
+    `Parameter "slippageBps" for ${toolId}`,
+    bps,
+    KYBERSWAP_MAX_SLIPPAGE_BPS,
+  );
+  return violation ? { ok: false, reason: violation } : { ok: true, bps };
+}
+
+/**
+ * The persisted quote-time floor for THIS execute, or a refusal.
+ *
+ * Re-reads the SAME fresh matched prequote row the gate already proved exists
+ * (mirrors `solana.swap.execute`), and pulls the `route_ref` price floor Vex
+ * computed when the user was shown the quote. Fail-closed: no row, or a row
+ * without a floor (a pre-upgrade quote, or one whose route output was
+ * unusable), refuses rather than signing with no independent floor at all.
+ */
+async function requireApprovedMinOut(
+  toolId: string,
+  sessionId: string,
+  p: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<{ readonly ok: true; readonly approvedMinOutRaw: bigint } | { readonly ok: false; readonly reason: string }> {
+  const noFloor = {
+    ok: false,
+    reason:
+      "no approved price floor is on record for this trade. "
+      + "Call kyberswap.swap.quote with the exact same params, then retry.",
+  } as const;
+  let matched: Awaited<ReturnType<typeof findFreshMatchedSwapPrequote>>;
+  try {
+    matched = await findFreshMatchedSwapPrequote(toolId, sessionId, p, context);
+  } catch {
+    return noFloor;
+  }
+  if (!matched) return noFloor;
+  const floor = parseRouteRefPriceFloor(matched.routeRef);
+  if (!floor) return noFloor;
+  return { ok: true, approvedMinOutRaw: BigInt(floor.approvedMinOutRaw) };
 }
 
 // ── Settlement decoding (registered once at module load) ───────────
@@ -405,6 +477,12 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
     if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
 
+    // Rejected HERE, not only at the execute: this quote seeds the prequote
+    // whose persisted price floor the execute is held to, so a slippage the
+    // execute would refuse must never produce a quote (or a floor) at all.
+    const quoteSlippage = resolveKyberSlippageBps("kyberswap.swap.quote", p);
+    if (!quoteSlippage.ok) return fail(quoteSlippage.reason);
+
     let slug: KyberChainSlug;
     let chainId: number;
     try {
@@ -564,7 +642,29 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     }
 
     const amountIn = parseUnits(amountInRaw, tokenIn.decimals);
-    const slippage = num(p, "slippageBps") ?? 50;
+    const resolvedSlippage = resolveKyberSlippageBps(toolId, p);
+    if (!resolvedSlippage.ok) {
+      return failPreBroadcast(
+        toolId, p, sessionId, walletAddress, chainId, slug,
+        legInput(tokenIn), legInput(tokenOut),
+        new VexError(ErrorCodes.KYBER_MALFORMED_PARAMS, resolvedSlippage.reason),
+        true,
+      );
+    }
+    const slippage = resolvedSlippage.bps;
+
+    // The floor Vex computed and persisted when the user was shown the quote.
+    // Read BEFORE the route call so a trade with no approved floor is refused
+    // without touching the provider at all.
+    const approvedFloor = await requireApprovedMinOut(toolId, sessionId, p, context);
+    if (!approvedFloor.ok) {
+      return failPreBroadcast(
+        toolId, p, sessionId, walletAddress, chainId, slug,
+        legInput(tokenIn), legInput(tokenOut),
+        new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, `${toolId} refused: ${approvedFloor.reason}`),
+        true,
+      );
+    }
 
     let routerAddress: Address;
     let routeSummaryRaw: KyberGetRouteResponse["data"]["routeSummary"];
@@ -615,6 +715,47 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
       });
       verifyRouterAddress(buildResp.data.routerAddress, META_AGGREGATION_ROUTER_V2);
 
+      // ── Pre-sign calldata assertion (the ONE gate on the opaque blob) ──
+      // KyberSwap embeds the price protection inside calldata WE did not
+      // build, so it is decoded and held to the floor Vex approved at quote
+      // time AND to the floor this fresh route implies — plus the fee line,
+      // the flags, the target, the spender and the native value. Runs BEFORE
+      // the intent is created, so a refusal is a clean pre-broadcast failure
+      // with nothing signed and nothing broadcast.
+      const verdict = verifyBuiltKyberSwap(
+        {
+          calldata: buildResp.data.data as Hex,
+          routerAddress: buildResp.data.routerAddress,
+          transactionValue: buildResp.data.transactionValue,
+        },
+        {
+          expectedRouter: META_AGGREGATION_ROUTER_V2,
+          recipient: walletAddress,
+          srcToken: getAddress(tokenIn.address),
+          dstToken: getAddress(tokenOut.address),
+          amountIn,
+          srcIsNative: tokenIn.isNative,
+          approvedMinOutRaw: approvedFloor.approvedMinOutRaw,
+          freshMinOutRaw: computeApprovedMinOut(routeSummaryRaw.amountOut, slippage),
+          floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
+        },
+      );
+      if (!verdict.ok) {
+        throw new VexError(
+          verdict.kind === "price_floor"
+            ? ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED
+            : ErrorCodes.KYBER_UNSAFE_BUILD,
+          // Kept SHORT on purpose: `summarizeProtocolError` joins message +
+          // hint and caps the pair at 200 chars, so a verbose reason silently
+          // truncates away the actionable tail — the one part of a refusal the
+          // agent must always receive.
+          `Refused before signing: ${verdict.reason}.`,
+          verdict.kind === "price_floor"
+            ? "Nothing was signed. Get a fresh kyberswap.swap.quote."
+            : "Nothing was signed. Re-quote; do not retry this build.",
+        );
+      }
+
       // C21 (Codex final-review finding 6): the native-in "requested" leg
       // recorded on the swap event is the SIGNED transaction's own declared
       // value (`transactionValue`), never a locally re-derived `amountIn` —
@@ -625,6 +766,24 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
       const tokenInAmountHuman = tokenIn.isNative
         ? formatUnits(BigInt(buildResp.data.transactionValue), tokenIn.decimals)
         : amountInRaw;
+
+      // The durable cost breakdown (migration 050). Derived here — AFTER the
+      // calldata guard above accepted the build — so "25 bps of the input, on
+      // the source token" is a proven property of the payload about to be
+      // signed rather than an assumption.
+      const swapCosts = estimateKyberSwapCostsUsd({
+        gasUsd: buildResp.data.gasUsd,
+        l1FeeUsd: routeSummaryRaw.l1FeeUsd,
+        amountInUsd: buildResp.data.amountInUsd,
+      });
+      // The same fee as a FACT rather than a USD estimate (migration 050
+      // Part 2). `amountIn` is the very bigint the guard just pinned to
+      // `desc.amount`, and the guard also pinned the rate, the source-side
+      // charge and the no-partial-fill flag — so this is the router's own
+      // arithmetic over proven inputs, not a re-derivation of a provider hint.
+      // It is recorded even when `usdVexFeeEst` is undefined, which is what
+      // makes an absent USD read as "price unknown" instead of "no fee".
+      const vexFeeRaw = computeKyberVexFeeRaw(amountIn);
 
       // ── Build the events plan BEFORE anything is signed (plan §11.1 step 1) ──
       const builtPlans: SwapEventPlan[] = [];
@@ -664,7 +823,28 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
           tokenOut: { tokenAddress: tokenOut.address, tokenSymbol: tokenOut.symbol, tokenDecimals: tokenOut.decimals, amountHuman: formatUnits(BigInt(buildResp.data.amountOut), tokenOut.decimals), amountRaw: buildResp.data.amountOut },
           usdInEst: buildResp.data.amountInUsd,
           usdOutEst: buildResp.data.amountOutUsd,
+          // `usd_fee_est` is FROZEN for the migration-050 dual-write window:
+          // it keeps receiving `gasUsd` alone, byte-identical to its
+          // pre-050 behavior, so old readers are unaffected. The honest gas —
+          // L2 execution PLUS the L1 data fee, which on an OP-stack chain can
+          // rival or exceed it — goes to `usd_network_gas_est`, so the two
+          // legitimately differ on those chains. A later contract migration
+          // drops `usd_fee_est`.
           usdFeeEst: buildResp.data.gasUsd,
+          usdNetworkGasEst: swapCosts.usdNetworkGasEst,
+          // Vex's own 25 bps, recorded for the first time. It rides the SWAP
+          // leg deliberately: this row's status is what says whether the fee
+          // was actually collected, so summing confirmed rows is honest revenue.
+          usdVexFeeEst: swapCosts.usdVexFeeEst,
+          // Charged on the SOURCE token and taken OUT of the input, so this is
+          // a component of `tokenIn.amountRaw` above — never an extra debit.
+          vexFee: {
+            tokenAddress: tokenIn.address,
+            tokenSymbol: tokenIn.symbol,
+            tokenDecimals: tokenIn.decimals,
+            amountRaw: vexFeeRaw.toString(),
+            amountHuman: formatUnits(vexFeeRaw, tokenIn.decimals),
+          },
           usdSource: "kyberswap_quote",
           routeProvenance: { routeID: routeSummaryRaw.routeID, checksum: routeSummaryRaw.checksum },
         },

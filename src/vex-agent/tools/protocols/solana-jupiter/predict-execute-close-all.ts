@@ -60,6 +60,14 @@ interface CloseAllPlan {
   readonly managed: JupiterPredictionManagedExecution | null;
   readonly positionPubkey: string;
   readonly payoutUsd: string | null | undefined;
+  /**
+   * The PROVIDER's protocol+venue fee for this item (migration 050's
+   * `usd_venue_fee_est`). `predict.sell` recorded a fee and `closeAll` — which
+   * is N of the same close — recorded none, so a fee appeared to depend on how
+   * the close was invoked. A `predict_claim` item carries no order preview and
+   * so genuinely has no fee figure: `undefined`, never 0.
+   */
+  readonly venueFeeUsd: string | null | undefined;
 }
 
 function planCloseAllItem(item: JupiterPredictionCloseAllPositionsItem): CloseAllPlan {
@@ -68,12 +76,15 @@ function planCloseAllItem(item: JupiterPredictionCloseAllPositionsItem): CloseAl
       role: "predict_close", transaction: requireTransaction(item.transaction, "Close all positions"),
       managed: resolveManagedExecution(item, "Close all positions"),
       positionPubkey: item.order.positionPubkey, payoutUsd: item.order.newPayoutUsd,
+      venueFeeUsd: item.order.estimatedTotalFeeUsd,
     };
   }
   return {
     role: "predict_claim", transaction: requireTransaction(item.transaction, "Close all positions"),
     managed: resolveManagedExecution(item, "Close all positions"),
     positionPubkey: item.position.positionPubkey, payoutUsd: item.position.payoutAmountUsd,
+    // A claim item carries no order preview — no honest fee figure exists.
+    venueFeeUsd: undefined,
   };
 }
 
@@ -117,6 +128,7 @@ export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
         amountHuman: usdEst(plan.payoutUsd), amountRaw: plan.payoutUsd ?? undefined,
       },
       usdOutEst: usdEst(plan.payoutUsd),
+      usdVenueFeeEst: usdEst(plan.venueFeeUsd),
       usdSource: "jupiter_prediction_order_preview",
     })),
   });

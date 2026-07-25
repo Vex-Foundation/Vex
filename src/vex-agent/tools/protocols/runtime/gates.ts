@@ -30,6 +30,18 @@ import logger from "@utils/logger.js";
  * when a human will actually see it (restricted permission, not yet
  * approved) — see `evaluateRiskPreview` below.
  *
+ * W4 (2026-07-25), so the next reader does not re-derive the gap this left:
+ * the `restricted`-only short-circuit below means a `full` autonomous session
+ * gets NO risk preview from this gate — correctly, because there is no
+ * approval preview to put one in. Until W4 that was the ONLY LTV computation
+ * in the tree, so an autonomous agent had no health signal at all. The fix is
+ * deliberately NOT here: `solana.lend.borrowPositions` now carries LTV, the
+ * distance to liquidation, and the provider's `isLiquidated` flag on the READ
+ * (`../solana-jupiter/borrow-health.ts`), which an agent can call at any time
+ * — an approval preview it can. The owner's ruling was DISCLOSE, DO NOT
+ * BLOCK: do not add a gate here that refuses a leveraged operation for want
+ * of a health number.
+ *
  * B3 (Codex batch-5 blocker on B1): an existing-position lookup failure must
  * BLOCK the gate rather than silently proceed without a preview — see
  * `../solana-jupiter/borrow-risk-preview.ts`'s `LendBorrowRiskPreviewOutcome`.

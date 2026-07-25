@@ -39,7 +39,6 @@
       "../src/vex-agent/tools/internal/chain-read.ts::TS2345": 1,
       "../src/vex-agent/tools/internal/wallet/send-execute-evm.ts::TS2345": 2,
       "../src/vex-agent/tools/protocols/capture-pipeline.ts::TS2345": 1,
-      "../src/vex-agent/tools/protocols/khalani/handlers/bridge.ts::TS2322": 1,
       "src/main/agent/__tests__/compact-worker.test.ts::TS2322": 5,
       "src/main/agent/__tests__/compact-worker.test.ts::TS2349": 1,
       "src/main/agent/__tests__/memory-manager-worker.test.ts::TS2322": 5,

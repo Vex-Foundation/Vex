@@ -137,14 +137,24 @@ describe("relay.bridge — two-hop evidence via structured legs[] (no _tradeCapt
   it("both-side hashes: inTxHashes (Vex origin) + txHashes (provider destination, unverified)", async () => {
     const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
     const out = JSON.parse(result.output) as Record<string, unknown>;
-    expect(out.inTxHashes).toEqual(["0xorigin"]);
+    // TWO Vex-signed origin transactions: the deposit and the 25 bps treasury
+    // transfer (`@tools/bridge-fee`), which is a real fund movement and is
+    // therefore surfaced rather than hidden. The stub returns one hash for both.
+    expect(out.inTxHashes).toEqual(["0xorigin", "0xorigin"]);
     expect(out.txHashes).toEqual(["0xfill"]);
+    // …and the fee itself is disclosed alongside them.
+    expect(out.vexFee).toMatchObject({ charged: true, bps: 25, collection: "confirmed" });
   });
 
   it("_explorerRefs coherently pairs the origin hash with the origin chain (Vex-signed only)", async () => {
     const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
     const refs = (result.data as { _explorerRefs: Array<{ chain: string; txRef: string }> })._explorerRefs;
-    expect(refs).toEqual([{ chain: "8453", txRef: "0xorigin" }]);
+    // Both origin broadcasts (deposit + Vex fee transfer) are chain-paired; the
+    // provider's destination hash stays out of this clickable set.
+    expect(refs).toEqual([
+      { chain: "8453", txRef: "0xorigin" },
+      { chain: "8453", txRef: "0xorigin" },
+    ]);
   });
 
   it("a broadcast bridge is truthfully PENDING — success-while-pending is forbidden (B5)", async () => {

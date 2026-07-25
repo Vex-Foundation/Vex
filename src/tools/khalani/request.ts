@@ -21,23 +21,115 @@ import { formatChainFamily, normalizeAddressForFamily, resolveConfiguredAddress 
 // is invisible, folded straight into `amountOut`. Khalani's own docs recommend
 // no attribution use, and their official SDK does not expose the fields at all.
 //
-// Vex charges NO bridge referral fee, and — exactly as for the KyberSwap
-// integrator fee (`src/tools/kyberswap/constants.ts`) — a fee is NEVER derived
-// from model/tool params. A model-controllable fee paid to a model-chosen
-// address is an overcharge vector: a prompt injection reaching tool params
-// could route up to 99.99% of a bridge to an attacker, and the human approving
-// the bridge would never see it (the approval preview is arguments-only and
-// allow-lists neither key).
+// Vex NEVER takes a fee parameter from model/tool input — exactly as for the
+// KyberSwap integrator fee (`src/tools/kyberswap/constants.ts`). A
+// model-controllable fee paid to a model-chosen address is an overcharge
+// vector: a prompt injection reaching tool params could route up to 99.99% of
+// a bridge to an attacker, and the human approving the bridge would never see
+// it (the approval preview is arguments-only and allow-lists neither key).
 //
 // So both fields are absent from `QuoteRequestInput` and from the outbound
 // `QuoteRequest` (compile-time: unsendable), and a caller that supplies either
 // is REJECTED by name rather than silently stripped — a silent drop would hide
-// an attempted overcharge. If Vex ever wants bridge referral revenue, it is a
-// product decision that pins these to a constant here, next to the venue, and
-// discloses the fee in the approval preview before any broadcast.
+// an attempted overcharge.
+//
+// Vex's OWN bridge fee does exist, and deliberately does NOT use this
+// mechanism: it is a hard-coded 25 bps of the INPUT token taken as Vex's own
+// transfer leg after the deposit (`src/tools/bridge-fee`). Requesting
+// `referrerFeeBps` was measured DEAD — it evicts the only filler that honours
+// it (see the doctrine comment in `src/tools/bridge-fee/constants.ts`) — and
+// it is EVM-only, so it could never cover Solana destinations.
+
+// ── Refund-destination policy (security) ────────────────────────────
+//
+// `refundTo` is where the money goes when a bridge FAILS. Khalani forwards a
+// refund to it directly, so it is a fund destination in exactly the sense
+// `recipient` is — except that a bridge only refunds on the unhappy path, so a
+// redirected refund surfaces late, if ever.
+//
+// It used to be a tool param: model-supplied, normalized straight into the
+// outbound quote request, and ABSENT from the approval preview's
+// `PREVIEW_KEY_ALLOWLIST` (`engine/core/approval-intent-preview.ts`) — so a
+// human approving a bridge never saw it. That is the same shape as the
+// referral-fee vector above, with the same conclusion: a destination a model
+// can choose is a destination an injection can choose.
+//
+// Prequote binding does NOT close it. `buildBridgeIdentity` binds `refundTo`
+// from PARAMS, so an attacker who sets the same address on the quote AND the
+// execute produces two colliding hashes and the gate passes. Adding the key to
+// the approval preview would not close it either — it would only mean the
+// human sees an address they have no basis to judge, on a path most sessions
+// never gate at all.
+//
+// So the capability is REMOVED, not disclosed: `refundTo` is absent from
+// `QuoteRequestInput`, and `prepareQuoteRequest` DERIVES it from the resolved
+// source address — the wallet the funds are leaving. A failed bridge returns
+// the money to where it came from, which is the only destination that needs no
+// authorization. A caller that supplies the key is REJECTED BY NAME; a silent
+// drop would hide an attempted redirection.
+//
+// If a product need for a different refund address ever appears, it is an
+// owner decision that must arrive with a user-authorized destination channel —
+// not a tool param.
 
 /** Tool/alias param keys that must never originate from a caller. */
 export const KHALANI_FORBIDDEN_FEE_PARAMS = ["referrer", "referrerFeeBps"] as const;
+
+/** Fund-destination keys Vex derives itself and never accepts from a caller. */
+export const KHALANI_DERIVED_DESTINATION_PARAMS = ["refundTo"] as const;
+
+const FEE_PARAM_REJECTION_REASON =
+  "Vex never takes fee parameters from tool input.";
+
+const DESTINATION_PARAM_REJECTION_REASON =
+  "Vex always refunds a failed bridge to the wallet the funds left, derived from the selected "
+  + "source wallet — a refund destination is never taken from tool input.";
+
+/** A caller-supplied parameter Vex refuses, with the reason to show. */
+export interface CallerSuppliedParamRejection {
+  readonly param: string;
+  readonly reason: string;
+}
+
+/**
+ * Was this key actually supplied? A key present but empty/whitespace (or
+ * absent) counts as NOT supplied — it carries no address and no fee, and the
+ * identity builder already treats it as the stable empty token.
+ */
+function isSupplied(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string" && value.trim() === "") return false;
+  return true;
+}
+
+/**
+ * The single check every Khalani tool/alias entry point runs: the first
+ * caller-supplied parameter Vex derives itself, with its own reason, else
+ * `null`. Fee params are reported first — they are the older, better-known
+ * vector, and reporting order is the only thing that could differ when a
+ * caller supplies both.
+ */
+export function findCallerSuppliedForbiddenParam(
+  params: Readonly<Record<string, unknown>>,
+): CallerSuppliedParamRejection | null {
+  const fee = findCallerSuppliedFeeParam(params);
+  if (fee !== null) return { param: fee, reason: FEE_PARAM_REJECTION_REASON };
+  const destination = findCallerSuppliedDestinationParam(params);
+  if (destination !== null) {
+    return { param: destination, reason: DESTINATION_PARAM_REJECTION_REASON };
+  }
+  return null;
+}
+
+/** Return the first caller-supplied fund-destination param, else `null`. */
+export function findCallerSuppliedDestinationParam(
+  params: Readonly<Record<string, unknown>>,
+): string | null {
+  for (const key of KHALANI_DERIVED_DESTINATION_PARAMS) {
+    if (isSupplied(params[key])) return key;
+  }
+  return null;
+}
 
 /**
  * Return the first forbidden fee param a caller actually supplied, else `null`.
@@ -49,10 +141,7 @@ export function findCallerSuppliedFeeParam(
   params: Readonly<Record<string, unknown>>,
 ): string | null {
   for (const key of KHALANI_FORBIDDEN_FEE_PARAMS) {
-    const value = params[key];
-    if (value === undefined || value === null) continue;
-    if (typeof value === "string" && value.trim() === "") continue;
-    return key;
+    if (isSupplied(params[key])) return key;
   }
   return null;
 }
@@ -69,7 +158,7 @@ export function assertNoCallerSuppliedFeeParams(
   if (supplied === null) return;
   throw new VexError(
     ErrorCodes.AGENT_VALIDATION_ERROR,
-    `${supplied} is not an accepted parameter: Vex never charges a bridge referral fee and never takes fee parameters from tool input.`,
+    `${supplied} is not an accepted parameter: Vex never takes fee parameters from tool input.`,
     "Remove it and retry.",
   );
 }
@@ -83,7 +172,11 @@ export interface QuoteRequestInput {
   tradeType?: string;
   fromAddress?: string;
   recipient?: string;
-  refundTo?: string;
+  /**
+   * NO `refundTo`. It is derived from the resolved source address — see the
+   * refund-destination policy above. Its absence here is the compile-time half
+   * of that rule: no code path can put a caller's refund address on the wire.
+   */
   filler?: string;
   refreshChains?: boolean;
 }
@@ -100,7 +193,7 @@ export interface PreparedQuoteRequest {
 export function resolveQuoteAddress(
   input: string | undefined,
   family: "eip155" | "solana",
-  fallbackRole: "from" | "recipient" | "refundTo",
+  fallbackRole: "from" | "recipient",
 ): string {
   const fallback = resolveConfiguredAddress(family);
   const value = input ?? fallback;
@@ -108,7 +201,7 @@ export function resolveQuoteAddress(
     throw new VexError(
       ErrorCodes.WALLET_NOT_CONFIGURED,
       `No ${formatChainFamily(family)} ${fallbackRole} address available.`,
-      `Pass --${fallbackRole === "refundTo" ? "refund-to" : fallbackRole} explicitly or configure the matching wallet first.`,
+      `Pass --${fallbackRole} explicitly or configure the matching wallet first.`,
     );
   }
   return normalizeAddressForFamily(value, family, fallbackRole);
@@ -148,9 +241,11 @@ export async function prepareQuoteRequest(input: QuoteRequestInput): Promise<Pre
   const recipient = input.recipient
     ? normalizeAddressForFamily(input.recipient, toFamily, "recipient")
     : resolveQuoteAddress(undefined, toFamily, "recipient");
-  const refundTo = input.refundTo
-    ? normalizeAddressForFamily(input.refundTo, fromFamily, "refundTo")
-    : fromAddress;
+  // DERIVED, never supplied (refund-destination policy above): a failed bridge
+  // returns the money to the wallet it left. `fromAddress` is already the
+  // resolved source address — under a session that is the selected source
+  // wallet, which is also the address that signs the deposit.
+  const refundTo = fromAddress;
 
   return {
     chains,

@@ -52,6 +52,7 @@ import {
   type AgentActivityFailureCode,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
 import logger from "@utils/logger.js";
 
@@ -69,6 +70,32 @@ const SWAP_NAMESPACE = "solana";
 /** The ONE entry point for provider-error text reaching an output/log/reason (scrub boundary — mirrors kyberswap/lend). */
 function swapFailureMessage(err: unknown): string {
   return summarizeProtocolError(err).message;
+}
+
+/**
+ * Vex's slippage ceiling, applied to the Jupiter venue.
+ *
+ * Jupiter's own range check permits 0–10,000 bps
+ * (`jupiter-swaps/validation.ts`), and the manifest `unit: "bps"` gate
+ * (`runtime/bps-param.ts`) proves integrality but deliberately applies no
+ * maximum — so before this check a model could authorise a 5,000 bps swap here
+ * while the identical KyberSwap request was refused. The ceiling is product
+ * policy and has ONE owner (`slippage-policy.ts`); this is Jupiter's call site.
+ *
+ * No `venueMaxBps` is passed: Jupiter's 10,000 is ABOVE Vex's ceiling, so the
+ * ceiling binds on its own (`effectiveMaxSlippageBps`).
+ *
+ * REJECTED, never clamped, and checked BEFORE wallet resolution or any provider
+ * call — a price-protection parameter the caller got wrong must surface as the
+ * caller's mistake, not be quietly lowered at the boundary where it costs money.
+ *
+ * @returns the agent-actionable rejection reason, or `null` when permitted.
+ * An omitted value takes Jupiter's own default and is not this gate's business.
+ */
+function jupiterSlippageViolation(toolId: string, p: Record<string, unknown>): string | null {
+  const raw = num(p, "slippageBps");
+  if (raw === undefined) return null;
+  return checkSlippageBps(`Parameter "slippageBps" for ${toolId}`, raw);
 }
 
 // ── Shared helpers (exported for predict + lend handlers) ───────
@@ -253,6 +280,9 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const amount = num(p, "amount");
     if (!inputRaw || !outputRaw || amount == null) return fail("Missing required: inputToken, outputToken, amount");
 
+    const slippageViolation = jupiterSlippageViolation("solana.swap.quote", p);
+    if (slippageViolation) return fail(slippageViolation);
+
     let taker: string;
     try {
       taker = walletAddress(p, ctx);
@@ -313,6 +343,9 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const inputRaw = str(p, "inputToken"), outputRaw = str(p, "outputToken");
     const amount = num(p, "amount");
     if (!inputRaw || !outputRaw || amount == null) return fail("Missing required: inputToken, outputToken, amount");
+
+    const slippageViolation = jupiterSlippageViolation(toolId, p);
+    if (slippageViolation) return fail(slippageViolation);
 
     const sessionId = ctx.sessionId;
     if (!sessionId) return fail(`${toolId} requires an active session.`);
@@ -448,6 +481,23 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
           tokenAddress: outputToken.address, tokenSymbol: outputToken.symbol,
           tokenDecimals: outputToken.decimals, amountRaw: prepared.raw.outAmount,
         }),
+        // Vex's 25 bps, recorded as the exact token amount (migration 050
+        // Part 2). This path fetches NO USD price, so `usd_vex_fee_est` is
+        // NULL on every Jupiter swap row and would read as "Vex charged
+        // nothing" if the amount were not here. Both figures come from
+        // `fee-swap.ts`'s single exact bigint derivation — the same numbers
+        // `assertFeePolicyUnchanged` re-checked and the approval preview
+        // disclosed — so the fee shown, the fee charged and the fee recorded
+        // are one value. `feeMint` IS the input mint by construction (the fee
+        // is charged on the input side), which is why the input token's
+        // symbol/decimals describe it.
+        vexFee: {
+          tokenAddress: prepared.feeMint,
+          tokenSymbol: inputToken.symbol,
+          tokenDecimals: inputToken.decimals,
+          amountRaw: prepared.feeAmountRaw,
+          amountHuman: prepared.feeAmountDecimal,
+        },
         ...(routeProvenance ? { routeProvenance } : {}),
       }],
     });
