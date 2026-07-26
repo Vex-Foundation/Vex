@@ -68,6 +68,23 @@ for (const chain of CHAINS) {
   idMap.set(chain.chainId, chain);
 }
 
+// ── Chain-id input form ─────────────────────────────────────────────
+
+/**
+ * A chain input written as a plain chain ID (`"8453"`) rather than a slug.
+ * `token_find` (khalani.tokens.search) returns `chainId` as a NUMBER, so this
+ * is the form the agent actually holds after looking a token up — it reaches
+ * every chain parameter in the tree. One owner for the form so callers that
+ * need to phrase a refusal ("chain id 424242 is not…") do not carry a second
+ * copy of the rule.
+ */
+const NUMERIC_CHAIN_ID_PATTERN = /^\d+$/;
+
+/** True when a chain input is written as a chain ID rather than a slug/alias. */
+export function isNumericChainIdInput(input: string): boolean {
+  return NUMERIC_CHAIN_ID_PATTERN.test(input.trim());
+}
+
 // ── Public API ──────────────────────────────────────────────────────
 
 /** Get all supported chains with feature availability. */
@@ -75,9 +92,30 @@ export function getKyberChains(): KyberChainFeatures[] {
   return CHAINS.map((c) => ({ ...c }));
 }
 
-/** Resolve a chain slug or alias to a validated KyberChainSlug. Throws on unknown. */
+/**
+ * Resolve a chain slug, alias, or chain ID to a validated KyberChainSlug.
+ * Throws on unknown.
+ *
+ * A chain ID resolves through `idMap` — the SAME registry rows the slug table
+ * is built from — rather than through a second lookup table, so a chain can
+ * never be KyberSwap-supported under its slug and unknown under its id. That
+ * split is exactly what used to happen: a numeric id threw here, the venue
+ * router read the throw as "KyberSwap does not cover this chain", and Base
+ * (aggregator: true, right there in `CHAINS`) was reported to the agent as
+ * unsupported — burning the session's one-shot Uniswap reveal on nothing but
+ * the spelling of the chain.
+ */
 export function resolveChainSlug(input: string): KyberChainSlug {
   const normalized = input.toLowerCase().trim();
+  if (NUMERIC_CHAIN_ID_PATTERN.test(normalized)) {
+    const slug = chainIdToSlug(Number(normalized));
+    if (slug) return slug;
+    throw new VexError(
+      ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
+      `Unsupported KyberSwap chain id: ${normalized}`,
+      `Supported: ${CHAINS.map((c) => `${c.slug} (${c.chainId})`).join(", ")}`,
+    );
+  }
   const aliased = ALIASES[normalized] ?? normalized;
   const entry = slugMap.get(aliased);
   if (!entry) {

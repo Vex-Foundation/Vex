@@ -205,11 +205,12 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
-    expect(row.productType).toBe("spot");
-    expect(row.amountBasis).toBe("requested"); // swap rule, unchanged
-    expect(row.legs).toBeNull();
-    expect(row.fromChainId).toBeNull();
-    expect(row.providerOrderId).toBeNull();
+    expect(res.items[0]).toMatchObject({
+      productType: "spot",
+      amountBasis: "requested", // swap rule, unchanged
+      legs: null,
+      fromChainId: null,
+      providerOrderId: null,
+    });
   });
 });

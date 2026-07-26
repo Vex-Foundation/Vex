@@ -66,6 +66,41 @@ export function compliantSwapCalldata(input: CompliantSwapBuildInput): Hex {
 }
 
 /**
+ * The `routeSummary.route` that accompanies a `compliantSwapCalldata` build:
+ * ONE path, ONE hop, swapping the input net of the integrator fee in a pool.
+ *
+ * A route summary ALWAYS carries this — `parseRouteSummary` yields an array on
+ * every path — so a `getRoute` mock without it is a response the real client
+ * cannot produce. It is not inert: `deriveRouteFirstHops` reads it to decide
+ * which pools a build may transfer the input to.
+ *
+ * The pool below is deliberately NOT the executor, so these mocks reproduce the
+ * dominant production shape — a route that names real pools while the build
+ * still routes everything through the executor (159 of 228 measured builds).
+ */
+export const COMPLIANT_ROUTE_POOL = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640";
+
+export function compliantRoutePaths(input: {
+  readonly srcToken: string;
+  readonly dstToken: string;
+  readonly amountIn: bigint;
+  readonly quotedNetOutRaw: string;
+}) {
+  const swapAmount = input.amountIn - (input.amountIn * BigInt(KYBERSWAP_FEE_BPS)) / 10_000n;
+  return [[{
+    pool: COMPLIANT_ROUTE_POOL,
+    tokenIn: getAddress(input.srcToken),
+    tokenOut: getAddress(input.dstToken),
+    swapAmount: swapAmount.toString(),
+    amountOut: input.quotedNetOutRaw,
+    exchange: "uniswapv3",
+    poolType: "univ3",
+    poolExtra: null,
+    extra: null,
+  }]];
+}
+
+/**
  * The input-token transfer list a real build carries for `amountIn`, which the
  * pre-sign guard binds: one transfer to the executor being called, for the
  * amount net of the integrator fee — or nothing at all when the input is

@@ -32,6 +32,12 @@ import {
   type ConfirmedPriorLeg,
 } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
+  classifyDependentLegPoolStateRevert,
+  classifyPreSignRevert,
+  dependentLegPoolStateRefusalGuidance,
+  preSignRefusalGuidance,
+} from "@tools/evm-chains/pre-sign-revert-refusal.js";
+import {
   META_AGGREGATION_ROUTER_V2,
   NATIVE_TOKEN_ADDRESS,
   KYBERSWAP_FEE_BPS,
@@ -41,22 +47,28 @@ import {
   KYBERSWAP_MAX_SLIPPAGE_BPS,
 } from "@tools/kyberswap/constants.js";
 import { verifyBuiltKyberSwap } from "@tools/kyberswap/evm/swap-calldata-guard.js";
+import { deriveRouteFirstHops } from "@tools/kyberswap/evm/swap-source-transfer-binding.js";
 import {
   computeApprovedMinOut,
   KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
 } from "@tools/kyberswap/swap-price-floor.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
-import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { checkSlippageBps, effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { resolveTokenMetadataStrict, type ResolvedKyberTokenMetadata, requireFeature, resolveChainWithId } from "@tools/kyberswap/helpers.js";
+import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
 import { formatRouteSummary, sanitizeProviderNote } from "../helpers.js";
 import { estimateKyberSwapCostsUsd } from "../swap-cost-estimate.js";
 import logger from "@utils/logger.js";
 import { isRecord } from "@utils/validation-helpers.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import {
+  MINED_REVERT_SWAP_LEG_REASON,
+  minedRevertApprovalLegReason,
+} from "@vex-agent/tools/protocols/runtime/mined-revert-reason.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
@@ -71,6 +83,7 @@ import {
   abortPlannedEvents,
   type AgentActivityEvent,
   type AgentActivityEventRole,
+  type AgentActivityFailureCode,
   type AgentActivityLegInput,
   type CreatePendingActivityEventInput,
 } from "@vex-agent/db/repos/agent-activity.js";
@@ -226,7 +239,7 @@ function revealOnSwapMinedRevert(eventRole: AgentActivityEventRole, sessionId: s
   const revealFailure = deriveKyberMinedRevertRevealFailure(eventRole);
   if (!revealFailure || !isRevealEligibleKyberFailure(revealFailure)) return "";
   revealUniswapPair(sessionId);
-  return " The Kyber swap transaction reverted on-chain. Do not retry that Kyber route. Uniswap quoting is now unlocked for this session — request a fresh swap_quote_uniswap before considering execution.";
+  return " The gas for this attempt was spent and nothing was swapped. A mined revert on a swap is most often the price guard: the pool moved past the minimum output written into the calldata after the pre-sign estimate passed. FIRST re-quote the SAME Kyber route with a higher slippageBps (Vex caps it at 1000) — switching venue does not fix a price-guard revert, another venue at the same tolerance reverts the same way. Uniswap quoting is also unlocked for this session if a fresh Kyber quote is refused for a routing reason rather than price.";
 }
 
 /**
@@ -414,6 +427,35 @@ async function abortRemainingPlans(executionId: number, fromIndex: number, reaso
   }
 }
 
+/**
+ * Finalize the ONE leg the chain refused pre-sign with its real failure code,
+ * instead of the blanket `unknown` that `abortPlannedEvents` hardcodes — a row
+ * reading `FAIL[unknown]` for a diagnosable slippage revert tells the agent
+ * nothing it can act on. Mirrors what `uniswap.swap.execute` already does from
+ * its sign-time catch.
+ *
+ * Called BEFORE the abort sweep because `failActivityEvent`'s CAS requires
+ * `status = 'pending'`, and as a SUPPLEMENT to it, never a replacement: the
+ * sweep still runs and its own `pending` filter skips this row, so a failed
+ * write here can never strand a row. Best-effort for that reason — a throw is
+ * logged, never propagated (the caller's return value is already decided).
+ */
+async function failRefusedLeg(
+  eventRow: AgentActivityEvent | undefined,
+  failureCode: AgentActivityFailureCode,
+  reason: string,
+): Promise<void> {
+  if (!eventRow) return;
+  try {
+    await failActivityEvent(eventRow.id, { failureCode, failureReason: `refused before signing: ${reason}` });
+  } catch (err) {
+    logger.warn("kyberswap.swap.execute.refused_leg_fail_write_failed", {
+      id: eventRow.id,
+      error: kyberFailureMessage("kyberswap.swap.execute", err),
+    });
+  }
+}
+
 // ── Handler map ──────────────────────────────────────────────────
 
 export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
@@ -474,6 +516,13 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return fail(`kyberswap.swap.quote failed: ${kyberFailureMessage("kyberswap.swap.quote", err)}`);
     }
+    // Agent-facing labels only. A native leg's `symbol` is the chain-agnostic
+    // `NATIVE` sentinel, which tells the agent nothing about what it is trading;
+    // these annotate it with the chain's real ticker (`NATIVE (ETH)`), degrading
+    // to the bare sentinel when the chain cannot be resolved. `tokenIn.symbol`
+    // itself stays canonical — it is what gets persisted and matched on.
+    const tokenInLabel = annotateNativeSymbol(tokenIn.symbol, chainId);
+    const tokenOutLabel = annotateNativeSymbol(tokenOut.symbol, chainId);
     const amountIn = parseUnits(amountInRaw, tokenIn.decimals).toString();
 
     let response: KyberGetRouteResponse;
@@ -502,7 +551,7 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     // stays parseable (every tool in this codebase returns JSON via `ok()`,
     // and downstream tests/consumers rely on `JSON.parse(result.output)`).
     const summary =
-      `Quote: ${amountInRaw} ${tokenIn.symbol} → ~${route.amountOut} ${tokenOut.symbol} `
+      `Quote: ${amountInRaw} ${tokenInLabel} → ~${route.amountOut} ${tokenOutLabel} `
       + `(~$${route.amountOutUsd} est.) on ${slug}. Gas ~$${route.gasUsd} est.`
       // On an L2 the L1 data fee can rival or exceed execution gas — quoting
       // only `gasUsd` understated the real cost of the trade.
@@ -512,8 +561,8 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     return ok({
       summary,
       chain: slug, chainId,
-      tokenIn: { address: tokenIn.address, symbol: tokenIn.symbol, decimals: tokenIn.decimals },
-      tokenOut: { address: tokenOut.address, symbol: tokenOut.symbol, decimals: tokenOut.decimals },
+      tokenIn: { address: tokenIn.address, symbol: tokenInLabel, decimals: tokenIn.decimals },
+      tokenOut: { address: tokenOut.address, symbol: tokenOutLabel, decimals: tokenOut.decimals },
       routeSummary: route,
       routerAddress: response.data.routerAddress,
       safety,
@@ -573,6 +622,11 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
       // though the tokens never resolved.
       return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, undefined, undefined, err, false);
     }
+    // Agent-facing labels only — see the quote handler's note. The persisted
+    // leg symbols (`legInput`, the activity event plan) keep the canonical
+    // `NATIVE` sentinel.
+    const tokenInLabel = annotateNativeSymbol(tokenIn.symbol, chainId);
+    const tokenOutLabel = annotateNativeSymbol(tokenOut.symbol, chainId);
 
     // Full signing wallet (decrypts) — resolved only now that the call may
     // actually need to sign. Re-validates the SAME session/policy scope the
@@ -693,6 +747,10 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
           srcIsNative: tokenIn.isNative,
           freshMinOutRaw: computeApprovedMinOut(routeSummaryRaw.amountOut, slippage),
           floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
+          // The pools of the very route summary posted to `/route/build`
+          // above — never a second, fresher route, which would let the guard
+          // bless a build against a route the agent never approved.
+          routeFirstHops: deriveRouteFirstHops(routeSummaryRaw.route),
         },
       );
       if (!verdict.ok) {
@@ -827,15 +885,25 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
     // estimating node does not always have it yet (see
     // `dependent-leg-gas-estimate.ts`).
     let priorLeg: ConfirmedPriorLeg | undefined;
+    // Per-leg, reset every iteration. The discriminator the outer catch needs
+    // — "did we submit anything for THIS step", never "was there an allowance
+    // leg" — so a post-broadcast failure can never inherit the pre-sign
+    // refusal's "nothing was signed" wording.
+    let legBroadcastAttempted = false;
     try {
       for (let i = 0; i < plans.length; i++) {
         currentIndex = i;
+        legBroadcastAttempted = false;
         const plan = plans[i]!;
         const eventRow = events[i]!;
         const outcome: StagedBroadcastOutcome = await signStageBroadcast(
           publicClient, walletClient, plan.txParams,
           {
             onHashStaged: async (handles) => {
+              // Reached only AFTER this leg is signed and immediately before
+              // `sendRawTransaction` — past this point the leg can no longer
+              // claim pre-sign safety.
+              legBroadcastAttempted = true;
               const res = await markActivityBroadcast(eventRow.id, handles);
               if (!res.applied) {
                 // C14 (Codex final-review finding 1): a CAS miss means this
@@ -866,7 +934,14 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
         if (outcome.kind === "reverted") {
           await failActivityEvent(eventRow.id, {
             failureCode: "mined_revert",
-            failureReason: `${plan.eventRole} transaction ${outcome.txHash} reverted on-chain.`,
+            // Per-role: the price-guard remedy is TRUE for the swap leg and
+            // FALSE for an approve (no minimum-output guard exists on one).
+            // Owner: `runtime/mined-revert-reason.ts`. The tx hash is not
+            // repeated — the row's own `tx_hash` column carries it, and the
+            // repo boundary masks hash-shaped text anyway.
+            failureReason: plan.eventRole === "swap"
+              ? MINED_REVERT_SWAP_LEG_REASON
+              : minedRevertApprovalLegReason(plan.eventRole),
           });
           await abortRemainingPlans(executionId, i + 1, `earlier ${plan.eventRole} reverted`);
           // REVISION 1 R1: reveal ONLY for the swap leg (never allowance/allowance_reset).
@@ -1008,7 +1083,7 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
         // fields after — one JSON key ordering (see the quote handler's same
         // convention note).
         const summary =
-          `Swapped ${amountInHuman} ${tokenIn.symbol} → ${amountOutHuman} ${tokenOut.symbol} on ${slug}. `
+          `Swapped ${amountInHuman} ${tokenInLabel} → ${amountOutHuman} ${tokenOutLabel} on ${slug}. `
           + `Tx: ${outcome.txHash}` + (buildResp.data.amountInUsd ? ` (~$${buildResp.data.amountInUsd} in / ~$${buildResp.data.amountOutUsd} out, estimated).` : ".");
 
         // The build response's own cost disclosure was validated and then
@@ -1022,8 +1097,8 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
           summary,
           chain: slug, chainId,
           txHash: outcome.txHash,
-          tokenIn: tokenIn.symbol,
-          tokenOut: tokenOut.symbol,
+          tokenIn: tokenInLabel,
+          tokenOut: tokenOutLabel,
           amountIn: amountInHuman,
           amountOut: amountOutHuman,
           ...(buildResp.data.additionalCostUsd
@@ -1050,6 +1125,25 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
       // this is a CAS-miss throw or any other unexpected failure) and return
       // with the SAME `_executionId`.
       const safeMessage = kyberFailureMessage(toolId, err);
+      const refusedRole = plans[currentIndex]?.eventRole ?? "swap";
+      // The chain refused this leg's PRE-SIGN estimate and nothing of ours
+      // went to the wire: a refusal, not an interruption of unknown scope.
+      // Reporting it as "already recorded, check the record" stranded a live
+      // autonomous mission on 2026-07-25 (`evm-chains/pre-sign-revert-refusal.ts`
+      // carries the full incident). Classified BEFORE the abort sweep so the
+      // row can keep its real code; `null` for a `DependentLegGasEstimateError`
+      // (its own branch below) and for any error we cannot place.
+      const preSignRevert = legBroadcastAttempted ? null : classifyPreSignRevert(err);
+      // The DECODED reason, not viem's verbose message — but still through
+      // this venue's single scrub boundary (C37), because the string is chosen
+      // by the contract, not by us. Same treatment `uniswap.swap.execute`
+      // gives its own classified reason.
+      const safeRevertReason = preSignRevert
+        ? kyberFailureMessage(toolId, preSignRevert.revertReason)
+        : "";
+      if (preSignRevert) {
+        await failRefusedLeg(events[currentIndex], preSignRevert.failureCode, safeRevertReason);
+      }
       await abortRemainingPlans(executionId, currentIndex, safeMessage);
       logger.warn("kyberswap.swap.execute.post_intent_failure", { executionId, index: currentIndex, error: safeMessage });
       // A leg refused because its estimate never succeeded after an allowance
@@ -1059,11 +1153,42 @@ export const SWAP_HANDLERS: Record<string, ProtocolHandler> = {
       // otherwise is what made a transient RPC lag permanent for an agent
       // (live 2026-07-24/25 — `dependent-leg-gas-estimate.ts`).
       if (err instanceof DependentLegGasEstimateError) {
-        const refusedRole = plans[currentIndex]?.eventRole ?? "swap";
+        // ERC-20 input (the common USDC→X shape): with an allowance leg in
+        // front, a genuine price-guard refusal can only reach the agent HERE,
+        // and the RPC-lag wording — actionable, but naming no parameter — left
+        // it unable to fix the one thing that was wrong. A POOL-STATE reason
+        // that survived every retry is admissible evidence (the narrowing and
+        // its two arguments live in `pre-sign-revert-refusal.ts`); every other
+        // reason keeps the branch below, unchanged.
+        const poolState = classifyDependentLegPoolStateRevert(err);
+        if (poolState) {
+          return {
+            success: false,
+            output: `${toolId}: the ${refusedRole} step was refused before signing. ${dependentLegPoolStateRefusalGuidance({
+              error: err,
+              // Chain-controlled text through this venue's single scrub boundary (C37).
+              revertReason: kyberFailureMessage(toolId, poolState.revertReason),
+              failureCode: poolState.failureCode,
+              slippage: { appliedBps: slippage, maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS) },
+            })} Recorded as execution ${executionId}.`,
+            data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: poolState.failureCode },
+          };
+        }
         return {
           success: false,
           output: `${toolId}: the ${refusedRole} step could not be gas-estimated, so it was refused before signing. ${dependentLegEstimateGuidance(err)} Recorded as execution ${executionId}; the node reported: ${safeMessage}`,
           data: { _executionId: executionId, status: "not_attempted", retryable: true },
+        };
+      }
+      if (preSignRevert) {
+        return {
+          success: false,
+          output: `${toolId}: the ${refusedRole} step was refused before signing. ${preSignRefusalGuidance({
+            revertReason: safeRevertReason,
+            failureCode: preSignRevert.failureCode,
+            slippage: { appliedBps: slippage, maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS) },
+          })} Recorded as execution ${executionId}.`,
+          data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: preSignRevert.failureCode },
         };
       }
       return {

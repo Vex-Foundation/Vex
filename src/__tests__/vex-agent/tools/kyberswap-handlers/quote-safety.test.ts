@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
+type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
+
 // ── Per-session wallet resolution mock (5D-protocols p1) ──────────
 // Handlers now resolve the session wallet via resolve.js (NOT the zero-arg
 // requireEvmWallet primary). Spy on the resolvers to assert the session wallet
@@ -11,12 +13,12 @@ const SESSION_EVM = {
   address: "0x1234567890abcdef1234567890abcdef12345678",
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
-const mockResolveSigningWallet = vi.fn(() => SESSION_EVM);
-const mockResolveSelectedAddress = vi.fn(() => SESSION_EVM.address);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
-  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
+  resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
   walletScopeErrorToResult: (err: unknown) => ({
     success: false,
     output: err instanceof Error ? err.message : String(err),

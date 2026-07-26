@@ -26,6 +26,18 @@
  * khalani bridge `amount` is SMALLEST units (wei/lamports). The alias schemas
  * document this and translation preserves it (no unit conversion happens here).
  *
+ * Chain params on the swap/token aliases accept BOTH a slug and a chain ID, in
+ * either JSON type (`"base"`, `"8453"`, `8453`) — `token_find`
+ * (khalani.tokens.search) returns `chainId` as a NUMBER, so an id is the form
+ * the agent normally holds. All three normalize to one value before venue
+ * classification (`./chain-param.js`), so the way a chain was spelled can never
+ * change which venue it routes to. The MUTATING executes share that exact
+ * schema (`../mutating-aliases.ts`) — quote and execute must accept the same
+ * forms or a legal quote cannot be executed. The bridge aliases are
+ * deliberately NOT included: their chain names belong to the Khalani/Relay
+ * namespaces and feed the bridge prequote match-hash, so widening them is a
+ * separate change.
+ *
  * KyberSwap route-not-found reveal (plan §11.2): when `classifySwapFamily`
  * determines an EVM chain has NO KyberSwap aggregator support at all
  * (`family.venue === "uniswap"`), `swap_quote` reveals the hidden Uniswap pair
@@ -45,7 +57,9 @@ import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
+import { ChainParam } from "./chain-param.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
+import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
@@ -83,7 +97,7 @@ function protocolContext(context: InternalToolContext): Parameters<typeof execut
 // transaction-safety-significant silent behavior change (the agent believes
 // it redirected output that in fact went to the sender).
 const SwapQuoteArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
   amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
@@ -104,6 +118,19 @@ export async function handleSwapQuote(
 
   const family = classifySwapFamily(a.chain);
   if (family.kind === "unknown") {
+    // A chain ID is refused AS an id. It came from token_find, so "cannot
+    // determine swap family" would read as a lookup mistake rather than the
+    // truth: no venue in the tree serves that chain. This branch runs BEFORE
+    // the Uniswap reveal below on purpose — revealing the fallback would claim
+    // Uniswap covers a chain nothing registers, and would spend the session's
+    // one-shot reveal to say it.
+    if (isNumericChainIdInput(a.chain)) {
+      return fail(
+        `swap_quote: chain id ${a.chain} is not a chain Vex can swap on. ` +
+          `Pass a supported EVM chain — either its slug or the chain id token_find ` +
+          `returns (ethereum/1, base/8453, arbitrum/42161, …) — or "solana".`,
+      );
+    }
     return fail(
       `swap_quote: cannot determine swap family for chain "${a.chain}". ` +
         `Use a supported EVM chain (e.g. ethereum, base, arbitrum) or "solana".`,
@@ -164,7 +191,7 @@ export async function handleSwapQuote(
 // ── swap_quote_uniswap — HIDDEN EVM-only Uniswap fallback quote ──────
 
 const SwapQuoteUniswapArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
   amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
@@ -224,7 +251,7 @@ export async function handleSwapQuoteUniswap(
 // ── token_check — EVM honeypot / fee-on-transfer ─────────────────────
 
 const TokenCheckArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  chain: ChainParam,
   address: z.string().min(1, { message: "address is required" }),
 });
 

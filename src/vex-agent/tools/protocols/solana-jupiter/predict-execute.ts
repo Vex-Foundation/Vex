@@ -62,6 +62,7 @@ import {
   type JupiterPredictionManagedExecution,
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
 import { JUPITER_PREDICTION_USDC_MINT } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
+import { buildPredictionOrderProvenance } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-order-provenance.js";
 import { prepareVersionedTx, type PreparedSolanaTx } from "@tools/solana-ecosystem/shared/solana-transaction.js";
 import { solanaExplorerUrl } from "@tools/solana-ecosystem/shared/solana-validation.js";
 import {
@@ -264,7 +265,14 @@ export function isToolResult(value: unknown): value is ToolResult {
 type EventPatch = Partial<
   Pick<
     CreatePendingActivityEventInput,
-    "tokenIn" | "tokenOut" | "usdInEst" | "usdOutEst" | "usdFeeEst" | "usdVenueFeeEst" | "usdSource"
+    | "tokenIn"
+    | "tokenOut"
+    | "usdInEst"
+    | "usdOutEst"
+    | "usdFeeEst"
+    | "usdVenueFeeEst"
+    | "usdSource"
+    | "routeProvenance"
   >
 >;
 
@@ -410,6 +418,11 @@ export const executePredictSell: ProtocolHandler = async (p, ctx) => {
       transaction,
       managed,
       eventPatch: {
+        // The position THIS row closes, persisted before anything is signed.
+        // A payout arrives in a keeper's later transaction, so the settlement
+        // sweep has nothing but the row to tell it which position to ask
+        // about — see `db/repos/agent-activity/prediction-payout-settlement.ts`.
+        routeProvenance: buildPredictionOrderProvenance(pk),
         // Payout ASSET only — no token amount. `newPayoutUsd` is a
         // USD-denominated estimate from the order preview; writing it into
         // `amountRaw` only ever looked right because JupUSD is 6-decimal and
@@ -458,6 +471,8 @@ export const executePredictClaim: ProtocolHandler = async (p, ctx) => {
       // when the provider genuinely returned no `execution` object.
       managed: resolveManagedExecution(raw, "Claim position"),
       eventPatch: {
+        // Same per-row position truth as the sell path above.
+        routeProvenance: buildPredictionOrderProvenance(pk),
         // Payout ASSET only — `payoutAmountUsd` is a USD estimate, never an
         // atomic JupUSD quantity. See the sell path and `predict-payout-asset.ts`.
         tokenOut: PREDICTION_PAYOUT_LEG,

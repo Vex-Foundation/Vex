@@ -24,8 +24,9 @@ import {
 import { PENDLE_ROUTER, PENDLE_ROUTER_ABI } from "@tools/pendle/constants.js";
 import { ErrorCodes } from "../../../../../errors.js";
 import { PENDLE_LIVE_FIXTURES as F } from "./fixtures.js";
+import { mutableConvertFixture } from "./validated-fixtures.js";
 
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+const clone = mutableConvertFixture;
 
 const WALLET = getAddress("0x742d35cc6634c0532925a3b844bc454e4438f44e");
 const WSTETH = getAddress("0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0");

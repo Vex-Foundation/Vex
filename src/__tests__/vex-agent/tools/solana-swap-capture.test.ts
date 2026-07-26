@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SendTransactionError } from "@solana/web3.js";
 import type { ProtocolExecutionContext } from "../../../vex-agent/tools/protocols/types.js";
 import { JupiterSubmitTipProof } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/submit-tip-proof.js";
 import {
@@ -169,9 +170,21 @@ function matchedPrequote(feePreview: Record<string, unknown> = VALID_FEE_PREVIEW
   };
 }
 
+/**
+ * The program a `/build` response declares for its swap instruction. The
+ * schema makes `swapInstruction` REQUIRED (`jupiter-swaps/schemas.ts`), and the
+ * pre-broadcast classifier binds the failing program in the node's logs to this
+ * exact value — so a fixture without it would let that binding go untested.
+ */
+const BUILD_SWAP_PROGRAM_ID = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+
 function preparedFeeBearingSwap(overrides: Record<string, unknown> = {}) {
   return {
-    raw: { inAmount: "1000000000", outAmount: "100000000", otherAmountThreshold: "99000000", swapMode: "ExactIn" },
+    raw: {
+      inAmount: "1000000000", outAmount: "100000000", otherAmountThreshold: "99000000", swapMode: "ExactIn",
+      slippageBps: 50,
+      swapInstruction: { programId: BUILD_SWAP_PROGRAM_ID },
+    },
     unsignedTx: { serialize: () => new Uint8Array([9, 9, 9]) },
     feeMint: "BonkMint",
     feeAccount: "TreasuryAta",
@@ -311,6 +324,133 @@ describe("solana.swap.execute capture", () => {
     expect(result.data?.status).toBe("rejected_before_broadcast");
     // Lifecycle unchanged — the sweep stays the sole terminality authority.
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
+    expect(mockMarkBroadcastAccepted).not.toHaveBeenCalled();
+  });
+
+  // ── Pre-broadcast refusals the agent can act on (phase-3 plan rule 8) ──────
+  //
+  // The defect: a rejection that PROVED nothing went on-chain still told the
+  // agent "do not retry until the cause is fixed", naming no cause and no
+  // parameter. On a thin pair — the common case — an autonomous agent stops
+  // permanently on a fully recoverable condition. Same defect shape as the EVM
+  // one fixed in `tools/evm-chains/pre-sign-revert-refusal.ts`.
+
+  /** A node preflight refusal (`skipPreflight:false`) carrying the swap program's own failure line. */
+  function preflightRejectionCause(programId: string, hexErrorCode: string): SendTransactionError {
+    return new SendTransactionError({
+      action: "simulate",
+      signature: "",
+      transactionMessage: `Transaction simulation failed: Error processing Instruction 4: custom program error: ${hexErrorCode}`,
+      logs: [
+        `Program ${programId} invoke [1]`,
+        "Program log: Instruction: SharedAccountsRoute",
+        "Program log: AnchorError occurred. Error Code: SlippageToleranceExceeded. Error Number: 6001. Error Message: Slippage tolerance exceeded.",
+        `Program ${programId} failed: custom program error: ${hexErrorCode}`,
+      ],
+    });
+  }
+
+  /** The tipless swap takes the RPC lane, which is where a node refusal (and therefore program logs) can reach us. */
+  function rpcLaneSwap() {
+    mockPrepareFeeBearingJupiterSwap.mockResolvedValue(preparedFeeBearingSwap({ submitTipProof: null }));
+  }
+
+  it("a pre-broadcast SLIPPAGE refusal tells the agent what to change, not to stop", async () => {
+    rpcLaneSwap();
+    mockSubmitOverRpc.mockResolvedValueOnce({
+      kind: "rejected_before_broadcast",
+      cause: preflightRejectionCause(BUILD_SWAP_PROGRAM_ID, "0x1771"),
+    });
+
+    const result = await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+      SWAP_SESSION_CTX,
+    );
+
+    // Still truthful about what happened, and still not a broadcast.
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/rejected before broadcast/i);
+    expect(result.output).toMatch(/nothing went on-chain/i);
+    expect(result.output).not.toMatch(/confirmation pending/i);
+    expect(result.data?.status).toBe("rejected_before_broadcast");
+
+    // The remedy: the parameter BY NAME, the value used, and the ceiling.
+    expect(result.output).toContain("slippageBps");
+    expect(result.output).toContain("50");
+    expect(result.output).toContain("1000");
+    expect(result.output).toMatch(/re-quote/i);
+    // The stranding sentence is gone on a cause we can actually name.
+    expect(result.output).not.toMatch(/do not retry until the cause is fixed/i);
+    // The hex is decoded to the upstream name, and no placeholder ever ships.
+    expect(result.output).toContain("SlippageToleranceExceeded");
+    expect(result.output).not.toMatch(/\bundefined\b/);
+
+    // Lifecycle unchanged — the sweep stays the sole terminality authority.
+    expect(mockFailActivityEvent).not.toHaveBeenCalled();
+    expect(mockMarkBroadcastAccepted).not.toHaveBeenCalled();
+  });
+
+  it("an UNRECOGNISED pre-broadcast rejection keeps the conservative wording and invents no remedy", async () => {
+    rpcLaneSwap();
+    // A real node refusal, but an error number this repo has no row for. A
+    // family resemblance must not produce confident wrong advice.
+    mockSubmitOverRpc.mockResolvedValueOnce({
+      kind: "rejected_before_broadcast",
+      cause: preflightRejectionCause(BUILD_SWAP_PROGRAM_ID, "0x1780"),
+    });
+
+    const result = await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+      SWAP_SESSION_CTX,
+    );
+
+    expect(result.output).toMatch(/rejected before broadcast/i);
+    expect(result.output).toMatch(/nothing went on-chain/i);
+    expect(result.output).toMatch(/do not retry until the cause is fixed/i);
+    expect(result.output).not.toContain("slippageBps");
+  });
+
+  it("a refusal from a DIFFERENT program than the one /build declared is not read as slippage", async () => {
+    rpcLaneSwap();
+    // The same error ordinal means something else in every other Anchor
+    // program. Without the program binding this would send the agent to change
+    // a tolerance that had nothing to do with the failure.
+    mockSubmitOverRpc.mockResolvedValueOnce({
+      kind: "rejected_before_broadcast",
+      cause: preflightRejectionCause("ComputeBudget111111111111111111111111111111", "0x1771"),
+    });
+
+    const result = await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+      SWAP_SESSION_CTX,
+    );
+
+    expect(result.output).toMatch(/do not retry until the cause is fixed/i);
+    expect(result.output).not.toContain("slippageBps");
+  });
+
+  it("a BROADCAST with an unknown outcome still says do not resubmit, and never claims nothing happened", async () => {
+    rpcLaneSwap();
+    // `transport_uncertain`: the bytes may already be in flight. Collapsing
+    // this into the rejected-before-broadcast framing is the lie that cost the
+    // 2026-07-25 live gate hours (live-gate-findings DEFECT 3).
+    mockSubmitOverRpc.mockResolvedValueOnce({
+      kind: "transport_uncertain",
+      cause: new Error("ECONNRESET"),
+    });
+
+    const result = await CORE_HANDLERS["solana.swap.execute"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+      SWAP_SESSION_CTX,
+    );
+
+    expect(result.data?.status).toBe("pending");
+    expect(result.output).toMatch(/do not retry/i);
+    expect(result.output).not.toMatch(/nothing went on-chain/i);
+    expect(result.output).not.toMatch(/nothing was signed/i);
+    expect(result.output).not.toMatch(/rejected before broadcast/i);
+    // No remedy is offered for an outcome we cannot place.
+    expect(result.output).not.toContain("slippageBps");
     expect(mockMarkBroadcastAccepted).not.toHaveBeenCalled();
   });
 

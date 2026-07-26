@@ -61,15 +61,25 @@
  * stored raw AND as exact decimals (`solana-executed-amount-human.js`, using
  * the row's own persisted decimals) so a confirmed row is readable.
  *
+ * PREDICTION FILL SETTLEMENT (`solana-prediction-fill-settlement.js`): ONE
+ * decoder decline is expected rather than anomalous. A Jupiter prediction
+ * sell/close pays out in a KEEPER's later settle transaction, so the
+ * transaction Vex broadcast genuinely has nothing to decode and the row could
+ * never confirm from its own hash. Those rows — and only those — get a second,
+ * keeper-side proof attempt before being logged as stuck. The lane never
+ * terminalizes and never throws; an unproven row simply stays pending, exactly
+ * as it did before.
+ *
  * DUPLICATE-CAS AWARENESS: `confirmActivityEvent`/`failActivityEvent` return
  * `{applied, row}` — an `applied:false` means a concurrent process (another
  * sweep instance, or a handler's own late finalize) already settled this row;
  * logged and skipped, never double-counted.
  *
  * TESTABILITY: `repairPendingSolanaActivity` is pure orchestration over an
- * injected `SolanaActivitySweepDeps` port — exactly the three RPC reads this
+ * injected `SolanaActivitySweepDeps` port — exactly the external reads this
  * sweep may perform (mirrors `RepairDeps`/`BridgeRepairDeps`'s "ONE
- * dependency surface" discipline). Every DB read/write
+ * dependency surface" discipline); its PRODUCTION wiring lives in the sibling
+ * `./solana-activity-repair-deps.js`. Every DB read/write
  * (`listSolanaStagedPending`, `confirmActivityEvent`, `failActivityEvent`,
  * `touchLastChecked`, `recoverStaleHashlessIntents`) is imported
  * directly and mocked via `vi.mock` in tests, matching
@@ -87,11 +97,17 @@ import {
 } from "@vex-agent/db/repos/agent-activity.js";
 import { parseSolanaTransactionResult } from "./solana-settlement-decoders.js";
 import { decodeSolanaSettlement } from "./solana-settlement-dispatch.js";
+import {
+  createPredictionHistoryCache,
+  isPredictionFillSettlementCandidate,
+  settlePredictionFillIfProven,
+  type PredictionHistoryCache,
+  type PredictionHistoryLookup,
+  type PredictionHistoryQuery,
+  type SolanaSignatureEntry,
+} from "./solana-prediction-fill-settlement.js";
 import { withExactExecutedAmountHuman } from "./solana-executed-amount-human.js";
-import { confirmSolanaMainnetGenesis, solanaRpcCall } from "./solana-rpc-safety.js";
 import { summarizeSolanaOnChainError } from "@tools/solana-ecosystem/shared/solana-transaction/onchain-error-summary.js";
-import { loadConfig } from "@config/store.js";
-import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 
 // ── Tunables ──────────────────────────────────────────────────────────────
@@ -172,6 +188,17 @@ export interface SolanaActivitySweepDeps {
   /** Raw `getTransaction` (jsonParsed, finalized, maxSupportedTransactionVersion:0) RPC result. */
   readonly getFinalizedTransaction: (signature: string) => Promise<SolanaRpcLookup<unknown>>;
   readonly getCurrentBlockHeight: () => Promise<SolanaRpcLookup<number>>;
+  /**
+   * The two reads the prediction fill-settlement lane needs. They live on this
+   * ONE port (not a second injection surface) so the sweep keeps a single
+   * dependency contract; the lane declares a structurally-compatible subset of
+   * it (`PredictionFillSettlementDeps`) and is handed this object unchanged.
+   */
+  readonly getSignaturesForAddress: (
+    address: string,
+    limit: number,
+  ) => Promise<SolanaRpcLookup<readonly SolanaSignatureEntry[]>>;
+  readonly getPredictionOrderHistory: (query: PredictionHistoryQuery) => Promise<PredictionHistoryLookup>;
 }
 
 export interface SolanaActivitySweepResult {
@@ -194,6 +221,10 @@ export async function repairPendingSolanaActivity(
 
   const candidates = await listSolanaStagedPending(SOLANA_SWEEP_BATCH_LIMIT);
   const now = Date.now();
+  // One provider-history response per (owner, position) for this RUN — see the
+  // prediction fill-settlement lane. Created here so the cache's lifetime is
+  // exactly one sweep tick and never leaks between runs.
+  const predictionHistoryCache = createPredictionHistoryCache();
   let checked = 0;
   let confirmed = 0;
   let failed = 0;
@@ -213,7 +244,7 @@ export async function repairPendingSolanaActivity(
       });
     }
     checked++;
-    const outcome = await processSolanaCandidate(event, deps);
+    const outcome = await processSolanaCandidate(event, deps, predictionHistoryCache);
     if (outcome === "confirmed") confirmed++;
     else if (outcome === "failed") failed++;
     else if (outcome === "pending") stillPending++;
@@ -229,6 +260,7 @@ type CandidateOutcome = "confirmed" | "failed" | "pending" | "duplicate";
 async function processSolanaCandidate(
   event: AgentActivityEvent,
   deps: SolanaActivitySweepDeps,
+  predictionHistoryCache: PredictionHistoryCache,
 ): Promise<CandidateOutcome> {
   const signature = event.txHash;
   if (!signature) return "pending"; // defensive; the candidate query already requires tx_hash IS NOT NULL.
@@ -248,7 +280,7 @@ async function processSolanaCandidate(
       );
     }
     if (isLandedStatus(statusLookup.value.confirmationStatus)) {
-      return handleLandedTransaction(event, deps);
+      return handleLandedTransaction(event, deps, predictionHistoryCache);
     }
     await touchLastChecked(event.id);
     return "pending"; // e.g. "processed" only — not yet confirmed/finalized.
@@ -262,7 +294,7 @@ async function processSolanaCandidate(
     return "pending";
   }
   if (txLookup.outcome === "found") {
-    return finalizeFromParsedTransaction(event, txLookup.value);
+    return finalizeFromParsedTransaction(event, txLookup.value, deps, predictionHistoryCache);
   }
 
   // BOTH missed — the only path that may terminalize on absence-of-proof,
@@ -273,6 +305,7 @@ async function processSolanaCandidate(
 async function handleLandedTransaction(
   event: AgentActivityEvent,
   deps: SolanaActivitySweepDeps,
+  predictionHistoryCache: PredictionHistoryCache,
 ): Promise<CandidateOutcome> {
   const txLookup = await deps.getFinalizedTransaction(event.txHash!);
   if (txLookup.outcome === "unavailable") {
@@ -286,12 +319,14 @@ async function handleLandedTransaction(
     await touchLastChecked(event.id);
     return "pending";
   }
-  return finalizeFromParsedTransaction(event, txLookup.value);
+  return finalizeFromParsedTransaction(event, txLookup.value, deps, predictionHistoryCache);
 }
 
 async function finalizeFromParsedTransaction(
   event: AgentActivityEvent,
   rawResult: unknown,
+  deps: SolanaActivitySweepDeps,
+  predictionHistoryCache: PredictionHistoryCache,
 ): Promise<CandidateOutcome> {
   const parsed = parseSolanaTransactionResult(rawResult);
   if (!parsed) {
@@ -314,6 +349,18 @@ async function finalizeFromParsedTransaction(
     routeProvenance: event.routeProvenance,
   });
   if (!decoded) {
+    // A Jupiter prediction sell/close is the ONE shape whose decline is
+    // expected rather than anomalous: its payout arrives in a keeper's later
+    // settle transaction, so the transaction Vex broadcast genuinely has
+    // nothing to decode. That row gets a second, keeper-side proof attempt
+    // before it is logged as stuck — every other row's decline is final for
+    // this tick, exactly as before.
+    if (isPredictionFillSettlementCandidate(event)) {
+      const laneOutcome = await settlePredictionFillIfProven({ event, deps, historyCache: predictionHistoryCache });
+      if (laneOutcome !== "pending") return laneOutcome;
+      await touchLastChecked(event.id);
+      return "pending";
+    }
     logger.warn("solana_activity_repair.undecodable_success", {
       id: event.id,
       eventRole: event.eventRole,
@@ -402,91 +449,12 @@ function logDuplicateCas(id: number, attempted: "confirm" | "fail"): void {
 
 // ── Production wiring ─────────────────────────────────────────────────────
 
-/**
- * Production deps: the single configured `cfg.solana.rpcUrl` (the SAME
- * trusted endpoint `prepareVersionedTx`/`getSolanaConnection` already use for
- * strictly MORE consequential operations — signing and broadcasting), health
- * -verified via the genesis-hash echo (`solana-rpc-safety.js`) ONCE per sweep
- * run and cached for every candidate this run processes (avoids one genesis
- * round-trip per RPC call). `null`/unhealthy genesis ⇒ every RPC dep in this
- * run reports `"unavailable"` — the sweep then leaves every candidate
- * pending, never guessing from an unverified endpoint.
- */
-export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
-  let healthyRpcUrl: Promise<string | null> | null = null;
-  const resolveHealthyRpcUrl = (): Promise<string | null> => {
-    if (!healthyRpcUrl) {
-      healthyRpcUrl = (async () => {
-        const rpcUrl = loadConfig().solana.rpcUrl;
-        return (await confirmSolanaMainnetGenesis(rpcUrl)) ? rpcUrl : null;
-      })();
-    }
-    return healthyRpcUrl;
-  };
-
-  return {
-    getSignatureStatus: async (signature) => {
-      const rpcUrl = await resolveHealthyRpcUrl();
-      if (!rpcUrl) return { outcome: "unavailable" };
-      try {
-        const result = await solanaRpcCall(rpcUrl, "getSignatureStatuses", [
-          [signature],
-          { searchTransactionHistory: true },
-        ]);
-        const value = isRecord(result) ? result.value : undefined;
-        const entry = Array.isArray(value) ? value[0] : undefined;
-        if (entry === null || entry === undefined) return { outcome: "not_found" };
-        if (!isRecord(entry)) return { outcome: "unavailable" };
-        const confirmationStatus = typeof entry.confirmationStatus === "string" ? entry.confirmationStatus : null;
-        return { outcome: "found", value: { err: entry.err ?? null, confirmationStatus } };
-      } catch (err) {
-        logger.debug("solana_activity_repair.signature_status_rpc_failed", {
-          error: summarizeProtocolError(err).message,
-        });
-        return { outcome: "unavailable" };
-      }
-    },
-
-    getFinalizedTransaction: async (signature) => {
-      const rpcUrl = await resolveHealthyRpcUrl();
-      if (!rpcUrl) return { outcome: "unavailable" };
-      try {
-        const result = await solanaRpcCall(rpcUrl, "getTransaction", [
-          signature,
-          { encoding: "jsonParsed", commitment: "finalized", maxSupportedTransactionVersion: 0 },
-        ]);
-        if (result === null || result === undefined) return { outcome: "not_found" };
-        return { outcome: "found", value: result };
-      } catch (err) {
-        logger.debug("solana_activity_repair.get_transaction_rpc_failed", {
-          error: summarizeProtocolError(err).message,
-        });
-        return { outcome: "unavailable" };
-      }
-    },
-
-    getCurrentBlockHeight: async () => {
-      const rpcUrl = await resolveHealthyRpcUrl();
-      if (!rpcUrl) return { outcome: "unavailable" };
-      try {
-        // `commitment: "finalized"` (not the confirmation guide's general
-        // "confirmed" polling suggestion): finalized height always lags
-        // confirmed height by a slot or two, so this can only ever make
-        // expiry HARDER to prove, never easier — the conservative choice for
-        // an irreversible `definitively_failed` write.
-        const result = await solanaRpcCall(rpcUrl, "getBlockHeight", [{ commitment: "finalized" }]);
-        if (typeof result !== "number" || !Number.isFinite(result)) return { outcome: "unavailable" };
-        return { outcome: "found", value: result };
-      } catch (err) {
-        logger.debug("solana_activity_repair.block_height_rpc_failed", {
-          error: summarizeProtocolError(err).message,
-        });
-        return { outcome: "unavailable" };
-      }
-    },
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
+// `buildProductionSolanaRepairDeps` (the health-gated adapters over this
+// port's external reads) moved MOVE-ONLY to the sibling
+// `./solana-activity-repair-deps.js` — a different reason to change
+// (endpoints/transport/response shapes) from this file's terminality policy,
+// and the headroom the prediction fill-settlement lane needed under the
+// 500-line cap. RE-EXPORTED here so every existing import site keeps working,
+// including the DYNAMIC `await import("./solana-activity-repair.js")` call
+// sites in `worker.ts`/`index.ts` that no typecheck would catch.
+export { buildProductionSolanaRepairDeps } from "./solana-activity-repair-deps.js";

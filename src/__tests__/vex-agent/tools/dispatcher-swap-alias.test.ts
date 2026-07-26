@@ -183,13 +183,26 @@ describe("swap_execute alias — legacy fields are REJECTED, never silently stri
   });
 });
 
-describe("swap_execute alias — chain Kyber does not cover reveals the hidden Uniswap pair", () => {
-  // Robinhood Chain resolves via its KyberSwap SLUG ("robinhood") but NOT via
-  // the bare numeric chain id "4663" (kyberswap/chains.ts's ALIASES map has no
-  // numeric entries) — a real, documented slug-vs-numeric-id asymmetry in the
-  // shared venue router. "robinhood" stays on KyberSwap; "4663" only resolves
-  // via Uniswap's numeric-id path, so THAT spelling is the one that triggers
-  // the pre-call reveal-eligible reject.
+describe("swap_execute alias — a chain id routes exactly like its slug", () => {
+  // CORRECTED (Wave B, card B2). This block used to assert that the bare chain
+  // id "4663" was "Kyber-blind" and therefore REJECTED with "KyberSwap does not
+  // support chain 4663" plus a burned Uniswap reveal — describing the
+  // slug-vs-numeric-id split as "a real, documented asymmetry in the shared
+  // venue router". It was neither real nor intended: `kyberswap/chains.ts`
+  // registers Robinhood Chain as `{ chainId: 4663, aggregator: true }` with
+  // aggregator support verified live on 2026-07-13, and `venue-router.ts`'s own
+  // header states 4663 → [kyberswap (primary), uniswap (fallback)].
+  //
+  // What the old assertion actually pinned was a resolver defect: only the SLUG
+  // reached Kyber's table, so the id spelling fell through to Uniswap's numeric
+  // path and the agent was told a venue lacked support it has — spending the
+  // session's one-shot reveal on the spelling of a chain. `token_find` returns
+  // `chainId` as a NUMBER, so that spelling is the common one.
+  //
+  // Both forms now resolve through the same registry rows, so the reveal cannot
+  // fire on a chain KyberSwap covers. The reveal itself is unchanged and still
+  // fires from its genuine triggers (Kyber route-not-found codes at quote time,
+  // a mined on-chain revert at execute time) inside the KyberSwap handlers.
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const VEX = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 
@@ -203,27 +216,37 @@ describe("swap_execute alias — chain Kyber does not cover reveals the hidden U
     expect(req.params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 });
   });
 
-  it('chain "4663" (numeric, Kyber-blind) → REJECTED and reveals swap_execute_uniswap for the session', async () => {
+  it('chain "4663" (chain id) ALSO routes to kyberswap.swap.execute, on the canonical slug', async () => {
+    await dispatchTool(
+      { name: "swap_execute", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 }, toolCallId: "rh2" },
+      ctx({ sessionId: "s-reveal-2" }),
+    );
+    const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
+    expect(req.toolId).toBe("kyberswap.swap.execute");
+    // Normalized to the slug, so the id and the slug produce one identity —
+    // which is what lets a quote taken on one spelling gate an execute on the
+    // other (the prequote match-hash resolves the chain the same way).
+    expect(req.params).toEqual({ chain: "robinhood", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5", slippageBps: 50 });
+  });
+
+  it("does NOT burn the session's Uniswap reveal on the chain id spelling", async () => {
     const sessionId = "s-reveal-2";
     expect(revealUniswapPair).toBeDefined();
-    const result = await dispatchTool(
-      { name: "swap_execute", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, toolCallId: "rh2" },
-      ctx({ sessionId }),
-    );
-    expect(result.success).toBe(false);
-    expect(result.output).toMatch(/kyberswap does not support/i);
-    expect(result.output).toContain("swap_execute_uniswap");
-    expect(executeProtocolTool).not.toHaveBeenCalled();
-
-    // The reveal actually fired for THIS session — proven by dispatching the
-    // hidden pair for the SAME session immediately after, with no separate
-    // reveal call.
     await dispatchTool(
-      { name: "swap_execute_uniswap", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, toolCallId: "rh3" },
+      { name: "swap_execute", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, toolCallId: "rh3" },
       ctx({ sessionId }),
     );
-    const [uniReq] = executeProtocolTool.mock.calls[0] as [{ toolId: string }];
-    expect(uniReq.toolId).toBe("uniswap.swap.execute");
+
+    // Proven behaviorally, the same way the old test proved the opposite: the
+    // hidden pair is dispatched for the SAME session immediately after and must
+    // be REFUSED, because nothing revealed it.
+    executeProtocolTool.mockClear();
+    const hidden = await dispatchTool(
+      { name: "swap_execute_uniswap", args: { chain: "4663", tokenIn: VIRTUAL, tokenOut: VEX, amountIn: "1.5" }, toolCallId: "rh4" },
+      ctx({ sessionId }),
+    );
+    expect(hidden.success).toBe(false);
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 });
 

@@ -9,6 +9,7 @@ import { resolveChainSlug, slugToChainId, chainIdToSlug, getChainFeatures } from
 import { NATIVE_TOKEN_ADDRESS } from "./constants.js";
 import { getKyberTokenApiClient } from "./token-api/client.js";
 import { readErc20Metadata } from "./evm-utils.js";
+import { getEvmNativeCurrency, NATIVE_SENTINEL_SYMBOL } from "../evm-chains/native-currency.js";
 import type { KyberChainSlug } from "./types.js";
 import type { KyberToken } from "./token-api/types.js";
 
@@ -20,13 +21,30 @@ export interface ResolvedKyberTokenMetadata {
   isNative: boolean;
 }
 
-/** Native EVM token metadata — sentinel address, 18 decimals, isNative. */
-function nativeTokenMetadata(): ResolvedKyberTokenMetadata {
+/**
+ * Native EVM token metadata — sentinel address, isNative, and the canonical
+ * chain-agnostic `NATIVE` symbol.
+ *
+ * The SYMBOL stays the sentinel deliberately. It is the value persisted to
+ * `agent_activity.token_*_symbol`, and the Stage-7 prequote gate canonicalizes
+ * a native execute param to the same sentinel ADDRESS, so keeping both stable
+ * is what preserves quote↔execute matching. The chain's real ticker is added
+ * alongside, at the agent-facing boundary, via `annotateNativeSymbol`.
+ *
+ * `name` and `decimals` ARE sourced per chain rather than hardcoded. Decimals
+ * feed `parseUnits`/`formatUnits` on a real money leg, so the value must come
+ * from the chain registry rather than a standing assumption; it is 18 on every
+ * chain Vex trades on today, and `native-currency.test.ts` fails loudly if a
+ * chain is ever added where it is not. An unresolvable chain keeps the previous
+ * generic values — never a guessed ticker.
+ */
+function nativeTokenMetadata(chainId: number): ResolvedKyberTokenMetadata {
+  const native = getEvmNativeCurrency(chainId);
   return {
     address: NATIVE_TOKEN_ADDRESS,
-    symbol: "NATIVE",
-    name: "Native token",
-    decimals: 18,
+    symbol: NATIVE_SENTINEL_SYMBOL,
+    name: native?.name ?? "Native token",
+    decimals: native?.decimals ?? 18,
     isNative: true,
   };
 }
@@ -132,7 +150,7 @@ export async function resolveTokenMetadata(input: string, chainId: number): Prom
   // Native token — keyword OR sentinel address. Must precede the generic
   // `isAddress` branch so the sentinel is not read as an ERC-20 contract.
   if (isNativeTokenInput(input)) {
-    return nativeTokenMetadata();
+    return nativeTokenMetadata(chainId);
   }
 
   // Address input → read metadata directly from chain (authoritative for decimals/symbol/name)
@@ -193,7 +211,7 @@ export async function resolveTokenMetadataStrict(input: string, chainId: number)
   // but is NOT an ERC-20, so it must resolve to native here rather than fall
   // through to an on-chain ERC-20 metadata read.
   if (isNativeTokenInput(input)) {
-    return nativeTokenMetadata();
+    return nativeTokenMetadata(chainId);
   }
 
   if (!isAddress(input)) {

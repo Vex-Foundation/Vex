@@ -207,10 +207,11 @@ describe("agent_activity display amount (FIX2-SPINE C20, finding 5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
-    expect(row.amountBasis).toBeNull();
-    expect(row.inputAmount).toBeNull();
-    expect(row.outputAmount).toBeNull();
+    expect(res.items[0]).toMatchObject({
+      amountBasis: null,
+      inputAmount: null,
+      outputAmount: null,
+    });
   });
 
   // W5/R5's "confirmed without decoder-proven executed legs → estimated"

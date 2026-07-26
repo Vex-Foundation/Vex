@@ -59,8 +59,21 @@ export function effectiveMaxSlippageBps(venueMaxBps?: number): number {
  *
  * `subject` names the offending parameter for the agent, e.g.
  * `Parameter "slippageBps" for kyberswap.swap.execute`.
+ *
+ * `retryParamKey` is the param the agent must resend, named INSIDE the retry
+ * sentence. It defaults to `slippageBps` because that is what every swap
+ * surface calls it, but a tool whose tolerance has another name
+ * (`solana.predict.closeAll`'s `minSellPriceSlippageBps`) must pass its own:
+ * the protocol boundary rejects an unknown parameter by name
+ * (`runtime/params.ts`), so naming the wrong key sends an agent into a second
+ * call that cannot be made at all.
  */
-export function checkSlippageBps(subject: string, value: number, venueMaxBps?: number): string | null {
+export function checkSlippageBps(
+  subject: string,
+  value: number,
+  venueMaxBps?: number,
+  retryParamKey = "slippageBps",
+): string | null {
   if (!Number.isFinite(value)) {
     return `${subject} must be a finite whole number of basis points (1 bps = 0.01%).`;
   }
@@ -81,7 +94,7 @@ export function checkSlippageBps(subject: string, value: number, venueMaxBps?: n
     return (
       `${subject} must not exceed ${max} basis points (got ${value}); `
       + `Vex caps slippage at ${VEX_MAX_SLIPPAGE_BPS} bps (${VEX_MAX_SLIPPAGE_BPS / 100}%) to bound worst-case loss. `
-      + `Retry the same call with slippageBps ${max} or lower; if the route genuinely needs more tolerance `
+      + `Retry the same call with ${retryParamKey} ${max} or lower; if the route genuinely needs more tolerance `
       + "than that, split the trade into smaller amounts instead."
     );
   }

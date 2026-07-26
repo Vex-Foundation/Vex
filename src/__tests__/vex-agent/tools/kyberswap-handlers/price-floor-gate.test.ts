@@ -28,6 +28,7 @@ import { decodeFunctionData, encodeFunctionData, getAddress, type Hex } from "vi
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 import capture from "../../../kyberswap/fixtures/route-build/base-usdc-to-native-50bps.json" with { type: "json" };
+import { compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -117,6 +118,15 @@ import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 const TOKEN_IN = getAddress(capture.request.tokenIn);
 const TOKEN_OUT = capture.request.tokenOut;
 const ROUTE_OUT = capture.routeSummary.amountOut;
+/**
+ * The captured `routeSummary` was trimmed to the two fields the harness needed
+ * in 2026-07-25, so its paths are reconstructed here. A real summary always
+ * carries them, and the pre-sign guard reads them to decide which pools the
+ * build may fund.
+ */
+const ROUTE_PATHS = compliantRoutePaths({
+  srcToken: TOKEN_IN, dstToken: TOKEN_OUT, amountIn: BigInt(capture.routeSummary.amountIn), quotedNetOutRaw: ROUTE_OUT,
+});
 /** 10 USDC at 6 decimals — matches the capture's `amountIn` of 10000000. */
 const AMOUNT_IN_HUMAN = "10";
 
@@ -194,6 +204,7 @@ describe("kyberswap.swap.execute — build calldata price floor", () => {
           amountIn: capture.routeSummary.amountIn,
           amountOut: ROUTE_OUT,
           gasUsd: "0.01", routeID: "r1", checksum: "c1",
+          route: ROUTE_PATHS,
         },
         routerAddress: capture.routerAddress,
       },
@@ -228,6 +239,7 @@ describe("kyberswap.swap.execute — build calldata price floor", () => {
           amountIn: capture.routeSummary.amountIn,
           amountOut: repricedOut,
           gasUsd: "0.01", routeID: "r1", checksum: "c1",
+          route: ROUTE_PATHS,
         },
         routerAddress: capture.routerAddress,
       },
@@ -299,6 +311,7 @@ describe("kyberswap.swap.execute — slippage ceiling", () => {
           amountIn: capture.routeSummary.amountIn,
           amountOut: ROUTE_OUT,
           gasUsd: "0.01", routeID: "r1", checksum: "c1",
+          route: ROUTE_PATHS,
         },
         routerAddress: capture.routerAddress,
       },

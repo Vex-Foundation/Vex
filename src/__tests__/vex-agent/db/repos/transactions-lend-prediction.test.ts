@@ -223,8 +223,7 @@ describe("agent_activity lend/prediction feed (R5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
-    expect(row.chainFamily).toBeNull();
+    expect(res.items[0]).toMatchObject({ chainFamily: null });
   });
 
   it("the NOT EXISTS dedup guard stays present for productType='lend'/'prediction' — a converted failure surfaces via agent_activity ONLY, never twice", async () => {

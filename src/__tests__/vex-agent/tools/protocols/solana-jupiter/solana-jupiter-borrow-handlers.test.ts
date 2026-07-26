@@ -9,19 +9,23 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { BORROW_MINT, ctx, PREPARED, SUPPLY_MINT, VAULT, WSOL_VAULT } from "./solana-jupiter-borrow-handlers.test-fixtures.js";
+
+type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
+type SolanaTransactionModule = typeof import("@tools/solana-ecosystem/shared/solana-transaction.js");
+type SolanaTokenProgramModule = typeof import("@tools/solana-ecosystem/shared/solana-token-program.js");
 
 const SIGNER = Keypair.generate();
 const WALLET_ADDRESS = SIGNER.publicKey.toBase58();
 
-const mockResolveSigningWallet = vi.fn(() => ({
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
   family: "solana" as const, address: WALLET_ADDRESS, secretKey: SIGNER.secretKey,
 }));
-const mockResolveSelectedAddress = vi.fn(() => WALLET_ADDRESS);
+const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => WALLET_ADDRESS);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
-  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
+  resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
   walletScopeErrorToResult: (err: unknown) => ({
     success: false,
     output: err instanceof Error ? err.message : String(err),
@@ -32,28 +36,6 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 // `supplyToken` is deliberately NOT the WSOL mint (mSOL here) so the
 // pre-existing deposit/withdraw/borrow tests below never trip the new WSOL
 // funding pre-check; that behavior gets its OWN dedicated fixture/tests.
-const SUPPLY_MINT = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So"; // mSOL — real mint, NOT WSOL
-const BORROW_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; // USDC
-const WSOL_MINT = "So11111111111111111111111111111111111111112";
-
-const VAULT = {
-  id: 1,
-  address: "VaultAddr1",
-  supplyToken: { address: SUPPLY_MINT, chainId: "solana", name: "Marinade staked SOL", symbol: "mSOL", uiSymbol: "mSOL", decimals: 9, price: "80" },
-  borrowToken: { address: BORROW_MINT, chainId: "solana", name: "USD Coin", symbol: "USDC", uiSymbol: "USDC", decimals: 6, price: "1" },
-  collateralFactor: "800",
-  liquidationThreshold: "850",
-  borrowable: "1000000000",
-  withdrawable: "900000000",
-  minimumBorrowing: "100000",
-};
-
-const WSOL_VAULT = {
-  ...VAULT,
-  id: 2,
-  supplyToken: { address: WSOL_MINT, chainId: "solana", name: "Wrapped SOL", symbol: "WSOL", uiSymbol: "SOL", decimals: 9, price: "150" },
-};
-
 const mockGetVaults = vi.fn();
 const mockGetPositions = vi.fn();
 const mockRequestOperate = vi.fn();
@@ -64,11 +46,11 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/service.js", ()
 }));
 
 const mockPrepareVersionedTx = vi.fn();
-const mockGetSolanaConnection = vi.fn(() => ({}));
+const mockGetSolanaConnection = vi.fn<SolanaTransactionModule["getSolanaConnection"]>(() => ({}));
 const mockSubmitOverRpc = vi.fn();
 vi.mock("@tools/solana-ecosystem/shared/solana-transaction.js", () => ({
   prepareVersionedTx: (...args: unknown[]) => mockPrepareVersionedTx(...args),
-  getSolanaConnection: (...args: unknown[]) => mockGetSolanaConnection(...args),
+  getSolanaConnection: (...args: Parameters<SolanaTransactionModule["getSolanaConnection"]>) => mockGetSolanaConnection(...args),
   submitPreparedTxOverRpc: (...args: unknown[]) => mockSubmitOverRpc(...args),
 }));
 
@@ -76,11 +58,11 @@ vi.mock("@tools/solana-ecosystem/shared/solana-transaction.js", () => ({
 // short-circuits to `TOKEN_PROGRAM_ID` for WSOL without a network call in
 // production; mocked here as a pure passthrough so only `getAccount`'s
 // balance drives the test outcomes.
-const mockResolveMintTokenProgramId = vi.fn(() => "TokenProgram111");
-const mockDeriveAta = vi.fn(() => "AtaAddress111");
+const mockResolveMintTokenProgramId = vi.fn<SolanaTokenProgramModule["resolveMintTokenProgramId"]>(() => "TokenProgram111");
+const mockDeriveAta = vi.fn<SolanaTokenProgramModule["deriveAssociatedTokenAccount"]>(() => "AtaAddress111");
 vi.mock("@tools/solana-ecosystem/shared/solana-token-program.js", () => ({
-  resolveMintTokenProgramId: (...args: unknown[]) => mockResolveMintTokenProgramId(...args),
-  deriveAssociatedTokenAccount: (...args: unknown[]) => mockDeriveAta(...args),
+  resolveMintTokenProgramId: (...args: Parameters<SolanaTokenProgramModule["resolveMintTokenProgramId"]>) => mockResolveMintTokenProgramId(...args),
+  deriveAssociatedTokenAccount: (...args: Parameters<SolanaTokenProgramModule["deriveAssociatedTokenAccount"]>) => mockDeriveAta(...args),
 }));
 
 const mockGetAccount = vi.fn();
@@ -123,24 +105,6 @@ vi.mock("@utils/logger.js", () => {
 });
 
 const { LEND_BORROW_HANDLERS } = await import("@vex-agent/tools/protocols/solana-jupiter/handlers/lend-borrow.js");
-
-function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
-  return {
-    sessionPermission: "full",
-    approved: true,
-    walletResolution: { source: "default" },
-    walletPolicy: { kind: "none" },
-    sessionId: "session-1",
-    ...over,
-  };
-}
-
-const PREPARED = {
-  serialized: new Uint8Array([1, 2, 3]),
-  signature: "LocalSig111",
-  recentBlockhash: "FreshBlockhash111",
-  lastValidBlockHeight: 12345,
-};
 
 describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
   beforeEach(() => {

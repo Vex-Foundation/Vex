@@ -110,10 +110,21 @@ describe("parseSolanaTransactionResult", () => {
     expect(parsed?.accountKeys).toEqual([WALLET, OTHER]);
   });
 
-  it("appends loadedAddresses.writable then .readonly after the static keys, in order", () => {
+  it("does NOT append loadedAddresses to a jsonParsed accountKeys list (already combined)", () => {
+    // jsonParsed object entries already contain the ALT-loaded keys (each has
+    // `source`); appending `meta.loadedAddresses` on top double-listed every
+    // ALT key. Chain-verified on the captured prediction create txs: 14
+    // accountKeys (2 lookupTable-sourced) against exactly 14 preBalances.
     const parsed = parseSolanaTransactionResult(
       fixtureRawTransaction({ loadedWritable: ["ALT_W1"], loadedReadonly: ["ALT_R1", "ALT_R2"] }),
     );
+    expect(parsed?.accountKeys).toEqual([WALLET, OTHER]);
+  });
+
+  it("appends loadedAddresses.writable then .readonly ONLY for the legacy plain-string accountKeys encoding", () => {
+    const raw = fixtureRawTransaction({ loadedWritable: ["ALT_W1"], loadedReadonly: ["ALT_R1", "ALT_R2"] });
+    (raw as Record<string, unknown> & { transaction: { message: { accountKeys: unknown } } }).transaction.message.accountKeys = [WALLET, OTHER];
+    const parsed = parseSolanaTransactionResult(raw);
     expect(parsed?.accountKeys).toEqual([WALLET, OTHER, "ALT_W1", "ALT_R1", "ALT_R2"]);
   });
 

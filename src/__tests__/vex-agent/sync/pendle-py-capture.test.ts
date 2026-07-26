@@ -14,18 +14,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { parseUnits } from "viem";
 
+type CaptureItemsModule = typeof import("@vex-agent/db/repos/capture-items.js");
+type ActivityPopulatorModule = typeof import("@vex-agent/sync/activity-populator.js");
+
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
 // ── capture-pipeline repo mocks (part a + guard) ──
-const mockRecordCaptureItems = vi.fn(async () => [10, 11]);
+const mockRecordCaptureItems = vi.fn<CaptureItemsModule["recordCaptureItems"]>(async () => [10, 11]);
 vi.mock("@vex-agent/db/repos/capture-items.js", () => ({
-  recordCaptureItems: (...a: unknown[]) => mockRecordCaptureItems(...a),
+  recordCaptureItems: (...args: Parameters<CaptureItemsModule["recordCaptureItems"]>) => mockRecordCaptureItems(...args),
 }));
-const mockPopulateActivity = vi.fn(async () => {});
+const mockPopulateActivity = vi.fn<ActivityPopulatorModule["populateActivity"]>(async () => {});
 vi.mock("@vex-agent/sync/activity-populator.js", () => ({
-  populateActivity: (...a: unknown[]) => mockPopulateActivity(...a),
+  populateActivity: (...args: Parameters<ActivityPopulatorModule["populateActivity"]>) => mockPopulateActivity(...args),
 }));
 
 const { populateCaptureItems } = await import("../../../vex-agent/tools/protocols/capture-pipeline.js");

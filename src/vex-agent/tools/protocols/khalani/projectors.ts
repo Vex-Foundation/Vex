@@ -92,7 +92,7 @@ export interface ConciseKhalaniQuoteRoute {
   amountOut: string;
   etaSeconds: number;
   /**
-   * The deadline `khalani.bridge.execute` actually enforces, unix SECONDS.
+   * The deadline `khalani.bridge` actually enforces, unix SECONDS.
    * `null` means the provider set none (both timestamps absent or 0) — the
    * executor skips the freshness check in exactly that case.
    */

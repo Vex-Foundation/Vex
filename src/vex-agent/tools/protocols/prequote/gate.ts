@@ -97,7 +97,7 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   no_quote:
     "Swap blocked: no fresh quote for these exact params — the execute must use EXACTLY the same params as the quote, including slippageBps (same value, or omitted on both sides). Call the swap quote first with those params, then retry.",
   safety_fail:
-    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam). Aborting.",
+    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam) by the pre-quote safety check. If this is the token you are BUYING, do not retry — pick a different token. If this is a token you already HOLD and are trying to exit, this block is not protecting you: report it and stop rather than retrying, because Vex has no exit path for a flagged holding today.",
   wallet_setup:
     "Swap blocked: the mission is still in setup (no active run), so swaps cannot broadcast yet. Accept and start the mission run, then swap — do NOT re-quote.",
   wallet_scope:

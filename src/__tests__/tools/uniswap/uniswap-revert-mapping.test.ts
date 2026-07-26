@@ -48,6 +48,12 @@ describe("classifyUniswapRevertError — decoded on-chain revert reasons", () =>
     ["UniswapV2: LOCKED", "simulation_reverted"],
     ["UniswapV2Library: IDENTICAL_ADDRESSES", "simulation_reverted"],
     ["UniswapV2Library: ZERO_ADDRESS", "simulation_reverted"],
+    // KyberSwap MetaAggregationRouterV2 — captured live on Base, 2026-07-25
+    // (native ETH → USDC, 50 bps, pre-sign `eth_estimateGas`). The reason
+    // table is shared EVM-router knowledge (`evm-chains/router-revert-reason.ts`),
+    // not a Uniswap-only list, so the venue that meets a string first does not
+    // decide who is allowed to understand it.
+    ["Return amount is not enough", "slippage"],
   ] as const)("%s -> %s", (reason, expectedCode) => {
     const result = classifyUniswapRevertError(revertedWith(reason));
     expect(result.failureCode).toBe(expectedCode);

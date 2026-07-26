@@ -19,13 +19,17 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getAddress, type Address, type Hex } from "viem";
+import { getAddress, type Address } from "viem";
+import { generatePrivateKey, privateKeyToAddress } from "viem/accounts";
 
-const EVM = {
-  family: "eip155" as const,
-  address: "0x1234567890AbcdEF1234567890aBcdef12345678",
-  privateKey: ("0x" + "ab".repeat(32)) as Hex,
-};
+import type { EvmWallet } from "@tools/wallet/multi-auth.js";
+
+function createEvmWallet(): EvmWallet {
+  const privateKey = generatePrivateKey();
+  return { family: "eip155", address: privateKeyToAddress(privateKey), privateKey };
+}
+
+const EVM = createEvmWallet();
 
 const mockPrepare = vi.fn();
 const mockSign = vi.fn();
@@ -66,6 +70,7 @@ import {
   planKhalaniDepositLegs,
   signStageKhalaniLeg,
   type KhalaniStagedLeg,
+  type NormalizedEvmTx,
 } from "@tools/khalani/bridge-executor.js";
 import {
   classifyNativeValue,
@@ -85,7 +90,9 @@ const UNDISCLOSED_NATIVE_CHARGE = 1_000_000_000_000_000n; // the live 1e15 wei
 
 const noopHooks = { onHashStaged: vi.fn(async () => {}), onAccepted: vi.fn(async () => {}) };
 
-function evmLeg(tx: { to: Address; data?: Hex; value?: bigint }): KhalaniStagedLeg {
+type EvmStagedLeg = Extract<KhalaniStagedLeg, { kind: "evm" }>;
+
+function evmLeg(tx: NormalizedEvmTx): EvmStagedLeg {
   return {
     role: "bridge_deposit",
     purpose: "bridge",
@@ -150,7 +157,7 @@ describe("an unclassified native charge refuses with NOTHING signed", () => {
     // boundary is the only thing that catches this.
     const authorizedTx = { to: DEPOSIT_TARGET, value: 1n };
     const authorized = evmLeg(authorizedTx);
-    const swapped: KhalaniStagedLeg = {
+    const swapped: EvmStagedLeg = {
       ...authorized,
       kind: "evm",
       tx: { to: DEPOSIT_TARGET, value: UNDISCLOSED_NATIVE_CHARGE },
@@ -166,7 +173,7 @@ describe("an unclassified native charge refuses with NOTHING signed", () => {
 
   it("refuses when the TARGET changed after classification", async () => {
     const authorized = evmLeg({ to: DEPOSIT_TARGET, value: 0n });
-    const redirected: KhalaniStagedLeg = {
+    const redirected: EvmStagedLeg = {
       ...authorized,
       kind: "evm",
       tx: { to: getAddress(EVM.address), value: 0n },

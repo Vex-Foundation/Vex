@@ -15,17 +15,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
+type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
+
 const SIGNER = Keypair.generate();
 const WALLET_ADDRESS = SIGNER.publicKey.toBase58();
 
-const mockResolveSigningWallet = vi.fn(() => ({
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
   family: "solana" as const, address: WALLET_ADDRESS, secretKey: SIGNER.secretKey,
 }));
-const mockResolveSelectedAddress = vi.fn(() => WALLET_ADDRESS);
+const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => WALLET_ADDRESS);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
-  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
+  resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
   walletScopeErrorToResult: (err: unknown) => ({
     success: false,
     output: err instanceof Error ? err.message : String(err),

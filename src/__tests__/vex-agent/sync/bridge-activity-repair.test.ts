@@ -190,9 +190,13 @@ describe("repairPendingBridges — orchestration", () => {
     expect(deps.confirmExpectedFill).not.toHaveBeenCalled();
     expect(deps.verifyFill).not.toHaveBeenCalled();
     expect(result.stillPending).toBe(1);
-    const call = warnSpy.mock.calls.find((c) => c[0] === "bridge.repair.correlation_mismatch");
+    const call = warnSpy.mock.calls.find(
+      (args) => String(Array.from(args)[0]) === "bridge.repair.correlation_mismatch",
+    );
     expect(call).toBeDefined();
-    expect((call?.[1] as Record<string, unknown>)?.field).toBe("author");
+    const [, metadata] = call === undefined ? [] : Array.from(call);
+    expect(isRecord(metadata)).toBe(true);
+    if (isRecord(metadata)) expect(metadata.field).toBe("author");
     warnSpy.mockRestore();
   });
 
@@ -222,9 +226,13 @@ describe("repairPendingBridges — orchestration", () => {
       fetchKhalaniOrder: vi.fn().mockResolvedValue(khalaniFilled()),
     });
     await repairPendingBridges(deps);
-    const call = (deps.verifyFill as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(call.recipient).toBeNull();
-    expect(call.recipient).not.toBe("0xwallet");
+    const [verifyCall] = (deps.verifyFill as ReturnType<typeof vi.fn>).mock.calls;
+    const [input] = verifyCall ?? [];
+    expect(isRecord(input)).toBe(true);
+    if (isRecord(input)) {
+      expect(input.recipient).toBeNull();
+      expect(input.recipient).not.toBe("0xwallet");
+    }
   });
 
   it("a FAILED B4 check keeps the row pending and never confirms (provider word alone is not enough)", async () => {
@@ -421,170 +429,8 @@ describe("repairPendingBridges — orchestration", () => {
     expect(result.failed).toBe(1);
     expect(result.refunded).toBe(0);
   });
-
-  // ── Null-order-id recovery (R5) ──────────────────────────────────────────────
-
-  it("recovers a missing order id via deposit-hash match and attaches it", async () => {
-    const deps = makeDeps({
-      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([
-        { executionId: 200, protocol: "khalani", walletAddress: "0xw", depositTxHash: "0xdep", fromChainId: 8453, toChainId: 42161 },
-      ]),
-      recoverKhalaniOrderId: vi.fn().mockResolvedValue("order-recovered"),
-      attachOrderId: vi.fn().mockResolvedValue(attach("attached")),
-    });
-    const result = await repairPendingBridges(deps);
-    expect(deps.touchAttempt).toHaveBeenCalledWith(200);
-    expect(deps.attachOrderId).toHaveBeenCalledWith({ executionId: 200, providerOrderId: "order-recovered" });
-    expect(deps.touchChecked).toHaveBeenCalledWith(200, "order_recovered:attached");
-    expect(result.recovered).toBe(1);
-  });
-
-  it("treats an already-attached-same order id as a successful recovery (DuplicateRecord path)", async () => {
-    const deps = makeDeps({
-      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([
-        { executionId: 200, protocol: "khalani", walletAddress: "0xw", depositTxHash: "0xdep", fromChainId: 8453, toChainId: 42161 },
-      ]),
-      recoverKhalaniOrderId: vi.fn().mockResolvedValue("order-existing"),
-      attachOrderId: vi.fn().mockResolvedValue(attach("already_attached_same")),
-    });
-    const result = await repairPendingBridges(deps);
-    expect(result.recovered).toBe(1);
-    expect(result.stillPending).toBe(0);
-  });
-
-  it("no order found yet → attempt touched, stays pending, no attach", async () => {
-    const deps = makeDeps({
-      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([
-        { executionId: 200, protocol: "khalani", walletAddress: "0xw", depositTxHash: "0xdep", fromChainId: 8453, toChainId: 42161 },
-      ]),
-      recoverKhalaniOrderId: vi.fn().mockResolvedValue(null),
-    });
-    const result = await repairPendingBridges(deps);
-    expect(deps.touchAttempt).toHaveBeenCalledWith(200);
-    expect(deps.attachOrderId).not.toHaveBeenCalled();
-    expect(result.recovered).toBe(0);
-    expect(result.stillPending).toBe(1);
-  });
-
-  it("a conflicting attach outcome does NOT count as recovery", async () => {
-    const deps = makeDeps({
-      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([
-        { executionId: 200, protocol: "khalani", walletAddress: "0xw", depositTxHash: "0xdep", fromChainId: 8453, toChainId: 42161 },
-      ]),
-      recoverKhalaniOrderId: vi.fn().mockResolvedValue("order-x"),
-      attachOrderId: vi.fn().mockResolvedValue(attach("conflict_different_id")),
-    });
-    const result = await repairPendingBridges(deps);
-    expect(result.recovered).toBe(0);
-    expect(result.stillPending).toBe(1);
-  });
-
-  it("a recovery lookup throw is scrubbed and leaves the row pending", async () => {
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
-    const deps = makeDeps({
-      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([
-        { executionId: 200, protocol: "khalani", walletAddress: "0xw", depositTxHash: "0xdep", fromChainId: 8453, toChainId: 42161 },
-      ]),
-      recoverKhalaniOrderId: vi.fn().mockRejectedValue(new Error("boom https://user:pw@rpc.example")),
-    });
-    const result = await repairPendingBridges(deps);
-    const call = warnSpy.mock.calls.find((c) => c[0] === "bridge.repair.order_recovery_failed");
-    expect(call).toBeDefined();
-    expect(String((call?.[1] as Record<string, unknown>)?.error)).not.toContain("user:pw");
-    expect(result.stillPending).toBe(1);
-    warnSpy.mockRestore();
-  });
-
-  // ── C3 confirm+enqueue recovery path (CHOICE = explicit recovery, not one tx) ─
-
-  it("reconciles confirmed-but-unenqueued rows by idempotently enqueuing the balance job, re-clearing a relay reveal (C3 recovery)", async () => {
-    const deps = makeDeps({
-      listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([
-        { executionId: 300, protocol: "relay", sessionId: "sess-r", normalizedRoute: "route-r" },
-        { executionId: 301, protocol: "khalani", sessionId: "sess-k", normalizedRoute: "route-k" },
-      ]),
-    });
-    const result = await repairPendingBridges(deps);
-    expect(deps.enqueueBalanceRefresh).toHaveBeenCalledWith({ namespace: "relay", executionId: 300 });
-    expect(deps.enqueueBalanceRefresh).toHaveBeenCalledWith({ namespace: "khalani", executionId: 301 });
-    // Recovery re-clears the stranded relay reveal (Blocker 11) — khalani never does.
-    expect(deps.clearRelayReveal).toHaveBeenCalledWith("sess-r", "route-r");
-    expect(deps.clearRelayReveal).not.toHaveBeenCalledWith("sess-k", "route-k");
-    expect(result.balanceReconciled).toBe(2);
-  });
-
-  it("idempotent re-run: once confirmed, a second sweep neither re-confirms nor re-enqueues from the confirm path", async () => {
-    // First run: pending → confirmed (enqueue once). Second run: the CAS is a
-    // no-op (already confirmed) AND the reconcile list is empty (already enqueued).
-    const firstRunDeps = makeDeps({
-      listSweepCandidates: vi.fn().mockResolvedValue([row()]),
-      fetchKhalaniOrder: vi.fn().mockResolvedValue(khalaniFilled()),
-    });
-    await repairPendingBridges(firstRunDeps);
-    expect(firstRunDeps.enqueueBalanceRefresh).toHaveBeenCalledTimes(1);
-
-    const secondRunDeps = makeDeps({
-      listSweepCandidates: vi.fn().mockResolvedValue([row()]),
-      fetchKhalaniOrder: vi.fn().mockResolvedValue(khalaniFilled()),
-      confirmExpectedFill: vi.fn().mockResolvedValue(cas(false, "confirmed")), // already confirmed
-      listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([]), // already enqueued
-    });
-    const secondResult = await repairPendingBridges(secondRunDeps);
-    expect(secondRunDeps.enqueueBalanceRefresh).not.toHaveBeenCalled();
-    expect(secondResult.confirmed).toBe(0);
-  });
-
-  // ── Duplicate CAS + counters ─────────────────────────────────────────────────
-
-  it("counts nothing and does not throw when every queue is empty", async () => {
-    const result = await repairPendingBridges(makeDeps());
-    expect(result).toEqual({
-      checked: 0,
-      confirmed: 0,
-      failed: 0,
-      refunded: 0,
-      recovered: 0,
-      balanceReconciled: 0,
-      stillPending: 0,
-    });
-  });
-
-  it("an unknown provider on a candidate is treated as a transport miss (no terminalization)", async () => {
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
-    const deps = makeDeps({
-      listSweepCandidates: vi.fn().mockResolvedValue([row({ protocol: "mystery" })]),
-    });
-    const result = await repairPendingBridges(deps);
-    expect(deps.fetchKhalaniOrder).not.toHaveBeenCalled();
-    expect(deps.fetchRelayStatus).not.toHaveBeenCalled();
-    expect(result.stillPending).toBe(1);
-    expect(warnSpy.mock.calls.some((c) => c[0] === "bridge.repair.unknown_protocol")).toBe(true);
-    warnSpy.mockRestore();
-  });
 });
 
-describe("repairPendingBridges — error text scrubbing", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
-  beforeEach(() => {
-    vi.clearAllMocks();
-    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
-  });
-  afterEach(() => warnSpy.mockRestore());
-
-  it("a refund-evidence append failure is scrubbed and KEEPS the row pending (no terminalization — Blocker 8)", async () => {
-    const deps = makeDeps({
-      listSweepCandidates: vi.fn().mockResolvedValue([row()]),
-      fetchKhalaniOrder: vi.fn().mockResolvedValue(khalaniOrder("refunded", { transactions: { refund: { txHash: "0xrefund", chainId: 8453 } } })),
-      verifyFill: vi.fn().mockResolvedValue({ verified: true }),
-      appendRefundEvidence: vi.fn().mockRejectedValue(new Error("Authorization: Bearer LEAK_TOKEN_123")),
-    });
-    const result = await repairPendingBridges(deps);
-    // The evidence-write failure must NOT terminalize — the row stays pending for
-    // the next sweep, so the known refund hash is never permanently lost.
-    expect(deps.failLogical).not.toHaveBeenCalled();
-    expect(result.refunded).toBe(0);
-    expect(result.stillPending).toBe(1);
-    const call = warnSpy.mock.calls.find((c) => c[0] === "bridge.repair.refund_evidence_failed");
-    expect(String((call?.[1] as Record<string, unknown>)?.error)).not.toContain("LEAK_TOKEN_123");
-  });
-});
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

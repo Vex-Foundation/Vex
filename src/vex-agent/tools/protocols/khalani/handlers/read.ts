@@ -360,7 +360,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         routeCount: outcome.routes.length,
         routes: projectQuoteRoutes(outcome.routes, Date.now()),
         vexFee,
-        expiryNote: "khalani.bridge.execute re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
+        expiryNote: "khalani.bridge re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
           + "passes — treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
       }, null, 2),
       data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee },

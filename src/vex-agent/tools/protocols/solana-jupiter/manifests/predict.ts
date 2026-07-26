@@ -113,7 +113,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "solana.predict.sell",
     namespace: "solana",
     lifecycle: "active",
-    description: "Sell (close) an OPEN prediction position before the market resolves, for whatever it's currently worth. Use solana.predict.claim instead once the market has RESOLVED and this position is a winner — claim needs no slippage decision, sell does. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth.",
+    description: "Sell (close) an OPEN prediction position before the market resolves, for whatever it's currently worth. Use solana.predict.claim instead once the market has RESOLVED and this position is a winner — claim settles at the resolved price; a sell takes whatever the book offers and Vex applies the provider's own default tolerance — size the position accordingly. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with inputToken JupUSD, outputToken USDC once the balance appears.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
@@ -127,7 +127,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "solana.predict.claim",
     namespace: "solana",
     lifecycle: "active",
-    description: "Claim winnings from a RESOLVED (settled) prediction position — the market has an outcome and this position won. Use solana.predict.sell instead to exit an OPEN position before resolution. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth.",
+    description: "Claim winnings from a RESOLVED (settled) prediction position — the market has an outcome and this position won. Use solana.predict.sell instead to exit an OPEN position before resolution. Broadcasts and returns truthful-pending; estimatedPayoutUsd in the output is an order-preview ESTIMATE, not executed truth. Payouts settle in JupUSD (6 decimals), not USDC, and they arrive in a LATER keeper transaction — this call's broadcast does not deliver them, so the position stays pending until settlement is observed. To convert a payout to USDC, run solana.swap.quote/solana.swap.execute with inputToken JupUSD, outputToken USDC once the balance appears.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
@@ -145,7 +145,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "minSellPriceSlippageBps", type: "number", unit: "bps", required: true, description: "Slippage tolerance applied to EACH sell in this batch, in basis points (0-10000; e.g. 100 = 1%). Required by the provider — there is no default, so pick a value you accept across every position closed." },
+      { key: "minSellPriceSlippageBps", type: "number", unit: "bps", required: true, description: "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider — there is no default, so pick a value you accept across every position closed." },
     ],
     exampleParams: { minSellPriceSlippageBps: 100 },
     requiresEnv: "JUPITER_API_KEY",

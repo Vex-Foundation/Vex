@@ -37,6 +37,11 @@ import {
   type JupiterFeeSwapKnobs,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import { assertExactInSwapMode, assertFeePolicyUnchanged } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap-revalidate.js";
+import {
+  appliedSlippageBps,
+  classifyJupiterPreBroadcastRejection,
+  jupiterPreBroadcastRefusalGuidance,
+} from "@tools/solana-ecosystem/jupiter/jupiter-swaps/pre-broadcast-rejection-refusal.js";
 import { buildSolanaSettlementRouteProvenance } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/settlement-profile.js";
 import {
   getSolanaConnection,
@@ -52,7 +57,7 @@ import {
   type AgentActivityFailureCode,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
-import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { checkSlippageBps, effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
 import logger from "@utils/logger.js";
 
@@ -561,9 +566,31 @@ export const CORE_HANDLERS: Record<string, ProtocolHandler> = {
       // The landing service ANSWERED and refused: nothing went on-chain.
       // Reporting this as "pending confirmation" would be a lie. The row still
       // stays pending — the sweep owns terminality (design D4).
+      //
+      // When the node named a program error we can PLACE (`pre-broadcast-
+      // rejection-refusal.ts`), the agent gets the remedy instead of a stop
+      // order: a refusal an autonomous agent cannot act on strands the mission
+      // (plan rule 8). Anything we cannot identify keeps the conservative
+      // wording below — an invented remedy is the failure being fixed here.
+      const rejection = classifyJupiterPreBroadcastRejection(
+        broadcast.cause,
+        prepared.raw.swapInstruction.programId,
+      );
       return {
         success: false,
-        output: `${toolId}: this swap was rejected before broadcast — nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
+        output: rejection
+          ? `${toolId}: ${jupiterPreBroadcastRefusalGuidance({
+            rejectionReason: broadcast.reason,
+            rejection,
+            slippage: {
+              appliedBps: appliedSlippageBps({
+                providerEchoedBps: prepared.raw.slippageBps,
+                requestedBps: knobs.slippageBps,
+              }),
+              maxBps: effectiveMaxSlippageBps(),
+            },
+          })} Recorded (execution ${executionId}).`
+          : `${toolId}: this swap was rejected before broadcast — nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
         data: {
           _executionId: executionId,
           status: "rejected_before_broadcast",

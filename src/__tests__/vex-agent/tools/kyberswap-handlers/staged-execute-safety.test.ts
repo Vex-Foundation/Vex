@@ -30,7 +30,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+
+type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -42,12 +43,12 @@ const SESSION_EVM = {
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
 
-const mockResolveSelectedAddress = vi.fn(() => SESSION_EVM.address);
-const mockResolveSigningWallet = vi.fn(() => SESSION_EVM);
+const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
-  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
+  resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
   walletScopeErrorToResult: (err: unknown) => ({
     success: false,
     output: err instanceof Error ? err.message : String(err),
@@ -123,26 +124,10 @@ vi.mock("@utils/logger.js", () => {
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
-import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantCalldataFor, ctx, ROUTER, TOKEN_A, TOKEN_B } from "./staged-execute-safety.test-fixtures.js";
 
-function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
-  return {
-    sessionPermission: "full",
-    approved: true,
-    walletResolution: { source: "default" },
-    walletPolicy: { kind: "none" },
-    sessionId: "session-1",
-    ...over,
-  };
-}
-
-const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
-const ROUTER = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5";
-const COMPLIANT_CALLDATA = compliantSwapCalldata({
-  srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
-  amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
-});
+const COMPLIANT_CALLDATA = compliantCalldataFor(SESSION_EVM.address);
 
 function execute(params: Record<string, unknown>) {
   return KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(params, ctx());
@@ -160,7 +145,14 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
     mockGetRoute.mockResolvedValue({
       data: {
-        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1" },
+        routeSummary: {
+          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+          // A route summary ALWAYS carries its paths, and the pre-sign guard
+          // reads them to decide which pools the build may fund.
+          route: compliantRoutePaths({
+            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+          }),
+        },
         routerAddress: ROUTER,
       },
     });

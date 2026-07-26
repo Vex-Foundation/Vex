@@ -54,6 +54,10 @@ import {
 } from "@vex-agent/db/repos/agent-activity.js";
 import { getSettlementDecoder, type DecodedSettlement } from "./settlement-decoders.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import {
+  MINED_REVERT_ROLE_NEUTRAL_REASON,
+  MINED_REVERT_SWAP_LEG_REASON,
+} from "@vex-agent/tools/protocols/runtime/mined-revert-reason.js";
 import logger from "@utils/logger.js";
 
 /** Repair-sweep candidacy: re-check a pending row once its signed submit is at least this old. */
@@ -139,7 +143,15 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
     if (receipt.status === "reverted") {
       const outcome = await failActivityEvent(event.id, {
         failureCode: "mined_revert",
-        failureReason: "mined revert (repair sweep receipt lookup)",
+        // A `swap` row gets the swap remedy — the same event deserves the same
+        // explanation however Vex noticed it. Every other role stays NEUTRAL:
+        // this sweep holds only a row (it sees approvals, bridge deposits and
+        // fee transfers alike) and has no venue knowledge to spend, so it
+        // states only what is certainly true. Owner:
+        // `tools/protocols/runtime/mined-revert-reason.ts`.
+        failureReason: event.eventRole === "swap"
+          ? MINED_REVERT_SWAP_LEG_REASON
+          : MINED_REVERT_ROLE_NEUTRAL_REASON,
       });
       if (outcome.applied) {
         failed++;

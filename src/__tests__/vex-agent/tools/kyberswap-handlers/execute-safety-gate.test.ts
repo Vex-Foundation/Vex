@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+
+type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
 import { ErrorCodes, VexError } from "../../../../errors.js";
 
 // ── Per-session wallet resolution mock (5D-protocols p1) ──────────
@@ -12,12 +14,12 @@ const SESSION_EVM = {
   address: "0x1234567890abcdef1234567890abcdef12345678",
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
-const mockResolveSigningWallet = vi.fn(() => SESSION_EVM);
-const mockResolveSelectedAddress = vi.fn(() => SESSION_EVM.address);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
-  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
+  resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
   walletScopeErrorToResult: (err: unknown) => ({
     success: false,
     output: err instanceof Error ? err.message : String(err),
@@ -120,7 +122,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", () => {
@@ -144,7 +146,14 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     mockGetRoute.mockReset();
     mockGetRoute.mockResolvedValue({
       data: {
-        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1" },
+        routeSummary: {
+          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+          // A route summary ALWAYS carries its paths, and the pre-sign guard
+          // reads them to decide which pools the build may fund.
+          route: compliantRoutePaths({
+            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+          }),
+        },
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
       },
     });

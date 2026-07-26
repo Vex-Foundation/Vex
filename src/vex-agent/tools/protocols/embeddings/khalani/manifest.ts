@@ -13,9 +13,13 @@ import { KHALANI_CHAINS } from "../../khalani/discovery-text.js";
 export const KHALANI_MAIN_DISCOVERY = {
   "khalani.chains.list": {
     canonicalSummary:
-      "List every Khalani-supported bridge chain (40+ EVM and Solana networks) with metadata.",
+      "List every Khalani-supported bridge chain (EVM and Solana networks) with metadata.",
     embeddingText: embeddingText(
-      `List every chain Khalani can bridge to or from — 40+ networks including Ethereum, Solana, Base, Arbitrum, BNB Chain, Polygon, Avalanche, Optimism, Linea, zkSync and others, both EVM and Solana. ` +
+      // No literal chain count anywhere in this file: the live registry served
+      // 18 chains while these passages advertised "40+" (ergonomics audit D14).
+      // Counts drift with the provider, so the tool that answers the question
+      // is the only honest source — defer to it instead of restating a number.
+      `List every chain Khalani can bridge to or from — including Ethereum, Solana, Base, Arbitrum, BNB Chain, Polygon, Avalanche, Optimism, Linea, zkSync and others, both EVM and Solana. ` +
       `Use this when the user wants to know what chains the bridge supports, asks if a specific network can be bridged, or wants to see chain metadata before transferring. ` +
       `Example queries: what chains can I bridge to, list khalani supported networks, can I bridge to solana, what evm chains support bridging, supported bridge routes.`,
     ),
@@ -27,7 +31,7 @@ export const KHALANI_MAIN_DISCOVERY = {
 
   "khalani.tokens.top": {
     embeddingText: embeddingText(
-      `List the most popular bridge-supported tokens — USDC, ETH, SOL, USDT, WETH and other major assets — across the 40+ chains Khalani supports. ` +
+      `List the most popular bridge-supported tokens — USDC, ETH, SOL, USDT, WETH and other major assets — across every chain khalani.chains.list returns. ` +
       `Use this when the user wants to know what tokens are commonly bridged, see top assets per chain, or browse popular cross-chain coins before deciding what to move. ` +
       `Example queries: top bridge tokens on base, popular cross-chain coins, what major tokens does khalani support, list common bridge assets, popular tokens to bridge.`,
     ),
@@ -36,7 +40,7 @@ export const KHALANI_MAIN_DISCOVERY = {
 
   "khalani.tokens.search": {
     embeddingText: embeddingText(
-      `Look up a token by name, symbol, or address across 40+ EVM and Solana chains — the canonical cross-chain resolver. ` +
+      `Look up a token by name, symbol, or address across every EVM and Solana chain khalani.chains.list returns — the canonical cross-chain resolver. ` +
       `Use this when the user names a token by ticker or partial name (USDC, ETH, SOL, PEPE) and you need the exact contract address on the source or destination chain before swapping or bridging. ` +
       `Example queries: find usdc address on base, what's the address of pepe on eth, lookup sol mint, resolve this ticker on solana, find token contract on arb. ` +
       `Run this before any swap or bridge.`,
@@ -104,11 +108,11 @@ export const KHALANI_MAIN_DISCOVERY = {
 
   "khalani.bridge": {
     embeddingText: embeddingText(
-      `Move tokens between blockchains — bridge across Ethereum, Solana, Base, Arbitrum, BNB Chain, Polygon, Avalanche and 35+ other EVM and Solana chains. ` +
+      `Move tokens between blockchains — bridge across Ethereum, Solana, Base, Arbitrum, BNB Chain, Polygon, Avalanche and the other EVM and Solana chains khalani.chains.list returns. ` +
       `Use this when the user wants to bridge funds, move tokens cross-chain, get assets onto another network, send USDC from Ethereum to Solana, transfer to Base, or get out of one chain into another. ` +
       `Example queries: bridge usdc from eth to solana, move funds to base, send sol from solana to ethereum, get tokens onto arb, cross-chain transfer, get my eth onto solana.`,
     ),
-    canonicalSummary: "Execute a cross-chain bridge transfer across 40+ EVM and Solana chains.",
+    canonicalSummary: "Execute a cross-chain bridge transfer across the supported EVM and Solana chains.",
     preferredFor: ["cross-chain bridge", "bridge funds", "bridge tokens", "cross chain transfer"],
     chains: KHALANI_CHAINS,
   },

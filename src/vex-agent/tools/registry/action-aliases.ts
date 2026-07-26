@@ -58,7 +58,7 @@ import type { ToolDef } from "../types.js";
 const SWAP_SCHEMA_PROPERTIES = {
   chain: {
     type: "string" as const,
-    description: "Chain to swap on. EVM slugs/aliases route to KyberSwap (ethereum, base, arbitrum, robinhood, …); the literal \"solana\" routes to Jupiter.",
+    description: "Chain to swap on. EVM slugs/aliases route to KyberSwap (ethereum, base, arbitrum, robinhood, …); the literal \"solana\" routes to Jupiter. Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453).",
   },
   tokenIn: {
     type: "string" as const,
@@ -74,7 +74,7 @@ const SWAP_SCHEMA_PROPERTIES = {
   },
   slippageBps: {
     type: "number" as const,
-    description: "Optional slippage tolerance in basis points (50 = 0.5%).",
+    description: "Slippage tolerance in basis points (1 bps = 0.01%); default 50 = 0.5%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 50 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 50 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
   },
 };
 const SWAP_SCHEMA_REQUIRED = ["chain", "tokenIn", "tokenOut", "amountIn"];
@@ -105,7 +105,7 @@ const UNISWAP_SWAP_SCHEMA_PROPERTIES = {
   },
   slippageBps: {
     type: "number" as const,
-    description: "Optional slippage tolerance in basis points (50 = 0.5%).",
+    description: "Slippage tolerance in basis points (1 bps = 0.01%); default 50 = 0.5%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 50 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 50 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
   },
 };
 
@@ -202,11 +202,15 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address." },
-        amount: { type: "string", description: "Amount in smallest units (wei/lamports)." },
+        amount: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         fromAddress: { type: "string", description: "Source wallet address override." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
-        refundTo: { type: "string", description: "Refund address override (defaults to fromAddress)." },
+        // NOTE: refundTo is intentionally NOT exposed — it is DERIVED from the
+        // selected source wallet and a caller-supplied value is rejected by
+        // name (`findCallerSuppliedForbiddenParam`). Advertising it here only
+        // taught the model a call that always fails. Same policy as the
+        // `khalani.bridge` / `khalani.quote.get` manifests.
         filler: { type: "string", description: "Restrict quotes to a specific filler." },
         // NOTE: referrer / referrerFeeBps are intentionally NOT exposed. They
         // set a referral fee (up to 99.99%) deducted from the bridged output
@@ -235,7 +239,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     parameters: {
       type: "object",
       properties: {
-        chain: { type: "string", description: "EVM chain slug or alias (ethereum, base, arbitrum, …)." },
+        chain: { type: "string", description: "EVM chain slug or alias (ethereum, base, arbitrum, …). Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453)." },
         address: { type: "string", description: "Token contract address to inspect." },
       },
       required: ["chain", "address"],
@@ -282,11 +286,15 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address." },
-        amount: { type: "string", description: "Amount in smallest units (wei/lamports)." },
+        amount: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         fromAddress: { type: "string", description: "Source wallet address override." },
         recipient: { type: "string", description: "Destination recipient override." },
-        refundTo: { type: "string", description: "Refund address override (defaults to fromAddress)." },
+        // NOTE: refundTo is intentionally NOT exposed — it is DERIVED from the
+        // selected source wallet and a caller-supplied value is rejected by
+        // name (`findCallerSuppliedForbiddenParam`). Advertising it here only
+        // taught the model a call that always fails. Same policy as the
+        // `khalani.bridge` / `khalani.quote.get` manifests.
         // referrer / referrerFeeBps intentionally NOT exposed — see the note on
         // the `bridge` alias above. A fee-bearing quote is what would later let
         // a matching fee-bearing execute through the prequote gate.
@@ -317,11 +325,16 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address, or native ETH/native." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address, or native ETH/native." },
-        amount: { type: "string", description: "Amount in smallest units (wei/lamports)." },
+        amount: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
-        refundTo: { type: "string", description: "Refund address override (defaults to your wallet)." },
-        slippageBps: { type: "string", description: "Slippage tolerance in basis points." },
+        // NOTE: refundTo is intentionally NOT exposed — the Relay handler
+        // DERIVES it from the resolved source wallet and both relay alias
+        // routers reject a caller-supplied value by name
+        // (`findCallerSuppliedForbiddenParam`). Advertising it here only
+        // taught the model a call that always fails. Same policy as the
+        // `relay.bridge` / `relay.quote.get` manifests.
+        slippageBps: { type: "string", description: "Slippage tolerance in basis points for the destination-side fill (1 bps = 0.01%). Higher tolerance widens the worst-case received amount on the destination chain. When a bridge quote fails or fills keep expiring, re-quote with a higher value rather than retrying the same one. Vex caps it at 1000 (10%) and rejects anything above rather than clamping." },
       },
       required: ["fromChain", "fromToken", "toChain", "toToken", "amount"],
     },
@@ -349,11 +362,16 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
         fromToken: { type: "string", description: "Source token address, or native ETH/native." },
         toChain: { type: "string", description: "Destination chain ID or alias." },
         toToken: { type: "string", description: "Destination token address, or native ETH/native." },
-        amount: { type: "string", description: "Amount in smallest units (wei/lamports)." },
+        amount: { type: "string", description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
         tradeType: { type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
         recipient: { type: "string", description: "Destination recipient override (defaults to your dest-chain wallet)." },
-        refundTo: { type: "string", description: "Refund address override (defaults to your wallet)." },
-        slippageBps: { type: "string", description: "Slippage tolerance in basis points." },
+        // NOTE: refundTo is intentionally NOT exposed — the Relay handler
+        // DERIVES it from the resolved source wallet and both relay alias
+        // routers reject a caller-supplied value by name
+        // (`findCallerSuppliedForbiddenParam`). Advertising it here only
+        // taught the model a call that always fails. Same policy as the
+        // `relay.bridge` / `relay.quote.get` manifests.
+        slippageBps: { type: "string", description: "Slippage tolerance in basis points for the destination-side fill (1 bps = 0.01%). Higher tolerance widens the worst-case received amount on the destination chain. When a bridge quote fails or fills keep expiring, re-quote with a higher value rather than retrying the same one. Vex caps it at 1000 (10%) and rejects anything above rather than clamping." },
       },
       required: ["fromChain", "fromToken", "toChain", "toToken", "amount"],
     },

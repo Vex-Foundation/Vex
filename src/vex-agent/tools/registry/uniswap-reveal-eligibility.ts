@@ -30,6 +30,17 @@
  *     receipt proves the token/funds cannot be responsible." The reveal only
  *     unlocks `swap_quote_uniswap` (a read-only quote probe); no automatic
  *     fallback execution ever follows (REVISION 1 R3).
+ *   - `unsafe_build` — the pre-sign calldata guard refused the build KyberSwap
+ *     returned for this route (`KYBER_UNSAFE_BUILD`). Terminal for the venue in
+ *     the same sense as a mined revert: nothing was signed, but the refusal is
+ *     a property of the BUILD Kyber produces for this pair, so a re-quote can
+ *     return the same shape and loop. Added 2026-07-25 after a live 4663 swap
+ *     was stranded with no venue to fall back to. The same R2/R3 limits apply —
+ *     it makes a separately-quoted venue a reasonable QUOTE candidate, it does
+ *     not prove Kyber is at fault, and no execution follows automatically.
+ *     Deliberately NOT extended to `KYBER_PRICE_FLOOR_VIOLATED`: that is a
+ *     price condition a genuinely fresh quote can clear, and its own hint
+ *     already tells the agent to re-quote.
  *
  * Never eligible: `4221` (`KYBER_WETH_NOT_CONFIGURED` — a config anomaly, not
  * route-not-found, even though it is numerically adjacent to the 4008/4010/4011
@@ -48,7 +59,8 @@
 export type KyberRevealFailure =
   | { readonly kind: "chain_unsupported" }
   | { readonly kind: "kyber_code"; readonly code: number; readonly tokenInputsValidated?: boolean }
-  | { readonly kind: "swap_mined_revert" };
+  | { readonly kind: "swap_mined_revert" }
+  | { readonly kind: "unsafe_build" };
 
 const ROUTE_NOT_FOUND_CODES: ReadonlySet<number> = new Set([4008, 4010]);
 const TOKEN_NOT_FOUND_CODE = 4011;
@@ -56,6 +68,7 @@ const TOKEN_NOT_FOUND_CODE = 4011;
 export function isRevealEligibleKyberFailure(failure: KyberRevealFailure): boolean {
   if (failure.kind === "chain_unsupported") return true;
   if (failure.kind === "swap_mined_revert") return true;
+  if (failure.kind === "unsafe_build") return true;
   if (failure.kind !== "kyber_code") return false;
 
   // Typed numeric equality — `typeof` guards against a numeric-looking string

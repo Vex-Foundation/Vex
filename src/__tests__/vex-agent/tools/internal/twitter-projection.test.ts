@@ -50,6 +50,13 @@ function fullTweet(over: Record<string, unknown> = {}): Record<string, unknown> 
   };
 }
 
+function projectedRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("expected a projected record");
+  }
+  return value;
+}
+
 function expectNoTweetNoise(tweet: Record<string, unknown>): void {
   for (const key of ["entities", "conversationId", "replyTo", "bookmarkCount"]) {
     expect(tweet).not.toHaveProperty(key);
@@ -199,7 +206,7 @@ describe("projectTwitterResult — nested + meta preservation", () => {
       data: { tweet },
     };
     const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
-    const projected = out.tweet as Record<string, unknown>;
+    const projected = projectedRecord(out.tweet);
 
     const quoted = projected.quoted as Record<string, unknown>;
     expect(Object.keys(quoted).sort()).toEqual(["author", "id", "url"]);
@@ -220,20 +227,20 @@ describe("projectTwitterResult — nested + meta preservation", () => {
       data: { account: fullUser() },
       rateLimit: { limit: "100", remaining: "99", reset: "1700000000" },
     };
-    const a = projectTwitterResult(withRl, "concise") as Record<string, unknown>;
+    const a = projectedRecord(projectTwitterResult(withRl, "concise"));
     expect(a.rateLimit).toEqual({ limit: "100", remaining: "99", reset: "1700000000" });
 
     const withoutRl: TwitterAccountResult = {
       action: "account_status",
       data: { account: fullUser() },
     };
-    const b = projectTwitterResult(withoutRl, "concise") as Record<string, unknown>;
+    const b = projectedRecord(projectTwitterResult(withoutRl, "concise"));
     expect(b).not.toHaveProperty("rateLimit");
   });
 
   it("defensively tolerates missing/invalid data without throwing", () => {
     const broken: TwitterAccountResult = { action: "tweet_search", data: null };
-    const out = projectTwitterResult(broken, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(broken, "concise"));
     expect(out.tweets).toEqual([]);
     expect(out.next).toBe("");
   });

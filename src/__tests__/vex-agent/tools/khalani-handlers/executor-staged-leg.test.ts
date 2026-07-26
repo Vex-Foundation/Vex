@@ -1,30 +1,22 @@
-/**
- * Phase-2 W3a — `bridge-executor` staged per-leg signing + planning.
- * W5 (K9, closing K2's flagged cross-card break) extended the Solana leg to
- * the provider-built-tx doctrine: sole-signer check + fresh-blockhash REPLACE
- * via the shared `prepareVersionedTx`, evidence threaded through the hash.
- *
- * Pins the leg-level discipline the handler suite mocks away:
- *   - an EVM leg stages its hash (with a numeric nonce) BEFORE any broadcast;
- *   - a send failure is `ambiguous(send)`, a reverted receipt is `reverted`;
- *   - `onHashStaged` throwing aborts BEFORE the broadcast (untracked-tx safety);
- *   - a SOLANA leg stages the base58 signature + fresh blockhash evidence
- *     (`recentBlockhash`/`lastValidBlockHeight`) in `txHash`/nonce-null shape
- *     (the B1 nonce matrix), then confirms;
- *   - a SOLANA confirmation that resolves `reverted` (RPC `value.err`) is mapped to
- *     a `reverted` outcome, NOT confirmed (blocker 2); a confirm RPC error is
- *     `ambiguous(confirm)`;
- *   - `planKhalaniDepositLegs` classifies roles, blocks PERMIT2, and requires
- *     exactly one deposit leg.
- */
+/** Staged EVM and Solana signing safety, order, and outcome regression tests. */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { encodeFunctionData, keccak256, type Address, type Hex } from "viem";
+import { keccak256, type Hex } from "viem";
+import { generatePrivateKey, privateKeyToAddress } from "viem/accounts";
 import { Keypair } from "@solana/web3.js";
 
-const EVM = { family: "eip155" as const, address: "0x1234567890AbcdEF1234567890aBcdef12345678", privateKey: ("0x" + "ab".repeat(32)) as `0x${string}` };
-const SOL_KEYPAIR = Keypair.generate();
-const SOL = { family: "solana" as const, address: SOL_KEYPAIR.publicKey.toBase58(), secretKey: SOL_KEYPAIR.secretKey };
+function createEvmWallet(): EvmWallet {
+  const privateKey = generatePrivateKey();
+  return { family: "eip155", address: privateKeyToAddress(privateKey), privateKey };
+}
+
+function createSolanaWallet(): SolanaWallet {
+  const keypair = Keypair.generate();
+  return { family: "solana", address: keypair.publicKey.toBase58(), secretKey: keypair.secretKey };
+}
+
+const EVM = createEvmWallet();
+const SOL = createSolanaWallet();
 
 const mockPrepare = vi.fn();
 const mockSign = vi.fn();
@@ -64,8 +56,9 @@ vi.mock("@tools/khalani/chains.js", () => ({
   getChainRpcUrl: () => "https://rpc.example",
 }));
 
-import { planKhalaniDepositLegs, signStageKhalaniLeg } from "@tools/khalani/bridge-executor.js";
-import type { KhalaniStagedLeg } from "@tools/khalani/bridge-executor.js";
+import { signStageKhalaniLeg } from "@tools/khalani/bridge-executor.js";
+import type { EvmWallet, SolanaWallet } from "@tools/wallet/multi-auth.js";
+import type { KhalaniStagedLeg, NormalizedEvmTx } from "@tools/khalani/bridge-executor.js";
 import { classifyNativeValue } from "@tools/evm-chains/native-value-authorization/index.js";
 import {
   DependentLegGasEstimateError,
@@ -78,17 +71,14 @@ const BASE_CHAIN = { id: 8453, name: "Base", type: "eip155" as const, nativeCurr
 const SOL_CHAIN = { id: 20011000000, name: "Solana", type: "solana" as const, nativeCurrency: { name: "SOL", symbol: "SOL", decimals: 9 } };
 const SERIALIZED = "0xabcdef";
 
-/**
- * Every EVM leg now carries a native-value authorization, re-validated inside
- * `signStageEvmLeg` before anything is signed. These helpers authorize whatever
- * value they are handed so the suites below keep testing what they are about —
- * gas discipline and staging order — instead of tripping the value gate. The
- * gate itself is pinned separately in `khalani/khalani-native-value-gate.test.ts`.
- */
-function authorizedNativeValue(tx: { to: string; data?: Hex; value?: bigint }) {
+/** EVM-leg tests authorize their fixture value; the gate itself has a dedicated suite. */
+type EvmStagedLeg = Extract<KhalaniStagedLeg, { kind: "evm" }>;
+type SolanaStagedLeg = Extract<KhalaniStagedLeg, { kind: "solana" }>;
+
+function authorizedNativeValue(tx: NormalizedEvmTx) {
   const valueWei = tx.value ?? 0n;
   return classifyNativeValue({
-    call: { chainId: BASE_CHAIN.id, to: tx.to as Address, data: tx.data, valueWei },
+    call: { chainId: BASE_CHAIN.id, to: tx.to, data: tx.data, valueWei },
     nativePrincipal: valueWei > 0n
       ? {
           amountWei: valueWei,
@@ -100,10 +90,10 @@ function authorizedNativeValue(tx: { to: string; data?: Hex; value?: bigint }) {
   });
 }
 
-function evmLeg(): KhalaniStagedLeg {
-  const tx = { to: EVM.address };
+function evmLeg(): EvmStagedLeg {
+  const tx: NormalizedEvmTx = { to: EVM.address };
   return {
-    role: "bridge_deposit", family: "eip155", isDeposit: true, kind: "evm", tx,
+    role: "bridge_deposit", purpose: "bridge", family: "eip155", isDeposit: true, kind: "evm", tx,
     nativeValue: authorizedNativeValue(tx),
   };
 }
@@ -111,10 +101,11 @@ function evmLeg(): KhalaniStagedLeg {
 function evmLegOf(
   role: "allowance" | "bridge_deposit",
   txOverrides: { data?: Hex; value?: bigint; gas?: bigint } = {},
-): KhalaniStagedLeg {
-  const tx = { to: EVM.address, ...txOverrides };
+): EvmStagedLeg {
+  const tx: NormalizedEvmTx = { to: EVM.address, ...txOverrides };
   return {
     role,
+    purpose: "bridge",
     family: "eip155",
     isDeposit: role === "bridge_deposit",
     kind: "evm",
@@ -122,8 +113,8 @@ function evmLegOf(
     nativeValue: authorizedNativeValue(tx),
   };
 }
-function solLeg(): KhalaniStagedLeg {
-  return { role: "bridge_deposit", family: "solana", isDeposit: true, kind: "solana", base64Tx: "base64tx" };
+function solLeg(): SolanaStagedLeg {
+  return { role: "bridge_deposit", purpose: "bridge", family: "solana", isDeposit: true, kind: "solana", base64Tx: "base64tx" };
 }
 
 /** Receipt block of a confirmed EVM leg — the next leg's read-after-write anchor. */
@@ -185,15 +176,7 @@ describe("bridge-executor — EVM staged leg", () => {
   });
 });
 
-/**
- * Gas-limit discipline for the Vex-signed EVM legs (2026-07-24 out-of-gas
- * defect class). Khalani hands us a provider-built transaction that MAY carry
- * its own `gas`; signing that verbatim — or letting viem sign the node's bare
- * estimate — is the same defect that mined-reverted four KyberSwap executes on
- * Base at ~97.3% of their limit with zero logs. The signed limit must be
- * `max(providerGas, headroom(ourOwnEstimate))`, and it must survive onto the
- * object actually serialized.
- */
+/** The signed limit is max(provider gas, our headroomed estimate). */
 describe("bridge-executor — EVM staged leg gas limit", () => {
   /** The bare estimate that was actually signed for the reverted Base swap. */
   const OWN_ESTIMATE = 1_026_236n;
@@ -507,53 +490,5 @@ describe("bridge-executor — Solana staged leg", () => {
     })).rejects.toThrow(/sole required signer/);
     expect(staged).toHaveLength(0);
     expect(mockBroadcastSolana).not.toHaveBeenCalled();
-  });
-});
-
-describe("bridge-executor — planKhalaniDepositLegs", () => {
-  it("classifies roles: deposit → bridge_deposit, approve(0) → allowance_reset, other approve → allowance", async () => {
-    const resetCalldata = encodeFunctionData({
-      abi: [{ type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] }],
-      functionName: "approve",
-      args: [EVM.address, 0n],
-    });
-    const grantCalldata = encodeFunctionData({
-      abi: [{ type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] }],
-      functionName: "approve",
-      args: [EVM.address, 100n],
-    });
-    const plan = {
-      kind: "CONTRACT_CALL" as const,
-      approvals: [
-        { type: "eip1193_request" as const, request: { method: "eth_sendTransaction", params: [{ to: EVM.address, data: resetCalldata }] } },
-        { type: "eip1193_request" as const, request: { method: "eth_sendTransaction", params: [{ to: EVM.address, data: grantCalldata }] } },
-        { type: "eip1193_request" as const, request: { method: "eth_sendTransaction", params: [{ to: EVM.address, data: "0xdeadbeef" }] }, deposit: true },
-      ],
-    };
-    const legs = planKhalaniDepositLegs(plan, BASE_CHAIN);
-    expect(legs.map((l) => l.role)).toEqual(["allowance_reset", "allowance", "bridge_deposit"]);
-    expect(legs.filter((l) => l.isDeposit)).toHaveLength(1);
-  });
-
-  it("skips a wallet_switchEthereumChain approval (not a broadcast)", async () => {
-    const plan = {
-      kind: "CONTRACT_CALL" as const,
-      approvals: [
-        { type: "eip1193_request" as const, request: { method: "wallet_switchEthereumChain", params: [{ chainId: "0x2105" }] } },
-        { type: "eip1193_request" as const, request: { method: "eth_sendTransaction", params: [{ to: EVM.address, data: "0xdead" }] }, deposit: true },
-      ],
-    };
-    const legs = planKhalaniDepositLegs(plan, BASE_CHAIN);
-    expect(legs).toHaveLength(1);
-    expect(legs[0]!.role).toBe("bridge_deposit");
-  });
-
-  it("blocks PERMIT2", async () => {
-    expect(() => planKhalaniDepositLegs({ kind: "PERMIT2", permit: {}, transferDetails: {} }, BASE_CHAIN)).toThrow(/PERMIT2/);
-  });
-
-  it("requires exactly one deposit leg", async () => {
-    const plan = { kind: "CONTRACT_CALL" as const, approvals: [{ type: "eip1193_request" as const, request: { method: "eth_sendTransaction", params: [{ to: EVM.address, data: "0xdead" }] } }] };
-    expect(() => planKhalaniDepositLegs(plan, BASE_CHAIN)).toThrow(/deposit=true/);
   });
 });

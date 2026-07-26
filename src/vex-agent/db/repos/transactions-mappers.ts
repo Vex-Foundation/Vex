@@ -125,6 +125,45 @@ function deriveBridgeDisplayAmounts(
   return { inputAmount: reqIn, outputAmount: reqOut, amountBasis };
 }
 
+/** The Vex integrator fee as projected onto the feed row (migration 050 Part 2). */
+interface VexFeeClaim {
+  usdVexFeeEst: string | null;
+  vexFeeTokenAddress: string | null;
+  vexFeeTokenSymbol: string | null;
+  vexFeeTokenDecimals: number | null;
+  vexFeeAmountRaw: string | null;
+  vexFeeAmountHuman: string | null;
+}
+
+/**
+ * VEX-FEE projection rule (P2) — the fee-side sibling of the display-amount
+ * rules above, and it turns on the same fact: whether anything settled.
+ *
+ * A `definitively_failed` row NEVER reports a Vex fee. Chain-proven by row #66,
+ * a Jupiter swap that landed with `{"InstructionError":[3,
+ * "ProgramFailedToComplete"]}`: the transaction is atomic, so the failing
+ * instruction reverted every instruction in it — the integrator-fee transfer
+ * INCLUDED — yet the feed still served `vexFeeAmountHuman: "0.023125"` JupUSD,
+ * claiming a charge that never happened. The same holds for a pre-broadcast
+ * failure, where the fee leg never even existed.
+ *
+ * The DB columns are untouched (the planned-fee provenance stays on the row);
+ * only the agent-facing projection withdraws the claim. Deliberately narrower
+ * than blanking all economics: the other `usd*Est` figures are labelled
+ * estimates of what the attempt would have cost and remain honest to show.
+ */
+function deriveVexFeeClaim(status: string | null, recorded: VexFeeClaim): VexFeeClaim {
+  if (status !== "definitively_failed") return recorded;
+  return {
+    usdVexFeeEst: null,
+    vexFeeTokenAddress: null,
+    vexFeeTokenSymbol: null,
+    vexFeeTokenDecimals: null,
+    vexFeeAmountRaw: null,
+    vexFeeAmountHuman: null,
+  };
+}
+
 /**
  * Coerce the `jsonb_agg(...)` bridge legs (already parsed to a JS array by the
  * pg driver) into typed `BridgeLegRow`s. Our own agent_activity rows, so the
@@ -195,6 +234,14 @@ export function mapRow(r: Record<string, unknown>): TransactionRow {
           num(r.token_in_decimals),
           num(r.token_out_decimals),
         );
+    const vexFee = deriveVexFeeClaim(status, {
+      usdVexFeeEst: str(r.usd_vex_fee_est),
+      vexFeeTokenAddress: str(r.vex_fee_token_address),
+      vexFeeTokenSymbol: str(r.vex_fee_token_symbol),
+      vexFeeTokenDecimals: num(r.vex_fee_token_decimals),
+      vexFeeAmountRaw: str(r.vex_fee_amount_raw),
+      vexFeeAmountHuman: str(r.vex_fee_amount_human),
+    });
     return {
       source: "agent_activity",
       id: Number(r.id),
@@ -235,12 +282,8 @@ export function mapRow(r: Record<string, unknown>): TransactionRow {
       usdNetworkGasEst: str(r.usd_network_gas_est),
       usdVenueFeeEst: str(r.usd_venue_fee_est),
       usdDestinationPrepayEst: str(r.usd_destination_prepay_est),
-      usdVexFeeEst: str(r.usd_vex_fee_est),
-      vexFeeTokenAddress: str(r.vex_fee_token_address),
-      vexFeeTokenSymbol: str(r.vex_fee_token_symbol),
-      vexFeeTokenDecimals: num(r.vex_fee_token_decimals),
-      vexFeeAmountRaw: str(r.vex_fee_amount_raw),
-      vexFeeAmountHuman: str(r.vex_fee_amount_human),
+      // P2: withheld on a definitively_failed row — see `deriveVexFeeClaim`.
+      ...vexFee,
       usdSource: str(r.usd_source),
       fromChainId: isBridge ? num(r.from_chain_id) : null,
       fromChainSlug: isBridge ? str(r.from_chain_slug) : null,

@@ -23,8 +23,12 @@
  * `minSellPriceSlippageBps` is a REQUIRED agent param (no Vex-side default —
  * coordinator decision, Batch-4-closure blocker 2): the provider's own
  * `CloseAllPositionsRequest` marks it `required` with no documented min/max
- * (DOCS-GAP — see `validation/body.ts`'s bound comment for the Vex-side
- * 0-10,000 bps product-safety range this card applies).
+ * (DOCS-GAP — `validation/body.ts` applies the transport-level 0-10,000 bps
+ * arithmetic bound). Vex's PRODUCT ceiling is the tighter one and is enforced
+ * here, in the agent tool layer, exactly as `handlers/core.ts` does for the
+ * Jupiter swap: `slippage-policy.ts` refuses above 1000 bps rather than
+ * clamping. Same layering as every other venue — the provider's wire bound is
+ * not a licence to authorise the tolerance it happens to accept.
  */
 
 import { Keypair } from "@solana/web3.js";
@@ -36,9 +40,11 @@ import {
   type JupiterPredictionManagedExecution,
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
 import type { JupiterPredictionCloseAllPositionsItem } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types.js";
+import { buildPredictionOrderProvenance } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-order-provenance.js";
 import { createAgentActivityIntent } from "@vex-agent/db/repos/agent-activity.js";
 
 import type { ProtocolHandler } from "../types.js";
+import { checkSlippageBps } from "../slippage-policy.js";
 import { num, fail } from "../handler-helpers.js";
 import {
   PREDICTION_PAYOUT_ASSET,
@@ -96,6 +102,20 @@ export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
   const toolId = "solana.predict.closeAll";
   const minSellPriceSlippageBps = num(p, "minSellPriceSlippageBps");
   if (minSellPriceSlippageBps == null) return fail("Missing required: minSellPriceSlippageBps");
+  // Vex's slippage ceiling, applied to the BATCH sell. One tolerance covers
+  // EVERY position closed in this call, and the provider documents no maximum
+  // — before this check a model could authorise a 100%-tolerance exit on the
+  // one call that empties the whole book, while the identical single-position
+  // swap was refused. Owner: `slippage-policy.ts`. REJECTED, never clamped, and
+  // checked BEFORE wallet resolution or any provider call. The tolerance is
+  // named explicitly so the retry sentence points at the param this tool has.
+  const slippageViolation = checkSlippageBps(
+    `Parameter "minSellPriceSlippageBps" for ${toolId}`,
+    minSellPriceSlippageBps,
+    undefined,
+    "minSellPriceSlippageBps",
+  );
+  if (slippageViolation) return fail(slippageViolation);
 
   const resolved = resolveSessionAndWallet(toolId, p, ctx);
   if (isToolResult(resolved)) return resolved;
@@ -127,6 +147,11 @@ export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
     toolId, namespace: NAMESPACE, intentParams: p,
     events: plans.map((plan, i) => ({
       ...sharedFields({ eventRole: plan.role, walletAddress: addr, sessionId }), eventIndex: i,
+      // PER-ITEM position truth. Every row of this fan-out shares ONE
+      // `intentParams` echo, so without this a settlement sweep could not
+      // tell which position a given row closed — and with two open positions
+      // could match a row against its sibling's money.
+      routeProvenance: buildPredictionOrderProvenance(plan.positionPubkey),
       // Payout ASSET only, for BOTH fan-out roles. `newPayoutUsd`/
       // `payoutAmountUsd` are USD estimates, not atomic JupUSD quantities —
       // see `predict-payout-asset.ts`. The estimate stays in `usdOutEst`.

@@ -109,4 +109,56 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
     );
     expect(isRevealEligibleKyberFailure({ kind: "kyber_code", code: 9999 })).toBe(false);
   });
+
+  // Added 2026-07-25. A live 4663 swap was refused by the pre-sign calldata
+  // guard with no venue to fall back to: the refusal is filed
+  // `route_not_found`, but it never reached the classifier at all, so the one
+  // venue that could serve the trade stayed locked.
+  describe("a pre-sign build refusal unlocks the fallback venue", () => {
+    it("`unsafe_build` is eligible", async () => {
+      const { isRevealEligibleKyberFailure } = await import(
+        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      );
+      expect(isRevealEligibleKyberFailure({ kind: "unsafe_build" })).toBe(true);
+    });
+
+    it("KYBER_UNSAFE_BUILD, thrown locally with no provider code, derives the eligible signal", async () => {
+      const { deriveKyberRevealFailure } = await import(
+        "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
+      );
+      const { VexError, ErrorCodes } = await import("../../../errors.js");
+      // Exactly how the handler builds it: no `externalName`, so the numeric
+      // Kyber-code path cannot see it.
+      const err = new VexError(
+        ErrorCodes.KYBER_UNSAFE_BUILD,
+        "Refused before signing: it sends 1 to 0xdead, which the quoted route never names.",
+        "Nothing was signed. Re-quote; do not retry this build.",
+      );
+      expect(err.externalName).toBeUndefined();
+      expect(deriveKyberRevealFailure(err, true)).toEqual({ kind: "unsafe_build" });
+    });
+
+    it("still files as route_not_found — the reveal changes the venue, not the activity code", async () => {
+      const { mapKyberFailureToActivityCode } = await import(
+        "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
+      );
+      const { VexError, ErrorCodes } = await import("../../../errors.js");
+      expect(
+        mapKyberFailureToActivityCode(new VexError(ErrorCodes.KYBER_UNSAFE_BUILD, "x")),
+      ).toBe("route_not_found");
+    });
+
+    // A price-floor breach is a PRICE condition a genuinely fresh quote can
+    // clear, so it keeps its own "get a fresh quote" remedy rather than
+    // unlocking a second venue.
+    it("KYBER_PRICE_FLOOR_VIOLATED does NOT unlock the fallback", async () => {
+      const { deriveKyberRevealFailure } = await import(
+        "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
+      );
+      const { VexError, ErrorCodes } = await import("../../../errors.js");
+      expect(
+        deriveKyberRevealFailure(new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, "x"), true),
+      ).toBeNull();
+    });
+  });
 });

@@ -26,6 +26,14 @@
  * lot-direction/PnL tracking survives Agent Scan, and wallet-delta receipt
  * decoding is the truth invariant for the output leg.
  *
+ * The two swap executes take their `chain` from the SAME schema as the quotes
+ * (`./internal/chain-param.js`): a slug, a digit string, or a JSON number, all
+ * normalized to one trimmed string. Quote and execute must accept the same
+ * forms — an execute that refuses what its own quote accepted is a dead end the
+ * model cannot reason its way out of. The bridge routers are deliberately
+ * excluded (their chain names belong to the Khalani/Relay namespaces and feed
+ * the bridge prequote match-hash).
+ *
  * Units: `amountIn` is the HUMAN decimal of `tokenIn` (e.g. "1.5"), matching
  * the kyber/uniswap `amountIn` string and the Jupiter `amount` number —
  * translation preserves the value, it does not convert units.
@@ -33,7 +41,9 @@
 
 import { z } from "zod";
 
+import { ChainParam } from "./internal/chain-param.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./internal/swap-family.js";
+import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
@@ -96,7 +106,10 @@ export type MutatingAliasRouter = (
 // silently stripped. Silently dropping `recipient` in particular would be a
 // transaction-safety-significant silent behavior change.
 const SwapArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  // The SAME schema the quote half uses (`internal/chain-param.ts`): a slug, a
+  // digit string, or a JSON number. Anything narrower here would refuse the
+  // execute of a quote this alias pair already accepted.
+  chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
   amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
@@ -131,6 +144,20 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
 
   const family = classifySwapFamily(a.chain);
   if (family.kind === "unknown") {
+    // A chain ID is refused AS an id — same branch and same wording as the
+    // quote half (`internal/action-aliases.ts`). It came from token_find, so
+    // "cannot determine swap family" would read as a lookup mistake rather than
+    // the truth: no venue in the tree serves that chain. This runs BEFORE the
+    // reveal-eligible branch below on purpose — revealing the Uniswap fallback
+    // would claim it covers a chain nothing registers, and would spend the
+    // session's one-shot reveal to say it.
+    if (isNumericChainIdInput(a.chain)) {
+      throw new MutatingAliasRouteError(
+        `swap_execute: chain id ${a.chain} is not a chain Vex can swap on. ` +
+          `Pass a supported EVM chain — either its slug or the chain id token_find ` +
+          `returns (ethereum/1, base/8453, arbitrum/42161, …) — or "solana".`,
+      );
+    }
     throw new MutatingAliasRouteError(
       `swap_execute: cannot determine swap family for chain "${a.chain}". ` +
         `Use a supported EVM chain (e.g. ethereum, base, arbitrum) or "solana".`,
@@ -188,7 +215,8 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
 // ── swap_execute_uniswap — HIDDEN EVM-only Uniswap fallback execute ────────
 
 const SwapExecuteUniswapArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  // Same shared schema as `swap_quote_uniswap` — see `SwapArgs` above.
+  chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
   amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),

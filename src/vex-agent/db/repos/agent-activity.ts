@@ -63,6 +63,19 @@ export {
   existsForExecutionId,
 } from "./agent-activity/swap-lifecycle.js";
 
+// Jupiter Prediction payout settlement (P1 fill-settlement lane): the CAS
+// finalizer that merges keeper-settle evidence into a payout row. Its own
+// module because its evidence is a DIFFERENT transaction than the row's
+// `tx_hash` — see that file's doc. The `prediction_order` provenance payload
+// it merges into belongs to the protocol
+// (`@tools/.../jupiter-prediction/prediction-order-provenance.ts`), like every
+// other route_provenance contract.
+export type { JupiterPredictionPayoutSettlementInput } from "./agent-activity/prediction-payout-settlement.js";
+export {
+  PAYOUT_SETTLEMENT_PROVENANCE_KEY,
+  confirmJupiterPredictionPayoutSettlement,
+} from "./agent-activity/prediction-payout-settlement.js";
+
 // Stale hashless-intent recovery (C7 — generalized off Solana-only to EVERY
 // chain family; extracted to its own module to keep swap-lifecycle.js under
 // the repo's 500-line cap).

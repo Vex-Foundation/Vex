@@ -55,6 +55,7 @@ import {
 import {
   classifyUniswapRevertError,
   classifyPreBroadcastFailure,
+  type UniswapRevertFailureCode,
 } from "@tools/uniswap/revert-mapping.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken, UniswapRoute } from "@tools/uniswap/types.js";
@@ -78,7 +79,16 @@ import {
 import { registerSettlementDecoder, type SettlementDecoderInput, type DecodedSettlement } from "@vex-agent/sync/settlement-decoders.js";
 import { clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
-import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import {
+  MINED_REVERT_SWAP_LEG_REASON,
+  minedRevertApprovalLegReason,
+} from "@vex-agent/tools/protocols/runtime/mined-revert-reason.js";
+import { checkSlippageBps, effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import {
+  classifyDependentLegPoolStateRevert,
+  dependentLegPoolStateRefusalGuidance,
+  preSignRefusalGuidance,
+} from "@tools/evm-chains/pre-sign-revert-refusal.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
@@ -297,6 +307,17 @@ interface Classification {
 }
 
 /**
+ * A refusal that never reached the network. Its code is narrowed to the shared
+ * router-revert subset (`classifyUniswapRevertError`'s own return type), which
+ * is what makes it a TYPE error — not a review question — to route a
+ * broadcast-only code such as `mined_revert` into the "nothing was signed"
+ * message.
+ */
+interface PreBroadcastClassification extends Classification {
+  readonly failureCode: UniswapRevertFailureCode;
+}
+
+/**
  * Every caught error's text that reaches a ToolResult `output` string or a
  * log MUST go through this function, never `err.message` directly (C37,
  * Codex final-review round 3 finding 1 — supersedes FIX3's local HTML-strip
@@ -384,7 +405,13 @@ async function abortRemainingPlans(executionId: number, fromIndex: number, reaso
  */
 type StageOutcome =
   | { readonly kind: "confirmed"; readonly receipt: UniswapDecodableReceipt; readonly txHash: Hex; readonly settledAtBlock: bigint }
-  | { readonly kind: "failed"; readonly classification: Classification }
+  // `stage` is load-bearing, not bookkeeping: BOTH a sign-time refusal
+  // (nothing ever reached the network) and a MINED revert (bytes broadcast,
+  // gas burned) arrive as `failed`, and they must never be described to the
+  // agent in the same words. Discriminated here rather than inferred from
+  // `failureCode` so a future code cannot silently join the wrong half.
+  | { readonly kind: "failed"; readonly stage: "pre_broadcast"; readonly classification: PreBroadcastClassification }
+  | { readonly kind: "failed"; readonly stage: "mined_revert"; readonly classification: Classification }
   | { readonly kind: "ambiguous"; readonly txHash: Hex };
 
 async function runStagedBroadcast(
@@ -419,9 +446,9 @@ async function runStagedBroadcast(
     // DB row (`failActivityEvent`, below) or the ToolResult output (the
     // "failed" branch in the main loop reads this same object's
     // `failureReason`).
-    const classification: Classification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason) };
+    const classification: PreBroadcastClassification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason) };
     await failActivityEvent(event.id, classification);
-    return { kind: "failed", classification };
+    return { kind: "failed", stage: "pre_broadcast", classification };
   }
 
   // C14 (Codex final-review round 1, finding 1): a CAS miss here means the
@@ -501,12 +528,18 @@ async function runStagedBroadcast(
   } catch (err) {
     if (err instanceof VexError && err.code === ErrorCodes.SWAP_FAILED) {
       // A DEFINITIVE mined revert (waitForSuccessfulReceipt's status!=='success' branch).
+      // Per-role: this reason is persisted AND read back verbatim in the
+      // "failed" branch's output, so it must carry the remedy that is true for
+      // THIS leg — the swap's price guard does not exist on an approve.
+      // Owner: `runtime/mined-revert-reason.ts`.
       const classification: Classification = {
         failureCode: "mined_revert",
-        failureReason: "mined revert (synchronous receipt wait)",
+        failureReason: event.eventRole === "swap"
+          ? MINED_REVERT_SWAP_LEG_REASON
+          : minedRevertApprovalLegReason(event.eventRole),
       };
       await failActivityEvent(event.id, classification);
-      return { kind: "failed", classification };
+      return { kind: "failed", stage: "mined_revert", classification };
     }
     // CONFIRMATION_UNKNOWN (or anything unexpected) — the receipt lookup itself
     // failed. Ambiguous NEVER terminalizes: leave the row pending for the
@@ -708,9 +741,32 @@ async function executeUniswapSwap(
             `earlier ${event.eventRole} reverted (${outcome.classification.failureCode})`,
           );
         }
+        // A sign-time refusal never reached the network — no bytes, no gas, no
+        // possible duplicate. Calling it a transaction that "failed" made the
+        // agent read a routine, recoverable slippage refusal as a lost trade,
+        // with no remedy named (`evm-chains/pre-sign-revert-refusal.ts` carries
+        // the incident). The MINED revert below keeps its own wording.
+        if (outcome.stage === "pre_broadcast") {
+          return {
+            success: false,
+            output: `${toolId}: the ${event.eventRole} step was refused before signing. ${preSignRefusalGuidance({
+              // Already through this venue's single scrub boundary (C37).
+              revertReason: outcome.classification.failureReason,
+              failureCode: outcome.classification.failureCode,
+              slippage: { appliedBps: slippageBps, maxBps: effectiveMaxSlippageBps() },
+            })} Recorded as execution ${executionId}.`,
+            data: {
+              _executionId: executionId, status: "not_attempted", retryable: true,
+              failureCode: outcome.classification.failureCode,
+            },
+          };
+        }
+        // Only `stage: "mined_revert"` reaches here (the pre-sign stage returned
+        // above), so the reason is one of `mined-revert-reason.ts`'s
+        // self-terminating sentences — no sentence period is added after it.
         return {
           success: false,
-          output: `${toolId}: the ${event.eventRole} transaction failed (${outcome.classification.failureCode}): ${outcome.classification.failureReason}. No further steps were attempted.`,
+          output: `${toolId}: the ${event.eventRole} transaction failed (${outcome.classification.failureCode}): ${outcome.classification.failureReason} No further steps were attempted.`,
           data: { _executionId: executionId, status: "failed" },
         };
       }
@@ -862,6 +918,29 @@ async function executeUniswapSwap(
     // attempted" (the confirmed approval row is untouched — it has a hash),
     // and re-running is safe.
     if (err instanceof DependentLegGasEstimateError) {
+      // ERC-20 input — the common shape, and the one the native-input fix did
+      // not reach: with an approval leg in front, a genuine price-guard refusal
+      // arrives ONLY here, and the RPC-lag wording named no parameter the agent
+      // could change. A POOL-STATE reason that survived every retry is
+      // admissible evidence (the narrowing and its two arguments live in
+      // `pre-sign-revert-refusal.ts`); every other reason keeps the wording below.
+      const poolState = classifyDependentLegPoolStateRevert(err);
+      if (poolState) {
+        return {
+          success: false,
+          output: `${toolId}: the ${refusedRole} step was refused before signing. ${dependentLegPoolStateRefusalGuidance({
+            error: err,
+            // Chain-controlled text through this venue's single scrub boundary (C37).
+            revertReason: uniswapFailureMessage(poolState.revertReason),
+            failureCode: poolState.failureCode,
+            slippage: { appliedBps: slippageBps, maxBps: effectiveMaxSlippageBps() },
+          })} Recorded as execution ${executionId}.`,
+          data: {
+            _executionId: executionId, status: "not_attempted", retryable: true,
+            failureCode: poolState.failureCode,
+          },
+        };
+      }
       return {
         success: false,
         output: `${toolId}: the ${refusedRole} step could not be gas-estimated, so it was refused before signing. ${dependentLegEstimateGuidance(err)} Recorded as execution ${executionId}; the node reported: ${uniswapFailureMessage(err)}`,

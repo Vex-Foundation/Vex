@@ -1,7 +1,7 @@
 /**
- * Solana settlement decoding — turns a raw `getTransaction` (jsonParsed,
- * `maxSupportedTransactionVersion:0`) RPC response into owner+mint token
- * balance deltas for one `agent_activity` row (design `w5-design.md` §4/R3).
+ * Solana settlement decoding — turns a parsed `getTransaction` response into
+ * the token/lamport deltas that prove one `agent_activity` row's executed
+ * amounts (design `w5-design.md` §4/R3).
  *
  * REGISTERED-DECODER DOCTRINE (mirrors the EVM `settlement-decoders.ts`
  * pattern this repo already established): a "success" on-chain result is
@@ -24,11 +24,6 @@
  * `solana-settlement-profile-design.md` D2), because no generic rule can tell
  * a landing tip or a SOL-wrap funding transfer apart from an unrelated
  * payment. Everything else still lands here, unchanged.
- *
- * SPL + TOKEN-2022, UNIFORMLY: `preTokenBalances`/`postTokenBalances`
- * entries report `owner`/`mint`/`uiTokenAmount.amount` identically
- * regardless of which token program manages the mint — no program-id
- * branching is needed anywhere below.
  *
  * SUMMED, NOT FIRST-MATCH: `preTokenBalances`/`postTokenBalances` can carry
  * MULTIPLE entries for the same owner+mint (a wallet holding more than one
@@ -63,271 +58,33 @@
  * cannot be read at all (unparseable jsonParsed entry): decline rather than
  * assume it carried no value.
  *
- * ACCOUNT-INDEX RESOLUTION (versioned tx + address lookup tables): the
- * combined account-key list that `pre/postBalances` are indexed against is
- * the transaction's STATIC keys followed by `meta.loadedAddresses.writable`
- * then `meta.loadedAddresses.readonly`, in that order (the documented
- * `getTransaction` jsonParsed shape) — `resolveAccountKeys` reproduces this
- * ordering exactly; an unexpected/missing shape declines rather than guesses
- * an index.
+ * PARSING LIVES NEXT DOOR: validating a raw RPC response into
+ * `ParsedSolanaTransaction` — including the combined account-key list every
+ * `accountIndex` is resolved against — is `./solana-parsed-transaction.js`'s
+ * job, re-exported below so this module stays the one import site callers
+ * already use.
  */
 
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import type { AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
 
-// ── Parsed transaction (narrow, validated view of the raw RPC response) ─────
+// ── Parsed transaction ────────────────────────────────────────────────────
 
-export interface ParsedSolanaTokenBalance {
-  readonly owner: string;
-  readonly mint: string;
-  readonly amountRaw: string;
-}
+// The raw-response parsing half (`ParsedSolanaTransaction` + every reader that
+// validates one) moved MOVE-ONLY to the sibling `./solana-parsed-transaction.js`
+// — a different reason to change (the RPC's response shape) from this file's
+// money-reading rules, and the headroom the escrow-account binding needed under
+// the 500-line cap. RE-EXPORTED here so every existing import site is unaffected.
+export type {
+  ParsedSolanaTokenBalance,
+  ParsedSolanaTransaction,
+  SolanaCreatedAccount,
+  SolanaNativeInstructionEvidence,
+  SolanaNativeTransfer,
+} from "./solana-parsed-transaction.js";
+export { parseSolanaTransactionResult } from "./solana-parsed-transaction.js";
 
-/** One `system` `transfer`/`transferWithSeed` effect. The DESTINATION is retained because a protocol-aware decoder classifies a transfer by who received it (design D3) — a landing tip and a SOL-wrap funding transfer are structurally identical otherwise. */
-export interface SolanaNativeTransfer {
-  readonly source: string;
-  readonly destination: string;
-  readonly lamports: number;
-}
-
-/** One `system` `createAccount`/`createAccountWithSeed` effect. The created ACCOUNT ADDRESS is retained so rent can be attributed only to accounts that survived the transaction (design D3/D5). */
-export interface SolanaCreatedAccount {
-  readonly source: string;
-  readonly address: string;
-  readonly lamports: number;
-}
-
-/**
- * System-program lamport-moving instruction effects collected from a tx
- * (top-level + inner instructions): the facts a native-SOL decode needs to
- * separate swap economics from fees, tips and rent. `null` (at the
- * `ParsedSolanaTransaction` field, not here) means "could not be reliably
- * read" — see the module doc.
- */
-export interface SolanaNativeInstructionEvidence {
-  readonly transfers: readonly SolanaNativeTransfer[];
-  readonly accountCreations: readonly SolanaCreatedAccount[];
-}
-
-export interface ParsedSolanaTransaction {
-  readonly err: unknown;
-  readonly feeLamports: number;
-  readonly accountKeys: readonly string[];
-  readonly preBalancesLamports: readonly number[];
-  readonly postBalancesLamports: readonly number[];
-  readonly preTokenBalances: readonly ParsedSolanaTokenBalance[];
-  readonly postTokenBalances: readonly ParsedSolanaTokenBalance[];
-  /** `null` when top-level/inner instructions could not be reliably read — `decodeNativeSolDelta` must decline rather than assume no ambiguous transfer occurred. */
-  readonly nativeInstructionEvidence: SolanaNativeInstructionEvidence | null;
-}
-
-/**
- * Validate + narrow a raw `getTransaction` (jsonParsed) RPC result. `null`
- * on ANY missing/malformed field this module depends on — the caller must
- * treat that identically to "cannot decode" (never guess a default).
- */
-export function parseSolanaTransactionResult(raw: unknown): ParsedSolanaTransaction | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const root = raw as Record<string, unknown>;
-  const meta = root.meta;
-  if (typeof meta !== "object" || meta === null) return null;
-  const metaRec = meta as Record<string, unknown>;
-
-  const fee = metaRec.fee;
-  if (typeof fee !== "number" || !Number.isFinite(fee)) return null;
-
-  const preBalances = readNumberArray(metaRec.preBalances);
-  const postBalances = readNumberArray(metaRec.postBalances);
-  if (!preBalances || !postBalances) return null;
-
-  const preTokenBalances = readTokenBalances(metaRec.preTokenBalances);
-  const postTokenBalances = readTokenBalances(metaRec.postTokenBalances);
-  if (!preTokenBalances || !postTokenBalances) return null;
-
-  const accountKeys = resolveAccountKeys(root.transaction, metaRec.loadedAddresses);
-  if (!accountKeys) return null;
-
-  const nativeInstructionEvidence = collectNativeInstructionEvidence(root.transaction, metaRec.innerInstructions);
-
-  return {
-    err: metaRec.err ?? null,
-    feeLamports: fee,
-    accountKeys,
-    preBalancesLamports: preBalances,
-    postBalancesLamports: postBalances,
-    preTokenBalances,
-    postTokenBalances,
-    nativeInstructionEvidence,
-  };
-}
-
-function readNumberArray(value: unknown): readonly number[] | null {
-  if (!Array.isArray(value)) return null;
-  const out: number[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "number" || !Number.isFinite(entry)) return null;
-    out.push(entry);
-  }
-  return out;
-}
-
-function readTokenBalances(value: unknown): readonly ParsedSolanaTokenBalance[] | null {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) return null;
-  const out: ParsedSolanaTokenBalance[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "object" || entry === null) return null;
-    const rec = entry as Record<string, unknown>;
-    const owner = rec.owner;
-    const mint = rec.mint;
-    const uiTokenAmount = rec.uiTokenAmount;
-    if (typeof owner !== "string" || typeof mint !== "string") return null;
-    if (typeof uiTokenAmount !== "object" || uiTokenAmount === null) return null;
-    const amountRaw = (uiTokenAmount as Record<string, unknown>).amount;
-    if (typeof amountRaw !== "string" || !/^\d+$/.test(amountRaw)) return null;
-    out.push({ owner, mint, amountRaw });
-  }
-  return out;
-}
-
-/** Static account keys + loaded-address-table writable/readonly, in the documented combined order. `null` on an unrecognized shape. */
-function resolveAccountKeys(transaction: unknown, loadedAddresses: unknown): readonly string[] | null {
-  if (typeof transaction !== "object" || transaction === null) return null;
-  const message = (transaction as Record<string, unknown>).message;
-  if (typeof message !== "object" || message === null) return null;
-  const staticKeys = readPubkeyList((message as Record<string, unknown>).accountKeys);
-  if (!staticKeys) return null;
-
-  let writable: readonly string[] = [];
-  let readonly_: readonly string[] = [];
-  if (typeof loadedAddresses === "object" && loadedAddresses !== null) {
-    const rec = loadedAddresses as Record<string, unknown>;
-    const w = readStringArray(rec.writable);
-    const r = readStringArray(rec.readonly);
-    if (w) writable = w;
-    if (r) readonly_ = r;
-  }
-  return [...staticKeys, ...writable, ...readonly_];
-}
-
-/** `message.accountKeys` in jsonParsed encoding is `{pubkey, signer, writable, source?}[]`; plain string[] is accepted too (legacy encoding fallback). */
-function readPubkeyList(value: unknown): readonly string[] | null {
-  if (!Array.isArray(value)) return null;
-  const out: string[] = [];
-  for (const entry of value) {
-    if (typeof entry === "string") {
-      out.push(entry);
-      continue;
-    }
-    if (typeof entry === "object" && entry !== null) {
-      const pubkey = (entry as Record<string, unknown>).pubkey;
-      if (typeof pubkey === "string") {
-        out.push(pubkey);
-        continue;
-      }
-    }
-    return null;
-  }
-  return out;
-}
-
-function readStringArray(value: unknown): readonly string[] | null {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) return null;
-  const out: string[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "string") return null;
-    out.push(entry);
-  }
-  return out;
-}
-
-type SystemInstructionEffect =
-  | { readonly kind: "transfer"; readonly transfer: SolanaNativeTransfer }
-  | { readonly kind: "createAccount"; readonly creation: SolanaCreatedAccount }
-  | { readonly kind: "irrelevant" };
-
-/** Lamports are integers by definition; a non-integer/unsafe value is a malformed RPC payload, and `BigInt()` would THROW on it further down. Declining is the only honest answer. */
-function readLamports(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-/**
- * Reads ONE parsed instruction entry (top-level or inner, jsonParsed
- * encoding). A non-`system`-program entry is irrelevant to native-SOL
- * netting and always safe to skip. A `system`-program entry present but NOT
- * in the expected `parsed.{type,info}` shape returns `null` — the caller
- * must treat that as "cannot prove no lamports moved," never as "skip it."
- */
-function readSystemInstructionEffect(entry: unknown): SystemInstructionEffect | null {
-  if (typeof entry !== "object" || entry === null) return null;
-  const rec = entry as Record<string, unknown>;
-  if (rec.program !== "system") return { kind: "irrelevant" };
-
-  const parsed = rec.parsed;
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const parsedRec = parsed as Record<string, unknown>;
-  const info = parsedRec.info;
-  if (typeof info !== "object" || info === null) return null;
-  const infoRec = info as Record<string, unknown>;
-  const source = infoRec.source;
-  const lamports = readLamports(infoRec.lamports);
-
-  if (parsedRec.type === "transfer" || parsedRec.type === "transferWithSeed") {
-    const destination = infoRec.destination;
-    if (typeof source !== "string" || typeof destination !== "string" || lamports === null) return null;
-    return { kind: "transfer", transfer: { source, destination, lamports } };
-  }
-  if (parsedRec.type === "createAccount" || parsedRec.type === "createAccountWithSeed") {
-    const address = infoRec.newAccount;
-    if (typeof source !== "string" || typeof address !== "string" || lamports === null) return null;
-    return { kind: "createAccount", creation: { source, address, lamports } };
-  }
-  // allocate/assign/withdrawNonceAccount/advanceNonceAccount/... never move
-  // lamports out of an arbitrary funder in a way relevant to this netting.
-  return { kind: "irrelevant" };
-}
-
-/**
- * Collects system-program transfer/createAccount effects from the tx's
- * top-level instructions AND every `meta.innerInstructions` group. `null`
- * when the instruction shape cannot be reliably read (present but not an
- * array, or an unparseable `system` entry) — see the module doc.
- */
-function collectNativeInstructionEvidence(
-  transaction: unknown,
-  innerInstructions: unknown,
-): SolanaNativeInstructionEvidence | null {
-  if (typeof transaction !== "object" || transaction === null) return null;
-  const message = (transaction as Record<string, unknown>).message;
-  if (typeof message !== "object" || message === null) return null;
-
-  const entries: unknown[] = [];
-  const topLevel = (message as Record<string, unknown>).instructions;
-  if (topLevel !== undefined && topLevel !== null) {
-    if (!Array.isArray(topLevel)) return null;
-    entries.push(...topLevel);
-  }
-  if (innerInstructions !== undefined && innerInstructions !== null) {
-    if (!Array.isArray(innerInstructions)) return null;
-    for (const group of innerInstructions) {
-      if (typeof group !== "object" || group === null) return null;
-      const inner = (group as Record<string, unknown>).instructions;
-      if (!Array.isArray(inner)) return null;
-      entries.push(...inner);
-    }
-  }
-
-  const transfers: SolanaNativeTransfer[] = [];
-  const accountCreations: SolanaCreatedAccount[] = [];
-  for (const entry of entries) {
-    const effect = readSystemInstructionEffect(entry);
-    if (effect === null) return null;
-    if (effect.kind === "transfer") transfers.push(effect.transfer);
-    else if (effect.kind === "createAccount") accountCreations.push(effect.creation);
-  }
-  return { transfers, accountCreations };
-}
+import type { ParsedSolanaTokenBalance, ParsedSolanaTransaction } from "./solana-parsed-transaction.js";
 
 // ── Mint-delta decode primitives ─────────────────────────────────────────
 
@@ -350,6 +107,60 @@ export function decodeTokenBalanceDelta(
   const preAmount = preMatches.reduce((sum, b) => sum + BigInt(b.amountRaw), 0n);
   const postAmount = postMatches.reduce((sum, b) => sum + BigInt(b.amountRaw), 0n);
   return postAmount - preAmount;
+}
+
+/** One token ACCOUNT, identified by all three of its address, mint and owner. */
+export interface SolanaTokenAccountRef {
+  /** The account's own address — an ATA a caller DERIVED, not a value read out of the transaction. */
+  readonly address: string;
+  readonly mint: string;
+  /** The account's expected owner. Checked as well as the address, so a caller cannot be handed a lookalike account. */
+  readonly owner: string;
+}
+
+/**
+ * Delta (post − pre) of ONE NAMED TOKEN ACCOUNT, resolved by `accountIndex`
+ * against the transaction's combined account-key list. `null` when this
+ * transaction has no balance entry for that account at all.
+ *
+ * WHY THIS EXISTS NEXT TO `decodeTokenBalanceDelta`. That function sums every
+ * account an OWNER holds for a mint, which is right when the question is "how
+ * much did this wallet's holding change" and WRONG when the question is "did
+ * THIS account pay". A program-derived owner can hold more than one token
+ * account for a mint, and anyone may create another one with that owner — so
+ * an owner+mint match can be satisfied by an account the caller never derived
+ * and never intended to accept. Where a proof depends on a specific derived
+ * address, it must use this.
+ *
+ * FAILS CLOSED ON AN UNATTRIBUTABLE ENTRY: a balance entry matching the owner
+ * and mint whose `accountIndex` is absent or does not resolve to a key makes
+ * the WHOLE lookup decline, rather than being skipped — a skipped pre-balance
+ * would turn a drain into an apparent credit.
+ */
+export function decodeTokenAccountDelta(
+  tx: ParsedSolanaTransaction,
+  account: SolanaTokenAccountRef,
+): bigint | null {
+  const sideTotal = (entries: readonly ParsedSolanaTokenBalance[]): { total: bigint; matched: boolean } | null => {
+    let total = 0n;
+    let matched = false;
+    for (const entry of entries) {
+      if (entry.mint !== account.mint || entry.owner !== account.owner) continue;
+      if (entry.accountIndex === null) return null;
+      const address = tx.accountKeys[entry.accountIndex];
+      if (address === undefined) return null;
+      if (address !== account.address) continue;
+      total += BigInt(entry.amountRaw);
+      matched = true;
+    }
+    return { total, matched };
+  };
+
+  const pre = sideTotal(tx.preTokenBalances);
+  const post = sideTotal(tx.postTokenBalances);
+  if (pre === null || post === null) return null;
+  if (!pre.matched && !post.matched) return null;
+  return post.total - pre.total;
 }
 
 /**

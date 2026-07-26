@@ -16,6 +16,7 @@ import {
   type ApprovedKyberSwap,
   type BuiltKyberSwap,
 } from "@tools/kyberswap/evm/swap-calldata-guard.js";
+import { deriveRouteFirstHops } from "@tools/kyberswap/evm/swap-source-transfer-binding.js";
 import {
   computeApprovedMinOut,
   KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
@@ -30,7 +31,22 @@ export interface RouteBuildCapture {
     readonly recipient: string;
     readonly slippageTolerance: number;
   };
-  readonly routeSummary: { readonly amountIn: string; readonly amountOut: string };
+  readonly routeSummary: {
+    readonly amountIn: string;
+    readonly amountOut: string;
+    /**
+     * The route's paths. The harness derives the approved first-hop pools from
+     * this with the SAME `deriveRouteFirstHops` the handler uses — a test that
+     * re-implemented the derivation could stay green while the product refused.
+     *
+     * Optional because the three original captures (2026-07-25 06:28) trimmed
+     * `routeSummary` to the two fields the harness then needed. Those three are
+     * executor-shape builds, so an absent route is behaviourally the same as
+     * the fail-closed empty hop set; captures taken after the pool-receiver fix
+     * store the summary whole.
+     */
+    readonly route?: readonly (readonly { readonly pool: string; readonly swapAmount: string }[])[];
+  };
   readonly routerAddress: string;
   readonly build: { readonly transactionValue: string; readonly data: string };
 }
@@ -99,6 +115,7 @@ export function harnessFor(c: RouteBuildCapture) {
       srcIsNative,
       freshMinOutRaw: computeApprovedMinOut(c.routeSummary.amountOut, slippageBps),
       floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
+      routeFirstHops: deriveRouteFirstHops(c.routeSummary.route ?? []),
       ...over,
     }),
   };

@@ -28,12 +28,16 @@ export const SOLANA_SWAP_DISCOVERY = {
 
   "solana.swap.execute": {
     canonicalSummary:
-      "Execute a Jupiter Solana SPL token swap across 400+ DEXes with MEV protection. Mutating.",
+      "Execute a Jupiter Solana SPL token swap across 400+ DEXes. Mutating.",
     embeddingText: embeddingText(
-      `Swap any SPL token on Solana — SOL, USDC, JUP, BONK, memecoins or any mint — using Jupiter's aggregator across 400+ DEXes with MEV protection. ` +
+      // No "MEV protection" claim and no router names (Metis/JupiterZ/Dflow/
+      // OKX): nothing in this repo selects, requests, or verifies either — Vex
+      // posts to Jupiter's `/build` and lands the signed bytes itself, so the
+      // router choice is Jupiter's and is never echoed back to us. Advertising
+      // a safety property we do not implement is the claim rule 90 forbids.
+      `Swap any SPL token on Solana — SOL, USDC, JUP, BONK, memecoins or any mint — using Jupiter's aggregator across 400+ DEXes. ` +
       `Use this when the user wants to swap on solana, buy a sol memecoin, sell an spl token, trade sol to usdc, ape into a solana coin, or get the best route on solana. ` +
-      `Example queries: swap sol to usdc, buy bonk with sol, sell jup, ape into this sol memecoin, trade spl tokens, best swap on sol. ` +
-      `Routes through Metis, JupiterZ RFQ, Dflow and OKX.`,
+      `Example queries: swap sol to usdc, buy bonk with sol, sell jup, ape into this sol memecoin, trade spl tokens, best swap on sol.`,
     ),
     aliases: [
       "solana swap", "spl swap", "swap on solana", "jupiter swap",

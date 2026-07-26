@@ -45,6 +45,20 @@ export type ErrorCategory =
    * reported to the agent as the provider's malfunction.
    */
   | "invalid_request"
+  /**
+   * A VEX SAFETY POLICY refused the call — our own money-path guard looked at
+   * what was about to be signed and declined. Nothing was sent to the venue,
+   * so nothing about the venue is being reported. Distinct from
+   * `provider_error` for the same reason `invalid_request` is: labelling the
+   * calldata price floor, the unsafe-build abort, or the provider-gas-limit
+   * ceiling as a provider malfunction tells the agent to retry a trade Vex
+   * stopped deliberately — and the retry reproduces it every time, because
+   * nothing about the venue was ever wrong.
+   *
+   * Attribution ONLY. Whether retrying helps is `retryable`'s job; a refusal
+   * can be either, and the two must not be read off one another.
+   */
+  | "policy_refusal"
   | "provider_error"
   | "unknown";
 
@@ -217,19 +231,66 @@ const LOCAL_VALIDATION_ERROR_CODES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
+ * Error codes thrown by Vex's OWN money-path safety gates — a guard that
+ * inspected what was about to be signed and refused. Nothing reaches the venue
+ * on any of these paths, so none of them can carry a provider's opinion.
+ *
+ * Same CLOSED-set discipline as `LOCAL_VALIDATION_ERROR_CODES`, and the same
+ * admission test: a code stays out unless every throw site in the tree is a
+ * gate WE authored. That test excludes, for example,
+ * `KYBER_FEE_EXCEEDS_AMOUNT` (produced by `mapAggregatorError` from KyberSwap's
+ * own response) and `PENDLE_VALUATION_TOO_LOW/HIGH` (Pendle's 400 body,
+ * re-worded by `tools/pendle/errors.ts`) — those are provider verdicts wearing
+ * a Vex code.
+ *
+ * Distinct from `LOCAL_VALIDATION_ERROR_CODES`, which covers a BAD PARAMETER
+ * ("fix your input"); these cover a REFUSAL of a well-formed request ("the
+ * trade itself was not safe to sign").
+ */
+const POLICY_REFUSAL_ERROR_CODES: ReadonlySet<string> = new Set<string>([
+  // KyberSwap calldata guard: built `minReturnAmount` below the approved floor.
+  ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED,
+  // KyberSwap calldata guard: non-price divergence (router/spender/value/fee/flags).
+  ErrorCodes.KYBER_UNSAFE_BUILD,
+  // `tools/evm-chains/gas-limit-headroom.ts`: provider's gas limit far above our own estimate.
+  ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE,
+  // `tools/evm-chains/native-value-authorization`: tx.value not attributable to proven costs.
+  ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
+  // Pendle calldata guard + redeem fallback — the Pendle sibling of KYBER_UNSAFE_BUILD.
+  ErrorCodes.PENDLE_UNSAFE_TX,
+  // `solana-transaction/prepare.ts`: strict sole-signer check refused to sign.
+  ErrorCodes.SOLANA_TX_SOLE_SIGNER_VIOLATION,
+  // `solana-transaction/prepare.ts`: blockhash evidence does not match the transaction.
+  ErrorCodes.SOLANA_TX_BLOCKHASH_MISMATCH,
+]);
+
+/**
+ * Evidence that a provider ANSWERED, which outranks any code we attached.
+ * These two are the repo's only markers of a provider verdict: `httpStatus` is
+ * set exclusively by `utils/http.ts` on a non-ok response, and `externalName`
+ * exclusively by a provider error mapper (Khalani, KyberSwap) or by a
+ * provider-supplied error code lifted from a response body.
+ */
+function carriesProviderVerdict(err: VexError): boolean {
+  return err.httpStatus !== undefined || err.externalName !== undefined;
+}
+
+/**
  * True only when WE authored the rejection. Conservative by construction: any
  * evidence that a provider ANSWERED disqualifies the error, and an unrecognized
  * code keeps today's label rather than guessing.
- *
- * The two disqualifiers are the repo's only markers of a provider verdict:
- * `httpStatus` is set exclusively by `utils/http.ts` on a non-ok response, and
- * `externalName` exclusively by a provider error mapper (Khalani, KyberSwap) or
- * by a provider-supplied error code lifted from a response body.
  */
 function isLocallyAuthoredValidationFailure(err: unknown): boolean {
   if (!(err instanceof VexError)) return false;
-  if (err.httpStatus !== undefined || err.externalName !== undefined) return false;
+  if (carriesProviderVerdict(err)) return false;
   return LOCAL_VALIDATION_ERROR_CODES.has(err.code);
+}
+
+/** True only when one of Vex's own safety gates refused, with no provider verdict attached. */
+function isVexAuthoredPolicyRefusal(err: unknown): boolean {
+  if (!(err instanceof VexError)) return false;
+  if (carriesProviderVerdict(err)) return false;
+  return POLICY_REFUSAL_ERROR_CODES.has(err.code);
 }
 
 /** Coarse, non-sensitive classification from the error's shape/text. */
@@ -237,7 +298,10 @@ export function classifyError(raw: string, err: unknown): ErrorCategory {
   // Checked FIRST, ahead of the text heuristics: a typed code we ourselves
   // attached is direct evidence of who rejected the call, whereas the keyword
   // scans below are guesses about prose that a provider may have written.
+  // The two sets are disjoint, so their order relative to each other is not
+  // load-bearing — only their position ahead of the scans is.
   if (isLocallyAuthoredValidationFailure(err)) return "invalid_request";
+  if (isVexAuthoredPolicyRefusal(err)) return "policy_refusal";
   const name = err instanceof Error ? err.name.toLowerCase() : "";
   const text = raw.toLowerCase();
   if (name.includes("abort") || text.includes("timeout") || text.includes("timed out")) {

@@ -81,7 +81,8 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
  *
  * `tokenInputsValidated` must be supplied by the caller (true only once BOTH
  * tokens passed address/native validation + on-chain metadata resolution
- * BEFORE the Kyber call) — this module never guesses it.
+ * BEFORE the Kyber call) — this module never guesses it. It does not gate the
+ * locally-derived kinds, which can only be reached after both tokens resolved.
  */
 export function deriveKyberRevealFailure(
   err: unknown,
@@ -90,6 +91,14 @@ export function deriveKyberRevealFailure(
   if (!(err instanceof VexError)) return null;
   if (err.code === ErrorCodes.KYBER_UNSUPPORTED_CHAIN) {
     return { kind: "chain_unsupported" };
+  }
+  // The pre-sign calldata guard's refusal is thrown LOCALLY, so it carries no
+  // `externalName` and the numeric-code path below can never see it. Without
+  // this branch a build refusal left the agent with no venue at all: the one
+  // fallback that could serve the trade stayed locked while the advice to
+  // re-quote returned the same build shape.
+  if (err.code === ErrorCodes.KYBER_UNSAFE_BUILD) {
+    return { kind: "unsafe_build" };
   }
   const code = rawKyberCode(err);
   if (code === undefined) return null;

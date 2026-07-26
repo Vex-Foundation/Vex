@@ -68,8 +68,19 @@ export type StagedSolanaBroadcastResult =
   | { readonly kind: "accepted"; readonly signature: string }
   | { readonly kind: "signature_mismatch"; readonly signature: string }
   | { readonly kind: "transport_uncertain"; readonly signature: string }
-  /** `reason` is already scrubbed and bounded — safe for tool output. */
-  | { readonly kind: "rejected_before_broadcast"; readonly reason: string };
+  | {
+      readonly kind: "rejected_before_broadcast";
+      /** Already scrubbed and bounded — safe for tool output. */
+      readonly reason: string;
+      /**
+       * The RAW thrown value, forwarded unchanged so a venue can CLASSIFY the
+       * refusal (see `jupiter-swaps/pre-broadcast-rejection-refusal.ts`, which
+       * reads the node's structured program logs). It is NOT safe to print —
+       * same contract as `SolanaSubmitOutcome.cause`, which it comes from. A
+       * caller that wants text uses `reason`, never this.
+       */
+      readonly cause: unknown;
+    };
 
 export interface StagedSolanaBroadcastInput {
   readonly toolId: string;
@@ -105,7 +116,7 @@ export async function broadcastStagedSolanaTx(
     case "rejected_before_broadcast": {
       const reason = failureReason(outcome.cause);
       logger.warn(`${toolId}.submit_rejected_before_broadcast`, { rowId, lane: lane.kind, reason });
-      return { kind: "rejected_before_broadcast", reason };
+      return { kind: "rejected_before_broadcast", reason, cause: outcome.cause };
     }
 
     case "transport_uncertain":

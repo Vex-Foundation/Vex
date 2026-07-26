@@ -364,3 +364,105 @@ describe("summarizeProtocolError — hint links (FIX4)", () => {
     expect(s.message).toContain("https://portal.jup.ag");
   });
 });
+
+// ── A Vex safety refusal is not a provider malfunction ──────────────────────
+//
+// The category tells the agent WHO refused, and that decides its next move.
+// Every VexError outside the local-validation set fell through to
+// `provider_error`, so Vex's own money-path guards — the calldata price floor,
+// the unsafe-build abort, the provider-gas-limit ceiling — were reported as
+// KyberSwap/Uniswap malfunctioning. That reads as "the venue is having a
+// moment, retry" when the truth is "Vex looked at what it was about to sign
+// and refused"; retrying reproduces it every time, and the agent never learns
+// its trade was stopped on purpose.
+//
+// Attribution only. Whether a retry is sane is `retryable`'s job and stays
+// independent of this label.
+
+describe("summarizeProtocolError — Vex-authored safety refusals", () => {
+  const POLICY_REFUSAL_CODES = [
+    ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED,
+    ErrorCodes.KYBER_UNSAFE_BUILD,
+    ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE,
+    ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
+    ErrorCodes.PENDLE_UNSAFE_TX,
+    ErrorCodes.SOLANA_TX_SOLE_SIGNER_VIOLATION,
+    ErrorCodes.SOLANA_TX_BLOCKHASH_MISMATCH,
+  ] as const;
+
+  it("labels every allowlisted guard code policy_refusal", () => {
+    for (const code of POLICY_REFUSAL_CODES) {
+      expect(summarizeProtocolError(new VexError(code, "refused before signing")).category)
+        .toBe("policy_refusal");
+    }
+  });
+
+  it("names the real live case — a price floor violated in built calldata", () => {
+    // Thrown by the KyberSwap calldata guard when the built swap's embedded
+    // `minReturnAmount` sits below the floor Vex approved at quote time.
+    const err = new VexError(
+      ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED,
+      "Built calldata minReturnAmount 990000 is below the approved floor 995000",
+      "Re-quote and retry with the same slippageBps.",
+    );
+    expect(summarizeProtocolError(err).category).toBe("policy_refusal");
+  });
+
+  it("yields to a provider's verdict when httpStatus proves one answered", () => {
+    for (const code of POLICY_REFUSAL_CODES) {
+      const err = new VexError(code, "refused");
+      err.httpStatus = 400;
+      expect(summarizeProtocolError(err).category).toBe("provider_error");
+    }
+  });
+
+  it("yields to a provider's verdict when externalName proves a mapper produced it", () => {
+    for (const code of POLICY_REFUSAL_CODES) {
+      const err = new VexError(code, "refused");
+      err.externalName = "4001";
+      expect(summarizeProtocolError(err).category).toBe("provider_error");
+    }
+  });
+
+  it("keeps attribution independent of retryability", () => {
+    const err = new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, "refused before signing");
+    err.retryable = true;
+    const summary = summarizeProtocolError(err);
+    expect(summary.category).toBe("policy_refusal");
+    expect(summary.retryable).toBe(true);
+  });
+
+  it("outranks the prose heuristics — our own code beats a keyword in the text", () => {
+    // The guard's message can legitimately contain words the text scan hunts
+    // for; a code WE attached is direct evidence, the scan is a guess about
+    // prose a provider may have written.
+    const err = new VexError(
+      ErrorCodes.KYBER_UNSAFE_BUILD,
+      "Router target is not the approved network address",
+    );
+    expect(summarizeProtocolError(err).category).toBe("policy_refusal");
+  });
+
+  it("leaves every other category exactly where it was", () => {
+    expect(summarizeProtocolError(new Error("request timed out")).category).toBe("timeout");
+    expect(summarizeProtocolError(new Error("ECONNREFUSED")).category).toBe("network");
+    expect(summarizeProtocolError(new Error("rate limit exceeded")).category).toBe("rate_limit");
+    expect(summarizeProtocolError(new Error("429 too many requests")).category).toBe("rate_limit");
+    expect(summarizeProtocolError(new Error("unauthorized")).category).toBe("auth");
+    expect(summarizeProtocolError(new Error("403 forbidden")).category).toBe("auth");
+    expect(summarizeProtocolError(new Error("boom")).category).toBe("provider_error");
+    expect(summarizeProtocolError("not an error").category).toBe("unknown");
+    expect(summarizeProtocolError(new VexError(ErrorCodes.INVALID_ADDRESS, "bad")).category)
+      .toBe("invalid_request");
+  });
+
+  it("does not sweep in a code a PROVIDER's mapper authors", () => {
+    // KYBER_FEE_EXCEEDS_AMOUNT is produced by `mapAggregatorError` from
+    // KyberSwap's own response — their verdict, not ours.
+    expect(summarizeProtocolError(new VexError(ErrorCodes.KYBER_FEE_EXCEEDS_AMOUNT, "fee too big")).category)
+      .toBe("provider_error");
+    // Pendle's 400 body classification re-words THEIR refusal.
+    expect(summarizeProtocolError(new VexError(ErrorCodes.PENDLE_VALUATION_TOO_LOW, "too low")).category)
+      .toBe("provider_error");
+  });
+});

@@ -21,6 +21,7 @@
 
 import type { ToolResult } from "../../types.js";
 import { ok, fail } from "../types.js";
+import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
 import type { TransactionRow } from "@vex-agent/db/repos/transactions.js";
 
 export interface InspectTransactionsParams {
@@ -73,14 +74,25 @@ function shortHash(hash: string | null | undefined): string | null {
  * without decoder-proven executed legs) it is marked explicitly (`~… est.`)
  * so a quoted amount never reads as an executed quantity (Codex FIX-ROUND-1
  * finding 12 / R14, extended to every kind by W5/R5).
+ *
+ * `legChainId` is the chain THIS leg settled on — the source chain for a
+ * bridge's input leg, the destination chain for its output leg. It exists only
+ * to annotate the chain-agnostic `NATIVE` sentinel with the real gas-asset
+ * ticker, so `0.0004 NATIVE` reads `0.0004 NATIVE (ETH)`. Annotation happens
+ * HERE, at projection, rather than at write time: it repairs rows already in
+ * the table, and it keeps the stored column ticker-shaped for vex-app's
+ * `sanitizeTokenSymbol` allowlist. Passing the wrong chain would print a
+ * confident lie, so a leg whose own chain id is unknown is left bare.
  */
 function formatLeg(
   amount: string | null | undefined,
   token: string | null | undefined,
   estimated: boolean,
+  legChainId: number | null | undefined,
 ): string | null {
   if (amount == null || token == null) return null;
-  return estimated ? `~${amount} ${token} est.` : `${amount} ${token}`;
+  const label = annotateNativeSymbol(token, legChainId);
+  return estimated ? `~${amount} ${label} est.` : `${amount} ${label}`;
 }
 
 function usdEstimate(value: number | null | undefined): string | null {
@@ -105,8 +117,12 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   const venue = row.protocol ?? row.namespace;
   const status = row.status ?? "pending";
   const estimated = row.amountBasis === "estimated";
-  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated);
-  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated);
+  // A bridge's two legs sit on DIFFERENT chains (Base → BSC moves ETH out and
+  // BNB in), so each leg is labelled from its own endpoint id. There is no
+  // fallback to `row.chainId`: guessing the destination asset from the source
+  // chain is exactly the confident-wrong-label failure this avoids.
+  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated, row.fromChainId);
+  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated, row.toChainId);
   const amount = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? null);
   const head = amount != null ? `Bridging ${amount} (${route})` : `Bridge ${route}`;
 
@@ -142,8 +158,9 @@ function summarize(row: TransactionRow): string {
   // executed legs falls back to the quote, marked `~… est.` — never a bare
   // executed-looking quantity for an attempt the decoder couldn't prove.
   const estimated = row.amountBasis === "estimated";
-  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated);
-  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated);
+  // Single-chain row: both legs settled on the row's own chain.
+  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated, row.chainId);
+  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated, row.chainId);
   const route = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? venue);
   const status = row.status ?? "confirmed";
 

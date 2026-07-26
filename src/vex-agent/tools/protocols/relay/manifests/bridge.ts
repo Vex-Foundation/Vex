@@ -6,7 +6,7 @@ const BRIDGE_PARAMS = [
   { key: "fromToken", type: "string" as const, required: true, description: "Source token address, or native ETH/native." },
   { key: "toChain", type: "string" as const, required: true, description: "Destination chain id or alias." },
   { key: "toToken", type: "string" as const, required: true, description: "Destination token address, or native ETH/native." },
-  { key: "amount", type: "string" as const, required: true, description: "Amount in smallest units (wei)." },
+  { key: "amount", type: "string" as const, required: true, description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
   { key: "recipient", type: "string" as const, description: "Destination recipient (default: your wallet)." },
   // `refundTo` is deliberately NOT exposed: it decides where funds land when a
   // bridge FAILS, and a model-chosen fund destination is the same vector as a
@@ -33,7 +33,7 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "fromToken", type: "string", required: true, description: "Source token address, or native ETH/native." },
       { key: "toChain", type: "string", required: true, description: "Destination chain id or alias." },
       { key: "toToken", type: "string", required: true, description: "Destination token address, or native ETH/native." },
-      { key: "amount", type: "string", required: true, description: "Amount in smallest units (wei)." },
+      { key: "amount", type: "string", required: true, description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
       { key: "recipient", type: "string", description: "Destination recipient (default: your wallet)." },
       // `refundTo` deliberately NOT exposed — see the note on BRIDGE_PARAMS above.
       { key: "slippageBps", type: "string", description: "Slippage tolerance in basis points." },

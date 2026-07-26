@@ -104,7 +104,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { compliantSwapCalldata } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 function ctx(): ProtocolExecutionContext {
@@ -148,7 +148,14 @@ describe("FIX 1 — swap build-response router verification", () => {
     // response's router is attacker-controlled.
     h.getRoute.mockResolvedValue({
       data: {
-        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1" },
+        routeSummary: {
+          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+          // A route summary ALWAYS carries its paths, and the pre-sign guard
+          // reads them to decide which pools the build may fund.
+          route: compliantRoutePaths({
+            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+          }),
+        },
         routerAddress: META_AGGREGATION_ROUTER_V2,
       },
     });

@@ -406,22 +406,33 @@ describe("solana-jupiter manifest", () => {
   // Implementation-detail strings ("Price API", "Tokens API", "deposit
   // transaction", "settlement history") are intentionally absent in the
   // refactored passages — they were API-doc jargon, not user intent.
-  // Router names (Metis/JupiterZ/Dflow/OKX) are kept in execute only,
-  // since the user-facing "preview" intent doesn't need router model names.
+  // Router names (Metis/JupiterZ/Dflow/OKX) and the "MEV protection" claim were
+  // REMOVED from the execute passage (ergonomics audit D13): no code in this
+  // repo selects, requests, or verifies either. Vex posts to Jupiter's `/build`
+  // and lands the signed bytes itself, so the router choice is Jupiter's and is
+  // never echoed back — the passage was asserting a capability we do not have.
+  // The assertions below therefore pin what the embedding must still do (anchor
+  // the Solana swap intent on the aggregator) and pin the retired claims as
+  // ABSENT, so a future edit cannot quietly reinstate them.
 
-  it("swap embeddings stay Solana-anchored; execute names the routers", () => {
+  it("swap embeddings stay Solana-anchored and name the aggregator", () => {
     const quote = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.quote")!;
     const execute = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.execute")!;
     for (const tool of [quote, execute]) {
       expect(tool.discovery!.embeddingText).toContain("Solana");
       expect(tool.discovery!.embeddingText?.toLowerCase()).toContain("swap");
     }
-    // execute-only: routers belong to the execute path
     expect(execute.discovery!.embeddingText).toContain("Jupiter");
-    expect(execute.discovery!.embeddingText).toContain("Metis");
-    expect(execute.discovery!.embeddingText).toContain("JupiterZ");
-    expect(execute.discovery!.embeddingText).toContain("Dflow");
-    expect(execute.discovery!.embeddingText).toContain("OKX");
+    expect(execute.discovery!.embeddingText).toContain("400+ DEXes");
+  });
+
+  it("the swap execute surface claims no MEV protection and names no router", () => {
+    const execute = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.execute")!;
+    const surface = `${execute.description} ${execute.discovery!.canonicalSummary ?? ""} ${execute.discovery!.embeddingText ?? ""}`;
+    expect(surface).not.toContain("MEV");
+    for (const router of ["Metis", "JupiterZ", "Dflow", "OKX"]) {
+      expect(surface, `${router} is an unverified router claim — see audit D13`).not.toContain(router);
+    }
   });
 
   it("core embeddings mention tokens and prices", () => {
