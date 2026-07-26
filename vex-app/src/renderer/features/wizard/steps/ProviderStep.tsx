@@ -25,8 +25,17 @@
  * "Reconfigure" reveals the form.
  *
  * AGENT_MODEL is NOT a secret — model ids are public catalogue
- * entries — so it stays in React state. The OPENROUTER_API_KEY input
- * is the ONLY secret in this step.
+ * entries — so it stays in React state. The API key inputs (primary +
+ * optional fallback) are the ONLY secrets in this step, and both are
+ * uncontrolled refs cleared synchronously before the await.
+ *
+ * Optional fallback provider: a collapsed "+ Add a fallback provider"
+ * section adds a second key + model id. Validated both-or-neither in
+ * the renderer AND at the IPC boundary, and BOTH providers are verified
+ * before anything is persisted — a fallback that only fails mid-mission
+ * (exactly when it is needed) is worse than no fallback at all. The
+ * engine retries the primary first and switches over only once those
+ * retries are exhausted (`src/vex-agent/inference/failover.ts`).
  *
  * PR6 — `ModelBrandIcon` parses the `<provider>/<model>` prefix and
  * shows a matching brand SVG from `@thesvg/react` (DeepSeek, Anthropic,
@@ -84,6 +93,14 @@ export function ProviderStep({
   const [successLatencyMs, setSuccessLatencyMs] = useState<number | null>(null);
   const [showOverride, setShowOverride] = useState(false);
   const apiKeyRef = useRef<HTMLInputElement | null>(null);
+
+  // ── Optional fallback provider ───────────────────────────────────
+  // Collapsed by default: it is genuinely optional, and expanding the step
+  // by two more required-looking fields would make the common single-provider
+  // path feel heavier than it is.
+  const [showFallback, setShowFallback] = useState(false);
+  const [fallbackModel, setFallbackModel] = useState<string>("");
+  const fallbackApiKeyRef = useRef<HTMLInputElement | null>(null);
 
   const providerState =
     envQuery.data?.ok === true ? envQuery.data.data.provider : null;
@@ -143,14 +160,44 @@ export function ProviderStep({
         return;
       }
 
-      // Snapshot, clear ref SYNCHRONOUSLY before await (skill §14).
+      // Optional fallback — both-or-neither, validated before we touch the
+      // network so the user fixes it inline rather than via a server error.
+      const fallbackApiKeyRaw = showFallback
+        ? (fallbackApiKeyRef.current?.value ?? "")
+        : "";
+      const fallbackApiKey = fallbackApiKeyRaw.trim();
+      const fallbackModelTrim = showFallback ? fallbackModel.trim() : "";
+      const hasFallbackKey = fallbackApiKey.length > 0;
+      const hasFallbackModel = fallbackModelTrim.length > 0;
+
+      if (hasFallbackKey !== hasFallbackModel) {
+        setClientError(
+          "The fallback provider needs both an API key and a model id — fill both, or clear both.",
+        );
+        return;
+      }
+      if (fallbackApiKey.length > 200 || fallbackModelTrim.length > 200) {
+        setClientError(
+          "API key and model id must each be shorter than 200 characters.",
+        );
+        return;
+      }
+
+      // Snapshot, clear refs SYNCHRONOUSLY before await (skill §14) — both
+      // secrets, so neither is parked in a DOM node across the await.
       const payload: ProviderPersistInput = {
         provider: "openrouter",
         apiKey,
         model: modelTrim,
+        ...(hasFallbackKey && hasFallbackModel
+          ? { fallbackApiKey, fallbackModel: fallbackModelTrim }
+          : {}),
       };
       if (apiKeyRef.current) {
         apiKeyRef.current.value = "";
+      }
+      if (fallbackApiKeyRef.current) {
+        fallbackApiKeyRef.current.value = "";
       }
       setSubmitting(true);
       try {
@@ -163,11 +210,13 @@ export function ProviderStep({
           // main (mapSdkError) — narrow defensively like AgentCoreStep's
           // `details.violation`.
           const causeCodeRaw = result.error.details?.causeCode;
+          const scopeRaw = result.error.details?.scope;
           setServerError({
             code: result.error.code,
             correlationId: result.error.correlationId ?? null,
             causeCode:
               typeof causeCodeRaw === "string" ? causeCodeRaw : null,
+            scope: scopeRaw === "fallback" ? "fallback" : "primary",
           });
           return;
         }
@@ -178,7 +227,7 @@ export function ProviderStep({
         setSubmitting(false);
       }
     },
-    [advanceToReview, invalidateEnvState, model],
+    [advanceToReview, invalidateEnvState, model, showFallback, fallbackModel],
   );
 
   const meta = WIZARD_STEP_META.provider;
@@ -361,6 +410,82 @@ export function ProviderStep({
           </p>
         </div>
 
+        {/* Optional fallback provider — collapsed by default. */}
+        {showFallback ? (
+          <div
+            className="flex flex-col gap-4 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"
+            data-vex-provider-fallback="open"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Used only if the model above keeps failing — the agent retries
+                the primary first and switches over only after those retries
+                are exhausted. A different key or model here is what makes it
+                useful.
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  // Clear both fields on collapse so a hidden half-filled
+                  // fallback can never be submitted.
+                  if (fallbackApiKeyRef.current) {
+                    fallbackApiKeyRef.current.value = "";
+                  }
+                  setFallbackModel("");
+                  setShowFallback(false);
+                }}
+                disabled={submitting || stepAdvance.isPending}
+              >
+                Remove
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="vex-provider-fallback-key">
+                Fallback API key
+              </Label>
+              <PasswordField
+                id="vex-provider-fallback-key"
+                ref={fallbackApiKeyRef}
+                placeholder="sk-or-..."
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label
+                htmlFor="vex-provider-fallback-model"
+                className="flex items-center gap-2"
+              >
+                <ModelBrandIcon modelId={fallbackModel} size={16} />
+                Fallback model id
+              </Label>
+              <ModelPicker
+                id="vex-provider-fallback-model"
+                value={fallbackModel}
+                models={catalogueModels}
+                loading={providerModels.isLoading}
+                failed={catalogueFailed}
+                disabled={submitting || stepAdvance.isPending}
+                onChange={setFallbackModel}
+                onRetry={() => {
+                  void providerModels.refetch();
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowFallback(true)}
+            disabled={submitting || stepAdvance.isPending}
+            data-vex-provider-fallback="collapsed"
+            className="self-start text-sm text-[var(--vex-onboarding-accent)] underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            + Add a fallback provider (optional)
+          </button>
+        )}
+
         {clientError ? (
           <p className="text-sm text-[var(--color-danger)]" role="alert">
             {clientError}
@@ -374,8 +499,16 @@ export function ProviderStep({
             className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] py-1 pl-3 text-sm text-[var(--color-danger)]"
           >
             <strong className="block font-semibold">
-              {uiCopyFor(String(serverError.code)).title}
+              {serverError.scope === "fallback"
+                ? `Fallback provider — ${uiCopyFor(String(serverError.code)).title}`
+                : uiCopyFor(String(serverError.code)).title}
             </strong>
+            {serverError.scope === "fallback" ? (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Your primary provider verified fine. Fix or remove the fallback
+                to continue — nothing was saved.
+              </p>
+            ) : null}
             <p className="mt-1">
               {uiCopyFor(String(serverError.code)).body}
             </p>

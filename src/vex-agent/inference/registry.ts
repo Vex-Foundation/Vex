@@ -9,6 +9,7 @@
 
 import type { InferenceProvider } from "./types.js";
 import { loadEnvConfig } from "./config.js";
+import { FailoverProvider } from "./failover.js";
 import logger from "@utils/logger.js";
 
 // ── Lazy imports (avoid loading unused provider dependencies) ────
@@ -16,6 +17,46 @@ import logger from "@utils/logger.js";
 async function createOpenRouterProvider(): Promise<InferenceProvider> {
   const { OpenRouterProvider } = await import("./openrouter.js");
   return new OpenRouterProvider();
+}
+
+/**
+ * Wrap the resolved primary in a failover stack, adding the optional fallback
+ * provider when BOTH `OPENROUTER_API_KEY_FALLBACK` and `AGENT_MODEL_FALLBACK`
+ * are configured.
+ *
+ * The wrap is UNCONDITIONAL so there is exactly one code path in production.
+ * A 1-deep stack is a pass-through: it re-throws the provider's own error
+ * untouched and mirrors the primary's `id`/`displayName`/`model`, so an
+ * install without a fallback behaves exactly as it did before this change.
+ *
+ * Constructing the fallback must never take down a working primary — a bad
+ * fallback config is logged and dropped, not thrown.
+ */
+async function withFallback(primary: InferenceProvider): Promise<InferenceProvider> {
+  const { fallbackApiKey, fallbackModel } = loadEnvConfig();
+  if (fallbackApiKey === null || fallbackModel === null) {
+    return new FailoverProvider([primary]);
+  }
+
+  try {
+    const { OpenRouterProvider } = await import("./openrouter.js");
+    const fallback = new OpenRouterProvider({
+      apiKey: fallbackApiKey,
+      model: fallbackModel,
+      id: "openrouter-fallback",
+      displayName: "OpenRouter (fallback)",
+    });
+    logger.info("inference.registry.fallback_enabled", {
+      primaryId: primary.id,
+      fallbackId: fallback.id,
+    });
+    return new FailoverProvider([primary, fallback]);
+  } catch (err) {
+    logger.warn("inference.registry.fallback_init_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return new FailoverProvider([primary]);
+  }
 }
 
 const PROVIDER_FACTORIES: Record<string, () => Promise<InferenceProvider>> = {
@@ -57,7 +98,7 @@ async function doResolve(): Promise<InferenceProvider | null> {
         provider: envConfig.agentProvider,
         source: "AGENT_PROVIDER",
       });
-      return provider;
+      return withFallback(provider);
     } catch (err) {
       logger.error("inference.registry.init_failed", {
         provider: envConfig.agentProvider,
@@ -75,7 +116,7 @@ async function doResolve(): Promise<InferenceProvider | null> {
         provider: "openrouter",
         source: "OPENROUTER_API_KEY",
       });
-      return provider;
+      return withFallback(provider);
     } catch (err) {
       logger.warn("inference.registry.openrouter_failed", {
         error: err instanceof Error ? err.message : String(err),

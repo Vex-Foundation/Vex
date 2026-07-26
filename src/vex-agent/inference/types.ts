@@ -266,6 +266,18 @@ export interface InferenceProvider {
   readonly displayName: string;
 
   /**
+   * The model id this provider instance is configured to call, when it is
+   * fixed at construction. Optional so existing implementations stay
+   * source-compatible.
+   *
+   * Read by the failover stack to retarget a delegated call at the ACTIVE
+   * provider's own model: the engine builds `InferenceConfig` once per turn
+   * from the PRIMARY, so a fallback with a different model must not be invoked
+   * with the primary's `config.model`.
+   */
+  readonly model?: string;
+
+  /**
    * Load inference configuration (model, pricing, context limit).
    *
    * Called per turn but expected to cache: a successful fetch is reused for a

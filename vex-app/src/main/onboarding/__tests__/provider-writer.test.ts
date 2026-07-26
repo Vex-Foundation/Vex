@@ -52,14 +52,90 @@ describe("writeProvider", () => {
         "AGENT_PROVIDER",
       ]);
     }
+    // The fallback slot is explicitly CLEARED (null) rather than omitted: a
+    // save with no fallback must remove any previously stored one, otherwise a
+    // stale key would keep serving as the failover target after the operator
+    // dropped it.
     expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
       OPENROUTER_API_KEY: "sk-or-test-123",
+      OPENROUTER_API_KEY_FALLBACK: null,
     });
     expect(readDotenvFileValue("OPENROUTER_API_KEY", envFile)).toBeNull();
     expect(readDotenvFileValue("AGENT_MODEL", envFile)).toBe(
       "anthropic/claude-sonnet-4.5",
     );
     expect(readDotenvFileValue("AGENT_PROVIDER", envFile)).toBe("openrouter");
+  });
+
+  it("vaults the fallback key and writes the fallback model when one is configured", async () => {
+    const result = await writeProvider(
+      {
+        provider: "openrouter",
+        apiKey: "sk-or-primary",
+        model: "anthropic/claude-sonnet-4.5",
+        fallbackApiKey: "sk-or-fallback",
+        fallbackModel: "deepseek/deepseek-chat",
+      },
+      { envFile },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).toEqual([
+        "OPENROUTER_API_KEY",
+        "AGENT_MODEL",
+        "AGENT_PROVIDER",
+        "OPENROUTER_API_KEY_FALLBACK",
+        "AGENT_MODEL_FALLBACK",
+      ]);
+    }
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      OPENROUTER_API_KEY: "sk-or-primary",
+      OPENROUTER_API_KEY_FALLBACK: "sk-or-fallback",
+    });
+    // Both keys are vault-only; neither may land in .env as plaintext.
+    expect(readDotenvFileValue("OPENROUTER_API_KEY", envFile)).toBeNull();
+    expect(readDotenvFileValue("OPENROUTER_API_KEY_FALLBACK", envFile)).toBeNull();
+    expect(readFileSync(envFile, "utf8")).not.toContain("sk-or-fallback");
+    // The model id is NOT a secret and must be readable by the agent.
+    expect(readDotenvFileValue("AGENT_MODEL_FALLBACK", envFile)).toBe(
+      "deepseek/deepseek-chat",
+    );
+  });
+
+  it("clears a previously configured fallback when the operator drops it", async () => {
+    await writeProvider(
+      {
+        provider: "openrouter",
+        apiKey: "sk-or-primary",
+        model: "anthropic/claude-sonnet-4.5",
+        fallbackApiKey: "sk-or-fallback",
+        fallbackModel: "deepseek/deepseek-chat",
+      },
+      { envFile },
+    );
+    sessionMocks.writeUnlockedSecrets.mockClear();
+
+    // Re-save with no fallback: the stale pair must not survive, or the agent
+    // would keep failing over to a provider the operator deliberately removed.
+    const result = await writeProvider(
+      {
+        provider: "openrouter",
+        apiKey: "sk-or-primary",
+        model: "anthropic/claude-sonnet-4.5",
+      },
+      { envFile },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.fieldsWritten).not.toContain("AGENT_MODEL_FALLBACK");
+    }
+    expect(sessionMocks.writeUnlockedSecrets).toHaveBeenCalledWith({
+      OPENROUTER_API_KEY: "sk-or-primary",
+      OPENROUTER_API_KEY_FALLBACK: null,
+    });
+    expect(readDotenvFileValue("AGENT_MODEL_FALLBACK", envFile)).toBeNull();
   });
 
   it("strips stale plaintext OpenRouter keys while preserving unrelated non-secret values", async () => {

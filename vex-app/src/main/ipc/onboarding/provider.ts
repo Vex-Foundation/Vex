@@ -57,6 +57,36 @@ export function registerProviderHandler(): () => void {
 
       const latencyMs = verifyResult.data.latencyMs;
 
+      // Step 1b: verify the OPTIONAL fallback the same way, still BEFORE any
+      // disk write, so the atomic guarantee covers both providers. A fallback
+      // that only fails at 3am mid-mission — exactly when it is needed — is
+      // worse than no fallback, so an unverifiable one blocks the save rather
+      // than being persisted with a warning.
+      if (input.fallbackApiKey !== undefined && input.fallbackModel !== undefined) {
+        const fallbackVerify = await verifyOpenRouterConnection(
+          { apiKey: input.fallbackApiKey, model: input.fallbackModel },
+          { correlationId: ctx.requestId },
+        );
+        if (!fallbackVerify.ok) {
+          log.info(
+            `[ipc:vex:onboarding:providerPersist] fallback ` +
+              `errCode=${fallbackVerify.error.code} correlationId=${ctx.requestId}`,
+          );
+          return {
+            ok: false,
+            error: {
+              ...fallbackVerify.error,
+              details: {
+                ...(fallbackVerify.error.details ?? {}),
+                // Lets the renderer point the error at the fallback fields
+                // instead of the primary ones.
+                scope: "fallback",
+              },
+            },
+          };
+        }
+      }
+
       // Step 2: persist vault secret + non-secret env values inside the env-write mutex.
       // On success, reload the non-secret .env into process.env (overwrite — the
       // user just rewrote it) and reset the engine's cached inference provider so
@@ -85,6 +115,7 @@ export function registerProviderHandler(): () => void {
       log.info(
         `[ipc:vex:onboarding:providerPersist] ` +
           `provider=openrouter modelSet=true latencyMs=${latencyMs} ` +
+          `fallbackSet=${input.fallbackApiKey !== undefined} ` +
           `correlationId=${ctx.requestId}`,
       );
 

@@ -19,7 +19,9 @@
 import { appendMultipleToDotenvFile } from "@vex-lib/dotenv.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
+  PROVIDER_PERSIST_BASE_FIELDS,
   PROVIDER_PERSIST_CANONICAL_ORDER,
+  PROVIDER_PERSIST_FALLBACK_FIELDS,
   type ProviderPersistInput,
 } from "@shared/schemas/provider.js";
 import { ENV_FILE } from "../paths/config-dir.js";
@@ -51,23 +53,29 @@ export async function writeProvider(
 ): Promise<Result<ProviderWriteResult>> {
   const targetFile = options.envFile ?? ENV_FILE;
 
-  const updates: Record<CanonicalKey, string> = {
-    OPENROUTER_API_KEY: input.apiKey,
-    AGENT_MODEL: input.model,
-    AGENT_PROVIDER: PROVIDER_AGENT_VALUE,
-  };
+  // Both-or-neither is enforced by the input schema; read as a single unit.
+  const fallback =
+    input.fallbackApiKey !== undefined && input.fallbackModel !== undefined
+      ? { apiKey: input.fallbackApiKey, model: input.fallbackModel }
+      : null;
 
   try {
+    // `null` CLEARS. A reconfigure that omits the fallback must remove any
+    // previously stored one — otherwise a stale key/model pair would keep
+    // silently serving as the failover target after the operator dropped it.
     const secretWrite = writeUnlockedSecrets({
       OPENROUTER_API_KEY: input.apiKey,
+      OPENROUTER_API_KEY_FALLBACK: fallback?.apiKey ?? null,
     });
     if (!secretWrite.ok) return secretWrite;
     stripManagedSecretsFromDotenvFile(targetFile);
     appendMultipleToDotenvFile(
       {
         OPENROUTER_API_KEY: null,
-        AGENT_MODEL: updates.AGENT_MODEL,
-        AGENT_PROVIDER: updates.AGENT_PROVIDER,
+        AGENT_MODEL: input.model,
+        AGENT_PROVIDER: PROVIDER_AGENT_VALUE,
+        OPENROUTER_API_KEY_FALLBACK: null,
+        AGENT_MODEL_FALLBACK: fallback?.model ?? null,
       },
       targetFile,
     );
@@ -88,8 +96,13 @@ export async function writeProvider(
     });
   }
 
-  log.info(`[provider-writer] persisted provider keys to ${targetFile}`);
+  log.info(
+    `[provider-writer] persisted provider keys to ${targetFile} ` +
+      `fallbackConfigured=${fallback !== null}`,
+  );
   return ok({
-    fieldsWritten: [...PROVIDER_PERSIST_CANONICAL_ORDER] as ReadonlyArray<CanonicalKey>,
+    fieldsWritten: (fallback !== null
+      ? [...PROVIDER_PERSIST_BASE_FIELDS, ...PROVIDER_PERSIST_FALLBACK_FIELDS]
+      : [...PROVIDER_PERSIST_BASE_FIELDS]) as ReadonlyArray<CanonicalKey>,
   });
 }

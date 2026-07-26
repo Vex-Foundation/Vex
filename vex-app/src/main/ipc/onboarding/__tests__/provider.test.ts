@@ -131,6 +131,99 @@ describe("providerPersist handler", () => {
     expect(mockWriter).toHaveBeenCalledTimes(1);
   });
 
+  it("verifies BOTH providers before persisting when a fallback is configured", async () => {
+    mockVerify.mockResolvedValue({ ok: true, data: { latencyMs: 120 } });
+    mockWriter.mockResolvedValue({
+      ok: true,
+      data: {
+        fieldsWritten: [
+          "OPENROUTER_API_KEY",
+          "AGENT_MODEL",
+          "AGENT_PROVIDER",
+          "OPENROUTER_API_KEY_FALLBACK",
+          "AGENT_MODEL_FALLBACK",
+        ],
+      },
+    });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    const result = (await fn(trustedSender, {
+      requestId: "req-fb",
+      payload: {
+        ...VALID_PAYLOAD,
+        fallbackApiKey: "sk-or-fallback-SECRET",
+        fallbackModel: "deepseek/deepseek-chat",
+      },
+    })) as { ok: boolean };
+
+    expect(result.ok).toBe(true);
+    expect(mockVerify).toHaveBeenCalledTimes(2);
+    // Each provider must be verified with its OWN model — verifying the
+    // fallback key against the primary's model is the P1 this guards.
+    expect(mockVerify.mock.calls[1]?.[0]).toMatchObject({
+      apiKey: "sk-or-fallback-SECRET",
+      model: "deepseek/deepseek-chat",
+    });
+    expect(mockWriter).toHaveBeenCalledTimes(1);
+  });
+
+  it("a bad fallback blocks the save entirely — writer NEVER called", async () => {
+    mockVerify
+      .mockResolvedValueOnce({ ok: true, data: { latencyMs: 90 } })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "provider.invalid_api_key",
+          domain: "onboarding",
+          message: "API key rejected",
+          retryable: false,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-fb-bad",
+        },
+      });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    const result = (await fn(trustedSender, {
+      requestId: "req-fb-bad",
+      payload: {
+        ...VALID_PAYLOAD,
+        fallbackApiKey: "sk-or-bad",
+        fallbackModel: "deepseek/deepseek-chat",
+      },
+    })) as {
+      ok: boolean;
+      error?: { code: string; details?: { scope?: string } };
+    };
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("provider.invalid_api_key");
+    // scope lets the renderer point the error at the fallback fields.
+    expect(result.error?.details?.scope).toBe("fallback");
+    // Atomic: a half-good pair persists nothing, not even the good primary.
+    expect(mockWriter).not.toHaveBeenCalled();
+  });
+
+  it("never logs either API key", async () => {
+    mockVerify.mockResolvedValue({ ok: true, data: { latencyMs: 120 } });
+    mockWriter.mockResolvedValue({ ok: true, data: { fieldsWritten: [] } });
+    registerProviderHandler();
+    const fn = handlers.get(CH.onboarding.providerPersist)!;
+    await fn(trustedSender, {
+      requestId: "req-log",
+      payload: {
+        ...VALID_PAYLOAD,
+        fallbackApiKey: "sk-or-fallback-SECRET",
+        fallbackModel: "deepseek/deepseek-chat",
+      },
+    });
+
+    const logged = logInfo.mock.calls.flat().join("\n");
+    expect(logged).not.toContain("sk-or-secret-VALUE-XYZ");
+    expect(logged).not.toContain("sk-or-fallback-SECRET");
+    expect(logged).toContain("fallbackSet=true");
+  });
+
   it("verify failure short-circuits — writer NEVER called", async () => {
     mockVerify.mockResolvedValue({
       ok: false,

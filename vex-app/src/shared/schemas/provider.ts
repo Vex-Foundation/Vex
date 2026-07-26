@@ -27,13 +27,32 @@ export type ProviderName = z.infer<typeof providerNameSchema>;
 
 const trimmedSecret = z.string().trim().min(1).max(200);
 
+/**
+ * Optional fallback provider (both-or-neither).
+ *
+ * `.refine` rather than two optional fields so a half-filled fallback is
+ * rejected at the IPC boundary instead of being silently dropped — the engine
+ * (`inference/registry.ts`) only activates failover when BOTH the key and the
+ * model are present, and a user who filled one field expects failover to work.
+ */
 export const providerPersistInputSchema = z
   .object({
     provider: z.literal("openrouter"),
     apiKey: trimmedSecret,
     model: trimmedSecret,
+    fallbackApiKey: trimmedSecret.optional(),
+    fallbackModel: trimmedSecret.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) =>
+      (v.fallbackApiKey === undefined) === (v.fallbackModel === undefined),
+    {
+      message:
+        "Fallback provider needs both an API key and a model id, or neither.",
+      path: ["fallbackModel"],
+    },
+  );
 
 export type ProviderPersistInput = z.infer<typeof providerPersistInputSchema>;
 
@@ -51,6 +70,22 @@ export const PROVIDER_PERSIST_CANONICAL_ORDER = [
   "OPENROUTER_API_KEY",
   "AGENT_MODEL",
   "AGENT_PROVIDER",
+  // Fallback pair — reported only when the operator configured one.
+  "OPENROUTER_API_KEY_FALLBACK",
+  "AGENT_MODEL_FALLBACK",
+] as const;
+
+/** Canonical fields always written by a provider persist (no fallback configured). */
+export const PROVIDER_PERSIST_BASE_FIELDS = [
+  "OPENROUTER_API_KEY",
+  "AGENT_MODEL",
+  "AGENT_PROVIDER",
+] as const;
+
+/** Extra fields written when the operator configured a fallback provider. */
+export const PROVIDER_PERSIST_FALLBACK_FIELDS = [
+  "OPENROUTER_API_KEY_FALLBACK",
+  "AGENT_MODEL_FALLBACK",
 ] as const;
 
 export const providerPersistFieldNameSchema = z.enum(

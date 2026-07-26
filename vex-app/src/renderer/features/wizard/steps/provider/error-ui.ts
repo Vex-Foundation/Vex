@@ -21,6 +21,13 @@ export interface ServerError {
    * errno string extracted main-side — never raw SDK message text.
    */
   readonly causeCode: string | null;
+  /**
+   * Which provider the verify failed on. `"fallback"` only when the optional
+   * fallback was the one that failed — the primary having already verified.
+   * Closed set stamped main-side (`ipc/onboarding/provider.ts`); anything else
+   * is treated as the primary.
+   */
+  readonly scope?: "primary" | "fallback";
 }
 
 export interface ErrorCopy {

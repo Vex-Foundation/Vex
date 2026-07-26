@@ -33,6 +33,14 @@ export interface EnvConfig {
   openrouterApiKey: string | null;
   /** Model ID — required for OpenRouter */
   agentModel: string | null;
+  /**
+   * OPTIONAL second OpenRouter key used only after the primary exhausts its
+   * transient retries. Activates ONLY together with {@link fallbackModel} —
+   * see `registry.ts`. Absent (the default) ⇒ single-provider behaviour.
+   */
+  fallbackApiKey: string | null;
+  /** Model id for the optional fallback provider. Both-or-neither with {@link fallbackApiKey}. */
+  fallbackModel: string | null;
   /** Sampling temperature — OpenRouter only */
   temperature: number | null;
   /** Max output tokens per response */
@@ -65,6 +73,23 @@ export function loadEnvConfig(): EnvConfig {
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? null;
   const agentModel = process.env.AGENT_MODEL?.trim() ?? null;
 
+  // Optional fallback provider. Deliberately NOT a validation error when only
+  // one half is present: failover is an opt-in convenience, and refusing to
+  // start the agent over a half-filled optional field would be a worse failure
+  // than running without it. `registry.ts` requires both to activate; the warn
+  // below is what makes a partial config visible.
+  const fallbackApiKey = process.env.OPENROUTER_API_KEY_FALLBACK?.trim() || null;
+  const fallbackModel = process.env.AGENT_MODEL_FALLBACK?.trim() || null;
+  if ((fallbackApiKey === null) !== (fallbackModel === null)) {
+    logger.warn("inference.config.fallback_partial", {
+      hint:
+        "Fallback provider ignored — set BOTH OPENROUTER_API_KEY_FALLBACK and " +
+        "AGENT_MODEL_FALLBACK to enable it",
+      hasKey: fallbackApiKey !== null,
+      hasModel: fallbackModel !== null,
+    });
+  }
+
   // AGENT_CONTEXT_LIMIT / AGENT_MAX_OUTPUT_TOKENS / AGENT_TEMPERATURE —
   // delegated to shared parser (returns collected ParseErrors so we
   // preserve the "throw all at once" engine contract).
@@ -91,6 +116,8 @@ export function loadEnvConfig(): EnvConfig {
     contextLimit: agentParse.value.contextLimit,
     openrouterApiKey,
     agentModel,
+    fallbackApiKey,
+    fallbackModel,
     temperature: agentParse.value.temperature,
     maxOutputTokens: agentParse.value.maxOutputTokens,
   };

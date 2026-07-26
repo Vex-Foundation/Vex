@@ -2,6 +2,11 @@ export const MASTER_PASSWORD_ENV_KEY = "VEX_KEYSTORE_PASSWORD" as const;
 
 export const VAULT_SECRET_KEYS = [
   "OPENROUTER_API_KEY",
+  // Optional second inference key used only after the primary exhausts its
+  // transient retries (see inference/failover.ts). Managed exactly like the
+  // primary key: encrypted in the vault, mirrored to process.env at unlock,
+  // and stripped from .env.
+  "OPENROUTER_API_KEY_FALLBACK",
   "JUPITER_API_KEY",
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",

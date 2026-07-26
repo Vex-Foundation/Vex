@@ -96,12 +96,32 @@ function apiUnreachableHint(causeCode: string | null): string {
 
 // ── Provider ─────────────────────────────────────────────────────
 
+/**
+ * Optional per-instance overrides. Omitted fields fall back to ENV, so
+ * zero-arg construction (`new OpenRouterProvider()`) is unchanged. Used to
+ * build a SECOND instance for the failover stack without disturbing the
+ * primary's ENV-derived config.
+ */
+export interface OpenRouterProviderOptions {
+  readonly apiKey?: string;
+  readonly model?: string;
+  /** Distinguishes the instance in logs, e.g. "OpenRouter (fallback)". */
+  readonly displayName?: string;
+  /** Stable id used in failover logs; defaults to "openrouter". */
+  readonly id?: string;
+}
+
 export class OpenRouterProvider implements InferenceProvider {
-  readonly id = "openrouter";
-  readonly displayName = "OpenRouter";
+  readonly id: string;
+  readonly displayName: string;
 
   private readonly apiKey: string;
-  private readonly model: string;
+  /**
+   * Public (read-only) so the failover stack can retarget a delegated call at
+   * THIS instance's model instead of the primary's — see `configFor` in
+   * `failover.ts`.
+   */
+  readonly model: string;
   private readonly contextLimit: number;
   private readonly temperature: number | undefined;
   private readonly maxOutputTokens: number;
@@ -119,18 +139,23 @@ export class OpenRouterProvider implements InferenceProvider {
   private staleServeUntil = 0;
   private inFlight: Promise<InferenceConfig | null> | null = null;
 
-  constructor() {
+  constructor(options: OpenRouterProviderOptions = {}) {
     const env = loadEnvConfig();
 
-    if (!env.openrouterApiKey) {
+    const apiKey = options.apiKey ?? env.openrouterApiKey;
+    const model = options.model ?? env.agentModel;
+
+    if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is required for OpenRouter provider");
     }
-    if (!env.agentModel) {
+    if (!model) {
       throw new Error("AGENT_MODEL is required for OpenRouter provider");
     }
 
-    this.apiKey = env.openrouterApiKey;
-    this.model = env.agentModel;
+    this.id = options.id ?? "openrouter";
+    this.displayName = options.displayName ?? "OpenRouter";
+    this.apiKey = apiKey;
+    this.model = model;
     this.contextLimit = env.contextLimit;
     this.temperature = env.temperature ?? undefined;
     this.maxOutputTokens = env.maxOutputTokens;
