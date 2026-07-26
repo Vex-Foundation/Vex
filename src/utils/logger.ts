@@ -1,5 +1,6 @@
 import winston from "winston";
 import type { Writable } from "node:stream";
+import { redactLogValue } from "../lib/diagnostics/log-redaction.js";
 
 const LOG_LEVEL = process.env.LOG_LEVEL ?? "info";
 
@@ -24,13 +25,29 @@ const structuredFormat = winston.format.combine(
   winston.format.json(),
 );
 
+/**
+ * Sanitize the shared Winston info object before any transport sees it.
+ * Symbol properties used internally by Winston remain in place; all
+ * user-controlled string-keyed message and metadata fields are replaced by
+ * their safe equivalents.
+ */
+const redactingFormat = winston.format((info) => {
+  const safe = redactLogValue(info) as Record<string, unknown>;
+  for (const key of Object.keys(info)) delete info[key];
+  Object.assign(info, safe);
+  return info;
+});
+
 // All logs go to stderr (stdout reserved for machine-readable output)
 export const logger = winston.createLogger({
   level: LOG_LEVEL,
   defaultMeta: {
     service: "vex-agent",
   },
-  format: shouldUseStructuredFormat() ? structuredFormat : colorizedFormat,
+  format: winston.format.combine(
+    redactingFormat(),
+    shouldUseStructuredFormat() ? structuredFormat : colorizedFormat,
+  ),
   transports: [
     new winston.transports.Stream({
       stream: process.stderr as unknown as Writable,

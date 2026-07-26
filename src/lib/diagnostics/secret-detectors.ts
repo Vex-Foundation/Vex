@@ -88,10 +88,12 @@ export const SOLANA_ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
  * Bounded with lookaround, not `\b`: `+` and `/` are not `\w` characters,
  * so a secret that happens to start or end with one of them (a real
  * possibility — base64 output is effectively uniform over its alphabet)
- * would sit on a non-word/non-word boundary where `\b` never matches.
+ * would sit on a non-word/non-word boundary where `\b` never matches. The
+ * leading boundary intentionally allows `=` because logs commonly render
+ * fields as `token=<value>`; trailing `=` remains part of the candidate.
  */
 export const OPEN_ENDED_BASE64_CANDIDATE_RE =
-  /(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{20,}={0,2}(?![A-Za-z0-9+/=])/g;
+  /(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{20,}={0,2}(?![A-Za-z0-9+/=])/g;
 
 /** A candidate that is entirely `0x` + hex digits is an EVM address/tx-hash
  *  shape (already covered by `EVM_ADDRESS_RE` / `TX_HASH_HEX_RE`), not a

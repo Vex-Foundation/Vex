@@ -47,6 +47,11 @@ describe("secret-detectors — open-ended base64 recall", () => {
       expect(candidates.some((c) => looksLikeBase64Secret(c))).toBe(true);
     });
   }
+
+  it("catches a base64 secret immediately after an assignment delimiter", () => {
+    const secret = base64Secret(32);
+    expect(candidatesIn(`token=${secret}`)).toContain(secret);
+  });
 });
 
 describe("secret-detectors — precision (false positives must not fire)", () => {
