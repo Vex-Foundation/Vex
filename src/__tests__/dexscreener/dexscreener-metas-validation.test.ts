@@ -82,7 +82,7 @@ describe("validateMetasTrendingResponse", () => {
     expect(meta.tokenCount).toBe(39);
     expect(meta.marketCapChange).toEqual({ m5: -0.23, h1: -2.89, h6: 7.08, h24: 24.21 });
     // Unknown field is not surfaced.
-    expect((meta as Record<string, unknown>).someFutureField).toBeUndefined();
+    expect(meta).not.toHaveProperty("someFutureField");
   });
 
   it("normalises missing / wrong-typed fields to null", () => {
@@ -146,7 +146,7 @@ describe("validateProfilesRecentResponse", () => {
       { type: "twitter", label: null, url: "https://x.com/QuackAI_AI" },
     ]);
     // openGraph is not part of our shape.
-    expect((row as Record<string, unknown>).openGraph).toBeUndefined();
+    expect(row).not.toHaveProperty("openGraph");
   });
 
   it("normalises a missing cto / updatedAt to null and drops non-records", () => {

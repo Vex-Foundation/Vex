@@ -13,8 +13,21 @@ import type {
   ProtocolDiscoveryRetrievalMeta,
 } from "./types.js";
 import type { ScoredManifest } from "./lexical-score.js";
+import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 
 const DEFAULT_DISCOVERY_LIMIT = 5;
+
+/**
+ * The canonical dotted Uniswap swap toolIds (FIX-SPINE round 1, finding
+ * 8/C3) — mirrors `runtime.ts`'s `REVEAL_GATED_UNISWAP_TOOL_IDS`. Filtered
+ * out of discovery results for a session that has not revealed them, so
+ * `discover_tools` never advertises a manifest `executeProtocolTool` would
+ * then hard-reject.
+ */
+const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
+  "uniswap.swap.quote",
+  "uniswap.swap.execute",
+]);
 
 function toDiscoveryItem(
   entry: ScoredManifest,
@@ -80,10 +93,14 @@ export async function discoverProtocolCapabilities(
   // Availability is strictly `isProtocolToolAvailable` (lifecycle + env).
   // Execute-time safety still lives in `runtime.ts`; discovery must not hide
   // mutating tools or the agent cannot find them and trigger approval flow.
+  const uniswapRevealed = isUniswapPairRevealed(request.sessionId);
   const filteredTools = PROTOCOL_TOOLS
     .filter((manifest) => isAdvertisedProtocolNamespace(manifest.namespace))
     .filter((manifest) => resolvedNamespace ? manifest.namespace === resolvedNamespace : true)
-    .filter((manifest) => isProtocolToolAvailable(manifest));
+    .filter((manifest) => isProtocolToolAvailable(manifest))
+    // FIX-SPINE round 1, finding 8/C3 — hide the canonical hidden Uniswap
+    // swap manifests from discovery until this session revealed them.
+    .filter((manifest) => uniswapRevealed || !REVEAL_GATED_UNISWAP_TOOL_IDS.has(manifest.toolId));
 
   let scoredTools: ScoredManifest[];
   let retrievalMeta: ProtocolDiscoveryRetrievalMeta;

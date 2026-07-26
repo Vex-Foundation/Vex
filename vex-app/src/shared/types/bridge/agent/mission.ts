@@ -10,10 +10,6 @@ import type {
   MissionGetDraftResult,
   MissionGetRenewableSourceInput,
   MissionGetRenewableSourceResult,
-  MissionGetResultForRunInput,
-  MissionGetResultForRunResult,
-  MissionListResultsInput,
-  MissionListResultsResult,
   MissionRecoverInput,
   MissionRecoverResult,
   MissionRenewInput,
@@ -78,12 +74,4 @@ export interface MissionBridge {
   readonly setAutoRetry: (
     input: MissionSetAutoRetryInput,
   ) => Promise<Result<MissionSetAutoRetryResult>>;
-  /** Per-wallet mission results ledger history, newest first (WP-J). */
-  readonly listResults: (
-    input: MissionListResultsInput,
-  ) => Promise<Result<MissionListResultsResult>>;
-  /** Single-run ledger read, e.g. the post-mission summary card (WP-J). */
-  readonly getResultForRun: (
-    input: MissionGetResultForRunInput,
-  ) => Promise<Result<MissionGetResultForRunResult>>;
 }

@@ -80,8 +80,6 @@ export interface VexConfig {
     pendleApiUrl: string;
     kyberswapAggregatorUrl: string;
     kyberswapTokenApiUrl: string;
-    kyberswapLimitOrderUrl: string;
-    kyberswapZaasUrl: string;
     kyberswapCommonServiceUrl: string;
   };
   solana: {
@@ -93,11 +91,6 @@ export interface VexConfig {
   };
   // Optional members carry `| undefined` so parsed-config spreads remain
   // assignable under vex-app's exactOptionalPropertyTypes profile.
-  polymarket?: {
-    clobBaseUrl?: string | undefined;
-    gammaBaseUrl?: string | undefined;
-    dataApiBaseUrl?: string | undefined;
-  } | undefined;
   claude?: {
     provider: string;
     model: string;
@@ -145,8 +138,6 @@ export function getDefaultConfig(): VexConfig {
       pendleApiUrl: "https://api-v2.pendle.finance/core",
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
-      kyberswapLimitOrderUrl: "https://limit-order.kyberswap.com",
-      kyberswapZaasUrl: "https://zap-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
     },
   };
@@ -299,7 +290,6 @@ export function loadConfig(): VexConfig {
         ...defaults.services,
         ...((parsed.services as Record<string, unknown> | undefined) ?? {}),
       },
-      ...(parsed.polymarket && typeof parsed.polymarket === "object" && !Array.isArray(parsed.polymarket) ? { polymarket: parsed.polymarket as VexConfig["polymarket"] } : {}),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
       ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),
@@ -343,8 +333,8 @@ export function configExists(): boolean {
 /**
  * Shape accepted by {@link saveConfigPatch} — every top-level section is
  * optional, and for object-valued sections (chain, services, …) the patch
- * only needs to mention the fields it wants to override. `wallet`, `claude`,
- * and `polymarket` follow the same rule.
+ * only needs to mention the fields it wants to override. `wallet` and
+ * `claude` follow the same rule.
  *
  * This is NOT a `DeepPartial<VexConfig>` — we keep the nesting explicit at
  * one level so the merge code stays simple and the call sites stay typed.
@@ -354,7 +344,6 @@ export type VexConfigPatch = {
   wallet?: Partial<VexConfig["wallet"]>;
   solana?: Partial<VexConfig["solana"]>;
   services?: Partial<VexConfig["services"]>;
-  polymarket?: NonNullable<VexConfig["polymarket"]>;
   claude?: NonNullable<VexConfig["claude"]>;
 };
 
@@ -374,7 +363,6 @@ export function saveConfigPatch(patch: VexConfigPatch): VexConfig {
     ...(patch.wallet ? { wallet: { ...current.wallet, ...patch.wallet } } : {}),
     ...(patch.solana ? { solana: { ...current.solana, ...patch.solana } } : {}),
     ...(patch.services ? { services: { ...current.services, ...patch.services } } : {}),
-    ...(patch.polymarket ? { polymarket: { ...(current.polymarket ?? {}), ...patch.polymarket } } : {}),
     ...(patch.claude ? { claude: { ...(current.claude ?? {} as VexConfig["claude"]), ...patch.claude } as VexConfig["claude"] } : {}),
   };
   saveConfig(next);

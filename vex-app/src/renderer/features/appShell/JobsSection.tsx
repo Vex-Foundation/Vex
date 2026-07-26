@@ -32,6 +32,7 @@ const STATUS_COUNTERS: ReadonlyArray<{
   { key: "completed", label: "completed" },
   { key: "failed", label: "failed" },
   { key: "permanently_failed", label: "perm-failed" },
+  { key: "retired", label: "retired" },
 ];
 
 export function JobsSection(): JSX.Element {

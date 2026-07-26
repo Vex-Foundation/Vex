@@ -6,13 +6,19 @@
  * the S5 oracle scorer. S4 PROVES the run executes and the captures populate; it
  * does NOT score against `_oracle.ts` (that is the S5 slice).
  *
+ * RETIREMENT NOTE (Agent Scan W4, FIX2): outcome-driven reconciliation is
+ * removed — this suite now drives + scores a pure consolidate/graph/decay/
+ * retrieval pipeline. The K category (4 items) and the S7 PF03/PF04/LQ03/LQ04
+ * reconcile-flip mirrors are gone from the corpus (not replaced); `scoreReconcile`
+ * is deleted from `_sim-scorer.ts`.
+ *
  * ── DOUBLE ENV GATE (per the plan-gate) ─────────────────────────────────────
  * This is the heaviest eval (~100 live-judge round-trips at full scale), so it is
  * gated behind BOTH `OPENROUTER_API_KEY` (present) AND `VEX_E2E_MEMORY_EVAL=1`.
  * The default `test:eval` run (key present, flag absent) does NOT run this suite.
- * Use the dedicated `test:eval:e2e` script. A 10-item subset (the S4 deliverable)
- * is selected via `VEX_E2E_SUBSET=10` (or the default `SUBSET_IDS`); the full 100
- * is S6.
+ * Use the dedicated `test:eval:e2e` script. A 9-item subset (the S4 deliverable)
+ * is selected via `VEX_E2E_SUBSET=10` (or the default `SUBSET_IDS`); the full
+ * 122-item corpus is S6.
  *
  * ── WHAT S4 ASSERTS ─────────────────────────────────────────────────────────
  *   1. the run executes end-to-end without crashing,
@@ -45,7 +51,6 @@ import {
   scoreSupersededStatus,
   scoreRejectNoRow,
   scoreDecay,
-  scoreReconcile,
   scoreClampCeiling,
   scorePromotionCorrectness,
   scoreSupersession,
@@ -61,10 +66,10 @@ const e2eEnabled = process.env.VEX_E2E_MEMORY_EVAL === "1";
 
 /**
  * Resolve which corpus ids this run drives, governed by `VEX_E2E_SUBSET`:
- *   - unset OR "10"   → the canonical 10-item smoke subset (`SUBSET_IDS`).
- *   - "full" OR "100" → ALL corpus ids (the full-corpus path; 130 after the S7
- *     Solana/perp expansion) — exercises every supersession chain, all reconcile
- *     flips (spot + perp), every decay canary, and all retrieval queries.
+ *   - unset OR "10"   → the canonical 9-item smoke subset (`SUBSET_IDS`).
+ *   - "full" OR "100" → ALL corpus ids (the full-corpus path; 122 after the S7
+ *     Solana/perp expansion, K category retired) — exercises every supersession
+ *     chain, every decay canary, and all retrieval queries.
  *   - numeric N ≤ |SUBSET_IDS| → a defensive slice of the smoke subset (never
  *     exceeds it; a larger N falls back to the full subset).
  */
@@ -134,7 +139,6 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
       let judgeValid = 0;
       let doorRejects = 0;
       let seeds = 0;
-      let reconciles = 0;
       const verdicts: string[] = [];
 
       for (const id of subsetIds) {
@@ -166,10 +170,6 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
           case "seed":
             seeds += 1;
             break;
-          case "reconcile":
-            reconciles += 1;
-            verdicts.push(`${id}:reconcile(${result.terminalStatus})`);
-            break;
           default: {
             const _exhaustive: never = result;
             throw new Error(`unhandled item result ${JSON.stringify(_exhaustive)}`);
@@ -189,7 +189,7 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
       console.log(
         `[e2e-s4] processed=${capture.processedItemIds.length} ` +
           `judgeReached=${judgeReached} judgeValid=${judgeValid} ` +
-          `doorRejects=${doorRejects} seeds=${seeds} reconciles=${reconciles}\n` +
+          `doorRejects=${doorRejects} seeds=${seeds}\n` +
           `[e2e-s4] verdicts: ${verdicts.join("  ")}`,
       );
 
@@ -198,7 +198,7 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
         pass: true,
         note:
           `processed=${capture.processedItemIds.length} judgeReached=${judgeReached} ` +
-          `judgeValid=${judgeValid} doorRejects=${doorRejects} seeds=${seeds} reconciles=${reconciles}`,
+          `judgeValid=${judgeValid} doorRejects=${doorRejects} seeds=${seeds}`,
       });
 
       // ── Honest path-split: how each processed item REACHED the pipeline, so a
@@ -211,11 +211,11 @@ describe.skipIf(!hasKey || !e2eEnabled)("eval: e2e memory correctness (live, S4 
       await runScoringPhase(capture);
     },
     // WALL-CLOCK BOTTLENECK = the live judge. The full corpus escalates ~40–50
-    // suggest items to the consolidate judge + up to 4 reconcile-flip judges +
-    // tier-raise consults; each call has a 30s timeout (JUDGE_TIMEOUT_MS) and on
-    // the F31-prone model many calls run to that cap, so the worst-case wall clock
-    // is ~50×30s ≫ the 600s smoke cap. Raise to 30 min for the full path; the
-    // smoke subset (10 items) finishes in well under the old 600s.
+    // suggest items to the consolidate judge + tier-raise consults; each call
+    // has a 30s timeout (JUDGE_TIMEOUT_MS) and on the F31-prone model many
+    // calls run to that cap, so the worst-case wall clock is ~50×30s ≫ the
+    // 600s smoke cap. Raise to 30 min for the full path; the smoke subset
+    // (9 items) finishes in well under the old 600s.
     1_800_000,
   );
 });
@@ -246,7 +246,6 @@ async function runScoringPhase(capture: RunCapture): Promise<void> {
     ...scoreSupersededStatus(capture, snapshot),
     ...scoreRejectNoRow(capture),
     ...scoreDecay(capture, snapshot),
-    ...scoreReconcile(capture, snapshot),
     ...scoreClampCeiling(capture, snapshot),
   ];
 
@@ -310,13 +309,6 @@ function recordItemCapture(id: string, result: ItemResult): void {
         note: `via=${result.via} knowledgeId=${result.knowledgeId ?? "—"} candidate=${result.candidateId ? "yes" : "no"}`,
       });
       break;
-    case "reconcile":
-      reportCard.recordCheck(SUITE, {
-        label: `item ${id}: reconcile`,
-        pass: true,
-        note: `status=${result.terminalStatus} lastError=${result.lastError ?? "—"} decision=${result.decisionType ?? "—"}`,
-      });
-      break;
     default: {
       const _exhaustive: never = result;
       throw new Error(`recordItemCapture: unhandled ${JSON.stringify(_exhaustive)}`);
@@ -362,17 +354,13 @@ function scaffoldReasonFor(item: MemoryItem): string {
       return "conflict-pair baseline (an active claim the later 'suggest' rival contradicts) — must pre-exist before the rival is judged";
     case "H":
       return "graph-cluster owner node (a pre-existing active node sibling members link to) — must exist before cluster members are judged";
-    case "K":
-      return "reconcile baseline (a promoted lesson carrying a stored POSITIVE outcome the later closing trade flips) — the believed-win baseline must pre-exist the wake";
     case "L":
       return "regime-bound decay owner (a bull-tagged active entry aged via the real sweep, then it decays once the effective regime turns bear)";
     case "M":
       return "time-only decay owner (an active entry aged via the real decay sweep over the sim window)";
     // ── S7 expansion seeded categories (same precondition classes as above). ──
-    case "PF":
-      return "perp-funding reconcile baseline (a promoted perp lesson carrying a stored POSITIVE outcome the later funding-driven closing trade flips) — the believed-win baseline must pre-exist the wake";
     case "LQ":
-      return "liquidation precondition: either a supersession predecessor (the active prior margin-buffer thesis the post-mortem successor supersedes) or a reconcile baseline (a believed-win perp leg the liquidation closing trade flips) — must pre-exist the scored event";
+      return "supersession predecessor (the active prior margin-buffer thesis the post-mortem successor supersedes) — must pre-exist before the successor is judged";
     case "RG":
       return "rug-pattern graph-cluster owner (a pre-existing active node the rug/honeypot members link to) — must exist before cluster members are judged";
     case "PB":

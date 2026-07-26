@@ -36,7 +36,10 @@ describe("moves read input schema", () => {
 describe("move item schema (tolerant)", () => {
   function itemFixture(overrides: Record<string, unknown> = {}) {
     return {
-      id: "42",
+      id: "success:42",
+      source: "success",
+      status: null,
+      failureCode: null,
       tradeSide: "buy",
       productType: "spot",
       venue: "kyberswap",
@@ -78,6 +81,29 @@ describe("move item schema (tolerant)", () => {
     expect(
       moveItemSchema.safeParse(
         itemFixture({ tradeSide: null, productType: "bridge", venue: "relay" }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("accepts lend/prediction rows (W5, migration 049) with an 'estimated' amountBasis", () => {
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({
+          tradeSide: null,
+          productType: "lend",
+          venue: "jupiter",
+          amountBasis: "estimated",
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      moveItemSchema.safeParse(
+        itemFixture({
+          tradeSide: null,
+          productType: "prediction",
+          venue: "jupiter",
+          amountBasis: "executed",
+        }),
       ).success,
     ).toBe(true);
   });
@@ -195,7 +221,10 @@ describe("move item schema (tolerant)", () => {
 
 describe("moves dto schema (array + cap)", () => {
   const row = {
-    id: "1",
+    id: "success:1",
+    source: "success",
+    status: null,
+    failureCode: null,
     tradeSide: null,
     productType: null,
     venue: null,

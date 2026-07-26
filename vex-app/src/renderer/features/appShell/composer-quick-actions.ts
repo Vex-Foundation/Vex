@@ -1,17 +1,13 @@
 /**
- * Starter chips shown under an empty conversation's composer — three compact
+ * Starter chips shown under an empty conversation's composer — compact
  * hairline chips DETACHED below the Signal Console, each with a small intent
- * icon (a flame, a market chart, a percent square). Pure data — each chip seeds
+ * icon (a flame, a percent square). Pure data — each chip seeds
  * the composer draft with its full-sentence prompt; the short label is what the
  * chip renders. Hidden in mission mode and once the transcript has messages.
  */
 
 import type { IconSvgElement } from "@hugeicons/react";
-import {
-  ChartLineData01Icon,
-  FireIcon,
-  PercentSquareIcon,
-} from "@hugeicons/core-free-icons";
+import { FireIcon, PercentSquareIcon } from "@hugeicons/core-free-icons";
 
 export interface QuickAction {
   readonly label: string;
@@ -26,12 +22,6 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
     prompt:
       "Hunt the trendiest memecoins right now — combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
     icon: FireIcon,
-  },
-  {
-    label: "Turn on Hypervexing",
-    prompt:
-      "Turn on Hypervexing and scan the perp markets for a setup — propose entry, size, and a protective stop before acting.",
-    icon: ChartLineData01Icon,
   },
   {
     label: "Scout Pendle yields",

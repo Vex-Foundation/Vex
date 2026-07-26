@@ -62,7 +62,7 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   // Block-explorer hosts (user-clicked MOVES tx / account deep links). Single
   // source of truth in `@shared/explorer-links` so the chain→URL mapper and
   // this allowlist can never drift. Pre-existing hosts stay host-wide; the new
-  // Hyperliquid/HyperEVM/Robinhood hosts are path-scoped there. https-only and
+  // HyperEVM/Robinhood hosts are path-scoped there. https-only and
   // path-boundary matching are enforced upstream in `isAllowedExternalUrl`.
   ...EXPLORER_EXTERNAL_ALLOW,
   // Vex release notes (updater toast CTA) — path-scoped per owner decision

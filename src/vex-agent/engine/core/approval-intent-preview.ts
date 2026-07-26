@@ -24,6 +24,8 @@
 
 import type { InternalToolContext } from "../../tools/internal/types.js";
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
+import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 
 /**
  * Allow-list of `tool_call.arguments` keys eligible for the preview
@@ -151,13 +153,27 @@ export interface IntentPreviewExtras {
    * from `maturityIso` into `criticalArgs.termLock`. Omitted when not a PT buy.
    */
   termLock?: { maturityIso: string };
-  /** Trusted Hyperliquid protection verdict from the runtime gate. */
-  hyperliquid?: {
-    stopLossVerdict?: "protected_required" | "unprotected_by_user_choice";
-    notionalUsd?: string;
-    estLiquidationPx?: string;
-    destinationClass?: string;
-  };
+  /**
+   * Jupiter fee-bearing swap disclosure (W5 design §6 R4; Codex batch-4
+   * closure blocker C2) — the 25bps fee AND its estimated token amount, fee
+   * mint + treasury ATA, ATA rent (if missing), tip, and priority-fee
+   * strategy AND lamport estimate. Sourced ONLY from the matched prequote's
+   * persisted `safetyDetail` (NOT raw args), so the LLM cannot inject or
+   * override it (`feeDisclosure` is deliberately NOT in
+   * PREVIEW_KEY_ALLOWLIST). `buildIntentPreview` renders it into
+   * `criticalArgs.feeDisclosure`.
+   */
+  feePreview?: JupiterFeePreview;
+  /**
+   * Jupiter Lend Borrow LTV/health disclosure (Agent Scan Phase 3 Batch 5,
+   * card B1 owner decision: "Approval preview MUST show LTV/health risk
+   * semantics before approval") for a `solana.lend.borrowOperate` call.
+   * Sourced ONLY from a live vault/position/price read at gate-time (NOT raw
+   * args), so it rides this channel (`riskPreview` is deliberately NOT in
+   * PREVIEW_KEY_ALLOWLIST). `buildIntentPreview` renders it into
+   * `criticalArgs.lendBorrowRisk`. Omitted for every other tool.
+   */
+  riskPreview?: LendBorrowRiskPreview;
 }
 
 /** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
@@ -200,6 +216,26 @@ function resolveEffectiveCall(
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Human-facing token label for the Borrow risk disclosure. Jupiter's vault rows
+ * carry `symbol`/`decimals`, but a `/borrow/positions` row genuinely does not,
+ * so both are optional at this boundary. An absent field must read as an
+ * explicit unknown — interpolating it directly once put the literal string
+ * "undefined decimals" in front of a human approving a loan.
+ */
+function describeRiskToken(
+  symbol: string | null | undefined,
+  decimals: number | null | undefined,
+  mint: string,
+): string {
+  if (symbol && decimals !== null && decimals !== undefined) {
+    return `${symbol} (${decimals} decimals, mint ${mint})`;
+  }
+  if (symbol) return `${symbol} (decimals unknown, mint ${mint})`;
+  if (decimals !== null && decimals !== undefined) return `mint ${mint} (${decimals} decimals)`;
+  return `mint ${mint} (symbol and decimals unavailable — amount shown in raw units only)`;
 }
 
 /**
@@ -252,17 +288,72 @@ export function buildIntentPreview(
       criticalArgs.termLock = `Funds locked until ${date}; early exit trades at market price and may realize a loss.`;
     }
   }
-  if (extras?.hyperliquid !== undefined) {
-    if (extras.hyperliquid.stopLossVerdict !== undefined) {
-      criticalArgs.stopLoss = extras.hyperliquid.stopLossVerdict === "unprotected_by_user_choice"
-        ? "UNPROTECTED — user disabled mandatory stop-loss policy"
-        : "required by policy";
-    }
-    if (extras.hyperliquid.notionalUsd !== undefined) criticalArgs.notionalUsd = extras.hyperliquid.notionalUsd;
-    if (extras.hyperliquid.estLiquidationPx !== undefined) criticalArgs.estLiquidationPx = extras.hyperliquid.estLiquidationPx;
-    if (extras.hyperliquid.destinationClass !== undefined) criticalArgs.destinationClass = extras.hyperliquid.destinationClass;
+
+  // W5 (design §6 R4; Codex batch-4 closure blocker C2): render the Jupiter
+  // fee-bearing disclosure from the typed `extras.feePreview` (never from raw
+  // args — `feeDisclosure` is NOT in PREVIEW_KEY_ALLOWLIST). Owner-ordered:
+  // fee bps + its estimated AMOUNT + mint/ATA, ATA rent if the account does
+  // not yet exist, tip, priority-fee strategy + its lamport ESTIMATE — not
+  // just a bare bps/strategy label.
+  if (extras?.feePreview !== undefined) {
+    const fp = extras.feePreview;
+    const rentNote = fp.feeAccountExists
+      ? ""
+      : ` (new account, ~${fp.ataRentLamports ?? "?"} lamports rent)`;
+    criticalArgs.feeDisclosure =
+      `Vex fee: ${fp.feeBps / 100}% of the input (~${fp.feeAmountDecimal} of the input token, raw ${fp.feeAmountRaw}), `
+      + `paid to treasury ATA ${fp.feeAccount}${rentNote}. `
+      + `Tip: ${fp.tipLamports} lamports. Priority-fee strategy: ${fp.priorityFeeStrategy} `
+      // When the /build response carried a CU price WITHOUT a CU limit, the
+      // denominator is the budget SIMD-0170 grants the transaction. Do NOT
+      // relabel this an UPPER BOUND (it was, until 2026-07-25, when the
+      // denominator was Solana's 1.4M-CU maximum): Solana charges the priority
+      // fee on the granted budget, so the number is what the swap costs — the
+      // only thing worth disclosing is where the limit came from.
+      + (fp.priorityFeeIsUpperBound
+        ? `(~${fp.priorityFeeLamportsEstimate} lamports at the default compute budget — response set no compute-unit limit). `
+        : `(estimated ~${fp.priorityFeeLamportsEstimate} lamports). `)
+      + `Landing: ${fp.landingMode}.`;
   }
 
+  // B1 (Batch 5 owner decision): render the Jupiter Lend Borrow LTV/health
+  // disclosure from the typed `extras.riskPreview` (never from raw args —
+  // `lendBorrowRisk` is NOT in PREVIEW_KEY_ALLOWLIST). Names the vault's max
+  // LTV (protocol-CONFIRMED scale) and liquidation threshold (scale NOT
+  // independently confirmed — labeled as such below, B3/B4); the current-LTV
+  // number is an explicitly-labeled ESTIMATE (or an explicit "unavailable"
+  // note) — never presented as authoritative (see `borrow-risk-preview.ts`).
+  // B4 (Codex blocker): the appended `riskNote` must never claim the
+  // liquidation threshold is protocol-confirmed — that would contradict the
+  // "(scale unconfirmed...)" label two lines below.
+  if (extras?.riskPreview !== undefined) {
+    const rp = extras.riskPreview;
+    const positionNote = rp.positionId === 0
+      ? "a NEW position"
+      : `position #${rp.positionId}`;
+    // B3 (Codex batch-5 blocker): the liquidation-threshold SCALE is not
+    // independently confirmed by Jupiter's own prose (only collateralFactor's
+    // is) — say so in the human-facing text itself, not only in code
+    // comments, until a live-gate smoke test confirms it.
+    const liquidationThresholdDisplay = rp.liquidationThresholdPercent !== null
+      ? `${rp.liquidationThresholdPercent} (scale unconfirmed by Jupiter's docs — pending live-gate verification)`
+      : "unknown";
+    criticalArgs.lendBorrowRisk =
+      `This changes ${positionNote} on vault #${rp.vaultId} (${rp.market} market). `
+      + `Vault max LTV: ${rp.maxLtvPercent ?? "unknown"}; liquidation threshold: ${liquidationThresholdDisplay}. `
+      // 2026-07-25: the raw amounts always travel with the symbol AND the
+      // decimals needed to read them — "1047061 of EPjFW…" is 1.05 at 6
+      // decimals and 0.00105 at 9, and a human approver cannot tell which
+      // from a bare mint address. When the provider row carries no token
+      // descriptor (a `/borrow/positions` row genuinely does not), the mint
+      // alone is stated: an honest omission, never the literal "undefined".
+      + `Projected collateral: ${rp.projectedSupplyRaw} raw units of ${describeRiskToken(rp.supplyTokenSymbol, rp.supplyTokenDecimals, rp.supplyTokenAddress)}; `
+      + `projected debt: ${rp.projectedBorrowRaw} raw units of ${describeRiskToken(rp.borrowTokenSymbol, rp.borrowTokenDecimals, rp.borrowTokenAddress)}. `
+      + `Estimated LTV after this call: ${rp.estimatedLtvPercent ?? "estimate unavailable"}. ${rp.riskNote} `
+      + "Jupiter's Borrow /operate never wraps or unwraps native SOL — if either token above is native SOL you "
+      + "must already hold WRAPPED SOL (WSOL) in your wallet; a borrowed/withdrawn WSOL amount stays wrapped and "
+      + "you must unwrap it yourself.";
+  }
   // Derive namespace from dotted tool name (e.g. "kyberswap.swap.sell" → "kyberswap").
   // Internal tools without a dot get no namespace.
   const dotIdx = effective.toolName.indexOf(".");

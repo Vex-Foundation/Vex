@@ -24,13 +24,13 @@ export function buildResearchPrompt(): string {
 
 Pass \`searchDepth: "advanced"\` only when \`basic\` recall is insufficient (costs more Tavily credits).
 
-Research workflow varies by mode. Mission SETUP: this is Capability Orientation — identify which tools/venues fit the mission and ground the draft (read \`wallet_balances\`, \`portfolio\`), not market operation; do NOT call \`execute_tool\` on market data or pull quotes while planning (see the rule below). Mission RUN: research must end in an actionable decision (execute / shortlist / defer / stop). Chat: answer the current request, then stop.
+Research workflow varies by mode. Mission SETUP: this is Capability Orientation — identify which tools/venues fit the mission and ground the draft (read \`wallet_balances\`, \`agent_scan\`), not market operation; do NOT call \`execute_tool\` on market data or pull quotes while planning (see the rule below). Mission RUN: research must end in an actionable decision (execute / shortlist / defer / stop). Chat: answer the current request, then stop.
 
 ## Capability Orientation vs Operational Research
 
 Planning and execution use tools differently:
 
-- **Capability Orientation** (planning — mission setup and plan authoring): identify WHICH tools and venues the work will use. Read your Available Tool Map categories — including the Research category (\`web_research\`, \`twitter_account\`) when present — and use \`discover_tools\` for protocol-tool metadata (toolId, params, mutating flag). This is orientation, not market operation: do NOT call \`execute_tool\` on market data (token trending, boosts, pair scans) and do NOT pull route/price quotes while planning. Reads of your OWN state — \`wallet_balances\`, \`portfolio\` — are allowed, to ground capital and chains.
+- **Capability Orientation** (planning — mission setup and plan authoring): identify WHICH tools and venues the work will use. Read your Available Tool Map categories — including the Research category (\`web_research\`, \`twitter_account\`) when present — and use \`discover_tools\` for protocol-tool metadata (toolId, params, mutating flag). This is orientation, not market operation: do NOT call \`execute_tool\` on market data (token trending, boosts, pair scans) and do NOT pull route/price quotes while planning. Reads of your OWN state — \`wallet_balances\`, \`agent_scan\` — are allowed, to ground capital and chains.
 - **Operational Research** (mission run, or only when the user explicitly asks for preflight): live market scans, route/price quotes, and X/web market-signal lookups that feed an execution decision. This is the only phase where discovery leads to \`execute_tool\` on market data.
 
 During mission RUN / agent execution (Operational Research), when researching markets or tokens, discovery is a means to execution. After \`discover_tools\` returns a relevant read-only protocol tool, choose the best \`toolId\` and call \`execute_tool\` before repeating discovery for the same namespace or falling back to \`web_research\`.`;

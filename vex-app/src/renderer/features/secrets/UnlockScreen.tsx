@@ -126,8 +126,8 @@ export function UnlockScreen(): JSX.Element {
         ) {
           // Workflow-specific UX (countdown banner) — message comes
           // from the shared copy helper so the wording stays
-          // consistent with other throttle surfaces (export,
-          // polymarket).
+          // consistent with other throttle surfaces (e.g. wallet
+          // private-key export).
           const copy = getErrorCopy(result.error);
           setThrottle({
             message: copy.message,

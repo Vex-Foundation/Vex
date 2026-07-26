@@ -1,128 +1,36 @@
 /**
- * Unit tests for `engine/mission/acceptance.ts`.
+ * Unit tests for `engine/mission/acceptance.ts` — `acceptContract`.
  *
- * The repo + tx helpers are mocked at the module boundary. We test the
- * discriminated-union outcomes returned by `acceptContract` so the IPC
- * layer in phase 6 can map them to `Result<T, VexError>` envelopes
- * without re-running engine logic.
+ * The repo + tx helpers are mocked at the module boundary; shared setup
+ * (mocks + fixtures) lives in `_acceptance-mocks.ts` so this file, plus
+ * `acceptance-assert-status.test.ts` and `acceptance-legacy-v2.test.ts`
+ * (the `assertAcceptedContract` split), stay under the repo's 500-line cap
+ * without duplicating the mock boilerplate. We test the discriminated-union
+ * outcomes returned by `acceptContract` so the IPC layer in phase 6 can map
+ * them to `Result<T, VexError>` envelopes without re-running engine logic.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  mockGetMissionForUpdate,
+  mockUpdateAcceptance,
+  mockGetActiveRun,
+  mockGetActivePlan,
+  mockSetAccepted,
+  fakeClientQuery,
+  makeMission,
+  makePlan,
+} from "./_acceptance-mocks.js";
 
-const mockGetMissionForUpdate = vi.fn();
-const mockUpdateAcceptance = vi.fn();
-const mockGetActiveRun = vi.fn();
-const mockGetActivePlan = vi.fn();
-const mockSetAccepted = vi.fn();
-
-vi.mock("@vex-agent/db/repos/missions.js", () => ({
-  getMissionForUpdate: (...args: unknown[]) => mockGetMissionForUpdate(...args),
-  updateAcceptance: (...args: unknown[]) => mockUpdateAcceptance(...args),
-}));
-
-vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
-  getActiveRun: (...args: unknown[]) => mockGetActiveRun(...args),
-}));
-
-// Co-accept (Approach A) reaches `session-plans` for the enabled+unaccepted
-// branch. Mocking the repo at its module boundary — same style as the missions
-// / mission-runs repos above — gives precise control over `getActivePlan` and
-// `setAccepted` per case. The default (no plan row) returns null so the existing
-// contract-only outcomes behave byte-for-byte as before.
-vi.mock("@vex-agent/db/repos/session-plans.js", () => ({
-  getActivePlan: (...args: unknown[]) => mockGetActivePlan(...args),
-  setAccepted: (...args: unknown[]) => mockSetAccepted(...args),
-}));
-
-// `withTransaction` is exercised for real — it just calls the fn with a
-// fake client object and runs BEGIN/COMMIT against it. We mock the pool
-// so the BEGIN/COMMIT noop doesn't error.
-const fakeClientQuery = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
-const fakeClientRelease = vi.fn();
-
-vi.mock("@vex-agent/db/client.js", () => ({
-  getPool: () => ({
-    connect: async () => ({
-      query: fakeClientQuery,
-      release: fakeClientRelease,
-    }),
-  }),
-  // Keep `withTransaction` real so the BEGIN/COMMIT contract is exercised.
-  withTransaction: async (fn: (client: unknown) => Promise<unknown>) => {
-    const fakeClient = { query: fakeClientQuery, release: fakeClientRelease };
-    await fakeClientQuery("BEGIN");
-    try {
-      const result = await fn(fakeClient);
-      await fakeClientQuery("COMMIT");
-      return result;
-    } catch (err) {
-      await fakeClientQuery("ROLLBACK");
-      throw err;
-    }
-  },
-  // The session-plans repo (co-accept path) is mocked above, so these tx-aware
-  // query helpers are not reached today. Exported anyway — mirroring
-  // commit-start.test.ts — so the mock stays complete if a future repo call
-  // routes through them, instead of throwing "No export defined".
-  executeWith: vi.fn(),
-  queryOneWith: vi.fn().mockResolvedValue(null),
-}));
-
-const { acceptContract, assertAcceptedContract } = await import(
+const { acceptContract } = await import(
   "../../../../vex-agent/engine/mission/acceptance.js"
 );
-const { computeContractHash } = await import(
+const { computeContractHash, CONTRACT_HASH_VERSION } = await import(
   "../../../../vex-agent/engine/mission/contract-hash.js"
 );
 const { missionToDraft } = await import(
   "../../../../vex-agent/engine/mission/mapper.js"
 );
-
-function makeMission(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "mission-1",
-    rootSessionId: "session-1",
-    status: "ready",
-    title: "SOL DCA",
-    goal: "Accumulate 10 SOL",
-    constraintsJson: { deadline: "2026-04-04" },
-    successCriteriaJson: ["Accumulated 10 SOL"],
-    stopConditionsJson: ["capital_depleted"],
-    riskProfile: "conservative",
-    capitalSourceJson: { type: "wallet", amount: "500 USDC" },
-    allowedProtocols: ["jupiter"],
-    allowedChains: ["solana"],
-    allowedWallets: ["solana"],
-    createdAt: "2026-05-22T10:00:00.000Z",
-    updatedAt: "2026-05-22T10:00:00.000Z",
-    approvedAt: null,
-    acceptedContractHash: null,
-    acceptedContractAt: null,
-    acceptedContractBy: null,
-    contractHashVersion: null,
-    renewedFromMissionId: null,
-    ...overrides,
-  };
-}
-
-/**
- * A mapped `SessionPlan` (the repo's domain shape). Plan-mode OFF / no plan is
- * the default in `beforeEach` (getActivePlan → null); these fixtures cover the
- * enabled branches.
- */
-function makePlan(overrides: Record<string, unknown> = {}) {
-  return {
-    sessionId: "session-1",
-    enabled: true,
-    planMd: "# Action plan\n1. Objective",
-    acceptedAt: null as string | null,
-    accepted: false,
-    offNoticePending: false,
-    createdAt: "2026-05-22T09:00:00.000Z",
-    updatedAt: "2026-05-22T09:30:00.000Z",
-    ...overrides,
-  };
-}
 
 describe("acceptContract", () => {
   beforeEach(() => {
@@ -216,7 +124,7 @@ describe("acceptContract", () => {
         acceptedContractHash: hash,
         acceptedContractAt: "2026-05-22T11:00:00.000Z",
         acceptedContractBy: "host",
-        contractHashVersion: 2,
+        contractHashVersion: CONTRACT_HASH_VERSION,
       }));
     mockGetActiveRun.mockResolvedValueOnce(null);
 
@@ -230,7 +138,7 @@ describe("acceptContract", () => {
     if (outcome.outcome === "accepted") {
       expect(outcome.acceptedContractHash).toBe(hash);
       expect(outcome.acceptedBy).toBe("host");
-      expect(outcome.contractHashVersion).toBe(2);
+      expect(outcome.contractHashVersion).toBe(CONTRACT_HASH_VERSION);
       expect(outcome.acceptedAt).toBe("2026-05-22T11:00:00.000Z");
     }
 
@@ -240,7 +148,7 @@ describe("acceptContract", () => {
       "mission-1",
       hash,
       "host",
-      2,
+      CONTRACT_HASH_VERSION,
     );
   });
 
@@ -515,78 +423,5 @@ describe("acceptContract", () => {
     const sqlCalls = fakeClientQuery.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(sqlCalls).toContain("ROLLBACK");
     expect(sqlCalls).not.toContain("COMMIT");
-  });
-});
-
-// ── assertAcceptedContract (puzzle 04 phase 4 gate) ──────────────
-
-describe("assertAcceptedContract", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    fakeClientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
-  });
-
-  it("returns mission_not_found when the row is missing", async () => {
-    mockGetMissionForUpdate.mockResolvedValueOnce(null);
-    const outcome = await assertAcceptedContract({ missionId: "mission-1" });
-    expect(outcome.outcome).toBe("mission_not_found");
-  });
-
-  it("returns not_accepted when accepted_contract_hash is null", async () => {
-    mockGetMissionForUpdate.mockResolvedValueOnce(
-      makeMission({ acceptedContractHash: null, contractHashVersion: null }),
-    );
-    const outcome = await assertAcceptedContract({ missionId: "mission-1" });
-    expect(outcome.outcome).toBe("not_accepted");
-    if (outcome.outcome === "not_accepted") {
-      expect(outcome.missionId).toBe("mission-1");
-    }
-  });
-
-  it("returns stale_acceptance when the recomputed hash drifted", async () => {
-    const mission = makeMission({
-      acceptedContractHash: "0".repeat(64),
-      acceptedContractAt: "2026-05-22T11:00:00.000Z",
-      acceptedContractBy: "host",
-      contractHashVersion: 1,
-    });
-    mockGetMissionForUpdate.mockResolvedValueOnce(mission);
-
-    const outcome = await assertAcceptedContract({ missionId: "mission-1" });
-    expect(outcome.outcome).toBe("stale_acceptance");
-    if (outcome.outcome === "stale_acceptance") {
-      expect(outcome.acceptedHash).toBe("0".repeat(64));
-      expect(outcome.currentHash).toBe(computeContractHash(missionToDraft(mission), 1));
-      expect(outcome.currentHash).not.toBe(outcome.acceptedHash);
-    }
-  });
-
-  it("returns accepted when the four-tuple matches the current draft", async () => {
-    const mission = makeMission();
-    const currentHash = computeContractHash(missionToDraft(mission), 1);
-    mockGetMissionForUpdate.mockResolvedValueOnce({
-      ...mission,
-      acceptedContractHash: currentHash,
-      acceptedContractAt: "2026-05-22T11:00:00.000Z",
-      acceptedContractBy: "host",
-      contractHashVersion: 1,
-    });
-
-    const outcome = await assertAcceptedContract({ missionId: "mission-1" });
-    expect(outcome.outcome).toBe("accepted");
-    if (outcome.outcome === "accepted") {
-      expect(outcome.contractHash).toBe(currentHash);
-      expect(outcome.contractHashVersion).toBe(1);
-    }
-  });
-
-  it("opens and closes a transaction (BEGIN + COMMIT) for the gate read", async () => {
-    mockGetMissionForUpdate.mockResolvedValueOnce(
-      makeMission({ acceptedContractHash: null, contractHashVersion: null }),
-    );
-    await assertAcceptedContract({ missionId: "mission-1" });
-    const sqlCalls = fakeClientQuery.mock.calls.map((c: unknown[]) => String(c[0]));
-    expect(sqlCalls).toContain("BEGIN");
-    expect(sqlCalls).toContain("COMMIT");
   });
 });

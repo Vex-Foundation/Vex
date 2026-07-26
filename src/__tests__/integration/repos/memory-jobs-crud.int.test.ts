@@ -1,10 +1,22 @@
 /**
- * Integration: memory_jobs repo — durable queue FSM, reconcile idempotency
- * with S7 D-REARM conflict semantics (completed→re-arm, running→wake_pending,
- * pending/failed→no-op, permanently_failed untouched), wake_pending
- * consumption on markCompleted, crash-recovery flag preservation (gate R1),
- * derived progress, atomic stale recovery, CHECK/uniqueness enforcement
- * (S1c + S7).
+ * Integration: memory_jobs repo — durable queue FSM, wake_pending consumption
+ * on markCompleted, crash-recovery flag preservation (gate R1), derived
+ * progress, atomic stale recovery, CHECK/uniqueness enforcement (S1c + S7).
+ *
+ * FIX2-SPINE C19 (Codex final-review finding 4): the repo's `enqueueReconcileJob`
+ * / `resetReconcileJob` exports are removed (the async `reconcile` job kind is
+ * retired end-to-end — see `db/repos/memory-jobs/crud.ts`'s file header). Every
+ * test that existed ONLY to pin those two functions' own behavior (RE-ARM,
+ * wake_pending flagging, permanently_failed protection, race-safety) is removed
+ * with them — there is no longer a subject under test (repo convention: a
+ * removed subsystem's test bodies are deleted, not left skipped, per
+ * `src/__tests__/SKIPPED.md`). The wake_pending tests below that exercise
+ * GENERIC, still-live logic (`markCompleted`'s consumption, `recoverStaleRunning`'s
+ * preservation) are kept, reseeded via raw SQL instead of the removed enqueue
+ * function — seeding mechanics changed, assertions did not. The CHECK/uniqueness
+ * tests are DB-level (raw SQL against constraints that still exist for
+ * historical/retired rows) and are unaffected by the repo-function removal
+ * beyond the same raw-SQL seeding swap.
  *
  * Runs against the ephemeral pgvector container from `setup/globalSetup.ts`.
  * S1c does NOT embed — candidates use synthetic vectors (_s1c-fixtures).
@@ -15,8 +27,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { execute, query } from "@vex-agent/db/client.js";
 import {
   enqueueConsolidateJob,
-  enqueueReconcileJob,
-  resetReconcileJob,
   claimNextDueJob,
   markFailed,
   markCompleted,
@@ -40,17 +50,22 @@ import {
   seedPendingCandidates,
 } from "./_s1c-fixtures.js";
 
-/** Drive a claimable job to permanently_failed via repeated claim+markFailed. */
-async function exhaustAttempts(workerId: string): Promise<number> {
-  let lastId = -1;
-  for (let i = 0; i < 5; i++) {
-    const job = await claimNextDueJob(workerId);
-    if (!job) break;
-    lastId = job.id;
-    const res = await markFailed(job.id, workerId, "transient_error", 0);
-    if (res.terminal) break;
-  }
-  return lastId;
+/**
+ * Seed a pending reconcile row directly (raw SQL) — the same shape the
+ * now-removed `enqueueReconcileJob` used to insert.
+ */
+async function seedPendingReconcileJob(
+  entryId: number,
+  outcomeVersion: number,
+): Promise<number> {
+  const rows = await query<{ id: number }>(
+    `INSERT INTO memory_jobs (job_kind, reconcile_entry_id, reconcile_outcome_version)
+     VALUES ('reconcile', $1, $2) RETURNING id`,
+    [entryId, outcomeVersion],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error("seedPendingReconcileJob: insert returned no row");
+  return id;
 }
 
 describe("memory_jobs repo (integration)", () => {
@@ -117,75 +132,25 @@ describe("memory_jobs repo (integration)", () => {
     expect((await getJobById(job!.id))!.status).toBe("completed");
   });
 
-  it("enqueueReconcileJob: pending / failed rows are no-ops (the queued run reads the post-wake ledger anyway)", async () => {
-    const entryId = await seedKnowledgeEntry("reconcile");
-    const first = await enqueueReconcileJob(entryId, 2);
-    expect(first.inserted).toBe(true);
-    expect(first.job.jobKind).toBe("reconcile");
-    expect(first.job.reconcileEntryId).toBe(entryId);
-    expect(first.job.reconcileOutcomeVersion).toBe(2);
-    expect(first.job.wakePending).toBe(false);
+  // FIX2-SPINE C19 (Codex final-review finding 4): the following tests used
+  // to exercise `enqueueReconcileJob`'s own RE-ARM/no-op/race-safety CASE
+  // logic and `resetReconcileJob`'s own permanently_failed-only reset — both
+  // functions are removed (see file header), so those tests are removed with
+  // them. `markCompleted`'s wake_pending consumption and
+  // `recoverStaleRunning`'s wake_pending preservation are GENERIC, still-live
+  // logic (wake_pending remains a real column both functions handle
+  // unconditionally); the two tests below keep pinning that behavior, reseeded
+  // via raw SQL to set up a `running` job carrying `wake_pending=true` instead
+  // of going through the removed enqueue function.
 
-    const second = await enqueueReconcileJob(entryId, 2);
-    expect(second.inserted).toBe(false);
-    expect(second.job.id).toBe(first.job.id);
-    expect(second.job.status).toBe("pending");
-    expect(second.job.wakePending).toBe(false);
-
-    // Drive the row into `failed` with a custom backoff/attempt, then re-enqueue:
-    // the conflict path must NOT erase the retry/backoff (D-REARM: failed = no-op).
-    await execute(
-      `UPDATE memory_jobs SET status='failed', attempt_count=2,
-         next_attempt_at = NOW() + interval '1 hour', last_error='boom' WHERE id=$1`,
-      [first.job.id],
-    );
-    const third = await enqueueReconcileJob(entryId, 2);
-    expect(third.inserted).toBe(false);
-    expect(third.job.status).toBe("failed");
-    expect(third.job.attemptCount).toBe(2);
-    expect(third.job.lastError).toBe("boom");
-    expect(third.job.wakePending).toBe(false);
-
-    // Only ONE reconcile row exists for (entry, v) — across all statuses.
-    const rows = await query<{ n: string }>(
-      "SELECT count(*)::text AS n FROM memory_jobs WHERE reconcile_entry_id=$1 AND reconcile_outcome_version=2",
-      [entryId],
-    );
-    expect(rows[0]!.n).toBe("1");
-  });
-
-  it("enqueueReconcileJob: completed → RE-ARM (fresh pending run on a same-version wake)", async () => {
-    const entryId = await seedKnowledgeEntry("rearm");
-    const { job } = await enqueueReconcileJob(entryId, 0);
-    const claimed = await claimNextDueJob("w");
-    expect(claimed!.id).toBe(job.id);
-    expect(await markCompleted(job.id, "w")).toBe(true);
-    expect((await getJobById(job.id))!.status).toBe("completed");
-
-    const rearmed = await enqueueReconcileJob(entryId, 0);
-    expect(rearmed.inserted).toBe(false); // conflict path, not a new row
-    expect(rearmed.job.id).toBe(job.id);
-    expect(rearmed.job.status).toBe("pending");
-    expect(rearmed.job.attemptCount).toBe(0);
-    expect(rearmed.job.completedAt).toBeNull();
-    expect(rearmed.job.wakePending).toBe(false);
-
-    // The re-armed job is claimable again (still ONE row for the key).
-    const reclaimed = await claimNextDueJob("w");
-    expect(reclaimed!.id).toBe(job.id);
-  });
-
-  it("enqueueReconcileJob: running → wake_pending flag; markCompleted CONSUMES it into one more pending pass", async () => {
-    const entryId = await seedKnowledgeEntry("wake-flag");
-    const { job } = await enqueueReconcileJob(entryId, 0);
+  it("markCompleted CONSUMES a wake_pending flag into one more pending pass", async () => {
+    const job = await enqueueConsolidateJob();
     const claimed = await claimNextDueJob("w");
     expect(claimed!.id).toBe(job.id);
 
-    // A wake landing WHILE running raises the flag without touching the run.
-    const flagged = await enqueueReconcileJob(entryId, 0);
-    expect(flagged.inserted).toBe(false);
-    expect(flagged.job.status).toBe("running");
-    expect(flagged.job.wakePending).toBe(true);
+    // Raw-SQL wake signal (historically only ever raised by
+    // enqueueReconcileJob's conflict path on a running row).
+    await execute("UPDATE memory_jobs SET wake_pending = true WHERE id = $1", [job.id]);
 
     // Completion consumes the flag: pending + attempt 0, NOT completed.
     expect(await markCompleted(job.id, "w")).toBe(true);
@@ -195,31 +160,18 @@ describe("memory_jobs repo (integration)", () => {
     expect(after!.completedAt).toBeNull();
     expect(after!.wakePending).toBe(false);
 
-    // The second pass runs against the post-wake ledger and completes normally.
+    // The second pass runs and completes normally (flag already consumed).
     const second = await claimNextDueJob("w");
     expect(second!.id).toBe(job.id);
     expect(await markCompleted(second!.id, "w")).toBe(true);
     expect((await getJobById(job.id))!.status).toBe("completed");
   });
 
-  it("enqueueReconcileJob: permanently_failed is untouched by a wake (resetReconcileJob is the ONLY revive)", async () => {
-    const entryId = await seedKnowledgeEntry("permfail-wake");
-    await enqueueReconcileJob(entryId, 1);
-    const id = await exhaustAttempts("w");
-    expect((await getJobById(id))!.status).toBe("permanently_failed");
-
-    const res = await enqueueReconcileJob(entryId, 1);
-    expect(res.inserted).toBe(false);
-    expect(res.job.id).toBe(id);
-    expect(res.job.status).toBe("permanently_failed");
-    expect(res.job.wakePending).toBe(false);
-  });
-
   it("recoverStaleRunning PRESERVES wake_pending (S7 gate R1 — the signal survives a worker crash)", async () => {
-    const entryId = await seedKnowledgeEntry("wake-recover");
-    const { job } = await enqueueReconcileJob(entryId, 0);
+    const job = await enqueueConsolidateJob();
     await claimNextDueJob("w");
-    await enqueueReconcileJob(entryId, 0); // wake during running → flag
+    // Raw-SQL wake signal on the now-running job (see test above).
+    await execute("UPDATE memory_jobs SET wake_pending = true WHERE id = $1", [job.id]);
     expect((await getJobById(job.id))!.wakePending).toBe(true);
 
     await execute(
@@ -232,51 +184,6 @@ describe("memory_jobs repo (integration)", () => {
     const after = await getJobById(job.id);
     expect(after!.status).toBe("pending");
     expect(after!.wakePending).toBe(true); // NOT cleaned up by recovery
-  });
-
-  it("enqueueReconcileJob is race-safe under two concurrent same-key inserts (one row, neither throws)", async () => {
-    const entryId = await seedKnowledgeEntry("recon-race");
-    const [a, b] = await Promise.all([
-      enqueueReconcileJob(entryId, 5),
-      enqueueReconcileJob(entryId, 5),
-    ]);
-    // Neither threw; both reference the same row; exactly one observed the fresh insert.
-    expect(a.job.id).toBe(b.job.id);
-    expect([a.inserted, b.inserted].filter(Boolean).length).toBe(1);
-    const rows = await query<{ n: string }>(
-      "SELECT count(*)::text AS n FROM memory_jobs WHERE reconcile_entry_id=$1 AND reconcile_outcome_version=5",
-      [entryId],
-    );
-    expect(rows[0]!.n).toBe("1");
-  });
-
-  it("resetReconcileJob resets ONLY a permanently_failed reconcile (full reset)", async () => {
-    const entryId = await seedKnowledgeEntry("reset");
-    await enqueueReconcileJob(entryId, 1);
-
-    // A pending reconcile is NOT resettable.
-    const early = await resetReconcileJob(entryId, 1);
-    expect(early).toEqual({ ok: false, reason: "not_permanently_failed" });
-
-    // Drive it to permanently_failed, accumulate audit fields, then reset.
-    const id = await exhaustAttempts("w");
-    expect(id).toBeGreaterThan(0);
-    await bumpJobInference(id, { llmCalls: 4, costUsd: 1.25 });
-    expect((await getJobById(id))!.status).toBe("permanently_failed");
-
-    const reset = await resetReconcileJob(entryId, 1);
-    expect(reset.ok).toBe(true);
-    if (!reset.ok) throw new Error("unreachable");
-    expect(reset.job.status).toBe("pending");
-    expect(reset.job.attemptCount).toBe(0);
-    expect(reset.job.llmCallCount).toBe(0);
-    expect(reset.job.costUsd).toBeNull();
-    expect(reset.job.lastError).toBeNull();
-    expect(reset.job.completedAt).toBeNull();
-    expect(reset.job.wakePending).toBe(false); // FULL reset includes the S7 flag
-
-    // A non-existent reconcile key → not_found.
-    expect(await resetReconcileJob(99999, 0)).toEqual({ ok: false, reason: "not_found" });
   });
 
   it("bumpJobInference accumulates only llm_call_count + cost_usd", async () => {
@@ -345,7 +252,7 @@ describe("memory_jobs repo (integration)", () => {
     const job = await enqueueConsolidateJob();
     // A job that went stale on its LAST attempt: running, attempt_count == max_attempts.
     // Resetting it to pending would make it unclaimable (claim needs attempt < max) AND
-    // unresettable (resetReconcileJob only touches permanently_failed) — i.e. stranded.
+    // unresettable (no exported primitive resets an exhausted row) — i.e. stranded.
     await execute(
       `UPDATE memory_jobs SET status='running', attempt_count=max_attempts, locked_by='w',
          heartbeat_at = NOW() - interval '10 minutes' WHERE id=$1`,
@@ -389,7 +296,7 @@ describe("memory_jobs repo (integration)", () => {
 
     it("enforces uniq_mj_reconcile across all statuses (raw second insert)", async () => {
       const entryId = await seedKnowledgeEntry("uniqr");
-      await enqueueReconcileJob(entryId, 5);
+      await seedPendingReconcileJob(entryId, 5);
       await expect(
         execute(
           "INSERT INTO memory_jobs (job_kind, reconcile_entry_id, reconcile_outcome_version, status) VALUES ('reconcile', $1, 5, 'completed')",
@@ -400,9 +307,9 @@ describe("memory_jobs repo (integration)", () => {
 
     it("cascades reconcile jobs when the knowledge entry is deleted", async () => {
       const entryId = await seedKnowledgeEntry("cascade");
-      const { job } = await enqueueReconcileJob(entryId, 0);
+      const jobId = await seedPendingReconcileJob(entryId, 0);
       await execute("DELETE FROM knowledge_entries WHERE id=$1", [entryId]);
-      expect(await getJobById(job.id)).toBeNull();
+      expect(await getJobById(jobId)).toBeNull();
     });
   });
 });

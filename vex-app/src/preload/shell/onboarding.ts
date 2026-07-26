@@ -1,12 +1,6 @@
 import { CH } from "../../shared/ipc/channels.js";
-import {
-  apiKeysSetInputSchema,
-  polymarketAutoSetupInputSchema,
-} from "../../shared/schemas/api-keys.js";
-import type {
-  ApiKeysSetInput,
-  PolymarketAutoSetupInput,
-} from "../../shared/schemas/api-keys.js";
+import { apiKeysSetInputSchema } from "../../shared/schemas/api-keys.js";
+import type { ApiKeysSetInput } from "../../shared/schemas/api-keys.js";
 import { agentCoreConfigureInputSchema } from "../../shared/schemas/agent-core.js";
 import type { AgentCoreConfigureInput } from "../../shared/schemas/agent-core.js";
 import { embeddingConfigureInputSchema } from "../../shared/schemas/embedding.js";
@@ -171,16 +165,6 @@ export const onboarding = {
       input,
       apiKeysSetInputSchema
     );
-  },
-  polymarketAutoSetup(input: PolymarketAutoSetupInput) {
-    return invokeWithSchema(
-      CH.onboarding.polymarketAutoSetup,
-      input,
-      polymarketAutoSetupInputSchema
-    );
-  },
-  polymarketConfiguredAddresses() {
-    return invokeWithSchema(CH.onboarding.polymarketConfiguredAddresses, {});
   },
   embeddingConfigure(input: EmbeddingConfigureInput) {
     return invokeWithSchema(

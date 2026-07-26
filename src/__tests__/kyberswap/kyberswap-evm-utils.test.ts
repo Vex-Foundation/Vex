@@ -1,28 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { validateKyberSpender, verifyRouterAddress, extractMintedNftId, extractErc1155Position } from "@tools/kyberswap/evm-utils.js";
-import {
-  META_AGGREGATION_ROUTER_V2,
-  DSLO_PROTOCOL,
-  KS_ZAP_ROUTER_POSITION,
-  KS_ZAP_ROUTER_PERMIT,
-} from "@tools/kyberswap/constants.js";
+import { validateKyberSpender, verifyRouterAddress, extractMintedNftId } from "@tools/kyberswap/evm-utils.js";
+import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 
 describe("validateKyberSpender", () => {
   it("accepts MetaAggregationRouterV2", () => {
     expect(() => validateKyberSpender(META_AGGREGATION_ROUTER_V2)).not.toThrow();
-  });
-
-  it("accepts DSLOProtocol", () => {
-    expect(() => validateKyberSpender(DSLO_PROTOCOL)).not.toThrow();
-  });
-
-  it("accepts KSZapRouterPosition", () => {
-    expect(() => validateKyberSpender(KS_ZAP_ROUTER_POSITION)).not.toThrow();
-  });
-
-  it("accepts KSZapRouterPermit", () => {
-    expect(() => validateKyberSpender(KS_ZAP_ROUTER_PERMIT)).not.toThrow();
   });
 
   it("accepts case variations", () => {
@@ -147,40 +130,5 @@ describe("extractMintedNftId", () => {
       { address: "0xc36442b4a4522e871399cd717abdd847ab11fe88", topics: [TRANSFER_TOPIC, ZERO, WALLET_PADDED, "0x00000000000000000000000000000000000000000000000000000000002bf43f"], data: "0x" },
     ];
     expect(extractMintedNftId(logs, WALLET)).toBe("2880575"); // 0x2BF43F
-  });
-});
-
-// ── extractErc1155Position ────────────────────────────────────────
-
-describe("extractErc1155Position", () => {
-  const TRANSFER_SINGLE_TOPIC = "0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62";
-  const WALLET = "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79";
-  const WALLET_PADDED = "0x00000000000000000000000018b467cb28fc07ca6e17a964b3319051b3072b79";
-  const OPERATOR = "0x0000000000000000000000001111111111111111111111111111111111111111";
-  const FROM = "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-  it("extracts token ID from TransferSingle event", () => {
-    // TransferSingle(operator, from, to, id=42, value=100)
-    // topics: [event, operator, from, to]  data: [id, value]
-    const idHex = "000000000000000000000000000000000000000000000000000000000000002a"; // 42
-    const valueHex = "0000000000000000000000000000000000000000000000000000000000000064"; // 100
-    const logs = [
-      { address: "0xBinManager", topics: [TRANSFER_SINGLE_TOPIC, OPERATOR, FROM, WALLET_PADDED], data: "0x" + idHex + valueHex },
-    ];
-    expect(extractErc1155Position(logs, WALLET)).toBe("42");
-  });
-
-  it("returns undefined for no matching logs", () => {
-    expect(extractErc1155Position([], WALLET)).toBeUndefined();
-  });
-
-  it("ignores transfers to different recipient", () => {
-    const OTHER = "0x0000000000000000000000009999999999999999999999999999999999999999";
-    const idHex = "000000000000000000000000000000000000000000000000000000000000002a";
-    const valueHex = "0000000000000000000000000000000000000000000000000000000000000064";
-    const logs = [
-      { address: "0xBin", topics: [TRANSFER_SINGLE_TOPIC, OPERATOR, FROM, OTHER], data: "0x" + idHex + valueHex },
-    ];
-    expect(extractErc1155Position(logs, WALLET)).toBeUndefined();
   });
 });

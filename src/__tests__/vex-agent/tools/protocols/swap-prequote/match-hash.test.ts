@@ -274,10 +274,42 @@ describe("computePrequoteMatchHash", () => {
           "",
           // Wave-2c venue binding — the provider token (lowercased).
           "kyberswap",
+          // W5 (design §6 R4) Jupiter fee-bearing tail — "" for a non-Jupiter
+          // swap (the `base` fixture omits every one of these fields).
+          "",
+          "",
+          "",
+          "",
+          "",
         ].join(" "),
       )
       .digest("hex");
     expect(mod.computePrequoteMatchHash(base)).toBe(expected);
+  });
+
+  // ── W5 (design §6 R4) — Jupiter fee-bearing tail ─────────────────────────
+  it("a Jupiter fee/tip/CU-strategy/route-knobs tail changes the hash; a non-Jupiter swap is unaffected by the new fields", () => {
+    const withoutTail = mod.computePrequoteMatchHash(base);
+    // Non-Jupiter callers never set the tail — omitting it must still match
+    // the explicit-digest reference above (i.e. "" on every new field).
+    expect(mod.computePrequoteMatchHash({ ...base, feeBps: undefined })).toBe(withoutTail);
+
+    const jupiterBase = {
+      ...base,
+      family: "solana" as const,
+      provider: "jupiter",
+      chainId: null,
+      feeBps: "25",
+      feeMint: "MintA",
+      tipLamports: "1000000",
+      cuStrategy: "high",
+      routeKnobs: "|| |1|0",
+    };
+    const jupiterHash = mod.computePrequoteMatchHash(jupiterBase);
+    expect(jupiterHash).not.toBe(mod.computePrequoteMatchHash({ ...jupiterBase, feeBps: undefined, feeMint: undefined, tipLamports: undefined, cuStrategy: undefined, routeKnobs: undefined }));
+    expect(jupiterHash).not.toBe(mod.computePrequoteMatchHash({ ...jupiterBase, tipLamports: "2000000" }));
+    expect(jupiterHash).not.toBe(mod.computePrequoteMatchHash({ ...jupiterBase, routeKnobs: "Raydium||1|0" }));
+    expect(jupiterHash).not.toBe(mod.computePrequoteMatchHash({ ...jupiterBase, feeBps: "50" }));
   });
 
   // ── Stage 9 — recipient / approveExact / slippageBps sensitivity ──────────

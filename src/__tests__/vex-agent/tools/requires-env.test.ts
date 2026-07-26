@@ -101,13 +101,13 @@ describe("requiresEnv filtering", () => {
       expect(result.count).toBe(0);
     });
 
-    it("shows all 20 solana tools when JUPITER_API_KEY is set", async () => {
+    it("shows all 34 solana tools when JUPITER_API_KEY is set", async () => {
       process.env.JUPITER_API_KEY = "test-jupiter-key";
       const result = await discoverProtocolCapabilities({
         namespace: "solana",
         limit: 100,
       });
-      expect(result.count).toBe(20);
+      expect(result.count).toBe(34);
     });
 
     it("khalani tools unaffected by JUPITER_API_KEY", async () => {
@@ -119,7 +119,7 @@ describe("requiresEnv filtering", () => {
       const without = await discoverProtocolCapabilities({ limit: 300 });
       process.env.JUPITER_API_KEY = "test-key";
       const withKey = await discoverProtocolCapabilities({ limit: 300 });
-      expect(withKey.totalCount).toBe(without.totalCount + 20);
+      expect(withKey.totalCount).toBe(without.totalCount + 34);
     });
   });
 

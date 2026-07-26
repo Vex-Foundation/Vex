@@ -10,7 +10,6 @@ import { fullBalanceSync } from "./balance-sync.js";
 import { drainPendingRuns } from "./worker.js";
 import * as syncRepo from "@vex-agent/db/repos/sync.js";
 import logger from "@utils/logger.js";
-import { registerHyperliquidMarkPriceWatchEvaluator } from "./hyperliquid-market-watcher.js";
 
 /**
  * Initialize sync pipeline on boot.
@@ -25,28 +24,11 @@ export async function initSync(): Promise<void> {
 
   // 1. Seed default sync jobs
   await seedSyncJobs();
-  // The evaluator is registered before an active mission can persist an HL
-  // mark-price watch. An unavailable sync runtime therefore fails closed.
-  registerHyperliquidMarkPriceWatchEvaluator();
 
   // 2. Drain backlog from previous run (avoids double-snapshot)
   const backlog = await drainPendingRuns();
   if (backlog.processed > 0) {
     logger.info("sync.init.backlog_drained", { processed: backlog.processed });
-  }
-
-  // 2b. Recover venue-side state that may have changed while the app was
-  // offline. This is capture-only and cheap when no HL state is tracked.
-  try {
-    const { reconcileHyperliquid } = await import("./hyperliquid-reconciler.js");
-    const result = await reconcileHyperliquid();
-    if (result.checked > 0 || result.errors > 0) {
-      logger.info("sync.init.hyperliquid_recovered", result);
-    }
-  } catch (err) {
-    logger.warn("sync.init.hyperliquid_recovery_failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 
   // 3. Authoritative startup full sync + snapshot
@@ -101,14 +83,39 @@ export async function syncTick(): Promise<void> {
         const settlementResult = await reconcilePredictionSettlements();
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(runId, { ...settlementResult }, settlementResult.closed);
-      } else if (job.syncType === "hyperliquid_reconcile") {
-        const { reconcileHyperliquid } = await import("./hyperliquid-reconciler.js");
-        const reconcileResult = await reconcileHyperliquid();
+      } else if (job.syncType === "agent_activity_repair") {
+        const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
+        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(
           runId,
-          { ...reconcileResult, periodic: true },
-          reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled,
+          { ...repairResult, periodic: true },
+          repairResult.confirmed + repairResult.failed,
+        );
+      } else if (job.syncType === "bridge_activity_repair") {
+        // C1 fix (Batch 4 closure) — this periodic job was seeded (seed.ts)
+        // and dispatched on-demand (worker.ts's drainPendingRuns/processNextRun)
+        // but never had a syncTick() branch, so its own 120s periodic timer
+        // never actually fired it. Mirrors the "agent_activity_repair" branch
+        // above exactly.
+        const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
+        const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...bridgeResult, periodic: true },
+          bridgeResult.confirmed + bridgeResult.failed,
+        );
+      } else if (job.syncType === "solana_activity_repair") {
+        // W5 (migration 049, K3) — periodic driver for the Solana activity
+        // sweep, mirroring the "agent_activity_repair" branch above exactly.
+        const { repairPendingSolanaActivity, buildProductionSolanaRepairDeps } = await import("./solana-activity-repair.js");
+        const solanaResult = await repairPendingSolanaActivity(buildProductionSolanaRepairDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...solanaResult, periodic: true },
+          solanaResult.confirmed + solanaResult.failed,
         );
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });

@@ -81,7 +81,6 @@ function envState(allConfigured: boolean): EnvState {
       jupiterConfigured: true,
       tavilyConfigured: false,
       rettiwtConfigured: false,
-      polymarketStatus: "missing",
     },
     embeddings: {
       configured: allConfigured,

@@ -14,7 +14,6 @@
  */
 
 import { z } from "zod";
-import { polymarketStatusSchema } from "./api-keys.js";
 
 export const walletPresenceSchema = z.enum(["present", "missing"]);
 export type WalletPresence = z.infer<typeof walletPresenceSchema>;
@@ -38,7 +37,6 @@ export const apiKeysStateSchema = z
     jupiterConfigured: z.boolean(),
     tavilyConfigured: z.boolean(),
     rettiwtConfigured: z.boolean(),
-    polymarketStatus: polymarketStatusSchema,
   })
   .strict();
 

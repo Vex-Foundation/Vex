@@ -101,7 +101,6 @@ function makeEnvState(
       jupiterConfigured: false,
       tavilyConfigured: false,
       rettiwtConfigured: false,
-      polymarketStatus: "missing",
     },
     secrets: { vaultConfigured: true, unlocked: true },
     embeddings: {

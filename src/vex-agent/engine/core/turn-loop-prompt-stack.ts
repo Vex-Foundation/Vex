@@ -31,7 +31,8 @@ import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
-import { buildHypervexingTurnStatePrompt } from "../prompts/protocols.js";
+import { buildBridgeCapabilityPrompt } from "../prompts/protocols.js";
+import { getBridgeCapabilityView } from "@vex-agent/tools/protocols/khalani/capability-snapshot.js";
 import { buildActivePlanBlock, PLAN_OFF_NOTICE } from "../prompts/plan.js";
 import { buildMemorySection } from "../prompts/memory-section.js";
 import { getTurnContext } from "@vex-agent/memory/turn-context.js";
@@ -73,6 +74,14 @@ export async function buildTurnPromptStack(args: {
   // any fetch error yields "" so the banner is omitted and the turn is never
   // blocked. Throttled + cached at the client, so repeated turns hit cache.
   promptOptions.ownTokenBanner = await buildOwnTokenBanner();
+
+  // Bridge-routing capability layer (DYNAMIC): the live Khalani `/v1/chains`
+  // list + the Relay-health-gated Robinhood line. Stale-while-revalidate
+  // single-flight snapshot — the accessor returns instantly (never blocks the
+  // turn on the network) and never throws; a cold/absent snapshot renders the
+  // conservative "verify by quoting" fallback. Kept out of buildProtocolsPrompt's
+  // permanent cache so nothing mutable sits behind it (R13/B7).
+  promptOptions.bridgeCapabilityPrompt = buildBridgeCapabilityPrompt(await getBridgeCapabilityView());
 
   let nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining;
   if (args.postCompactBridgeRemaining > 0) {
@@ -161,16 +170,6 @@ export async function buildTurnPromptStack(args: {
   // unconditional, so the two cannot drift (no stale defaultTools path).
   const tools = toToolDefinitions(getOpenAITools(visibilityCtx));
   promptOptions.toolCatalogPrompt = buildToolCatalogPrompt(visibilityCtx);
-  promptOptions.hypervexingTurnStatePrompt = buildHypervexingTurnStatePrompt(
-    visibilityCtx,
-    {
-      sessionId: args.context.sessionId,
-      missionId: args.context.missionId,
-      ...(args.context.selectedEvmWallet === null
-        ? {}
-        : { walletAddress: args.context.selectedEvmWallet.address }),
-    },
-  );
 
   return {
     promptOptions,

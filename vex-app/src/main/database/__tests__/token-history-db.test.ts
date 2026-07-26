@@ -5,23 +5,28 @@
  * Mirrors `portfolio-db.test.ts`: mocked `pg` Client (scripted
  * `mockResolvedValueOnce` per statement, in the exact order
  * `getTokenHistory` issues them: BEGIN READ ONLY, SET LOCAL
- * statement_timeout, the page UNION, the cost-basis read, then
- * COMMIT/ROLLBACK), mocked `db-config`, mocked `@vex-lib/wallet.js`
- * `listWallets`, mocked logger.
+ * statement_timeout, the page UNION, then COMMIT/ROLLBACK), mocked
+ * `db-config`, mocked `@vex-lib/wallet.js` `listWallets`, mocked logger.
+ *
+ * Split by domain under test (Card C5, move-only, same pattern as Cards
+ * F1/K7/K8: no assertion changes, no coverage loss) once this file crossed
+ * the repo's 500-line cap. This anchor covers empty-inventory, address
+ * normalization, pagination, and page-phase failure classification;
+ * `token-history-db-entry-mapping.test.ts` covers entry-mapping shape
+ * details; `token-history-db-agent-activity.test.ts` covers the
+ * `agent_activity` swap arm; `token-history-db-bridge.test.ts` covers the
+ * `agent_activity` bridge arm.
  *
  * Security/behavior invariants under test:
  *  - empty inventory → the empty available page, NO SQL issued;
  *  - EVM addresses are lower-cased end-to-end; Solana stays verbatim;
- *  - leg-aware bridge matching (destination-chain leg via a DIFFERENT
- *    numeric chain than the origin `chain` column);
- *  - `wallet_intents` inclusion (executed + hash) and exclusion
- *    (non-address token, wrong network);
- *  - keyset pagination (limit+1 → nextCursor/hasMore);
- *  - SQLSTATE 57014 on the PAGE phase → `{status:"unavailable"}`; any
- *    other page failure → a Result error; a cost-basis-phase failure
- *    (timeout or otherwise) degrades ONLY `costBasis`, never the page;
- *  - cost-basis fail-closed instrument_key parsing + proration + totals;
- *  - "no open lots" vs "cost basis unavailable" distinction.
+ *  - keyset pagination (limit+1 → nextCursor/hasMore) across all three arms;
+ *  - SQLSTATE 57014 on the PAGE phase → `{status:"unavailable"}`; any other
+ *    page failure → a Result error.
+ *
+ * Cost basis was retired (Agent Scan plan §4.7) along with the
+ * decimal-point unit-guessing heuristic — see `token-history-db.ts`'s module
+ * header and `amountField`'s doc comment.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -111,6 +116,8 @@ function activityRow(overrides: Partial<Record<string, unknown>> = {}) {
     output_token_symbol: "USDC",
     output_token_local_symbol: null,
     to_address: null,
+    status: null,
+    failure_code: null,
     ...overrides,
   };
 }
@@ -141,14 +148,61 @@ function intentRow(overrides: Partial<Record<string, unknown>> = {}) {
     output_token_symbol: null,
     output_token_local_symbol: null,
     to_address: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    status: null,
+    failure_code: null,
     ...overrides,
   };
 }
 
-/** Scripts BEGIN + SET LOCAL, then the caller's page/lots/commit responses. */
+/** Agent Scan §4.7 — one row per EVM swap ATTEMPT (pending/confirmed/failed). */
+/**
+ * Default status is "confirmed" — `input_amount`/`output_amount` (the
+ * quote-time REQUESTED echo) are deliberately DECOY values ("999") distinct
+ * from what `executed_amount_*_raw`/`token_*_decimals` compute, so any test
+ * that forgets to override status and still asserts the executed value
+ * would catch a regression back to showing the quote as settlement (C20).
+ * 50000000 raw @ 6 decimals = "50"; 2000000000000000000 raw @ 18 decimals =
+ * "2" (viem's `formatUnits` never prints a trailing ".0").
+ */
+function agentActivityRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    source_kind: "agent_activity",
+    source_rank: 2,
+    source_id: "00000000000000000009",
+    created_at: new Date("2026-07-10T10:00:00.000Z"),
+    cursor_ts: "2026-07-10T10:00:00.000000Z",
+    namespace: "kyberswap",
+    product_type: "spot",
+    trade_side: null,
+    chain: String(BASE_CHAIN_ID),
+    dest_chain: null,
+    input_token_address: "0xInputToken",
+    input_amount: "999",
+    output_token_address: TOKEN_ADDR_LOWER,
+    output_amount: "999",
+    input_value_usd: "50.00",
+    output_value_usd: "50.00",
+    unit_price_usd: null,
+    capture_status: null,
+    tx_ref: "0xagenttx",
+    input_token_symbol: "USDC",
+    input_token_local_symbol: null,
+    output_token_symbol: "WETH",
+    output_token_local_symbol: null,
+    to_address: null,
+    status: "confirmed",
+    failure_code: null,
+    executed_amount_in_raw: "50000000",
+    executed_amount_out_raw: "2000000000000000000",
+    token_in_decimals: 6,
+    token_out_decimals: 18,
+    ...overrides,
+  };
+}
+
+/** Scripts BEGIN + SET LOCAL, then the caller's page response + COMMIT/ROLLBACK. */
 function scriptTransaction(opts: {
   page: ReadonlyArray<Record<string, unknown>> | Error;
-  lots?: ReadonlyArray<Record<string, unknown>> | Error;
 }): void {
   mocks.query.mockResolvedValueOnce({ rows: [] }); // BEGIN READ ONLY
   mocks.query.mockResolvedValueOnce({ rows: [] }); // SET LOCAL statement_timeout
@@ -159,15 +213,7 @@ function scriptTransaction(opts: {
     return;
   }
   mocks.query.mockResolvedValueOnce({ rows: opts.page }); // page
-
-  const lots = opts.lots ?? [];
-  if (lots instanceof Error) {
-    mocks.query.mockRejectedValueOnce(lots); // cost-basis
-    mocks.query.mockResolvedValueOnce({ rows: [] }); // ROLLBACK (aborted txn)
-  } else {
-    mocks.query.mockResolvedValueOnce({ rows: lots }); // cost-basis
-    mocks.query.mockResolvedValueOnce({ rows: [] }); // COMMIT
-  }
+  mocks.query.mockResolvedValueOnce({ rows: [] }); // COMMIT
 }
 
 /**
@@ -183,6 +229,12 @@ function allBoundParams(): unknown[] {
     const params = call[1];
     return Array.isArray(params) ? params : [];
   });
+}
+
+/** The bound params array of the page-query call (the 3rd query() invocation). */
+function pageQueryCall(): { readonly sql: string; readonly params: unknown[] } {
+  const call = mocks.query.mock.calls[2];
+  return { sql: String(call?.[0] ?? ""), params: (call?.[1] as unknown[]) ?? [] };
 }
 
 beforeEach(() => {
@@ -222,7 +274,6 @@ describe("getTokenHistory — empty inventory", () => {
       entries: [],
       nextCursor: null,
       hasMore: false,
-      costBasis: { kind: "none" },
     });
     expect(mocks.query).not.toHaveBeenCalled();
   });
@@ -263,82 +314,6 @@ describe("getTokenHistory — address normalization", () => {
     );
     expect(aliasArray).toBeDefined();
     expect(aliasArray).toContain(String(BASE_CHAIN_ID));
-  });
-});
-
-describe("getTokenHistory — entry mapping", () => {
-  it("maps a matched spot activity row to a swap entry with tagged amounts", async () => {
-    scriptTransaction({ page: [activityRow()] });
-    const result = await getTokenHistory({
-      chainId: BASE_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok || result.data.status !== "available") return;
-    expect(result.data.entries).toHaveLength(1);
-    const entry = result.data.entries[0];
-    expect(entry?.kind).toBe("swap");
-    if (entry?.kind === "swap") {
-      expect(entry.input.amount).toEqual({ value: "1.5", unitProvenance: "human" });
-      expect(entry.txRefs).toEqual([{ chainId: BASE_CHAIN_ID, ref: "0xhash1" }]);
-    }
-  });
-
-  it("maps a bridge row with a destination leg on a DIFFERENT numeric chain than the origin", async () => {
-    scriptTransaction({
-      page: [
-        activityRow({
-          product_type: "bridge",
-          chain: String(BASE_CHAIN_ID),
-          dest_chain: String(ARBITRUM_CHAIN_ID),
-        }),
-      ],
-    });
-    const result = await getTokenHistory({
-      chainId: ARBITRUM_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok || result.data.status !== "available") return;
-    const entry = result.data.entries[0];
-    expect(entry?.kind).toBe("bridge");
-    if (entry?.kind === "bridge") {
-      expect(entry.originChain).toBe(String(BASE_CHAIN_ID));
-      expect(entry.destinationChain).toBe(String(ARBITRUM_CHAIN_ID));
-    }
-  });
-
-  it("maps an executed wallet_intents row to a transfer entry", async () => {
-    scriptTransaction({ page: [intentRow()] });
-    const result = await getTokenHistory({
-      chainId: BASE_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok || result.data.status !== "available") return;
-    const entry = result.data.entries[0];
-    expect(entry?.kind).toBe("transfer");
-    if (entry?.kind === "transfer") {
-      expect(entry.toAddress).toBe("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
-      expect(entry.amount).toEqual({ value: "5", unitProvenance: "human" });
-    }
-  });
-
-  it("tags a bare atomic-integer amount as atomic, never human", async () => {
-    scriptTransaction({ page: [activityRow({ input_amount: "1500000000000000000" })] });
-    const result = await getTokenHistory({
-      chainId: BASE_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    if (!result.ok || result.data.status !== "available") throw new Error("expected available");
-    const entry = result.data.entries[0];
-    if (entry?.kind === "swap") {
-      expect(entry.input.amount.unitProvenance).toBe("atomic");
-    }
   });
 });
 
@@ -403,6 +378,26 @@ describe("getTokenHistory — pagination", () => {
       sourceId: "intent-b",
     });
   });
+
+  it("mints a sourceRank=2 cursor when the last kept row is an agent_activity row", async () => {
+    const tiedTs = "2026-07-10T10:00:00.000000Z";
+    const rows = Array.from({ length: 51 }, (_, i) =>
+      agentActivityRow({
+        source_id: String(i).padStart(20, "0"),
+        cursor_ts: tiedTs,
+        created_at: new Date(tiedTs),
+      }),
+    );
+    scriptTransaction({ page: rows });
+    const result = await getTokenHistory({
+      chainId: BASE_CHAIN_ID,
+      tokenAddress: TOKEN_ADDR_LOWER,
+      cursor: null,
+    });
+    if (!result.ok || result.data.status !== "available") throw new Error("expected available");
+    expect(result.data.hasMore).toBe(true);
+    expect(result.data.nextCursor?.sourceRank).toBe(2);
+  });
 });
 
 describe("getTokenHistory — page-phase failure classification", () => {
@@ -426,66 +421,5 @@ describe("getTokenHistory — page-phase failure classification", () => {
       cursor: null,
     });
     expect(result.ok).toBe(false);
-  });
-});
-
-describe("getTokenHistory — cost-basis phase degradation", () => {
-  it("a cost-basis timeout degrades ONLY costBasis; entries still return", async () => {
-    scriptTransaction({ page: [activityRow()], lots: new FakeDbError("57014") });
-    const result = await getTokenHistory({
-      chainId: BASE_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok || result.data.status !== "available") return;
-    expect(result.data.entries).toHaveLength(1);
-    expect(result.data.costBasis).toEqual({ kind: "unavailable" });
-  });
-
-  it("zero matching lots reports 'none', distinct from 'unavailable'", async () => {
-    scriptTransaction({ page: [activityRow()], lots: [] });
-    const result = await getTokenHistory({
-      chainId: BASE_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    if (!result.ok || result.data.status !== "available") throw new Error("expected available");
-    expect(result.data.costBasis).toEqual({ kind: "none" });
-  });
-
-  it("maps matching lots into openLots + totals, capped display at 50", async () => {
-    scriptTransaction({
-      page: [activityRow()],
-      lots: [
-        {
-          remaining_quantity_raw: "500000000000000000",
-          prorated_cost_basis_usd: "50.00",
-          price_usd: "100.00",
-          opened_at: new Date("2026-05-01T00:00:00.000Z"),
-          total_open_quantity: "500000000000000000",
-          avg_open_price_usd: "100.00",
-        },
-      ],
-    });
-    const result = await getTokenHistory({
-      chainId: BASE_CHAIN_ID,
-      tokenAddress: TOKEN_ADDR_LOWER,
-      cursor: null,
-    });
-    if (!result.ok || result.data.status !== "available") throw new Error("expected available");
-    expect(result.data.costBasis).toEqual({
-      kind: "lots",
-      openLots: [
-        {
-          quantity: { value: "500000000000000000", unitProvenance: "atomic" },
-          priceUsd: "100.00",
-          costBasisUsd: "50.00",
-          openedAt: "2026-05-01T00:00:00.000Z",
-        },
-      ],
-      totalOpenQuantity: "500000000000000000",
-      avgOpenPriceUsd: "100.00",
-    });
   });
 });

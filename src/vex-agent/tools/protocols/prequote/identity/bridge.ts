@@ -116,8 +116,23 @@ export async function buildBridgeIdentity(
   // resolved fromAddress under a session); referrer/referrerFeeBps/filler are
   // absent → "". referrerFeeBps is canonicalized to the handler's numeric
   // identity (throws on an invalid value → recorder skip / gate fail-closed).
-  const explicitRefundTo = bridgeStr(params, "refundTo");
-  const refundTo = explicitRefundTo !== "" ? explicitRefundTo : sourceWallet;
+  //
+  // NOTE: `referrer`/`referrerFeeBps` can no longer be SUPPLIED — the tool and
+  // alias surfaces dropped them and both Khalani handlers reject them by name
+  // (bridge referral-fee policy in `@tools/khalani/request.js`), so in practice
+  // these always read "". The binding is kept deliberately: it costs nothing,
+  // keeps persisted match-hashes stable, and means a stray fee arriving by any
+  // future path still fails the quote↔execute collision instead of sliding
+  // through. It is a second barrier, not the primary defense.
+  // DERIVED, never read from params. Binding it from PARAMS was the hole: an
+  // attacker who set the SAME address on the quote AND the execute produced two
+  // colliding hashes, so the gate passed a redirected refund. The tool and
+  // alias surfaces no longer accept the key at all and both handlers reject it
+  // by name; binding the derived value keeps the identity honest about where a
+  // refund would land. Unchanged for every legitimate call — an omitted
+  // `refundTo` already resolved to the source wallet — so persisted hashes do
+  // not move.
+  const refundTo = sourceWallet;
   const referrer = bridgeStr(params, "referrer");
   const referrerFeeBps = canonReferrerFeeBps(bridgeStr(params, "referrerFeeBps"));
   const filler = bridgeStr(params, "filler");
@@ -141,6 +156,13 @@ export async function buildBridgeIdentity(
     referrer,
     referrerFeeBps,
     filler,
+    // Khalani has NO slippage surface — `khalani.bridge` accepts no
+    // `slippageBps` and forwards none, so the identity binds the stable empty
+    // on BOTH sides and Khalani quote↔execute pairs collide exactly as before.
+    // (The generic `bridge` alias declares a `slippageBps` arg, but documents
+    // it as "Relay-only ... Ignored on the Khalani path" and the Khalani
+    // handler never reads it.)
+    slippageBps: "",
   };
 }
 

@@ -38,6 +38,7 @@ import { buildPendleMintIdentity, buildPendleRedeemPyIdentity } from "./identity
 import { buildPendleLpAddIdentity, buildPendleLpRemoveIdentity } from "./identity/pendle-lp.js";
 import { extractQuote, extractPendleQuote, extractPendlePyQuote, extractPendleLpQuote } from "./safety/extract.js";
 import { canonSlippageBps, readParamSlippageBps } from "./slippage.js";
+import { canonicalizeJupiterFeeTail, resolveJupiterFeeSwapKnobs } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
 // ── Recorder ──────────────────────────────────────────────────────────────
 
@@ -430,6 +431,23 @@ async function recordSwapPrequote(
     return;
   }
 
+  // W5 (design §6 R4): Jupiter fee-bearing tail, read from the QUOTE PARAMS
+  // (same convention as `slippageBps` below) so it stays in lockstep with the
+  // gate, which reads the SAME knobs from the execute params. Best-effort — a
+  // malformed knob (e.g. an out-of-range tipLamports) is a bounded skip, never
+  // a thrown recorder failure; every non-Jupiter provider leaves this
+  // `undefined` (the hash tail then canonicalizes to "").
+  let jupiterTail: ReturnType<typeof canonicalizeJupiterFeeTail> | undefined;
+  if (registered.provider === "jupiter") {
+    try {
+      jupiterTail = canonicalizeJupiterFeeTail(resolveJupiterFeeSwapKnobs(params), extracted.tokenIn);
+    } catch (err) {
+      const reason = err instanceof VexError ? err.code : "jupiter_knobs_invalid";
+      logger.warn("protocol.prequote.skipped", { toolId, reason });
+      return;
+    }
+  }
+
   // Stage 9: bind the execute-only money/safety leg. The QUOTE carries none of
   // recipient/approveExact, so default them to what the executor uses when they
   // are omitted (output-to-self == the resolved selected wallet; approveExact
@@ -451,6 +469,7 @@ async function recordSwapPrequote(
     recipient: walletAddress,
     approveExact: false,
     slippageBps: canonSlippageBps(readParamSlippageBps(params)),
+    ...jupiterTail,
   });
 
   const input: CreatePrequoteInput = {
@@ -468,6 +487,11 @@ async function recordSwapPrequote(
     slippageBps: extracted.slippageBps,
     safetyVerdict: extracted.verdict,
     safetyDetail: extracted.safetyDetail,
+    // Structural-only route facts. No swap venue writes any today: the one
+    // producer was KyberSwap's quote-time price floor, removed by owner
+    // decision (2026-07-25) because comparing it against the build reduced to
+    // "the price must not have moved", which stranded autonomous retries. The
+    // column stays for a future structural fact; nothing derives from it now.
     routeRef: null,
     expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
   };

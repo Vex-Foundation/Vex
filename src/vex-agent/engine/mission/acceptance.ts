@@ -39,9 +39,10 @@ import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 import {
   CONTRACT_HASH_VERSION,
   LEGACY_CONTRACT_HASH_VERSION,
+  LEGACY_V2_CONTRACT_HASH_VERSION,
   computeContractHash,
 } from "./contract-hash.js";
-import { missionToDraft } from "./mapper.js";
+import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
 
 const ACCEPTABLE_MISSION_STATUSES = new Set<string>(["draft", "ready"]);
 /**
@@ -114,8 +115,8 @@ export async function assertAcceptedContract(
     if (!mission) {
       return { outcome: "mission_not_found" };
     }
-    // Legacy v1 contracts remain immutable and valid forever. Recompute with
-    // the version stored at acceptance; unknown versions fail closed.
+    // Legacy v1/v2 contracts remain immutable and valid forever. Recompute
+    // with the version stored at acceptance; unknown versions fail closed.
     if (
       mission.acceptedContractHash === null
       || mission.contractHashVersion === null
@@ -123,7 +124,15 @@ export async function assertAcceptedContract(
     ) {
       return { outcome: "not_accepted", missionId: mission.id };
     }
-    const currentHash = computeContractHash(missionToDraft(mission), mission.contractHashVersion);
+    // The legacy v2 risk material (if any) is sourced directly off the row —
+    // MissionDraft no longer carries it — and is a no-op for any other version.
+    const currentHash = computeContractHash(
+      missionToDraft(mission),
+      mission.contractHashVersion,
+      mission.contractHashVersion === LEGACY_V2_CONTRACT_HASH_VERSION
+        ? extractLegacyHyperliquidRiskV2(mission)
+        : undefined,
+    );
     if (currentHash !== mission.acceptedContractHash) {
       return {
         outcome: "stale_acceptance",
@@ -232,8 +241,9 @@ export async function acceptContract(
     // 3. Recompute the canonical hash from the locked row. If the
     //    UI showed an older draft, the hash won't match and the user
     //    must re-view + re-accept.
-    // New acceptance always emits v2 material. A legacy v1 draft that somehow
-    // carries Hyperliquid risk cannot be accepted under the old hash shape.
+    // New acceptance always emits CURRENT (v3) material — Hyperliquid risk no
+    // longer exists on MissionDraft, so a fresh acceptance can never produce
+    // the frozen v2 shape (see contract-hash.ts).
     const currentHash = computeContractHash(missionToDraft(mission), CONTRACT_HASH_VERSION);
     if (currentHash !== input.contractHash) {
       return {
@@ -340,6 +350,10 @@ export async function acceptContract(
   }
 }
 
-function isKnownContractHashVersion(version: number): version is typeof LEGACY_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION {
-  return version === LEGACY_CONTRACT_HASH_VERSION || version === CONTRACT_HASH_VERSION;
+function isKnownContractHashVersion(
+  version: number,
+): version is typeof LEGACY_CONTRACT_HASH_VERSION | typeof LEGACY_V2_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION {
+  return version === LEGACY_CONTRACT_HASH_VERSION
+    || version === LEGACY_V2_CONTRACT_HASH_VERSION
+    || version === CONTRACT_HASH_VERSION;
 }

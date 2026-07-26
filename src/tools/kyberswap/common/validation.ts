@@ -3,8 +3,8 @@
  * (codex-002 Phase 2, full uniformity).
  *
  * This endpoint feeds dynamic chain discovery (supported-chains), which gates
- * which chains the KyberSwap aggregator/limit-order/zaas clients will operate
- * on. The original used the STRICT field pattern: a malformed required field
+ * which chains the KyberSwap aggregator client will operate on. The original
+ * used the STRICT field pattern: a malformed required field
  * (chainId/chainName/displayName/state) throws
  * `VexError(KYBER_API_ERROR, "Invalid KyberSwap Common Service response: missing <field>")`,
  * while the two ROOT-shape guards (chain-info-not-object, response-without-data-array)

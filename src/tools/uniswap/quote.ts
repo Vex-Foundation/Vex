@@ -30,6 +30,7 @@ import {
 } from "./abis.js";
 import type { UniswapDeployment } from "./deployments.js";
 import type { UniswapRoute, UniswapToken } from "./types.js";
+import { VexError, ErrorCodes } from "../../errors.js";
 
 /** Fee tiers used for the intermediate hops of a V3 2-hop route (skip the 0.01% dust tier). */
 const V3_MULTIHOP_FEE_TIERS = [500, 3000, 10000] as const;
@@ -246,8 +247,27 @@ export async function quoteBestRoute(
   return priceImpact !== undefined ? { route: best, priceImpact } : { route: best };
 }
 
-/** minAmountOut = amountOut * (10000 - slippageBps) / 10000, floored. */
+/**
+ * minAmountOut = amountOut * (10000 - slippageBps) / 10000, floored.
+ *
+ * REJECTS an out-of-domain tolerance; it used to
+ * `Math.max(0, Math.min(10_000, Math.floor(bps)))`, which silently turned a
+ * caller's 50,000 into a 100% tolerance — a minAmountOut of zero, accepting any
+ * output at all — with no error and a normal-looking quote. Same doctrine as
+ * `runtime/bps-param.ts`: reject, never coerce, at a price-protection boundary.
+ *
+ * This bounds the ARITHMETIC domain only. Vex's product ceiling (currently 1000
+ * bps) is a separate, stricter rule enforced at the handler
+ * (`slippage-policy.ts`), which is the layer that may hold a product opinion —
+ * `src/tools/**` must not import `src/vex-agent/**`.
+ */
 export function applySlippage(amountOut: bigint, slippageBps: number): bigint {
-  const bps = BigInt(Math.max(0, Math.min(10_000, Math.floor(slippageBps))));
-  return (amountOut * (10_000n - bps)) / 10_000n;
+  if (!Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 10_000) {
+    throw new VexError(
+      ErrorCodes.INVALID_AMOUNT,
+      `Invalid slippageBps: ${slippageBps}`,
+      "slippageBps must be a whole number of basis points between 0 and 10000 (1 bps = 0.01%).",
+    );
+  }
+  return (amountOut * (10_000n - BigInt(slippageBps))) / 10_000n;
 }

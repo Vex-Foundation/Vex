@@ -1,11 +1,10 @@
 /**
- * Portfolio inspect — DB-backed read-only self-inspection tool.
+ * Agent Scan — DB-backed read-only self-inspection tool (renamed from
+ * `portfolio`, Agent Scan plan v3 §1.9/§4.7 — the profit-computation system
+ * is deleted; views shrink to plain recorded session-wallet history).
  *
- * 15 views across 4 families:
- *   Trading: lots, profits, unrealized
- *   Positions: open_positions, closed_positions, orders
- *   Activity: activity, bridges, lp_history, non_trading_history, transactions
- *   Portfolio: summary, balances, snapshots, executions
+ * Views: transactions (primary), activity, balances, snapshots, summary,
+ * executions.
  *
  * View implementations in inspect-views/*.ts — this file is the router only.
  */
@@ -15,20 +14,14 @@ import type { InternalToolContext } from "./types.js";
 import { str, num, fail } from "./types.js";
 import { resolveSelectedAddressSetForRead, walletScopeErrorToResult } from "./wallet/resolve.js";
 
-// Trading views
-import { inspectLots, inspectProfits, inspectUnrealized } from "./inspect-views/trading.js";
-// Position views
-import { inspectOpenPositions, inspectClosedPositions, inspectOrders } from "./inspect-views/positions.js";
-// Activity views
-import { inspectActivity, inspectBridges, inspectLpHistory, inspectNonTradingHistory } from "./inspect-views/activity.js";
+// Activity view
+import { inspectActivity } from "./inspect-views/activity.js";
 import { inspectTransactions } from "./inspect-views/transactions.js";
 // Portfolio views
 import { inspectSummary, inspectBalances, inspectSnapshots, inspectExecutions } from "./inspect-views/portfolio.js";
 
 const VALID_VIEWS = new Set<string>([
-  "open_positions", "activity", "executions", "balances", "snapshots", "summary",
-  "lots", "profits", "closed_positions", "non_trading_history",
-  "bridges", "lp_history", "orders", "unrealized", "transactions",
+  "transactions", "activity", "balances", "snapshots", "summary", "executions",
 ]);
 
 /**
@@ -37,14 +30,10 @@ const VALID_VIEWS = new Set<string>([
  * unscoped.
  */
 const WALLET_SCOPED_VIEWS = new Set<string>([
-  "summary", "balances", "snapshots",
-  "open_positions", "closed_positions", "orders",
-  "lots", "profits", "unrealized",
-  "activity", "bridges", "lp_history", "non_trading_history",
-  "transactions",
+  "summary", "balances", "snapshots", "activity", "transactions",
 ]);
 
-export async function handlePortfolio(
+export async function handleAgentScan(
   params: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
@@ -72,12 +61,6 @@ export async function handlePortfolio(
       case "summary": return inspectSummary(addresses);
       case "balances": return inspectBalances(addresses);
       case "snapshots": return inspectSnapshots(addresses);
-      case "open_positions": return inspectOpenPositions(addresses, namespace, limit);
-      case "closed_positions": return inspectClosedPositions(addresses, namespace, limit);
-      case "orders": return inspectOrders(addresses, namespace, str(params, "status") || undefined, limit);
-      case "lots": return inspectLots(addresses, str(params, "instrumentKey") || undefined, namespace, str(params, "status") || undefined, limit);
-      case "profits": return inspectProfits(addresses, namespace, str(params, "instrumentKey") || undefined, str(params, "groupBy") || undefined);
-      case "unrealized": return inspectUnrealized(addresses, namespace);
       case "activity": return inspectActivity(addresses, namespace, productType, limit);
       case "transactions": return inspectTransactions(addresses, context.sessionId, {
         productType,
@@ -86,9 +69,6 @@ export async function handlePortfolio(
         cursor: str(params, "cursor") || undefined,
         limit,
       });
-      case "bridges": return inspectBridges(addresses, namespace, limit);
-      case "lp_history": return inspectLpHistory(addresses, namespace, limit);
-      case "non_trading_history": return inspectNonTradingHistory(addresses, namespace, limit);
       default: return fail(`Unknown view: ${view}`);
     }
   }

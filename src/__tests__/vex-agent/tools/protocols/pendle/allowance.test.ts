@@ -15,14 +15,16 @@ import { ErrorCodes } from "../../../../../errors.js";
 const TOKEN = getAddress("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
 const OWNER = getAddress("0x742d35cc6634c0532925a3b844bc454e4438f44e");
 
-function makeClients(currentAllowance: bigint) {
+function makeClients(currentAllowance: bigint, gasEstimate = 46_312n) {
   const writeContract = vi.fn().mockResolvedValue("0xhash");
+  const estimateContractGas = vi.fn().mockResolvedValue(gasEstimate);
   const publicClient = {
     readContract: vi.fn().mockResolvedValue(currentAllowance),
+    estimateContractGas,
     waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
   };
   const walletClient = { account: { address: OWNER }, chain: { id: 1 }, writeContract };
-  return { publicClient, walletClient, writeContract };
+  return { publicClient, walletClient, writeContract, estimateContractGas };
 }
 
 /** Extract [spender, amount] pairs of the approve calls, in order. */
@@ -96,5 +98,76 @@ describe("ensurePendleAllowanceExact — set-to-exact discipline", () => {
       ensurePendleAllowanceExact(publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n),
     ).rejects.toMatchObject({ code: ErrorCodes.APPROVAL_FAILED });
     expect(writeContract).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Gas-limit discipline (2026-07-24 out-of-gas defect class). `writeContract`
+ * with no explicit `gas` makes viem sign the node's BARE `eth_estimateGas` with
+ * zero headroom — the same signing shape that mined-reverted four KyberSwap
+ * executes on Base at ~97.3% of their limit. Approvals are cheap and stable
+ * relative to router calldata, but this was the last place still doing it.
+ *
+ * Unlike Khalani, Pendle's approvals carry NO provider-supplied gas figure
+ * (the Convert API's `requiredApprovals` have no gas field), so there is no
+ * `max(provider, ours)` reconciliation to pin here — only the headroom floor.
+ */
+describe("ensurePendleAllowanceExact — gas-limit headroom", () => {
+  const ESTIMATE = 46_312n;
+  /** 200% headroom policy (`gasLimitWithHeadroom`). */
+  const HEADROOMED = 92_624n;
+
+  /** The `gas` passed to each `approve` write, in order. */
+  function writtenGas(writeContract: ReturnType<typeof vi.fn>): Array<bigint | undefined> {
+    return writeContract.mock.calls.map((c) => (c[0] as { gas?: bigint }).gas);
+  }
+
+  it("signs the headroomed estimate, not the bare estimate, on a single exact approval", async () => {
+    const { publicClient, walletClient, writeContract } = makeClients(0n, ESTIMATE);
+
+    await ensurePendleAllowanceExact(
+      publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n,
+    );
+
+    expect(writtenGas(writeContract)).toEqual([HEADROOMED]);
+  });
+
+  it("applies the headroom to BOTH the reset and the exact approval", async () => {
+    const { publicClient, walletClient, writeContract, estimateContractGas } = makeClients(1n, ESTIMATE);
+
+    await ensurePendleAllowanceExact(
+      publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n,
+    );
+
+    expect(estimateContractGas).toHaveBeenCalledTimes(2);
+    expect(writtenGas(writeContract)).toEqual([HEADROOMED, HEADROOMED]);
+  });
+
+  it("estimates each leg against the exact approve call it then writes", async () => {
+    const { publicClient, walletClient, estimateContractGas } = makeClients(1n, ESTIMATE);
+
+    await ensurePendleAllowanceExact(
+      publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n,
+    );
+
+    const estimated = estimateContractGas.mock.calls.map(
+      (c) => (c[0] as { functionName: string; args: [string, bigint] }).args,
+    );
+    expect(estimated).toEqual([
+      [PENDLE_ROUTER, 0n],
+      [PENDLE_ROUTER, 100n],
+    ]);
+  });
+
+  it("throws APPROVAL_FAILED before any approve is written when the estimate reverts", async () => {
+    const { publicClient, walletClient, writeContract } = makeClients(0n, ESTIMATE);
+    publicClient.estimateContractGas.mockRejectedValueOnce(new Error("execution reverted"));
+
+    await expect(
+      ensurePendleAllowanceExact(publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n),
+    ).rejects.toMatchObject({ code: ErrorCodes.APPROVAL_FAILED });
+    // A would-revert approve never reaches signing — same classification the
+    // internal estimate produced before the gas limit became explicit.
+    expect(writeContract).not.toHaveBeenCalled();
   });
 });

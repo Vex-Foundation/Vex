@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+type EvmClientModule = typeof import("@tools/evm-chains/evm-client.js");
+
 // ── Mocks ───────────────────────────────────────────────────────
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -14,9 +16,9 @@ const fakeClient = {
   multicall: vi.fn(),
   getBalance: vi.fn(),
 };
-const mockGetLocalPublicClient = vi.fn(() => fakeClient);
+const mockGetLocalPublicClient = vi.fn<EvmClientModule["getLocalPublicClient"]>(() => fakeClient);
 vi.mock("@tools/evm-chains/evm-client.js", () => ({
-  getLocalPublicClient: (...a: unknown[]) => mockGetLocalPublicClient(...a),
+  getLocalPublicClient: (...args: Parameters<EvmClientModule["getLocalPublicClient"]>) => mockGetLocalPublicClient(...args),
 }));
 
 const mockTracked = vi.fn();

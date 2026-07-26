@@ -1,21 +1,30 @@
 /**
- * Relay bridge executor — validate the WHOLE quote, then sign every step in
- * order, then poll to terminal.
+ * Relay bridge execution PRIMITIVES — origin-only staged-broadcast building
+ * blocks (Wave-3 W3b).
  *
- * FAIL-CLOSED ORDERING (fund safety): validation and broadcasting are strictly
- * separated into two phases. PHASE 1 pre-validates EVERY step of the quote (kind,
- * per-step chainId ∈ {origin, destination}, from == the selected wallet, tx
- * calldata shape) with ZERO broadcasts. Only if the whole quote passes does PHASE
- * 2 broadcast the pre-validated transactions strictly in order. A single invalid
- * step — even the LAST one — aborts the whole bridge before any funds move, so a
- * valid early step can never leave funds mid-bridge on a quote that is rejected
- * further down.
+ * The agent_activity staged discipline (planned row → sign → persist hash CAS →
+ * broadcast → mark accepted, R4) lives in the HANDLER
+ * (`vex-agent/tools/protocols/relay/handlers/bridge.ts`), because that is the
+ * layer where the `agent_activity` repo lives — `src/tools/**` must NOT import
+ * `src/vex-agent/**` (one-way layering). This tools-layer module therefore
+ * exposes only the KEYLESS EVM primitives the handler composes with the shared
+ * `signStageBroadcast` primitive:
+ *   - `resolveRelayStepClients` — per-chain viem public + wallet clients;
+ *   - `planRelayStepTx` — per-step, fail-closed tx extraction (ORIGIN-ONLY, B3)
+ *     AND the native-value authorization gate (`./native-value.ts`): the last
+ *     point before `signStageBroadcast`, so a `tx.value` Vex cannot attribute to
+ *     a proven cost is refused rather than signed verbatim;
+ *   - `pollRelayIntentStatus` — the bounded, INFORMATIONAL in-turn status poll;
+ *   - `parseRequestIdFromCheckEndpoint` — the poll-source trust parser.
  *
- * Wallet clients resolve via the INCLUSIVE chain resolver (2b): Robinhood 4663
- * uses the local registry client (honours the user RPC override + Multicall3);
- * every other chain uses the Khalani dynamic client. Only `kind: "transaction"`
- * steps are signed — a `signature` (permit) step is REJECTED in v1 (bounded
- * signing surface, mirroring Khalani's PERMIT2 block).
+ * ORIGIN-ONLY (B3): Vex signs ONLY origin-chain steps (approve + deposit). The
+ * destination fill is solver-signed and externally observed — Vex NEVER
+ * broadcasts a destination-chain step. The old two-chain `executeRelayBridge`
+ * (which accepted `chainId ∈ {origin, destination}` and broadcast a monolithic
+ * plan without any durable staging) is REMOVED: `planRelayStepTx` rejects any
+ * item whose `chainId` is not the origin chain. The closed step policy
+ * (`./step-policy`) is the first gate; this per-tx check is fail-closed
+ * belt-and-suspenders before any signing.
  */
 
 import {
@@ -28,27 +37,56 @@ import {
   type WalletClient,
 } from "viem";
 
-import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
+import { resolveInclusiveEvmChain, type InclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { getLocalEvmClients } from "@tools/evm-chains/evm-client.js";
-import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import {
   createDynamicPublicClient,
   createDynamicWalletClient,
 } from "@tools/khalani/evm-client.js";
-import type { ChainWallet } from "@tools/wallet/multi-auth.js";
+import { checkNativeValueAuthorizedForCall } from "@tools/evm-chains/native-value-authorization/index.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 import { getRelayClient, RELAY_INTENT_STATUS_PATH } from "./client.js";
-import { RELAY_TERMINAL_STATUSES, type RelayQuoteResponse } from "./types.js";
-import { loadConfig } from "../../config/store.js";
+import { resolveRelayOnlyStepClients } from "./chain-client.js";
+import {
+  classifyRelayStepNativeValue,
+  relayNativeValueRefusal,
+  relayStepNativeValueCall,
+  type RelayStepNativeValueContext,
+} from "./native-value.js";
+import { RELAY_TERMINAL_STATUSES, type RelayChain, type RelayStep } from "./types.js";
 
-interface EvmClients {
+/** Origin-chain viem clients for a signable Relay step. */
+export interface RelayStepClients {
   publicClient: PublicClient<Transport, Chain>;
   walletClient: WalletClient<Transport, Chain, Account>;
 }
 
-async function resolveStepClients(chainId: number, privateKey: Hex): Promise<EvmClients> {
-  const resolved = await resolveInclusiveEvmChain(String(chainId));
+/**
+ * Resolve the viem public + wallet clients for a Relay step's chain. Robinhood
+ * 4663 uses the local-registry client (honours the user RPC override +
+ * Multicall3); a chain in the Khalani dynamic registry uses the Khalani client.
+ * A RELAY-ONLY chain — present in Relay's `/chains` but in neither local nor
+ * Khalani registries (R9 reveals Relay for exactly these) — builds a
+ * credential-free, SSRF-validated client from the Relay registry entry
+ * (`resolveRelayOnlyStepClients`, blocker 5) instead of deterministically failing
+ * before signing. A non-EVM chain, or a Relay-only chain with no safe public RPC,
+ * is rejected fail-closed. `relayChains` is the SAME live `/chains` list the
+ * handler already fetched (passed in to avoid a redundant fetch + a version skew).
+ */
+export async function resolveRelayStepClients(
+  chainId: number,
+  privateKey: Hex,
+  relayChains: readonly RelayChain[],
+): Promise<RelayStepClients> {
+  let resolved: InclusiveEvmChain;
+  try {
+    resolved = await resolveInclusiveEvmChain(String(chainId));
+  } catch {
+    // Absent from BOTH local and Khalani registries → Relay-only origin (R9).
+    // Build from the Relay registry, fail-closed on a non-EVM / unsafe RPC.
+    return resolveRelayOnlyStepClients(chainId, relayChains, privateKey);
+  }
   if (resolved.family !== "eip155") {
     throw new VexError(ErrorCodes.RELAY_UNSUPPORTED_CHAIN, `Relay step chain ${chainId} is not an EVM chain.`);
   }
@@ -61,118 +99,177 @@ async function resolveStepClients(chainId: number, privateKey: Hex): Promise<Evm
   };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Bounded status-poll budget: relay soft-confirms fast, but we never block a turn
-// indefinitely. On timeout we return the last non-terminal status (the capture
-// records it as pending — the intent is still live on Relay). Relay's docs
-// recommend polling the status endpoint ~once per second; a constant 1s interval
-// within the 60s budget makes the final poll land right at window close (the old
-// 2s→8s backoff left the last poll near t=54s, missing late terminal flips).
-const POLL_MAX_MS = 60_000;
-const POLL_INTERVAL_MS = 1_000;
-
 /**
- * Result of the bounded status poll. `observed` is true iff at least one
- * `getIntentStatus` call actually returned a status — it distinguishes a REAL
- * last-seen non-terminal status from a poll window where EVERY request threw
- * (Relay status API unreachable). The caller must not mask the latter as a
- * benign pending intent.
+ * A single origin-chain transaction, pre-validated and canonicalized, ready for
+ * the handler to hand to `signStageBroadcast`. `to`/`value` are already
+ * `getAddress`/`BigInt`-canonical so a malformed field throws HERE (before any
+ * signing/broadcast), never mid-bridge.
  */
-interface RelayPollResult {
-  readonly status: string;
-  readonly observed: boolean;
-}
-
-async function pollToTerminal(requestId: string): Promise<RelayPollResult> {
-  const client = getRelayClient();
-  const started = Date.now();
-  let status = "pending";
-  let observed = false;
-  while (Date.now() - started < POLL_MAX_MS) {
-    await delay(POLL_INTERVAL_MS);
-    try {
-      const res = await client.getIntentStatus(requestId);
-      status = res.status;
-      observed = true;
-      if (RELAY_TERMINAL_STATUSES.has(status)) return { status, observed };
-    } catch (err) {
-      logger.warn("relay.bridge.status_poll_failed", {
-        reason: err instanceof VexError ? err.code : "unknown",
-      });
-    }
-  }
-  return { status, observed };
-}
-
-export interface RelayExecuteArgs {
-  quote: RelayQuoteResponse;
-  signer: ChainWallet;
-  originChainId: number;
-  destinationChainId: number;
-}
-
-/** One broadcast transaction paired with the chain it was broadcast on. */
-export interface RelayTransaction {
-  readonly chainId: number;
-  readonly hash: string;
-}
-
-export interface RelayExecuteResult {
-  txHashes: string[];
-  /**
-   * Per-tx records carrying the chain each hash was broadcast on. Additive
-   * alongside `txHashes` (kept for compatibility): a Relay bridge spans the
-   * origin AND destination chains, so a chain-less `txHashes[]` cannot map every
-   * hash to an explorer. `transactions[i].hash === txHashes[i]` by construction.
-   */
-  transactions: RelayTransaction[];
-  requestId: string | null;
-  finalStatus: string;
-  /**
-   * True iff the intent status was actually OBSERVED (a `getIntentStatus` call
-   * succeeded) OR a terminal state was reached. False when there was no
-   * requestId to track, or every status poll threw — i.e. delivery is UNKNOWN,
-   * not benignly pending. The handler fails closed on `false` rather than
-   * emitting a phantom pending capture.
-   */
-  statusObserved: boolean;
-}
-
-/**
- * A single transaction pre-validated in PHASE 1 and ready to broadcast in PHASE
- * 2. `to`/`value` are already canonicalized (`getAddress`/`BigInt`), so PHASE 2
- * never re-parses untrusted quote fields — a parse failure aborts BEFORE any
- * broadcast, not between broadcasts.
- */
-interface PlannedRelayTx {
-  readonly stepId: string;
-  readonly chainId: number;
+export interface PlannedRelayStepTx {
   readonly to: `0x${string}`;
   readonly data: Hex;
   readonly value: bigint;
 }
 
 /**
- * The intent request id is the ONLY handle to a bridge's terminal status. Relay
- * exposes it two ways (per docs.relay.link step-execution): directly on
- * `step.requestId`, and inside a step item's `check.endpoint` — the status URL
- * (`/intents/status/v3?requestId=<id>`) the wallet is told to poll. The id can
- * be present on the check endpoint even when the step omits `requestId`, so we
- * parse it out as a fallback rather than falsely treating the bridge as
- * untrackable.
+ * Extract and canonicalize the SINGLE origin-chain transaction a signable step
+ * carries, fail-closed (B3 / R4). The closed step policy (`./step-policy`) has
+ * already classified the step's role and asserted every item is origin-chain +
+ * `kind:"transaction"`; this is the per-tx canonicalization + belt-and-suspenders
+ * ORIGIN-ONLY re-check run BEFORE the step is signed:
+ *   - the step is `kind:"transaction"`;
+ *   - EXACTLY one item carries `data` (a plain bridge's approve/deposit step is
+ *     one tx — zero or many is an unexpected shape → reject rather than guess);
+ *   - the tx `chainId` === originChainId (Vex never signs a destination step);
+ *   - `data.from`, when present, equals the selected wallet;
+ *   - `to`/`value` canonicalize — a malformed field throws here, pre-broadcast;
+ *   - every wei of `tx.value` is attributed to a proven cost component
+ *     (`./native-value.ts` + the shared classifier) — an unattributable native
+ *     charge refuses HERE, which is the LAST point before the tx reaches
+ *     `signStageBroadcast`. Nothing else stands between this function and a
+ *     signature, so the gate is a property of the planner rather than a
+ *     convention every caller has to remember (Khalani puts the same check
+ *     inside its own signer, `signStageEvmLeg`).
  *
- * `check.endpoint` is UNTRUSTED external input, so we accept its `requestId`
- * ONLY when the endpoint is genuinely the Relay status endpoint: the pathname
- * must equal the documented status path EXACTLY (`RELAY_INTENT_STATUS_PATH`,
- * shared with the client so a version bump updates both), and — for absolute
- * URLs — the host must equal the configured Relay API host (`allowedBaseUrl`,
- * the SAME value the client polls; never a hardcoded second copy). A relative
- * endpoint resolves against that host so the exact-path check still applies.
- * Anything else (wrong host, wrong path, empty/absent id, malformed URL) → null,
- * which the caller treats as "no id" and fails closed before broadcast.
+ * `nativeValue` is REQUIRED: what Vex derived about this step's outflow cannot
+ * be inferred from the step, and a caller who omits it must not compile.
+ */
+export function planRelayStepTx(
+  step: RelayStep,
+  originChainId: number,
+  expectedFrom: `0x${string}`,
+  nativeValue: RelayStepNativeValueContext,
+): PlannedRelayStepTx {
+  if (step.kind !== "transaction") {
+    throw new VexError(
+      ErrorCodes.RELAY_UNSUPPORTED_STEP,
+      `Relay step "${step.id}" (${step.kind}) is not signable — only transaction steps are signed.`,
+    );
+  }
+  const dataItems = step.items.filter((item) => item.data);
+  if (dataItems.length !== 1) {
+    throw new VexError(
+      ErrorCodes.RELAY_BRIDGE_FAILED,
+      `Relay step "${step.id}" must carry exactly one origin transaction (found ${dataItems.length}).`,
+    );
+  }
+  const data = dataItems[0]!.data!;
+  if (data.chainId !== originChainId) {
+    throw new VexError(
+      ErrorCodes.RELAY_STEP_CHAIN_MISMATCH,
+      `Relay step "${step.id}" targets chain ${data.chainId}, not the origin chain ${originChainId}. Vex signs only origin-chain steps; the fill is solver-signed on the destination.`,
+    );
+  }
+  if (data.from && getAddress(data.from) !== expectedFrom) {
+    throw new VexError(
+      ErrorCodes.RELAY_BRIDGE_FAILED,
+      `Relay step "${step.id}" sender does not match the selected wallet.`,
+    );
+  }
+  let to: `0x${string}`;
+  try {
+    to = getAddress(data.to);
+  } catch {
+    throw new VexError(ErrorCodes.RELAY_BRIDGE_FAILED, `Relay step "${step.id}" has a malformed recipient address.`);
+  }
+  let value: bigint;
+  try {
+    value = BigInt(data.value);
+  } catch {
+    throw new VexError(ErrorCodes.RELAY_BRIDGE_FAILED, `Relay step "${step.id}" has a malformed transaction value.`);
+  }
+
+  // THE LAST GATE. Classify every wei the provider asked Vex to send, then
+  // re-validate the authorization against the exact call about to be signed —
+  // the fingerprint binds `(chain, to, calldata, value)`, so an authorization
+  // can never be read as covering a different transaction. A zero-value step
+  // (every ERC-20 approve and ERC-20 deposit) authorizes with no components and
+  // costs nothing.
+  const call = relayStepNativeValueCall(originChainId, { to, data: data.data as Hex, value });
+  const authorized = checkNativeValueAuthorizedForCall(
+    classifyRelayStepNativeValue(call, nativeValue),
+    call,
+  );
+  if (!authorized.ok) {
+    // The message stays short on purpose — `summarizeProtocolError` caps a
+    // surfaced error at 200 characters, and the unattributed amount plus
+    // "nothing was signed" must never be the parts that get truncated. The
+    // handler composes `relayNativeValueGuidance` alongside it.
+    throw new VexError(
+      ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
+      relayNativeValueRefusal(nativeValue.role, authorized.reason),
+    );
+  }
+
+  return { to, data: data.data as Hex, value };
+}
+
+// ── Bounded, informational in-turn status poll ─────────────────────────────────
+//
+// Relay recommends ~1 poll/second; a constant 1s interval within the 60s budget
+// lands the final poll at window close. This poll is INFORMATIONAL ONLY: W3b
+// never confirms/terminalizes the logical row from it (W4's verified sweep owns
+// pending→confirmed and reveal-clear). A fast bridge simply surfaces a nicer
+// last-seen status in the tool output; a slow one returns the last non-terminal
+// status and the durable row stays pending for W4.
+const POLL_MAX_MS = 60_000;
+const POLL_INTERVAL_MS = 1_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Result of the bounded in-turn poll. `observed` is true iff at least one status
+ * call returned — it distinguishes a real last-seen status from a window where
+ * EVERY request threw (status API unreachable). `destinationTxHashes` are the
+ * provider-reported destination fill hashes on the last observed status —
+ * UNTRUSTED, informational only (never a confirmation; W4 verifies).
+ */
+export interface RelayPollResult {
+  readonly status: string;
+  readonly observed: boolean;
+  readonly destinationTxHashes: readonly string[];
+}
+
+export async function pollRelayIntentStatus(requestId: string): Promise<RelayPollResult> {
+  const client = getRelayClient();
+  const started = Date.now();
+  let status = "pending";
+  let observed = false;
+  let destinationTxHashes: readonly string[] = [];
+  while (Date.now() - started < POLL_MAX_MS) {
+    await delay(POLL_INTERVAL_MS);
+    try {
+      const res = await client.getIntentStatus(requestId);
+      status = res.status;
+      observed = true;
+      destinationTxHashes = res.txHashes ?? res.destinationTxHashes ?? [];
+      if (RELAY_TERMINAL_STATUSES.has(status)) return { status, observed, destinationTxHashes };
+    } catch (err) {
+      // Relay status errors carry no provider free-text worth surfacing — log a
+      // bounded code only, never the raw error.
+      logger.warn("relay.bridge.status_poll_failed", {
+        reason: err instanceof VexError ? err.code : "unknown",
+      });
+    }
+  }
+  return { status, observed, destinationTxHashes };
+}
+
+/**
+ * Parse the `requestId` from a status `check.endpoint`, accepting it ONLY when
+ * the endpoint is genuinely the Relay status endpoint: the pathname must equal
+ * the documented status path EXACTLY (`RELAY_INTENT_STATUS_PATH`, shared with
+ * the client so a version bump updates both) and — for absolute URLs — the host
+ * must equal the configured Relay API host (`allowedBaseUrl`, the SAME value the
+ * client polls; never a hardcoded second copy). A relative endpoint resolves
+ * against that host so the exact-path check still applies. Anything else (wrong
+ * host, wrong path, empty/absent id, malformed URL) → null.
+ *
+ * This is the poll-SOURCE TRUST parser (host + path pinned), distinct from the
+ * correlation contract's looser consistency check (`./correlation`) which flags
+ * a divergent id on ANY host. Retained + exported as the canonical trust parser.
  */
 export function parseRequestIdFromCheckEndpoint(endpoint: string, allowedBaseUrl: string): string | null {
   let base: URL;
@@ -187,159 +284,8 @@ export function parseRequestIdFromCheckEndpoint(endpoint: string, allowedBaseUrl
   } catch {
     return null;
   }
-  // An endpoint on a different host, or not the exact status path, is NOT a
-  // trustworthy status source — do not associate its requestId with this bridge.
   if (parsed.host !== base.host) return null;
   if (parsed.pathname !== RELAY_INTENT_STATUS_PATH) return null;
   const requestId = parsed.searchParams.get("requestId");
   return requestId && requestId.length > 0 ? requestId : null;
-}
-
-/**
- * step.requestId (any step) → parsed from a step item's check.endpoint. The
- * allowed host is read from the SAME config the client polls, so the endpoint
- * check can never diverge from where status is actually fetched.
- */
-function deriveRequestId(quote: RelayQuoteResponse): string | null {
-  for (const step of quote.steps) {
-    if (step.requestId) return step.requestId;
-  }
-  const allowedBaseUrl = loadConfig().services.relayApiUrl;
-  for (const step of quote.steps) {
-    for (const item of step.items) {
-      const endpoint = item.check?.endpoint;
-      const derived = endpoint ? parseRequestIdFromCheckEndpoint(endpoint, allowedBaseUrl) : null;
-      if (derived) return derived;
-    }
-  }
-  return null;
-}
-
-/**
- * PHASE 1 — pre-validate EVERY step of the quote with ZERO broadcasts. Returns
- * the ordered list of transactions to broadcast plus the intent requestId. Any
- * invalid step (unsupported kind, chainId outside {origin, destination}, sender
- * mismatch, malformed calldata) THROWS here, so the caller never broadcasts a
- * partially-valid quote. A quote with NO trackable request id (neither on a step
- * nor derivable from a check endpoint) ALSO throws here — failing BEFORE any
- * broadcast is strictly safer than moving funds we could never verify.
- */
-function planRelayBridge(
-  quote: RelayQuoteResponse,
-  expectedFrom: `0x${string}`,
-  originChainId: number,
-  destinationChainId: number,
-): { planned: PlannedRelayTx[]; requestId: string } {
-  const allowedChains = new Set([originChainId, destinationChainId]);
-  const planned: PlannedRelayTx[] = [];
-
-  for (const step of quote.steps) {
-    if (step.kind !== "transaction") {
-      throw new VexError(
-        ErrorCodes.RELAY_UNSUPPORTED_STEP,
-        `Relay step "${step.id}" (${step.kind}) is not supported. Only transaction steps are signed in v1.`,
-      );
-    }
-    for (const item of step.items) {
-      const data = item.data;
-      if (!data) continue;
-      if (!allowedChains.has(data.chainId)) {
-        throw new VexError(
-          ErrorCodes.RELAY_STEP_CHAIN_MISMATCH,
-          `Relay step targets chain ${data.chainId}, which is neither the origin (${originChainId}) nor destination (${destinationChainId}).`,
-        );
-      }
-      if (data.from && getAddress(data.from) !== expectedFrom) {
-        throw new VexError(
-          ErrorCodes.RELAY_BRIDGE_FAILED,
-          "Relay step sender does not match the selected wallet.",
-        );
-      }
-      // Canonicalize the calldata shape NOW (before any broadcast). A malformed
-      // `to`/`value` throws here, aborting the whole bridge fail-closed rather
-      // than after an earlier step has already moved funds.
-      let to: `0x${string}`;
-      let value: bigint;
-      try {
-        to = getAddress(data.to);
-      } catch {
-        throw new VexError(ErrorCodes.RELAY_BRIDGE_FAILED, `Relay step "${step.id}" has a malformed recipient address.`);
-      }
-      try {
-        value = BigInt(data.value);
-      } catch {
-        throw new VexError(ErrorCodes.RELAY_BRIDGE_FAILED, `Relay step "${step.id}" has a malformed transaction value.`);
-      }
-      planned.push({ stepId: step.id, chainId: data.chainId, to, data: data.data as Hex, value });
-    }
-  }
-
-  // Fail closed BEFORE any broadcast when the intent is untrackable: without a
-  // request id there is no way to ever confirm delivery, so moving funds would
-  // leave an unverifiable bridge. Real Relay quotes always carry the id (step or
-  // check endpoint); this guards a degenerate/idless quote.
-  const requestId = deriveRequestId(quote);
-  if (!requestId) {
-    throw new VexError(
-      ErrorCodes.RELAY_BRIDGE_FAILED,
-      "Relay quote carries no request id (neither on a step nor a check endpoint) — the bridge status could never be verified. Refusing to broadcast an untrackable bridge.",
-      "Re-quote before retrying.",
-    );
-  }
-
-  return { planned, requestId };
-}
-
-/**
- * Validate the WHOLE quote (PHASE 1), broadcast every pre-validated transaction
- * in order (PHASE 2), then poll to a terminal state (bounded). Returns the
- * broadcast tx hashes + the intent requestId + the final status observed. A
- * PHASE-1 validation failure produces a clean error with ZERO broadcasts.
- */
-export async function executeRelayBridge(args: RelayExecuteArgs): Promise<RelayExecuteResult> {
-  const { quote, signer, originChainId, destinationChainId } = args;
-  if (signer.family !== "eip155") {
-    throw new VexError(ErrorCodes.RELAY_BRIDGE_FAILED, "Relay bridge requires an EVM signing wallet.");
-  }
-  const privateKey = signer.privateKey as Hex;
-  const expectedFrom = getAddress(signer.address);
-
-  // ── PHASE 1: pre-validate every step. No broadcasts happen until this returns. ──
-  const { planned, requestId } = planRelayBridge(quote, expectedFrom, originChainId, destinationChainId);
-
-  // ── PHASE 2: broadcast the pre-validated transactions strictly in order. ──
-  const transactions: RelayTransaction[] = [];
-  for (const tx of planned) {
-    const { publicClient, walletClient } = await resolveStepClients(tx.chainId, privateKey);
-    const hash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: tx.to,
-      data: tx.data,
-      value: tx.value,
-    });
-    await waitForSuccessfulReceipt(publicClient, hash, {
-      code: ErrorCodes.RELAY_BRIDGE_FAILED,
-      what: `Relay step "${tx.stepId}"`,
-      hint: "No further steps were broadcast. Check the transaction hash before re-quoting or retrying.",
-    });
-    // Pair each hash with the chain it was broadcast on (fund safety already
-    // constrained tx.chainId to {origin, destination} in PHASE 1).
-    transactions.push({ chainId: tx.chainId, hash });
-    logger.info("relay.bridge.step_broadcast", { stepId: tx.stepId, chainId: tx.chainId });
-  }
-
-  // requestId is guaranteed non-null here (planRelayBridge fails closed
-  // otherwise). Poll to a terminal state; `observed` distinguishes a real
-  // last-seen status from a window where EVERY status request threw (status API
-  // unreachable) — the handler fails closed on the latter rather than emitting a
-  // phantom pending capture.
-  const poll = await pollToTerminal(requestId);
-  return {
-    txHashes: transactions.map((t) => t.hash),
-    transactions,
-    requestId,
-    finalStatus: poll.status,
-    statusObserved: poll.observed,
-  };
 }

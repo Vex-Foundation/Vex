@@ -56,6 +56,7 @@ describe("swap-prequote façade surface", () => {
     expect(typeof facade.recordPrequoteFromQuote).toBe("function");
     expect(typeof facade.evaluatePrequoteGate).toBe("function");
     expect(typeof facade.evaluateSwapPrequoteGate).toBe("function");
+    expect(typeof facade.findFreshMatchedSwapPrequote).toBe("function");
   });
 
   it("pins the EXACT set of runtime export keys (no internal helper leakage)", () => {
@@ -70,6 +71,7 @@ describe("swap-prequote façade surface", () => {
         "recordPrequoteFromQuote",
         "evaluatePrequoteGate",
         "evaluateSwapPrequoteGate",
+        "findFreshMatchedSwapPrequote",
       ]),
     );
   });
@@ -119,6 +121,7 @@ describe("swap-prequote façade surface", () => {
       referrer: "",
       referrerFeeBps: "",
       filler: "",
+      slippageBps: "",
     };
     const match: PrequoteMatchInput = swap;
     const gateReg: ExecuteGateRegistration = { kind: "bridge" };

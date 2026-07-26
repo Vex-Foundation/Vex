@@ -14,7 +14,6 @@ const validState: EnvState = {
     jupiterConfigured: false,
     tavilyConfigured: false,
     rettiwtConfigured: false,
-    polymarketStatus: "missing",
   },
   embeddings: {
     configured: true,
@@ -56,22 +55,6 @@ describe("envStateSchema", () => {
       },
     };
     expect(envStateSchema.safeParse(state).success).toBe(true);
-  });
-
-  it("accepts polymarketStatus = 'partial'", () => {
-    const state: EnvState = {
-      ...validState,
-      apiKeys: { ...validState.apiKeys, polymarketStatus: "partial" },
-    };
-    expect(envStateSchema.safeParse(state).success).toBe(true);
-  });
-
-  it("rejects unknown polymarketStatus value", () => {
-    const result = envStateSchema.safeParse({
-      ...validState,
-      apiKeys: { ...validState.apiKeys, polymarketStatus: "weird" as never },
-    });
-    expect(result.success).toBe(false);
   });
 
   it("rejects unknown wallet status enum (no `decrypted` etc.)", () => {

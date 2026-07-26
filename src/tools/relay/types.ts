@@ -6,8 +6,18 @@
  * the fields Vex acts on (a step's tx `to`/`data`/`value`/`chainId`) and stay
  * tolerant (passthrough) on the rest so a benign API addition never breaks us.
  *
- * Shapes confirmed live 2026-07-05 (GET /chains, POST /quote, GET
- * /intents/status/v3).
+ * QUOTE ENDPOINT: `POST /quote/v2` (Wave-2 W2 migration — v1 `POST /quote` is
+ * deprecated). The v2 response is `{ steps[], fees{}, details{}, requestId }`;
+ * `requestId` is the authoritative durable id (persisted + polled), and
+ * `details.currencyIn/Out.amountUsd` carry per-side USD. USD is treated as an
+ * ESTIMATE and is NULLABLE end-to-end: the populated `details{}` key shapes are
+ * dossier LOW_CONFIDENCE, so `details{}` stays tolerant (passthrough, every
+ * projected field optional) — a missing or malformed USD key degrades to null,
+ * never a hard failure. Step/status shapes are unchanged between v1 and v2, so
+ * `RelayQuoteResponse` stays surface-compatible for the executor.
+ *
+ * Shapes confirmed live 2026-07-05 (GET /chains, GET /intents/status/v3);
+ * /quote/v2 modeled from docs.relay.link (get-quote-v2) 2026-07-23.
  */
 
 import { z } from "zod";
@@ -89,30 +99,49 @@ export type RelayStep = z.infer<typeof RelayStepSchema>;
 /**
  * One side of the quote's `details` (`currencyIn` / `currencyOut`) — the
  * currency metadata (symbol/decimals) + human-readable `amountFormatted` the
- * bridge handler records in its trade capture. Tolerant: Relay may omit any
- * of it; the capture falls back to addresses / raw amounts.
+ * bridge handler records in its trade capture. `amountUsd` is Relay's per-side
+ * USD estimate (v2 `details`; naming differs across endpoints — quote uses
+ * `amountUsd`). Tolerant: Relay may omit ANY of these; the capture falls back to
+ * addresses / raw amounts and USD degrades to null (see `adaptRelayQuote`).
  */
 export const RelayQuoteDetailsSideSchema = z
   .object({
     currency: RelayCurrencySchema.optional(),
     amount: z.string().optional(),
     amountFormatted: z.string().optional(),
+    amountUsd: z.string().optional(),
   })
   .passthrough();
 export type RelayQuoteDetailsSide = z.infer<typeof RelayQuoteDetailsSideSchema>;
 
+/**
+ * Quote `details{}` — tolerant (passthrough). Only the fields Vex projects are
+ * modeled and every one is optional: the populated `details{}` key shapes are
+ * dossier LOW_CONFIDENCE (unverified against a live POST), so an absent or
+ * unexpected key must NEVER reject the quote. `operation` (`bridge`/`swap`/…)
+ * and `timeEstimate` (seconds) are display-only estimates. `fees{}` is kept
+ * maximally tolerant (`unknown` per bucket) and read defensively in the adapter.
+ */
 export const RelayQuoteDetailsSchema = z
   .object({
     currencyIn: RelayQuoteDetailsSideSchema.optional(),
     currencyOut: RelayQuoteDetailsSideSchema.optional(),
+    operation: z.string().optional(),
+    timeEstimate: z.number().optional(),
   })
   .passthrough();
 
 export const RelayQuoteResponseSchema = z
   .object({
     steps: z.array(RelayStepSchema),
+    // Kept maximally tolerant: each fee bucket is `unknown` and read via a
+    // runtime guard in `adaptRelayQuote`, so a scalar/new bucket shape never
+    // rejects the whole quote.
     fees: z.record(z.string(), z.unknown()).optional(),
     details: RelayQuoteDetailsSchema.optional(),
+    // v2: the authoritative durable intent id. Persisted pre-sign + polled;
+    // the correlation contract asserts every step/check id agrees with it.
+    requestId: z.string().optional(),
   })
   .passthrough();
 export type RelayQuoteResponse = z.infer<typeof RelayQuoteResponseSchema>;
@@ -134,6 +163,13 @@ export const RELAY_TERMINAL_STATUSES = new Set(["success", "failure", "refund"])
 
 // ── Quote request ────────────────────────────────────────────────────────────
 
+/**
+ * Relay `tradeType` (v2). `EXPECTED_OUTPUT` is Relay's recommended mode for
+ * plain bridging (targets the output, auto-accounting for all fees); `EXACT_INPUT`
+ * fixes the input; `EXACT_OUTPUT` guarantees exact output (fail-and-refund).
+ */
+export type RelayTradeType = "EXACT_INPUT" | "EXACT_OUTPUT" | "EXPECTED_OUTPUT";
+
 export interface RelayQuoteRequest {
   user: string;
   recipient: string;
@@ -143,6 +179,8 @@ export interface RelayQuoteRequest {
   originCurrency: string;
   destinationCurrency: string;
   amount: string;
-  tradeType: "EXACT_INPUT" | "EXACT_OUTPUT";
+  tradeType: RelayTradeType;
   slippageTolerance?: string;
+  /** Quote time-to-live in seconds (v2). Omitted → Relay's default. */
+  ttl?: number;
 }

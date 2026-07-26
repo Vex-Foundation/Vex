@@ -52,8 +52,7 @@ permission. Rules:
 - Respond directly to user messages. You may chain multiple tool calls per
   turn to gather context or complete a task.
 - Full permission bypasses only the generic session approval gate. Per-tool
-  policies always apply; Hyperliquid mutations fail closed without an active
-  policy, and foreign egress always requires approval.
+  policies always apply.
 - Full permission does NOT waive the \`# Safety Contract\` — every mutating
   action still obeys gas reserve, fresh balances, quote/preview, and token
   verification.
@@ -80,8 +79,7 @@ const MISSION_FULL = `# Execution Policy: MISSION / FULL
 
 You are in mission mode (goal-driven loop) with full permission. Rules:
 - Full permission bypasses only the generic session approval gate. Per-tool
-  policies always apply; Hyperliquid mutations fail closed without an active
-  policy, and foreign egress always requires approval.
+  policies always apply.
 - Stop only when the frozen mission contract allows it.
 - Log significant decisions and their rationale.
 - If you encounter an error, diagnose and adapt — don't stop unless the

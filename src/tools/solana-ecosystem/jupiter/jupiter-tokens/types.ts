@@ -7,12 +7,19 @@ import type { TokenMetadata } from "../../shared/types.js";
 
 export const JUPITER_TOKENS_V2_BASE_URL = "https://api.jup.ag/tokens/v2";
 
-export type JupiterTokenTag = "lst" | "verified";
+export type JupiterTokenTag = "lst" | "verified" | "stocks";
 export type JupiterTokenCategory = "toporganicscore" | "toptraded" | "toptrending";
 export type JupiterTokenInterval = "5m" | "1h" | "6h" | "24h";
+/**
+ * Which stats window(s) a Vex-side caller wants projected. Not a Jupiter wire
+ * value — `"all"` is Vex's own escape hatch to keep every interval block,
+ * mirroring the projector's pre-existing default (see `projectors.ts`).
+ */
+export type JupiterTokenStatsInterval = JupiterTokenInterval | "all";
 
 export interface JupiterTokenApy {
-  jupEarn: number;
+  /** Absent (empty `{}`) for tokens with no Jupiter Lend Earn market — most tokens. */
+  jupEarn?: number;
   [key: string]: unknown;
 }
 

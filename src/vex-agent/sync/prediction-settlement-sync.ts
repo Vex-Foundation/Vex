@@ -1,9 +1,54 @@
 /**
- * Prediction settlement sync — closes zombie prediction positions.
+ * Prediction settlement sync — closes zombie Jupiter prediction positions.
  *
- * Jupiter Prediction and Polymarket settle via on-chain keepers, bypassing
- * execute_tool. This module polls read APIs to detect settlements and creates
- * synthetic captures that flow through the standard pipeline.
+ * ┌──────────────────────────────────────────────────────────────────────┐
+ * │ DORMANT — THIS MODULE CANNOT FIRE IN PRODUCTION TODAY (phase-3 W2).  │
+ * │ It is still wired into every sync cycle and still reports success,   │
+ * │ but it iterates an EMPTY SET on every run. Do not read it as working │
+ * │ code, and do not extend it without first restoring its input.        │
+ * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * WHY IT IS DORMANT, traced 2026-07-25. The query below reads
+ * `proj_open_positions`, and nothing writes a prediction row there any more:
+ * the four prediction handlers (`predict-execute.ts`,
+ * `predict-execute-close-all.ts`) were converted to the durable
+ * `agent_activity` pipeline and are classified `capture: "none"` in
+ * `tools/protocols/mutation-matrix.ts`, so their results never carry
+ * `_tradeCapture`/`_tradeCaptureItems`, so `runtime/capture.ts` →
+ * `capture-pipeline.ts` → `activity-populator.ts` → `sync/position-projector.ts`
+ * → `db/repos/open-positions.ts` is never entered. (Wider still: no product
+ * type writes that table today — perps and DCA/limit orders were both
+ * removed — so its only live reader, `openPositionCount` in
+ * `tools/internal/inspect-views/portfolio.ts`, permanently reports 0.)
+ *
+ * NOTHING CONSUMES ITS OUTPUT EITHER. All three call sites (`sync/index.ts`,
+ * `sync/worker.ts` ×2) spread the `SettlementResult` into
+ * `completeRun(...)` → `protocol_sync_runs.result` JSONB, which no code in
+ * `src` or `vex-app` reads. Prediction activity IS already visible in the
+ * Moves/Token-History feed through a different, live path
+ * (`vex-app` `moves-db-query.ts` selects `agent_activity` rows with
+ * `kind IN ('lend','prediction')`).
+ *
+ * NOT DELETED, DELIBERATELY. There is a real gap it was built for that
+ * nothing else covers: detecting a keeper's AUTO-settlement of a position the
+ * agent never closed itself. `sync/solana-activity-repair.ts` cannot do it —
+ * it only resolves signatures Vex itself broadcast. That detection belongs to
+ * the phase-4 provider order/position-status lane, which is also what will
+ * make a prediction payout amount knowable at all
+ * (`solana-prediction-payout-settlement.ts`). Retiring the
+ * `prediction_settlement` sync job type is a phase-4 decision, not a
+ * drive-by one.
+ *
+ * ITS TESTS PROVE THE ALGORITHM, NOT REACHABILITY.
+ * `prediction-settlement-sync.test.ts` and
+ * `prediction-settlement-jupiter-boundary.test.ts` mock `db/client.js` and
+ * inject the rows the production query can no longer return. They would pass
+ * unchanged against a permanently empty table — which is exactly what they do
+ * today.
+ *
+ * Jupiter Prediction settles via on-chain keepers, bypassing execute_tool.
+ * This module polls the read API to detect settlements and creates synthetic
+ * captures that flow through the standard pipeline.
  *
  * Algorithm: wallet-grouped. One API call per unique wallet, local matching.
  *
@@ -11,13 +56,10 @@
  *   position_lost              → status "closed", no outputValueUsd
  *   position_won + !claimed    → status "closed", payout in meta only
  *   position_won + claimed     → status "claimed", outputValueUsd = payoutAmountUsd
- *
- * Polymarket settlement semantics:
- *   in closedPositions         → status "closed", realizedPnl in meta
  */
 
+import { JUPITER_PREDICTION_PAYOUT_SYMBOL } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
 import { query } from "@vex-agent/db/client.js";
-import { parseInstrumentKey } from "./instrument-key.js";
 import { recordSyntheticCapture } from "./synthetic-capture.js";
 import logger from "@utils/logger.js";
 
@@ -63,11 +105,6 @@ export async function reconcilePredictionSettlements(): Promise<SettlementResult
     try {
       if (namespace === "solana") {
         const groupResult = await reconcileJupiterSettlements(walletAddress, groupPositions);
-        result.closed += groupResult.closed;
-        result.skipped += groupResult.skipped;
-        result.errors += groupResult.errors;
-      } else if (namespace === "polymarket") {
-        const groupResult = await reconcilePolymarketSettlements(walletAddress, groupPositions);
         result.closed += groupResult.closed;
         result.skipped += groupResult.skipped;
         result.errors += groupResult.errors;
@@ -177,7 +214,12 @@ async function reconcileJupiterSettlements(
           ...(outputValueUsd ? { outputValueUsd } : {}),
           ...(settlementEvent.totalCostUsd ? { inputValueUsd: settlementEvent.totalCostUsd } : {}),
           valuationSource: outputValueUsd ? "prediction_exact" : "none",
-          settlementAssetKey: "USDC",
+          // JupUSD, not USDC. A position is bought with USDC and paid out in
+          // JupUSD (chain-proven on the sell `5AChd2vmZt…`); this said "USDC"
+          // for as long as the rest of the prediction lane did. Corrected
+          // here even though the module is dormant, so reviving it cannot
+          // silently reintroduce the wrong settlement asset.
+          settlementAssetKey: JUPITER_PREDICTION_PAYOUT_SYMBOL,
           meta: {
             source: "settlement_sync",
             eventType: settlementEvent.eventType,
@@ -196,93 +238,6 @@ async function reconcileJupiterSettlements(
       errors++;
       logger.warn("sync.settlement.jupiter_position_failed", {
         positionKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  return { closed, skipped, errors };
-}
-
-// ── Polymarket ─────────────────────────────────────────────────────
-
-async function reconcilePolymarketSettlements(
-  eoaWalletAddress: string,
-  positions: Record<string, unknown>[],
-): Promise<{ closed: number; skipped: number; errors: number }> {
-  let closed = 0, skipped = 0, errors = 0;
-
-  // Derive proxy wallet from EOA via relayer
-  let proxyWallet: string;
-  try {
-    const { getPolyRelayerClient } = await import("@tools/polymarket/relayer/client.js");
-    const payload = await getPolyRelayerClient().getRelayPayload(eoaWalletAddress, "SAFE");
-    proxyWallet = payload.address;
-    if (!proxyWallet) {
-      logger.warn("sync.settlement.polymarket_no_proxy", { eoaWalletAddress });
-      return { closed: 0, skipped: positions.length, errors: 0 };
-    }
-  } catch (err) {
-    logger.warn("sync.settlement.polymarket_proxy_failed", {
-      eoaWalletAddress,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { closed: 0, skipped: positions.length, errors: 0 };
-  }
-
-  // One API call per proxy wallet
-  const { getPolyDataClient } = await import("@tools/polymarket/data/client.js");
-  const closedPositions = await getPolyDataClient().getClosedPositions({ user: proxyWallet });
-
-  // Build lookup: conditionId:outcome → closedPosition (case-insensitive on outcome)
-  const closedByKey = new Map<string, typeof closedPositions[number]>();
-  for (const cp of closedPositions) {
-    if (cp.conditionId && cp.outcome) {
-      const key = `${cp.conditionId}:${cp.outcome.toUpperCase()}`;
-      closedByKey.set(key, cp);
-    }
-  }
-
-  for (const dbPos of positions) {
-    const instrumentKey = dbPos.instrument_key as string | null;
-    const positionKey = dbPos.position_key as string | null;
-    if (!instrumentKey || !positionKey) { skipped++; continue; }
-
-    const parsed = parseInstrumentKey(instrumentKey);
-    if (parsed.kind !== "prediction" || !parsed.marketId || !parsed.side) { skipped++; continue; }
-
-    // Match: polymarket:{conditionId}:{outcome} → conditionId:OUTCOME (normalized)
-    const lookupKey = `${parsed.marketId}:${parsed.side.toUpperCase()}`;
-    const closedPos = closedByKey.get(lookupKey);
-    if (!closedPos) { skipped++; continue; }
-
-    try {
-      await recordSyntheticCapture({
-        toolId: "settlement_sync.polymarket",
-        namespace: "polymarket",
-        tradeCapture: {
-          type: "prediction",
-          chain: "polygon",
-          status: "closed",
-          walletAddress: eoaWalletAddress,
-          positionKey,
-          instrumentKey,
-          valuationSource: "none",
-          settlementAssetKey: "USDC",
-          meta: {
-            source: "settlement_sync",
-            realizedPnl: closedPos.realizedPnl,
-            avgPrice: closedPos.avgPrice,
-            settledAt: closedPos.timestamp,
-          },
-        },
-        source: "settlement_sync",
-      });
-      closed++;
-    } catch (err) {
-      errors++;
-      logger.warn("sync.settlement.polymarket_position_failed", {
-        positionKey, instrumentKey,
         error: err instanceof Error ? err.message : String(err),
       });
     }

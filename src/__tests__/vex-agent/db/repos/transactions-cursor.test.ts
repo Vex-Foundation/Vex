@@ -58,7 +58,12 @@ describe("transactions-cursor codec", () => {
   });
 
   it("rejects an out-of-range sourceRank", () => {
-    expect(() => decodeCursor(forge(VALID.cursorTs, 2, VALID.id))).toThrow(CursorError);
+    expect(() => decodeCursor(forge(VALID.cursorTs, 3, VALID.id))).toThrow(CursorError);
+  });
+
+  it("accepts sourceRank 2 (the agent_activity-added failure rank)", () => {
+    const cursor: DecodedCursor = { cursorTs: "2026-06-04T10:00:00.123456Z", sourceRank: 2, id: 1 };
+    expect(decodeCursor(encodeCursor(cursor))).toEqual(cursor);
   });
 
   it("rejects a non-numeric / empty sourceRank field", () => {

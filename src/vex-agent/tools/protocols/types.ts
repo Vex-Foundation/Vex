@@ -1,7 +1,7 @@
 /**
  * Protocol tool types — manifest-driven discover+execute system.
  *
- * Each protocol (khalani, kyberswap, solana, polymarket) provides:
+ * Each protocol (khalani, kyberswap, solana, ...) provides:
  * 1. Manifests — declarative tool metadata (params, mutating, description)
  * 2. Handlers — async functions that call TS clients directly
  *
@@ -14,7 +14,6 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
-import type { HlPolicyResolution } from "../../../lib/hyperliquid-policy.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -24,11 +23,9 @@ export type ProtocolNamespace =
   | "uniswap"
   | "relay"
   | "solana"
-  | "polymarket"
   | "dexscreener"
   | "virtuals"
-  | "pendle"
-  | "hyperliquid";
+  | "pendle";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -73,6 +70,23 @@ export interface ProtocolParamDef {
   type: "string" | "number" | "boolean" | "object";
   required?: boolean;
   description: string;
+  /**
+   * Domain unit of a NUMERIC param, when the bare `type` is too weak to
+   * express the contract. Only meaningful on `type: "number"`.
+   *
+   * `"bps"` — basis points: a WHOLE, non-negative number (1 bps = 0.01%).
+   * Enforced at the manifest boundary by `runtime/bps-param.ts`, called from
+   * `validateProtocolParams`. This exists because `z.number()` happily accepts
+   * `0.5`, and a fractional bps is not a smaller tolerance — Jupiter answers a
+   * non-integer `slippageBps` with `otherAmountThreshold = 0`, i.e. a swap that
+   * accepts ANY output including near-zero. The failure is silent: the quote
+   * looks normal. Declare this on EVERY basis-point param so a model-supplied
+   * `0.5` is rejected before it can reach a provider or a signing path.
+   *
+   * Single-member union on purpose (same convention as {@link ToolLifecycle}):
+   * a second unit must be added here deliberately, with its own enforcement.
+   */
+  unit?: "bps";
 }
 
 export interface ProtocolToolManifest {
@@ -132,8 +146,6 @@ export interface ProtocolExecutionContext {
    */
   walletResolution: WalletResolution;
   walletPolicy: WalletPolicy;
-  /** Fresh, main-owned Hyperliquid policy resolution for this execution. */
-  hyperliquidPolicy?: HlPolicyResolution;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
   /**
@@ -160,6 +172,14 @@ export interface ProtocolDiscoveryRequest {
    * + Tool Map omission already in force at the same bands.
    */
   contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
+  /**
+   * Session id at dispatch time (FIX-SPINE round 1, finding 8/C3) — lets
+   * `discoverProtocolCapabilities` filter the canonical hidden Uniswap swap
+   * manifests out of the result set for a session that has not revealed
+   * them, so discovery never advertises a tool `executeProtocolTool` would
+   * then hard-reject. Omitted/undefined fails closed (hidden).
+   */
+  sessionId?: string;
 }
 
 export interface ProtocolDiscoveryItem {
@@ -254,15 +274,11 @@ export interface ProtocolExecuteRequest {
 }
 
 // ── Coverage matrix types ───────────────────────────────────────
-
-/** Business semantics of a mutation — how downstream treats the capture. */
-export type PortfolioRole =
-  | "pnl_spot"       // lot matching, realized PnL
-  | "pnl_perps"      // perps position lifecycle + PnL
-  | "pnl_prediction" // prediction position lifecycle + PnL
-  | "projection"     // orders, LP — lifecycle, no realized PnL
-  | "audit"          // balance/state impact — audit trail only
-  | "utility";       // no portfolio impact
+//
+// `CaptureKind` (the coarse capture-semantics classification — trade/
+// projection/audit/utility) lives in `mutation-matrix.ts`, the matrix's own
+// module, now that the PnL role split (pnl_spot/pnl_perps/pnl_prediction) and
+// the valuation tri-state are gone (Agent Scan plan §4.3/§11.4).
 
 /** Whether handler produces _tradeCapture today. */
 export type CaptureSupport = "full" | "none";

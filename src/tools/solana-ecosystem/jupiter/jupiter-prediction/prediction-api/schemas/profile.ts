@@ -15,6 +15,8 @@ export const jupiterPredictionProfileResponseSchema = z
     correctPredictions: z.string(),
     wrongPredictions: z.string(),
     totalActiveContracts: z.string(),
+    totalActiveContractsMicro: z.string().optional(),
+    totalActiveContractsDecimal: z.string().optional(),
     totalPositionsValueUsd: z.string(),
   })
   .passthrough();

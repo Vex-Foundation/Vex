@@ -29,7 +29,14 @@ import { log } from "../logger/index.js";
 
 export const EMPTY_CONSTRAINTS: MissionConstraints = {};
 
-/** Allowlisted mission risk projection; malformed JSONB never reaches the renderer. */
+/**
+ * Allowlisted mission risk projection; malformed JSONB never reaches the
+ * renderer. HISTORICAL ONLY (Hyperliquid removed, Agent Scan Phase 3): reads
+ * whatever a mission accepted under the frozen v2 contract shape still
+ * carries in `constraints_json.hyperliquidRisk` — new missions can never
+ * write this key again (see `hyperliquidMissionRiskTransportSchema` in
+ * `@shared/schemas/mission/draft.ts`).
+ */
 export function normaliseHyperliquidMissionRisk(
   raw: unknown,
 ): HyperliquidMissionRiskTransport | null {

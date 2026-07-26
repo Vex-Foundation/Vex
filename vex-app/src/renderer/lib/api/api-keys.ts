@@ -3,8 +3,8 @@
  *
  * IMPORTANT secret-handling rule (skill §14, mirrors M8 wallet
  * import pattern): the IPC payload carries SECRETS (Jupiter / Tavily
- * / Rettiwt / Polymarket trio). Routing it through `useMutation`
- * would park the variables in observer state for staleness/devtools.
+ * / Rettiwt). Routing it through `useMutation` would park the
+ * variables in observer state for staleness/devtools.
  * So `setApiKeys` is a plain async function. Callers MUST:
  *   - read each secret from an UNCONTROLLED DOM ref at submit time,
  *   - clear `inputRef.current.value = ""` synchronously BEFORE the

@@ -1,26 +1,20 @@
 /**
- * Uniswap ERC-20 helpers — metadata reads + EXACT-amount allowance to an
- * ALLOWLISTED router only.
+ * Uniswap ERC-20 helpers — metadata reads + spender allowlist validation.
  *
  * Approvals target ONLY a router in `UNISWAP_KNOWN_SPENDERS` (built from the
- * verified deployment registry). Per Wave-2c doctrine the approval is for the
- * EXACT input amount (not maxUint256) — a smaller standing allowance surface.
+ * verified deployment registry), validated here. The allowance STAGING itself
+ * (read current allowance, reset-if-needed, approve-exact, each as its own
+ * durable, signed `agent_activity` broadcast) lives in the execute handler
+ * (`tools/protocols/uniswap/handlers/swap.ts`) using `execute.ts`'s
+ * `buildApproveTx` + staged sign/broadcast pair — per-broadcast durability
+ * (plan §11.1) needs each approval on its own signed/persisted/confirmed
+ * lifecycle, which a single blocking helper here could not provide.
  */
 
-import {
-  getAddress,
-  type Address,
-  type Chain,
-  type Hex,
-  type PublicClient,
-  type Transport,
-  type WalletClient,
-  type Account,
-} from "viem";
+import type { Address, Chain, PublicClient, Transport } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
-import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import { UNISWAP_ERC20_ABI } from "./abis.js";
 import { UNISWAP_KNOWN_SPENDERS } from "./deployments.js";
 
@@ -66,73 +60,17 @@ export function validateUniswapSpender(address: Address): void {
   }
 }
 
-/**
- * Ensure the router has at least `requiredAmount` allowance for `token`.
- * Approves the EXACT `requiredAmount` when short. Handles USDT-style tokens that
- * require a reset to 0 before a new non-zero approval. Returns the approval tx
- * hash (and any reset tx), or null when the allowance was already sufficient.
- */
-export async function ensureUniswapAllowanceExact(
-  publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain, Account>,
+/** Read the current ERC-20 allowance a router holds for an owner. Pure read, no signer. */
+export async function readUniswapAllowance(
+  client: PublicClient<Transport, Chain>,
   token: Address,
+  owner: Address,
   spender: Address,
-  requiredAmount: bigint,
-): Promise<{ txHash: Hex; resetTxHash?: Hex } | null> {
-  validateUniswapSpender(spender);
-  const owner = walletClient.account.address;
-
-  const currentAllowance = (await publicClient.readContract({
+): Promise<bigint> {
+  return (await client.readContract({
     address: token,
     abi: UNISWAP_ERC20_ABI,
     functionName: "allowance",
     args: [owner, spender],
   })) as bigint;
-
-  if (currentAllowance >= requiredAmount) {
-    logger.debug({ event: "uniswap.allowance.sufficient", token, spender });
-    return null;
-  }
-
-  let resetTxHash: Hex | undefined;
-  if (currentAllowance > 0n) {
-    try {
-      resetTxHash = await walletClient.writeContract({
-        account: walletClient.account,
-        chain: walletClient.chain,
-        address: token,
-        abi: UNISWAP_ERC20_ABI,
-        functionName: "approve",
-        args: [spender, 0n],
-      });
-      await waitForSuccessfulReceipt(publicClient, resetTxHash, {
-        code: ErrorCodes.APPROVAL_FAILED,
-        what: "Allowance-reset transaction",
-        hint: "The existing allowance was not cleared, so the follow-up approve would be blocked. Check the transaction hash before retrying.",
-      });
-    } catch (err) {
-      if (err instanceof VexError) throw err;
-      throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  try {
-    const txHash = await walletClient.writeContract({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      address: getAddress(token),
-      abi: UNISWAP_ERC20_ABI,
-      functionName: "approve",
-      args: [spender, requiredAmount],
-    });
-    await waitForSuccessfulReceipt(publicClient, txHash, {
-      code: ErrorCodes.APPROVAL_FAILED,
-      what: "Approval transaction",
-      hint: "The router was not granted an allowance. Check the transaction hash before retrying.",
-    });
-    return resetTxHash ? { txHash, resetTxHash } : { txHash };
-  } catch (err) {
-    if (err instanceof VexError) throw err;
-    throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to approve: ${err instanceof Error ? err.message : String(err)}`);
-  }
 }

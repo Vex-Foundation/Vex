@@ -11,6 +11,10 @@ export const SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
 export const WELL_KNOWN_SOLANA_TOKENS: readonly TokenMetadata[] = [
   { chain: "solana", address: SOL_MINT, symbol: "SOL", name: "Solana", decimals: 9 },
   { chain: "solana", address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", name: "USD Coin", decimals: 6 },
+  // Jupiter's own dollar asset. It is what a PREDICTION position pays out and
+  // what Jupiter's venue fees are taken in, so its raw amounts show up across
+  // the activity log; without an entry here they are unreadable integers.
+  { chain: "solana", address: "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD", symbol: "JupUSD", name: "Jupiter USD", decimals: 6 },
   { chain: "solana", address: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", symbol: "USDT", name: "Tether USD", decimals: 6 },
   { chain: "solana", address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", symbol: "JUP", name: "Jupiter", decimals: 6, logoUri: "https://static.jup.ag/jup/icon.png" },
   { chain: "solana", address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "BONK", name: "Bonk", decimals: 5 },

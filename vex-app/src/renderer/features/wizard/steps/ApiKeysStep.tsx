@@ -1,6 +1,5 @@
 /**
- * Wizard Step 3 — API keys (M9 + feature #7 Polymarket auto-setup +
- * PR8 redesign — per-provider glass cards).
+ * Wizard Step 3 — API keys (M9 + PR8 redesign — per-provider glass cards).
  *
  * Stores the optional API keys via `vex.onboarding.apiKeysSet`. Per
  * skill §14: secret inputs are uncontrolled DOM refs, plain-async
@@ -8,45 +7,28 @@
  * status badges derive from envState booleans only — values never
  * round-trip.
  *
- * The Polymarket manual trio is no longer captured by this form;
- * `PolymarketAutoSetupSection` is the only path that writes Polymarket
- * credentials from this step. The IPC schema (`apiKeysSetInputSchema`)
- * still accepts `polymarket` for potential programmatic callers — that
- * surface lives at the boundary, not in the UI.
- *
  * Optional-connections model: API keys are OPTIONAL. Jupiter is needed
  * to swap tokens on Solana, but the operator may defer it (and the rest)
  * to in-app Settings. Nothing on this step BLOCKS advancement anymore —
  * we warn and let the user continue.
  *
- * Skip-card semantics (codex turn 1 D3 + feature #7 Q5):
+ * Skip-card semantics (codex turn 1 D3):
  *   - The skip-card ("API keys already configured") is only the right
  *     copy when JUPITER_API_KEY is already set; otherwise the form shows
  *     with a non-blocking warning alert and the user advances via "Skip
- *     optional" / "Save and continue". A partial Polymarket no longer
- *     blocks the skip — it surfaces a warning callout above the
- *     Polymarket card but the user can continue.
+ *     optional" / "Save and continue".
  *   - Skip-card is ONLY shown in `first-pass` flow mode. In `back-edit`
  *     mode (user clicked Edit from Review) we always render the full
  *     form so they can change anything.
- *   - In setup mode the skip-card surfaces a "Configure Polymarket now"
- *     CTA when polymarketStatus !== "configured" so the operator can
- *     run feature #7 auto-setup without going through Settings.
- *
- * Polymarket repair path (partial state): the only renderer-visible
- * repair is the auto-configure button inside the Polymarket card —
- * Settings has no clear/repair flow today, so we do not promise one.
  *
  * Chrome lives in `WizardStepPanel` — `data-vex-wizard-apikeys`
- * forwarded onto the panel root via typed `panelDataAttr`. Polymarket
- * partial warning and the skip-card CTA keep their own
- * `data-vex-apikeys-*` attributes for test stability.
+ * forwarded onto the panel root via typed `panelDataAttr`.
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
-import { cn } from "../../../lib/utils.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
+import { cn } from "../../../lib/utils.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
   setApiKeys,
@@ -63,15 +45,10 @@ import {
   clearAll,
   type FieldRefs,
 } from "./api-keys/form-helpers.js";
-import { statusFor, polymarketStatusBadge } from "./api-keys/status-helpers.js";
+import { statusFor } from "./api-keys/status-helpers.js";
 import { ApiKeysSkipPanel } from "./api-keys/ApiKeysSkipPanel.js";
 import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
-import {
-  JupiterCard,
-  TavilyCard,
-  RettiwtCard,
-  PolymarketCard,
-} from "./api-keys/ProviderCards.js";
+import { JupiterCard, TavilyCard, RettiwtCard } from "./api-keys/ProviderCards.js";
 
 export interface ApiKeysStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -94,11 +71,6 @@ export function ApiKeysStep({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submittedOnce, setSubmittedOnce] = useState(false);
-  // Feature #7 Q5: in setup mode, skip-card can be "opened" to reveal
-  // the full form (so the operator can run auto-setup without first
-  // visiting Settings). The flag stays local — refetching envState
-  // does not reset it.
-  const [skipExpanded, setSkipExpanded] = useState(false);
 
   const refs: FieldRefs = {
     jupiter: useRef<HTMLInputElement | null>(null),
@@ -111,27 +83,11 @@ export function ApiKeysStep({
   const jupiterConfigured = apiKeysState?.jupiterConfigured ?? false;
   const tavilyConfigured = apiKeysState?.tavilyConfigured ?? false;
   const rettiwtConfigured = apiKeysState?.rettiwtConfigured ?? false;
-  const polymarketStatus = apiKeysState?.polymarketStatus ?? "missing";
-  const polymarketPartial = polymarketStatus === "partial";
-  // Feature #7 inputs: the auto-setup IPC needs an EVM keystore and an
-  // unlocked vault. Both come from envState; the section disables its
-  // button (with helper text) when either is missing.
-  const evmWalletPresent = envState?.walletStatus.evm === "present";
-  const vaultUnlocked = envState?.secrets.unlocked ?? false;
-  // Feature #7 Q5: back-edit ALWAYS renders the full form. In setup
-  // mode the skip-card stays available unless the operator clicked the
-  // "Configure Polymarket now" CTA (skipExpanded === true). The skip-card
-  // copy assumes Jupiter is already configured, so it only shows when
-  // `jupiterConfigured`. A partial Polymarket keeps the user on the FORM
-  // so the partial warning callout stays visible — but, per the
-  // optional-connections model, it no longer BLOCKS advancing (the
-  // submit/skip handlers warn-but-advance regardless).
+  // Back-edit ALWAYS renders the full form. In setup mode the skip-card
+  // stays available whenever Jupiter is already configured (the skip-card
+  // copy assumes it).
   const canSkip =
-    flowMode === "first-pass"
-    && jupiterConfigured
-    && !polymarketPartial
-    && !submittedOnce
-    && !skipExpanded;
+    flowMode === "first-pass" && jupiterConfigured && !submittedOnce;
 
   const advanceToEmbedding = useCallback(async () => {
     const result = await stepAdvance.advance({
@@ -149,11 +105,10 @@ export function ApiKeysStep({
       e.preventDefault();
       setFormError(null);
       const payload = buildPayload(refs);
-      // Optional-connections model: API keys never block advancement.
-      // An empty Save with Jupiter unconfigured still advances (the
-      // missing-Jupiter warning alert is always visible). A partial
-      // Polymarket likewise warns (callout above its card) but does not
-      // block — if nothing was entered, skip the IPC and just advance.
+      // Optional-connections model: API keys never block advancement. An
+      // empty Save with Jupiter unconfigured still advances (the
+      // missing-Jupiter warning alert is always visible) — if nothing was
+      // entered, skip the IPC and just advance.
       if (Object.keys(payload).length === 0) {
         await advanceToEmbedding();
         return;
@@ -179,8 +134,8 @@ export function ApiKeysStep({
   );
 
   const onSkipContinue = useCallback(async () => {
-    // Optional-connections model: skipping never blocks — Jupiter and
-    // Polymarket warnings are surfaced visually but the user advances.
+    // Optional-connections model: skipping never blocks — the Jupiter
+    // warning is surfaced visually but the user advances.
     setFormError(null);
     await advanceToEmbedding();
   }, [advanceToEmbedding]);
@@ -191,15 +146,10 @@ export function ApiKeysStep({
     return (
       <ApiKeysSkipPanel
         icon={meta.icon}
-        polymarketStatus={polymarketStatus}
         formError={formError}
         advancePending={stepAdvance.isPending}
         onContinue={() => {
           void onSkipContinue();
-        }}
-        onConfigurePolymarket={() => {
-          setFormError(null);
-          setSkipExpanded(true);
         }}
       />
     );
@@ -256,16 +206,6 @@ export function ApiKeysStep({
         <RettiwtCard
           status={statusFor(rettiwtConfigured)}
           inputRef={refs.rettiwt}
-        />
-
-        <PolymarketCard
-          status={polymarketStatusBadge(polymarketStatus)}
-          polymarketStatus={polymarketStatus}
-          polymarketPartial={polymarketPartial}
-          evmWalletPresent={evmWalletPresent}
-          vaultUnlocked={vaultUnlocked}
-          disabled={submitting || stepAdvance.isPending}
-          onSuccess={invalidateEnvState}
         />
 
         {formError ? (

@@ -374,6 +374,7 @@ function emptyCounts(): MemoryJobsSummaryDto["countsByStatus"] {
     completed: 0,
     failed: 0,
     permanently_failed: 0,
+    retired: 0,
   };
 }
 

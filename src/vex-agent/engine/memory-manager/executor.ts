@@ -22,9 +22,11 @@
  *   Finalize: anyTransientFailure || anyUnclosed → markFailed (retry revives the
  *   job's own failed/unclosed items); else markCompleted.
  *
- * A `reconcile` job (S7) routes to `processReconcileJob` (reconcile.ts): one
- * entry per job, NO job items, self-finalizing (heartbeat + markCompleted /
- * markFailed inside, incl. the D-REARM wake_pending consumption on completion).
+ * The async `reconcile` job kind (S7) is retired (Agent Scan W4:
+ * `engine/memory-manager/reconcile.ts` deleted, along with every caller that
+ * could enqueue a fresh reconcile job). Migration 044 terminalized every
+ * non-terminal reconcile row to a new `retired` status; this loop no longer
+ * claims or dispatches `reconcile`-kind jobs — only `consolidate`.
  *
  * Maintenance cron-tick (§10): every MAINTENANCE_SWEEP_INTERVAL_MS, enqueue a
  * consolidate job IFF pending candidates exist without an active job.
@@ -55,11 +57,6 @@ import { getLatestDecision } from "@vex-agent/db/repos/memory-decisions/index.js
 import { listCandidatesByStatus } from "@vex-agent/db/repos/memory-candidates/index.js";
 import { runDecaySweep } from "./decay-sweep.js";
 import {
-  processReconcileJob,
-  defaultReconcileDeps,
-  type ReconcileDeps,
-} from "./reconcile.js";
-import {
   consolidateCandidate,
   applyDecisionAtomically,
   defaultConsolidateDeps,
@@ -88,8 +85,6 @@ export interface StartMemoryManagerOptions {
   sweepIntervalMs?: number;
   /** Injectable consolidate deps (tests stub recall/deref/judge). */
   deps?: ConsolidateDeps;
-  /** Injectable reconcile deps (tests stub resolver/judge/repo IO) — S7. */
-  reconcileDeps?: ReconcileDeps;
 }
 
 export function startMemoryManagerExecutor(
@@ -99,7 +94,6 @@ export function startMemoryManagerExecutor(
   const sweepInterval = options.sweepIntervalMs ?? MAINTENANCE_SWEEP_INTERVAL_MS;
   const workerId = `memory-manager-${process.pid}-${randomUUID().slice(0, 8)}`;
   const deps = options.deps ?? defaultConsolidateDeps();
-  const reconcileDeps = options.reconcileDeps ?? defaultReconcileDeps();
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
@@ -136,10 +130,12 @@ export function startMemoryManagerExecutor(
       if (!job) return;
       memLog("manager", "claimed", { jobId: job.id, jobKind: job.jobKind });
 
-      if (job.jobKind === "reconcile") {
-        // S7: outcome reconciliation — one entry per job, self-finalizing
-        // (markCompleted / markFailed + heartbeat live inside; never throws).
-        await processReconcileJob(job, workerId, reconcileDeps);
+      // C19 defense in depth: the claim query is consolidate-only by
+      // predicate, but a claimed row of any OTHER kind (e.g. a legacy
+      // `reconcile` row surfacing through a future query edit) must never be
+      // processed as consolidation.
+      if (job.jobKind !== "consolidate") {
+        memLog.error("manager", "claimed_non_consolidate_job", { jobId: job.id });
         return;
       }
 

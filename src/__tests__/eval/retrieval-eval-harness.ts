@@ -38,9 +38,13 @@ const SeedQuerySchema = z.object({
 });
 
 const SeedDatasetSchema = z.object({
-  version: z.literal("v3-agent-200"),
+  // Agent Scan phase 1 (2026-07-22): shrunk from v3-agent-200 to v3-agent-116
+  // — polymarket/zap/limitOrder/old-buy-sell rows removed, no backfill (see
+  // tool-discovery-seed.json's description + discovery-baseline.test.ts for
+  // the count-lockstep decision). Same v3 schema shape, smaller curated count.
+  version: z.literal("v3-agent-116"),
   description: z.string(),
-  queries: z.array(SeedQuerySchema).length(200),
+  queries: z.array(SeedQuerySchema).length(116),
 });
 
 export type SeedQuery = z.infer<typeof SeedQuerySchema>;

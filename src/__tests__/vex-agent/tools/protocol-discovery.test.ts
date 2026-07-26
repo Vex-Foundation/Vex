@@ -22,7 +22,6 @@ describe("protocol discovery", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) original[k] = process.env[k];
     process.env.JUPITER_API_KEY = "test-jupiter-key";
-    process.env.POLYMARKET_API_KEY = "test-polymarket-key";
     delete process.env.EMBEDDING_BASE_URL;
     delete process.env.EMBEDDING_MODEL;
     delete process.env.EMBEDDING_DIM;
@@ -69,6 +68,27 @@ describe("protocol discovery", () => {
     expect(result.success).toBe(false);
     expect(result.count).toBe(0);
     expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
+  // C30): the hidden Uniswap fallback must not be discoverable pre-reveal —
+  // NOT just hidden from the LLM tool list, but genuinely unreachable through
+  // the discover_tools/execute_tool meta-tool path (the sanctioned path is the
+  // `swap_quote_uniswap`/`swap_execute_uniswap` internal aliases, which check
+  // the session reveal state themselves and never go through this namespace
+  // resolution). `uniswap` stays a KNOWN namespace (isKnownProtocolNamespace)
+  // but is not ADVERTISED — same "reserved" contract as an unregistered one,
+  // proven with its own message rather than reusing the unknown-namespace test.
+  it("rejects namespace='uniswap' as reserved — the hidden pair is not directly discoverable", async () => {
+    const result = await discoverProtocolCapabilities({ namespace: "uniswap" });
+    expect(result.success).toBe(false);
+    expect(result.count).toBe(0);
+    expect(result.warnings.join(" ")).toMatch(/reserved/i);
+  });
+
+  it("never surfaces a uniswap.* toolId via a generic query, at any limit", async () => {
+    const result = await discoverProtocolCapabilities({ query: "swap", limit: 200 });
+    expect(result.tools.some((t) => t.toolId.startsWith("uniswap."))).toBe(false);
   });
 
   it("returns kyberswap tools when filtering by kyberswap namespace", async () => {
@@ -201,17 +221,6 @@ describe("protocol discovery", () => {
     expect(bridge!.mutating).toBe(true);
   });
 
-  it("matches polymarket clob from natural language query", async () => {
-    // Query uses "polymarket orderbook" (namespace + discriminator) instead of the
-    // ambiguous "prediction market orderbook" — which now ties polymarket.data.*
-    // (via "prediction market" in description) with polymarket.clob.* (via "orderbook").
-    // Lexical scoring without IDF can't break that tie; PR3 metadata v1 is the place
-    // to disambiguate. The capability-phrase intent in message #5 is the right shape here.
-    const result = await discoverProtocolCapabilities({ query: "polymarket orderbook" });
-    expect(result.success).toBe(true);
-    expect(result.tools[0]?.toolId.startsWith("polymarket.clob")).toBe(true);
-  });
-
   it("matches community takeover query to dexscreener", async () => {
     const result = await discoverProtocolCapabilities({ query: "community takeover" });
     expect(result.success).toBe(true);
@@ -243,17 +252,6 @@ describe("protocol discovery", () => {
   it("returns env-gated tools when their requiresEnv is present", async () => {
     const result = await discoverProtocolCapabilities({ namespace: "solana", limit: 100 });
     expect(result.count).toBeGreaterThan(0);
-  });
-
-  it("does not surface gated polymarket clob mutating tools when key missing", async () => {
-    delete process.env.POLYMARKET_API_KEY;
-    const result = await discoverProtocolCapabilities({
-      namespace: "polymarket",
-      query: "buy yes",
-      limit: 100,
-    });
-    // The mutating clob.buy tool requires POLYMARKET_API_KEY → must be hidden.
-    expect(result.tools.some((t) => t.toolId === "polymarket.clob.buy")).toBe(false);
   });
 
   // ── Facet-driven discovery (audit follow-up) ─────────────────────

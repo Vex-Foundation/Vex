@@ -14,14 +14,28 @@ import {
   parseBalanceChainSelection,
 } from "@tools/khalani/balances.js";
 import { walletAddressesEqual, familyToInventory } from "@tools/wallet/inventory.js";
-import { prepareQuoteRequest } from "@tools/khalani/request.js";
+import { findCallerSuppliedForbiddenParam, prepareQuoteRequest } from "@tools/khalani/request.js";
+import { classifyKhalaniQuoteResponse } from "@tools/khalani/quote-result.js";
+import {
+  BRIDGE_FEE_RECEIVER_EVM,
+  BRIDGE_FEE_RECEIVER_SOLANA,
+  buildBridgeFeeDisclosure,
+  buildBridgeFeeSkippedDisclosure,
+  evaluateEvmBridgeFeeEligibility,
+  splitBridgeAmountForFee,
+  type BridgeFeeSplit,
+} from "@tools/bridge-fee/index.js";
+import { estimateUsd, humanizeAmount, resolveKhalaniTokenInfo } from "./bridge-usd.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
-import { projectChain, projectChains, projectToken, projectTokens } from "../projectors.js";
+import { projectChain, projectChains, projectQuoteRoutes, projectToken, projectTokens } from "../projectors.js";
+import { revealOnEligibleKhalaniFailure } from "./reveal.js";
+import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
+import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
@@ -183,16 +197,64 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
     }
 
+    // Fee params AND the refund destination are never accepted from tool input
+    // (see the two policy blocks in `@tools/khalani/request.js`). Rejecting
+    // here matters as much as on the execute: the prequote gate binds the
+    // money/fee leg, so a quote carrying either is what would later let a
+    // matching execute through — an attacker who sets the SAME value on the
+    // quote and the execute gets two colliding hashes and a passing gate. No
+    // such quote can be recorded in the first place.
+    const forbiddenParam = findCallerSuppliedForbiddenParam(params);
+    if (forbiddenParam !== null) {
+      return {
+        success: false,
+        output: `khalani.quote.get failed: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      };
+    }
+
+    // Pre-quote route guard (R9 — same wiring as the execute handler): a local
+    // chain routes statically to Relay; a nonlocal endpoint absent from the
+    // LIVE registry is a typed no-route that surfaces the route-bound Relay
+    // reveal (previously the raw resolver throw returned a bare message with
+    // no reveal — coordinator live-smoke finding, 2026-07-23).
+    let prequote: Awaited<ReturnType<typeof resolveKhalaniPrequoteRoute>>;
+    try {
+      prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
+    } catch (err) {
+      // Route resolution reads Khalani's live registry, so this catch can hold
+      // PROVIDER-controlled text (`mapKhalaniError` builds its message from the
+      // response body). Raw `err.message` bypassed the scrub boundary entirely.
+      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}` };
+    }
+    if (prequote.outcome === "static_relay") {
+      return {
+        success: false,
+        output: "This route touches a local chain (e.g. Robinhood) that Khalani does not serve — use the Relay bridge tools directly for it.",
+      };
+    }
+    if (prequote.outcome === "no_route") {
+      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
+      return {
+        success: false,
+        output: `khalani.quote.get failed: Khalani has no route (${prequote.missing.join(", ")} chain not in the live registry).${revealSuffix}`,
+      };
+    }
+
     // Per-session wallet scope (5D-protocols p4) — the quote uses the session's
     // selected source/dest wallets, not the primary. Read-only (no signing).
     const chains = await getCachedKhalaniChains();
+    let fromChainId: number;
     let fromFamily: "eip155" | "solana";
     let toFamily: "eip155" | "solana";
     try {
-      fromFamily = getChainFamily(resolveChainId(fromChain, chains), chains);
+      fromChainId = resolveChainId(fromChain, chains);
+      fromFamily = getChainFamily(fromChainId, chains);
       toFamily = getChainFamily(resolveChainId(toChain, chains), chains);
     } catch (err) {
-      return { success: false, output: err instanceof Error ? err.message : String(err) };
+      // Locally authored, but it echoes the MODEL-SUPPLIED fromChain/toChain
+      // verbatim — untrusted input reaching an output sink, so it goes through
+      // the same boundary as provider text.
+      return { success: false, output: summarizeProtocolError(err).message };
     }
     const explicitFrom = str(params, "fromAddress") || undefined;
     let fromAddress: string;
@@ -224,29 +286,84 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       tradeType: str(params, "tradeType") || undefined,
       fromAddress,
       recipient,
-      refundTo: str(params, "refundTo") || undefined,
-      referrer: str(params, "referrer") || undefined,
-      referrerFeeBps: str(params, "referrerFeeBps") || undefined,
+      // No `refundTo`: derived from `fromAddress` (refund-destination policy
+      // in `@tools/khalani/request.js`), so the quote binds the same derived
+      // value the execute will.
       filler: str(params, "filler") || undefined,
     });
 
-    const quoteResponse = await getKhalaniClient().getQuotes(prepared.request);
+    // Vex integrator fee — the SAME split the execute applies, so the quoted
+    // `amountOut` is what the user actually receives and the disclosed fee is
+    // the fee that will actually be taken. Resolved through the shared
+    // `@tools/bridge-fee` module, never re-derived here.
+    let feeSplit: BridgeFeeSplit;
+    try {
+      feeSplit = splitBridgeAmountForFee(prepared.request.amount);
+    } catch (err) {
+      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}` };
+    }
+    let feeSkipReason: string | null = feeSplit.charged
+      ? null
+      : "25 bps of the requested amount floors to 0 in smallest units";
+    if (feeSplit.charged && fromFamily === "eip155") {
+      const eligibility = await evaluateEvmBridgeFeeEligibility(fromChainId, fromToken);
+      if (!eligibility.charge) feeSkipReason = eligibility.reason;
+    }
+    const chargeFee = feeSkipReason === null;
+    const quoteRequest = {
+      ...prepared.request,
+      amount: (chargeFee ? feeSplit.bridgedRaw : feeSplit.totalRaw).toString(),
+    };
+
+    // Read-only quote: a Khalani no-route (empty routes[]) or a reveal-eligible
+    // exception is a FAILURE that surfaces the route-bound Relay reveal. No
+    // activity row is written (a read miss records nothing — R15).
+    let outcome: ReturnType<typeof classifyKhalaniQuoteResponse>;
+    try {
+      outcome = classifyKhalaniQuoteResponse(await getKhalaniClient().getQuotes(quoteRequest));
+    } catch (err) {
+      const externalName = err instanceof VexError ? err.externalName : undefined;
+      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "exception", externalName }, context.sessionId, params);
+      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}.${revealSuffix}` };
+    }
+    if (outcome.outcome === "no_route") {
+      const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
+      return { success: false, output: `khalani.quote.get: Khalani has no route for this pair.${revealSuffix}` };
+    }
+
+    // Fee disclosure (fail-soft token facts — a lookup miss degrades the human
+    // amount and USD to null, never to a fabricated figure).
+    const fromInfo = await resolveKhalaniTokenInfo(fromToken, fromChainId);
+    const vexFee = chargeFee
+      ? buildBridgeFeeDisclosure({
+          tokenAddress: fromToken,
+          tokenSymbol: fromInfo?.symbol,
+          tokenDecimals: fromInfo?.decimals,
+          feeRaw: feeSplit.feeRaw,
+          bridgedRaw: feeSplit.bridgedRaw,
+          totalRaw: feeSplit.totalRaw,
+          receiver: fromFamily === "solana" ? BRIDGE_FEE_RECEIVER_SOLANA : BRIDGE_FEE_RECEIVER_EVM,
+          feeUsdEstimate: estimateUsd(
+            humanizeAmount(feeSplit.feeRaw.toString(), fromInfo?.decimals),
+            fromInfo?.priceUsd,
+          ),
+        })
+      : buildBridgeFeeSkippedDisclosure({
+          reason: feeSkipReason ?? "no fee applies to this bridge",
+          totalRaw: feeSplit.totalRaw,
+        });
 
     return {
       success: true,
       output: JSON.stringify({
-        quoteId: quoteResponse.quoteId,
-        routeCount: quoteResponse.routes.length,
-        routes: quoteResponse.routes.map(r => ({
-          routeId: r.routeId,
-          type: r.type,
-          amountIn: r.quote.amountIn,
-          amountOut: r.quote.amountOut,
-          etaSeconds: r.quote.expectedDurationSeconds,
-          tags: r.quote.tags,
-        })),
+        quoteId: outcome.quoteId,
+        routeCount: outcome.routes.length,
+        routes: projectQuoteRoutes(outcome.routes, Date.now()),
+        vexFee,
+        expiryNote: "khalani.bridge re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
+          + "passes — treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
       }, null, 2),
-      data: { quoteId: quoteResponse.quoteId, routes: quoteResponse.routes },
+      data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee },
     };
   },
 

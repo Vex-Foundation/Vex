@@ -120,7 +120,6 @@ function envFixture(overrides?: Partial<EnvState>): EnvState {
       jupiterConfigured: true,
       tavilyConfigured: true,
       rettiwtConfigured: false,
-      polymarketStatus: "configured",
     },
     secrets: { vaultConfigured: true, unlocked: true },
     embeddings: {
@@ -201,7 +200,6 @@ describe("SettingsScreen", () => {
           jupiterConfigured: false,
           tavilyConfigured: false,
           rettiwtConfigured: false,
-          polymarketStatus: "missing",
         },
         walletStatus: { evm: "present", solana: "missing" },
         provider: { configured: false, name: null, modelLabel: null },

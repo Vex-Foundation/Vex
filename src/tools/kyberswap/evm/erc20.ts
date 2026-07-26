@@ -1,6 +1,7 @@
 /**
- * KyberSwap ERC-20 operations: metadata reads, spender validation,
- * allowance management, and transaction sending.
+ * KyberSwap ERC-20 operations: metadata reads, spender validation, and
+ * transaction sending. Allowance planning lives in `evm/allowance-plan.ts`
+ * (read-only decision, separated from broadcasting per plan §11.1).
  */
 
 import {
@@ -91,7 +92,7 @@ export function validateKyberSpender(address: Address): void {
     throw new VexError(
       ErrorCodes.INVALID_SPENDER,
       `Spender ${address} is not a known KyberSwap contract`,
-      `Known: MetaAggregationRouterV2, DSLOProtocol, KSZapRouterPosition, KSZapRouterPermit`,
+      `Known: MetaAggregationRouterV2`,
     );
   }
 }
@@ -107,145 +108,18 @@ export function verifyRouterAddress(actual: Address, expected: Address): void {
   }
 }
 
-// ── Allowance management ────────────────────────────────────────────
-
-export interface ApproveResult {
-  txHash: Hex;
-  resetTxHash?: Hex;
-}
-
-/**
- * Ensure ERC-20 allowance is sufficient. Approve if needed.
- * Handles USDT-style tokens that require reset to 0 before new approval.
- *
- * Approves the EXACT `requiredAmount` when short (never an unlimited
- * `maxUint256`) — the exact-amount doctrine mirrors Uniswap's
- * `ensureUniswapAllowanceExact` (`src/tools/uniswap/erc20.ts`): a smaller
- * standing-allowance surface, so a compromised router can pull only what this
- * one operation needs. The former `approveExact` opt-in (default unlimited) was
- * REMOVED, not merely defaulted to exact: the Stage-9 prequote identity binds
- * `approveExact` into the swap match-hash and the recorder pins it `false`, so
- * an execute passing `approveExact: true` produced a divergent digest and was
- * already BLOCKED (no_quote) by the gate — the opt-in was dead on arrival. The
- * `approveExact` param is likewise gone from the kyberswap swap/zap manifests,
- * so the dispatcher rejects it as an unknown param before a handler runs.
- *
- * Callers that genuinely need an unlimited standing allowance (zap-out /
- * zap-migrate ERC-20 LP-share exits, where the router-pulled amount is not
- * determinable pre-build) pass `maxUint256` AS `requiredAmount` explicitly and
- * document why at the call site.
- *
- * @param publicClient - viem PublicClient for the target chain
- * @param walletClient - viem WalletClient for signing
- * @param token - ERC-20 token address
- * @param spender - Spender to approve (validated against KYBER_KNOWN_SPENDERS)
- * @param requiredAmount - Exact allowance to grant when the current one is short
- */
-export async function ensureKyberAllowance(
-  publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain>,
-  token: Address,
-  spender: Address,
-  requiredAmount: bigint,
-): Promise<ApproveResult | null> {
-  validateKyberSpender(spender);
-
-  const owner = walletClient.account!.address;
-
-  const currentAllowance = await publicClient.readContract({
-    address: token,
-    abi: ERC20_ABI,
-    functionName: "allowance",
-    args: [owner, spender],
-  });
-
-  if (currentAllowance >= requiredAmount) {
-    logger.debug({ event: "kyberswap.allowance.sufficient", token, spender, current: currentAllowance.toString() });
-    return null;
-  }
-
-  let resetTxHash: Hex | undefined;
-
-  // USDT-style reset: if current > 0 and < required, reset to 0 first
-  if (currentAllowance > 0n && currentAllowance < requiredAmount) {
-    logger.debug({ event: "kyberswap.allowance.reset", token, spender });
-    try {
-      resetTxHash = await walletClient.writeContract({
-        account: walletClient.account!,
-        address: token,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [spender, 0n],
-      });
-      await waitForSuccessfulReceipt(publicClient, resetTxHash, {
-        code: ErrorCodes.APPROVAL_FAILED,
-        what: "Allowance-reset transaction",
-        hint: "The existing allowance was not cleared, so the follow-up approve would be blocked. Check the transaction hash before retrying.",
-      });
-    } catch (err) {
-      if (err instanceof VexError) throw err;
-      throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  const approveAmount = requiredAmount;
-
-  try {
-    logger.debug({ event: "kyberswap.allowance.approve", token, spender, amount: approveAmount.toString() });
-    const txHash = await walletClient.writeContract({
-      account: walletClient.account!,
-      address: token,
-      abi: ERC20_ABI,
-      functionName: "approve",
-      args: [spender, approveAmount],
-    });
-    await waitForSuccessfulReceipt(publicClient, txHash, {
-      code: ErrorCodes.APPROVAL_FAILED,
-      what: "Approval transaction",
-      hint: "The router was not granted an allowance. Check the transaction hash before retrying.",
-    });
-    return { txHash, resetTxHash };
-  } catch (err) {
-    if (err instanceof VexError) throw err;
-    throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to approve: ${err instanceof Error ? err.message : err}`);
-  }
-}
-
 // ── Transaction sending ─────────────────────────────────────────────
 
 /**
- * Send a pre-built KyberSwap transaction (swap, cancel, zap).
+ * Send a pre-built KyberSwap transaction and return both hash and receipt —
+ * the receipt-truth primitive generic `chain_read`-style consumers use to
+ * extract logs (originally built for zap.in's NFT position extraction; kept
+ * as a general reusable primitive after the Agent Scan teardown — see
+ * `evm/receipt-logs.ts`'s `extractMintedNftId`, its remaining consumer).
  *
- * @returns Transaction hash
- */
-export async function sendKyberTransaction(
-  publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain>,
-  params: { to: Address; data: Hex; value?: bigint },
-): Promise<Hex> {
-  try {
-    const txHash = await walletClient.sendTransaction({
-      account: walletClient.account!,
-      to: params.to,
-      data: params.data,
-      value: params.value ?? 0n,
-      chain: walletClient.chain,
-    });
-    await waitForSuccessfulReceipt(publicClient, txHash, {
-      code: ErrorCodes.SWAP_FAILED,
-      what: "Transaction",
-      hint: "No swap was confirmed. Check the transaction hash before retrying.",
-    });
-    return txHash;
-  } catch (err) {
-    if (err instanceof VexError) throw err;
-    throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : err}`);
-  }
-}
-
-/**
- * Send a KyberSwap transaction and return both hash and receipt.
- * Used by zap.in to extract NFT position ID from receipt logs.
+ * The swap execute handler does NOT use this atomic send+wait shape for its
+ * own broadcasts — it needs the tx hash persisted BEFORE broadcasting (plan
+ * §11.1), which requires the sign/broadcast split in `staged-broadcast.ts`.
  */
 export async function sendKyberTransactionWithReceipt(
   publicClient: PublicClient<Transport, Chain>,

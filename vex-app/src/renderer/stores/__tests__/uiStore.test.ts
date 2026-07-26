@@ -19,7 +19,6 @@ const STORAGE_KEY = "vex-ui";
 function resetStoreToDefaults(): void {
   useUiStore.setState({
     theme: "chronos",
-    workspaceMode: "normal",
     sidebarOpen: true,
     bookOpen: true,
     currentView: "splash",
@@ -52,7 +51,6 @@ describe("uiStore", () => {
   it("starts with the expected defaults", () => {
     const state = useUiStore.getState();
     expect(state.theme).toBe("chronos");
-    expect(state.workspaceMode).toBe("normal");
     expect(state.sidebarOpen).toBe(true);
     expect(state.currentView).toBe("splash");
     expect(state.setupGateActive).toBe(true);
@@ -91,22 +89,6 @@ describe("uiStore", () => {
     useUiStore.getState().setSidebarOpen(false);
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
     expect(parsed.state.theme).toBe("chronos");
-  });
-
-  it("setWorkspaceMode flips the transient Hypervexing flag without persisting it", () => {
-    expect(useUiStore.getState().workspaceMode).toBe("normal");
-    useUiStore.getState().setWorkspaceMode("hypervexing");
-    expect(useUiStore.getState().workspaceMode).toBe("hypervexing");
-    useUiStore.getState().setWorkspaceMode("normal");
-    expect(useUiStore.getState().workspaceMode).toBe("normal");
-    // A relaunch must always start in `normal` mode — the flag is agent-driven
-    // and transient, so it is excluded from the persist whitelist.
-    useUiStore.getState().setWorkspaceMode("hypervexing");
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    expect(raw).not.toBeNull();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.state.workspaceMode).toBeUndefined();
-    expect(raw).not.toContain("hypervexing");
   });
 
   it("migrate v2→v5 collapses the retired theme pair to 'chronos' without disturbing v2 fields", async () => {
@@ -253,7 +235,6 @@ describe("uiStore", () => {
       theme: "chronos",
       sidebarOpen: true,
       bookOpen: true,
-      hlFavorites: [],
       hideDustBalances: true,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
@@ -441,7 +422,6 @@ describe("uiStore", () => {
       theme: "chronos",
       sidebarOpen: false,
       bookOpen: true,
-      hlFavorites: [],
       hideDustBalances: true,
     });
     expect(parsed.state.logBuffer).toBeUndefined();

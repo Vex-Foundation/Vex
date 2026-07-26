@@ -68,9 +68,8 @@
     "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
   /* Display serif — Instrument Serif (static 400 + italic only): the hero
-   * statement voice of the Chronos shell, plus the Hyperliquid protocol
-   * accents. Falls back to the platform serifs so a font-load miss still
-   * reads as a serif. */
+   * statement voice of the Chronos shell. Falls back to the platform serifs
+   * so a font-load miss still reads as a serif. */
   --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
 }
 

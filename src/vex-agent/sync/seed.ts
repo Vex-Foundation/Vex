@@ -15,21 +15,39 @@ const SYNC_JOBS = [
   // Prediction settlement reconciliation — every 5 minutes
   { namespace: "_global", syncType: "prediction_settlement", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
-  // Hyperliquid is off-chain state. The reconciler short-circuits before any
-  // venue request when no tracked position or resting entry exists.
-  { namespace: "_global", syncType: "hyperliquid_reconcile", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+  // Agent Scan repair sweep (plan §4.1/§11.1) — re-checks pending
+  // agent_activity rows by persisted tx_hash. Lookup-only; see
+  // sync/agent-activity-repair.ts.
+  { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+
+  // Phase-2 bridge order-status sweep — re-checks pending bridge logical rows by
+  // provider_order_id (Khalani/Relay), independently verifies fills before
+  // confirming, never ages pending→failed. Lookup-only; see
+  // sync/bridge-activity-repair.ts. Cadence mirrors the Phase-1 repair sweep.
+  { namespace: "_global", syncType: "bridge_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+
+  // W5 (agent-scan-phase3 migration 049) — re-checks pending Solana-family
+  // agent_activity rows (Jupiter swap/lend/prediction + Solana bridge legs)
+  // by persisted signature, family-disjoint from the EVM repair sweep and
+  // the bridge order-status sweep. Lookup-only; see
+  // sync/solana-activity-repair.ts (K3). ON CONFLICT DO NOTHING makes this
+  // safe to seed now even though the worker branch does not exist yet —
+  // worker.ts logs "Unknown sync type" and skips until K3 lands.
+  { namespace: "_global", syncType: "solana_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
 
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "kyberswap", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
-  { namespace: "polymarket", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
+  // Relay bridge post-mutation balance refresh (khalani parity, B8). The W4 sweep
+  // enqueues this job by execution id on a verified pending→confirmed; this
+  // post_mutation entry is the job the enqueue targets (getJobsForNamespace("relay")).
+  { namespace: "relay", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   // Pendle trades can land on chains Khalani cannot scan; the post-mutation run
   // derives the traded chain from _tradeCapture.chain and selectively refreshes
   // it (enrich/seed) so PT balances appear immediately instead of at the next
   // periodic _global cycle.
   { namespace: "pendle", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
-  { namespace: "hyperliquid", syncType: "hyperliquid_reconcile", readToolId: null, strategy: "post_mutation", intervalSeconds: null },
 ];
 
 /**

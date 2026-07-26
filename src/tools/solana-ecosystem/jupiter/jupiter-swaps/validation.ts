@@ -7,28 +7,81 @@ import {
   requireJupiterApiKey as requireSharedJupiterApiKey,
   resolveJupiterApiKey as resolveSharedJupiterApiKey,
 } from "../../shared/jupiter-auth.js";
+import { isBase64 } from "../../shared/schemas.js";
 import { validateSolanaAddress } from "../../shared/solana-validation.js";
 import type {
   JupiterSwapBuildParams,
+  JupiterSwapComputeUnitPricePercentile,
   JupiterSwapExecuteRequest,
   JupiterSwapOrderParams,
+  JupiterSwapSubmitRequest,
 } from "./types.js";
 
 function isDefined<T>(value: T | undefined): value is T {
   return value !== undefined;
 }
 
-function assertNumberInRange(
+/**
+ * Every numeric knob Jupiter's Swap API V2 accepts here is an INTEGER by
+ * contract (basis points, account counts, slot counts). This helper used to
+ * range-check WITHOUT an integrality test, which was a total-loss hole:
+ * Jupiter ACCEPTS a fractional `slippageBps` and answers with
+ * `otherAmountThreshold = 0` — a swap that will take ANY output, including
+ * near-zero. Reproduced live at `50.5`, `50.9`, and most dangerously `0.5`
+ * (a caller meaning "0.5%" got total-loss tolerance), with no error and a
+ * normal-looking quote.
+ *
+ * REJECT, NEVER COERCE: `0.5` could mean 0.5 bps or 0.5%, so rounding or
+ * flooring would be guessing on a price-protection parameter.
+ *
+ * Mirrors `../jupiter-prediction/prediction-api/validation/helpers.ts`'s
+ * `assertIntegerInRange`, which already had this right — the swap module was
+ * the one that drifted. Kept as a SEPARATE implementation rather than a shared
+ * import: this is the defense-in-depth layer under the protocol-manifest gate
+ * (`@vex-agent/tools/protocols/runtime/bps-param.ts`), and `src/tools` must not
+ * import from `src/vex-agent` (one-way dependency direction).
+ */
+function assertIntegerInRange(
   name: string,
   value: number,
   min: number,
   max: number,
 ): void {
-  if (!Number.isFinite(value) || value < min || value > max) {
+  if (!Number.isInteger(value)) {
+    throw new VexError(
+      ErrorCodes.INVALID_AMOUNT,
+      `Invalid ${name}: ${value}`,
+      `${name} must be a whole number between ${min} and ${max}.${bpsPercentReadingHint(name, value)}`,
+    );
+  }
+  if (value < min || value > max) {
     throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
       `Invalid ${name}: ${value}`,
       `${name} must be between ${min} and ${max}.`,
+    );
+  }
+}
+
+/**
+ * For a basis-point param, name the correct form for the value the caller most
+ * plausibly meant (the common mistake is passing a percentage: `0.5` for
+ * "0.5%"). Suggestion only — nothing is coerced. Silent when the param is not
+ * a bps field or the percent reading is not itself a whole number of bps.
+ */
+function bpsPercentReadingHint(name: string, value: number): string {
+  if (!name.endsWith("Bps")) return "";
+  const asBps = Math.round(value * 100);
+  if (asBps / 100 !== value) return "";
+  return ` If you meant ${value}%, pass ${asBps}.`;
+}
+
+function assertNonNegativeInteger(name: string, value: number): void {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw new VexError(
+      ErrorCodes.INVALID_AMOUNT,
+      `Invalid ${name}: ${value}`,
+      `${name} must be a non-negative integer (lamports).`,
     );
   }
 }
@@ -79,6 +132,29 @@ function assertMutuallyExclusive(
   }
 }
 
+function assertComputeUnitPricePercentile(value: JupiterSwapComputeUnitPricePercentile): void {
+  if (typeof value === "string") {
+    if (value !== "medium" && value !== "high" && value !== "veryHigh") {
+      throw new VexError(
+        ErrorCodes.SOLANA_SWAP_FAILED,
+        `Unsupported computeUnitPricePercentile: ${value}`,
+        "Supported values: medium, high, veryHigh, or an integer 0-10000 bps.",
+      );
+    }
+    return;
+  }
+  // Official contract: an INTEGER 0-10000 bps — a fractional percentile is a
+  // caller bug, not a roundable value.
+  if (!Number.isInteger(value)) {
+    throw new VexError(
+      ErrorCodes.SOLANA_SWAP_FAILED,
+      `computeUnitPricePercentile must be an integer (got ${value}).`,
+      "Supported values: medium, high, veryHigh, or an integer 0-10000 bps.",
+    );
+  }
+  assertIntegerInRange("computeUnitPricePercentile", value, 0, 10_000);
+}
+
 function normalizeCsvValue(value?: string | string[]): string | undefined {
   if (!isDefined(value)) return undefined;
   if (Array.isArray(value)) {
@@ -127,14 +203,13 @@ export function validateJupiterSwapOrderParams(params: JupiterSwapOrderParams): 
     );
   }
 
-  if (isDefined(params.slippageBps)) assertNumberInRange("slippageBps", params.slippageBps, 0, 10_000);
-  if (isDefined(params.referralFee)) assertNumberInRange("referralFee", params.referralFee, 50, 255);
-  if (isDefined(params.priorityFeeLamports) && params.priorityFeeLamports < 0) {
-    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid priorityFeeLamports: ${params.priorityFeeLamports}`);
-  }
-  if (isDefined(params.jitoTipLamports) && params.jitoTipLamports < 0) {
-    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid jitoTipLamports: ${params.jitoTipLamports}`);
-  }
+  if (isDefined(params.slippageBps)) assertIntegerInRange("slippageBps", params.slippageBps, 0, 10_000);
+  if (isDefined(params.referralFee)) assertIntegerInRange("referralFee", params.referralFee, 50, 255);
+  // Lamports are integral by definition; the old `< 0`-only checks let a
+  // fractional value through to the query string. Same class as the
+  // `slippageBps` hole above.
+  if (isDefined(params.priorityFeeLamports)) assertNonNegativeInteger("priorityFeeLamports", params.priorityFeeLamports);
+  if (isDefined(params.jitoTipLamports)) assertNonNegativeInteger("jitoTipLamports", params.jitoTipLamports);
 
   assertRequiredTogether("referralAccount", params.referralAccount, "referralFee", params.referralFee);
 }
@@ -153,11 +228,15 @@ export function validateJupiterSwapBuildParams(params: JupiterSwapBuildParams): 
     );
   }
 
-  if (isDefined(params.slippageBps)) assertNumberInRange("slippageBps", params.slippageBps, 0, 10_000);
-  if (isDefined(params.platformFeeBps)) assertNumberInRange("platformFeeBps", params.platformFeeBps, 0, 10_000);
-  if (isDefined(params.maxAccounts)) assertNumberInRange("maxAccounts", params.maxAccounts, 1, 64);
+  if (isDefined(params.slippageBps)) assertIntegerInRange("slippageBps", params.slippageBps, 0, 10_000);
+  if (isDefined(params.platformFeeBps)) assertIntegerInRange("platformFeeBps", params.platformFeeBps, 0, 10_000);
+  if (isDefined(params.maxAccounts)) assertIntegerInRange("maxAccounts", params.maxAccounts, 1, 64);
   if (isDefined(params.blockhashSlotsToExpiry)) {
-    assertNumberInRange("blockhashSlotsToExpiry", params.blockhashSlotsToExpiry, 1, 300);
+    assertIntegerInRange("blockhashSlotsToExpiry", params.blockhashSlotsToExpiry, 1, 300);
+  }
+  if (isDefined(params.tipAmount)) assertNonNegativeInteger("tipAmount", params.tipAmount);
+  if (isDefined(params.computeUnitPricePercentile)) {
+    assertComputeUnitPricePercentile(params.computeUnitPricePercentile);
   }
 
   if (params.payer) validateSolanaAddress(params.payer);
@@ -247,9 +326,40 @@ export function normalizeBuildQueryParams(params: JupiterSwapBuildParams): Recor
     blockhashSlotsToExpiry: isDefined(params.blockhashSlotsToExpiry)
       ? String(params.blockhashSlotsToExpiry)
       : undefined,
+    tipAmount: isDefined(params.tipAmount) ? String(params.tipAmount) : undefined,
+    computeUnitPricePercentile: isDefined(params.computeUnitPricePercentile)
+      ? String(params.computeUnitPricePercentile)
+      : undefined,
+    forJitoBundle: isDefined(params.forJitoBundle) ? String(params.forJitoBundle) : undefined,
   };
 
   return Object.fromEntries(
     Object.entries(query).filter((entry): entry is [string, string] => Boolean(entry[1])),
   );
+}
+
+export function validateJupiterSwapSubmitRequest(request: JupiterSwapSubmitRequest): void {
+  const signedTransaction = request.signedTransaction.trim();
+  if (!signedTransaction) {
+    throw new VexError(
+      ErrorCodes.SOLANA_SWAP_FAILED,
+      "signedTransaction is required for /tx/v1/submit.",
+    );
+  }
+  // The client serializes the request VERBATIM (client.ts JSON.stringify) —
+  // validating a trimmed copy while sending the original would let
+  // whitespace-wrapped base64 pass here and different bytes go on the wire.
+  // Reject the mismatch outright instead of silently normalizing.
+  if (signedTransaction !== request.signedTransaction) {
+    throw new VexError(
+      ErrorCodes.SOLANA_SWAP_FAILED,
+      "signedTransaction must not carry surrounding whitespace.",
+    );
+  }
+  if (!isBase64(signedTransaction)) {
+    throw new VexError(
+      ErrorCodes.SOLANA_SWAP_FAILED,
+      "signedTransaction must be base64-encoded for /tx/v1/submit.",
+    );
+  }
 }

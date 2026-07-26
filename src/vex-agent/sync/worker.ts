@@ -107,11 +107,21 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const settlementResult = await reconcilePredictionSettlements();
         result = { ...settlementResult };
         rowsAffected = settlementResult.closed;
-      } else if (syncType === "hyperliquid_reconcile") {
-        const { reconcileHyperliquid } = await import("./hyperliquid-reconciler.js");
-        const reconcileResult = await reconcileHyperliquid();
-        result = { ...reconcileResult };
-        rowsAffected = reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled;
+      } else if (syncType === "agent_activity_repair") {
+        const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
+        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        result = { ...repairResult };
+        rowsAffected = repairResult.confirmed + repairResult.failed;
+      } else if (syncType === "bridge_activity_repair") {
+        const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
+        const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
+        result = { ...bridgeResult };
+        rowsAffected = bridgeResult.confirmed + bridgeResult.failed;
+      } else if (syncType === "solana_activity_repair") {
+        const { repairPendingSolanaActivity, buildProductionSolanaRepairDeps } = await import("./solana-activity-repair.js");
+        const solanaResult = await repairPendingSolanaActivity(buildProductionSolanaRepairDeps());
+        result = { ...solanaResult };
+        rowsAffected = solanaResult.confirmed + solanaResult.failed;
       } else {
         result = { skipped: true, reason: `Unknown sync type: ${syncType}` };
         logger.warn("sync.worker.unknown_type", { syncType, runCount: runs.length });
@@ -146,20 +156,6 @@ export async function drainPendingRuns(): Promise<DrainResult> {
     logger.info("sync.worker.drain_completed", { processed, deduped, errors });
   }
 
-  // Refresh prediction MTM after balance drain (cheap — deduped API calls)
-  if (processed > 0) {
-    try {
-      const { refreshPredictionMtm } = await import("./mtm.js");
-      await refreshPredictionMtm();
-    } catch (err) {
-      const causeCode = extractCauseCode(err);
-      logger.warn("sync.worker.mtm_failed", {
-        error: err instanceof Error ? err.message : String(err),
-        ...(causeCode !== null ? { causeCode } : {}),
-      });
-    }
-  }
-
   return { processed, deduped, errors };
 }
 
@@ -186,14 +182,18 @@ export async function processNextRun(): Promise<boolean> {
       const { reconcilePredictionSettlements } = await import("./prediction-settlement-sync.js");
       const settlementResult = await reconcilePredictionSettlements();
       await syncRepo.completeRun(run.id, { ...settlementResult }, settlementResult.closed);
-    } else if (job.syncType === "hyperliquid_reconcile") {
-      const { reconcileHyperliquid } = await import("./hyperliquid-reconciler.js");
-      const reconcileResult = await reconcileHyperliquid();
-      await syncRepo.completeRun(
-        run.id,
-        { ...reconcileResult },
-        reconcileResult.captured + reconcileResult.closed + reconcileResult.cancelled,
-      );
+    } else if (job.syncType === "agent_activity_repair") {
+      const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
+      const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.confirmed + repairResult.failed);
+    } else if (job.syncType === "bridge_activity_repair") {
+      const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
+      const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
+      await syncRepo.completeRun(run.id, { ...bridgeResult }, bridgeResult.confirmed + bridgeResult.failed);
+    } else if (job.syncType === "solana_activity_repair") {
+      const { repairPendingSolanaActivity, buildProductionSolanaRepairDeps } = await import("./solana-activity-repair.js");
+      const solanaResult = await repairPendingSolanaActivity(buildProductionSolanaRepairDeps());
+      await syncRepo.completeRun(run.id, { ...solanaResult }, solanaResult.confirmed + solanaResult.failed);
     } else {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }

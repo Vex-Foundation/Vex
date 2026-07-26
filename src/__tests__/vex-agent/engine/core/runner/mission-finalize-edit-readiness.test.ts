@@ -22,7 +22,6 @@ const mockConsumeAbortIntent = vi.fn();
 const mockScheduleRuntimeContinuation = vi.fn();
 const mockIsContinuableRuntimeStop = vi.fn().mockReturnValue(false);
 const mockReconcileDraftReadiness = vi.fn();
-const mockCaptureMissionFinal = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   setStatus: (...a: unknown[]) => mockMissionsSetStatus(...a),
@@ -53,10 +52,6 @@ vi.mock("@vex-agent/engine/mission/draft-readiness.js", () => ({
   reconcileDraftReadiness: (...a: unknown[]) => mockReconcileDraftReadiness(...a),
 }));
 
-vi.mock("@vex-agent/engine/mission/mission-results-capture.js", () => ({
-  captureMissionFinal: (...a: unknown[]) => mockCaptureMissionFinal(...a),
-}));
-
 import { finalizeMissionRunStatus } from "../../../../../vex-agent/engine/core/runner/mission-finalize.js";
 
 describe("finalizeMissionRunStatus — user_stopped edit-abort-intent branch", () => {
@@ -65,7 +60,6 @@ describe("finalizeMissionRunStatus — user_stopped edit-abort-intent branch", (
     mockIsContinuableRuntimeStop.mockReturnValue(false);
     mockConsumeAbortIntent.mockReturnValue("edit");
     mockMissionRunsGetRun.mockResolvedValue(null);
-    mockCaptureMissionFinal.mockResolvedValue(undefined);
   });
 
   it('returns "ready" when reconcileDraftReadiness resolves { promoted: true }', async () => {

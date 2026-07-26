@@ -61,14 +61,6 @@ const SYNTHETIC_CONTRACTS: ReadonlyMap<string, SyntheticCaptureContract> = new M
     expectedType: "prediction",
     requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
   }],
-  ["settlement_sync.polymarket", {
-    expectedType: "prediction",
-    requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
-  }],
-  ["hyperliquid_reconcile.position", {
-    expectedType: "perps",
-    requiredFields: ["type", "status", "walletAddress", "positionKey", "valuationSource"],
-  }],
 ]);
 
 /**
@@ -77,7 +69,7 @@ const SYNTHETIC_CONTRACTS: ReadonlyMap<string, SyntheticCaptureContract> = new M
  * routed into the synthetic validator and REJECTED there — it must never fall
  * back to the fail-open non-synthetic path. See B-006.
  */
-const SYNTHETIC_TOOL_PREFIXES = ["settlement_sync.", "hyperliquid_reconcile."] as const;
+const SYNTHETIC_TOOL_PREFIXES = ["settlement_sync."] as const;
 
 /** Whether a tool-id belongs to the synthetic-capture family (by prefix). */
 export function isSyntheticToolId(toolId: string): boolean {

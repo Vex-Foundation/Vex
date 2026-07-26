@@ -28,9 +28,23 @@
  *
  * Add a chain here only when its explorer host is also added to
  * `EXPLORER_EXTERNAL_ALLOW`. Do NOT grow this into a chain registry — the
- * coverage audit in `__tests__/explorer-links.test.ts` pins that every runtime
- * chain identity (KyberSwap CHAINS, evm-chains activityChainKeys, Solana,
- * HyperCore, HyperEVM) resolves through this map.
+ * coverage audit in `__tests__/explorer-links-coverage.test.ts` pins that every
+ * runtime chain identity (KyberSwap CHAINS, evm-chains activityChainKeys,
+ * Solana, HyperEVM) resolves through this map.
+ *
+ * BRIDGE resolution (Agent Scan Phase 2, R14): a bridge leg's explorer link is
+ * resolved ONLY through this curated map — provider (Khalani `/v1/chains`
+ * blockExplorers.default.url / Relay `explorerUrl`+`explorerPaths.transaction`)
+ * URLs are NEVER passed through raw; the renderer resolves each leg by its
+ * `chainFamily` (a `solana`-family leg → the `solana` explorer path, a signed
+ * base58 signature not a 0x hash — the provider-native Solana chain id, which
+ * differs across providers, is DELIBERATELY not used as a key). This phase's
+ * bridge routes (Base 8453, Arbitrum 42161, Optimism 10, Robinhood 4663,
+ * Solana) are ALL already curated above. A Khalani chain not yet curated
+ * (e.g. abstract/0g/katana/jovay — no verified explorer host in the repo or the
+ * research dossier) FAILS CLOSED to a non-interactive row (null), never a
+ * guessed or raw provider URL; adding it requires transcribing its VERIFIED
+ * explorer host here AND into `EXPLORER_EXTERNAL_ALLOW`.
  */
 
 /** Normalized chain alias → explorer tx-path base (trailing slash included). */
@@ -109,8 +123,6 @@ const EXPLORER_TX_BASE: ReadonlyMap<string, string> = new Map([
   ["zksync", "https://explorer.zksync.io/tx/"],
   ["eip155:324", "https://explorer.zksync.io/tx/"],
   ["324", "https://explorer.zksync.io/tx/"],
-  // HyperCore (Hyperliquid L1): tx hash → the app's own explorer.
-  ["hyperliquid", "https://app.hyperliquid.xyz/explorer/tx/"],
   // HyperEVM (chain id 999): EVM tx hash → hyperevmscan.
   ["hyperevm", "https://hyperevmscan.io/tx/"],
   ["eip155:999", "https://hyperevmscan.io/tx/"],
@@ -129,13 +141,13 @@ const EXPLORER_TX_BASE: ReadonlyMap<string, string> = new Map([
 /**
  * Normalized chain alias → explorer address-path base (trailing slash
  * included). Populated ONLY for chains whose activity can lack a tx hash and
- * whose explorer exposes a per-address page. Today that is HyperCore, where a
- * position/fill row carries no single transaction reference, so the UI links to
- * the account page instead. Same allowlist coupling as `EXPLORER_TX_BASE`.
+ * whose explorer exposes a per-address page — a row carrying no single
+ * transaction reference links to the account page instead. Currently empty
+ * (its sole entry, HyperCore, was removed with Hyperliquid); `explorerAccountUrl`
+ * stays a live, tested mechanism for the next chain that needs it. Same
+ * allowlist coupling as `EXPLORER_TX_BASE`.
  */
-const EXPLORER_ADDRESS_BASE: ReadonlyMap<string, string> = new Map([
-  ["hyperliquid", "https://app.hyperliquid.xyz/explorer/address/"],
-]);
+const EXPLORER_ADDRESS_BASE: ReadonlyMap<string, string> = new Map([]);
 
 /**
  * Trim a tolerant scalar and reject blanks — a whitespace-only ref/address
@@ -168,8 +180,10 @@ export function explorerTxUrl(
 
 /**
  * Resolve a row to its block-explorer ACCOUNT (address) URL. Used for activity
- * that has no single tx reference (e.g. HyperCore rows), so the UI can still
- * offer a `View account` link. Same tolerant semantics as `explorerTxUrl`.
+ * that has no single tx reference, so the UI can still offer a `View account`
+ * link. Same tolerant semantics as `explorerTxUrl`. No chain is currently
+ * mapped in `EXPLORER_ADDRESS_BASE` (its only entry died with Hyperliquid);
+ * this always resolves `null` until a future chain needs it.
  *
  * @param chain   tolerant chain identifier
  * @param address the account/wallet address; `null` when absent
@@ -204,10 +218,10 @@ export type ExplorerAllowEntry =
  * cannot drift.
  *
  * The 7 pre-existing explorer hosts keep HOST-WIDE semantics (exact-host match,
- * no path scoping) exactly as before — no silent tightening. The 3 NEW hosts
+ * no path scoping) exactly as before — no silent tightening. The other hosts
  * are PATH-SCOPED to the explorer routes the mapper emits, so an allow-listed
  * host cannot double as an open redirect to its app surface (e.g.
- * `app.hyperliquid.xyz/trade` is NOT allowed; only `/explorer/...` is).
+ * `robinhoodchain.blockscout.com/swap` is NOT allowed; only `/tx/...` is).
  */
 export const EXPLORER_EXTERNAL_ALLOW: readonly ExplorerAllowEntry[] = [
   // Pre-existing explorer hosts — host-wide (unchanged semantics).
@@ -219,7 +233,6 @@ export const EXPLORER_EXTERNAL_ALLOW: readonly ExplorerAllowEntry[] = [
   "polygonscan.com",
   "optimistic.etherscan.io",
   // New hosts — path-scoped to the emitted explorer routes only.
-  { host: "app.hyperliquid.xyz", pathPrefix: "/explorer/" },
   { host: "hyperevmscan.io", pathPrefix: "/tx/" },
   { host: "robinhoodchain.blockscout.com", pathPrefix: "/tx/" },
   // Full chain coverage — every host below is path-scoped to `/tx/` so an

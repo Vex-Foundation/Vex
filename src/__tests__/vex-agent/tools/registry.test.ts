@@ -201,18 +201,30 @@ describe("registry", () => {
     const namespace = discover?.parameters.properties?.namespace;
     expect(namespace).toBeDefined();
     expect(namespace?.description).toContain("dexscreener");
-    expect(namespace?.description).toContain("polymarket");
     expect(namespace?.description).toContain("khalani");
+    // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
+    // C30): the hidden Uniswap fallback is a KNOWN but non-ADVERTISED
+    // namespace — this STATIC discovery schema text must never name it, even
+    // though `uniswap.swap.*` tools still exist and are still reachable via
+    // the session-revealed aliases.
+    expect(namespace?.description).not.toContain("uniswap");
   });
 
-  it("mutating tools are bridge, polymarket_setup, swap, wallet_send_confirm", () => {
-    // `swap` (Stage 8b) and `bridge` (Stage 8c) are MUTATING action-aliases that
-    // dispatch through the dedicated branch (executeProtocolTool owns approval).
+  it("mutating tools are bridge, bridge_execute_relay, swap_execute, swap_execute_uniswap, wallet_send_confirm", () => {
+    // `swap_execute`/`swap_execute_uniswap` (Stage 8b; Agent Scan plan §11.2
+    // renamed `swap` in place and added the hidden Uniswap pair) and `bridge`
+    // (Stage 8c) are MUTATING action-aliases that dispatch through the
+    // dedicated branch (executeProtocolTool owns approval). Phase-2 bridge
+    // factory W5 added the hidden Relay pair — `bridge_execute_relay` is the
+    // mutating half (route-bound reveal; `bridge_quote_relay` is read-only).
+    // Hidden-by-default visibility does not affect this list — `getAllTools()`
+    // is unfiltered.
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
     expect(mutating).toEqual([
       "bridge",
-      "polymarket_setup",
-      "swap",
+      "bridge_execute_relay",
+      "swap_execute",
+      "swap_execute_uniswap",
       "wallet_send_confirm",
     ]);
   });
@@ -235,10 +247,13 @@ describe("registry", () => {
         contextUsageBand: "barrier",
       }));
       const names = tools.map(t => t.function.name);
-      // wallet_send_confirm + polymarket_setup are the canonical mutating
-      // tools (registry-completeness asserts the list).
+      // wallet_send_confirm + swap_execute are canonical, universally-visible
+      // mutating tools (registry-completeness asserts the mutating list).
+      // swap_execute_uniswap is NOT used here — it is ALSO hidden by the
+      // reveal gate independent of pressure band, which would make a false
+      // pressure-band assertion.
       expect(names).not.toContain("wallet_send_confirm");
-      expect(names).not.toContain("polymarket_setup");
+      expect(names).not.toContain("swap_execute");
     });
 
     it("at critical band: mutating tools are hidden from the LLM catalog", () => {
@@ -250,7 +265,7 @@ describe("registry", () => {
       }));
       const names = tools.map(t => t.function.name);
       expect(names).not.toContain("wallet_send_confirm");
-      expect(names).not.toContain("polymarket_setup");
+      expect(names).not.toContain("swap_execute");
     });
 
     it("at barrier band: compact_only tools (compact_now) ARE visible", () => {

@@ -9,22 +9,18 @@
  *
  * These tests pin the fail-closed contract: when the build response's
  * routerAddress differs from the allowlisted constant, the handler MUST refuse
- * BEFORE any send, even though the route response's routerAddress matched.
+ * BEFORE any broadcast, even though the route response's routerAddress
+ * matched.
  *
- * `verifyRouterAddress` is mocked with a behaviour-equivalent lowercase compare
- * (the real function's checksum semantics are covered by
- * `kyberswap-evm-utils.test.ts`); here we assert the WIRING — that each handler
- * calls it with the BUILD router + the correct allowlisted constant, before the
- * send spy.
+ * The zap.in build-router-verification half of this file was deleted with the
+ * rest of the zap surface (Agent Scan plan §4.2) — `sendKyberTransaction` is
+ * also gone (the execute handler now uses the staged sign→persist→broadcast
+ * primitive, `signStageBroadcast`).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
-import {
-  META_AGGREGATION_ROUTER_V2,
-  KS_ZAP_ROUTER_POSITION,
-} from "@tools/kyberswap/constants.js";
-import type { ZapDexEntry } from "@tools/kyberswap/zaas/zap-dexes/types.js";
+import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 
 const ATTACKER_ROUTER = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
@@ -35,19 +31,14 @@ const h = vi.hoisted(() => ({
       throw new Error(`Router address mismatch: ${actual} != ${expected}`);
     }
   }),
-  sendKyberTransaction: vi.fn().mockResolvedValue("0xswaphash"),
-  sendKyberTransactionWithReceipt: vi.fn().mockResolvedValue({
-    hash: "0xzaphash",
-    receipt: { logs: [] },
-  }),
-  ensureKyberAllowance: vi.fn().mockResolvedValue(undefined),
+  signStageBroadcast: vi.fn(),
+  planKyberAllowance: vi.fn().mockResolvedValue({ needsReset: false, needsApprove: false }),
   ensureErc20Balance: vi.fn().mockResolvedValue(undefined),
   getRoute: vi.fn(),
   buildRoute: vi.fn(),
-  getZapInRoute: vi.fn(),
-  buildZapIn: vi.fn(),
   getHoneypotFotInfo: vi.fn().mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 }),
-  resolveChainBenchmark: vi.fn(() => null),
+  createAgentActivityPreBroadcastFailure: vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } }),
+  createAgentActivityIntent: vi.fn().mockResolvedValue({ executionId: 1, events: [{ id: 1 }] }),
 }));
 
 const SESSION_EVM = {
@@ -67,17 +58,14 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 
 vi.mock("@tools/kyberswap/evm-utils.js", () => ({
   getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
-  ensureKyberAllowance: (...a: unknown[]) => h.ensureKyberAllowance(...a),
-  ensureErc721Approval: vi.fn().mockResolvedValue(null),
-  ensureErc1155ApprovalForAll: vi.fn().mockResolvedValue(null),
-  sendKyberTransaction: (...a: unknown[]) => h.sendKyberTransaction(...a),
-  sendKyberTransactionWithReceipt: (...a: unknown[]) => h.sendKyberTransactionWithReceipt(...a),
-  extractMintedNftId: vi.fn(() => undefined),
-  extractErc1155Position: vi.fn(() => undefined),
   readErc20Metadata: vi.fn(async (_slug: string, address: string) => ({
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   })),
   verifyRouterAddress: (...a: [string, string]) => h.verifyRouterAddress(...a),
+  planKyberAllowance: (...a: unknown[]) => h.planKyberAllowance(...a),
+  buildApproveCalldata: vi.fn(() => "0xapprove"),
+  signStageBroadcast: (...a: unknown[]) => h.signStageBroadcast(...a),
+  decodeKyberSwapSettlement: vi.fn(() => null),
 }));
 
 vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({
@@ -98,37 +86,17 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   }),
 }));
 
-vi.mock("@tools/kyberswap/zaas/client.js", () => ({
-  getKyberZaasClient: () => ({
-    getZapInRoute: (...a: unknown[]) => h.getZapInRoute(...a),
-    buildZapIn: (...a: unknown[]) => h.buildZapIn(...a),
-  }),
+vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+  createAgentActivityIntent: (...a: unknown[]) => h.createAgentActivityIntent(...a),
+  createAgentActivityPreBroadcastFailure: (...a: unknown[]) => h.createAgentActivityPreBroadcastFailure(...a),
+  markActivityBroadcast: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  markBroadcastAccepted: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  confirmActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
+  failActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
 }));
 
-// Controlled DEX catalog so zap.in reaches the build+send path hermetically.
-const NATIVE_ZAP_DEX: ZapDexEntry = {
-  id: "DEX_UNISWAPV3",
-  name: "Uniswap V3",
-  supports: ["zap-in"],
-  verification: "verified",
-  positionRefKind: "tokenId",
-  approvalStandard: "erc20",
-  approvalTargetKind: "poolAddress",
-  captureKind: "none",
-  positionKeyStrategy: "none",
-};
-
-vi.mock("@tools/kyberswap/zaas/zap-dexes/index.js", () => ({
-  getZapDexConfig: () => ({
-    chain: "ethereum",
-    lastVerified: "2026-01-01",
-    source: "test",
-    dexes: [NATIVE_ZAP_DEX],
-  }),
-}));
-
-vi.mock("@vex-agent/sync/benchmark.js", () => ({
-  resolveChainBenchmark: (...a: [string]) => h.resolveChainBenchmark(...a),
+vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
+  pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
 vi.mock("@utils/logger.js", () => {
@@ -136,6 +104,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
+import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 function ctx(): ProtocolExecutionContext {
@@ -144,14 +113,26 @@ function ctx(): ProtocolExecutionContext {
     approved: true,
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
+    sessionId: "session-1",
   };
 }
-
-const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 describe("FIX 1 — swap build-response router verification", () => {
   const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
   const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+
+  /**
+   * Real captured router calldata, identity fields matching the handler call
+   * below (TOKEN_A→TOKEN_B, 18-decimal `amountIn: "1"`, output to the session
+   * wallet) and the route mock's quoted 999000 out at the venue-default 50 bps.
+   * Both cases use it so the ONLY difference between them is the build's
+   * `routerAddress` — a `"0xcalldata"` placeholder would make the positive
+   * control refuse at the pre-sign calldata decode instead of broadcasting.
+   */
+  const COMPLIANT_BUILD_CALLDATA = compliantSwapCalldata({
+    srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
+    amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -160,108 +141,71 @@ describe("FIX 1 — swap build-response router verification", () => {
         throw new Error(`Router address mismatch: ${actual} != ${expected}`);
       }
     });
+    h.planKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    h.createAgentActivityIntent.mockResolvedValue({ executionId: 1, events: [{ id: 1 }] });
     h.getHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     // Route response's router matches — guards approval — but the build
     // response's router is attacker-controlled.
     h.getRoute.mockResolvedValue({
       data: {
-        routeSummary: { amountIn: "1000000", amountOut: "999000", gasUsd: "0.5" },
+        routeSummary: {
+          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+          // A route summary ALWAYS carries its paths, and the pre-sign guard
+          // reads them to decide which pools the build may fund.
+          route: compliantRoutePaths({
+            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+          }),
+        },
         routerAddress: META_AGGREGATION_ROUTER_V2,
       },
     });
   });
 
-  it("fails closed BEFORE send when the build router differs from the allowlist", async () => {
+  it("fails closed BEFORE broadcast when the build router differs from the allowlist", async () => {
     h.buildRoute.mockResolvedValue({
       data: {
         routerAddress: ATTACKER_ROUTER,
-        data: "0xcalldata",
+        data: COMPLIANT_BUILD_CALLDATA,
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
     });
 
-    await expect(
-      KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
-        { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
-        ctx(),
-      ),
-    ).rejects.toThrow(/mismatch/i);
+    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
+      ctx(),
+    );
 
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/mismatch/i);
     expect(h.verifyRouterAddress).toHaveBeenCalledWith(ATTACKER_ROUTER, META_AGGREGATION_ROUTER_V2);
-    expect(h.sendKyberTransaction).not.toHaveBeenCalled();
+    expect(h.signStageBroadcast).not.toHaveBeenCalled();
   });
 
   it("broadcasts when the build router matches the allowlist (positive control)", async () => {
     h.buildRoute.mockResolvedValue({
       data: {
         routerAddress: META_AGGREGATION_ROUTER_V2,
-        data: "0xcalldata",
+        data: COMPLIANT_BUILD_CALLDATA,
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
     });
+    h.signStageBroadcast.mockResolvedValue({
+      kind: "confirmed",
+      txHash: "0xswaphash",
+      receipt: { logs: [] },
+    });
 
-    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.sell"]!(
+    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       ctx(),
     );
 
     expect(result.success).toBe(true);
     expect(h.verifyRouterAddress).toHaveBeenCalledWith(META_AGGREGATION_ROUTER_V2, META_AGGREGATION_ROUTER_V2);
-    expect(h.sendKyberTransaction).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("FIX 1 — zap.in build-response router verification", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    h.verifyRouterAddress.mockImplementation((actual: string, expected: string) => {
-      if (actual.toLowerCase() !== expected.toLowerCase()) {
-        throw new Error(`Router address mismatch: ${actual} != ${expected}`);
-      }
-    });
-    // Route response's router matches the allowlist.
-    h.getZapInRoute.mockResolvedValue({
-      data: {
-        route: "0xroute",
-        routerAddress: KS_ZAP_ROUTER_POSITION,
-        zapDetails: undefined,
-        poolDetails: undefined,
-      },
-    });
-  });
-
-  it("fails closed BEFORE send when the build router differs from the allowlist", async () => {
-    h.buildZapIn.mockResolvedValue({
-      data: { routerAddress: ATTACKER_ROUTER, callData: "0xcalldata", value: "0" },
-    });
-
-    await expect(
-      KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
-        { chain: "ethereum", dex: "DEX_UNISWAPV3", pool: "0x1111111111111111111111111111111111111111", tokenIn: NATIVE, amountIn: "1000000000000000000" },
-        ctx(),
-      ),
-    ).rejects.toThrow(/mismatch/i);
-
-    expect(h.verifyRouterAddress).toHaveBeenCalledWith(ATTACKER_ROUTER, KS_ZAP_ROUTER_POSITION);
-    expect(h.sendKyberTransactionWithReceipt).not.toHaveBeenCalled();
-  });
-
-  it("broadcasts when the build router matches the allowlist (positive control)", async () => {
-    h.buildZapIn.mockResolvedValue({
-      data: { routerAddress: KS_ZAP_ROUTER_POSITION, callData: "0xcalldata", value: "0" },
-    });
-
-    const result = await KYBERSWAP_HANDLERS["kyberswap.zap.in"]!(
-      { chain: "ethereum", dex: "DEX_UNISWAPV3", pool: "0x1111111111111111111111111111111111111111", tokenIn: NATIVE, amountIn: "1000000000000000000" },
-      ctx(),
-    );
-
-    expect(result.success).toBe(true);
-    expect(h.verifyRouterAddress).toHaveBeenCalledWith(KS_ZAP_ROUTER_POSITION, KS_ZAP_ROUTER_POSITION);
-    expect(h.sendKyberTransactionWithReceipt).toHaveBeenCalledTimes(1);
+    expect(h.signStageBroadcast).toHaveBeenCalledTimes(1);
   });
 });

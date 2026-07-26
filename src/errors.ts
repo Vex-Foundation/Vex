@@ -4,6 +4,16 @@
 export class VexError extends Error {
   retryable?: boolean;
   externalName?: string;
+  /**
+   * HTTP status of the response that produced this error, when it came from a
+   * provider that ANSWERED (set by `utils/http.ts` on a non-ok response).
+   * Absent for network/timeout/parse failures, where no status exists.
+   *
+   * Callers use it to tell a definitive provider refusal (4xx — the request
+   * was understood and rejected, nothing was acted on) from an ambiguous
+   * transport failure. Never assume its absence means success.
+   */
+  httpStatus?: number;
 
   constructor(
     public readonly code: string,
@@ -91,9 +101,24 @@ export const ErrorCodes = {
   KHALANI_SOLANA_KEYSTORE_NOT_FOUND: "KHALANI_SOLANA_KEYSTORE_NOT_FOUND",
   KHALANI_ADDRESS_MISMATCH: "KHALANI_ADDRESS_MISMATCH",
   KHALANI_UNSUPPORTED_DEPOSIT_METHOD: "KHALANI_UNSUPPORTED_DEPOSIT_METHOD",
-
-  // Hyperliquid Bridge2 funding
-  HYPERLIQUID_DEPOSIT_FAILED: "HYPERLIQUID_DEPOSIT_FAILED",
+  /**
+   * An EVM transaction's `tx.value` could not be fully attributed to proven
+   * cost components, or the transaction reaching the signer is not the one
+   * whose value was authorized. An AUTHORIZATION failure, not an economics one
+   * — maps to the `agent_activity` failure code `allowance_or_balance` with a
+   * structured reason. Nothing is signed.
+   * See `src/tools/evm-chains/native-value-authorization`.
+   */
+  NATIVE_VALUE_UNAUTHORIZED: "NATIVE_VALUE_UNAUTHORIZED",
+  /**
+   * A provider quoted a gas limit so far above Vex's own fresh
+   * `eth_estimateGas` for the same call that Vex will not sign it. The inverse
+   * of the lowball defect: our floor stops a provider lowering the limit, this
+   * stops one raising Vex's signed exposure without bound. A PRE-SIGN refusal —
+   * nothing is signed, staged, or broadcast.
+   * See `src/tools/evm-chains/gas-limit-headroom.ts`.
+   */
+  PROVIDER_GAS_LIMIT_EXCESSIVE: "PROVIDER_GAS_LIMIT_EXCESSIVE",
 
   // Relay (api.relay.link) — keyless cross-chain bridge
   RELAY_API_ERROR: "RELAY_API_ERROR",
@@ -119,36 +144,26 @@ export const ErrorCodes = {
   KYBER_FEE_EXCEEDS_AMOUNT: "KYBER_FEE_EXCEEDS_AMOUNT",
   KYBER_AMOUNT_TOO_LARGE: "KYBER_AMOUNT_TOO_LARGE",
   KYBER_WETH_NOT_CONFIGURED: "KYBER_WETH_NOT_CONFIGURED",
+  /**
+   * The built swap calldata's embedded `minReturnAmount` is below the price
+   * floor Vex approved at quote time (or below the floor the fresh route
+   * implies). A genuine slippage abort — maps to the `agent_activity`
+   * failure code `slippage`. Nothing is signed.
+   */
+  KYBER_PRICE_FLOOR_VIOLATED: "KYBER_PRICE_FLOOR_VIOLATED",
+  /**
+   * The built swap calldata does not match the transaction Vex approved in a
+   * NON-price way: wrong router/target, an unexpected approve spender, an
+   * unexpected native value, a fee line that is not the Vex constant, or a
+   * flag set (partial fill / fee-on-destination) we never approve. Maps to
+   * `route_not_found`, mirroring Solana's fee-policy divergence abort.
+   * Nothing is signed.
+   */
+  KYBER_UNSAFE_BUILD: "KYBER_UNSAFE_BUILD",
 
   // KyberSwap Token API
   KYBER_TOKEN_SEARCH_FAILED: "KYBER_TOKEN_SEARCH_FAILED",
   KYBER_HONEYPOT_CHECK_FAILED: "KYBER_HONEYPOT_CHECK_FAILED",
-
-  // KyberSwap Limit Orders
-  KYBER_LO_SIGN_FAILED: "KYBER_LO_SIGN_FAILED",
-  KYBER_LO_CREATE_FAILED: "KYBER_LO_CREATE_FAILED",
-  KYBER_LO_CANCEL_FAILED: "KYBER_LO_CANCEL_FAILED",
-  KYBER_LO_FILL_FAILED: "KYBER_LO_FILL_FAILED",
-  KYBER_LO_ORDER_NOT_FOUND: "KYBER_LO_ORDER_NOT_FOUND",
-  KYBER_LO_INSUFFICIENT_ALLOWANCE: "KYBER_LO_INSUFFICIENT_ALLOWANCE",
-  KYBER_LO_SIGNATURE_INVALID: "KYBER_LO_SIGNATURE_INVALID",
-
-  // KyberSwap ZaaS
-  KYBER_ZAP_ROUTE_NOT_FOUND: "KYBER_ZAP_ROUTE_NOT_FOUND",
-  KYBER_ZAP_BUILD_FAILED: "KYBER_ZAP_BUILD_FAILED",
-  KYBER_ZAP_UNSUPPORTED_DEX: "KYBER_ZAP_UNSUPPORTED_DEX",
-  KYBER_ZAP_INVALID_POSITION: "KYBER_ZAP_INVALID_POSITION",
-
-  // Polymarket
-  POLYMARKET_API_ERROR: "POLYMARKET_API_ERROR",
-  POLYMARKET_TIMEOUT: "POLYMARKET_TIMEOUT",
-  POLYMARKET_RATE_LIMITED: "POLYMARKET_RATE_LIMITED",
-  POLYMARKET_AUTH_FAILED: "POLYMARKET_AUTH_FAILED",
-  POLYMARKET_ORDER_FAILED: "POLYMARKET_ORDER_FAILED",
-  POLYMARKET_ORDER_NOT_FOUND: "POLYMARKET_ORDER_NOT_FOUND",
-  POLYMARKET_MARKET_NOT_FOUND: "POLYMARKET_MARKET_NOT_FOUND",
-  POLYMARKET_INSUFFICIENT_BALANCE: "POLYMARKET_INSUFFICIENT_BALANCE",
-  POLYMARKET_NOT_CONFIGURED: "POLYMARKET_NOT_CONFIGURED",
 
   // Setup
   SETUP_TARGET_EXISTS: "SETUP_TARGET_EXISTS",
@@ -222,6 +237,13 @@ export const ErrorCodes = {
   SOLANA_TRANSFER_FAILED: "SOLANA_TRANSFER_FAILED",
   SOLANA_TX_FAILED: "SOLANA_TX_FAILED",
   SOLANA_TX_TIMEOUT: "SOLANA_TX_TIMEOUT",
+  // W5 staged seam (design §2/R2b): the strict sole-signer check refused to
+  // sign (wrong required-signer count, signer mismatch, or a preserved
+  // nonzero signature that a blockhash replacement would invalidate).
+  SOLANA_TX_SOLE_SIGNER_VIOLATION: "SOLANA_TX_SOLE_SIGNER_VIOLATION",
+  // W5 staged seam: caller-supplied blockhash evidence (VERIFY mode) does not
+  // match the transaction's own embedded `recentBlockhash`.
+  SOLANA_TX_BLOCKHASH_MISMATCH: "SOLANA_TX_BLOCKHASH_MISMATCH",
   SOLANA_TOKEN_NOT_FOUND: "SOLANA_TOKEN_NOT_FOUND",
   SOLANA_RPC_ERROR: "SOLANA_RPC_ERROR",
   SOLANA_QUOTE_FAILED: "SOLANA_QUOTE_FAILED",

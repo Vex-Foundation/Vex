@@ -11,6 +11,9 @@ Local source-of-truth for the new Jupiter Lend shelf under `src/tools/solana-eco
 - `https://dev.jup.ag/docs/lend/program-addresses`
 - `https://dev.jup.ag/api-reference/lend/earn`
 - Verified on `2026-03-30`
+- `https://developers.jup.ag/docs/lend/borrow/api` — Borrow REST
+  (vaults/positions/operate), verified on `2026-07-24` (Agent Scan Phase 3
+  Batch 5, card B1 — see `borrow-api/JupiterLendBorrowApi.md`).
 
 ## Current Scope
 - Implemented now:
@@ -18,8 +21,12 @@ Local source-of-truth for the new Jupiter Lend shelf under `src/tools/solana-eco
   - unsigned transaction requests for deposit, withdraw, mint, and redeem
   - raw instruction requests for the same four Earn operations
   - read endpoints for tokens, positions, and earnings
+  - stable Jupiter Lend Borrow REST endpoints under `borrow-api/`: vaults,
+    positions, and the full-lifecycle `/operate` (see
+    `borrow-api/JupiterLendBorrowApi.md`)
 - Explicitly deferred in this pass:
-  - Borrow REST and Borrow SDK flows
+  - Borrow `/operate-instructions` (owner decision, B1 card)
+  - Borrow SDK flows (`@jup-ag/lend`, `@jup-ag/lend-read`)
   - Flashloan SDK flows
   - Read SDK integrations (`@jup-ag/lend-read`)
   - Lend SDK integrations (`@jup-ag/lend`)
@@ -49,13 +56,21 @@ src/tools/solana-ecosystem/jupiter/jupiter-lend/
 ├── index.ts
 ├── constants.ts
 ├── JupiterLend.md
-└── earn-api/
+├── earn-api/
+│   ├── index.ts
+│   ├── types.ts
+│   ├── validation.ts
+│   ├── client.ts
+│   ├── service.ts
+│   └── JupiterLendEarnApi.md
+└── borrow-api/
     ├── index.ts
     ├── types.ts
     ├── validation.ts
     ├── client.ts
+    ├── schemas.ts
     ├── service.ts
-    └── JupiterLendEarnApi.md
+    └── JupiterLendBorrowApi.md
 ```
 
 ## Upstream Contract Notes

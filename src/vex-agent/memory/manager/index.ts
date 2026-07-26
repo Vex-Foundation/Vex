@@ -105,42 +105,11 @@ export {
 } from "./evidence-deref.js";
 
 export {
-  resolveOutcome,
-  type OutcomeResolverDeps,
-} from "./outcome-resolver.js";
-
-export {
   deriveDecisionBoundary,
   checkNoLookahead,
   type ExecTimeRef,
   type ExecTimeDeref,
 } from "./point-in-time.js";
-
-export {
-  OUTCOME_QUENCH_ACTIVATION,
-  RECONCILE_RATIONALE_MAX,
-  RECONCILE_VERDICT_ACTIONS,
-  RECONCILE_TIER_PROPOSALS,
-  reconcileVerdictSchema,
-  outcomeDelta,
-  consequenceFor,
-  quenchedActivation,
-  shouldConsultTierRaise,
-  tierRaiseTarget,
-  resolveFinalAction,
-  type OutcomeDelta,
-  type ReconcileConsequence,
-  type ReconcileAction,
-  type ReconcileVerdict,
-} from "./reconcile-policy.js";
-
-export {
-  callReconcileJudge,
-  buildReconcileJudgeSystemPrompt,
-  buildReconcileJudgeUserPrompt,
-  type ReconcileJudgeContext,
-  type ReconcileJudgeResult,
-} from "./reconcile-judge.js";
 
 export {
   buildJudgeContext,

@@ -1,28 +1,18 @@
 /**
- * ApiKeysStep tests (M9 Step 3 + feature #7 Polymarket auto-setup +
- * PR8 redesign — per-provider glass cards).
+ * ApiKeysStep tests (M9 Step 3 + PR8 redesign — per-provider glass cards).
  *
  * Verifies:
- *  - Skip-card when JUPITER configured + polymarket NOT partial.
- *  - Skip-card surfaces "Configure Polymarket now" CTA in setup mode
- *    when polymarketStatus !== "configured" (feature #7).
- *  - back-edit flow ALWAYS renders the form (feature #7 Codex Q5).
- *  - "Repair Polymarket" warning rendered when polymarketStatus === "partial"
- *    (warn-but-advance — no longer blocks; optional-connections model).
+ *  - Skip-card when JUPITER is configured.
+ *  - back-edit flow ALWAYS renders the form.
  *  - Non-blocking "Jupiter missing" warning when Jupiter is unconfigured;
  *    "Skip optional" / "Save and continue" ADVANCE regardless.
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
- *  - 4 provider cards render in canonical order (jupiter → tavily →
- *    rettiwt → polymarket) and each carries the correct external link.
- *  - Polymarket card hosts the auto-setup section only — no manual
- *    API-key / secret / passphrase inputs (PR8).
+ *  - 3 provider cards render in canonical order (jupiter → tavily →
+ *    rettiwt) and each carries the correct external link.
  *  - Every external "Get key" link opens with target="_blank" +
  *    rel="noopener noreferrer".
- *  - PolymarketAutoSetupSection mounts inside the Polymarket card
- *    (feature #7) and the onSuccess callback wires through to envState
- *    invalidation (Codex Q8).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +21,6 @@ import {
   fireEvent,
   render,
   waitFor,
-  within,
 } from "@testing-library/react";
 import {
   QueryClient,
@@ -86,15 +75,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
 
 const { ApiKeysStep } = await import("../ApiKeysStep.js");
 
-interface EnvStateExtras {
-  readonly secretsUnlocked?: boolean;
-  readonly evmWalletPresent?: boolean;
-}
-
-function envState(
-  overrides: Partial<EnvState["apiKeys"]> = {},
-  extras: EnvStateExtras = {},
-): EnvState {
+function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
   return {
     hasKeystorePassword: true,
     hasJupiterApiKey: overrides.jupiterConfigured ?? false,
@@ -102,12 +83,11 @@ function envState(
       jupiterConfigured: false,
       tavilyConfigured: false,
       rettiwtConfigured: false,
-      polymarketStatus: "missing",
       ...overrides,
     },
     secrets: {
       vaultConfigured: true,
-      unlocked: extras.secretsUnlocked ?? true,
+      unlocked: true,
     },
     embeddings: {
       configured: false,
@@ -117,7 +97,7 @@ function envState(
       dbReachable: null,
     },
     walletStatus: {
-      evm: (extras.evmWalletPresent ?? true) ? "present" : "missing",
+      evm: "present",
       solana: "present",
     },
     provider: { configured: false, name: null, modelLabel: null },
@@ -157,24 +137,13 @@ afterEach(() => {
 });
 
 describe("ApiKeysStep", () => {
-  it("renders skip-card when JUPITER configured + polymarket not partial", () => {
+  it("renders skip-card when JUPITER is configured", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
     expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).toBeNull();
-  });
-
-  it("shows the form even when JUPITER is set if polymarket is partial", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
-    );
-    const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
-    expect(container.querySelector('[data-vex-apikeys-warning="polymarket-partial"]')).not.toBeNull();
   });
 
   it("submits Jupiter key, clears the input, and advances on success", async () => {
@@ -244,37 +213,8 @@ describe("ApiKeysStep", () => {
     expect(mockSetApiKeys).not.toHaveBeenCalled();
   });
 
-  it("'Skip optional' ADVANCES even when Polymarket configuration is partial (warn-but-advance)", async () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
-    );
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
-    const { getByText, container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    // Partial Polymarket still shows the form (jupiter set) with the
-    // partial warning callout, but no longer blocks the skip.
-    expect(
-      container.querySelector('[data-vex-apikeys-warning="polymarket-partial"]'),
-    ).not.toBeNull();
-    fireEvent.click(getByText("Skip optional"));
-    await waitFor(() => {
-      expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
-    });
-  });
-
-  it("'Skip optional' advances when Jupiter configured + polymarket not partial", async () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "configured" })),
-    );
+  it("'Skip optional' advances when Jupiter configured", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     mockSetWizardMutate.mockResolvedValue({
       ok: true,
       data: {
@@ -319,30 +259,6 @@ describe("ApiKeysStep", () => {
     expect(mockSetApiKeys).not.toHaveBeenCalled();
   });
 
-  it("'Save and continue' ADVANCES when Polymarket partial + nothing entered (warn-but-advance)", async () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "partial" })),
-    );
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
-    const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
-    fireEvent.submit(form);
-    await waitFor(() => {
-      expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
-    });
-    expect(mockSetApiKeys).not.toHaveBeenCalled();
-  });
-
   it("does not render legacy API-key fields in the form", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
@@ -353,9 +269,7 @@ describe("ApiKeysStep", () => {
   });
 
   it("back-edit mode renders the full form even when Jupiter is configured", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "missing" })),
-    );
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     const { container } = renderWithQuery(
       <ApiKeysStep
         completedSteps={["keystore", "wallets", "apiKeys"]}
@@ -367,116 +281,18 @@ describe("ApiKeysStep", () => {
     expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).toBeNull();
   });
 
-  it("setup mode skip-card shows 'Configure Polymarket now' CTA when polymarket missing", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "missing" })),
-    );
-    const { container, getByText } = renderWithQuery(
-      <ApiKeysStep
-        completedSteps={["keystore", "wallets"]}
-        onAdvance={mockOnAdvance}
-        flowMode="first-pass"
-      />,
-    );
-    expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
-    expect(getByText(/Configure Polymarket now/i)).toBeTruthy();
-  });
-
-  it("setup mode skip-card hides 'Configure Polymarket now' CTA when polymarket configured", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(
-        envState({ jupiterConfigured: true, polymarketStatus: "configured" }),
-      ),
-    );
-    const { container } = renderWithQuery(
-      <ApiKeysStep
-        completedSteps={["keystore", "wallets"]}
-        onAdvance={mockOnAdvance}
-        flowMode="first-pass"
-      />,
-    );
-    expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).not.toBeNull();
-    expect(
-      container.querySelector("[data-vex-apikeys-skip-polymarket-cta='button']"),
-    ).toBeNull();
-  });
-
-  it("clicking 'Configure Polymarket now' CTA expands skip-card into the form", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({ jupiterConfigured: true, polymarketStatus: "missing" })),
-    );
-    const { container, getByText } = renderWithQuery(
-      <ApiKeysStep
-        completedSteps={["keystore", "wallets"]}
-        onAdvance={mockOnAdvance}
-        flowMode="first-pass"
-      />,
-    );
-    fireEvent.click(getByText(/Configure Polymarket now/i));
-    expect(container.querySelector('[data-vex-wizard-apikeys="form"]')).not.toBeNull();
-    expect(
-      container.querySelector("[data-vex-polymarket-auto-button]"),
-    ).not.toBeNull();
-  });
-
-  it("Polymarket fieldset includes the auto-setup section (feature #7)", () => {
-    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const fieldset = container.querySelector(
-      "[data-vex-apikeys-polymarket='fieldset']",
-    );
-    expect(fieldset).not.toBeNull();
-    expect(
-      fieldset?.querySelector("[data-vex-polymarket-auto-button]"),
-    ).not.toBeNull();
-  });
-
-  it("auto-setup section button is disabled when EVM wallet missing (feature #7)", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({}, { evmWalletPresent: false })),
-    );
-    const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const button = container.querySelector(
-      "[data-vex-polymarket-auto-button]",
-    ) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(
-      container.querySelector("[data-vex-polymarket-auto-helper]")?.textContent,
-    ).toMatch(/EVM wallet required/);
-  });
-
-  it("auto-setup section button is disabled when vault locked (feature #7)", () => {
-    mockUseEnvState.mockReturnValue(
-      makeQueryResult(envState({}, { secretsUnlocked: false })),
-    );
-    const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const button = container.querySelector(
-      "[data-vex-polymarket-auto-button]",
-    ) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(
-      container.querySelector("[data-vex-polymarket-auto-helper]")?.textContent,
-    ).toMatch(/Unlock Vex first/);
-  });
-
   // ── PR8 redesign — per-provider cards ────────────────────────────────
 
-  it("renders 4 provider cards in canonical order (PR8)", () => {
+  it("renders 3 provider cards in canonical order (PR8)", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(3);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
-    ).toEqual(["jupiter", "tavily", "rettiwt", "polymarket"]);
+    ).toEqual(["jupiter", "tavily", "rettiwt"]);
   });
 
   it("renders canonical external links for each provider card (PR8)", () => {
@@ -503,33 +319,6 @@ describe("ApiKeysStep", () => {
     expect(rettiwtHrefs).toContain(
       "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper",
     );
-
-    // Polymarket card has NO get-key link (auto-setup only).
-    expect(
-      container.querySelector('[data-vex-apikeys-card="polymarket"] a[href]'),
-    ).toBeNull();
-  });
-
-  it("Polymarket card renders auto-setup only — no manual fields (PR8)", () => {
-    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    const { container } = renderWithQuery(
-      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
-    );
-    const polyCard = container.querySelector(
-      '[data-vex-apikeys-card="polymarket"]',
-    ) as HTMLElement | null;
-    expect(polyCard).not.toBeNull();
-    if (polyCard === null) return;
-    // Auto-setup button is present.
-    expect(
-      polyCard.querySelector("[data-vex-polymarket-auto-button]"),
-    ).not.toBeNull();
-    // No manual trio inputs — labels "API key", "API secret",
-    // "Passphrase" must not exist anywhere inside the Polymarket card.
-    const w = within(polyCard);
-    expect(w.queryByLabelText("API key")).toBeNull();
-    expect(w.queryByLabelText("API secret")).toBeNull();
-    expect(w.queryByLabelText("Passphrase")).toBeNull();
   });
 
   it("every external link on a card uses target='_blank' + rel='noopener noreferrer' (PR8)", () => {

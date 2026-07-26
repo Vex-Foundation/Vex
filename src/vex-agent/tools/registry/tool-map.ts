@@ -9,7 +9,6 @@
  */
 
 import { getVisibleToolDefs, type ToolVisibilityContext } from "./visibility.js";
-import { HYPERVEXING_ALIAS_NAMES } from "../hypervexing-aliases.js";
 
 /**
  * Ordered, visibility-coherent categorization of the agent-surface tools
@@ -29,7 +28,7 @@ export interface ToolMapCategory {
 
 export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Protocol discovery/execution", toolNames: ["discover_tools", "execute_tool"] },
-  { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "portfolio"] },
+  { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
   {
     label: "Khalani read shortcuts",
@@ -42,9 +41,23 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   },
   {
     label: "Swap & bridge previews (read-only)",
-    toolNames: ["swap_quote", "token_check", "bridge_quote", "bridge_status"],
+    // `bridge_quote_relay` mirrors `swap_quote_uniswap`: a hidden, route-bound
+    // reveal pair (see registry/relay-reveal.ts) that sits right after its
+    // always-visible counterpart once revealed.
+    toolNames: [
+      "swap_quote",
+      "swap_quote_uniswap",
+      "token_check",
+      "bridge_quote",
+      "bridge_quote_relay",
+      "bridge_status",
+    ],
   },
-  { label: "Swap & bridge execution (on-chain — quote first)", toolNames: ["swap", "bridge"] },
+  {
+    label: "Swap & bridge execution (on-chain — quote first)",
+    // `bridge_execute_relay` mirrors `swap_execute_uniswap` (hidden reveal pair).
+    toolNames: ["swap_execute", "swap_execute_uniswap", "bridge", "bridge_execute_relay"],
+  },
   { label: "Research", toolNames: ["web_research", "twitter_account"] },
   { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
   {
@@ -65,8 +78,6 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Mission run stop", toolNames: ["mission_stop"] },
   { label: "Mission run scheduling", toolNames: ["loop_defer"] },
   { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["plan_write"] },
-  { label: "Setup/onboarding", toolNames: ["polymarket_setup"] },
-  { label: "Hyperliquid workspace", toolNames: ["hyperliquid_enter"] },
 ];
 
 /**
@@ -90,10 +101,6 @@ export function getVisibleToolsByCategory(
     if (surviving.length > 0) {
       result.push({ label: category.label, toolNames: surviving });
     }
-  }
-  const hotAliases = HYPERVEXING_ALIAS_NAMES.filter(name => visibleNames.has(name));
-  if (hotAliases.length > 0) {
-    result.push({ label: "Hypervexing Hyperliquid hot set", toolNames: hotAliases });
   }
   return result;
 }

@@ -1,5 +1,6 @@
 /**
- * Uniswap execution — calldata builders (V2 Router02 / V3 SwapRouter02) + send.
+ * Uniswap execution — calldata builders (V2 Router02 / V3 SwapRouter02) + a
+ * STAGED sign/broadcast pair (plan §11.1's durability contract).
  *
  * The builders are PURE (deterministic calldata from a resolved route), so they
  * are unit-tested without any RPC. Native legs:
@@ -10,12 +11,20 @@
  * V3 deadline is enforced by wrapping the swap (+ optional unwrap) in
  * SwapRouter02.multicall(deadline, data[]) — SwapRouter02's swap structs have no
  * deadline field.
+ *
+ * `signUniswapTransaction` / `broadcastUniswapTransaction` are deliberately
+ * SEPARATE calls (not one `sendTransaction`): the caller must persist the
+ * signed hash (`agent_activity.markActivityBroadcast`) BEFORE the actual RPC
+ * submit, so a crash between the two still leaves a repairable row. Signing
+ * locally derives the hash from the same signed bytes `broadcastUniswapTransaction`
+ * later submits, so the persisted hash is exact, not a guess.
  */
 
 import {
   encodeFunctionData,
   encodePacked,
   getAddress,
+  keccak256,
   type Address,
   type Chain,
   type Hex,
@@ -26,8 +35,13 @@ import {
 } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
-import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
+import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
+  estimateGasForPlanLeg,
+  type ConfirmedPriorLeg,
+} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import {
+  UNISWAP_ERC20_ABI,
   UNISWAP_V2_ROUTER_ABI,
   UNISWAP_V3_SWAP_ROUTER_02_ABI,
 } from "./abis.js";
@@ -180,28 +194,102 @@ export function buildSwapTx(args: BuildSwapArgs): BuiltSwapTx {
   return args.route.version === "v2" ? buildV2SwapTx(args) : buildV3SwapTx(args);
 }
 
-/** Send a pre-built Uniswap swap tx and wait for the receipt. Returns the hash. */
-export async function sendUniswapTransaction(
+/**
+ * Build an ERC-20 `approve(spender, amount)` calldata tx — used for BOTH the
+ * USDT-style zero-reset and the exact-amount grant, each staged and confirmed
+ * as its own `agent_activity` event (`event_role` "allowance_reset"/"allowance").
+ * Callers MUST validate `spender` against `UNISWAP_KNOWN_SPENDERS`
+ * (`erc20.ts`'s `validateUniswapSpender`) before calling this.
+ */
+export function buildApproveTx(token: Address, spender: Address, amount: bigint): BuiltSwapTx {
+  return {
+    to: getAddress(token),
+    value: 0n,
+    data: encodeFunctionData({
+      abi: UNISWAP_ERC20_ABI,
+      functionName: "approve",
+      args: [getAddress(spender), amount],
+    }),
+  };
+}
+
+export interface SignedUniswapTransaction {
+  readonly serializedTransaction: Hex;
+  /** Derived locally from the signed bytes — identical to what broadcast will return. */
+  readonly txHash: Hex;
+  readonly fromAddress: Address;
+  readonly nonce: number;
+}
+
+/**
+ * STAGE 1 — prepare + sign a built tx (estimates gas with headroom, fills
+ * nonce/fees, signs locally, derives the tx hash). No RPC submission happens
+ * here; the caller persists the returned hash (`markActivityBroadcast`) before
+ * calling `broadcastUniswapTransaction`. Any failure here (including a
+ * would-revert simulation surfaced through gas estimation) throws the raw
+ * error — callers classify it with `revert-mapping.ts`, never a signed payload
+ * is persisted.
+ */
+export async function signUniswapTransaction(
   publicClient: PublicClient<Transport, Chain>,
   walletClient: WalletClient<Transport, Chain, Account>,
   tx: BuiltSwapTx,
-): Promise<Hex> {
-  try {
-    const hash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: tx.to,
-      data: tx.data,
-      value: tx.value,
-    });
-    await waitForSuccessfulReceipt(publicClient, hash, {
-      code: ErrorCodes.SWAP_FAILED,
-      what: "Swap transaction",
-      hint: "No tokens were swapped. Check the transaction hash before re-quoting or retrying.",
-    });
-    return hash;
-  } catch (err) {
-    if (err instanceof VexError) throw err;
-    throw new VexError(ErrorCodes.SWAP_FAILED, `Transaction failed: ${err instanceof Error ? err.message : String(err)}`);
+  priorLeg?: ConfirmedPriorLeg,
+): Promise<SignedUniswapTransaction> {
+  const account = walletClient.account;
+
+  // Estimated explicitly rather than left to `prepareTransactionRequest`,
+  // which signs viem's bare estimate with no headroom (`gasLimitWithHeadroom`
+  // documents the on-chain loss that proves why that is unsafe). Same call
+  // shape as the signed transaction (`value` included, so a native-input swap
+  // is priced as the call that actually runs), so a route that can no longer
+  // execute still throws HERE — before anything is signed, staged, or
+  // broadcast. `priorLeg` (the approval this plan just confirmed) additionally
+  // lets the estimate survive an estimating node that has not applied that
+  // approval yet — bounded, and never by signing an unestimated leg
+  // (`dependent-leg-gas-estimate.ts`).
+  const gasEstimate = await estimateGasForPlanLeg(
+    publicClient,
+    { account, to: tx.to, data: tx.data, value: tx.value },
+    priorLeg,
+  );
+  const gasLimit = gasLimitWithHeadroom(gasEstimate);
+
+  const prepared = await walletClient.prepareTransactionRequest({
+    account,
+    chain: walletClient.chain,
+    to: tx.to,
+    data: tx.data,
+    value: tx.value,
+    gas: gasLimit,
+  });
+  // Re-asserted on the request that is actually serialized: when fees/nonce
+  // still need filling, viem may route preparation through the node's
+  // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
+  // unbuffered figure. The signed bytes are what the chain enforces, so the
+  // headroom has to survive to exactly here.
+  const serializedTransaction = await walletClient.signTransaction({ ...prepared, gas: gasLimit });
+  const nonce = prepared.nonce;
+  if (nonce === undefined) {
+    throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap transaction signing did not resolve a nonce.");
   }
+  return {
+    serializedTransaction,
+    txHash: keccak256(serializedTransaction),
+    fromAddress: getAddress(walletClient.account.address),
+    nonce,
+  };
+}
+
+/**
+ * STAGE 2 — submit an already-signed transaction. Called AFTER the hash was
+ * persisted (`markActivityBroadcast`). Returns the hash the node echoes back
+ * (should equal `signUniswapTransaction`'s locally-derived hash by
+ * construction — EVM tx hashes are `keccak256` of the signed bytes).
+ */
+export async function broadcastUniswapTransaction(
+  publicClient: PublicClient<Transport, Chain>,
+  serializedTransaction: Hex,
+): Promise<Hex> {
+  return publicClient.sendRawTransaction({ serializedTransaction });
 }

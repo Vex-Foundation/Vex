@@ -37,16 +37,16 @@ This is behavioral guidance. The runtime validates tokens where possible but can
 Every mutating DeFi tool that supports \`dryRun\` / preview must be previewed first. Proceed to execution only after confirming the route.
 
 - **2-step transfer rule.** Step 1: quote / preview (non-mutating). Step 2: execute with explicit confirmation (mutating). Never skip step 1.
-- **Same-venue quote and execute.** A swap or bridge executes only against a fresh quote from the SAME venue/provider (e.g. a \`kyberswap\` quote cannot authorize a \`uniswap\` execute, and a \`khalani\` quote cannot authorize a \`relay\` execute). The runtime enforces this — quote on the venue you intend to execute on.
+- **Same-venue quote and execute.** A swap or bridge executes only against a fresh quote from the SAME venue/provider (e.g. a \`khalani\` quote cannot authorize a \`relay\` execute — the same rule holds for any revealed backup swap venue). The runtime enforces this — quote on the venue you intend to execute on.
 - **Mutating calls are blocked at the pressure barrier.** At ≥ 88% context the only mutating action available is \`compact_now\`; preview / dryRun passes through, the actual mutation does not. Compact first, then resume — the post-compact resume packet inherits the rolling summary you supplied as \`conversation_summary\`.
 
 ## DeFi safety rules
 
 1. **Gas reserve on native tokens.** When spending ETH, POL, BNB, or any chain's native token, never spend the entire balance. Leave enough for at least one follow-up transaction. "All" / "max" for native assets means "balance minus gas reserve", not 100%. For ERC-20 tokens (USDC, WETH, etc.), "all" means the full balance.
 
-2. **Fresh balance before each mutation.** After a successful swap/bridge/zap, read fresh live balances before the next mutation. Use \`wallet_balances\` for the full picture, or \`khalani_tokens_balances\` for a single family. Never chain multiple swaps based on estimated post-tx balances.
+2. **Fresh balance before each mutation.** After a successful swap/bridge, read fresh live balances before the next mutation. Use \`wallet_balances\` for the full picture, or \`khalani_tokens_balances\` for a single family. Never chain multiple swaps based on estimated post-tx balances.
 
-3. **Address-first for EVM mutations.** Resolve exact token contract addresses via \`khalani.tokens.search(query, chainIds)\` BEFORE passing to kyberswap/khalani.bridge/zap. Pass the address, not the symbol.
+3. **Address-first for EVM mutations.** Resolve exact token contract addresses via \`khalani.tokens.search(query, chainIds)\` BEFORE passing to kyberswap/khalani.bridge. Pass the address, not the symbol.
 
-4. **Check before swap.** Before any \`kyberswap.swap.sell\` or \`kyberswap.swap.buy\`, run \`kyberswap.tokens.check\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. The runtime enforces this gate, but discovering issues early gives better error messages. Skip for native tokens (ETH / POL / BNB / etc).`;
+4. **Check before swap.** Before any \`kyberswap.swap.execute\`, run \`kyberswap.tokens.check\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. The runtime enforces this gate, but discovering issues early gives better error messages. Skip for native tokens (ETH / POL / BNB / etc).`;
 }

@@ -32,14 +32,13 @@ Cells are scored:
 | Migrations: 15 SQL files applied, progress events streamed | | | | | |
 | Wizard step `keystore` — master password + keystore set, `secrets.vault.json` created | | | | | |
 | Wizard step `wallets` — EVM + Solana wallets generated, addresses in `config.json` | | | | | |
-| Wizard step `apiKeys` — Jupiter / Tavily / Rettiwt / Polymarket entries persisted to vault | | | | | |
+| Wizard step `apiKeys` — Jupiter / Tavily / Rettiwt entries persisted to vault | | | | | |
 | Wizard step `embedding` — model + dim accepted, embeddings runtime probed | | | | | |
 | Wizard step `agentCore` — agent-core tuning written to `.env` | | | | | |
 | Wizard step `provider` — OpenRouter API key set + AGENT_MODEL chosen | | | | | |
 | Wizard step `review` — finalize + telemetry consent toggle + setup-complete marker written | | | | | |
 | Unlock screen (after relaunch / lock-on-quit) — correct password unlocks | | | | | |
 | Unlock screen — wrong password throttles after 5 attempts, retryAfterMs honoured | | | | | |
-| Polymarket one-click setup from `apiKeys` step — credentials persisted | | | | | |
 | Wallet private-key export (from app shell) — clipboard cleared after lease | | | | | |
 | App quit relocks vault, in-flight handlers torn down via globalCleanup | | | | | |
 

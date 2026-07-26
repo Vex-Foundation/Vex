@@ -1,4 +1,22 @@
 import type { ProtocolNamespaceNavigation } from "./types.js";
+import { getKyberChains } from "@tools/kyberswap/chains.js";
+
+/**
+ * Swap-supported EVM chain slugs for the kyberswap entry's `summary`,
+ * derived from the LIVE registry at module load (owner add-on, 2026-07-23) —
+ * never hand-written, so a future chain add/drop in `@tools/kyberswap/chains.ts`
+ * flows into the built protocols prompt automatically. Filtered to
+ * `aggregator: true` (the feature `kyberswap.swap.execute` actually needs),
+ * not just "every registry entry," so a hypothetical future chain added for a
+ * different feature without aggregator support is correctly excluded. Kept
+ * reveal-consistent (Agent Scan plan v3 §11.2 / C30): this line names ONLY
+ * KyberSwap chains — it must never mention Uniswap; the existing "if
+ * KyberSwap cannot route, a backup venue is offered automatically in the
+ * failure message" wording already covers the off-registry case.
+ */
+const KYBER_SWAP_EXECUTE_CHAIN_SLUGS: readonly string[] = getKyberChains()
+  .filter((chain) => chain.aggregator)
+  .map((chain) => chain.slug);
 
 export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] = [
   {
@@ -10,7 +28,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     whenToUse:
       "Use when the task crosses chains or needs a canonical multi-chain token resolver, wallet balances, bridge quote, or bridge execution flow.",
     preferInstead:
-      "Use `kyberswap` for EVM-only swaps/limit orders and `solana` for Solana-only swaps.",
+      "Use `kyberswap` for EVM-only swaps and `solana` for Solana-only swaps.",
     exampleQueries: [
       'discover_tools(query="token search", namespace="khalani")',
       'discover_tools(query="bridge quote", namespace="khalani")',
@@ -46,7 +64,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupLabel: "Cross-chain",
     summary: "Keyless cross-chain bridge (Relay) — the ONLY bridge to/from Robinhood Chain (4663); also bridges across its wider chain registry.",
     whenToUse:
-      "Use to bridge funds to or from Robinhood Chain (Khalani does not cover 4663): bridge ETH/USDG/VIRTUAL in to fund trading, or bridge back out, then swap on-chain via uniswap.",
+      "Use to bridge funds to or from Robinhood Chain (Khalani does not cover 4663): bridge ETH/USDG/VIRTUAL in to fund trading, or bridge back out. Trade on-chain after bridging in via kyberswap; if it cannot route, a backup venue is offered automatically in its failure message.",
     preferInstead:
       "Use `khalani` for bridges between its supported chains; use `relay` whenever either side is Robinhood Chain (or Khalani lacks the route).",
     exampleQueries: [
@@ -70,18 +88,17 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     advertised: true,
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
-    summary: "EVM-only swaps, limit orders, zap liquidity, and token safety checks across KyberSwap routes.",
+    summary: `EVM-only swaps and token safety checks across KyberSwap routes. Swap-supported EVM chains: ${KYBER_SWAP_EXECUTE_CHAIN_SLUGS.join(", ")}.`,
     whenToUse:
-      "Use when the user wants EVM execution on an existing chain: swap, place/fill/cancel limit orders, zap into liquidity, or run honeypot/FOT checks.",
+      "Use when the user wants EVM execution on an existing chain: swap, or run honeypot/FOT checks.",
     preferInstead:
       "Use `khalani` to resolve cross-chain token addresses first, `solana` for Solana trading, and `dexscreener` for read-only research.",
     exampleQueries: [
       'discover_tools(query="swap on base", namespace="kyberswap")',
-      'discover_tools(query="limit order", namespace="kyberswap")',
-      'discover_tools(query="zap liquidity", namespace="kyberswap")',
+      'discover_tools(query="check token honeypot", namespace="kyberswap")',
     ],
-    aliases: ["kyber", "evm swap", "limit order", "zap liquidity"],
-    discoveryHints: ["swap on ethereum", "limit order", "fill order", "zap liquidity", "honeypot check"],
+    aliases: ["kyber", "evm swap", "honeypot check"],
+    discoveryHints: ["swap on ethereum", "honeypot check", "fee on transfer"],
     facets: [
       {
         label: "Chains and token safety",
@@ -95,28 +112,30 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         toolPrefixes: ["kyberswap.swap"],
         hints: ["swap quote", "sell token", "buy token", "route build"],
       },
-      {
-        label: "Limit orders",
-        summary: "Create, list, cancel, hard-cancel, or fill gasless limit orders.",
-        toolPrefixes: ["kyberswap.limitOrder"],
-        hints: ["limit order", "cancel order", "fill order", "active making amount"],
-      },
-      {
-        label: "Zaps and LP",
-        summary: "Search pools and zap in/out/migrate concentrated-liquidity positions.",
-        toolPrefixes: ["kyberswap.zap"],
-        hints: ["zap liquidity", "lp position", "migrate lp", "pool search"],
-      },
     ],
   },
   {
+    // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2
+    // / C30): Uniswap is the HIDDEN fallback pair, session-reveal-gated. It
+    // must not be statically advertised anywhere — `advertised: false` here
+    // is the single source of truth that removes it from
+    // `PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST` (catalog.ts derives that list
+    // FROM this flag), `buildDiscoverNamespaceDescription()`'s static schema
+    // text, `discoverProtocolCapabilities`'s candidate filter (so it never
+    // surfaces via discover_tools even for a revealed session — the sanctioned
+    // path there is the `swap_quote_uniswap`/`swap_execute_uniswap` internal
+    // aliases, not generic discovery), and the built `# Available Protocol
+    // Namespaces` prompt section. `executeProtocolTool`'s OWN reveal gate
+    // (`REVEAL_GATED_UNISWAP_TOOL_IDS` + `isUniswapPairRevealed`, in
+    // `runtime.ts`) is independent of this flag and still allows a revealed
+    // session's alias-routed execute_tool dispatch through.
     namespace: "uniswap",
-    advertised: true,
+    advertised: false,
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
     summary: "Keyless on-chain Uniswap V2/V3 swaps (best route). An all-EVM fallback for KyberSwap, including on Robinhood Chain (4663) — where $VEX and Virtuals agent tokens trade against VIRTUAL.",
     whenToUse:
-      "Use as a fallback on any EVM chain when KyberSwap is unavailable or lacks a route, including Robinhood Chain (quote/sell/buy against VIRTUAL/ETH). Pass token contract ADDRESSES (no symbol search).",
+      "Use as a fallback on any EVM chain when KyberSwap is unavailable or lacks a route, including Robinhood Chain (quote/execute against VIRTUAL/ETH). Pass token contract ADDRESSES (no symbol search).",
     preferInstead:
       "Prefer `kyberswap` on the chains it supports (aggregated pricing + token safety flags), incl. Robinhood Chain; use `uniswap` when Kyber lacks the chain/route.",
     exampleQueries: [
@@ -145,7 +164,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     whenToUse:
       "Use when the user wants Pendle yield on any of its 11 chains: find markets by liquidity or implied APY, value holdings, buy a PT to lock a fixed rate, sell a PT early (market-priced), redeem a matured PT (~1:1), buy a YT for variable/leveraged yield (worth zero at expiry), sell a YT early, add or remove single-token liquidity (LP earns swap fees until expiry, not a fixed lock), or claim accrued interest and rewards. Preview PT/YT/LP actions with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote first.",
     preferInstead:
-      "Use `kyberswap`/`uniswap` for ordinary spot swaps; Pendle is specifically for term yield. A PT is fixed yield; a YT is variable and can lose money. Points programs are NOT a guaranteed yield.",
+      "Use `kyberswap` for ordinary spot swaps (if it cannot route, a backup venue is offered automatically in its failure message); Pendle is specifically for term yield. A PT is fixed yield; a YT is variable and can lose money. Points programs are NOT a guaranteed yield.",
     exampleQueries: [
       'discover_tools(query="pendle fixed yield", namespace="pendle")',
       'discover_tools(query="buy YT variable yield", namespace="pendle")',
@@ -201,7 +220,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     whenToUse:
       "Use when the task is Solana-only: resolve mints, fetch Jupiter prices, swap on Solana, inspect lend positions, or trade Jupiter prediction markets.",
     preferInstead:
-      "Use `polymarket` for Polygon prediction markets, `khalani` for cross-chain bridging, and `kyberswap` for EVM-only execution.",
+      "Use `khalani` for cross-chain bridging and `kyberswap` for EVM-only execution.",
     exampleQueries: [
       'discover_tools(query="solana token search", namespace="solana")',
       'discover_tools(query="swap on solana", namespace="solana")',
@@ -227,63 +246,6 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         summary: "Browse, analyze, and trade Jupiter prediction markets on Solana.",
         toolPrefixes: ["solana.predict"],
         hints: ["prediction market", "buy yes", "sell shares", "market history"],
-      },
-    ],
-  },
-  {
-    namespace: "polymarket",
-    advertised: true,
-    groupId: "prediction-markets",
-    groupLabel: "Prediction Markets",
-    summary: "Polymarket prediction-market surface for discovery, orderbook trading, positions, bridge flows, and rewards.",
-    whenToUse:
-      "Use when the user wants Polymarket on Polygon: browse markets/events, inspect the orderbook, place/cancel trades, read positions/activity, bridge funds, or inspect rewards.",
-    preferInstead:
-      "Use `solana` for Jupiter prediction markets and `dexscreener` for non-prediction token research.",
-    exampleQueries: [
-      'discover_tools(query="prediction market orderbook", namespace="polymarket")',
-      'discover_tools(query="polymarket positions", namespace="polymarket")',
-      'discover_tools(query="bridge funds to polymarket", namespace="polymarket")',
-    ],
-    aliases: ["prediction market", "orderbook market", "clob", "gamma", "polymarket"],
-    discoveryHints: [
-      "prediction market orderbook",
-      "yes no market",
-      "gamma market discovery",
-      "positions and pnl",
-      "bridge to polymarket",
-      "rewards earnings",
-    ],
-    facets: [
-      {
-        label: "Gamma discovery",
-        summary: "Browse/search events, markets, tags, comments, profiles, and sports metadata.",
-        toolPrefixes: ["polymarket.gamma"],
-        hints: ["gamma", "market discovery", "event search", "tag search", "sports metadata"],
-      },
-      {
-        label: "CLOB trading",
-        summary: "Read orderbooks/prices and place, cancel, or inspect orders and trades.",
-        toolPrefixes: ["polymarket.clob"],
-        hints: ["orderbook", "clob", "buy yes", "sell no", "cancel order", "price history"],
-      },
-      {
-        label: "Portfolio and analytics",
-        summary: "Read positions, activity, holders, open interest, and leaderboard data.",
-        toolPrefixes: ["polymarket.data"],
-        hints: ["positions", "activity", "holders", "open interest", "leaderboard", "pnl"],
-      },
-      {
-        label: "Bridge",
-        summary: "Inspect supported assets, bridge quote/status, deposit, and withdraw flows.",
-        toolPrefixes: ["polymarket.bridge"],
-        hints: ["bridge funds", "supported assets", "deposit address", "withdraw quote"],
-      },
-      {
-        label: "Rewards",
-        summary: "Inspect market/user rewards, earnings, and percentage snapshots.",
-        toolPrefixes: ["polymarket.rewards"],
-        hints: ["rewards", "earnings", "active rewards", "user markets"],
       },
     ],
   },
@@ -340,31 +302,6 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         toolPrefixes: ["dexscreener.communityTakeovers", "dexscreener.orders", "dexscreener.ads"],
         hints: ["community takeover", "cto", "paid orders", "ads", "promotion"],
       },
-    ],
-  },
-  {
-    namespace: "hyperliquid",
-    advertised: true,
-    groupId: "perps",
-    groupLabel: "Perpetuals",
-    summary: "Hyperliquid Core perpetual and spot trading: market/account research, protected perp orders, leverage and margin controls, funding history, and spot orders.",
-    whenToUse: "Use for Hyperliquid Core. Inspect market depth, funding, account margin, and existing stop coverage before any trade. Stop losses reduce risk but are not guaranteed fills during rapid moves or liquidation.",
-    preferInstead: "Use EVM/Solana venue tools for on-chain swaps; Hyperliquid uses its own signed exchange actions and risk controls.",
-    exampleQueries: [
-      'discover_tools(query="my Hyperliquid positions", namespace="hyperliquid")',
-      'discover_tools(query="open protected BTC perpetual", namespace="hyperliquid")',
-      'discover_tools(query="Hyperliquid funding cost", namespace="hyperliquid")',
-    ],
-    aliases: ["hyperliquid", "hypercore", "perps", "perpetuals", "HL"],
-    discoveryHints: ["perp position", "stop loss", "liquidation", "funding", "Hyperliquid order book"],
-    facets: [
-      { label: "Markets and account", summary: "Read Core/spot markets, L2 depth, account margin, positions, orders, fills, and funding.", toolPrefixes: ["hyperliquid.perp.markets", "hyperliquid.perp.positions", "hyperliquid.perp.orders", "hyperliquid.perp.fills", "hyperliquid.perp.funding", "hyperliquid.account", "hyperliquid.spot.markets", "hyperliquid.spot.balances", "hyperliquid.market.book"], hints: ["markets", "positions", "funding", "margin", "order book"] },
-      { label: "Market analysis and candle scanning", summary: "Watch local candles, read coverage, or scan decimal-safe momentum, volume, moving-average, RSI, and range signals.", toolPrefixes: ["hyperliquid.market.watchCandles", "hyperliquid.market.candles", "hyperliquid.market.scan"], hints: ["watch candles", "RSI", "volume spike", "breakout", "moving average", "candle scan"] },
-      { label: "Protected perpetual trading", summary: "Open, close, protect, amend, cancel, leverage, margin, or TWAP a Core perpetual under policy gates.", toolPrefixes: ["hyperliquid.perp.open", "hyperliquid.perp.close", "hyperliquid.perp.setTpsl", "hyperliquid.perp.modifyOrder", "hyperliquid.perp.cancelOrders", "hyperliquid.perp.setLeverage", "hyperliquid.perp.adjustMargin", "hyperliquid.perp.twap"], hints: ["open perp", "stop loss", "close position", "leverage", "TWAP"] },
-      { label: "Spot trading", summary: "Place Hyperliquid spot orders after checking market and depth.", toolPrefixes: ["hyperliquid.spot.trade"], hints: ["spot order", "buy HYPE", "sell spot"] },
-      { label: "Funding, transfers, and withdrawals", summary: "Deposit native USDC from Arbitrum, move USDC between spot and perp, send assets on HyperCore, or withdraw to Arbitrum — every egress stays approval-gated.", toolPrefixes: ["hyperliquid.deposit", "hyperliquid.transfer", "hyperliquid.withdraw"], hints: ["deposit to Hyperliquid", "move USDC to perp", "withdraw from Hyperliquid", "send USDC", "usd class transfer"] },
-      { label: "Earn, staking, and account setup", summary: "Inspect or move funds in vaults incl. HLP, manage HYPE staking and delegation, claim rewards, propose session risk limits, and approve the builder fee.", toolPrefixes: ["hyperliquid.vault", "hyperliquid.staking", "hyperliquid.rewards", "hyperliquid.risk", "hyperliquid.builder"], hints: ["deposit to HLP", "stake HYPE", "claim rewards", "set risk limits", "builder fee"] },
-      { label: "Hypervexing workspace", summary: "Enter or leave the focused local Hyperliquid workspace without changing trading state.", toolPrefixes: ["hyperliquid.workspace"], hints: ["Hypervexing", "workspace", "focused Hyperliquid view"] },
     ],
   },
   {

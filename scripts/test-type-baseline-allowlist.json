@@ -1,0 +1,5 @@
+{
+  "$comment": "Exact diagnostic-fingerprint exceptions for the root test type ratchet. Each entry requires a reviewed reason and bounded maxCount; keep this empty by default.",
+  "schemaVersion": 1,
+  "entries": {}
+}

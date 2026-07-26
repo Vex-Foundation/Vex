@@ -107,7 +107,7 @@ describe("checkPlanAcceptanceDeny — gate active (enabled, unaccepted)", () => 
 
     mockGetManifest.mockReturnValue({ mutating: true });
     const denied = await checkPlanAcceptanceDeny(
-      call("execute_tool", { toolId: "kyberswap.swap.sell" }),
+      call("execute_tool", { toolId: "kyberswap.swap.execute" }),
       ctx,
     );
     expect(denied).not.toBeNull();
@@ -127,8 +127,13 @@ describe("checkPlanAcceptanceDeny — gate active (enabled, unaccepted)", () => 
     expect(denied!.output).toContain("not yet accepted");
   });
 
-  it("BLOCKS a sensitive local write (polymarket_setup)", async () => {
-    const denied = await checkPlanAcceptanceDeny(call("polymarket_setup"), ctx);
+  it("BLOCKS a sensitive local write (wallet_track_token)", async () => {
+    // Agent Scan plan v3 (2026-07-23, FIX2-W7): `polymarket_setup` is deleted;
+    // `wallet_track_token` is the surviving registered `actionKind:"local_write"`
+    // internal tool NOT on the safe-control allowlist, so it proves the same
+    // invariant (a real registered local write is blocked pending plan
+    // acceptance) instead of an arbitrary nonexistent tool name.
+    const denied = await checkPlanAcceptanceDeny(call("wallet_track_token"), ctx);
     expect(denied).not.toBeNull();
     expect(denied!.success).toBe(false);
   });
@@ -136,7 +141,7 @@ describe("checkPlanAcceptanceDeny — gate active (enabled, unaccepted)", () => 
   it("BLOCKS execute_tool whose TARGET manifest is mutating", async () => {
     mockGetManifest.mockReturnValue({ mutating: true });
     const denied = await checkPlanAcceptanceDeny(
-      call("execute_tool", { toolId: "kyberswap.swap.sell" }),
+      call("execute_tool", { toolId: "kyberswap.swap.execute" }),
       ctx,
     );
     expect(denied).not.toBeNull();

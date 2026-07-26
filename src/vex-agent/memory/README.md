@@ -27,9 +27,14 @@ controls execution, sizing, approvals, or signing.
 6. **Maturity / decay / regime** (`manager/maturity*.ts`,
    `engine/memory-manager/decay-sweep.ts`) — activation decays over time with
    regime-aware half-lives; stale lessons fade out of hot context (never deleted).
-7. **Reconcile** (`engine/memory-manager/reconcile.ts`, `memory/ledger-wake.ts`) — a
-   later closing trade re-resolves a lesson's outcome; a believed win that realizes a
-   loss **flips** to negative and quenches the lesson.
+7. **Reconcile — RETIRED** (Agent Scan Phase 1): `engine/memory-manager/reconcile.ts`,
+   `memory/ledger-wake.ts`, and `manager/{outcome-resolver,reconcile-policy,reconcile-judge}.ts`
+   are deleted along with the profit-computation system they graded lessons against. A
+   trade-family candidate no longer gets a later closing-trade re-resolution; it carries a
+   neutral placeholder outcome (`status:"open", lessonSignal:"neutral", pnlSource:"none"`)
+   from consolidation onward — never a believed-win/real-loss flip. A later phase will inject
+   the session's own transaction list into the judge directly instead of re-deriving PnL
+   facts from a ledger. Historical reconcile decisions and maturity events remain readable.
 8. **Knowledge graph** (`manager/entity-extraction.ts`, `db/repos/memory-edges`) —
    bi-temporal entities/edges; superseding a lesson retracts its edges
    (invalidate ≠ delete, audit history preserved).
@@ -46,9 +51,17 @@ controls execution, sizing, approvals, or signing.
 Two live integration suites (real judge + real Gemma embeddings + Postgres) under
 `src/__tests__/integration/eval/`:
 
-- **Correctness eval** (`e2e-memory-correctness.int.test.ts`) — 130 realistic
-  Solana/perp memories over a simulated 90 days; structural invariants (decay,
-  reconcile, supersede, redaction, retrieval) as hard gates vs an independent oracle.
+- **Correctness eval** (`e2e-memory-correctness.int.test.ts`) — 122 realistic
+  Solana/perp memories over a simulated 90 days; structural invariants (decay, supersede,
+  redaction, retrieval) as hard gates vs an independent oracle. The "reconcile" invariant
+  this suite used to gate on is retired doctrine (see pipeline step 7 above): the K
+  category (4 items) and the S7 PF03/PF04/LQ03/LQ04 reconcile-flip mirrors are REMOVED
+  from the corpus (not replaced, per owner ruling — outcome-driven reconciliation no
+  longer exists), along with their dedicated ledger instruments, closing TradeEvents,
+  and oracle/scorer references (`ExpectedReconcile`, `scoreReconcile`,
+  `reconcileCauseCode`). The private fixtures `_sim-runner.ts`/`_world-corpus.ts`/
+  `_oracle.ts`/`_sim-scorer.ts` now drive + score a pure consolidate/graph/decay/
+  retrieval pipeline and compile cleanly.
 - **Judge benchmark** (`judge-benchmark.int.test.ts`) — decision quality of the judge
   on 134 always-escalating memories vs an independent oracle (false-promote rate,
   supersede recall, tier/grounding calibration, rubric-axis localization).

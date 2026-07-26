@@ -325,6 +325,7 @@ describe("memory-inspector handlers (S10 — read-only)", () => {
           completed: 0,
           failed: 0,
           permanently_failed: 0,
+          retired: 0,
         },
         recentJobs: [],
       },

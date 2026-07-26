@@ -96,9 +96,10 @@ const orderSchema: z.ZodType<KhalaniOrder> = z
       destAmount: asString("order.destAmount"),
       status: asString("order.status"),
       author: asString("order.author"),
-      // recipient/refundTo: string or null (non-string → null).
+      // recipient/refundTo/fillerAddress: string or null (non-string → null).
       recipient: z.unknown().transform((v) => (typeof v === "string" ? v : null)),
       refundTo: z.unknown().transform((v) => (typeof v === "string" ? v : null)),
+      fillerAddress: z.unknown().transform((v) => (typeof v === "string" ? v : null)),
       depositTxHash: asString("order.depositTxHash"),
       externalOrderId: asOptionalString,
       createdAt: asString("order.createdAt"),
@@ -131,6 +132,7 @@ const orderSchema: z.ZodType<KhalaniOrder> = z
     author: o.author,
     recipient: o.recipient,
     refundTo: o.refundTo,
+    fillerAddress: o.fillerAddress,
     depositTxHash: o.depositTxHash,
     externalOrderId: o.externalOrderId,
     createdAt: o.createdAt,

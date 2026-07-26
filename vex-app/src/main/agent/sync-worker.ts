@@ -9,7 +9,7 @@
  * Unlike the compact and wake workers, the sync executor has NO provider gate:
  * it makes no OpenRouter/inference calls. What it DOES do is PUBLIC-ADDRESS
  * NETWORK READS — `initSync()` snapshots balances and `syncTick()` refreshes
- * projections by querying Khalani/Jupiter/Polymarket with the wallet's PUBLIC
+ * projections by querying Khalani/Jupiter with the wallet's PUBLIC
  * addresses. No keystore unlock and no private key are involved. The only start
  * gate is this SUPERVISOR proving Postgres + the `protocol_sync_jobs` schema are
  * ready (not merely that `VEX_DB_URL` resolves). Consequence: once the schema is

@@ -18,6 +18,16 @@ import { executeWith } from "../../db/client.js";
  * rather than copied — the caller already verified session ownership
  * of the source, but passing the target session id keeps the SQL
  * self-explanatory.
+ *
+ * `constraints_json` strips the legacy `hyperliquidRisk` key (jsonb `-`
+ * operator) rather than copying it verbatim. A source mission accepted
+ * while `CONTRACT_HASH_VERSION` was 2 may still carry a historical
+ * Hyperliquid risk envelope there; the clone is always a fresh
+ * `contract_hash_version = NULL` draft that will next be hashed at v3
+ * (`contract-hash.ts`), which has no Hyperliquid field. The frozen v2
+ * material (`contract-hash-legacy-v2.ts`) is verify-only — reproducing the
+ * SOURCE mission's original hash — and must never be carried forward into a
+ * new draft's live `constraints_json`.
  */
 export async function cloneMissionAsDraft(
   client: PoolClient,
@@ -56,7 +66,7 @@ export async function cloneMissionAsDraft(
        'draft' AS status,
        title,
        goal,
-       constraints_json,
+       constraints_json - 'hyperliquidRisk' AS constraints_json,
        success_criteria_json,
        stop_conditions_json,
        risk_profile,

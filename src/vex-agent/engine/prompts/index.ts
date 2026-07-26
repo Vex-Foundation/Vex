@@ -11,8 +11,7 @@
  * - TURN layers — volatile per-call state, joined into the TRAILING system
  *   message (cacheHint "turn_state", placed AFTER history): runtime clock,
  *   context pressure, resume packet, `# Memory` (routing at its end),
- *   active plan, Tool Map, Hypervexing workspace state, mission turn-state,
- *   one-shots.
+ *   active plan, Tool Map, mission turn-state, one-shots.
  *
  * Hard ordering constraint preserved: state signals → memory routing → Tool
  * Map. Determinism: static layers must not contain timestamps/randomness —
@@ -106,11 +105,15 @@ export interface PromptStackOptions {
    */
   toolCatalogPrompt?: string;
   /**
-   * Session-mode Hypervexing state generated from the same visibility context
-   * as the Tool Map. TURN-STATE because workspace mode and policy can change
-   * between turns.
+   * Pre-rendered DYNAMIC bridge-routing capability section from
+   * `buildBridgeCapabilityPrompt` — the live Khalani chain list (single-flight
+   * snapshot) plus a Relay-health-gated Robinhood line. TURN-STATE: the chain
+   * list is live, so it must NOT sit behind buildProtocolsPrompt()'s permanent
+   * cache (R13/B7). Built fail-soft in `buildTurnPromptStack`; a cold/absent
+   * snapshot renders the conservative "verify by quoting" fallback. Empty/
+   * undefined omits the section.
    */
-  hypervexingTurnStatePrompt?: string;
+  bridgeCapabilityPrompt?: string;
 }
 
 export interface PromptStack {
@@ -210,9 +213,8 @@ export function buildPromptStack(
 
   // Pressure-state first (drives immediate tool behaviour), then the
   // post-compact bridge, then the consolidated memory section (routing at
-  // its end), then the advisory plan, Tool Map, and Hypervexing workspace
-  // state — preserving the hard constraint: state signals → memory routing →
-  // tool catalog.
+  // its end), then the advisory plan and Tool Map — preserving the hard
+  // constraint: state signals → memory routing → tool catalog.
   if (options.contextPressureBanner && options.contextPressureBanner.length > 0) {
     turnLayers.push(options.contextPressureBanner);
   }
@@ -234,8 +236,12 @@ export function buildPromptStack(
   if (options.toolCatalogPrompt && options.toolCatalogPrompt.length > 0) {
     turnLayers.push(options.toolCatalogPrompt);
   }
-  if (options.hypervexingTurnStatePrompt && options.hypervexingTurnStatePrompt.length > 0) {
-    turnLayers.push(options.hypervexingTurnStatePrompt);
+  // Bridge routing (DYNAMIC): live Khalani chain list + gated Robinhood line.
+  // Sits with the Tool Map — capability/routing guidance the model reads
+  // together. Kept out of the static prefix so the live list never busts the
+  // KV-cache prefix.
+  if (options.bridgeCapabilityPrompt && options.bridgeCapabilityPrompt.length > 0) {
+    turnLayers.push(options.bridgeCapabilityPrompt);
   }
 
   // Mission turn-state: the frozen per-slice iteration snapshot
@@ -282,7 +288,6 @@ export { buildMemoryPolicyPrompt } from "./memory-policy.js";
 export { buildResearchPrompt } from "./research.js";
 export {
   buildProtocolsPrompt,
-  buildHypervexingTurnStatePrompt,
   resetProtocolsPromptCache,
 } from "./protocols.js";
 export { buildPermissionPrompt } from "./execution-policy.js";

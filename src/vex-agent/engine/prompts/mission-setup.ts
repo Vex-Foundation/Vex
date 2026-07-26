@@ -31,7 +31,7 @@ export function buildMissionSetupPrompt(
   lines.push("");
 
   lines.push("## Rules");
-  lines.push("- Capability Orientation only: use the Available Tool Map (including `web_research` and `twitter_account` when present), `discover_tools`, `wallet_balances`, and `portfolio` only to ground the draft's tools, venues, capital, and chains. Do not run market scans, quotes, or `execute_tool` on market data; Operational Research belongs to the run");
+  lines.push("- Capability Orientation only: use the Available Tool Map (including `web_research` and `twitter_account` when present), `discover_tools`, `wallet_balances`, and `agent_scan` only to ground the draft's tools, venues, capital, and chains. Do not run market scans, quotes, or `execute_tool` on market data; Operational Research belongs to the run");
   lines.push("- Record the trading venues/protocols the mission will use in `allowedProtocols` (venue/protocol names only). Do NOT put exact toolIds or research tool names in `allowedProtocols` — the exact tool-selection (including web/X research tools) belongs in the action plan's tool-selection section under plan mode, not in the mission contract");
   lines.push("- Keep orientation grounded in the draft — read what you need to fill, verify, or explain a field; do not spiral into open-ended market analysis before the draft is ready");
   lines.push("- If the user gives a concrete mission idea such as \"hunt Solana meme tokens with $6\", treat it as draft input: save explicit fields, then ask for missing required fields or ask the user to confirm/refine the proposed stop-condition list");

@@ -54,7 +54,7 @@ function knowledgeCtx(
 }
 
 const ROUTING_LINES = [
-  "- Current state (balances, prices, gas, positions, quotes) → live tools (`wallet_balances`, `khalani_tokens_balances`, `portfolio`).",
+  "- Current state (balances, prices, gas, positions, quotes) → live tools (`wallet_balances`, `khalani_tokens_balances`, `agent_scan`).",
   "- Something earlier in THIS conversation/mission → `session_memory_search` (per-session narrative).",
   "- Cross-session long-term memory (durable lessons / strategies / observed preferences from earlier sessions, incl. fresh un-consolidated signals) → `long_memory_search`.",
 ] as const;

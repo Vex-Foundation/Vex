@@ -80,6 +80,26 @@ export interface SwapMatchInput {
    * diverge → block.
    */
   readonly slippageBps: string;
+  /**
+   * Jupiter fee-bearing `/build` tail (W5 design §6 R4: "prequote identity
+   * hash extended with: feeBps, feeMint, tip, CU strategy, dexes,
+   * maxAccounts, wrap"). ALL FIVE are `undefined` (→ "" in the hash material)
+   * for every non-Jupiter swap (kyberswap/uniswap/pendle) — their
+   * quote↔execute pairs still collide unchanged, since both sides omit them
+   * identically. Only `solana.swap.quote`/`solana.swap.execute` (provider
+   * "jupiter") populate real values, via
+   * `fee-swap.ts`'s `canonicalizeJupiterFeeTail` on BOTH the recorder and the
+   * gate, so a fee/tip/DEX-filter/maxAccounts/wrap substitution between quote
+   * and execute produces a different digest → BLOCK. `routeKnobs` bundles
+   * dexes/excludeDexes/maxAccounts/wrap/forJitoBundle into one canonical
+   * string (see `canonicalizeJupiterFeeTail`) rather than five separate
+   * fields.
+   */
+  readonly feeBps?: string;
+  readonly feeMint?: string;
+  readonly tipLamports?: string;
+  readonly cuStrategy?: string;
+  readonly routeKnobs?: string;
 }
 
 /**
@@ -137,6 +157,18 @@ export interface BridgeMatchInput {
   readonly referrerFeeBps: string;
   /** Opaque Khalani filler-provider name (case-preserved, NOT an address); "" when omitted. */
   readonly filler: string;
+  /**
+   * Bridge slippage tolerance (canonical integer bps string); "" when the
+   * provider has no slippage surface or the caller omitted it.
+   *
+   * Bound for the SAME reason every other identity binds it, and it was the one
+   * place the doctrine had not been applied: `relay.bridge` forwards
+   * `slippageBps` to Relay as `slippageTolerance`, so without this a 50 bps
+   * `relay.quote.get` and a 5000 bps `relay.bridge` produced the SAME digest and
+   * the gate allowed the pair. Khalani has no slippage param and passes the
+   * stable "" on both sides, so its quote↔execute pairs still collide.
+   */
+  readonly slippageBps: string;
 }
 
 /**
@@ -327,8 +359,15 @@ export type PrequoteMatchInput =
   | LpAddMatchInput
   | LpRemoveMatchInput;
 
-/** Canonical bridge trade direction; mirrors `parseTradeType` in khalani/request. */
-export type BridgeTradeType = "EXACT_INPUT" | "EXACT_OUTPUT";
+/**
+ * Canonical bridge trade direction. `EXACT_INPUT`/`EXACT_OUTPUT` mirror
+ * `parseTradeType` in khalani/request; `EXPECTED_OUTPUT` is a DISTINCT Relay
+ * value (Wave-2 W2, R10) — Relay's recommended plain-bridge mode. Bound verbatim
+ * into `bridgeHashMaterial`, so an `EXPECTED_OUTPUT` quote↔execute produces a
+ * digest distinct from `EXACT_INPUT` (no longer collapsed). Widening this union
+ * is additive: Khalani's `parseBridgeTradeType` still returns only the first two.
+ */
+export type BridgeTradeType = "EXACT_INPUT" | "EXACT_OUTPUT" | "EXPECTED_OUTPUT";
 
 /**
  * Canonicalize an address/mint for the match-hash. EVM addresses are
@@ -378,7 +417,8 @@ function canonAmount(raw: string): string {
  *               amount, recipient, approveExact, slippageBps, provider]
  *   - bridge : ["bridge", sessionId, sourceFamily, destFamily, fromChainId,
  *               toChainId, sourceWallet, recipient, fromToken, toToken, amount,
- *               tradeType, refundTo, referrer, referrerFeeBps, filler, provider]
+ *               tradeType, refundTo, referrer, referrerFeeBps, filler, provider,
+ *               slippageBps]
  * EVM addresses/tokens lowercase; Solana mints case-preserved; amount via
  * `canonAmount`.
  *
@@ -559,6 +599,13 @@ function swapHashMaterial(input: SwapMatchInput): string {
     // Wave-2c venue binding (LOCKED #4): the quoting provider/venue, so a
     // kyber quote and a uniswap quote for the same identity hash differently.
     input.provider.trim().toLowerCase(),
+    // W5 (design §6 R4) Jupiter fee-bearing tail — "" for every non-Jupiter
+    // swap (both sides omit it identically, so their collision is unaffected).
+    input.feeBps ?? "",
+    input.feeMint ?? "",
+    input.tipLamports ?? "",
+    input.cuStrategy ?? "",
+    input.routeKnobs ?? "",
   ].join(" ");
 }
 
@@ -594,5 +641,10 @@ function bridgeHashMaterial(input: BridgeMatchInput): string {
     // Wave-2c venue binding (LOCKED #4): the bridge provider/venue, so a khalani
     // quote and a relay quote for the same route hash differently.
     input.provider.trim().toLowerCase(),
+    // Slippage tail: appended LAST so the field order of every pre-existing
+    // material element is untouched. "" for a provider without a slippage
+    // surface (khalani) and for an omitted relay slippage, so those
+    // quote↔execute pairs still collide; a divergent relay slippage blocks.
+    input.slippageBps,
   ].join(" ");
 }

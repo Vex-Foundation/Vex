@@ -1,26 +1,54 @@
 /**
- * Action-named READ-ONLY alias handlers (Stage 8a).
+ * Action-named READ-ONLY alias handlers (Stage 8a; Agent Scan plan §4.2/§11.2
+ * rewired the swap quotes).
  *
  * Each handler validates its (untrusted) args with Zod at the boundary,
  * translates them into the TARGET protocol tool's exact param names, and
  * dispatches via `executeProtocolTool`. Because every target is non-mutating,
- * no approval gate fires. `swap_quote` is a family ROUTER (EVM vs Solana); the
- * other three are pass-through / mode selectors.
+ * no approval gate fires. `swap_quote` / `swap_quote_uniswap` are each a
+ * family ROUTER (EVM vs Solana for `swap_quote`; EVM-only for the hidden
+ * Uniswap pair); the other three are pass-through / mode selectors.
  *
  * Param translation is the whole point — the alias presents ONE clean
  * LLM-facing shape and maps to whatever the underlying manifest calls things:
  *
- *   swap_quote (EVM)    { chain, tokenIn, tokenOut, amount, slippageBps? }
- *                       → kyberswap.swap.quote { chain, tokenIn, tokenOut, amountIn: amount, slippageBps? }
- *   swap_quote (Solana) → solana.swap.quote   { inputToken: tokenIn, outputToken: tokenOut, amount: Number(amount), slippageBps? }
+ *   swap_quote (EVM)    { chain, tokenIn, tokenOut, amountIn, slippageBps? }
+ *                       → kyberswap.swap.quote (SAME keys — KyberSwap ONLY, no venue fallback)
+ *   swap_quote (Solana) → solana.swap.quote   { inputToken: tokenIn, outputToken: tokenOut, amount: Number(amountIn), slippageBps? }
+ *   swap_quote_uniswap  → uniswap.swap.quote (SAME keys) — HIDDEN, dispatch-gated on
+ *                         `isUniswapPairRevealed(sessionId)` (plan §11.2)
  *   token_check         { chain, address }      → kyberswap.tokens.check (same keys)
  *   bridge_status (id)  { orderId }              → khalani.orders.get { orderId }
  *   bridge_status (list)→ khalani.orders.list (pass through list filters)
  *   bridge_quote        → khalani.quote.get (same keys)
  *
- * Units: kyber/jupiter swap `amount` is HUMAN decimal (e.g. "1.5"); khalani
- * bridge `amount` is SMALLEST units (wei/lamports). The alias schemas document
- * this and translation preserves it (no unit conversion happens here).
+ * Units: kyber/uniswap/jupiter swap `amountIn` is HUMAN decimal (e.g. "1.5");
+ * khalani bridge `amount` is SMALLEST units (wei/lamports). The alias schemas
+ * document this and translation preserves it (no unit conversion happens here).
+ *
+ * Chain params on the swap/token aliases accept BOTH a slug and a chain ID, in
+ * either JSON type (`"base"`, `"8453"`, `8453`) — `token_find`
+ * (khalani.tokens.search) returns `chainId` as a NUMBER, so an id is the form
+ * the agent normally holds. All three normalize to one value before venue
+ * classification (`./chain-param.js`), so the way a chain was spelled can never
+ * change which venue it routes to. The MUTATING executes share that exact
+ * schema (`../mutating-aliases.ts`) — quote and execute must accept the same
+ * forms or a legal quote cannot be executed. The bridge aliases are
+ * deliberately NOT included: their chain names belong to the Khalani/Relay
+ * namespaces and feed the bridge prequote match-hash, so widening them is a
+ * separate change.
+ *
+ * KyberSwap route-not-found reveal (plan §11.2): when `classifySwapFamily`
+ * determines an EVM chain has NO KyberSwap aggregator support at all
+ * (`family.venue === "uniswap"`), `swap_quote` reveals the hidden Uniswap pair
+ * for the session BEFORE failing — this is the "local chain-not-Kyber-
+ * supported, registry gate, pre-call" reveal-eligible case (the ONLY one this
+ * module owns). The other eligible cases — Kyber codes 4008/4010/4011, and
+ * (REVISION 1 — reveal-on-execute-revert design) a `swap`-role MINED on-chain
+ * revert of `kyberswap.swap.execute`'s staged broadcast — fire from INSIDE the
+ * `kyberswap.swap.quote`/`kyberswap.swap.execute` handlers themselves (they
+ * hold the raw failure code/outcome + already know `context.sessionId`) —
+ * this module does not re-derive them.
  */
 
 import { z } from "zod";
@@ -29,12 +57,14 @@ import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
+import { ChainParam } from "./chain-param.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
+import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
-import {
-  isFallbackEligibleQuoteCategory,
-  resolveUniswapFallbackChainKey,
-} from "@tools/uniswap/venue-router.js";
+import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
+import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
+import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import logger from "@utils/logger.js";
 
 // ── Shared dispatch context projection ───────────────────────────────
@@ -54,19 +84,25 @@ function protocolContext(context: InternalToolContext): Parameters<typeof execut
   };
 }
 
-// ── swap_quote — EVM/Solana family router ────────────────────────────
+// ── swap_quote — EVM (KyberSwap ONLY)/Solana family router ───────────
 //
 // The family classifier (`classifySwapFamily`) is shared with the Stage 8b
-// MUTATING `swap` alias router (`tools/mutating-aliases.ts`) so the read-only
-// quote and the execute can never disagree on which family a chain maps to.
+// MUTATING `swap_execute` alias router (`tools/mutating-aliases.ts`) so the
+// read-only quote and the execute can never disagree on which family/venue a
+// chain maps to.
 
+// `.strict()` (FIX-SPINE round 1, finding 14/C4) — the removed legacy
+// `side`/`recipient`/`amount` fields are REJECTED with a clear message, never
+// silently stripped. Silently dropping `recipient` in particular would be a
+// transaction-safety-significant silent behavior change (the agent believes
+// it redirected output that in fact went to the sender).
 const SwapQuoteArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
-  amount: z.string().min(1, { message: "amount is required (human decimal string)" }),
+  amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
   slippageBps: z.number().int().nonnegative().optional(),
-});
+}).strict();
 
 type SwapQuoteArgs = z.infer<typeof SwapQuoteArgs>;
 
@@ -82,6 +118,19 @@ export async function handleSwapQuote(
 
   const family = classifySwapFamily(a.chain);
   if (family.kind === "unknown") {
+    // A chain ID is refused AS an id. It came from token_find, so "cannot
+    // determine swap family" would read as a lookup mistake rather than the
+    // truth: no venue in the tree serves that chain. This branch runs BEFORE
+    // the Uniswap reveal below on purpose — revealing the fallback would claim
+    // Uniswap covers a chain nothing registers, and would spend the session's
+    // one-shot reveal to say it.
+    if (isNumericChainIdInput(a.chain)) {
+      return fail(
+        `swap_quote: chain id ${a.chain} is not a chain Vex can swap on. ` +
+          `Pass a supported EVM chain — either its slug or the chain id token_find ` +
+          `returns (ethereum/1, base/8453, arbitrum/42161, …) — or "solana".`,
+      );
+    }
     return fail(
       `swap_quote: cannot determine swap family for chain "${a.chain}". ` +
         `Use a supported EVM chain (e.g. ethereum, base, arbitrum) or "solana".`,
@@ -91,9 +140,9 @@ export async function handleSwapQuote(
   if (family.kind === "solana") {
     // Solana quote manifest types `amount` as a NUMBER (human decimal) — coerce
     // the unified string here so the protocol-runtime type check passes.
-    const amount = Number(a.amount);
+    const amount = Number(a.amountIn);
     if (!Number.isFinite(amount) || amount <= 0) {
-      return fail(`swap_quote: amount "${a.amount}" is not a positive number.`);
+      return fail(`swap_quote: amountIn "${a.amountIn}" is not a positive number.`);
     }
     const params: Record<string, unknown> = {
       inputToken: a.tokenIn,
@@ -104,10 +153,9 @@ export async function handleSwapQuote(
     return executeProtocolTool({ toolId: "solana.swap.quote", params }, protocolContext(context));
   }
 
-  // EVM → the VENUE ROUTER's primary venue (KyberSwap where supported, Uniswap on
-  // Robinhood Chain / as an all-EVM fallback). Both quote handlers resolve tokens
-  // strictly (address-only), so DEX symbol search is disabled to avoid
-  // wrong-contract matches (e.g. "USDC" → axlUSDC). Reject a bare symbol here.
+  // EVM → KyberSwap ONLY (plan §11.2 — the silent Uniswap fallback is removed).
+  // Both quote handlers resolve tokens strictly (address-only), so DEX symbol
+  // search is disabled to avoid wrong-contract matches (e.g. "USDC" → axlUSDC).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     return fail(
       "swap_quote: EVM tokens must be a contract address — resolve the symbol " +
@@ -116,62 +164,94 @@ export async function handleSwapQuote(
     );
   }
 
-  // amount → amountIn (both human decimal strings). Route quote to the SAME venue
-  // the `swap` execute alias uses (shared classifier), so the prequote gate's
-  // venue-bound match-hash collides between the quote and the execute.
-  const buildParams = (chain: string): Record<string, unknown> => ({
-    chain,
+  // `family.venue === "uniswap"` means the venue classifier found NO KyberSwap
+  // aggregator support for this chain at all (kyberAggregatorSlug undefined) —
+  // this is the "local chain-not-Kyber-supported, registry gate, pre-call"
+  // reveal-eligible case (plan §11.2). Reveal BEFORE failing so the very next
+  // turn can call swap_quote_uniswap.
+  if (family.venue === "uniswap") {
+    revealUniswapPair(context.sessionId);
+    logger.info("swap_quote.uniswap_reveal", { reason: "chain_unsupported", chain: a.chain });
+    return fail(
+      `swap_quote: KyberSwap does not support chain "${a.chain}". ` +
+        `swap_quote_uniswap is now available for this session as a fallback (Uniswap venue).`,
+    );
+  }
+
+  const params: Record<string, unknown> = {
+    chain: family.chain,
     tokenIn: a.tokenIn,
     tokenOut: a.tokenOut,
-    amountIn: a.amount,
+    amountIn: a.amountIn,
     ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
-  });
-
-  const primaryToolId = family.venue === "uniswap" ? "uniswap.swap.quote" : "kyberswap.swap.quote";
-  const primary = await executeProtocolTool(
-    { toolId: primaryToolId, params: buildParams(family.chain) },
-    protocolContext(context),
-  );
-
-  // Runtime Kyber→Uniswap QUOTE fallback (LOCKED Wave-2 #3). ONLY when KyberSwap
-  // was the primary venue AND its quote FAILED with a transport/API/route error
-  // AND a verified Uniswap deployment exists for the chain. A honeypot/token-
-  // safety verdict is surfaced on a SUCCESSFUL quote (never a throw), so it can
-  // never reach this branch — the fallback can never launder a safety block. The
-  // Uniswap quote records provider "uniswap", so the venue-bound prequote identity
-  // binds a later execute to Uniswap automatically (a KyberSwap execute would
-  // hash to a different identity and fail the gate). Policy (eligible categories +
-  // fallback availability) lives in the single venue-router module.
-  if (primary.success || family.venue !== "kyberswap") return primary;
-  if (!isFallbackEligibleQuoteCategory(runtimeFailureCategory(primary.output))) return primary;
-  const fallbackChain = resolveUniswapFallbackChainKey(a.chain);
-  if (fallbackChain === undefined) return primary;
-  logger.info("swap_quote.venue_fallback", {
-    fromVenue: "kyberswap",
-    toVenue: "uniswap",
-    chain: fallbackChain,
-  });
-  return executeProtocolTool(
-    { toolId: "uniswap.swap.quote", params: buildParams(fallbackChain) },
-    protocolContext(context),
-  );
+  };
+  return executeProtocolTool({ toolId: "kyberswap.swap.quote", params }, protocolContext(context));
 }
 
+// ── swap_quote_uniswap — HIDDEN EVM-only Uniswap fallback quote ──────
+
+const SwapQuoteUniswapArgs = z.object({
+  chain: ChainParam,
+  tokenIn: z.string().min(1, { message: "tokenIn is required" }),
+  tokenOut: z.string().min(1, { message: "tokenOut is required" }),
+  amountIn: z.string().min(1, { message: "amountIn is required (human decimal string)" }),
+  slippageBps: z.number().int().nonnegative().optional(),
+}).strict();
+
+type SwapQuoteUniswapArgs = z.infer<typeof SwapQuoteUniswapArgs>;
+
 /**
- * Extract the coarse runtime error category the protocol runtime embeds in a
- * THROWN handler failure's output (`"<toolId> failed (<category>): <message>"`;
- * see protocols/runtime/errors.ts). Returns "" when the output is not a
- * thrown-failure summary — e.g. a returned validation `fail(...)` carries no
- * category — so a non-transport failure is never treated as fallback-eligible.
+ * Dispatch-side gate (plan §11.2 hard rule): rejected with a clean ToolResult
+ * for a session that has no active reveal — independent of whatever the tool
+ * list showed the model (a direct dispatch attempt is rejected the same way).
  */
-function runtimeFailureCategory(output: string): string {
-  return /\bfailed \(([a-z_]+)\):/.exec(output)?.[1] ?? "";
+export async function handleSwapQuoteUniswap(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  if (!isUniswapPairRevealed(context.sessionId)) {
+    return fail(
+      "swap_quote_uniswap is not available yet for this session — it unlocks after an eligible "
+        + "KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting "
+        + "on-chain at execute time (try swap_quote first).",
+    );
+  }
+
+  const parsed = SwapQuoteUniswapArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`swap_quote_uniswap: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a: SwapQuoteUniswapArgs = parsed.data;
+
+  // Resolve DIRECTLY against the Uniswap deployment registry — NOT via
+  // `classifySwapFamily` (which prioritizes KyberSwap whenever it ALSO covers
+  // the chain; the whole point of this fallback is to reach Uniswap even on a
+  // chain Kyber supports, e.g. after a 4011 token-not-found reveal).
+  const deployment = resolveUniswapDeployment(a.chain);
+  if (!deployment) {
+    return fail(`swap_quote_uniswap: "${a.chain}" has no verified Uniswap deployment.`);
+  }
+  if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
+    return fail(
+      "swap_quote_uniswap: EVM tokens must be a contract address — resolve the symbol "
+        + "with token_find first, or pass native ETH/native.",
+    );
+  }
+
+  const params: Record<string, unknown> = {
+    chain: deployment.key,
+    tokenIn: a.tokenIn,
+    tokenOut: a.tokenOut,
+    amountIn: a.amountIn,
+    ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
+  };
+  return executeProtocolTool({ toolId: "uniswap.swap.quote", params }, protocolContext(context));
 }
 
 // ── token_check — EVM honeypot / fee-on-transfer ─────────────────────
 
 const TokenCheckArgs = z.object({
-  chain: z.string().min(1, { message: "chain is required" }),
+  chain: ChainParam,
   address: z.string().min(1, { message: "address is required" }),
 });
 
@@ -245,9 +325,9 @@ const BridgeQuoteArgs = z.object({
   tradeType: z.string().min(1).optional(),
   fromAddress: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
-  refundTo: z.string().min(1).optional(),
-  referrer: z.string().min(1).optional(),
-  referrerFeeBps: z.string().min(1).optional(),
+  // No `refundTo` — the refund destination is derived from the selected
+  // source wallet, never taken from tool input (refund-destination policy in
+  // `@tools/khalani/request.js`).
   filler: z.string().min(1).optional(),
   slippageBps: z.string().min(1).optional(),
 });
@@ -256,6 +336,19 @@ export async function handleBridgeQuote(
   args: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
+  // Fee params and the refund destination are rejected BY NAME, never silently
+  // stripped. This schema is not `.strict()`, so dropping the keys alone would
+  // let the attempt pass unnoticed — and the QUOTE is precisely what the
+  // prequote gate would later bind a matching execute against, so an attacker
+  // who sets the same value on both would collide the hashes and pass the gate.
+  // See the two policy blocks in `@tools/khalani/request.js`.
+  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  if (forbiddenParam !== null) {
+    return fail(
+      `bridge_quote: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+    );
+  }
+
   const parsed = BridgeQuoteArgs.safeParse(args);
   if (!parsed.success) {
     return fail(`bridge_quote: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
@@ -275,7 +368,6 @@ export async function handleBridgeQuote(
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
     if (a.recipient !== undefined) params.recipient = a.recipient;
-    if (a.refundTo !== undefined) params.refundTo = a.refundTo;
     if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
     return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
   }
@@ -290,9 +382,71 @@ export async function handleBridgeQuote(
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
   if (a.recipient !== undefined) params.recipient = a.recipient;
-  if (a.refundTo !== undefined) params.refundTo = a.refundTo;
-  if (a.referrer !== undefined) params.referrer = a.referrer;
-  if (a.referrerFeeBps !== undefined) params.referrerFeeBps = a.referrerFeeBps;
   if (a.filler !== undefined) params.filler = a.filler;
   return executeProtocolTool({ toolId: "khalani.quote.get", params }, protocolContext(context));
+}
+
+// ── bridge_quote_relay — HIDDEN Relay-only bridge preview (route-bound reveal) ──
+//
+// The read half of the hidden Relay fallback pair (bridge factory W5; plan R7).
+// Unlike the generic `bridge_quote` (which stays Khalani-routed except the
+// local-chain static exception), this alias ALWAYS targets `relay.quote.get`. It
+// is dispatch-gated on the ROUTE-BOUND reveal (`evaluateRelayRevealGate`) here as
+// an early, clean rejection; `executeProtocolTool`'s own gate on
+// `relay.quote.get` is the un-bypassable backstop. Robinhood/local routes pass
+// the gate via the always-allowed carve-out.
+
+const BridgeQuoteRelayArgs = z.object({
+  fromChain: z.string().min(1, { message: "fromChain is required" }),
+  fromToken: z.string().min(1, { message: "fromToken is required" }),
+  toChain: z.string().min(1, { message: "toChain is required" }),
+  toToken: z.string().min(1, { message: "toToken is required" }),
+  amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+  tradeType: z.string().min(1).optional(),
+  recipient: z.string().min(1).optional(),
+  // No `refundTo` — the refund destination is derived from the selected
+  // source wallet, never taken from tool input (refund-destination policy in
+  // `@tools/khalani/request.js`).
+  slippageBps: z.string().min(1).optional(),
+});
+
+export async function handleBridgeQuoteRelay(
+  args: Record<string, unknown>,
+  context: InternalToolContext,
+): Promise<ToolResult> {
+  if (evaluateRelayRevealGate(args, context.sessionId).decision === "deny") {
+    return fail(
+      "bridge_quote_relay is not available for this route yet — it unlocks after an eligible "
+        + "Khalani no-route failure for this exact route, or the Khalani deposit transaction reverting "
+        + "on-chain for this exact route (Robinhood routes are always available via bridge_quote). "
+        + "Try bridge_quote first.",
+    );
+  }
+
+  // This schema is not `.strict()` either, so the same by-name refusal applies
+  // — otherwise a redirected refund address would be dropped here in silence.
+  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  if (forbiddenParam !== null) {
+    return fail(
+      `bridge_quote_relay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+    );
+  }
+
+  const parsed = BridgeQuoteRelayArgs.safeParse(args);
+  if (!parsed.success) {
+    return fail(`bridge_quote_relay: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+  }
+  const a = parsed.data;
+
+  const params: Record<string, unknown> = {
+    fromChain: a.fromChain,
+    fromToken: a.fromToken,
+    toChain: a.toChain,
+    toToken: a.toToken,
+    amount: a.amount,
+  };
+  if (a.tradeType !== undefined) params.tradeType = a.tradeType;
+  if (a.recipient !== undefined) params.recipient = a.recipient;
+  if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
+  return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
 }

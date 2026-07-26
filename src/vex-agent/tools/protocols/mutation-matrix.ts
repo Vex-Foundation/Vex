@@ -1,22 +1,51 @@
 /**
  * Canonical mutation matrix — single source-of-truth for capture contracts.
  *
- * Imported by runtime.ts (validation, preview detection), tests (structural coverage),
- * and replay.ts (type correction). Every mutating protocol tool is classified exactly once.
+ * Imported by runtime.ts (validation, preview detection) and tests (structural
+ * coverage). Every mutating protocol tool is classified exactly once.
  *
  * Non-mutating tools are implicit read_only — not listed here.
+ *
+ * Agent Scan simplification (plan §4.3/§11.4): the PnL role split
+ * (pnl_spot/pnl_perps/pnl_prediction) and the `valuationExpected`
+ * exact/conditional/none tri-state are REMOVED — no FIFO-lot or exact-USD
+ * hard-gate machinery survives (no PnL system computes anything from these
+ * captures anymore). `kind` now classifies only the COARSE capture semantics
+ * downstream code still needs: `trade` (a swap/position-lifecycle capture that
+ * feeds `proj_activity` / `proj_open_positions`), `projection` (orders/LP
+ * lifecycle, no PnL), `audit` (balance/state-impact trail only), `utility`
+ * (no portfolio impact).
+ *
+ * `kyberswap.swap.execute` / `uniswap.swap.execute` (the new unified Kyber/
+ * Uniswap swap executes, replacing the deleted buy/sell pairs) — from Agent
+ * Scan Phase 2, `khalani.bridge` / `relay.bridge` — and, from Agent Scan
+ * Phase 3/W5 (migration 049), `solana.lend.deposit` / `solana.lend.withdraw`
+ * and `solana.predict.buy` / `.sell` / `.claim` / `.closeAll` — and, from
+ * Batch 5 (card B1), `solana.lend.borrowOperate` — are
+ * `capture: "none"`: their handler writes the durable truth DIRECTLY to
+ * `agent_activity` (via `db/repos/agent-activity.ts`) before/during/after
+ * broadcast, so the legacy `proj_activity` projection pipeline below must
+ * never also run for them. `capture: "none"` + no `_tradeCapture` on the
+ * handler's `ToolResult.data` already makes `capture-pipeline.ts`'s existing
+ * "no items → no-op" path skip projection for these tools with ZERO special
+ * casing — the entries below exist so this classification is still
+ * discoverable/explicit (the file's own invariant: every mutating tool is
+ * classified exactly once), not because the skip depends on them.
  */
 
-import type { PortfolioRole, CaptureSupport } from "./types.js";
+import type { CaptureSupport } from "./types.js";
 
 // ── Contract per mutation ──────────────────────────────────────
 
+/** Coarse capture semantics — see module doc. No PnL/valuation machinery. */
+export type CaptureKind = "trade" | "projection" | "audit" | "utility";
+
 export interface MutationContract {
-  /** Business semantics for downstream projections. */
-  role: PortfolioRole;
+  /** Coarse capture semantics for downstream projections (no PnL role split). */
+  kind: CaptureKind;
   /** Whether handler produces _tradeCapture. */
   capture: CaptureSupport;
-  /** Expected _tradeCapture.type value(s). Array for dual-type tools (e.g. Polymarket buy/sell). */
+  /** Expected _tradeCapture.type value(s). Array for dual-type tools. */
   expectedType: string | string[];
   /** Handler supports dryRun param → runtime skips approval + capture for previews. */
   previewSupport: boolean;
@@ -27,33 +56,28 @@ export interface MutationContract {
   /** Named exceptions to requiredFields (e.g. "claim: no instrumentKey"). */
   exceptions?: readonly string[];
   /**
-   * Handler's USD valuation capability. Runtime hard gate in capture-validator.ts.
-   * - "exact": must emit inputValueUsd/outputValueUsd + valuationSource. Capture rejected without them.
-   * - "conditional": may emit exact USD on certain paths (e.g. Polymarket matched). No guard on unmatched.
-   * - "none": no USD from source — honest null / valuationSource: "none".
+   * A `fanOut: "items"` tool whose SUMMARY `_tradeCapture` must NEVER
+   * substitute for missing per-item `_tradeCaptureItems` — its summary
+   * collapses multiple DISTINCT legs (e.g. a Pendle PY mint's PT leg + YT leg)
+   * into one mislabeled capture, a portfolio-integrity bug. Batch tools whose
+   * summary is a safe fallback (e.g. a batch claim with nothing to
+   * distinguish) leave this unset.
    */
-  valuationExpected: "exact" | "conditional" | "none";
+  strictItemsRequired?: boolean;
   /**
-   * Meta fields required for downstream features (e.g. contracts for MTM).
-   * Validated in capture-validator.ts alongside requiredFields.
+   * Meta fields required for downstream features beyond the top-level
+   * `_tradeCapture` shape. Validated in capture-validator.ts alongside
+   * requiredFields. Unused by any current entry — kept for the next
+   * protocol whose capture needs a nested meta invariant.
    */
   requiredMetaFields?: readonly string[];
 }
 
-// ── Required field sets per role ────────────────────────────────
+// ── Required field sets ──────────────────────────────────────────
 
-const PNL_SPOT_FIELDS = [
+const TRADE_FIELDS = [
   "type", "walletAddress", "tradeSide", "instrumentKey",
   "inputTokenAddress", "outputTokenAddress", "inputAmount", "outputAmount",
-] as const;
-
-const PNL_PREDICTION_FIELDS = [
-  "type", "walletAddress", "status", "positionKey", "instrumentKey",
-] as const;
-
-/** Netted perp position snapshots, consumed by the existing lifecycle projector. */
-const PNL_PERPS_FIELDS = [
-  "type", "walletAddress", "status", "positionKey", "instrumentKey",
 ] as const;
 
 const PROJECTION_FIELDS = [
@@ -69,115 +93,82 @@ const NO_FIELDS: readonly string[] = [];
 // ── Matrix entries ─────────────────────────────────────────────
 
 const entries: [string, MutationContract][] = [
-  // ── pnl_spot ──────────────────────────────────────────────
-  ["solana.swap.execute",    { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: false, fanOut: "single", requiredFields: PNL_SPOT_FIELDS, exceptions: ["neutral swap: no tradeSide when meta.stableSwap or meta.ambiguousSwap"], valuationExpected: "exact" }],
-  ["kyberswap.swap.sell",    { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  ["kyberswap.swap.buy",     { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  // Uniswap has no aggregator USD — honest valuationExpected "none" (the portfolio
-  // sync values holdings later via DexScreener). Token addresses are still
-  // captured so the self-learning balance sync auto-tracks acquired tokens.
-  ["uniswap.swap.sell",      { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "none" }],
-  ["uniswap.swap.buy",       { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "none" }],
+  // ── trade (spot swaps, no PnL — proj_activity capture only) ──
+
+  // KyberSwap/Uniswap/Jupiter unified executes — truth lives in
+  // agent_activity, written directly by the handler. `capture: "none"` so
+  // this pipeline never also projects proj_activity for these toolIds.
+  // `solana.swap.execute` flipped full->none in W5 (design §3/§6, migration
+  // 049) with the fee-bearing `/build` atomic flip — same K2 staged Solana
+  // seam kyberswap/uniswap already use on EVM.
+  ["kyberswap.swap.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["uniswap.swap.execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["solana.swap.execute",    { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 
   // Pendle fixed-yield PT (Ethereum v1). All three capture as spot swaps: buy
-  // opens a PT lot, sell (early exit) + redeem (matured, ~face) close it. The
-  // handler emits exact USD from Pendle prices (valuationSource "pendle").
-  ["pendle.pt.buy",          { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  ["pendle.pt.sell",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  ["pendle.pt.redeem",       { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+  // opens a PT lot, sell (early exit) + redeem (matured, ~face) close it.
+  ["pendle.pt.buy",          { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
+  ["pendle.pt.sell",         { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
+  ["pendle.pt.redeem",       { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
 
   // Pendle YT (variable/leveraged yield). Buy opens a YT lot, early-exit sell
-  // closes it — captured as spot swaps with exact USD from the payment leg
-  // (valuationSource "pendle"). The YT lot key is the YT address (distinct from
-  // the market's PT). No redeem — a YT decays to zero rather than maturing to face.
-  ["pendle.yt.buy",          { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  ["pendle.yt.sell",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+  // closes it. No redeem — a YT decays to zero rather than maturing to face.
+  ["pendle.yt.buy",          { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
+  ["pendle.yt.sell",         { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
 
   // Pendle PY mint / pre-expiry redeem (P4). ONE execution, TWO capture items (a
-  // PT leg + a YT leg) with DISTINCT instrument keys → fanOut:"items" (mint opens
-  // a PT lot AND a YT lot; redeem closes both). Each item is a complete spot swap
-  // with exact USD split proportionally across the legs (valuationSource "pendle").
-  ["pendle.py.mint",         { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "items",  requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  ["pendle.py.redeem",       { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: true,  fanOut: "items",  requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
-  ["hyperliquid.spot.trade", { role: "pnl_spot", capture: "full", expectedType: "swap",       previewSupport: false, fanOut: "single", requiredFields: PNL_SPOT_FIELDS, valuationExpected: "exact" }],
+  // PT leg + a YT leg) with DISTINCT instrument keys → fanOut:"items" AND
+  // strictItemsRequired (the summary must never substitute for the two items).
+  ["pendle.py.mint",         { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "items", requiredFields: TRADE_FIELDS, strictItemsRequired: true }],
+  ["pendle.py.redeem",       { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "items", requiredFields: TRADE_FIELDS, strictItemsRequired: true }],
 
-  // ── pnl_prediction ────────────────────────────────────────
-  // Solana predictions — single positionPubkey per buy/sell/claim
-  ["solana.predict.buy",     { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact", requiredMetaFields: ["contracts"] }],
-  ["solana.predict.sell",    { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: PNL_PREDICTION_FIELDS, valuationExpected: "exact" }],
-  ["solana.predict.claim",   { role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: ["walletAddress", "status", "positionKey"], exceptions: ["claim: no instrumentKey — matches via positionKey"], valuationExpected: "exact" }],
-  ["solana.predict.closeAll",{ role: "pnl_prediction", capture: "full", expectedType: "prediction", previewSupport: false, fanOut: "items",  requiredFields: PNL_PREDICTION_FIELDS, exceptions: ["closeAll claim item: no instrumentKey — matches via positionKey"], valuationExpected: "exact" }],
+  // ── trade (predictions — Jupiter/Solana; W5 migration 049 converted
+  // buy/sell/claim/closeAll to the staged `agent_activity` write path (K2:
+  // createAgentActivityIntent -> prepareVersionedTx -> markActivitySolana
+  // Broadcast -> submitPreparedTx), same flip as kyberswap/uniswap/khalani/
+  // relay/solana.lend.* above — `capture: "none"` so the legacy
+  // `proj_activity` pipeline never also runs for these four toolIds.
+  ["solana.predict.buy",     { kind: "trade", capture: "none", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["solana.predict.sell",    { kind: "trade", capture: "none", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["solana.predict.claim",   { kind: "trade", capture: "none", expectedType: "prediction", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["solana.predict.closeAll",{ kind: "trade", capture: "none", expectedType: "prediction", previewSupport: false, fanOut: "items",  requiredFields: NO_FIELDS }],
 
-  // Polymarket CLOB — dual-type: matched→prediction (position, exact valuation), live→order (pending, no valuation)
-  ["polymarket.clob.buy",    { role: "pnl_prediction", capture: "full", expectedType: ["prediction", "order"], previewSupport: true,  fanOut: "single", requiredFields: ["walletAddress", "status", "positionKey", "instrumentKey"], valuationExpected: "conditional" }],
-  ["polymarket.clob.sell",   { role: "pnl_prediction", capture: "full", expectedType: ["prediction", "order"], previewSupport: true,  fanOut: "single", requiredFields: ["walletAddress", "status", "positionKey", "instrumentKey"], valuationExpected: "conditional" }],
-
-  // Polymarket cancel* — order lifecycle, not prediction position
-  ["polymarket.clob.cancel",       { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["polymarket.clob.cancelOrders", { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["polymarket.clob.cancelAll",    { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["polymarket.clob.cancelMarket", { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-
-  // Hyperliquid mutations capture the post-action clearinghouse snapshot, so
-  // scale in/out projects netted truth without changing the shared projector.
-  ["hyperliquid.perp.open",         { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.close",        { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.setTpsl",      { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.modifyOrder",  { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.cancelOrders", { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.setLeverage",  { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.adjustMargin", { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.perp.twap",         { role: "pnl_perps", capture: "full", expectedType: "perps", previewSupport: false, fanOut: "single", requiredFields: PNL_PERPS_FIELDS, valuationExpected: "none", requiredMetaFields: ["coin", "contracts", "protectionState"] }],
-  ["hyperliquid.risk.proposeSetup", { role: "utility", capture: "none", expectedType: "social", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS, valuationExpected: "none" }],
-
-  // Hyperliquid funding, vault, staking and reward mutations are account
-  // operations, not trade lots. Keep their captures audit-only so they remain
-  // visible without inventing spot/perp PnL semantics.
-  ["hyperliquid.deposit",           { role: "audit", capture: "full", expectedType: "transfer", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.transfer.usdClass", { role: "audit", capture: "full", expectedType: "account", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.withdraw",          { role: "audit", capture: "full", expectedType: "transfer", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.transfer.send",     { role: "audit", capture: "full", expectedType: "transfer", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.vault.transfer",    { role: "audit", capture: "full", expectedType: "lp", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.staking.delegate",  { role: "audit", capture: "full", expectedType: "stake", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.staking.transfer",  { role: "audit", capture: "full", expectedType: "stake", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.rewards.claim",     { role: "audit", capture: "full", expectedType: "reward", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["hyperliquid.builder.approveFee", { role: "audit", capture: "full", expectedType: "account", previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-
-  // ── projection (orders, LP) ───────────────────────────────
-  ["kyberswap.limitOrder.create",    { role: "projection", capture: "full", expectedType: "order", previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.limitOrder.cancel",    { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.limitOrder.hardCancel",{ role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.limitOrder.fill",      { role: "projection", capture: "full", expectedType: "order", previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.limitOrder.batchFill", { role: "projection", capture: "full", expectedType: "order", previewSupport: true,  fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.limitOrder.cancelAll", { role: "projection", capture: "full", expectedType: "order", previewSupport: false, fanOut: "items",  requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.zap.in",              { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.zap.out",             { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["kyberswap.zap.migrate",         { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  // Pendle single-token LP add/remove (P5) — same LP-lifecycle projection as the
-  // kyberswap zaps: type:"lp", positionKey `slug:lp:market:wallet`, meta.action
-  // "lp-add"/"lp-remove" drives openPositions open/close (remove closes only on a
-  // proven full exit) + proj_lp_events via the protocol-neutral meta.lpLegs path.
-  // valuationExpected "none" — the handler emits honest Pendle-priced USD when
-  // available, honest null otherwise (validator does not force it).
-  ["pendle.lp.add",                 { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
-  ["pendle.lp.remove",              { role: "projection", capture: "full", expectedType: "lp",    previewSupport: true,  fanOut: "single", requiredFields: PROJECTION_FIELDS, valuationExpected: "none" }],
+  // ── projection (LP — lifecycle only, no LP economics) ─────
+  // Pendle single-token LP add/remove (P5) — plain lp records only (LP
+  // open-position/economics projection was cut for both zap and Pendle;
+  // Pendle keeps the lifecycle row, zap's own tools are deleted outright).
+  ["pendle.lp.add",                 { kind: "projection", capture: "full", expectedType: "lp", previewSupport: true, fanOut: "single", requiredFields: PROJECTION_FIELDS }],
+  ["pendle.lp.remove",              { kind: "projection", capture: "full", expectedType: "lp", previewSupport: true, fanOut: "single", requiredFields: PROJECTION_FIELDS }],
 
   // ── audit (capture: full) ─────────────────────────────────
-  ["khalani.bridge",           { role: "audit", capture: "full", expectedType: "bridge",       previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["relay.bridge",             { role: "audit", capture: "full", expectedType: "bridge",       previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["solana.lend.deposit",      { role: "audit", capture: "full", expectedType: "lend",         previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  ["solana.lend.withdraw",     { role: "audit", capture: "full", expectedType: "lend",         previewSupport: false, fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-  // Pendle income sweep — claims accrued YT interest + rewards / LP rewards to the
-  // wallet. Not a spot trade (no input/output pair, no principal moved) → audited
-  // as a "reward" income event (type→product "reward"; honest null valuation).
-  ["pendle.claim",             { role: "audit", capture: "full", expectedType: "reward",       previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS, valuationExpected: "none" }],
-
-  // ── audit (capture: none — address creation, no direct tx) ─
-  ["polymarket.bridge.deposit",  { role: "audit", capture: "none", expectedType: "bridge", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS, valuationExpected: "none" }],
-  ["polymarket.bridge.withdraw", { role: "audit", capture: "none", expectedType: "bridge", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS, valuationExpected: "none" }],
-
-  // ── utility (no portfolio impact) ─────────────────────────
-  ["polymarket.clob.heartbeat",       { role: "utility", capture: "none", expectedType: "social", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS, valuationExpected: "none" }],
+  // Khalani/Relay bridges (Agent Scan Phase 2, migration 045) write their durable
+  // truth DIRECTLY to `agent_activity` (via `db/repos/agent-activity.ts`) across
+  // the full staged lifecycle, so `capture: "none"` here — the legacy
+  // `proj_activity` projection pipeline must NEVER also run for them (exactly the
+  // Phase-1 kyberswap/uniswap flip). The Relay hidden-pair aliases
+  // (bridge_quote_relay / bridge_execute_relay) resolve to `relay.bridge`, so
+  // flipping it covers them too. Entries stay listed so the classification is
+  // explicit (every mutating tool classified exactly once).
+  ["khalani.bridge",           { kind: "audit", capture: "none", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  ["relay.bridge",             { kind: "audit", capture: "none", expectedType: "bridge", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+  // Jupiter Lend deposit/withdraw (Agent Scan Phase 3/W5, migration 049) —
+  // converted to the staged `agent_activity` write path (K2/K6): the handler
+  // writes its durable truth DIRECTLY (createAgentActivityIntent →
+  // prepareVersionedTx → markActivitySolanaBroadcast → submitPreparedTx), so
+  // `capture: "none"` here — the legacy `proj_activity` projection pipeline
+  // must NEVER also run for these two, exactly the khalani.bridge/relay.bridge
+  // flip above.
+  ["solana.lend.deposit",      { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["solana.lend.withdraw",     { kind: "audit", capture: "none", expectedType: "lend",   previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Jupiter Lend BORROW `/operate` (Agent Scan Phase 3 Batch 5, card B1) —
+  // full lifecycle (create/deposit/withdraw/borrow/repay) on the SAME K2
+  // staged `agent_activity` write path as the two Earn tools above —
+  // `capture: "none"` for the identical reason.
+  ["solana.lend.borrowOperate", { kind: "audit", capture: "none", expectedType: "lend",  previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Pendle income sweep — claims accrued YT interest + rewards / LP rewards to
+  // the wallet. Not a spot trade (no input/output pair, no principal moved) →
+  // audited as a "reward" income event.
+  ["pendle.claim",             { kind: "audit", capture: "full", expectedType: "reward", previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────
@@ -199,7 +190,7 @@ export function getMatrixToolIds(): string[] {
   return entries.map(([id]) => id);
 }
 
-/** Get tools by role. */
-export function getToolsByRole(role: PortfolioRole): [string, MutationContract][] {
-  return entries.filter(([, c]) => c.role === role);
+/** Get tools by capture kind. */
+export function getToolsByKind(kind: CaptureKind): [string, MutationContract][] {
+  return entries.filter(([, c]) => c.kind === kind);
 }

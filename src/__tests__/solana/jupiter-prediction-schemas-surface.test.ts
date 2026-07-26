@@ -6,14 +6,14 @@
  * trades / leaderboard / vault / transactions, with the shared PRIVATE base
  * schemas in `_shared`).
  *
- * Pins the EXACT runtime export set of the barrel (the 22 `jupiterPrediction*`
+ * Pins the EXACT runtime export set of the barrel (the 23 `jupiterPrediction*`
  * Zod schemas) plus each export's `typeof`, so callers importing from the old
  * path (`../schemas.js`, consumed by `prediction-api/client/{read,write}.ts`
  * and the existing `jupiter-prediction-schemas.test.ts`) see no difference.
  *
  * CODEX: this barrel has NO exported types — the wire interfaces stay canonical
  * in `types/`, so there are no `z.infer` exports to verify. The type-only check
- * below asserts the module shape carries ONLY the 22 runtime schema values
+ * below asserts the module shape carries ONLY the 23 runtime schema values
  * (every value is a Zod schema), pinning that no type-export leaked in.
  */
 
@@ -33,7 +33,7 @@ const _typeProbe: _AllAreZodSchemas | null = null;
 void _typeProbe;
 
 describe("jupiter-prediction schemas barrel surface", () => {
-  it("exposes exactly the expected 22 runtime schema exports", () => {
+  it("exposes exactly the expected 23 runtime schema exports", () => {
     const keys = Object.keys(schemasMod).sort();
     expect(keys).toEqual([
       "jupiterPredictionClaimPositionResponseSchema",
@@ -42,6 +42,8 @@ describe("jupiter-prediction schemas barrel surface", () => {
       "jupiterPredictionEventMarketsResponseSchema",
       "jupiterPredictionEventSchema",
       "jupiterPredictionEventsResponseSchema",
+      // K5: managed POST /execute response for a Jupiter Forecast (bisonfi) order.
+      "jupiterPredictionExecuteResponseSchema",
       "jupiterPredictionHistoryResponseSchema",
       "jupiterPredictionLeaderboardsResponseSchema",
       "jupiterPredictionMarketResponseSchema",

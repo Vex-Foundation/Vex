@@ -4,8 +4,7 @@
  *
  *   - every mapped chain (plus its CAIP-2 `eip155:<id>` alias for EVM) resolves
  *     to the canonical explorer `/tx/` URL,
- *   - the new Hyperliquid / HyperEVM / Robinhood aliases resolve to their
- *     explorers, and HyperCore additionally exposes an `/address/` account URL,
+ *   - the HyperEVM / Robinhood aliases resolve to their explorers,
  *   - normalization is lowercase + trim over the tolerant chain string,
  *   - `null`/blank refs and unknown chains resolve to `null` (UI renders
  *     non-interactive) — the builders never throw,
@@ -97,12 +96,6 @@ describe("explorerTxUrl", () => {
     }
   });
 
-  it("maps HyperCore (hyperliquid) tx hashes to the app explorer", () => {
-    expect(explorerTxUrl("hyperliquid", HASH)).toBe(
-      `https://app.hyperliquid.xyz/explorer/tx/${HASH}`,
-    );
-  });
-
   it("maps HyperEVM (hyperevm / eip155:999) to hyperevmscan", () => {
     const expected = `https://hyperevmscan.io/tx/${HASH}`;
     expect(explorerTxUrl("hyperevm", HASH)).toBe(expected);
@@ -130,16 +123,12 @@ describe("explorerTxUrl", () => {
     expect(explorerTxUrl("ETHEREUM", HASH)).toBe(
       `https://etherscan.io/tx/${HASH}`,
     );
-    expect(explorerTxUrl(" HyperLiquid ", HASH)).toBe(
-      `https://app.hyperliquid.xyz/explorer/tx/${HASH}`,
-    );
   });
 
   it("returns null for a null, empty, or whitespace-only ref", () => {
     expect(explorerTxUrl("solana", null)).toBeNull();
     expect(explorerTxUrl("solana", "")).toBeNull();
     expect(explorerTxUrl("ethereum", "   ")).toBeNull();
-    expect(explorerTxUrl("hyperliquid", null)).toBeNull();
   });
 
   it("returns null for unknown chains", () => {
@@ -159,34 +148,23 @@ describe("explorerTxUrl", () => {
   });
 });
 
+// `EXPLORER_ADDRESS_BASE` currently has no populated chain (its sole entry,
+// HyperCore, was removed with Hyperliquid) — `explorerAccountUrl` always
+// resolves `null` today. It stays a live, tested mechanism for the next chain
+// that lacks a single tx reference; these tests only pin the "no mapping"
+// fail-closed behavior. The URL-building/encoding branch has no coverage
+// until a chain populates the map again.
 describe("explorerAccountUrl", () => {
-  it("maps hyperliquid to the app account explorer", () => {
-    expect(explorerAccountUrl("hyperliquid", ADDRESS)).toBe(
-      `https://app.hyperliquid.xyz/explorer/address/${ADDRESS}`,
-    );
-    // Tolerant normalization, same as the tx builder.
-    expect(explorerAccountUrl(" HyperLiquid ", ADDRESS)).toBe(
-      `https://app.hyperliquid.xyz/explorer/address/${ADDRESS}`,
-    );
-  });
-
-  it("returns null for a null, empty, or whitespace-only address", () => {
-    expect(explorerAccountUrl("hyperliquid", null)).toBeNull();
-    expect(explorerAccountUrl("hyperliquid", "")).toBeNull();
-    expect(explorerAccountUrl("hyperliquid", "   ")).toBeNull();
-  });
-
-  it("returns null for chains with no account explorer (incl. mapped tx chains)", () => {
-    // A chain can have a tx explorer but no account page in this map.
+  it("returns null for every chain (no chain is currently mapped)", () => {
     expect(explorerAccountUrl("ethereum", ADDRESS)).toBeNull();
     expect(explorerAccountUrl("solana", ADDRESS)).toBeNull();
     expect(explorerAccountUrl("robinhood", ADDRESS)).toBeNull();
     expect(explorerAccountUrl("dogecoin", ADDRESS)).toBeNull();
   });
 
-  it("URL-encodes the address", () => {
-    expect(explorerAccountUrl("hyperliquid", "abc/../evil")).toBe(
-      "https://app.hyperliquid.xyz/explorer/address/abc%2F..%2Fevil",
-    );
+  it("returns null for a null, empty, or whitespace-only address", () => {
+    expect(explorerAccountUrl("solana", null)).toBeNull();
+    expect(explorerAccountUrl("solana", "")).toBeNull();
+    expect(explorerAccountUrl("solana", "   ")).toBeNull();
   });
 });

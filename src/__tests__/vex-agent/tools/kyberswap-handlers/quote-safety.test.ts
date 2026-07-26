@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
+type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
+
 // ── Per-session wallet resolution mock (5D-protocols p1) ──────────
 // Handlers now resolve the session wallet via resolve.js (NOT the zero-arg
 // requireEvmWallet primary). Spy on the resolvers to assert the session wallet
@@ -11,12 +13,12 @@ const SESSION_EVM = {
   address: "0x1234567890abcdef1234567890abcdef12345678",
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
-const mockResolveSigningWallet = vi.fn(() => SESSION_EVM);
-const mockResolveSelectedAddress = vi.fn(() => SESSION_EVM.address);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
-  resolveSigningWallet: (...args: unknown[]) => mockResolveSigningWallet(...args),
-  resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
+  resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
+  resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
   walletScopeErrorToResult: (err: unknown) => ({
     success: false,
     output: err instanceof Error ? err.message : String(err),
@@ -33,27 +35,6 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
     ...over,
   };
 }
-
-const mockGetZapInRoute = vi.fn();
-const mockBuildZapIn = vi.fn();
-const mockGetZapOutRoute = vi.fn();
-const mockBuildZapOut = vi.fn();
-const mockGetZapMigrateRoute = vi.fn();
-const mockBuildZapMigrate = vi.fn();
-
-vi.mock("@tools/kyberswap/zaas/client.js", () => ({
-  getKyberZaasClient: () => ({
-    getZapInRoute: (...args: unknown[]) => mockGetZapInRoute(...args),
-    buildZapIn: (...args: unknown[]) => mockBuildZapIn(...args),
-    getZapOutRoute: (...args: unknown[]) => mockGetZapOutRoute(...args),
-    buildZapOut: (...args: unknown[]) => mockBuildZapOut(...args),
-    getZapMigrateRoute: (...args: unknown[]) => mockGetZapMigrateRoute(...args),
-    buildZapMigrate: (...args: unknown[]) => mockBuildZapMigrate(...args),
-  }),
-}));
-
-const mockExtractMintedNftId = vi.fn();
-const mockExtractErc1155Position = vi.fn();
 
 // readErc20Metadata is used by resolveTokenMetadataStrict for address inputs
 // (the quote path is now strict/address-only, matching execute).
@@ -72,18 +53,12 @@ vi.mock("@tools/kyberswap/evm-utils.js", () => ({
     publicClient: {},
     walletClient: {},
   }),
-  ensureKyberAllowance: vi.fn().mockResolvedValue(undefined),
-  ensureErc721Approval: vi.fn().mockResolvedValue(null),
-  ensureErc1155ApprovalForAll: vi.fn().mockResolvedValue(null),
-  sendKyberTransaction: vi.fn().mockResolvedValue("0xmockhash"),
-  sendKyberTransactionWithReceipt: vi.fn().mockResolvedValue({
-    hash: "0xzaphash",
-    receipt: { logs: [{ topics: ["0xddf252ad"], data: "0x" }] },
-  }),
-  extractMintedNftId: (...args: unknown[]) => mockExtractMintedNftId(...args),
-  extractErc1155Position: (...args: unknown[]) => mockExtractErc1155Position(...args),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
+  planKyberAllowance: vi.fn(),
+  buildApproveCalldata: vi.fn(),
+  signStageBroadcast: vi.fn(),
+  decodeKyberSwapSettlement: vi.fn(),
 }));
 
 // Mock token API for safety gate + quote-time safety surfacing (Stage 6b).
@@ -122,7 +97,6 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
-import { KYBERSWAP_TOOLS } from "../../../../vex-agent/tools/protocols/kyberswap/manifest.js";
 
 describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
   const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC-like
@@ -142,8 +116,15 @@ describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
           amountOut: "999000",
           amountOutUsd: "0.99",
           gasUsd: "0.5",
+          // L2 data fee + integrator fee: dropped by the old projection,
+          // restored 2026-07-25 (most supported chains are L2s).
+          l1FeeUsd: "0.12",
+          extraFee: { feeAmount: "25", chargeFeeBy: "currency_in", isInBps: true, feeReceiver: "0xTreasury" },
           // Two non-null hops across one path — drives routeHops projection.
-          route: [[{ pool: "0xpool1" }, { pool: "0xpool2" }]],
+          route: [[
+            { pool: "0xpool1", exchange: "uniswapv3", swapAmount: "1000000" },
+            { pool: "0xpool2", exchange: "curve", swapAmount: "999500" },
+          ]],
         },
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
       },
@@ -174,21 +155,32 @@ describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
     // Both non-native legs were checked, in parallel.
     expect(mockGetHoneypotFotInfo).toHaveBeenCalledTimes(2);
     // routeSummary is the compact formatRouteSummary projection: amounts +
-    // USD legs + gasUsd + derived priceImpact + routeHops; route/poolExtra/
-    // extra/routeID/checksum/tokenIn/tokenOut/l1FeeUsd/extraFee/gas/gasPrice
-    // are dropped. priceImpact is a derived float, asserted approximately.
+    // USD legs + gasUsd + derived priceImpact + routeHops; poolExtra/extra/
+    // routeID/checksum/tokenIn/tokenOut/gas/gasPrice stay dropped.
+    // 2026-07-25: `l1FeeUsd`, `extraFee`, and the per-path venue list are NO
+    // LONGER dropped — the old key-set assertion below encoded that loss, and
+    // on an L2 an omitted L1 data fee understates the true cost of the trade.
+    // priceImpact is a derived float, asserted approximately.
     expect(out.routeSummary).toMatchObject({
       amountIn: "1000000",
       amountInUsd: "1.00",
       amountOut: "999000",
       amountOutUsd: "0.99",
       gasUsd: "0.5",
+      l1FeeUsd: "0.12",
+      extraFee: { feeAmount: "25", chargeFeeBy: "currency_in", isInBps: true, feeReceiver: "0xTreasury" },
       routeHops: 2,
+      routePaths: [{ exchanges: ["uniswapv3", "curve"], amountInRaw: "1000000" }],
     });
     expect(out.routeSummary.priceImpact).toBeCloseTo(0.01, 10);
     expect(Object.keys(out.routeSummary).sort()).toEqual(
-      ["amountIn", "amountInUsd", "amountOut", "amountOutUsd", "gasUsd", "priceImpact", "routeHops"].sort(),
+      [
+        "amountIn", "amountInUsd", "amountOut", "amountOutUsd", "gasUsd",
+        "l1FeeUsd", "extraFee", "priceImpact", "routeHops", "routePaths",
+      ].sort(),
     );
+    // The L1 fee reaches the human-readable summary too, labeled an estimate.
+    expect(out.summary).toContain("L1 data fee ~$0.12 est.");
     expect(out.routerAddress).toBe("0x6131B5fae19EA4f9D964eAc0408E4408b66337b5");
   });
 

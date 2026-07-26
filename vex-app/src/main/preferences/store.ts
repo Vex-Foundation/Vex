@@ -23,6 +23,27 @@ import {
   type Preferences,
 } from "@shared/schemas/preferences.js";
 
+/**
+ * Returns `parsed` with its retired top-level `hyperliquid` key removed, or
+ * `null` when `parsed` is not a plain object / carries no such key (nothing to
+ * migrate).
+ *
+ * Every install since app version 037 persisted a `hyperliquid` block
+ * (Agent Scan Phase 3 dropped the field from `preferencesSchema` along with
+ * the rest of Hyperliquid). Because the root schema is `.strict()`, an
+ * on-disk file still carrying that key fails `safeParse` on first launch
+ * after the update — this one-time forward migration strips ONLY that known
+ * key before re-validating, so `loadInner` never falls through to the
+ * full-defaults reset for a file whose only problem is the retired key.
+ */
+function stripRetiredHyperliquidKey(parsed: unknown): Record<string, unknown> | null {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const rec = parsed as Record<string, unknown>;
+  if (!("hyperliquid" in rec)) return null;
+  const { hyperliquid: _hyperliquid, ...rest } = rec;
+  return rest;
+}
+
 class PreferencesStore {
   private cache: Preferences | null = null;
   private readonly listeners = new Set<(preferences: Preferences) => void>();
@@ -92,12 +113,25 @@ class PreferencesStore {
       return defaultPreferences;
     }
     const result = preferencesSchema.safeParse(parsed);
-    if (!result.success) {
-      await this.writeInner(defaultPreferences);
-      return defaultPreferences;
+    if (result.success) {
+      this.cache = result.data;
+      return this.cache;
     }
-    this.cache = result.data;
-    return this.cache;
+    // One-time forward migration (see `stripRetiredHyperliquidKey`): a strict-
+    // parse failure caused ONLY by the retired `hyperliquid` key recovers by
+    // stripping it and re-validating, instead of falling through to a full
+    // reset that would also wipe telemetry consent, window bounds, and the
+    // updater throttle timestamp for every existing user.
+    const stripped = stripRetiredHyperliquidKey(parsed);
+    if (stripped !== null) {
+      const migrated = preferencesSchema.safeParse(stripped);
+      if (migrated.success) {
+        await this.writeInner(migrated.data);
+        return migrated.data;
+      }
+    }
+    await this.writeInner(defaultPreferences);
+    return defaultPreferences;
   }
 
   /**

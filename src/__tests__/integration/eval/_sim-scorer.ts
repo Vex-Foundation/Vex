@@ -45,7 +45,7 @@ import type { KnowledgeLineageResult } from "@vex-agent/db/repos/knowledge/types
 
 import { WORLD_CORPUS, type MemoryItem } from "./_world-corpus.js";
 import { ORACLE } from "./_oracle.js";
-import type { RunCapture, ItemResult } from "./_sim-runner.js";
+import type { RunCapture } from "./_sim-runner.js";
 import { makeContext } from "./_sim-runner.js";
 import { reportCard, type OracleCauseCode } from "./_report-card.js";
 
@@ -217,37 +217,6 @@ export function extractSecretTokens(contentMd: string): string[] {
   return [...new Set(long)];
 }
 
-/**
- * Map a reconcile capture's terminal status + bounded last_error → the S6
- * cause-code for a NON-applied flip. Pure mapper over the runner's already-
- * bounded captures (no free text). The reconcile flip is FAIL-CLOSED on the live
- * reconcile judge, so on this F31-prone model a flip commonly does not apply:
- *   - terminalStatus 'wrong_target:*'                → wake_wrong_target
- *   - lastError judge_* (timeout/malformed/schema)   → judge_failed
- *   - status failed/permanently_failed (any reason)  → judge_failed (the flip path
- *     only fails via the fail-closed judge throw)
- *   - a clean completion with no decision row + no judge error → no_matched_lot
- *     (the re-resolve found no flippable realized delta; the ledger had no matched
- *     lot to produce a loss).
- */
-function reconcileCauseCode(result: Extract<ItemResult, { kind: "reconcile" }>): OracleCauseCode {
-  if (result.terminalStatus.startsWith("wrong_target")) return "wake_wrong_target";
-  const err = result.lastError ?? "";
-  if (
-    err === "judge_timeout" ||
-    err === "judge_malformed" ||
-    err === "judge_schema_invalid" ||
-    err === "schema_invalid" ||
-    err === "provider_config"
-  ) {
-    return "judge_failed";
-  }
-  if (result.terminalStatus === "failed" || result.terminalStatus === "permanently_failed") {
-    return "judge_failed";
-  }
-  return "no_matched_lot";
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 //  HARD-GATE RESULT TYPES (the test shell expect()s these)
 // ════════════════════════════════════════════════════════════════════════════
@@ -413,7 +382,7 @@ export async function scoreSecrets(
  *
  * PRECONDITION-AWARE (subset firewall). The reason an id must-not-appear differs:
  *   - It produced NO active entry (door-rejected O/Q/P, rejected J, or its row was
- *     retired to non-active by a supersede/conflict/reconcile that RAN) → the
+ *     retired to non-active by a supersede/conflict that RAN) → the
  *     must-not-appear precondition is ESTABLISHED → HARD (a surfacing reds).
  *   - It produced an entry that is STILL ACTIVE — this happens on a truncated
  *     subset where the superseder/winner that would retire it was NOT in the run
@@ -682,144 +651,6 @@ export function scoreDecay(capture: RunCapture, snapshot: FinalSnapshot): HardGa
       pass,
       knownGap: false,
       detail: `maturity=${maturity} activation=${activation.toFixed(3)} ceilingOk=${ceilingOk} floorOk=${floorOk}`,
-    });
-  }
-  return gates;
-}
-
-/**
- * RECONCILE (SOFT + cause-coded — NEVER a hard gate). For each K item:
- *   - The flip path is FAIL-CLOSED on the LIVE reconcile judge (reconcile.ts:286 —
- *     a flip consults the judge and throws→markFailed→retry on failure), so on the
- *     F31-prone model the applied flip commonly does not land. Per the S6 firewall
- *     reconcile is therefore a SOFT/cause-coded dimension, NOT a structural hard
- *     gate: a non-applied flip records `judge_failed` / `no_matched_lot` /
- *     `wake_wrong_target` and NEVER reds the suite.
- *   - The wake enqueue (deterministic ledger leg) is recorded; a fan-out
- *     (`wrong_target:*`) or unclaimable job is cause-coded (`wake_wrong_target`),
- *     still soft (the dedicated K instruments make a fan-out a genuine surprise,
- *     surfaced as a finding rather than masked).
- *   - When the flip DID apply (outcome_version bumped + a reconcile decision row),
- *     it is recorded as a pass; the consequence CHOICE (quench vs invalidate) is
- *     model-decided → SOFT.
- * The underlying ledger correctness (the SELL anchor re-resolves NEGATIVE vs the
- * stored positive baseline) is exercised deterministically by the seeding; only
- * the JUDGE-GATED apply is non-deterministic, hence soft.
- */
-export function scoreReconcile(capture: RunCapture, snapshot: FinalSnapshot): HardGate[] {
-  const gates: HardGate[] = [];
-  const NON_ENQUEUED = new Set([
-    "not_enqueued",
-    "no_due_job",
-    "drain_budget_exhausted",
-  ]);
-  for (const itemId of capture.processedItemIds) {
-    const pred = ORACLE.predictions[itemId];
-    if (!pred || pred.expectedReconcile === undefined) continue;
-    const result = capture.perItem.get(itemId);
-    if (result?.kind !== "reconcile") {
-      reportCard.recordOracleScore({
-        itemId,
-        dimension: "reconcile",
-        expected: `flip→${pred.expectedReconcile.finalSignal} + enqueue`,
-        actual: `no reconcile capture (kind=${result?.kind ?? "none"})`,
-        pass: false,
-        note: "reconcile path not reached",
-        causeCode: "wake_wrong_target",
-      });
-      gates.push({
-        id: `reconcile-enqueued:${itemId}`,
-        pass: true,
-        knownGap: true,
-        detail: `no reconcile capture kind=${result?.kind ?? "none"} (soft, cause-coded)`,
-      });
-      continue;
-    }
-
-    // The wake matched + the reconcile job for THIS entry was claimed. This is the
-    // deterministic-ledger leg, but a same-token wake fan-out (`wrong_target:*`)
-    // or an unclaimable job is recorded + cause-coded, NOT a hard RED — the flip
-    // path beyond it is reconcile-judge-gated (fail-closed), so reconcile is a
-    // SOFT/cause-coded dimension per the S6 firewall, never a structural hard gate.
-    const enqueued =
-      !NON_ENQUEUED.has(result.terminalStatus) && !result.terminalStatus.startsWith("wrong_target");
-    reportCard.recordCheck(SUITE, {
-      label: `reconcile-enqueued ${itemId}`,
-      pass: enqueued,
-      note: `status=${result.terminalStatus} lastError=${result.lastError ?? "—"}`,
-    });
-    if (!enqueued) {
-      reportCard.recordOracleScore({
-        itemId,
-        dimension: "reconcile",
-        expected: `wake matched + reconcile job claimed`,
-        actual: `status=${result.terminalStatus}`,
-        pass: false,
-        note: "wake did not enqueue/claim a reconcile job for this entry (cause-coded)",
-        causeCode: reconcileCauseCode(result),
-      });
-    }
-    gates.push({
-      id: `reconcile-enqueued:${itemId}`,
-      pass: true,
-      knownGap: true,
-      detail: `status=${result.terminalStatus} enqueued=${enqueued} (soft, cause-coded)`,
-    });
-
-    // The flip re-resolution: outcome_version bumps above 0 iff a consequence
-    // applied (the ledger-derived flip proof) AND a reconcile decision was written.
-    const entrySnap = snapshot.entries.get(itemId);
-    const outcomeVersion = entrySnap?.row?.outcomeVersion ?? 0;
-    const flipApplied = outcomeVersion > 0 && result.decisionType === "reconcile";
-
-    if (!flipApplied) {
-      // The applied flip did NOT land. The flip path is FAIL-CLOSED on the live
-      // reconcile judge, so the dominant cause on this model is judge_failed (the
-      // judge threw → markFailed); a clean completion with no decision is
-      // no_matched_lot (no flippable realized delta); a fan-out is wake_wrong_target.
-      const cause = reconcileCauseCode(result);
-      reportCard.recordFinding({
-        code: "F-reconcile",
-        manifested: true,
-        summary: `${itemId}: reconcile flip not applied (status=${result.terminalStatus} decision=${result.decisionType ?? "none"} outcomeVersion=${outcomeVersion} cause=${cause})`,
-      });
-      reportCard.recordOracleScore({
-        itemId,
-        dimension: "reconcile",
-        expected: `flip→${pred.expectedReconcile.finalSignal} + ${pred.expectedReconcile.expectedConsequence}`,
-        actual: `not-applied (status=${result.terminalStatus} decision=${result.decisionType ?? "none"})`,
-        pass: false,
-        note: "reconcile flip not applied — SOFT + cause-coded (never a hard gate)",
-        causeCode: cause,
-      });
-      gates.push({
-        id: `reconcile-flip:${itemId}`,
-        pass: true,
-        knownGap: true,
-        detail: `not-applied outcomeVersion=${outcomeVersion} decision=${result.decisionType ?? "none"} cause=${cause}`,
-      });
-      continue;
-    }
-
-    // The flip genuinely applied — record it (SOFT) + the consequence (SOFT).
-    reportCard.recordCheck(SUITE, {
-      label: `reconcile-flip ${itemId}`,
-      pass: true,
-      note: `outcomeVersion=${outcomeVersion} decision=reconcile (re-resolved)`,
-    });
-    reportCard.recordOracleScore({
-      itemId,
-      dimension: "reconcile",
-      expected: `flip→${pred.expectedReconcile.finalSignal} + consequence=${pred.expectedReconcile.expectedConsequence}`,
-      actual: `decision=reconcile status=${result.terminalStatus} outcomeVersion=${outcomeVersion}`,
-      pass: true,
-      note: "flip applied; consequence choice is model-decided (soft)",
-    });
-    gates.push({
-      id: `reconcile-flip:${itemId}`,
-      pass: true,
-      knownGap: true,
-      detail: `outcomeVersion=${outcomeVersion} decision=reconcile (flip applied)`,
     });
   }
   return gates;

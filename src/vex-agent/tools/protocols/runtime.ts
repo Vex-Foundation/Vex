@@ -29,17 +29,31 @@ import {
   recordPrequoteFromQuote,
 } from "./swap-prequote.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { validateProtocolParams } from "./runtime/params.js";
 import { summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
-import { captureExecution, createHyperliquidExecutionIntent } from "./runtime/capture.js";
-import { withHyperliquidWalletMutationLock } from "./runtime/hyperliquid-mutation-lock.js";
+import { captureExecution } from "./runtime/capture.js";
 import logger from "@utils/logger.js";
-import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
-import { evaluateHyperliquidCollateralGate, evaluateHyperliquidProtectionGate } from "./hyperliquid/protection-gate.js";
+import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { REVEAL_GATED_RELAY_TOOL_IDS, evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
+
+/**
+ * The canonical dotted Uniswap swap toolIds (FIX-SPINE round 1, finding
+ * 8/C3). Alias-level reveal checks (`swap_quote_uniswap`/
+ * `swap_execute_uniswap`'s handlers) are necessary but NOT sufficient — a
+ * caller can reach these SAME manifests directly via `execute_tool`, which
+ * has no alias to gate it. `executeProtocolTool` is the one chokepoint every
+ * path funnels through, so the hard reveal gate lives HERE too.
+ */
+const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
+  "uniswap.swap.quote",
+  "uniswap.swap.execute",
+]);
 
 // ── Action taxonomy stamp (puzzle 5 phase 1B) ───────────────────
 //
@@ -96,6 +110,44 @@ export async function executeProtocolTool(
     ? "read"
     : manifest.actionKind;
 
+  // All-path reveal gate (FIX-SPINE round 1, finding 8/C3) — BEFORE any other
+  // processing. Rejects unless this session's hidden-pair reveal is active,
+  // regardless of how the call reached executeProtocolTool (alias, direct
+  // execute_tool, or anything future). Alias-level checks stay as an
+  // additional, earlier-failing layer — this is the one that cannot be
+  // bypassed.
+  if (REVEAL_GATED_UNISWAP_TOOL_IDS.has(request.toolId) && !isUniswapPairRevealed(context.sessionId)) {
+    logger.info("protocol.execute.uniswap_reveal_denied", { toolId: request.toolId });
+    return withActionKind({
+      success: false,
+      output: `${request.toolId} is not available yet for this session — it unlocks after an eligible `
+        + `KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting `
+        + `on-chain at execute time (try swap_quote first).`,
+    }, effectiveActionKind);
+  }
+
+  // All-path ROUTE-BOUND reveal gate for the hidden Relay bridge pair (bridge
+  // factory W5; plan R7/R8/R9). Same chokepoint rationale as Uniswap above:
+  // `execute_tool` can forward `relay.quote.get` / `relay.bridge` straight here,
+  // bypassing the alias-level checks. Local-chain (Robinhood) routes are the
+  // static Relay path and ALWAYS pass; every other route needs an active reveal
+  // for that EXACT normalized route in this session. `evaluateRelayRevealGate`
+  // runs its OWN strict param parse (R8) and fail-closes on an unresolvable or
+  // incomplete route — the raw params never decide the gate un-parsed.
+  if (REVEAL_GATED_RELAY_TOOL_IDS.has(request.toolId)) {
+    const relayGate = evaluateRelayRevealGate(params, context.sessionId);
+    if (relayGate.decision === "deny") {
+      logger.info("protocol.execute.relay_reveal_denied", { toolId: request.toolId, reason: relayGate.reason });
+      return withActionKind({
+        success: false,
+        output: `${request.toolId} is not available for this route yet — general-purpose Relay bridging `
+          + `unlocks only after an eligible Khalani no-route failure for this exact route, or the Khalani `
+          + `deposit transaction reverting on-chain for this exact route (bridges to/from Robinhood Chain `
+          + `are always available). Try bridge_quote first.`,
+      }, effectiveActionKind);
+    }
+  }
+
   // Normalize the wallet scope so the deny-guard + migrated handlers never see
   // undefined. Both fields are REQUIRED on the type (production is fail-closed
   // via tsc); this defends test/legacy callers that omit them — they default to
@@ -104,19 +156,6 @@ export async function executeProtocolTool(
     ...context,
     walletResolution: context.walletResolution ?? { source: "default" },
     walletPolicy: context.walletPolicy ?? { kind: "none" },
-    // Fallback hydration ONLY for hyperliquid.* targets (mirrors the dispatcher
-    // gating) — other namespaces must never touch the HL policy provider.
-    // `evm != null` (loose) also rejects `undefined` from legacy/test callers.
-    ...(context.hyperliquidPolicy === undefined && request.toolId.startsWith("hyperliquid.")
-      ? {
-          hyperliquidPolicy: resolveHlPolicy({
-            ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
-            ...(context.walletResolution?.source === "session" && context.walletResolution.evm != null
-              ? { walletAddress: context.walletResolution.evm.address }
-              : {}),
-          }),
-        }
-      : {}),
   };
 
   // Per-session wallet scope (puzzle 5): the 5B hard-deny for user-wallet signing
@@ -160,17 +199,6 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
-  const hyperliquidPolicy = scopedContext.hyperliquidPolicy ?? {
-    kind: "unavailable" as const,
-    reason: "provider_absent" as const,
-  };
-  if (manifest.namespace === "hyperliquid" && manifest.mutating && hyperliquidPolicy.kind === "unavailable") {
-    return withActionKind({
-      success: false,
-      output: `${request.toolId} is unavailable because Hyperliquid trading policy is not configured. Hyperliquid reads remain available.`,
-    }, effectiveActionKind);
-  }
-
   // Pressure-barrier guard for protocol tools — at band ≥ barrier, mutating
   // protocol calls are blocked unless they are preview/dryRun. The agent must
   // call `compact_now` first to clear the barrier. Same semantics as the
@@ -208,17 +236,6 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
-  // Business invariant: live HL state is checked after untrusted params are
-  // structurally valid and before any approval/signing decision.
-  const hyperliquidProtection = await evaluateHyperliquidProtectionGate(request.toolId, params, scopedContext);
-  if (hyperliquidProtection?.kind === "block") {
-    return withActionKind({ success: false, output: hyperliquidProtection.message }, effectiveActionKind);
-  }
-  const hyperliquidCollateral = await evaluateHyperliquidCollateralGate(request.toolId, params, scopedContext);
-  if (hyperliquidCollateral?.kind === "block") {
-    return withActionKind({ success: false, output: hyperliquidCollateral.message }, effectiveActionKind);
-  }
-
   // Find handler
   const handler = getProtocolHandler(request.toolId);
   if (!handler) {
@@ -240,6 +257,8 @@ export async function executeProtocolTool(
   let prequoteVerdict: SafetyVerdict | undefined;
   let prequoteFotTax: number | undefined;
   let prequoteTermLock: { readonly maturityIso: string } | undefined;
+  let prequoteFeePreview: JupiterFeePreview | undefined;
+  let prequoteRiskPreview: LendBorrowRiskPreview | undefined;
   const prequoteDecision = await evaluatePrequoteGateDecision(request.toolId, params, scopedContext);
   if (prequoteDecision.kind === "block") {
     return withActionKind({ success: false, output: prequoteDecision.message }, effectiveActionKind);
@@ -247,25 +266,16 @@ export async function executeProtocolTool(
   prequoteVerdict = prequoteDecision.verdict;
   prequoteFotTax = prequoteDecision.fotTax;
   prequoteTermLock = prequoteDecision.termLock;
+  prequoteFeePreview = prequoteDecision.feePreview;
+  prequoteRiskPreview = prequoteDecision.riskPreview;
 
   // Approval gate — mutating tools require approval under restricted permission.
   // Preview (dryRun) is read-only simulation — skip approval. The pending
   // result (with the typed `prequote` carry) is built in
   // `evaluateApprovalGate` (./runtime/gates.ts).
-  const destinationClass = hyperliquidDestinationClass(request.toolId, params);
-  const hyperliquidPreview = {
-    ...(hyperliquidProtection === null ? {} : {
-      stopLossVerdict: hyperliquidProtection.stopLossVerdict,
-      ...(hyperliquidProtection.notionalUsd ? { notionalUsd: hyperliquidProtection.notionalUsd } : {}),
-      ...(hyperliquidProtection.estimatedLiquidationPx ?? hyperliquidProtection.snapshot.liquidationPx
-        ? { estLiquidationPx: hyperliquidProtection.estimatedLiquidationPx ?? hyperliquidProtection.snapshot.liquidationPx ?? undefined }
-        : {}),
-    }),
-    ...(destinationClass === undefined ? {} : { destinationClass }),
-  };
   const pendingApproval = evaluateApprovalGate(
-    manifest, request, params, scopedContext, prequoteVerdict, prequoteFotTax, prequoteTermLock,
-    Object.keys(hyperliquidPreview).length === 0 ? undefined : hyperliquidPreview,
+    manifest, request, params, scopedContext,
+    prequoteVerdict, prequoteFotTax, prequoteTermLock, prequoteFeePreview, prequoteRiskPreview,
   );
   if (pendingApproval) {
     return withActionKind(pendingApproval, effectiveActionKind);
@@ -274,56 +284,11 @@ export async function executeProtocolTool(
   // Determine preview BEFORE handler call — flag survives thrown exceptions
   const isPreview = isPreviewExecution(request.toolId, params);
   const shouldCapture = manifest.mutating && !isPreview;
-  const isSerializedHyperliquidMutation = shouldCapture && manifest.namespace === "hyperliquid";
 
   // Execute + capture
   const startTime = Date.now();
-  let intentExecutionId: number | undefined;
   try {
-    const executeHandler = async (): Promise<ToolResult> => {
-      if (!isSerializedHyperliquidMutation) return handler(params, scopedContext);
-
-      let walletAddress: string;
-      try {
-        walletAddress = (await import("../internal/wallet/resolve.js"))
-          .resolveSelectedAddress(scopedContext.walletResolution, scopedContext.walletPolicy, "eip155");
-      } catch {
-        return { success: false, output: "A selected EVM wallet is required for Hyperliquid trading." };
-      }
-
-      return withHyperliquidWalletMutationLock(walletAddress, async () => {
-        // Approval previews use the first read above. This second, locked read
-        // is authoritative for submission: it closes the open/cancel and
-        // collateral race without holding a lock while a user approval waits.
-        const finalProtection = await evaluateHyperliquidProtectionGate(request.toolId, params, scopedContext);
-        if (finalProtection?.kind === "block") {
-          return { success: false, output: finalProtection.message };
-        }
-        const finalCollateral = await evaluateHyperliquidCollateralGate(request.toolId, params, scopedContext);
-        if (finalCollateral?.kind === "block") {
-          return { success: false, output: finalCollateral.message };
-        }
-
-        try {
-          intentExecutionId = await createHyperliquidExecutionIntent(
-            request.toolId, manifest.namespace, context.sessionId ?? null, params,
-          );
-        } catch (error) {
-          const safe = summarizeProtocolError(error);
-          logger.warn("hyperliquid.execution_intent.persist_failed", {
-            toolId: request.toolId,
-            code: safe.category,
-            message: safe.message,
-          });
-          return {
-            success: false,
-            output: "Hyperliquid mutation was blocked because its durable intent could not be recorded. Retry when local storage is available.",
-          };
-        }
-        return handler(params, scopedContext);
-      });
-    };
-    const result = await executeHandler();
+    const result = await handler(params, scopedContext);
     const durationMs = Date.now() - startTime;
 
     logger.info("protocol.execute.completed", {
@@ -355,7 +320,7 @@ export async function executeProtocolTool(
     // Preview executions skip capture entirely (determined before handler call)
     if (shouldCapture) {
       try {
-        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs, intentExecutionId);
+        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs);
       } catch (err) {
         // B-003: capture/DB errors can embed a credential-bearing connection
         // URL — log only the redacted, bounded summary.
@@ -395,7 +360,7 @@ export async function executeProtocolTool(
     );
     if (shouldCapture) {
       try {
-        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, failedResult, durationMs, intentExecutionId);
+        await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, failedResult, durationMs);
       } catch (captureErr) {
         // B-003: same redaction discipline on the failure-capture path.
         const safeCapture = summarizeProtocolError(captureErr);
@@ -409,14 +374,4 @@ export async function executeProtocolTool(
 
     return failedResult;
   }
-}
-
-function hyperliquidDestinationClass(toolId: string, params: Record<string, unknown>): string | undefined {
-  if (toolId === "hyperliquid.deposit") return "Hyperliquid bridge deposit";
-  if (toolId === "hyperliquid.withdraw") return "External EVM address";
-  if (toolId === "hyperliquid.transfer.send") return "External Hyperliquid account";
-  if (toolId === "hyperliquid.transfer.usdClass") {
-    return params.toPerp === true ? "Hyperliquid perpetual account" : "Hyperliquid spot account";
-  }
-  return undefined;
 }

@@ -49,9 +49,10 @@ import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 import {
   CONTRACT_HASH_VERSION,
   LEGACY_CONTRACT_HASH_VERSION,
+  LEGACY_V2_CONTRACT_HASH_VERSION,
   computeContractHash,
 } from "./contract-hash.js";
-import { missionToDraft } from "./mapper.js";
+import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
 import {
   buildMissionRunContractSnapshot,
   type MissionRunContractSnapshot,
@@ -117,18 +118,29 @@ export async function commitMissionStart(
       return { outcome: "mission_not_found" };
     }
 
-    // 2. acceptance four-tuple + exact version match
+    // 2. acceptance four-tuple + exact version match. v2 stays accepted here
+    //    (frozen historical shape, see contract-hash.ts) so a mission accepted
+    //    while Hyperliquid mutations were live can still start.
     if (
       mission.acceptedContractHash === null
       || mission.contractHashVersion === null
       || (mission.contractHashVersion !== LEGACY_CONTRACT_HASH_VERSION
+        && mission.contractHashVersion !== LEGACY_V2_CONTRACT_HASH_VERSION
         && mission.contractHashVersion !== CONTRACT_HASH_VERSION)
     ) {
       return { outcome: "not_accepted", missionId: mission.id };
     }
 
-    // 3. recompute canonical hash on the locked draft
-    const currentHash = computeContractHash(missionToDraft(mission), mission.contractHashVersion);
+    // 3. recompute canonical hash on the locked draft. The legacy v2 risk
+    //    material (if any) is sourced directly off the row — MissionDraft no
+    //    longer carries it — and is a no-op for any other version.
+    const currentHash = computeContractHash(
+      missionToDraft(mission),
+      mission.contractHashVersion,
+      mission.contractHashVersion === LEGACY_V2_CONTRACT_HASH_VERSION
+        ? extractLegacyHyperliquidRiskV2(mission)
+        : undefined,
+    );
     if (currentHash !== mission.acceptedContractHash) {
       return {
         outcome: "stale_acceptance",

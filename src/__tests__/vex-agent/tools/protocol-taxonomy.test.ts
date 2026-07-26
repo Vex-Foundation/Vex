@@ -58,18 +58,8 @@ describe("ProtocolToolManifest taxonomy — coverage", () => {
 
 describe("ProtocolToolManifest taxonomy — mutating ↔ taxonomy invariant", () => {
   it("non-mutating protocol tools classify as 'read'", () => {
-    // Reviewed exceptions: the Hypervexing workspace tools emit a UI-mode event
-    // only — no approval, no capture, no provider call, no durable state. They
-    // classify as 'local_write' (honest: they change local presentation state),
-    // and stay non-mutating so the agent can switch the mode without friction.
-    const reviewedLocalWrites = new Set([
-      "hyperliquid.workspace.enter",
-      "hyperliquid.workspace.exit",
-      "hyperliquid.market.watchCandles",
-    ]);
     const violations = PROTOCOL_TOOLS
       .filter((m) => !m.mutating && m.actionKind !== "read")
-      .filter((m) => !(reviewedLocalWrites.has(m.toolId) && m.actionKind === "local_write"))
       .map((m) => `${m.toolId}: mutating=false but actionKind=${m.actionKind}`);
     expect(violations, "non-mutating tools mis-classified as something other than read").toEqual([]);
   });
@@ -94,44 +84,10 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["khalani.bridge", "user_wallet_broadcast"],
     ["khalani.tokens.search", "read"],
 
-    // KyberSwap — split between on-chain wallet broadcasts and off-chain
-    // limit-order relay submissions (gasless EIP-712).
-    ["kyberswap.swap.sell", "user_wallet_broadcast"],
-    ["kyberswap.swap.buy", "user_wallet_broadcast"],
+    // KyberSwap — swap only (Agent Scan plan v3 §1.9/§4.2: limit orders and
+    // zap deleted wholesale; buy/sell unified into one execute toolId).
+    ["kyberswap.swap.execute", "user_wallet_broadcast"],
     ["kyberswap.swap.quote", "read"],
-
-    // Codex 1B Q2 ruling: `cancel` (soft, gasless lapse) is off-chain;
-    // `hardCancel` / `cancelAll` are on-chain.
-    ["kyberswap.limitOrder.create", "external_post"],
-    ["kyberswap.limitOrder.cancel", "external_post"],
-    ["kyberswap.limitOrder.hardCancel", "user_wallet_broadcast"],
-    ["kyberswap.limitOrder.cancelAll", "user_wallet_broadcast"],
-    ["kyberswap.limitOrder.fill", "user_wallet_broadcast"],
-    ["kyberswap.limitOrder.batchFill", "user_wallet_broadcast"],
-
-    // KyberSwap zap — all on-chain LP operations.
-    ["kyberswap.zap.in", "user_wallet_broadcast"],
-    ["kyberswap.zap.out", "user_wallet_broadcast"],
-    ["kyberswap.zap.migrate", "user_wallet_broadcast"],
-    ["kyberswap.zap.list", "read"],
-
-    // Polymarket — Codex 1A Q3: EIP-712 CLOB orders are off-chain.
-    // No `user_wallet_broadcast` in polymarket today (no direct chain settlement
-    // exposed at this layer; bridge funding addresses are off-chain prep).
-    ["polymarket.clob.buy", "external_post"],
-    ["polymarket.clob.sell", "external_post"],
-    ["polymarket.clob.cancel", "external_post"],
-    ["polymarket.clob.cancelAll", "external_post"],
-    ["polymarket.clob.cancelMarket", "external_post"],
-    ["polymarket.clob.cancelOrders", "external_post"],
-    ["polymarket.clob.heartbeat", "external_post"], // keep-alive signal
-    ["polymarket.clob.orderbook", "read"],
-    ["polymarket.bridge.deposit", "external_post"], // address prep, not settlement
-    ["polymarket.bridge.withdraw", "external_post"],
-    ["polymarket.bridge.assets", "read"],
-    ["polymarket.gamma.events", "read"],
-    ["polymarket.data.positions", "read"],
-    ["polymarket.rewards.active", "read"],
 
     // Solana / Jupiter — all mutations are on-chain Solana program writes.
     // Codex 1B Q1 confirmed via handler inspection (executeJupiterPrediction*
@@ -141,14 +97,15 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["solana.lend.deposit", "user_wallet_broadcast"],
     ["solana.lend.withdraw", "user_wallet_broadcast"],
     ["solana.lend.rates", "read"],
+    // Batch 5 (card B1) — Jupiter Lend Borrow.
+    ["solana.lend.borrowOperate", "user_wallet_broadcast"],
+    ["solana.lend.borrowVaults", "read"],
+    ["solana.lend.borrowPositions", "read"],
     ["solana.predict.buy", "user_wallet_broadcast"],
     ["solana.predict.sell", "user_wallet_broadcast"],
     ["solana.predict.claim", "user_wallet_broadcast"],
     ["solana.predict.closeAll", "user_wallet_broadcast"],
     ["solana.predict.events", "read"],
-
-    // Hyperliquid Bridge2 funding is a direct Arbitrum ERC-20 broadcast.
-    ["hyperliquid.deposit", "user_wallet_broadcast"],
 
     // DexScreener — entirely read-only (no auth, no API key).
     ["dexscreener.search", "read"],

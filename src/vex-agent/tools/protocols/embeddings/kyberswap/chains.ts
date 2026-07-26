@@ -13,9 +13,9 @@ import { KYBER_SWAP_CHAINS } from "../../kyberswap/discovery-text.js";
 export const KYBERSWAP_CHAINS_DISCOVERY = {
   "kyberswap.chains": {
     embeddingText: embeddingText(
-      `List the EVM chains where KyberSwap is available — Ethereum, Base, Arbitrum, BNB Chain, Polygon, Optimism, Avalanche, Linea and others — with which features (swap, limit orders, zap LP) work on each chain. ` +
-      `Use this when the user wants to know what chains KyberSwap supports, where they can swap or place limit orders, or which networks have zap liquidity available. ` +
-      `Example queries: what chains does kyberswap support, where can I place a limit order, list evm networks for swap, does kyberswap work on base, kyberswap chain feature matrix.`,
+      `List the EVM chains where KyberSwap aggregator swaps are available — Ethereum, Base, Arbitrum, BNB Chain, Polygon, Optimism, Avalanche, Linea and others. ` +
+      `Use this when the user wants to know what chains and networks KyberSwap currently supports for aggregator swapping and quoting. ` +
+      `Example queries: what chains does kyberswap support, list evm networks for swap, does kyberswap work on base, kyberswap chain feature matrix.`,
     ),
     aliases: ["supported networks", "chain ids", "evm chains", "feature matrix"],
     exampleIntents: ["what chains does KyberSwap support", "list swap networks", "show KyberSwap chain ids"],

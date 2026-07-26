@@ -22,9 +22,6 @@ export const onboardingKeys = {
   envState: () => ["onboarding", "envState"] as const,
   wizardState: () => ["onboarding", "wizardState"] as const,
   providerModels: () => ["onboarding", "providerModels"] as const,
-  // Puzzle 5 B-UI — lowercased EVM addresses with Polymarket creds configured.
-  polymarketConfiguredAddresses: () =>
-    ["onboarding", "polymarketConfiguredAddresses"] as const,
   // C3 — full-archive restore screen. Metadata-only backup listing (no
   // secrets, no paths). Invalidated after a successful restore so the list
   // refreshes if the archive set changed.
@@ -154,12 +151,6 @@ export const missionKeys = {
    */
   renewableSource: (sessionId: string) =>
     ["mission", "renewableSource", sessionId] as const,
-  /** WP-J — per-wallet mission results ledger history, newest first. */
-  results: (walletAddress: string) =>
-    ["mission", "results", walletAddress] as const,
-  /** WP-J — single-run ledger read (e.g. the post-mission summary card). */
-  resultForRun: (missionRunId: string, walletAddress: string) =>
-    ["mission", "resultForRun", missionRunId, walletAddress] as const,
 };
 
 export const approvalsKeys = {
@@ -251,20 +242,3 @@ export const marketKeys = {
   snapshot: () => ["market", "vex", "snapshot"] as const,
 };
 
-/** Hyperliquid main-pushed positions and durable user-risk proposal cards. */
-export const hyperliquidKeys = {
-  all: ["hyperliquid"] as const,
-  positions: (sessionId: string) => ["hyperliquid", "positions", sessionId] as const,
-  candles: (sessionId: string, coin: string, interval: string) => ["hyperliquid", "candles", sessionId, coin, interval] as const,
-  markets: (sessionId: string) => ["hyperliquid", "markets", sessionId] as const,
-  book: (sessionId: string, coin: string) => ["hyperliquid", "book", sessionId, coin] as const,
-  workspaceMode: (sessionId: string) => ["hyperliquid", "workspaceMode", sessionId] as const,
-  openOrders: (sessionId: string) => ["hyperliquid", "openOrders", sessionId] as const,
-  twapHistory: (sessionId: string) => ["hyperliquid", "twapHistory", sessionId] as const,
-  tradeHistory: (sessionId: string) => ["hyperliquid", "tradeHistory", sessionId] as const,
-  fundingHistory: (sessionId: string) => ["hyperliquid", "fundingHistory", sessionId] as const,
-  orderHistory: (sessionId: string) => ["hyperliquid", "orderHistory", sessionId] as const,
-  riskProposals: (sessionId: string) => ["hyperliquid", "riskProposals", sessionId] as const,
-  sessionRiskPolicy: (sessionId: string) => ["hyperliquid", "sessionRiskPolicy", sessionId] as const,
-  preferences: () => ["hyperliquid", "preferences"] as const,
-};

@@ -1,0 +1,17 @@
+# Line-ending policy: LF everywhere, on every platform (repo is developed
+# across WSL/Windows — without this, editors silently reintroduce CRLF and
+# `git diff --check` flags phantom "trailing whitespace" on added lines).
+# Tree fully normalized to LF on 2026-07-23 (21 stragglers converted).
+* text=auto eol=lf
+
+# Binary assets — never touch line endings.
+*.png binary
+*.webp binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.gguf binary

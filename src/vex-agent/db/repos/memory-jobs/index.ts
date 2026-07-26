@@ -12,10 +12,10 @@ export type {
 
 export { JOB_COLUMNS, mapRow } from "./types.js";
 
+// FIX2-SPINE C19 (Codex final-review finding 4): `enqueueReconcileJob` /
+// `resetReconcileJob` are removed here — see crud.ts's file header.
 export {
   enqueueConsolidateJob,
-  enqueueReconcileJob,
-  resetReconcileJob,
   claimNextDueJob,
   heartbeat,
   markCompleted,

@@ -1,16 +1,31 @@
 /**
  * Frozen coverage matrix — canonical source-of-truth from mutation-matrix.ts.
  *
+ * FIX-SPINE round 1 (C12) full rewrite: Agent Scan (plan §4.3/§11.4) removed
+ * the PnL role split (pnl_spot/pnl_perps/pnl_prediction), the
+ * `valuationExpected` exact/conditional/none tri-state, and every matrix row
+ * for a deleted tool (KyberSwap limitOrder ×6, KyberSwap/ZaaS zap ×3,
+ * Polymarket ×8, the old per-venue kyber/uniswap buy/sell split ×4). The
+ * matrix now classifies `kind: "trade" | "projection" | "audit" | "utility"`
+ * (coarse capture semantics only, no PnL/valuation machinery) plus an
+ * explicit `strictItemsRequired` flag replacing the old
+ * `role === "pnl_spot"` fanOut-items guard.
+ *
  * Tests structural invariants (every mutating tool classified exactly once)
  * and contract invariants (expectedType, previewSupport, requiredFields).
  * Detects handler drift automatically.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { PROTOCOL_TOOLS } from "../../../vex-agent/tools/protocols/catalog.js";
-import { MUTATION_MATRIX, getMatrixToolIds, getToolsByRole, isExpectedType } from "../../../vex-agent/tools/protocols/mutation-matrix.js";
+import {
+  MUTATION_MATRIX,
+  getMatrixToolIds,
+  getToolsByKind,
+  isExpectedType,
+  type MutationContract,
+} from "../../../vex-agent/tools/protocols/mutation-matrix.js";
 import { validateCaptureContract, isPreviewExecution } from "../../../vex-agent/tools/protocols/capture-validator.js";
-import type { PortfolioRole } from "../../../vex-agent/tools/protocols/types.js";
 
 // ── Structural coverage ────────────────────────────────────────
 
@@ -44,31 +59,97 @@ describe("capture contract — structural coverage", () => {
     }
   });
 
-  it("pnl_spot tools all have capture:full", () => {
-    const spot = getToolsByRole("pnl_spot");
-    // solana.swap.execute, kyberswap.swap.sell/buy, uniswap.swap.sell/buy (Wave 2c),
-    // pendle.pt.buy/sell/redeem (Wave 5), pendle.yt.buy/sell (P3 YT surface),
-    // pendle.py.mint/redeem (P4 PY — two capture items each),
-    // hyperliquid.spot.trade (HL Phase 2).
-    expect(spot.length).toBe(13);
-    for (const [toolId, c] of spot) {
+  it("no deleted-tool matrix row survives (limitOrder, zap, Polymarket, old kyber/uniswap buy/sell, Hyperliquid)", () => {
+    for (const toolId of [
+      "kyberswap.limitOrder.create", "kyberswap.limitOrder.cancel", "kyberswap.limitOrder.hardCancel",
+      "kyberswap.limitOrder.fill", "kyberswap.limitOrder.batchFill", "kyberswap.limitOrder.cancelAll",
+      "kyberswap.zap.in", "kyberswap.zap.out", "kyberswap.zap.migrate",
+      "polymarket.clob.buy", "polymarket.clob.sell", "polymarket.clob.cancel",
+      "polymarket.clob.cancelOrders", "polymarket.clob.cancelAll", "polymarket.clob.cancelMarket",
+      "polymarket.clob.heartbeat", "polymarket.bridge.deposit", "polymarket.bridge.withdraw",
+      "kyberswap.swap.buy", "kyberswap.swap.sell", "uniswap.swap.buy", "uniswap.swap.sell",
+      // Agent Scan Phase 3 (Hyperliquid total removal) — spot/perp/risk/account rows.
+      "hyperliquid.spot.trade", "hyperliquid.perp.open", "hyperliquid.perp.close",
+      "hyperliquid.perp.setTpsl", "hyperliquid.perp.modifyOrder", "hyperliquid.perp.cancelOrders",
+      "hyperliquid.perp.setLeverage", "hyperliquid.perp.adjustMargin", "hyperliquid.perp.twap",
+      "hyperliquid.risk.proposeSetup", "hyperliquid.deposit", "hyperliquid.transfer.usdClass",
+      "hyperliquid.withdraw", "hyperliquid.transfer.send", "hyperliquid.vault.transfer",
+      "hyperliquid.staking.delegate", "hyperliquid.staking.transfer", "hyperliquid.rewards.claim",
+      "hyperliquid.builder.approveFee",
+    ]) {
+      expect(MUTATION_MATRIX.has(toolId), `${toolId} should have been deleted from the matrix`).toBe(false);
+    }
+  });
+
+  it("the unified kyberswap.swap.execute / uniswap.swap.execute / solana.swap.execute rows exist, capture:none", () => {
+    // solana.swap.execute flipped full->none in W5 (design §3/§6, migration
+    // 049) with the fee-bearing /build atomic flip — same K2 staged Solana
+    // seam kyberswap/uniswap already use on EVM.
+    for (const toolId of ["kyberswap.swap.execute", "uniswap.swap.execute", "solana.swap.execute"]) {
+      const c = MUTATION_MATRIX.get(toolId);
+      expect(c, `${toolId} missing from matrix`).toBeDefined();
+      expect(c!.kind).toBe("trade");
+      expect(c!.capture).toBe("none");
+      expect(c!.expectedType).toBe("swap");
+      expect(c!.requiredFields).toEqual([]);
+    }
+  });
+
+  it("solana.predict.buy/.sell/.claim/.closeAll are capture:none (W5 staged Solana seam, migration 049)", () => {
+    for (const toolId of ["solana.predict.buy", "solana.predict.sell", "solana.predict.claim", "solana.predict.closeAll"]) {
+      const c = MUTATION_MATRIX.get(toolId);
+      expect(c, `${toolId} missing from matrix`).toBeDefined();
+      expect(c!.kind).toBe("trade");
+      expect(c!.capture).toBe("none");
+      expect(c!.expectedType).toBe("prediction");
+      expect(c!.requiredFields).toEqual([]);
+    }
+    expect(MUTATION_MATRIX.get("solana.predict.closeAll")!.fanOut).toBe("items");
+  });
+
+  it("'trade' kind tools with capture:full total 7 (no PnL role split — just the coarse kind)", () => {
+    // pendle.pt.buy/sell/redeem (3); pendle.yt.buy/sell (2); pendle.py.mint/redeem
+    // (2) = 7. Agent Scan Phase 3 removed the 9 hyperliquid.spot.trade/perp.*
+    // rows that used to bring this total to 21; W5 (migration 049) flipped
+    // solana.predict.buy/sell/claim/closeAll AND solana.swap.execute (the
+    // fee-bearing /build atomic flip, §6) to capture:"none" — those five,
+    // plus the two Agent Scan unified EVM executes, are ALSO kind:"trade" but
+    // capture:"none" — excluded here on purpose.
+    const trade = getToolsByKind("trade").filter(([, c]) => c.capture === "full");
+    expect(trade.length).toBe(7);
+    for (const [toolId, c] of trade) {
       expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }
   });
 
-  it("utility tools all have capture:none", () => {
-    const utility = getToolsByRole("utility");
-    for (const [toolId, c] of utility) {
-      expect(c.capture, `${toolId} should have capture:none`).toBe("none");
+  it("no utility-kind tools are currently classified (Hyperliquid removal deleted the only one)", () => {
+    // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio impact)
+    // entry; Agent Scan Phase 3 deleted it along with the rest of the protocol.
+    // The `utility` CaptureKind stays in the type for the next protocol that needs it.
+    expect(getToolsByKind("utility")).toEqual([]);
+  });
+
+  it("audit tools are capture:full EXCEPT the staged agent_activity write paths (Phase 2 bridges + W5/Batch5 lend)", () => {
+    const audit = getToolsByKind("audit");
+    expect(audit.length).toBeGreaterThan(0);
+    // khalani.bridge / relay.bridge record their full staged lifecycle in
+    // agent_activity directly (migration 045); solana.lend.deposit/withdraw
+    // and solana.lend.borrowOperate (Batch 5, card B1) do the same via the K2
+    // staged Solana seam (migration 049) — capture is intentionally off for
+    // exactly these five.
+    const captureNone = audit.filter(([, c]) => c.capture === "none").map(([id]) => id).sort();
+    expect(captureNone).toEqual([
+      "khalani.bridge", "relay.bridge", "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",
+    ]);
+    for (const [toolId, c] of audit) {
+      if (captureNone.includes(toolId)) continue;
+      expect(c.capture, `${toolId} should have capture:full`).toBe("full");
     }
   });
 
-  it("audit capture:none has exactly 2 entries (polymarket bridge)", () => {
-    const auditNone = getToolsByRole("audit").filter(([, c]) => c.capture === "none");
-    expect(auditNone.map(([id]) => id).sort()).toEqual([
-      "polymarket.bridge.deposit",
-      "polymarket.bridge.withdraw",
-    ]);
+  it("projection kind has exactly the two Pendle LP lifecycle rows (zap's projection rows were deleted)", () => {
+    const projection = getToolsByKind("projection");
+    expect(projection.map(([id]) => id).sort()).toEqual(["pendle.lp.add", "pendle.lp.remove"]);
   });
 });
 
@@ -91,140 +172,89 @@ describe("capture contract — contract invariants", () => {
     }
   });
 
-  it("KyberSwap limitOrder tools all have expectedType 'order' (not 'swap')", () => {
-    const loTools = getMatrixToolIds().filter(id => id.startsWith("kyberswap.limitOrder."));
-    expect(loTools.length).toBeGreaterThanOrEqual(6);
-    for (const toolId of loTools) {
-      const c = MUTATION_MATRIX.get(toolId)!;
-      expect(c.expectedType, `${toolId} should be "order"`).toBe("order");
-    }
-  });
-
-  it("Polymarket buy/sell are dual-type (order|prediction)", () => {
-    for (const toolId of ["polymarket.clob.buy", "polymarket.clob.sell"]) {
-      const c = MUTATION_MATRIX.get(toolId)!;
-      expect(Array.isArray(c.expectedType), `${toolId} should have dual expectedType`).toBe(true);
-      expect(c.expectedType).toContain("prediction");
-      expect(c.expectedType).toContain("order");
-    }
-  });
-
-  it("Polymarket cancel* are type 'order' with role 'projection'", () => {
-    const cancelTools = [
-      "polymarket.clob.cancel", "polymarket.clob.cancelOrders",
-      "polymarket.clob.cancelAll", "polymarket.clob.cancelMarket",
-    ];
-    for (const toolId of cancelTools) {
-      const c = MUTATION_MATRIX.get(toolId)!;
-      expect(c.expectedType, `${toolId} should be "order"`).toBe("order");
-      expect(c.role, `${toolId} should be "projection"`).toBe("projection");
-    }
-  });
-
-  it("bulk operations have fanOut: 'items'", () => {
+  it("bulk operations have fanOut: 'items' (limitOrder/Polymarket batch tools deleted — only Solana + Pendle PY survive)", () => {
     const bulkTools = [
       "solana.predict.closeAll",
-      "kyberswap.limitOrder.batchFill",
-      "kyberswap.limitOrder.cancelAll",
-      "polymarket.clob.cancelOrders",
-      "polymarket.clob.cancelAll",
-      "polymarket.clob.cancelMarket",
-      // P4: PY mint/redeem emit two spot capture items (PT leg + YT leg).
       "pendle.py.mint",
       "pendle.py.redeem",
     ];
+    expect(getToolsByKind("trade").filter(([, c]) => c.fanOut === "items").map(([id]) => id).sort())
+      .toEqual([...bulkTools].sort());
     for (const toolId of bulkTools) {
       const c = MUTATION_MATRIX.get(toolId)!;
       expect(c.fanOut, `${toolId} should be fanOut:"items"`).toBe("items");
     }
   });
 
-  it("solana.predict.claim has exception for instrumentKey", () => {
-    const c = MUTATION_MATRIX.get("solana.predict.claim")!;
-    expect(c.exceptions).toBeDefined();
-    expect(c.exceptions!.some(e => e.includes("instrumentKey"))).toBe(true);
+  it("strictItemsRequired is true ONLY for pendle.py.mint/redeem (their summary can never substitute for the two distinct legs)", () => {
+    expect(MUTATION_MATRIX.get("pendle.py.mint")!.strictItemsRequired).toBe(true);
+    expect(MUTATION_MATRIX.get("pendle.py.redeem")!.strictItemsRequired).toBe(true);
+    // solana.predict.closeAll is ALSO fanOut:"items" but its summary fallback
+    // is safe (nothing to distinguish) — strictItemsRequired must stay unset.
+    expect(MUTATION_MATRIX.get("solana.predict.closeAll")!.strictItemsRequired).toBeUndefined();
   });
 
-  it("solana.predict.closeAll has exception for instrumentKey (claim items match via positionKey)", () => {
-    const c = MUTATION_MATRIX.get("solana.predict.closeAll")!;
-    expect(c.exceptions).toBeDefined();
-    expect(c.exceptions!.some(e => /no instrumentKey/i.test(e))).toBe(true);
+  it("isExpectedType supports dual-type contracts (synthetic fixture — no LIVE matrix tool is dual-type anymore)", () => {
+    // Agent Scan deleted the only dual-type tool (polymarket.clob.buy/sell,
+    // expectedType: ["prediction", "order"]). The array-handling branch stays
+    // supported in the type/helper for a future dual-type tool, so it is
+    // pinned directly against a synthetic contract rather than a live one.
+    const dualType: MutationContract = {
+      kind: "trade", capture: "full", expectedType: ["prediction", "order"],
+      previewSupport: false, fanOut: "single", requiredFields: [],
+    };
+    expect(isExpectedType(dualType, "prediction")).toBe(true);
+    expect(isExpectedType(dualType, "order")).toBe(true);
+    expect(isExpectedType(dualType, "swap")).toBe(false);
   });
 });
 
 // ── Capture validator tests ────────────────────────────────────
 
+// W5 (design §6): solana.swap.execute flipped capture:"full"->"none" — the
+// generic capture:"full" validator tests below now use `pendle.pt.buy`
+// (same requiredFields/expectedType shape) as their live-matrix example
+// instead. NOTE: the two former "neutral swap" tests (stableSwap/
+// ambiguousSwap `tradeSide` exception) are REMOVED here, not ported — that
+// `exceptions` entry existed ONLY on solana.swap.execute's row (no other
+// matrix entry ever declared it), so with solana.swap.execute now
+// capture:"none" there is no remaining live row to exercise it. The
+// `hasRequiredFieldException` stableSwap/ambiguousSwap branch in
+// `capture-validator.ts` is consequently dead code with no matrix consumer —
+// flagged for the coordinator rather than silently removed (out of this
+// card's stated scope).
 describe("capture contract — runtime validator", () => {
-  it("validates pnl_spot with all required fields + valuation", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
+  it("validates a trade capture with all required fields", () => {
+    const valid = validateCaptureContract("pendle.pt.buy", {
       type: "swap", walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
-      inputValueUsd: "5.00", outputValueUsd: "4.90", valuationSource: "jupiter_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("rejects pnl_spot missing tradeSide without a neutral Solana swap marker", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-      inputValueUsd: "5.00", valuationSource: "jupiter_exact",
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("accepts neutral Solana swaps without tradeSide as activity-only captures", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x",
-      instrumentKey: "solana:USDT", inputTokenAddress: "0xUSDC", outputTokenAddress: "0xUSDT",
-      inputAmount: "100", outputAmount: "100",
-      inputValueUsd: "100.00", valuationSource: "jupiter_exact",
-      meta: { stableSwap: true },
     });
     expect(valid).toBe(true);
   });
 
   it("rejects capture:full with null tradeCapture", () => {
-    expect(validateCaptureContract("solana.swap.execute", null)).toBe(false);
+    expect(validateCaptureContract("pendle.pt.buy", null)).toBe(false);
   });
 
-  it("passes capture:none regardless of tradeCapture", () => {
-    expect(validateCaptureContract("polymarket.bridge.deposit", null)).toBe(true);
-    expect(validateCaptureContract("polymarket.bridge.deposit", { type: "bridge" })).toBe(true);
+  it("passes capture:none regardless of tradeCapture (e.g. the Agent Scan unified executes)", () => {
+    expect(validateCaptureContract("kyberswap.swap.execute", null)).toBe(true);
+    expect(validateCaptureContract("kyberswap.swap.execute", { type: "swap" })).toBe(true);
+    expect(validateCaptureContract("solana.swap.execute", null)).toBe(true);
   });
 
   it("passes unknown toolId (not in matrix)", () => {
     expect(validateCaptureContract("unknown.tool", null)).toBe(true);
   });
 
-  it("solana.predict.claim passes without instrumentKey (exception) with valuation", () => {
-    const valid = validateCaptureContract("solana.predict.claim", {
-      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
-      outputValueUsd: "3.50", valuationSource: "prediction_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("solana.predict.closeAll item passes without instrumentKey (exception) with valuation", () => {
-    const valid = validateCaptureContract("solana.predict.closeAll", {
-      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "PK1",
-      outputValueUsd: "3.50", valuationSource: "prediction_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("solana.predict.closeAll item missing positionKey is REJECTED (exception is instrumentKey-only)", () => {
-    const valid = validateCaptureContract("solana.predict.closeAll", {
-      type: "prediction", walletAddress: "0x", status: "claimed",
-      outputValueUsd: "3.50", valuationSource: "prediction_exact",
-    });
-    expect(valid).toBe(false);
+  it("passes capture:none regardless of tradeCapture — solana.predict.claim/closeAll (W5 staged Solana seam)", () => {
+    expect(validateCaptureContract("solana.predict.claim", null)).toBe(true);
+    expect(validateCaptureContract("solana.predict.claim", { type: "prediction" })).toBe(true);
+    expect(validateCaptureContract("solana.predict.closeAll", null)).toBe(true);
   });
 
   it("rejects unexpected type", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
+    const valid = validateCaptureContract("pendle.pt.buy", {
       type: "prediction", walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
@@ -232,15 +262,8 @@ describe("capture contract — runtime validator", () => {
     expect(valid).toBe(false);
   });
 
-  it("accepts dual-type tool with either valid type", () => {
-    const base = { walletAddress: "0x", status: "executed", positionKey: "pk", instrumentKey: "ik" };
-    expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "prediction" })).toBe(true);
-    expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "order" })).toBe(true);
-    expect(validateCaptureContract("polymarket.clob.buy", { ...base, type: "swap" })).toBe(false);
-  });
-
   it("rejects capture without type field (type is required for all capture:full)", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
+    const valid = validateCaptureContract("pendle.pt.buy", {
       walletAddress: "0x", tradeSide: "buy",
       instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
       inputAmount: "100", outputAmount: "200",
@@ -248,194 +271,72 @@ describe("capture contract — runtime validator", () => {
     expect(valid).toBe(false);
   });
 
-  it("validates real matrix tools — kyberswap.limitOrder.cancel requires type+positionKey+status", () => {
+  it("validates real matrix tools — pendle.lp.add requires type+positionKey+status", () => {
     // Missing positionKey
-    expect(validateCaptureContract("kyberswap.limitOrder.cancel", {
-      type: "order", status: "cancelled",
+    expect(validateCaptureContract("pendle.lp.add", {
+      type: "lp", status: "open",
     })).toBe(false);
 
     // Complete
-    expect(validateCaptureContract("kyberswap.limitOrder.cancel", {
-      type: "order", status: "cancelled", positionKey: "123",
+    expect(validateCaptureContract("pendle.lp.add", {
+      type: "lp", status: "open", positionKey: "123",
     })).toBe(true);
   });
 
-  it("validates real matrix tools — khalani.bridge requires type+walletAddress+status", () => {
-    expect(validateCaptureContract("khalani.bridge", {
-      type: "bridge", status: "pending",
+  it("validates real matrix tools — pendle.claim requires type+walletAddress+status", () => {
+    // khalani.bridge flipped to capture:none in Phase 2, and
+    // solana.lend.deposit/withdraw flipped to capture:none in Phase 3/W5
+    // (both own their lifecycle directly in agent_activity now) — pendle.claim
+    // is the live capture:full audit tool that carries this pin today.
+    expect(validateCaptureContract("pendle.claim", {
+      type: "reward", status: "open",
     })).toBe(false);
 
-    expect(validateCaptureContract("khalani.bridge", {
-      type: "bridge", status: "pending", walletAddress: "0x123",
+    expect(validateCaptureContract("pendle.claim", {
+      type: "reward", status: "open", walletAddress: "0x123",
     })).toBe(true);
   });
-});
 
-// ── Valuation expectations (W4A regression guard) ──────────────
-
-describe("capture contract — valuation expectations", () => {
-  it("exact tools have valuationExpected: 'exact'", () => {
-    const exactTools = [
-      "solana.swap.execute",
-      "kyberswap.swap.buy", "kyberswap.swap.sell",
-      "solana.predict.buy", "solana.predict.sell", "solana.predict.claim", "solana.predict.closeAll",
-    ];
-    for (const toolId of exactTools) {
-      const c = MUTATION_MATRIX.get(toolId)!;
-      expect(c.valuationExpected, `${toolId} should be "exact"`).toBe("exact");
-    }
+  it("passes capture:none regardless of tradeCapture — solana.lend.deposit/withdraw (W5 staged Solana seam)", () => {
+    expect(validateCaptureContract("solana.lend.deposit", null)).toBe(true);
+    expect(validateCaptureContract("solana.lend.deposit", { type: "lend" })).toBe(true);
+    expect(validateCaptureContract("solana.lend.withdraw", null)).toBe(true);
   });
 
-  it("conditional tools have valuationExpected: 'conditional'", () => {
-    for (const toolId of ["polymarket.clob.buy", "polymarket.clob.sell"]) {
-      const c = MUTATION_MATRIX.get(toolId)!;
-      expect(c.valuationExpected, `${toolId} should be "conditional"`).toBe("conditional");
-    }
-  });
-
-  it("all audit tools have valuationExpected: 'none'", () => {
-    const auditTools = getToolsByRole("audit");
-    for (const [toolId, c] of auditTools) {
-      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
-    }
-  });
-
-  it("all utility tools have valuationExpected: 'none'", () => {
-    const utilityTools = getToolsByRole("utility");
-    for (const [toolId, c] of utilityTools) {
-      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
-    }
-  });
-
-  it("all projection tools have valuationExpected: 'none'", () => {
-    const projectionTools = getToolsByRole("projection");
-    for (const [toolId, c] of projectionTools) {
-      expect(c.valuationExpected, `${toolId} should be "none"`).toBe("none");
-    }
-  });
-
-  it("every matrix entry has valuationExpected defined", () => {
-    for (const [toolId, c] of MUTATION_MATRIX) {
-      expect(["exact", "conditional", "none"]).toContain(c.valuationExpected);
-    }
-  });
-
-  // ── Content-level regression guard: validate capture economics ──
-
-  it("exact capture with full valuation passes validator", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-      inputValueUsd: "5.00", outputValueUsd: "4.90", valuationSource: "jupiter_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("exact capture WITHOUT USD fields is REJECTED (hard fail)", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-      // No inputValueUsd, no outputValueUsd — handler regression
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("exact capture WITHOUT valuationSource is REJECTED", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-      inputValueUsd: "5.00", // has USD but no valuationSource
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("exact capture with valuationSource 'none' is REJECTED", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-      inputValueUsd: "5.00", valuationSource: "none",
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("exact capture with only outputValueUsd passes (e.g. predict.claim)", () => {
-    const valid = validateCaptureContract("solana.predict.claim", {
-      type: "prediction", walletAddress: "0x", status: "claimed", positionKey: "pk",
-      outputValueUsd: "3.50", valuationSource: "prediction_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("Solana swap exact capture with only outputValueUsd passes", () => {
-    const valid = validateCaptureContract("solana.swap.execute", {
-      type: "swap", walletAddress: "0x", tradeSide: "sell",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xBONK", outputTokenAddress: "So111",
-      inputAmount: "100", outputAmount: "200",
-      outputValueUsd: "3.50", valuationSource: "jupiter_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("conditional capture with polymarket_exact on matched path", () => {
-    const valid = validateCaptureContract("polymarket.clob.buy", {
-      type: "prediction", walletAddress: "0x", status: "executed",
-      positionKey: "pk", instrumentKey: "ik",
-      inputValueUsd: "2.00", unitPriceUsd: "0.65", valuationSource: "polymarket_exact",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("conditional capture with valuationSource 'none' on unmatched path passes (no exact guard)", () => {
-    const valid = validateCaptureContract("polymarket.clob.buy", {
-      type: "order", walletAddress: "0x", status: "open",
-      positionKey: "pk", instrumentKey: "ik",
-      valuationSource: "none",
-    });
-    expect(valid).toBe(true);
+  it("passes capture:none regardless of tradeCapture — solana.lend.borrowOperate (Batch 5, card B1)", () => {
+    expect(validateCaptureContract("solana.lend.borrowOperate", null)).toBe(true);
+    expect(validateCaptureContract("solana.lend.borrowOperate", { type: "lend" })).toBe(true);
   });
 });
 
-// ── Meta fields regression guard (contracts for MTM) ───────────
-
-describe("capture contract — required meta fields", () => {
-  it("solana.predict.buy requires meta.contracts", () => {
-    const c = MUTATION_MATRIX.get("solana.predict.buy")!;
-    expect(c.requiredMetaFields).toContain("contracts");
-  });
-
-  it("prediction buy with contracts in meta passes", () => {
-    const valid = validateCaptureContract("solana.predict.buy", {
-      type: "prediction", walletAddress: "0x", status: "open",
-      positionKey: "pk", instrumentKey: "solana:predict:m1:yes",
-      inputValueUsd: "2.00", valuationSource: "prediction_exact",
-      meta: { contracts: "3.5" },
-    });
-    expect(valid).toBe(true);
-  });
-});
+// requiredMetaFields (nested-invariant support in capture-validator.ts) has no
+// LIVE matrix example anymore: Hyperliquid's perp.* rows (deleted, Agent Scan
+// Phase 3) and solana.predict.buy (flipped to capture:"none", W5 migration
+// 049 — requiredMetaFields no longer set) were its only two users. Left
+// dormant-but-reserved for the next protocol that needs it, same treatment as
+// the (also currently empty) "utility" CaptureKind above — no dedicated
+// mechanism test without a real `validateCaptureContract` entry point that
+// accepts a synthetic contract.
 
 // ── Preview detection tests ────────────────────────────────────
 
 describe("capture contract — preview detection", () => {
   it("detects preview for tools with previewSupport", () => {
-    expect(isPreviewExecution("kyberswap.swap.sell", { dryRun: true })).toBe(true);
-    expect(isPreviewExecution("kyberswap.limitOrder.batchFill", { dryRun: true })).toBe(true);
+    // The two agent_activity swap executes deliberately have previewSupport:false
+    // (dryRun preview would skip the approval gate before a REAL broadcast path).
+    expect(isPreviewExecution("kyberswap.swap.execute", { dryRun: true })).toBe(false);
+    expect(isPreviewExecution("uniswap.swap.execute", { dryRun: true })).toBe(false);
     expect(isPreviewExecution("khalani.bridge", { dryRun: true })).toBe(true);
-    expect(isPreviewExecution("polymarket.clob.buy", { dryRun: true })).toBe(true);
+    expect(isPreviewExecution("pendle.pt.buy", { dryRun: true })).toBe(true);
   });
 
   it("does not detect preview when dryRun is false or absent", () => {
-    expect(isPreviewExecution("kyberswap.swap.sell", { dryRun: false })).toBe(false);
-    expect(isPreviewExecution("kyberswap.swap.sell", {})).toBe(false);
+    expect(isPreviewExecution("kyberswap.swap.execute", { dryRun: false })).toBe(false);
+    expect(isPreviewExecution("kyberswap.swap.execute", {})).toBe(false);
   });
 
   it("does not detect preview for tools without previewSupport", () => {
     expect(isPreviewExecution("solana.swap.execute", { dryRun: true })).toBe(false);
     expect(isPreviewExecution("solana.predict.buy", { dryRun: true })).toBe(false);
-    expect(isPreviewExecution("polymarket.clob.cancel", { dryRun: true })).toBe(false);
   });
 });

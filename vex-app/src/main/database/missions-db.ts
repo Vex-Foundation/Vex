@@ -115,7 +115,11 @@ async function withClient<T>(
   }
 }
 
+/** `contract_hash_version` value historically used while Hyperliquid mutations were live. */
+const LEGACY_V2_CONTRACT_HASH_VERSION = 2;
+
 function toDraftDto(row: MissionRow): MissionDraftDto {
+  const acceptance = projectAcceptance(row);
   return {
     missionId: row.id,
     sessionId: row.root_session_id,
@@ -123,7 +127,20 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     title: row.title,
     goal: row.goal,
     constraints: normaliseConstraints(row.constraints_json),
-    hyperliquidRisk: normaliseHyperliquidMissionRisk(row.constraints_json),
+    // HISTORICAL ONLY (Hyperliquid removed, Agent Scan Phase 3): projected
+    // ONLY for a mission that is ACTUALLY ACCEPTED at the frozen v2 contract
+    // version (see `normaliseHyperliquidMissionRisk`'s own doc comment). Any
+    // v1/v3 or unaccepted draft OMITS the property entirely (the shared
+    // draft schema's "omitted for v1/v3" contract) regardless of what a
+    // stale `constraints_json.hyperliquidRisk` key might still contain —
+    // e.g. a fresh draft renewed from a v2-accepted mission is unaccepted
+    // (v3-to-be) and must never resurface the source's historical risk
+    // envelope. An accepted v2 row WITHOUT a risk envelope keeps an
+    // explicit `hyperliquidRisk: null` (populated-vs-absent stays
+    // distinguishable for the one cohort that legitimately carries it).
+    ...(acceptance !== null && acceptance.contractHashVersion === LEGACY_V2_CONTRACT_HASH_VERSION
+      ? { hyperliquidRisk: normaliseHyperliquidMissionRisk(row.constraints_json) }
+      : {}),
     successCriteria: normaliseStringList(
       row.success_criteria_json,
       "success_criteria_json",
@@ -147,7 +164,7 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     approvedAt: toIsoOrNull(row.approved_at),
-    acceptance: projectAcceptance(row),
+    acceptance,
     renewedFromMissionId: row.renewed_from_mission_id ?? null,
   };
 }

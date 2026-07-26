@@ -168,63 +168,6 @@ describe("ToolActRow", () => {
     }
   });
 
-  it("shows the Confirmed stamp alongside the Hyperliquid frame and explorer links without hiding either", () => {
-    // WP-G port fix: current main already renders a Hyperliquid protocol
-    // frame + ExplorerRefLinks in this exact row region (Hyperliquid wave,
-    // merged after the reference PR was authored) — the Confirmed stamp
-    // must integrate with both, not clobber them.
-    const { container } = render(
-      createElement(ToolActRow, {
-        act: act({
-          toolName: "wallet_send_confirm",
-          output: JSON.stringify({
-            txHash: "0xabc",
-            chain: "base",
-            status: "confirmed",
-          }),
-          explorerRefs: [{ chain: "base", txRef: "0xabc" }],
-          toolDisplayBlock: {
-            namespace: "hyperliquid",
-            kind: "order_receipt",
-            coin: "BTC",
-            side: "long",
-            status: "accepted",
-            protectionState: "PROTECTED",
-          },
-        }),
-      }),
-    );
-
-    expect(container.querySelector('[data-hyperliquid-card="true"]')).not.toBeNull();
-    expect(
-      container.querySelector('[data-vex-transaction-status="confirmed"]'),
-    ).not.toBeNull();
-    expect(container.querySelector("a[href]")).not.toBeNull();
-  });
-
-  it("renders the Hyperliquid frame only from a typed display block", () => {
-    const { container } = render(
-      createElement(ToolActRow, {
-        act: act({
-          toolName: "hyperliquid.perp.open",
-          toolDisplayBlock: {
-            namespace: "hyperliquid",
-            kind: "order_receipt",
-            coin: "BTC",
-            side: "long",
-            status: "accepted",
-            protectionState: "PROTECTED",
-          },
-        }),
-      }),
-    );
-    expect(container.querySelector('[data-hyperliquid-card="true"]')).not.toBeNull();
-    // The frame draws the serif "Hyperliquid" wordmark once, then the mono
-    // receipt detail beside it (design spec §4.5 protocol frame).
-    expect(screen.getByText("Hyperliquid")).not.toBeNull();
-    expect(screen.getByText(/BTC · accepted/)).not.toBeNull();
-  });
-
   it("Awaiting-signature stamp links to the approval card and focuses it", () => {
     render(
       createElement(
@@ -253,14 +196,14 @@ describe("ToolActRow", () => {
   it("renders a single `tx ↗` link resolving through explorerTxUrl", () => {
     render(
       createElement(ToolActRow, {
-        act: act({ explorerRefs: [{ chain: "hyperliquid", txRef: "0xabc" }] }),
+        act: act({ explorerRefs: [{ chain: "base", txRef: "0xabc" }] }),
       }),
     );
     const link = screen.getByRole("link", {
       name: /open transaction \d+ on .+ explorer/i,
     });
     expect(link.getAttribute("href")).toBe(
-      "https://app.hyperliquid.xyz/explorer/tx/0xabc",
+      "https://basescan.org/tx/0xabc",
     );
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
@@ -272,7 +215,7 @@ describe("ToolActRow", () => {
       createElement(ToolActRow, {
         act: act({
           explorerRefs: [
-            { chain: "hyperliquid", txRef: "0xabc" },
+            { chain: "base", txRef: "0xabc" },
             { chain: "solana", txRef: "5sig" },
           ],
         }),
@@ -290,7 +233,7 @@ describe("ToolActRow", () => {
     // A11y: each link carries a DISTINCT accessible name (index + chain), not
     // one repeated generic label.
     expect(links[0]!.getAttribute("aria-label")).toBe(
-      "Open transaction 1 on hyperliquid explorer",
+      "Open transaction 1 on base explorer",
     );
     expect(links[1]!.getAttribute("aria-label")).toBe(
       "Open transaction 2 on solana explorer",
@@ -314,7 +257,7 @@ describe("ToolActRow", () => {
         act: act({
           explorerRefs: [
             { chain: "dogechain", txRef: "0xbad" },
-            { chain: "hyperliquid", txRef: "0xgood" },
+            { chain: "base", txRef: "0xgood" },
           ],
         }),
       }),
@@ -326,7 +269,7 @@ describe("ToolActRow", () => {
     // Single resolvable ref → unnumbered `tx` label.
     expect(links[0]!.textContent).toContain("tx");
     expect(links[0]!.getAttribute("href")).toBe(
-      "https://app.hyperliquid.xyz/explorer/tx/0xgood",
+      "https://basescan.org/tx/0xgood",
     );
   });
 });

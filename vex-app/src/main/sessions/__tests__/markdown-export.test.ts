@@ -34,7 +34,6 @@ function message(
     toolCallId: null,
     toolName: null,
     toolCalls: null,
-    toolDisplayBlock: null,
     explorerRefs: null,
     ...overrides,
   };

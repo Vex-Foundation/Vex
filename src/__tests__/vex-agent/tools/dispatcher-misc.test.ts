@@ -36,14 +36,14 @@ describe("dispatcher — wallet, unknown, no-stubs", () => {
 
   // ── Approval gate (mutating + restricted + !approved) ────────────
 
-  it("polymarket_setup under restricted + unapproved → pendingApproval (handler not reached; FINDING-security-005 mutating-gate class)", async () => {
+  it("wallet_send_confirm under restricted + unapproved → pendingApproval (handler not reached; FINDING-security-005 mutating-gate class)", async () => {
     // baseContext = makeTestContext() → restricted + approved:false. The
     // dispatcher's mutating-tool gate must fire BEFORE the credential derive.
     // Canonical regression for the restricted-mode mutating-approval gate (the
     // FINDING-security-005 class) — `mutating:true` tools must surface an
     // approval card instead of reaching their handler under restricted+unapproved.
     const result = await dispatchTool(
-      { name: "polymarket_setup", args: {}, toolCallId: "call_pm_setup" },
+      { name: "wallet_send_confirm", args: {}, toolCallId: "call_send_confirm" },
       baseContext,
     );
 

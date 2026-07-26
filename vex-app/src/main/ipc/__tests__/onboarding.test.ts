@@ -88,7 +88,6 @@ describe("vex.onboarding.getEnvState handler", () => {
         jupiterConfigured: false,
         tavilyConfigured: false,
         rettiwtConfigured: false,
-        polymarketStatus: "missing",
       },
       secrets: {
         vaultConfigured: true,

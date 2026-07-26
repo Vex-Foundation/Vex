@@ -47,5 +47,9 @@ export { extractQuote } from "./prequote/safety/extract.js";
 export { recordPrequoteFromQuote } from "./prequote/record.js";
 
 // ── Stage 7 — execute-time prequote gate ────────────────────────────────────
-export { evaluatePrequoteGate, evaluateSwapPrequoteGate } from "./prequote/gate.js";
+export {
+  evaluatePrequoteGate,
+  evaluateSwapPrequoteGate,
+  findFreshMatchedSwapPrequote,
+} from "./prequote/gate.js";
 export type { GateDecision } from "./prequote/gate.js";

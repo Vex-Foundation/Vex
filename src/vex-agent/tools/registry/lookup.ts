@@ -19,7 +19,6 @@ import { ACTION_ALIAS_TOOLS } from "./action-aliases.js";
 import { WEB_TOOLS } from "./web.js";
 import { TWITTER_ACCOUNT_TOOLS } from "./twitter-account.js";
 import { PORTFOLIO_TOOLS } from "./portfolio.js";
-import { SETUP_TOOLS } from "./setup.js";
 import { MISSION_TOOLS } from "./mission.js";
 import { AUTONOMY_TOOLS } from "./autonomy.js";
 import { EVM_TOOLS } from "./evm.js";
@@ -28,8 +27,6 @@ import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
-import { HYPERLIQUID_INTERNAL_TOOLS } from "./hyperliquid.js";
-import { getHypervexingAliasToolDef } from "../hypervexing-aliases.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -41,7 +38,6 @@ export const TOOLS: readonly ToolDef[] = [
   ...WEB_TOOLS,
   ...TWITTER_ACCOUNT_TOOLS,
   ...PORTFOLIO_TOOLS,
-  ...SETUP_TOOLS,
   ...MISSION_TOOLS,
   ...AUTONOMY_TOOLS,
   ...EVM_TOOLS,
@@ -50,7 +46,6 @@ export const TOOLS: readonly ToolDef[] = [
   ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
-  ...HYPERLIQUID_INTERNAL_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
@@ -58,7 +53,7 @@ export const TOOLS: readonly ToolDef[] = [
 const byName = new Map<string, ToolDef>(TOOLS.map(t => [t.name, t]));
 
 export function getToolDef(name: string): ToolDef | undefined {
-  return byName.get(name) ?? getHypervexingAliasToolDef(name);
+  return byName.get(name);
 }
 
 export function isInternalTool(name: string): boolean {

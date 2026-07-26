@@ -18,8 +18,6 @@
  *   - recover.ts           (prepareMissionRecover + fire-and-forget)
  *   - stop.ts              (shared stop dispatcher)
  *   - update-draft.ts      (fail-closed, lands with the form in phase 7+)
- *   - list-results.ts       (WP-J: per-wallet mission results ledger read)
- *   - get-result-for-run.ts (WP-J: single-run ledger read)
  */
 
 export { registerMissionHandlers } from "./mission/index.js";

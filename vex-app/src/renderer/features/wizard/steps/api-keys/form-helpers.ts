@@ -7,11 +7,8 @@
  * React state, and `clearAll` wipes every ref synchronously on submit
  * BEFORE the IPC fires.
  *
- * The renderer no longer captures the manual Polymarket trio — the
- * Polymarket card runs auto-setup only. The IPC contract
- * (`apiKeysSetInputSchema`) still accepts `polymarket` for potential
- * programmatic callers, but `buildPayload` emits jupiter/tavily/rettiwt
- * exclusively.
+ * `buildPayload` emits jupiter/tavily/rettiwt exclusively — the IPC
+ * contract (`apiKeysSetInputSchema`) has no other fields.
  */
 
 import type { RefObject } from "react";

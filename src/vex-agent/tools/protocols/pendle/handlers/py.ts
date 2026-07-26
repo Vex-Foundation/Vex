@@ -140,6 +140,7 @@ async function pendlePyQuote(p: Record<string, unknown>, context: ProtocolExecut
         expiry: market.expiry ?? null,
         liquidityUsd: market.details.liquidity ?? null,
         priceImpact: best.data.priceImpact,
+        feeUsdEstimate: best.data.feeUsd,
         amountIn: amountInRaw,
         ptOut: humanAmount(ptOut, ptDec).toString(),
         ytOut: humanAmount(ytOut, ytDec).toString(),
@@ -187,6 +188,7 @@ async function pendlePyQuote(p: Record<string, unknown>, context: ProtocolExecut
       expiry: market.expiry ?? null,
       liquidityUsd: market.details.liquidity ?? null,
       priceImpact: best.data.priceImpact,
+      feeUsdEstimate: best.data.feeUsd,
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDec).toString(),
       aggregator: best.data.aggregatorType,
@@ -226,7 +228,7 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
         slippage,
       });
       const best = response?.routes[0];
-      return ok({ dryRun: true, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null });
+      return ok({ dryRun: true, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null });
     }
 
     // Signer AFTER dryRun so a preview never decrypts a key.
@@ -344,8 +346,8 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
       output: JSON.stringify({ txHash, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address, amountIn: amountInRaw, ptOut: humanAmount(ptOut, ptDec).toString(), ytOut: humanAmount(ytOut, ytDec).toString() }, null, 2),
       data: {
         txHash,
-        // Audit-record summary (NOT projected — the fanOut:"items" pnl_spot guard
-        // uses the items below for projection). Represents the whole mint.
+        // Audit-record summary (NOT projected — the fanOut:"items" strictItemsRequired
+        // guard uses the items below for projection). Represents the whole mint.
         _tradeCapture: {
           type: "swap",
           chain: chainSlug,

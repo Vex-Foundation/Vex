@@ -182,12 +182,11 @@ Fetches native currency balance across multiple chains:
 ## Consumed by
 
 Nearly every module that touches on-chain:
-- `bot/executor.ts` — trade execution
 - `tools/khalani/` — cross-chain bridge execution
-- `tools/polymarket/` — EIP-712 order signing
-- `commands/wallet/` — CLI wallet operations
-- `commands/send.ts` — native transfers
-- `password/` — health checks, decrypt validation
+- `tools/kyberswap/`, `tools/uniswap/` — EVM swap signing (staged sign→persist→broadcast)
+
+(`tools/polymarket/` — EIP-712 order signing — removed with the Polymarket integration,
+Agent Scan Phase 1.)
 
 ---
 

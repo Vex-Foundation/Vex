@@ -94,10 +94,12 @@ export async function jupiterPredictionEvents(
     withQuery("/events", {
       provider: validated.provider,
       includeMarkets: validated.includeMarkets != null ? String(validated.includeMarkets) : undefined,
+      includeAllMarkets: validated.includeAllMarkets != null ? String(validated.includeAllMarkets) : undefined,
       start: validated.start != null ? String(validated.start) : undefined,
       end: validated.end != null ? String(validated.end) : undefined,
       category: validated.category,
       subcategory: typeof validated.subcategory === "string" ? validated.subcategory : undefined,
+      tags: validated.tags,
       sortBy: validated.sortBy,
       sortDirection: validated.sortDirection,
       filter: validated.filter,
@@ -133,6 +135,7 @@ export async function jupiterPredictionEvent(
   return fetchJson<JupiterPredictionEventsResponse["data"][number]>(
     withQuery(`/events/${validated.eventId}`, {
       includeMarkets: validated.includeMarkets != null ? String(validated.includeMarkets) : undefined,
+      includeAllMarkets: validated.includeAllMarkets != null ? String(validated.includeAllMarkets) : undefined,
     }),
     { headers: getJupiterPredictionHeaders() },
     jupiterPredictionEventSchema,
@@ -145,8 +148,14 @@ export async function jupiterPredictionSuggestedEvents(
   requireJupiterPredictionApiKey();
   const validated = validateJupiterPredictionSuggestedEventsParams(params);
 
+  // LIVE-GATE FIX 1 (2026-07-24): confirmed live that `pubkey` is a QUERY
+  // param on the base `/events/suggested` route, not a path segment — the
+  // documented `/events/suggested/{pubkey}` path 404s (gateway-level, route
+  // not registered) for every pubkey tried, while `/events/suggested?pubkey=
+  // ...` returns 200 with real data.
   return fetchJson<JupiterPredictionSuggestedEventsResponse>(
-    withQuery(`/events/suggested/${validated.pubkey}`, {
+    withQuery("/events/suggested", {
+      pubkey: validated.pubkey,
       provider: validated.provider,
     }),
     { headers: getJupiterPredictionHeaders() },

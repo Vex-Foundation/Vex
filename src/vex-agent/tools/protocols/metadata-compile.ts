@@ -20,9 +20,7 @@ import type {
 const GROUP_ECOSYSTEMS: Record<ProtocolNavigationGroupId, readonly string[]> = {
   "evm-trading": ["evm"],
   "solana": ["solana"],
-  "perps": ["hyperliquid", "perpetuals", "derivatives"],
   "cross-chain": ["evm", "solana", "crosschain"],
-  "prediction-markets": ["evm", "solana"],
   "market-research": ["multichain"],
 };
 
@@ -32,8 +30,6 @@ type SourceClass = ToolDiscoveryMetadata["sourceClass"];
 
 const NAMESPACE_SOURCE_CLASS: Record<string, SourceClass> = {
   dexscreener: "specialized_market",
-  polymarket: "specialized_market",
-  hyperliquid: "specialized_market",
   khalani: "protocol_native",
   kyberswap: "protocol_native",
   solana: "protocol_native",

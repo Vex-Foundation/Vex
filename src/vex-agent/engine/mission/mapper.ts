@@ -5,7 +5,6 @@
  * Parser produces Partial<MissionDraft>, mapper converts to Partial<MissionDraftRow>.
  */
 
-import { hyperliquidMissionRiskSchema } from "../../../lib/hyperliquid-policy.js";
 import type { MissionDraft } from "../types.js";
 import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 
@@ -15,7 +14,6 @@ import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 export function missionToDraft(m: Mission): MissionDraft {
   const src = m.capitalSourceJson as Record<string, unknown>;
   const constraints = m.constraintsJson as Record<string, unknown>;
-  const risk = hyperliquidMissionRiskSchema.safeParse(constraints?.hyperliquidRisk);
   return {
     title: m.title,
     goal: m.goal,
@@ -30,8 +28,23 @@ export function missionToDraft(m: Mission): MissionDraft {
     deadline: constraints?.deadline as string ?? null,
     durationMinutes:
       typeof constraints?.durationMinutes === "number" ? constraints.durationMinutes : null,
-    hyperliquidRisk: risk.success ? risk.data : null,
   };
+}
+
+/**
+ * Raw (unvalidated) legacy `hyperliquidRisk` off a mission row's
+ * `constraints_json` — read directly off the DB row rather than through
+ * `MissionDraft`, which no longer carries this field (Hyperliquid was
+ * removed from the live agent, Agent Scan Phase 3). The ONLY consumer is
+ * `computeContractHash`'s frozen v2 legacy path
+ * (`contract-hash-legacy-v2.ts`): a mission accepted while
+ * `CONTRACT_HASH_VERSION` was 2 may still have a non-null value here, and
+ * its hash can only be reproduced by re-normalizing this exact raw material.
+ * Never wire this into any mission-WRITING path.
+ */
+export function extractLegacyHyperliquidRiskV2(m: Mission): unknown {
+  const constraints = m.constraintsJson as Record<string, unknown> | null | undefined;
+  return constraints?.hyperliquidRisk;
 }
 
 /** Convert a partial domain draft to DB row shape for updateDraft(). */
@@ -59,17 +72,12 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
   // `stopConditionsAccepted` — acceptance lives on
   // `missions.accepted_contract_hash` (mig 023) and is written by the
   // host-only acceptance path, never by the model/draft update flow.
-  if (
-    draft.deadline !== undefined ||
-    draft.durationMinutes !== undefined ||
-    draft.hyperliquidRisk !== undefined
-  ) {
+  if (draft.deadline !== undefined || draft.durationMinutes !== undefined) {
     row.constraints_json = {
       ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
       ...(draft.durationMinutes !== undefined
         ? { durationMinutes: draft.durationMinutes }
         : {}),
-      ...(draft.hyperliquidRisk !== undefined ? { hyperliquidRisk: draft.hyperliquidRisk } : {}),
     };
   }
 
@@ -132,9 +140,6 @@ export function draftToPromptContext(m: Mission): string {
   }
   if (draft.deadline) lines.push(`**Deadline:** ${draft.deadline}`);
   if (draft.durationMinutes) lines.push(`**Time-box:** ${draft.durationMinutes} min (run auto-finalizes at start + this)`);
-  if (draft.hyperliquidRisk) {
-    lines.push(`**Hyperliquid risk:** ${draft.hyperliquidRisk.leverageCap}x leverage cap, ${draft.hyperliquidRisk.perOrderNotionalPct}% per order, ${draft.hyperliquidRisk.totalNotionalPct}% total`);
-  }
 
   return lines.join("\n");
 }

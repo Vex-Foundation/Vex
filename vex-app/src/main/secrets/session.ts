@@ -13,14 +13,6 @@ import {
   VAULT_SECRET_KEYS,
   type VaultSecretKey,
 } from "@vex-lib/secret-keys.js";
-import {
-  ENV_POLYMARKET_API_KEY,
-  ENV_POLYMARKET_API_SECRET,
-  ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS,
-  ENV_POLYMARKET_PASSPHRASE,
-  parseCredentialMapEnv,
-} from "@vex-lib/polymarket.js";
-import { getPrimaryEvmAddress } from "@vex-lib/wallet.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   setKeystorePasswordProvider,
@@ -323,59 +315,5 @@ export function getUnlockedSecretPresence(): SecretPresence {
     scrubUnlockedRuntime();
     void invalidateProviderCache();
     return { vaultConfigured: status.vaultConfigured, unlocked: false, secrets: {} };
-  }
-}
-
-/**
- * Lowercased EVM addresses that currently have Polymarket CLOB credentials in
- * the vault (puzzle 5 B-UI). Surfaced to the renderer's wallet picker so each
- * EVM wallet can render a ✓ configured / ◦ not-configured badge.
- *
- * Sources:
- *   - the keys of the `POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS` JSON map
- *     (already lowercased map keys);
- *   - PLUS the primary EVM address IF the three fixed legacy keys are all
- *     present (pre-B-core "legacy primary" fallback that has no map entry yet).
- *
- * Fail-closed: a present-but-malformed map throws inside `parseCredentialMapEnv`;
- * we let it propagate to the catch and surface an error Result rather than
- * masquerading as "no wallets configured". NEVER returns secret values — the
- * credential strings stay inside the vault.
- */
-export function getConfiguredPolymarketAddresses(): Result<readonly string[]> {
-  const passwordResult = requireUnlockedMasterPassword();
-  if (!passwordResult.ok) return passwordResult;
-
-  try {
-    const contents = unlockSecretVault(passwordResult.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
-
-    const configured = new Set<string>();
-
-    // 1. Per-wallet map keys (lowercased addresses). Malformed → throws here.
-    const map = parseCredentialMapEnv(
-      contents.secrets[ENV_POLYMARKET_CLOB_CREDENTIALS_BY_ADDRESS],
-    );
-    for (const lcAddress of Object.keys(map)) {
-      configured.add(lcAddress);
-    }
-
-    // 2. Legacy primary fallback — only when ALL three fixed keys are present.
-    const legacyPrimaryConfigured = Boolean(
-      contents.secrets[ENV_POLYMARKET_API_KEY] &&
-        contents.secrets[ENV_POLYMARKET_API_SECRET] &&
-        contents.secrets[ENV_POLYMARKET_PASSPHRASE],
-    );
-    if (legacyPrimaryConfigured) {
-      const primaryAddress = getPrimaryEvmAddress();
-      if (primaryAddress !== null) {
-        configured.add(primaryAddress.toLowerCase());
-      }
-    }
-
-    return ok([...configured]);
-  } catch (cause) {
-    return toPublicError(cause);
   }
 }

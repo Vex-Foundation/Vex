@@ -16,48 +16,74 @@ import {
   evaluatePrequoteGate,
 } from "../swap-prequote.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
+import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-preview.js";
+import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
 import logger from "@utils/logger.js";
-import { isAddress } from "viem";
-
-export type HyperliquidEgressClass = "foreign" | "own_account" | "none";
 
 /**
- * Classify only the Hyperliquid flows that can move collateral out of its
- * current account. A self withdrawal is own-account funding only when both
- * the selected session EVM snapshot and the requested recipient are valid
- * addresses. Every absent, malformed, or non-session snapshot fails closed as
- * foreign egress.
+ * `solana.lend.borrowOperate`'s pre-approval LTV/health disclosure is NOT a
+ * persisted-prequote safety gate like the swap mechanism above — it is
+ * DISCLOSURE computed fresh for the approval preview. Only worth computing
+ * when a human will actually see it (restricted permission, not yet
+ * approved) — see `evaluateRiskPreview` below.
+ *
+ * W4 (2026-07-25), so the next reader does not re-derive the gap this left:
+ * the `restricted`-only short-circuit below means a `full` autonomous session
+ * gets NO risk preview from this gate — correctly, because there is no
+ * approval preview to put one in. Until W4 that was the ONLY LTV computation
+ * in the tree, so an autonomous agent had no health signal at all. The fix is
+ * deliberately NOT here: `solana.lend.borrowPositions` now carries LTV, the
+ * distance to liquidation, and the provider's `isLiquidated` flag on the READ
+ * (`../solana-jupiter/borrow-health.ts`), which an agent can call at any time
+ * — an approval preview it can. The owner's ruling was DISCLOSE, DO NOT
+ * BLOCK: do not add a gate here that refuses a leveraged operation for want
+ * of a health number.
+ *
+ * B3 (Codex batch-5 blocker on B1): an existing-position lookup failure must
+ * BLOCK the gate rather than silently proceed without a preview — see
+ * `../solana-jupiter/borrow-risk-preview.ts`'s `LendBorrowRiskPreviewOutcome`.
+ * A thrown error from the evaluator itself is treated the SAME as an
+ * `"unverifiable"` outcome (fail-closed), matching the swap prequote gate's
+ * own "any error → BLOCK" doctrine below.
  */
-export function classifyHyperliquidEgress(
+const RISK_PREVIEW_TOOL_ID = "solana.lend.borrowOperate";
+
+interface RiskPreviewGateResult {
+  readonly riskPreview: LendBorrowRiskPreview | undefined;
+  /** Set when the gate must BLOCK instead of enqueueing approval. */
+  readonly blockMessage: string | undefined;
+}
+
+async function evaluateRiskPreview(
   toolId: string,
   params: Record<string, unknown>,
-  context: Pick<ProtocolExecutionContext, "walletResolution">,
-): HyperliquidEgressClass {
-  if (toolId === "hyperliquid.transfer.send") return "foreign";
-  if (toolId === "hyperliquid.deposit") return "own_account";
-  if (toolId === "hyperliquid.transfer.usdClass") return "own_account";
-  if (toolId !== "hyperliquid.withdraw") return "none";
-
-  const destination = params.destination;
-  const wallet = context.walletResolution;
-  const normalizeEvmAddress = (value: string): string | null => {
-    const normalizedPrefix = value.startsWith("0X") ? `0x${value.slice(2)}` : value;
-    return isAddress(normalizedPrefix) ? normalizedPrefix.toLowerCase() : null;
-  };
-  if (
-    typeof destination !== "string"
-    || wallet.source !== "session"
-    || wallet.evm === null
-  ) {
-    return "foreign";
+  scopedContext: ProtocolExecutionContext,
+): Promise<RiskPreviewGateResult> {
+  if (toolId !== RISK_PREVIEW_TOOL_ID) return { riskPreview: undefined, blockMessage: undefined };
+  if (scopedContext.approved || scopedContext.sessionPermission !== "restricted") {
+    return { riskPreview: undefined, blockMessage: undefined };
   }
-  const normalizedDestination = normalizeEvmAddress(destination);
-  const normalizedWallet = normalizeEvmAddress(wallet.evm.address);
-  if (normalizedDestination === null || normalizedWallet === null) return "foreign";
-  return normalizedDestination === normalizedWallet
-    ? "own_account"
-    : "foreign";
+
+  const outcome = await evaluateLendBorrowRiskPreview(params, scopedContext).catch((err) => ({
+    kind: "unverifiable" as const,
+    reason: summarizeProtocolError(err).message,
+  }));
+
+  if (outcome.kind === "confirmed") return { riskPreview: outcome.preview, blockMessage: undefined };
+  if (outcome.kind === "unverifiable") {
+    return {
+      riskPreview: undefined,
+      blockMessage: `${toolId} requires approval, but its LTV/health risk preview could not be confirmed — `
+        + `refusing to enqueue for approval: ${outcome.reason}`,
+    };
+  }
+  // "not_applicable": agent params don't resolve to a real operate request —
+  // the handler's own validation surfaces the error when it runs; nothing to
+  // block or disclose here.
+  return { riskPreview: undefined, blockMessage: undefined };
 }
 
 /**
@@ -74,6 +100,10 @@ export type PrequoteGateDecision =
       readonly fotTax: number | undefined;
       /** Pendle term-lock maturity for the approval preview (typed, unspoofable). */
       readonly termLock: { readonly maturityIso: string } | undefined;
+      /** Jupiter fee-bearing disclosure (W5 design §6 R4) for the approval preview (typed, unspoofable). */
+      readonly feePreview: JupiterFeePreview | undefined;
+      /** Jupiter Lend Borrow LTV/health disclosure (B1) for the approval preview (typed, unspoofable). */
+      readonly riskPreview: LendBorrowRiskPreview | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
 
@@ -89,7 +119,9 @@ export type PrequoteGateDecision =
  *
  * Returns `{ kind: "allow", verdict: undefined, fotTax: undefined }` when the
  * tool is not gated (or is a preview) — i.e. the pre-split path that never
- * entered the inline `if` block and left both locals undefined.
+ * entered the inline `if` block and left both locals undefined. The SAME
+ * `else` branch also evaluates (and can fail-closed BLOCK on) the disjoint
+ * `solana.lend.borrowOperate` risk-preview channel — see `evaluateRiskPreview`.
  */
 export async function evaluatePrequoteGateDecision(
   toolId: string,
@@ -108,12 +140,29 @@ export async function evaluatePrequoteGateDecision(
     return {
       kind: "allow",
       verdict: decision.verdict,
-      // Fee-on-transfer tax + Pendle term-lock ride the same TYPED channel.
+      // Fee-on-transfer tax + Pendle term-lock + Jupiter fee preview ride the
+      // same TYPED channel. `toolId` is a swap-gated tool here, never the
+      // (disjoint) B1 risk-preview tool — no risk preview to evaluate.
       fotTax: decision.fotTax,
       termLock: decision.termLock,
+      feePreview: decision.feePreview,
+      riskPreview: undefined,
     };
   }
-  return { kind: "allow", verdict: undefined, fotTax: undefined, termLock: undefined };
+
+  const risk = await evaluateRiskPreview(toolId, params, scopedContext);
+  if (risk.blockMessage !== undefined) {
+    logger.info("protocol.execute.risk_preview_gate_blocked", { toolId, reason: risk.blockMessage });
+    return { kind: "block", message: risk.blockMessage };
+  }
+  return {
+    kind: "allow",
+    verdict: undefined,
+    fotTax: undefined,
+    termLock: undefined,
+    feePreview: undefined,
+    riskPreview: risk.riskPreview,
+  };
 }
 
 /**
@@ -134,38 +183,43 @@ export function evaluateApprovalGate(
   prequoteVerdict: SafetyVerdict | undefined,
   prequoteFotTax: number | undefined,
   prequoteTermLock: { readonly maturityIso: string } | undefined,
-  hyperliquid?: {
-    readonly stopLossVerdict?: "protected_required" | "unprotected_by_user_choice";
-    readonly notionalUsd?: string;
-    readonly estLiquidationPx?: string;
-    readonly destinationClass?: string;
-  },
+  prequoteFeePreview: JupiterFeePreview | undefined,
+  prequoteRiskPreview: LendBorrowRiskPreview | undefined,
 ): ToolResult | undefined {
-  const egress = classifyHyperliquidEgress(request.toolId, params, context);
-  const requiresEgressApproval = egress === "foreign";
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
-    && (context.sessionPermission === "restricted" || requiresEgressApproval)) {
+    && context.sessionPermission === "restricted") {
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
     // Carry the gate-matched prequote verdict to the restricted-mode approval
     // preview via the TYPED `prequote` field (NOT raw args) so the human sees
     // the safety verdict — especially `unknown` — before approving (R5). A
-    // fee-on-transfer tax and a Pendle term-lock (when the gate provided one)
-    // ride the same typed field so the human sees a high tax / lock date even
-    // though neither is a verdict `fail`.
+    // fee-on-transfer tax, a Pendle term-lock, and a Jupiter fee-bearing
+    // disclosure (when the gate provided one) ride the same typed field so
+    // the human sees a high tax / lock date / fee+tip+ATA-rent disclosure
+    // even though none of them is a verdict `fail`. `prequote.verdict` is
+    // REQUIRED (B3: reverted from B1's optional widening) — a Jupiter Lend
+    // Borrow risk preview has NO matched swap/bridge verdict at all (it is
+    // not a swap-gated tool), so it rides its OWN top-level `riskPreview`
+    // sibling field on `ToolResult` instead of living inside `prequote`.
     const pending: ToolResult = {
       success: false,
       output: `${request.toolId} requires approval — mutating tool in restricted permission mode.`,
       pendingApproval: true,
     };
     if (prequoteVerdict !== undefined) {
-      const prequote: { verdict: SafetyVerdict; fotTax?: number; termLock?: { maturityIso: string } } = {
-        verdict: prequoteVerdict,
-      };
+      const prequote: {
+        verdict: SafetyVerdict;
+        fotTax?: number;
+        termLock?: { maturityIso: string };
+        feePreview?: JupiterFeePreview;
+      } = { verdict: prequoteVerdict };
       if (prequoteFotTax !== undefined) prequote.fotTax = prequoteFotTax;
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
+      if (prequoteFeePreview !== undefined) prequote.feePreview = prequoteFeePreview;
       pending.prequote = prequote;
     }
-    if (hyperliquid !== undefined) pending.hyperliquid = hyperliquid;
+    if (prequoteRiskPreview !== undefined) {
+      pending.riskPreview = prequoteRiskPreview;
+    }
     return pending;
   }
   return undefined;

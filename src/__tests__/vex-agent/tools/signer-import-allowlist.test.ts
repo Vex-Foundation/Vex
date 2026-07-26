@@ -69,10 +69,7 @@ describe("signer import allowlist", () => {
       "internal/wallet/send-execute-solana.ts",
       "protocols/khalani/handlers/read.ts",
       "protocols/kyberswap/handlers/swap.ts",
-      "protocols/kyberswap/handlers/zap.ts",
-      "protocols/kyberswap/handlers/limit-order.ts",
       "protocols/solana-jupiter/handlers/core.ts",
-      "protocols/polymarket/handlers-clob.ts",
     ];
     for (const rel of migrated) {
       const src = readFileSync(join(TOOLS_DIR, rel), "utf-8");
@@ -81,8 +78,9 @@ describe("signer import allowlist", () => {
   });
 
   it("protocol manifest actionKinds stay within the deny-covered census", () => {
-    // "local_write" reviewed for hyperliquid.risk.proposeSetup (HL Phase 4a):
-    // writes a local session-policy proposal row only — no signing, no provider call.
+    // "local_write" is allowed for a tool that changes local state only — no
+    // signing, no provider call, no approval. Currently unused by any live
+    // manifest; kept as a reviewed, allowed kind for the next tool that needs it.
     const allowedKinds = new Set(["read", "user_wallet_broadcast", "external_post", "local_write"]);
     const seen = new Set<string>();
     for (const file of walk(join(TOOLS_DIR, "protocols"))) {
@@ -127,7 +125,6 @@ describe("src/tools signer import scan", () => {
 const PROTOCOL_PATHS = [
   "src/vex-agent/tools/protocols",
   "src/tools/khalani",
-  "src/tools/polymarket",
   "src/tools/kyberswap",
   "src/tools/solana-ecosystem",
 ].map((p) => join(process.cwd(), p));

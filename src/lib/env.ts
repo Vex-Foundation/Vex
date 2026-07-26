@@ -9,12 +9,6 @@
  *
  */
 
-export {
-  ENV_POLYMARKET_API_KEY,
-  ENV_POLYMARKET_API_SECRET,
-  ENV_POLYMARKET_PASSPHRASE,
-} from "../tools/polymarket/constants.js";
-
 /** Canonical .env key for the (required) Jupiter API key. */
 export const ENV_JUPITER_API_KEY = "JUPITER_API_KEY";
 
@@ -34,9 +28,6 @@ export const TRACKED_API_KEYS = [
   ENV_JUPITER_API_KEY,
   ENV_TAVILY_API_KEY,
   ENV_RETTIWT_API_KEY,
-  "POLYMARKET_API_KEY",
-  "POLYMARKET_API_SECRET",
-  "POLYMARKET_PASSPHRASE",
 ] as const;
 
 export type TrackedApiKey = (typeof TRACKED_API_KEYS)[number];

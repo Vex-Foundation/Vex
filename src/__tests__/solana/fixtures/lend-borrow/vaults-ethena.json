@@ -1,0 +1,119 @@
+[
+  {
+    "id": 5,
+    "address": "3LekyrZMPjcPSpkc1KwpduWLNRb5KM96C9tbxkc4oU62",
+    "supplyToken": {
+      "address": "DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT",
+      "chainId": "solana",
+      "name": "USDe",
+      "symbol": "USDe",
+      "uiSymbol": "USDe",
+      "decimals": 9,
+      "logoUrl": "https://coin-images.coingecko.com/coins/images/33613/large/usde.png?1733810059",
+      "price": "0.999797250425",
+      "coingeckoId": "ethena-usde",
+      "updatedAt": "2026-07-24T15:24:06.000+00:00"
+    },
+    "borrowToken": {
+      "address": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+      "chainId": "solana",
+      "name": "Global Dollar",
+      "symbol": "USDG",
+      "uiSymbol": "USDG",
+      "decimals": 6,
+      "logoUrl": "https://coin-images.coingecko.com/coins/images/51281/large/GDN_USDG_Token_200x200.png?1730484111",
+      "price": "1.000133336243",
+      "coingeckoId": "global-dollar",
+      "updatedAt": "2026-07-24T15:24:06.000+00:00"
+    },
+    "totalSupply": "263023960665787976",
+    "totalSupplyLiquidity": "261073326642438240",
+    "totalBorrow": "238784594839900",
+    "totalBorrowLiquidity": "238784589105880",
+    "absorbedSupply": "0",
+    "absorbedBorrow": "0",
+    "supplyRateMagnifier": "392",
+    "borrowRateMagnifier": "0",
+    "borrowFee": "0",
+    "collateralFactor": "920",
+    "liquidationThreshold": "940",
+    "liquidationMaxLimit": "960",
+    "liquidationPenalty": "100",
+    "withdrawalGap": "50",
+    "supplyRate": "392",
+    "supplyRateLiquidity": "0",
+    "borrowRate": "249",
+    "borrowRateLiquidity": "249",
+    "withdrawLimit": "195804994981828680",
+    "withdrawableUntilLimit": "52214613113822319",
+    "withdrawable": "52214613113822319",
+    "borrowLimit": "238784909391425",
+    "borrowableUntilLimit": "320285224",
+    "borrowable": "320285224",
+    "borrowLimitUtilization": "252061290855515",
+    "minimumBorrowing": "1005410",
+    "totalPositions": 1276,
+    "oracle": "3Wy2bGwxQ6UNUJ8uHJtUXW1Ztbrv2QNNnTQqfKBmdzHg",
+    "oraclePrice": "999999999999999",
+    "oraclePriceOperate": "999999999999999",
+    "oraclePriceLiquidate": "999999999999999",
+    "oracleSources": [
+      {
+        "source": "Dpw1EAVrSB1ibxiDQyTAW6Zip3J4Btk2x4SgApQCeFbX",
+        "invert": false,
+        "multiplier": "1",
+        "divisor": "1",
+        "sourceType": {
+          "pyth": {}
+        }
+      },
+      {
+        "source": "Dpw1EAVrSB1ibxiDQyTAW6Zip3J4Btk2x4SgApQCeFbX",
+        "invert": true,
+        "multiplier": "1",
+        "divisor": "1",
+        "sourceType": {
+          "pyth": {}
+        }
+      }
+    ],
+    "oracleTimestamp": 1784906772465,
+    "liquiditySupplyData": {
+      "modeWithInterest": true,
+      "supply": "261073326642438240",
+      "withdrawalLimit": "195804994981828680",
+      "lastUpdateTimestamp": "1784902626",
+      "expandPercent": "2500",
+      "expandDuration": "21600",
+      "baseWithdrawalLimit": "8000012223600000",
+      "withdrawableUntilLimit": "65268331660609560",
+      "withdrawable": "65268331660609560",
+      "decayAmount": "0",
+      "decayEndTimestamp": "1784906786"
+    },
+    "liquidityBorrowData": {
+      "modeWithInterest": true,
+      "borrow": "238784589105880",
+      "borrowLimit": "238784909391425",
+      "lastUpdateTimestamp": "1784902766",
+      "expandPercent": "5000",
+      "expandDuration": "21600",
+      "baseBorrowLimit": "100541014480600",
+      "maxBorrowLimit": "238784909391425",
+      "borrowLimitUtilization": "252061290855515",
+      "borrowableUntilLimit": "320285545",
+      "borrowable": "320285545"
+    },
+    "rewards": [],
+    "topTick": -55,
+    "metadata": {
+      "maxLeverage": true,
+      "nativeStake": false,
+      "pegged": true,
+      "multiply": {
+        "enabled": true,
+        "reduceFactor": 110
+      }
+    }
+  }
+]

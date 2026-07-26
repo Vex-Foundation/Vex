@@ -51,7 +51,7 @@ export function buildMissionRunPrompt(
   lines.push("- Runtime slice limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
-  lines.push("- Use DexScreener, Jupiter/Solana, wallet, portfolio, or web research only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
+  lines.push("- Use DexScreener, Jupiter/Solana, wallet, agent scan, or web research only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
   lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
   lines.push("- Log significant decisions with rationale for audit trail");
   lines.push("");

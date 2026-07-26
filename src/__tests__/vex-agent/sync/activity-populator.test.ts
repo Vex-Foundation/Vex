@@ -26,7 +26,7 @@ describe("activity-populator", () => {
   });
 
   it("maps prediction → prediction", async () => {
-    await populateActivity(3, null, "polymarket.clob.buy", "polymarket", { type: "prediction", chain: "polygon" });
+    await populateActivity(3, null, "solana.predict.buy", "solana", { type: "prediction", chain: "solana" });
     expect(mockInsertActivity.mock.calls[0][0].productType).toBe("prediction");
   });
 
@@ -36,19 +36,19 @@ describe("activity-populator", () => {
   });
 
   it("maps lp → lp", async () => {
-    await populateActivity(5, null, "kyberswap.zap.in", "kyberswap", { type: "lp", chain: "ethereum" });
+    await populateActivity(5, null, "pendle.lp.add", "pendle", { type: "lp", chain: "ethereum" });
     expect(mockInsertActivity.mock.calls[0][0].productType).toBe("lp");
   });
 
   // ── tradeSide rules ─────────────────────────────────────────────
 
   it("spot buy derives tradeSide=buy from tool name", async () => {
-    await populateActivity(10, null, "kyberswap.swap.buy", "kyberswap", { type: "swap", chain: "base", tradeSide: "buy" });
+    await populateActivity(10, null, "pendle.pt.buy", "pendle", { type: "swap", chain: "base" });
     expect(mockInsertActivity.mock.calls[0][0].tradeSide).toBe("buy");
   });
 
   it("spot sell derives tradeSide=sell from tool name", async () => {
-    await populateActivity(11, null, "kyberswap.swap.sell", "kyberswap", { type: "swap", chain: "base", tradeSide: "sell" });
+    await populateActivity(11, null, "pendle.pt.sell", "pendle", { type: "swap", chain: "base" });
     expect(mockInsertActivity.mock.calls[0][0].tradeSide).toBe("sell");
   });
 
@@ -78,7 +78,7 @@ describe("activity-populator", () => {
   });
 
   it("reward → tradeSide=null", async () => {
-    await populateActivity(17, null, "polymarket.rewards.claim", "polymarket", { type: "reward", chain: "polygon" });
+    await populateActivity(17, null, "hyperliquid.rewards.claim", "hyperliquid", { type: "reward", chain: "arbitrum" });
     expect(mockInsertActivity.mock.calls[0][0].tradeSide).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe("activity-populator", () => {
   });
 
   it("prefers inputTokenAddress over inputToken", async () => {
-    await populateActivity(21, null, "kyberswap.swap.sell", "kyberswap", {
+    await populateActivity(21, null, "kyberswap.swap.execute", "kyberswap", {
       type: "swap", chain: "ethereum", inputToken: "WETH", inputTokenAddress: "0xWETH_ADDR",
     });
     expect(mockInsertActivity.mock.calls[0][0].inputToken).toBe("0xWETH_ADDR");

@@ -37,12 +37,9 @@
  * custom).
  */
 
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { AnimatePresence } from "motion/react";
-import type { WorkspaceMode } from "../../stores/uiStore.js";
+import type { JSX } from "react";
 import { useUiStore } from "../../stores/uiStore.js";
 import { BookPanel } from "./BookPanel.js";
-import { shouldFocusComposerAfterWorkspaceExit } from "./composer-focus-handoff.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
 import { MissionRail } from "./MissionRail.js";
 import { useAutoCollapseBook } from "./useAutoCollapseBook.js";
@@ -52,13 +49,6 @@ import { SessionsList } from "./SessionsList.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
-import { HypervexingWorkspace } from "./workspace/HypervexingWorkspace.js";
-import { HypervexingFirstEntryAck } from "./workspace/HypervexingFirstEntryAck.js";
-import { useHypervexingWorkspace } from "./workspace/useHypervexingWorkspace.js";
-import {
-  deriveShellTheme,
-  type ShellTheme,
-} from "./workspace/workspaceModeGate.js";
 
 export function AppShell(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
@@ -69,28 +59,6 @@ export function AppShell(): JSX.Element {
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const closeCreateSession = useUiStore((s) => s.closeCreateSession);
 
-  // Hypervexing workspace: agent-driven entry (a main→renderer push), ack-gated
-  // first entry, always-available exit. The controller owns the ack-dialog gate
-  // and turns each agent request into the right store transition.
-  const workspace = useHypervexingWorkspace();
-  // Two distinct signals, deliberately not collapsed into one "inWorkspace"
-  // flag: `workspaceMode` (logical) gates whether the room is the child
-  // `AnimatePresence` is asked to keep present/exit; `visualWorkspaceMode`
-  // (lagged on exit until the drain finishes) gates everything the user
-  // SEES while that exit plays — theme, sky dimming, and whether the normal
-  // shell is allowed to mount (never alongside a still-draining room).
-  const inWorkspace = workspace.workspaceMode === "hypervexing";
-  const visuallyInWorkspace = workspace.visualWorkspaceMode === "hypervexing";
-
-  // `data-vex-theme` is DERIVED: while the mode is visually active (including
-  // through the exit drain) it reads "hypervexing"; otherwise it is the
-  // user's own persisted theme, so EXIT restores Chronos exactly once the
-  // drain completes. The mode never overwrites `theme`.
-  const derivedTheme: ShellTheme = deriveShellTheme(
-    workspace.visualWorkspaceMode,
-    theme,
-  );
-
   // Stage F responsive: below ~1360px the three columns (sidebar + chat +
   // BOOK) no longer fit, so auto-collapse BOOK on the narrowing edge. One-way on
   // the transition (not continuously enforced) so a user can still re-open BOOK
@@ -99,36 +67,9 @@ export function AppShell(): JSX.Element {
 
   // Backdrop veil is derived from state AppShell already subscribes to —
   // light on welcome/idle (no active session), deep behind an active session
-  // transcript OR the Hypervexing chart (including through its exit drain,
-  // alongside the theme above). The opacity itself eases inside
-  // ShellBackdrop, so this can flip freely.
-  const backdropDimmed = visuallyInWorkspace || activeSessionId !== null;
-
-  // Focus handoff BACK to the normal chat composer once the exit drain
-  // completes (see SessionComposer's `focusRequest` doc). Detected as the one
-  // visual transition hypervexing → normal; reset the moment the composer
-  // reports it consumed the request, so an unrelated later composer mount
-  // never inherits a stale "focus me".
-  const previousVisualModeRef = useRef<WorkspaceMode>(
-    workspace.visualWorkspaceMode,
-  );
-  const [focusComposerOnReturn, setFocusComposerOnReturn] = useState(false);
-
-  useEffect(() => {
-    if (
-      shouldFocusComposerAfterWorkspaceExit(
-        previousVisualModeRef.current,
-        workspace.visualWorkspaceMode,
-      )
-    ) {
-      setFocusComposerOnReturn(true);
-    }
-    previousVisualModeRef.current = workspace.visualWorkspaceMode;
-  }, [workspace.visualWorkspaceMode]);
-
-  const handleComposerFocusHandled = useCallback((): void => {
-    setFocusComposerOnReturn(false);
-  }, []);
+  // transcript. The opacity itself eases inside ShellBackdrop, so this can
+  // flip freely.
+  const backdropDimmed = activeSessionId !== null;
 
   return (
     // `relative isolate`: anchors the absolutely-positioned Eclipse backdrop
@@ -136,39 +77,17 @@ export function AppShell(): JSX.Element {
     <main
       className="relative isolate flex h-screen w-screen overflow-hidden bg-[var(--vex-surface-0)] text-foreground"
       data-vex-shell="true"
-      data-vex-theme={derivedTheme}
+      data-vex-theme={theme}
       data-vex-screen="appShell"
     >
       <ShellBackdrop dimmed={backdropDimmed} />
 
-      {/* The 5-zone trading room replaces the normal columns while active. It
-       * reuses the SAME SessionPanel (docked), so chat context is preserved
-       * and only ONE chat surface is ever mounted. `AnimatePresence` lets the
-       * room's own declared exit animation actually play instead of the hard
-       * conditional unmounting it mid-drain (the #40 defect); `onExitComplete`
-       * releases `visualWorkspaceMode`, which is what gates the normal shell
-       * below — so it can never mount a second chat surface underneath a
-       * room still contracting away. */}
-      <AnimatePresence onExitComplete={workspace.onExitAnimationComplete}>
-        {inWorkspace ? (
-          <HypervexingWorkspace key="hypervexing-workspace" onExit={workspace.exit} />
-        ) : null}
-      </AnimatePresence>
-
-      {/* Hidden while EITHER signal says hypervexing: `inWorkspace` covers
-       * the instant of entry, `visuallyInWorkspace` covers the exit drain —
-       * the `||` is what guarantees this never mounts a second chat surface
-       * alongside a still-present (entering or still-exiting) room. */}
-      {inWorkspace || visuallyInWorkspace ? null : (
-        <NormalShell
-          activeSessionId={activeSessionId}
-          bookOpen={bookOpen}
-          toggleBook={toggleBook}
-          onCreate={() => openCreateSession()}
-          focusComposerOnReturn={focusComposerOnReturn}
-          onComposerFocusHandled={handleComposerFocusHandled}
-        />
-      )}
+      <NormalShell
+        activeSessionId={activeSessionId}
+        bookOpen={bookOpen}
+        toggleBook={toggleBook}
+        onCreate={() => openCreateSession()}
+      />
 
       {/* Full-app overlay screens (Memory / Sessions / How Vex works) —
        * `fixed` overlays expanding from their profile-menu rows, floating
@@ -183,36 +102,23 @@ export function AppShell(): JSX.Element {
           if (!next) closeCreateSession();
         }}
       />
-
-      {/* First-entry risk acknowledgment (renders in the CURRENT theme, before
-       * the morph). The mode activates only after the user accepts. */}
-      <HypervexingFirstEntryAck
-        open={workspace.ackPending}
-        saving={workspace.ackSaving}
-        onConfirm={workspace.confirmAck}
-        onCancel={workspace.cancelAck}
-      />
     </main>
   );
 }
 
-/** The normal (non-Hypervexing) shell columns: sessions rail · session column
- * under the desk rule · optional BOOK panel. Extracted so the AppShell root
- * cleanly branches between the normal shell and the Hypervexing workspace. */
+/** The shell columns: sessions rail · session column under the desk rule ·
+ * optional BOOK panel. Extracted so the AppShell root stays a thin frame
+ * around the backdrop + overlay screens. */
 function NormalShell({
   activeSessionId,
   bookOpen,
   toggleBook,
   onCreate,
-  focusComposerOnReturn,
-  onComposerFocusHandled,
 }: {
   readonly activeSessionId: string | null;
   readonly bookOpen: boolean;
   readonly toggleBook: () => void;
   readonly onCreate: () => void;
-  readonly focusComposerOnReturn: boolean;
-  readonly onComposerFocusHandled: () => void;
 }): JSX.Element {
   return (
     <>
@@ -248,10 +154,7 @@ function NormalShell({
         </header>
 
         <div className="min-h-0 flex-1">
-          <SessionPanel
-            focusRequest={focusComposerOnReturn}
-            onFocusRequestHandled={onComposerFocusHandled}
-          />
+          <SessionPanel />
         </div>
       </section>
 

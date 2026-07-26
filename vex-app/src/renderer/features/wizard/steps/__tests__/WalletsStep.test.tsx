@@ -190,7 +190,6 @@ function envQueryFor(walletStatus: {
           jupiterConfigured: false,
           tavilyConfigured: false,
           rettiwtConfigured: false,
-          polymarketStatus: "missing",
         },
         embeddings: {
           configured: false,

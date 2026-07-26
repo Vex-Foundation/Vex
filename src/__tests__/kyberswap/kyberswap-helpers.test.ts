@@ -52,20 +52,17 @@ describe("resolveChainWithId", () => {
 });
 
 describe("requireFeature", () => {
-  it("does not throw for supported feature", () => {
+  // Agent Scan (plan §4.2) deleted limit-order + zap tooling — `aggregator` is
+  // the only surviving KyberSwap feature, and every registered chain has it
+  // (Scroll/zkSync, the only aggregator:false entries, were dropped from the
+  // registry entirely rather than kept as dead entries).
+  it("does not throw for a registered chain's aggregator feature", () => {
     expect(() => requireFeature("ethereum", "aggregator")).not.toThrow();
-    expect(() => requireFeature("ethereum", "zaas")).not.toThrow();
-  });
-
-  it("throws KYBER_UNSUPPORTED_CHAIN for unsupported feature", () => {
-    expect(() => requireFeature("mantle", "zaas")).toThrow(VexError);
-    expect(() => requireFeature("megaeth", "zaas")).toThrow(VexError);
-  });
-
-  it("gates Robinhood to aggregator only — limit order + zap are rejected", () => {
     expect(() => requireFeature("robinhood", "aggregator")).not.toThrow();
-    expect(() => requireFeature("robinhood", "limitOrder")).toThrow(VexError);
-    expect(() => requireFeature("robinhood", "zaas")).toThrow(VexError);
+  });
+
+  it("throws KYBER_UNSUPPORTED_CHAIN for an unregistered chain slug", () => {
+    expect(() => requireFeature("scroll" as never, "aggregator")).toThrow(VexError);
   });
 });
 

@@ -340,7 +340,7 @@ describe("turn-loop", () => {
       // state (queue without intent, or queue+intent without paused_approval)
       // is unrepresentable.
       const provider = makeProvider([
-        { toolCalls: [{ id: "call-1", name: "execute_tool", arguments: { toolId: "kyberswap.swap.sell", params: { chain: "base" } } }] },
+        { toolCalls: [{ id: "call-1", name: "execute_tool", arguments: { toolId: "kyberswap.swap.execute", params: { chain: "base" } } }] },
       ]);
       mockDispatchTool.mockResolvedValue({
         success: false,

@@ -166,6 +166,33 @@ describe("jupiterLendEarn read schemas (non-financial display)", () => {
     ).toBe(true);
   });
 
+  it("LIVE-GATE FIX 1 regression: accepts the live-renamed camelCase asset shape (chain_id/logo_url/coingecko_id absent)", () => {
+    // Confirmed live 2026-07-24 against GET /earn/tokens: the provider
+    // renamed asset.{chain_id,logo_url,coingecko_id} to
+    // asset.{chainId,logoUrl,coingeckoId} — the old keys never appear.
+    const token = {
+      ...validToken(),
+      asset: {
+        address: PUBKEY,
+        chainId: "solana",
+        name: "Jupiter USD",
+        symbol: "JupUSD",
+        uiSymbol: "JupUSD",
+        decimals: 6,
+        logoUrl: "https://example.com/jupusd.png",
+        price: "0.999995389363",
+        coingeckoId: "jupusd",
+        updatedAt: "2026-07-24T16:39:06.000+00:00",
+      },
+    };
+    const r = jupiterLendEarnTokensResponseSchema.safeParse([token]);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data[0]!.asset.chain_id).toBeUndefined();
+      expect(r.data[0]!.asset.price).toBe("0.999995389363");
+    }
+  });
+
   it("accepts a positions array", () => {
     expect(
       jupiterLendEarnPositionsResponseSchema.safeParse([
@@ -190,5 +217,25 @@ describe("jupiterLendEarn read schemas (non-financial display)", () => {
     };
     expect(jupiterLendEarnEarningsResponseSchema.safeParse(item).success).toBe(true);
     expect(jupiterLendEarnEarningsResponseSchema.safeParse([item]).success).toBe(true);
+  });
+
+  it("LIVE-GATE FIX 2 regression: accepts the live-shaped numeric-STRING earnings value", () => {
+    // Confirmed live 2026-07-24 against GET /earn/earnings: `earnings` is a
+    // numeric string ("0") on every row, not a JSON number as the pre-fix
+    // schema (z.number()) required — this is the actual root cause of the
+    // `solana.lend.positions` `<root>: Invalid input` failure (the handler's
+    // nested /earnings sub-call), not a drift on /earn/positions itself.
+    const item = {
+      address: PUBKEY,
+      ownerAddress: PUBKEY,
+      earnings: "0",
+      slot: 0,
+    };
+    const r = jupiterLendEarnEarningsResponseSchema.safeParse([item]);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      const [parsed] = r.data as Extract<typeof r.data, unknown[]>;
+      expect(parsed!.earnings).toBe("0");
+    }
   });
 });

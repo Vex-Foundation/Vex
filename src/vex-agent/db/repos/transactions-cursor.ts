@@ -11,8 +11,8 @@
  * Wire format: the three fields are joined with a `|` delimiter and base64'd —
  * `base64("${cursorTs}|${sourceRank}|${id}")`. `|` is unambiguous: `cursorTs`
  * is the fixed `YYYY-MM-DDTHH:MM:SS.ffffffZ` shape (digits, `-`, `:`, `.`, `T`,
- * `Z` only), `sourceRank` is `0`|`1`, and `id` is a positive integer — none can
- * contain `|`. (We deliberately do NOT use JSON here: this codec lives under
+ * `Z` only), `sourceRank` is `0`|`1`|`2`, and `id` is a positive integer — none
+ * can contain `|`. (We deliberately do NOT use JSON here: this codec lives under
  * `db/repos`, where the JSONB-boundary lint forbids `JSON.stringify` so that all
  * JSONB column writes go through `db/params`. A base64 cursor token is not a
  * JSONB write, but the lint is a blunt line scan, so the delimited encoding both
@@ -30,8 +30,12 @@ import { z } from "zod";
 export interface DecodedCursor {
   /** created_at rendered at microsecond precision: YYYY-MM-DDTHH:MM:SS.ffffffZ. */
   readonly cursorTs: string;
-  /** Source tie-break: 0 = success (proj_activity), 1 = failure (protocol_executions). */
-  readonly sourceRank: 0 | 1;
+  /**
+   * Source tie-break: 0 = agent_activity (new-format, Agent Scan), 1 = success
+   * (proj_activity), 2 = failure (protocol_executions). Only a constant per
+   * half — never a business-meaning ordering.
+   */
+  readonly sourceRank: 0 | 1 | 2;
   /** Row id within its source table — final, strict tie-break. */
   readonly id: number;
 }
@@ -56,7 +60,7 @@ const CursorTsSchema = z
 
 const DecodedCursorSchema = z.object({
   cursorTs: CursorTsSchema,
-  sourceRank: z.union([z.literal(0), z.literal(1)]),
+  sourceRank: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   id: z.number().int().positive(),
 });
 

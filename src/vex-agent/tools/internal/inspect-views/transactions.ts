@@ -1,16 +1,28 @@
 /**
- * Portfolio inspect — transactions view: the unified tx feed.
+ * Agent Scan — transactions view: the unified tx feed (PRIMARY view, Agent
+ * Scan plan v3 §1.9/§4.2 output-polish).
  *
- * FUSES successful activity (proj_activity) with FAILED trade-impacting mutation
- * attempts (protocol_executions WHERE success = false, this session only),
- * filtered by productType (NOT trade_side), keyset-paginated, with a txHash
- * anchor. The repo (`db/repos/transactions.ts`) owns the SQL + the cursor
- * semantics; this handler decodes the opaque cursor (bounded-fail on garbage),
- * calls the repo, and shapes the bounded result.
+ * FUSES `agent_activity` (new-format swap attempts: pending/confirmed/
+ * definitively_failed) with legacy successful activity (proj_activity) and
+ * legacy FAILED trade-impacting mutation attempts (protocol_executions,
+ * THIS session only), filtered by productType, keyset-paginated, with a
+ * txHash anchor. The repo (`db/repos/transactions.ts`) owns the SQL + the
+ * cursor semantics; this handler decodes the opaque cursor (bounded-fail on
+ * garbage), calls the repo, and shapes the bounded result.
+ *
+ * Output polish (owner: "write it the way you'd want to receive it"): every
+ * row gets a compact human `summary` line up front (amounts with symbols,
+ * USD labeled as an estimate, status, short tx hash) ahead of the full
+ * machine fields. Rows with a resolvable chain+hash also feed `_explorerRefs`
+ * (metadata-only, model-invisible — same mechanism `wallet/send` uses for a
+ * linkable-but-uncaptured tx ref) so the desktop app can render a real
+ * explorer deep link without this module needing its own chain→URL map.
  */
 
 import type { ToolResult } from "../../types.js";
 import { ok, fail } from "../types.js";
+import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
+import type { TransactionRow } from "@vex-agent/db/repos/transactions.js";
 
 export interface InspectTransactionsParams {
   productType?: string;
@@ -18,6 +30,146 @@ export interface InspectTransactionsParams {
   txHash?: string;
   cursor?: string;
   limit?: number;
+}
+
+/** Bounded set of explorer refs derived from this page's rows — same shape `wallet/send` attaches under `data._explorerRefs`. */
+function buildExplorerRefs(items: readonly TransactionRow[]): Array<{ chain: string; txRef: string }> {
+  const seen = new Set<string>();
+  const refs: Array<{ chain: string; txRef: string }> = [];
+  const add = (chain: string | null, txRef: string | null | undefined): void => {
+    if (!chain || !txRef) return;
+    const key = `${chain}:${txRef}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    refs.push({ chain, txRef });
+  };
+  for (const item of items) {
+    // A bridge logical row fans its on-chain hashes across its legs (deposit,
+    // fill, refund, extra fills) — each on its OWN chain. Derive a ref from
+    // EVERY leg, not only the row's top-level fill hash, so a pending deposit /
+    // refund / extra-fill link is never invisible (Codex FIX-ROUND-1 finding
+    // 13). The canonical fill leg is included in `legs`, so the top-level hash
+    // is still covered. Non-bridge rows keep the top-level-hash derivation.
+    if (item.legs && item.legs.length > 0) {
+      for (const leg of item.legs) {
+        const chain = leg.chainSlug ?? (leg.chainId != null ? String(leg.chainId) : null);
+        add(chain, leg.txHash);
+      }
+      continue;
+    }
+    const chain = item.chain ?? (item.chainId != null ? String(item.chainId) : null);
+    add(chain, item.txHash);
+  }
+  return refs;
+}
+
+function shortHash(hash: string | null | undefined): string | null {
+  if (!hash) return null;
+  return hash.length <= 14 ? hash : `${hash.slice(0, 8)}…${hash.slice(-4)}`;
+}
+
+/**
+ * One amount leg (`amount token`). When the row's `amountBasis` is a quote
+ * (`estimated` — Q2 for bridges, R5 for a lend/prediction/swap confirmation
+ * without decoder-proven executed legs) it is marked explicitly (`~… est.`)
+ * so a quoted amount never reads as an executed quantity (Codex FIX-ROUND-1
+ * finding 12 / R14, extended to every kind by W5/R5).
+ *
+ * `legChainId` is the chain THIS leg settled on — the source chain for a
+ * bridge's input leg, the destination chain for its output leg. It exists only
+ * to annotate the chain-agnostic `NATIVE` sentinel with the real gas-asset
+ * ticker, so `0.0004 NATIVE` reads `0.0004 NATIVE (ETH)`. Annotation happens
+ * HERE, at projection, rather than at write time: it repairs rows already in
+ * the table, and it keeps the stored column ticker-shaped for vex-app's
+ * `sanitizeTokenSymbol` allowlist. Passing the wrong chain would print a
+ * confident lie, so a leg whose own chain id is unknown is left bare.
+ */
+function formatLeg(
+  amount: string | null | undefined,
+  token: string | null | undefined,
+  estimated: boolean,
+  legChainId: number | null | undefined,
+): string | null {
+  if (amount == null || token == null) return null;
+  const label = annotateNativeSymbol(token, legChainId);
+  return estimated ? `~${amount} ${label} est.` : `${amount} ${label}`;
+}
+
+function usdEstimate(value: number | null | undefined): string | null {
+  return value != null && Number.isFinite(value) ? `~$${value.toFixed(2)} est.` : null;
+}
+
+/** Chain display for a bridge route endpoint — slug preferred, numeric id as fallback. */
+function routeEndpoint(slug: string | null | undefined, id: number | null | undefined): string | null {
+  return slug ?? (id != null ? String(id) : null);
+}
+
+/**
+ * Compact human line for a bridge logical row (Codex FIX-ROUND-1 finding 13):
+ * origin→destination route + amount marked by `amountBasis` + venue + status +
+ * the fill hash. A refund/failed row surfaces its failure code and drops the
+ * amount (money-back is not a settled quantity).
+ */
+function summarizeBridge(row: TransactionRow, hash: string | null): string {
+  const from = routeEndpoint(row.fromChainSlug, row.fromChainId);
+  const to = routeEndpoint(row.toChainSlug, row.toChainId);
+  const route = from && to ? `${from} → ${to}` : (from ?? to ?? "unknown route");
+  const venue = row.protocol ?? row.namespace;
+  const status = row.status ?? "pending";
+  const estimated = row.amountBasis === "estimated";
+  // A bridge's two legs sit on DIFFERENT chains (Base → BSC moves ETH out and
+  // BNB in), so each leg is labelled from its own endpoint id. There is no
+  // fallback to `row.chainId`: guessing the destination asset from the source
+  // chain is exactly the confident-wrong-label failure this avoids.
+  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated, row.fromChainId);
+  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated, row.toChainId);
+  const amount = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? null);
+  const head = amount != null ? `Bridging ${amount} (${route})` : `Bridge ${route}`;
+
+  const parts = [`${head} via ${venue} — ${status}`];
+  const usd = usdEstimate(row.valueUsd ?? null);
+  if (usd) parts.push(usd);
+  if (row.failureCode) parts.push(`(${row.failureCode})`);
+  if (hash) parts.push(`tx ${hash}`);
+  return parts.join(" — ");
+}
+
+/** Compact human line for one row — leads the item, full fields follow. */
+function summarize(row: TransactionRow): string {
+  const hash = shortHash(row.txHash);
+
+  if (row.source === "failure") {
+    // Failure rows carry no economics (never produced a fill).
+    const label = row.toolId ?? row.namespace;
+    return hash ? `${label} failed (tx ${hash})` : `${label} failed — no tx broadcast`;
+  }
+
+  // Only the agent_activity bridge LOGICAL row carries the route endpoints,
+  // legs, and amountBasis the bridge line needs. A legacy `success`-sourced
+  // bridge (proj_activity, product_type 'bridge') has none of those and is a
+  // settled fill, so it keeps the generic line (its prior behavior).
+  if (row.source === "agent_activity" && row.productType === "bridge") {
+    return summarizeBridge(row, hash);
+  }
+
+  const chain = row.chain ?? "unknown chain";
+  const venue = row.protocol ?? row.namespace;
+  // Swap/lend/prediction rows (R5): a confirmed row without decoder-proven
+  // executed legs falls back to the quote, marked `~… est.` — never a bare
+  // executed-looking quantity for an attempt the decoder couldn't prove.
+  const estimated = row.amountBasis === "estimated";
+  // Single-chain row: both legs settled on the row's own chain.
+  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated, row.chainId);
+  const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated, row.chainId);
+  const route = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? venue);
+  const status = row.status ?? "confirmed";
+
+  const parts = [`${route} via ${venue} on ${chain} — ${status}`];
+  const usd = usdEstimate(row.valueUsd ?? null);
+  if (usd) parts.push(usd);
+  if (status === "definitively_failed" && row.failureCode) parts.push(`(${row.failureCode})`);
+  if (hash) parts.push(`tx ${hash}`);
+  return parts.join(" — ");
 }
 
 export async function inspectTransactions(
@@ -56,8 +208,9 @@ export async function inspectTransactions(
     view: "transactions",
     count: items.length,
     failuresScope,
-    transactions: items,
+    transactions: items.map((item) => ({ summary: summarize(item), ...item })),
     nextCursor,
     hasMore,
+    _explorerRefs: buildExplorerRefs(items),
   });
 }

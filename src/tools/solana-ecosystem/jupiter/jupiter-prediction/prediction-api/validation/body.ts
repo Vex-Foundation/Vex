@@ -13,12 +13,25 @@ import type {
   JupiterPredictionClosePositionRequest,
   JupiterPredictionCloseAllPositionsRequest,
   JupiterPredictionClaimPositionRequest,
+  JupiterPredictionExecuteRequest,
 } from "../types.js";
 import {
+  assertIntegerInRange,
   assertNonEmptyString,
   normalizePositiveIntegerString,
   normalizeOwnerPubkey,
 } from "./helpers.js";
+
+/**
+ * Owner-wide bps bound (0-10,000 = 0-100%). NOT documented by the provider
+ * for `minSellPriceSlippageBps` itself — the OpenAPI spec only marks it
+ * `required`/`type: number` with no min/max (DOCS-GAP, see `predict-execute.ts`'s
+ * `executePredictCloseAll` doc comment). Mirrors this domain's own
+ * order-level `slippageBps`/`maxSlippageBps` fields (both `minimum: 0`,
+ * described as "0 = none, 250 = 2.5%") and the Swap module's documented
+ * `slippageBps` range (0-10000).
+ */
+const MIN_SELL_PRICE_SLIPPAGE_BPS_MAX = 10_000;
 
 // ── Auth ───────────────────────────────────────────────────────────
 
@@ -131,11 +144,32 @@ export function validateJupiterPredictionClosePositionRequest(
 export function validateJupiterPredictionCloseAllPositionsRequest(
   request: JupiterPredictionCloseAllPositionsRequest,
 ): JupiterPredictionCloseAllPositionsRequest {
-  return { ownerPubkey: normalizeOwnerPubkey(request.ownerPubkey) };
+  assertIntegerInRange(
+    "minSellPriceSlippageBps",
+    request.minSellPriceSlippageBps,
+    0,
+    MIN_SELL_PRICE_SLIPPAGE_BPS_MAX,
+  );
+  return {
+    ownerPubkey: normalizeOwnerPubkey(request.ownerPubkey),
+    minSellPriceSlippageBps: request.minSellPriceSlippageBps,
+  };
 }
 
 export function validateJupiterPredictionClaimPositionRequest(
   request: JupiterPredictionClaimPositionRequest,
 ): JupiterPredictionClaimPositionRequest {
   return { ownerPubkey: normalizeOwnerPubkey(request.ownerPubkey) };
+}
+
+export function validateJupiterPredictionExecuteRequest(
+  request: JupiterPredictionExecuteRequest,
+): JupiterPredictionExecuteRequest {
+  if (!request.signedTransaction.trim()) {
+    throw new VexError(
+      ErrorCodes.HTTP_REQUEST_FAILED,
+      "signedTransaction is required for /execute.",
+    );
+  }
+  return request;
 }

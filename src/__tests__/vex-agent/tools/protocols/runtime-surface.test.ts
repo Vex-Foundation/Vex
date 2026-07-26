@@ -77,7 +77,10 @@ vi.mock("@vex-agent/tools/protocols/capture-pipeline.js", () => ({
   populateCaptureItems: vi.fn(),
 }));
 // recordExecution throws a credential-bearing error to drive capture_failed.
-const CAPTURE_URL = "postgres://user:p4ssw0rd@db.internal:5432/vex?sslmode=require";
+// vi.hoisted: the factory below is hoisted ABOVE a plain `const`, so the URL
+// must be hoisted with it (plain top-level consts hit the TDZ — vitest's
+// "no top level variables inside vi.mock" rule).
+const CAPTURE_URL = vi.hoisted(() => "postgres://user:p4ssw0rd@db.internal:5432/vex?sslmode=require");
 vi.mock("@vex-agent/db/repos/executions.js", () => ({
   recordExecution: vi.fn().mockRejectedValue(new Error(`capture insert failed at ${CAPTURE_URL}`)),
 }));

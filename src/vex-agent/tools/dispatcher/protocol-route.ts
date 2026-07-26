@@ -19,17 +19,12 @@ import {
   MutatingAliasRouteError,
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
-import {
-  isHypervexingProtocolAlias,
-  resolveHypervexingAlias,
-} from "../hypervexing-aliases.js";
+import { revealUniswapPair } from "../registry/uniswap-reveal.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
 import { toResultData } from "../protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
-import { resolveHlPolicy } from "../../../lib/hyperliquid-policy.js";
-import { isHlWorkspaceModeActive } from "../../../lib/hyperliquid-workspace-mode.js";
 
 /**
  * Project a discovery result into its model-facing shape: strip the
@@ -60,9 +55,7 @@ export async function routeToolCall(
   // the mutating handler never executes. Read-only tools and non-mission
   // dispatches (missionRunId === null) skip this. Dynamic import mirrors the
   // protocol runtime's DB-access pattern and avoids a static tool→DB cycle.
-  const inactiveHypervexingAlias = isHypervexingProtocolAlias(call.name)
-    && !isHlWorkspaceModeActive(context.sessionId);
-  if (context.missionRunId !== null && !inactiveHypervexingAlias && dispatchTargetIsMutating(call)) {
+  if (context.missionRunId !== null && dispatchTargetIsMutating(call)) {
     const { markAutoRetryUnsafe } = await import(
       "@vex-agent/db/repos/mission-runs.js"
     );
@@ -76,6 +69,9 @@ export async function routeToolCall(
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
       contextUsageBand: context.contextUsageBand,
+      // FIX-SPINE round 1, finding 8/C3 — lets discovery hide the canonical
+      // hidden Uniswap swap manifests for a session that has not revealed them.
+      sessionId: context.sessionId,
     };
     const result = await discoverProtocolCapabilities(discoveryRequest);
     // Telemetry reads the FULL result (incl. embeddingModel/embeddingDim).
@@ -111,43 +107,11 @@ export async function routeToolCall(
         contextUsageBand: context.contextUsageBand,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
-        // Hydrated only for hyperliquid.* targets — other namespaces must not
-        // depend on (or fail through) the HL policy provider.
-        ...(toolId.startsWith("hyperliquid.")
-          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
-          : {}),
       },
     );
   }
 
-  // Hypervexing hot-set aliases are valid ONLY while main's per-session
-  // workspace controller reports the focused mode. They are direct, lossless
-  // aliases to protocol manifests — do not insert an internal approval path or
-  // any alias-specific gate here. `executeProtocolTool` remains the one
-  // authority for policy, protection, approval, signing, and capture.
-  if (isHypervexingProtocolAlias(call.name)) {
-    if (!isHlWorkspaceModeActive(context.sessionId)) {
-      return {
-        success: false,
-        output: `Tool "${call.name}" is available only in the Hypervexing workspace for this session.`,
-      };
-    }
-    const target = resolveHypervexingAlias(call.name, call.args);
-    return executeProtocolTool(
-      { toolId: target.toolId, params: target.params },
-      {
-        sessionPermission: context.sessionPermission,
-        approved: context.approved,
-        sessionId: context.sessionId,
-        contextUsageBand: context.contextUsageBand,
-        walletResolution: context.walletResolution,
-        walletPolicy: context.walletPolicy,
-        hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)),
-      },
-    );
-  }
-
-  // Mutating protocol-alias branch (Stage 8b — e.g. `swap`). DEDICATED path:
+  // Mutating protocol-alias branch (Stage 8b — e.g. `swap_execute`). DEDICATED path:
   // resolve the TARGET protocol toolId + translated params via the router, then
   // dispatch DIRECTLY through `executeProtocolTool`. This deliberately SKIPS
   // `routeInternalTool`'s internal mutating-approval gate so approval is owned
@@ -164,9 +128,12 @@ export async function routeToolCall(
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
     let target: ReturnType<typeof router>;
     try {
-      target = router(call.args);
+      target = router(call.args, context.sessionId);
     } catch (err) {
       if (err instanceof MutatingAliasRouteError) {
+        // Agent Scan plan §11.2: the ONE reveal case a router can determine
+        // synchronously, pre-call (chain has no KyberSwap support at all).
+        if (err.revealEligible) revealUniswapPair(context.sessionId);
         return { success: false, output: err.message };
       }
       throw err; // unexpected — let dispatchTool's catch produce a failed result
@@ -180,10 +147,6 @@ export async function routeToolCall(
         contextUsageBand: context.contextUsageBand,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
-        // Hydrated only for hyperliquid.* targets (see execute_tool branch).
-        ...(target.toolId.startsWith("hyperliquid.")
-          ? { hyperliquidPolicy: resolveHlPolicy(hyperliquidPolicyScope(context)) }
-          : {}),
       },
     );
   }
@@ -194,21 +157,6 @@ export async function routeToolCall(
   }
 
   return routeInternalTool(call, context);
-}
-
-function hyperliquidPolicyScope(context: InternalToolContext): {
-  readonly sessionId: string;
-  readonly missionId: string | null;
-  readonly walletAddress?: string;
-} {
-  const walletAddress = context.walletResolution.source === "session"
-    ? context.walletResolution.evm?.address
-    : undefined;
-  return {
-    sessionId: context.sessionId,
-    missionId: context.missionId,
-    ...(walletAddress === undefined ? {} : { walletAddress }),
-  };
 }
 
 async function routeInternalTool(

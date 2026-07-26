@@ -16,11 +16,15 @@ import { parseUnits, getAddress } from "viem";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { WalletIntent } from "@vex-agent/db/repos/wallet-intents.js";
 
+type EvmChainResolverModule = typeof import("@tools/evm-chains/resolver.js");
+type EvmClientModule = typeof import("@tools/evm-chains/evm-client.js");
+type KhalaniEvmClientModule = typeof import("@tools/khalani/evm-client.js");
+
 // ── Mocks ───────────────────────────────────────────────────────
 
-const mockResolve = vi.fn();
+const mockResolve = vi.fn<EvmChainResolverModule["resolveInclusiveEvmChain"]>();
 vi.mock("@tools/evm-chains/resolver.js", () => ({
-  resolveInclusiveEvmChain: (...a: unknown[]) => mockResolve(...a),
+  resolveInclusiveEvmChain: (...args: Parameters<EvmChainResolverModule["resolveInclusiveEvmChain"]>) => mockResolve(...args),
 }));
 
 const localPublicClient = {
@@ -31,12 +35,12 @@ const localWalletClient = {
   sendTransaction: vi.fn(),
   writeContract: vi.fn(),
 };
-const mockGetLocalEvmClients = vi.fn(() => ({
+const mockGetLocalEvmClients = vi.fn<EvmClientModule["getLocalEvmClients"]>(() => ({
   publicClient: localPublicClient,
   walletClient: localWalletClient,
 }));
 vi.mock("@tools/evm-chains/evm-client.js", () => ({
-  getLocalEvmClients: (...a: unknown[]) => mockGetLocalEvmClients(...a),
+  getLocalEvmClients: (...args: Parameters<EvmClientModule["getLocalEvmClients"]>) => mockGetLocalEvmClients(...args),
 }));
 
 const khalaniPublicClient = {
@@ -47,11 +51,11 @@ const khalaniWalletClient = {
   sendTransaction: vi.fn(),
   writeContract: vi.fn(),
 };
-const mockCreateDynamicPublicClient = vi.fn(() => khalaniPublicClient);
-const mockCreateDynamicWalletClient = vi.fn(() => khalaniWalletClient);
+const mockCreateDynamicPublicClient = vi.fn<KhalaniEvmClientModule["createDynamicPublicClient"]>(() => khalaniPublicClient);
+const mockCreateDynamicWalletClient = vi.fn<KhalaniEvmClientModule["createDynamicWalletClient"]>(() => khalaniWalletClient);
 vi.mock("@tools/khalani/evm-client.js", () => ({
-  createDynamicPublicClient: (...a: unknown[]) => mockCreateDynamicPublicClient(...a),
-  createDynamicWalletClient: (...a: unknown[]) => mockCreateDynamicWalletClient(...a),
+  createDynamicPublicClient: (...args: Parameters<KhalaniEvmClientModule["createDynamicPublicClient"]>) => mockCreateDynamicPublicClient(...args),
+  createDynamicWalletClient: (...args: Parameters<KhalaniEvmClientModule["createDynamicWalletClient"]>) => mockCreateDynamicWalletClient(...args),
 }));
 
 const { executeEvmTransfer } = await import(

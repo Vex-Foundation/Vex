@@ -16,8 +16,18 @@ import {
   type SeedQuery,
 } from "./retrieval-eval-harness.js";
 
-const EXPECTED_QUERY_COUNT = 200;
-const EXPECTED_AWARENESS_COUNT = 100;
+// Agent Scan phase 1 (2026-07-22): the dataset shrank from 200 to 116 when
+// polymarket + KyberSwap zap + KyberSwap limit orders were deleted and the old
+// kyberswap.swap.buy/sell split was unified into kyberswap.swap.execute (10
+// rows remapped in place, 8 rows pruned to their surviving Jupiter
+// alternative, 84 rows deleted outright — no query text was invented to
+// backfill back to 200; see tool-discovery-seed.json's description). The
+// awareness split is no longer 100/100 by construction — deletions only ever
+// removed rows from their original half, so it stayed close (55/61) rather
+// than being independently rebalanced.
+const EXPECTED_QUERY_COUNT = 116;
+const EXPECTED_BLIND_COUNT = 55;
+const EXPECTED_PROTOCOL_AWARE_COUNT = 61;
 
 const dataset = loadDataset();
 
@@ -26,10 +36,10 @@ function countByAwareness(queries: readonly SeedQuery[], awareness: SeedQuery["a
 }
 
 describe("discover_tools English v3 dataset contract", () => {
-  it("loads exactly 200 English seed queries split 100/100 by awareness", () => {
+  it("loads exactly 116 English seed queries split 55/61 by awareness", () => {
     expect(dataset).toHaveLength(EXPECTED_QUERY_COUNT);
-    expect(countByAwareness(dataset, "blind")).toBe(EXPECTED_AWARENESS_COUNT);
-    expect(countByAwareness(dataset, "protocol-aware")).toBe(EXPECTED_AWARENESS_COUNT);
+    expect(countByAwareness(dataset, "blind")).toBe(EXPECTED_BLIND_COUNT);
+    expect(countByAwareness(dataset, "protocol-aware")).toBe(EXPECTED_PROTOCOL_AWARE_COUNT);
 
     const nonAsciiQueries = dataset
       .filter((query) => !/^[\x00-\x7F]+$/.test(query.query))

@@ -1,0 +1,248 @@
+{
+  "data": [
+    {
+      "eventId": "POLY-411239",
+      "isActive": true,
+      "isLive": false,
+      "category": "politics",
+      "subcategory": "",
+      "tags": [
+        "politics",
+        "ethiopia",
+        "elections",
+        "main-election",
+        "global-elections",
+        "rewards-200-4pt5-20"
+      ],
+      "metadata": {
+        "slug": "next-prime-minister-of-ethiopia",
+        "title": "Next Prime Minister of Ethiopia?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-411239",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/ethiopia-parliamentary-election-winner-ofkn9mmT2_id.png",
+        "subtitle": "",
+        "closeTime": "2026-06-01T00:00:00Z"
+      },
+      "volumeUsd": "229954526000000",
+      "volume24hr": "1997691000000",
+      "beginAt": "1780333200",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [
+        {
+          "provider": "polymarket",
+          "marketId": "POLY-2063128",
+          "status": "open",
+          "result": null,
+          "marketResultPubkey": null,
+          "title": "Abiy Ahmed",
+          "openTime": 1777326879,
+          "closeTime": 1780272000,
+          "isTeamMarket": false,
+          "rulesPrimary": "General elections are scheduled to be held in Ethiopia on June 1, 2026.\n\nThis market will resolve to the next individual who officially assumes the office of Prime Minister of Ethiopia by December 31, 2028, 11:59 PM ET.\n\nTo count for resolution, the individual must be officially appointed and sworn in as Prime Minister of Ethiopia. Any interim or caretaker Prime Minister will not count toward the resolution of this market.\n\nIf no such Prime Minister takes office by December 31, 2028, 11:59 PM ET, this market will resolve to “Other”.\n\nThe primary resolution source for this market will be official information from the Government of Ethiopia; however, a consensus of credible reporting may also be used.",
+          "rulesSecondary": "",
+          "resolveAt": null,
+          "pricing": {
+            "buyYesPriceUsd": 949000,
+            "sellYesPriceUsd": 933000,
+            "sellNoPriceUsd": 51000,
+            "buyNoPriceUsd": 67000,
+            "volume": 112660
+          },
+          "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-abiy-ahmed-be-the-next-prime-minister-of-ethiopia-bDGV1hUE4uym.jpg",
+          "team": null,
+          "outcomes": [
+            "Yes",
+            "No"
+          ],
+          "clobTokenIds": [
+            "94134253597648057047877517813082069606962886792971715730299111686696678669356",
+            "111837462577887619861245480063847994135633408660698174988518194419381642361349"
+          ],
+          "marketOptions": [
+            {
+              "label": "Yes",
+              "buyYes": true
+            },
+            {
+              "label": "No",
+              "buyYes": false
+            }
+          ],
+          "sportsMarketType": null,
+          "sportsLine": null,
+          "gameNumber": null
+        },
+        {
+          "provider": "polymarket",
+          "marketId": "POLY-2063131",
+          "status": "open",
+          "result": null,
+          "marketResultPubkey": null,
+          "title": "Alesa Mengesha",
+          "openTime": 1777326891,
+          "closeTime": 1780272000,
+          "isTeamMarket": false,
+          "rulesPrimary": "General elections are scheduled to be held in Ethiopia on June 1, 2026.\n\nThis market will resolve to the next individual who officially assumes the office of Prime Minister of Ethiopia by December 31, 2028, 11:59 PM ET.\n\nTo count for resolution, the individual must be officially appointed and sworn in as Prime Minister of Ethiopia. Any interim or caretaker Prime Minister will not count toward the resolution of this market.\n\nIf no such Prime Minister takes office by December 31, 2028, 11:59 PM ET, this market will resolve to “Other”.\n\nThe primary resolution source for this market will be official information from the Government of Ethiopia; however, a consensus of credible reporting may also be used.",
+          "rulesSecondary": "",
+          "resolveAt": null,
+          "pricing": {
+            "buyYesPriceUsd": 39000,
+            "sellYesPriceUsd": 6000,
+            "sellNoPriceUsd": 961000,
+            "buyNoPriceUsd": 994000,
+            "volume": 13569378
+          },
+          "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/ethiopia-parliamentary-election-winner-ofkn9mmT2_id.png",
+          "team": null,
+          "outcomes": [
+            "Yes",
+            "No"
+          ],
+          "clobTokenIds": [
+            "80737749707623321656569294238127946200924575060067022053313951954399729244690",
+            "49867572102615009847714675678027343310000329465549330577240824807327092645545"
+          ],
+          "marketOptions": [
+            {
+              "label": "Yes",
+              "buyYes": true
+            },
+            {
+              "label": "No",
+              "buyYes": false
+            }
+          ],
+          "sportsMarketType": null,
+          "sportsLine": null,
+          "gameNumber": null
+        }
+      ],
+      "sportsMarketGroups": []
+    },
+    {
+      "eventId": "POLY-731553",
+      "isActive": true,
+      "isLive": false,
+      "category": "climate & science",
+      "subcategory": "",
+      "tags": [
+        "climate & science",
+        "climate-science",
+        "daily-temperature",
+        "highest-temperature",
+        "weather",
+        "recurring",
+        "hide-from-new",
+        "madrid"
+      ],
+      "metadata": {
+        "slug": "highest-temperature-in-madrid-on-july-24-2026",
+        "title": "Highest temperature in Madrid on July 24?",
+        "isLive": false,
+        "series": "polymarket",
+        "eventId": "POLY-731553",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/madrid-84bf84053b.jpg",
+        "subtitle": "",
+        "closeTime": "2026-07-24T12:00:00Z"
+      },
+      "volumeUsd": "159492000000",
+      "volume24hr": "128683000000",
+      "beginAt": "1784692980.306",
+      "closeCondition": "This market will close and expire after a winner is declared.",
+      "rulesPdf": "",
+      "markets": [
+        {
+          "provider": "polymarket",
+          "marketId": "POLY-3025073",
+          "status": "open",
+          "result": null,
+          "marketResultPubkey": null,
+          "title": "33°C",
+          "openTime": 1784692997,
+          "closeTime": 1784894400,
+          "isTeamMarket": false,
+          "rulesPrimary": "This market will resolve to the temperature range that contains the highest temperature recorded at the Adolfo Suárez Madrid-Barajas Airport Station in degrees Celsius on 24 Jul '26.\n\nThe resolution source for this market will be information from Wunderground, specifically the highest temperature recorded for all times on this day for the Adolfo Suárez Madrid-Barajas Airport Station, available here: https://www.wunderground.com/history/daily/es/madrid/LEMD.\n\nTo toggle between Fahrenheit and Celsius, click the gear icon next to the search bar and switch the Temperature setting between °F and °C.\n\nThis market can not resolve until the first data point for the following date has been published on the resolution source.\n\nThe resolution source for this market measures temperatures to whole degrees Celsius (eg, 9°C). Thus, this is the level of precision that will be used when resolving the market.\n\nRevisions to temperatures recorded within this market's timeframe will be considered until the first datapoint for the following date has been published, after which any alterations will not be considered.",
+          "rulesSecondary": "",
+          "resolveAt": null,
+          "pricing": {
+            "buyYesPriceUsd": 999000,
+            "sellYesPriceUsd": 997000,
+            "sellNoPriceUsd": 1000,
+            "buyNoPriceUsd": 3000,
+            "volume": 18468
+          },
+          "imageUrl": null,
+          "team": null,
+          "outcomes": [
+            "Yes",
+            "No"
+          ],
+          "clobTokenIds": [
+            "89288020124587103627806677495605902425227020315754490468051229601143591252042",
+            "51828471291019737652007201397205353406097502846740227343052270658290755126804"
+          ],
+          "marketOptions": [
+            {
+              "label": "Yes",
+              "buyYes": true
+            },
+            {
+              "label": "No",
+              "buyYes": false
+            }
+          ],
+          "sportsMarketType": null,
+          "sportsLine": null,
+          "gameNumber": null
+        },
+        {
+          "provider": "polymarket",
+          "marketId": "POLY-3025075",
+          "status": "open",
+          "result": null,
+          "marketResultPubkey": null,
+          "title": "35°C",
+          "openTime": 1784692997,
+          "closeTime": 1784894400,
+          "isTeamMarket": false,
+          "rulesPrimary": "This market will resolve to the temperature range that contains the highest temperature recorded at the Adolfo Suárez Madrid-Barajas Airport Station in degrees Celsius on 24 Jul '26.\n\nThe resolution source for this market will be information from Wunderground, specifically the highest temperature recorded for all times on this day for the Adolfo Suárez Madrid-Barajas Airport Station, available here: https://www.wunderground.com/history/daily/es/madrid/LEMD.\n\nTo toggle between Fahrenheit and Celsius, click the gear icon next to the search bar and switch the Temperature setting between °F and °C.\n\nThis market can not resolve until the first data point for the following date has been published on the resolution source.\n\nThe resolution source for this market measures temperatures to whole degrees Celsius (eg, 9°C). Thus, this is the level of precision that will be used when resolving the market.\n\nRevisions to temperatures recorded within this market's timeframe will be considered until the first datapoint for the following date has been published, after which any alterations will not be considered.",
+          "rulesSecondary": "",
+          "resolveAt": null,
+          "pricing": {
+            "buyYesPriceUsd": 3000,
+            "sellYesPriceUsd": 0,
+            "sellNoPriceUsd": 997000,
+            "buyNoPriceUsd": 1000000,
+            "volume": 18807
+          },
+          "imageUrl": null,
+          "team": null,
+          "outcomes": [
+            "Yes",
+            "No"
+          ],
+          "clobTokenIds": [
+            "33930226544473743442090692372203284570969333333490383869607446702994704782649",
+            "48858304262140416787209940704106377637770125961714514807708895172808770425456"
+          ],
+          "marketOptions": [
+            {
+              "label": "Yes",
+              "buyYes": true
+            },
+            {
+              "label": "No",
+              "buyYes": false
+            }
+          ],
+          "sportsMarketType": null,
+          "sportsLine": null,
+          "gameNumber": null
+        }
+      ],
+      "sportsMarketGroups": []
+    }
+  ]
+}

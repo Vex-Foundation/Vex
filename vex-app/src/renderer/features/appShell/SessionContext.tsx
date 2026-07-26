@@ -37,9 +37,9 @@ export interface SessionContextProps {
   /**
    * Optional content-agnostic slot rendered at the trailing (right) edge of the
    * active-session title row. Content-agnostic on purpose: the header stays
-   * unaware of what it hosts, so a caller can attach context (e.g. the mission
-   * badge cluster in the Hypervexing dock) without this shared component gaining
-   * a second reason to change. Absent by default → the shell row is unchanged.
+   * unaware of what it hosts, so a caller can attach context without this
+   * shared component gaining a second reason to change. Absent by default →
+   * the shell row is unchanged.
    */
   readonly trailing?: ReactNode;
 }

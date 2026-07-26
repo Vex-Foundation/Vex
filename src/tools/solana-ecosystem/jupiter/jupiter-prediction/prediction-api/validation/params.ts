@@ -49,12 +49,14 @@ export function validateJupiterPredictionEventsParams(
       ? assertEnumValue("provider", params.provider, PREDICTION_PROVIDERS)
       : undefined,
     includeMarkets: params.includeMarkets,
+    includeAllMarkets: params.includeAllMarkets,
     start: params.start,
     end: params.end,
     category: params.category
       ? assertEnumValue("category", params.category, PREDICTION_CATEGORIES)
       : undefined,
     subcategory: normalizeOptionalCsv(params.subcategory),
+    tags: normalizeOptionalNonEmptyString(params.tags),
     sortBy: params.sortBy
       ? assertEnumValue("sortBy", params.sortBy, PREDICTION_SORT_BY)
       : undefined,
@@ -95,6 +97,7 @@ export function validateJupiterPredictionGetEventParams(
   return {
     eventId: assertNonEmptyString("eventId", params.eventId),
     includeMarkets: params.includeMarkets,
+    includeAllMarkets: params.includeAllMarkets,
   };
 }
 

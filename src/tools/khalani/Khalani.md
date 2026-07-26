@@ -41,6 +41,11 @@ Supports both **EVM chains** (Ethereum, Arbitrum, Base, etc.) and **Solana**.
 | `chains.ts` | Chain alias map (40+ entries), chain cache (24h TTL), `resolveChainId()`, `getChain()`, `getChainFamily()`, `getChainRpcUrl()` |
 | `evm-client.ts` | Dynamic viem wallet/public client creation from Khalani chain metadata + private key |
 | `solana-signer.ts` | `signSolanaTransaction()` and `signAndSendSolanaTransaction()` for Solana deposit execution |
+| `bridge-executor.ts` | PUBLIC ENTRY POINT for deposit-plan planning + staged per-leg signing. Re-export surface only; the implementation is the folder below |
+| `bridge-executor/staged-leg.ts` | The leg model: roles, purposes, staged outcomes, stage handles/hooks, and `khalaniLegNativeValueCall` |
+| `bridge-executor/approval-normalization.ts` | Pure parsing + fail-closed validation of Khalani's untrusted `approvals` wire shape |
+| `bridge-executor/deposit-plan.ts` | Network-free planning: `planKhalaniDepositLegs` — ordered legs, Vex fee leg appended last |
+| `bridge-executor/leg-signing.ts` | `signStageKhalaniLeg` — the only module holding signing keys: sign → stage → broadcast → bounded receipt |
 
 ### Commands (`src/commands/khalani/`)
 
@@ -223,7 +228,24 @@ All token amounts in the API are **strings in smallest units** (no decimals).
 | `quote.validBefore` | Unix timestamp, seconds | On-chain deadline — tx reverts after this |
 | `quote.quoteExpiresAt` | Unix timestamp, seconds | Price quote expiry — re-quote after this |
 | `quote.estimatedGas` | String, wei | Gas estimate (optional) |
-| `referrerFeeBps` | Integer, 0-9999 | Basis points (100 = 1%) |
+| `referrerFeeBps` | Integer, 0-9999 | Basis points (100 = 1%). **Vex never sends this.** See below. |
+
+### Referral fee — deliberately unused
+
+Khalani's `POST /v1/quotes` accepts `referrer` + `referrerFeeBps`. Verified live
+(2026-07-25, ETH→ARB USDC, Hyperstream native-filler route): the fee is a
+**surcharge deducted from the user's output**, not a share of a fee Khalani
+already takes — 1,000,000 in returns 999,800 out with no fee, and 989,802 with
+`referrerFeeBps=100`. The schema accepts up to 9999 (99.99%), the `referrer`
+address needs no registration (only an EIP-55 checksum), and the quote response
+carries **no fee breakdown field**, so the skim is invisible inside `amountOut`.
+It is also route-dependent: aggregated routes such as Across ignore it entirely.
+
+Vex charges no bridge referral fee. Both fields are absent from
+`QuoteRequestInput` and from the outbound `QuoteRequest`, and any caller-supplied
+value is rejected by name — a fee must never come from model/tool input. See the
+policy block in `request.ts` and the same doctrine in
+`src/tools/kyberswap/constants.ts`.
 
 ### Order Fields
 
@@ -366,7 +388,6 @@ khalani quote
   --amount <value>
   [--trade-type EXACT_INPUT|EXACT_OUTPUT]
   [--from-address <addr>] [--recipient <addr>] [--refund-to <addr>]
-  [--referrer <addr>] [--referrer-fee-bps <bps>]
   [--filler <name>] [--route <routeId>]
   [--stream] [--refresh-chains]
 
@@ -376,7 +397,6 @@ khalani bridge
   --amount <value>
   [--trade-type EXACT_INPUT|EXACT_OUTPUT]
   [--from-address <addr>] [--recipient <addr>] [--refund-to <addr>]
-  [--referrer <addr>] [--referrer-fee-bps <bps>]
   [--filler <name>] [--route-id <routeId>]
   [--deposit-method CONTRACT_CALL|PERMIT2|TRANSFER]
   [--dry-run] [--yes] [--refresh-chains]

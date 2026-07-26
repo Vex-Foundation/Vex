@@ -68,20 +68,10 @@ describe("getErrorCopy", () => {
     );
   });
 
-  it("embeds backend message into provider.polymarket_setup_failed", () => {
-    const c = getErrorCopy(
-      makeError({
-        code: "provider.polymarket_setup_failed",
-        message: "API rejected the wallet signature.",
-      }),
-    );
-    expect(c.message).toContain("API rejected the wallet signature.");
-  });
-
   it("returns provider.unavailable static copy", () => {
     const c = getErrorCopy(makeError({ code: "provider.unavailable" }));
     expect(c.message).toBe(
-      "Polymarket service is unavailable. Try again later.",
+      "The connected provider is temporarily unavailable. Try again in a moment.",
     );
   });
 
@@ -99,13 +89,5 @@ describe("getErrorCopy", () => {
       }),
     );
     expect(c.message).toBe("unspecified runtime failure");
-  });
-
-  it("returns fallback copy for wallet.risk_confirmation_required (caller is expected to branch first)", () => {
-    const c = getErrorCopy(
-      makeError({ code: "wallet.risk_confirmation_required" }),
-    );
-    expect(c.message).toBe("Risk confirmation required.");
-    expect(c.autoCloseMs).toBeUndefined();
   });
 });

@@ -26,7 +26,6 @@ export type {
   ChatBridge,
   DatabaseBridge,
   DockerBridge,
-  HyperliquidBridge,
   MarketBridge,
   MessagesBridge,
   MissionBridge,

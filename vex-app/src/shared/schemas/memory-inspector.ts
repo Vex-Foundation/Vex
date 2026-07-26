@@ -129,13 +129,19 @@ export type MemoryDecisionActorDto = z.infer<typeof memoryDecisionActorSchema>;
 
 // ── Job vocabularies (memory/schema/memory-job-enums.ts) ──
 
-/** Mirrors engine `MEMORY_JOB_STATUS`. */
+/**
+ * Mirrors engine `MEMORY_JOB_STATUS`. `retired` (Agent Scan migration 044) is
+ * a terminal value stamped ONLY on `reconcile` jobs once the async reconcile
+ * machinery was removed — read-only doctrine here too, so this inspector just
+ * displays it (job lists + the queue counter), never revives it.
+ */
 export const MEMORY_JOB_STATUSES = [
   "pending",
   "running",
   "completed",
   "failed",
   "permanently_failed",
+  "retired",
 ] as const;
 export const memoryJobStatusSchema = z.enum(MEMORY_JOB_STATUSES);
 export type MemoryJobStatusDto = z.infer<typeof memoryJobStatusSchema>;
@@ -308,6 +314,7 @@ export const memoryJobsSummaryDtoSchema = z
         completed: z.number().int().nonnegative(),
         failed: z.number().int().nonnegative(),
         permanently_failed: z.number().int().nonnegative(),
+        retired: z.number().int().nonnegative(),
       })
       .strict(),
     recentJobs: z.array(memoryJobDtoSchema),

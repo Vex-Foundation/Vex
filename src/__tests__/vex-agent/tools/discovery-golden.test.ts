@@ -22,22 +22,17 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "cross chain token search", expectedAny: ["khalani.tokens"] },
   { intent: "supported bridge chains", expectedAny: ["khalani.chains"] },
   { intent: "swap on base", expectedAny: ["kyberswap.swap"] },
-  { intent: "limit order on ethereum", expectedAny: ["kyberswap.limitOrder"] },
   { intent: "honeypot token check", expectedAny: ["kyberswap.tokens"] },
   { intent: "swap on solana", expectedAny: ["solana.swap"] },
   { intent: "solana token search", expectedAny: ["solana.tokens"] },
   { intent: "fresh solana tokens", expectedAny: ["solana.tokens.trending"] },
   { intent: "jupiter price lookup", expectedAny: ["solana.prices"] },
-  { intent: "polymarket orderbook", expectedAny: ["polymarket.clob.orderbook", "polymarket.clob.orderbooks"] },
-  { intent: "polymarket positions", expectedAny: ["polymarket.data.positions", "polymarket.data.closedPositions"] },
-  { intent: "polymarket rewards earnings", expectedAny: ["polymarket.rewards"] },
-  { intent: "buy yes on polymarket", expectedAny: ["polymarket.clob.buy", "polymarket.clob"] },
   { intent: "trending meme tokens", expectedAny: ["dexscreener.trending", "dexscreener.boosts"] },
   { intent: "community takeover", expectedAny: ["dexscreener.communityTakeovers"] },
   { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pairs", "dexscreener.tokens"] },
   // ── ambiguous / cross-namespace ───────────────────────────────────
-  { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens", "polymarket.data"] },
-  { intent: "prediction market events", expectedAny: ["polymarket.gamma.events", "solana.predict.events"] },
+  { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens"] },
+  { intent: "prediction market events", expectedAny: ["solana.predict.events"] },
   { intent: "token search", expectedAny: ["khalani.tokens", "solana.tokens", "kyberswap.tokens", "dexscreener.search", "dexscreener.tokens"] },
 
   // ── param-driven ──────────────────────────────────────────────────
@@ -51,13 +46,10 @@ const FIXTURES: readonly GoldenFixture[] = [
   // ── rare-chain lexical recall (validates structured `chains` field) ─
   { intent: "swap on plasma", expectedAny: ["kyberswap.swap"] },
   { intent: "bridge to monad", expectedAny: ["khalani.bridge", "khalani.quote"] },
-  // Query "lp on berachain" is short and ambiguous; the chain-field hit is the
-  // validation goal here. Since the Pendle namespace went multichain, its LP tools
-  // also list berachain in `chains` and are an equally correct LP hit — accept any
-  // of kyberswap.zap (LP intent), kyberswap.swap (kyberswap-on-berachain), or
-  // pendle.lp (Pendle LP-on-berachain); each proves the chains lexical field works.
-  // The rare-chain top-5 case below still pins kyberswap.zap specifically.
-  { intent: "lp on berachain", expectedAny: ["kyberswap.zap", "kyberswap.swap", "pendle.lp"] },
+  // "lp on berachain" retired (Agent Scan plan v3 — KyberSwap zap deleted, the
+  // tool this fixture validated chain-field recall against no longer exists;
+  // no replacement invented — see the rare-chain recall block below, which
+  // dropped the matching kyberswap.zap case for the same reason).
 ];
 
 describe("discovery golden harness", () => {
@@ -114,7 +106,6 @@ describe("discovery golden harness", () => {
   it.each([
     { intent: "swap on plasma", expectedToolPrefix: "kyberswap.swap", chain: "plasma" },
     { intent: "bridge to monad", expectedToolPrefix: "khalani.bridge", chain: "monad" },
-    { intent: "lp on berachain", expectedToolPrefix: "kyberswap.zap", chain: "berachain" },
   ])("rare-chain '$chain' — top-5 contains $expectedToolPrefix tagged whyMatched: 'chains'",
     async ({ intent, expectedToolPrefix }) => {
       const result = await discoverProtocolCapabilities({ query: intent, limit: 5 });

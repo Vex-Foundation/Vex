@@ -4,29 +4,45 @@
  * State transitions (compact_jobs precedent):
  *   pending → running               (claim via SELECT FOR UPDATE SKIP LOCKED)
  *   running → completed             (markCompleted, owner-checked)
- *   running → pending               (markCompleted CONSUMING wake_pending, S7 D-REARM)
+ *   running → pending               (markCompleted CONSUMING wake_pending — historical, see below)
  *   running → failed                (markFailed, transient; retry scheduled)
  *   running → permanently_failed    (markFailed at attempt_count >= max_attempts)
  *   failed  → pending               (next_attempt_at <= now, attempt < max)
  *   running → pending               (recoverStaleRunning: stale heartbeat)
- *   completed → pending             (enqueueReconcileJob RE-ARM on a new wake, S7 D-REARM)
- *   permanently_failed → pending    (resetReconcileJob: explicit reconcile retry)
  *
- * Concurrency disciplines (S1c spec §5 + S7 D-REARM):
+ * FIX2-SPINE round 2 (Codex final-review finding 4/C19): the async
+ * `reconcile` job kind (S7) is retired end-to-end — its worker
+ * (`engine/memory-manager/reconcile.ts`), every enqueue caller
+ * (`memory/ledger-wake.ts`), and this repo's own `enqueueReconcileJob`/
+ * `resetReconcileJob` exports are ALL deleted (Agent Scan W4 + this round).
+ * Migration 044 terminalized every non-terminal reconcile row to a dead-end
+ * `retired` status. Two former transitions are consequently no longer
+ * reachable by any code in this repo and are removed from the list above:
+ * `completed → pending` (was `enqueueReconcileJob` RE-ARM) and
+ * `permanently_failed → pending` (was `resetReconcileJob`'s explicit retry).
+ * `wake_pending` (S7 D-REARM) is a still-real column that `markCompleted`
+ * and `recoverStaleRunning` still handle generically (see their own doc
+ * comments) — nothing sets it anymore since the only setter was
+ * `enqueueReconcileJob`'s conflict path, but the consumption/preservation
+ * logic is left in place as inert, harmless generality rather than special-
+ * cased away.
+ *
+ * Concurrency disciplines (S1c spec §5):
  *   - claim: FOR UPDATE SKIP LOCKED inside a transaction; attempt+1 at CLAIM.
+ *     `claimNextDueJob` ONLY ever claims `job_kind='consolidate'` rows
+ *     (FIX2-SPINE C19) — defense in depth even though no reconcile row can
+ *     be `pending`/`failed` anymore (retired rows are a dead end and no
+ *     enqueue path can create a fresh one), so a future regression that
+ *     re-introduced a reconcile enqueue path could never silently get it
+ *     claimed and processed as if it were a consolidate job.
  *   - heartbeat / markCompleted / markFailed: owner-checked
  *     (status='running' AND locked_by=$workerId) — a reclaimed stale worker
  *     can never mutate the new owner's row.
  *   - recoverStaleRunning: ONE transaction resets each stale job to pending AND
  *     releases its reserved|processing items (MF3) — no separate caller step.
- *     It MUST leave wake_pending untouched (S7 gate R1): the wake signal
- *     survives a worker crash and is consumed on the recovered run's completion.
- *   - enqueueReconcileJob (S7 D-REARM): idempotent per (entry, outcome_version)
- *     with status-aware conflict handling — `completed` re-arms to a fresh
- *     pending run, `running` raises wake_pending (lost-wake window), pending/
- *     failed are no-ops (the queued run will read the post-wake ledger anyway),
- *     and `permanently_failed` is untouched (resetReconcileJob is the ONLY
- *     revive for a given-up row, R5-MF2).
+ *     It MUST leave wake_pending untouched (S7 gate R1): a historical wake
+ *     signal must survive a worker crash and be consumed on the recovered
+ *     run's completion, even though nothing sets the flag anymore.
  *
  * Observability: memLog (memory/observability/logger.ts), area `job`. Only
  * allowlisted, structurally-safe meta — bounded errorCode, never a raw error.
@@ -50,7 +66,6 @@ import {
   type JobProgress,
   type MemoryJob,
   type MemoryJobRow,
-  type MemoryJobRowWithInsertFlag,
 } from "./types.js";
 
 /** Run `fn` on the provided tx client, or open a fresh transaction. */
@@ -81,128 +96,11 @@ export async function enqueueConsolidateJob(client?: PoolClient): Promise<Memory
   return job;
 }
 
-/**
- * Enqueue a reconcile job for (entryId, outcomeVersion) — idempotent per key
- * with S7 D-REARM status-aware conflict handling. The unique key
- * (`uniq_mj_reconcile`) spans ALL statuses, so a same-key wake must decide what
- * an existing row means:
- *
- *   - `completed` → RE-ARM (status pending, attempt_count 0, next_attempt_at
- *     NOW(), wake_pending false, completed_at cleared): the prior run already
- *     consumed an OLDER ledger state; a new wake at the same version means the
- *     ledger moved again without a version bump (the prior pass was a no-op).
- *   - `running` → SET wake_pending=true (lost-wake window): the in-flight pass
- *     read the ledger BEFORE this wake's write; markCompleted consumes the flag
- *     into one more pending pass so the signal is never lost.
- *   - `pending` / `failed` → no-op: the queued/retrying run will read the
- *     post-wake ledger when it executes.
- *   - `permanently_failed` → untouched: resetReconcileJob is the ONLY revive
- *     for a given-up row (R5-MF2).
- *
- * Concurrency-safe: the CASE-form `DO UPDATE` reliably RETURNS the row on both
- * the insert and the conflict path; `(xmax = 0)` distinguishes a fresh insert
- * from a conflict (memory-candidates xmax-upsert precedent). The CASE arms read
- * the row's PRE-UPDATE values (`memory_jobs.*`), so each status maps to exactly
- * one action. R5-MF1: the conflict target names the partial index's columns +
- * predicate.
- */
-export async function enqueueReconcileJob(
-  entryId: number,
-  outcomeVersion: number,
-  client?: PoolClient,
-): Promise<{ job: MemoryJob; inserted: boolean }> {
-  const exec: Executor = client ?? getPool();
-  const row = await queryOneWith<MemoryJobRowWithInsertFlag>(
-    exec,
-    `INSERT INTO memory_jobs (job_kind, reconcile_entry_id, reconcile_outcome_version)
-     VALUES ('reconcile', $1, $2)
-     ON CONFLICT (reconcile_entry_id, reconcile_outcome_version) WHERE job_kind = 'reconcile'
-     DO UPDATE SET
-       status          = CASE WHEN memory_jobs.status = 'completed' THEN 'pending'
-                              ELSE memory_jobs.status END,
-       attempt_count   = CASE WHEN memory_jobs.status = 'completed' THEN 0
-                              ELSE memory_jobs.attempt_count END,
-       next_attempt_at = CASE WHEN memory_jobs.status = 'completed' THEN NOW()
-                              ELSE memory_jobs.next_attempt_at END,
-       completed_at    = CASE WHEN memory_jobs.status = 'completed' THEN NULL
-                              ELSE memory_jobs.completed_at END,
-       wake_pending    = CASE WHEN memory_jobs.status = 'completed' THEN FALSE
-                              WHEN memory_jobs.status = 'running'   THEN TRUE
-                              ELSE memory_jobs.wake_pending END
-     RETURNING ${JOB_COLUMNS}, (xmax = 0) AS inserted`,
-    [entryId, outcomeVersion],
-  );
-  if (!row) {
-    throw new Error(
-      `enqueueReconcileJob: upsert returned no row for entry=${entryId} v=${outcomeVersion}`,
-    );
-  }
-  const { inserted, ...rest } = row;
-  const job = mapRow(rest);
-  memLog("job", "enqueued", {
-    jobId: job.id,
-    jobKind: job.jobKind,
-    status: job.status,
-    insertResult: inserted ? "inserted" : "duplicate",
-  });
-  return { job, inserted };
-}
-
-/**
- * Explicit retry of a GIVEN-UP reconcile job (resetPermanentlyFailed precedent).
- * Resets ONLY a `permanently_failed` reconcile row for (entryId, outcomeVersion)
- * back to a clean `pending` state — clearing ALL stale lock / audit / accumulator
- * fields (R5-MF2) so the re-run starts fresh. Never touches a
- * pending/running/failed/completed row.
- */
-export async function resetReconcileJob(
-  entryId: number,
-  outcomeVersion: number,
-  client?: PoolClient,
-): Promise<
-  { ok: true; job: MemoryJob } | { ok: false; reason: "not_found" | "not_permanently_failed" }
-> {
-  const exec: Executor = client ?? getPool();
-  const row = await queryOneWith<MemoryJobRow>(
-    exec,
-    `UPDATE memory_jobs
-       SET status                 = 'pending',
-           attempt_count          = 0,
-           next_attempt_at        = NOW(),
-           wake_pending           = FALSE,
-           locked_at              = NULL,
-           locked_by              = NULL,
-           heartbeat_at           = NULL,
-           last_error             = NULL,
-           started_at             = NULL,
-           completed_at           = NULL,
-           inference_completed_at = NULL,
-           inference_provider     = NULL,
-           inference_model        = NULL,
-           cost_usd               = NULL,
-           llm_call_count         = 0
-     WHERE job_kind = 'reconcile'
-       AND reconcile_entry_id = $1
-       AND reconcile_outcome_version = $2
-       AND status = 'permanently_failed'
-     RETURNING ${JOB_COLUMNS}`,
-    [entryId, outcomeVersion],
-  );
-  if (row) {
-    const job = mapRow(row);
-    memLog("job", "reset", { jobId: job.id, jobKind: job.jobKind });
-    return { ok: true, job };
-  }
-  // Disambiguate not_found vs not_permanently_failed (compact precedent).
-  const existing = await queryOneWith<{ status: string }>(
-    exec,
-    `SELECT status FROM memory_jobs
-       WHERE job_kind = 'reconcile' AND reconcile_entry_id = $1 AND reconcile_outcome_version = $2`,
-    [entryId, outcomeVersion],
-  );
-  if (!existing) return { ok: false, reason: "not_found" };
-  return { ok: false, reason: "not_permanently_failed" };
-}
+// FIX2-SPINE C19 (Codex final-review finding 4): `enqueueReconcileJob` and
+// `resetReconcileJob` were removed here. The async `reconcile` job kind is
+// retired end-to-end — see the file header — and these were its only
+// enqueue/retry entry points. `MemoryJobRowWithInsertFlag` (types.ts) was
+// this pair's only consumer and was removed with them.
 
 // ── Claim ────────────────────────────────────────────────────────
 
@@ -211,6 +109,11 @@ export async function resetReconcileJob(
  * transaction so concurrent workers never claim the same row; stamps
  * `running`, `locked_by`, heartbeat, `started_at`, and `attempt_count + 1` (the
  * attempt is incremented at CLAIM, compact precedent). Returns null if none due.
+ *
+ * ONLY ever claims `job_kind='consolidate'` (FIX2-SPINE C19 — Codex
+ * final-review finding 4): defense in depth for the memory_manager executor,
+ * which processes every claimed row as a consolidation — see the file header
+ * for why no reconcile row can reach `pending`/`failed` anymore regardless.
  */
 export async function claimNextDueJob(
   workerId: string,
@@ -220,6 +123,7 @@ export async function claimNextDueJob(
     const pick = await tx.query<{ id: number }>(
       `SELECT id FROM memory_jobs
        WHERE status IN ('pending', 'failed')
+         AND job_kind = 'consolidate'
          AND attempt_count < max_attempts
          AND next_attempt_at <= NOW()
        ORDER BY created_at ASC
@@ -282,10 +186,11 @@ export async function heartbeat(
  * while this run was in flight — its reads predate the wake's write), the row
  * goes back to `pending` with attempt_count=0 instead of `completed`, so ONE
  * more pass runs against the post-wake ledger. Extended here rather than in a
- * reconcile-only variant: the flag is only ever raised on reconcile rows
- * (enqueueReconcileJob conflict path), so consolidate completions are
- * byte-for-byte unchanged, and a single completion path means no call site can
- * ever forget to consume the flag. The CASE arms read the PRE-UPDATE
+ * reconcile-only variant: the flag was only ever raised on reconcile rows by
+ * the now-removed `enqueueReconcileJob`'s conflict path (FIX2-SPINE C19), so
+ * consolidate completions are byte-for-byte unchanged; kept generic (rather
+ * than special-cased away) so a single completion path means no call site
+ * could ever forget to consume the flag. The CASE arms read the PRE-UPDATE
  * `wake_pending`; the flag itself is always cleared.
  */
 export async function markCompleted(
@@ -408,8 +313,10 @@ export async function recoverStaleRunning(
     // claim, so attempt_count >= max_attempts on a running row means the last
     // attempt is the one that went stale) must go `permanently_failed`. Resetting
     // it to `pending` would make it UNCLAIMABLE (claimNextDueJob requires
-    // attempt_count < max_attempts) AND unresettable (resetReconcileJob only
-    // touches permanently_failed) — i.e. stranded forever.
+    // attempt_count < max_attempts) AND unresettable — no exported primitive
+    // resets an exhausted row back to pending (FIX2-SPINE C19 removed the only
+    // one, `resetReconcileJob`, which was reconcile-only anyway) — i.e.
+    // stranded forever.
     const failed = await tx.query<{ id: number }>(
       `UPDATE memory_jobs
          SET status       = 'permanently_failed',

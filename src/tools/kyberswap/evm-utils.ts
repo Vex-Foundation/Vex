@@ -6,16 +6,33 @@ export { ERC20_ABI, DEFAULT_RPC, RPC_TIMEOUT_MS, RPC_RETRY_COUNT, toViemChain } 
 export type { KyberEvmClients } from "./evm/config.js";
 export { getKyberEvmClients, getKyberPublicClient } from "./evm/config.js";
 
-export type { Erc20Metadata, ApproveResult } from "./evm/erc20.js";
+export type { Erc20Metadata } from "./evm/erc20.js";
 export {
   readErc20Metadata,
   validateKyberSpender,
   verifyRouterAddress,
-  ensureKyberAllowance,
-  sendKyberTransaction,
   sendKyberTransactionWithReceipt,
 } from "./evm/erc20.js";
 
 export { ensureErc721Approval, ensureErc1155ApprovalForAll } from "./evm/nft.js";
 
-export { extractMintedNftId, extractErc1155Position } from "./evm/receipt-logs.js";
+export { extractMintedNftId } from "./evm/receipt-logs.js";
+
+export type { KyberAllowancePlan } from "./evm/allowance-plan.js";
+export { planKyberAllowance, buildApproveCalldata } from "./evm/allowance-plan.js";
+
+export type {
+  StagedTxParams,
+  StagedSendHandles,
+  StagedBroadcastOutcome,
+  StagedBroadcastHooks,
+} from "./evm/staged-broadcast.js";
+export { signStageBroadcast } from "./evm/staged-broadcast.js";
+
+export type {
+  SwapSettlementLog,
+  SwapSettlementLeg,
+  DecodeSwapSettlementInput,
+  DecodedSwapAmounts,
+} from "./evm/swap-settlement.js";
+export { decodeKyberSwapSettlement } from "./evm/swap-settlement.js";

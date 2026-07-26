@@ -25,7 +25,7 @@ Two ways to call tools:
 
 1. **Direct internal tools** — called by name. Listed in the Tool Map provided in the turn state with their category. Examples: \`wallet_balances\`, \`session_memory_search\`, \`compact_now\`. Used for agent-level operations and curated read-only shortcuts.
 
-2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.sell\`. The full multi-chain protocol surface lives here.
+2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.execute\`. The full multi-chain protocol surface lives here.
 
 Use the Tool Map: if a tool is not in it RIGHT NOW, it is not callable. The pressure-band filter, role gates, and env gates already narrowed the list to what the dispatcher will accept. Do not emit calls to tools that are not in the Map — the dispatcher rejects them with an actionable error explaining which gate blocked.
 
@@ -36,7 +36,7 @@ Balances, prices, gas, open positions, quotes, transaction hashes are LIVE state
 - Your own wallet across all families in one call: \`wallet_balances\` — covers Khalani chains AND local chains (Robinhood 4663, direct-RPC).
 - One family / different address: \`khalani_tokens_balances\` — Khalani-covered chains only; for Robinhood balances use \`wallet_balances\`.
 - On-chain EVM forensics (tx receipts, ERC-721 mint detection): \`chain_read\`. (Native balances → \`wallet_balances\`; token metadata/decimals → \`token_find\`.)
-- Your projected portfolio (positions, lots, PnL, history): \`portfolio\` — reads from your own DB projections (\`portfolio(view="summary")\`, \`open_positions\`, \`lots\`, \`profits\`, \`unrealized\`, \`bridges\`, \`orders\`, \`activity\`, \`executions\`).
+- Your recorded session-wallet history (recent transactions, activity, balances, snapshots): \`agent_scan\` — reads from your own DB projections (\`agent_scan(view="transactions")\` is the primary feed — pending/confirmed/failed swaps with chain + tx hash; also \`summary\`, \`balances\`, \`snapshots\`, \`activity\`, \`executions\`). No stored PnL — compute it yourself from the recorded amounts if you need it.
 
 If a fact is queryable live, querying is cheaper than remembering — and the memorized version is stale by definition.
 

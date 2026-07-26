@@ -14,12 +14,14 @@
  * They are approval-gated + prequote-gated (add → kind `lp_add`; remove → kind
  * `lp_remove`).
  *
- * Capture is the LP-lifecycle projection shape (NOT a spot lot): `type:"lp"` with a
- * per-chain `positionKey` (`slug:lp:market:wallet`) so `projectLpLifecycle` opens
- * the position on add and closes it on a PROVEN full exit on remove (a partial
- * remove leaves the position open). Every remove records LP economics
- * (`proj_lp_events` + `proj_lp_event_legs`) via a protocol-neutral `meta.lpLegs`
- * block. Upstream error text NEVER reaches the model.
+ * Capture writes a plain `proj_activity` row (`type:"lp"`, with a per-chain
+ * `positionKey` for provenance and a protocol-neutral `meta.lpLegs` block for the
+ * recorded amounts) — NOT a position projection. Agent Scan Phase 1 retired
+ * LP-lifecycle tracking and LP economics (`sync/projectors/lp.ts` and
+ * `db/repos/lp-events.ts` deleted): `position-projector.ts`'s `lp` case is now a
+ * no-op, so neither add nor remove opens/closes a tracked position or writes
+ * LP-economics rows — the agent reads recorded amounts back via `agent_scan`'s
+ * `transactions`/`activity` views instead. Upstream error text NEVER reaches the model.
  */
 
 import { getAddress, parseUnits, type Hex } from "viem";
@@ -130,6 +132,7 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
         expiry: market.expiry ?? null,
         liquidityUsd: market.details.liquidity ?? null,
         priceImpact: best.data.priceImpact,
+        feeUsdEstimate: best.data.feeUsd,
         amountIn: amountInRaw,
         amountOut: humanAmount(lpOut, lpDec).toString(),
         aggregator: best.data.aggregatorType,
@@ -172,6 +175,7 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
       expiry: market.expiry ?? null,
       liquidityUsd: market.details.liquidity ?? null,
       priceImpact: best.data.priceImpact,
+      feeUsdEstimate: best.data.feeUsd,
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDec).toString(),
       aggregator: best.data.aggregatorType,
@@ -211,7 +215,7 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
         slippage,
       });
       const best = response?.routes[0];
-      return ok({ dryRun: true, action: "add", market: marketAddr, tokenIn: tokenIn.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null });
+      return ok({ dryRun: true, action: "add", market: marketAddr, tokenIn: tokenIn.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null });
     }
 
     // Signer AFTER dryRun so a preview never decrypts a key.

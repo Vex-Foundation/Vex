@@ -2,8 +2,33 @@
  * Protocol executions repo — audit log of every mutating tool call.
  */
 
-import { query, queryOne, execute } from "../client.js";
-import { jsonb, nullableJsonb } from "../params.js";
+import type { PoolClient } from "pg";
+
+import { query, queryOne, queryOneWith, execute } from "../client.js";
+import { jsonb, jsonbByteLength, nullableJsonb } from "../params.js";
+import { redactBugPayload } from "../../../lib/diagnostics/redactor.js";
+
+/**
+ * Repo-boundary sanitization for the intent-first `params` echo (FIX-SPINE
+ * round 1, finding 9/C5) — the shared secret-shape detectors (key-name +
+ * two-tier text redaction) plus a hard total-size cap. Applied here, not by
+ * callers, so `protocol_executions.params` can never carry an unredacted
+ * secret or an unbounded payload regardless of which intent-first caller
+ * (Hyperliquid, Agent Scan swap executes) supplied it.
+ */
+const MAX_INTENT_PARAMS_BYTES = 8 * 1024;
+function sanitizeIntentParams(params: Record<string, unknown>): Record<string, unknown> {
+  const { value } = redactBugPayload(params);
+  const sizeBytes = jsonbByteLength(value);
+  if (sizeBytes <= MAX_INTENT_PARAMS_BYTES) {
+    return value;
+  }
+  return {
+    _dropped: true,
+    _reason: "intentParams exceeded the 8KiB cap after redaction",
+    _originalSizeBytes: sizeBytes,
+  };
+}
 
 export interface ExecutionRecord {
   id: number;
@@ -18,18 +43,26 @@ export interface ExecutionRecord {
   createdAt: string;
 }
 
-/** Persisted before a Hyperliquid signing path may submit any side effect. */
+/**
+ * Persisted before a signing path may submit any side effect (Hyperliquid;
+ * Agent Scan's Kyber/Uniswap swap executes — see `db/repos/agent-activity.ts`).
+ * Accepts an optional shared `client` so a caller can persist this intent row
+ * and the FIRST `agent_activity` event row in the SAME transaction (plan
+ * §11.1 step 1 — atomic with intent creation).
+ */
 export async function createExecutionIntent(
   toolId: string,
   namespace: string,
   sessionId: string | null,
   params: Record<string, unknown>,
+  client?: PoolClient,
 ): Promise<number> {
-  const row = await queryOne<{ id: number }>(
-    `INSERT INTO protocol_executions (tool_id, namespace, session_id, params, result, success, trade_capture, external_refs, execution_status)
-     VALUES ($1, $2, $3, $4::jsonb, '{}'::jsonb, false, NULL, '{}'::jsonb, 'intent') RETURNING id`,
-    [toolId, namespace, sessionId, jsonb(params)],
-  );
+  const sql = `INSERT INTO protocol_executions (tool_id, namespace, session_id, params, result, success, trade_capture, external_refs, execution_status)
+     VALUES ($1, $2, $3, $4::jsonb, '{}'::jsonb, false, NULL, '{}'::jsonb, 'intent') RETURNING id`;
+  const bindParams = [toolId, namespace, sessionId, jsonb(sanitizeIntentParams(params))];
+  const row = client
+    ? await queryOneWith<{ id: number }>(client, sql, bindParams)
+    : await queryOne<{ id: number }>(sql, bindParams);
   return row?.id ?? 0;
 }
 
@@ -63,9 +96,13 @@ export async function recordExecution(
   externalRefs: Record<string, unknown>,
   durationMs: number,
 ): Promise<number> {
+  // execution_status defaults to 'succeeded' (migration 039) — the normal,
+  // post-hoc (non-intent) capture path used by every non-Hyperliquid mutation
+  // must set it explicitly, or a failed execution (success=false) is
+  // mislabeled 'succeeded'. Mirrors completeExecutionIntent's CASE.
   const row = await queryOne<{ id: number }>(
-    `INSERT INTO protocol_executions (tool_id, namespace, session_id, params, result, success, trade_capture, external_refs, duration_ms)
-     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9) RETURNING id`,
+    `INSERT INTO protocol_executions (tool_id, namespace, session_id, params, result, success, trade_capture, external_refs, duration_ms, execution_status)
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8::jsonb, $9, CASE WHEN $6 THEN 'succeeded' ELSE 'failed' END) RETURNING id`,
     [toolId, namespace, sessionId, jsonb(params), jsonb(result),
      success, nullableJsonb(tradeCapture), jsonb(externalRefs), durationMs],
   );

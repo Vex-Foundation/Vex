@@ -80,7 +80,7 @@ describe("dispatchTargetIsMutating", () => {
   it("internal mutating tool → true; read-only → false", () => {
     expect(dispatchTargetIsMutating({ name: "wallet_send_confirm", args: {} })).toBe(true);
     expect(dispatchTargetIsMutating({ name: "wallet_balances", args: {} })).toBe(false);
-    expect(dispatchTargetIsMutating({ name: "portfolio", args: {} })).toBe(false);
+    expect(dispatchTargetIsMutating({ name: "agent_scan", args: {} })).toBe(false);
     // The execute_tool WRAPPER itself is mutating:false — never stamp on the name.
     expect(dispatchTargetIsMutating({ name: "execute_tool", args: {} })).toBe(false);
   });

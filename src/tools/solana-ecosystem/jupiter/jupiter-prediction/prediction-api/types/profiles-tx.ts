@@ -1,9 +1,15 @@
 /**
- * Jupiter Prediction API — profile, PnL, leaderboards, trades, vault,
- * transaction meta, and execution result types.
+ * Jupiter Prediction API — profile, PnL, leaderboards, trades, vault, and
+ * transaction-meta types.
+ *
+ * W5 (migration 049): the monolithic sign-and-send execution-result types
+ * (`JupiterPredictionExecutionResult`/`JupiterPredictionCloseAllExecutionItem`/
+ * `JupiterPredictionCloseAllExecutionResult`) were removed — the staged
+ * `agent_activity` write path (`vex-agent/tools/protocols/solana-jupiter/
+ * predict-execute.ts`) now owns sign/persist/submit orchestration directly on
+ * the K2 primitives; `service.ts` keeps only the request-only (no-sign)
+ * transaction builders.
  */
-
-import type { TransferResult } from "../../../../shared/types.js";
 
 // ── Profile ────────────────────────────────────────────────────────
 
@@ -14,7 +20,10 @@ export interface JupiterPredictionProfileResponse {
   predictionsCount: string;
   correctPredictions: string;
   wrongPredictions: string;
+  /** Legacy floored whole-contract count. See `totalActiveContractsMicro`/`totalActiveContractsDecimal`. */
   totalActiveContracts: string;
+  totalActiveContractsMicro?: string;
+  totalActiveContractsDecimal?: string;
   totalPositionsValueUsd: string;
 }
 
@@ -31,7 +40,8 @@ export interface JupiterPredictionPnlHistoryResponse {
 // ── Trades ─────────────────────────────────────────────────────────
 
 export interface JupiterPredictionTrade {
-  id: number;
+  /** Provider-prefixed string identity (e.g. "order-2782520"), not numeric. */
+  id: string;
   ownerPubkey: string;
   marketId: string;
   message: string;
@@ -42,7 +52,8 @@ export interface JupiterPredictionTrade {
   marketTitle: string;
   amountUsd: string;
   priceUsd: string;
-  eventImageUrl: string;
+  /** Display-only. `null` when the event has no image — the provider's convention here. */
+  eventImageUrl: string | null;
   eventId: string;
 }
 
@@ -109,8 +120,13 @@ export interface JupiterPredictionCreateOrderDetails {
   positionPubkey: string;
   isBuy: boolean;
   isYes: boolean;
+  /** Legacy floored whole-contract count. See `contractsMicro`/`contractsDecimal`. */
   contracts: string;
+  contractsMicro?: string;
+  contractsDecimal?: string;
   newContracts: string;
+  newContractsMicro?: string;
+  newContractsDecimal?: string;
   maxBuyPriceUsd: string | null;
   minSellPriceUsd: string | null;
   externalOrderId: string | null;
@@ -123,10 +139,46 @@ export interface JupiterPredictionCreateOrderDetails {
   estimatedTotalFeeUsd: string;
 }
 
+/**
+ * `execution` on a build response — the provider's managed-execution routing.
+ * Present for BOTH keeper-filled (kalshi/polymarket) and Forecast (bisonfi)
+ * orders; `executionModel` distinguishes them but does NOT gate `execution`
+ * (corrected 2026-07-25, live-probed). `context` is opaque and MUST be passed
+ * unchanged to the managed execute endpoint. `endpoint` is a provider-supplied
+ * PATH — never used to build a URL directly; see `managed-execution.ts`.
+ */
+export interface JupiterPredictionExecutionContext {
+  endpoint: string;
+  context: Record<string, unknown>;
+}
+
 export interface JupiterPredictionCreateOrderResponse extends JupiterPredictionTxMetaFields {
   transaction: string | null;
   externalOrderId: string | null;
   order: JupiterPredictionCreateOrderDetails;
+  /**
+   * `"atomic_swap"` for a Jupiter Forecast (bisonfi) order; absent for a
+   * keeper-filled order (kalshi/polymarket). PURELY DESCRIPTIVE — it does NOT
+   * decide the submit lane. Both kinds return `execution` and both must go
+   * through the managed execute endpoint; routing reads `execution`.
+   */
+  executionModel?: string | null;
+  execution?: JupiterPredictionExecutionContext | null;
+  /**
+   * Signatures the provider is still WAITING FOR (see the schema's doc).
+   * `[ourWallet]` when the provider has already filled its own slots — the
+   * only shape Vex will co-sign, because it is what makes `signatures[0]` a
+   * real transaction id before submit.
+   */
+  requiredSigners?: string[];
+}
+
+/** `POST /execute` response — see `JupiterPredictionExecuteRequest`. */
+export interface JupiterPredictionExecuteResponse {
+  status: "Success" | "Failed";
+  signature: string | null;
+  error: string | null;
+  requestId?: string;
 }
 
 export interface JupiterPredictionClaimPositionDetails {
@@ -135,13 +187,20 @@ export interface JupiterPredictionClaimPositionDetails {
   userPubkey: string;
   ownerPubkey: string;
   isYes: boolean;
+  /** Legacy floored whole-contract count. See `contractsMicro`/`contractsDecimal`. */
   contracts: string;
+  contractsMicro?: string;
+  contractsDecimal?: string;
   payoutAmountUsd: string;
 }
 
 export interface JupiterPredictionClaimPositionResponse extends JupiterPredictionTxMetaFields {
   transaction: string;
   position: JupiterPredictionClaimPositionDetails;
+  /** UNVERIFIED for claim (no live position to probe) — read if present, never assumed absent. */
+  execution?: JupiterPredictionExecutionContext | null;
+  /** UNVERIFIED for claim — see `execution`. */
+  requiredSigners?: string[];
 }
 
 export type JupiterPredictionCloseAllPositionsItem =
@@ -150,20 +209,4 @@ export type JupiterPredictionCloseAllPositionsItem =
 
 export interface JupiterPredictionCloseAllPositionsResponse {
   data: JupiterPredictionCloseAllPositionsItem[];
-}
-
-export interface JupiterPredictionExecutionResult<T> extends TransferResult {
-  signer: string;
-  raw: T;
-}
-
-export interface JupiterPredictionCloseAllExecutionItem
-  extends JupiterPredictionExecutionResult<JupiterPredictionCloseAllPositionsItem> {
-  kind: "order" | "claim";
-}
-
-export interface JupiterPredictionCloseAllExecutionResult {
-  signer: string;
-  results: JupiterPredictionCloseAllExecutionItem[];
-  raw: JupiterPredictionCloseAllPositionsResponse;
 }

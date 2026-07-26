@@ -31,6 +31,7 @@ import type {
   PrequoteFamily,
   PrequoteKind,
   SafetyVerdict,
+  SwapPrequote,
 } from "@vex-agent/db/repos/swap-prequotes.js";
 
 import { EXECUTE_GATE_TOOLS } from "./registry.js";
@@ -46,6 +47,12 @@ import { buildPendleLpAddIdentity, buildPendleLpRemoveIdentity } from "./identit
 import { GateIdentityError } from "./gate-errors.js";
 import type { GateBlockReason } from "./gate-errors.js";
 import { canonSlippageBps, readParamSlippageBps } from "./slippage.js";
+import {
+  canonicalizeJupiterFeeTail,
+  jupiterFeePreviewSchema,
+  resolveJupiterFeeSwapKnobs,
+  type JupiterFeePreview,
+} from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
 /**
  * Single gate decision. `allow` carries the matched prequote's verdict +
@@ -70,6 +77,13 @@ export type GateDecision =
        * prequote, NEVER from raw args, so the LLM cannot inject or override it.
        */
       readonly termLock?: { readonly maturityIso: string };
+      /**
+       * Jupiter fee-bearing disclosure (W5 design §6 R4). When a matched
+       * `solana.swap.execute` prequote's bounded `safetyDetail` carries a
+       * `feePreview`, it rides this TYPED channel to the approval preview —
+       * sourced from the persisted prequote, never raw args.
+       */
+      readonly feePreview?: JupiterFeePreview;
     }
   | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
 
@@ -83,7 +97,7 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   no_quote:
     "Swap blocked: no fresh quote for these exact params — the execute must use EXACTLY the same params as the quote, including slippageBps (same value, or omitted on both sides). Call the swap quote first with those params, then retry.",
   safety_fail:
-    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam). Aborting.",
+    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam) by the pre-quote safety check. If this is the token you are BUYING, do not retry — pick a different token. If this is a token you already HOLD and are trying to exit, this block is not protecting you: report it and stop rather than retrying, because Vex has no exit path for a flagged holding today.",
   wallet_setup:
     "Swap blocked: the mission is still in setup (no active run), so swaps cannot broadcast yet. Accept and start the mission run, then swap — do NOT re-quote.",
   wallet_scope:
@@ -261,6 +275,19 @@ function termLockFromSafetyDetail(
 }
 
 /**
+ * Extract the Jupiter fee-bearing disclosure (W5 design §6 R4) from a matched
+ * swap prequote's bounded `safetyDetail`, for the approval preview. Re-parsed
+ * with the SAME Zod schema the recorder validated against — the detail is
+ * `Record<string, unknown>` (round-trips through the DB as JSONB), so it is
+ * treated as untrusted here too. A non-Jupiter detail naturally yields
+ * undefined.
+ */
+function feePreviewFromSafetyDetail(safetyDetail: Record<string, unknown>): JupiterFeePreview | undefined {
+  const parsed = jupiterFeePreviewSchema.safeParse(safetyDetail.feePreview);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
  * Map a caught gate failure to a bounded block reason. Most throws are a genuine
  * fail-closed `gate_error`. A wallet-resolution VexError, however, means the
  * execute is CORRECTLY blocked (no usable signer / not authorized) yet the agent
@@ -432,9 +459,9 @@ function buildEvmIdentity(
 /**
  * Build the Solana trade identity. `inputToken`/`outputToken` are symbol-OR-mint
  * at execute; resolve BOTH to their mint with the SAME resolver
- * `executeJupiterSwap` uses (`requireJupiterResolvedToken`, which returns
- * `.address` = mint) so the gate mint matches the recorded mint. A resolve
- * failure throws → caught upstream → gate_error block.
+ * `solana.swap.execute` (`handlers/core.ts`) uses (`requireJupiterResolvedToken`,
+ * which returns `.address` = mint) so the gate mint matches the recorded mint.
+ * A resolve failure throws → caught upstream → gate_error block.
  *
  * Stage 9: Jupiter execute has no recipient/approveExact param — pin `recipient`
  * to the selected wallet (self) and `approveExact` to false, matching the
@@ -538,6 +565,14 @@ async function computeGateMatch(
     gated.family === "eip155"
       ? buildEvmIdentity(params, walletAddress, gated.provider)
       : await buildSolanaIdentity(params, walletAddress);
+  // W5 (design §6 R4): Jupiter fee-bearing tail, read from the EXECUTE params
+  // via the SAME canonicalization the recorder used on the quote params — a
+  // fee/tip/DEX-filter/maxAccounts/wrap substitution between quote and
+  // execute produces a different digest → BLOCK. "" for every other provider.
+  const jupiterTail =
+    gated.provider === "jupiter"
+      ? canonicalizeJupiterFeeTail(resolveJupiterFeeSwapKnobs(params), identity.tokenIn)
+      : undefined;
   const matchHash = computePrequoteMatchHash({
     kind: "swap",
     sessionId,
@@ -555,6 +590,7 @@ async function computeGateMatch(
     recipient: identity.recipient,
     approveExact: identity.approveExact,
     slippageBps: canonSlippageBps(readParamSlippageBps(params)),
+    ...jupiterTail,
   });
   return { matchHash, family: gated.family };
 }
@@ -618,9 +654,12 @@ export async function evaluatePrequoteGate(
     // Pendle term-lock (Wave 5) — rides the same TYPED channel as FoT for the
     // approval preview; sourced from the persisted prequote, never raw args.
     const termLock = termLockFromSafetyDetail(latest.safetyDetail);
+    // Jupiter fee-bearing disclosure (W5 design §6 R4) — same typed channel.
+    const feePreview = feePreviewFromSafetyDetail(latest.safetyDetail);
     let allow: GateDecision = { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
     if (fotTax !== undefined) allow = { ...allow, fotTax };
     if (termLock !== undefined) allow = { ...allow, termLock };
+    if (feePreview !== undefined) allow = { ...allow, feePreview };
     return allow;
   } catch (err) {
     const reason = classifyGateBlockReason(err, context.walletPolicy);
@@ -652,4 +691,28 @@ export async function evaluateSwapPrequoteGate(
   context: ProtocolExecutionContext,
 ): Promise<GateDecision> {
   return evaluatePrequoteGate(toolId, params, context);
+}
+
+/**
+ * Re-fetch the SAME fresh matched `swap` prequote row `evaluatePrequoteGate`
+ * already validated exists, for the EXECUTE HANDLER's own trade-shape
+ * revalidation (W5 design §6 R4) — the fee-policy/swap-mode checks must
+ * run on EVERY execute, not only when restricted-mode approval fires (a
+ * full/autonomous-permission session skips the approval gate entirely, but
+ * never the revalidation). Reuses `computeGateMatch` so the identity is
+ * computed IDENTICALLY to the gate's own — no duplicated hash logic. Returns
+ * `null` when no fresh match exists or the tool is not a gated `swap`
+ * execute (defensive; the gate already ran first in the normal call order,
+ * so this should not observably differ, but the handler must never assume).
+ */
+export async function findFreshMatchedSwapPrequote(
+  toolId: string,
+  sessionId: string,
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<SwapPrequote | null> {
+  const gated = EXECUTE_GATE_TOOLS[toolId];
+  if (!gated || gated.kind !== "swap") return null;
+  const { matchHash } = await computeGateMatch(gated, sessionId, params, context);
+  return prequoteRepo.findLatestFreshByMatch(sessionId, matchHash, "swap");
 }

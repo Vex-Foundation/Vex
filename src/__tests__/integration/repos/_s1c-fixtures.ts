@@ -16,7 +16,6 @@ import {
 import {
   claimNextDueJob,
   enqueueConsolidateJob,
-  enqueueReconcileJob,
 } from "@vex-agent/db/repos/memory-jobs/index.js";
 import {
   listItemsByJob,
@@ -126,18 +125,32 @@ export async function seedReservedCandidate(
 /**
  * Seed a RUNNING reconcile job for (entryId, outcomeVersion) and return its id —
  * the precondition `recordDecision` requires for a reconcile decision (jobId must
- * be THE matching reconcile job AND running). Enqueues then claims it.
+ * be THE matching reconcile job AND running).
+ *
+ * FIX2-SPINE C19 (Codex final-review finding 4): this used to enqueue via
+ * `enqueueReconcileJob` then claim via `claimNextDueJob`. Both paths are gone
+ * now — the repo's reconcile enqueue/retry exports were removed, and
+ * `claimNextDueJob` only ever claims `job_kind='consolidate'` rows — so a
+ * reconcile job can no longer become `running` through any exported
+ * primitive. This fixture seeds the SAME end state directly via raw SQL
+ * (the shape `enqueueReconcileJob` + a claim would have produced) so its one
+ * consumer (`memory-decisions-crud.int.test.ts`, unedited) needs no changes.
  */
 export async function seedReconcileJob(
   entryId: number,
   outcomeVersion: number,
 ): Promise<number> {
-  const { job } = await enqueueReconcileJob(entryId, outcomeVersion);
-  const claimed = await claimNextDueJob(`recon-${entryId}-${outcomeVersion}`);
-  if (!claimed || claimed.id !== job.id) {
-    throw new Error("seedReconcileJob: failed to claim the reconcile job");
-  }
-  return claimed.id;
+  const rows = await query<{ id: number }>(
+    `INSERT INTO memory_jobs
+       (job_kind, reconcile_entry_id, reconcile_outcome_version, status,
+        locked_by, locked_at, heartbeat_at, started_at, attempt_count)
+     VALUES ('reconcile', $1, $2, 'running', $3, NOW(), NOW(), NOW(), 1)
+     RETURNING id`,
+    [entryId, outcomeVersion, `recon-${entryId}-${outcomeVersion}`],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error("seedReconcileJob: insert returned no row");
+  return id;
 }
 
 export { makeSession };

@@ -100,7 +100,7 @@ export function mapKhalaniError(status: number, body: KhalaniErrorBody | null): 
       );
     case "NotSupportedDepositMethodException":
       return withMeta(
-        new VexError(ErrorCodes.KHALANI_UNSUPPORTED_DEPOSIT_METHOD, message, "Use a different --deposit-method or omit it to use the route default."),
+        new VexError(ErrorCodes.KHALANI_UNSUPPORTED_DEPOSIT_METHOD, message, "Pass a different depositMethod, or omit the parameter to use the route default."),
         false, name,
       );
     case "InternalErrorException":

@@ -72,7 +72,11 @@ function percentile(sorted: number[], p: number): number {
 // ── Output schema ────────────────────────────────────────────────
 
 const LatencyOutputSchema = z.object({
-  version: z.literal("v3-agent-200"),
+  // Agent Scan phase 1 (2026-07-22): dataset shrank 200 -> 116 (see
+  // tool-discovery-seed.json's description). This baseline's captured
+  // latencies go stale with the version bump — regeneration is the
+  // coordinator's named post-merge step, not done here.
+  version: z.literal("v3-agent-116"),
   mode: z.literal("dense"),
   capturedAt: z.string(),
   methodology: z.object({
@@ -136,7 +140,7 @@ describeRealStack("v3 — discover_tools latency benchmark (dense mode)", () => 
       const gatePassed = p95 <= P95_GATE_MS;
 
       const output: LatencyOutput = {
-        version: "v3-agent-200",
+        version: "v3-agent-116",
         mode: "dense",
         capturedAt: new Date().toISOString(),
         methodology: {

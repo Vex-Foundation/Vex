@@ -15,14 +15,12 @@
 import { describe, expect, it } from "vitest";
 import {
   EXPLORER_EXTERNAL_ALLOW,
-  explorerAccountUrl,
   explorerTxUrl,
 } from "@shared/explorer-links.js";
 import { isAllowedExternalUrl } from "../url.js";
 
 const HASH = "0xabc123def456";
 const SIG = "5VERYrealSolanaSignature111111111111111111";
-const ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
 
 // Every chain alias the tx builder recognises — kept in lockstep with
 // `EXPLORER_TX_BASE`. Each must emit a URL the real allowlist accepts.
@@ -88,7 +86,6 @@ const TX_ALIASES: readonly string[] = [
   "zksync",
   "eip155:324",
   "324",
-  "hyperliquid",
   "hyperevm",
   "eip155:999",
   "999",
@@ -115,23 +112,11 @@ describe("explorer builders emit only allowlisted URLs", () => {
       true,
     );
   });
-
-  it("HyperCore account URL passes the real allowlist", () => {
-    const url = explorerAccountUrl("hyperliquid", ADDRESS);
-    expect(url).toBe(
-      `https://app.hyperliquid.xyz/explorer/address/${ADDRESS}`,
-    );
-    expect(isAllowedExternalUrl(url as string, EXPLORER_EXTERNAL_ALLOW)).toBe(
-      true,
-    );
-  });
 });
 
 describe("explorer allowlist denials", () => {
   it.each([
     // New hosts are PATH-SCOPED: the app surface is NOT an open redirect.
-    "https://app.hyperliquid.xyz/trade",
-    "https://app.hyperliquid.xyz/",
     "https://hyperevmscan.io/address/0xabc",
     "https://robinhoodchain.blockscout.com/address/0xabc",
     // Full-coverage hosts are PATH-SCOPED too: /tx/ only, no app-surface redirect.
@@ -141,14 +126,12 @@ describe("explorer allowlist denials", () => {
     "https://explorer.zksync.io/address/0xabc",
     "https://mega.etherscan.io/address/0xabc",
     // Lookalike / polluted hosts.
-    "https://app.hyperliquid.xyz.evil.com/explorer/tx/0xabc",
     "https://hyperevmscan.io.evil.com/tx/0xabc",
     "https://robinhoodchain.blockscout.com.evil.com/tx/0xabc",
     "https://etherscan.io.evil.com/tx/0xabc",
     "https://snowtrace.io.evil.com/tx/0xabc",
     "https://app.roninchain.com.evil.com/tx/0xabc",
     // Wrong scheme.
-    "http://app.hyperliquid.xyz/explorer/tx/0xabc",
     "http://etherscan.io/tx/0xabc",
   ])("denies %s", (url) => {
     expect(isAllowedExternalUrl(url, EXPLORER_EXTERNAL_ALLOW)).toBe(false);

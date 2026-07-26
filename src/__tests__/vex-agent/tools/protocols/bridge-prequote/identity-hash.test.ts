@@ -196,6 +196,7 @@ describe("computePrequoteMatchHash — bridge identity", () => {
     referrer: "",
     referrerFeeBps: "",
     filler: "",
+    slippageBps: "",
   };
 
   it("is deterministic and a full sha256 hex digest", () => {

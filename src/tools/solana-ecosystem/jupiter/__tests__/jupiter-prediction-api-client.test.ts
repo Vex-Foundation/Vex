@@ -27,6 +27,7 @@ const {
   jupiterPredictionClosePosition,
   jupiterPredictionCloseAllPositions,
   jupiterPredictionClaimPosition,
+  jupiterPredictionExecute,
   jupiterPredictionHistory,
   jupiterPredictionProfile,
   jupiterPredictionPnlHistory,
@@ -100,9 +101,12 @@ describe("jupiter prediction api client", () => {
       "https://api.jup.ag/prediction/v1/events/event-123?includeMarkets=true",
     );
 
+    // LIVE-GATE FIX 1 (2026-07-24): pubkey is a query param on the base
+    // `/events/suggested` route, not a path segment — the old
+    // `/events/suggested/{pubkey}` path 404s live (route not registered).
     const [suggestedUrl] = mockFetchJson.mock.calls[3];
     expect(suggestedUrl).toBe(
-      `https://api.jup.ag/prediction/v1/events/suggested/${USER}?provider=polymarket`,
+      `https://api.jup.ag/prediction/v1/events/suggested?pubkey=${USER}&provider=polymarket`,
     );
 
     const [eventMarketsUrl] = mockFetchJson.mock.calls[4];
@@ -201,7 +205,8 @@ describe("jupiter prediction api client", () => {
       .mockResolvedValueOnce({ transaction: "sell-base64", txMeta: { blockhash: "bh", lastValidBlockHeight: 1 }, externalOrderId: "ext", order: { orderPubkey: ORDER } })
       .mockResolvedValueOnce({ transaction: "close-base64", txMeta: { blockhash: "bh", lastValidBlockHeight: 1 }, externalOrderId: "ext", order: { orderPubkey: ORDER } })
       .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ transaction: "claim-base64", txMeta: { blockhash: "bh", lastValidBlockHeight: 1 }, position: { positionPubkey: POSITION } });
+      .mockResolvedValueOnce({ transaction: "claim-base64", txMeta: { blockhash: "bh", lastValidBlockHeight: 1 }, position: { positionPubkey: POSITION } })
+      .mockResolvedValueOnce({ status: "Success", signature: "sig-1", error: null });
 
     await jupiterPredictionCreateOrder({
       ownerPubkey: USER,
@@ -218,8 +223,9 @@ describe("jupiter prediction api client", () => {
       contracts: 5,
     });
     await jupiterPredictionClosePosition(POSITION, { ownerPubkey: USER });
-    await jupiterPredictionCloseAllPositions({ ownerPubkey: USER });
+    await jupiterPredictionCloseAllPositions({ ownerPubkey: USER, minSellPriceSlippageBps: 100 });
     await jupiterPredictionClaimPosition(POSITION, { ownerPubkey: USER });
+    await jupiterPredictionExecute({ signedTransaction: "signed-base64", context: { type: "bisonfi_swap" } });
 
     const [buyUrl, buyOpts] = mockFetchJson.mock.calls[0];
     expect(buyUrl).toBe("https://api.jup.ag/prediction/v1/orders");
@@ -253,12 +259,19 @@ describe("jupiter prediction api client", () => {
     const [closeAllUrl, closeAllOpts] = mockFetchJson.mock.calls[3];
     expect(closeAllUrl).toBe("https://api.jup.ag/prediction/v1/positions");
     expect(closeAllOpts.method).toBe("DELETE");
-    expect(JSON.parse(closeAllOpts.body)).toEqual({ ownerPubkey: USER });
+    expect(JSON.parse(closeAllOpts.body)).toEqual({ ownerPubkey: USER, minSellPriceSlippageBps: 100 });
 
     const [claimUrl, claimOpts] = mockFetchJson.mock.calls[4];
     expect(claimUrl).toBe(`https://api.jup.ag/prediction/v1/positions/${POSITION}/claim`);
     expect(claimOpts.method).toBe("POST");
     expect(JSON.parse(claimOpts.body)).toEqual({ ownerPubkey: USER });
+
+    const [executeUrl, executeOpts] = mockFetchJson.mock.calls[5];
+    expect(executeUrl).toBe("https://api.jup.ag/prediction/v1/execute");
+    expect(executeOpts.method).toBe("POST");
+    expect(JSON.parse(executeOpts.body)).toEqual({
+      signedTransaction: "signed-base64", context: { type: "bisonfi_swap" },
+    });
   });
 
   it("rejects invalid inputs and missing API key before fetching", async () => {
@@ -298,6 +311,20 @@ describe("jupiter prediction api client", () => {
         depositMint: USDC,
       }),
     ).rejects.toMatchObject({ code: "HTTP_REQUEST_FAILED" });
+
+    // Batch-4-closure blocker 2: minSellPriceSlippageBps is REQUIRED (no
+    // silent default) with a Vex-side 0-10,000 bps product-safety bound.
+    await expect(
+      jupiterPredictionCloseAllPositions({ ownerPubkey: USER } as never),
+    ).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+
+    await expect(
+      jupiterPredictionCloseAllPositions({ ownerPubkey: USER, minSellPriceSlippageBps: 10_001 }),
+    ).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+
+    await expect(
+      jupiterPredictionCloseAllPositions({ ownerPubkey: USER, minSellPriceSlippageBps: -1 }),
+    ).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
 
     expect(mockFetchJson).not.toHaveBeenCalled();
   });

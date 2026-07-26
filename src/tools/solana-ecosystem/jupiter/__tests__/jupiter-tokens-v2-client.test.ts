@@ -55,6 +55,17 @@ describe("jupiter tokens v2 client", () => {
     expect(url).toBe("https://api.jup.ag/tokens/v2/tag?query=verified");
   });
 
+  // W1-G: "stocks" (tokenized equities) is a documented Jupiter tag value
+  // (recon-docs-tokens.md §2.2) that was previously unmodeled and rejected.
+  it("calls /tokens/v2/tag for stocks (tokenized equities) tokens", async () => {
+    mockFetchJson.mockResolvedValueOnce([]);
+
+    await jupiterTokensByTag("stocks");
+
+    const [url] = mockFetchJson.mock.calls[0];
+    expect(url).toBe("https://api.jup.ag/tokens/v2/tag?query=stocks");
+  });
+
   it("calls /tokens/v2/{category}/{interval} with limit", async () => {
     mockFetchJson.mockResolvedValueOnce([]);
 

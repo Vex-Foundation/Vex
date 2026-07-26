@@ -399,11 +399,12 @@ describe("SessionComposer — Signal Console chrome", () => {
 
   it("renders under a re-tinted theme scope without leaking raw colors (token-only)", () => {
     // jsdom does not resolve CSS vars; the token-only classNames are what
-    // guarantee any theme scope recolors. Smoke-mount inside the Hypervexing
-    // re-tint scope and confirm the round send fill still routes through the
-    // accent-contrast token.
+    // guarantee any theme scope recolors. Smoke-mount inside a hypothetical
+    // alternate theme scope (the planned `celeris` light theme, see uiStore's
+    // `VexTheme` doc) and confirm the round send fill still routes through
+    // the accent-contrast token.
     render(
-      <div data-vex-shell="true" data-vex-theme="hypervexing">
+      <div data-vex-shell="true" data-vex-theme="celeris">
         <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />
       </div>,
     );

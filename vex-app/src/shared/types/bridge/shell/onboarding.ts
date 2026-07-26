@@ -28,9 +28,6 @@ import type {
 import type {
   ApiKeysSetInput,
   ApiKeysSetResult,
-  PolymarketAutoSetupInput,
-  PolymarketAutoSetupResult,
-  PolymarketConfiguredAddressesResult,
 } from "../../../schemas/api-keys.js";
 import type {
   EmbeddingConfigureInput,
@@ -106,24 +103,6 @@ export interface OnboardingBridge {
   readonly apiKeysSet: (
     input: ApiKeysSetInput
   ) => Promise<Result<ApiKeysSetResult>>;
-  /**
-   * One-click Polymarket setup (Phase 2 feature #7). Derives CLOB API
-   * credentials from the unlocked EVM wallet keystore via the engine
-   * primitive, persists them inside the encrypted secret vault, and
-   * returns the wallet address. Result does NOT carry credentials —
-   * the renderer reads canonical envState for confirmation.
-   */
-  readonly polymarketAutoSetup: (
-    input: PolymarketAutoSetupInput
-  ) => Promise<Result<PolymarketAutoSetupResult>>;
-  /**
-   * Lowercased EVM addresses that currently have Polymarket CLOB credentials
-   * in the vault (puzzle 5 B-UI). Drives the per-wallet ✓ configured / ◦ not
-   * badge in the wallet picker. Returns PUBLIC ADDRESSES ONLY.
-   */
-  readonly polymarketConfiguredAddresses: () => Promise<
-    Result<PolymarketConfiguredAddressesResult>
-  >;
   readonly embeddingConfigure: (
     input: EmbeddingConfigureInput
   ) => Promise<Result<EmbeddingConfigureResult>>;

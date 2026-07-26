@@ -28,9 +28,35 @@ export function isNativeInput(input: string): boolean {
   return lower === "native" || lower === "eth" || lower === PENDLE_NATIVE_TOKEN.toLowerCase();
 }
 
+/**
+ * Convert a caller-supplied basis-point tolerance to the fraction Pendle's
+ * Convert API expects. An OMITTED value takes {@link DEFAULT_SLIPPAGE_BPS};
+ * an INVALID one is rejected.
+ *
+ * This used to read `bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS`,
+ * which silently substituted 50 bps for a negative input — a caller that passes
+ * `-1` has made an error, and quietly trading with a tolerance they never asked
+ * for hides it at a price-protection boundary. A fractional value is rejected
+ * for the same reason it is at the manifest gate: `0.5` could mean 0.5 bps or
+ * 0.5%, and rounding a price-protection parameter is guessing.
+ *
+ * Defense-in-depth only — `unit: "bps"` on the Pendle manifests
+ * (`runtime/bps-param.ts`) rejects both cases before any handler runs. Every
+ * caller sits inside a handler-level `try/catch` that returns `fail(...)`.
+ *
+ * The 5000 bps cap below is PRE-EXISTING and deliberately left untouched;
+ * changing or removing it is a separate, owner-gated decision.
+ */
 export function slippageFraction(bps: number | undefined): number {
-  const b = bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS;
-  return Math.min(b, 5000) / 10_000;
+  if (bps === undefined) return DEFAULT_SLIPPAGE_BPS / 10_000;
+  if (!Number.isInteger(bps) || bps < 0) {
+    throw new VexError(
+      ErrorCodes.INVALID_AMOUNT,
+      `Invalid slippageBps: ${bps}`,
+      "slippageBps must be a whole, non-negative number of basis points (1 bps = 0.01%).",
+    );
+  }
+  return Math.min(bps, 5000) / 10_000;
 }
 
 /** Model-facing failure detail — code-keyed + bounded, never upstream text. */

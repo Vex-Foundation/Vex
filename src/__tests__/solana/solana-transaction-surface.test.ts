@@ -29,18 +29,25 @@ vi.mock("@config/store.js", () => ({
 
 import * as txMod from "../../tools/solana-ecosystem/shared/solana-transaction.js";
 
-// Type-only imports of the 2 exported types must compile against the façade.
+// Type-only imports of the exported types must compile against the façade.
 type _Phase = import("../../tools/solana-ecosystem/shared/solana-transaction.js").StagedSubmissionPhase;
 type _Result = import("../../tools/solana-ecosystem/shared/solana-transaction.js").StagedSubmissionResult;
+type _Prepared = import("../../tools/solana-ecosystem/shared/solana-transaction.js").PreparedSolanaTx;
+type _KnownBlockhash = import("../../tools/solana-ecosystem/shared/solana-transaction.js").KnownSolanaBlockhash;
+type _PrepareOptions = import("../../tools/solana-ecosystem/shared/solana-transaction.js").PrepareVersionedTxOptions;
+type _SubmitOutcome = import("../../tools/solana-ecosystem/shared/solana-transaction.js").SolanaSubmitOutcome;
+type _RpcOptions = import("../../tools/solana-ecosystem/shared/solana-transaction.js").SubmitPreparedTxOverRpcOptions;
 
 describe("solana-transaction façade surface", () => {
   it("exposes exactly the expected runtime exports with correct typeof", () => {
-    // The exact set of RUNTIME export keys (the 2 types are erased at runtime).
+    // The exact set of RUNTIME export keys (the type-only exports are erased at runtime).
     const keys = Object.keys(txMod).sort();
     expect(keys).toEqual([
+      "classifyProviderSubmitFailure",
       "confirmVersionedTx",
       "deserializeVersionedTx",
       "getSolanaConnection",
+      "prepareVersionedTx",
       "resetSolanaConnection",
       "sendSignedVersionedTx",
       "signAndSendLegacyTx",
@@ -48,6 +55,7 @@ describe("solana-transaction façade surface", () => {
       "signAndSubmitLegacyTxStaged",
       "signAndSubmitVersionedTxStaged",
       "signVersionedTx",
+      "submitPreparedTxOverRpc",
     ]);
 
     expect(typeof txMod.deserializeVersionedTx).toBe("function");
@@ -60,9 +68,14 @@ describe("solana-transaction façade surface", () => {
     expect(typeof txMod.resetSolanaConnection).toBe("function");
     expect(typeof txMod.signAndSendLegacyTx).toBe("function");
     expect(typeof txMod.signAndSubmitLegacyTxStaged).toBe("function");
+    expect(typeof txMod.prepareVersionedTx).toBe("function");
+    expect(typeof txMod.submitPreparedTxOverRpc).toBe("function");
+    expect(typeof txMod.classifyProviderSubmitFailure).toBe("function");
 
     // Keep the type-only imports referenced so they are not elided as unused.
-    const _typeProbe: ReadonlyArray<_Phase | _Result> = [];
+    const _typeProbe: ReadonlyArray<
+      _Phase | _Result | _Prepared | _KnownBlockhash | _PrepareOptions | _SubmitOutcome | _RpcOptions
+    > = [];
     void _typeProbe;
   });
 

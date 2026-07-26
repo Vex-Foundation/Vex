@@ -220,17 +220,23 @@ describe("bridge quote ↔ execute identity collision", () => {
     }
   });
 
-  it("EXPLOIT GUARD: a quote without refundTo does NOT authorize an execute with a changed refundTo", async () => {
-    // Quote omits refundTo (→ defaults to sourceWallet). Execute supplies a
-    // DIFFERENT refundTo (attacker address). The gate hash must NOT collide →
-    // no matching prequote → block.
+  it("EXPLOIT GUARD: a caller-variable param cannot be changed between quote and execute", async () => {
+    // The hash binds what a caller can LEGITIMATELY vary. Changing such a param
+    // between quote and execute must not collide → no matching prequote → block.
+    //
+    // `refundTo`, `referrer` and `referrerFeeBps` are deliberately NOT tested
+    // here any more. They are no longer caller-suppliable at all: each is
+    // rejected BY NAME at every entry point and `refundTo` is now DERIVED from
+    // the selected source wallet, so the identity binds the derived value and a
+    // supplied one cannot move the hash. Binding a param a caller cannot supply
+    // would protect nothing; the real guarantee is the rejection, proven in
+    // `khalani-refund-destination.test.ts` and
+    // `khalani-referrer-fee-rejection.test.ts`. Asserting hash divergence for
+    // them here would silently re-test a vector that no longer exists.
     await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     const tampered: Array<Record<string, unknown>> = [
-      { refundTo: "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, // refund to attacker
-      { referrer: "0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" },
-      { referrerFeeBps: "9999" },
       { filler: "evil-filler" },
     ];
     for (const v of tampered) {

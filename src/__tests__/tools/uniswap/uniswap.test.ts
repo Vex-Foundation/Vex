@@ -15,11 +15,7 @@ import {
   isUniswapChain,
   UNISWAP_KNOWN_SPENDERS,
 } from "@tools/uniswap/deployments.js";
-import {
-  resolveSwapVenues,
-  isFallbackEligibleQuoteCategory,
-  resolveUniswapFallbackChainKey,
-} from "@tools/uniswap/venue-router.js";
+import { resolveSwapVenues } from "@tools/uniswap/venue-router.js";
 import { resolveUniswapChainId } from "@tools/uniswap/chains.js";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
 import { buildV2SwapTx, buildV3SwapTx, NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
@@ -88,32 +84,6 @@ describe("swap venue router", () => {
   });
 });
 
-// ── Runtime Kyber→Uniswap fallback policy (LOCKED #3) ────────────────────────
-
-describe("venue-router runtime fallback policy", () => {
-  it("resolveUniswapFallbackChainKey returns the deployment key where Uniswap is verified", () => {
-    expect(resolveUniswapFallbackChainKey("base")).toBe("base");
-    expect(resolveUniswapFallbackChainKey("robinhood")).toBe("robinhood");
-    expect(resolveUniswapFallbackChainKey("4663")).toBe("robinhood");
-  });
-
-  it("resolveUniswapFallbackChainKey is undefined where Uniswap has no verified deployment", () => {
-    // Avalanche is KyberSwap-supported but absent from the Uniswap registry.
-    expect(resolveUniswapFallbackChainKey("avalanche")).toBeUndefined();
-    expect(resolveUniswapFallbackChainKey("narnia")).toBeUndefined();
-  });
-
-  it("isFallbackEligibleQuoteCategory covers transport/API/route failures only", () => {
-    for (const c of ["timeout", "network", "rate_limit", "provider_error"]) {
-      expect(isFallbackEligibleQuoteCategory(c)).toBe(true);
-    }
-    // A safety verdict never fails a quote; auth/unknown/empty are not re-routed.
-    for (const c of ["auth", "unknown", ""]) {
-      expect(isFallbackEligibleQuoteCategory(c)).toBe(false);
-    }
-  });
-});
-
 // ── Quote route selection (mocked RPC) ──────────────────────────────────────
 
 interface MockCall { functionName: string; args?: readonly unknown[]; address: Address }
@@ -162,6 +132,18 @@ describe("quoteBestRoute", () => {
     expect(applySlippage(1000n, 50)).toBe(995n); // -0.5%
     expect(applySlippage(1000n, 0)).toBe(1000n);
     expect(applySlippage(1000n, 10000)).toBe(0n);
+  });
+
+  // Phase-3 W3: this used to `Math.max(0, Math.min(10_000, Math.floor(bps)))`,
+  // so a caller's 50_000 silently became a 100% tolerance — a minAmountOut of
+  // zero, accepting any output at all, with no error and a normal-looking
+  // quote. Reject, never coerce, at a price-protection boundary. (Vex's own
+  // 1000 bps product ceiling is enforced a layer up, in the handler.)
+  it("applySlippage REJECTS an out-of-domain tolerance instead of clamping it", () => {
+    expect(() => applySlippage(1000n, 10_001)).toThrow(/slippageBps/i);
+    expect(() => applySlippage(1000n, 50_000)).toThrow(/slippageBps/i);
+    expect(() => applySlippage(1000n, -1)).toThrow(/slippageBps/i);
+    expect(() => applySlippage(1000n, 0.5)).toThrow(/slippageBps/i);
   });
 });
 

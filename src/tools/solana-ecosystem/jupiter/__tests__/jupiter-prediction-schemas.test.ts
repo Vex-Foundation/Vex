@@ -16,6 +16,9 @@ import {
   jupiterPredictionCreateOrderResponseSchema,
   jupiterPredictionClaimPositionResponseSchema,
   jupiterPredictionCloseAllPositionsResponseSchema,
+  jupiterPredictionExecuteResponseSchema,
+  jupiterPredictionTradesResponseSchema,
+  jupiterPredictionMarketResponseSchema,
 } from "../jupiter-prediction/prediction-api/schemas.js";
 
 const B64 = "AQIDBA=="; // base64 of [1,2,3,4]
@@ -75,6 +78,80 @@ describe("jupiterPredictionOrderbookResponseSchema", () => {
         no_dollars: [["0.45", 8]],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe("jupiterPredictionTradesResponseSchema — LIVE-GATE FIX 1 regression (id drift)", () => {
+  function validTrade(id: unknown = "order-2782520"): Record<string, unknown> {
+    return {
+      id,
+      ownerPubkey: "owner-1",
+      marketId: "mkt-1",
+      message: "owner-1 bought Yes for X at $0.65 ($10.00)",
+      timestamp: 1784911810,
+      action: "buy",
+      side: "yes",
+      eventTitle: "Event",
+      marketTitle: "Market",
+      amountUsd: "10000000",
+      priceUsd: "650000",
+      eventImageUrl: "https://example/img.png",
+      eventId: "evt-1",
+    };
+  }
+
+  it("accepts a live-shaped provider-prefixed string id (confirmed live 2026-07-24: GET /trades)", () => {
+    const r = jupiterPredictionTradesResponseSchema.safeParse({ data: [validTrade("order-2782520")] });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.data[0]!.id).toBe("order-2782520");
+  });
+
+  it("rejects a numeric id (the pre-fix, now-wrong assumption)", () => {
+    expect(
+      jupiterPredictionTradesResponseSchema.safeParse({ data: [validTrade(1)] }).success,
+    ).toBe(false);
+  });
+});
+
+describe("jupiterPredictionMarketResponseSchema — LIVE-GATE FIX 2 regression (resolveAt drift)", () => {
+  function validMarket(resolveAt: unknown = null): Record<string, unknown> {
+    return {
+      marketId: "mkt-1",
+      status: "open",
+      result: null,
+      openTime: 1784001647,
+      closeTime: 1784908800,
+      resolveAt,
+    };
+  }
+
+  it("accepts resolveAt: null (the common, still-open case)", () => {
+    expect(jupiterPredictionMarketResponseSchema.safeParse(validMarket(null)).success).toBe(true);
+  });
+
+  it("accepts a live-shaped ISO-8601 string resolveAt (confirmed live 2026-07-24: GET /events, closed markets)", () => {
+    const r = jupiterPredictionMarketResponseSchema.safeParse(
+      validMarket("2026-07-24T05:14:12.365Z"),
+    );
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.resolveAt).toBe("2026-07-24T05:14:12.365Z");
+  });
+
+  it("still accepts a number (the pre-drift/documented shape)", () => {
+    expect(jupiterPredictionMarketResponseSchema.safeParse(validMarket(1784908800)).success).toBe(
+      true,
+    );
+  });
+
+  it("keeps openTime/closeTime strictly numeric — no drift observed on those siblings", () => {
+    expect(
+      jupiterPredictionMarketResponseSchema.safeParse({ ...validMarket(), openTime: "1784001647" })
+        .success,
+    ).toBe(false);
+    expect(
+      jupiterPredictionMarketResponseSchema.safeParse({ ...validMarket(), closeTime: "1784908800" })
+        .success,
+    ).toBe(false);
   });
 });
 
@@ -148,6 +225,57 @@ describe("jupiterPredictionCreateOrderResponseSchema", () => {
   it("rejects when the order detail object is missing", () => {
     const { order: _omit, ...rest } = validCreateOrder();
     expect(jupiterPredictionCreateOrderResponseSchema.safeParse(rest).success).toBe(false);
+  });
+
+  // ── Forecast (bisonfi) managed-execution fields (Batch-4-closure blocker 1) ──
+
+  it("accepts a keeper-filled order with no executionModel/execution fields (existing behavior, unaffected)", () => {
+    expect(jupiterPredictionCreateOrderResponseSchema.safeParse(validCreateOrder()).success).toBe(true);
+  });
+
+  it("accepts an atomic_swap (Jupiter Forecast/bisonfi) order carrying an execution context", () => {
+    const r = jupiterPredictionCreateOrderResponseSchema.safeParse({
+      ...validCreateOrder(),
+      executionModel: "atomic_swap",
+      execution: { endpoint: "/api/v1/execute", context: { type: "bisonfi_swap", jupiterSwapRequestId: "req-1" } },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.executionModel).toBe("atomic_swap");
+      expect(r.data.execution?.context).toEqual({ type: "bisonfi_swap", jupiterSwapRequestId: "req-1" });
+    }
+  });
+
+  it("rejects a malformed execution object (not the documented {endpoint, context} shape)", () => {
+    expect(
+      jupiterPredictionCreateOrderResponseSchema.safeParse({
+        ...validCreateOrder(),
+        executionModel: "atomic_swap",
+        execution: "not-an-object",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("jupiterPredictionExecuteResponseSchema", () => {
+  it("accepts a Success response with a signature", () => {
+    const r = jupiterPredictionExecuteResponseSchema.safeParse({
+      status: "Success", signature: "sig-1", error: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects a Success response with a null signature", () => {
+    expect(
+      jupiterPredictionExecuteResponseSchema.safeParse({ status: "Success", signature: null, error: null }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a Failed response with a null signature and an error message", () => {
+    const r = jupiterPredictionExecuteResponseSchema.safeParse({
+      status: "Failed", signature: null, error: "insufficient funds",
+    });
+    expect(r.success).toBe(true);
   });
 });
 

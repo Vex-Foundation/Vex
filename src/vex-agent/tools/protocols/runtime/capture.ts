@@ -30,21 +30,51 @@ export async function captureExecution(
   // Defense-in-depth: preview results are NOT mutations — skip entire capture pipeline
   if (result.data?.dryRun === true) return;
 
-  const { completeExecutionIntent, recordExecution } = await import("@vex-agent/db/repos/executions.js");
+  const { completeExecutionIntent, recordExecution, getById } = await import("@vex-agent/db/repos/executions.js");
   const paramsForStorage = sanitizeRecord(params);
   const resultData = sanitizeRecord(result.data ?? {});
   const tradeCapture = isRecord(resultData._tradeCapture) ? resultData._tradeCapture : null;
   const tradeCaptureItems = sanitizeRecordArray(resultData._tradeCaptureItems);
   const externalRefs = extractExternalRefs(resultData);
 
-  const executionId = existingExecutionId ?? await recordExecution(
+  // Agent Scan (plan §11.1 step 4): a handler that already created its OWN
+  // `protocol_executions` intent row BEFORE broadcasting (the Kyber/Uniswap
+  // execute handlers) embeds that id as `_executionId` on the returned
+  // ToolResult.data — the SAME underscore-prefixed internal-metadata
+  // convention as `_tradeCapture`. Reusing it here (exactly like the explicit
+  // `existingExecutionId` param) keeps post-handler capture from creating a
+  // SECOND audit row for the same attempt.
+  //
+  // PROVENANCE CHECK (FIX-SPINE round 1, finding 13/C10): unlike
+  // `existingExecutionId` (a trusted internal call parameter the runtime
+  // itself computes before invoking a handler), `_executionId` arrives on an
+  // adopted ONLY when the referenced `protocol_executions` row's own
+  // `tool_id`/`namespace` match the tool CURRENTLY executing — a mismatch
+  // (or a missing row) is logged and this capture falls through to creating
+  // a FRESH execution row instead, exactly as if no id had been supplied.
+  // This can never adopt a foreign/forged intent.
+  const resultExecutionId = typeof resultData._executionId === "number" ? resultData._executionId : undefined;
+  let priorExecutionId = existingExecutionId;
+  if (priorExecutionId === undefined && resultExecutionId !== undefined) {
+    const candidate = await getById(resultExecutionId);
+    if (candidate && candidate.toolId === toolId && candidate.namespace === namespace) {
+      priorExecutionId = resultExecutionId;
+    } else {
+      logger.warn("protocol.execute.execution_id_provenance_mismatch", {
+        toolId, namespace, claimedExecutionId: resultExecutionId,
+        foundToolId: candidate?.toolId ?? null, foundNamespace: candidate?.namespace ?? null,
+      });
+    }
+  }
+
+  const executionId = priorExecutionId ?? await recordExecution(
     toolId, namespace, sessionId, paramsForStorage,
     resultData, result.success,
     tradeCapture, externalRefs, durationMs,
   );
-  if (existingExecutionId !== undefined) {
+  if (priorExecutionId !== undefined) {
     await completeExecutionIntent(
-      existingExecutionId, resultData, result.success, tradeCapture, externalRefs, durationMs,
+      priorExecutionId, resultData, result.success, tradeCapture, externalRefs, durationMs,
     );
   }
 
@@ -90,19 +120,6 @@ export async function captureExecution(
       });
     }
   }
-}
-
-/** Insert the Hyperliquid audit record before the handler can reach signing. */
-export async function createHyperliquidExecutionIntent(
-  toolId: string,
-  namespace: string,
-  sessionId: string | null,
-  params: Record<string, unknown>,
-): Promise<number> {
-  const { createExecutionIntent } = await import("@vex-agent/db/repos/executions.js");
-  const executionId = await createExecutionIntent(toolId, namespace, sessionId, sanitizeRecord(params));
-  if (executionId <= 0) throw new Error("durable intent insert returned no execution id");
-  return executionId;
 }
 
 // populateCaptureItems moved to capture-pipeline.ts (shared with replay.ts)

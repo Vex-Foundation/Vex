@@ -37,11 +37,9 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   uniswap: "active",
   relay: "active",
   solana: "active",
-  polymarket: "active",
   dexscreener: "active",
   virtuals: "active",
   pendle: "active",
-  hyperliquid: "active",
 };
 
 /** True iff the namespace is currently `deprecated_hidden`. */

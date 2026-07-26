@@ -30,7 +30,12 @@ import {
 
 loadProviderDotenv();
 
-const DATASET_VERSION = "v3-agent-200";
+// Agent Scan phase 1 (2026-07-22): dataset shrank 200 -> 116 (see
+// tool-discovery-seed.json's description + discovery-baseline.test.ts). This
+// generator's recall/mrr floors below were captured against the OLD 200-query
+// set and go stale with the version bump — regenerating this baseline against
+// the new dataset is the coordinator's named post-merge step, not done here.
+const DATASET_VERSION = "v3-agent-116";
 const REQUIRED_ENV = "VEX_REAL_DENSE_EVAL";
 const RECALL5_OVERALL_FLOOR = 0.95;
 const RECALL5_BLIND_FLOOR = 0.94;

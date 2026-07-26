@@ -10,146 +10,106 @@ import {
   getJupiterPredictionPosition,
   getJupiterPredictionPositions,
   getJupiterPredictionHistory,
-  executeJupiterPredictionCreateOrder,
-  executeJupiterPredictionClosePosition,
-  executeJupiterPredictionCloseAllPositions,
-  executeJupiterPredictionClaimPosition,
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
-import { JUPITER_PREDICTION_USDC_MINT } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
 
 import type { ProtocolHandler } from "../../types.js";
-import { str, num, ok, fail, enumField } from "../../handler-helpers.js";
-import { walletAddress, walletSecret } from "./core.js";
+import { str, num, bool, ok, fail } from "../../handler-helpers.js";
+import { walletAddress } from "./core.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { toPredictView, projectMarketPricing } from "../predict-projector.js";
+import { convertPredictionHistoryEventMoney } from "../predict-money.js";
+import { resolvePredictionWindow, resolveSearchWindow, strictEnumField } from "../predict-params.js";
+import { wrapPredictionRead } from "../predict-region-block.js";
+import { executePredictBuy, executePredictSell, executePredictClaim } from "../predict-execute.js";
+import { executePredictCloseAll } from "../predict-execute-close-all.js";
 
 // ── SDK enum mirrors ──────────────────────────────────────────────
-// Source: `JupiterPredictionCategory` + `JupiterPredictionFilter` in
-// `@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types/base.ts`.
+// Source: `JupiterPredictionProvider`/`JupiterPredictionCategory`/
+// `JupiterPredictionFilter`/`JupiterPredictionSortBy`/`JupiterPredictionSortDirection`
+// in `@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/types/base.ts`.
+const PREDICT_PROVIDER = ["kalshi", "polymarket", "bisonfi"] as const;
 const PREDICT_CATEGORY = [
   "all", "crypto", "sports", "politics", "esports", "culture", "economics", "tech",
 ] as const;
-const PREDICT_FILTER = ["new", "live", "trending"] as const;
-
-// ── Compact-JSON projector (P1-11) ───────────────────────────────
-// Events and positions are returned verbatim from the SDK and carry heavy,
-// agent-irrelevant payload: imageUrl / rulesPdf blobs, marketResultPubkey
-// account addresses, and event-metadata noise (slug/series/closeTime/imageUrl).
-// `toPredictView` projects each item down to the fields the agent reasons over.
-// It is intentionally narrow and structural: it discriminates a position (has a
-// top-level `pubkey`) from an event (has `eventId` but no `pubkey`) and curates
-// each. Unknown / non-object input is returned untouched so the handler never
-// turns a real SDK shape into `null` silently.
-//
-// NOT advertised as guaranteed output (verified against manifest + discovery):
-// imageUrl, rulesPdf, marketResultPubkey, event metadata.{slug,series,closeTime,imageUrl}.
-
-/** Narrow an unknown to a plain object (excludes null + arrays). */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Keep only the listed keys that are actually present on the source object. */
-function pick(
-  source: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (key in source) out[key] = source[key];
-  }
-  return out;
-}
-
-/** Curate event metadata down to title/subtitle/eventId (drop slug/series/closeTime/imageUrl). */
-function projectEventMetadata(metadata: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(metadata)) return undefined;
-  return pick(metadata, ["eventId", "title", "subtitle"]);
-}
-
-/** Curate market metadata, keeping title/subtitle/eventId. */
-function projectMarketMetadata(metadata: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(metadata)) return undefined;
-  return pick(metadata, ["marketId", "eventId", "title", "subtitle", "status", "result"]);
-}
-
-/**
- * Curate a single market: keep marketId/status/result/timings/pricing and the
- * curated metadata; drop imageUrl + marketResultPubkey.
- */
-function projectMarket(market: unknown): unknown {
-  if (!isRecord(market)) return market;
-  const view = pick(market, [
-    "marketId", "status", "result", "openTime", "closeTime", "resolveAt", "pricing",
-  ]);
-  const metadata = projectMarketMetadata(market.metadata);
-  if (metadata !== undefined) view.metadata = metadata;
-  return view;
-}
-
-/** Curate a single event: keep eventId/category/volumeUsd + curated metadata + curated markets. */
-function projectEvent(event: Record<string, unknown>): Record<string, unknown> {
-  const view = pick(event, ["eventId", "category", "volumeUsd"]);
-  const metadata = projectEventMetadata(event.metadata);
-  if (metadata !== undefined) view.metadata = metadata;
-  if (Array.isArray(event.markets)) view.markets = event.markets.map(projectMarket);
-  return view;
-}
-
-/** Curate a single position: keep exposure/PnL/claim fields + curated metadata; drop noise. */
-function projectPosition(position: Record<string, unknown>): Record<string, unknown> {
-  const view = pick(position, [
-    "pubkey", "owner", "contracts", "sizeUsd", "valueUsd", "avgPriceUsd",
-    "markPriceUsd", "pnlUsd", "claimed", "payoutUsd", "eventId",
-  ]);
-  const eventMetadata = projectEventMetadata(position.eventMetadata);
-  if (eventMetadata !== undefined) view.eventMetadata = eventMetadata;
-  const marketMetadata = projectMarketMetadata(position.marketMetadata);
-  if (marketMetadata !== undefined) view.marketMetadata = marketMetadata;
-  return view;
-}
-
-/**
- * Project a prediction event or position to its agent-facing view.
- * Returns the input untouched for non-object values so it is safe to map over
- * arrays of mixed/unknown shape without producing `null` holes.
- */
-function toPredictView(item: unknown): unknown {
-  if (!isRecord(item)) return item;
-  // A position carries a top-level `pubkey`; an event never does.
-  if (typeof item.pubkey === "string") return projectPosition(item);
-  if (typeof item.eventId === "string") return projectEvent(item);
-  return item;
-}
+const PREDICT_FILTER = ["new", "live", "trending", "upcoming"] as const;
+const PREDICT_SORT_BY = ["volume", "beginAt"] as const;
+const PREDICT_SORT_DIRECTION = ["asc", "desc"] as const;
 
 // ── Handler map ──────────────────────────────────────────────────
 
 export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.events": async (p) => {
-    // Pagination: manifest exposes limit/offset; the SDK takes start/end
-    // (mirrors solana.predict.history). Unbounded list → always paginate.
-    // Clamp negatives to 0 (Math.max) so a negative limit/offset can never
-    // translate into an invalid/negative start/end window for the SDK.
-    const start = Math.max(0, num(p, "offset") ?? 0);
-    const limit = Math.max(0, num(p, "limit") ?? 10);
-    const result = await getJupiterPredictionEvents({
-      category: enumField(p, "category", PREDICT_CATEGORY),
-      filter: enumField(p, "filter", PREDICT_FILTER),
-      includeMarkets: true,
-      start,
-      end: start + limit,
-    });
-    return ok({ ...result, data: result.data.map(toPredictView) });
+    const window = resolvePredictionWindow(p);
+    if (!window.ok) return window.result;
+    const provider = strictEnumField(p, "provider", PREDICT_PROVIDER);
+    if (!provider.ok) return provider.result;
+    const category = strictEnumField(p, "category", PREDICT_CATEGORY);
+    if (!category.ok) return category.result;
+    const filter = strictEnumField(p, "filter", PREDICT_FILTER);
+    if (!filter.ok) return filter.result;
+    const sortBy = strictEnumField(p, "sortBy", PREDICT_SORT_BY);
+    if (!sortBy.ok) return sortBy.result;
+    const sortDirection = strictEnumField(p, "sortDirection", PREDICT_SORT_DIRECTION);
+    if (!sortDirection.ok) return sortDirection.result;
+    // Lean markets (W1-C, transport optimization P1): the agent's own
+    // preference is both the projection toggle below AND, as of P1, the
+    // actual upstream request — the SDK/provider genuinely honor this param
+    // (CORRECTED, see fixtures/prediction-events-search.meta.md CORRECTION:
+    // the earlier "the provider ignores this param" claim was a rate-limit
+    // artifact of keyless probing, not real provider behavior). The projector
+    // (`toPredictView`) remains the enforcement point for the agent-facing
+    // contract regardless of what the provider returns.
+    const includeMarkets = bool(p, "includeMarkets") ?? false;
+    const result = await wrapPredictionRead(() => getJupiterPredictionEvents({
+      provider: provider.value,
+      category: category.value,
+      subcategory: str(p, "subcategory") || undefined,
+      tags: str(p, "tags") || undefined,
+      sortBy: sortBy.value,
+      sortDirection: sortDirection.value,
+      filter: filter.value,
+      includeMarkets,
+      start: window.start,
+      end: window.end,
+    }));
+    return ok({ ...result, data: result.data.map((item) => toPredictView(item, { includeMarkets })) });
   },
   "solana.predict.search": async (p) => {
     const q = str(p, "query");
     if (!q) return fail("Missing required: query");
-    const result = await searchJupiterPredictionEvents({ query: q });
-    return ok({ ...result, data: result.data.map(toPredictView) });
+    const window = resolveSearchWindow(p);
+    if (!window.ok) return window.result;
+    const provider = strictEnumField(p, "provider", PREDICT_PROVIDER);
+    if (!provider.ok) return provider.result;
+    // Lean markets (W1-C): search's events carry the same always-nested
+    // markets[] as /events (fixture-confirmed) — same lean-by-default
+    // treatment, enforced by the projector below. Unlike `.events`/`.event`
+    // (P1), this preference is NOT also passed upstream: neither the docs
+    // nor the SDK's `JupiterPredictionSearchEventsParams` expose an
+    // `includeMarkets` query param on `/events/search` at all.
+    const includeMarkets = bool(p, "includeMarkets") ?? false;
+    const result = await wrapPredictionRead(() => searchJupiterPredictionEvents({
+      provider: provider.value,
+      query: q,
+      limit: window.limit,
+    }));
+    // LIVE FACT (coordinator, 2026-07-24, 4s spacing): /events/search ignores
+    // `limit` entirely — 1/2/20 all returned the same 10-row response. Vex
+    // cannot trust the provider to honor the requested window, so the
+    // agent's requested count is enforced LOCALLY by slicing the (always
+    // up-to-10-row) response — still a legitimate, honored agent contract,
+    // just enforced client-side instead of upstream (see resolveSearchWindow).
+    const windowed = result.data.slice(0, window.limit);
+    return ok({ data: windowed.map((item) => toPredictView(item, { includeMarkets })) });
   },
   "solana.predict.market": async (p) => {
     const id = str(p, "marketId");
     if (!id) return fail("Missing required: marketId");
-    return ok(await getJupiterPredictionMarket(id));
+    // Regional-block mapping (FIX-D): the last of the domain's 18 reads to
+    // get wrapPredictionRead — flagged as a gap in P1's delta log because it
+    // pre-dates W1-C's 5-handler rollout and P1's 16-handler count.
+    const market = await wrapPredictionRead(() => getJupiterPredictionMarket(id));
+    return ok({ ...market, pricing: projectMarketPricing(market.pricing) });
   },
   "solana.predict.positions": async (p, ctx) => {
     let owner: string;
@@ -158,18 +118,17 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
-    // Pagination: manifest exposes limit/offset; the SDK takes start/end
-    // (mirrors solana.predict.history). Unbounded list → always paginate.
-    // Clamp negatives to 0 (Math.max) so a negative limit/offset can never
-    // translate into an invalid/negative start/end window for the SDK.
-    const start = Math.max(0, num(p, "offset") ?? 0);
-    const limit = Math.max(0, num(p, "limit") ?? 10);
-    const result = await getJupiterPredictionPositions({
+    const window = resolvePredictionWindow(p);
+    if (!window.ok) return window.result;
+    const result = await wrapPredictionRead(() => getJupiterPredictionPositions({
       ownerPubkey: owner,
-      start,
-      end: start + limit,
-    });
-    return ok({ ...result, data: result.data.map(toPredictView) });
+      marketPubkey: str(p, "marketPubkey") || undefined,
+      marketId: str(p, "marketId") || undefined,
+      isYes: bool(p, "isYes"),
+      start: window.start,
+      end: window.end,
+    }));
+    return ok({ ...result, data: result.data.map((item) => toPredictView(item)) });
   },
   "solana.predict.history": async (p, ctx) => {
     let owner: string;
@@ -178,242 +137,41 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
-    const start = num(p, "offset") ?? 0;
-    const limit = num(p, "limit") ?? 10;
-    return ok(await getJupiterPredictionHistory({
+    const window = resolvePredictionWindow(p);
+    if (!window.ok) return window.result;
+    const result = await wrapPredictionRead(() => getJupiterPredictionHistory({
       ownerPubkey: owner,
-      start,
-      end: start + limit,
+      positionPubkey: str(p, "positionPubkey") || undefined,
+      id: num(p, "id"),
+      start: window.start,
+      end: window.end,
     }));
+    return ok({ ...result, data: result.data.map(convertPredictionHistoryEventMoney) });
   },
-  "solana.predict.buy": async (p, ctx) => {
-    const marketId = str(p, "marketId"), side = str(p, "side");
-    const amount = num(p, "amountUsdc");
-    if (!marketId || !side || amount == null) return fail("Missing required: marketId, side, amountUsdc");
-    const normalizedSide = side.toLowerCase();
-    if (normalizedSide !== "yes" && normalizedSide !== "no") return fail('side must be "yes" or "no"');
-    const isYes = normalizedSide === "yes";
-    const depositAmount = Math.round(amount * 1_000_000);
-    // Resolve owner + signer BEFORE broadcast (5D-protocols p2).
-    let addr: string, secret: Uint8Array;
-    try {
-      addr = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
-    } catch (err) {
-      return walletScopeErrorToResult(err);
-    }
-    const result = await executeJupiterPredictionCreateOrder(secret, {
-      marketId, isYes, isBuy: true, depositAmount, depositMint: JUPITER_PREDICTION_USDC_MINT,
-    });
-    const positionPubkey = result.raw.order.positionPubkey;
-    const order = result.raw.order;
-    return {
-      success: true,
-      // Lean view (P0-2): drop the base64 VersionedTransaction + build internals
-      // carried on `result.raw`; the full result + _tradeCapture stay in `data`.
-      output: JSON.stringify({
-        signature: result.signature,
-        explorerUrl: result.explorerUrl,
-        positionPubkey,
-        marketId,
-        side: normalizedSide,
-        sizeUsd: order.newSizeUsd,
-        payoutUsd: order.newPayoutUsd,
-        contracts: order.newContracts,
-        avgPriceUsd: order.newAvgPriceUsd,
-        costUsd: order.orderCostUsd,
-        feeUsd: order.estimatedTotalFeeUsd,
-      }, null, 2),
-      data: {
-        ...result,
-        positionPubkey,
-        _tradeCapture: {
-          type: "prediction", chain: "solana", status: "open",
-          walletAddress: addr, tradeSide: "buy",
-          positionKey: positionPubkey, instrumentKey: `solana:predict:${marketId}:${normalizedSide}`,
-          inputValueUsd: order.orderCostUsd,
-          unitPriceUsd: order.newAvgPriceUsd,
-          feeValueUsd: order.estimatedTotalFeeUsd,
-          valuationSource: "prediction_exact",
-          settlementAssetKey: "USDC",
-          meta: { marketId, side: normalizedSide, sizeUsd: order.newSizeUsd, payoutUsd: order.newPayoutUsd, contracts: order.newContracts },
-        },
-      },
-    };
-  },
-  "solana.predict.sell": async (p, ctx) => {
-    const pk = str(p, "positionPubkey");
-    if (!pk) return fail("Missing required: positionPubkey");
-    let addr: string, secret: Uint8Array;
-    try {
-      addr = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
-    } catch (err) {
-      return walletScopeErrorToResult(err);
-    }
-    const result = await executeJupiterPredictionClosePosition(secret, pk);
-    const order = result.raw.order;
-    const outcome = order.isYes ? "yes" : "no";
-    return {
-      success: true,
-      // Lean view (P0-2): drop the base64 tx; full result + _tradeCapture in data.
-      output: JSON.stringify({
-        signature: result.signature,
-        explorerUrl: result.explorerUrl,
-        positionPubkey: pk,
-        marketId: order.marketId,
-        side: outcome,
-        sizeUsd: order.newSizeUsd,
-        payoutUsd: order.newPayoutUsd,
-        contracts: order.contracts,
-        avgPriceUsd: order.newAvgPriceUsd,
-        costUsd: order.orderCostUsd,
-        feeUsd: order.estimatedTotalFeeUsd,
-      }, null, 2),
-      data: {
-        ...result,
-        _tradeCapture: {
-          type: "prediction", chain: "solana", status: "closed",
-          walletAddress: addr, tradeSide: "sell",
-          positionKey: pk,
-          instrumentKey: `solana:predict:${order.marketId}:${outcome}`,
-          inputValueUsd: order.orderCostUsd,
-          unitPriceUsd: order.newAvgPriceUsd,
-          feeValueUsd: order.estimatedTotalFeeUsd,
-          valuationSource: "prediction_exact",
-          settlementAssetKey: "USDC",
-          meta: { positionPubkey: pk, marketId: order.marketId, side: outcome, sizeUsd: order.newSizeUsd, payoutUsd: order.newPayoutUsd, contracts: order.contracts },
-        },
-      },
-    };
-  },
-  "solana.predict.claim": async (p, ctx) => {
-    const pk = str(p, "positionPubkey");
-    if (!pk) return fail("Missing required: positionPubkey");
-    let addr: string, secret: Uint8Array;
-    try {
-      addr = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
-    } catch (err) {
-      return walletScopeErrorToResult(err);
-    }
-    const result = await executeJupiterPredictionClaimPosition(secret, pk);
-    const pos = result.raw.position;
-    const outcome = pos.isYes ? "yes" : "no";
-    return {
-      success: true,
-      // Lean view (P0-2): drop the base64 tx; full result + _tradeCapture in data.
-      output: JSON.stringify({
-        signature: result.signature,
-        explorerUrl: result.explorerUrl,
-        positionPubkey: pk,
-        side: outcome,
-        payoutAmountUsd: pos.payoutAmountUsd,
-        contracts: pos.contracts,
-      }, null, 2),
-      data: {
-        ...result,
-        _tradeCapture: {
-          type: "prediction", chain: "solana", status: "claimed",
-          walletAddress: addr, positionKey: pk,
-          outputValueUsd: pos.payoutAmountUsd,
-          valuationSource: "prediction_exact",
-          settlementAssetKey: "USDC",
-          // No instrumentKey — claim response has marketPubkey (account address), not marketId.
-          // Downstream matches via positionKey from the buy capture.
-          meta: { positionPubkey: pk, side: outcome, payoutAmountUsd: pos.payoutAmountUsd, contracts: pos.contracts },
-        },
-      },
-    };
-  },
-  "solana.predict.closeAll": async (p, ctx) => {
-    // Resolve owner + signer BEFORE broadcast (5D-protocols p2).
-    let wallet: string, secret: Uint8Array;
-    try {
-      wallet = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
-    } catch (err) {
-      return walletScopeErrorToResult(err);
-    }
-    const result = await executeJupiterPredictionCloseAllPositions(secret);
-
-    const captureItems = result.results.map(item => {
-      let pk: string | undefined;
-      let marketId: string | undefined;
-      let outcome: string | undefined;
-      let itemValuation: Record<string, string | undefined> = {};
-
-      let contracts: string | undefined;
-
-      if ("order" in item.raw) {
-        const order = item.raw.order;
-        pk = order.positionPubkey;
-        marketId = order.marketId;
-        outcome = order.isYes ? "yes" : "no";
-        contracts = order.contracts;
-        itemValuation = {
-          inputValueUsd: order.orderCostUsd,
-          unitPriceUsd: order.newAvgPriceUsd,
-          feeValueUsd: order.estimatedTotalFeeUsd,
-          valuationSource: "prediction_exact",
-        };
-      } else if ("position" in item.raw) {
-        const pos = item.raw.position;
-        pk = pos.positionPubkey;
-        outcome = pos.isYes ? "yes" : "no";
-        contracts = pos.contracts;
-        itemValuation = {
-          outputValueUsd: pos.payoutAmountUsd,
-          valuationSource: "prediction_exact",
-        };
-      }
-
-      return {
-        type: "prediction" as const, chain: "solana" as const,
-        status: item.kind === "claim" ? "claimed" as const : "closed" as const,
-        walletAddress: wallet, tradeSide: "sell" as const,
-        signature: item.signature,
-        positionKey: pk,
-        instrumentKey: marketId && outcome ? `solana:predict:${marketId}:${outcome}` : undefined,
-        settlementAssetKey: "USDC",
-        ...itemValuation,
-        meta: { kind: item.kind, positionPubkey: pk, outcome, contracts },
-      };
-    });
-
-    // Lean view (P0-2): closeAll otherwise DOUBLE-embeds every position's base64
-    // tx (result.raw + each results[].raw). Summarise from the captured items;
-    // the full result + _tradeCapture(+Items) stay in the (dropped) `data`.
-    const closed = captureItems.map((c) => ({
-      kind: c.meta.kind,
-      signature: c.signature,
-      positionPubkey: c.meta.positionPubkey,
-      outcome: c.meta.outcome,
-      contracts: c.meta.contracts,
-    }));
-    return {
-      success: true,
-      output: JSON.stringify({ count: result.results.length, closed }, null, 2),
-      data: {
-        ...result,
-        _tradeCapture: {
-          type: "prediction", chain: "solana", status: "closed",
-          walletAddress: wallet, tradeSide: "sell",
-          signature: result.results[0]?.signature,
-          meta: { action: "closeAll", count: result.results.length },
-        },
-        _tradeCaptureItems: captureItems,
-      },
-    };
-  },
+  // buy/sell/claim/closeAll (W5 migration 049): converted to the staged
+  // `agent_activity` write path — see `../predict-execute.ts`'s module doc
+  // for the full write-sequence contract (`../predict-execute-close-all.ts`
+  // for the N-row closeAll fan-out). `capture: "none"` in
+  // mutation-matrix.ts (no more `_tradeCapture`/`_tradeCaptureItems`); every
+  // outcome is truthful-pending.
+  "solana.predict.buy": executePredictBuy,
+  "solana.predict.sell": executePredictSell,
+  "solana.predict.claim": executePredictClaim,
+  "solana.predict.closeAll": executePredictCloseAll,
   "solana.predict.event": async (p) => {
     const id = str(p, "eventId");
     if (!id) return fail("Missing required: eventId");
-    return ok(toPredictView(await getJupiterPredictionEvent({ eventId: id, includeMarkets: true })));
+    // Lean markets (W1-C, transport optimization P1): same treatment as
+    // `.events` — the agent's preference is now also the actual upstream
+    // request (see `.events`'s comment above for the correction evidence).
+    const includeMarkets = bool(p, "includeMarkets") ?? false;
+    const event = await wrapPredictionRead(() => getJupiterPredictionEvent({ eventId: id, includeMarkets }));
+    return ok(toPredictView(event, { includeMarkets }));
   },
   "solana.predict.position": async (p) => {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
-    return ok(toPredictView(await getJupiterPredictionPosition(pk)));
+    // Regional-block mapping (FIX-D) — see `.market`'s comment above.
+    return ok(toPredictView(await wrapPredictionRead(() => getJupiterPredictionPosition(pk))));
   },
 };

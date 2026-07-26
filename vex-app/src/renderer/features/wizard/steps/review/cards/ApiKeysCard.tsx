@@ -23,13 +23,6 @@ export function ApiKeysCard({
   );
   items.push(`Tavily: ${k.tavilyConfigured ? "set" : "—"}`);
   items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "—"}`);
-  const poly =
-    k.polymarketStatus === "configured"
-      ? "set"
-      : k.polymarketStatus === "partial"
-        ? "partial"
-        : "—";
-  items.push(`Polymarket: ${poly}`);
   return (
     <SummaryCard
       title="API keys"

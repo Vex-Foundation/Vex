@@ -21,6 +21,7 @@ import {
 } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
+import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import logger from "../../utils/logger.js";
 import { PENDLE_ERC20_ABI, PENDLE_ROUTER } from "./constants.js";
@@ -88,6 +89,19 @@ export async function ensurePendleAllowanceExact(
   let resetTxHash: Hex | undefined;
   if (currentAllowance > 0n) {
     try {
+      // Estimated explicitly so the approve is signed with the shared headroom
+      // instead of `writeContract`'s internal bare estimate (see
+      // `gasLimitWithHeadroom` for the on-chain loss that proves why a bare
+      // estimate is unsafe). Kept INSIDE this try so a would-revert approve
+      // still throws before anything is signed AND still lands on the existing
+      // APPROVAL_FAILED classification, exactly as the internal estimate did.
+      const resetGasEstimate = await publicClient.estimateContractGas({
+        account: walletClient.account,
+        address: getAddress(token),
+        abi: PENDLE_ERC20_ABI,
+        functionName: "approve",
+        args: [spender, 0n],
+      });
       resetTxHash = await walletClient.writeContract({
         account: walletClient.account,
         chain: walletClient.chain,
@@ -95,6 +109,7 @@ export async function ensurePendleAllowanceExact(
         abi: PENDLE_ERC20_ABI,
         functionName: "approve",
         args: [spender, 0n],
+        gas: gasLimitWithHeadroom(resetGasEstimate),
       });
       await waitForSuccessfulReceipt(publicClient, resetTxHash, {
         code: ErrorCodes.APPROVAL_FAILED,
@@ -108,6 +123,14 @@ export async function ensurePendleAllowanceExact(
   }
 
   try {
+    // Same headroom discipline as the reset leg above.
+    const gasEstimate = await publicClient.estimateContractGas({
+      account: walletClient.account,
+      address: getAddress(token),
+      abi: PENDLE_ERC20_ABI,
+      functionName: "approve",
+      args: [spender, requiredAmount],
+    });
     const txHash = await walletClient.writeContract({
       account: walletClient.account,
       chain: walletClient.chain,
@@ -115,6 +138,7 @@ export async function ensurePendleAllowanceExact(
       abi: PENDLE_ERC20_ABI,
       functionName: "approve",
       args: [spender, requiredAmount],
+      gas: gasLimitWithHeadroom(gasEstimate),
     });
     await waitForSuccessfulReceipt(publicClient, txHash, {
       code: ErrorCodes.APPROVAL_FAILED,

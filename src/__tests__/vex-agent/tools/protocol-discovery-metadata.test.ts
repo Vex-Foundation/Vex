@@ -15,7 +15,6 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) original[k] = process.env[k];
     process.env.JUPITER_API_KEY = "test-jupiter-key";
-    process.env.POLYMARKET_API_KEY = "test-polymarket-key";
     delete process.env.EMBEDDING_BASE_URL;
     delete process.env.EMBEDDING_MODEL;
     delete process.env.EMBEDDING_DIM;
@@ -29,30 +28,14 @@ describe("protocol discovery — metadata v1 wiring (PR3)", () => {
     }
   });
 
-  it("canonicalSummary from metadata contributes to scoring", async () => {
-    const result = await discoverProtocolCapabilities({
-      query: "prediction market orderbook bids asks",
-    });
-    expect(result.success).toBe(true);
-    const clobOrderbook = result.tools.find((t) => t.toolId === "polymarket.clob.orderbook");
-    expect(clobOrderbook).toBeDefined();
-    expect(clobOrderbook!.whyMatched).toContain("canonicalSummary");
-  });
-
-  it("prediction market orderbook ranks clob.orderbook above data.closedPositions", async () => {
-    const result = await discoverProtocolCapabilities({
-      query: "prediction market orderbook",
-      limit: 10,
-    });
-    expect(result.success).toBe(true);
-    const ids = result.tools.map((t) => t.toolId);
-    const clobIdx = ids.findIndex((id) => id === "polymarket.clob.orderbook");
-    const closedIdx = ids.findIndex((id) => id === "polymarket.data.closedPositions");
-    expect(clobIdx, `clob.orderbook should appear (got ${JSON.stringify(ids)})`).toBeGreaterThanOrEqual(0);
-    if (closedIdx >= 0) {
-      expect(clobIdx, `clob.orderbook (idx=${clobIdx}) should rank above data.closedPositions (idx=${closedIdx})`).toBeLessThan(closedIdx);
-    }
-  });
+  // Agent Scan plan v3 (2026-07-22): the two canonicalSummary-scoring cases
+  // this suite used to pin (polymarket.clob.orderbook vs
+  // polymarket.data.closedPositions) were deleted along with the whole
+  // Polymarket namespace — no other active manifest was verified to
+  // demonstrate the same canonicalSummary-scoring invariant, so no
+  // replacement was invented here. Residual coverage gap: flagged for a
+  // follow-up pass using a surviving protocol's canonicalSummary-rich
+  // manifest if this metadata-v1 scoring behavior needs a dedicated pin again.
 
   it("unfilled tools still score via inherited metadata fields", async () => {
     const result = await discoverProtocolCapabilities({

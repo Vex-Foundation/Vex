@@ -21,3 +21,18 @@ export {
   type StagedSubmissionPhase,
   type StagedSubmissionResult,
 } from "./solana-transaction/staged.js";
+export {
+  prepareVersionedTx,
+  type PreparedSolanaTx,
+  type KnownSolanaBlockhash,
+  type PrepareVersionedTxOptions,
+  type SolanaSignerContract,
+} from "./solana-transaction/prepare.js";
+export {
+  submitPreparedTxOverRpc,
+  type SubmitPreparedTxOverRpcOptions,
+} from "./solana-transaction/rpc-submit.js";
+export {
+  classifyProviderSubmitFailure,
+  type SolanaSubmitOutcome,
+} from "./solana-transaction/submit-outcome.js";

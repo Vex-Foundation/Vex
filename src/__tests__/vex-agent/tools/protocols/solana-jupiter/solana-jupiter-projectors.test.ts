@@ -84,8 +84,56 @@ describe("projectJupiterToken — dropped-field invariants stay intact", () => {
     expect("mintAuthority" in out).toBe(false);
     expect("freezeAuthority" in out).toBe(false);
     expect("firstPool" in out).toBe(false);
-    expect("updatedAt" in out).toBe(false);
+    // `updatedAt` is deliberately NO LONGER dropped (2026-07-25): together with
+    // `priceBlockId` it is the only handle the agent has on how stale
+    // `usdPrice` is. The social/url bag and the raw sub-objects stay dropped.
+    expect(out.updatedAt).toBe("2024-01-02");
     expect(out.logoUrl).toBe("https://cdn.jup.ag/sol.png");
+  });
+});
+
+describe("projectJupiterToken — restored risk + staleness signals (2026-07-25)", () => {
+  it("surfaces audit.devMints, the serial-launcher rug signal in the safety block", () => {
+    const out = projectJupiterToken(makeToken({
+      audit: {
+        isSus: false,
+        mintAuthorityDisabled: true,
+        freezeAuthorityDisabled: true,
+        topHoldersPercentage: 21.5,
+        devBalancePercentage: 3.2,
+        devMints: 47,
+      },
+    }));
+    expect(out.audit?.devMints).toBe(47);
+    // The flags it sits beside are unchanged.
+    expect(out.audit?.isSus).toBe(false);
+    expect(out.audit?.topHoldersPercentage).toBe(21.5);
+  });
+
+  it("reports devMints as null when Jupiter audited the mint but omitted the count", () => {
+    const out = projectJupiterToken(makeToken({ audit: { isSus: true } }));
+    expect(out.audit?.devMints).toBeNull();
+  });
+
+  it("keeps the price's own staleness handles next to usdPrice", () => {
+    const out = projectJupiterToken(makeToken({
+      usdPrice: 231.44,
+      priceBlockId: 298_451_119,
+      updatedAt: "2026-07-24T15:24:06.000Z",
+    }));
+    expect(out.usdPrice).toBe(231.44);
+    expect(out.priceBlockId).toBe(298_451_119);
+    expect(out.updatedAt).toBe("2026-07-24T15:24:06.000Z");
+  });
+
+  it("normalises missing staleness handles to null rather than omitting them", () => {
+    const out = projectJupiterToken(makeToken({ usdPrice: 1 }));
+    expect(out.priceBlockId).toBeNull();
+    expect(out.updatedAt).toBeNull();
+  });
+
+  it("leaves the audit block null when Jupiter provided none (absence stays absence)", () => {
+    expect(projectJupiterToken(makeToken()).audit).toBeNull();
   });
 });
 

@@ -18,8 +18,8 @@
  * blocked finalize even though wallets existed.
  *
  * M9: extends the shape with per-API-key status (jupiter / tavily /
- * rettiwt / polymarket-3-state) + embeddings.allFieldsConfigured +
- * embeddings.dbReachable. The legacy `hasJupiterApiKey` field stays
+ * rettiwt) + embeddings.allFieldsConfigured + embeddings.dbReachable.
+ * The legacy `hasJupiterApiKey` field stays
  * as a deprecated mirror of `apiKeys.jupiterConfigured` so M2/M7
  * callers keep parsing without changes.
  */
@@ -38,7 +38,6 @@ import type {
   WalletAddresses,
   WalletPresence,
 } from "@shared/schemas/onboarding.js";
-import type { PolymarketStatus } from "@shared/schemas/api-keys.js";
 import {
   normalizeWalletSection,
   type WalletInventoryEntry,
@@ -218,17 +217,6 @@ export async function gatherWalletProbe(
   };
 }
 
-function polymarketStatusFrom(
-  apiKey: boolean,
-  apiSecret: boolean,
-  passphrase: boolean,
-): PolymarketStatus {
-  const set = [apiKey, apiSecret, passphrase].filter(Boolean).length;
-  if (set === 0) return "missing";
-  if (set === 3) return "configured";
-  return "partial";
-}
-
 export async function gatherEnvState(): Promise<EnvState> {
   const secretPresence = getUnlockedSecretPresence();
   const [
@@ -246,11 +234,6 @@ export async function gatherEnvState(): Promise<EnvState> {
   const hasJupiter = secretPresence.secrets.JUPITER_API_KEY === true;
   const hasTavily = secretPresence.secrets.TAVILY_API_KEY === true;
   const hasRettiwt = secretPresence.secrets.RETTIWT_API_KEY === true;
-  const hasPolyKey = secretPresence.secrets.POLYMARKET_API_KEY === true;
-  const hasPolySecret = secretPresence.secrets.POLYMARKET_API_SECRET === true;
-  const hasPolyPass = secretPresence.secrets.POLYMARKET_PASSPHRASE === true;
-
-  const polymarketStatus = polymarketStatusFrom(hasPolyKey, hasPolySecret, hasPolyPass);
 
   return {
     hasKeystorePassword: hasPwd,
@@ -259,7 +242,6 @@ export async function gatherEnvState(): Promise<EnvState> {
       jupiterConfigured: hasJupiter,
       tavilyConfigured: hasTavily,
       rettiwtConfigured: hasRettiwt,
-      polymarketStatus,
     },
     secrets: {
       vaultConfigured: secretPresence.vaultConfigured,

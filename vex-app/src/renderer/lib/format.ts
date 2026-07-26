@@ -2,10 +2,10 @@
  * Shared display formatters for the BOOK panel (and beyond).
  *
  * `truncateAddress` is the single canonical address shortener — the redesign
- * plan referenced a `maskHex` that never existed, and four near-identical
- * private copies live across the renderer (AddressDisplay, ExportWalletPicker,
- * SessionWalletSelect, polymarket). Those can be migrated to this helper in a
- * follow-up cleanup; new BOOK code uses this one.
+ * plan referenced a `maskHex` that never existed, and near-identical private
+ * copies live across the renderer (AddressDisplay, ExportWalletPicker,
+ * SessionWalletSelect). Those can be migrated to this helper in a follow-up
+ * cleanup; new BOOK code uses this one.
  */
 
 const ADDR_PREFIX = 6;

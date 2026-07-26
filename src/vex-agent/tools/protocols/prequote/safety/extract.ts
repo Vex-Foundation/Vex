@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
+import { jupiterFeePreviewSchema } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 
 // ── Verdict computation ───────────────────────────────────────────────────
@@ -111,6 +112,11 @@ const SolanaQuoteSchema = z.object({
     })
     .optional(),
   slippageBps: z.number().nullish(),
+  // W5 (design §6 R4): `solana.swap.quote`'s fee-bearing disclosure, when
+  // present. Optional so any pre-existing quote-result fixture without it
+  // still validates — the new `solana.swap.quote` handler always includes it
+  // in real traffic.
+  feePreview: jupiterFeePreviewSchema.optional(),
 });
 type SolanaTokenSafety = z.infer<typeof SolanaTokenSafetySchema>;
 
@@ -176,6 +182,13 @@ function extractEvm(
 
   const inLeg = evmLegVerdict(parsed.data.safety.tokenIn);
   const outLeg = evmLegVerdict(parsed.data.safety.tokenOut);
+
+  // No route facts are persisted here. A quote-time price floor used to ride
+  // the `route_ref` column so `kyberswap.swap.execute` could hold the build to
+  // it; that comparison was a zero tolerance stacked on the caller's own
+  // `slippageBps` and was removed by owner decision (2026-07-25) — see
+  // `@tools/kyberswap/swap-price-floor.js`. The execute now derives its floor
+  // from the FRESH route it just fetched, so nothing needs carrying across.
   return {
     tokenIn: parsed.data.tokenIn.address,
     tokenOut: parsed.data.tokenOut.address,
@@ -222,7 +235,14 @@ function extractSolana(
     amount,
     slippageBps: slippage,
     verdict: aggregateVerdict([inLeg.verdict, outLeg.verdict]),
-    safetyDetail: { inputToken: inLeg.detail, outputToken: outLeg.detail },
+    safetyDetail: {
+      inputToken: inLeg.detail,
+      outputToken: outLeg.detail,
+      // W5 (design §6 R4): the bounded fee-bearing disclosure rides the same
+      // JSONB channel as every other Solana quote detail — the gate later
+      // extracts it back out for the approval preview.
+      ...(parsed.data.feePreview !== undefined ? { feePreview: parsed.data.feePreview } : {}),
+    },
   };
 }
 

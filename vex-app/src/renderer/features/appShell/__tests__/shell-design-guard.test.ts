@@ -135,19 +135,6 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "Glass is allowed on the two side rails AND this composer — nowhere else.",
   },
   {
-    // Owner-decreed FOURTH sanctioned glass family (Hypervexing v2 redesign,
-    // 2026-07-12: "glass soft jedność" — the trading room must read as one
-    // liquid surface with the backdrop showing through the grid gaps).
-    // Deliberately scoped to the SINGLE HvZone wrapper: every workspace zone
-    // composes it, and no other workspace file may carry backdrop-blur.
-    file: "features/appShell/workspace/HvZone.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-sanctioned Hypervexing glass: all workspace grid zones wear " +
-      "translucent ink (--vex-glass) with backdrop-blur over the Eclipse " +
-      "via this one wrapper. The normal shell's glass law is unchanged.",
-  },
-  {
     // Owner decree 2026-07-20, Chronos glass law: every full-app ShellScreen
     // overlay (Memory / Sessions / How Vex works) is a floating glass
     // surface — ink glass + backdrop-blur for legibility over the Eclipse,
@@ -207,8 +194,8 @@ const WHITELIST: readonly WhitelistEntry[] = [
     // pill-band (lighter furniture than a card) — translucent ink
     // (--vex-rail) + backdrop-blur + a --vex-line hairline, rounded-2xl to
     // harmonize with the console pill above it. Full sanctioned glass
-    // roster after this entry: the two side rails, the composer, HvZone,
-    // the ShellScreen overlays, the profile menu, the Dialog base, the
+    // roster after this entry: the two side rails, the composer, the
+    // ShellScreen overlays, the profile menu, the Dialog base, the
     // portfolio cards, and this quick-actions chip row — nowhere else.
     file: "features/appShell/ComposerQuickActions.tsx",
     pattern: "backdrop-blur (glass)",

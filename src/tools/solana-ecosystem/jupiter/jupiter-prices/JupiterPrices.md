@@ -23,6 +23,7 @@ Local source-of-truth for Jupiter Price API V3 under `src/tools/solana-ecosystem
 - Tokens without a reliable price are omitted from the response. The local service represents that explicitly via `found: false` instead of inventing fallback values.
 - Price API returns current USD prices only. Historical prices are out of scope for this shelf.
 - Query-based helpers resolve symbols and names through `../jupiter-tokens/` before fetching prices.
+- `getJupiterPricesForTokenQueries` is wired to the agent-facing `solana.prices` tool's `queries` param (`../../../../vex-agent/tools/protocols/solana-jupiter/handlers/core.ts`), alongside the raw `mints` param backed by `getJupiterPricesByMint`. Both branches diff the request against the response and report unpriced entries via an explicit `missing` list — Jupiter's `/price/v3` silently omits ids it cannot price rather than erroring, so the handler never lets that omission pass through unexplained.
 
 ## Related
 - `../jupiter-tokens/` for metadata and token resolution

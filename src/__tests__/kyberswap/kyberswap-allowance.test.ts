@@ -1,102 +1,67 @@
 /**
- * Behavior tests for `ensureKyberAllowance` (Etap 4 — always-exact allowance).
+ * Behavior tests for `planKyberAllowance` (Agent Scan plan §4.2 rewrite of
+ * `ensureKyberAllowance`) — a pure on-chain READ that decides whether an
+ * allowance reset and/or approve broadcast is needed, BEFORE the execute
+ * handler creates its `agent_activity` event rows (plan §11.1 step 1: every
+ * planned broadcast needs its row created before anything is signed, so the
+ * handler must know the broadcast plan from a read, not from executing it).
  *
- * The exact-amount doctrine (mirroring Uniswap's `ensureUniswapAllowanceExact`)
- * means a short allowance is topped up to EXACTLY `requiredAmount`, never to an
- * unlimited `maxUint256`. These tests assert the on-chain `approve` call amount
- * and the sufficient-allowance short-circuit.
+ * The exact-amount doctrine is unchanged (Etap 4 — mirrors Uniswap's
+ * `ensureUniswapAllowanceExact`): callers top up to EXACTLY `requiredAmount`,
+ * never an unlimited `maxUint256`, unless the CALLER explicitly requests it.
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { maxUint256, type Address, type Hex } from "viem";
-import { ensureKyberAllowance } from "@tools/kyberswap/evm-utils.js";
+import { maxUint256, type Address } from "viem";
+import { planKyberAllowance, buildApproveCalldata } from "@tools/kyberswap/evm/allowance-plan.js";
 import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 
 const OWNER = "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79" as Address;
 const TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as Address; // USDC
 const SPENDER = META_AGGREGATION_ROUTER_V2;
-const FAKE_HASH = "0xabc0000000000000000000000000000000000000000000000000000000000001" as Hex;
 
-interface ApproveCall {
-  readonly functionName: string;
-  readonly args: readonly unknown[];
+function fakePublicClient(currentAllowance: bigint) {
+  return { readContract: vi.fn(async () => currentAllowance) } as unknown as Parameters<typeof planKyberAllowance>[0];
 }
 
-/** Build mocked viem clients; `writeContract` records each call's args. */
-function makeClients(currentAllowance: bigint) {
-  const approveCalls: ApproveCall[] = [];
-  const publicClient = {
-    readContract: vi.fn(async () => currentAllowance),
-    waitForTransactionReceipt: vi.fn(async () => ({ status: "success", logs: [] })),
-  };
-  const walletClient = {
-    account: { address: OWNER },
-    chain: { id: 1 },
-    writeContract: vi.fn(async (call: ApproveCall) => {
-      approveCalls.push({ functionName: call.functionName, args: call.args });
-      return FAKE_HASH;
-    }),
-  };
-  // The util only consumes the narrow surface exercised here; the viem generic
-  // client types are structurally wider, so cast at this test boundary only.
-  return { publicClient, walletClient, approveCalls } as unknown as {
-    publicClient: Parameters<typeof ensureKyberAllowance>[0];
-    walletClient: Parameters<typeof ensureKyberAllowance>[1];
-    approveCalls: ApproveCall[];
-  };
-}
-
-describe("ensureKyberAllowance — always-exact approval", () => {
-  it("approves EXACTLY requiredAmount (never maxUint256) when allowance is zero", async () => {
-    const required = 1_000_000n; // 1 USDC (6 decimals)
-    const { publicClient, walletClient, approveCalls } = makeClients(0n);
-
-    const result = await ensureKyberAllowance(publicClient, walletClient, TOKEN, SPENDER, required);
-
-    expect(result).not.toBeNull();
-    // Exactly one approve, for the exact required amount.
-    const approves = approveCalls.filter(c => c.functionName === "approve");
-    expect(approves).toHaveLength(1);
-    expect(approves[0]!.args[1]).toBe(required);
-    // Doctrine guard: it must NOT approve an unlimited allowance.
-    expect(approves[0]!.args[1]).not.toBe(maxUint256);
-  });
-
-  it("short-circuits (no approve) when the current allowance already covers requiredAmount", async () => {
+describe("planKyberAllowance", () => {
+  it("needs neither reset nor approve when the current allowance already covers requiredAmount", async () => {
     const required = 1_000_000n;
-    const { publicClient, walletClient, approveCalls } = makeClients(5_000_000n);
-
-    const result = await ensureKyberAllowance(publicClient, walletClient, TOKEN, SPENDER, required);
-
-    expect(result).toBeNull();
-    expect(approveCalls).toHaveLength(0);
+    const plan = await planKyberAllowance(fakePublicClient(5_000_000n), TOKEN, OWNER, SPENDER, required);
+    expect(plan).toEqual({ currentAllowance: 5_000_000n, needsReset: false, needsApprove: false });
   });
 
-  it("USDT-style: resets to 0 then approves EXACTLY requiredAmount when a partial allowance exists", async () => {
+  it("needs an approve (no reset) when the current allowance is exactly zero", async () => {
     const required = 1_000_000n;
-    const { publicClient, walletClient, approveCalls } = makeClients(500_000n); // partial < required
-
-    const result = await ensureKyberAllowance(publicClient, walletClient, TOKEN, SPENDER, required);
-
-    expect(result).not.toBeNull();
-    const approves = approveCalls.filter(c => c.functionName === "approve");
-    expect(approves).toHaveLength(2);
-    // First: reset to 0.
-    expect(approves[0]!.args[1]).toBe(0n);
-    // Second: exact required amount, not maxUint256.
-    expect(approves[1]!.args[1]).toBe(required);
-    expect(approves[1]!.args[1]).not.toBe(maxUint256);
+    const plan = await planKyberAllowance(fakePublicClient(0n), TOKEN, OWNER, SPENDER, required);
+    expect(plan).toEqual({ currentAllowance: 0n, needsReset: false, needsApprove: true });
   });
 
-  it("honors an explicit maxUint256 requiredAmount (zap-out/migrate LP-exit case)", async () => {
-    // Callers that genuinely need an unlimited standing allowance pass maxUint256
-    // AS requiredAmount; the function then approves exactly that (unlimited).
-    const { publicClient, walletClient, approveCalls } = makeClients(0n);
+  it("needs BOTH a reset and an approve (USDT-style) when a partial allowance exists", async () => {
+    const required = 1_000_000n;
+    const plan = await planKyberAllowance(fakePublicClient(500_000n), TOKEN, OWNER, SPENDER, required);
+    expect(plan).toEqual({ currentAllowance: 500_000n, needsReset: true, needsApprove: true });
+  });
 
-    await ensureKyberAllowance(publicClient, walletClient, TOKEN, SPENDER, maxUint256);
+  it("treats an equal current allowance as sufficient (boundary)", async () => {
+    const required = 1_000_000n;
+    const plan = await planKyberAllowance(fakePublicClient(1_000_000n), TOKEN, OWNER, SPENDER, required);
+    expect(plan.needsApprove).toBe(false);
+    expect(plan.needsReset).toBe(false);
+  });
+});
 
-    const approves = approveCalls.filter(c => c.functionName === "approve");
-    expect(approves).toHaveLength(1);
-    expect(approves[0]!.args[1]).toBe(maxUint256);
+describe("buildApproveCalldata", () => {
+  it("encodes the exact required amount (never maxUint256 unless explicitly requested)", () => {
+    const calldata = buildApproveCalldata(SPENDER, 1_000_000n);
+    // approve(address,uint256) selector
+    expect(calldata.slice(0, 10)).toBe("0x095ea7b3");
+    expect(calldata.toLowerCase()).not.toContain(maxUint256.toString(16));
+  });
+
+  it("honors an explicit maxUint256 amount when the caller requests it", () => {
+    const calldata = buildApproveCalldata(SPENDER, maxUint256);
+    expect(calldata.slice(0, 10)).toBe("0x095ea7b3");
+    expect(calldata.toLowerCase()).toContain("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
   });
 });

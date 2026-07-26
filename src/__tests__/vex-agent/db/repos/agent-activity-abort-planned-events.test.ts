@@ -1,0 +1,148 @@
+/**
+ * agent-activity repo — `abortPlannedEvents` unit tests (mocked pool).
+ *
+ * FIX2-SPINE round 2 (Codex final-review finding 3/C17): pins the CAS shape
+ * an early-plan-abort finalize must have —
+ *   - targets ONE execution's downstream rows (`protocol_execution_id = $1`)
+ *     at or after `fromIndex` (`event_index >= $2`)
+ *   - CAS-guarded: only `status = 'pending' AND tx_hash IS NULL` rows qualify
+ *     (a row that already staged a hash is untouched — repair owns it)
+ *   - finalizes to `definitively_failed` with the closed `failure_code`
+ *     `'unknown'`
+ *   - `failure_reason` passes the SAME repo-boundary sanitization
+ *     (`redact()` + 500-char cap) as `failActivityEvent` (finding 9/C5) —
+ *     callers cannot bypass it
+ *   - returns every row it actually finalized (mapped), `[]` when none
+ *     qualified — never throws for "nothing to abort"
+ */
+
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+
+type QueryMock = Mock<(sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>>;
+
+let mockQuery: QueryMock;
+
+function resetMocks() {
+  mockQuery = vi
+    .fn<(sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>>()
+    .mockResolvedValue([]);
+}
+resetMocks();
+
+vi.mock("@vex-agent/db/client.js", () => ({
+  query: (sql: string, params?: unknown[]) => mockQuery(sql, params),
+  queryOne: vi.fn(),
+  execute: vi.fn(),
+  queryWith: vi.fn(),
+  queryOneWith: vi.fn(),
+  executeWith: vi.fn(),
+  withTransaction: vi.fn(),
+}));
+
+const repo = await import("@vex-agent/db/repos/agent-activity.js");
+
+function lastSql(): string {
+  return mockQuery.mock.calls[mockQuery.mock.calls.length - 1]![0];
+}
+function lastParams(): unknown[] {
+  return mockQuery.mock.calls[mockQuery.mock.calls.length - 1]![1] ?? [];
+}
+
+function activityRow(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: 1,
+    protocol_execution_id: 42,
+    event_index: 1,
+    event_role: "allowance",
+    record_version: 1,
+    kind: "swap",
+    protocol: "kyberswap",
+    chain_id: 8453,
+    chain_slug: "base",
+    status: "definitively_failed",
+    failure_code: "unknown",
+    failure_reason: "not attempted: earlier swap reverted",
+    token_in_address: null,
+    token_in_symbol: null,
+    token_in_decimals: null,
+    amount_in_human: null,
+    amount_in_raw: null,
+    token_out_address: null,
+    token_out_symbol: null,
+    token_out_decimals: null,
+    amount_out_human: null,
+    amount_out_raw: null,
+    executed_amount_in_human: null,
+    executed_amount_in_raw: null,
+    executed_amount_out_human: null,
+    executed_amount_out_raw: null,
+    usd_in_est: null,
+    usd_out_est: null,
+    usd_fee_est: null,
+    usd_source: null,
+    tx_hash: null,
+    from_address: null,
+    nonce: null,
+    wallet_address: "0xWALLET",
+    session_id: "00000000-0000-4000-8000-000000000001",
+    route_provenance: null,
+    submit_attempted_at: null,
+    broadcast_at: null,
+    confirmed_at: null,
+    last_checked_at: null,
+    created_at: "2026-07-23T10:00:00.000Z",
+    updated_at: "2026-07-23T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  resetMocks();
+});
+
+describe("abortPlannedEvents", () => {
+  it("CAS-targets the execution's downstream never-signed pending rows only", async () => {
+    mockQuery.mockResolvedValueOnce([activityRow({ id: 2, event_index: 2 })]);
+    await repo.abortPlannedEvents(42, 1, "not attempted: earlier allowance reverted");
+
+    const sql = lastSql();
+    expect(sql).toMatch(/protocol_execution_id\s*=\s*\$1/);
+    expect(sql).toMatch(/event_index\s*>=\s*\$2/);
+    expect(sql).toMatch(/status\s*=\s*'pending'/);
+    expect(sql).toMatch(/tx_hash\s+IS\s+NULL/);
+    expect(sql).toContain("SET status = 'definitively_failed'");
+    expect(sql).toContain("failure_code = 'unknown'");
+
+    const params = lastParams();
+    expect(params[0]).toBe(42);
+    expect(params[1]).toBe(1);
+  });
+
+  it("sanitizes failure_reason the same way failActivityEvent does (redact + 500-char cap)", async () => {
+    const longReason = "not attempted: earlier swap reverted — ".repeat(30); // > 500 chars
+    await repo.abortPlannedEvents(7, 0, longReason);
+
+    const params = lastParams();
+    const boundReason = params[2] as string;
+    expect(boundReason.length).toBeLessThanOrEqual(520);
+    expect(boundReason.endsWith("…[truncated]")).toBe(true);
+  });
+
+  it("returns every finalized row, mapped", async () => {
+    mockQuery.mockResolvedValueOnce([
+      activityRow({ id: 5, event_index: 1 }),
+      activityRow({ id: 6, event_index: 2 }),
+    ]);
+    const rows = await repo.abortPlannedEvents(42, 1, "not attempted: earlier allowance reverted");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.id).toBe(5);
+    expect(rows[0]!.status).toBe("definitively_failed");
+    expect(rows[0]!.failureCode).toBe("unknown");
+    expect(rows[1]!.id).toBe(6);
+  });
+
+  it("returns [] (never throws) when nothing qualifies", async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await expect(repo.abortPlannedEvents(999, 0, "not attempted: earlier swap ambiguous")).resolves.toEqual([]);
+  });
+});
