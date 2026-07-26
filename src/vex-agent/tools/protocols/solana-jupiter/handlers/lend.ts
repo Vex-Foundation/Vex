@@ -346,7 +346,17 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
     };
   }
   // Exactly one match at this point — both other cardinalities returned above.
-  const [position] = matches;
+  // The explicit guard (not a destructure) keeps the stricter vex-app compile
+  // (`noUncheckedIndexedAccess`) satisfied without a non-null assertion.
+  const position = matches[0];
+  if (!position) {
+    return {
+      ok: false,
+      result: fail(
+        `solana.lend.withdraw: internal position-resolution error for ${asset} — retry, and if it persists withdraw a specific amount instead.`,
+      ),
+    };
+  }
 
   // `shares` is FINANCIALLY CONSUMED here (it is the redeem magnitude), so it
   // is read strictly even though the positions schema is a tolerant reader: a
