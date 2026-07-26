@@ -57,6 +57,7 @@ import {
 import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import { CAUSE_HINTS, uiCopyFor, type ServerError } from "./provider/error-ui.js";
+import { InferenceTierNote } from "./provider/InferenceTierNote.js";
 import { ModelBrandIcon } from "./provider/ModelBrandIcon.js";
 import { ModelPicker } from "./provider/ModelPicker.js";
 
@@ -359,6 +360,7 @@ export function ProviderStep({
             </a>
             .
           </p>
+          <InferenceTierNote />
         </div>
 
         {clientError ? (

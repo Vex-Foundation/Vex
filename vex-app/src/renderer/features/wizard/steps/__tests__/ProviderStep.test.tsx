@@ -440,6 +440,65 @@ describe("ProviderStep", () => {
     expect(models?.getAttribute("rel")).toContain("noreferrer");
   });
 
+  it("free-vs-paid note starts collapsed and expands on click", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ProviderStep
+        completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
+        onAdvance={mockOnAdvance}
+        flowMode="first-pass"
+      />,
+    );
+
+    // Collapsed by default so the common path stays light.
+    const trigger = container.querySelector(
+      '[data-vex-provider-tier-note="collapsed"]',
+    );
+    expect(trigger).toBeTruthy();
+    expect(
+      container.querySelector('[data-vex-provider-tier-note="open"]'),
+    ).toBeNull();
+
+    fireEvent.click(trigger as Element);
+
+    const panel = container.querySelector(
+      '[data-vex-provider-tier-note="open"]',
+    );
+    expect(panel).toBeTruthy();
+    // Links out to the LIVE catalogue and guardrail pages rather than
+    // restating anything volatile in-app.
+    const hrefs = Array.from(panel!.querySelectorAll("a")).map((a) =>
+      a.getAttribute("href"),
+    );
+    expect(hrefs).toContain("https://openrouter.ai/settings/privacy");
+    expect(hrefs).toContain("https://openrouter.ai/models");
+  });
+
+  it("free-vs-paid note hardcodes no prices and no model names", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container } = renderWithQuery(
+      <ProviderStep
+        completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
+        onAdvance={mockOnAdvance}
+        flowMode="first-pass"
+      />,
+    );
+    fireEvent.click(
+      container.querySelector(
+        '[data-vex-provider-tier-note="collapsed"]',
+      ) as Element,
+    );
+    const text =
+      container.querySelector('[data-vex-provider-tier-note="open"]')
+        ?.textContent ?? "";
+
+    // Prices and model names go stale fast, and stale onboarding copy reads as
+    // authoritative long after it stopped being true. Keep it qualitative.
+    expect(text).not.toMatch(/\$\s?\d/);
+    expect(text).not.toMatch(/\d+\s*(tokens?|requests?)\s*(per|\/)\s*(day|min)/i);
+    expect(text).not.toMatch(/gpt-|claude-|llama-|deepseek-|gemini-/i);
+  });
+
   it("Skip-card 'Continue' button advances to review without calling persistProvider", async () => {
     mockUseEnvState.mockReturnValue(
       makeQueryResult(
