@@ -49,13 +49,13 @@ export function DaemonStoppedBody({
         />
 
         <div className="flex flex-col gap-2">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.78)]">
+          <p className="vex-micro text-[var(--color-text-secondary)]">
             Run this in a terminal
           </p>
-          <pre className="overflow-auto rounded-lg border border-white/[0.14] bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-primary)]">
+          <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-[var(--color-text-primary)]">
             <code>sudo systemctl start docker</code>
           </pre>
-          <p className="text-xs text-[rgba(243,244,247,0.78)]">
+          <p className="text-xs text-[var(--color-text-secondary)]">
             Then click Recheck below.
           </p>
         </div>
@@ -64,12 +64,12 @@ export function DaemonStoppedBody({
           variant="ghost"
           disabled={starting}
           onClick={onStart}
-          className="self-start text-[rgba(243,244,247,0.78)]"
+          className="self-start text-[var(--color-text-secondary)]"
         >
           {starting ? "Starting…" : "Try Start Docker Desktop"}
         </Button>
         {startMessage ? (
-          <p className="text-[11px] leading-relaxed text-[rgba(243,244,247,0.78)]">
+          <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
             {startMessage}
           </p>
         ) : null}
@@ -104,7 +104,7 @@ export function DaemonStoppedBody({
       />
 
       {isDesktopPlatform ? (
-        <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
           <li>Click Start Docker (launches Docker Desktop).</li>
           <li>Wait ~30s for the daemon to answer.</li>
           <li>Click Recheck below.</li>
@@ -120,7 +120,7 @@ export function DaemonStoppedBody({
         {starting ? "Starting…" : "Start Docker"}
       </Button>
       {startMessage ? (
-        <p className="text-[11px] leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
           {startMessage}
         </p>
       ) : null}

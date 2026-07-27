@@ -182,7 +182,7 @@ export function ModelPicker({
       </div>
 
       {selected !== null && !showPanel ? (
-        <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
+        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
           <ModelBrandIcon modelId={selected.modelId} size={13} />
           <span>{selected.displayName}</span>
           {formatModelMeta(selected) ? <span>· {formatModelMeta(selected)}</span> : null}

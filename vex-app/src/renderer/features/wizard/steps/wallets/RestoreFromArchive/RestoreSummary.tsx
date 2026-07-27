@@ -25,7 +25,7 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
         <ul className="flex flex-col gap-2">
           {result.walletsRestored.map((wallet) => (
             <li key={wallet.id} className="flex flex-col gap-1">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+              <span className="vex-micro text-[var(--color-text-muted)]">
                 {wallet.label}
                 {wallet.legacy === true ? " · legacy" : ""}
               </span>

@@ -44,22 +44,20 @@
 
 import { useEffect, useRef, useState, type JSX } from "react";
 import { cn } from "../../lib/utils.js";
+import {
+  ALPHA_LEVELS,
+  BASE_ALPHA_IDX,
+  DEFAULT_SIGIL_PALETTE,
+  DPR_CAP,
+  buildSigilStyles,
+  mulberry32,
+  sampleSigilTargets,
+  type SigilPalette,
+} from "../../lib/sigil-sampler.js";
 
 /** Default source: the VEX script monogram (square PNG). */
 const SIGIL_SRC = "/logo_clean.png";
 
-/** Fixed offscreen sampling width — particle count is DPR-independent. */
-const SAMPLE_WIDTH = 220;
-/** Landing engine caps devicePixelRatio at 1.5. */
-const DPR_CAP = 1.5;
-/** A pixel is part of the mark when its alpha clears this (of 255). */
-const ALPHA_THRESHOLD = 128;
-/** Default sampling grid step (px in sample space). */
-const GRID_STEP = 2;
-const MIN_PARTICLES = 1500;
-const MAX_PARTICLES = 3000;
-/** Stride-thinning lands here when the raw grid overshoots MAX_PARTICLES. */
-const THIN_TARGET = 2400;
 /** Per-particle flight time on the landing Out curve. */
 const ASSEMBLE_MS = 1400;
 /** Max per-particle stagger — delay = hash(index) * 500ms. */
@@ -71,64 +69,11 @@ const SHIMMER_FRACTION = 0.015;
 /** Seed for the one-time particle PRNG ("VEXS"). */
 const SIGIL_SEED = 0x56455853;
 
-/**
- * A sigil palette is exactly three "r,g,b" canvas-paint channels (JS values,
- * never Tailwind classes): the body tone plus two accent sparks. The
- * constellation paints ~85% body, ~15% sparks (see the colorIdx roll below).
- */
-export type SigilPalette = readonly [string, string, string];
-
-/** Default (VEX) palette — paper #f3f4f7 body with periwinkle cobalt sparks
- * #8ba2ff / #7d92ff (the white signature with cobalt life). */
-const PAPER_RGB = "243,244,247";
-export const DEFAULT_SIGIL_PALETTE: SigilPalette = [
-  PAPER_RGB,
-  "139,162,255",
-  "125,146,255",
-];
-
-/** dim / base / bright — the shimmer flips between the outer two. */
-const ALPHA_LEVELS = [0.75, 0.9, 1] as const;
-const BASE_ALPHA_IDX = 1;
-/** Build the 9 fill styles for a palette (styleIdx = colorIdx * 3 + alphaIdx). */
-function buildStyles(palette: SigilPalette): readonly string[] {
-  return palette.flatMap((rgb) =>
-    ALPHA_LEVELS.map((alpha) => `rgba(${rgb},${alpha})`),
-  );
-}
-
-/** Tiny deterministic PRNG (mulberry32) — seeded once at sample time. */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** Collect [x0,y0, x1,y1, …] sample-space targets on a `step` grid. */
-function collectGridPoints(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  step: number,
-): number[] {
-  // NOTE (noUncheckedIndexedAccess): every index below is provably in
-  // bounds (loop-bounded), so the `?? 0` fallbacks in this module only
-  // satisfy the compiler and never fire.
-  const coords: number[] = [];
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < width; x += step) {
-      if ((data[(y * width + x) * 4 + 3] ?? 0) > ALPHA_THRESHOLD) {
-        coords.push(x, y);
-      }
-    }
-  }
-  return coords;
-}
+/* The sampling pipeline, the palette vocabulary and the PRNG now live in
+ * `lib/sigil-sampler.ts` — the setup gate's cinematic prologue assembles the
+ * SAME monogram and must read the same letterform targets. Re-exported here
+ * so this component's long-standing public API is unchanged. */
+export { DEFAULT_SIGIL_PALETTE, type SigilPalette };
 
 /** Particle store — parallel typed arrays; positions in SAMPLE space. */
 interface SigilParticles {
@@ -156,54 +101,9 @@ interface SigilParticles {
  * unreadable pixels, empty mark) — the caller falls back to the plain <img>.
  */
 function buildParticles(image: HTMLImageElement): SigilParticles | null {
-  const naturalWidth = image.naturalWidth;
-  const naturalHeight = image.naturalHeight;
-  if (naturalWidth <= 0 || naturalHeight <= 0) return null;
-
-  const sampleW = SAMPLE_WIDTH;
-  const sampleH = Math.max(
-    1,
-    Math.round((naturalHeight / naturalWidth) * SAMPLE_WIDTH),
-  );
-  const offscreen = document.createElement("canvas");
-  offscreen.width = sampleW;
-  offscreen.height = sampleH;
-  let sampleCtx: CanvasRenderingContext2D | null = null;
-  try {
-    sampleCtx = offscreen.getContext("2d", { willReadFrequently: true });
-  } catch {
-    sampleCtx = null;
-  }
-  if (sampleCtx === null) return null;
-
-  sampleCtx.drawImage(image, 0, 0, sampleW, sampleH);
-  let data: Uint8ClampedArray;
-  try {
-    data = sampleCtx.getImageData(0, 0, sampleW, sampleH).data;
-  } catch {
-    // Unreadable pixels (e.g. a tainted canvas) — surface as fallback.
-    return null;
-  }
-
-  // Grid sampling: 2px grid, refined to 1px only when the mark is too
-  // sparse; overshoot is stride-thinned below (deterministic, keeps the
-  // letterform coverage uniform).
-  let coords = collectGridPoints(data, sampleW, sampleH, GRID_STEP);
-  if (coords.length / 2 < MIN_PARTICLES) {
-    coords = collectGridPoints(data, sampleW, sampleH, 1);
-  }
-  let count = coords.length / 2;
-  if (count === 0) return null;
-  if (count > MAX_PARTICLES) {
-    const stride = count / THIN_TARGET;
-    const thinned: number[] = [];
-    for (let k = 0; Math.floor(k * stride) < count; k++) {
-      const i = Math.floor(k * stride);
-      thinned.push(coords[i * 2] ?? 0, coords[i * 2 + 1] ?? 0);
-    }
-    coords = thinned;
-    count = coords.length / 2;
-  }
+  const sample = sampleSigilTargets(image);
+  if (sample === null) return null;
+  const { width: sampleW, height: sampleH, count, coords } = sample;
 
   const prng = mulberry32(SIGIL_SEED);
   const targetX = new Float32Array(count);
@@ -292,7 +192,7 @@ export function VexSigil({
   paletteRef.current = palette;
 
   useEffect(() => {
-    const styles = buildStyles(paletteRef.current);
+    const styles = buildSigilStyles(paletteRef.current);
     const canvasEl = canvasRef.current;
     if (canvasEl === null) return undefined;
     // Re-declared with the narrowed type so the hoisted closures below see a

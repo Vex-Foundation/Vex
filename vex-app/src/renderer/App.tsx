@@ -54,6 +54,7 @@ const PRE_SHELL_VIEWS: ReadonlySet<View> = new Set<View>([
 
 export function App(): JSX.Element {
   const currentView = useUiStore((s) => s.currentView);
+  const prologueReplayNonce = useUiStore((s) => s.prologueReplayNonce);
   const unlockCurtainActive = useUiStore((s) => s.unlockCurtainActive);
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const dismissUnlockCurtain = useUiStore((s) => s.dismissUnlockCurtain);
@@ -125,7 +126,11 @@ export function App(): JSX.Element {
           resolves and the curtain reveal completes, then unmounts for the
           rest of the process. Mounted BELOW UpdateLayer (z-[60]) so a
           critical update toast stays visible over the boot ritual. */}
-      <SetupGate />
+      {/* The nonce is a REMOUNT key, not just data: the gate decides its
+          prologue variant once per mount (a lazy initialiser), so the dev
+          tour's replay only re-runs the cinematic if the whole gate is a
+          fresh mount. It stays 0 for the entire life of a real launch. */}
+      <SetupGate key={prologueReplayNonce} />
       {/* Unlock-success exit curtain — armed by UnlockScreen after the
           unlock IPC succeeds; flips the view to unlockReturnView while the
           cobalt plate is opaque, then splits open over the revealed view.

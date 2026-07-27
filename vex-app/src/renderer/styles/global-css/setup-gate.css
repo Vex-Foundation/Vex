@@ -56,17 +56,22 @@
   }
 }
 
-/* Tones: ink (cobalt arc on the dark shell/onboarding canvas) and paper
- * (paper arc on the cobalt plate). Token-only on the ink side; the paper
- * side is literal landing-paper because the plate behind it is the one
- * surface where the accent IS the background. */
+/* Tones: ink (cobalt arc on the shell/onboarding canvas) and paper (the
+ * pre-shell plate). Both are token-only. `paper` kept its name — every
+ * `tone="paper"` call site is a pre-shell surface — but the INK REDESIGN
+ * turned the plate from solid cobalt into deep ink-navy, so the arc is no
+ * longer paper-on-accent: it is the cobalt accent itself, in the lighter
+ * `--color-accent-secondary` mix (#7ba4ff, 7.99:1 on the plate) because a
+ * 2px stroke of raw #1f44ff would only reach ~3:1 there. The track drops
+ * to a whisper so the unlit part of the ring stops reading as a grey
+ * circle around the paper sigil. */
 .vex-loader--ink {
   --vex-loader-arc: var(--color-accent-primary);
   --vex-loader-track: rgba(255, 255, 255, 0.08);
 }
 .vex-loader--paper {
-  --vex-loader-arc: rgba(243, 244, 247, 0.95);
-  --vex-loader-track: rgba(255, 255, 255, 0.22);
+  --vex-loader-arc: var(--color-accent-secondary);
+  --vex-loader-track: rgba(255, 255, 255, 0.12);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -83,54 +88,183 @@
 }
 
 /* --- The cold-open plate ------------------------------------ */
-/* Solid cobalt with a whisper of depth toward the edges — the
- * vignette keeps the sigil's paper particles the brightest thing
- * on screen. Grain rides on top via the shared .vex-noise layer. */
+/* INK REDESIGN (owner decree 2026-07-27): the plate was solid cobalt
+ * (`--color-accent-primary`) with white text at 58–78% alpha; at those
+ * alphas the copy sat at 2.9–4.0:1 on the accent and washed out. The
+ * surface is now deep ink-navy and cobalt is promoted to ACCENT — see the
+ * `[data-vex-gate="true"]` scope below.
+ *
+ * The literal is deliberate: `.vex-gate-plate` is painted by SetupGate and
+ * CurtainExit, whose roots sit OUTSIDE the `[data-vex-gate]` attribute
+ * scope (they are curtain layers, not pages), so the plate colour cannot
+ * come from a token declared there. This one hex is the whole plate's
+ * source of truth. Grain rides on top via the shared .vex-noise layer. */
 .vex-gate-plate {
-  background: var(--color-accent-primary);
+  background: #070b1e;
 }
 
-/* --- The cobalt continuum token scope (AMENDMENT A2) ---------- */
-/* Every pre-shell screen paints the SetupGate plate and carries
- * `data-vex-gate="true"` on its root. This scope re-projects the
- * shadcn aliases for paper-on-cobalt: stock Button `default` becomes
- * a paper pill with a deep-cobalt label, `ghost`/`outline` hover on a
- * white-alpha wash, focus rings speak paper, and stock Input hairlines
- * read on the plate. This file imports AFTER onboarding.css, so the
- * cascade beats the ink-tuned onboarding projection on the same node.
- * No component forks — tokens only. */
+/* --- The pre-shell continuum token scope (AMENDMENT A2 / INK) --- */
+/* Every pre-shell screen paints the plate above and carries
+ * `data-vex-gate="true"` on its root. This scope is where the whole
+ * "ink + cobalt accent" direction lives: colour tiers AND the type scale,
+ * re-projected for the pre-shell only. This file imports AFTER
+ * onboarding.css, so the cascade beats the onboarding projection on the
+ * same node. No component forks — tokens only.
+ *
+ * Why re-projection rather than editing call sites: six of the seven
+ * wizard steps (and therefore `WizardStepPanel` and everything under
+ * `features/wizard/steps/`) are ALSO rendered by the app shell's Settings
+ * screen (`features/appShell/screens/SettingsScreen.tsx`). The shell is
+ * out of scope for this redesign, so anything that must change only in
+ * the pre-shell has to change here, on the scope — never in a step file. */
 [data-vex-gate="true"] {
-  --color-primary: var(--color-text-primary);
-  --color-primary-foreground: var(--color-accent-deep);
-  --color-ring: var(--color-text-primary);
+  /* Cobalt is the ACCENT now, not the surface. Stock Button `default` is a
+   * cobalt pill with a WHITE label (6.31:1); rings, selection and the
+   * active progress dot speak the same cobalt; `ghost`/`outline` hover on
+   * a white-alpha wash. */
+  --color-primary: var(--color-accent-primary);
+  --color-primary-foreground: #ffffff;
+  --color-ring: var(--color-accent-primary);
   --color-accent: rgba(255, 255, 255, 0.1);
   --color-accent-foreground: var(--color-text-primary);
+  /* Hairlines. The pre-shell used to draw these at white 10–16%, which is
+   * 1.26–1.54:1 on the plate — visually absent. Raised to a border tier
+   * that is actually a line, and a stronger step for input wells so a
+   * field reads as a field before it is focused. Call sites reach these
+   * through `--color-border` / `--color-input`, which the app shell also
+   * defines, so a dual-hosted step form is correct in both worlds. */
   --color-border: rgba(255, 255, 255, 0.22);
-  --color-input: rgba(255, 255, 255, 0.22);
-  /* Ink-tuned text/surface aliases re-projected for paper-on-cobalt
-   * (Phase 2b root-cause fix): every `text-secondary`/`muted` consumer
-   * inside the gate scope reads paper-alpha instead of the ink greys,
-   * popover/muted slabs become the ink-glass / white-alpha vocabulary,
-   * and the free-floating onboarding accent — cobalt, i.e. the exact
-   * hex of the plate itself — becomes paper, which fixes every
-   * remaining accent-on-accent link, ring, and scrollbar thumb in one
-   * move. The same classes keep their ink-tuned values inside the
-   * shell, so step forms render correctly in BOTH worlds. */
-  --color-text-secondary: rgba(243, 244, 247, 0.78);
-  --color-text-muted: rgba(243, 244, 247, 0.58);
-  --color-muted-foreground: rgba(243, 244, 247, 0.58);
-  --color-popover: rgba(8, 11, 24, 0.55);
-  --color-muted: rgba(255, 255, 255, 0.1);
-  --vex-onboarding-accent: var(--color-text-primary);
-  /* Status words (owner QA 2026-07-22: "kolory są średnio dopasowane") —
-   * the tokens.css semantics (#1fb954 / #febc2e / #ef4444) are tuned for
-   * the dark ink shell and turn muddy on the cobalt plate. Inside the
-   * gate they lean toward landing paper (#f3f4f7): same hue family,
-   * pastel weight, readable on #1f44ff. Literals mixed from the
-   * tokens.css bases because a var() here would self-reference. */
-  --color-success: color-mix(in oklab, #1fb954 42%, #f3f4f7);
-  --color-warning: color-mix(in oklab, #febc2e 55%, #f3f4f7);
-  --color-danger: color-mix(in oklab, #ef4444 45%, #f3f4f7);
+  --color-input: rgba(255, 255, 255, 0.28);
+  /* Text tiers are SOLID — never opacity-stacked (the same law tokens.css
+   * states for the ink shell). Contrast on the #070b1e plate:
+   *   primary   #f3f4f7 → 17.75:1
+   *   secondary #c4cadb → 11.92:1
+   *   muted     #8f97ad →  6.69:1  (AA body text needs 4.5:1)
+   * These are the pre-shell's own tier, within ~3% of the global ink trio;
+   * declared explicitly so the plate owns its own contrast budget. */
+  --color-text-secondary: #c4cadb;
+  --color-text-muted: #8f97ad;
+  --color-muted-foreground: #8f97ad;
+  /* Raised ink for popovers/menus (the model picker) — a translucent slab
+   * over the plate lost its edge once the plate went dark. */
+  --color-popover: var(--color-bg-elevated);
+  --color-muted: rgba(255, 255, 255, 0.08);
+  /* Accent AS TEXT or as a thin stroke must use the lighter mix: raw
+   * #1f44ff on #070b1e is 3.09:1, too weak to read. The 55%-toward-white
+   * mix resolves to #7ba4ff → 7.99:1. `--vex-accent-text` is the same
+   * token name the shell scope uses, so `.vex-eyebrow` and the two link
+   * primitives resolve correctly in both worlds. */
+  --vex-onboarding-accent: var(--color-accent-secondary);
+  --vex-accent-text: var(--color-accent-secondary);
+
+  /* --- Type scale (INK REDESIGN) -------------------------------- *
+   * The pre-shell had no scale: sizes were px literals at 10–13px. It is
+   * rem-based now, and raised, so it tracks the root font size.
+   *
+   * Tailwind v4 compiles `text-sm` to `font-size: var(--text-sm)` (verified
+   * against the emitted utilities of tailwindcss 4.2.4), so re-pinning the
+   * theme vars HERE rescales every text utility in the pre-shell without
+   * touching one call site — and leaves the app shell, which hosts the
+   * same step forms, on the stock scale. */
+  --text-xs: 0.875rem; /* 12 → 14px — helper/hint copy under fields */
+  --text-sm: 1rem; /* 14 → 16px — body copy, field labels, inputs */
+  --text-2xl: 2.5rem; /* 24 → 40px — the serif screen/step title. One
+   * re-pin lands BOTH the SetupFrame screen titles and the wizard step
+   * titles on the same size, with no call-site edits and no change in
+   * Settings (which hosts the same step files on the stock scale). */
+  /* The mono micro-label (`.vex-micro`, global-css/landing-motifs.css):
+   * bigger, and looser tracking pulled back in so it stops shimmering. */
+  --vex-micro-size: 0.75rem; /* 10 → 12px */
+  --vex-micro-tracking: 0.14em; /* was 0.18em */
+}
+
+/* Status words: the paper-mixed pastels this scope used to declare existed
+ * only because the plate WAS the cobalt accent and the true semantics went
+ * muddy on it. On the ink plate the global semantics are the readable ones
+ * — #1fb954 7.55:1, #febc2e 11.57:1, #ef4444 5.19:1 — so the gate simply
+ * inherits tokens.css and the pre-shell finally matches the shell. */
+
+/* --- The pre-shell action pill --------------------------------- */
+/* The Button primitive's type scale is a literal inside its CVA base
+ * (`components/ui/button.tsx`: `text-[11px] tracking-[0.16em]`), so it is
+ * NOT reachable through the `--text-*` re-projection above — and that file
+ * is shared with the app shell, which must not change. The pre-shell
+ * therefore resizes the pill here, keyed on the two base utilities every
+ * Button emits: the pill radius plus the mono micro-type. Raw `<button>`
+ * elements in the pre-shell (icon toggles, list options, inline links) do
+ * not carry both and are untouched; the hand-rolled Button lookalikes in
+ * `features/docker/LicenseNotice.tsx` do, and are meant to follow.
+ *
+ * COUPLING: if button.tsx's base ever drops `rounded-full` or `font-mono`,
+ * this rule silently stops matching. It is unlayered author CSS, so it
+ * beats Tailwind's `@layer utilities` without !important. */
+[data-vex-gate="true"] button.rounded-full.font-mono {
+  font-size: 0.875rem; /* 11 → 14px */
+  letter-spacing: 0.12em;
+}
+
+/* Physical size of the pre-shell's real actions (owner review 2026-07-27:
+ * the CTAs read undersized against the enlarged type). Height must also be
+ * decided here rather than at the call sites, because the wizard's footers
+ * live in step files that the app shell's Settings screen renders too.
+ *
+ * The two ACTION sizes grow to a single h-12: `default` (h-9, the wizard
+ * step footers) and `lg` (h-11, the SetupFrame screens' primary CTAs).
+ * `sm` (h-8) is deliberately excluded — it marks the small inline actions
+ * inside wallet/model rows, which are not page CTAs and must stay quiet.
+ *
+ * COUPLING: the size utilities are the selector. They are exactly what
+ * button.tsx's CVA `size` variants emit, and `cn()`'s tailwind-merge keeps
+ * one height class per element, so a call-site `h-12` still wins cleanly. */
+[data-vex-gate="true"] button.rounded-full.font-mono.h-9,
+[data-vex-gate="true"] button.rounded-full.font-mono.h-11 {
+  height: 3rem;
+  padding-inline: 2rem;
+}
+
+/* --- The wizard step header, centered for the pre-shell only ---- */
+/* Owner review 2026-07-27: the pre-shell pages read unbalanced with a
+ * flush-left header over centered actions. In the gate the step header
+ * becomes a centered stack — icon badge above, then the serif title, then
+ * the lede — which matches SetupFrame's centered header so the wizard and
+ * the five SetupFrame screens share one rhythm.
+ *
+ * This lives here, not in `WizardStepPanel.tsx`, because that component is
+ * ALSO the header of every Settings section in the app shell
+ * (`features/appShell/screens/SettingsScreen.tsx`), where the left-aligned
+ * composition is correct and must not change. The two classes below are
+ * pure hooks: they carry no declarations outside this scope, so in Settings
+ * they are inert and the call-site Tailwind classes stand unmodified.
+ *
+ * The header's own `items-start`/`gap-4` are Tailwind utilities in
+ * `@layer utilities`; this unlayered rule beats them without !important.
+ * Text centering is inherited by the title and lede, so the inner column
+ * needs no hook of its own. */
+[data-vex-gate="true"] .vex-step-header {
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+}
+/* The lede goes up a step (16 → 18px) in the pre-shell only. It cannot ride
+ * a `--text-*` re-pin: it is `text-sm`, which also carries body copy, field
+ * labels and input values across both worlds. */
+[data-vex-gate="true"] .vex-step-lede {
+  font-size: var(--text-lg);
+}
+/* The step's action row centers with the header. The form fields between
+ * them keep their own left alignment — only headers, hero prose and CTAs
+ * center (owner spec). Settings keeps the row right-aligned. */
+[data-vex-gate="true"] .vex-step-actions {
+  justify-content: center;
+}
+
+/* Input wells grow with the body scale — a 16px value in a 36px well sits
+ * on the baseline with nowhere to breathe. Checkboxes and radios keep
+ * their intrinsic box. */
+[data-vex-gate="true"]
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+  height: 2.75rem; /* h-9 → h-11 */
 }
 
 /* --- The gate page column scroll contract ---------------------- */
@@ -151,6 +285,13 @@
   overflow-x: clip;
   overflow-y: auto;
   animation: vex-gate-scroll-settle 1.1s step-end;
+  /* Owner QA 2026-07-27: the thumb sat flush against the text column
+   * (visibly touching the review rows' EDIT labels). The gutter lives
+   * HERE, with the scroll contract, so both gate pages (WizardShell,
+   * SetupFrame) breathe identically; it is symmetric so the text column
+   * stays centered. Call sites widen their max-w by 4rem to compensate —
+   * the readable measure is unchanged. */
+  padding-inline: 2rem;
 }
 @keyframes vex-gate-scroll-settle {
   from {
@@ -158,24 +299,40 @@
   }
 }
 
-/* Gate scrollbar, quieter — the onboarding projection (paper thumb at
- * 38%) reads as a fat white bar against cobalt. Same recipe, calmer
- * alpha; wins by source order (this file imports after onboarding.css,
- * both attributes sit on the same root node). */
+/* Gate scrollbar — the onboarding recipe tints the thumb with
+ * `--vex-onboarding-accent`, which the gate scope points at the light
+ * #7ba4ff mix; at 38% that reads as a pale grey pill, louder than any
+ * text on the ink plate (owner QA 2026-07-27). Inside the gate the thumb
+ * speaks raw cobalt instead: unlike text and thin strokes, the thumb is
+ * a passive affordance and WANTS to sit below the content's contrast
+ * floor, so the raw accent at partial alpha is correct here. Same
+ * specificity as the onboarding rules; wins by source order (this file
+ * imports after onboarding.css, both attributes sit on the same root). */
 [data-vex-gate="true"]::-webkit-scrollbar-thumb,
 [data-vex-gate="true"] *::-webkit-scrollbar-thumb {
-  background: rgba(243, 244, 247, 0.24);
+  background: color-mix(in oklab, var(--color-accent-primary) 45%, transparent);
   background-clip: content-box;
 }
 [data-vex-gate="true"]::-webkit-scrollbar-thumb:hover,
 [data-vex-gate="true"] *::-webkit-scrollbar-thumb:hover {
-  background: rgba(243, 244, 247, 0.45);
+  background: color-mix(in oklab, var(--color-accent-primary) 75%, transparent);
   background-clip: content-box;
 }
+[data-vex-gate="true"] {
+  scrollbar-color: color-mix(in oklab, var(--color-accent-primary) 45%, transparent)
+    transparent;
+}
+
+/* Vignette — still a whisper of depth toward the edges, but inverted in
+ * intent: on a near-black plate the deep cobalt no longer darkens the
+ * corners, it blooms them, which is what keeps the kinship with the old
+ * cobalt world. Pulled back from 45% to 30% so the centre stays the
+ * darkest thing on screen and the sigil's paper particles stay the
+ * brightest. */
 .vex-gate-vignette {
   background: radial-gradient(
     120% 90% at 50% 50%,
     transparent 55%,
-    color-mix(in oklab, var(--color-accent-deep) 45%, transparent) 100%
+    color-mix(in oklab, var(--color-accent-deep) 30%, transparent) 100%
   );
 }

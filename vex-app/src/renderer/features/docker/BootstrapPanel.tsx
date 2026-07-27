@@ -246,7 +246,7 @@ export function BootstrapPanel(): JSX.Element {
           <Button
             variant="ghost"
             size="lg"
-            className="min-w-[208px] text-[rgba(243,244,247,0.78)]"
+            className="min-w-[208px] text-[var(--color-text-secondary)]"
             onClick={handleRecheck}
             disabled={recheckDisabled}
           >

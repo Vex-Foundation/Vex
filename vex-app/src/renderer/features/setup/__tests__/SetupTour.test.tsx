@@ -68,6 +68,7 @@ describe("SetupTour", () => {
       expect(screen.getByRole("button", { name: view })).not.toBeNull();
     }
     expect(screen.getByRole("button", { name: "Reload boot" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Replay prologue" })).not.toBeNull();
   });
 
   it("a view key dismisses the boot gate and flips currentView (view-routing only)", async () => {
@@ -78,5 +79,31 @@ describe("SetupTour", () => {
     fireEvent.click(screen.getByRole("button", { name: "unlock" }));
     expect(store.getState().currentView).toBe("unlock");
     expect(store.getState().setupGateActive).toBe(false);
+  });
+
+  it("Replay prologue re-arms the gate and bumps the replay nonce each click", async () => {
+    const { SetupTour, store } = await importFresh("1");
+    render(<SetupTour />);
+
+    // Start from a dismissed gate — the realistic state when the owner wants
+    // to preview the cold open again mid-session.
+    store.setState({ setupGateActive: false });
+    const before = store.getState().prologueReplayNonce;
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay prologue" }));
+    expect(store.getState().setupGateActive).toBe(true);
+    expect(store.getState().prologueReplayNonce).toBe(before + 1);
+
+    // Repeatable: the nonce is the gate's remount key, so a second click
+    // must produce a NEW value or the replay would silently no-op.
+    fireEvent.click(screen.getByRole("button", { name: "Replay prologue" }));
+    expect(store.getState().prologueReplayNonce).toBe(before + 2);
+  });
+
+  it("does not persist the prologue version key — the preview stays repeatable", async () => {
+    const { SetupTour } = await importFresh("1");
+    render(<SetupTour />);
+    fireEvent.click(screen.getByRole("button", { name: "Replay prologue" }));
+    expect(window.localStorage.getItem("vex-prologue-version")).toBeNull();
   });
 });

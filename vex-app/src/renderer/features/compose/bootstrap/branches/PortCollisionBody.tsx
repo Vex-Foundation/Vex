@@ -37,7 +37,7 @@ export function PortCollisionBody({
       />
       {previousInstallHoldingPorts ? (
         <>
-          <p className="text-xs leading-relaxed text-[rgba(243,244,247,0.78)]">
+          <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
             Containers from a previous Vex installation are holding the ports.
             Vex will stop only the inspected containers publishing the required
             ports.
@@ -61,7 +61,7 @@ export function PortCollisionBody({
         </>
       ) : (
         <>
-          <p className="text-xs leading-relaxed text-[rgba(243,244,247,0.78)]">
+          <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
             Stop the conflicting process (another Postgres or Vex install may be
             holding the port) and click Try again. Vex needs free local ports for
             the bundled Postgres + embeddings runtime.

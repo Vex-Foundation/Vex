@@ -23,7 +23,7 @@ export function LoadingBody(): JSX.Element {
         <p className="text-sm font-medium text-[var(--color-text-primary)]">
           Detecting Docker…
         </p>
-        <p className="text-xs text-[rgba(243,244,247,0.58)]">
+        <p className="text-xs text-[var(--color-text-muted)]">
           Probing the Docker endpoint and platform. This should take a few
           seconds.
         </p>

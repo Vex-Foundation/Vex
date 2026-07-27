@@ -35,10 +35,10 @@ const defaultWord: Record<SetupStatusTone, string> = {
 
 const wordInk: Record<SetupStatusTone, string> = {
   ok: "text-[var(--color-success)]",
-  info: "text-[rgba(243,244,247,0.85)]",
+  info: "text-[var(--color-text-secondary)]",
   warn: "text-[var(--color-warning)]",
   error: "text-[var(--color-danger)]",
-  muted: "text-[rgba(243,244,247,0.58)]",
+  muted: "text-[var(--color-text-muted)]",
 };
 
 const alertRail: Partial<Record<SetupStatusTone, string>> = {
@@ -54,21 +54,32 @@ export function SetupStatusCard({
   detail,
   children,
 }: SetupStatusCardProps): JSX.Element {
+  // Alignment follows the tone, so no call site has to decide (owner review
+  // 2026-07-27 — prose centers, alerts do not). A calm stanza is hero prose
+  // and centers with the screen's header. An alert IS its left rail: the
+  // 2px border is the alignment, and centering text against it would leave
+  // the rail marking nothing.
+  const isAlert = alertRail[tone] !== undefined;
   return (
-    <div className={cn("flex flex-col gap-1", alertRail[tone])}>
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        isAlert ? alertRail[tone] : "items-center text-center",
+      )}
+    >
       <span
         className={cn(
-          "font-mono text-[10px] font-semibold uppercase tracking-[0.18em]",
+          "vex-micro font-semibold",
           wordInk[tone],
         )}
       >
         {word ?? defaultWord[tone]}
       </span>
-      <span className="text-sm font-medium text-[var(--color-text-primary)]">
+      <span className="text-lg font-medium text-[var(--color-text-primary)]">
         {title}
       </span>
       {detail ? (
-        <span className="text-xs leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <span className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
           {detail}
         </span>
       ) : null}
