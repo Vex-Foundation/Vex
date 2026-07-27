@@ -54,8 +54,19 @@ export function SetupStatusCard({
   detail,
   children,
 }: SetupStatusCardProps): JSX.Element {
+  // Alignment follows the tone, so no call site has to decide (owner review
+  // 2026-07-27 — prose centers, alerts do not). A calm stanza is hero prose
+  // and centers with the screen's header. An alert IS its left rail: the
+  // 2px border is the alignment, and centering text against it would leave
+  // the rail marking nothing.
+  const isAlert = alertRail[tone] !== undefined;
   return (
-    <div className={cn("flex flex-col gap-1", alertRail[tone])}>
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        isAlert ? alertRail[tone] : "items-center text-center",
+      )}
+    >
       <span
         className={cn(
           "vex-micro font-semibold",
@@ -64,7 +75,7 @@ export function SetupStatusCard({
       >
         {word ?? defaultWord[tone]}
       </span>
-      <span className="text-sm font-medium text-[var(--color-text-primary)]">
+      <span className="text-lg font-medium text-[var(--color-text-primary)]">
         {title}
       </span>
       {detail ? (

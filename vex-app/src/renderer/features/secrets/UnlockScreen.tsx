@@ -194,7 +194,9 @@ export function UnlockScreen(): JSX.Element {
         >
           Welcome back.
         </h1>
-        <p className="vex-rise vex-rise-d1 mt-3 text-center text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        {/* Bespoke header (this screen passes no SetupFrame title), so the
+         * subline steps up to 18px here rather than through the scaffold. */}
+        <p className="vex-rise vex-rise-d1 mt-3 text-center text-lg leading-relaxed text-[var(--color-text-secondary)]">
           Your master password decrypts the local vault on this machine.
         </p>
 

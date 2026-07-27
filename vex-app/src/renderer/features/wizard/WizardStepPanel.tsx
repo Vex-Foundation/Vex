@@ -171,8 +171,14 @@ export function WizardStepPanel({
   // type system guarantees the (kind, value) pair is valid.
   const dataAttrs = { [dataAttrKey]: panelDataAttr.value };
 
+  // `vex-step-header` / `vex-step-lede` are STYLE HOOKS, not styles: they
+  // carry declarations only inside the `[data-vex-gate]` scope
+  // (global-css/setup-gate.css), where the header becomes a centered stack
+  // and the lede goes up to 18px. In Settings — which renders this same
+  // component — they match nothing, so the left-aligned composition below
+  // is what ships there. Keep the Tailwind classes as the Settings truth.
   const headerNode = (
-    <header className="flex items-start gap-4">
+    <header className="vex-step-header flex items-start gap-4">
       <span aria-hidden className={ICON_CIRCLE_CHROME}>
         <HugeiconsIcon icon={icon} size={20} aria-hidden />
       </span>
@@ -180,15 +186,20 @@ export function WizardStepPanel({
         <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
           {title}
         </h1>
-        <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        <p className="vex-step-lede text-sm leading-relaxed text-[var(--color-text-secondary)]">
           {description}
         </p>
       </div>
     </header>
   );
 
+  // Same hook contract as the header: right-aligned in Settings, centered in
+  // the pre-shell so the step's actions sit under the centered header on the
+  // same axis as every SetupFrame screen's CTA.
   const actionsNode = footer ? (
-    <div className="mt-8 flex items-center justify-end gap-3">{footer}</div>
+    <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
+      {footer}
+    </div>
   ) : null;
 
   const metaNode = (

@@ -334,8 +334,10 @@ export function WizardShell(): JSX.Element {
           completedSteps={persisted?.completedSteps ?? []}
         />
         {/* A3 boxless: the page scrolls here (quiet onboarding scrollbar),
-            not inside a bordered panel well. */}
-        <div className="vex-gate-page min-h-0 w-full max-w-[640px]">
+            not inside a bordered panel well. max-w = 640px of readable
+            measure + 4rem for .vex-gate-page's symmetric scrollbar gutter
+            (setup-gate.css), which keeps the thumb off the text column. */}
+        <div className="vex-gate-page min-h-0 w-full max-w-[704px]">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={currentStepId}
