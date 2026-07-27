@@ -15,7 +15,7 @@ export const DEXSCREENER_CORE_DISCOVERY = {
     embeddingText: embeddingText(
       `Search trading pairs and tokens by name, symbol, or contract address across every chain — Ethereum, Solana, BNB, Base, Arbitrum, Polygon, Avalanche, Robinhood and others. ` +
       `Use this when the user names a coin or pair (PEPE, BONK, a new memecoin) and wants to find it without knowing the chain, or wants to compare pairs across chains. ` +
-      `Optional filters narrow by chain, minimum liquidity, and result count; results come back sorted by liquidity. Follow with dexscreener.tokenPairs to pick the deepest pool. ` +
+      `Optional filters narrow by chains (chainIds), minimum liquidity, and result count; results come back in provider order, not ranked by liquidity. Follow with dexscreener.tokenPairs to pick the deepest pool. ` +
       `Example queries: find pepe pair, search bonk, lookup this contract, where is shib trading on base, find a token on robinhood, search dex pairs.`,
     ),
     chains: DEXSCREENER_CHAINS,

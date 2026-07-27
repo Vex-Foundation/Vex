@@ -8,19 +8,25 @@
  * and takes no window params at all — there is nothing to filter in a 7-row answer
  * about a token the caller already chose.
  *
- * Tool-level `description` strings are owned by a separate description card.
+ * That split is why only `ads` carries the shared feed-window disclosure: `orders`
+ * has no window, so claiming one would be its own falsehood.
  */
 
 import type { ProtocolToolManifest } from "../../types.js";
 import { DEXSCREENER_ORDERS_DISCOVERY } from "../../embeddings/dexscreener/orders.js";
-import { AD_FEED_PARAMS } from "./feed-list-params.js";
+import { AD_FEED_PARAMS, FEED_DESCRIPTION_WINDOW_CLAUSE } from "./feed-list-params.js";
 
 export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "dexscreener.orders",
     namespace: "dexscreener",
     lifecycle: "active",
-    description: "Check paid promotional orders for a token — each with type, status, and paymentTimestampMs (Unix epoch MILLISECONDS) — plus the token's boost-payment ledger (individual boost purchases with amounts). Legitimacy verification signal: shows what the project paid DEX Screener for.",
+    description:
+      "Check paid promotional orders for a token — each with type, status, and paymentTimestampMs "
+      + "(Unix epoch MILLISECONDS) — plus the token's boost-payment ledger (individual boost "
+      + "purchases with amounts). This is a SPEND record: it shows what the project paid DEX "
+      + "Screener for. Paying for promotion is not a quality or safety signal, and paying for none "
+      + "is not a warning.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -34,7 +40,10 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "dexscreener.ads",
     namespace: "dexscreener",
     lifecycle: "active",
-    description: "Get latest DexScreener ad placements — type, duration, impressions. Monitor promotional activity across the platform.",
+    description:
+      "Get latest DexScreener ad placements — type, duration, impressions. Monitor promotional "
+      + "activity across the platform. "
+      + FEED_DESCRIPTION_WINDOW_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [...AD_FEED_PARAMS],

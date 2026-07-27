@@ -2,6 +2,7 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { DEXSCREENER_CORE_DISCOVERY } from "../../embeddings/dexscreener/core.js";
 import {
   PAIR_BATCH_PARAMS,
+  PAIR_DESCRIPTION_WINDOW_CLAUSE,
   PAIR_LIST_PARAMS,
   PAIR_LOOKUP_PARAMS,
   SEARCH_CHAIN_FILTER_PARAM,
@@ -13,9 +14,9 @@ import {
 // stats on that pool).
 //
 // All four tools share the param vocabulary in `./pair-list-params.ts` and the
-// output contract in `../pair-list/`. The tool-level `description` strings below
-// predate that work and are owned by a separate description card — the param
-// text is where the honest constraints live for now.
+// output contract in `../pair-list/`. The `description` strings below now carry
+// the same honest constraints as the param text: what the provider chose, what
+// Vex applied to it, and that neither the window nor the sort can be widened.
 
 export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
   {
@@ -23,7 +24,13 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Search DEX pairs across every chain by token name, symbol, or contract address. Start here when you have a name/ticker/address but not a specific pool. Returns concise pairs (price, priceChange h1/h24, liquidity, volume h24, FDV, market cap, txns h24) sorted by liquidity. Optional filters: chainId (e.g. ethereum, base, solana, bsc, arbitrum, robinhood), minLiquidityUsd, limit. Then use dexscreener.tokenPairs to pick the deepest pool.",
+      "Search DEX pairs across every chain by token name, symbol, or contract address. Start here "
+      + "when you have a name/ticker/address but not a specific pool. Returns concise pairs (price, "
+      + "priceChange h1/h24, liquidity, volume h24, FDV, market cap, txns h24) in relevance order — "
+      + "the order DexScreener returned, which is not a ranking. Optional filters: chainIds (e.g. "
+      + "ethereum, base, solana, bsc, arbitrum, robinhood), minLiquidityUsd, limit. "
+      + PAIR_DESCRIPTION_WINDOW_CLAUSE
+      + " Then use dexscreener.tokenPairs to pick the deepest pool.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -35,9 +42,10 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
           "What to match, minimum 2 characters (DexScreener answers 1 character with an HTTP 400 "
           + "it does not explain). Matches a token name (spaces are fine), a symbol, a token "
           + "address, pair notation like SOL/USDC, and a venue name such as raydium — which acts "
-          + "as a de-facto venue filter. A POOL address returns exactly that one pool, with no "
-          + "chainId needed, which makes this the cheapest way to identify an address of unknown "
-          + "provenance. TRAP: matching is purely textual and never against the chain field, so "
+          + "as a de-facto venue filter. A POOL address is the cheapest way to identify an address "
+          + "of unknown provenance, but it can return matching rows on more than one chain because "
+          + "EVM addresses recur — inspect chainId on every returned row or use `chainIds` to "
+          + "narrow. TRAP: matching is purely textual and never against the chain field, so "
           + "q=arbitrum returns the ARB token on Solana, not pools on Arbitrum — use `chainIds` "
           + "for that.",
       },
@@ -52,7 +60,12 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Get concise stats for one specific DEX pool by chain + pair address — price, priceChange (h1/h24), liquidity, volume (h24), txns (h24 buys/sells), FDV, market cap, pair age. Use when you already have a pool address (e.g. from dexscreener.tokenPairs) and want its numbers.",
+      "Get concise stats for one specific DEX pool by chain + pair address — price, priceChange "
+      + "(h1/h24), liquidity, volume (h24), txns (h24 buys/sells), FDV, market cap, pair age. Use "
+      + "when you already have a pool address (e.g. from dexscreener.tokenPairs) and want its "
+      + "numbers. Direct lookup: returns only the pool(s) you name (a comma-separated address list "
+      + "is fetched in one call). Vex applies no filtering here; DexScreener offers no server-side "
+      + "filter or sort.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -77,7 +90,10 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "Batch-price up to 30 token addresses on ONE chain in a single call (comma-separated). Returns the same concise pair rows as search. Use for portfolio pricing or comparing several tokens on the same chain.",
+      "Batch-price up to 30 token addresses on ONE chain in a single call (comma-separated). "
+      + "Returns the same concise pair rows as search. Use for portfolio pricing or comparing "
+      + "several tokens on the same chain. "
+      + PAIR_DESCRIPTION_WINDOW_CLAUSE,
     mutating: false,
     actionKind: "read",
     params: [
@@ -102,7 +118,13 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "dexscreener",
     lifecycle: "active",
     description:
-      "List every DEX pool for ONE token on a chain, sorted by USD liquidity (deepest first). This is the canonical resolver for 'which pool should I trade / zap into'. Returns concise pair rows including pairAddress — feed that pool address into swap/zap tools or dexscreener.pairs.",
+      "List the DEX pools for ONE token on a chain, sorted by USD liquidity (deepest first). This "
+      + "is the canonical resolver for 'which pool should I trade / zap into'. Returns concise pair "
+      + "rows including pairAddress — feed that pool address into swap/zap tools or "
+      + "dexscreener.pairs. The provider selects at most 30 pools per token, in unspecified order — "
+      + "high-pool-count tokens are truncated to 30 by DexScreener with no way to widen. Vex then "
+      + "sorts that bounded window (by USD liquidity by default) and applies every filter and "
+      + "window; no server-side filter, sort, limit or pagination exists.",
     mutating: false,
     actionKind: "read",
     params: [

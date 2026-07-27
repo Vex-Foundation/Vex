@@ -32,6 +32,21 @@ const FEED_WINDOW_CLAUSE =
   "Applied by Vex to the at most 30 rows DexScreener returned — it cannot reach rows outside that "
   + "window, and an empty result means this window held none, not that none exist.";
 
+/**
+ * The same truth at TOOL level, for the `description` of the five fixed-window
+ * feeds (`profiles`, `profiles.recent`, `boosts`, `boosts.top`, `ads`).
+ *
+ * It lives beside `FEED_WINDOW_CLAUSE` so the window fact still has exactly one
+ * owner: a correction cannot land on the params and miss the descriptions, or on
+ * four feeds and miss the fifth. `communityTakeovers` and `attention` are NOT on
+ * this clause — the takeover feed has only an observed bound (28 rows measured,
+ * never a stated cap) and `attention` merges two windows, so each states its own.
+ */
+export const FEED_DESCRIPTION_WINDOW_CLAUSE =
+  "Every filter, sort and window is applied by Vex to the provider's own feed window of at most 30 "
+  + "rows per call. DexScreener offers no server-side filter, sort, limit or pagination, and there "
+  + "is no way to widen the window.";
+
 /** Window / paging. Replaces every silent default. */
 export const FEED_WINDOW_PARAMS: readonly ProtocolParamDef[] = [
   {

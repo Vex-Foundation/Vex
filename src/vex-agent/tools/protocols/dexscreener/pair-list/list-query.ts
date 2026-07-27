@@ -198,7 +198,7 @@ export function parsePairListQuery(
   // AND measurably degrades lexical tool retrieval (the duplicate key and its
   // description both score on "chain", which was enough to push
   // `khalani.tokens.search` out of the golden top-3 for "cross chain token
-  // search"). An agent working from the not-yet-rewritten description gets
+  // search"). An agent that still tries the old spelling gets
   // `Unknown parameter "chainId" … Allowed parameters: query, chainIds, …` from
   // the runtime param boundary, which names the replacement and is correctable in
   // one turn.

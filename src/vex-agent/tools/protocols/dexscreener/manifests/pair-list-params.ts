@@ -24,6 +24,20 @@ const WINDOW_CLAUSE =
   "Applied by Vex to the at most 30 rows DexScreener returned — it cannot reach rows outside "
   + "that window.";
 
+/**
+ * The same truth at TOOL level, for the `description` of `search` and `tokens`.
+ *
+ * It lives beside `WINDOW_CLAUSE` rather than in the manifest so the window fact
+ * still has exactly one owner per family: a future correction cannot land on the
+ * params and miss the description, or on one tool and miss its sibling. The
+ * pair-lookup tools state their own narrower truth inline — `pairs` has no window
+ * to disclose and `tokenPairs` is truncated by the provider before we see it.
+ */
+export const PAIR_DESCRIPTION_WINDOW_CLAUSE =
+  "Every filter, sort and window is applied by Vex to at most 30 provider-chosen rows per call. "
+  + "DexScreener offers no server-side filter, sort, limit or pagination, and there is no way to "
+  + "widen the window.";
+
 /** Window / paging. Replaces every silent default. */
 export const PAIR_WINDOW_PARAMS: readonly ProtocolParamDef[] = [
   {
