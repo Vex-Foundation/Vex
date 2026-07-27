@@ -37,6 +37,22 @@ export const ALL_NARRATIVE_FIELDS: readonly string[] = [
   ...RICH_NARRATIVE_FIELDS,
 ];
 
+/**
+ * What `omitFields` may remove here.
+ *
+ * `description` is opt-in on this family, so omitting it only bites alongside
+ * `fields: "full"` — which is exactly the call an agent makes to get every
+ * number, and exactly where DexScreener's unbounded editorial prose is the one
+ * thing it does not want. Everything else on the row is a number a decision
+ * reads, or the `slug` that identifies it.
+ */
+export const OMITTABLE_NARRATIVE_FIELDS: readonly string[] = ["description"];
+
+export const OMIT_NARRATIVE_FIELDS_NOTE =
+  "slug is the identifier you pass back to dexscreener.meta and the aggregates are what the feed "
+  + "exists to report, so neither is omittable. description is opt-in via \"fields\" — omitting it "
+  + "is only meaningful together with fields: \"full\".";
+
 export const ALL_FIELDS_SENTINEL = "full";
 
 export type NarrativeFieldSelection = ReadonlySet<string>;
@@ -45,15 +61,26 @@ export type NarrativeFieldResolution =
   | { readonly ok: true; readonly fields: NarrativeFieldSelection }
   | { readonly ok: false; readonly reason: string };
 
-/** Additive, never subtractive. Unknown names are rejected BY NAME. */
+/**
+ * Additive first, then the bounded subtraction. Unknown names rejected BY NAME.
+ *
+ * Subtraction runs LAST so `fields: "full"` + `omitFields: "description"` means
+ * "every number, none of the prose" rather than depending on read order.
+ */
 export function resolveNarrativeFields(
   requested: readonly string[] | null,
+  omitted: readonly string[] | null = null,
 ): NarrativeFieldResolution {
+  const withoutOmitted = (fields: Set<string>): NarrativeFieldSelection => {
+    for (const name of omitted ?? []) fields.delete(name);
+    return fields;
+  };
+
   const selected = new Set<string>(LEAN_NARRATIVE_FIELDS);
-  if (requested === null) return { ok: true, fields: selected };
+  if (requested === null) return { ok: true, fields: withoutOmitted(selected) };
 
   if (requested.includes(ALL_FIELDS_SENTINEL)) {
-    return { ok: true, fields: new Set(ALL_NARRATIVE_FIELDS) };
+    return { ok: true, fields: withoutOmitted(new Set(ALL_NARRATIVE_FIELDS)) };
   }
   const known = new Set(ALL_NARRATIVE_FIELDS);
   const unknown = requested.filter((name) => !known.has(name));
@@ -68,5 +95,5 @@ export function resolveNarrativeFields(
     };
   }
   for (const name of requested) selected.add(name);
-  return { ok: true, fields: selected };
+  return { ok: true, fields: withoutOmitted(selected) };
 }

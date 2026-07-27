@@ -95,7 +95,12 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "Get latest community takeover (CTO) events — a record that a community reclaimed control of "
       + "a token, each carrying the provider's claimDate (emitted as claimedAt, reported as "
-      + "eventAgeSeconds); bound recency with claimedWithinSeconds. Every filter, sort and window is "
+      + "eventAgeSeconds); bound recency with claimedWithinSeconds. This is a RECENCY WINDOW, not a "
+      + "takeover history: it reports the takeovers this feed is carrying right now, so 'has token X "
+      + "ever had a CTO' and 'list this token's past takeovers' are NOT answerable here or anywhere "
+      + "in this API — a token absent from the window has not been shown to lack a takeover. For a "
+      + "per-token flag use dexscreener.profiles / dexscreener.profiles.recent, whose rows carry "
+      + "communityTakeover. Every filter, sort and window is "
       + "applied by Vex to the provider's returned feed window (observed ≤30 rows). DexScreener "
       + "offers no server-side filter, sort, limit or pagination, and there is no way to widen the "
       + "window.",
@@ -116,7 +121,11 @@ export const TRENDING_TOOLS: readonly ProtocolToolManifest[] = [
       + "trending narratives. It is a Vex-side merge of the token-profile and paid-boost feed "
       + "windows (each ≤30 provider-chosen rows, so the merge can reach ~60 rows); every filter, "
       + "sort and window is applied by Vex; no server-side options exist and the underlying windows "
-      + "cannot be widened.",
+      + "cannot be widened. ROWS CARRY NO TIMESTAMP and none can be added: the boost feed publishes "
+      + "no time of any kind, and the merge keeps boost units rather than the profile half's "
+      + "updatedAt — so nothing here can be filtered or sorted by age, and a row being present says "
+      + "nothing about when it appeared. Use dexscreener.profiles.recent when you need a "
+      + "time-ordered feed.",
     mutating: false,
     actionKind: "read",
     params: [...ATTENTION_FEED_PARAMS],

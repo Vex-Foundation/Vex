@@ -26,7 +26,11 @@
  * `src/__tests__/vex-agent/inference/schema-normalizer.test.ts`.
  */
 
-import type { JsonSchema, JsonSchemaProperty } from "@vex-agent/tools/types.js";
+import type {
+  JsonSchema,
+  JsonSchemaProperty,
+  JsonSchemaTypedProperty,
+} from "@vex-agent/tools/types.js";
 
 /**
  * Return a strict-mode-compliant copy of `schema` with:
@@ -51,7 +55,17 @@ export function normalizeToolSchemaForProvider(schema: JsonSchema): JsonSchema {
 }
 
 function normalizeProperty(property: JsonSchemaProperty): JsonSchemaProperty {
-  const result: JsonSchemaProperty = { ...property };
+  // A union property (what a param declared `acceptsStringArray` compiles to)
+  // carries its real shapes in the BRANCHES. Walking only `items`/`properties`
+  // left a bare `{type:"array"}` branch without an item schema — precisely what
+  // OpenAI strict and Azure reject, so the normalizer would have waved through
+  // the very shape it exists to fix. It gains no `type` here either: `type`
+  // beside `anyOf` conjoins and would make the array branch unsatisfiable.
+  if (property.anyOf !== undefined) {
+    return { ...property, anyOf: property.anyOf.map(normalizeProperty) };
+  }
+
+  const result: JsonSchemaTypedProperty = { ...property };
 
   if (property.type === "array") {
     // Inject default items schema only when missing — never overwrite an

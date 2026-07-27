@@ -25,17 +25,67 @@
  * Each row is counted against exactly ONE reason, the first that rejected it.
  */
 
+/**
+ * A value on either side of a filter comparison, as the agent will read it.
+ *
+ * Deliberately not `unknown`: these are echoed into the payload, so the shape
+ * has to be one a caller can compare without re-parsing.
+ */
+export type DropComparisonValue = string | number | boolean | readonly string[] | null;
+
 /** One named rejection rule. `reason` becomes a `droppedByFilter` key. */
 export interface RowRejection<TRow> {
   /** The PARAMETER NAME that did the dropping — never a prose description. */
   readonly reason: string;
   readonly rejects: (row: TRow) => boolean;
+  /**
+   * The row's own value for THIS filter, read only when `explainDrops` is on.
+   *
+   * Optional because a few rules are presence tests with nothing to report
+   * (`unknownAge` IS the statement that the value is absent).
+   */
+  readonly rowValueOf?: (row: TRow) => DropComparisonValue;
+  /** The threshold as the caller passed it, normalised. */
+  readonly threshold?: DropComparisonValue;
+}
+
+/**
+ * One dropped row, explained. See {@link ExplainDropsOptions} for the cap.
+ */
+export interface DroppedRowRecord {
+  /**
+   * 0-based index of the row in THIS response's PRE-FILTER input — the provider
+   * window order for a plain tool, the Vex merge order for `attention`.
+   *
+   * Deterministic within one response and NOT stable across calls: the provider
+   * re-chooses its window every time. It is a pointer into the answer in hand,
+   * never a row identity, and the param text says so.
+   */
+  readonly providerRowIndex: number;
+  /** Best-effort family identity: pair address, token address or slug. */
+  readonly rowId: string | null;
+  /** The FIRST filter that rejected the row — the same one `droppedByFilter` counted. */
+  readonly filter: string;
+  readonly value: DropComparisonValue;
+  readonly threshold: DropComparisonValue;
+}
+
+/** The cap on the explained sample. `droppedByFilter` remains the full census. */
+export const MAX_EXPLAINED_DROPPED_ROWS = 10;
+
+export interface ExplainDropsOptions<TRow> {
+  /** Best-effort identity for a provider row, or `null` when it carries none. */
+  readonly rowIdOf: (row: TRow) => string | null;
 }
 
 export interface FilterOutcome<TRow> {
   readonly kept: TRow[];
   /** Reason → row count. Only reasons that dropped something appear. */
   readonly droppedByFilter: Record<string, number>;
+  /** Present only when `explainDrops` was requested. At most 10 records. */
+  readonly droppedRows?: DroppedRowRecord[];
+  /** Present with `droppedRows`: whether the census exceeds the sample. */
+  readonly droppedRowsTruncated?: boolean;
 }
 
 /**
@@ -51,20 +101,43 @@ export interface FilterOutcome<TRow> {
 export function filterRows<TRow>(
   rows: readonly TRow[],
   rejections: readonly RowRejection<TRow>[],
+  explain?: ExplainDropsOptions<TRow>,
 ): FilterOutcome<TRow> {
   const kept: TRow[] = [];
   const droppedByFilter: Record<string, number> = {};
+  const droppedRows: DroppedRowRecord[] = [];
+  let droppedTotal = 0;
 
-  for (const row of rows) {
+  for (const [providerRowIndex, row] of rows.entries()) {
     const rejection = rejections.find((candidate) => candidate.rejects(row));
     if (rejection === undefined) {
       kept.push(row);
       continue;
     }
     droppedByFilter[rejection.reason] = (droppedByFilter[rejection.reason] ?? 0) + 1;
+    droppedTotal += 1;
+    // The SAMPLE is capped; the census above is not. An agent needs one row's
+    // losing number to decide whether to loosen the filter — it does not need
+    // thirty of them, and paying for thirty on every explained call would
+    // reintroduce the blob this pipeline exists to remove.
+    if (explain !== undefined && droppedRows.length < MAX_EXPLAINED_DROPPED_ROWS) {
+      droppedRows.push({
+        providerRowIndex,
+        rowId: explain.rowIdOf(row),
+        filter: rejection.reason,
+        value: rejection.rowValueOf === undefined ? null : rejection.rowValueOf(row),
+        threshold: rejection.threshold ?? null,
+      });
+    }
   }
 
-  return { kept, droppedByFilter };
+  if (explain === undefined) return { kept, droppedByFilter };
+  return {
+    kept,
+    droppedByFilter,
+    droppedRows,
+    droppedRowsTruncated: droppedTotal > droppedRows.length,
+  };
 }
 
 export type SortDirection = "desc" | "asc";

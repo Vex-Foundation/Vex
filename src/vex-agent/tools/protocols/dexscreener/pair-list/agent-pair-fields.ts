@@ -105,6 +105,122 @@ export const RICH_PAIR_FIELDS: readonly string[] = [
 export const ALL_PAIR_FIELDS: readonly string[] = [...LEAN_PAIR_FIELDS, ...RICH_PAIR_FIELDS];
 
 /**
+ * Which OUTPUT FIELD each `min*`/`max*` filter compares against.
+ *
+ * THE DEFECT THIS CLOSES, measured live and ranked [high]
+ *
+ * `minQuoteDepthTokens` reads `liquidityQuoteTokens`, and nothing said so. A
+ * context-free agent did the only reasonable thing: it named the field after the
+ * filter (`quoteDepthTokens`), was rejected, then guessed `priceInQuoteToken` —
+ * which was ACCEPTED and returned a price where a depth was wanted. Three calls
+ * for one number, and the middle one produced a plausible wrong answer.
+ *
+ * The map is the single source for three consumers: the param text (asserted to
+ * contain its field), the `fields` rejection's mapping table, and the redirect
+ * that catches a filter-shaped guess. `pair-filters.ts` reads the same metric it
+ * names here.
+ */
+export const PAIR_FILTER_FIELD_READS: Readonly<Record<string, string>> = {
+  minLiquidityUsd: "liquidityUsd",
+  maxLiquidityUsd: "liquidityUsd",
+  minQuoteDepthTokens: "liquidityQuoteTokens",
+  minVolumeUsd: "volumeUsdSelected",
+  maxVolumeUsd: "volumeUsdSelected",
+  minFdvUsd: "fdvUsd",
+  maxFdvUsd: "fdvUsd",
+  minMarketCapUsd: "marketCapUsd",
+  maxMarketCapUsd: "marketCapUsd",
+  minTurnoverRatio: "turnoverRatioH24",
+  maxTurnoverRatio: "turnoverRatioH24",
+  minPriceChangePct: "priceChangePctSelected",
+  maxPriceChangePct: "priceChangePctSelected",
+  minPairAgeSeconds: "pairAgeSeconds",
+  maxPairAgeSeconds: "pairAgeSeconds",
+};
+
+/**
+ * Filters that read a number Vex derives per window and does NOT emit as one
+ * field, so they cannot appear in the map above.
+ *
+ * They are listed rather than left out, so "is this filter accounted for?" has a
+ * mechanical answer and a new filter cannot be added with no field statement at
+ * all. Their param text names the parts the number is computed from instead.
+ */
+export const PAIR_FILTERS_WITHOUT_ONE_FIELD: readonly string[] = [
+  "minTxnCount",
+  "minBuySellRatio",
+  "maxBuySellRatio",
+];
+
+/**
+ * The vocabulary, grouped the way an agent chooses fields.
+ *
+ * A flat list of 40 names in a rejection is a wall the agent scans for something
+ * that looks close — which is how `priceInQuoteToken` got picked for a depth
+ * question. Four groups turn "find a plausible name" into "pick the group, then
+ * the name". The groups PARTITION the vocabulary exactly; a name in two of them
+ * would put the ambiguity back.
+ */
+export const PAIR_FIELD_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  /** What the row IS: the pool, its tokens, its age, its links and flags. */
+  identity: [
+    "chainId",
+    "dexId",
+    "pairAddress",
+    "baseAddress",
+    "baseSymbol",
+    "baseName",
+    "quoteAddress",
+    "quoteSymbol",
+    "quoteName",
+    "labels",
+    "pairAgeSeconds",
+    "pairCreatedAtMs",
+    "dexScreenerUrl",
+    "imageUrl",
+    "socialPlatforms",
+    "hasWebsite",
+    "hasSocials",
+    "activeBoostCount",
+    "decimalsAvailable",
+  ],
+  /** What it holds and what it is worth — the fake-depth detectors live here. */
+  depth: [
+    "priceUsd",
+    "priceInQuoteToken",
+    "liquidityUsd",
+    "liquidityBaseTokens",
+    "liquidityQuoteTokens",
+    "fdvUsd",
+    "marketCapUsd",
+    "marketCapEqualsFdv",
+    "turnoverRatioH24",
+  ],
+  /** Activity in the ONE window `window` selected. */
+  flow: ["volumeUsdSelected", "priceChangePctSelected"],
+  /** The same activity broken out per m5/h1/h6/h24 — `includeAllWindows` adds all of them. */
+  windows: WINDOWED_RICH_PAIR_FIELDS,
+};
+
+/**
+ * Lookup from a plausible wrong name to the field that answers it.
+ *
+ * Covers both the filter's own key (`minQuoteDepthTokens`) and the key with its
+ * `min`/`max` prefix stripped (`quoteDepthTokens`) — the second is the spelling
+ * that actually cost a live call.
+ */
+const FIELD_REDIRECTS: ReadonlyMap<string, string> = new Map(
+  Object.entries(PAIR_FILTER_FIELD_READS).flatMap(([filter, field]) => {
+    const stem = filter.replace(/^(min|max)/, "");
+    const unprefixed = stem.charAt(0).toLowerCase() + stem.slice(1);
+    return [
+      [filter.toLowerCase(), field] as const,
+      [unprefixed.toLowerCase(), field] as const,
+    ];
+  }),
+);
+
+/**
  * `fields: "full"` — every field. Spelled as a sentinel rather than as a
  * boolean param so the honest sentence ("`full` returns every field") lives in
  * one place.
@@ -117,6 +233,40 @@ export type PairFieldSelection = ReadonlySet<string>;
 export type PairFieldResolution =
   | { readonly ok: true; readonly fields: PairFieldSelection }
   | { readonly ok: false; readonly reason: string };
+
+/**
+ * The rejection an agent has to be able to recover from IN ONE RETRY.
+ *
+ * Three parts, each earning its bytes: the offending names, a REDIRECT for any
+ * name that looks like a filter (the guess that actually happened live), and the
+ * vocabulary grouped rather than dumped. The filter → field table rides along so
+ * the next filter the agent reaches for is answered before it is asked.
+ */
+function unknownFieldsRejection(unknown: readonly string[]): string {
+  const redirects = unknown
+    .map((name) => [name, FIELD_REDIRECTS.get(name.toLowerCase())] as const)
+    .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
+    .map(([name, field]) => `${name} → ${field}`);
+
+  const groups = Object.entries(PAIR_FIELD_GROUPS)
+    .map(([group, fields]) => `${group}: ${fields.join(", ")}`)
+    .join(" | ");
+
+  const mapping = Object.entries(PAIR_FILTER_FIELD_READS)
+    .map(([filter, field]) => `${filter} → ${field}`)
+    .join(", ");
+
+  return [
+    `Unknown "fields" value(s): ${unknown.join(", ")}.`,
+    redirects.length > 0 ? `Did you mean: ${redirects.join("; ")}?` : "",
+    `Use "${ALL_FIELDS_SENTINEL}" for every field, or pick from — ${groups}.`,
+    `Filters read these fields: ${mapping}. minTxnCount, minBuySellRatio and maxBuySellRatio read `
+      + "numbers computed per selected window that are not emitted as one field; request "
+      + "txnBuyCount<Window>/txnSellCount<Window> or buySellRatio<Window> to see the parts.",
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+}
 
 /**
  * Resolve the requested field names against the vocabulary.
@@ -138,12 +288,7 @@ export function resolvePairFields(
     const known = new Set(ALL_PAIR_FIELDS);
     const unknown = requested.filter((name) => !known.has(name));
     if (unknown.length > 0) {
-      return {
-        ok: false,
-        reason:
-          `Unknown "fields" value(s): ${unknown.join(", ")}. `
-          + `Use "${ALL_FIELDS_SENTINEL}" for every field, or pick from: ${ALL_PAIR_FIELDS.join(", ")}.`,
-      };
+      return { ok: false, reason: unknownFieldsRejection(unknown) };
     }
     for (const name of requested) selected.add(name);
   }

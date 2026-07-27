@@ -13,6 +13,7 @@
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import type { ProtocolHandler } from "../../types.js";
 import { str, ok, fail } from "../../handler-helpers.js";
+import { readStringOrArrayParam } from "../list-core/index.js";
 import {
   SEARCH_PROVIDER_RELEVANCE_NOTE,
   assessCrossPoolPrices,
@@ -22,11 +23,13 @@ import {
   toPairRows,
 } from "../pair-list/index.js";
 import { reconcileTokenBatchAddresses } from "../token-batch-addresses.js";
+import { missingRequired } from "./missing-params.js";
 
 export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.search": async (p) => {
     const query = str(p, "query");
-    if (!query) return fail("Missing required: query");
+    const missing = missingRequired("dexscreener.search", { query });
+    if (missing) return fail(missing);
     // DexScreener answers a 1-character query with HTTP 400 and an HTML body, so
     // the transport-level message would be an opaque "HTTP 400". Refuse first,
     // with the actual reason.
@@ -67,8 +70,15 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
   // Token and pair addresses are never case-folded: Solana base58 is
   // case-sensitive and folding one would corrupt an identifier.
   "dexscreener.pairs": async (p) => {
-    const chainId = str(p, "chainId"), pairAddress = str(p, "pairAddress");
-    if (!chainId || !pairAddress) return fail("Missing required: chainId, pairAddress");
+    const chainId = str(p, "chainId");
+    // A comma string OR an array of addresses — one canonical comma-string
+    // downstream, so the upstream request and the `requestedPairAddresses` echo
+    // cannot disagree about what was asked for.
+    const pairAddressRead = readStringOrArrayParam(p, "pairAddress");
+    if (!pairAddressRead.ok) return fail(`dexscreener.pairs: ${pairAddressRead.reason}`);
+    const pairAddress = pairAddressRead.value ?? "";
+    const missing = missingRequired("dexscreener.pairs", { chainId, pairAddress });
+    if (missing) return fail(missing);
     const parsed = parsePairListQuery(p, { sortBy: "relevance" });
     if (!parsed.ok) return fail(`dexscreener.pairs: ${parsed.reason}`);
 
@@ -94,8 +104,16 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "dexscreener.tokens": async (p) => {
-    const chainId = str(p, "chainId"), tokenAddresses = str(p, "tokenAddresses");
-    if (!chainId || !tokenAddresses) return fail("Missing required: chainId, tokenAddresses");
+    const chainId = str(p, "chainId");
+    // ONE canonical address list feeds BOTH the upstream call and the
+    // requested/resolved/unresolved reconciliation, so the echo can never
+    // describe a different list from the one we sent. Casing is preserved:
+    // Solana base58 is case-sensitive and folding one would corrupt it.
+    const tokenAddressesRead = readStringOrArrayParam(p, "tokenAddresses");
+    if (!tokenAddressesRead.ok) return fail(`dexscreener.tokens: ${tokenAddressesRead.reason}`);
+    const tokenAddresses = tokenAddressesRead.value ?? "";
+    const missing = missingRequired("dexscreener.tokens", { chainId, tokenAddresses });
+    if (missing) return fail(missing);
     const parsed = parsePairListQuery(p, { sortBy: "relevance" });
     if (!parsed.ok) return fail(`dexscreener.tokens: ${parsed.reason}`);
 
@@ -118,7 +136,8 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
 
   "dexscreener.tokenPairs": async (p) => {
     const chainId = str(p, "chainId"), tokenAddress = str(p, "tokenAddress");
-    if (!chainId || !tokenAddress) return fail("Missing required: chainId, tokenAddress");
+    const missing = missingRequired("dexscreener.tokenPairs", { chainId, tokenAddress });
+    if (missing) return fail(missing);
     const parsed = parsePairListQuery(p, { sortBy: "liquidityUsd" });
     if (!parsed.ok) return fail(`dexscreener.tokenPairs: ${parsed.reason}`);
 

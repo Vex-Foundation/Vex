@@ -68,6 +68,8 @@ function rejectionsFor(filters: FeedListFilters): readonly RowRejection<FeedRow>
     rejections.push({
       reason: "chainIds",
       rejects: (row) => !chainIds.includes(row.source.chainId.toLowerCase()),
+      rowValueOf: (row) => row.source.chainId,
+      threshold: chainIds,
     });
   }
 
@@ -77,6 +79,8 @@ function rejectionsFor(filters: FeedListFilters): readonly RowRejection<FeedRow>
     rejections.push({
       reason: "ctoOnly",
       rejects: (row) => row.metrics.communityTakeover !== true,
+      rowValueOf: (row) => row.metrics.communityTakeover,
+      threshold: true,
     });
   }
 
@@ -84,6 +88,7 @@ function rejectionsFor(filters: FeedListFilters): readonly RowRejection<FeedRow>
   if (maxEventAgeSeconds !== null && eventAgeParamKey !== null) {
     rejections.push({
       reason: "unknownEventAge",
+      // No `rowValueOf`: this rule IS the statement that the row has no event time.
       rejects: (row) => row.metrics.eventAgeSeconds === null,
     });
     rejections.push({
@@ -92,6 +97,8 @@ function rejectionsFor(filters: FeedListFilters): readonly RowRejection<FeedRow>
         const age = row.metrics.eventAgeSeconds;
         return age === null || age > maxEventAgeSeconds;
       },
+      rowValueOf: (row) => row.metrics.eventAgeSeconds,
+      threshold: maxEventAgeSeconds,
     });
   }
 
@@ -105,6 +112,8 @@ function rejectionsFor(filters: FeedListFilters): readonly RowRejection<FeedRow>
         const total = row.metrics.boostCountTotal;
         return total === null || total < minBoostCountTotal;
       },
+      rowValueOf: (row) => row.metrics.boostCountTotal,
+      threshold: minBoostCountTotal,
     });
   }
 
@@ -132,7 +141,15 @@ export function buildFeedList(request: FeedListRequest): FeedListResult {
   const { query } = request;
   const rows = toFeedRows(request.providerRows, request.asOfMs);
 
-  const { kept, droppedByFilter } = filterRows(rows, rejectionsFor(query.filters));
+  const { kept, droppedByFilter, droppedRows, droppedRowsTruncated } = filterRows(
+    rows,
+    rejectionsFor(query.filters),
+    // For `attention` the index is the Vex MERGE order (boost rows, then
+    // profile-only rows) rather than one endpoint's order — see
+    // `./attention-merge.ts`. Deterministic within the response, never stable
+    // across calls, and the param text says so.
+    query.explainDrops ? { rowIdOf: (row) => row.source.tokenAddress } : undefined,
+  );
   const sorted = query.sortBy === "relevance"
     ? [...kept]
     : orderRowsByMetric(kept, (row) => sortMetric(row, query.sortBy), query.sortDir);
@@ -152,6 +169,10 @@ export function buildFeedList(request: FeedListRequest): FeedListResult {
     offset: query.offset,
     filtersApplied: query.filtersApplied,
     droppedByFilter,
+    ...(droppedRows === undefined ? {} : { droppedRows, droppedRowsTruncated }),
+    ...(query.fieldsOmitted === null ? {} : { fieldsOmitted: query.fieldsOmitted }),
+    // Collected over the PROJECTED rows, so an omitted field is no longer
+    // announced as an untrusted path that is not in the payload.
     externalContentFields: collectExternalContentPaths(
       projected,
       "rows",

@@ -1,11 +1,13 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { DEXSCREENER_CORE_DISCOVERY } from "../../embeddings/dexscreener/core.js";
 import {
-  PAIR_BATCH_PARAMS,
   PAIR_DESCRIPTION_WINDOW_CLAUSE,
   PAIR_LIST_PARAMS,
   PAIR_LOOKUP_PARAMS,
   SEARCH_CHAIN_FILTER_PARAM,
+  SEARCH_LIST_PARAMS,
+  STRING_OR_ARRAY_CLAUSE,
+  TOKENS_BATCH_PARAMS,
 } from "./pair-list-params.js";
 
 // Chain slugs are DexScreener string ids: ethereum, base, solana, bsc,
@@ -50,7 +52,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
           + "for that.",
       },
       SEARCH_CHAIN_FILTER_PARAM,
-      ...PAIR_LIST_PARAMS,
+      // The shared vocabulary, with `limit` carrying THIS surface's measured
+      // bare-call size — same key, same rules, one extra measured sentence.
+      ...SEARCH_LIST_PARAMS,
     ],
     exampleParams: { query: "PEPE", chainIds: "base", minTurnoverRatio: 0.05 },
     discovery: DEXSCREENER_CORE_DISCOVERY["dexscreener.search"],
@@ -73,11 +77,13 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       {
         key: "pairAddress",
         type: "string",
+        acceptsStringArray: true,
         required: true,
         description:
           "DEX pool/pair contract address. Comma-separate several to fetch them in ONE call "
           + "(verified live: 2 addresses returned 2 pools) — cheaper against the rate limit than "
-          + "one call each. `requestedPairAddresses` and `found` in the reply say what was asked "
+          + `one call each. ${STRING_OR_ARRAY_CLAUSE} `
+          + "`requestedPairAddresses` and `found` in the reply say what was asked "
           + "for and whether anything came back.",
       },
       ...PAIR_LOOKUP_PARAMS,
@@ -101,14 +107,17 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       {
         key: "tokenAddresses",
         type: "string",
+        acceptsStringArray: true,
         required: true,
         description:
           "Comma-separated token addresses. DexScreener answers at most 30 and SILENTLY DROPS the "
           + "rest (measured: 40 requested, 30 returned, 10 absent, HTTP 200) — always read "
-          + "unresolvedAddresses and addressCapApplied in the reply. Each address yields ONE "
-          + "arbitrary pool, often not the deepest; use dexscreener.tokenPairs for depth.",
+          + `unresolvedAddresses and addressCapApplied in the reply. ${STRING_OR_ARRAY_CLAUSE} `
+          + "Address casing is preserved on both spellings (Solana base58 is case-sensitive). Each "
+          + "address yields ONE arbitrary pool, often not the deepest; use dexscreener.tokenPairs "
+          + "for depth.",
       },
-      ...PAIR_BATCH_PARAMS,
+      ...TOKENS_BATCH_PARAMS,
     ],
     exampleParams: { chainId: "ethereum", tokenAddresses: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,0xdAC17F958D2ee523a2206206994597C13D831ec7" },
     discovery: DEXSCREENER_CORE_DISCOVERY["dexscreener.tokens"],

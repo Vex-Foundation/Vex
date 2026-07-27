@@ -26,12 +26,18 @@ import {
   readBoolean,
   readEnum,
   readNumber,
+  readOmitFields,
   readStringList,
   type FiltersApplied,
   type NumericParamSpecs,
 } from "../list-core/index.js";
 
-import { resolveFeedFields, type FeedFieldSelection } from "./feed-fields.js";
+import {
+  OMITTABLE_FEED_FIELDS,
+  OMIT_FEED_FIELDS_NOTE,
+  resolveFeedFields,
+  type FeedFieldSelection,
+} from "./feed-fields.js";
 
 /**
  * Sort keys over a feed window.
@@ -78,6 +84,10 @@ export interface FeedListQuery {
   limit: number | null;
   offset: number;
   filters: FeedListFilters;
+  /** When true the envelope carries a capped sample of dropped rows with their values. */
+  explainDrops: boolean;
+  /** Echoed as `fieldsOmitted`. `null` when the caller supplied no `omitFields`. */
+  fieldsOmitted: readonly string[] | null;
   filtersApplied: FiltersApplied;
 }
 
@@ -146,18 +156,24 @@ export function parseFeedListQuery(
   filtersApplied.sortBy = sortBy.value;
   filtersApplied.sortDir = sortDir.value;
 
-  const requestedFields = readStringList(params, "fields", { lowercase: false });
+  const requestedFields = readStringList(params, "fields", { lowercase: false, acceptsArray: false });
   if (!requestedFields.ok) return requestedFields;
-  const fields = resolveFeedFields(requestedFields.value);
+  const omitFields = readOmitFields(params, {
+    allowed: OMITTABLE_FEED_FIELDS,
+    note: OMIT_FEED_FIELDS_NOTE,
+  });
+  if (!omitFields.ok) return omitFields;
+  const fields = resolveFeedFields(requestedFields.value, omitFields.value);
   if (!fields.ok) return fields;
   if (requestedFields.value !== null) filtersApplied.fields = requestedFields.value;
+  if (omitFields.value !== null) filtersApplied.omitFields = omitFields.value;
 
   const limit = readNumber(params, "limit", FEED_NUMERIC_PARAMS);
   if (!limit.ok) return limit;
   const offset = readNumber(params, "offset", FEED_NUMERIC_PARAMS);
   if (!offset.ok) return offset;
 
-  const chainIds = readStringList(params, "chainIds", { lowercase: true });
+  const chainIds = readStringList(params, "chainIds", { lowercase: true, acceptsArray: true });
   if (!chainIds.ok) return chainIds;
   if (chainIds.value !== null) filtersApplied.chainIds = chainIds.value;
 
@@ -211,6 +227,10 @@ export function parseFeedListQuery(
     filtersApplied.minBoostCountTotal = minBoostCountTotal.value;
   }
 
+  const explainDrops = readBoolean(params, "explainDrops");
+  if (!explainDrops.ok) return explainDrops;
+  if (explainDrops.value) filtersApplied.explainDrops = true;
+
   return {
     ok: true,
     query: {
@@ -219,6 +239,8 @@ export function parseFeedListQuery(
       sortDir: sortDir.value,
       limit: limit.value,
       offset: offset.value ?? 0,
+      explainDrops: explainDrops.value,
+      fieldsOmitted: omitFields.value,
       filters: {
         chainIds: chainIds.value,
         maxEventAgeSeconds,

@@ -26,6 +26,27 @@
  */
 
 import type { ProtocolParamDef } from "../../types.js";
+import { EXPLAIN_DROPS_PARAM, STRING_OR_ARRAY_CLAUSE } from "./pair-list-params.js";
+
+/**
+ * Subtractive projection for the feed family — one name, and it is the big one.
+ *
+ * `description` is both the dominant byte cost of these payloads and their
+ * entire hostile surface, and it is MANDATORY in a feed row, so this is the one
+ * place in the namespace where subtraction does something `fields` cannot.
+ */
+export const FEED_OMIT_FIELDS_PARAM: ProtocolParamDef = {
+  key: "omitFields",
+  type: "string",
+  description:
+    "Comma-separated output fields to REMOVE from every row. Accepts one name: description — the "
+    + "issuer-authored text that dominates these payloads (30 descriptions measured at 18,473 "
+    + "characters on the recent-profiles feed) and carries the whole untrusted surface. Use it when "
+    + "you want the chainId/tokenAddress identities and the feed's signal, and will resolve details "
+    + "with dexscreener.tokenPairs. Identity and signal fields are never omittable; everything else "
+    + "is already opt-in via \"fields\", so there is nothing there to subtract. Echoed back as "
+    + "fieldsOmitted, and externalContentFields reflects what actually remains.",
+};
 
 /** Repeated in the params that can silently mislead about coverage. */
 const FEED_WINDOW_CLAUSE =
@@ -102,8 +123,10 @@ export const FEED_SORT_PARAMS: readonly ProtocolParamDef[] = [
 export const FEED_CHAIN_FILTER_PARAM: ProtocolParamDef = {
   key: "chainIds",
   type: "string",
+  acceptsStringArray: true,
   description:
     "Comma-separated chain slugs to keep (e.g. base,solana,robinhood), matched case-insensitively. "
+    + `${STRING_OR_ARRAY_CLAUSE} `
     + `${FEED_WINDOW_CLAUSE} Every feed mixes chains — one live window held base, solana, bsc, `
     + "pulsechain, ethereum, arbitrum, robinhood and berachain at once — so this is the filter that "
     + "makes a per-chain hunt possible at all. Read droppedByFilter.chainIds to see how much of the "
@@ -183,8 +206,10 @@ export const BOOST_THRESHOLD_PARAM: ProtocolParamDef = {
 /** Every feed's shared set, in the order an agent reads it. */
 export const FEED_LIST_PARAMS: readonly ProtocolParamDef[] = [
   ...FEED_WINDOW_PARAMS,
+  FEED_OMIT_FIELDS_PARAM,
   ...FEED_SORT_PARAMS,
   FEED_CHAIN_FILTER_PARAM,
+  EXPLAIN_DROPS_PARAM,
 ];
 
 /** `profiles` and `profiles.recent`. */

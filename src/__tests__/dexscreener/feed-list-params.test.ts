@@ -136,10 +136,33 @@ describe("DexScreener feed + narrative param validation", () => {
     expect(result.output).toContain("string");
   });
 
-  it("chainIds sent as an array is rejected naming the shape it wanted", async () => {
-    const result = await run("dexscreener.profiles", { chainIds: ["base", "solana"] });
+  // CONTRACT CHANGE, and the reason is measured. This case used to assert the
+  // array spelling was REJECTED. `call-records.json` (persona gate, first
+  // record) shows what that cost live: `dexscreener.profiles
+  // {chainIds:["solana"], limit:15}` → 78 bytes, ok:false, while the identical
+  // call spelled `"solana"` → 5,215 bytes of answer. A JSON tool call makes the
+  // array natural. Both spellings are now accepted and must agree exactly —
+  // see `./list-string-array-params.test.ts` for the equivalence pins.
+  it("chainIds sent as an array is accepted and means the same as the comma string", async () => {
+    const fromArray = await run("dexscreener.profiles", { chainIds: ["base", "solana"] });
+    const fromString = await run("dexscreener.profiles", { chainIds: "base,solana" });
+    expect(fromArray.ok).toBe(true);
+    expect(fromString.ok).toBe(true);
+    // Everything but `asOfMs`, which is our clock at response time and so is the
+    // one field legitimately allowed to differ between two calls.
+    const withoutClock = (output: string): unknown => {
+      const parsed = JSON.parse(output) as Record<string, unknown>;
+      delete parsed.asOfMs;
+      return parsed;
+    };
+    expect(withoutClock(fromArray.output)).toEqual(withoutClock(fromString.output));
+  });
+
+  it("a chainIds array with a non-string member is still rejected, by position", async () => {
+    const result = await run("dexscreener.profiles", { chainIds: ["base", 7] });
     expect(result.ok).toBe(false);
-    expect(result.output).toContain("comma-separated");
+    expect(result.output).toContain("chainIds");
+    expect(result.output).toContain("index 1");
   });
 
   it("a chainIds string with no values in it is rejected rather than ignored", async () => {

@@ -10,8 +10,20 @@
  */
 
 import type { ProtocolParamDef } from "../../types.js";
+import { EXPLAIN_DROPS_PARAM } from "./pair-list-params.js";
 
 export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
+  {
+    key: "omitFields",
+    type: "string",
+    description:
+      "Comma-separated output fields to REMOVE. Accepts one name: description — DexScreener's "
+      + "editorial prose, which is unbounded and which no decision reads. It is opt-in here, so "
+      + "this is only meaningful together with fields: \"full\": that pairing means 'every number, "
+      + "none of the prose'. slug and the aggregates are what this feed exists to report and are "
+      + "never omittable. Echoed back as fieldsOmitted.",
+  },
+  EXPLAIN_DROPS_PARAM,
   {
     key: "limit",
     type: "number",
@@ -65,7 +77,8 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
     key: "minTokenCount",
     type: "number",
     description:
-      "Keep narratives holding at least this many tokens (the narrativeTokenCount field). This is "
+      "Keep narratives whose narrativeTokenCount — how many tokens DexScreener counts in the "
+      + "narrative — is at least this. This is "
       + "the narrative-level count and it disagrees with what dexscreener.meta reports for the same "
       + "slug — measured 67 here against 31 there, in the same minute. This tool owns the "
       + "narrative-level number. 0 is a genuine no-op; whole number.",
@@ -74,7 +87,7 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
     key: "minMarketCapUsd",
     type: "number",
     description:
-      "Keep narratives with at least this aggregate market cap in USD. Aggregated by DexScreener "
+      "Keep narratives whose marketCapUsd is at least this, in USD. Aggregated by DexScreener "
       + "over tokens whose individual market caps are derived from pool prices a pool can set "
       + "itself, so a fabricated token price inflates its narrative too. 0 is a genuine no-op.",
   },
@@ -82,7 +95,7 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
     key: "minLiquidityUsd",
     type: "number",
     description:
-      "Keep narratives with at least this aggregate USD liquidity. Note the provider's aggregate is "
+      "Keep narratives whose liquidityUsd is at least this. Note the provider's aggregate is "
       + "NOT the sum of the pools it will show you for that narrative — measured 23,354,089.77 "
       + "reported against 21,774,508.92 summed. 0 is a genuine no-op.",
   },
@@ -90,7 +103,7 @@ export const NARRATIVE_LIST_PARAMS: readonly ProtocolParamDef[] = [
     key: "minVolumeUsd",
     type: "number",
     description:
-      "Keep narratives with at least this aggregate 24h USD volume. Same caveat as minLiquidityUsd: "
+      "Keep narratives whose volumeUsdH24 is at least this. Same caveat as minLiquidityUsd: "
       + "the aggregate is not a sum over the pools dexscreener.meta returns. 0 is a genuine no-op.",
   },
 ];

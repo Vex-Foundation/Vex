@@ -146,8 +146,7 @@ export interface ToolDef {
  * The full per-provider projection layer (Phase 1 of the long-term plan) builds
  * on this baseline shape.
  */
-export interface JsonSchemaProperty {
-  type: string;
+interface JsonSchemaPropertyShape {
   description?: string;
   enum?: string[];
   /** Schema of array elements. Required by OpenAI strict + Azure when type === "array". */
@@ -159,6 +158,28 @@ export interface JsonSchemaProperty {
   /** When false on an object, rejects extra keys (OpenAI strict requirement). */
   additionalProperties?: boolean;
 }
+
+/** The ordinary single-`type` property — what almost every param compiles to. */
+export interface JsonSchemaTypedProperty extends JsonSchemaPropertyShape {
+  type: string;
+  anyOf?: never;
+}
+
+/**
+ * A property that accepts one of several shapes, e.g. a param declared
+ * `acceptsStringArray` compiling to string | string[].
+ *
+ * `type` is ABSENT here by construction. JSON Schema conjoins sibling keywords,
+ * so emitting `type: "string"` beside an `anyOf` carrying an array branch makes
+ * the array branch unsatisfiable — the model would be shown a union it can never
+ * validly fill. The two variants are split so that mistake cannot be typed.
+ */
+export interface JsonSchemaUnionProperty extends JsonSchemaPropertyShape {
+  type?: never;
+  anyOf: JsonSchemaProperty[];
+}
+
+export type JsonSchemaProperty = JsonSchemaTypedProperty | JsonSchemaUnionProperty;
 
 export interface JsonSchema {
   type: "object";

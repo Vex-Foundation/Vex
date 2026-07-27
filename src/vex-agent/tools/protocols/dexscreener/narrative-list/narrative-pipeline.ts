@@ -104,6 +104,10 @@ function rejectionsFor(filters: NarrativeListFilters): readonly RowRejection<Nar
         const value = metricOf(row);
         return value === null || value < threshold;
       },
+      // The same `metricOf` the rule compares, so `explainDrops` cannot report a
+      // number other than the one that caused the drop.
+      rowValueOf: metricOf,
+      threshold,
     });
   }
   return rejections;
@@ -134,7 +138,11 @@ export function buildNarrativeList(request: NarrativeListRequest): NarrativeList
   const { query } = request;
   const rows = toNarrativeRows(request.providerMetas);
 
-  const { kept, droppedByFilter } = filterRows(rows, rejectionsFor(query.filters));
+  const { kept, droppedByFilter, droppedRows, droppedRowsTruncated } = filterRows(
+    rows,
+    rejectionsFor(query.filters),
+    query.explainDrops ? { rowIdOf: (row) => row.meta.slug } : undefined,
+  );
   const sorted = query.sortBy === "relevance"
     ? [...kept]
     : orderRowsByMetric(kept, (row) => sortMetric(row, query.sortBy, query.window), query.sortDir);
@@ -158,6 +166,8 @@ export function buildNarrativeList(request: NarrativeListRequest): NarrativeList
     offset: query.offset,
     filtersApplied: query.filtersApplied,
     droppedByFilter,
+    ...(droppedRows === undefined ? {} : { droppedRows, droppedRowsTruncated }),
+    ...(query.fieldsOmitted === null ? {} : { fieldsOmitted: query.fieldsOmitted }),
     externalContentFields: collectExternalContentPaths(
       projected,
       "narratives",

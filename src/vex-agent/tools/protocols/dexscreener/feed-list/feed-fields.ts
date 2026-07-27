@@ -50,6 +50,23 @@ export const RICH_FEED_FIELDS: readonly string[] = [
 
 export const ALL_FEED_FIELDS: readonly string[] = [...LEAN_FEED_FIELDS, ...RICH_FEED_FIELDS];
 
+/**
+ * What `omitFields` may remove here — the one mandatory issuer-authored field.
+ *
+ * `description` is the dominant byte cost of every feed payload (30 descriptions
+ * measured at 18,473 characters on `profiles.recent`) AND the entire hostile
+ * surface of a feed row. It is also the only field a caller can lose without
+ * losing the row's meaning: `chainId` + `tokenAddress` are the identity carried
+ * into `dexscreener.tokenPairs`, and each feed's signal fields are why it was
+ * called at all.
+ */
+export const OMITTABLE_FEED_FIELDS: readonly string[] = ["description"];
+
+export const OMIT_FEED_FIELDS_NOTE =
+  "chainId and tokenAddress are the identity you carry into dexscreener.tokenPairs, and each "
+  + "feed's signal fields (boost counts, updatedAt, claimedAt, ad placement) are why the feed was "
+  + "called — neither can be omitted. Everything else is already opt-in via \"fields\".";
+
 /** `fields: "full"` — every field. Same sentinel as the pair family. */
 export const ALL_FIELDS_SENTINEL = "full";
 
@@ -67,12 +84,23 @@ export type FeedFieldResolution =
  * are REJECTED BY NAME — a caller who asks for `icon` and silently receives a row
  * without it cannot tell a misspelling from an absent value.
  */
-export function resolveFeedFields(requested: readonly string[] | null): FeedFieldResolution {
+export function resolveFeedFields(
+  requested: readonly string[] | null,
+  omitted: readonly string[] | null = null,
+): FeedFieldResolution {
+  // Subtraction runs LAST, over whatever the additive pass selected, so
+  // `fields: "full"` + `omitFields: "description"` means "everything but the
+  // prose" rather than depending on which param was read first.
+  const withoutOmitted = (fields: Set<string>): FeedFieldSelection => {
+    for (const name of omitted ?? []) fields.delete(name);
+    return fields;
+  };
+
   const selected = new Set<string>(LEAN_FEED_FIELDS);
-  if (requested === null) return { ok: true, fields: selected };
+  if (requested === null) return { ok: true, fields: withoutOmitted(selected) };
 
   if (requested.includes(ALL_FIELDS_SENTINEL)) {
-    return { ok: true, fields: new Set(ALL_FEED_FIELDS) };
+    return { ok: true, fields: withoutOmitted(new Set(ALL_FEED_FIELDS)) };
   }
   const known = new Set(ALL_FEED_FIELDS);
   const unknown = requested.filter((name) => !known.has(name));
@@ -87,5 +115,5 @@ export function resolveFeedFields(requested: readonly string[] | null): FeedFiel
     };
   }
   for (const name of requested) selected.add(name);
-  return { ok: true, fields: selected };
+  return { ok: true, fields: withoutOmitted(selected) };
 }

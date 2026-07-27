@@ -39,7 +39,9 @@ export {
   readBoolean,
   readEnum,
   readNumber,
+  readOmitFields,
   readStringList,
+  readStringOrArrayParam,
   type FiltersApplied,
   type NumericParamSpec,
   type NumericParamSpecs,
@@ -58,9 +60,13 @@ export {
   type ProviderOrder,
 } from "./provenance.js";
 export {
+  MAX_EXPLAINED_DROPPED_ROWS,
   filterRows,
   orderRowsByMetric,
   takeRowWindow,
+  type DropComparisonValue,
+  type DroppedRowRecord,
+  type ExplainDropsOptions,
   type FilterOutcome,
   type RowRejection,
   type SortDirection,
