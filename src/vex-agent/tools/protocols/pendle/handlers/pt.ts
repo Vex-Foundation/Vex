@@ -33,6 +33,7 @@ import { str, num, ok, fail } from "../../handler-helpers.js";
 import { resolveMarketByPt, buildAssetMap } from "../market-lookup.js";
 import { selectSafeRoute, type PendleAction, type PendleTxIntent } from "../calldata.js";
 import { buildRedeemPyToSyPlan } from "../redeem-fallback.js";
+import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
 import {
   DEFAULT_SLIPPAGE_BPS,
   failureDetail,
@@ -131,6 +132,10 @@ async function executePendleSwap(
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) {
     return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
   }
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
+  // everything after the broadcast is a read-back that can throw, and the catch
+  // MUST be able to tell the agent the trade is already on-chain.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -208,7 +213,7 @@ async function executePendleSwap(
     }
 
     const value = tokenIn.isNative ? amountWei : 0n;
-    const txHash = await walletClient.sendTransaction({
+    txHash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,
       to: getAddress(route.tx.to),
@@ -273,6 +278,7 @@ async function executePendleSwap(
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure(`pendle.pt.${side}`, txHash, err);
     return fail(`Pendle ${side} failed (${failureDetail(`pendle.pt.${side}`, err)})`);
   }
 }
@@ -282,6 +288,11 @@ async function executePendleSwap(
 async function executePendleRedeem(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !amountInRaw) return fail("Missing required: chain, tokenIn (PT), amountIn");
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`). BOTH
+  // redeem paths broadcast — the Convert path and the `redeemPyToSy` fallback —
+  // and each is followed by a read-back that can throw. Declaring this inside
+  // the `try` (as it was) put the hash out of the catch's reach.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -318,7 +329,6 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
     const { publicClient, walletClient } = getPendleEvmClients(chainId, signer.privateKey as Hex);
     const slippage = slippageFraction(num(p, "slippageBps"));
 
-    let txHash: Hex;
     let outHuman = 0;
     /** RAW base-unit output amount for the capture ("0" when unknown — fallback). */
     let outAmountRaw = "0";
@@ -432,6 +442,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.pt.redeem", txHash, err);
     return fail(`Pendle redeem failed (${failureDetail("pendle.pt.redeem", err)})`);
   }
 }

@@ -36,7 +36,6 @@ import { buildSessionWalletResolution, hydrateEngineSession } from "../../hydrat
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
 import { appendMessage } from "../../../events/index.js";
-import { refreshBlobTtlForRecentMessages } from "../../../wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 
 import { claimResumeContinuation } from "../continuation.js";
@@ -81,10 +80,6 @@ export async function applyApproveSideEffects(
 
   try {
     await approvalIntentsRepo.markExecutionStatus(approvalId, "dispatching");
-
-    // Refresh blob TTLs before dispatch (mirror legacy approveAndResume) — a
-    // long paused window can expire blobs referenced by recent messages.
-    await refreshBlobTtlForRecentMessages(sessionId);
 
     // Wallet scope for the resumed dispatch: hydrate the session so a resumed
     // wallet_send_confirm signs with the session's selected wallet under the
@@ -195,7 +190,7 @@ export async function applyApproveSideEffects(
       throw cause;
     }
     // Unhandled post-tx persistence failure (markExecutionStatus /
-    // appendMessage / blob-refresh threw). Flip the run to `paused_error`
+    // appendMessage threw). Flip the run to `paused_error`
     // and surface as ApprovalPostDecisionError so IPC can return a safe
     // `approvals.dispatch_failed` error.
     const errSummary = summarizeErrorForLog(cause);

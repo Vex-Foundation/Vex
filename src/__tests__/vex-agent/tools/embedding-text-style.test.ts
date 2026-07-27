@@ -17,9 +17,9 @@
  *      / boilerplate centroid).
  *
  * **Scope:** the linter ONLY checks `discovery.embeddingText`. Tech
- * vocabulary in `description`, `aliases`, `params`, `canonicalSummary`,
- * and `preferredFor` is NOT checked — those fields feed the lexical lane
- * where exact matches on terms like "EIP-712 limit order" are valuable.
+ * vocabulary in `description`, `aliases`, `params` and `canonicalSummary`
+ * is NOT checked — those fields feed the lexical fallback lane, where exact
+ * matches on terms like "EIP-712 limit order" are valuable.
  */
 
 import { describe, it, expect } from "vitest";

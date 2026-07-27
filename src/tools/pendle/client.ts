@@ -3,14 +3,25 @@
  *
  * Five endpoints back the fixed-yield PT tools:
  *   - GET  /v1/{chainId}/markets/active              → discovery / valuation
- *   - GET  /v1/assets/all                            → metadata + prices (cache 5m)
+ *   - GET  /v1/{chainId}/assets/all                  → metadata + prices (cache 5m)
  *   - GET  /v1/dashboard/positions/database/{wallet} → session-wallet positions
  *   - GET  /v1/sdk/{chainId}/supported-aggregators   → per-chain aggregator gate
  *   - POST /v3/sdk/{chainId}/convert                 → mutating quote/plan (201 = ok)
  *
- * Markets + convert are chainId-scoped; assets/positions are GLOBAL. All reads
- * are CU-throttled + TTL-cached (URL-keyed, so per-chain caches come free);
- * convert is throttled but NEVER cached (each broadcast plan must be fresh).
+ * CONTRACT CHANGE (H-1, 2026-07-27) — assets are now PER-CHAIN.
+ * `getAllAssets()` (global `/v1/assets/all`) is GONE, replaced by
+ * `getAssetsForChain(chainId)`. The two endpoints are not interchangeable:
+ * the global root is an object `{assets:[…]}` whose rows carry NO `price` and NO
+ * `baseType`, while the per-chain root is a bare array whose rows carry both.
+ * Reading the global one through an array-shaped validator made `getAllAssets()`
+ * return `[]` on every call in production — silently. Every caller that used to
+ * take the global list and filter it by `chainId` must now pass the chain in.
+ * Cost: N chains = N calls where there was one; each is 1 CU and TTL-cached 5m
+ * per chain URL, and callers only ask for chains they are actually working on.
+ *
+ * Markets, assets and convert are chainId-scoped; positions are GLOBAL. All
+ * reads are CU-throttled + TTL-cached (URL-keyed, so per-chain caches come
+ * free); convert is throttled but NEVER cached (each plan must be fresh).
  *
  * Aggregators: the convert body sends the INTERSECTION of PENDLE_AGGREGATORS
  * (kyberswap/okx) with the chain's supported set (some chains support only
@@ -131,9 +142,13 @@ export class PendleClient {
     return this.get(`/v1/${chainId}/markets/active`, PENDLE_CU.markets, PENDLE_TTL.markets, validateMarkets);
   }
 
-  /** All Pendle assets (metadata + prices), GLOBAL. Cached aggressively (5m, ~2.4k assets). */
-  getAllAssets(): Promise<PendleAsset[]> {
-    return this.get("/v1/assets/all", PENDLE_CU.assets, PENDLE_TTL.assets, validateAssets);
+  /**
+   * One chain's Pendle assets (metadata + prices + `baseType`). Cached per chain
+   * URL (5m). A shape we cannot read RAISES `PENDLE_INVALID_RESPONSE` — callers
+   * must treat that as "unknown", never as "this chain has no assets".
+   */
+  getAssetsForChain(chainId: number): Promise<PendleAsset[]> {
+    return this.get(`/v1/${chainId}/assets/all`, PENDLE_CU.assets, PENDLE_TTL.assets, validateAssets);
   }
 
   /**
@@ -161,11 +176,18 @@ export class PendleClient {
     try {
       supported = await this.getSupportedAggregators(chainId);
     } catch {
+      logger.warn("pendle.api.aggregators_unavailable", { chainId, reason: "fetch_failed" });
       return ["kyberswap"];
     }
     const allowed = new Set(supported);
     const intersection = PENDLE_AGGREGATORS.filter((a) => allowed.has(a));
-    return intersection.length > 0 ? intersection : ["kyberswap"];
+    if (intersection.length === 0) {
+      // Never silent: an empty intersection means we route every trade on this
+      // chain through kyberswap alone, which is a measurable execution cost.
+      logger.warn("pendle.api.aggregators_unavailable", { chainId, reason: "empty_intersection", supported: supported.length });
+      return ["kyberswap"];
+    }
+    return intersection;
   }
 
   /** Dashboard positions for one wallet (valuation included per leg). */

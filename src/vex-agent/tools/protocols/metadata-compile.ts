@@ -85,7 +85,7 @@ function mergeMetadata(
 
   const stringArrayKeys = [
     "aliases", "exampleIntents", "paramKeywords", "resourceTypes",
-    "ecosystems", "preferredFor", "avoidFor",
+    "ecosystems",
   ] as const;
 
   for (const key of stringArrayKeys) {

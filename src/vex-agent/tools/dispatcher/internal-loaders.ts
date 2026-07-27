@@ -57,7 +57,6 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
 
   // Autonomy primitives — mission wake
   loop_defer: async () => (await import("../internal/loop-defer.js")).handleLoopDefer,
-  tool_output_read: async () => (await import("../internal/tool-output-read.js")).handleToolOutputRead,
 
   // Per-session memory layer — agent-driven recall + outstanding-item closing
   session_memory_search: async () =>

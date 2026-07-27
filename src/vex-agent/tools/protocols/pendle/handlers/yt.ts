@@ -45,6 +45,7 @@ import {
   type PendleTxIntent,
   type PendleClaimIntent,
 } from "../calldata.js";
+import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
 import {
   failureDetail,
   humanAmount,
@@ -156,6 +157,10 @@ async function executePendleYtSwap(
     return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
   }
   const tradeSide: "buy" | "sell" = side === "yt-buy" ? "buy" : "sell";
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
+  // everything after the broadcast is a read-back that can throw, and the catch
+  // MUST be able to tell the agent the trade is already on-chain.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -230,7 +235,7 @@ async function executePendleYtSwap(
     }
 
     const value = tokenIn.isNative ? amountWei : 0n;
-    const txHash = await walletClient.sendTransaction({
+    txHash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,
       to: getAddress(route.tx.to),
@@ -295,6 +300,7 @@ async function executePendleYtSwap(
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure(`pendle.yt.${tradeSide}`, txHash, err);
     return fail(`Pendle YT ${tradeSide} failed (${failureDetail(`pendle.yt.${tradeSide}`, err)})`);
   }
 }

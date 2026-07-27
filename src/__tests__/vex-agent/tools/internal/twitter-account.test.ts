@@ -138,44 +138,53 @@ describe("twitter_account", () => {
     expect(result.output).toContain("\"userName\":\"openai\"");
   });
 
-  it("response_format='concise' returns the projection", async () => {
-    mockExecuteTwitterAccountRequest.mockResolvedValueOnce(noisyUserResult);
-
+  // W2B retired `response_format`. These three flipped from "concise wins" /
+  // "detailed passes through" / "an unknown value falls back" to a single rule:
+  // the param is rejected BY NAME, whatever its value, and no request is made.
+  // Silent deletion was not an option — the union strips unknown keys, so a
+  // dropped read would have ACCEPTED `detailed` and quietly returned concise.
+  it("response_format='concise' is rejected by name — the projection is the only shape", async () => {
     const result = await handleTwitterAccount(
       { action: "user_details", username: "openai", response_format: "concise" },
       baseContext,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).not.toContain("profileImage");
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
-  it("response_format='detailed' returns the verbatim client output", async () => {
-    mockExecuteTwitterAccountRequest.mockResolvedValueOnce(noisyUserResult);
-
+  it("response_format='detailed' is rejected by name — the verbatim payload is gone", async () => {
     const result = await handleTwitterAccount(
       { action: "user_details", username: "openai", response_format: "detailed" },
       baseContext,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain("profileImage");
-    expect(result.output).toContain("profileBanner");
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(result.output).not.toContain("profileImage");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
-  it("an invalid response_format falls back to concise", async () => {
-    mockExecuteTwitterAccountRequest.mockResolvedValueOnce(noisyUserResult);
-
+  it("an unknown response_format value is rejected too — never a silent fallback", async () => {
     const result = await handleTwitterAccount(
       { action: "user_details", username: "openai", response_format: "verbose" },
       baseContext,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).not.toContain("profileImage");
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
-  it("redacts cookie names, bearer tokens, and the configured API key from errors", async () => {
+  /**
+   * This used to assert a DENYLIST: the provider's sentence reached the model
+   * with three secret shapes rewritten to `[redacted]`. The contract is now an
+   * ALLOWLIST — a Vex-owned code and a static message — so the secrets are gone
+   * along with the sentence that carried them, redaction markers included.
+   * Adversarial coverage lives in `twitter-account-provider-error.test.ts`.
+   */
+  it("carries no provider error text at all — not the secrets, not the redaction markers", async () => {
     process.env.RETTIWT_API_KEY = "secret-do-not-leak";
     mockExecuteTwitterAccountRequest.mockRejectedValueOnce(
       new Error("failed secret-do-not-leak auth_token=abc; ct0=def Bearer token.value"),
@@ -185,10 +194,10 @@ describe("twitter_account", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("twitter_account:");
+    expect(result.output).toContain("provider_rejected");
     expect(result.output).not.toContain("secret-do-not-leak");
-    expect(result.output).not.toContain("auth_token=abc");
-    expect(result.output).not.toContain("Bearer token.value");
-    expect(result.output).toContain("auth_token=[redacted]");
-    expect(result.output).toContain("Bearer [redacted]");
+    expect(result.output).not.toContain("auth_token");
+    expect(result.output).not.toContain("Bearer");
+    expect(result.output).not.toContain("[redacted]");
   });
 });

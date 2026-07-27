@@ -37,7 +37,8 @@ export const PENDLE_CU = {
   markets: 1,
   assets: 1,
   prices: 1,
-  positions: 3,
+  /** Live `x-computing-unit` header on the dashboard read is 4, not the 3 we assumed. */
+  positions: 4,
   aggregators: 1,
   /** 5 base + 1 per allowed aggregator (kyberswap, okx). */
   convert: 7,

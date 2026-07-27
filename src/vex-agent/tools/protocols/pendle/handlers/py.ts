@@ -39,6 +39,8 @@ import { str, num, ok, fail } from "../../handler-helpers.js";
 
 import { resolveMarketByPt, buildAssetMap, priceUsdFor } from "../market-lookup.js";
 import { selectSafeRoute, type PendleTxIntent } from "../calldata.js";
+import { ptUsdShare, splitWei } from "../py-leg-split.js";
+import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
 import {
   DEFAULT_SLIPPAGE_BPS,
   failureDetail,
@@ -50,28 +52,7 @@ import {
   slippageFraction,
 } from "./shared.js";
 
-// ── Split helpers ────────────────────────────────────────────────────
-
-/**
- * PT's share of a two-leg value split. When BOTH legs are priced, split by USD;
- * otherwise a 50/50 fallback (documented — a mint/redeem is roughly balanced, and
- * an unpriced leg gives no better estimate). Always in [0, 1].
- */
-function ptUsdShare(ptUsd: number | null, ytUsd: number | null): number {
-  if (ptUsd !== null && ytUsd !== null && ptUsd + ytUsd > 0) {
-    const s = ptUsd / (ptUsd + ytUsd);
-    return Number.isFinite(s) ? Math.min(1, Math.max(0, s)) : 0.5;
-  }
-  return 0.5;
-}
-
-/** Split a raw base-unit total into [pt, yt] by `ptShare`, conserving the total. */
-function splitWei(total: bigint, ptShare: number): [bigint, bigint] {
-  const SCALE = 1_000_000n;
-  const ptScaled = BigInt(Math.min(1_000_000, Math.max(0, Math.round(ptShare * 1_000_000))));
-  const ptPart = (total * ptScaled) / SCALE;
-  return [ptPart, total - ptPart];
-}
+// ── Route output lookup ──────────────────────────────────────────────
 
 /** Find a Convert route output amount (raw) for `address`; "0" when absent. */
 function outputAmountFor(outputs: readonly PendleTokenAmount[], address: string): string {
@@ -206,6 +187,10 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
   if (!chain || !ptRaw || !tokenInRaw || !amountInRaw) {
     return fail("Missing required: chain, pt, tokenIn, amountIn");
   }
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
+  // everything after the broadcast is a read-back that can throw, and the catch
+  // MUST be able to tell the agent the mint is already on-chain.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -276,7 +261,7 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
       });
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
-    const txHash = await walletClient.sendTransaction({
+    txHash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,
       to: getAddress(route.tx.to),
@@ -373,6 +358,7 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.py.mint", txHash, err);
     return fail(`Pendle mint failed (${failureDetail("pendle.py.mint", err)})`);
   }
 }
@@ -382,6 +368,10 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
 async function executePendleRedeemPy(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), ptRaw = str(p, "pt"), amountInRaw = str(p, "amountIn");
   if (!chain || !ptRaw || !amountInRaw) return fail("Missing required: chain, pt, amountIn");
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
+  // everything after the broadcast is a read-back that can throw, and the catch
+  // MUST be able to tell the agent the redeem is already on-chain.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -449,7 +439,7 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
     for (const approval of response.requiredApprovals) {
       await ensurePendleAllowanceExact(publicClient, walletClient, getAddress(approval.token), PENDLE_ROUTER, BigInt(approval.amount));
     }
-    const txHash = await walletClient.sendTransaction({
+    txHash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,
       to: getAddress(route.tx.to),
@@ -541,6 +531,7 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.py.redeem", txHash, err);
     return fail(`Pendle redeem failed (${failureDetail("pendle.py.redeem", err)})`);
   }
 }

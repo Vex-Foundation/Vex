@@ -95,6 +95,25 @@ export function mapPendleError(status: number, body?: unknown): VexError {
   return new VexError(ErrorCodes.PENDLE_API_ERROR, `Pendle API returned HTTP ${status}.`);
 }
 
+/**
+ * The provider answered, but not in a shape we can read. This is deliberately a
+ * THROW and not a degraded empty result: "Pendle says the collection is empty"
+ * and "Pendle sent something I cannot parse" are different facts, and conflating
+ * them is what let `/v1/assets/all` return `[]` on every call for months — every
+ * token silently 18-decimal, every cost basis $0, every PT invisible in the
+ * portfolio, with nothing logged.
+ *
+ * `detail` MUST come from our own static vocabulary — never from the upstream
+ * body, which is hostile input (see the module header).
+ */
+export function pendleInvalidResponse(endpoint: string, detail: string): VexError {
+  return new VexError(
+    ErrorCodes.PENDLE_INVALID_RESPONSE,
+    `Pendle returned an unreadable ${endpoint} response (${detail}).`,
+    "Pendle changed a response shape Vex depends on. Retrying with different parameters will not help — report this.",
+  );
+}
+
 /** Normalize a transport-layer throw into a Pendle-coded VexError. */
 export function mapPendleTransportError(err: unknown): never {
   if (err instanceof VexError && err.code.startsWith("PENDLE_")) {

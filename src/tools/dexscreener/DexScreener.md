@@ -128,12 +128,12 @@ pool) → pairs (deep stats)**; discovery flow: **trending (narratives) → meta
 
 | Tool ID | Backing method | Notes |
 |---------|----------------|-------|
-| `dexscreener.search` | `search` | Optional `chainId` / `minLiquidityUsd` / `limit` client-side filters; sorted by liquidity |
+| `dexscreener.search` | `search` | Optional `chainIds` / `minLiquidityUsd` / `limit` client-side filters; relevance order (the provider's), not a liquidity sort |
 | `dexscreener.pairs` | `getPairs` | Concise pair for one pool |
 | `dexscreener.tokens` | `getTokens` | Batch (≤30) concise pairs |
-| `dexscreener.tokenPairs` | `getTokenPairs` | All pools for a token, deepest first; canonical pool resolver |
+| `dexscreener.tokenPairs` | `getTokenPairs` | Up to 30 provider-selected pools for a token (Vex sorts deepest-first); canonical pool resolver |
 | `dexscreener.profiles` | `getProfiles` | Latest profiles |
-| `dexscreener.profiles.recent` | `getProfilesRecentUpdates` | **undocumented** — recently updated profiles + `updatedAt`/`cto` |
+| `dexscreener.profiles.recent` | `getProfilesRecentUpdates` | **undocumented** — recently updated profiles + `updatedAt`/`cto` (emitted agent-side as `communityTakeover`) |
 | `dexscreener.boosts` | `getBoosts` | Latest boosts |
 | `dexscreener.boosts.top` | `getTopBoosts` | Top boosts |
 | `dexscreener.communityTakeovers` | `getCommunityTakeovers` | CTO events |
@@ -223,10 +223,20 @@ more.
 ### DexBoost
 
 ```typescript
-{ url, chainId, tokenAddress, amount, totalAmount,
+{ url, chainId, tokenAddress,
+  amount: number | null, totalAmount: number | null,
   icon: string | null, header: string | null, description: string | null,
   links: Array<{ type, label, url }> | null }
 ```
+
+One shape serves both boost endpoints, and both amounts are nullable.
+`/token-boosts/latest/v1` sends `amount` on every row; `/token-boosts/top/v1`
+sends it on none (live-verified 2026-07-27 — requiring it made
+`dexscreener.boosts.top` throw on 100% of calls). `null` means "the endpoint
+did not report it", which is not the same as a boost of zero.
+
+`validateBoostsResponse` returns `{ boosts, skipped }`, not a bare array: a row
+that fails to parse is dropped and COUNTED rather than throwing the feed away.
 
 ### DexCommunityTakeover
 
@@ -242,13 +252,38 @@ more.
   durationHours: number | null, impressions: number | null }
 ```
 
-### DexOrder
+### DexOrdersResponse
+
+`/orders/v1/{chainId}/{tokenAddress}` answers with an **object**, not an array
+(live-verified 2026-07-27). It carries the paid-order history AND the
+boost-payment ledger for the same token; both are returned.
 
 ```typescript
-{ type: "tokenProfile" | "communityTakeover" | "tokenAd" | "trendingBarAd";
-  status: "processing" | "cancelled" | "on-hold" | "approved" | "rejected";
-  paymentTimestamp: number /* Unix seconds */ }
+// GET /orders/v1/{chainId}/{tokenAddress} → { orders: [...], boosts: [...] }
+{ orders: DexOrder[];
+  boostPayments: DexBoostPayment[];
+  skippedOrders: number;         // rows dropped because they did not parse
+  skippedBoostPayments: number }
 ```
+
+```typescript
+// DexOrder
+{ chainId, tokenAddress,
+  type: string;    // observed: "tokenProfile" | "communityTakeover" | "tokenAd" | "trendingBarAd"
+  status: string;  // documented: "processing" | "cancelled" | "on-hold" | "approved" | "rejected"
+  paymentTimestampMs: number | null }
+
+// DexBoostPayment — one boost PURCHASE; a different shape from DexBoost
+{ chainId, tokenAddress,
+  id: string | null;             // opaque DexScreener payment id
+  amount: number | null;
+  paymentTimestampMs: number | null }
+```
+
+`type` and `status` are plain strings, not closed unions: DexScreener adds
+promotional products, and a membership check would throw on the first new one.
+The comments above document the observed vocabulary; the values are echoed to
+the agent, never branched on.
 
 ---
 
@@ -264,7 +299,7 @@ more.
 | `priceChange.h24` | **Already percentage** | `2.5` = 2.5% | Display as `+2.50%` — do NOT multiply by 100 |
 | `txns.h24.buys` / `sells` | Integer | `1234` | Transaction count |
 | `pairCreatedAt` | Unix timestamp **ms** | `1672531200000` | `new Date(value)` |
-| `paymentTimestamp` | Unix timestamp **seconds** | `1700000000` | `new Date(value * 1000)` |
+| `paymentTimestampMs` | Unix timestamp **milliseconds** | `1785076668204` | `new Date(value)` — do NOT multiply by 1000 |
 | `updatedAt` / `claimDate` / ad `date` | ISO 8601 string | `"2026-07-04T13:43:41.745Z"` | Date display |
 | `meta.marketCapChange.*` | **Already percentage** | `24.21` = 24.21% | Aggregate narrative change |
 
@@ -299,7 +334,7 @@ via other protocols:
 2. ANALYSIS
    dexscreener.tokens / dexscreener.pairs (price, volume, liquidity, FDV, txns)
    dexscreener.tokenPairs (all pools, find deepest liquidity → pool address)
-   dexscreener.orders (paid-promotion legitimacy signal)
+   dexscreener.orders (paid-promotion SPEND record — not a legitimacy signal)
 
 3. REAL-TIME MONITORING (ws-client.ts)
    community-takeovers / boosts / profiles streams

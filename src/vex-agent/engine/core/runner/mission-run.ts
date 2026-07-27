@@ -14,7 +14,7 @@
  *   - lease release in finally
  *
  * `resumePreparedMissionRun`:
- *   - flip run → running, refresh blob TTL
+ *   - flip run → running
  *   - hydrate
  *   - runTurnLoop with iteration counter snapshot
  *   - finalize status
@@ -47,7 +47,6 @@ import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
-import { refreshBlobTtlForRecentMessages } from "../../wake/blob-refresh.js";
 
 import {
   finalizeMissionRunError,
@@ -227,7 +226,6 @@ export async function resumePreparedMissionRun(
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
     await missionRunsRepo.updateStatus(prepared.runId, "running");
-    await refreshBlobTtlForRecentMessages(prepared.run.sessionId);
 
     const hydrated = await hydrateEngineSession(prepared.run.sessionId);
     if (!hydrated) {

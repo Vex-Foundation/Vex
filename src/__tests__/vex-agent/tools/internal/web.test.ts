@@ -26,6 +26,34 @@ import { makeTestContext } from "../_test-context.js";
 
 const baseContext = makeTestContext();
 
+/** The W2B row shape: one flat `results[]`, page reads folded onto their row. */
+interface ParsedRow {
+  title: string;
+  url: string;
+  snippet?: string;
+  pageRead: "ok" | "failed" | "not_requested";
+  pageText?: string;
+  pageError?: string;
+}
+interface ParsedSearch {
+  results: ParsedRow[];
+  counts: { requested: number; returned: number; pagesRequested: number; pagesRead: number; pagesFailed: number };
+}
+
+function parsed(output: string): ParsedSearch {
+  return JSON.parse(output) as ParsedSearch;
+}
+function firstRow(output: string): ParsedRow {
+  const row = parsed(output).results[0];
+  if (!row) throw new Error("expected at least one result row");
+  return row;
+}
+function rowFor(output: string, url: string): ParsedRow {
+  const row = parsed(output).results.find((r) => r.url === url);
+  if (!row) throw new Error(`no row for ${url}`);
+  return row;
+}
+
 describe("web_research", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,12 +83,13 @@ describe("web_research", () => {
     expect(result.output).toContain("exactly one of `query` or `url`");
   });
 
-  it("rejects `fetchTop` when only `url` is set (search-only knob)", async () => {
+  it("rejects `fetchTop` when only `url` is set (search-only knob, named in the message)", async () => {
     const result = await handleWebResearch(
       { url: "https://example.com", fetchTop: 2 },
       baseContext,
     );
     expect(result.success).toBe(false);
+    expect(result.output).toContain("`fetchTop`");
     expect(result.output).toContain("apply only to `query` searches");
   });
 
@@ -70,22 +99,33 @@ describe("web_research", () => {
       baseContext,
     );
     expect(result.success).toBe(false);
+    expect(result.output).toContain("`searchDepth`");
     expect(result.output).toContain("apply only to `query` searches");
   });
 
-  // ── Search branch (replaces old web_search) ───────────────────
+  // ── Search branch ─────────────────────────────────────────────
 
   describe("search branch", () => {
     it("returns cached results when available", async () => {
-      mockGetCached.mockResolvedValueOnce([
-        { title: "Test", url: "https://example.com", content: "cached content" },
-      ]);
+      mockGetCached.mockResolvedValueOnce({
+        rows: [
+          {
+            title: "Test",
+            url: "https://example.com",
+            snippet: "cached content",
+            score: 0.5,
+            publishedAt: null,
+            publishedAtMs: null,
+          },
+        ],
+        cachedAt: Date.now(),
+      });
 
-      const result = await handleWebResearch({ query: "test" }, baseContext);
+      const result = await handleWebResearch({ query: "test", fetchTop: 0 }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.count).toBe(1);
-      expect(parsed.results[0].title).toBe("Test");
+      const payload = parsed(result.output);
+      expect(payload.counts.returned).toBe(1);
+      expect(firstRow(result.output).title).toBe("Test");
       expect(mockCacheResult).not.toHaveBeenCalled();
     });
 
@@ -138,7 +178,11 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "stuck-query" }, baseContext);
       expect(result.success).toBe(false);
-      expect(result.output.toLowerCase()).toMatch(/timed out|timeout|failed/);
+      // The Vex code, not the SDK's sentence — provider error text is untrusted
+      // content and never reaches the transcript (see
+      // web-research-provider-error.test.ts).
+      expect(result.output).toContain("provider_timeout");
+      expect(result.output).not.toContain("Request timed out after 30000ms");
       // Failure path must not write to cache.
       expect(mockCacheResult).not.toHaveBeenCalled();
 
@@ -146,7 +190,7 @@ describe("web_research", () => {
     });
   });
 
-  // ── Fetch branch (replaces old web_fetch) ─────────────────────
+  // ── Fetch branch ──────────────────────────────────────────────
 
   describe("fetch branch", () => {
     it("rejects non-http url at Zod boundary (and skips Tavily entirely)", async () => {
@@ -176,7 +220,10 @@ describe("web_research", () => {
         baseContext,
       );
       expect(result.success).toBe(false);
-      expect(result.output).toContain("403 Forbidden");
+      // Honest failure, in Vex's words: the provider's own reason picks the code
+      // and is then discarded rather than quoted into the transcript.
+      expect(result.output).toContain("provider_rejected");
+      expect(result.output).not.toContain("403 Forbidden");
       // The privileged process must never fetch the URL itself.
       expect(fetchSpy).not.toHaveBeenCalled();
 
@@ -195,7 +242,8 @@ describe("web_research", () => {
         baseContext,
       );
       expect(result.success).toBe(false);
-      expect(result.output).toContain("timed out");
+      expect(result.output).toContain("provider_timeout");
+      expect(result.output).not.toContain("Request timed out after 25000ms");
       expect(fetchSpy).not.toHaveBeenCalled();
 
       fetchSpy.mockRestore();
@@ -224,17 +272,20 @@ describe("web_research", () => {
       expect(result.success).toBe(false);
     });
 
-    it("returns cached fetch when available", async () => {
+    it("returns cached fetch when available, as raw pageText", async () => {
       mockGetCachedFetch.mockResolvedValueOnce({
         markdown: "# Hello World\n\nCached content",
         title: "Hello World",
+        fetchedAt: Date.now() - 1000,
       });
 
       const result = await handleWebResearch({ url: "https://example.com" }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.title).toBe("Hello World");
-      expect(parsed.content).toContain("Cached content");
+      const payload = JSON.parse(result.output) as { title: string; pageText: string };
+      expect(payload.title).toBe("Hello World");
+      expect(payload.pageText).toContain("Cached content");
+      // No re-serialized `Source:` header — url and title are fields already.
+      expect(payload.pageText).not.toContain("Source: https://example.com");
     });
 
     it("passes timeout: 25 to the Tavily extract SDK", async () => {
@@ -253,10 +304,10 @@ describe("web_research", () => {
     });
   });
 
-  // ── Combined branch: search + auto-scrape top N (default 5) ─────
+  // ── Combined branch: search + page reads (default 3) ────────────
 
-  describe("combined branch (query + auto-scrape)", () => {
-    it("auto-scrapes top 5 by default when fetchTop is omitted (single batch extract call)", async () => {
+  describe("combined branch (query + page reads)", () => {
+    it("reads the top 3 by default when fetchTop is omitted (single batch extract call)", async () => {
       const origKey = process.env.TAVILY_API_KEY;
       process.env.TAVILY_API_KEY = "test-key";
       const searchHits = Array.from({ length: 7 }, (_, i) => ({
@@ -265,9 +316,9 @@ describe("web_research", () => {
         content: `snippet ${i}`,
       }));
       mockTavilySearch.mockResolvedValueOnce({ results: searchHits });
-      // Tavily batch extract returns content for the 5 top URLs in one call.
+      // Tavily batch extract returns content for the 3 top URLs in one call.
       mockTavilyExtract.mockResolvedValueOnce({
-        results: searchHits.slice(0, 5).map((h, i) => ({
+        results: searchHits.slice(0, 3).map((h, i) => ({
           rawContent: `# ${h.title}\n\nfull ${i}`,
           url: h.url,
           title: h.title,
@@ -277,15 +328,15 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo" }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.count).toBe(7);
-      expect(parsed.fetchedPages).toHaveLength(5);
-      expect(parsed.fetchedPages.every((p: { ok: boolean }) => p.ok)).toBe(true);
+      const payload = parsed(result.output);
+      expect(payload.counts.returned).toBe(7);
+      expect(payload.counts.pagesRead).toBe(3);
+      expect(payload.results.filter((r) => r.pageRead === "ok")).toHaveLength(3);
 
-      // Critical: ONE batch call, not five separate calls.
+      // Critical: ONE batch call, not three.
       expect(mockTavilyExtract).toHaveBeenCalledTimes(1);
       const [urlsArg, optsArg] = mockTavilyExtract.mock.calls[0]!;
-      expect(urlsArg).toHaveLength(5);
+      expect(urlsArg).toHaveLength(3);
       // Targeted extract: original query forwarded for relevance filtering.
       expect((optsArg as { query?: string }).query).toBe("foo");
       expect((optsArg as { timeout?: number }).timeout).toBe(25);
@@ -293,7 +344,7 @@ describe("web_research", () => {
       if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
     });
 
-    it("returns search results + fetched top-N pages (explicit fetchTop)", async () => {
+    it("returns search rows with the top-N pages folded in (explicit fetchTop)", async () => {
       const origKey = process.env.TAVILY_API_KEY;
       process.env.TAVILY_API_KEY = "test-key";
       mockTavilySearch.mockResolvedValueOnce({
@@ -314,13 +365,13 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo", fetchTop: 2 }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.count).toBe(3);
-      expect(parsed.fetchedPages).toHaveLength(2);
-      // Order may differ from search order — check membership.
-      const urls = parsed.fetchedPages.map((p: { url: string }) => p.url).sort();
-      expect(urls).toEqual(["https://a.example.com", "https://b.example.com"]);
-      expect(parsed.fetchedPages.every((p: { ok: boolean }) => p.ok)).toBe(true);
+      const payload = parsed(result.output);
+      expect(payload.counts.returned).toBe(3);
+      expect(payload.counts.pagesRead).toBe(2);
+      expect(rowFor(result.output, "https://a.example.com").pageRead).toBe("ok");
+      expect(rowFor(result.output, "https://b.example.com").pageRead).toBe("ok");
+      // The third row was never requested — a distinct state from "failed".
+      expect(rowFor(result.output, "https://c.example.com").pageRead).toBe("not_requested");
 
       // ONE batch call, not two.
       expect(mockTavilyExtract).toHaveBeenCalledTimes(1);
@@ -337,9 +388,11 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo", fetchTop: 0 }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.count).toBe(1);
-      expect(parsed.fetchedPages).toBeUndefined();
+      const payload = parsed(result.output);
+      expect(payload.counts.returned).toBe(1);
+      expect(payload.counts.pagesRequested).toBe(0);
+      expect(firstRow(result.output).pageRead).toBe("not_requested");
+      expect(firstRow(result.output).snippet).toBe("snip");
       expect(mockTavilyExtract).not.toHaveBeenCalled();
 
       if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
@@ -351,7 +404,7 @@ describe("web_research", () => {
       // Zod schema rejects fetchTop > 10 at boundary.
     });
 
-    it("reports per-page ok/error: extract returns one result + one explicit failure", async () => {
+    it("reports per-row page state: extract returns one result + one explicit failure", async () => {
       const origKey = process.env.TAVILY_API_KEY;
       process.env.TAVILY_API_KEY = "test-key";
       mockTavilySearch.mockResolvedValueOnce({
@@ -368,15 +421,18 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo", fetchTop: 2 }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.fetchedPages).toHaveLength(2);
 
-      const okPage = parsed.fetchedPages.find((p: { url: string }) => p.url === "https://a.example.com");
-      const failPage = parsed.fetchedPages.find((p: { url: string }) => p.url === "https://b.example.com");
-      expect(okPage.ok).toBe(true);
-      expect(okPage.content).toContain("full A");
-      expect(failPage.ok).toBe(false);
-      expect(failPage.error).toContain("403");
+      const okRow = rowFor(result.output, "https://a.example.com");
+      const failRow = rowFor(result.output, "https://b.example.com");
+      expect(okRow.pageRead).toBe("ok");
+      expect(okRow.pageText).toContain("full A");
+      expect(failRow.pageRead).toBe("failed");
+      // `pageRead: "failed"` is preserved; the reason is a Vex code, never the
+      // provider's sentence.
+      expect(failRow.pageError).toBe("provider_rejected");
+      expect(result.output).not.toContain("403 Forbidden");
+      // A row that could not be read keeps the snippet it does have.
+      expect(failRow.snippet).toBe("b snippet");
 
       if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
     });
@@ -393,7 +449,7 @@ describe("web_research", () => {
       // A is in fetch cache; B requires Tavily.
       mockGetCachedFetch.mockImplementation(async (url: string) =>
         url === "https://a.example.com"
-          ? { markdown: "cached A body", title: "Cached A" }
+          ? { markdown: "cached A body", title: "Cached A", fetchedAt: Date.now() - 5000 }
           : null,
       );
       mockTavilyExtract.mockResolvedValueOnce({
@@ -403,8 +459,7 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo", fetchTop: 2 }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.fetchedPages).toHaveLength(2);
+      expect(parsed(result.output).counts.pagesRead).toBe(2);
 
       // Batch extract called ONCE with only the uncached URL.
       expect(mockTavilyExtract).toHaveBeenCalledTimes(1);
@@ -412,14 +467,12 @@ describe("web_research", () => {
       expect(urlsArg).toEqual(["https://b.example.com"]);
 
       // Both pages present — A from cache, B from extract.
-      const cachedPage = parsed.fetchedPages.find((p: { url: string }) => p.url === "https://a.example.com");
-      expect(cachedPage.title).toBe("Cached A");
-      expect(cachedPage.content).toContain("cached A body");
+      expect(rowFor(result.output, "https://a.example.com").pageText).toContain("cached A body");
 
       if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
     });
 
-    it("whole batch failure → every URL reported ok:false with the reason — no raw-HTTP fallback", async () => {
+    it("whole batch failure → every row reported failed with the reason — no raw-HTTP fallback", async () => {
       const origKey = process.env.TAVILY_API_KEY;
       process.env.TAVILY_API_KEY = "test-key";
       mockTavilySearch.mockResolvedValueOnce({
@@ -433,10 +486,11 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo", fetchTop: 2 }, baseContext);
       expect(result.success).toBe(true); // search itself succeeded — snippets stand
-      const parsed = JSON.parse(result.output);
-      expect(parsed.fetchedPages).toHaveLength(2);
-      expect(parsed.fetchedPages.every((p: { ok: boolean }) => p.ok === false)).toBe(true);
-      expect(parsed.fetchedPages.every((p: { error?: string }) => String(p.error).includes("timed out"))).toBe(true);
+      const payload = parsed(result.output);
+      expect(payload.counts.pagesFailed).toBe(2);
+      expect(payload.results.every((r) => r.pageRead === "failed")).toBe(true);
+      expect(payload.results.every((r) => r.pageError === "provider_timeout")).toBe(true);
+      expect(result.output).not.toContain("Request timed out after 25000ms");
       expect(fetchSpy).not.toHaveBeenCalled();
 
       fetchSpy.mockRestore();
@@ -454,10 +508,9 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "foo", fetchTop: 1 }, baseContext);
       expect(result.success).toBe(true);
-      const parsed = JSON.parse(result.output);
-      expect(parsed.fetchedPages).toHaveLength(1);
-      expect(parsed.fetchedPages[0].ok).toBe(false);
-      expect(parsed.fetchedPages[0].error).toContain("http://");
+      const row = firstRow(result.output);
+      expect(row.pageRead).toBe("failed");
+      expect(row.pageError).toContain("http://");
       // Tavily extract MUST NOT be called when all targets are filtered out.
       expect(mockTavilyExtract).not.toHaveBeenCalled();
 
@@ -465,7 +518,7 @@ describe("web_research", () => {
     });
   });
 
-  it("a batch result with EMPTY rawContent is reported ok:false — never silently dropped (exactly-once accounting)", async () => {
+  it("a batch result with EMPTY rawContent is reported failed — never silently dropped (exactly-once accounting)", async () => {
     const origKey = process.env.TAVILY_API_KEY;
     process.env.TAVILY_API_KEY = "test-key";
     mockTavilySearch.mockResolvedValueOnce({
@@ -484,11 +537,9 @@ describe("web_research", () => {
 
     const result = await handleWebResearch({ query: "foo", fetchTop: 2 }, baseContext);
     expect(result.success).toBe(true);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.fetchedPages).toHaveLength(2);
-    const pageB = parsed.fetchedPages.find((p: { url: string }) => p.url === "https://b.example.com");
-    expect(pageB.ok).toBe(false);
-    expect(String(pageB.error)).toContain("empty content");
+    const rowB = rowFor(result.output, "https://b.example.com");
+    expect(rowB.pageRead).toBe("failed");
+    expect(String(rowB.pageError)).toContain("empty content");
 
     if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
   });
@@ -508,10 +559,10 @@ describe("web_research", () => {
     });
 
     const result = await handleWebResearch({ query: "foo", fetchTop: 1 }, baseContext);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.fetchedPages).toHaveLength(1);
-    expect(parsed.fetchedPages[0].ok).toBe(true);
-    expect(parsed.fetchedPages[0].content).toContain("first body");
+    const payload = parsed(result.output);
+    expect(payload.counts.pagesRequested).toBe(1);
+    expect(firstRow(result.output).pageRead).toBe("ok");
+    expect(firstRow(result.output).pageText).toContain("first body");
 
     if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
   });
@@ -528,9 +579,9 @@ describe("web_research", () => {
     });
 
     const result = await handleWebResearch({ query: "foo", fetchTop: 1 }, baseContext);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.fetchedPages).toHaveLength(1);
-    expect(parsed.fetchedPages[0].ok).toBe(true);
+    const payload = parsed(result.output);
+    expect(payload.counts.pagesRequested).toBe(1);
+    expect(firstRow(result.output).pageRead).toBe("ok");
 
     if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
   });
@@ -550,9 +601,10 @@ describe("web_research", () => {
     });
 
     const result = await handleWebResearch({ query: "foo", fetchTop: 1 }, baseContext);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.fetchedPages).toHaveLength(1);
-    expect(parsed.fetchedPages[0].url).toBe("https://a.example.com");
+    const payload = parsed(result.output);
+    expect(payload.results).toHaveLength(1);
+    expect(firstRow(result.output).url).toBe("https://a.example.com");
+    expect(result.output).not.toContain("injected");
     // The planted URL must not reach the fetch cache.
     const cachedUrls = mockCacheFetchResult.mock.calls.map((c: unknown[]) => c[0]);
     expect(cachedUrls).not.toContain("https://evil.example.net/planted");
@@ -560,7 +612,7 @@ describe("web_research", () => {
     if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
   });
 
-  it("duplicate search-result URLs collapse to ONE outcome even when the whole batch fails", async () => {
+  it("duplicate search-result URLs collapse to ONE page outcome even when the whole batch fails", async () => {
     const origKey = process.env.TAVILY_API_KEY;
     process.env.TAVILY_API_KEY = "test-key";
     mockTavilySearch.mockResolvedValueOnce({
@@ -572,9 +624,12 @@ describe("web_research", () => {
     mockTavilyExtract.mockRejectedValueOnce(new Error("batch down"));
 
     const result = await handleWebResearch({ query: "foo", fetchTop: 2 }, baseContext);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.fetchedPages).toHaveLength(1);
-    expect(parsed.fetchedPages[0].ok).toBe(false);
+    const payload = parsed(result.output);
+    expect(payload.counts.pagesRequested).toBe(1);
+    expect(payload.counts.pagesFailed).toBe(1);
+    // Both provider rows are still reported — the outcome is shared, not doubled.
+    expect(payload.results).toHaveLength(2);
+    expect(payload.results.every((r) => r.pageRead === "failed")).toBe(true);
 
     if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
   });
@@ -605,8 +660,8 @@ describe("web_research", () => {
 
     const result = await handleWebResearch({ url: "https://a.example.com/doc" }, baseContext);
     expect(result.success).toBe(true);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.content).toContain("real body");
+    const payload = JSON.parse(result.output) as { pageText: string };
+    expect(payload.pageText).toContain("real body");
 
     if (origKey) process.env.TAVILY_API_KEY = origKey; else delete process.env.TAVILY_API_KEY;
   });

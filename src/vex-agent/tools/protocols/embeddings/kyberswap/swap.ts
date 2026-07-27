@@ -20,7 +20,6 @@ export const KYBERSWAP_SWAP_DISCOVERY = {
     ),
     aliases: ["swap quote", "route preview", "best route", "price impact", "slippage preview", "RFQ liquidity"],
     exampleIntents: ["quote swap on bnb", "best route USDC to ETH on base", "preview token swap"],
-    preferredFor: ["swap quote", "route preview", "read only swap", "price impact"],
     chains: KYBER_SWAP_CHAINS,
   },
 
@@ -33,7 +32,6 @@ export const KYBERSWAP_SWAP_DISCOVERY = {
     ),
     aliases: ["execute swap", "sell token", "buy token", "swap out", "exit position", "acquire token"],
     exampleIntents: ["swap ETH for USDC on arbitrum", "buy token on bnb", "exit token position on base"],
-    preferredFor: ["execute swap", "sell token", "buy token", "exit position", "exact input swap"],
     chains: KYBER_SWAP_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

@@ -1,0 +1,538 @@
+{
+  "endpoint": "https://api.dexscreener.com/community-takeovers/latest/v1",
+  "capturedAt": "2026-07-27T14:11:50.799Z",
+  "response": [
+    {
+      "url": "https://dexscreener.com/solana/ai66lhzg9mczg1wkdawwqduvaxpnduuv8m3uyq5ppump",
+      "chainId": "solana",
+      "tokenAddress": "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump",
+      "icon": "https://cdn.dexscreener.com/cms/images/_aILGflqFiJQJ4A-?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/cpMHVuyMCeQw68wt?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump?timestamp=1785161400000",
+      "description": "The cat version of Doge.\n\nBorn from the same pure meme energy that turned a Shiba Inu into a global phenomenon, Cate is the feline answer to the internet’s favourite dog coin. No complicated roadmap, no fake utility promises, just the classic dogs vs cats rivalry played out on the blockchain. It’s a community driven memecoin through and through.",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/thecatecoinsol?s=11&t=JQmNFn94sEXRJU2hkHIuDQ"
+        }
+      ],
+      "claimDate": "2026-07-27T13:52:48.606Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/8vgatbw1nz4fbbocyfph7mvslsgl8wbbex9m1he5pump",
+      "chainId": "solana",
+      "tokenAddress": "8vgaTBW1nz4fBboCYFph7MVSLsgL8wBbex9M1hE5pump",
+      "icon": "https://cdn.dexscreener.com/cms/images/qkCEuCICG1_1XVqG?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/OWeu5cE3Ig0_LKPJ?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/8vgaTBW1nz4fBboCYFph7MVSLsgL8wBbex9M1hE5pump?timestamp=1785161400000",
+      "description": "fake names for the dog have popped up, but the creator of the meme has confirmed there is no name. let's launch this the right way with a relatable name as the meme takes over the internet",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2005723216703033553"
+        }
+      ],
+      "claimDate": "2026-07-27T13:08:49.455Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/9ztbetdnjnst9y2zs82fzyy49xumpgqxrh46yjjrpump",
+      "chainId": "solana",
+      "tokenAddress": "9ZtbETDNjnST9Y2zs82FZYy49xUMPgqXRh46YjjRpump",
+      "icon": "https://cdn.dexscreener.com/cms/images/lxpQJBg7sQzPS7j3?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/H-QODBHYOb8h5E_W?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/9ZtbETDNjnST9Y2zs82FZYy49xUMPgqXRh46YjjRpump?timestamp=1785161400000",
+      "description": "Brötchen is the adorable baby pygmy hippopotamus taking Germany by storm. Born at Zoo Berlin, this tiny hippo instantly became an internet favorite thanks to her round face, playful personality, and bread-inspired name (\"Brötchen\" means \"bread roll\" in German). Cute, curious, and impossible not to love, she's Germany's newest animal celebrity.",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2037613758965858491"
+        }
+      ],
+      "claimDate": "2026-07-27T12:00:04.538Z"
+    },
+    {
+      "url": "https://dexscreener.com/ethereum/0xa00453052a36d43a99ac1ca145dfe4a952ca33b8",
+      "chainId": "ethereum",
+      "tokenAddress": "0xa00453052A36D43A99Ac1ca145DFe4A952cA33B8",
+      "icon": "https://cdn.dexscreener.com/cms/images/PuinNw9Px5eXrRLX?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/gh8mH72UjRQQWtsl?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xa00453052a36d43a99ac1ca145dfe4a952ca33b8?timestamp=1785161400000",
+      "description": "The official cat sister of doge",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/1950885182904455271"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/ethcate"
+        }
+      ],
+      "claimDate": "2026-07-27T11:14:50.582Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/fzy8nt54e5dkyehnthbl122ktqzbh4cnyesp86w4pump",
+      "chainId": "solana",
+      "tokenAddress": "FZY8nt54e5DkyEHnTHbL122Ktqzbh4CNYeSp86W4pump",
+      "icon": "https://cdn.dexscreener.com/cms/images/Ams0cpt7kIGxdQgt?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/iEiqfCL7XYa8Lunf?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/FZY8nt54e5DkyEHnTHbL122Ktqzbh4CNYeSp86W4pump?timestamp=1785161400000",
+      "description": "ChillDog",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2020215673826288113"
+        }
+      ],
+      "claimDate": "2026-07-27T11:07:30.512Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0xd5c0de035b863ecce99036f5887e16619aa70c80",
+      "chainId": "robinhood",
+      "tokenAddress": "0xD5c0de035b863ECce99036f5887e16619AA70c80",
+      "icon": "https://cdn.dexscreener.com/cms/images/FfFhu-TocWKT42Sr?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/-Ud2VVp2sZXuTYF1?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0xd5c0de035b863ecce99036f5887e16619aa70c80?timestamp=1785161400000",
+      "description": "Cat In Hood is the lonely cat nobody noticed. Silent, forgotten, and carrying the pain of the whole timeline behind those watery eyes. Now the hood is up, and the saddest cat on-chain has finally been seen.",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/CatInHood_CTO"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/CatInHood_CTO"
+        }
+      ],
+      "claimDate": "2026-07-27T10:09:15.989Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/5hbcgse51r9plwkwtdjxg6msi5x6apv26bxqwnkapump",
+      "chainId": "solana",
+      "tokenAddress": "5HBCGSE51r9PLwkWTdjxG6Msi5x6aPv26bxqwnkapump",
+      "icon": "https://cdn.dexscreener.com/cms/images/PSr1ztmpxWEf4bEX?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/GA1uYNp0e4qbtcIx?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/5HBCGSE51r9PLwkWTdjxG6Msi5x6aPv26bxqwnkapump?timestamp=1785161400000",
+      "description": "Let's $Boop all the animals of Solana chain!",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/1941217051256799529"
+        }
+      ],
+      "claimDate": "2026-07-27T09:53:05.503Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/ckv8uurdpeyou2qqvwq2ivvk8ya9wxom5wynypbgpump",
+      "chainId": "solana",
+      "tokenAddress": "CKv8UuRDpEYou2QQvwQ2ivVK8yA9wxoM5wYnYpbGpump",
+      "icon": "https://cdn.dexscreener.com/cms/images/JYNxSGc5oqxk03CJ?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/iULB7HIXJ7lam2y9?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/CKv8UuRDpEYou2QQvwQ2ivVK8yA9wxoM5wYnYpbGpump?timestamp=1785161400000",
+      "description": "Bruno the white puppy",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://knowyourmeme.com/memes/bruno-white-puppy"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2015587787836440779"
+        }
+      ],
+      "claimDate": "2026-07-27T09:26:38.251Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/3euh5kgauwgxhx9eqshoyjqtzatsmdc3u53ct2xk719a",
+      "chainId": "solana",
+      "tokenAddress": "3EuH5KgAuwGXhX9EQshoyjQTZAtsmdc3u53ct2Xk719a",
+      "icon": "https://cdn.dexscreener.com/cms/images/_Fj9ay-ss50mLXq5?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/vcm_bo1iRNQX-IJL?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/3EuH5KgAuwGXhX9EQshoyjQTZAtsmdc3u53ct2Xk719a?timestamp=1785161400000",
+      "description": "The OG cat & dog meme is back.\n\nNew community-led CTO focused on building long-term value through consistent marketing, active leadership, community growth, buybacks, listings, and daily content.\n\nThe previous team may have left, but the community didn't.\n\nNow it's our turn to take this where it belongs.",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://catect.fun/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/catecoinog"
+        },
+        {
+          "type": "instagram",
+          "url": "https://www.instagram.com/stories/kabosumama/3949880202595208008/"
+        }
+      ],
+      "claimDate": "2026-07-27T07:21:49.760Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x40e836f547653691b74c0d68fff60befe36cb024",
+      "chainId": "robinhood",
+      "tokenAddress": "0x40e836F547653691B74C0d68fFf60beFE36CB024",
+      "icon": "https://cdn.dexscreener.com/cms/images/FQTGhFw_MkpTHRFt?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/97dAj1Q-uyv_AlgY?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x40e836f547653691b74c0d68fff60befe36cb024?timestamp=1785161400000",
+      "description": "OG Family CTO",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2038276050287993288"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/OgFamilyCto"
+        }
+      ],
+      "claimDate": "2026-07-27T06:24:01.648Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/5kkjcefkrlkjpseezzfypn9pnv5ag3pqjta7tjaapump",
+      "chainId": "solana",
+      "tokenAddress": "5KKjCeFkrLkJpSEEzZFypn9pNV5aG3pQjTa7TJaApump",
+      "icon": "https://cdn.dexscreener.com/cms/images/qqNB-l0qeFdCHtyk?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/IWAHXmcK2YvfHFtp?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/5KKjCeFkrLkJpSEEzZFypn9pNV5aG3pQjTa7TJaApump?timestamp=1785161400000",
+      "description": "Wan the capybara from moodeng's zoo",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2014932946478850304"
+        }
+      ],
+      "claimDate": "2026-07-27T06:10:27.732Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/8gjutwn9xqbkvhmscbvs6gx3vcf3b9c9dqsvgvrmbm12",
+      "chainId": "solana",
+      "tokenAddress": "8gJUTwn9XqbKVHmScBVs6Gx3Vcf3b9C9DQsvGVrmbm12",
+      "icon": "https://cdn.dexscreener.com/cms/images/nMspTLnFLvHWH676?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/CxU687av_H3jey0S?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/8gJUTwn9XqbKVHmScBVs6Gx3Vcf3b9C9DQsvGVrmbm12?timestamp=1785161400000",
+      "description": "cats are taking over solami",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://youtu.be/heQyD9JySNY?si=9_nYLCrDb8GAjeYe"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2019464650002428127"
+        }
+      ],
+      "claimDate": "2026-07-27T03:13:46.352Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x5acb54868d292443cafc3ce88496589f6b4f1e18",
+      "chainId": "robinhood",
+      "tokenAddress": "0x5aCB54868D292443cAFC3Ce88496589F6b4F1E18",
+      "icon": "https://cdn.dexscreener.com/cms/images/AVeARwqJvXEXwIG4?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/ZdybUZHONgYXtXno?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x5acb54868d292443cafc3ce88496589f6b4f1e18?timestamp=1785161400000",
+      "description": "Buckillions",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://buckcoin.fun"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/buckcoinrh"
+        },
+        {
+          "type": "tiktok",
+          "url": "https://www.tiktok.com/@buckcoinrh"
+        }
+      ],
+      "claimDate": "2026-07-27T02:49:29.846Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/8kaycongf4r6kvke2uhdtjzhteancyajun3zqggxpump",
+      "chainId": "solana",
+      "tokenAddress": "8kAYCongF4r6kVKe2uhDTJZhTEANcyAjUn3ZqgGxpump",
+      "icon": "https://cdn.dexscreener.com/cms/images/zo8yI6a9xdaZnrfz?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/zyUEHTfpK7XnjjOz?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/8kAYCongF4r6kVKe2uhDTJZhTEANcyAjUn3ZqgGxpump?timestamp=1785161400000",
+      "description": "Two raccoons with short spine syndrome: Danny DeVito, the original who's been around for years, and Jimothy, a much smaller one born about six months ago. They even posted about it! Danny is believed to be Jimothy's father.",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2038790542323253289"
+        },
+        {
+          "type": "instagram",
+          "url": "https://www.instagram.com/stories/daisy._and_.gatsby/3949954500088204525?utm_source=ig_story_item_share&igsh=MWRha3JlajMybWpzdw=="
+        }
+      ],
+      "claimDate": "2026-07-27T01:17:32.616Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x4f2ced81f60e5269d965c0adc664cdc88170f09e",
+      "chainId": "robinhood",
+      "tokenAddress": "0x4F2CED81f60E5269D965c0aDc664cdc88170F09e",
+      "icon": "https://cdn.dexscreener.com/cms/images/32RYZcJ48YRt4-1Q?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/c15ce5OBfp7d_UOX?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x4f2ced81f60e5269d965c0adc664cdc88170f09e?timestamp=1785161400000",
+      "description": "Very chill, very house",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://chillhouse.family/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/Chillhousepons"
+        }
+      ],
+      "claimDate": "2026-07-27T00:55:31.238Z"
+    },
+    {
+      "url": "https://dexscreener.com/ethereum/0x8cddd6eea1067b78b77255e49861843f69d4703d",
+      "chainId": "ethereum",
+      "tokenAddress": "0x8cDDd6EeA1067b78B77255e49861843F69D4703D",
+      "icon": "https://cdn.dexscreener.com/cms/images/drhMOi8svsV3FIci?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/GCPLs08egJeT6ogI?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0x8cddd6eea1067b78b77255e49861843f69d4703d?timestamp=1785161400000",
+      "description": "PUPPY is the first token launched on Woofswap v3 (Ethereum), a SHIB-focused launchpad designed to burn SHIB.\n\nEvery token on Woofswap v3 is paired exclusively with $SHIB and trades on Uniswap v3.",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://app.woofswap.finance/token/ethereum/0x8cDDd6EeA1067b78B77255e49861843F69D4703D"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/woofswap"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/woofswap"
+        }
+      ],
+      "claimDate": "2026-07-27T00:08:10.029Z"
+    },
+    {
+      "url": "https://dexscreener.com/stable/0x49556fcad760d7a7cbf9bf9621c9b46ab88415d5",
+      "chainId": "stable",
+      "tokenAddress": "0x49556fcaD760D7a7cbF9BF9621c9b46ab88415d5",
+      "icon": "https://cdn.dexscreener.com/cms/images/_f8ETQqbeBlAl8D8?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/4X8l9u6s4Ouq6vYa?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/stable/0x49556fcad760d7a7cbf9bf9621c9b46ab88415d5?timestamp=1785161400000",
+      "description": "the horse is stable",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/0xStableMeme"
+        }
+      ],
+      "claimDate": "2026-07-26T23:12:24.777Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/d2xvlipyupfgj42kb6u4ihmhenstt7h2bs2in5ntzzkg",
+      "chainId": "solana",
+      "tokenAddress": "D2XvLipYuPFgJ42kB6U4ihmHENStT7h2BS2iN5NtzZKg",
+      "icon": "https://cdn.dexscreener.com/cms/images/TFPdcSeBtEHyp0lg?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/Tq5Ci6L2flgPeSLn?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/D2XvLipYuPFgJ42kB6U4ihmHENStT7h2BS2iN5NtzZKg?timestamp=1785161400000",
+      "description": "The token was created approximately two years ago and recently regained popularity after appearing in images posted by Ansen about a month ago. After the token passed through the hands of a CTO team that had farmed it, I decided to take control by acquiring 50 million tokens to lock them up and reserve them for future airdrops. We also set up a main community profile on Telegram and another on MemeDepot, where we have been posting visual content almost daily.",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://memedepot.com/d/dogwifhood#:~:text=Back%20to%20Depots-,DOGWIFHOOD,-Edit%20Depot"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/MorfeoHood"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/DogWifHoodCt"
+        }
+      ],
+      "claimDate": "2026-07-26T21:52:32.114Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0xdf8116804e43f1179adbaa7d59a523da8d5cc389",
+      "chainId": "robinhood",
+      "tokenAddress": "0xdf8116804E43f1179ADbaa7d59a523Da8d5CC389",
+      "icon": "https://cdn.dexscreener.com/cms/images/_N2BgXufYIzwqBLs?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/V5gggqFU7WQqfnew?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0xdf8116804e43f1179adbaa7d59a523da8d5cc389?timestamp=1785161400000",
+      "description": "MOGCAT by Robinhood.",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/Mogcat_RH"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/mogcat_rh"
+        }
+      ],
+      "claimDate": "2026-07-26T20:34:49.489Z"
+    },
+    {
+      "url": "https://dexscreener.com/ethereum/0xc1ac9431a628d3603cce365786583d7268556a09",
+      "chainId": "ethereum",
+      "tokenAddress": "0xc1aC9431a628D3603cce365786583D7268556A09",
+      "icon": "https://cdn.dexscreener.com/cms/images/sQAjzm9sd_0Qyaz1?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/P0LWfemdGpfTfQGc?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc1ac9431a628d3603cce365786583d7268556a09?timestamp=1785161400000",
+      "description": "Gnocchi the most popular Shiba Inu",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/gnocchi_erc"
+        }
+      ],
+      "claimDate": "2026-07-26T18:36:51.957Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x03663de697213461798a0ca0c7e5e1d68283c041",
+      "chainId": "robinhood",
+      "tokenAddress": "0x03663DE697213461798a0ca0C7E5e1D68283c041",
+      "icon": "https://cdn.dexscreener.com/cms/images/QvxNT22aKWBfGgp_?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/e7cfVDyseRzMGRTt?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x03663de697213461798a0ca0c7e5e1d68283c041?timestamp=1785161400000",
+      "description": "Wall Street dismissed Robinhood traders as ‘dumb money’ and today Vlad Tenev acknowledges us onchain as ‘degen money’ the perfect narrative for Robinhood.",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://techbullion.com/robinhood-chain-degen-money-memes-and-more-vlad-tenevs-vision-for-the-future-of-finance/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/DegenMoney_RH"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/DegenMoney_RH"
+        }
+      ],
+      "claimDate": "2026-07-26T17:15:30.648Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x530ec3ec59fef6e2d6277bcd849610c5457b0e0e",
+      "chainId": "robinhood",
+      "tokenAddress": "0x530eC3Ec59FeF6e2d6277bCD849610c5457b0e0e",
+      "icon": "https://cdn.dexscreener.com/cms/images/EcfqsNIsM1AlB6eB?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/fGYGu274gDxyva_8?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x530ec3ec59fef6e2d6277bcd849610c5457b0e0e?timestamp=1785161400000",
+      "description": "Robotichood is a world people can watch, explore, and play together. Social spaces, wandering NPCs, story moments, and collectible characters. Meet an inventor in the Garden Arcade, pick up a task near the Robinhood building, or gather in the square when it lights up. Not a world that feels distant or complicated. One that feels warm, strange, and alive. \"Roaming the Flat World\" is the invitation. $ROBOCAT is the town signal. Robotichood is the place we're building around it.",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://robotichood.com/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/Robotichood_"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/robolichood"
+        }
+      ],
+      "claimDate": "2026-07-26T15:04:06.540Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/qztrsan8hpuvtioqjymabzurwjmym3wcscpge7ipump",
+      "chainId": "solana",
+      "tokenAddress": "QZTrsan8hPuVtioQJyMAbzuRWjmYM3WCScPGe7ipump",
+      "icon": "https://cdn.dexscreener.com/cms/images/xsz54s56plLsHFDW?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/cZ1R6ZUFeJRSlK0z?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/QZTrsan8hPuVtioQJyMAbzuRWjmYM3WCScPGe7ipump?timestamp=1785161400000",
+      "description": "spider + cat = spidercat",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2019051620730908725"
+        }
+      ],
+      "claimDate": "2026-07-26T13:18:08.417Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x415bd25e093c41350fe073432b58e6a646af5ecf",
+      "chainId": "robinhood",
+      "tokenAddress": "0x415bd25E093c41350fE073432b58E6A646aF5ecF",
+      "icon": "https://cdn.dexscreener.com/cms/images/bxaX6ZSuDtLkYbFY?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/zJknle2AfhJKwqO_?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x415bd25e093c41350fe073432b58e6a646af5ecf?timestamp=1785161400000",
+      "description": "Meet Coco!",
+      "links": [
+        {
+          "label": "Website",
+          "url": "https://www.ponsfamily.com/launchpad/0x415bd25E093c41350fE073432b58E6A646aF5ecF"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/COCOHasFun"
+        }
+      ],
+      "claimDate": "2026-07-26T10:08:31.506Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/dx39f7cpsrntd7u4cnqaqpjryhs3kxcful3tbkjbpump",
+      "chainId": "solana",
+      "tokenAddress": "DX39f7cpSRNTd7u4cNqaQPjRyHS3kXCfUL3TbKjbpump",
+      "icon": "https://cdn.dexscreener.com/cms/images/zjzapWYx2Xu6LZAX?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/DPLkGRLLi3CKcKqf?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/DX39f7cpSRNTd7u4cNqaQPjRyHS3kXCfUL3TbKjbpump?timestamp=1785161400000",
+      "description": "The entire timeline is AI models, open source debates, and people speculating that one company going open source could crash the AI stack.\n\nMeanwhile the Venn diagram meme about \"things staying open\" is going viral, Denny's has joined in...\n\nSo why are we not memeing this as Open Sauce $OS",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2036853965426458819"
+        }
+      ],
+      "claimDate": "2026-07-26T06:05:07.356Z"
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x38673a2ea3a527214422c9dc0c83ac3bbd83bc72",
+      "chainId": "robinhood",
+      "tokenAddress": "0x38673A2EA3A527214422C9DC0C83aC3bbd83bc72",
+      "icon": "https://cdn.dexscreener.com/cms/images/IgS6H3EI3YlJvhY3?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/Qtiv4h0FakHa_XIk?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x38673a2ea3a527214422c9dc0c83ac3bbd83bc72?timestamp=1785161400000",
+      "description": "The Uniswap Dog Abe",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/theuniswapdogrh"
+        }
+      ],
+      "claimDate": "2026-07-26T05:03:24.873Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/byj11baymnufqynceciix2ridzr3wgmvha47yypapump",
+      "chainId": "solana",
+      "tokenAddress": "BYJ11bAymNufQYNCECiix2RidzR3WgmvhA47yypApump",
+      "icon": "https://cdn.dexscreener.com/cms/images/x7JxbOX-TM-zM5uz?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/DY9eKPKhJ21k267x?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/BYJ11bAymNufQYNCECiix2RidzR3WgmvhA47yypApump?timestamp=1785161400000",
+      "description": "",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2032416854153556266"
+        }
+      ],
+      "claimDate": "2026-07-26T02:53:54.694Z"
+    },
+    {
+      "url": "https://dexscreener.com/solana/d9cccaa7byhst1zj4kmlcxm4izjgkfvyhsbycvbfpump",
+      "chainId": "solana",
+      "tokenAddress": "D9cCcaA7ByHST1zj4KMLCXM4iZJgKfvYhsbYCvBfpump",
+      "icon": "https://cdn.dexscreener.com/cms/images/lY8KlI8aenHe0OHz?width=64&height=64&fit=crop&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/NmI6bYkJ66sI5WPi?width=600&height=200&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/D9cCcaA7ByHST1zj4KMLCXM4iZJgKfvYhsbYCvBfpump?timestamp=1785161400000",
+      "description": "This Japanese 長押しで変化 trend is taking over X\n\nThe preview looks almost completely empty\n\nBut once you open it, a massive glowing artwork suddenly appears\n\nNow everyone is copying the format and pulling tens of millions of views from it\n\nThe most viral X trend of all time.",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/ChangeOnSol"
+        }
+      ],
+      "claimDate": "2026-07-26T01:13:36.775Z"
+    }
+  ]
+}

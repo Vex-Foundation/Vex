@@ -18,7 +18,6 @@ export const PENDLE_PT_DISCOVERY = {
     ),
     aliases: ["pendle quote", "pendle PT price", "preview pendle trade", "pendle rate"],
     exampleIntents: ["quote a pendle PT buy", "preview selling my PT", "pendle redeem preview"],
-    preferredFor: ["pendle quote", "pendle PT price", "fixed yield preview"],
     chains: PENDLE_CHAINS,
   },
 
@@ -32,7 +31,6 @@ export const PENDLE_PT_DISCOVERY = {
     ),
     aliases: ["pendle buy", "buy PT", "lock fixed yield", "enter pendle position"],
     exampleIntents: ["buy pendle PT with USDC", "lock a fixed yield", "enter a fixed-rate position"],
-    preferredFor: ["pendle buy", "enter fixed yield", "buy principal token"],
     chains: PENDLE_CHAINS,
   },
 
@@ -45,7 +43,6 @@ export const PENDLE_PT_DISCOVERY = {
     ),
     aliases: ["pendle sell", "sell PT", "exit fixed yield early", "unwind pendle"],
     exampleIntents: ["sell my pendle PT early", "exit a fixed yield before expiry", "unwind pendle position"],
-    preferredFor: ["pendle sell", "early exit", "sell principal token"],
     chains: PENDLE_CHAINS,
   },
 
@@ -58,7 +55,6 @@ export const PENDLE_PT_DISCOVERY = {
     ),
     aliases: ["pendle redeem", "redeem PT", "claim matured pendle", "cash out pendle"],
     exampleIntents: ["redeem my matured pendle PT", "claim principal from expired PT", "cash out matured PT"],
-    preferredFor: ["pendle redeem", "claim matured PT", "redeem principal token"],
     chains: PENDLE_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

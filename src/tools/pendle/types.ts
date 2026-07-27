@@ -44,16 +44,21 @@ export interface PendleAsset {
   address: string;
   /**
    * Chain the asset lives on (from the top-level `chainId` field or the `id`
-   * prefix). assets/all is GLOBAL, so callers MUST filter by this before keying
-   * by bare address — the same address (e.g. an OP-Stack WETH predeploy) exists
-   * on multiple chains with different prices/decimals.
+   * prefix). Assets are fetched PER CHAIN (`getAssetsForChain`), so this should
+   * already equal the requested chain; callers still key maps by chain because
+   * the same bare address (e.g. an OP-Stack WETH predeploy) exists on several
+   * chains with different prices/decimals.
    */
   chainId: number | null;
   symbol: string | null;
   decimals: number | null;
   /** ISO expiry for PT/YT/LP; null for generic assets. */
   expiry: string | null;
-  /** PT | YT | SY | LP | GENERIC | NATIVE | IB … (raw upstream string). */
+  /**
+   * Raw upstream string. LIVE values (chain 1, 2026-07-27):
+   * `PT` | `YT` | `SY` | `IB` | `PENDLE_LP` | `GENERIC` | `NATIVE`.
+   * Note `PENDLE_LP` — NOT `LP`, which this doc previously claimed.
+   */
   baseType: string | null;
   /** Spot USD price. */
   priceUsd: number | null;

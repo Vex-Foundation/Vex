@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import { isRecord } from "../../utils/validation-helpers.js";
+import { pendleInvalidResponse } from "./errors.js";
 import type {
   PendleAsset,
   PendleClaimResponse,
@@ -128,10 +129,32 @@ function normalizeAsset(raw: unknown): PendleAsset | null {
   };
 }
 
-/** `GET /v1/assets/all` → asset metadata + prices. Non-array root → []. */
+/**
+ * `GET /v1/{chainId}/assets/all` → one chain's asset metadata + prices.
+ *
+ * STRICT ON SHAPE, tolerant on fields. This validator backs decimals, prices and
+ * PT classification — everything downstream sizes a trade with — so a shape it
+ * cannot read RAISES `PENDLE_INVALID_RESPONSE` instead of degrading to `[]`.
+ * A genuinely empty catalogue (`[]`) is still a valid, determined answer.
+ *
+ * The endpoint is the PER-CHAIN one. The global `/v1/assets/all` root is an
+ * object (`{assets:[…]}`) whose rows carry neither `price` nor `baseType`, so it
+ * is rejected here by design rather than unwrapped.
+ */
 export function validateAssets(raw: unknown): PendleAsset[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map(normalizeAsset).filter((a): a is PendleAsset => a !== null);
+  if (!Array.isArray(raw)) {
+    throw pendleInvalidResponse(
+      "assets",
+      isRecord(raw) ? "expected a JSON array at the root, received an object" : "expected a JSON array at the root",
+    );
+  }
+  const assets = raw.map(normalizeAsset).filter((a): a is PendleAsset => a !== null);
+  // Rows arrived but not one of them carried a usable address: the row shape
+  // changed under us. Reporting "no assets" here would be the same silent lie.
+  if (assets.length === 0 && raw.length > 0) {
+    throw pendleInvalidResponse("assets", "no row carried a readable address");
+  }
+  return assets;
 }
 
 // ── dashboard positions ────────────────────────────────────────────
@@ -291,6 +314,12 @@ export function validateClaim(raw: unknown): PendleClaimResponse | null {
  * carries the list under a common key (`aggregators` / `supportedAggregators` /
  * `data`). Any other shape degrades to `[]` (the caller then falls back to
  * kyberswap). Names are lowercased + de-duped so the intersection is case-safe.
+ *
+ * ENTRY SHAPE: live chain 1 returns OBJECTS —
+ * `{"name":"kyberswap","computingUnit":1}` — not bare strings. Reading them as
+ * strings yielded an empty set, so the intersection was empty and every Pendle
+ * trade on every chain fell back to kyberswap-only for an hour at a time (the
+ * TTL), silently losing the routes OKX wins. Both entry forms are accepted.
  */
 export function validateSupportedAggregators(raw: unknown): string[] {
   let list: unknown = raw;
@@ -300,8 +329,8 @@ export function validateSupportedAggregators(raw: unknown): string[] {
   if (!Array.isArray(list)) return [];
   const out = new Set<string>();
   for (const item of list) {
-    const s = readString(item);
-    if (s) out.add(s.toLowerCase());
+    const name = isRecord(item) ? readString(item.name) : readString(item);
+    if (name) out.add(name.toLowerCase());
   }
   return [...out];
 }

@@ -1,9 +1,14 @@
 /**
  * Pendle per-chain aggregator gating — the convert body must send the
  * INTERSECTION of PENDLE_AGGREGATORS (kyberswap/okx) with the chain's supported
- * set. Chains that support only kyberswap (HyperEVM 999, Berachain 80094) must
- * NEVER receive okx; a failed support fetch falls back to kyberswap; the support
- * lookup is TTL-cached so repeated converts fetch it once.
+ * set. A kyberswap-only chain must NEVER receive okx; a failed support fetch
+ * falls back to kyberswap; the support lookup is TTL-cached so repeated converts
+ * fetch it once.
+ *
+ * The 999/80094 cases below drive STUBBED kyberswap-only support sets — they
+ * exercise the intersection logic, not a claim about those chains. Live-probed
+ * 2026-07-27: only Berachain 80094 is kyberswap-only; HyperEVM 999 does support
+ * okx. The real per-chain sets are asserted from a captured fixture instead.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -21,6 +26,7 @@ vi.mock("@utils/http.js", () => ({
 
 const { PendleClient } = await import("@tools/pendle/client.js");
 const { PENDLE_LIVE_FIXTURES: F } = await import("./fixtures.js");
+const { PENDLE_SUPPORTED_AGGREGATORS_CHAIN1 } = await import("./asset-catalog-fixtures.js");
 
 interface FakeResponse {
   ok: boolean;
@@ -61,7 +67,7 @@ beforeEach(() => {
 });
 
 describe("pendle aggregator gating", () => {
-  it("HyperEVM (999, kyberswap-only) never receives okx", async () => {
+  it("a kyberswap-only chain (stubbed, 999) never receives okx", async () => {
     install(["kyberswap"]);
     const client = new PendleClient("https://api.example/");
     await client.convert(999, CONVERT_PARAMS);
@@ -83,6 +89,17 @@ describe("pendle aggregator gating", () => {
     const client = new PendleClient("https://api.example/");
     await client.convert(1, CONVERT_PARAMS);
     expect(convertBodies[0]!.aggregators).toEqual(["kyberswap", "okx"]);
+  });
+
+  it("Ethereum (1) reaches okx from the LIVE object-entry response, not just a string array", async () => {
+    // The captured wire shape is `{aggregators:[{name:"kyberswap",…},…]}`.
+    // Reading those entries as strings emptied the intersection, so every trade
+    // on every chain silently fell back to kyberswap alone for the 1h TTL.
+    install(PENDLE_SUPPORTED_AGGREGATORS_CHAIN1);
+    const client = new PendleClient("https://api.example/");
+    await client.convert(1, CONVERT_PARAMS);
+    const [body] = convertBodies;
+    expect(body?.aggregators).toEqual(["kyberswap", "okx"]);
   });
 
   it("falls back to kyberswap when the support fetch FAILS", async () => {

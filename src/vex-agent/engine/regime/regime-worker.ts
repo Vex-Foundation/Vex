@@ -54,6 +54,7 @@ import { memLog } from "@vex-agent/memory/observability/logger.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import { minRegimeConfidence, type RegimeSource } from "@vex-agent/memory/schema/regime-enums.js";
 import { searchAndOptionallyFetch } from "@vex-agent/tools/internal/web.js";
+import { freezeWebSearchOptions } from "@vex-agent/tools/internal/web-research/search-options.js";
 import {
   REGIME_LLM_TIMEOUT_MS,
   REGIME_MIN_INTERVAL_HOURS,
@@ -102,16 +103,47 @@ async function defaultProvider(): Promise<JudgeProvider> {
 
 // The web seam returns a ToolResult whose `data` is handler-shaped; validate the
 // slice we consume at this boundary (external-ish input — never trust shape).
+// W2B renamed the row's text field: a search-only row carries `snippet`, a row
+// whose page was read carries `pageText` and no snippet at all.
 const webSearchPayloadSchema = z
   .object({
-    results: z.array(z.object({ title: z.string(), content: z.string() }).passthrough()),
+    results: z.array(
+      z
+        .object({
+          title: z.string(),
+          snippet: z.string().optional(),
+          pageText: z.string().optional(),
+        })
+        .passthrough(),
+    ),
   })
   .passthrough();
+
+/**
+ * The classifier's OWN web request — never the tool's agent-facing defaults.
+ *
+ * 10 rows with no page reads is the evidence set this worker has always used;
+ * `web_research` now defaults to 6 rows + 3 page reads for the agent. Spelling
+ * every field out here means a change to that default cannot silently shrink a
+ * regime snapshot's evidence (the failure that left every snapshot Tavily-only
+ * for a month went unnoticed for exactly this class of reason).
+ */
+const REGIME_WEB_SEARCH_MAX_RESULTS = 10;
 
 async function defaultSearchWeb(query: string): Promise<readonly RegimeWebResult[]> {
   // fetchTop=0 → search-only (titles + snippets): fewer Tavily credits and a
   // smaller prompt-injection surface than full page bodies.
-  const result = await searchAndOptionallyFetch(query, 0, undefined);
+  const result = await searchAndOptionallyFetch(
+    freezeWebSearchOptions({
+      query,
+      maxResults: REGIME_WEB_SEARCH_MAX_RESULTS,
+      fetchTop: 0,
+      topic: "general",
+      searchDepth: "basic",
+      chunksPerSource: null,
+      timeRange: null,
+    }),
+  );
   if (!result.success) {
     throw new Error("regime_web_search_failed");
   }
@@ -119,7 +151,10 @@ async function defaultSearchWeb(query: string): Promise<readonly RegimeWebResult
   if (!parsed.success) {
     throw new Error("regime_web_search_malformed_payload");
   }
-  return parsed.data.results.map((r) => ({ title: r.title, snippet: r.content }));
+  return parsed.data.results.map((r) => ({
+    title: r.title,
+    snippet: r.pageText ?? r.snippet ?? "",
+  }));
 }
 
 // tweet_search returns a cursored payload of serialized rettiwt tweets; pick

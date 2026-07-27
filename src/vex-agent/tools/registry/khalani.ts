@@ -35,15 +35,29 @@ export const KHALANI_INTERNAL_TOOLS: readonly ToolDef[] = Object.entries(KHALANI
   },
 );
 
-function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSchema {
+/**
+ * Compile manifest params into a provider-facing JSON schema.
+ *
+ * The ONE ProtocolParamDef → JsonSchema compiler in the repo (protocol tools
+ * otherwise reach the model through `discover_tools`, which serialises the
+ * ProtocolParamDef itself). Exported so the `acceptsStringArray` union can be
+ * proven end-to-end — compiled here, then through
+ * `normalizeToolSchemaForProvider` — rather than only where a Khalani alias
+ * happens to declare it.
+ */
+export function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSchema {
   const properties: Record<string, JsonSchemaProperty> = {};
   const required: string[] = [];
 
   for (const param of params) {
-    properties[param.key] = {
-      type: param.type,
-      description: param.description,
-    };
+    properties[param.key] = param.acceptsStringArray === true
+      // No outer `type`: JSON Schema conjoins siblings, so `type: "string"` here
+      // would make the array branch unsatisfiable. See `JsonSchemaUnionProperty`.
+      ? {
+          anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+          description: param.description,
+        }
+      : { type: param.type, description: param.description };
     if (param.required) required.push(param.key);
   }
 

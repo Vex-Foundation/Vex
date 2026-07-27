@@ -20,7 +20,6 @@ export const PENDLE_LP_DISCOVERY = {
     ),
     aliases: ["pendle lp quote", "pendle liquidity quote", "preview add liquidity", "preview remove liquidity"],
     exampleIntents: ["quote adding pendle liquidity", "preview removing pendle LP to a token", "single-token LP deposit preview"],
-    preferredFor: ["pendle lp quote", "pendle liquidity preview", "single-token LP preview"],
     chains: PENDLE_CHAINS,
   },
 
@@ -34,7 +33,6 @@ export const PENDLE_LP_DISCOVERY = {
     ),
     aliases: ["pendle add liquidity", "add pendle lp", "provide pendle liquidity", "single-token lp add"],
     exampleIntents: ["add pendle liquidity", "provide single-token LP to a pendle market", "deposit into a pendle pool"],
-    preferredFor: ["pendle add liquidity", "provide pendle LP", "single-token LP deposit"],
     chains: PENDLE_CHAINS,
   },
 
@@ -48,7 +46,6 @@ export const PENDLE_LP_DISCOVERY = {
     ),
     aliases: ["pendle remove liquidity", "remove pendle lp", "withdraw pendle liquidity", "exit pendle pool"],
     exampleIntents: ["remove pendle liquidity", "withdraw pendle LP to a token", "exit a pendle pool to one token"],
-    preferredFor: ["pendle remove liquidity", "withdraw pendle LP", "exit pendle pool"],
     chains: PENDLE_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

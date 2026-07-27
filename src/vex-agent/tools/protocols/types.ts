@@ -52,8 +52,6 @@ export interface ToolDiscoveryMetadata {
   ecosystems?: string[];
   sourceClass?: "specialized_market" | "general_web" | "social" | "protocol_native" | "onchain_verification";
   sideEffectLevel?: "none" | "low" | "high";
-  preferredFor?: string[];
-  avoidFor?: string[];
   /**
    * Chains where this tool operates — used as a low-weight lexical search
    * field so queries like "swap on plasma" or "bridge to monad" recall the
@@ -87,6 +85,26 @@ export interface ProtocolParamDef {
    * a second unit must be added here deliberately, with its own enforcement.
    */
   unit?: "bps";
+  /**
+   * OPT-IN: this `type: "string"` param also accepts an ARRAY of strings.
+   *
+   * Declare it on params that are semantically a LIST spelled as a
+   * comma-separated string (`chainIds`, `dexIds`, `labels`, `tokenAddresses`).
+   * Measured in the persona gate (`call-records.json`, first record):
+   * `dexscreener.profiles {chainIds: ["solana"]}` was rejected in 78 bytes while
+   * `chainIds: "solana"` answered in 5,215 — a whole call spent on a spelling a
+   * JSON tool call makes natural.
+   *
+   * Deliberately per-param rather than blanket: a param that means exactly ONE
+   * value (`query`, `slug`, `chainId`, `tokenAddress`) must keep rejecting an
+   * array, because there its list form is a mistake, not a convenience.
+   *
+   * The flag is read in two places and nowhere else: `runtime/params.ts` widens
+   * the boundary check to a validated `string[]`, and the ProtocolParamDef →
+   * JSON-schema compiler emits an `anyOf` union. `type` STAYS `"string"` — this
+   * is a capability, not a second type.
+   */
+  acceptsStringArray?: true;
 }
 
 export interface ProtocolToolManifest {

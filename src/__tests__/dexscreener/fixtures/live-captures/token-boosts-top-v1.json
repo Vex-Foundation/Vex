@@ -1,0 +1,569 @@
+{
+  "endpoint": "https://api.dexscreener.com/token-boosts/top/v1",
+  "capturedAt": "2026-07-27T07:19:17.095Z",
+  "response": [
+    {
+      "url": "https://dexscreener.com/solana/9ax92xmkm5z26nqzmjfb5wrzslss4n4ftjxmnom2pump",
+      "chainId": "solana",
+      "tokenAddress": "9AX92xMkM5Z26nQzmJfb5wRZsLSs4n4fTJxMNom2pump",
+      "description": "Happy Cat is spreading joy across the Solana onchain, one smile at a time.",
+      "icon": "wUOOxFXnqPqatvwn",
+      "header": "https://cdn.dexscreener.com/cms/images/Qrf4RiKrqqEuHYI3?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/9AX92xMkM5Z26nQzmJfb5wRZsLSs4n4fTJxMNom2pump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://happycatsol.fun"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/HappyCatSOLX"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/happycat_channel"
+        }
+      ],
+      "totalAmount": 500
+    },
+    {
+      "url": "https://dexscreener.com/solana/faf8whqhrtcfwzbp2qrbehgzbu1wb5s9yj26kw7hpump",
+      "chainId": "solana",
+      "tokenAddress": "FaF8WhqHrTcfwzBp2qRBeHgZbu1wB5S9Yj26KW7Hpump",
+      "description": "Pick your card. NOW.",
+      "icon": "PIg9dErcMhQsHlzG",
+      "header": "https://cdn.dexscreener.com/cms/images/_-VsM1ECLV20iKwA?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/FaF8WhqHrTcfwzBp2qRBeHgZbu1wB5S9Yj26KW7Hpump?timestamp=1785136800000",
+      "totalAmount": 500
+    },
+    {
+      "url": "https://dexscreener.com/solana/3prsppye6eyeapdm2ui2ghnu2d1dyuqxzfaqajtwfhzp",
+      "chainId": "solana",
+      "tokenAddress": "3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP",
+      "description": "💛😁 SmileCoin is the meme coin on a mission to Make the World Smile. 😄💛\n\nSpread positivity, good vibes, and smiles across the crypto world. 💛✨😁\n\n💛 Join the movement. 😄\n\nSMILE — Make the World Smile. 💛😁😄",
+      "icon": "_RZeTXFMlZL2XEqU",
+      "header": "https://cdn.dexscreener.com/cms/images/QLZNVoM254wG4zPl?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/SmilixCoin"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/smilecoin1"
+        }
+      ],
+      "totalAmount": 500
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x232cdfc415d10b673845d83dc02ba2eabe7e30d1",
+      "chainId": "robinhood",
+      "tokenAddress": "0x232CDFc415D10b673845D83Dc02ba2eaBe7e30d1",
+      "description": "What if you never sold? What if the chart didn't shake you out? What if a community decided the game was broken, and simply refused to play it? $IF was born the moment its dev walked away and nobody flinched. No team. No promises. Just holders who looked at years of PvP extraction, snipers, and paper hands and said: not here. What If is the anti-casino. We don't trade each other, we outlast everything. Every holder is the dev now.",
+      "icon": "N5Q4p_8OYzMIXwaL",
+      "header": "https://cdn.dexscreener.com/cms/images/oqnrIFcoCT1q25M8?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x232cdfc415d10b673845d83dc02ba2eabe7e30d1?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://whatifonhood.com/#token"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/WhatIFonHOOD"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/WhatIFonHoodChain"
+        }
+      ],
+      "totalAmount": 500
+    },
+    {
+      "url": "https://dexscreener.com/solana/dyfgnzidqg1cjtunfxkld9mq5bsoxkuxibhx54vdpump",
+      "chainId": "solana",
+      "tokenAddress": "DyFGNzidqg1CJtUNfXkLd9mQ5BsoxKUxiBHx54vDpump",
+      "description": "GridClimb (GCLB) is the community token connected to GridClimb, a competitive number-chain browser game featuring timed challenges, player profiles and leaderboards. The game is currently in public beta. Planned holder access will require a wallet to hold at least 4,000,000 GCLB once wallet verification is activated.",
+      "icon": "0LSQe2iAPJFGQvxx",
+      "header": "https://cdn.dexscreener.com/cms/images/8XFvmKKuJEofaCTv?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/DyFGNzidqg1CJtUNfXkLd9mQ5BsoxKUxiBHx54vDpump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://gridclimb.com/"
+        }
+      ],
+      "totalAmount": 500
+    },
+    {
+      "url": "https://dexscreener.com/solana/hgbxfam4hdrktagrytnwksjphshdm8cop9ve9je6pump",
+      "chainId": "solana",
+      "tokenAddress": "HGBxfAM4hDrKTagryTNwKsjPHShdM8coP9Ve9jE6pump",
+      "description": "Armed with razor-sharp shark jaws and relentless feline stealth, Shark Cat rules the deep waters of Solana. It hunts down bears, tears paper hands to shreds, and drags holders to unbelievable green heights! Fear the fin, embrace the claw, and claim your spot in the ocean feeding frenzy!",
+      "icon": "rtnNqpjM1ZGRgZ41",
+      "header": "https://cdn.dexscreener.com/cms/images/75b-r_JUXm9SY7YJ?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/HGBxfAM4hDrKTagryTNwKsjPHShdM8coP9Ve9jE6pump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://shark-cat.vercel.app/"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/SHARKCATSOLS"
+        }
+      ],
+      "totalAmount": 300
+    },
+    {
+      "url": "https://dexscreener.com/solana/3qgauegtljsdxa2nzdoskn4rrjeqtnf1xwa1nbrppump",
+      "chainId": "solana",
+      "tokenAddress": "3QgaUegtLJSdXA2NzDoskN4rrJEqTnF1XWA1nBrPpump",
+      "description": "Kabosu",
+      "icon": "zHjrX7OqF0LSOOmk",
+      "header": "https://cdn.dexscreener.com/cms/images/MKfBr2cZpzSWEC38?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/3QgaUegtLJSdXA2NzDoskN4rrJEqTnF1XWA1nBrPpump?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/ShibaDevEth/status/2081475890513359340"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/shibadeveth"
+        }
+      ],
+      "totalAmount": 110
+    },
+    {
+      "url": "https://dexscreener.com/solana/3mhzzkmgxguppq7rrzczjzlrdajwcygtyfugbxmepump",
+      "chainId": "solana",
+      "tokenAddress": "3MHZzkmgxguPpq7RRzczjzLRDaJwcyGtyFUgbXMEpump",
+      "description": "The Queen of the Kabosu Family",
+      "icon": "ZjONXzuS9XviM4_G",
+      "header": "https://cdn.dexscreener.com/cms/images/_nlqFZzSk0-7PN1H?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/3MHZzkmgxguPpq7RRzczjzLRDaJwcyGtyFUgbXMEpump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://www.tsujicoin.lol/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/TsujicoinSol"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/admjoqiounjbxvzdqtvdjcrcp2nvtovw7426enzkyk5r",
+      "chainId": "solana",
+      "tokenAddress": "AdMJoQiounJbXVZDqtVdjCRcp2NVtovw7426ENZKyK5R",
+      "icon": "t3WBVTQCWZJBlWQh",
+      "header": "https://cdn.dexscreener.com/cms/images/BwaA47RcmRmIQ3TS?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/AdMJoQiounJbXVZDqtVdjCRcp2NVtovw7426ENZKyK5R?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/i/communities/2038686887460618496"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x30db03a051205ccbeb1b6524ddf87fbc6c0127bc",
+      "chainId": "robinhood",
+      "tokenAddress": "0x30dB03A051205CcBeb1B6524dDf87fbC6c0127bC",
+      "description": "Trading fees automatically donated to children's Trump Accounts Funding the next generation of Americans on Robinhood",
+      "icon": "3UAwwOkcwRk97Ph6",
+      "header": "https://cdn.dexscreener.com/cms/images/qmdbFu0OTg5YbkGu?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x30db03a051205ccbeb1b6524ddf87fbc6c0127bc?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://accounts.fund/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/TrumpAccFund"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/9lri6expuebhqe2lhfmvioqkakauhenhcrgpkdjepump",
+      "chainId": "solana",
+      "tokenAddress": "9LRi6EXPUebHqE2LHfmvioQKAKAUHEnhCRgpKDjepump",
+      "description": "Evildogi",
+      "icon": "gt6OpkjsLbqjzeFI",
+      "header": "https://cdn.dexscreener.com/cms/images/BgskXiBcVClG8dmh?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/9LRi6EXPUebHqE2LHfmvioQKAKAUHEnhCRgpKDjepump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://evildogi.fun/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/EvildogiSOL"
+        },
+        {
+          "type": "tiktok",
+          "url": "https://www.tiktok.com/@evildogi?_r=1&_t=ZT-98HuVf7FXnJ"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/6pdk7itpb2xquqavjlitnfrcsainjozdpbcs6uslpump",
+      "chainId": "solana",
+      "tokenAddress": "6pDk7itpB2xQUQAvJLitNFrCSAinjozdPBcS6UsLpump",
+      "description": "Cate is the sister of Doge. Doge has Baby Doge, and Cate has Baby Cate.",
+      "icon": "hJkP-_V6ofmsUcmS",
+      "header": "https://cdn.dexscreener.com/cms/images/aBoQd1NXXSkaeiox?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/6pDk7itpB2xQUQAvJLitNFrCSAinjozdPBcS6UsLpump?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/babycatesolana"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/9t4tnpviaxmb1iqxvx647caytsgg2sq1t22kixgypump",
+      "chainId": "solana",
+      "tokenAddress": "9T4TnPviAXMB1iQXVX647CaYTsGg2sq1t22Kixgypump",
+      "description": "Mellow is a simple marshmallow-inspired character with a consistently calm expression. Amid the noise and fast-paced dynamics of the world, Mellow is here to bring a relaxed, peaceful, and pleasant atmosphere.",
+      "icon": "Q2O8dBnK7Fen_TsG",
+      "header": "https://cdn.dexscreener.com/cms/images/rySp6oLahMJpYyYY?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/9T4TnPviAXMB1iQXVX647CaYTsGg2sq1t22Kixgypump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://marshmellow.lol/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/simplemellow"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0xf0e17e54239cd945cd7bea471a3a2ca6a8c7f7a3",
+      "chainId": "robinhood",
+      "tokenAddress": "0xf0E17e54239CD945Cd7bEa471a3a2CA6a8C7f7A3",
+      "description": "Launch/Trade tokens the way you want. Customize bonding cap, taxes, and token allocations before launch, deploy instantly on Robinhood Chain and Stable chain",
+      "icon": "D6ckGmg2FrlciNfJ",
+      "header": "https://cdn.dexscreener.com/cms/images/hWSXLnMYwSXHKapX?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0xf0e17e54239cd945cd7bea471a3a2ca6a8c7f7a3?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://lemon.fun"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/lemondotfun"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/lemondotfun"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/abjfcqcgwjxgzwtdwhsuz4iet7zkkdwn6wvmp6zmpump",
+      "chainId": "solana",
+      "tokenAddress": "ABJfcqcGWjxGZwtdWHsUz4iet7ZKKdWn6wvMP6Zmpump",
+      "description": "$BADZ was born where hype couldn't survive. It's a place for those who stay steady when the noise gets loud, proving that conviction isn't announced—it endures.",
+      "icon": "XL3bGPVpu21sCr94",
+      "header": "https://cdn.dexscreener.com/cms/images/o7iKIgPTSJt9LTKj?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/ABJfcqcGWjxGZwtdWHsUz4iet7ZKKdWn6wvMP6Zmpump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://badz.fun/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/coldbadz"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/7bojdgkguxbv2mpjmbukbxkme6uehhx7zsrnzxdipump",
+      "chainId": "solana",
+      "tokenAddress": "7BoJdgKGUXbv2mpjmbuKBXkmE6UEHHx7zsrNZxdipump",
+      "description": "the first bitcoin cat ever",
+      "icon": "9w0Xs57A3Xh0hmx4",
+      "header": "https://cdn.dexscreener.com/cms/images/A_QGh44I4OPllIDV?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/7BoJdgKGUXbv2mpjmbuKBXkmE6UEHHx7zsrNZxdipump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://siriuscat.site/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/siriusbtcat"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x8382342eb994dbc3ee845b8ad3d99c1313ae7b03",
+      "chainId": "robinhood",
+      "tokenAddress": "0x8382342eb994dBc3ee845B8AD3d99C1313AE7b03",
+      "description": "The official cat sister of doge",
+      "icon": "Hs7YQWFitRcqNQ74",
+      "header": "https://cdn.dexscreener.com/cms/images/qeb3n7YME9FLN-1c?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x8382342eb994dbc3ee845b8ad3d99c1313ae7b03?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://thecate.xyz/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/thecatecoinx"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/thecatecoinn"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0xac0f333bbebb62b6d16322650641bd5ef2b849e5",
+      "chainId": "robinhood",
+      "tokenAddress": "0xac0F333bBEBB62B6d16322650641Bd5eF2B849e5",
+      "description": "SHIBCAT is the Shiba Inu cat version, now on Robinhood Chain. A community driven meme token built for those who love memes, culture, and the next generation of on chain communities.\n\nInspired by the iconic Shiba spirit, SHIBCAT brings a fresh feline identity to the ecosystem, combining fun, community, and viral energy. Our mission is simple: build a loyal community, create lasting momentum, and make SHIBCAT a recognizable name across Robinhood Chain.",
+      "icon": "zY5sDFq9MCZ-e6wA",
+      "header": "https://cdn.dexscreener.com/cms/images/0kRkbvfolHwLB-8Z?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0xac0f333bbebb62b6d16322650641bd5ef2b849e5?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://shibcatrh.com"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/SHIBCATRH"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/SHIBCATRH"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/biwfp9pkf4xdbwwrw3rpz2hzvpf5qbsoqij1xpeupump",
+      "chainId": "solana",
+      "tokenAddress": "BiwFp9pKF4xdbwWRW3RPZ2HzVPf5qBSoQiJ1xpEupump",
+      "description": "THE bull dog",
+      "icon": "wf3nlBAed3OvwDnU",
+      "header": "https://cdn.dexscreener.com/cms/images/2220maZm7duQzKZ5?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/BiwFp9pKF4xdbwWRW3RPZ2HzVPf5qBSoQiJ1xpEupump?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "telegram",
+          "url": "https://t.me/thebullgodonsol"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x499dc58539ba6869ee15b6c2a3c3c07f1ac4995f",
+      "chainId": "robinhood",
+      "tokenAddress": "0x499dC58539BA6869EE15b6c2a3c3c07F1AC4995F",
+      "description": "HOOD4663 is born — the cult has officially begun",
+      "icon": "aV7d3BmBZ38Z1IQo",
+      "header": "https://cdn.dexscreener.com/cms/images/-HZCwqsTHqli2Kta?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x499dc58539ba6869ee15b6c2a3c3c07f1ac4995f?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://hood4663.com/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/hood4663_rh"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/HOOD4663RH"
+        }
+      ],
+      "totalAmount": 100
+    },
+    {
+      "url": "https://dexscreener.com/solana/eahkrd62bxjbp6vmwoewly1uykkwsx92ux2gq7jbpump",
+      "chainId": "solana",
+      "tokenAddress": "EaHKRd62bxJBP6VMwoeWLy1uYKkwSX92ux2gQ7JBpump",
+      "description": "🐱🇺🇸 TrumpCat is making the ultimate comeback in 2028. Powered by memes, built on Solana, and fighting for full bowls everywhere. Make Catmerica Great Again! 🚀",
+      "icon": "fkpgXbs2nVtxey-Z",
+      "header": "https://cdn.dexscreener.com/cms/images/xpMi9X1OGzAFW8Rr?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/EaHKRd62bxJBP6VMwoeWLy1uYKkwSX92ux2gQ7JBpump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "http://www.trumpcat2028.vip/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/trumpcat2028"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/trumpcat2028"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/solana/fw2aaganweex2ko7n9qw3ks3tvfdx2s3ssfsfzerpump",
+      "chainId": "solana",
+      "tokenAddress": "Fw2aagAnwEex2ko7n9QW3ks3Tvfdx2s3SsfsFzErpump",
+      "description": "What does the phoks say?",
+      "icon": "JRDBfMuQCH8CfXRD",
+      "header": "https://cdn.dexscreener.com/cms/images/gBUah63vaEccDTdX?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/Fw2aagAnwEex2ko7n9QW3ks3Tvfdx2s3SsfsFzErpump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://phoks.xyz"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/phoksonsol"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/phoksonsol"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/solana/erms1vkbcqs5ymjccfnp464rjyhuhwslydpsre5cpump",
+      "chainId": "solana",
+      "tokenAddress": "ERMS1vKBCQS5YMJCcFNP464RJyHuHwSLYdpsre5Cpump",
+      "description": "🚀 The Original Midterms26 Narrative \n\n⚡ OG Midterms26 Coin on Solana\n\n🔥 Meme The $Midterms26",
+      "icon": "S90pCMM400an-yRk",
+      "header": "https://cdn.dexscreener.com/cms/images/8_9fxrqZeBF2C_8B?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/ERMS1vKBCQS5YMJCcFNP464RJyHuHwSLYdpsre5Cpump?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://midterms26.xyz/"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/midtermsmemes26"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/midterms2026"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0xecd0afad64c7ede7de31e5c0bac4c90e7556b698",
+      "chainId": "robinhood",
+      "tokenAddress": "0xecD0Afad64c7edE7DE31E5C0bac4c90E7556b698",
+      "description": "DOGGFATHER PLASTERED ON THE WALLS",
+      "icon": "W18YfsOelplW-5g0",
+      "header": "https://cdn.dexscreener.com/cms/images/0vwt0fh6OTOkk9gp?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0xecd0afad64c7ede7de31e5c0bac4c90e7556b698?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://doggfather.site"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/TheDoggfatherRH"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/solana/5nhepjybuvv5dqgvv9iv7svzrv4wijf2vmsqcreepump",
+      "chainId": "solana",
+      "tokenAddress": "5nHepJYbUvv5dQGvV9iV7Svzrv4Wijf2vmSqcREEpump",
+      "icon": "Cx6i__S--efFkyqx",
+      "header": "https://cdn.dexscreener.com/cms/images/Dh9K2I5OuCEjp6oR?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/5nHepJYbUvv5dQGvV9iV7Svzrv4Wijf2vmSqcREEpump?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/de__gods/status/2081606227973337511?s=20"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/solana/dshgtfp1eue97wliijjzfvtcs3l6vkd6n1irq25lpump",
+      "chainId": "solana",
+      "tokenAddress": "DSHgTFP1eUE97WLiiJJZfVtcS3L6vkd6n1iRQ25Lpump",
+      "icon": "trd2SS3b0esI_uP9",
+      "header": "https://cdn.dexscreener.com/cms/images/U_0J-lnDdGHMPPot?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/DSHgTFP1eUE97WLiiJJZfVtcS3L6vkd6n1iRQ25Lpump?timestamp=1785136800000",
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x5f1990a6a78935c2809103242615a8227f54dad0",
+      "chainId": "robinhood",
+      "tokenAddress": "0x5f1990A6A78935C2809103242615A8227F54dAD0",
+      "description": "moodeng ran in english who cares about language",
+      "icon": "6eAlDSMR9JouD1e1",
+      "header": "https://cdn.dexscreener.com/cms/images/wOWuWiaGiJuRQp0Y?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x5f1990a6a78935c2809103242615a8227f54dad0?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://nongwan.xyz"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/NongwanOnRH"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/solana/gzfb6lumwoyqd2tnclyqocvkcaire35f3sfvanwfpump",
+      "chainId": "solana",
+      "tokenAddress": "Gzfb6LUmwoYQD2TNcLyqocvkCaire35F3SFvANwfpump",
+      "icon": "Jm3Jq4sL58kGq29i",
+      "header": "https://cdn.dexscreener.com/cms/images/3IJ4S_okB9t80ifj?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/Gzfb6LUmwoYQD2TNcLyqocvkCaire35F3SFvANwfpump?timestamp=1785136800000",
+      "links": [
+        {
+          "type": "twitter",
+          "url": "https://x.com/terryXXc_/status/2081618161225380232"
+        }
+      ],
+      "totalAmount": 50
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x5a7d584bcc70c944a6292184eb65f90bdb8acaff",
+      "chainId": "robinhood",
+      "tokenAddress": "0x5A7d584Bcc70c944a6292184EB65F90bdB8acafF",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x5a7d584bcc70c944a6292184eb65f90bdb8acaff?timestamp=1785136800000",
+      "totalAmount": 40
+    },
+    {
+      "url": "https://dexscreener.com/robinhood/0x59adc81a6454fde015b26d7c92db50bec26f3417",
+      "chainId": "robinhood",
+      "tokenAddress": "0x59ADC81A6454FDE015B26D7c92dB50Bec26f3417",
+      "description": "Roaring Cat carries the GME spirit forward on Robinhood—community powered, fearless, and always ready to roar.",
+      "icon": "lRJ5URpX1zzEK7Sb",
+      "header": "https://cdn.dexscreener.com/cms/images/Qytv9jCyGfhUQa2X?width=900&height=300&fit=crop&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x59adc81a6454fde015b26d7c92db50bec26f3417?timestamp=1785136800000",
+      "links": [
+        {
+          "url": "https://www.roaringcathood.site"
+        },
+        {
+          "type": "twitter",
+          "url": "https://x.com/roaringcathood"
+        },
+        {
+          "type": "telegram",
+          "url": "https://t.me/roaringcathood"
+        }
+      ],
+      "totalAmount": 30
+    }
+  ]
+}

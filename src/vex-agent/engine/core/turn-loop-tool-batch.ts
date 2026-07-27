@@ -28,7 +28,7 @@
  * message + tool results) — matches the pre-extraction site where the
  * mutation lived inline. This is the only side-effect on caller state
  * besides DB writes via `dispatchTool` / `saveAssistantMessage` /
- * `persistToolResultWithOverflow` / `approvalsRepo.enqueue` /
+ * `persistBatchTranscript` / `approvalsRepo.enqueue` /
  * `missionRunsRepo.updateStatus("paused_approval")`.
  *
  * Structural split: the outcome contract lives in

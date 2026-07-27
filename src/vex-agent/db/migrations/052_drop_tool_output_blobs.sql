@@ -1,0 +1,12 @@
+-- 052: drop the tool-output blob externalisation table (D-4).
+--
+-- The mechanism is removed: tool outputs are persisted verbatim and inline in
+-- `messages`, because the model never knew what to look for inside a blob —
+-- full tool output in context beats blobbing, and the precondition (bounded,
+-- measured tool outputs) landed first.
+--
+-- The drop is safe and non-destructive in practice: rows carried a 15-minute
+-- TTL, so the table never held durable data. Owner approved the one-step drop.
+-- Legacy overflow stubs already written into `messages` stay inert; the read
+-- side still tolerates them.
+DROP TABLE IF EXISTS tool_output_blobs;

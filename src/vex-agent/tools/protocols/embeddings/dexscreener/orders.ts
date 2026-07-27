@@ -14,7 +14,7 @@ export const DEXSCREENER_ORDERS_DISCOVERY = {
   "dexscreener.orders": {
     embeddingText: embeddingText(
       `Check whether a token has paid promotional orders on DEX Screener — type, status, payment timestamp. ` +
-      `Use this when the user wants to verify if a token is being marketed, check the legitimacy or marketing history of a project, or see if money is being spent to promote a coin. ` +
+      `Use this when the user wants to know whether a token is being marketed, review a project's marketing history, or see how much money is being spent to promote a coin — a spend record, never a safety verdict. ` +
       `Example queries: is this token paying for promo, marketing campaign for this coin, paid promo history for token, has this project bought ads, promo orders for this token.`,
     ),
     chains: DEXSCREENER_CHAINS,

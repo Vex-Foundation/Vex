@@ -64,6 +64,36 @@ export function assertNeverParamType(value: never): never {
 }
 
 /**
+ * The `acceptsStringArray` branch of the type gate — VALIDATION ONLY.
+ *
+ * Returns a rejection reason, or `null` when the value is an acceptable array.
+ * It deliberately does NOT transform: the handler keeps receiving the params
+ * object exactly as the model sent it, so a downstream reader (and anything that
+ * hashes or captures the call) sees one untouched input rather than a shape this
+ * gate silently rewrote.
+ *
+ * A non-string member is named BY POSITION. "chainIds must be strings" leaves an
+ * agent re-sending the same 12-element array with the same mistake in it.
+ */
+function checkStringArrayParam(
+  toolId: string,
+  key: string,
+  value: readonly unknown[],
+): string | null {
+  if (value.length === 0) {
+    return `Parameter "${key}" for ${toolId} was an empty array. Supply at least one value, `
+      + "or omit the parameter — an empty list cannot mean both 'none' and 'no filter'.";
+  }
+  for (const [index, member] of value.entries()) {
+    if (typeof member !== "string") {
+      return `Parameter "${key}" for ${toolId} accepts a string or an array of strings, but the `
+        + `item at index ${index} is ${member === null ? "null" : typeof member}.`;
+    }
+  }
+  return null;
+}
+
+/**
  * Outcome of strict param validation. `ok` carries no payload — the runtime
  * keeps operating on the already-validated `params` object; this is a boundary
  * gate, not a transform.
@@ -130,6 +160,24 @@ export function validateProtocolParams(
       };
     }
     if (missing) continue; // optional + absent — not type-checked
+
+    if (Array.isArray(value)) {
+      // `typeof [] === "object"`, so the generic message below would tell an
+      // agent that sent a list that we expected a string and got an "object" —
+      // true, unhelpful, and the exact wording that cost a call in the persona
+      // gate. Both branches name the array explicitly.
+      if (param.acceptsStringArray !== true) {
+        return {
+          ok: false,
+          reason:
+            `Parameter "${param.key}" for ${manifest.toolId} has invalid type: `
+            + `expected ${param.type}, got array — this parameter takes a single value, not a list.`,
+        };
+      }
+      const violation = checkStringArrayParam(manifest.toolId, param.key, value);
+      if (violation) return { ok: false, reason: violation };
+      continue; // validated as a list; the primitive schema does not apply
+    }
 
     const parsed = primitiveSchema(param.type).safeParse(value);
     if (!parsed.success) {

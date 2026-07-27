@@ -25,7 +25,6 @@ export const KHALANI_MAIN_DISCOVERY = {
     ),
     aliases: ["bridge chains", "supported bridge chains", "bridge networks", "supported bridge networks", "cross-chain networks"],
     exampleIntents: ["list supported bridge chains", "what chains does the bridge support", "supported bridge networks"],
-    preferredFor: ["supported bridge chains", "bridge chain list", "what chains the bridge supports"],
     chains: KHALANI_CHAINS,
   },
 
@@ -84,7 +83,6 @@ export const KHALANI_MAIN_DISCOVERY = {
       "amount in smallest units from chain id to chain id",
       "preview route with source and destination chain ids",
     ],
-    preferredFor: ["bridge quote", "quote amount", "preview route"],
     chains: KHALANI_CHAINS,
   },
 
@@ -113,7 +111,6 @@ export const KHALANI_MAIN_DISCOVERY = {
       `Example queries: bridge usdc from eth to solana, move funds to base, send sol from solana to ethereum, get tokens onto arb, cross-chain transfer, get my eth onto solana.`,
     ),
     canonicalSummary: "Execute a cross-chain bridge transfer across the supported EVM and Solana chains.",
-    preferredFor: ["cross-chain bridge", "bridge funds", "bridge tokens", "cross chain transfer"],
     chains: KHALANI_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

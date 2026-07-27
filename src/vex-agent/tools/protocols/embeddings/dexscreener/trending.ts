@@ -13,17 +13,17 @@ import { DEXSCREENER_CHAINS } from "../../dexscreener/discovery-text.js";
 export const DEXSCREENER_TRENDING_DISCOVERY = {
   "dexscreener.profiles": {
     embeddingText: embeddingText(
-      `Get the latest token profiles on DEX Screener — newly listed projects with descriptions, websites, socials. ` +
-      `Use this when the user wants to find newly visible tokens, browse fresh project listings, or discover what's new in the ecosystem with full descriptions and links. ` +
-      `Example queries: latest token profiles, find new project listings, what just got listed, browse newest crypto projects, fresh memecoin profiles, recently visible tokens.`,
+      `Find new tokens on any supported chain through the latest token profiles on DEX Screener — newly listed projects with descriptions, websites, socials, and the time each listing was last updated. ` +
+      `Use this when the user asks what is new on a chain they name, wants freshly listed projects or newly visible tokens, or wants to browse the newest crypto projects with full descriptions and links. ` +
+      `Example queries: new tokens on this chain, what's new on solana, freshly listed projects, latest token profiles, find new project listings, browse newest crypto projects, fresh memecoin profiles.`,
     ),
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.profiles.recent": {
     embeddingText: embeddingText(
-      `Get RECENTLY UPDATED token profiles on DEX Screener — projects that just refreshed their description, socials, or branding, each with an updatedAt timestamp and a community-takeover (cto) flag. ` +
-      `Use this when the user wants the freshest profile activity, who just updated their listing, or a change feed of project metadata rather than the plain latest-profiles list. Live but undocumented API surface — may change. ` +
-      `Example queries: recently updated profiles, who just refreshed their listing, latest profile changes, fresh project updates, recent metadata updates.`,
+      `Find new tokens on any supported chain through RECENTLY UPDATED token profiles on DEX Screener — the freshest listing activity, each row carrying an updatedAt timestamp and a community-takeover flag. ` +
+      `Use this when the user asks what just appeared on a chain they name, wants the freshest project activity, who just refreshed a listing, or a change feed of listing metadata rather than the plain latest-profiles list. Live but undocumented API surface — may change. ` +
+      `Example queries: new tokens on this chain, what just changed on base, recently updated profiles, who just refreshed their listing, latest profile changes, fresh project updates.`,
     ),
     chains: DEXSCREENER_CHAINS,
   },
@@ -46,7 +46,8 @@ export const DEXSCREENER_TRENDING_DISCOVERY = {
   "dexscreener.communityTakeovers": {
     embeddingText: embeddingText(
       `Get the latest community takeover (CTO) events on DEX Screener — tokens where the community has reclaimed control. ` +
-      `Use this when the user wants to find CTO opportunities, track community-run memecoins, watch for takeover signals (often precedes price action), or browse renewed-attention coins. ` +
+      `Use this when the user wants to find CTO opportunities, track community-run memecoins, watch for takeover signals, or browse renewed-attention coins. ` +
+      `Each event carries the date the community claimed the token, so a takeover claimed minutes ago can be told apart from one claimed months ago. ` +
       `Example queries: latest cto events, community takeover tokens, recent ctos, community-controlled memecoins, takeover signals, community reclaimed coins.`,
     ),
     chains: DEXSCREENER_CHAINS,

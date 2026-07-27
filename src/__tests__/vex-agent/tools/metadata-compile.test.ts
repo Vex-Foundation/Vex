@@ -141,19 +141,6 @@ describe("compileToolDiscoveryMetadata", () => {
     expect(result.operation).toEqual(["monitor"]);
   });
 
-  it("preferredFor and avoidFor from discovery pass through", () => {
-    const manifest = makeManifest({
-      discovery: {
-        preferredFor: ["orderbook", "bids asks"],
-        avoidFor: ["positions"],
-      },
-    });
-    const result = compileToolDiscoveryMetadata(manifest, MOCK_NAV);
-
-    expect(result.preferredFor).toEqual(["orderbook", "bids asks"]);
-    expect(result.avoidFor).toEqual(["positions"]);
-  });
-
   it("deduplicates array values when override repeats inherited entries", () => {
     const manifest = makeManifest({
       discovery: { aliases: ["dex screener", "market scanner"] },

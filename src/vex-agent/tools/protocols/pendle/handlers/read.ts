@@ -125,23 +125,29 @@ async function pendlePositionValue(
 
   try {
     const client = getPendleClient();
-    // Positions are grouped per chain already; assets/all is GLOBAL (one call).
-    const [positionsByChain, assets] = await Promise.all([
-      client.getPositions(wallet),
-      client.getAllAssets(),
-    ]);
+    // Positions are grouped per chain; the asset catalogue is per chain too, so
+    // it is fetched INSIDE the loop — only for chains this wallet actually holds
+    // a position on, and each one is TTL-cached per URL. A chain whose markets or
+    // assets cannot be read PROPAGATES (same as the pre-existing per-chain
+    // markets read): reporting an unpriceable position as $0 would be a lie.
+    const positionsByChain = await client.getPositions(wallet);
 
     const positions: Array<Record<string, unknown>> = [];
     for (const chainPos of positionsByChain) {
       const slug = pendleChainSlug(chainPos.chainId);
       if (!slug) continue; // only chains in the Pendle registry
       // Chain-scoped market + asset maps (no cross-chain address collisions).
-      const markets = await client.getActiveMarkets(chainPos.chainId);
+      const [markets, assets] = await Promise.all([
+        client.getActiveMarkets(chainPos.chainId),
+        client.getAssetsForChain(chainPos.chainId),
+      ]);
       const marketByAddress = new Map<string, PendleMarket>();
       for (const m of markets) marketByAddress.set(m.address.toLowerCase(), m);
       const assetByAddress = new Map<string, PendleAsset>();
       for (const a of assets) {
-        if (a.chainId === chainPos.chainId) assetByAddress.set(a.address.toLowerCase(), a);
+        if (a.chainId === null || a.chainId === chainPos.chainId) {
+          assetByAddress.set(a.address.toLowerCase(), a);
+        }
       }
       // PT legs (fixed-yield principal) + LP legs (liquidity) from the SAME
       // dashboard response, each tagged with `kind` so the model can tell them

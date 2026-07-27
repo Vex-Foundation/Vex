@@ -1,6 +1,7 @@
 import * as RettiwtApi from "rettiwt-api";
 import type { IRettiwtConfig, ITweetFilter } from "rettiwt-api";
 import type { TwitterAccountParams } from "./schema.js";
+import { TwitterAccountRequestError } from "./failure.js";
 import {
   RETTIWT_API_KEY_ENV,
   RETTIWT_DELAY_MS_ENV,
@@ -36,7 +37,9 @@ export async function executeTwitterAccountRequest(
 function createRettiwt(rateLimit: TwitterAccountRateLimit): RettiwtInstance {
   const apiKey = process.env[RETTIWT_API_KEY_ENV]?.trim();
   if (!apiKey) {
-    throw new Error(`${RETTIWT_API_KEY_ENV} is not configured`);
+    // Typed, so the caller can tell OUR failures from the provider's without
+    // trusting message text — everything untyped is bounded by default.
+    throw new TwitterAccountRequestError("auth_failed");
   }
 
   const config: IRettiwtConfig = {
@@ -69,7 +72,7 @@ async function executeAction(
   switch (params.action) {
     case "account_status": {
       const account = await client.user.details();
-      if (!account) throw new Error("Authenticated Twitter/X account was not returned");
+      if (!account) throw new TwitterAccountRequestError("unreadable_content");
       return { account: serialize(account) };
     }
     case "tweet_details":
@@ -97,7 +100,8 @@ async function executeAction(
       })) };
     case "user_details": {
       const target = params.userId ?? params.username;
-      if (!target) throw new Error("Missing user target");
+      // Defense-in-depth: the schema already refines `username || userId`.
+      if (!target) throw new TwitterAccountRequestError("user_not_found");
       return { user: serialize(await client.user.details(target)) };
     }
     case "user_search":
@@ -127,11 +131,14 @@ async function resolveUserId(
   target: { userId?: string; username?: string },
 ): Promise<string> {
   if (target.userId) return target.userId;
-  if (!target.username) throw new Error("Missing user target");
+  // Defense-in-depth: the schema already refines `username || userId`.
+  if (!target.username) throw new TwitterAccountRequestError("user_not_found");
 
   const user = serialize(await client.user.details(target.username));
   const id = getStringField(user, "id");
-  if (!id) throw new Error(`Twitter/X user not found: ${target.username}`);
+  // The handle the agent asked for is already in its own tool call, so the
+  // static message loses nothing by not repeating it.
+  if (!id) throw new TwitterAccountRequestError("user_not_found");
   return id;
 }
 
@@ -173,7 +180,7 @@ function uniqueStrings(values: readonly string[]): string[] {
 function serializeCursored(value: unknown): CursoredJson {
   const serialized = serialize(value);
   if (!isRecord(serialized) || !Array.isArray(serialized.list)) {
-    throw new Error("Rettiwt returned an invalid cursored response");
+    throw new TwitterAccountRequestError("unreadable_content");
   }
   return {
     items: serialized.list,
@@ -187,6 +194,17 @@ function serialize(value: unknown): unknown {
   return value;
 }
 
+/**
+ * DENYLIST redaction — it removes the three secret shapes it knows about and
+ * passes every other provider word through. That is why it is NO LONGER on the
+ * agent-facing path: `twitter_account` now answers with a bounded code from
+ * `failure.ts`, which is an allowlist and cannot be outflanked by prose nobody
+ * anticipated.
+ *
+ * Its one remaining caller is the regime worker, which sanitizes before
+ * re-throwing and whose catch then discards the message entirely (only
+ * `errorCode` is logged). Do not reintroduce it into anything the model reads.
+ */
 export function sanitizeTwitterAccountError(error: unknown): string {
   const rawMessage = error instanceof Error ? error.message : String(error);
   let message = rawMessage || "Twitter/X request failed";

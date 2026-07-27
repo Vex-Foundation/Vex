@@ -19,7 +19,6 @@ export const UNISWAP_SWAP_DISCOVERY = {
     ),
     aliases: ["uniswap quote", "uniswap route preview", "robinhood swap quote", "v2 v3 best route"],
     exampleIntents: ["quote swap on robinhood", "uniswap price VIRTUAL to VEX", "preview uniswap trade"],
-    preferredFor: ["uniswap swap quote", "robinhood swap", "route preview", "price impact"],
     chains: UNISWAP_CHAINS,
   },
 
@@ -31,7 +30,6 @@ export const UNISWAP_SWAP_DISCOVERY = {
     ),
     aliases: ["uniswap execute", "uniswap swap", "trade on robinhood via uniswap", "uniswap fallback swap"],
     exampleIntents: ["swap VEX for VIRTUAL on robinhood via uniswap", "execute uniswap trade", "uniswap fallback execute"],
-    preferredFor: ["uniswap swap execute", "robinhood trade", "exact input swap", "kyberswap fallback"],
     chains: UNISWAP_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

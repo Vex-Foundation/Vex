@@ -21,7 +21,6 @@ export const VIRTUALS_AGENTS_DISCOVERY = {
     ),
     aliases: ["virtuals agents", "agent tokens", "list virtuals", "robinhood agent tokens", "virtuals screener"],
     exampleIntents: ["list virtuals agents on robinhood", "top agent tokens by market cap", "newest virtuals launches"],
-    preferredFor: ["virtuals agent list", "agent token discovery", "robinhood agent tokens", "agent token screener"],
     chains: VIRTUALS_CHAIN_LABELS,
   },
 
@@ -33,7 +32,6 @@ export const VIRTUALS_AGENTS_DISCOVERY = {
     ),
     aliases: ["virtuals agent detail", "agent token profile", "virtuals get", "agent id lookup", "anti-sniper window"],
     exampleIntents: ["get virtuals agent 96200", "details for the VEX agent token", "check anti-sniper window"],
-    preferredFor: ["virtuals agent detail", "agent token profile", "anti-sniper window check", "agent trading route"],
     chains: VIRTUALS_CHAIN_LABELS,
   },
 
@@ -45,7 +43,6 @@ export const VIRTUALS_AGENTS_DISCOVERY = {
     ),
     aliases: ["recent graduations", "just graduated", "virtuals graduations", "newly graduated agents", "graduation feed"],
     exampleIntents: ["what just graduated on robinhood", "recent virtuals graduations", "newly graduated agent tokens"],
-    preferredFor: ["recent graduations", "graduation feed", "fresh agent tokens", "just graduated robinhood"],
     chains: VIRTUALS_CHAIN_LABELS,
   },
 
@@ -57,7 +54,6 @@ export const VIRTUALS_AGENTS_DISCOVERY = {
     ),
     aliases: ["genesis calendar", "virtuals launches", "launch schedule", "genesis sales", "upcoming agent launches"],
     exampleIntents: ["virtuals genesis calendar", "upcoming agent launches", "recent genesis sales"],
-    preferredFor: ["genesis calendar", "launch schedule", "genesis sales", "upcoming virtuals launches"],
     chains: VIRTUALS_CHAIN_LABELS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
