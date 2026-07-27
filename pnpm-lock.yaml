@@ -30,8 +30,8 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0
       rettiwt-api:
-        specifier: 7.0.3
-        version: 7.0.3
+        specifier: 7.1.2
+        version: 7.1.2
       socket.io-client:
         specifier: ^4.8.3
         version: 4.8.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -1677,8 +1677,8 @@ packages:
     resolution: {integrity: sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow==}
     engines: {node: '>= 4'}
 
-  rettiwt-api@7.0.3:
-    resolution: {integrity: sha512-8Y9FaA83h/DJPh48HT8Ld3OBn3B7syrMDqH4J69qpj0SctMxl+wYXi4q3CahvRJ007AwW/vhJiYI8JJNz63wug==}
+  rettiwt-api@7.1.2:
+    resolution: {integrity: sha512-11EoAGGEJLYEQwqksFnG1p2iSzHS1DjLlsyY16mwE0QQyVuGMbUc0SzJi0cy6vw+ZLBmVvXejm/RHJi7Krq8zA==}
     engines: {node: ^22.21.0}
     hasBin: true
 
@@ -2112,8 +2112,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  x-client-transaction-id@0.2.3:
-    resolution: {integrity: sha512-SgCpLpswNoUAJpphrKrouCByvBCOBWvBiGynQ8+Ioncc67uG5FafTFBpAtpEiUMhjAK/MRIQF578fl9C6BUfKg==}
+  x-client-transaction-id@0.3.1:
+    resolution: {integrity: sha512-fD9YtDswTL3VyG/z7FbZUfMu5CUsvGmKk33fM3b9eOXe0Wnmj8W55UKLPA5Z/cuq6WrWTxXQhLcV3GGCD6mKaQ==}
 
   xmlhttprequest-ssl@2.1.2:
     resolution: {integrity: sha512-TEU+nJVUUnA4CYJFLvK5X9AOeH4KvDvhIfm0vV1GaQRtchnG0hgK5p8hw/xjv8cunWYCsiPCSDzObPyhEwq3KQ==}
@@ -3732,7 +3732,7 @@ snapshots:
 
   retry@0.12.0: {}
 
-  rettiwt-api@7.0.3:
+  rettiwt-api@7.1.2:
     dependencies:
       axios: 1.14.0
       chalk: 5.6.2
@@ -3743,7 +3743,7 @@ snapshots:
       linkedom: 0.18.12
       node-html-parser: 7.1.0
       socks-proxy-agent: 8.0.5
-      x-client-transaction-id: 0.2.3
+      x-client-transaction-id: 0.3.1
     transitivePeerDependencies:
       - canvas
       - debug
@@ -4200,7 +4200,7 @@ snapshots:
       bufferutil: 4.1.0
       utf-8-validate: 6.0.6
 
-  x-client-transaction-id@0.2.3:
+  x-client-transaction-id@0.3.1:
     dependencies:
       linkedom: 0.18.12
     transitivePeerDependencies:
