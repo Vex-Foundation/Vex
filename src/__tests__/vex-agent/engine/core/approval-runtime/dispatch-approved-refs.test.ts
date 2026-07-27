@@ -35,10 +35,6 @@ vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
   buildSessionWalletResolution: vi.fn(),
 }));
 
-vi.mock("@vex-agent/engine/wake/blob-refresh.js", () => ({
-  refreshBlobTtlForRecentMessages: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("@vex-agent/engine/core/approval-runtime/continuation.js", () => ({
   claimResumeContinuation: vi.fn(),
 }));

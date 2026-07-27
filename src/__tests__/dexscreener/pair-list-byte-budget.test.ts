@@ -41,6 +41,7 @@ import {
   tokenPairsWeth,
   tokensEthereum40,
 } from "./_pair-captures.js";
+import { DEXSCREENER_BYTE_BUDGET_BYTES } from "./_byte-budget.js";
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -49,8 +50,6 @@ const READ_CTX: ProtocolExecutionContext = {
   walletPolicy: { kind: "none" },
 };
 
-/** The global context cap the blob mechanism enforces elsewhere. */
-const CONTEXT_CAP_BYTES = 16_384;
 
 async function outputBytes(
   toolId: string,
@@ -82,13 +81,13 @@ describe("DexScreener pair-list byte budgets", () => {
 
   it("search, lean default, 30 rows: under the 16,384 B context cap", async () => {
     const bytes = await outputBytes("dexscreener.search", { query: "USDC" });
-    expect(bytes).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(bytes).toBeGreaterThan(5_000);
   });
 
   it("search, rich (fields=full), 30 rows: over the cap — which is why rich is opt-in", async () => {
     const bytes = await outputBytes("dexscreener.search", { query: "USDC", fields: "full" });
-    expect(bytes).toBeGreaterThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(bytes).toBeLessThan(60_000);
   });
 
@@ -125,7 +124,7 @@ describe("DexScreener pair-list byte budgets", () => {
       chainId: "ethereum",
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     });
-    expect(bytes).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("tokenPairs, rich: over the cap, opt-in only", async () => {
@@ -134,7 +133,7 @@ describe("DexScreener pair-list byte budgets", () => {
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       fields: "full",
     });
-    expect(bytes).toBeGreaterThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   // MEASURED AND ACCEPTED: `tokens` is the one tool in this family whose default
@@ -149,7 +148,7 @@ describe("DexScreener pair-list byte budgets", () => {
       chainId: "ethereum",
       tokenAddresses: tokensEthereum40().requestedAddresses,
     });
-    expect(bytes).toBeGreaterThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(bytes).toBeLessThan(20_000);
   });
 
@@ -162,7 +161,7 @@ describe("DexScreener pair-list byte budgets", () => {
       READ_CTX,
     );
     expect(result.success).toBe(true);
-    expect(Buffer.byteLength(result.output, "utf8")).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(Buffer.byteLength(result.output, "utf8")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     // The rows are windowed; the address reconciliation is NOT.
     const data: unknown = JSON.parse(result.output);
     expect(data).toMatchObject({ unresolvedAddresses: expect.any(Array) });

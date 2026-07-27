@@ -64,6 +64,7 @@ import {
   profilesLatest,
   profilesRecent,
 } from "./_feed-captures.js";
+import { DEXSCREENER_BYTE_BUDGET_BYTES } from "./_byte-budget.js";
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -72,8 +73,6 @@ const READ_CTX: ProtocolExecutionContext = {
   walletPolicy: { kind: "none" },
 };
 
-/** The global context cap the blob mechanism enforces elsewhere. */
-const CONTEXT_CAP_BYTES = 16_384;
 
 async function outputBytes(toolId: string, params: Record<string, unknown> = {}): Promise<number> {
   const handler = DEXSCREENER_HANDLERS[toolId];
@@ -104,24 +103,24 @@ describe("DexScreener feed + narrative byte budgets", () => {
 
   it("profiles, no params: under the cap (it was 21,205 B and unshrinkable)", async () => {
     const bytes = await outputBytes("dexscreener.profiles");
-    expect(bytes).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(bytes).toBeGreaterThan(3_000);
   });
 
   it("boosts, no params: under the cap (it was 20,493 B)", async () => {
-    expect(await outputBytes("dexscreener.boosts")).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(await outputBytes("dexscreener.boosts")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("boosts.top, no params: under the cap (it was 21,612 B)", async () => {
-    expect(await outputBytes("dexscreener.boosts.top")).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(await outputBytes("dexscreener.boosts.top")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("communityTakeovers, no params: under the cap (it was 23,122 B)", async () => {
-    expect(await outputBytes("dexscreener.communityTakeovers")).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(await outputBytes("dexscreener.communityTakeovers")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("ads, no params: under the cap", async () => {
-    expect(await outputBytes("dexscreener.ads")).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(await outputBytes("dexscreener.ads")).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   // ── The one feed that still needs an agent-set limit ────────────
@@ -133,14 +132,14 @@ describe("DexScreener feed + narrative byte budgets", () => {
   // both agent-set and both documented on the tool.
   it("profiles.recent, no params: still over the cap, and the excess is issuer text", async () => {
     const bytes = await outputBytes("dexscreener.profiles.recent");
-    expect(bytes).toBeGreaterThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     // Was 40,089 B. The projection more than halves it without dropping a row.
     expect(bytes).toBeLessThan(30_000);
   });
 
   it("profiles.recent, limit 15: comfortably under the cap", async () => {
     const bytes = await outputBytes("dexscreener.profiles.recent", { limit: 15 });
-    expect(bytes).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("profiles.recent: projecting description away is the other lever, and it is huge", async () => {
@@ -163,7 +162,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
   // over; `limit` is the disclosed lever if that happens.
   it("attention, no params: returns the WHOLE merge and still fits", async () => {
     const bytes = await outputBytes("dexscreener.attention");
-    expect(bytes).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     // Far more than the 20 rows the silent default used to leave.
     expect(bytes).toBeGreaterThan(12_000);
   });
@@ -172,7 +171,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
     const all = await outputBytes("dexscreener.attention");
     const twenty = await outputBytes("dexscreener.attention", { limit: 20 });
     expect(twenty).toBeLessThan(all);
-    expect(twenty).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(twenty).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   // ── narratives ─────────────────────────────────────────────────
@@ -180,14 +179,14 @@ describe("DexScreener feed + narrative byte budgets", () => {
   it("trending, no params: 19 narratives well under the cap, lean and full", async () => {
     const lean = await outputBytes("dexscreener.trending");
     const full = await outputBytes("dexscreener.trending", { fields: "full" });
-    expect(lean).toBeLessThan(CONTEXT_CAP_BYTES);
-    expect(full).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(lean).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
+    expect(full).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     expect(full).toBeGreaterThan(lean);
   });
 
   it("meta, no params: under the cap (it was 17,161 B with no limit param at all)", async () => {
     const bytes = await outputBytes("dexscreener.meta", { slug: "cat" });
-    expect(bytes).toBeLessThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   // The headroom on `meta` is the thinnest in the family — a 31-pair narrative
@@ -200,7 +199,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
 
   it("meta, fields=full: over the cap, which is why rich is opt-in", async () => {
     const bytes = await outputBytes("dexscreener.meta", { slug: "cat", fields: "full" });
-    expect(bytes).toBeGreaterThan(CONTEXT_CAP_BYTES);
+    expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   // ── Opt-in cost, measured ──────────────────────────────────────
@@ -212,7 +211,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
     });
     // Two CDN URLs the model cannot see, on 28 rows.
     expect(withImages - lean).toBeGreaterThan(4_000);
-    expect(withImages).toBeGreaterThan(CONTEXT_CAP_BYTES);
+    expect(withImages).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
   });
 
   it("fields=full on a feed is over the cap on three of them — hence opt-in", async () => {
@@ -221,7 +220,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
       "dexscreener.boosts",
       "dexscreener.communityTakeovers",
     ]) {
-      expect(await outputBytes(toolId, { fields: "full" })).toBeGreaterThan(CONTEXT_CAP_BYTES);
+      expect(await outputBytes(toolId, { fields: "full" })).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
     }
   });
 
@@ -247,7 +246,7 @@ describe("DexScreener feed + narrative byte budgets", () => {
       rows.push([toolId, was ?? 0, await outputBytes(toolId, params)]);
     }
     for (const [toolId, was, now] of rows) {
-      const verdict = now < CONTEXT_CAP_BYTES ? "under" : `OVER ${(now / CONTEXT_CAP_BYTES).toFixed(2)}x`;
+      const verdict = now < DEXSCREENER_BYTE_BUDGET_BYTES ? "under" : `OVER ${(now / DEXSCREENER_BYTE_BUDGET_BYTES).toFixed(2)}x`;
       // eslint-disable-next-line no-console
       console.log(
         `feed-budget ${toolId.padEnd(32)} was ${String(was).padStart(6)} → now ${String(now).padStart(6)}  ${verdict}`,

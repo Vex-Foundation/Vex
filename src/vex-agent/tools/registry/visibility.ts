@@ -21,7 +21,7 @@ import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-
 /**
  * Session-aware context for tool surface projection. Built by engine runners
  * before every provider call so `getOpenAITools` can gate session-scoped
- * tools (loop_defer, tool_output_read, compact_now).
+ * tools (loop_defer, compact_now).
  *
  * `permission` and `sessionKind` are immutable per session; the former
  * controls approval bypass on mutating tools, the latter controls
