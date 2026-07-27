@@ -37,6 +37,10 @@
 import { z } from "zod";
 import { TOKEN_SYMBOL_MAX_LENGTH } from "../token-symbol-sanitizer.js";
 import {
+  ACTIVITY_KIND_MAX_LENGTH,
+  EVENT_ROLE_MAX_LENGTH,
+} from "../agent-activity-vocabulary.js";
+import {
   bridgeAmountBasisSchema,
   bridgeLegsSchema,
 } from "./bridge-legs.js";
@@ -222,6 +226,41 @@ export const moveItemSchema = z
      * `null` so legacy/swap payloads still parse.
      */
     lastCheckedAt: z.string().datetime({ offset: true }).nullable().default(null),
+    /**
+     * The CANONICAL activity vocabulary (`../agent-activity-vocabulary.ts`) —
+     * the field the UI keys off instead of `productType`/`tradeSide`.
+     *
+     *  - `agent_activity` rows carry the real `kind` column: `swap`, `bridge`,
+     *    `lend`, `prediction`, `wrap`.
+     *  - LEGACY `proj_activity` rows DERIVE one server-side from
+     *    `product_type` (`bridge`→`bridge`, `send`/`transfer`→`transfer`,
+     *    `spot`/`trade`→`swap`, anything else→the neutral `activity`). They
+     *    derive rather than go null so a legacy row keeps its meaning once the
+     *    renderer stops reading `productType`/`tradeSide` — a null here would
+     *    silently flatten every legacy bridge and send into "unknown".
+     *
+     * TOLERANT open string, never an enum (module header): a kind this build
+     * has never heard of must render neutrally, not reject the row.
+     *
+     * OPTIONAL **and** nullable, deliberately — NOT `.default(null)` like the
+     * bridge fields above. A default keeps old PAYLOADS parsing but makes the
+     * key REQUIRED in the inferred type, so every existing construction site
+     * would have to be edited in lockstep with this schema. Optional keeps old
+     * payloads AND old call sites working while the canonical vocabulary rolls
+     * out across surfaces. `undefined` and `null` mean the same thing here —
+     * "this row carries no canonical kind" — so consumers read it as
+     * `activityKind ?? null` and never branch on the difference.
+     */
+    activityKind: z.string().max(ACTIVITY_KIND_MAX_LENGTH).nullable().optional(),
+    /**
+     * `agent_activity.event_role` — which leg of an execution this row is
+     * (`swap`, `bridge_fill_expected`, `lend_deposit`, `predict_buy`, …).
+     * ALWAYS `null` on a legacy `proj_activity` row: that table has no event
+     * -role concept, and deriving a fake one would assert something the data
+     * cannot support. Same tolerant, bounded, optional-and-nullable contract as
+     * `activityKind` above.
+     */
+    eventRole: z.string().max(EVENT_ROLE_MAX_LENGTH).nullable().optional(),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();

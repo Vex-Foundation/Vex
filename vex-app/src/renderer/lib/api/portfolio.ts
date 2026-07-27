@@ -25,6 +25,11 @@ import type {
 } from "@shared/schemas/portfolio.js";
 import type { MovesDto } from "@shared/schemas/portfolio-moves.js";
 import type {
+  AgentScanCursor,
+  AgentScanDto,
+  AgentScanFilters,
+} from "@shared/schemas/agent-scan-feed.js";
+import type {
   TokenHistoryCursor,
   TokenHistoryDto,
 } from "@shared/schemas/token-history.js";
@@ -133,6 +138,43 @@ export function getTokenHistoryNextPageParam(
   return lastPage.data.hasMore && lastPage.data.nextCursor !== null
     ? lastPage.data.nextCursor
     : undefined;
+}
+
+/**
+ * AGENT SCAN — the global full-history activity feed
+ * (`vex:portfolio:listAgentScan`). Same infinite-query contract as
+ * `useTokenHistoryInfinite`: a failed `Result`, an `"unavailable"` (timed-out)
+ * page, or an exhausted page all STOP pagination rather than throwing, so the
+ * screen surfaces the page's own status instead of an error boundary.
+ */
+export function getAgentScanNextPageParam(
+  lastPage: Result<AgentScanDto>,
+): AgentScanCursor | undefined {
+  if (!lastPage.ok) return undefined;
+  if (lastPage.data.status !== "available") return undefined;
+  return lastPage.data.hasMore && lastPage.data.nextCursor !== null
+    ? lastPage.data.nextCursor
+    : undefined;
+}
+
+/**
+ * `filters` MUST be referentially stable across renders (memoize it on the
+ * user's selection): it is part of the query key, so a fresh object every
+ * render would mint a fresh cache entry and refetch the whole feed.
+ */
+export function useAgentScanInfinite(
+  filters: AgentScanFilters,
+): UseInfiniteQueryResult<
+  InfiniteData<Result<AgentScanDto>, AgentScanCursor | null>
+> {
+  return useInfiniteQuery({
+    queryKey: portfolioKeys.agentScan(filters),
+    queryFn: ({ pageParam }) =>
+      window.vex.portfolio.listAgentScan({ cursor: pageParam, filters }),
+    initialPageParam: null as AgentScanCursor | null,
+    getNextPageParam: (lastPage) => getAgentScanNextPageParam(lastPage),
+    staleTime: STALE_MS,
+  });
 }
 
 export function useTokenHistoryInfinite(

@@ -10,6 +10,11 @@
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
+import {
+  ACTIVITY_KIND_MAX_LENGTH,
+  EVENT_ROLE_MAX_LENGTH,
+} from "@shared/agent-activity-vocabulary.js";
+import { legacyActivityKindSql } from "./legacy-activity-kind.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 
@@ -258,7 +263,13 @@ export function buildActivityHalf(p: ActivityHalfParams): string {
         NULL::smallint AS token_out_decimals,
         NULL::text AS provider_order_id,
         NULL::jsonb AS legs,
-        NULL::timestamptz AS last_checked_at
+        NULL::timestamptz AS last_checked_at,
+        -- Canonical vocabulary DERIVED from the legacy product type, so a
+        -- historical bridge keeps its meaning once the UI stops reading
+        -- product_type. event_role has no legacy counterpart: NULL, never
+        -- invented.
+        ${legacyActivityKindSql("a.product_type")} AS activity_kind,
+        NULL::text AS event_role
       FROM proj_activity a
       LEFT JOIN protocol_capture_items ci
         ON ci.id = a.capture_item_id AND ci.execution_id = a.execution_id
@@ -331,7 +342,11 @@ export function buildIntentHalf(p: IntentHalfParams): string {
         NULL::smallint AS token_out_decimals,
         NULL::text AS provider_order_id,
         NULL::jsonb AS legs,
-        NULL::timestamptz AS last_checked_at
+        NULL::timestamptz AS last_checked_at,
+        -- This arm produces a transfer ENTRY, which carries no vocabulary
+        -- field today; the columns exist only so the UNION arms line up.
+        NULL::text AS activity_kind,
+        NULL::text AS event_role
       FROM wallet_intents wi
       WHERE wi.wallet_address = ANY($${walletsParam}::text[])
         AND wi.status = 'executed'
@@ -437,7 +452,13 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
         ) END AS legs,
         -- R12: last SUCCESSFUL sweep check of a pending bridge's order status
         -- (surfaced on the DTO for bridge logical rows only in the mapper).
-        aa.last_checked_at
+        aa.last_checked_at,
+        -- The REAL canonical vocabulary — unlike product_type above, which
+        -- folds swap/wrap into 'spot'. Clamped to the DTO bounds so a
+        -- future vocabulary value can never fail output validation and blank
+        -- the screen.
+        LEFT(aa.kind, ${ACTIVITY_KIND_MAX_LENGTH}) AS activity_kind,
+        LEFT(aa.event_role, ${EVENT_ROLE_MAX_LENGTH}) AS event_role
       FROM agent_activity aa
       WHERE aa.wallet_address = ANY($${walletsParam}::text[])
         AND (

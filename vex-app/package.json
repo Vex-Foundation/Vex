@@ -49,6 +49,7 @@
     "@sentry/electron": "~7.13.0",
     "@solana/web3.js": "~1.98.4",
     "@tanstack/react-query": "~5.100.9",
+    "@tanstack/react-virtual": "3.14.8",
     "@thesvg/react": "~3.2.2",
     "@zxcvbn-ts/core": "~4.1.2",
     "@zxcvbn-ts/language-common": "~4.1.2",

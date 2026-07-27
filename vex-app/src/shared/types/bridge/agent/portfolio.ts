@@ -11,6 +11,10 @@ import type {
   TokenHistoryDto,
   TokenHistoryReadInput,
 } from "../../../schemas/token-history.js";
+import type {
+  AgentScanDto,
+  AgentScanReadInput,
+} from "../../../schemas/agent-scan-feed.js";
 
 /**
  * Portfolio — read-only wallet-scoped reads (stage 3 + move 0.3 + chronos-shell).
@@ -31,6 +35,13 @@ import type {
  * "unavailable"}` DTO is a genuine degraded-success shape (the read hit its
  * bounded statement timeout) — never an error `Result`.
  *
+ * `listAgentScan` (Agent Scan) resolves that SAME global inventory allow-list
+ * and reads the agent's FULL activity history from `agent_activity` alone —
+ * filterable and keyset-paginated. Its optional `filters.sessionId` NARROWS the
+ * read to one session; it can never widen it past the inventory. Like
+ * `listTokenHistory`, a `{status: "unavailable"}` DTO is a genuine
+ * degraded-success shape (the bounded read timed out), never an error `Result`.
+ *
  * The renderer never supplies a wallet address.
  */
 export interface PortfolioBridge {
@@ -39,4 +50,7 @@ export interface PortfolioBridge {
   readonly listTokenHistory: (
     input: TokenHistoryReadInput,
   ) => Promise<Result<TokenHistoryDto>>;
+  readonly listAgentScan: (
+    input: AgentScanReadInput,
+  ) => Promise<Result<AgentScanDto>>;
 }

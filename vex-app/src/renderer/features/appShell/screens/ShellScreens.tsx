@@ -18,6 +18,7 @@ import { useUiStore } from "../../../stores/uiStore.js";
 import { MemoryScreen } from "./MemoryScreen.js";
 import { SessionsScreen } from "./SessionsScreen.js";
 import { HowVexWorksScreen } from "./HowVexWorksScreen.js";
+import { AgentScanScreen } from "./AgentScanScreen.js";
 import { AssetsScreen } from "./AssetsScreen.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { TokenHistoryScreen } from "./TokenHistoryScreen.js";
@@ -43,6 +44,8 @@ export function ShellScreens(): JSX.Element {
         <MemoryScreen key="memory" origin={route.origin} onClose={close} />
       ) : route.kind === "sessions" ? (
         <SessionsScreen key="sessions" origin={route.origin} onClose={close} />
+      ) : route.kind === "agentScan" ? (
+        <AgentScanScreen key="agentScan" origin={route.origin} onClose={close} />
       ) : route.kind === "howItWorks" ? (
         <HowVexWorksScreen key="howItWorks" origin={route.origin} onClose={close} />
       ) : route.kind === "assets" ? (

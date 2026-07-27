@@ -29,9 +29,15 @@ import {
   tokenHistoryReadInputSchema,
   type TokenHistoryDto,
 } from "@shared/schemas/token-history.js";
+import {
+  agentScanDtoSchema,
+  agentScanReadInputSchema,
+  type AgentScanDto,
+} from "@shared/schemas/agent-scan-feed.js";
 import { getPortfolio } from "../database/portfolio-db.js";
 import { getMovesForSession } from "../database/moves-db.js";
 import { getTokenHistory } from "../database/token-history-db.js";
+import { getAgentScan } from "../database/agent-scan-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -143,10 +149,63 @@ function registerPortfolioTokenHistoryReadHandler(): () => void {
   });
 }
 
+/**
+ * AGENT SCAN read — read-only, global-scope FULL-HISTORY activity feed backed by
+ * `agent-scan-db.ts`, which resolves the GLOBAL configured wallet inventory
+ * server-side (never a renderer-supplied address) and treats
+ * `filters.sessionId` as a NARROWING predicate on top of it.
+ *
+ * Logging records the DTO `status`, the entry COUNT, whether a cursor and a
+ * session filter were present, and `correlationId` ONLY — never wallet
+ * addresses, amounts, token identities, tx hashes, or the filter VALUES (a
+ * protocol/kind list is user-chosen but still activity metadata).
+ *
+ * Timeout-vs-cancel reinterpretation is identical to `listTokenHistory`'s and
+ * exists for the same reason: `registerHandler`'s abort normalisation rewrites
+ * Result ERRORS only, never a successful DTO, so a `{status:"unavailable"}`
+ * returned after the caller already issued `vex:cancel` must be converted here
+ * or it would surface as a spurious "the database timed out".
+ */
+function registerPortfolioAgentScanReadHandler(): () => void {
+  return registerHandler({
+    channel: CH.portfolio.listAgentScan,
+    domain: "portfolio",
+    inputSchema: agentScanReadInputSchema,
+    outputSchema: agentScanDtoSchema,
+    handle: async (input, ctx): Promise<Result<AgentScanDto>> => {
+      const scoped = input.filters.sessionId !== undefined;
+      const outcome = await getAgentScan(input, ctx.requestId);
+      if (outcome.ok) {
+        if (outcome.data.status === "unavailable" && ctx.signal.aborted) {
+          log.info(
+            `[ipc:vex:portfolio:listAgentScan] timeout reinterpreted as cancel ` +
+              `correlationId=${ctx.requestId}`,
+          );
+          return err(cancelledError("portfolio", ctx.requestId));
+        }
+        const entryCount =
+          outcome.data.status === "available" ? outcome.data.entries.length : 0;
+        log.info(
+          `[ipc:vex:portfolio:listAgentScan] ok status=${outcome.data.status} ` +
+            `entries=${entryCount} paged=${input.cursor !== null} sessionScoped=${scoped} ` +
+            `correlationId=${ctx.requestId}`,
+        );
+        return outcome;
+      }
+      log.info(
+        `[ipc:vex:portfolio:listAgentScan] errCode=${outcome.error.code} ` +
+          `correlationId=${ctx.requestId}`,
+      );
+      return outcome;
+    },
+  });
+}
+
 export function registerPortfolioHandlers(): ReadonlyArray<() => void> {
   return [
     registerPortfolioReadHandler(),
     registerPortfolioMovesReadHandler(),
     registerPortfolioTokenHistoryReadHandler(),
+    registerPortfolioAgentScanReadHandler(),
   ];
 }

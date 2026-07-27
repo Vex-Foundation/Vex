@@ -17,12 +17,16 @@
  * fills.
  *
  * LEDGER GRAMMAR (landing .ws-stat): one hairline-separated row per fill —
- * status dot · stamp (mono 9px chip: BUY success-tone / SELL paper-tone /
- * SWAP muted; `productType` takes priority — `bridge` → BRIDGE·VENUE,
- * `send`/`transfer` → TRANSFER; a neutral swap with a known venue/protocol
- * falls back to `SWAP·VENUE` — e.g. `SWAP·KYBERSWAP` for an `agent_activity`
- * row, which carries no `tradeSide` at all since the unified Kyber/Uniswap
- * contract dropped the `side` parameter) · `IN → OUT` legs · HH:MM. Leg
+ * status dot · protocol mark · ActivityBadge · `IN → OUT` legs · HH:MM.
+ *
+ * The badge speaks the CANONICAL engine vocabulary (`activityKind` /
+ * `eventRole` — see `@shared/agent-activity-vocabulary.ts`) through the one
+ * shared `ActivityBadge` grammar. It replaced a local `sideStamp` that read
+ * `productType`/`tradeSide`, a SQL-minted SPOT taxonomy which could render a
+ * `wrap` row as a spot trade; those two fields now have ZERO renderer
+ * consumers. The venue left the stamp text (`BRIDGE·RELAY`) and became the
+ * round protocol mark beside it: the badge says WHAT happened, the mark says
+ * WHO executed it. Leg
  * token identity and amounts render through the shared token-leg policy
  * (`lib/token-leg-display.ts` — extracted from this file, behavior pinned
  * by MovesBlock.test.tsx): a known mint address is the ONLY thing that
@@ -68,11 +72,14 @@ import {
   explorerTxUrl,
 } from "@shared/explorer-links.js";
 import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
+import { ProtocolMark } from "../../../components/common/ProtocolMark.js";
 import { TokenIcon } from "../../../components/common/TokenIcon.js";
 import { useMoves } from "../../../lib/api/portfolio.js";
 import { formatClock } from "../../../lib/format.js";
+import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
 import { amountDisplay, tokenDisplay } from "../../../lib/token-leg-display.js";
 import { cn } from "../../../lib/utils.js";
+import { ActivityBadge } from "../ActivityBadge.js";
 import { BookBlock } from "./BookBlock.js";
 
 /** Rendered window: the 10 newest fills. The badge counts the fetched total. */
@@ -128,54 +135,13 @@ function rowState(move: MoveItem): MoveState {
   return moveState(move.captureStatus);
 }
 
-type SideTone = "buy" | "sell" | "neutral";
-
-interface SideStamp {
-  readonly text: string;
-  readonly tone: SideTone;
-}
-
 /**
- * Chip stamp with `productType` priority: `bridge` → BRIDGE, venue-qualified
- * (`BRIDGE·RELAY`) when the tolerant `venue` is present; `send`/`transfer` →
- * TRANSFER; anything else falls through to the tolerant `tradeSide` —
- * `buy`/`sell` (EVM spot) carry their own tones; `null`/empty falls back to
- * a venue-qualified `SWAP·VENUE` (e.g. `SWAP·KYBERSWAP`) when the tolerant
- * `venue` is present, else bare `SWAP` — covers both a neutral Solana swap
- * and every `agent_activity` row, which carries no `tradeSide` at all (the
- * unified Kyber/Uniswap contract dropped the `side` parameter); any other
- * engine value prints uppercased in the neutral tone. Never throw, never
- * hide data (legacy rows carry `productType: null` and keep the
- * tradeSide-only derivation).
+ * Is this row a bridge? Reads the CANONICAL `activityKind` (server-derived for
+ * a legacy row) — `productType` has no renderer consumers any more.
  */
-function sideStamp(move: MoveItem): SideStamp {
-  const product = move.productType?.toLowerCase() ?? "";
-  if (product === "bridge") {
-    const venue = move.venue !== null && move.venue.length > 0 ? move.venue.toUpperCase() : null;
-    return { text: venue !== null ? `BRIDGE·${venue}` : "BRIDGE", tone: "neutral" };
-  }
-  if (product === "send" || product === "transfer") {
-    return { text: "TRANSFER", tone: "neutral" };
-  }
-  const side = move.tradeSide?.toLowerCase() ?? "";
-  if (side === "buy") return { text: "BUY", tone: "buy" };
-  if (side === "sell") return { text: "SELL", tone: "sell" };
-  if (side.length === 0) {
-    const venue = move.venue !== null && move.venue.length > 0 ? move.venue.toUpperCase() : null;
-    return { text: venue !== null ? `SWAP·${venue}` : "SWAP", tone: "neutral" };
-  }
-  return { text: side.toUpperCase(), tone: "neutral" };
+function isBridgeMove(move: MoveItem): boolean {
+  return (move.activityKind ?? null) === "bridge";
 }
-
-/** SIDE chip tones — hairline chips, ink stays on the text (no fills). */
-const STAMP_TONE: Record<SideTone, string> = {
-  // BUY — the landing's live/pass green as a hairline, not a fill.
-  buy: "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success",
-  // SELL — neutral paper-tone hairline.
-  sell: "border-[var(--vex-line-strong)] text-[var(--vex-text-2)]",
-  // SWAP / unknown side — the muted register.
-  neutral: "border-[var(--vex-line)] text-[var(--vex-text-3)]",
-};
 
 export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.Element {
   const query = useMoves(sessionId);
@@ -233,7 +199,7 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
 
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = rowState(move);
-  const side = sideStamp(move);
+  const protocolMark = resolveProtocolMark(move.venue);
   const input = tokenDisplay(
     move.inputToken,
     move.inputTokenSymbol,
@@ -268,7 +234,7 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   // TokenHistoryScreen shows a chip). Priority: failureCode wins, then the
   // tracking-delay note, then the legacy instrumentKey.
   const bridgeDelayTitle =
-    move.productType === "bridge" &&
+    isBridgeMove(move) &&
     move.status === "pending" &&
     isBridgeTrackingStale(move.lastCheckedAt, move.createdAt)
       ? move.lastCheckedAt !== null
@@ -287,14 +253,19 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
         aria-hidden
         className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT[state])}
       />
-      <span
-        className={cn(
-          "inline-flex h-4 min-w-[42px] shrink-0 items-center justify-center rounded-[3px] border px-1 font-mono text-[9px] uppercase tracking-[0.14em]",
-          STAMP_TONE[side.tone],
-        )}
-      >
-        {side.text}
+      {/* The venue moved out of the stamp text (`BRIDGE·RELAY`) and became a
+       * mark: the badge now says WHAT happened, the mark says WHO executed it.
+       * Fixed-width slot keeps rows aligned when a venue does not resolve. */}
+      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+        <ProtocolMark mark={protocolMark} size={14} />
       </span>
+      <ActivityBadge
+        kind={move.activityKind ?? null}
+        eventRole={move.eventRole ?? null}
+        // The row's lifecycle is already carried by the status dot; a second
+        // status chip on every pending row would double-state it.
+        status={null}
+      />
       <span className="flex h-4 min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11px] leading-none text-[var(--vex-text-2)] transition-colors group-hover:text-[var(--vex-text)]">
         <span
           title={input.full ?? undefined}

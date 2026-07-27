@@ -149,6 +149,12 @@ export function mapMoveRow(row: MoveRow): MoveItem {
     // rows only — the renderer flags a stale pending bridge "tracking
     // delayed". Swap/legacy rows leave it null.
     lastCheckedAt: isBridge && row.last_checked_at != null ? toIso(row.last_checked_at) : null,
+    // Canonical vocabulary (see `legacy-activity-kind.ts`): derived server-side
+    // for the legacy arm, the real columns for the agent_activity arm. Both are
+    // pass-through — the SQL owns the derivation and the clamping, so there is
+    // no second place for the two arms to disagree.
+    activityKind: row.activity_kind ?? null,
+    eventRole: row.event_role ?? null,
     createdAt: toIso(row.created_at),
   };
 }

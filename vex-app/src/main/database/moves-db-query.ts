@@ -9,6 +9,11 @@
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import { MOVE_TOKEN_SYMBOL_MAX } from "@shared/schemas/portfolio-moves.js";
+import {
+  ACTIVITY_KIND_MAX_LENGTH,
+  EVENT_ROLE_MAX_LENGTH,
+} from "@shared/agent-activity-vocabulary.js";
+import { legacyActivityKindSql } from "./legacy-activity-kind.js";
 import { getSessionWalletScope } from "./sessions-db.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -182,7 +187,13 @@ export function buildLegacyMovesHalf(): string {
                NULL::text AS to_chain,
                NULL::text AS provider_order_id,
                NULL::jsonb AS legs,
-               NULL::timestamptz AS last_checked_at
+               NULL::timestamptz AS last_checked_at,
+               -- Canonical vocabulary DERIVED from the legacy product type, so
+               -- a historical bridge/send keeps its meaning once the UI stops
+               -- reading product_type/trade_side. event_role has no legacy
+               -- counterpart and stays NULL rather than being invented.
+               ${legacyActivityKindSql("a.product_type")} AS activity_kind,
+               NULL::text AS event_role
           FROM proj_activity a
           JOIN protocol_executions e ON e.id = a.execution_id
           LEFT JOIN protocol_capture_items ci
@@ -279,7 +290,13 @@ export function buildAgentActivityMovesHalf(): string {
                ) END AS legs,
                -- R12: last SUCCESSFUL sweep check of a pending bridge's order
                -- status (surfaced for bridge logical rows only in the mapper).
-               aa.last_checked_at
+               aa.last_checked_at,
+               -- The REAL canonical vocabulary — unlike product_type above,
+               -- which folds swap/wrap into 'spot'. Clamped to the DTO
+               -- bounds so a future vocabulary value can never fail output
+               -- validation and blank the panel.
+               LEFT(aa.kind, ${ACTIVITY_KIND_MAX_LENGTH}) AS activity_kind,
+               LEFT(aa.event_role, ${EVENT_ROLE_MAX_LENGTH}) AS event_role
           FROM agent_activity aa
          WHERE aa.wallet_address = ANY($1::text[])
            AND aa.session_id = $2

@@ -124,6 +124,10 @@ describe("moves-db getMovesForSession — agent_activity lend/prediction (W5, mi
       provider_order_id: null,
       legs: null,
       last_checked_at: null,
+      // The canonical vocabulary columns the agent_activity SELECT now
+      // projects (migration 049's kind/event_role, clamped in SQL).
+      activity_kind: "lend",
+      event_role: "lend_deposit",
       ...overrides,
     };
   }
@@ -164,6 +168,10 @@ describe("moves-db getMovesForSession — agent_activity lend/prediction (W5, mi
         amountBasis: "estimated",
         legs: [],
         lastCheckedAt: null,
+        // Canonical vocabulary straight off the row — `productType: "lend"`
+        // above is the legacy derivation, this is the real column.
+        activityKind: "lend",
+        eventRole: "lend_deposit",
         createdAt: "2026-07-24T10:00:00.000Z",
       },
     ]);

@@ -2,10 +2,10 @@
  * MOVES ledger — stamp + leg-amount grammar (split out of MovesBlock.test.tsx,
  * F1, over the 500-line cap):
  *
- *   - stamps give `productType` priority: bridge → BRIDGE·VENUE (plain BRIDGE
- *     without a venue), send/transfer → TRANSFER; otherwise the tolerant
- *     `tradeSide` derives: buy → BUY, sell → SELL, null (neutral Solana
- *     swap) → SWAP,
+ *   - rows badge their CANONICAL activity vocabulary (`activityKind` /
+ *     `eventRole`) through the shared `ActivityBadge`; the venue left the
+ *     stamp text and became a protocol mark. The retired `productType`/
+ *     `tradeSide` SPOT taxonomy has ZERO renderer consumers,
  *   - leg amounts render ONLY for dotted-decimal strings (compact ≤6
  *     significant digits); raw base-unit integers (legacy wei/lamports) and
  *     nulls render nothing,
@@ -81,56 +81,92 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("MovesBlock ledger display — stamps + amounts", () => {
-  it("stamps BUY / SELL / SWAP from the tolerant tradeSide", () => {
+describe("MovesBlock ledger display — activity badges + amounts", () => {
+  it("badges each row with its CANONICAL activity kind", () => {
     mockMoves([
-      move({ id: "1", tradeSide: "buy" }),
-      move({ id: "2", tradeSide: "sell" }),
-      move({ id: "3", tradeSide: null }),
+      move({ id: "1", activityKind: "swap" }),
+      move({ id: "2", activityKind: "bridge" }),
+      move({ id: "3", activityKind: "lend" }),
+      move({ id: "4", activityKind: "prediction" }),
+      move({ id: "5", activityKind: "wrap" }),
+      move({ id: "6", activityKind: "transfer" }),
     ]);
     render(<MovesBlock sessionId={SESSION} />);
-    expect(screen.getByText("BUY")).not.toBeNull();
-    expect(screen.getByText("SELL")).not.toBeNull();
     expect(screen.getByText("SWAP")).not.toBeNull();
+    expect(screen.getByText("BRIDGE")).not.toBeNull();
+    expect(screen.getByText("LEND")).not.toBeNull();
+    expect(screen.getByText("PREDICT")).not.toBeNull();
+    expect(screen.getByText("WRAP")).not.toBeNull();
+    expect(screen.getByText("TRANSFER")).not.toBeNull();
   });
 
-  it("stamps a venue-qualified SWAP·VENUE for a neutral row with a known venue (agent_activity has no tradeSide at all)", () => {
+  it("renders the event role as the badge's second segment", () => {
+    mockMoves([
+      move({ id: "1", activityKind: "lend", eventRole: "lend_withdraw" }),
+      move({ id: "2", activityKind: "prediction", eventRole: "predict_claim" }),
+      move({ id: "3", activityKind: "bridge", eventRole: "bridge_fee" }),
+    ]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("LEND·WITHDRAW")).not.toBeNull();
+    expect(screen.getByText("PREDICT·CLAIM")).not.toBeNull();
+    expect(screen.getByText("BRIDGE·FEE")).not.toBeNull();
+  });
+
+  it("moves the venue OUT of the stamp text and into a protocol mark", () => {
     mockMoves([
       move({
         id: "1",
         source: "agent_activity",
-        productType: "spot",
+        activityKind: "bridge",
+        eventRole: "bridge_fill_expected",
+        venue: "relay",
+      }),
+      move({
+        id: "2",
+        source: "agent_activity",
+        activityKind: "swap",
+        eventRole: "swap",
         venue: "kyberswap",
-        tradeSide: null,
-        status: "pending",
       }),
     ]);
-    render(<MovesBlock sessionId={SESSION} />);
-    expect(screen.getByText("SWAP·KYBERSWAP")).not.toBeNull();
+    const { container } = render(<MovesBlock sessionId={SESSION} />);
+    // The badge says WHAT happened…
+    expect(screen.getByText("BRIDGE·FILL")).not.toBeNull();
+    expect(screen.getByText("SWAP")).not.toBeNull();
+    // …and the venue-qualified stamp text is gone for good.
+    expect(screen.queryByText("BRIDGE·RELAY")).toBeNull();
+    expect(screen.queryByText("SWAP·KYBERSWAP")).toBeNull();
+    // …while the mark says WHO executed it, from the bundled same-origin
+    // artwork — never a remote logo URL.
+    const kyber = container.querySelector('img[src="/protocols/kyberswap.svg"]');
+    expect(kyber?.getAttribute("title")).toBe("KyberSwap");
+    const relay = container.querySelector('img[src="/protocols/relay.png"]');
+    expect(relay?.getAttribute("title")).toBe("Relay");
   });
 
-  it("stamps a bridge move BRIDGE·VENUE (productType beats tradeSide), plain BRIDGE without a venue", () => {
+  it("badges a LEGACY row from its server-derived kind, and stays neutral when it has none", () => {
     mockMoves([
-      // Venue-qualified: a Relay bridge never renders as SWAP again.
-      move({ id: "1", productType: "bridge", venue: "relay", tradeSide: null }),
-      move({ id: "2", productType: "bridge", venue: "khalani", tradeSide: null }),
-      // Legacy tolerance: bridge row without a venue → plain BRIDGE.
-      move({ id: "3", productType: "bridge", venue: null }),
-      move({ id: "4", productType: "send" }),
+      // A legacy product this build has no canonical name for.
+      move({ id: "1", activityKind: "activity" }),
+      // A row from a build older than the vocabulary rollout: no kind at all.
+      move({ id: "2", activityKind: null }),
     ]);
     render(<MovesBlock sessionId={SESSION} />);
-    expect(screen.getByText("BRIDGE·RELAY")).not.toBeNull();
-    expect(screen.getByText("BRIDGE·KHALANI")).not.toBeNull();
-    expect(screen.getByText("BRIDGE")).not.toBeNull();
-    expect(screen.getByText("TRANSFER")).not.toBeNull();
-    expect(screen.queryByText("SWAP")).toBeNull();
+    // Both degrade to the neutral label — never blank, never a fake SWAP.
+    expect(screen.getAllByText("ACTIVITY")).toHaveLength(2);
+  });
+
+  it("renders an UNKNOWN engine kind neutrally rather than blanking the row", () => {
+    mockMoves([move({ id: "1", activityKind: "perps", eventRole: "perps_open" })]);
+    render(<MovesBlock sessionId={SESSION} />);
+    expect(screen.getByText("PERPS·PERPS_OPEN")).not.toBeNull();
   });
 
   it("renders dotted-decimal amounts on the legs (≤6 significant digits) and hides raw/null amounts", () => {
     mockMoves([
       move({
         id: "1",
-        productType: "bridge",
+        activityKind: "bridge",
         venue: "relay",
         inputToken: "ETH",
         inputAmount: "0.001714",
@@ -198,7 +234,7 @@ describe("MovesBlock ledger display — stamps + amounts", () => {
       move({
         id: "1",
         source: "agent_activity",
-        productType: "bridge",
+        activityKind: "bridge",
         venue: "relay",
         status: "pending",
         amountBasis: "estimated",
@@ -219,7 +255,7 @@ describe("MovesBlock ledger display — stamps + amounts", () => {
       move({
         id: "1",
         source: "agent_activity",
-        productType: "bridge",
+        activityKind: "bridge",
         venue: "khalani",
         status: "confirmed",
         amountBasis: "executed",
@@ -240,7 +276,7 @@ describe("MovesBlock ledger display — stamps + amounts", () => {
       move({
         id: "1",
         source: "agent_activity",
-        productType: "bridge",
+        activityKind: "bridge",
         venue: "relay",
         status: "pending",
         // Last successful sweep check is long past → tracking is delayed.
@@ -258,7 +294,7 @@ describe("MovesBlock ledger display — stamps + amounts", () => {
       move({
         id: "1",
         source: "agent_activity",
-        productType: "bridge",
+        activityKind: "bridge",
         venue: "relay",
         status: "pending",
         lastCheckedAt: new Date().toISOString(),
