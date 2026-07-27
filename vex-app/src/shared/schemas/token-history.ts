@@ -73,6 +73,10 @@
 
 import { z } from "zod";
 import { familyForChainId } from "../chains/display.js";
+import {
+  ACTIVITY_KIND_MAX_LENGTH,
+  EVENT_ROLE_MAX_LENGTH,
+} from "../agent-activity-vocabulary.js";
 import { evmAddressSchema } from "./wallets.js";
 import {
   bridgeAmountBasisSchema,
@@ -215,6 +219,44 @@ const tokenLegSchema = z
 /** `agent_activity`-only lifecycle status; `null` for a legacy swap row. */
 const tokenHistorySwapStatusSchema = z.enum(["pending", "confirmed", "failed"]);
 
+/**
+ * The CANONICAL activity vocabulary (`../agent-activity-vocabulary.ts`),
+ * carried by the swap and bridge entries so the UI can key off it instead of
+ * `productType`/`tradeSide`.
+ *
+ * MIND THE NAME. This union's own `kind` discriminant (`swap`/`bridge`/
+ * `transfer`) describes the DTO SHAPE and is deliberately untouched; the engine
+ * vocabulary rides `activityKind`. A Jupiter Lend row is therefore
+ * `kind: "swap"` (one role per on-chain tx, the swap shape fits) AND
+ * `activityKind: "lend"` — neither field has to lie.
+ *
+ *  - `agent_activity` rows carry the real `kind`/`event_role` columns.
+ *  - LEGACY `proj_activity` rows DERIVE `activityKind` server-side from
+ *    `product_type` (`bridge`→`bridge`, `send`/`transfer`→`transfer`,
+ *    `spot`/`trade`→`swap`, anything else→the neutral `activity`) and always
+ *    leave `eventRole` null — that table has no event-role concept and
+ *    inventing one would assert what the data cannot support.
+ *
+ * TOLERANT open strings, bounded, and OPTIONAL as well as nullable — NOT
+ * `.default(null)` like the bridge fields below. A default keeps old PAYLOADS
+ * parsing but makes the key REQUIRED in the inferred type, forcing every
+ * existing construction site to be edited in lockstep. Optional keeps old
+ * payloads AND old call sites working while the canonical vocabulary rolls out
+ * across surfaces. `undefined` and `null` mean the same thing here — "this
+ * entry carries no canonical vocabulary" — so consumers read
+ * `activityKind ?? null` and never branch on the difference.
+ */
+const activityKindFieldSchema = z
+  .string()
+  .max(ACTIVITY_KIND_MAX_LENGTH)
+  .nullable()
+  .optional();
+const eventRoleFieldSchema = z
+  .string()
+  .max(EVENT_ROLE_MAX_LENGTH)
+  .nullable()
+  .optional();
+
 const swapEntrySchema = z
   .object({
     kind: z.literal("swap"),
@@ -232,6 +274,8 @@ const swapEntrySchema = z
      * `portfolio-moves.ts`'s `MoveItem.productType` convention.
      */
     productType: z.string().max(32).nullable(),
+    activityKind: activityKindFieldSchema,
+    eventRole: eventRoleFieldSchema,
     input: tokenLegSchema,
     output: tokenLegSchema,
     unitPriceUsd: usdValueSchema,
@@ -256,6 +300,8 @@ const bridgeEntrySchema = z
     /** Destination chain (legacy: `meta.destChain`; agent_activity: `to_chain_slug`/`to_chain_id`); `null` if absent. */
     destinationChain: z.string().max(CHAIN_DISPLAY_MAX_LENGTH).nullable(),
     venue: z.string().max(CHAIN_DISPLAY_MAX_LENGTH).nullable(),
+    activityKind: activityKindFieldSchema,
+    eventRole: eventRoleFieldSchema,
     input: tokenLegSchema,
     output: tokenLegSchema,
     captureStatus: z.string().max(32).nullable(),

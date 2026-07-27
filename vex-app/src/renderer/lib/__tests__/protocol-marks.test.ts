@@ -1,0 +1,91 @@
+/**
+ * Protocol-mark resolver — the curated venue→logo matrix behind the small
+ * round mark beside every activity row's badge.
+ *
+ * Pins the same doctrine `token-marks.test.ts` pins for tokens: a bundled
+ * asset is granted ONLY to a venue actually present in the curated map, every
+ * other value degrades to a monogram, and nothing ever resolves to a remote
+ * URL. The eight venue strings below are the complete vocabulary the tools
+ * emit (`khalani`, `kyberswap`, `pendle`, `relay`, `uniswap`, `jupiter`,
+ * `dexscreener`, `polymarket`); `polymarket` deliberately has no bundled asset
+ * and MUST take the monogram rather than borrow another brand's mark.
+ *
+ * This map is a LOOK-UP of venue artwork, NOT a list of what a feed can
+ * contain — `agent-scan/agent-scan-protocols.ts` owns that, and the two must
+ * not be conflated (they were once, and it put two always-empty options in the
+ * Agent Scan protocol filter).
+ */
+
+import { describe, expect, it } from "vitest";
+import { resolveProtocolMark } from "../protocol-marks.js";
+
+describe("resolveProtocolMark — curated venues", () => {
+  it.each([
+    ["dexscreener", "/protocols/dexscreener.jpg", "DexScreener"],
+    ["jupiter", "/protocols/jupiter.jpg", "Jupiter"],
+    ["khalani", "/protocols/khalani.svg", "Khalani"],
+    ["kyberswap", "/protocols/kyberswap.svg", "KyberSwap"],
+    ["pendle", "/protocols/pendle.jpg", "Pendle"],
+    ["relay", "/protocols/relay.png", "Relay"],
+    ["uniswap", "/protocols/uniswap.png", "Uniswap"],
+  ])("resolves %s to its bundled asset", (protocol, src, label) => {
+    const mark = resolveProtocolMark(protocol);
+    expect(mark).toEqual({ kind: "local", src, label });
+  });
+
+  it("normalizes casing and surrounding whitespace before matching", () => {
+    expect(resolveProtocolMark("  KyberSwap ")).toEqual({
+      kind: "local",
+      src: "/protocols/kyberswap.svg",
+      label: "KyberSwap",
+    });
+  });
+});
+
+describe("resolveProtocolMark — fallbacks", () => {
+  it("gives a KNOWN venue with no bundled asset the monogram, never another brand's mark", () => {
+    expect(resolveProtocolMark("polymarket")).toEqual({
+      kind: "monogram",
+      label: "Polymarket",
+      initial: "P",
+    });
+  });
+
+  it("gives an UNKNOWN venue a monogram built from its own sanitized text", () => {
+    expect(resolveProtocolMark("someNewDex")).toEqual({
+      kind: "monogram",
+      label: "someNewDex",
+      initial: "S",
+    });
+  });
+
+  it("returns null when there is no venue at all — the row renders no mark", () => {
+    expect(resolveProtocolMark(null)).toBeNull();
+    expect(resolveProtocolMark("")).toBeNull();
+    expect(resolveProtocolMark("   ")).toBeNull();
+  });
+
+  it("bounds a hostile/overlong venue string so it can never stretch a row", () => {
+    const mark = resolveProtocolMark("x".repeat(500));
+    expect(mark?.kind).toBe("monogram");
+    expect(mark?.label.length).toBeLessThanOrEqual(32);
+  });
+
+  it("never resolves to a remote URL — every curated src is a bundled same-origin path", () => {
+    for (const protocol of [
+      "dexscreener",
+      "jupiter",
+      "khalani",
+      "kyberswap",
+      "pendle",
+      "relay",
+      "uniswap",
+    ]) {
+      const mark = resolveProtocolMark(protocol);
+      expect(mark?.kind).toBe("local");
+      if (mark?.kind === "local") {
+        expect(mark.src.startsWith("/protocols/")).toBe(true);
+      }
+    }
+  });
+});

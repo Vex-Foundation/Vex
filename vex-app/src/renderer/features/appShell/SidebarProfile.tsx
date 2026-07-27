@@ -26,9 +26,9 @@
  * `position: relative` that beat the layered `absolute` utility and dropped
  * the panel INTO flow — the "whole sidebar jumps" bug). Entries carry hint
  * sublines; Personalize opens the "Vex setup" dialog (with a STATIC cobalt
- * attention dot while no display name is set), Memory / Sessions / How Vex
- * works open their full-app ShellScreens (measuring the row rect as the
- * screen's expand origin; Missions is retired — Sessions covers it), and
+ * attention dot while no display name is set), Memory / Sessions / Agent Scan
+ * / How Vex works open their full-app ShellScreens (measuring the row rect as
+ * the screen's expand origin; Missions is retired — Sessions covers it), and
  * Settings opens the in-shell Settings ShellScreen (Phase 2b — the
  * reconfigure-wizard door is retired). The footer status row speaks
  * one short word ("Connected" / "Connecting" / …) beside the Docker/Postgres
@@ -52,6 +52,7 @@ import {
   ArrowUp01Icon,
   BookOpen01Icon,
   Brain01Icon,
+  Radar01Icon,
   Settings02Icon,
   UserEdit01Icon,
 } from "@hugeicons/core-free-icons";
@@ -72,7 +73,7 @@ import { VexSetupDialog } from "./VexSetupDialog.js";
 const AVATAR_SRC = "/icon.png";
 
 /** The full-app screens the profile menu can open (each a `ShellRoute` kind). */
-type ProfileMenuScreen = "memory" | "sessions" | "howItWorks";
+type ProfileMenuScreen = "memory" | "sessions" | "agentScan" | "howItWorks";
 
 /** Chronos hallmark — the healthy-runtime subtitle. Test-pinned copy. */
 export const NIGHT_SHIFT_MESSAGE = "The night shift is active.";
@@ -331,6 +332,12 @@ export function SidebarProfile({
               label="Sessions"
               hint="Find any conversation"
               onSelect={(event) => openScreenFromRow("sessions", event)}
+            />
+            <ProfileMenuItem
+              icon={Radar01Icon}
+              label="Agent Scan"
+              hint="Every move, verified on-chain"
+              onSelect={(event) => openScreenFromRow("agentScan", event)}
             />
             <ProfileMenuItem
               icon={BookOpen01Icon}

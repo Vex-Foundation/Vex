@@ -202,6 +202,11 @@ export function mapEntry(row: PageRow): TokenHistoryEntry {
         providerOrderId: row.provider_order_id ?? null,
         // executed_* are populated together (B4); prefer the output basis.
         amountBasis: outRes.basis ?? inRes.basis,
+      // Canonical vocabulary (see `legacy-activity-kind.ts`): the real columns
+      // on this arm, derived server-side on the legacy arm. Pure pass-through —
+      // the SQL owns derivation and clamping, so the arms cannot disagree.
+      activityKind: row.activity_kind ?? null,
+      eventRole: row.event_role ?? null,
         legs: coerceBridgeLegs(row.legs),
         // R12: last successful sweep check — the renderer flags a stale pending
         // bridge "tracking delayed". `null` when never checked.
@@ -265,6 +270,11 @@ export function mapEntry(row: PageRow): TokenHistoryEntry {
       captureStatus: null,
       status,
       failureCode: row.failure_code,
+      // Canonical vocabulary (see `legacy-activity-kind.ts`): the real columns
+      // on this arm, derived server-side on the legacy arm. Pure pass-through —
+      // the SQL owns derivation and clamping, so the arms cannot disagree.
+      activityKind: row.activity_kind ?? null,
+      eventRole: row.event_role ?? null,
       txRefs,
     };
   }
@@ -299,6 +309,8 @@ export function mapEntry(row: PageRow): TokenHistoryEntry {
       input,
       output,
       captureStatus: row.capture_status,
+    activityKind: row.activity_kind ?? null,
+    eventRole: row.event_role ?? null,
       txRefs,
       status: null,
       failureCode: null,
@@ -323,6 +335,8 @@ export function mapEntry(row: PageRow): TokenHistoryEntry {
     captureStatus: row.capture_status,
     status: null,
     failureCode: null,
+    activityKind: row.activity_kind ?? null,
+    eventRole: row.event_role ?? null,
     txRefs,
   };
 }

@@ -58,4 +58,13 @@ export interface MoveRow {
    * `null`/absent on legacy rows. `Date`/string per node-postgres.
    */
   readonly last_checked_at: string | Date | null;
+  /**
+   * Canonical `activityKind`: the real `agent_activity.kind` on the new-format
+   * arm, DERIVED from `product_type` on the legacy arm (see
+   * `legacy-activity-kind.ts`). Optional so a caller constructing this row
+   * shape before the column existed still type-checks.
+   */
+  readonly activity_kind?: string | null;
+  /** `agent_activity.event_role`; always NULL on the legacy arm. */
+  readonly event_role?: string | null;
 }

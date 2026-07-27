@@ -110,10 +110,10 @@ export type SettingsSection =
  * Full-app overlay screen route (Chronos screens redesign, 2026-07-20;
  * atomised into ONE discriminated union in the token-history round so a
  * screen and its payload can never desync). The center panel is ALWAYS the
- * session panel; Memory, the sessions library, and the "How Vex works"
- * article open as `ShellScreen` overlays expanding from their profile-menu
- * rows (the Missions screen is retired — the owner ruled Sessions covers
- * it); `assets` is the All-assets register (welcome Portfolio tab's Balances
+ * session panel; Memory, the sessions library, the Agent Scan full-history
+ * feed, and the "How Vex works" article open as `ShellScreen` overlays
+ * expanding from their profile-menu rows (the Missions screen is retired —
+ * the owner ruled Sessions covers it); `assets` is the All-assets register (welcome Portfolio tab's Balances
  * footer); `tokenHistory` is the per-token history screen (the eye trigger
  * on a token row), carrying the row's token identity and the surface its
  * close returns to. `none` = no screen open. NOT persisted —
@@ -122,7 +122,7 @@ export type SettingsSection =
 export type ShellRoute =
   | { readonly kind: "none" }
   | {
-      readonly kind: "memory" | "sessions" | "howItWorks";
+      readonly kind: "memory" | "sessions" | "howItWorks" | "agentScan";
       readonly origin: ShellScreenOrigin | null;
     }
   | { readonly kind: "assets"; readonly origin: ShellScreenOrigin | null }

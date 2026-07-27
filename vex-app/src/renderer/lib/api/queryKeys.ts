@@ -5,6 +5,8 @@
  * — touch every consumer atomically).
  */
 
+import type { AgentScanFilters } from "@shared/schemas/agent-scan-feed.js";
+
 export const systemKeys = {
   all: ["system"] as const,
   health: () => ["system", "health"] as const,
@@ -221,6 +223,15 @@ export const portfolioKeys = {
    */
   tokenHistory: (chainId: number, tokenAddress: string) =>
     ["portfolio", "tokenHistory", chainId, tokenAddress] as const,
+  /**
+   * Agent Scan — the global full-history activity feed. Keyed by the whole
+   * filter object so each filter combination is its own cache entry (TanStack
+   * hashes the object deterministically); page params are NOT part of the key.
+   * Callers must pass a STABLE object (memoized on the selection), otherwise
+   * every render mints a new key.
+   */
+  agentScan: (filters: AgentScanFilters) =>
+    ["portfolio", "agentScan", filters] as const,
 };
 
 /**

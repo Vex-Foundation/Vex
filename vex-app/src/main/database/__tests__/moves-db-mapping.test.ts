@@ -301,6 +301,10 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         amountBasis: null,
         legs: [],
         lastCheckedAt: null,
+        // Canonical vocabulary: this fixture predates the SQL columns, so both
+        // read as absent — the tolerant contract the DTO exists to guarantee.
+        activityKind: null,
+        eventRole: null,
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);

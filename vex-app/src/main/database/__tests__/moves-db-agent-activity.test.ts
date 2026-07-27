@@ -165,6 +165,8 @@ describe("moves-db getMovesForSession — agent_activity half (Agent Scan §4.7)
           executed_amount_out_raw: null,
           token_in_decimals: 6,
           token_out_decimals: 18,
+          activity_kind: "swap",
+          event_role: "swap",
         },
       ],
     });
@@ -200,6 +202,10 @@ describe("moves-db getMovesForSession — agent_activity half (Agent Scan §4.7)
       amountBasis: null,
       legs: [],
       lastCheckedAt: null,
+      // The real canonical vocabulary: `productType: "spot"` above is the
+      // legacy derivation this seam is meant to retire.
+      activityKind: "swap",
+      eventRole: "swap",
       createdAt: "2026-07-10T10:00:00.000Z",
     });
   });

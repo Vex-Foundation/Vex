@@ -64,6 +64,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   PanelRightCloseIcon: "PanelRightCloseIcon",
   PanelRightOpenIcon: "PanelRightOpenIcon",
   Search01Icon: "Search01Icon",
+  Radar01Icon: "Radar01Icon",
   Settings02Icon: "Settings02Icon",
   Shield02Icon: "Shield02Icon",
   SparklesIcon: "SparklesIcon",

@@ -42,6 +42,7 @@ vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
 vi.mock("../SessionsScreen.js", () => ({ SessionsScreen: () => null }));
 vi.mock("../HowVexWorksScreen.js", () => ({ HowVexWorksScreen: () => null }));
 vi.mock("../AssetsScreen.js", () => ({ AssetsScreen: () => null }));
+vi.mock("../AgentScanScreen.js", () => ({ AgentScanScreen: () => null }));
 vi.mock("../TokenHistoryScreen.js", () => ({ TokenHistoryScreen: () => null }));
 
 // The wizard public gate — step-form stubs expose exactly the contract the

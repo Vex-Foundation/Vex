@@ -65,6 +65,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   PanelRightOpenIcon: "PanelRightOpenIcon",
   Search01Icon: "Search01Icon",
   StopCircleIcon: "StopCircleIcon",
+  Radar01Icon: "Radar01Icon",
   Settings02Icon: "Settings02Icon",
   Shield02Icon: "Shield02Icon",
   SparklesIcon: "SparklesIcon",
@@ -84,6 +85,13 @@ vi.mock("@hugeicons/core-free-icons", () => ({
 // AppShell import light.
 vi.mock("../../screens/SettingsScreen.js", () => ({
   SettingsScreen: () => null,
+}));
+
+// Same reason: the Agent Scan ShellScreen pulls the virtualizer and the whole
+// agent-scan feed module graph. This suite asserts the menu ROUTE, not the
+// screen — Agent Scan has its own suite.
+vi.mock("../../screens/AgentScanScreen.js", () => ({
+  AgentScanScreen: () => null,
 }));
 
 vi.mock("@thesvg/react", () => ({
@@ -344,7 +352,7 @@ describe("AppShell", () => {
     expect(screen.getByText("PREVIEW · v0.0.0-test")).not.toBeNull();
   });
 
-  it("profile menu carries exactly five entries (no Missions — Sessions covers it)", async () => {
+  it("profile menu carries exactly six entries (no Missions — Sessions covers it)", async () => {
     renderShell();
     await screen.findByText("The night shift is active.");
 
@@ -354,12 +362,14 @@ describe("AppShell", () => {
     expect(screen.getByText("Connected")).not.toBeNull();
     expect(screen.queryByText("Connected to local runtime")).toBeNull();
 
-    // The five menu entries (each screen row with its hint subline) — the
-    // Missions entry/screen is retired (owner: Sessions covers it).
+    // The six menu entries (each screen row with its hint subline) — the
+    // Missions entry/screen is retired (owner: Sessions covers it); Agent Scan
+    // sits between Sessions and How Vex works.
     for (const entry of [
       "Personalize",
       "Memory",
       "Sessions",
+      "Agent Scan",
       "How Vex works",
       "Settings",
     ]) {
@@ -367,15 +377,22 @@ describe("AppShell", () => {
         screen.getByRole("menuitem", { name: new RegExp(entry, "i") }),
       ).not.toBeNull();
     }
-    expect(screen.getAllByRole("menuitem")).toHaveLength(5);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(6);
     expect(screen.queryByRole("menuitem", { name: /Missions/i })).toBeNull();
     expect(screen.queryByText("Results ledger")).toBeNull();
     expect(screen.getByText("What Vex has learned")).not.toBeNull();
     expect(screen.getByText("Find any conversation")).not.toBeNull();
+    expect(screen.getByText("Every move, verified on-chain")).not.toBeNull();
     expect(screen.getByText("Start here — the five-minute tour")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("menuitem", { name: /^Memory/i }));
     expect(useUiStore.getState().shellRoute.kind).toBe("memory");
+    useUiStore.getState().setShellRoute({ kind: "none" });
+
+    // Agent Scan opens its own full-app ShellScreen, expanding from the row.
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Agent Scan/i }));
+    expect(useUiStore.getState().shellRoute.kind).toBe("agentScan");
     useUiStore.getState().setShellRoute({ kind: "none" });
 
     // Settings opens the in-shell Settings ShellScreen (Phase 2b — the

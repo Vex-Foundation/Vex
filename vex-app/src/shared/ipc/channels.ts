@@ -262,6 +262,12 @@ export const CH = {
     // `scope: "global"`); the renderer supplies only `{chainId, tokenAddress,
     // cursor}`, never an address.
     listTokenHistory: "vex:portfolio:listTokenHistory",
+    // Agent Scan — read-only, global-scope FULL-HISTORY activity feed, built on
+    // the canonical `agent_activity` vocabulary alone (no legacy arm). Server
+    // resolves the GLOBAL configured wallet inventory; the renderer supplies
+    // only `{cursor, filters}`, never an address, and its optional
+    // `filters.sessionId` can only NARROW that scope.
+    listAgentScan: "vex:portfolio:listAgentScan",
   },
 
   // Market — read-only live VEX token metrics for the welcome-screen price

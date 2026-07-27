@@ -57,4 +57,15 @@ export interface PageRow {
    * `null`/absent on the legacy arms. `Date`/string per node-postgres.
    */
   readonly last_checked_at?: string | Date | null;
+  /**
+   * Canonical `activityKind`: the real `agent_activity.kind` on the
+   * agent_activity arm, DERIVED from `product_type` on the legacy
+   * `proj_activity` arm (see `legacy-activity-kind.ts`), NULL on the
+   * `wallet_intents` arm (whose `transfer` entry carries no vocabulary field).
+   * Optional so a row shape constructed before the column existed still
+   * type-checks.
+   */
+  readonly activity_kind?: string | null;
+  /** `agent_activity.event_role`; NULL on both legacy arms. */
+  readonly event_role?: string | null;
 }
