@@ -1,9 +1,10 @@
 /**
  * Horizontal wizard stepper — the minimal progress rail above the step
- * panel (Chronos rebrand): seven paper dots on the cobalt plate plus
- * one quiet mono line naming where you are ("Step 3 of 7 · API keys").
+ * panel (Chronos rebrand): seven dots on the pre-shell plate plus one
+ * quiet mono line naming where you are ("Step 3 of 7 · API keys").
  * The DotMatrix node system is retired; state is color, not motion —
- * done = solid paper, current = paper ring, upcoming = faint white.
+ * done = solid paper, current = cobalt, upcoming = faint white
+ * (see DOT_CHROME below for the contrast reasoning).
  *
  * Display-only: clicking a dot does NOT navigate. The wizard still has
  * no back-navigation outside the dedicated ReviewStep "edit" path
@@ -48,9 +49,18 @@ function resolveStatus(
   return "pending";
 }
 
+/* State is color, not motion. The INK REDESIGN moves the ACTIVE marker into
+ * the cobalt accent family so "you are here" is the one colored thing on the
+ * rail; done stays paper and upcoming stays a faint white.
+ *
+ * The active dot is the accent's lighter mix, not raw #1f44ff: these dots are
+ * 6px, and raw cobalt on the #070b1e plate is 3.09:1 — the same reason the
+ * plate's rule forbids raw accent for text and thin strokes. The mix is
+ * 7.99:1. `--vex-accent-text` is defined by both the gate and shell scopes,
+ * with a fallback for anything that defines neither. */
 const DOT_CHROME: Record<StepDotStatus, string> = {
   pending: "bg-white/[0.28]",
-  active: "border border-[var(--color-text-primary)] bg-transparent",
+  active: "bg-[var(--vex-accent-text,var(--color-accent-secondary))]",
   completed: "bg-[var(--color-text-primary)]",
 };
 
@@ -80,9 +90,9 @@ export function HorizontalStepper({
           );
         })}
       </ol>
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.85)]">
+      <p className="vex-micro text-[var(--color-text-secondary)]">
         Step {currentIndex + 1} of {WIZARD_STEP_IDS.length}
-        <span className="text-[rgba(243,244,247,0.58)]">
+        <span className="text-[var(--color-text-muted)]">
           {" "}
           · {WIZARD_STEP_META[currentStepId].label}
         </span>

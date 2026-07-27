@@ -22,6 +22,26 @@
     color-mix(in oklab, var(--color-accent-primary) 55%, white)
   );
 }
+/* Micro-label — the mono stamp the app repeats everywhere a value needs a
+ * caption: stepper lines, trailing meta rows, status words, version stamps,
+ * inline tags. Extracted (INK REDESIGN, 2026-07-27) from ~25 duplicated
+ * `font-mono text-[10px] uppercase tracking-[0.18em]` call sites so the two
+ * worlds can size the stamp independently: the shell keeps the 10px/0.18em
+ * default below, the pre-shell re-pins both vars in the
+ * `[data-vex-gate="true"]` scope (global-css/setup-gate.css) to 12px/0.14em.
+ * That split matters because most of those call sites live in wizard step
+ * files, which the app shell's Settings screen renders too.
+ *
+ * Sets NO color and no display — every call site owns its own text tier and
+ * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
+ * site that needs a different size must not use this class. */
+.vex-micro {
+  font-family: var(--font-mono);
+  font-size: var(--vex-micro-size, 0.625rem);
+  letter-spacing: var(--vex-micro-tracking, 0.18em);
+  text-transform: uppercase;
+}
+
 /* Welcome-stage modifier ONLY (White House/Instrument typography pass): swaps
  * the eyebrow's hardcoded mono face for the sans display face without
  * touching every other `.vex-eyebrow` call site (memory/session dialogs

@@ -43,13 +43,13 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
         />
       </div>
 
-      <p className="text-center font-mono text-[11px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.85)]">
+      <p className="text-center vex-micro text-[var(--color-text-secondary)]">
         {progressLabel(current)}
       </p>
 
       {showCurrentRow && current !== null ? (
         <div
-          className="flex w-full items-center gap-3 border-t border-white/[0.10] py-4"
+          className="flex w-full items-center gap-3 border-t border-[var(--color-border)] py-4"
           data-migration-version={current.version}
         >
           <VexLoader
@@ -62,11 +62,11 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
             <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
               Migration v{current.version}
             </span>
-            <span className="truncate font-mono text-[11px] text-[rgba(243,244,247,0.58)]">
+            <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
               {current.file}
             </span>
           </div>
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.85)]">
+          <span className="shrink-0 vex-micro text-[var(--color-text-secondary)]">
             {current.phase}
           </span>
         </div>

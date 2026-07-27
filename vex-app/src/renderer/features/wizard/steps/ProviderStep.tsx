@@ -222,10 +222,10 @@ export function ProviderStep({
       >
         <div className="flex flex-col gap-4">
           {effectiveModel ? (
-            <div className="flex items-center gap-3 border-t border-white/[0.12] pt-4">
+            <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
               <ModelBrandIcon modelId={effectiveModel} size={22} />
               <div className="flex min-w-0 flex-col">
-                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                <span className="vex-micro text-[var(--color-text-muted)]">
                   Active model
                 </span>
                 <code className="truncate font-mono text-sm text-[var(--color-text-primary)]">

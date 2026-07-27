@@ -1,8 +1,11 @@
 /**
  * SETUP GATE — the Chronos Gate cold open (PR1 of the setup rebrand).
  *
- * A full-window cobalt plate (the app icon at room scale) covers the
- * window from the first paint. While it holds, `useSetupOrchestrator`
+ * A full-window ink plate covers the window from the first paint (it was
+ * the app icon's solid cobalt at room scale until the INK REDESIGN moved
+ * the pre-shell onto deep ink-navy with cobalt as the accent — the sigil
+ * and the loader arc now carry the brand color instead of the surface).
+ * While it holds, `useSetupOrchestrator`
  * runs the real launch pipeline (probes → compose → migrate → wizard
  * entry) and the particle sigil signs itself inside the VexLoader ring.
  * When the pipeline resolves, the gate applies the handoff to the view
@@ -79,6 +82,12 @@ export function SetupGate(): JSX.Element | null {
     <div
       data-vex-screen="setup-gate"
       data-vex-gate-phase={revealing ? "reveal" : "hold"}
+      // The cold open is the first slide of the pre-shell continuum, so it
+      // carries the same token scope as every screen the curtain opens onto
+      // (`global-css/setup-gate.css`) — otherwise its status line and version
+      // stamp would render on the shell's type scale and text tiers while the
+      // plate beneath them is the pre-shell's.
+      data-vex-gate="true"
       className="fixed inset-0 z-50 overflow-hidden"
     >
       {/* Curtain panels — one solid plate until the reveal splits it. */}
@@ -124,11 +133,11 @@ export function SetupGate(): JSX.Element | null {
         </VexLoader>
         <p
           aria-hidden
-          className="mt-8 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.85)]"
+          className="mt-8 vex-micro text-[var(--color-text-secondary)]"
         >
           {status.label}
         </p>
-        <span className="absolute bottom-7 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.6)]">
+        <span className="absolute bottom-7 vex-micro text-[var(--color-text-muted)]">
           v{__VEX_APP_VERSION__}
         </span>
       </motion.div>

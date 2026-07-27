@@ -35,10 +35,10 @@ const defaultWord: Record<SetupStatusTone, string> = {
 
 const wordInk: Record<SetupStatusTone, string> = {
   ok: "text-[var(--color-success)]",
-  info: "text-[rgba(243,244,247,0.85)]",
+  info: "text-[var(--color-text-secondary)]",
   warn: "text-[var(--color-warning)]",
   error: "text-[var(--color-danger)]",
-  muted: "text-[rgba(243,244,247,0.58)]",
+  muted: "text-[var(--color-text-muted)]",
 };
 
 const alertRail: Partial<Record<SetupStatusTone, string>> = {
@@ -58,7 +58,7 @@ export function SetupStatusCard({
     <div className={cn("flex flex-col gap-1", alertRail[tone])}>
       <span
         className={cn(
-          "font-mono text-[10px] font-semibold uppercase tracking-[0.18em]",
+          "vex-micro font-semibold",
           wordInk[tone],
         )}
       >
@@ -68,7 +68,7 @@ export function SetupStatusCard({
         {title}
       </span>
       {detail ? (
-        <span className="text-xs leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <span className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
           {detail}
         </span>
       ) : null}

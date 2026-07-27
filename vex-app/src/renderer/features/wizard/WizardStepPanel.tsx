@@ -113,11 +113,11 @@ function stepIndexFor(kind: PanelKind): number {
  * quiet. */
 const ICON_CIRCLE_CHROME = cn(
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-  "border border-white/[0.16] text-[var(--color-text-primary)]",
+  "border border-[var(--color-border)] text-[var(--color-text-primary)]",
 );
 
 const META_CHROME = cn(
-  "flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.58)]",
+  "flex items-center gap-3 vex-micro text-[var(--color-text-muted)]",
 );
 
 function TrailingMeta({
@@ -143,7 +143,7 @@ function TrailingMeta({
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
-          "inline-flex items-center gap-1 text-[rgba(243,244,247,0.78)] transition-colors",
+          "inline-flex items-center gap-1 text-[var(--color-text-secondary)] transition-colors",
           "hover:text-[var(--color-text-primary)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
         )}
@@ -180,7 +180,7 @@ export function WizardStepPanel({
         <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
           {title}
         </h1>
-        <p className="text-[13px] leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
           {description}
         </p>
       </div>
@@ -192,7 +192,7 @@ export function WizardStepPanel({
   ) : null;
 
   const metaNode = (
-    <div className="mt-6 border-t border-white/[0.12] pt-4">
+    <div className="mt-6 border-t border-[var(--color-border)] pt-4">
       <TrailingMeta
         kind={panelDataAttr.kind}
         showStepCount={flowMode !== "back-edit"}

@@ -54,7 +54,7 @@ export function SummaryCard({
       className={cn(
         // A3 boxless: hairline-separated register row, never a filled
         // tile — the statusLabel word carries the state color.
-        "flex flex-col gap-2 border-b border-white/[0.10] pb-3",
+        "flex flex-col gap-2 border-b border-[var(--color-border)] pb-3",
         "last:border-0 last:pb-0",
       )}
     >
@@ -65,7 +65,7 @@ export function SummaryCard({
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "font-mono text-[10px] uppercase tracking-[0.18em]",
+              "vex-micro",
               STATUS_WORD_COLOR[status],
             )}
           >

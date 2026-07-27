@@ -190,11 +190,11 @@ export function UnlockScreen(): JSX.Element {
 
         <h1
           id="vex-unlock-title"
-          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-[30px] font-normal leading-none text-[var(--color-text-primary)]"
+          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-2xl font-normal leading-none text-[var(--color-text-primary)]"
         >
           Welcome back.
         </h1>
-        <p className="vex-rise vex-rise-d1 mt-3 text-center text-[13px] leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <p className="vex-rise vex-rise-d1 mt-3 text-center text-sm leading-relaxed text-[var(--color-text-secondary)]">
           Your master password decrypts the local vault on this machine.
         </p>
 
@@ -211,7 +211,7 @@ export function UnlockScreen(): JSX.Element {
             <div className="flex flex-col gap-2.5">
               <Label
                 htmlFor="vex-unlock-password"
-                className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-[rgba(243,244,247,0.58)]"
+                className="vex-micro font-medium text-[var(--color-text-muted)]"
               >
                 Master password
               </Label>
@@ -245,7 +245,7 @@ export function UnlockScreen(): JSX.Element {
                 <p
                   role="alert"
                   data-vex-unlock-throttle="active"
-                  className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-[13px] text-[color-mix(in_oklab,var(--color-warning)_70%,white)]"
+                  className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-sm text-[color-mix(in_oklab,var(--color-warning)_70%,white)]"
                 >
                   {throttle.message}{" "}
                   <span className="font-mono text-xs tabular-nums">
@@ -259,7 +259,7 @@ export function UnlockScreen(): JSX.Element {
                 {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
                 <p
                   role="alert"
-                  className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-[13px] text-[color-mix(in_oklab,var(--color-danger)_70%,white)]"
+                  className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-[color-mix(in_oklab,var(--color-danger)_70%,white)]"
                 >
                   {error}
                 </p>
@@ -289,7 +289,7 @@ export function UnlockScreen(): JSX.Element {
             variant="ghost"
             disabled={inputsDisabled}
             onClick={() => setResetDialogOpen(true)}
-            className="mt-3 w-full text-[rgba(243,244,247,0.58)]"
+            className="mt-3 w-full text-[var(--color-text-muted)]"
           >
             I forgot my password — set up a new vault
           </Button>

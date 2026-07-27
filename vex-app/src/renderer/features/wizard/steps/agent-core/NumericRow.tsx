@@ -47,7 +47,7 @@ export function NumericRow({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <Label htmlFor={id} className="text-[13px] font-medium">
+        <Label htmlFor={id} className="text-sm font-medium">
           {label}
         </Label>
         {envName ? (

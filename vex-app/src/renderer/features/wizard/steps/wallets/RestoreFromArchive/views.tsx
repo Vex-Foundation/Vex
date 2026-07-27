@@ -33,7 +33,7 @@ interface PanelHeaderProps {
 export function PanelHeader({ onClose }: PanelHeaderProps): JSX.Element {
   return (
     <div className="flex items-center justify-between">
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+      <p className="vex-micro text-[var(--color-text-muted)]">
         Restore a full backup
       </p>
       <Button
@@ -59,7 +59,7 @@ export function LoadingBackups(): JSX.Element {
         tone="paper"
         label="Loading backups…"
       />
-      <span aria-hidden className="text-xs text-[rgba(243,244,247,0.58)]">
+      <span aria-hidden className="text-xs text-[var(--color-text-muted)]">
         Loading backups…
       </span>
     </div>
@@ -155,7 +155,7 @@ export function RestoreForm({
               // paper left bar on the label, never a filled card.
               <li
                 key={backup.id}
-                className="border-b border-white/[0.10] last:border-0"
+                className="border-b border-[var(--color-border)] last:border-0"
               >
                 <label
                   className="flex cursor-pointer flex-col gap-2 border-l-2 border-l-transparent py-3 pl-3 has-[:checked]:border-l-[var(--color-text-primary)]"
@@ -177,12 +177,12 @@ export function RestoreForm({
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {backup.vaultIncluded ? (
-                          <span className="rounded-sm border border-white/[0.12] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                          <span className="rounded-sm border border-[var(--color-border)] px-1.5 py-0.5 vex-micro text-[var(--color-text-muted)]">
                             vault
                           </span>
                         ) : null}
                         {backup.envIncluded ? (
-                          <span className="rounded-sm border border-white/[0.12] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                          <span className="rounded-sm border border-[var(--color-border)] px-1.5 py-0.5 vex-micro text-[var(--color-text-muted)]">
                             .env
                           </span>
                         ) : null}

@@ -45,9 +45,9 @@ export function SetupTour(): JSX.Element | null {
   return (
     <div
       data-vex-setup-tour
-      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-white/[0.16] bg-[rgba(8,11,24,0.85)] p-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[rgba(243,244,247,0.85)]"
+      className="fixed bottom-4 left-4 z-[70] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[rgba(8,11,24,0.85)] p-2 vex-micro text-[var(--color-text-secondary)]"
     >
-      <span className="px-1 text-[9px] text-[rgba(243,244,247,0.55)]">
+      <span className="px-1 text-[9px] text-[var(--color-text-muted)]">
         Setup tour
       </span>
       {TOUR_VIEWS.map((view) => (
@@ -72,7 +72,7 @@ export function SetupTour(): JSX.Element | null {
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="mt-1 rounded border border-white/[0.16] px-2 py-1 text-left hover:bg-white/[0.08]"
+        className="mt-1 rounded border border-[var(--color-border)] px-2 py-1 text-left hover:bg-white/[0.08]"
       >
         Reload boot
       </button>

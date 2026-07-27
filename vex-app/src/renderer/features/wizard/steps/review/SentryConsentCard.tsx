@@ -58,7 +58,7 @@ export function SentryConsentCard({
 
   return (
     <div
-      className="flex flex-col gap-3 border-b border-white/[0.10] pb-3 last:border-0"
+      className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-3 last:border-0"
       data-vex-review-card="sentry-consent"
     >
       <label className="flex cursor-pointer items-start gap-3">
@@ -82,7 +82,7 @@ export function SentryConsentCard({
       <details
         open={showDetails}
         onToggle={(e) => setShowDetails((e.target as HTMLDetailsElement).open)}
-        className="border-y border-white/[0.12] py-3"
+        className="border-y border-[var(--color-border)] py-3"
       >
         <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-primary)]">
           What we collect / never collect

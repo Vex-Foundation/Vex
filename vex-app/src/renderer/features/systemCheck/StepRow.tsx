@@ -14,7 +14,7 @@
  * state machine value. Word texts are pinned by tests:
  * CHECKING… / OK / WARN / FAIL.
  *
- * Note: the detail line is the only `text-[11px]` element in the row —
+ * Note: the detail line is the only `text-xs` element in the row —
  * a test pins that invariant to detect a missing detail span.
  */
 
@@ -57,21 +57,21 @@ export function StepRow({
   const labelText = badgeLabel ?? defaultBadgeLabel[status];
   return (
     <li
-      className="flex items-center gap-3 border-t border-white/[0.10] py-4 first:border-t-0"
+      className="flex items-center gap-3 border-t border-[var(--color-border)] py-4 first:border-t-0"
       data-step-status={status}
     >
       <span
         aria-hidden
-        className="flex h-8 w-8 shrink-0 items-center justify-center text-[rgba(243,244,247,0.78)]"
+        className="flex h-8 w-8 shrink-0 items-center justify-center text-[var(--color-text-secondary)]"
       >
         {icon}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[13px] font-medium text-[var(--color-text-primary)]">
+        <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
           {label}
         </span>
         {detail ? (
-          <span className="truncate font-mono text-[11px] text-[rgba(243,244,247,0.58)]">
+          <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
             {detail}
           </span>
         ) : null}
@@ -79,14 +79,14 @@ export function StepRow({
       {status === "loading" ? (
         <span className="flex shrink-0 items-center gap-2">
           <VexLoader size={16} stroke={2} tone="paper" label="Checking" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.78)]">
+          <span className="vex-micro text-[var(--color-text-secondary)]">
             {labelText}
           </span>
         </span>
       ) : (
         <span
           className={cn(
-            "shrink-0 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]",
+            "shrink-0 vex-micro font-semibold",
             wordInk[status],
           )}
         >

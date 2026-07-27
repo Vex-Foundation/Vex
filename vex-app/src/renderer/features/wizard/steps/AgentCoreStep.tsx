@@ -142,9 +142,9 @@ export function AgentCoreStep({
       <div className="flex flex-col gap-5">
         <div
           aria-live="polite"
-          className="flex items-center justify-between gap-3 border-b border-white/[0.12] pb-3"
+          className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3"
         >
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+          <span className="vex-micro text-[var(--color-text-muted)]">
             Pending ·{" "}
             <strong className="text-[var(--color-text-primary)]">
               {summary.sets}

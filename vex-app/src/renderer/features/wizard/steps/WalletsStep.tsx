@@ -213,10 +213,10 @@ export function WalletsStep({
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3">
-            <div className="border-b border-white/[0.10] pb-3">
+            <div className="border-b border-[var(--color-border)] pb-3">
               <div className="flex items-center gap-2">
                 <Ethereum width={14} height={14} aria-hidden />
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                <p className="vex-micro text-[var(--color-text-muted)]">
                   EVM
                 </p>
               </div>
@@ -231,7 +231,7 @@ export function WalletsStep({
             <div>
               <div className="flex items-center gap-2">
                 <Solana width={14} height={14} aria-hidden />
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                <p className="vex-micro text-[var(--color-text-muted)]">
                   Solana
                 </p>
               </div>
@@ -342,7 +342,7 @@ export function WalletsStep({
           />
         </TabsContent>
       </Tabs>
-      <div className="mt-4 flex flex-col gap-3 border-t border-white/[0.12] pt-4">
+      <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)] pt-4">
         {anyWallet ? <ExportAllWallets /> : null}
         <RestoreFromArchive />
       </div>
