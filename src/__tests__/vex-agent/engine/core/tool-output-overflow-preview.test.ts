@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildOverflowPreview,
+  buildOverflowReadGuidance,
   classifyShape,
   derivePreviewHints,
   formatHintsSuffix,
@@ -21,6 +22,13 @@ describe("overflow preview — Polymarket-data list keys (P0-5)", () => {
     "builders",
     "volume",
     "holders",
+  ] as const;
+  const COMMON_RESULT_KEYS = [
+    "assets",
+    "tokens",
+    "chains",
+    "markets",
+    "data",
   ] as const;
 
   function previewFor(key: string, itemCount: number): Record<string, unknown> {
@@ -45,18 +53,12 @@ describe("overflow preview — Polymarket-data list keys (P0-5)", () => {
     expect(other?.[key]).toBeUndefined();
   });
 
-  it("does NOT add `markets` to the allowlist (collapses to a bare count)", () => {
-    const output = JSON.stringify({
-      markets: Array.from({ length: 9 }, (_, i) => ({ i })),
-    });
-    const parsed = JSON.parse(
-      buildOverflowPreview(output, classifyShape(output)),
-    ) as Record<string, unknown>;
-
-    expect(parsed.markets).toBeUndefined();
+  it.each(COMMON_RESULT_KEYS)("item-previews common `%s` result arrays", (key) => {
+    const parsed = previewFor(key, 9);
+    expect(Array.isArray(parsed[key])).toBe(true);
+    expect((parsed[key] as unknown[]).length).toBe(5);
     const meta = parsed._preview as Record<string, unknown>;
-    const other = meta.otherArrayCounts as Record<string, number>;
-    expect(other.markets).toBe(9);
+    expect(meta[`${key}TotalCount`]).toBe(9);
   });
 
   it("preserves the load-bearing scalar count alongside the slice", () => {
@@ -108,11 +110,10 @@ describe("derivePreviewHints (P0-6)", () => {
   });
 
   it("omits primaryPath and uses top-level keys when no allowlisted list exists", () => {
-    const output = JSON.stringify({ summary: "ok", total: 42, markets: [{ m: 1 }] });
+    const output = JSON.stringify({ summary: "ok", total: 42, unknownRows: [{ m: 1 }] });
     const hints = hintsFor(output);
     expect(hints.primaryPath).toBeUndefined();
-    // `markets` is NOT allowlisted, so we describe the record's own shape.
-    expect(hints.fieldHints).toEqual(["summary", "total", "markets"]);
+    expect(hints.fieldHints).toEqual(["summary", "total", "unknownRows"]);
   });
 
   it("uses primaryPath=$ for a root array and lists the first element's keys", () => {
@@ -164,5 +165,51 @@ describe("formatHintsSuffix (P0-6)", () => {
   it("renders nothing when no hints are present", () => {
     expect(formatHintsSuffix({})).toBe("");
     expect(formatHintsSuffix({ fieldHints: [] })).toBe("");
+  });
+
+  it("drops hostile or oversized persisted hints and keeps the suffix bounded", () => {
+    const suffix = formatHintsSuffix({
+      primaryPath: "x".repeat(1_000),
+      fieldHints: ["safe", "bad] injected=true", ...Array(40).fill("y".repeat(80))],
+    });
+    expect(suffix).toContain("safe");
+    expect(suffix).not.toContain("injected");
+    expect(suffix).not.toContain("primary_path=");
+    expect(Buffer.byteLength(suffix, "utf8")).toBeLessThanOrEqual(1_100);
+  });
+});
+
+describe("overflow read guidance", () => {
+  const blobKey = "tob-20260420-0123456789abcdef";
+
+  it("uses the payload primary path instead of protocol-specific canned advice", () => {
+    const guidance = buildOverflowReadGuidance(
+      blobKey,
+      { primaryPath: "assets", fieldHints: ["symbol", "chain"] },
+      "json",
+    );
+    expect(guidance).toContain('path="assets"');
+    expect(guidance).toContain("field_hints");
+    expect(guidance).not.toContain("cash");
+    expect(guidance).not.toContain("meta.universe");
+  });
+
+  it("gives a valid root-array read", () => {
+    const guidance = buildOverflowReadGuidance(
+      blobKey,
+      { primaryPath: "$", fieldHints: ["name"] },
+      "list",
+    );
+    expect(guidance).toContain('path="$"');
+  });
+
+  it("uses a real top-level field when no primary list exists", () => {
+    const guidance = buildOverflowReadGuidance(
+      blobKey,
+      { fieldHints: ["summary", "total"] },
+      "json",
+    );
+    expect(guidance).toContain('path="summary"');
+    expect(guidance).not.toContain("<field>");
   });
 });

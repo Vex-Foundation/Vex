@@ -315,7 +315,7 @@ describe("turn-loop tool output overflow", () => {
     const bigOutput = JSON.stringify({
       summary: "ok",
       total: 3,
-      markets: Array.from({ length: 3 }, (_, i) => ({ i })),
+      unknownRows: Array.from({ length: 3 }, (_, i) => ({ i })),
       padding: "x".repeat(20_000),
     });
     mockExecuteTurn.mockResolvedValueOnce({
@@ -335,13 +335,13 @@ describe("turn-loop tool output overflow", () => {
     const persistedMessage = toolSave![1] as { content: string };
     // No allowlisted list ⇒ no primary_path, but the record's shape is surfaced.
     expect(persistedMessage.content).not.toContain("primary_path=");
-    expect(persistedMessage.content).toContain("field_hints=[summary,total,markets,padding]");
+    expect(persistedMessage.content).toContain("field_hints=[summary,total,unknownRows,padding]");
     const blobPayload = mockWriteBlob.mock.calls[0]![2] as {
       primaryPath?: string;
       fieldHints?: string[];
     };
     expect(blobPayload.primaryPath).toBeUndefined();
-    expect(blobPayload.fieldHints).toEqual(["summary", "total", "markets", "padding"]);
+    expect(blobPayload.fieldHints).toEqual(["summary", "total", "unknownRows", "padding"]);
   });
 
   it("writes primary_path=$ for a root-array overflow output", async () => {
@@ -365,6 +365,9 @@ describe("turn-loop tool output overflow", () => {
     const persistedMessage = toolSave![1] as { content: string };
     expect(persistedMessage.content).toContain("primary_path=$");
     expect(persistedMessage.content).toContain("field_hints=[id,label,pad]");
+    expect(persistedMessage.content).toContain('path="$"');
+    expect(persistedMessage.content).not.toContain("meta.universe");
+    expect(persistedMessage.content).not.toContain('search="cash"');
   });
 
   it("emits NO hints for a non-JSON (text) overflow output", async () => {

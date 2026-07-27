@@ -34,6 +34,9 @@ const SEARCH_CONTEXT_RADIUS = 100;
 const SEARCH_MAX_TOTAL = 10_000;
 /** Max path tokens — caps both length and nesting depth. */
 const MAX_PATH_TOKENS = 10;
+/** Keep failed-path diagnostics bounded even for hostile JSON object keys. */
+const TOP_LEVEL_HINT_KEYS_MAX = 12;
+const TOP_LEVEL_HINT_KEY_CHARS_MAX = 64;
 
 // ── Search (case-insensitive substring only) ─────────────────────
 
@@ -125,16 +128,24 @@ export type PathResult =
  * Parse a dot/bracket path (`meta.universe`, `contexts[1]`, `meta.universe[230]`)
  * into tokens. Dot keys and `[index]` brackets only — no wildcards, recursive
  * descent, or expressions. Returns null on malformed input or when the token
- * count exceeds MAX_PATH_TOKENS. A leading `$` / `$.` root marker is accepted
- * and ignored.
+ * count exceeds MAX_PATH_TOKENS. A leading `$` / `$.` root marker is accepted;
+ * bare `$` resolves the root value itself.
  */
 export function parseJsonPath(path: string): Array<string | number> | null {
+  if (path === "$") return [];
+  if (path.length === 0) return null;
+
   const tokens: Array<string | number> = [];
   const n = path.length;
   let i = 0;
-  if (path.startsWith("$")) {
-    i = 1;
-    if (path[i] === ".") i += 1;
+  if (path[0] === "$") {
+    if (path[1] === ".") {
+      i = 2;
+    } else if (path[1] === "[") {
+      i = 1;
+    } else {
+      return null;
+    }
   }
   while (i < n) {
     if (tokens.length >= MAX_PATH_TOKENS) return null;
@@ -197,7 +208,20 @@ export function resolveJsonPath(root: unknown, path: string): PathResult {
 /** Human-readable hint listing the top-level shape for a failed path. */
 export function describeTopLevel(root: unknown): string {
   if (Array.isArray(root)) return `top-level value is an array of length ${root.length}`;
-  if (isRecord(root)) return `top-level keys: [${Object.keys(root).join(", ")}]`;
+  if (isRecord(root)) {
+    const keys = Object.keys(root);
+    const shown = keys
+      .slice(0, TOP_LEVEL_HINT_KEYS_MAX)
+      .map((key) => JSON.stringify(
+        key.length <= TOP_LEVEL_HINT_KEY_CHARS_MAX
+          ? key
+          : `${key.slice(0, TOP_LEVEL_HINT_KEY_CHARS_MAX)}…`,
+      ));
+    const remainder = keys.length > shown.length
+      ? `, … +${keys.length - shown.length} more`
+      : "";
+    return `top-level keys (${keys.length}): [${shown.join(", ")}${remainder}]`;
+  }
   return `top-level value is a ${typeof root}`;
 }
 
