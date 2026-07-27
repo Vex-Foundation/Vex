@@ -21,7 +21,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Preview a Pendle single-token LP add or remove — add deposits ONE token into a market's LP; remove burns LP back to one token. Shows the output, price impact, feeUsdEstimate (Pendle's own estimated route fee in USD), aggregator, liquidity, and market expiry, and records the safety preview the add/remove tools require before they broadcast. After expiry LP can still be removed but stops earning swap fees and rewards. Read-only.",
+      "Preview a Pendle single-token LP add or remove — add deposits ONE token into a market's LP; remove burns LP back to one token. Shows the output, price impact, feeUsdEstimate (Pendle's own estimated route fee in USD), aggregator, liquidity, and market expiry. LP is NOT a fixed-rate lock: after expiry it stops earning swap fees and rewards. Quotes route through Pendle's AMM only — limit-order liquidity is excluded, so a better resting price may exist. Exact-output is impossible: you specify amountIn and receive an estimate, never a guaranteed amountOut. This call has a SIDE EFFECT — it records the prequote authorization the matching broadcast tool requires, so quoting arms that tool for ~15 minutes. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -60,7 +60,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Remove single-token liquidity from a Pendle market — burns the market's LP token and returns ONE output token. Works before AND after expiry: a matured market can still be removed (principal side) but no longer earns swap fees or rewards. Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.lp.quote (direction remove) first.",
+      "Remove single-token liquidity from a Pendle market — burns the market's LP token and returns ONE output token. TODAY THIS WORKS ONLY BEFORE EXPIRY: Pendle itself allows removal from a matured market, but Vex resolves markets from the active list, so a matured market cannot currently be removed here. LP is not a fixed-rate lock and no longer earns swap fees or rewards after expiry. Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.lp.quote (direction remove) first.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

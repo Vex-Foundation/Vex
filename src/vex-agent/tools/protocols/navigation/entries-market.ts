@@ -160,9 +160,9 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
     summary:
-      "Pendle yield trading across 11 chains (Ethereum, Arbitrum, Base, BSC, and more) — principal tokens (PT) lock a FIXED rate until expiry; yield tokens (YT) are VARIABLE, leveraged yield that DECAYS to zero at expiry. Discover markets, value positions, buy / sell / redeem PT, buy / sell YT, mint / redeem the PT+YT pair, add / remove single-token liquidity (LP), and claim accrued income through the pinned Pendle Router.",
+      "Pendle yield trading across 11 chains (Ethereum, Arbitrum, Base, BSC, and more; some listed chains currently have no active markets) — principal tokens (PT) lock a FIXED rate until expiry; yield tokens (YT) are VARIABLE, leveraged yield that DECAYS to zero at expiry. Discover markets, inspect one market's tokens, rates, history and depth, value positions, buy / sell / redeem PT, buy / sell YT, mint / redeem the PT+YT pair, add / remove single-token liquidity (LP), and claim accrued income through the pinned Pendle Router.",
     whenToUse:
-      "Use when the user wants Pendle yield on any of its 11 chains: find markets by liquidity or implied APY, value holdings, buy a PT to lock a fixed rate, sell a PT early (market-priced), redeem a matured PT (~1:1), buy a YT for variable/leveraged yield (worth zero at expiry), sell a YT early, add or remove single-token liquidity (LP earns swap fees until expiry, not a fixed lock), or claim accrued interest and rewards. Preview PT/YT/LP actions with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote first.",
+      "Use when the user wants Pendle yield on any of its 11 chains: find markets by liquidity or implied APY, inspect one market (accepted tokens, current rates, APY history, price candles, order-book depth), value holdings, buy a PT to lock a fixed rate, sell a PT early (market-priced), redeem a matured PT (~1:1), buy a YT for variable/leveraged yield (worth zero at expiry), sell a YT early, add or remove single-token liquidity (LP earns swap fees until expiry, not a fixed lock), or claim accrued interest and rewards. Preview PT/YT/LP actions with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote first.",
     preferInstead:
       "Use `kyberswap` for ordinary spot swaps (if it cannot route, a backup venue is offered automatically in its failure message); Pendle is specifically for term yield. A PT is fixed yield; a YT is variable and can lose money. Points programs are NOT a guaranteed yield.",
     exampleQueries: [
@@ -204,10 +204,31 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         hints: ["add pendle liquidity", "provide single-token LP", "remove pendle liquidity", "withdraw pendle LP", "pendle pool fees"],
       },
       {
+        label: "Market detail and history",
+        summary:
+          "Inspect ONE market — its legs, expiry, accepted tokens and current rates — plus its APY/TVL history and price candles. Resolves MATURED markets, which the trading tools cannot see.",
+        toolPrefixes: ["pendle.market"],
+        hints: ["pendle market details", "which tokens does this market accept", "implied apy history", "PT price chart", "when does this PT expire"],
+      },
+      {
+        label: "Order-book depth",
+        summary:
+          "See the resting limit orders on a market. Vex quotes through the automated market maker only, so this is the price quality being forgone, not depth Vex can fill.",
+        toolPrefixes: ["pendle.orderbook"],
+        hints: ["pendle order book", "pendle depth", "better price than the quote", "resting pendle orders"],
+      },
+      {
+        label: "Asset prices",
+        summary: "Dollar price marks for Pendle PT, YT, LP and SY assets on one chain, including ones the wallet does not hold. Display marks, not executable quotes.",
+        toolPrefixes: ["pendle.prices"],
+        hints: ["what is this PT worth", "price a pendle token", "pendle asset price"],
+      },
+      {
         label: "Positions and income",
-        summary: "Value open positions, see which PT are redeemable, and claim accrued interest and rewards.",
-        toolPrefixes: ["pendle.position", "pendle.claim"],
-        hints: ["pendle positions", "PT holdings value", "redeemable PT", "claim rewards", "harvest yield"],
+        summary:
+          "Value open PT, YT, LP and SY positions, see which are redeemable or removable, claim accrued interest and rewards, and read merkle reward accruals (readable, but claimable only on Pendle's own site).",
+        toolPrefixes: ["pendle.position", "pendle.claim", "pendle.rewards"],
+        hints: ["pendle positions", "PT holdings value", "redeemable PT", "claim rewards", "harvest yield", "pending pendle rewards", "unclaimed incentives"],
       },
     ],
   },

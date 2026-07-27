@@ -21,7 +21,7 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Preview a Pendle PY mint or pre-expiry redeem — mint splits a payment token into an EQUAL amount of PT and YT; redeem burns an EQUAL PT+YT pair back to a token before expiry. Shows the output, price impact, feeUsdEstimate (Pendle's own estimated route fee in USD), aggregator, liquidity, and expiry, and records the safety preview the mint/redeem tools require before they broadcast. Read-only.",
+      "Preview a Pendle PY mint or pre-expiry redeem — mint splits a payment token into an EQUAL amount of PT and YT; redeem burns an EQUAL PT+YT pair back to a token before expiry. Shows the output, price impact, feeUsdEstimate (Pendle's own estimated route fee in USD), aggregator, liquidity, and expiry. Quotes route through Pendle's AMM only — limit-order liquidity is excluded, so a better resting price may exist. Exact-output is impossible: you specify amountIn and receive an estimate, never a guaranteed amountOut. This call has a SIDE EFFECT — it records the prequote authorization the matching broadcast tool requires, so quoting arms that tool for ~15 minutes. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [

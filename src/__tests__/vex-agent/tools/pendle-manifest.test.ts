@@ -8,6 +8,13 @@ describe("pendle manifest", () => {
     // Read (2)
     "pendle.yields",
     "pendle.position.value",
+    // Market data reads (6, T1 card R3/R4)
+    "pendle.market.get",
+    "pendle.market.history",
+    "pendle.market.candles",
+    "pendle.orderbook",
+    "pendle.rewards.merkle",
+    "pendle.prices.assets",
     // PT trading (4)
     "pendle.pt.quote",
     "pendle.pt.buy",
@@ -28,9 +35,9 @@ describe("pendle manifest", () => {
     "pendle.lp.remove",
   ];
 
-  it("has 16 tools total", () => {
-    expect(PENDLE_TOOLS).toHaveLength(16);
-    expect(EXPECTED_TOOL_IDS).toHaveLength(16);
+  it("has 22 tools total", () => {
+    expect(PENDLE_TOOLS).toHaveLength(22);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(22);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
