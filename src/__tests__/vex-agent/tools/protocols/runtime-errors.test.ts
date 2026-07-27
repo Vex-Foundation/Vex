@@ -292,6 +292,49 @@ describe("summarizeProtocolError — who actually rejected the call", () => {
     expect(summarizeProtocolError(err).category).toBe("provider_error");
   });
 
+  // A response we could not READ is neither the caller's bad parameter nor the
+  // provider malfunctioning. Both of those labels tell the agent to do something
+  // that cannot work: `invalid_request` says fix your params (no parameter
+  // helps), `provider_error` says retry (every retry reproduces it). Live proof:
+  // `dexscreener.orders` failed on 100% of calls for months because our
+  // validator demanded an array root where the API sends `{orders, boosts}` —
+  // and the agent was told it was DexScreener's fault.
+  it("classifies our own response-parse refusal as response_schema", () => {
+    const err = new VexError(
+      ErrorCodes.DEXSCREENER_INVALID_RESPONSE,
+      "Invalid DexScreener response: expected orders response object",
+    );
+    const safe = summarizeProtocolError(err);
+    expect(safe.category).toBe("response_schema");
+    expect(safe.retryable).toBeUndefined();
+  });
+
+  it("does not let a parse-error message be re-labelled by the keyword scans", () => {
+    // The parser quotes what it saw; a provider body could contain "timeout" or
+    // "too many requests" and must not steal the category.
+    for (const message of [
+      "Invalid DexScreener response: expected number for boost.amount (timeout)",
+      "Invalid DexScreener response: body said too many requests",
+    ]) {
+      expect(summarizeProtocolError(new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, message)).category)
+        .toBe("response_schema");
+    }
+  });
+
+  it("keeps rate_limit distinguishable from a schema drift", () => {
+    const limited = new VexError(ErrorCodes.DEXSCREENER_RATE_LIMITED, "DexScreener API returned HTTP 429");
+    limited.retryable = true;
+    const limitedSummary = summarizeProtocolError(limited);
+    expect(limitedSummary.category).toBe("rate_limit");
+    expect(limitedSummary.retryable).toBe(true);
+
+    const drift = summarizeProtocolError(
+      new VexError(ErrorCodes.DEXSCREENER_INVALID_RESPONSE, "Invalid DexScreener response: expected boosts array"),
+    );
+    expect(drift.category).toBe("response_schema");
+    expect(drift.category).not.toBe(limitedSummary.category);
+  });
+
   it("keeps today's label for an unrecognized code rather than guessing", () => {
     expect(summarizeProtocolError(new VexError("SOME_UNMAPPED_CODE", "boom")).category)
       .toBe("provider_error");

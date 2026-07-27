@@ -1,0 +1,38 @@
+{
+  "endpoint": "https://api.dexscreener.com/orders/v1/solana/3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP",
+  "capturedAt": "2026-07-27T07:19:19.481Z",
+  "response": {
+    "orders": [
+      {
+        "chainId": "solana",
+        "tokenAddress": "3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP",
+        "type": "tokenProfile",
+        "status": "approved",
+        "paymentTimestamp": 1785004748399
+      }
+    ],
+    "boosts": [
+      {
+        "chainId": "solana",
+        "tokenAddress": "3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP",
+        "id": "mfBPisWhdd4cTmKziDXy",
+        "amount": 10,
+        "paymentTimestamp": 1785075284536
+      },
+      {
+        "chainId": "solana",
+        "tokenAddress": "3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP",
+        "id": "B7qPrz76M2trSDksIsnC",
+        "amount": 500,
+        "paymentTimestamp": 1785073381985
+      },
+      {
+        "chainId": "solana",
+        "tokenAddress": "3pRSpPyE6EYeapDm2Ui2GHnU2d1dYUQxzfaQaJTWfHZP",
+        "id": "h1lMpurnccnsoA14lhEx",
+        "amount": 100,
+        "paymentTimestamp": 1785004785886
+      }
+    ]
+  }
+}

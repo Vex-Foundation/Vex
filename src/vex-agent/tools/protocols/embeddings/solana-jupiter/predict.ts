@@ -31,7 +31,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "what can I bet on solana",
       "live prediction markets",
     ],
-    preferredFor: ["browse prediction events", "trending jupiter markets", "discover bets"],
     chains: SOLANA_CHAINS,
   },
 
@@ -55,7 +54,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "look up super bowl bets on jupiter",
       "search jupiter predict by keyword",
     ],
-    preferredFor: ["search jupiter predict", "find prediction event", "lookup bet"],
     chains: SOLANA_CHAINS,
   },
 
@@ -99,7 +97,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "unrealized pnl on jupiter predict",
       "active yes no bets on solana",
     ],
-    preferredFor: ["my prediction positions", "open jupiter bets", "active prediction exposure"],
     chains: SOLANA_CHAINS,
   },
 
@@ -123,7 +120,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "realized pnl on jupiter predict",
       "closed prediction bets",
     ],
-    preferredFor: ["my prediction history", "closed jupiter bets", "realized prediction pnl"],
     chains: SOLANA_CHAINS,
   },
 
@@ -147,7 +143,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "place a prediction trade on solana",
       "ape into this jupiter prediction market",
     ],
-    preferredFor: ["place bet", "buy yes shares", "buy no shares", "open prediction position"],
     chains: SOLANA_CHAINS,
   },
 
@@ -171,7 +166,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "close my yes shares before settlement",
       "take profit on this jupiter bet",
     ],
-    preferredFor: ["close prediction position", "exit jupiter bet", "take profit on prediction"],
     chains: SOLANA_CHAINS,
   },
 
@@ -195,7 +189,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "settle resolved prediction position",
       "collect winnings on jupiter predict",
     ],
-    preferredFor: ["claim prediction payout", "redeem winning bet", "settle resolved position"],
     chains: SOLANA_CHAINS,
   },
 
@@ -219,7 +212,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "batch close prediction bets",
       "wipe out my jupiter predict exposure",
     ],
-    preferredFor: ["close all prediction positions", "panic exit prediction", "batch settle bets"],
     chains: SOLANA_CHAINS,
   },
 
@@ -282,7 +274,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "bid ask depth on solana predict",
       "market depth before betting on jupiter",
     ],
-    preferredFor: ["prediction order book", "prediction market depth"],
     chains: SOLANA_CHAINS,
   },
 
@@ -438,7 +429,6 @@ export const SOLANA_PREDICT_DISCOVERY = {
       "prediction leaderboard by pnl",
       "who has the best win rate on solana predict",
     ],
-    preferredFor: ["prediction leaderboard", "top prediction traders"],
     chains: SOLANA_CHAINS,
   },
 

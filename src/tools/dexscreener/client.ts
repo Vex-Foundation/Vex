@@ -17,11 +17,11 @@ import {
 } from "./throttle.js";
 import type {
   DexAd,
-  DexBoost,
+  DexBoostFeed,
   DexCommunityTakeover,
   DexMeta,
   DexMetaDetail,
-  DexOrder,
+  DexOrdersResponse,
   DexPair,
   DexProfileUpdate,
   DexTokenProfile,
@@ -136,13 +136,13 @@ export class DexScreenerClient {
     return this.request("/token-profiles/latest/v1", validateProfilesResponse);
   }
 
-  /** Get latest boosted tokens. */
-  getBoosts(): Promise<DexBoost[]> {
+  /** Get latest boosted tokens (this feed sends `amount` AND `totalAmount`). */
+  getBoosts(): Promise<DexBoostFeed> {
     return this.request("/token-boosts/latest/v1", validateBoostsResponse);
   }
 
-  /** Get tokens with most active boosts. */
-  getTopBoosts(): Promise<DexBoost[]> {
+  /** Get tokens with most active boosts (this feed sends `totalAmount` only). */
+  getTopBoosts(): Promise<DexBoostFeed> {
     return this.request("/token-boosts/top/v1", validateBoostsResponse);
   }
 
@@ -189,8 +189,8 @@ export class DexScreenerClient {
 
   // ── Orders ────────────────────────────────────────────────────
 
-  /** Check paid orders for a token. */
-  getOrders(chainId: string, tokenAddress: string): Promise<DexOrder[]> {
+  /** Check paid orders for a token, plus the sibling boost-payment ledger. */
+  getOrders(chainId: string, tokenAddress: string): Promise<DexOrdersResponse> {
     return this.request(
       `/orders/v1/${encodeURIComponent(chainId)}/${encodeURIComponent(tokenAddress)}`,
       validateOrdersResponse,

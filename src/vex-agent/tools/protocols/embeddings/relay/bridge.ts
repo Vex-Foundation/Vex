@@ -15,7 +15,6 @@ export const RELAY_BRIDGE_DISCOVERY = {
     ),
     aliases: ["relay quote", "bridge quote to robinhood", "cross-chain quote relay"],
     exampleIntents: ["quote bridge to robinhood", "relay bridge preview", "cost to bridge into robinhood"],
-    preferredFor: ["relay bridge quote", "bridge to robinhood", "bridge from robinhood"],
   },
 
   "relay.bridge": {
@@ -26,7 +25,6 @@ export const RELAY_BRIDGE_DISCOVERY = {
     ),
     aliases: ["relay bridge", "bridge to robinhood", "bridge from robinhood", "fund robinhood"],
     exampleIntents: ["bridge ETH to robinhood", "bridge out of robinhood", "move funds to robinhood chain"],
-    preferredFor: ["bridge to robinhood", "bridge from robinhood", "cross-chain transfer robinhood"],
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 

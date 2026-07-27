@@ -2,7 +2,26 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { DEXSCREENER_HANDLERS } from "../../../vex-agent/tools/protocols/dexscreener/handlers.js";
 import { DEXSCREENER_TOOLS } from "../../../vex-agent/tools/protocols/dexscreener/manifest.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
-import type { DexBoost, DexPair, DexTokenProfile } from "@tools/dexscreener/types.js";
+import { ErrorCodes, VexError } from "../../../errors.js";
+import type { DexBoost, DexBoostFeed, DexPair, DexTokenProfile } from "@tools/dexscreener/types.js";
+import type { ProtocolExecutionContext } from "../../../vex-agent/tools/protocols/types.js";
+
+/**
+ * A fully-typed read-only execution context.
+ *
+ * The inline `{ sessionPermission, approved }` literals elsewhere in this file
+ * predate `ProtocolExecutionContext` gaining `walletResolution`/`walletPolicy`
+ * and no longer satisfy it (they are carried in the test-type baseline). Tests
+ * added here use this instead, so new call sites do not enlarge that debt.
+ * DexScreener handlers are read-only and touch no wallet, so the neutral
+ * "default"/"none" pair is the honest value, not a stub standing in for one.
+ */
+const READ_CTX: ProtocolExecutionContext = {
+  sessionPermission: "restricted",
+  approved: false,
+  walletResolution: { source: "default" },
+  walletPolicy: { kind: "none" },
+};
 
 describe("dexscreener handlers", () => {
   // ── Handler coverage ─────────────────────────────────────────────
@@ -148,6 +167,36 @@ describe("dexscreener handlers", () => {
     const data = JSON.parse(result.output);
     expect(typeof data.count).toBe("number");
     expect(Array.isArray(data.boosts)).toBe(true);
+    expect(data.skipped).toBe(0);
+  });
+
+  // Live regression guard: this tool threw on 100% of calls because the shared
+  // boost schema required `amount`, which `/token-boosts/top/v1` never sends.
+  it("dexscreener.boosts.top returns rows against the LIVE top feed", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts.top"]!({}, READ_CTX);
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output);
+    expect(data.count).toBeGreaterThan(0);
+    expect(data.skipped).toBe(0);
+    expect(data.boosts[0].chainId).toBeTruthy();
+    expect(data.boosts[0].tokenAddress).toBeTruthy();
+  });
+
+  // Same for orders: the live root is `{orders, boosts}`, which the validator
+  // rejected outright.
+  it("dexscreener.orders returns the envelope against the LIVE endpoint", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
+      { chainId: "solana", tokenAddress: "A55XjvzRU4KtR3Lrys8PpLZQvPojPqvnv5bJVHMYy3Jv" },
+      READ_CTX,
+    );
+    expect(result.success).toBe(true);
+    const data = JSON.parse(result.output);
+    expect(data.orderCount).toBeGreaterThan(0);
+    expect(Array.isArray(data.boostPayments)).toBe(true);
+    expect(data.skippedOrders).toBe(0);
+    // Milliseconds: read as seconds this row lands in the year ~58,000.
+    const ms = data.orders[0].paymentTimestampMs;
+    expect(new Date(ms).getUTCFullYear()).toBeGreaterThanOrEqual(2020);
   });
 
   it("dexscreener.attention returns merged items", async () => {
@@ -163,7 +212,9 @@ describe("dexscreener handlers", () => {
     if (data.items.length > 0) {
       expect(data.items[0].chainId).toBeDefined();
       expect(data.items[0].tokenAddress).toBeDefined();
-      expect(typeof data.items[0].boostTotalAmount).toBe("number");
+      // `null` is legitimate — the feed did not report a boost total — and is
+      // deliberately NOT coerced to 0.
+      expect(["number", "object"]).toContain(typeof data.items[0].boostTotalAmount);
       expect(typeof data.items[0].hasProfile).toBe("boolean");
     }
   });
@@ -343,6 +394,11 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
   });
 });
 
+/** Wrap crafted boost rows in the feed envelope the client now returns. */
+function feedOf(boosts: DexBoost[]): DexBoostFeed {
+  return { boosts, skipped: 0 };
+}
+
 describe("dexscreener.attention default limit", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -363,7 +419,7 @@ describe("dexscreener.attention default limit", () => {
       links: null,
     }));
     const profiles: DexTokenProfile[] = [];
-    vi.spyOn(client, "getBoosts").mockResolvedValue(boosts);
+    vi.spyOn(client, "getBoosts").mockResolvedValue(feedOf(boosts));
     vi.spyOn(client, "getProfiles").mockResolvedValue(profiles);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]!({}, PERM);
@@ -386,7 +442,7 @@ describe("dexscreener.attention default limit", () => {
       description: null,
       links: null,
     }));
-    vi.spyOn(client, "getBoosts").mockResolvedValue(boosts);
+    vi.spyOn(client, "getBoosts").mockResolvedValue(feedOf(boosts));
     vi.spyOn(client, "getProfiles").mockResolvedValue([]);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]!({ limit: 5 }, PERM);
@@ -484,20 +540,29 @@ describe("dexscreener metas + recent handlers", () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.trending"]!({ limit: 3 }, PERM);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
-    expect(data.available).toBe(true);
     expect(data.count).toBe(3);
     expect(data.metas[0].slug).toBe("m0");
+    // `available: true` is gone — `success` already carries that signal, and the
+    // flag only existed to pair with a success-shaped FAILURE.
+    expect(data.available).toBeUndefined();
   });
 
-  it("dexscreener.trending degrades to feed-unavailable on error", async () => {
+  // The defect this replaces: the handler caught every error WITHOUT binding it
+  // and returned `ok({available:false, reason:"…undocumented endpoint that may
+  // have changed"})` — a success row for a failed call, asserting a cause nobody
+  // had established. The error must now propagate so the runtime can classify
+  // the REAL one.
+  it("dexscreener.trending propagates the failure instead of reporting success", async () => {
     const client = getDexScreenerClient();
-    vi.spyOn(client, "getMetasTrending").mockRejectedValue(new Error("boom"));
+    const rateLimited = new VexError(
+      ErrorCodes.DEXSCREENER_RATE_LIMITED,
+      "DexScreener API returned HTTP 429",
+      "Wait and retry.",
+    );
+    rateLimited.retryable = true;
+    vi.spyOn(client, "getMetasTrending").mockRejectedValue(rateLimited);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.trending"]!({}, PERM);
-    expect(result.success).toBe(true); // never throws through the namespace
-    const data = JSON.parse(result.output);
-    expect(data.available).toBe(false);
-    expect(data.reason).toContain("undocumented");
+    await expect(DEXSCREENER_HANDLERS["dexscreener.trending"]!({}, PERM)).rejects.toBe(rateLimited);
   });
 
   it("dexscreener.meta requires slug", async () => {
@@ -524,7 +589,6 @@ describe("dexscreener metas + recent handlers", () => {
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]!({ slug: "knockoff-legends" }, PERM);
     const data = JSON.parse(result.output);
-    expect(data.available).toBe(true);
     expect(data.slug).toBe("knockoff-legends");
     expect(data.tokenCount).toBe(2);
     expect(data.pairCount).toBe(1);
@@ -533,16 +597,22 @@ describe("dexscreener metas + recent handlers", () => {
     expect(data.pairs[0].url).toBeUndefined();
   });
 
-  it("dexscreener.meta degrades when the feed returns null", async () => {
+  // An unreadable payload IS an established cause (the provider answered; the
+  // body did not match the shape), so it is reported as a FAILURE naming exactly
+  // that — and nothing more.
+  it("dexscreener.meta fails honestly when the payload cannot be read", async () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "getMeta").mockResolvedValue(null);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]!({ slug: "gone" }, PERM);
-    const data = JSON.parse(result.output);
-    expect(data.available).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("did not match the expected shape");
+    expect(result.output).toContain("gone");
+    // No fabricated cause, and no advice to abandon the tool.
+    expect(result.output).not.toContain("undocumented");
   });
 
-  it("dexscreener.profiles.recent returns profiles, degrades on error", async () => {
+  it("dexscreener.profiles.recent returns profiles and propagates failures", async () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "getProfilesRecentUpdates").mockResolvedValue([
       {
@@ -554,13 +624,11 @@ describe("dexscreener metas + recent handlers", () => {
     const okResult = JSON.parse(
       (await DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]!({}, PERM)).output,
     );
-    expect(okResult.available).toBe(true);
     expect(okResult.count).toBe(1);
+    expect(okResult.available).toBeUndefined();
 
-    vi.spyOn(client, "getProfilesRecentUpdates").mockRejectedValue(new Error("boom"));
-    const degraded = JSON.parse(
-      (await DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]!({}, PERM)).output,
-    );
-    expect(degraded.available).toBe(false);
+    const boom = new Error("boom");
+    vi.spyOn(client, "getProfilesRecentUpdates").mockRejectedValue(boom);
+    await expect(DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]!({}, PERM)).rejects.toBe(boom);
   });
 });

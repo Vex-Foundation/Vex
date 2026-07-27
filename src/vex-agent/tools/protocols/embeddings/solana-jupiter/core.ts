@@ -22,7 +22,6 @@ export const SOLANA_CORE_DISCOVERY = {
     ),
     aliases: ["jupiter price lookup", "solana price lookup", "token price lookup", "current token price", "price by symbol"],
     exampleIntents: ["jupiter price lookup", "current price of bonk", "usd price for solana mint", "price by token symbol"],
-    preferredFor: ["price lookup", "token prices", "current usd price", "price by symbol or name"],
     chains: SOLANA_CHAINS,
   },
 

@@ -56,9 +56,25 @@ const FIXTURE_BOOST = {
 };
 
 const FIXTURE_ORDER = {
+  chainId: "solana",
+  tokenAddress: "A55X",
   type: "tokenProfile",
   status: "approved",
-  paymentTimestamp: 1700000000,
+  paymentTimestamp: 1785076668204,
+};
+
+/** The live `/orders/v1` root: an OBJECT carrying orders AND the boost ledger. */
+const FIXTURE_ORDERS_BODY = {
+  orders: [FIXTURE_ORDER],
+  boosts: [
+    {
+      chainId: "solana",
+      tokenAddress: "A55X",
+      id: "qUbIz6cRExFyxTpAFbd4",
+      amount: 500,
+      paymentTimestamp: 1785078004322,
+    },
+  ],
 };
 
 // ── Setup ───────────────────────────────────────────────────────────
@@ -191,8 +207,9 @@ describe("getBoosts", () => {
   it("parses boosts", async () => {
     mockOk([FIXTURE_BOOST]);
     const result = await client.getBoosts();
-    expect(result).toHaveLength(1);
-    expect(result[0].totalAmount).toBe(200);
+    expect(result.boosts).toHaveLength(1);
+    expect(result.boosts[0].totalAmount).toBe(200);
+    expect(result.skipped).toBe(0);
   });
 });
 
@@ -202,22 +219,37 @@ describe("getTopBoosts", () => {
     await client.getTopBoosts();
     expect(lastFetchUrl()).toContain("/token-boosts/top/v1");
   });
+
+  // The live `top` feed omits `amount` on every row. Requiring it made this
+  // call fail 100% of the time; the client must now return the rows.
+  it("parses a top-feed row that carries no `amount`", async () => {
+    const { amount: _omitted, ...noAmount } = FIXTURE_BOOST;
+    mockOk([noAmount]);
+    const result = await client.getTopBoosts();
+    expect(result.boosts).toHaveLength(1);
+    expect(result.boosts[0].amount).toBeNull();
+    expect(result.boosts[0].totalAmount).toBe(200);
+  });
 });
 
 // ── getOrders ───────────────────────────────────────────────────────
 
 describe("getOrders", () => {
   it("fetches orders for token", async () => {
-    mockOk([FIXTURE_ORDER]);
+    mockOk(FIXTURE_ORDERS_BODY);
     await client.getOrders("solana", "A55X");
     expect(lastFetchUrl()).toContain("/orders/v1/solana/A55X");
   });
 
-  it("parses orders", async () => {
-    mockOk([FIXTURE_ORDER]);
+  it("parses the object envelope, orders and boost ledger alike", async () => {
+    mockOk(FIXTURE_ORDERS_BODY);
     const result = await client.getOrders("solana", "A55X");
-    expect(result).toHaveLength(1);
-    expect(result[0].status).toBe("approved");
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0].status).toBe("approved");
+    expect(result.orders[0].chainId).toBe("solana");
+    expect(result.orders[0].paymentTimestampMs).toBe(1785076668204);
+    expect(result.boostPayments).toHaveLength(1);
+    expect(result.boostPayments[0].amount).toBe(500);
   });
 });
 

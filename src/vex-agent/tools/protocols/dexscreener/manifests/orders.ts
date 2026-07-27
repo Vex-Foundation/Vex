@@ -6,7 +6,7 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "dexscreener.orders",
     namespace: "dexscreener",
     lifecycle: "active",
-    description: "Check paid promotional orders for a token — type, status, payment timestamp. Legitimacy verification signal.",
+    description: "Check paid promotional orders for a token — each with type, status, and paymentTimestampMs (Unix epoch MILLISECONDS) — plus the token's boost-payment ledger (individual boost purchases with amounts). Legitimacy verification signal: shows what the project paid DEX Screener for.",
     mutating: false,
     actionKind: "read",
     params: [

@@ -18,7 +18,6 @@ export const PENDLE_YT_DISCOVERY = {
     ),
     aliases: ["pendle YT quote", "yield token price", "preview pendle YT", "variable yield preview"],
     exampleIntents: ["quote a pendle YT buy", "preview selling my YT", "pendle YT price"],
-    preferredFor: ["pendle YT quote", "yield token price", "variable yield preview"],
     chains: PENDLE_CHAINS,
   },
 
@@ -32,7 +31,6 @@ export const PENDLE_YT_DISCOVERY = {
     ),
     aliases: ["pendle YT buy", "buy yield token", "long yield", "variable yield exposure"],
     exampleIntents: ["buy pendle YT", "get variable yield exposure", "long the yield"],
-    preferredFor: ["pendle YT buy", "buy yield token", "long variable yield"],
     chains: PENDLE_CHAINS,
   },
 
@@ -46,7 +44,6 @@ export const PENDLE_YT_DISCOVERY = {
     ),
     aliases: ["pendle YT sell", "sell yield token", "exit variable yield", "unwind YT"],
     exampleIntents: ["sell my pendle YT", "exit variable yield", "close a YT position"],
-    preferredFor: ["pendle YT sell", "sell yield token", "close variable yield"],
     chains: PENDLE_CHAINS,
   },
 
@@ -59,7 +56,6 @@ export const PENDLE_YT_DISCOVERY = {
     ),
     aliases: ["pendle claim", "claim pendle rewards", "harvest pendle yield", "collect pendle interest"],
     exampleIntents: ["claim my pendle rewards", "harvest pendle yield", "collect accrued interest"],
-    preferredFor: ["pendle claim", "harvest pendle yield", "claim pendle rewards"],
     chains: PENDLE_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

@@ -22,7 +22,6 @@ export const SOLANA_SWAP_DISCOVERY = {
     ),
     aliases: ["solana swap quote", "spl swap quote", "jupiter quote", "preview sol swap", "swap on solana preview"],
     exampleIntents: ["preview a swap on solana", "quote spl token swap", "rate for sol to usdc swap"],
-    preferredFor: ["preview swap on solana", "quote solana swap", "simulate spl swap"],
     chains: SOLANA_CHAINS,
   },
 
@@ -48,7 +47,6 @@ export const SOLANA_SWAP_DISCOVERY = {
       "swap on solana", "swap sol to usdc", "ape into a solana memecoin",
       "trade spl tokens via jupiter", "best swap route on solana",
     ],
-    preferredFor: ["swap on solana", "solana swap", "spl swap", "jupiter swap"],
     chains: SOLANA_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

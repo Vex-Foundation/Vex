@@ -19,7 +19,6 @@ export const PENDLE_PY_DISCOVERY = {
     ),
     aliases: ["pendle mint quote", "pendle py quote", "preview mint pt yt", "preview redeem pt yt"],
     exampleIntents: ["quote minting pendle PT and YT", "preview redeeming PT and YT before expiry", "split token into PT and YT preview"],
-    preferredFor: ["pendle mint quote", "pendle py preview", "PT plus YT split preview"],
     chains: PENDLE_CHAINS,
   },
 
@@ -33,7 +32,6 @@ export const PENDLE_PY_DISCOVERY = {
     ),
     aliases: ["pendle mint", "mint pt and yt", "split into pt yt", "wrap into pt yt"],
     exampleIntents: ["mint pendle PT and YT", "split a token into PT and YT", "wrap into pendle PT plus YT"],
-    preferredFor: ["pendle mint", "mint PT and YT", "split token into PT YT"],
     chains: PENDLE_CHAINS,
   },
 
@@ -47,7 +45,6 @@ export const PENDLE_PY_DISCOVERY = {
     ),
     aliases: ["pendle py redeem", "redeem pt and yt", "unwind pt yt pair", "burn pt yt"],
     exampleIntents: ["redeem pendle PT and YT before expiry", "unwind PT plus YT to a token", "burn PT and YT pair"],
-    preferredFor: ["pendle py redeem", "redeem PT and YT", "unwind PT YT pair"],
     chains: PENDLE_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

@@ -1,4 +1,3 @@
-import { PROTOCOL_TOOLS } from "./catalog.js";
 import {
   getDiscoveryStringsForTool,
   getMatchingFacetsForTool,
@@ -10,11 +9,9 @@ import type {
   ProtocolToolManifest,
   ToolDiscoveryMetadata,
 } from "./types.js";
-import logger from "@utils/logger.js";
 
 const TOKEN_SPLIT_RE = /[^a-z0-9]+/g;
 const CAMEL_CASE_RE = /([a-z0-9])([A-Z])/g;
-const BIAS_COVERAGE_THRESHOLD = 0.4;
 
 export interface ScoredManifest {
   manifest: ProtocolToolManifest;
@@ -32,43 +29,6 @@ interface WeightedSearchField {
   weight: number;
   /** Stable signal tag emitted in whyMatched when this field contributes to the score. */
   tag: string;
-}
-
-// preferredFor/avoidFor bias gated at 40% catalog coverage to prevent sparse over-steering.
-const biasFieldCoverage = computeBiasCoverage();
-
-function computeBiasCoverage(): { preferredFor: boolean; avoidFor: boolean } {
-  const total = PROTOCOL_TOOLS.length;
-  if (total === 0) return { preferredFor: false, avoidFor: false };
-  let preferredCount = 0;
-  let avoidCount = 0;
-  for (const manifest of PROTOCOL_TOOLS) {
-    const meta = compileToolDiscoveryMetadata(
-      manifest,
-      maybeGetProtocolNamespaceNavigation(manifest.namespace),
-    );
-    if (meta.preferredFor && meta.preferredFor.length > 0) preferredCount++;
-    if (meta.avoidFor && meta.avoidFor.length > 0) avoidCount++;
-  }
-  const preferredPct = preferredCount / total;
-  const avoidPct = avoidCount / total;
-  const preferredPass = preferredPct >= BIAS_COVERAGE_THRESHOLD;
-  const avoidPass = avoidPct >= BIAS_COVERAGE_THRESHOLD;
-  if (!preferredPass) {
-    logger.debug("discovery.coverage_gate", {
-      field: "preferredFor",
-      pct: (preferredPct * 100).toFixed(1),
-      gated: true,
-    });
-  }
-  if (!avoidPass) {
-    logger.debug("discovery.coverage_gate", {
-      field: "avoidFor",
-      pct: (avoidPct * 100).toFixed(1),
-      gated: true,
-    });
-  }
-  return { preferredFor: preferredPass, avoidFor: avoidPass };
 }
 
 function normalizeText(value: string): string {
@@ -192,43 +152,7 @@ function scoreManifest(
   if (matchedTokens.size === 0) return { score: 0, whyMatched: [] };
   if (matchedTokens.size === queryTokens.length) score += 12;
 
-  score = applyBiasAdjustment(manifest, queryTokens, score, whyMatched);
   return { score, whyMatched: [...whyMatched] };
-}
-
-function applyBiasAdjustment(
-  manifest: ProtocolToolManifest,
-  queryTokens: string[],
-  score: number,
-  whyMatched: Set<string>,
-): number {
-  const metadata = compileToolDiscoveryMetadata(
-    manifest,
-    maybeGetProtocolNamespaceNavigation(manifest.namespace),
-  );
-  const querySet = new Set(queryTokens);
-
-  if (biasFieldCoverage.preferredFor && metadata.preferredFor) {
-    const hit = metadata.preferredFor.some((phrase) =>
-      tokenize(phrase).some((token) => querySet.has(token)),
-    );
-    if (hit) {
-      score += 5;
-      whyMatched.add("preferredFor");
-    }
-  }
-
-  if (biasFieldCoverage.avoidFor && metadata.avoidFor) {
-    const hit = metadata.avoidFor.some((phrase) =>
-      tokenize(phrase).some((token) => querySet.has(token)),
-    );
-    if (hit) {
-      score = Math.max(1, score - 5);
-      whyMatched.add("avoidFor");
-    }
-  }
-
-  return score;
 }
 
 export function lexicalScore(

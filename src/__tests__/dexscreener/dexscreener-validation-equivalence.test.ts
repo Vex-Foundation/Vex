@@ -85,7 +85,15 @@ const BOOST = {
   links: null,
 };
 
-const ORDER = { type: "tokenProfile", status: "approved", paymentTimestamp: 1700000000 };
+// Mirrors a real `/orders/v1` row: the provider sends chainId/tokenAddress on
+// every row and `paymentTimestamp` is 13-digit MILLISECONDS.
+const ORDER = {
+  chainId: "solana",
+  tokenAddress: "ta",
+  type: "tokenProfile",
+  status: "approved",
+  paymentTimestamp: 1785076668204,
+};
 
 const CTO = {
   url: "https://c",
@@ -156,10 +164,17 @@ describe("equivalence: valid round-trips", () => {
       description: "desc",
       links: [{ type: "website", label: "Website", url: "https://example.com" }],
     });
-    expect(validateBoostsResponse([BOOST])[0]).toEqual({ ...BOOST });
+    expect(validateBoostsResponse([BOOST]).boosts[0]).toEqual({ ...BOOST });
     expect(validateCommunityTakeoversResponse([CTO])[0]).toEqual({ ...CTO });
     expect(validateAdsResponse([AD])[0]).toEqual({ ...AD });
-    expect(validateOrdersResponse([ORDER])[0]).toEqual({ ...ORDER });
+    // Shape CHANGED deliberately: object envelope in, `paymentTimestampMs` out.
+    expect(validateOrdersResponse({ orders: [ORDER] }).orders[0]).toEqual({
+      chainId: "solana",
+      tokenAddress: "ta",
+      type: "tokenProfile",
+      status: "approved",
+      paymentTimestampMs: 1785076668204,
+    });
   });
 });
 
@@ -217,7 +232,7 @@ describe("equivalence: defaults land exactly (null, not undefined)", () => {
 
   it("boost icon optional → null when missing (asOptionalString, not strDefault)", () => {
     const { icon, ...noIcon } = BOOST;
-    const p = validateBoostsResponse([noIcon])[0];
+    const p = validateBoostsResponse([noIcon]).boosts[0];
     expect(p.icon).toBeNull();
   });
 
@@ -298,7 +313,9 @@ describe("equivalence: root-type mismatch throws original message+code", () => {
     expectVexThrow(() => validateTokensPairsResponse({}), "Invalid DexScreener response: expected token-pairs array");
     expectVexThrow(() => validateProfilesResponse({}), "Invalid DexScreener response: expected profiles array");
     expectVexThrow(() => validateBoostsResponse(null), "Invalid DexScreener response: expected boosts array");
-    expectVexThrow(() => validateOrdersResponse({}), "Invalid DexScreener response: expected orders array");
+    // `validateOrdersResponse({})` no longer throws: an object IS the live root
+    // and absent collections are legitimate. A non-OBJECT root still throws.
+    expectVexThrow(() => validateOrdersResponse([]), "Invalid DexScreener response: expected orders response object");
     expectVexThrow(
       () => validateCommunityTakeoversResponse({}),
       "Invalid DexScreener response: expected community takeovers array",
@@ -348,12 +365,12 @@ describe("equivalence: strict per-element throws", () => {
       "Invalid DexScreener response: expected string for pair.chainId",
     );
   });
-  it("order missing fields throws", () => {
-    expectVexThrow(
-      () => validateOrdersResponse([{ type: "tokenProfile" }]),
-      "Invalid DexScreener response: expected string for order.status",
-    );
-    expectVexThrow(() => validateOrdersResponse(["x"]), "Invalid DexScreener response: order must be an object");
+  it("order missing type/status is SKIPPED and counted, not thrown", () => {
+    // Changed from a whole-response throw on purpose: one unreadable row must
+    // not blind the agent to the rest of the response.
+    const partial = validateOrdersResponse({ orders: [{ type: "tokenProfile" }, "x"] });
+    expect(partial.orders).toHaveLength(0);
+    expect(partial.skippedOrders).toBe(2);
   });
   it("cto missing claimDate throws", () => {
     const { claimDate, ...noClaim } = CTO;
@@ -370,27 +387,25 @@ describe("equivalence: strict per-element throws", () => {
 describe("equivalence: numeric field semantics (NOT z.number())", () => {
   it("boost.amount accepts Infinity", () => {
     const r = validateBoostsResponse([{ ...BOOST, amount: Infinity, totalAmount: -Infinity }]);
-    expect(r[0].amount).toBe(Infinity);
-    expect(r[0].totalAmount).toBe(-Infinity);
+    expect(r.boosts[0].amount).toBe(Infinity);
+    expect(r.boosts[0].totalAmount).toBe(-Infinity);
   });
-  it("boost.amount rejects NaN with field-path message", () => {
-    expectVexThrow(
-      () => validateBoostsResponse([{ ...BOOST, amount: NaN }]),
-      "Invalid DexScreener response: expected number for boost.amount",
-    );
+  // The amounts are DISPLAY-ONLY, so an unreadable one nulls rather than
+  // killing the row (and previously the whole feed). Their strictness is what
+  // made `dexscreener.boosts.top` fail on 100% of calls.
+  it("boost.amount nulls NaN instead of throwing", () => {
+    expect(validateBoostsResponse([{ ...BOOST, amount: NaN }]).boosts[0].amount).toBeNull();
   });
-  it("boost.amount rejects non-number string", () => {
-    expectVexThrow(
-      () => validateBoostsResponse([{ ...BOOST, amount: "100" }]),
-      "Invalid DexScreener response: expected number for boost.amount",
-    );
+  it("boost.amount nulls a non-number string instead of throwing", () => {
+    expect(validateBoostsResponse([{ ...BOOST, amount: "100" }]).boosts[0].amount).toBeNull();
   });
-  it("order.paymentTimestamp accepts Infinity, rejects NaN", () => {
-    expect(validateOrdersResponse([{ ...ORDER, paymentTimestamp: Infinity }])[0].paymentTimestamp).toBe(Infinity);
-    expectVexThrow(
-      () => validateOrdersResponse([{ ...ORDER, paymentTimestamp: NaN }]),
-      "Invalid DexScreener response: expected number for order.paymentTimestamp",
-    );
+  it("order.paymentTimestampMs accepts Infinity, nulls NaN", () => {
+    expect(
+      validateOrdersResponse({ orders: [{ ...ORDER, paymentTimestamp: Infinity }] }).orders[0].paymentTimestampMs,
+    ).toBe(Infinity);
+    expect(
+      validateOrdersResponse({ orders: [{ ...ORDER, paymentTimestamp: NaN }] }).orders[0].paymentTimestampMs,
+    ).toBeNull();
   });
   it("lenient number fields (liquidity/txns/volume/boosts.active) accept Infinity AND NaN", () => {
     const p = validateTokensResponse([

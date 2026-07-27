@@ -65,10 +65,24 @@ const FIXTURE_BOOST = {
   links: null,
 };
 
+// Field set and values mirror a real `/orders/v1` row (see
+// `fixtures/live-captures/`): the provider sends `chainId`/`tokenAddress` on
+// every row, and `paymentTimestamp` is 13-digit MILLISECONDS.
 const FIXTURE_ORDER = {
+  chainId: "solana",
+  tokenAddress: "So111111111111111111111111111111111111112",
   type: "tokenProfile",
   status: "approved",
-  paymentTimestamp: 1700000000,
+  paymentTimestamp: 1785076668204,
+};
+
+/** A row of the `/orders/v1` boost LEDGER — a payment, not a ranking row. */
+const FIXTURE_BOOST_PAYMENT = {
+  chainId: "solana",
+  tokenAddress: "So111111111111111111111111111111111111112",
+  id: "qUbIz6cRExFyxTpAFbd4",
+  amount: 500,
+  paymentTimestamp: 1785078004322,
 };
 
 const FIXTURE_CTO = {
@@ -219,14 +233,36 @@ describe("validateProfilesResponse", () => {
 describe("validateBoostsResponse", () => {
   it("parses valid boosts array", () => {
     const result = validateBoostsResponse([FIXTURE_BOOST]);
-    expect(result).toHaveLength(1);
-    expect(result[0].amount).toBe(100);
-    expect(result[0].totalAmount).toBe(500);
+    expect(result.boosts).toHaveLength(1);
+    expect(result.skipped).toBe(0);
+    expect(result.boosts[0].amount).toBe(100);
+    expect(result.boosts[0].totalAmount).toBe(500);
   });
 
-  it("rejects boost with missing amount", () => {
-    const bad = { ...FIXTURE_BOOST, amount: "not-a-number" };
-    expect(() => validateBoostsResponse([bad])).toThrow();
+  // Display-only amounts are nullable on purpose: `/token-boosts/top/v1` sends
+  // NO `amount` on any row, and requiring it made `dexscreener.boosts.top` fail
+  // on 100% of calls. See `dexscreener-live-shape.test.ts` for the live proof.
+  it("keeps a boost whose amount is absent, reporting null rather than zero", () => {
+    const { amount: _omitted, ...noAmount } = FIXTURE_BOOST;
+    const result = validateBoostsResponse([noAmount]);
+    expect(result.boosts).toHaveLength(1);
+    expect(result.boosts[0].amount).toBeNull();
+    expect(result.boosts[0].totalAmount).toBe(500);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("nulls a wrong-typed amount instead of dropping the row", () => {
+    const result = validateBoostsResponse([{ ...FIXTURE_BOOST, amount: "not-a-number" }]);
+    expect(result.boosts).toHaveLength(1);
+    expect(result.boosts[0].amount).toBeNull();
+  });
+
+  // Identity stays strict: without chainId/tokenAddress the row cannot be
+  // merged or acted on, so it is skipped — and the skip is COUNTED.
+  it("skips a row missing its identity and counts it", () => {
+    const result = validateBoostsResponse([FIXTURE_BOOST, { ...FIXTURE_BOOST, tokenAddress: "" }]);
+    expect(result.boosts).toHaveLength(1);
+    expect(result.skipped).toBe(1);
   });
 
   it("rejects non-array input", () => {
@@ -236,26 +272,46 @@ describe("validateBoostsResponse", () => {
 
 // ── validateOrdersResponse ──────────────────────────────────────────
 
+// The live root is the OBJECT `{orders, boosts}`. The previous suite asserted
+// that an object root THROWS — it pinned the shape the code wanted instead of
+// the shape the API sends, which is why `dexscreener.orders` could be dead on
+// every call while this file stayed green.
 describe("validateOrdersResponse", () => {
-  it("parses valid orders array", () => {
-    const result = validateOrdersResponse([FIXTURE_ORDER]);
-    expect(result).toHaveLength(1);
-    expect(result[0].type).toBe("tokenProfile");
-    expect(result[0].status).toBe("approved");
-    expect(result[0].paymentTimestamp).toBe(1700000000);
+  it("parses the object envelope, keeping per-row identity", () => {
+    const result = validateOrdersResponse({ orders: [FIXTURE_ORDER], boosts: [] });
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0].chainId).toBe("solana");
+    expect(result.orders[0].tokenAddress).toBe("So111111111111111111111111111111111111112");
+    expect(result.orders[0].type).toBe("tokenProfile");
+    expect(result.orders[0].status).toBe("approved");
+    expect(result.orders[0].paymentTimestampMs).toBe(1785076668204);
   });
 
-  it("parses empty orders", () => {
-    expect(validateOrdersResponse([])).toHaveLength(0);
+  it("surfaces the sibling boost-payment ledger", () => {
+    const result = validateOrdersResponse({ orders: [], boosts: [FIXTURE_BOOST_PAYMENT] });
+    expect(result.boostPayments).toHaveLength(1);
+    expect(result.boostPayments[0].id).toBe("qUbIz6cRExFyxTpAFbd4");
+    expect(result.boostPayments[0].amount).toBe(500);
+    expect(result.boostPayments[0].paymentTimestampMs).toBe(1785078004322);
   });
 
-  it("rejects non-array input", () => {
+  it("parses empty collections", () => {
+    const result = validateOrdersResponse({ orders: [], boosts: [] });
+    expect(result.orders).toHaveLength(0);
+    expect(result.boostPayments).toHaveLength(0);
+    expect(result.skippedOrders).toBe(0);
+    expect(result.skippedBoostPayments).toBe(0);
+  });
+
+  it("rejects a non-object root", () => {
     expect(() => validateOrdersResponse(null)).toThrow();
-    expect(() => validateOrdersResponse({})).toThrow();
+    expect(() => validateOrdersResponse([])).toThrow();
   });
 
-  it("rejects order with missing fields", () => {
-    expect(() => validateOrdersResponse([{ type: "tokenProfile" }])).toThrow();
+  it("skips an order with no readable type/status and counts it", () => {
+    const result = validateOrdersResponse({ orders: [{ type: "tokenProfile" }], boosts: [] });
+    expect(result.orders).toHaveLength(0);
+    expect(result.skippedOrders).toBe(1);
   });
 });
 

@@ -42,6 +42,7 @@ import { str, num, ok, fail } from "../../handler-helpers.js";
 
 import { resolveMarketByAddress, buildAssetMap, priceUsdFor } from "../market-lookup.js";
 import { selectSafeRoute, type PendleTxIntent } from "../calldata.js";
+import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
 import {
   DEFAULT_SLIPPAGE_BPS,
   failureDetail,
@@ -193,6 +194,10 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
   if (!chain || !marketRaw || !tokenInRaw || !amountInRaw) {
     return fail("Missing required: chain, market, tokenIn, amountIn");
   }
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
+  // everything after the broadcast is a read-back that can throw, and the catch
+  // MUST be able to tell the agent the deposit is already on-chain.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -261,7 +266,7 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
       });
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
-    const txHash = await walletClient.sendTransaction({
+    txHash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,
       to: getAddress(route.tx.to),
@@ -310,6 +315,7 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.lp.add", txHash, err);
     return fail(`Pendle add liquidity failed (${failureDetail("pendle.lp.add", err)})`);
   }
 }
@@ -319,6 +325,10 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
 async function executePendleLpRemove(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), marketRaw = str(p, "market"), amountInRaw = str(p, "amountIn");
   if (!chain || !marketRaw || !amountInRaw) return fail("Missing required: chain, market, amountIn");
+  // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
+  // everything after the broadcast is a read-back that can throw, and the catch
+  // MUST be able to tell the agent the withdrawal is already on-chain.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
@@ -400,7 +410,7 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
       fullExit = false;
     }
 
-    const txHash = await walletClient.sendTransaction({
+    txHash = await walletClient.sendTransaction({
       account: walletClient.account,
       chain: walletClient.chain,
       to: getAddress(route.tx.to),
@@ -451,6 +461,7 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
       },
     };
   } catch (err) {
+    if (txHash !== undefined) return broadcastUnconfirmedFailure("pendle.lp.remove", txHash, err);
     return fail(`Pendle remove liquidity failed (${failureDetail("pendle.lp.remove", err)})`);
   }
 }

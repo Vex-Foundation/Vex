@@ -5,7 +5,7 @@
  * PT tokens on the chains it DOES cover, and it cannot scan Pendle chains absent
  * from its dynamic registry at all (the scan throws). This module reads the
  * wallet's TRACKED Pendle PT balances straight from the chain's RPC, prices them
- * from Pendle's assets/all (SCOPED to that chain), and exposes two paths:
+ * from that chain's Pendle asset catalogue, and exposes two paths:
  *
  *   - enrichPendleBalances(…, chainId, base): MERGE — supplements the rows the
  *     Khalani scan produced for a chain it refreshed. Deduped by address:
@@ -16,15 +16,25 @@
  *     that chain directly (the same transactional per-chain replace the Khalani /
  *     local-chain paths use). An empty result clears a stale PT row (post-sell).
  *
- * Chain scoping (critic #8): assets/all is GLOBAL, so PT classification + price
- * come from assets FILTERED to `chainId` (PendleAsset.chainId) — the same bare
- * address on two chains never collides or poisons decimals.
+ * Chain scoping (critic #8): PT classification + price come from
+ * `getAssetsForChain(chainId)` — a per-chain endpoint — and are re-checked
+ * against `PendleAsset.chainId`, so the same bare address on two chains never
+ * collides or poisons decimals.
  *
  * Failure semantics (2b doctrine): RPC + Pendle-API failures are FAIL-SOFT (merge
  * keeps the Khalani rows; seed skips its write and keeps last-good rows). The
  * tracked-token DB read and the seed's transactional write PROPAGATE so a
  * local-DB fault surfaces and the worker retries, exactly like the Khalani /
  * local-chain paths.
+ *
+ * DETERMINED-EMPTY vs UNKNOWN (H-1) is the load-bearing distinction here,
+ * because the seed path DELETES rows on an empty result. "The wallet holds no PT
+ * here" is a determined `[]`; "I could not classify anything" is `null`. When
+ * `/v1/assets/all` silently degraded to an empty list, every tracked token
+ * failed the `baseType === "PT"` test, so an UNKNOWN outcome was reported as a
+ * determined empty one and the seed wiped the user's PT balances. An unreadable
+ * catalogue now raises, and an empty catalogue for a Pendle chain is treated as
+ * unknown rather than as proof the wallet holds nothing.
  */
 
 import { formatUnits, getAddress, type Address } from "viem";
@@ -76,13 +86,20 @@ async function collectPendlePtRows(
 
   // RPC + API — FAIL-SOFT. On any error, signal "don't touch existing rows".
   try {
-    // Chain-scoped asset map: assets/all is GLOBAL, so filter to THIS chain FIRST
-    // (never key a bare address across chains — critic #8 decimals/price poisoning).
-    const assets = await getPendleClient().getAllAssets();
+    // Per-chain catalogue; the chainId re-check keeps a foreign row out of the
+    // map (critic #8 decimals/price poisoning).
+    const assets = await getPendleClient().getAssetsForChain(chainId);
     const assetByLower = new Map<string, PendleAsset>();
     for (const a of assets) {
-      if (a.chainId !== chainId) continue;
+      if (a.chainId !== null && a.chainId !== chainId) continue;
       assetByLower.set(a.address.toLowerCase(), a);
+    }
+    // A Pendle-registry chain always has a catalogue. An empty one means we
+    // cannot classify ANY tracked token, which is UNKNOWN — not proof that the
+    // wallet holds no PT. Returning [] here would let the seed delete real rows.
+    if (assetByLower.size === 0) {
+      logger.warn("sync.pendle_enrichment.empty_asset_catalog", { chainId });
+      return null;
     }
 
     // Restrict to tokens Pendle recognizes as PT ON THIS CHAIN (self-limiting to

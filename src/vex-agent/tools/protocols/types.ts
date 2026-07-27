@@ -52,8 +52,6 @@ export interface ToolDiscoveryMetadata {
   ecosystems?: string[];
   sourceClass?: "specialized_market" | "general_web" | "social" | "protocol_native" | "onchain_verification";
   sideEffectLevel?: "none" | "low" | "high";
-  preferredFor?: string[];
-  avoidFor?: string[];
   /**
    * Chains where this tool operates — used as a low-weight lexical search
    * field so queries like "swap on plasma" or "bridge to monad" recall the

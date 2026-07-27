@@ -17,7 +17,6 @@ export const PENDLE_YIELDS_DISCOVERY = {
     ),
     aliases: ["pendle yields", "fixed yield markets", "pendle PT list", "pendle fixed rate"],
     exampleIntents: ["best pendle fixed yield", "list pendle markets", "highest implied apy pendle"],
-    preferredFor: ["pendle discovery", "fixed yield screening", "pendle PT markets"],
     chains: PENDLE_CHAINS,
   },
 
@@ -30,7 +29,6 @@ export const PENDLE_YIELDS_DISCOVERY = {
     ),
     aliases: ["pendle positions", "pendle portfolio value", "my PT holdings", "redeemable pendle"],
     exampleIntents: ["what are my pendle positions worth", "which PTs can I redeem", "pendle holdings value"],
-    preferredFor: ["pendle position value", "pendle portfolio", "redeemable positions"],
     chains: PENDLE_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

@@ -59,6 +59,22 @@ export type ErrorCategory =
    * can be either, and the two must not be read off one another.
    */
   | "policy_refusal"
+  /**
+   * WE could not READ what the provider sent — our own response parser refused
+   * a body we do not understand. Distinct from `provider_error` (the provider
+   * malfunctioned; retry may help) AND from `invalid_request` (a caller
+   * parameter was bad; fixing the parameter helps). Here the request was fine
+   * and the provider answered, so NEITHER of those next actions works: the
+   * shape mismatch reproduces on every retry and with every parameter until
+   * our schema or the provider's payload changes.
+   *
+   * Live proof of the confusion this removes (2026-07-26): `dexscreener.orders`
+   * had been failing on 100% of calls for months because our validator
+   * demanded an array root where the API sends `{orders, boosts}` — and the
+   * failure was reported to the agent as the PROVIDER's error, inviting a
+   * retry that could never succeed.
+   */
+  | "response_schema"
   | "provider_error"
   | "unknown";
 
@@ -265,6 +281,21 @@ const POLICY_REFUSAL_ERROR_CODES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
+ * Error codes thrown by Vex's OWN RESPONSE parsers — a provider answered and we
+ * could not read the body. Same CLOSED-set discipline as the two sets above.
+ *
+ * Deliberately NOT folded into `LOCAL_VALIDATION_ERROR_CODES`: that set's
+ * contract is a bad CALLER/MODEL PARAMETER, and its category (`invalid_request`)
+ * tells the agent to fix its input. A response-shape mismatch is not the
+ * caller's fault and no parameter change can clear it, so labelling it
+ * `invalid_request` would send the agent down a road with no end — the same
+ * class of harm as labelling it `provider_error`.
+ */
+const RESPONSE_SCHEMA_ERROR_CODES: ReadonlySet<string> = new Set<string>([
+  ErrorCodes.DEXSCREENER_INVALID_RESPONSE,
+]);
+
+/**
  * Evidence that a provider ANSWERED, which outranks any code we attached.
  * These two are the repo's only markers of a provider verdict: `httpStatus` is
  * set exclusively by `utils/http.ts` on a non-ok response, and `externalName`
@@ -293,15 +324,33 @@ function isVexAuthoredPolicyRefusal(err: unknown): boolean {
   return POLICY_REFUSAL_ERROR_CODES.has(err.code);
 }
 
+/**
+ * True when our own response parser refused the body.
+ *
+ * No `carriesProviderVerdict` gate here, unlike the two predicates above, and
+ * the difference is deliberate: every throw site for these codes is a parser WE
+ * wrote, running only AFTER a 2xx response, so there is no provider verdict to
+ * outrank — a provider answering is the PRECONDITION for this category, not a
+ * disqualifier from it. Gating on it would only create a silent fall-through to
+ * `provider_error` if a future code in this set ever carried an HTTP status.
+ */
+function isResponseSchemaFailure(err: unknown): boolean {
+  if (!(err instanceof VexError)) return false;
+  return RESPONSE_SCHEMA_ERROR_CODES.has(err.code);
+}
+
 /** Coarse, non-sensitive classification from the error's shape/text. */
 export function classifyError(raw: string, err: unknown): ErrorCategory {
   // Checked FIRST, ahead of the text heuristics: a typed code we ourselves
   // attached is direct evidence of who rejected the call, whereas the keyword
   // scans below are guesses about prose that a provider may have written.
-  // The two sets are disjoint, so their order relative to each other is not
-  // load-bearing — only their position ahead of the scans is.
+  // The three sets are disjoint, so their order relative to each other is not
+  // load-bearing — only their position ahead of the scans is. That position
+  // matters most for `response_schema`: a parser message quoting a provider
+  // body could trip a keyword scan and be mislabelled.
   if (isLocallyAuthoredValidationFailure(err)) return "invalid_request";
   if (isVexAuthoredPolicyRefusal(err)) return "policy_refusal";
+  if (isResponseSchemaFailure(err)) return "response_schema";
   const name = err instanceof Error ? err.name.toLowerCase() : "";
   const text = raw.toLowerCase();
   if (name.includes("abort") || text.includes("timeout") || text.includes("timed out")) {

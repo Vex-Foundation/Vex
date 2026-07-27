@@ -6,10 +6,10 @@
  * Both the prequote redeem identity (record-time AND gate-time) and the handlers
  * resolve YT from a PT through `resolveMarketByPt(chainId, pt)` here, so their
  * redeem identities collide by construction on the same chain. Every lookup is
- * chain-scoped: `getActiveMarkets(chainId)` is inherently one chain's markets,
- * and `buildAssetMap(chainId)` filters the GLOBAL assets/all by chain id so the
- * same address on two chains never collides. Backed by the client's TTL-caches,
- * so repeated lookups in one flow hit the cache.
+ * chain-scoped at the SOURCE: both `getActiveMarkets(chainId)` and
+ * `getAssetsForChain(chainId)` are per-chain endpoints, so the same bare address
+ * on two chains can never collide. Backed by the client's per-URL TTL-caches, so
+ * repeated lookups in one flow hit the cache.
  */
 
 import { getPendleClient } from "@tools/pendle/client.js";
@@ -43,15 +43,18 @@ export async function resolveYtForPt(chainId: number, ptAddress: string): Promis
 }
 
 /**
- * Lowercase address → asset (metadata + price) for ONE chain. assets/all is
- * GLOBAL, so rows are filtered to `chainId` FIRST — the same address on another
- * chain (e.g. an OP-Stack WETH predeploy) must never leak into this map.
+ * Lowercase address → asset (metadata + price) for ONE chain, from that chain's
+ * `/v1/{chainId}/assets/all`. The `chainId` re-check is defence in depth: the
+ * endpoint is already scoped, but a foreign row must never leak into this map
+ * (the same address on another chain carries different decimals and price).
+ * Raises `PENDLE_INVALID_RESPONSE` if the catalogue is unreadable — callers must
+ * not mistake that for "this chain has no assets".
  */
 export async function buildAssetMap(chainId: number): Promise<Map<string, PendleAsset>> {
-  const assets = await getPendleClient().getAllAssets();
+  const assets = await getPendleClient().getAssetsForChain(chainId);
   const map = new Map<string, PendleAsset>();
   for (const a of assets) {
-    if (a.chainId !== chainId) continue;
+    if (a.chainId !== null && a.chainId !== chainId) continue;
     map.set(a.address.toLowerCase(), a);
   }
   return map;

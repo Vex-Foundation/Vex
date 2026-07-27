@@ -6,15 +6,23 @@
  *
  * Market-data handlers (search/pairs/tokens/tokenPairs) return the unified
  * concise pair projection (see `projectors.ts`) — never the raw fat DexPair.
- * The metas / recent-updates handlers hit LIVE but UNDOCUMENTED endpoints and
- * degrade to a clear "feed unavailable" result on any error rather than
- * throwing through the namespace.
+ *
+ * FAILURES ARE NOT SWALLOWED. The metas / recent-updates handlers used to catch
+ * every error without binding it and return `ok({available:false, reason:
+ * "…undocumented endpoint that may have changed"})` — a success row for a
+ * failed call, asserting a cause nobody had established (a 429, a timeout and a
+ * DNS failure all produced that same sentence) and telling the agent to abandon
+ * the tool permanently instead of waiting. Those catches are gone: the error now
+ * reaches `protocols/runtime.ts`, which is already the one place that classifies
+ * it (`summarizeProtocolError` → `rate_limit` / `timeout` / `network` /
+ * `response_schema` / `provider_error`), scrubs it, preserves `retryable`, and
+ * returns `success:false`. Re-deriving any of that here would be a second,
+ * worse copy of a classifier we already own.
  */
 
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
-import type { DexBoost, DexPair, DexTokenProfile, DexTrendingItem } from "@tools/dexscreener/types.js";
+import type { DexPair, DexTrendingItem } from "@tools/dexscreener/types.js";
 import type { ProtocolHandler } from "../types.js";
-import type { ToolResult } from "../../types.js";
 import { str, num, ok, fail } from "../handler-helpers.js";
 import { projectPairs } from "./projectors.js";
 
@@ -30,16 +38,6 @@ function clampSearchLimit(requested: number | undefined): number {
     return Math.min(Math.floor(requested), SEARCH_MAX_LIMIT);
   }
   return SEARCH_DEFAULT_LIMIT;
-}
-
-// ── Undocumented-feed degradation ────────────────────────────────
-
-const UNDOCUMENTED_FEED_UNAVAILABLE =
-  "Feed unavailable — this is a live but undocumented DexScreener endpoint that may have changed.";
-
-/** Clean, never-throw fallback for the live/undocumented metas + recent tools. */
-function feedUnavailable(source: string): ToolResult {
-  return ok({ available: false, source, reason: UNDOCUMENTED_FEED_UNAVAILABLE });
 }
 
 // ── Handler map ──────────────────────────────────────────────────
@@ -131,26 +129,24 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "dexscreener.profiles.recent": async () => {
-    // Live but undocumented — degrade cleanly instead of crashing the namespace.
-    try {
-      const client = getDexScreenerClient();
-      const profiles = await client.getProfilesRecentUpdates();
-      return ok({ available: true, count: profiles.length, profiles });
-    } catch {
-      return feedUnavailable("profiles.recent");
-    }
+    const client = getDexScreenerClient();
+    const profiles = await client.getProfilesRecentUpdates();
+    return ok({ count: profiles.length, profiles });
   },
 
+  // `amount` is null on every row of the `top` feed and populated on `latest`;
+  // `skipped` reports rows the parser could not read, so a thinned feed is
+  // visible rather than silent.
   "dexscreener.boosts": async () => {
     const client = getDexScreenerClient();
-    const boosts = await client.getBoosts();
-    return ok({ count: boosts.length, boosts });
+    const feed = await client.getBoosts();
+    return ok({ count: feed.boosts.length, skipped: feed.skipped, boosts: feed.boosts });
   },
 
   "dexscreener.boosts.top": async () => {
     const client = getDexScreenerClient();
-    const boosts = await client.getTopBoosts();
-    return ok({ count: boosts.length, boosts });
+    const feed = await client.getTopBoosts();
+    return ok({ count: feed.boosts.length, skipped: feed.skipped, boosts: feed.boosts });
   },
 
   "dexscreener.communityTakeovers": async () => {
@@ -168,7 +164,7 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
     const client = getDexScreenerClient();
 
     // Fetch profiles and boosts in parallel
-    const [profiles, boosts] = await Promise.all([
+    const [profiles, boostFeed] = await Promise.all([
       client.getProfiles(),
       client.getBoosts(),
     ]);
@@ -176,7 +172,7 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
     // Merge by chainId:tokenAddress
     const map = new Map<string, DexTrendingItem>();
 
-    for (const boost of boosts) {
+    for (const boost of boostFeed.boosts) {
       const key = `${boost.chainId}:${boost.tokenAddress}`;
       map.set(key, {
         chainId: boost.chainId,
@@ -216,9 +212,21 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
       }
     }
 
-    // Sort: highest boost first, then profile presence
+    // Sort: highest boost first, then profile presence. A `null` boost total
+    // means the feed did not report one — it ranks below every measured value
+    // (including a measured 0) instead of being coerced into a number, so an
+    // unreported row can never outrank a real one. Compared with explicit
+    // branches, never by subtraction: two unreported rows would subtract to
+    // `NaN` and leave the comparator inconsistent.
+    const compareBoostDesc = (a: number | null, b: number | null): number => {
+      if (a === b) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return b > a ? 1 : -1;
+    };
     let items = Array.from(map.values()).sort((a, b) => {
-      if (b.boostTotalAmount !== a.boostTotalAmount) return b.boostTotalAmount - a.boostTotalAmount;
+      const byBoost = compareBoostDesc(a.boostTotalAmount, b.boostTotalAmount);
+      if (byBoost !== 0) return byBoost;
       if (a.hasProfile !== b.hasProfile) return a.hasProfile ? -1 : 1;
       return 0;
     });
@@ -227,7 +235,7 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
       items = items.slice(0, limit);
     }
 
-    return ok({ count: items.length, items });
+    return ok({ count: items.length, skippedBoosts: boostFeed.skipped, items });
   },
 
   // ── Metas / narratives (live, undocumented) ───────────────────
@@ -235,41 +243,40 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.trending": async (p) => {
     // Official trending NARRATIVES/themes feed (live, undocumented endpoint).
     // Returns categories (ai, dog, "knockoff-legends"), NOT individual tokens.
-    try {
-      const limit = num(p, "limit");
-      const client = getDexScreenerClient();
-      const metas = await client.getMetasTrending();
-      const limited = limit && limit > 0 ? metas.slice(0, limit) : metas;
-      return ok({ available: true, count: limited.length, metas: limited });
-    } catch {
-      return feedUnavailable("metas.trending");
-    }
+    const limit = num(p, "limit");
+    const client = getDexScreenerClient();
+    const metas = await client.getMetasTrending();
+    const limited = limit && limit > 0 ? metas.slice(0, limit) : metas;
+    return ok({ count: limited.length, metas: limited });
   },
 
   "dexscreener.meta": async (p) => {
     const slug = str(p, "slug");
     if (!slug) return fail("Missing required: slug");
     // `slug` is a NARRATIVE slug from dexscreener.trending, not a chain slug.
-    try {
-      const client = getDexScreenerClient();
-      const detail = await client.getMeta(slug);
-      if (!detail) return feedUnavailable("metas.meta");
-      return ok({
-        available: true,
-        slug: detail.slug,
-        name: detail.name,
-        description: detail.description,
-        marketCap: detail.marketCap,
-        liquidity: detail.liquidity,
-        volume: detail.volume,
-        tokenCount: detail.tokenCount,
-        marketCapChange: detail.marketCapChange,
-        pairCount: detail.pairs.length,
-        pairs: projectPairs(detail.pairs),
-      });
-    } catch {
-      return feedUnavailable("metas.meta");
+    const client = getDexScreenerClient();
+    const detail = await client.getMeta(slug);
+    // `null` is the tolerant validator's verdict on a body it could not read at
+    // all. That IS an established cause — the provider answered and the payload
+    // did not match the narrative shape — so it is reported as exactly that,
+    // and as a failure. No claim is made about WHY the shape changed.
+    if (!detail) {
+      return fail(
+        `dexscreener.meta could not read the narrative feed for "${slug}": the endpoint responded but the payload did not match the expected shape. Retrying will not change it. Check the slug against dexscreener.trending.`,
+      );
     }
+    return ok({
+      slug: detail.slug,
+      name: detail.name,
+      description: detail.description,
+      marketCap: detail.marketCap,
+      liquidity: detail.liquidity,
+      volume: detail.volume,
+      tokenCount: detail.tokenCount,
+      marketCapChange: detail.marketCapChange,
+      pairCount: detail.pairs.length,
+      pairs: projectPairs(detail.pairs),
+    });
   },
 
   // ── Orders & ads ──────────────────────────────────────────────
@@ -278,8 +285,20 @@ export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
     const chainId = str(p, "chainId"), tokenAddress = str(p, "tokenAddress");
     if (!chainId || !tokenAddress) return fail("Missing required: chainId, tokenAddress");
     const client = getDexScreenerClient();
-    const orders = await client.getOrders(chainId, tokenAddress);
-    return ok({ chainId, tokenAddress, count: orders.length, orders });
+    // The endpoint answers with BOTH the paid-order history and the
+    // boost-payment ledger for the same token. Both are legitimacy signals, so
+    // both are surfaced; the ledger used to be discarded entirely.
+    const result = await client.getOrders(chainId, tokenAddress);
+    return ok({
+      chainId,
+      tokenAddress,
+      orderCount: result.orders.length,
+      orders: result.orders,
+      boostPaymentCount: result.boostPayments.length,
+      boostPayments: result.boostPayments,
+      skippedOrders: result.skippedOrders,
+      skippedBoostPayments: result.skippedBoostPayments,
+    });
   },
 
   "dexscreener.ads": async () => {

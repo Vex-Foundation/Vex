@@ -96,28 +96,107 @@ export interface DexTokenProfile {
 }
 
 // ── Token Boosts ────────────────────────────────────────────────────
+//
+// ONE tolerant row shape serves BOTH boost endpoints. They disagree about
+// `amount` — `/token-boosts/latest/v1` sends it on 30/30 rows,
+// `/token-boosts/top/v1` on 0/30 (live-verified 2026-07-27, captures in
+// `__tests__/dexscreener/fixtures/live-captures/`). Requiring it killed
+// `dexscreener.boosts.top` on every call for months.
+//
+// Two per-endpoint schemas were considered and rejected: the amounts are
+// display-only promotional credits (Vex never spends or prices them), so the
+// tolerant-reader rule applies to both; the WS layer already treats `boosts`
+// and `boosts-top` as one row type through `parseBoost`; and pinning each
+// endpoint's CURRENT field set is precisely the mistake that caused this
+// outage — it would simply re-arm on whichever side drifts next.
 
 export interface DexBoost {
   url: string;
   chainId: string;
   tokenAddress: string;
-  amount: number;
-  totalAmount: number;
+  /**
+   * Boost units bought in the most recent purchase. Display-only.
+   * `null` = the endpoint did not send the field (always the case on
+   * `top/v1`), which is NOT the same as a boost of zero.
+   */
+  amount: number | null;
+  /** Cumulative boost units currently active. Display-only, same null rule. */
+  totalAmount: number | null;
   icon: string | null;
   header: string | null;
   description: string | null;
   links: DexLink[] | null;
 }
 
-// ── Orders ──────────────────────────────────────────────────────────
+/**
+ * A boost feed plus the number of rows dropped because they did not parse.
+ * A malformed row is skipped and COUNTED rather than throwing the whole feed
+ * away — but the count is surfaced, so a silently-degraded feed is impossible
+ * to mistake for a healthy one.
+ */
+export interface DexBoostFeed {
+  boosts: DexBoost[];
+  skipped: number;
+}
 
+// ── Orders ──────────────────────────────────────────────────────────
+//
+// `/orders/v1/{chainId}/{tokenAddress}` returns an OBJECT — `{orders, boosts}`
+// — not an array (live-verified 2026-07-27). The sibling `boosts` array is the
+// boost-payment ledger for the same token.
+
+/** Order types observed live. NOT enforced as a closed set — see `DexOrder.type`. */
 export type DexOrderType = "tokenProfile" | "communityTakeover" | "tokenAd" | "trendingBarAd";
+/** Order statuses documented by DexScreener. NOT enforced — see `DexOrder.status`. */
 export type DexOrderStatus = "processing" | "cancelled" | "on-hold" | "approved" | "rejected";
 
 export interface DexOrder {
-  type: DexOrderType;
-  status: DexOrderStatus;
-  paymentTimestamp: number;
+  chainId: string;
+  tokenAddress: string;
+  /**
+   * Kept as `string`, not `DexOrderType`. DexScreener adds promotional
+   * products, and a membership check would throw on the first new one — the
+   * same failure class this module was just repaired for. The union above
+   * documents the vocabulary; the value is echoed to the agent, never branched
+   * on. (The previous code claimed `DexOrderType` while casting any string to
+   * it, so the type was already fiction; this makes it honest, not looser.)
+   */
+  type: string;
+  /** Same reasoning as `type`. See `DexOrderStatus` for the documented set. */
+  status: string;
+  /**
+   * Unix epoch MILLISECONDS — 13 digits, e.g. `1785076668204` = 2026-07-26.
+   * The unit is in the NAME because getting it wrong is silent: read as
+   * seconds this lands in the year ~58,000. `DexScreener.md` claimed seconds
+   * and prescribed `×1000` until 2026-07-27; it did not survive a live check.
+   */
+  paymentTimestampMs: number | null;
+}
+
+/**
+ * One boost PURCHASE from the `/orders/v1` sibling ledger — a payment event,
+ * distinct from `DexBoost` (a row in the boost RANKING feed) and carrying a
+ * different field set.
+ */
+export interface DexBoostPayment {
+  chainId: string;
+  tokenAddress: string;
+  /** Opaque DexScreener payment id. */
+  id: string | null;
+  /** Boost units bought in this purchase. Display-only. */
+  amount: number | null;
+  /** Unix epoch MILLISECONDS — see `DexOrder.paymentTimestampMs`. */
+  paymentTimestampMs: number | null;
+}
+
+/** The full `/orders/v1` envelope: paid orders, the boost ledger, and drop counts. */
+export interface DexOrdersResponse {
+  orders: DexOrder[];
+  boostPayments: DexBoostPayment[];
+  /** Order rows dropped because they did not parse. */
+  skippedOrders: number;
+  /** Ledger rows dropped because they did not parse. */
+  skippedBoostPayments: number;
 }
 
 // ── Community Takeovers ─────────────────────────────────────────────
@@ -155,8 +234,13 @@ export interface DexTrendingItem {
   header: string | null;
   description: string | null;
   links: DexLink[] | null;
-  boostAmount: number;
-  boostTotalAmount: number;
+  /**
+   * Boost units from the merged boost feed. `null` = the feed did not report
+   * the field; `0` = the token has no boost. The two are NOT collapsed — a
+   * missing measurement and a measured zero are different facts.
+   */
+  boostAmount: number | null;
+  boostTotalAmount: number | null;
   hasProfile: boolean;
 }
 
