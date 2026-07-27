@@ -138,41 +138,43 @@ describe("twitter_account", () => {
     expect(result.output).toContain("\"userName\":\"openai\"");
   });
 
-  it("response_format='concise' returns the projection", async () => {
-    mockExecuteTwitterAccountRequest.mockResolvedValueOnce(noisyUserResult);
-
+  // W2B retired `response_format`. These three flipped from "concise wins" /
+  // "detailed passes through" / "an unknown value falls back" to a single rule:
+  // the param is rejected BY NAME, whatever its value, and no request is made.
+  // Silent deletion was not an option — the union strips unknown keys, so a
+  // dropped read would have ACCEPTED `detailed` and quietly returned concise.
+  it("response_format='concise' is rejected by name — the projection is the only shape", async () => {
     const result = await handleTwitterAccount(
       { action: "user_details", username: "openai", response_format: "concise" },
       baseContext,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).not.toContain("profileImage");
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
-  it("response_format='detailed' returns the verbatim client output", async () => {
-    mockExecuteTwitterAccountRequest.mockResolvedValueOnce(noisyUserResult);
-
+  it("response_format='detailed' is rejected by name — the verbatim payload is gone", async () => {
     const result = await handleTwitterAccount(
       { action: "user_details", username: "openai", response_format: "detailed" },
       baseContext,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).toContain("profileImage");
-    expect(result.output).toContain("profileBanner");
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(result.output).not.toContain("profileImage");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
-  it("an invalid response_format falls back to concise", async () => {
-    mockExecuteTwitterAccountRequest.mockResolvedValueOnce(noisyUserResult);
-
+  it("an unknown response_format value is rejected too — never a silent fallback", async () => {
     const result = await handleTwitterAccount(
       { action: "user_details", username: "openai", response_format: "verbose" },
       baseContext,
     );
 
-    expect(result.success).toBe(true);
-    expect(result.output).not.toContain("profileImage");
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("response_format");
+    expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
   it("redacts cookie names, bearer tokens, and the configured API key from errors", async () => {

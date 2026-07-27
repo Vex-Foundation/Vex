@@ -50,10 +50,12 @@ function fullTweet(over: Record<string, unknown> = {}): Record<string, unknown> 
   };
 }
 
+function isProjectedRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function projectedRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("expected a projected record");
-  }
+  if (!isProjectedRecord(value)) throw new Error("expected a projected record");
   return value;
 }
 
@@ -89,7 +91,7 @@ describe("projectTwitterResult — concise shape per action", () => {
       action: "account_status",
       data: { account: fullUser() },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     expect(out.action).toBe("account_status");
     const account = out.account as Record<string, unknown>;
     expect(account.userName).toBe("research");
@@ -102,7 +104,7 @@ describe("projectTwitterResult — concise shape per action", () => {
       action: "user_details",
       data: { user: fullUser({ userName: "openai" }) },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     const user = out.user as Record<string, unknown>;
     expect(user.userName).toBe("openai");
     expectNoUserNoise(user);
@@ -113,7 +115,7 @@ describe("projectTwitterResult — concise shape per action", () => {
       action: "tweet_details",
       data: { tweet: fullTweet() },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     const tweet = out.tweet as Record<string, unknown>;
     expect(tweet.fullText).toBe("hello world");
     expect(tweet.media).toEqual(["photo"]);
@@ -143,7 +145,7 @@ describe("projectTwitterResult — concise shape per action", () => {
         },
       },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     const space = out.space as Record<string, unknown>;
     expect(space).not.toHaveProperty("participants");
     expect(space.participantCount).toBe(120);
@@ -165,7 +167,7 @@ describe("projectTwitterResult — concise shape per action", () => {
       action,
       data: { items: [fullTweet(), fullTweet({ id: "t2" })], next: "CURSOR123" },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     expect(out.action).toBe(action);
     expect(out.next).toBe("CURSOR123");
     const tweets = out.tweets as Array<Record<string, unknown>>;
@@ -186,7 +188,7 @@ describe("projectTwitterResult — concise shape per action", () => {
       action,
       data: { items: [fullUser(), fullUser({ id: "u2" })], next: "" },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     expect(out.action).toBe(action);
     expect(out.next).toBe("");
     const users = out.users as Array<Record<string, unknown>>;
@@ -205,7 +207,7 @@ describe("projectTwitterResult — nested + meta preservation", () => {
       action: "tweet_details",
       data: { tweet },
     };
-    const out = projectTwitterResult(result, "concise") as Record<string, unknown>;
+    const out = projectedRecord(projectTwitterResult(result));
     const projected = projectedRecord(out.tweet);
 
     const quoted = projected.quoted as Record<string, unknown>;
@@ -227,20 +229,20 @@ describe("projectTwitterResult — nested + meta preservation", () => {
       data: { account: fullUser() },
       rateLimit: { limit: "100", remaining: "99", reset: "1700000000" },
     };
-    const a = projectedRecord(projectTwitterResult(withRl, "concise"));
+    const a = projectedRecord(projectTwitterResult(withRl));
     expect(a.rateLimit).toEqual({ limit: "100", remaining: "99", reset: "1700000000" });
 
     const withoutRl: TwitterAccountResult = {
       action: "account_status",
       data: { account: fullUser() },
     };
-    const b = projectedRecord(projectTwitterResult(withoutRl, "concise"));
+    const b = projectedRecord(projectTwitterResult(withoutRl));
     expect(b).not.toHaveProperty("rateLimit");
   });
 
   it("defensively tolerates missing/invalid data without throwing", () => {
     const broken: TwitterAccountResult = { action: "tweet_search", data: null };
-    const out = projectedRecord(projectTwitterResult(broken, "concise"));
+    const out = projectedRecord(projectTwitterResult(broken));
     expect(out.tweets).toEqual([]);
     expect(out.next).toBe("");
   });
