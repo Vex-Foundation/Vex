@@ -198,7 +198,7 @@ describe("web_research — W2B output contract", () => {
     expect(result.output).not.toContain("Source: https://hit0.example.com");
   });
 
-  it("a failed page read keeps its snippet and reports pageRead:'failed' with the reason", async () => {
+  it("a failed page read keeps its snippet and reports pageRead:'failed' with a Vex-owned code", async () => {
     mockTavilySearch.mockResolvedValueOnce({ results: [searchHit(0)] });
     mockTavilyExtract.mockResolvedValueOnce({
       results: [],
@@ -208,7 +208,10 @@ describe("web_research — W2B output contract", () => {
     const result = await handleWebResearch({ query: "foo", fetchTop: 1 }, ctx);
     const row = rowAt(result.output, 0);
     expect(row.pageRead).toBe("failed");
-    expect(row.pageError).toContain("403");
+    // The provider's reason selects the code and is then dropped — Tavily error
+    // text is untrusted content, not diagnostics.
+    expect(row.pageError).toBe("provider_rejected");
+    expect(result.output).not.toContain("403 Forbidden");
     expect(row.snippet).toBe("snippet 0");
   });
 

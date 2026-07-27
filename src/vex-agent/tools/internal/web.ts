@@ -12,13 +12,20 @@
  * documents.
  *
  * The parameter contract lives in `web-research/search-options.ts`, the output
- * contract in `web-research/result-shape.ts`, and publisher-timestamp handling
- * in `web-research/published-date.ts` — three different reasons to change, kept
- * out of this file so the handler reads as orchestration.
+ * contract in `web-research/result-shape.ts`, publisher-timestamp handling in
+ * `web-research/published-date.ts`, and failure wording in
+ * `web-research/provider-error.ts` — four different reasons to change, kept out
+ * of this file so the handler reads as orchestration.
  *
  * PROVIDER DATA IS UNTRUSTED. The exactly-once accounting below is keyed by
  * what WE requested: duplicates, an URL in both results and failedResults, or a
  * URL we never asked for cannot multiply outcomes or poison the cache.
+ *
+ * PROVIDER ERROR TEXT IS UNTRUSTED TOO, and it used to be the exception: every
+ * failure path interpolated the provider's own words into the model's transcript
+ * and into the logs. Every one now goes through `classifyProviderFailure`, which
+ * answers with a Vex-owned code and a static message. Nothing on a failure path
+ * below may interpolate a provider string again.
  */
 
 import { tavily } from "@tavily/core";
@@ -42,6 +49,12 @@ import {
   type PageOutcome,
   type WebSearchRow,
 } from "./web-research/result-shape.js";
+import {
+  UNREADABLE_CONTENT_FAILURE,
+  classifyProviderFailure,
+  providerFailureLogFields,
+  providerFailureMessage,
+} from "./web-research/provider-error.js";
 
 const SEARCH_TIMEOUT_S = 30;
 const EXTRACT_TIMEOUT_S = 25;
@@ -135,24 +148,29 @@ async function fetchUrl(url: string): Promise<ToolResult> {
         }),
       );
     }
-    // Tavily returned no usable content. Surface the explicit failure reason
-    // when present. There is deliberately NO raw-HTTP fallback: owner decision
-    // (2026-07-19) removed direct fetching from the privileged process
-    // entirely — Tavily's infrastructure does the fetching, which also removes
-    // the local SSRF surface.
+    // Tavily returned no usable content. Classify the explicit failure when
+    // present — the provider's own reason is untrusted text, so it selects a
+    // code and is then discarded. There is deliberately NO raw-HTTP fallback:
+    // owner decision (2026-07-19) removed direct fetching from the privileged
+    // process entirely — Tavily's infrastructure does the fetching, which also
+    // removes the local SSRF surface.
     const failedResult = response.failedResults?.find((f) => f.url === url);
-    const reason = failedResult ? failedResult.error : "no usable content returned";
+    // No failure report and no content is a SHAPE failure Vex determined itself
+    // (it also covers the planted-result mismatch above): nothing to classify.
+    const failure = failedResult
+      ? classifyProviderFailure(failedResult.error)
+      : UNREADABLE_CONTENT_FAILURE;
     if (failedResult) {
       logger.warn("web.fetch.tavily_failed_explicit", {
         url: url.slice(0, 60),
-        error: failedResult.error,
+        ...providerFailureLogFields(failure),
       });
     }
-    return fail(`Fetch failed: ${reason}`);
+    return fail(`Fetch failed: ${providerFailureMessage(failure)}`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.debug("web.fetch.tavily_failed", { error: msg });
-    return fail(`Fetch failed: ${msg}`);
+    const failure = classifyProviderFailure(err);
+    logger.debug("web.fetch.tavily_failed", providerFailureLogFields(failure));
+    return fail(`Fetch failed: ${providerFailureMessage(failure)}`);
   }
 }
 
@@ -218,9 +236,9 @@ export async function searchAndOptionallyFetch(options: WebSearchOptions): Promi
       }
       logger.debug("web.search.completed", { count: rows.length, query: options.query.slice(0, 50) });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn("web.search.failed", { error: msg });
-      return fail(`Web search failed: ${msg}`);
+      const failure = classifyProviderFailure(err);
+      logger.warn("web.search.failed", providerFailureLogFields(failure));
+      return fail(`Web search failed: ${providerFailureMessage(failure)}`);
     }
   }
 
@@ -329,9 +347,14 @@ async function readTopPages(
         logger.warn("web.fetch.unrequested_failure", { url: f.url.slice(0, 60) });
         continue;
       }
-      logger.warn("web.fetch.tavily_failed_explicit", { url: f.url.slice(0, 60), error: f.error });
+      // The row keeps `pageRead: "failed"`; only the REASON becomes Vex-owned.
+      const failure = classifyProviderFailure(f.error);
+      logger.warn("web.fetch.tavily_failed_explicit", {
+        url: f.url.slice(0, 60),
+        ...providerFailureLogFields(failure),
+      });
       if (fetched.has(f.url)) continue; // success (or first report) wins
-      fetched.set(f.url, { state: "failed", pageError: f.error });
+      fetched.set(f.url, { state: "failed", pageError: failure.code });
     }
     // One outcome per requested URL: anything Tavily left unmentioned is an
     // honest failure (no raw-HTTP fallback exists — owner decision).
@@ -342,10 +365,16 @@ async function readTopPages(
       );
     }
   } catch (err) {
-    // Whole batch failed (timeout, auth) — every URL reported as failed.
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn("web.fetch.tavily_batch_failed", { error: msg, count: uncachedUrls.length });
-    for (const url of requested) outcomes.set(url, { state: "failed", pageError: msg });
+    // Whole batch failed (timeout, auth) — every URL reported as failed. This
+    // catch also spans the response loop above, so a provider-shaped crash
+    // (a non-string `url`, say) is reported here rather than escaping into the
+    // dispatcher's generic catch, which would serialize the raw message.
+    const failure = classifyProviderFailure(err);
+    logger.warn("web.fetch.tavily_batch_failed", {
+      ...providerFailureLogFields(failure),
+      count: uncachedUrls.length,
+    });
+    for (const url of requested) outcomes.set(url, { state: "failed", pageError: failure.code });
   }
 
   return outcomes;

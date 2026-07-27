@@ -177,7 +177,14 @@ describe("twitter_account", () => {
     expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
-  it("redacts cookie names, bearer tokens, and the configured API key from errors", async () => {
+  /**
+   * This used to assert a DENYLIST: the provider's sentence reached the model
+   * with three secret shapes rewritten to `[redacted]`. The contract is now an
+   * ALLOWLIST — a Vex-owned code and a static message — so the secrets are gone
+   * along with the sentence that carried them, redaction markers included.
+   * Adversarial coverage lives in `twitter-account-provider-error.test.ts`.
+   */
+  it("carries no provider error text at all — not the secrets, not the redaction markers", async () => {
     process.env.RETTIWT_API_KEY = "secret-do-not-leak";
     mockExecuteTwitterAccountRequest.mockRejectedValueOnce(
       new Error("failed secret-do-not-leak auth_token=abc; ct0=def Bearer token.value"),
@@ -187,10 +194,10 @@ describe("twitter_account", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("twitter_account:");
+    expect(result.output).toContain("provider_rejected");
     expect(result.output).not.toContain("secret-do-not-leak");
-    expect(result.output).not.toContain("auth_token=abc");
-    expect(result.output).not.toContain("Bearer token.value");
-    expect(result.output).toContain("auth_token=[redacted]");
-    expect(result.output).toContain("Bearer [redacted]");
+    expect(result.output).not.toContain("auth_token");
+    expect(result.output).not.toContain("Bearer");
+    expect(result.output).not.toContain("[redacted]");
   });
 });

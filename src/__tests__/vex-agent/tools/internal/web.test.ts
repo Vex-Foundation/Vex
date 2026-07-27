@@ -178,7 +178,11 @@ describe("web_research", () => {
 
       const result = await handleWebResearch({ query: "stuck-query" }, baseContext);
       expect(result.success).toBe(false);
-      expect(result.output.toLowerCase()).toMatch(/timed out|timeout|failed/);
+      // The Vex code, not the SDK's sentence — provider error text is untrusted
+      // content and never reaches the transcript (see
+      // web-research-provider-error.test.ts).
+      expect(result.output).toContain("provider_timeout");
+      expect(result.output).not.toContain("Request timed out after 30000ms");
       // Failure path must not write to cache.
       expect(mockCacheResult).not.toHaveBeenCalled();
 
@@ -216,7 +220,10 @@ describe("web_research", () => {
         baseContext,
       );
       expect(result.success).toBe(false);
-      expect(result.output).toContain("403 Forbidden");
+      // Honest failure, in Vex's words: the provider's own reason picks the code
+      // and is then discarded rather than quoted into the transcript.
+      expect(result.output).toContain("provider_rejected");
+      expect(result.output).not.toContain("403 Forbidden");
       // The privileged process must never fetch the URL itself.
       expect(fetchSpy).not.toHaveBeenCalled();
 
@@ -235,7 +242,8 @@ describe("web_research", () => {
         baseContext,
       );
       expect(result.success).toBe(false);
-      expect(result.output).toContain("timed out");
+      expect(result.output).toContain("provider_timeout");
+      expect(result.output).not.toContain("Request timed out after 25000ms");
       expect(fetchSpy).not.toHaveBeenCalled();
 
       fetchSpy.mockRestore();
@@ -419,7 +427,10 @@ describe("web_research", () => {
       expect(okRow.pageRead).toBe("ok");
       expect(okRow.pageText).toContain("full A");
       expect(failRow.pageRead).toBe("failed");
-      expect(failRow.pageError).toContain("403");
+      // `pageRead: "failed"` is preserved; the reason is a Vex code, never the
+      // provider's sentence.
+      expect(failRow.pageError).toBe("provider_rejected");
+      expect(result.output).not.toContain("403 Forbidden");
       // A row that could not be read keeps the snippet it does have.
       expect(failRow.snippet).toBe("b snippet");
 
@@ -478,7 +489,8 @@ describe("web_research", () => {
       const payload = parsed(result.output);
       expect(payload.counts.pagesFailed).toBe(2);
       expect(payload.results.every((r) => r.pageRead === "failed")).toBe(true);
-      expect(payload.results.every((r) => String(r.pageError).includes("timed out"))).toBe(true);
+      expect(payload.results.every((r) => r.pageError === "provider_timeout")).toBe(true);
+      expect(result.output).not.toContain("Request timed out after 25000ms");
       expect(fetchSpy).not.toHaveBeenCalled();
 
       fetchSpy.mockRestore();

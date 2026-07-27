@@ -1,8 +1,9 @@
 import { TwitterAccountParamsSchema, type TwitterAccountParams } from "@tools/twitter-account/schema.js";
+import { executeTwitterAccountRequest } from "@tools/twitter-account/client.js";
 import {
-  executeTwitterAccountRequest,
-  sanitizeTwitterAccountError,
-} from "@tools/twitter-account/client.js";
+  classifyTwitterFailure,
+  twitterFailureMessage,
+} from "@tools/twitter-account/failure.js";
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail, ok } from "./types.js";
@@ -51,7 +52,11 @@ export async function handleTwitterAccount(
       ),
     );
   } catch (error) {
-    return fail(`twitter_account: ${sanitizeTwitterAccountError(error)}`);
+    // Provider error text is untrusted content, not diagnostics: it selects a
+    // Vex-owned code and is then discarded. The vocabulary — including the
+    // auth/rate-limit distinction the agent acts on — lives in
+    // `@tools/twitter-account/failure.ts`.
+    return fail(`twitter_account: ${twitterFailureMessage(classifyTwitterFailure(error))}`);
   }
 }
 
