@@ -1,0 +1,481 @@
+{
+  "endpoint": "https://api.dexscreener.com/metas/trending/v1",
+  "capturedAt": "2026-07-27T14:11:52.763Z",
+  "response": [
+    {
+      "description": "pspspspspsp",
+      "icon": {
+        "type": "emoji",
+        "value": "🐈"
+      },
+      "name": "Cat",
+      "slug": "cat",
+      "marketCap": 308536632,
+      "liquidity": 32114433.37,
+      "volume": 16563087.65,
+      "tokenCount": 67,
+      "marketCapChange": {
+        "m5": -0.15689801247712862,
+        "h1": -0.09330851288906482,
+        "h6": -3.117617051517105,
+        "h24": -3.048316174739525
+      },
+      "marketCapDelta": {
+        "m5": -484087.84337187244,
+        "h1": -287890.9430372065,
+        "h6": -9618990.64940858,
+        "h24": -9405172.058252566
+      }
+    },
+    {
+      "description": "Famous both online and on-chain",
+      "icon": {
+        "type": "emoji",
+        "value": "🐾"
+      },
+      "name": "Internet Animals",
+      "slug": "internet-animals",
+      "marketCap": 89927730,
+      "liquidity": 6836268.18,
+      "volume": 23133284.89,
+      "tokenCount": 33,
+      "marketCapChange": {
+        "m5": -0.3809057436763021,
+        "h1": 0.37224534507571017,
+        "h6": -1.4078461806425757,
+        "h24": -6.216767460787846
+      },
+      "marketCapDelta": {
+        "m5": -342539.888727717,
+        "h1": 334751.7888572529,
+        "h6": -1266044.1121435678,
+        "h24": -5590597.85686515
+      }
+    },
+    {
+      "description": "Artificial intelligence and agents",
+      "icon": {
+        "type": "emoji",
+        "value": "🤖"
+      },
+      "name": "AI",
+      "slug": "ai",
+      "marketCap": 1668869029,
+      "liquidity": 61252456.45,
+      "volume": 14057823,
+      "tokenCount": 65,
+      "marketCapChange": {
+        "m5": 0.016952683548023696,
+        "h1": 0.06948382562330896,
+        "h6": 0.5077649358526172,
+        "h24": 2.398630170737007
+      },
+      "marketCapDelta": {
+        "m5": 282918.0853173458,
+        "h1": 1159594.0459917693,
+        "h6": 8473931.754566045,
+        "h24": 40029996.03967973
+      }
+    },
+    {
+      "description": "Furry friends and funny memes",
+      "icon": {
+        "type": "emoji",
+        "value": "🐶"
+      },
+      "name": "Dog",
+      "slug": "dog",
+      "marketCap": 800120026,
+      "liquidity": 36618018.83,
+      "volume": 8416896.6,
+      "tokenCount": 57,
+      "marketCapChange": {
+        "m5": 0.051025116216025554,
+        "h1": 0.47014764283539395,
+        "h6": 0.004774094692741953,
+        "h24": 0.6307098730429116
+      },
+      "marketCapDelta": {
+        "m5": 408262.1731341939,
+        "h1": 3761745.442092941,
+        "h6": 38198.48769683153,
+        "h24": 5046436.000175511
+      }
+    },
+    {
+      "description": "Established memes, enduring communities",
+      "icon": {
+        "type": "emoji",
+        "value": "🏆"
+      },
+      "name": "Meme Hall of Fame",
+      "slug": "meme-hall-of-fame",
+      "marketCap": 3534612338,
+      "liquidity": 150376999.75,
+      "volume": 22194033.9,
+      "tokenCount": 58,
+      "marketCapChange": {
+        "m5": 0.0703848086688629,
+        "h1": 0.5581899423630987,
+        "h6": 0.1385739812125945,
+        "h24": 1.5817438017795347
+      },
+      "marketCapDelta": {
+        "m5": 2487830.131287322,
+        "h1": 19729850.572241176,
+        "h6": 4898053.037198168,
+        "h24": 55908511.5732497
+      }
+    },
+    {
+      "description": "Crypto native characters and mascots",
+      "icon": {
+        "type": "emoji",
+        "value": "🐻‍❄️"
+      },
+      "name": "Character",
+      "slug": "character",
+      "marketCap": 2000211118,
+      "liquidity": 52972082.77,
+      "volume": 5379922.49,
+      "tokenCount": 27,
+      "marketCapChange": {
+        "m5": 0.13636664367152437,
+        "h1": 0.6462054815385089,
+        "h6": 0.003885828970773251,
+        "h24": 1.3099951861607764
+      },
+      "marketCapDelta": {
+        "m5": 2727620.767961274,
+        "h1": 12925473.88685869,
+        "h6": 77724.78309987155,
+        "h24": 26202669.358852644
+      }
+    },
+    {
+      "description": "Historians will struggle with this",
+      "icon": {
+        "type": "emoji",
+        "value": "🧠"
+      },
+      "name": "Brainrot",
+      "slug": "brainrot",
+      "marketCap": 16365500,
+      "liquidity": 1709902.78,
+      "volume": 1626976.37,
+      "tokenCount": 19,
+      "marketCapChange": {
+        "m5": -0.206662874387935,
+        "h1": 0.14883320878297837,
+        "h6": -4.2672608417701285,
+        "h24": -13.243901063069568
+      },
+      "marketCapDelta": {
+        "m5": -33821.412707957505,
+        "h1": 24357.298783378326,
+        "h6": -698358.5730598904,
+        "h24": -2167430.62847665
+      }
+    },
+    {
+      "description": "If it trends, it trades",
+      "icon": {
+        "type": "emoji",
+        "value": "🎬"
+      },
+      "name": "TikTok",
+      "slug": "tiktok",
+      "marketCap": 22335969,
+      "liquidity": 2969706.31,
+      "volume": 2173513.29,
+      "tokenCount": 35,
+      "marketCapChange": {
+        "m5": -0.2271428972026294,
+        "h1": 0.05289116212784203,
+        "h6": -3.512898841902045,
+        "h24": -10.70849963511701
+      },
+      "marketCapDelta": {
+        "m5": -50734.56710488117,
+        "h1": 11813.753576614536,
+        "h6": -784639.9963285998,
+        "h24": -2391847.1588648483
+      }
+    },
+    {
+      "description": "Vuvuzela goes brrr",
+      "icon": {
+        "type": "emoji",
+        "value": "⚽"
+      },
+      "name": "World Cup",
+      "slug": "world-cup",
+      "marketCap": 810453,
+      "liquidity": 784194.03,
+      "volume": 81411.91,
+      "tokenCount": 51,
+      "marketCapChange": {
+        "m5": 0.011332899235390968,
+        "h1": 0.21998720508614641,
+        "h6": 6.319850038427679,
+        "h24": -13.786091536434474
+      },
+      "marketCapDelta": {
+        "m5": 91.84782184020317,
+        "h1": 1782.8929032368262,
+        "h6": 51219.41423193827,
+        "h24": -111729.79243977928
+      }
+    },
+    {
+      "description": "Temu version, MS Paint edition",
+      "icon": {
+        "type": "emoji",
+        "value": "🎨"
+      },
+      "name": "Knockoff Legends",
+      "slug": "knockoff-legends",
+      "marketCap": 4123070,
+      "liquidity": 1435447.95,
+      "volume": 245708.56,
+      "tokenCount": 33,
+      "marketCapChange": {
+        "m5": -0.30045352100457823,
+        "h1": 0.26686944450359784,
+        "h6": 0.9191087563656586,
+        "h24": -0.645217641951904
+      },
+      "marketCapDelta": {
+        "m5": -12387.908988483465,
+        "h1": 11003.21400549449,
+        "h6": 37895.49740108556,
+        "h24": -26602.77503002637
+      }
+    },
+    {
+      "description": "How do you do, fellow kids?",
+      "icon": {
+        "type": "emoji",
+        "value": "🤙"
+      },
+      "name": "Slang",
+      "slug": "slang",
+      "marketCap": 39986013,
+      "liquidity": 5393420.66,
+      "volume": 244770.26,
+      "tokenCount": 10,
+      "marketCapChange": {
+        "m5": -0.015379015070489693,
+        "h1": 0.015214258331176693,
+        "h6": -0.24548889231376034,
+        "h24": -1.7748940598634968
+      },
+      "marketCapDelta": {
+        "m5": -6149.454965357968,
+        "h1": 6083.575314157896,
+        "h6": -98161.22039413621,
+        "h24": -709709.3695132456
+      }
+    },
+    {
+      "description": "This has never backfired",
+      "icon": {
+        "type": "emoji",
+        "value": "🌟"
+      },
+      "name": "Celebrity",
+      "slug": "celebrity",
+      "marketCap": 712267090,
+      "liquidity": 83304087.84,
+      "volume": 1864193.32,
+      "tokenCount": 6,
+      "marketCapChange": {
+        "m5": -0.3458840590682295,
+        "h1": 0.13374852612576524,
+        "h6": 0.5962496949250635,
+        "h24": 0.5688748532549631
+      },
+      "marketCapDelta": {
+        "m5": -2463618.322299159,
+        "h1": 952646.7349538777,
+        "h6": 4246890.351176627,
+        "h24": 4051908.3630208964
+      }
+    },
+    {
+      "description": "All roads lead to Rocketman",
+      "icon": {
+        "type": "emoji",
+        "value": "👨‍🚀"
+      },
+      "name": "Elon Musk",
+      "slug": "elon-musk",
+      "marketCap": 85513408,
+      "liquidity": 15218542.42,
+      "volume": 2767375.01,
+      "tokenCount": 36,
+      "marketCapChange": {
+        "m5": 0.32833120448576397,
+        "h1": 3.783812631066573,
+        "h6": 2.30669913897098,
+        "h24": 8.604283412255882
+      },
+      "marketCapDelta": {
+        "m5": 280767.2024832257,
+        "h1": 3235667.1331594936,
+        "h6": 1972537.046040741,
+        "h24": 7357815.979798693
+      }
+    },
+    {
+      "description": "JPEGs turned fungible",
+      "icon": {
+        "type": "emoji",
+        "value": "🖼️"
+      },
+      "name": "NFT",
+      "slug": "nft",
+      "marketCap": 514844772,
+      "liquidity": 16235045.14,
+      "volume": 2906845.05,
+      "tokenCount": 9,
+      "marketCapChange": {
+        "m5": 0.39099180622108337,
+        "h1": 0.26153021466021614,
+        "h6": 1.1598417664840792,
+        "h24": 2.1371054328463415
+      },
+      "marketCapDelta": {
+        "m5": 2013000.8732776185,
+        "h1": 1346474.6373785005,
+        "h6": 5971384.69821573,
+        "h24": 11002775.59313736
+      }
+    },
+    {
+      "description": "Not financial advice",
+      "icon": {
+        "type": "emoji",
+        "value": "📈"
+      },
+      "name": "Stonks",
+      "slug": "stonks",
+      "marketCap": 331190665,
+      "liquidity": 11443580.45,
+      "volume": 627629.26,
+      "tokenCount": 13,
+      "marketCapChange": {
+        "m5": 0.008995120680711215,
+        "h1": 1.0351956436956313,
+        "h6": 0.6501175297847269,
+        "h24": 3.295516436570441
+      },
+      "marketCapDelta": {
+        "m5": 29791,
+        "h1": 3428471.336406592,
+        "h6": 2153128.57017561,
+        "h24": 10914442.801461946
+      }
+    },
+    {
+      "description": "That guy from The Apprentice",
+      "icon": {
+        "type": "emoji",
+        "value": "🍊"
+      },
+      "name": "Trump",
+      "slug": "trump",
+      "marketCap": 2121658058,
+      "liquidity": 49638458.86,
+      "volume": 1806071.67,
+      "tokenCount": 5,
+      "marketCapChange": {
+        "m5": -0.11581016934022895,
+        "h1": 0.05704937417608934,
+        "h6": -0.93718196004139,
+        "h24": -0.724056214629832
+      },
+      "marketCapDelta": {
+        "m5": -2457095.789790413,
+        "h1": 1210392.6442455705,
+        "h6": -19883796.57334049,
+        "h24": -15361997.022143606
+      }
+    },
+    {
+      "description": "Chaos, degeneracy and commitment",
+      "icon": {
+        "type": "emoji",
+        "value": "😈"
+      },
+      "name": "Degen",
+      "slug": "degen",
+      "marketCap": 591522154,
+      "liquidity": 25606816.73,
+      "volume": 3233474.12,
+      "tokenCount": 27,
+      "marketCapChange": {
+        "m5": -0.11774889629024832,
+        "h1": 0.3224498530128658,
+        "h6": 0.9079257987577175,
+        "h24": 3.5112192940780087
+      },
+      "marketCapDelta": {
+        "m5": -696510.807647303,
+        "h1": 1907362.3161115374,
+        "h6": 5370582.241533356,
+        "h24": 20769639.99999383
+      }
+    },
+    {
+      "description": "救命，我不会说中文!",
+      "icon": {
+        "type": "emoji",
+        "value": "🇨🇳"
+      },
+      "name": "Chinese",
+      "slug": "chinese",
+      "marketCap": 708884810,
+      "liquidity": 17350613.44,
+      "volume": 3755455.76,
+      "tokenCount": 47,
+      "marketCapChange": {
+        "m5": -0.05174726829014946,
+        "h1": 0.15545473312085895,
+        "h6": -0.3576116330364351,
+        "h24": -2.7575994132931045
+      },
+      "marketCapDelta": {
+        "m5": -366828.5244988163,
+        "h1": 1101994.989519808,
+        "h6": -2535054.5453882306,
+        "h24": -19548203.36148394
+      }
+    },
+    {
+      "description": "The internet-native payment protocol",
+      "icon": {
+        "type": "emoji",
+        "value": "💸"
+      },
+      "name": "x402",
+      "slug": "x402",
+      "marketCap": 125194335,
+      "liquidity": 4723170.94,
+      "volume": 1997308.89,
+      "tokenCount": 14,
+      "marketCapChange": {
+        "m5": 0.17057357486094538,
+        "h1": 0.8315022786285384,
+        "h6": 3.881609062971387,
+        "h24": -1.5623556629113837
+      },
+      "marketCapDelta": {
+        "m5": 213548.45273288773,
+        "h1": 1040993.7482388457,
+        "h6": 4859554.653686759,
+        "h24": -1955980.7825167484
+      }
+    }
+  ]
+}

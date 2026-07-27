@@ -85,6 +85,20 @@ export interface DexLink {
   url: string;
 }
 
+/**
+ * ONE row shape serves BOTH profile feeds.
+ *
+ * `/token-profiles/latest/v1` and `/token-profiles/recent-updates/v1` send the
+ * IDENTICAL ten fields — live-verified 2026-07-27, `updatedAt` and `cto` present
+ * on 30/30 rows of each. The `latest` validator used to declare neither, so both
+ * were parsed off the wire and thrown away: `updatedAt` is the only field in
+ * either feed from which freshness can be computed at all, and `cto` answers the
+ * question `dexscreener.communityTakeovers` exists to answer.
+ *
+ * The two feeds are NOT the same data — the same measurement found only 3 tokens
+ * in common between the two 30-row windows — so neither is a superset of the
+ * other. They are two windows on the same market with one row shape.
+ */
 export interface DexTokenProfile {
   url: string;
   chainId: string;
@@ -93,6 +107,17 @@ export interface DexTokenProfile {
   header: string | null;
   description: string | null;
   links: DexLink[] | null;
+  /**
+   * ISO 8601 profile-update time. Display-tolerant (`null` when the provider
+   * omits it) per the tolerant-reader rule: no money decision reads it, and
+   * requiring it is the failure mode that killed `boosts.top` for months.
+   */
+  updatedAt: string | null;
+  /**
+   * `true` = the project went through a community takeover. `null` = the feed did
+   * not say, which is NOT the same as "no takeover".
+   */
+  cto: boolean | null;
 }
 
 // ── Token Boosts ────────────────────────────────────────────────────
@@ -284,14 +309,16 @@ export interface DexMetaDetail extends DexMeta {
 }
 
 // ── Token profile updates (recent-updates feed, live/undocumented) ──
-//
-// `GET /token-profiles/recent-updates/v1` — profile-shaped rows enriched with
-// `updatedAt` (ISO 8601) and a `cto` flag. Superset of `DexTokenProfile`.
 
-export interface DexProfileUpdate extends DexTokenProfile {
-  updatedAt: string | null;
-  cto: boolean | null;
-}
+/**
+ * `GET /token-profiles/recent-updates/v1`.
+ *
+ * An ALIAS, not a superset: measured live 2026-07-27, both profile feeds send the
+ * same ten fields including `updatedAt` and `cto`. It was declared a superset only
+ * because the `latest` validator dropped those two. The name is kept because it
+ * documents which endpoint a value came from at the call site.
+ */
+export type DexProfileUpdate = DexTokenProfile;
 
 // ── WebSocket handshake ─────────────────────────────────────────────
 

@@ -155,6 +155,12 @@ describe("equivalence: valid round-trips", () => {
   });
 
   it("profile / boost / cto / ad / order round-trip", () => {
+    // Shape CHANGED deliberately: `updatedAt` and `cto` are now declared, so they
+    // survive the schema instead of being parsed off the wire and stripped by
+    // `z.object`. Both are live-present on 30/30 rows of BOTH profile feeds; both
+    // are nullable, because requiring a field merely because it arrives today is
+    // what killed `dexscreener.boosts.top` for months. This fixture omits them, so
+    // `null` here is the tolerant reader doing its job.
     expect(validateProfilesResponse([PROFILE])[0]).toEqual({
       url: "https://p",
       chainId: "solana",
@@ -163,6 +169,8 @@ describe("equivalence: valid round-trips", () => {
       header: "https://header",
       description: "desc",
       links: [{ type: "website", label: "Website", url: "https://example.com" }],
+      updatedAt: null,
+      cto: null,
     });
     expect(validateBoostsResponse([BOOST]).boosts[0]).toEqual({ ...BOOST });
     expect(validateCommunityTakeoversResponse([CTO])[0]).toEqual({ ...CTO });
