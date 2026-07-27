@@ -14,6 +14,7 @@
 import { decodeFunctionData, getAddress, type Hex } from "viem";
 
 import { VexError, ErrorCodes } from "../../../errors.js";
+import { isKhalaniNativeAlias } from "../native-token-identity.js";
 import type { Approval, EvmApproval, KhalaniChain } from "../types.js";
 import type { KhalaniLegRole, NormalizedEvmTx } from "./staged-leg.js";
 
@@ -73,11 +74,14 @@ export function assertEvmApproval(approval: Approval): asserts approval is EvmAp
   }
 }
 
+/**
+ * Native-asset classification for the deposit path. The alias set itself lives
+ * in the dependency-free leaf `../native-token-identity.ts` so the background
+ * bridge-repair sweep can share it without pulling viem and this module's error
+ * machinery into its graph; this stays the deposit path's named entry point.
+ */
 export function isNativeTransferToken(token: string): boolean {
-  const normalized = token.trim().toLowerCase();
-  return normalized === "native"
-    || normalized === "0x0000000000000000000000000000000000000000"
-    || normalized === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  return isKhalaniNativeAlias(token);
 }
 
 const APPROVE_ABI = [

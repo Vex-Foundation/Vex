@@ -41,6 +41,23 @@ export default defineConfig({
     conditions: ["module", "node", "development|production"],
     mainFields: ["module", "jsnext:main", "jsnext", "main"],
   },
+  // Rolldown inlines CJS deps that read bare `__filename` (@solana/spl-token →
+  // buffer-layout-utils → bigint-buffer → bindings) into this ESM bundle, where
+  // that identifier does not exist; `bindings.getFileName()` reads it from
+  // INSIDE an `Error.prepareStackTrace` hook, so the ReferenceError escapes
+  // through `dummy.stack` and the following line — the one that restores the
+  // previous hook — never runs. `Error.prepareStackTrace` then stays poisoned
+  // process-wide, so every later `error.stack` read in main throws and the app
+  // logs "[ReferenceError: __filename is not defined]" instead of real errors.
+  //
+  // NEVER add `__dirname` here: main sources DECLARE `const __dirname = …`
+  // (src/main/index.ts, src/main/database/migrate-runner.ts,
+  // src/main/windows/main-window.ts) and a define would rewrite those
+  // declaration sites into a syntax error. No source declares `__filename`.
+  // Guarded by the postbuild gate in scripts/check-privileged-bundles.mjs.
+  define: {
+    __filename: "import.meta.filename",
+  },
   build: {
     outDir: path.resolve(__dirname, "dist/main"),
     emptyOutDir: true,

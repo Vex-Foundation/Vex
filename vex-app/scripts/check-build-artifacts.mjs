@@ -4,7 +4,10 @@
  *
  * Run after `pnpm build` (or in CI release workflow). Asserts:
  *   1. dist/main/index.js exists and matches package.json `main` field.
- *   2. dist/preload/index.cjs exists, is CJS, exposes contextBridge, NEVER raw ipcRenderer.
+ *   2. The privileged process bundles — preload exposure surface plus every
+ *      emitted dist/main/*.js chunk (bundler-config regressions, bundled
+ *      Postgres runtime, no bare `__filename`). Those live in
+ *      scripts/check-privileged-bundles.mjs and run through this runner.
  *   3. dist/renderer/index.html has strict CSP — no `'unsafe-inline'`, no `'unsafe-eval'`,
  *      and `script-src`/`connect-src` parse to EXACTLY `'self'`. `img-src` is now
  *      pinned to EXACTLY `'self' data:` (remote images DISABLED for launch to
@@ -29,8 +32,6 @@
  *      `REPLACE_WITH_VERIFIED_DIGEST_BEFORE_FIRST_RUN` placeholders behind.
  *   10. Packaged migration resources are byte-for-byte in sync with the
  *      canonical `src/vex-agent/db/migrations/` source.
- *   11. Postgres runtime dependencies are bundled into main, not left as
- *      external ASAR node_modules imports.
  *
  * Exit non-zero on any violation.
  */
@@ -39,23 +40,12 @@ import { createHash } from "node:crypto";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
+import { privilegedBundleChecks } from "./check-privileged-bundles.mjs";
 
 const root = path.resolve(process.cwd());
-const distMain = path.join(root, "dist", "main", "index.js");
-const distPreload = path.join(root, "dist", "preload", "index.cjs");
 const distRendererHtml = path.join(root, "dist", "renderer", "index.html");
 const distRendererAssets = path.join(root, "dist", "renderer", "assets");
 const pkgJson = path.join(root, "package.json");
-
-const POSTGRES_RUNTIME_EXTERNALS = [
-  "pg",
-  "pg-types",
-  "postgres-array",
-  "postgres-bytea",
-  "postgres-date",
-  "postgres-interval",
-  "pgpass",
-];
 
 const RED = "\x1b[31m";
 const GREEN = "\x1b[32m";
@@ -72,20 +62,6 @@ function check(label, fn) {
     console.log(`  ${e.message}`);
     failures.push({ label, message: e.message });
   }
-}
-
-function walkFiles(dir, predicate) {
-  const found = [];
-  if (!existsSync(dir)) return found;
-  for (const ent of readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) {
-      found.push(...walkFiles(full, predicate));
-    } else if (predicate(full)) {
-      found.push(full);
-    }
-  }
-  return found;
 }
 
 async function checkAsync(label, fn) {
@@ -109,33 +85,10 @@ check("package.json `main` resolves to existing file", () => {
   }
 });
 
-// 2. preload bundle
-check("preload bundle is CJS + uses contextBridge + NO raw ipcRenderer exposure", () => {
-  if (!existsSync(distPreload)) throw new Error(`missing: ${distPreload}`);
-  const src = readFileSync(distPreload, "utf8");
-  if (!src.includes('require("electron")') && !src.includes("require('electron')")) {
-    throw new Error("preload bundle is not CJS-style (no `require('electron')` found)");
-  }
-  if (!src.includes("contextBridge")) {
-    throw new Error("preload bundle does not use contextBridge.exposeInMainWorld");
-  }
-  // Heuristic: preload may use ipcRenderer.invoke under the hood; we forbid only
-  // exposing it directly. exposeInMainWorld must be called with `vex` as first arg.
-  if (!src.includes("exposeInMainWorld") || !src.includes('"vex"')) {
-    throw new Error("preload does not expose `window.vex`");
-  }
-  // Reject patterns that would leak the entire ipcRenderer to renderer.
-  const leaks = [
-    /exposeInMainWorld\(\s*["']vex["']\s*,\s*ipcRenderer\b/,
-    /exposeInMainWorld\(\s*["']ipcRenderer["']/,
-    /exposeInMainWorld\(\s*["'][^"']+["']\s*,\s*\{\s*invoke\s*:\s*ipcRenderer\.invoke\b/,
-  ];
-  for (const pattern of leaks) {
-    if (pattern.test(src)) {
-      throw new Error(`preload leaks ipcRenderer surface (matched ${pattern.source})`);
-    }
-  }
-});
+// 2. privileged process bundles (dist/main/*.js + dist/preload/index.cjs)
+for (const { label, run } of privilegedBundleChecks) {
+  check(label, () => run(root));
+}
 
 // 3. renderer CSP
 check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
@@ -252,79 +205,6 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
   walk(srcDir);
   if (violations.length > 0) {
     throw new Error(`Renderer source violations:\n    ${violations.join("\n    ")}`);
-  }
-});
-
-// 5. main bundle hygiene (top-level)
-check("main bundle — entrypoint exists + uses single-instance lock", () => {
-  if (!existsSync(distMain)) throw new Error(`missing: ${distMain}`);
-  const src = readFileSync(distMain, "utf8");
-  if (!src.includes("requestSingleInstanceLock")) {
-    throw new Error("main bundle missing single-instance lock guard");
-  }
-  if (!src.includes("registerSchemesAsPrivileged")) {
-    throw new Error("main bundle missing custom protocol registration");
-  }
-  if (!src.includes("setPermissionRequestHandler")) {
-    throw new Error("main bundle missing permission deny handlers");
-  }
-  // M10 regression guard #1 — first-order browser-compat stub.
-  // `__vite-browser-external` is the stub Vite emits when it tries to
-  // externalize a bare Node built-in (`os`, `fs`, `http`, …) using its
-  // browser-compat policy. That stub is `{}` and crashes at runtime the
-  // moment any consumer calls `os.release()` etc. (real-world repro:
-  // @colors/colors → supports-colors.js on Windows.)
-  // If this gate trips, audit `vite.main.config.ts` — bare builtins must
-  // be in `external` and `resolve.conditions` must include `"node"`.
-  if (src.includes("__vite-browser-external")) {
-    throw new Error(
-      "main bundle contains __vite-browser-external stubs — a Node built-in is being resolved through Vite's browser-compat path. Check vite.main.config.ts (bareNodeBuiltins + resolve.conditions including 'node')."
-    );
-  }
-  // M10 regression guard #2 — second-order throwing `__require` shim.
-  // When CJS deps are bundled into ESM main without `platform: "node"`,
-  // rolldown emits a shim that throws "Calling `require` for X in an
-  // environment that doesn't expose the `require` function". Real-world
-  // repro: safe-buffer / secp256k1 / bn.js → `require("buffer")`.
-  // Fix: `rolldownOptions.platform = "node"` so rolldown injects
-  // `createRequire(import.meta.url)` instead.
-  if (src.includes("environment that doesn't expose the `require` function")) {
-    throw new Error(
-      "main bundle contains a throwing __require shim — CJS deps are bundled into the ESM main without a Node platform setting. Set `rolldownOptions.platform = 'node'` in vite.main.config.ts."
-    );
-  }
-});
-
-// 5b. `pg` is pure JS and small enough to bundle. Leaving it external makes
-// packaged startup depend on electron-builder copying the full pnpm transitive
-// graph into app.asar/node_modules; v0.1.0 crashed on macOS when
-// `pg-types -> postgres-array` was missing there. Fail at postbuild if that
-// packaging risk comes back.
-check("main bundle — Postgres runtime deps are bundled, not external ASAR imports", () => {
-  const mainDir = path.join(root, "dist", "main");
-  const jsFiles = walkFiles(mainDir, (file) => file.endsWith(".js"));
-  if (jsFiles.length === 0) throw new Error(`no built main JS files in ${mainDir}`);
-
-  const violations = [];
-  for (const file of jsFiles) {
-    const rel = path.relative(root, file);
-    const src = readFileSync(file, "utf8");
-    for (const mod of POSTGRES_RUNTIME_EXTERNALS) {
-      const escaped = mod.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const patterns = [
-        new RegExp(`\\bfrom\\s+["']${escaped}["']`),
-        new RegExp(`\\bimport\\s*\\(\\s*["']${escaped}["']\\s*\\)`),
-      ];
-      if (patterns.some((pattern) => pattern.test(src))) {
-        violations.push(`${rel}: leaves ${mod} as a runtime module import`);
-      }
-    }
-  }
-
-  if (violations.length > 0) {
-    throw new Error(
-      `Postgres runtime deps must be bundled into dist/main to avoid ASAR node_modules drift:\n    ${violations.join("\n    ")}`
-    );
   }
 });
 

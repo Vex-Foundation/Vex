@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { redact } from "../redact.js";
+import { redact, redactArgs } from "../redact.js";
+
+/**
+ * Reproduce the production incident: a bundled CJS dependency installed an
+ * `Error.prepareStackTrace` hook that throws (bare `__filename` in an ESM
+ * chunk) and never restored the previous one, so EVERY later `.stack` read in
+ * the main process throws. Runs `body` inside that poisoned window and always
+ * restores the hook.
+ */
+function withPoisonedPrepareStackTrace(body: () => void): void {
+  const original = Error.prepareStackTrace;
+  Error.prepareStackTrace = () => {
+    throw new ReferenceError("__filename is not defined");
+  };
+  try {
+    body();
+  } finally {
+    Error.prepareStackTrace = original;
+  }
+}
 
 describe("redact", () => {
   it("redacts sensitive object keys regardless of value", () => {
@@ -38,6 +57,34 @@ describe("redact", () => {
     expect(out.name).toBe("Error");
     expect(out.message).not.toContain(evmKey);
     expect(out.message).toContain("[REDACTED]");
+  });
+
+  it("survives a poisoned Error.prepareStackTrace instead of throwing", () => {
+    withPoisonedPrepareStackTrace(() => {
+      const err = new Error("handled failure");
+      let out: unknown;
+      expect(() => {
+        out = redact(err);
+      }).not.toThrow();
+      const shaped = out as { name: string; message: string; stack?: string };
+      expect(shaped.name).toBe("Error");
+      expect(shaped.message).toBe("handled failure");
+      expect(shaped.stack).toBe("<stack unavailable>");
+    });
+  });
+
+  it("keeps the log.error path safe when .stack reads throw", () => {
+    withPoisonedPrepareStackTrace(() => {
+      const err = new Error("db connect failed");
+      let out: unknown[] = [];
+      expect(() => {
+        out = redactArgs(["[startup]", err]);
+      }).not.toThrow();
+      expect(out[0]).toBe("[startup]");
+      const shaped = out[1] as { name: string; message: string };
+      expect(shaped.name).toBe("Error");
+      expect(shaped.message).toBe("db connect failed");
+    });
   });
 
   it("handles circular references without throwing", () => {

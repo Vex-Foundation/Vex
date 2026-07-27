@@ -58,6 +58,8 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     touchChecked: vi.fn().mockResolvedValue(undefined),
     fetchKhalaniOrder: vi.fn().mockResolvedValue(null),
     fetchRelayStatus: vi.fn().mockResolvedValue(null),
+    // F2: recovery never reaches the DeBridge fill-hash lane; default to a refusal.
+    fetchDebridgeFillHash: vi.fn().mockResolvedValue(null),
     recoverKhalaniOrderId: vi.fn().mockResolvedValue(null),
     verifyFill: vi.fn().mockResolvedValue({ verified: true }),
     confirmExpectedFill: vi.fn().mockResolvedValue(cas(true, "confirmed")),

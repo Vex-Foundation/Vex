@@ -6,8 +6,10 @@
  */
 
 import type { BridgeChainFamily } from "@vex-agent/db/repos/agent-activity.js";
+import { isKhalaniNativeAlias } from "@tools/khalani/native-token-identity.js";
 import type {
   BridgeObservation,
+  DebridgeFillHashLookup,
   KhalaniOrderTx,
   KhalaniOrderView,
   RelayStatusView,
@@ -24,11 +26,34 @@ function readTx(
   return tx && typeof tx === "object" ? tx : undefined;
 }
 
-/** Family-aware identity equality: EVM addresses/hashes are case-insensitive, Solana signatures/mints are case-sensitive base58. */
-function idEquals(family: BridgeChainFamily, a: string, b: string): boolean {
+/**
+ * Family-aware identity equality: EVM addresses/hashes are case-insensitive,
+ * Solana signatures/mints are case-sensitive base58. Exported because the
+ * deBridge fill-hash lookup (`./bridge-activity-repair-debridge-lookup.js`)
+ * correlates a third provider's record against the SAME stored identities and
+ * must apply the same rule — one definition, not two.
+ */
+export function bridgeIdentityEquals(family: BridgeChainFamily, a: string, b: string): boolean {
   const na = family === "eip155" ? a.trim().toLowerCase() : a.trim();
   const nb = family === "eip155" ? b.trim().toLowerCase() : b.trim();
   return na.length > 0 && na === nb;
+}
+
+/**
+ * R6 TOKEN identity: `bridgeIdentityEquals` plus the EVM native-alias
+ * equivalence (Card F3).
+ *
+ * Khalani reports a native asset as the ZERO ADDRESS on Hyperstream-routed
+ * orders while Vex stores the `0xEeee…` sentinel (and `"native"` appears on
+ * some routes) — three spellings of ONE asset. Without this, a legitimately
+ * filled native bridge sits in `correlation_mismatch` forever (live row #104,
+ * execution 232). The widening is deliberately narrow: EVM only, tokens only,
+ * and only across the closed alias set — WRAPPED native (WETH) is a different
+ * ERC-20 and still mismatches, and Solana mints are untouched.
+ */
+function tokenIdentityEquals(family: BridgeChainFamily, provider: string, stored: string): boolean {
+  if (bridgeIdentityEquals(family, provider, stored)) return true;
+  return family === "eip155" && isKhalaniNativeAlias(provider) && isKhalaniNativeAlias(stored);
 }
 
 /**
@@ -44,19 +69,50 @@ function correlateKhalaniIdentity(order: KhalaniOrderView, c: StoredBridgeCorrel
   const originFamily = c.route.fromChainFamily;
   const destFamily = c.route.toChainFamily;
   if (c.providerOrderId && order.id && order.id !== c.providerOrderId) return "order_id";
-  if (order.author && !idEquals(originFamily, order.author, c.author)) return "author";
-  if (c.depositTxHash && order.depositTxHash && !idEquals(originFamily, order.depositTxHash, c.depositTxHash)) {
+  if (order.author && !bridgeIdentityEquals(originFamily, order.author, c.author)) return "author";
+  if (c.depositTxHash && order.depositTxHash && !bridgeIdentityEquals(originFamily, order.depositTxHash, c.depositTxHash)) {
     return "deposit_hash";
   }
-  if (c.tokenInAddress && order.fromToken && !idEquals(originFamily, order.fromToken, c.tokenInAddress)) {
+  if (c.tokenInAddress && order.fromToken && !tokenIdentityEquals(originFamily, order.fromToken, c.tokenInAddress)) {
     return "from_token";
   }
-  if (c.tokenOutAddress && order.toToken && !idEquals(destFamily, order.toToken, c.tokenOutAddress)) {
+  if (c.tokenOutAddress && order.toToken && !tokenIdentityEquals(destFamily, order.toToken, c.tokenOutAddress)) {
     return "to_token";
   }
   if (c.quoteId && order.quoteId && order.quoteId !== c.quoteId) return "quote_id";
   if (c.routeId && order.routeId && order.routeId !== c.routeId) return "route_id";
   return null;
+}
+
+/** Khalani's `routeId` for orders it hands to deBridge's DLN — the only route whose fill hash is recoverable there. */
+const KHALANI_DEBRIDGE_ROUTE_ID = "DeBridge";
+
+/**
+ * The destination expectations a deBridge fill-hash recovery must prove (F2), or
+ * `null` when this order is not a recoverable case at all.
+ *
+ * Built ONLY for a `DeBridge`-routed order that carries an `externalOrderId` —
+ * we never ask deBridge about an order it did not route. The chain comes from
+ * the STORED route (never the provider's echo); the token from the stored
+ * logical row; recipient and destination amount from the order, which the R6
+ * correlation above has already proven is ours. Anything Vex never recorded is
+ * carried as an explicit `null` so the lookup refuses rather than skips it.
+ */
+function buildDebridgeFillRecovery(
+  order: KhalaniOrderView,
+  c: StoredBridgeCorrelation,
+): DebridgeFillHashLookup | null {
+  if (order.routeId !== KHALANI_DEBRIDGE_ROUTE_ID) return null;
+  const externalOrderId = order.externalOrderId;
+  if (!externalOrderId) return null;
+  return {
+    externalOrderId,
+    expectedDestChainId: c.route.toChainId,
+    expectedDestChainFamily: c.route.toChainFamily,
+    expectedTokenOutAddress: c.tokenOutAddress,
+    expectedRecipient: order.recipient ?? null,
+    expectedDestAmount: order.destAmount ?? null,
+  };
 }
 
 /**
@@ -81,7 +137,12 @@ export function mapKhalaniOrderOutcome(order: KhalaniOrderView, c: StoredBridgeC
 
   if (order.status === "filled") {
     const fill = readTx(order.transactions, "fill");
-    if (!fill?.txHash) return { kind: "filled_no_hash", providerStatus };
+    if (!fill?.txHash) {
+      const debridgeFillRecovery = buildDebridgeFillRecovery(order, c);
+      return debridgeFillRecovery
+        ? { kind: "filled_no_hash", providerStatus, debridgeFillRecovery }
+        : { kind: "filled_no_hash", providerStatus };
+    }
     // B4: a fill MUST name its destination chain, and it must be the stored one.
     // A missing fill chain is NOT acceptable for confirm (Blocker 7).
     if (fill.chainId === undefined || fill.chainId !== route.toChainId) {
@@ -133,7 +194,7 @@ export function relayDestinationHashes(status: RelayStatusView): readonly string
 function correlateRelayIdentity(status: RelayStatusView, c: StoredBridgeCorrelation): string | null {
   const origin = status.inTxHashes;
   if (c.depositTxHash && origin && origin.length > 0) {
-    const present = origin.some((h) => typeof h === "string" && idEquals(c.route.fromChainFamily, h, c.depositTxHash!));
+    const present = origin.some((h) => typeof h === "string" && bridgeIdentityEquals(c.route.fromChainFamily, h, c.depositTxHash!));
     if (!present) return "deposit_hash";
   }
   return null;

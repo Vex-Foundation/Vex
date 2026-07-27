@@ -27,6 +27,14 @@ const SECRET_PATTERNS: ReadonlyArray<RegExp> = [
 const REDACTED = "[REDACTED]";
 const MAX_STRING_LEN = 4000;
 
+/**
+ * Stands in for a stack we could not read. Keeping the field (rather than
+ * dropping it silently) tells whoever reads the log that a stack existed and
+ * the read failed — otherwise a poisoned process looks identical to errors
+ * that legitimately carry no stack.
+ */
+const STACK_UNAVAILABLE = "<stack unavailable>";
+
 function scrubString(value: string): string {
   let out = value;
   for (const re of SECRET_PATTERNS) {
@@ -36,6 +44,27 @@ function scrubString(value: string): string {
     out = `${out.slice(0, MAX_STRING_LEN)}…[truncated ${out.length - MAX_STRING_LEN} chars]`;
   }
   return out;
+}
+
+/**
+ * Reading `error.stack` CAN THROW: V8 computes it lazily through
+ * `Error.prepareStackTrace`, so any dependency that installs a broken hook and
+ * fails to restore it poisons that read for the whole process. That happened in
+ * production — a CJS `bindings` shim inlined into the ESM main bundle read bare
+ * `__filename` inside its hook — and because this redactor sits on the logging
+ * path, the throw turned every HANDLED error into an unhandled rejection and
+ * hid the real failure behind "[ReferenceError: __filename is not defined]".
+ * A logger must never do that, so the read is fail-safe regardless of what a
+ * future dependency does to the global hook.
+ */
+function readStack(error: Error): string | undefined {
+  let raw: unknown;
+  try {
+    raw = error.stack;
+  } catch {
+    return STACK_UNAVAILABLE;
+  }
+  return typeof raw === "string" && raw.length > 0 ? scrubString(raw) : undefined;
 }
 
 function redactValue(value: unknown, depth: number, seen: WeakSet<object>): unknown {
@@ -50,7 +79,7 @@ function redactValue(value: unknown, depth: number, seen: WeakSet<object>): unkn
     return {
       name: value.name,
       message: scrubString(value.message),
-      stack: value.stack ? scrubString(value.stack) : undefined,
+      stack: readStack(value),
     };
   }
 
