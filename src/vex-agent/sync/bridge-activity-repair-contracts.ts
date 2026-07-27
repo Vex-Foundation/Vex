@@ -82,6 +82,20 @@ export interface KhalaniOrderView {
   readonly author?: string;
   /** Origin deposit hash echoed by the provider (R6 `deposit_hash`). */
   readonly depositTxHash?: string;
+  /**
+   * The EXTERNAL router's own order id — for `routeId: "DeBridge"` orders this is
+   * the DLN order id, and it is the ONLY handle on a destination fill hash those
+   * orders ever expose (F2; live capture 2026-07-26).
+   */
+  readonly externalOrderId?: string;
+  /**
+   * Destination recipient the provider reports. NOT stored on the logical row
+   * (Blocker 7), so it is carried here purely as an expectation for the DeBridge
+   * fill-hash cross-check.
+   */
+  readonly recipient?: string | null;
+  /** Quoted destination amount in raw units of `toToken` (the DeBridge cross-check's amount expectation). */
+  readonly destAmount?: string;
   readonly transactions: Readonly<Record<string, KhalaniOrderTx | undefined>>;
 }
 
@@ -143,6 +157,35 @@ export interface FillVerificationInput {
   readonly recipient: string | null;
 }
 
+/**
+ * Everything a deBridge (DLN) fill-hash recovery must PROVE before the hash it
+ * returns may be handed to the B4 verifier (F2).
+ *
+ * A DeBridge-routed Khalani order reports `filled` while carrying only its
+ * deposit transaction; the destination hash exists solely in deBridge's stats
+ * API. Reading it means trusting a THIRD provider, so the lookup carries the
+ * full destination identity the DLN record must echo back — chain, token,
+ * recipient, and the exact destination amount. `expectedDestChainId`/`Family`
+ * come from the STORED route (never the provider's echo); the token comes from
+ * the stored logical row; recipient and amount come from the Khalani order,
+ * which the R6 correlation has ALREADY proven is ours (order id, author, deposit
+ * hash, tokens, quote id, route id) by the time a recovery is attempted.
+ *
+ * A `null` on any of the three nullable fields means Vex never recorded that
+ * expectation: the lookup then refuses outright. A recording gap is never a
+ * reason to relax confirmation.
+ */
+export interface DebridgeFillHashLookup {
+  /** The DLN order id (`0x` + 64 hex) from the Khalani order's `externalOrderId`. */
+  readonly externalOrderId: string;
+  readonly expectedDestChainId: number;
+  readonly expectedDestChainFamily: BridgeChainFamily;
+  readonly expectedTokenOutAddress: string | null;
+  readonly expectedRecipient: string | null;
+  /** Raw units of the destination token — compared EXACTLY, no tolerance. */
+  readonly expectedDestAmount: string | null;
+}
+
 /** Result of the B4 verification. Executed amounts are present ONLY when decoded against the stored token + recipient (Q2). */
 export interface FillVerification {
   readonly verified: boolean;
@@ -171,6 +214,17 @@ export interface BridgeRepairDeps {
   // ── Provider status (null = transport failure; the row stays pending) ──
   fetchKhalaniOrder(orderId: string): Promise<KhalaniOrderView | null>;
   fetchRelayStatus(requestId: string): Promise<RelayStatusView | null>;
+
+  /**
+   * DeBridge (DLN) destination fill-hash recovery for a Khalani order that
+   * reports `filled` without one (F2). Returns the hash ONLY when the DLN record
+   * proves — inside the implementation, never by the caller — that it settles
+   * exactly this `input`. `null` on ANY doubt: transport failure, non-200,
+   * malformed payload, unexpected state, an identity that disagrees, or an
+   * expectation Vex never recorded. It never throws into the sweep batch, and a
+   * recovered hash is still gated by the unchanged `verifyFill` proof.
+   */
+  fetchDebridgeFillHash(input: DebridgeFillHashLookup): Promise<{ txHash: string } | null>;
 
   // ── Null-order-id recovery (lookup-only; never re-signs/re-broadcasts) ──
   recoverKhalaniOrderId(candidate: BridgeOrderIdRecoveryCandidate): Promise<string | null>;
@@ -233,6 +287,21 @@ export interface BridgeRepairSweepResult {
   readonly stillPending: number;
 }
 
+/**
+ * The sweep's in-flight accumulator for `BridgeRepairSweepResult` — the mutable
+ * counterpart, shared by the sweep loop and the terminal-transition module it
+ * dispatches to (`./bridge-activity-repair-terminalize.js`). Internal to the
+ * repair family; not part of the public gate.
+ */
+export interface MutableSweepCounters {
+  confirmed: number;
+  failed: number;
+  refunded: number;
+  recovered: number;
+  balanceReconciled: number;
+  stillPending: number;
+}
+
 // ── Pure status mapping result shape (dossier §2 table) ─────────────────────
 
 /**
@@ -251,8 +320,16 @@ export type BridgeObservation =
       readonly destChainFamily: BridgeChainFamily;
     }
   // Provider says filled/success but no destination fill hash is present — dossier
-  // §5: keep pending + anomaly, NEVER fabricate a confirmation.
-  | { readonly kind: "filled_no_hash"; readonly providerStatus: string }
+  // §5: keep pending + anomaly, NEVER fabricate a confirmation. `debridgeFillRecovery`
+  // is present ONLY for a DeBridge-routed Khalani order carrying an
+  // `externalOrderId` (F2): for those the hash is recoverable from deBridge's
+  // stats API, and the recovered hash still goes through the B4 verify→confirm
+  // path. Absent for every other route — the row simply stays pending.
+  | {
+      readonly kind: "filled_no_hash";
+      readonly providerStatus: string;
+      readonly debridgeFillRecovery?: DebridgeFillHashLookup;
+    }
   // Provider's returned chain ids do not match the stored route (or a fill omits
   // its destination chain) — B4 anomaly.
   | { readonly kind: "chain_mismatch"; readonly providerStatus: string }

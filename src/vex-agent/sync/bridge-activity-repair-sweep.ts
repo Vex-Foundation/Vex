@@ -3,45 +3,41 @@
  * move-only) once the parent file crossed the repo's 500-line cap. See
  * `bridge-activity-repair.ts`'s own module doc for the full W4 design (R12/
  * B4/B6/C3, dossier §2) this orchestration implements — fair scheduling
- * (`./bridge-activity-repair-fairness.js`), per-row status observation, B4
- * independent on-chain verification before any confirm, the
- * verify-then-write-then-terminalize refund path (Blocker 8), the C3
- * confirm+enqueue side-effect ordering + recovery (Blocker 11), and R5
+ * (`./bridge-activity-repair-fairness.js`), per-row status observation,
+ * dispatch of terminal outcomes to
+ * `./bridge-activity-repair-terminalize.js` (the B4-verified confirm, the
+ * verify-then-write-then-terminalize refund path, provider failures), and R5
  * null-order-id recovery. Pure over the injected `BridgeRepairDeps` port —
  * no IO of its own.
  */
 
-import type { BridgeChainFamily, CasResult } from "@vex-agent/db/repos/agent-activity.js";
+import type { BridgeChainFamily } from "@vex-agent/db/repos/agent-activity.js";
 import { clearRelayRouteReveal } from "@vex-agent/tools/registry/relay-reveal.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 import {
   BRIDGE_SWEEP_BATCH_LIMIT,
-  KHALANI_EVIDENCE_SOURCE,
-  RELAY_EVIDENCE_SOURCE,
   type BridgeObservation,
   type BridgeRepairDeps,
   type BridgeRepairSweepResult,
   type BridgeSweepRow,
+  type MutableSweepCounters,
   type StoredBridgeCorrelation,
   type StoredBridgeRoute,
 } from "./bridge-activity-repair-contracts.js";
 import { mapKhalaniOrderOutcome, mapRelayStatusOutcome } from "./bridge-activity-repair-status-map.js";
 import { compareBridgeFairness } from "./bridge-activity-repair-fairness.js";
+import {
+  confirmVerifiedFill,
+  recoverDebridgeFillHash,
+  terminalizeProviderFailure,
+  terminalizeRefund,
+} from "./bridge-activity-repair-terminalize.js";
 
 /** Provider-native Solana chain ids (Khalani vs Relay diverge) — used only to infer a row's chain family for explorer-link resolution. */
 const SOLANA_CHAIN_IDS: ReadonlySet<number> = new Set([20011000000, 792703809]);
 
 // ── Orchestration (pure over the injected deps) ─────────────────────────────
-
-interface MutableSweepCounters {
-  confirmed: number;
-  failed: number;
-  refunded: number;
-  recovered: number;
-  balanceReconciled: number;
-  stillPending: number;
-}
 
 export async function repairPendingBridges(deps: BridgeRepairDeps): Promise<BridgeRepairSweepResult> {
   const counters: MutableSweepCounters = {
@@ -145,14 +141,11 @@ async function applyObservation(
       return;
 
     case "filled_no_hash":
-      // dossier §5: provider claims filled/success but produced no fill hash — the
-      // one shape we must NEVER convert to a confirmation. Stay pending + anomaly.
-      logger.warn("bridge.repair.filled_without_hash", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
-      });
-      counters.stillPending++;
+      // dossier §5: provider claims filled/success but produced no fill hash. For a
+      // DeBridge-routed Khalani order the hash is recoverable from deBridge's own
+      // stats API (F2) — everything else stays pending + anomaly, and a recovered
+      // hash still passes the unchanged B4 verification before any confirm.
+      await recoverDebridgeFillHash(logical, observation, deps, counters);
       return;
 
     case "chain_mismatch":
@@ -185,204 +178,9 @@ async function applyObservation(
       await terminalizeRefund(logical, observation, deps, counters);
       return;
 
-    case "failed": {
-      const outcome = await deps.failLogical(
-        logical.id,
-        "bridge_failed",
-        `provider-terminal failure (${observation.providerStatus})`,
-      );
-      if (outcome.applied) counters.failed++;
-      else logDuplicateCas(executionId, "fail", outcome);
+    case "failed":
+      await terminalizeProviderFailure(logical, observation, deps, counters);
       return;
-    }
-  }
-}
-
-async function confirmVerifiedFill(
-  logical: BridgeSweepRow,
-  observation: Extract<BridgeObservation, { kind: "confirmable" }>,
-  deps: BridgeRepairDeps,
-  counters: MutableSweepCounters,
-): Promise<void> {
-  const executionId = logical.protocolExecutionId;
-  const [primaryHash, ...additionalHashes] = observation.fillTxHashes;
-  if (!primaryHash) {
-    // Defensive: the mapper never emits `confirmable` with an empty list.
-    counters.stillPending++;
-    return;
-  }
-
-  // B4: independent on-chain proof BEFORE any confirm. A failed check keeps the
-  // row pending — the provider's word alone is never enough. The recipient is
-  // NEVER substituted with the source wallet (Blocker 7): it is passed as stored
-  // (null when unstored → amount-decode named-degraded).
-  const verification = await deps.verifyFill({
-    protocol: logical.protocol,
-    txHash: primaryHash,
-    expectedChainId: observation.destChainId,
-    chainFamily: observation.destChainFamily,
-    tokenOutAddress: logical.tokenOutAddress,
-    recipient: null,
-  });
-  if (!verification.verified) {
-    logger.warn("bridge.repair.fill_unverified", {
-      executionId,
-      protocol: logical.protocol,
-      providerStatus: observation.providerStatus,
-      reason: verification.reason ?? "verification_failed",
-    });
-    counters.stillPending++;
-    return;
-  }
-
-  const evidenceSource = logical.protocol === "relay" ? RELAY_EVIDENCE_SOURCE : KHALANI_EVIDENCE_SOURCE;
-  const outcome = await deps.confirmExpectedFill({
-    executionId,
-    txHash: primaryHash,
-    evidenceSource,
-    providerStatus: observation.providerStatus,
-    // Q2/B4: executed_* is set ONLY when the verifier decoded it against the stored
-    // token + recipient; otherwise it stays NULL and the quoted amounts remain estimates.
-    executedAmountInHuman: verification.executedAmountInHuman,
-    executedAmountInRaw: verification.executedAmountInRaw,
-    executedAmountOutHuman: verification.executedAmountOutHuman,
-    executedAmountOutRaw: verification.executedAmountOutRaw,
-  });
-
-  if (!outcome.applied) {
-    // A concurrent process (another sweep instance) already confirmed it.
-    logDuplicateCas(executionId, "confirm", outcome);
-    return;
-  }
-
-  counters.confirmed++;
-
-  // C3 ORDERING (Blocker 11): clear the reveal FIRST (in-memory, best-effort) so a
-  // later enqueue failure never strands a still-revealed confirmed route; the
-  // recovery path re-clears it too.
-  if (logical.protocol === "relay" && logical.sessionId && logical.normalizedRoute) {
-    deps.clearRelayReveal(logical.sessionId, logical.normalizedRoute);
-  }
-
-  // B2/B8 (Blocker 9): every ADDITIONAL provider fill hash becomes a verified
-  // `bridge_fill_observed` audit row (dedup by hash). An append failure here is
-  // audit-only — it never blocks the confirm or the enqueue.
-  for (const extraHash of additionalHashes) {
-    const extraVerification = await deps.verifyFill({
-      protocol: logical.protocol,
-      txHash: extraHash,
-      expectedChainId: observation.destChainId,
-      chainFamily: observation.destChainFamily,
-      tokenOutAddress: logical.tokenOutAddress,
-      recipient: null,
-    });
-    if (!extraVerification.verified) {
-      logger.warn("bridge.repair.extra_fill_unverified", {
-        executionId,
-        protocol: logical.protocol,
-        reason: extraVerification.reason ?? "verification_failed",
-      });
-      continue;
-    }
-    try {
-      await deps.appendFillObserved({
-        executionId,
-        protocol: logical.protocol,
-        chainId: observation.destChainId,
-        chainFamily: observation.destChainFamily,
-        txHash: extraHash,
-        evidenceSource,
-        providerStatus: observation.providerStatus,
-      });
-    } catch (err) {
-      logger.warn("bridge.repair.extra_fill_append_failed", {
-        executionId,
-        error: summarizeProtocolError(err).message,
-      });
-    }
-  }
-
-  // C3 (Blocker 11): enqueue LAST, and a failure here leaves a RECOVERABLE state —
-  // the row is already confirmed and the reveal already cleared, so
-  // reconcileBalanceEnqueues re-enqueues it next sweep. Swallow (scrubbed) rather
-  // than abort the whole batch on one bad enqueue.
-  try {
-    await deps.enqueueBalanceRefresh({ namespace: logical.protocol, executionId });
-  } catch (err) {
-    logger.warn("bridge.repair.enqueue_failed", {
-      executionId,
-      error: summarizeProtocolError(err).message,
-    });
-  }
-}
-
-async function terminalizeRefund(
-  logical: BridgeSweepRow,
-  observation: Extract<BridgeObservation, { kind: "refunded" }>,
-  deps: BridgeRepairDeps,
-  counters: MutableSweepCounters,
-): Promise<void> {
-  const executionId = logical.protocolExecutionId;
-
-  if (observation.refundTxHash) {
-    // B4 (Blocker 8): verify the refund receipt/signature BEFORE writing a
-    // confirmed evidence row. An unverifiable refund (not mined yet / reverted)
-    // keeps the WHOLE row pending — no terminalization, retried next sweep (the
-    // provider keeps returning refunded + the hash; no permanent loss).
-    const verification = await deps.verifyFill({
-      protocol: logical.protocol,
-      txHash: observation.refundTxHash,
-      expectedChainId: observation.refundChainId,
-      chainFamily: observation.refundChainFamily,
-      tokenOutAddress: null,
-      recipient: null,
-    });
-    if (!verification.verified) {
-      logger.warn("bridge.repair.refund_unverified", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
-        reason: verification.reason ?? "verification_failed",
-      });
-      counters.stillPending++;
-      return;
-    }
-
-    // Evidence write must SUCCEED before we terminalize (Blocker 8). A write
-    // failure keeps everything pending for the next sweep (dedup makes the retry a
-    // harmless no-op if the row did land).
-    try {
-      await deps.appendRefundEvidence({
-        executionId,
-        protocol: logical.protocol,
-        chainId: observation.refundChainId,
-        chainFamily: observation.refundChainFamily,
-        txHash: observation.refundTxHash,
-        evidenceSource: logical.protocol === "relay" ? RELAY_EVIDENCE_SOURCE : KHALANI_EVIDENCE_SOURCE,
-        providerStatus: observation.providerStatus,
-      });
-    } catch (err) {
-      logger.warn("bridge.repair.refund_evidence_failed", {
-        executionId,
-        error: summarizeProtocolError(err).message,
-      });
-      counters.stillPending++;
-      return;
-    }
-  }
-
-  // refundTxHash present + verified + evidence written, OR the named-gap case
-  // (no hash, keyless Relay) with route correlation already passed — terminalize.
-  const outcome = await deps.failLogical(
-    logical.id,
-    "bridge_refunded",
-    `provider refund — funds returned to refundTo (${observation.providerStatus})`,
-  );
-  if (outcome.applied) {
-    counters.failed++;
-    counters.refunded++;
-  } else {
-    logDuplicateCas(executionId, "fail", outcome);
   }
 }
 
@@ -473,13 +271,4 @@ function readStoredCorrelation(logical: BridgeSweepRow): StoredBridgeCorrelation
     quoteId: logical.quoteId,
     routeId: logical.routeId,
   };
-}
-
-function logDuplicateCas(executionId: number, attempted: "confirm" | "fail", outcome: CasResult): void {
-  // Not a failure — a concurrent sweep instance already settled this row.
-  logger.info("bridge.repair.duplicate_cas_miss", {
-    executionId,
-    attempted,
-    currentStatus: outcome.row.status,
-  });
 }

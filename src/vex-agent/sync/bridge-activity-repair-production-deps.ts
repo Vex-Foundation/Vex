@@ -24,6 +24,7 @@ import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/error
 import logger from "@utils/logger.js";
 import type { BridgeRepairDeps, BridgeSweepRow } from "./bridge-activity-repair-contracts.js";
 import { verifyBridgeLegOnChain } from "./bridge-activity-repair-verification.js";
+import { fetchDebridgeFillHash } from "./bridge-activity-repair-debridge-lookup.js";
 
 /** Extract an optional string field from the logical row's `route_provenance` JSONB (quote/route ids). */
 function readProvenanceString(provenance: unknown, key: string): string | null {
@@ -212,6 +213,11 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
           toToken: order.toToken,
           author: order.author,
           depositTxHash: order.depositTxHash,
+          // F2: the client already validates these three; the sweep needs them to
+          // cross-check a recovered DeBridge fill hash against OUR destination.
+          externalOrderId: order.externalOrderId,
+          recipient: order.recipient,
+          destAmount: order.destAmount,
           transactions: order.transactions,
         };
       } catch (err) {
@@ -241,6 +247,10 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
         return null;
       }
     },
+
+    // Read-only GET against deBridge's FIXED stats host; the module owns the SSRF
+    // guard, the boundary schema, and the destination correlation (F2).
+    fetchDebridgeFillHash: (input) => fetchDebridgeFillHash(input),
 
     recoverKhalaniOrderId: async (candidate) => {
       // Lookup-only (never re-signs/re-broadcasts): match the persisted deposit
