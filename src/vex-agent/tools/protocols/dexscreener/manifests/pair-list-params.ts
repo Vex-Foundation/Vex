@@ -396,7 +396,7 @@ export const PAIR_LOOKUP_PARAMS: readonly ProtocolParamDef[] = [
  *
  * CANONICAL SOURCE: `agents_dm/agentscan-phase4/persona-tests/call-records.json`,
  * the replay that measures what the ENGINE measures
- * (`Buffer.byteLength(result.output, "utf8")`, per `tool-output-overflow.ts`) —
+ * (`Buffer.byteLength(result.output, "utf8")`) —
  * not the persona scripts' whole-ToolResult count, which was ~2x inflated.
  *
  * Only these two pair surfaces exceeded the 16,384 B cap bare, so only these two

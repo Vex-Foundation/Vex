@@ -59,7 +59,6 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     toolNames: ["swap_execute", "swap_execute_uniswap", "bridge", "bridge_execute_relay"],
   },
   { label: "Research", toolNames: ["web_research", "twitter_account"] },
-  { label: "Runtime overflow recovery", toolNames: ["tool_output_read"] },
   {
     label: "Session memory — this conversation/mission only",
     toolNames: ["session_memory_search", "session_memory_resolve_item"],

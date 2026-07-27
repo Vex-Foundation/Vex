@@ -9,11 +9,11 @@
  */
 
 import type { StopReason } from "../../types.js";
-import type { Message } from "@vex-agent/db/repos/messages.js";
+import type { Message, MessageMetadata } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
+import { appendMessage } from "@vex-agent/engine/events/index.js";
 import type { ExplorerRef } from "../explorer-refs.js";
 import { saveAssistantMessage } from "../turn.js";
-import { persistToolResultWithOverflow } from "../tool-output-overflow.js";
 import type { StopPayload, ToolBatchOutcome } from "./outcome.js";
 
 /** Synthetic tool-result emitted for batch tool calls skipped after a `compact_committed` signal. */
@@ -68,26 +68,40 @@ export async function persistBatchTranscript(args: {
     timestamp: new Date().toISOString(),
   });
 
-  // Save tool results (only for fully-executed, non-approval calls).
-  // Oversized outputs are externalised into tool_output_blobs (PR-11) —
-  // transcript gets a short stub with `metadata.payload.blob_key` so
-  // archive-aware checkpoint and resume paths can keep the pointer alive.
-  for (const { toolCallId, toolName, output, success, explorerRefs } of executedResults) {
-    const persisted = await persistToolResultWithOverflow(
+  // Save tool results (only for fully-executed, non-approval calls). Every
+  // tool output is persisted VERBATIM and inline: the externalisation
+  // mechanism (tool output blobs + a stub in the transcript) was removed —
+  // the model could not tell what to look for inside a blob, so full output
+  // in context beats blobbing.
+  //
+  // `metadata.payload` is the ONLY part of MessageMetadata that reaches the
+  // `messages.metadata` JSONB column (see db/repos/messages/write.ts), so
+  // `explorerRefs` lives under payload — the desktop app reads it as the
+  // column's top-level `metadata -> 'explorerRefs'`. Omitted entirely when
+  // empty so ref-less rows carry no extra JSONB.
+  for (const { toolCallId, output, success, explorerRefs } of executedResults) {
+    const metadata: MessageMetadata = {
+      source: "tool",
+      messageType: "tool_result",
+      visibility: "internal",
+      payload: {
+        success,
+        ...(explorerRefs.length > 0 ? { explorerRefs } : {}),
+      },
+    };
+
+    await appendMessage(
       sessionId,
-      toolCallId,
-      toolName,
-      output,
-      success,
-      explorerRefs,
+      { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
+      metadata,
     );
 
     liveMessages.push({
       role: "tool",
-      content: persisted.content,
+      content: output,
       toolCallId,
       timestamp: new Date().toISOString(),
-      metadata: persisted.metadata,
+      metadata,
     });
   }
 }

@@ -11,7 +11,6 @@
  */
 
 import { appendMessage } from "../../../events/index.js";
-import { refreshBlobTtlForRecentMessages } from "../../../wake/blob-refresh.js";
 import logger from "@utils/logger.js";
 
 import { claimResumeContinuation } from "../continuation.js";
@@ -59,8 +58,6 @@ async function runRejectionSideEffects(
   const toolCallId = row.queue_tool_call_id ?? row.tool_call_id ?? approvalId;
 
   try {
-    await refreshBlobTtlForRecentMessages(sessionId);
-
     await appendMessage(
       sessionId,
       {

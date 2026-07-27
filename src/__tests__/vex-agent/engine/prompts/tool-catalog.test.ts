@@ -89,8 +89,6 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).toContain("**Mission setup draft:** mission_draft_update");
       expect(out).not.toContain("Mission run stop");
       expect(out).not.toContain("Mission run scheduling");
-      // tool_output_read is hidden in mission setup
-      expect(out).not.toContain("Runtime overflow recovery");
     });
   });
 
@@ -104,7 +102,6 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).toContain("**Mission run stop:** mission_stop");
       expect(out).toContain("**Mission run scheduling:** loop_defer");
       expect(out).not.toContain("Mission setup draft");
-      expect(out).toContain("**Runtime overflow recovery:** tool_output_read");
     });
   });
 
