@@ -68,6 +68,7 @@ const rolloverIntent = (over: Partial<PendleReflectIntent> = {}): PendleReflectI
   inputAmountWei: ONE,
   slippageBps: BPS,
   expectedLegMarkets: [SOURCE_MARKET, DEST_MARKET],
+  expectedRouteOutputs: [DEST_PT],
   ...over,
 });
 
@@ -80,6 +81,8 @@ const transferIntent = (over: Partial<PendleReflectIntent> = {}): PendleReflectI
   inputAmountWei: ONE,
   slippageBps: BPS,
   expectedLegMarkets: [SOURCE_MARKET, DEST_MARKET],
+  // The destination market IS the LP token it delivers.
+  expectedRouteOutputs: [DEST_MARKET],
   ...over,
 });
 
@@ -92,6 +95,8 @@ const lpToPtIntent = (over: Partial<PendleTxIntent> = {}): PendleTxIntent => ({
   inputAmountWei: ONE,
   isNative: false,
   expectedMarket: SOURCE_MARKET,
+  // Same-market only: the PT this LP converts into is its OWN market's PT.
+  expectedRouteOutputs: [SOURCE_PT],
   ...over,
 });
 
@@ -170,6 +175,60 @@ describe("the price floor still binds through the composition", () => {
       });
     }
     expectUnsafe(() => selectSafeRoute(lpToPtIntent(), poisoned), /price_floor: minPtOut/);
+  });
+});
+
+describe("a hostile response cannot re-point the floor at a token it invented", () => {
+  // All three of these actions end on a BARE-uint256 min-out (`minPtOut`,
+  // `minLpOut`) that names no token in the calldata. Before the topology bind,
+  // the floor was therefore derived from whatever `route.outputs` declared — so
+  // one dust output of an unrelated token produced a floor of ~0 that any
+  // min-out cleared, while the calldata delivered the real asset unbounded.
+  const STRANGER_DUST = [{ token: STRANGER, amount: "1" }];
+
+  it("pt.rollover: an unrelated dust output is REFUSED before any floor is computed", () => {
+    const poisoned = response("rollOverPtR5d");
+    for (const route of poisoned.routes) route.outputs = [...STRANGER_DUST];
+    expectUnsafe(
+      () => selectSafeReflectRoute(rolloverIntent(), poisoned),
+      /route declares outputs this action does not deliver/,
+    );
+  });
+
+  it("lp.transfer: an unrelated dust output is REFUSED before any floor is computed", () => {
+    const poisoned = response("transferLiquidity");
+    for (const route of poisoned.routes) route.outputs = [...STRANGER_DUST];
+    expectUnsafe(
+      () => selectSafeReflectRoute(transferIntent(), poisoned),
+      /route declares outputs this action does not deliver/,
+    );
+  });
+
+  it("lp.toPt: an unrelated dust output is REFUSED before any floor is computed", () => {
+    const poisoned = response("convertLpToPt");
+    for (const route of poisoned.routes) route.outputs = [...STRANGER_DUST];
+    expectUnsafe(
+      () => selectSafeRoute(lpToPtIntent(), poisoned),
+      /route declares outputs this action does not deliver/,
+    );
+  });
+
+  it("a rollover into the SOURCE PT is refused — the declared output must be the DESTINATION", () => {
+    const poisoned = response("rollOverPtR5d");
+    for (const route of poisoned.routes) route.outputs = [{ token: SOURCE_PT, amount: "969279060056085269" }];
+    expectUnsafe(
+      () => selectSafeReflectRoute(rolloverIntent(), poisoned),
+      /route declares outputs this action does not deliver/,
+    );
+  });
+
+  it("an EXTRA declared leg is refused too — the match is exact, not a subset", () => {
+    const poisoned = response("transferLiquidity");
+    for (const route of poisoned.routes) route.outputs = [...route.outputs, ...STRANGER_DUST];
+    expectUnsafe(
+      () => selectSafeReflectRoute(transferIntent(), poisoned),
+      /route declares outputs this action does not deliver/,
+    );
   });
 });
 

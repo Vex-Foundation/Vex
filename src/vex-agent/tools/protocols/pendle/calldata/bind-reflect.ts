@@ -44,7 +44,10 @@
  *                         Router allowlist and compared with the leg decoded out
  *                         of `tx.data`, so a spoofed echo cannot
  *                         mislead downstream logging/UX.
- *   8. PRICE FLOOR      : LAST, so a tampered route is reported as tampering
+ *   8. OUTPUT TOPOLOGY  : the response's declared outputs must EXACTLY match the
+ *                         `expectedRouteOutputs` the caller declared, checked
+ *                         before the floor reads them.
+ *   9. PRICE FLOOR      : LAST, so a tampered route is reported as tampering
  *                         rather than as a price problem. Every leg must own a
  *                         minimum-output binding row, then
  *                         `assertReflectFloorBound` holds the FINAL leg to the
@@ -68,6 +71,7 @@ import {
 import {
   PENDLE_MIN_OUT_BINDINGS,
   assertReflectFloorBound,
+  assertRouteOutputTopology,
   reflectLegReceiverIsAllowed,
 } from "./price-floor.js";
 
@@ -105,6 +109,18 @@ export interface PendleReflectIntent {
    * rather than partially bound.
    */
   expectedLegMarkets: readonly Address[];
+  /**
+   * The EXACT set of output tokens the response is allowed to declare — the
+   * destination PT for a rollover, the destination market's LP for a transfer.
+   *
+   * REQUIRED, deliberately, exactly as `slippageBps` is. Both reflect actions end
+   * on a bare-`uint256` selector (`swapExactSyForPt`, `addLiquiditySingleSy`)
+   * that names no output token in the calldata, so the final leg's floor is
+   * computed from whatever `route.outputs` says. An optional field here would be
+   * a floor that can be bound to an attacker-chosen token; the compiler now
+   * forces every reflect path to declare what it expects to receive.
+   */
+  expectedRouteOutputs: readonly Address[];
 }
 
 // ── Approval-set binding ────────────────────────────────────────────
@@ -224,7 +240,11 @@ export function assertReflectRouteSafe(
   // 7. Echo cross-check.
   assertReflectEcho(route, pinned, reflect.legs);
 
-  // 8. PRICE FLOOR — last. Every leg must own a binding row first: a leg whose
+  // 8a. Output topology — BEFORE the floor, because the FINAL leg is floored
+  //     against `route.outputs` and names no output token of its own.
+  assertRouteOutputTopology(route, intent.expectedRouteOutputs);
+
+  // 8b. PRICE FLOOR — last. Every leg must own a binding row first: a leg whose
   //    minimum we cannot even locate is unbound, and an unbound leg is never
   //    signed.
   for (const [index, leg] of reflect.legs.entries()) {

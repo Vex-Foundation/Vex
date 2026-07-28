@@ -174,6 +174,11 @@ async function executePendleSyWrap(
       inputAmountWei: amountWei,
       isNative: false,
       expectedSy: sy,
+      // The ONLY token this wrap may be quoted as delivering — the SY on a mint,
+      // the payment token on a redeem. Without it a mint's `minSyOut` (a bare
+      // uint256 naming no token) would be floored against whatever token the
+      // response chose to declare, and `route.outputs[0]` below would report it.
+      expectedRouteOutputs: [tokenOut],
       // Redeem carries a TokenOutput; binding it stops a route from delivering a
       // token other than the one quoted. Mint's SY output is arg 1, already bound
       // by `expectedSy`, and carries no output tuple.

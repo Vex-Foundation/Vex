@@ -224,6 +224,10 @@ async function executePendlePtRollover(
       // In EXECUTION order: leg 1 sells out of the source market, the final leg
       // buys into the destination.
       expectedLegMarkets: [sourceMarket, destMarket],
+      // A roll delivers the DESTINATION PT and nothing else. The final leg's
+      // `minPtOut` names no token, so this is what ties its floor to the asset
+      // the caller is actually buying.
+      expectedRouteOutputs: [toPt],
     };
     const route = selectSafeReflectRoute(intent, response);
 
@@ -454,6 +458,9 @@ async function executePendleLpTransfer(
       inputAmountWei: amountWei,
       slippageBps: slippage.bps,
       expectedLegMarkets: [fromMarket, toMarket],
+      // A transfer delivers the DESTINATION market's LP — the market IS its LP
+      // token — and nothing else.
+      expectedRouteOutputs: [toMarket],
     };
     const route = selectSafeReflectRoute(intent, response);
 
@@ -688,7 +695,11 @@ async function executePendleLpToPt(
       isNative: false,
       expectedMarket: marketAddr,
       // NO `expectedOutputToken`: `removeLiquiditySinglePt` pays out PT and
-      // carries no TokenOutput tuple to bind (see calldata/decode.ts).
+      // carries no TokenOutput tuple to bind (see calldata/decode.ts). Because
+      // the calldata names no output token, the route's DECLARED outputs are
+      // pinned instead — otherwise `minPtOut` would be floored against whatever
+      // token the response declared.
+      expectedRouteOutputs: [ptOut],
     };
     const route = selectSafeRoute(intent, response);
 

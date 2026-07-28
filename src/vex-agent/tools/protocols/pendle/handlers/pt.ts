@@ -521,7 +521,17 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
       }
       deliveredAsset = getAddress(market.sy);
       deliveredPath = "router_fallback_redeemPyToSy";
-      const plan = buildRedeemPyToSyPlan({ receiver: wallet, yt: expectedYt, netPyIn: amountWei, slippage: slippage.fraction });
+      // The floor needs the SY exchange rate (share-based SY — see
+      // redeem-fallback.ts); built BEFORE the approval so a rate-read refusal
+      // leaves no allowance behind.
+      const plan = await buildRedeemPyToSyPlan({
+        publicClient,
+        receiver: wallet,
+        yt: expectedYt,
+        sy: deliveredAsset,
+        netPyIn: amountWei,
+        slippage: slippage.fraction,
+      });
       await ensurePendleAllowanceExact(publicClient, walletClient, ptAddress, PENDLE_ROUTER, amountWei);
       const syDecimals = assetMapPre.get(deliveredAsset.toLowerCase())?.decimals ?? null;
       broadcast = await sendPendleRouterTx(

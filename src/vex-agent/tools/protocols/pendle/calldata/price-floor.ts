@@ -353,6 +353,45 @@ function coveredOutputs(
 }
 
 /**
+ * Bind the route's DECLARED OUTPUT TOPOLOGY to the one the action must deliver,
+ * BEFORE any floor arithmetic runs.
+ *
+ * WHY THIS IS NOT REDUNDANT WITH THE FLOOR. `assertRouteFloorBound` ties a
+ * min-out field to a route output by TOKEN only when the selector names one —
+ * i.e. through a `TokenOutput` tuple. The bare-`uint256` selectors
+ * (`mintSyFromToken`, `removeLiquiditySinglePt`, `swapExactSyForPt`,
+ * `addLiquiditySingleSy`, …) name no token anywhere in the calldata, so under
+ * `coversOutputs: "all"` the floor is computed from WHATEVER token the response
+ * chose to declare. A hostile response that declares one unrelated dust output
+ * therefore produces a floor of ~0 that any min-out clears, and the calldata
+ * still delivers the real asset at an unbounded price. Four actions ran on those
+ * selectors: `sy.mint`, `lp.toPt`, `pt.rollover`, `lp.transfer`.
+ *
+ * The fix is to make the caller DECLARE what the response is allowed to say. The
+ * match is EXACT — same number of outputs, and a one-to-one pairing by token
+ * address — so an extra leg, a missing leg, or a substituted token is a refusal
+ * rather than a differently-shaped floor. Order is not part of the contract:
+ * the provider's `outputs` order is its OWN canonical order (measured
+ * 2026-07-28, see {@link PendleMinOutTokenSource}).
+ */
+export function assertRouteOutputTopology(
+  route: PendleConvertRoute,
+  expectedOutputTokens: readonly Address[],
+): void {
+  if (route.outputs.length !== expectedOutputTokens.length) {
+    return unsafe("price_floor: the route declares outputs this action does not deliver");
+  }
+  const remaining = expectedOutputTokens.map((token) => token.toLowerCase());
+  for (const output of route.outputs) {
+    const at = remaining.indexOf(output.token.toLowerCase());
+    if (at === -1) {
+      return unsafe("price_floor: the route declares outputs this action does not deliver");
+    }
+    remaining.splice(at, 1);
+  }
+}
+
+/**
  * Hold ONE route's calldata to the floor its OWN quoted outputs imply.
  *
  * For every binding row of the decoded selector, and for every route output that

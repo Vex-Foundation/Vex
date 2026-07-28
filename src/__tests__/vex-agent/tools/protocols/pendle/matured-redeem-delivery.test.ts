@@ -77,7 +77,9 @@ vi.mock("@tools/pendle/evm-client.js", () => ({
   getPendlePublicClient: () => ({ readContract: async () => 18 }),
   getPendleEvmClients: () => ({
     publicClient: {
-      readContract: async () => 18,
+      readContract: async (args: { functionName?: string }) =>
+        // Share-based SY: the redeem fallback reads exchangeRate() for its floor.
+        args?.functionName === "exchangeRate" ? 10n ** 18n : 18,
       estimateGas: async () => 1_000_000n,
       sendRawTransaction: (...a: unknown[]) => mockSendTransaction(...a),
       waitForTransactionReceipt: async () => ({

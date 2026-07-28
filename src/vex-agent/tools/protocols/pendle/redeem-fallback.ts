@@ -7,16 +7,25 @@
  * involved. The tx always targets the pinned Router; the caller approves the PT
  * (exact `netPyIn`) to the Router and broadcasts.
  *
- * `minSyOut` is conservative: a matured PT redeems ~1:1, so we floor it at
- * `netPyIn * (1 - slippage)` scaled by nothing (SY shares 1:1 with PT units at
- * maturity for these markets). A zero floor is refused — a redemption must never
- * accept an unbounded-loss `minSyOut`.
+ * `minSyOut` is SHARE-BASED, not 1:1. SY is a share token: PT is denominated in
+ * the accounting asset, and the Router pays `netPyIn * 1e18 /
+ * SY.exchangeRate()`. Live-measured 2026-07-28 on the matured srUSDe market
+ * (`agents_dm/agentscan-phase4/live-gate/free-lanes-2026-07-28.md`, LANE 2 /
+ * L2-D1): `netPyIn 1896804154210053863` paid `netSyOut 1845564247148178107` at
+ * rate `1027763816481086050` — 97.29 %, while the old 1:1 floor demanded
+ * 99.49 % and the redemption reverted with `Slippage: INSUFFICIENT_SY_OUT`.
+ *
+ * So the tolerance is applied to the rate-converted expectation. It is NOT a
+ * conversion allowance: it covers only exchange-rate accrual between the read
+ * and the mine (the rate rises, output falls slightly). A zero floor is still
+ * refused — a redemption must never accept an unbounded-loss `minSyOut` — and a
+ * failed rate read is refused BY NAME rather than falling back to 1:1.
  */
 
-import { encodeFunctionData, getAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, getAddress, type Address, type Chain, type Hex, type PublicClient, type Transport } from "viem";
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
-import { PENDLE_ROUTER, PENDLE_ROUTER_REDEEM_ABI } from "@tools/pendle/constants.js";
+import { PENDLE_ROUTER, PENDLE_ROUTER_REDEEM_ABI, PENDLE_SY_RATE_ABI } from "@tools/pendle/constants.js";
 import { classifyPendleExpiry } from "./market-maturity.js";
 
 /**
@@ -63,36 +72,75 @@ export interface RedeemPyToSyPlan {
   yt: Address;
   netPyIn: bigint;
   minSyOut: bigint;
+  /** 1e18-scaled SY exchange rate the floor was computed from. */
+  syExchangeRate: bigint;
+  /** `netPyIn * 1e18 / syExchangeRate` — the output before tolerance. */
+  expectedSyOut: bigint;
 }
 
+const WAD = 10n ** 18n;
+
 /**
- * Build the `redeemPyToSy` calldata + a conservative `minSyOut`. Pure — no
- * network. Throws on a malformed address or a non-positive amount so a bad exit
- * plan can never be broadcast.
+ * Build the `redeemPyToSy` calldata + a share-based `minSyOut`. Performs ONE
+ * free `eth_call` (`SY.exchangeRate()`); everything else is local. Throws on a
+ * malformed address, a non-positive amount, or an unreadable/non-positive
+ * exchange rate, so a bad exit plan can never be broadcast.
  */
-export function buildRedeemPyToSyPlan(input: {
+export async function buildRedeemPyToSyPlan(input: {
+  publicClient: PublicClient<Transport, Chain>;
   receiver: string;
   yt: string;
+  /** The market's SY — the share token the redemption actually pays. */
+  sy: string;
   netPyIn: bigint;
   /** Slippage tolerance 0-1 for the minSyOut floor (default 0.5%). */
   slippage?: number;
-}): RedeemPyToSyPlan {
+}): Promise<RedeemPyToSyPlan> {
   if (input.netPyIn <= 0n) {
     throw new VexError(ErrorCodes.INVALID_AMOUNT, "Redeem amount must be positive.");
   }
   let receiver: Address;
   let yt: Address;
+  let sy: Address;
   try {
     receiver = getAddress(input.receiver);
     yt = getAddress(input.yt);
+    sy = getAddress(input.sy);
   } catch {
     throw new VexError(ErrorCodes.PENDLE_UNSAFE_TX, "Redeem fallback address is malformed.");
   }
 
+  // The floor's scale comes from the chain, never from an assumption. A read
+  // failure refuses the redeem: a 1:1 fallback is exactly the defect that made
+  // the live redemption revert.
+  let syExchangeRate: bigint;
+  try {
+    syExchangeRate = (await input.publicClient.readContract({
+      address: sy,
+      abi: PENDLE_SY_RATE_ABI,
+      functionName: "exchangeRate",
+    })) as bigint;
+  } catch (err) {
+    throw new VexError(
+      ErrorCodes.PENDLE_UNSAFE_TX,
+      `Pendle refused to sign: this market's SY exchange rate could not be read, so a safe minSyOut cannot be computed (${err instanceof Error ? err.message : String(err)}).`,
+      "Nothing was signed or spent. Retry when the RPC is reachable.",
+    );
+  }
+  if (syExchangeRate <= 0n) {
+    throw new VexError(
+      ErrorCodes.PENDLE_UNSAFE_TX,
+      "Pendle refused to sign: this market's SY reported a non-positive exchange rate, so a safe minSyOut cannot be computed.",
+      "Nothing was signed or spent.",
+    );
+  }
+
   const slippage = input.slippage !== undefined && input.slippage >= 0 && input.slippage < 1 ? input.slippage : 0.005;
-  // Matured PT ↔ SY is ~1:1; floor conservatively and refuse a zero floor.
+  // SY is share-based: the Router pays netPyIn * 1e18 / exchangeRate.
+  const expectedSyOut = (input.netPyIn * WAD) / syExchangeRate;
+  // Tolerance protects ONLY against rate accrual between this read and the mine.
   const bps = BigInt(Math.round((1 - slippage) * 10_000));
-  const minSyOut = (input.netPyIn * bps) / 10_000n;
+  const minSyOut = (expectedSyOut * bps) / 10_000n;
   if (minSyOut <= 0n) {
     throw new VexError(ErrorCodes.PENDLE_UNSAFE_TX, "Redeem fallback minSyOut floored to zero.");
   }
@@ -103,5 +151,5 @@ export function buildRedeemPyToSyPlan(input: {
     args: [receiver, yt, input.netPyIn, minSyOut],
   });
 
-  return { to: PENDLE_ROUTER, data, receiver, yt, netPyIn: input.netPyIn, minSyOut };
+  return { to: PENDLE_ROUTER, data, receiver, yt, netPyIn: input.netPyIn, minSyOut, syExchangeRate, expectedSyOut };
 }

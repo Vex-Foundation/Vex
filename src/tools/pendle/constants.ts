@@ -683,6 +683,18 @@ export const PENDLE_ROUTER_REDEEM_ABI = [
 ] as const;
 
 /**
+ * Minimal SY ABI for the redeem fallback's floor (IStandardizedYield).
+ *
+ * `exchangeRate()` is 1e18-scaled accounting-asset-per-SY-share. A matured PT is
+ * denominated in the accounting asset, so `redeemPyToSy` pays
+ * `netPyIn * 1e18 / exchangeRate` SY shares — NOT 1:1. Live-measured 2026-07-28
+ * (see `agents_dm/agentscan-phase4/live-gate/free-lanes-2026-07-28.md`, LANE 2).
+ */
+export const PENDLE_SY_RATE_ABI = [
+  { type: "function", name: "exchangeRate", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const;
+
+/**
  * Income-sweep claim ABI — `redeemDueInterestAndRewardsV2` (IPActionMiscV3).
  * Live-probed 2026-07-06 + 4byte-confirmed signature:
  *   redeemDueInterestAndRewardsV2(

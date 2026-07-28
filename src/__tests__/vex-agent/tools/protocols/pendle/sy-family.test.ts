@@ -61,6 +61,7 @@ const mintIntent = (over: Partial<PendleTxIntent> = {}): PendleTxIntent => ({
   inputAmountWei: ONE,
   isNative: false,
   expectedSy: SY,
+  expectedRouteOutputs: [SY],
   ...over,
 });
 
@@ -73,6 +74,7 @@ const redeemIntent = (over: Partial<PendleTxIntent> = {}): PendleTxIntent => ({
   isNative: false,
   expectedSy: SY,
   expectedOutputToken: WSTETH,
+  expectedRouteOutputs: [WSTETH],
   ...over,
 });
 
@@ -174,6 +176,36 @@ describe("an SY route that is not the one asked for is REFUSED", () => {
       });
     }
     expectUnsafe(() => selectSafeRoute(redeemIntent(), response), /price_floor: minTokenOut/);
+  });
+});
+
+describe("a hostile response cannot re-point the floor at a token it invented", () => {
+  // `mintSyFromToken`'s minSyOut is a bare uint256 naming NO token, so before the
+  // topology bind the floor was computed from whatever `outputs` declared: one
+  // dust output of an unrelated token makes the floor ~0 and every min-out clears
+  // it, while the calldata still delivers the real SY at an unbounded price.
+  it("sy.mint: an unrelated dust output is REFUSED before any floor is computed", () => {
+    const response = mintResponse();
+    for (const route of response.routes) route.outputs = [{ token: USDC, amount: "1" }];
+    expectUnsafe(() => selectSafeRoute(mintIntent(), response), /route declares outputs this action does not deliver/);
+  });
+
+  it("sy.redeem: an unrelated dust output is REFUSED before any floor is computed", () => {
+    const response = redeemResponse();
+    for (const route of response.routes) route.outputs = [{ token: USDC, amount: "1" }];
+    expectUnsafe(() => selectSafeRoute(redeemIntent(), response), /route declares outputs this action does not deliver/);
+  });
+
+  it("an EXTRA declared output is refused too — the match is exact, not a subset", () => {
+    const response = mintResponse();
+    for (const route of response.routes) route.outputs = [...route.outputs, { token: USDC, amount: "1" }];
+    expectUnsafe(() => selectSafeRoute(mintIntent(), response), /route declares outputs this action does not deliver/);
+  });
+
+  it("a route declaring NO output is refused rather than treated as unbounded", () => {
+    const response = mintResponse();
+    for (const route of response.routes) route.outputs = [];
+    expectUnsafe(() => selectSafeRoute(mintIntent(), response), /route declares outputs this action does not deliver/);
   });
 });
 

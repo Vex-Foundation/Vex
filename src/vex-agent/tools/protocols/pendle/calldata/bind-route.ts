@@ -41,7 +41,7 @@ import { PENDLE_NATIVE_TOKEN, PENDLE_ROUTER, type PendleRouterMethod } from "@to
 import type { PendleConvertResponse, PendleConvertRoute } from "@tools/pendle/types.js";
 
 import { decodeRouterCall, requireAddress, unsafe } from "./decode.js";
-import { assertRouteFloorBound } from "./price-floor.js";
+import { assertRouteFloorBound, assertRouteOutputTopology } from "./price-floor.js";
 
 export type PendleAction =
   | "buy"
@@ -117,6 +117,19 @@ export interface PendleTxIntent {
   expectedOutputToken?: Address;
   /** SY wrap/unwrap: the SY contract the caller named. Asserted against arg 1. */
   expectedSy?: Address;
+  /**
+   * The EXACT set of output tokens this route is allowed to declare, checked
+   * BEFORE the floor (see `assertRouteOutputTopology`).
+   *
+   * REQUIRED IN PRACTICE for any action whose min-out lives in a bare `uint256`
+   * argument — `sy-mint` and `lp-to-pt` today — because those selectors name no
+   * output token in the calldata, so without this the floor is derived from
+   * whatever token the response declares. Optional on the type only because the
+   * `TokenOutput`-carrying actions already bind their delivered token through
+   * `expectedOutputToken`, and the dual-LP actions bind both legs by
+   * token/elimination in `PENDLE_MIN_OUT_BINDINGS`.
+   */
+  expectedRouteOutputs?: readonly Address[];
 }
 
 /** Method(s) a given action may legitimately carry. */
@@ -301,7 +314,14 @@ export function assertRouteSafe(
     return unsafe("echoed market/YT disagrees with the calldata");
   }
 
-  // 6. Price floor — LAST, so a tampered route is reported as tampering. No
+  // 6a. Output topology — BEFORE the floor, because the floor reads the very
+  //     outputs this binds. A response free to declare its own output token can
+  //     hand the floor a dust amount of an unrelated asset.
+  if (intent.expectedRouteOutputs !== undefined) {
+    assertRouteOutputTopology(route, intent.expectedRouteOutputs);
+  }
+
+  // 6b. Price floor — LAST, so a tampered route is reported as tampering. No
   //    route reaches a signature unbound: the intent's `slippageBps` is
   //    required, so there is no path through here without a floor.
   assertRouteFloorBound(call, route, intent.slippageBps);

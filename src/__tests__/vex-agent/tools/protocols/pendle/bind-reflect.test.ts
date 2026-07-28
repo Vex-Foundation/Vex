@@ -35,6 +35,8 @@ const MONAD_REFLECTOR = getAddress("0x73d5dbf81a4f3bfa7b335e6a2d4638d6017a4fa8")
 
 const SOURCE_MARKET = getAddress("0x34280882267ffa6383b363e278b027be083bbe3b");
 const DEST_MARKET = getAddress("0xba1cbaece600beec76dabc0a4ead31e0339cbe37");
+/** The destination PT the chain-1 roll-over capture declares as its only output. */
+const DEST_PT = getAddress("0xa3e7ccf0d0fa014892372c0321731a1ed977068c");
 const SOURCE_PT = getAddress("0xb253eff1104802b97ac7e3ac9fdd73aece295a2c");
 const MONAD_SOURCE_MARKET = getAddress("0x2142267022ecde6745de9f577e3ba4549ad23abc");
 const MONAD_DEST_MARKET = getAddress("0x6f99cf00ee7290ae78a072bb6910ef72d1129fe7");
@@ -120,6 +122,7 @@ const rolloverIntent: PendleReflectIntent = {
   inputAmountWei: ONE_E18,
   slippageBps: 100,
   expectedLegMarkets: [SOURCE_MARKET, DEST_MARKET],
+  expectedRouteOutputs: [DEST_PT],
 };
 
 const transferIntent: PendleReflectIntent = {
@@ -130,6 +133,7 @@ const transferIntent: PendleReflectIntent = {
   inputAmountWei: ONE_E18,
   slippageBps: 100,
   expectedLegMarkets: [SOURCE_MARKET, DEST_MARKET],
+  expectedRouteOutputs: [DEST_MARKET],
 };
 
 const monadTransferIntent: PendleReflectIntent = {
@@ -140,6 +144,7 @@ const monadTransferIntent: PendleReflectIntent = {
   inputAmountWei: ONE_E18,
   slippageBps: 100,
   expectedLegMarkets: [MONAD_SOURCE_MARKET, MONAD_DEST_MARKET],
+  expectedRouteOutputs: [MONAD_DEST_MARKET],
 };
 
 // ── 1. Green path, per action, from the live captures ────────────────
