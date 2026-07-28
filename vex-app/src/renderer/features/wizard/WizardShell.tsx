@@ -7,7 +7,8 @@
  * but paints the same SetupGate plate as every other pre-shell slide
  * (`.vex-gate-plate` + vignette + grain) and carries the
  * `data-vex-gate` token scope, so stock Buttons inside step forms are
- * paper pills. Top-left brand + bottom corners match `SetupFrame`
+ * cobalt pills and the step forms pick up the pre-shell type scale
+ * (INK REDESIGN). Top-left brand + bottom corners match `SetupFrame`
  * (plus the "Backed by · Virtuals" partner mark, wizard-only). The
  * centered column hosts the minimal `HorizontalStepper` rail above
  * `WizardStepPanel`. Loading state is the VexLoader ring.
@@ -92,7 +93,7 @@ const SHELL_CHROME = cn(
  * boxless): serif title, danger rail for the message, actions in flow. */
 const ERROR_STACK_CHROME = cn("relative z-10 flex w-full max-w-md flex-col gap-4");
 
-/** The cobalt plate + corner chrome shared by all three shell states.
+/** The ink plate + corner chrome shared by all three shell states.
  * Paint layers first (behind), then the pointer-events-none corners. */
 function WizardChrome(): JSX.Element {
   return (
@@ -114,7 +115,7 @@ function WizardChrome(): JSX.Element {
       <div className="pointer-events-none absolute bottom-7 left-10 z-10">
         {/* Static backed-by line — a quiet monochrome partner mark. */}
         <span className="flex items-center gap-2 opacity-70">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.58)]">
+          <span className="vex-micro text-[var(--color-text-muted)]">
             Backed by
           </span>
           <img
@@ -124,7 +125,7 @@ function WizardChrome(): JSX.Element {
           />
         </span>
       </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.58)]">
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
         v{__VEX_APP_VERSION__}
       </span>
     </>
@@ -262,11 +263,11 @@ export function WizardShell(): JSX.Element {
               Setup unavailable
             </h1>
             {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
-            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-[rgba(243,244,247,0.78)]">
+            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-[var(--color-text-secondary)]">
               {message}
             </p>
           </div>
-          <p className="text-xs text-[rgba(243,244,247,0.58)]">
+          <p className="text-xs text-[var(--color-text-muted)]">
             Most setup-state failures are transient — retry once, then
             restart Vex if the problem persists.
           </p>
@@ -333,8 +334,10 @@ export function WizardShell(): JSX.Element {
           completedSteps={persisted?.completedSteps ?? []}
         />
         {/* A3 boxless: the page scrolls here (quiet onboarding scrollbar),
-            not inside a bordered panel well. */}
-        <div className="vex-gate-page min-h-0 w-full max-w-[640px]">
+            not inside a bordered panel well. max-w = 640px of readable
+            measure + 4rem for .vex-gate-page's symmetric scrollbar gutter
+            (setup-gate.css), which keeps the thumb off the text column. */}
+        <div className="vex-gate-page min-h-0 w-full max-w-[704px]">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={currentStepId}

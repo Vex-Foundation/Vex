@@ -141,7 +141,7 @@ export function ChainActions({
         data-vex-wallet-chain={chain}
       >
         <div>
-          <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+          <p className="vex-micro text-muted-foreground">
             {chainLabel(chain)} wallet
           </p>
           <AddressDisplay address={address} className="mt-1" />

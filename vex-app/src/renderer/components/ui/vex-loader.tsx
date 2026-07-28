@@ -32,8 +32,12 @@ export type VexLoaderTone = "ink" | "paper";
 export interface VexLoaderProps {
   /** Outer diameter in px (the ring hugs this box). */
   readonly size?: number;
-  /** Arc color family: `ink` = cobalt arc on dark canvas (default);
-   * `paper` = paper arc on the cobalt plate. */
+  /** Arc color family: `ink` = cobalt arc on the shell canvas (default);
+   * `paper` = the pre-shell plate's arc. Historically a paper arc on the
+   * solid-cobalt plate — hence the name — but since the INK REDESIGN the
+   * plate is ink-navy and the tone resolves to the accent's lighter mix
+   * (`global-css/setup-gate.css`). Every `tone="paper"` call site is a
+   * pre-shell surface. */
   readonly tone?: VexLoaderTone;
   /** Announced once via role="status"; never rendered visually. */
   readonly label: string;

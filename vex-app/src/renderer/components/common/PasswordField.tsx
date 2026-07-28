@@ -44,7 +44,7 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
           onClick={() => setVisible((v) => !v)}
           aria-pressed={visible}
           aria-label={visible ? "Hide password" : "Show password"}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm px-2 py-0.5 vex-micro text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {visible ? "hide" : "show"}
         </button>

@@ -5,10 +5,10 @@
  * reuse it with different wiring.
  *
  * Sequence (the SetupGate curtain in reverse order of duties):
- *   1. COVER — the full-window cobalt plate fades in over the current
+ *   1. COVER — the full-window ink plate fades in over the current
  *      screen (0.22s). The plate is pixel-identical to the pre-shell
  *      continuum plate beneath, so only the card content visibly melts
- *      away — the cobalt reads as one continuous surface.
+ *      away — the plate reads as one continuous surface.
  *   2. `onCovered()` — the caller flips the view machine while the plate
  *      is opaque (nothing beneath is visible); one frame later the reveal
  *      starts.

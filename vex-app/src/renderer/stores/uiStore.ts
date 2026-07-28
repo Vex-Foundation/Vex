@@ -183,6 +183,15 @@ interface UiState {
    */
   readonly setupGateActive: boolean;
   /**
+   * Bumped by the dev Setup Tour to replay the gate's cinematic prologue on
+   * demand. Any value > 0 means "this gate mount is a tour replay": it forces
+   * the FULL variant regardless of the play policy and does NOT persist the
+   * version key, so the preview stays repeatable. It is also the remount key
+   * for the gate, which is what makes a second click replay rather than no-op.
+   * Dev-only in practice (the tour is build-flag gated). NOT persisted.
+   */
+  readonly prologueReplayNonce: number;
+  /**
    * The unlock-success exit curtain (features/setup/CurtainExit, mounted by
    * App): `true` from a successful unlock IPC until the cobalt curtain has
    * covered the screen, flipped `currentView` to `unlockReturnView`, and
@@ -258,6 +267,8 @@ interface UiState {
   readonly setCurrentView: (value: View) => void;
   /** One-way: the boot gate unmounts for the rest of the process. */
   readonly dismissSetupGate: () => void;
+  /** Re-arm the boot gate and replay its full prologue (dev Setup Tour). */
+  readonly replayPrologue: () => void;
   /** Arm the unlock-success curtain — called ONLY after the unlock IPC succeeds. */
   readonly beginUnlockCurtain: () => void;
   /** The curtain finished its reveal and unmounts. */
@@ -327,6 +338,7 @@ export const useUiStore = create<UiState>()(
       bookOpen: true,
       currentView: "splash",
       setupGateActive: true,
+      prologueReplayNonce: 0,
       unlockCurtainActive: false,
       wizardEntryMode: "setup",
       unlockReturnView: "appShell",
@@ -346,6 +358,11 @@ export const useUiStore = create<UiState>()(
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
       dismissSetupGate: () => set({ setupGateActive: false }),
+      replayPrologue: () =>
+        set((state) => ({
+          setupGateActive: true,
+          prologueReplayNonce: state.prologueReplayNonce + 1,
+        })),
       beginUnlockCurtain: () => set({ unlockCurtainActive: true }),
       dismissUnlockCurtain: () => set({ unlockCurtainActive: false }),
       openWizard: (wizardEntryMode) =>

@@ -111,10 +111,10 @@ export function WalletInventoryPanel({
 
   return (
     <div
-      className="flex flex-col gap-3 border-t border-white/[0.12] pt-4"
+      className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4"
       data-vex-wallet-inventory={chain}
     >
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+      <p className="vex-micro text-muted-foreground">
         {chainLabel(chain)} wallets ({count}/{MAX_PER_FAMILY})
       </p>
       {others.length > 0 ? (

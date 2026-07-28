@@ -1,12 +1,13 @@
 /**
- * SetupFrame — the shared pre-shell scaffold on the cobalt continuum
- * (Chronos rebrand, AMENDMENT A2). Replaces the NOTARY-era NotaryPage.
+ * SetupFrame — the shared pre-shell scaffold (Chronos rebrand, AMENDMENT
+ * A2; INK REDESIGN 2026-07-27). Replaces the NOTARY-era NotaryPage.
  *
  * Every pre-shell screen (systemCheck, dockerBootstrap, composeBootstrap,
- * migrations, unlock) paints the exact SetupGate plate — solid cobalt
+ * migrations, unlock) paints the exact SetupGate plate — deep ink-navy
  * (`.vex-gate-plate`) + `.vex-gate-vignette` + `.vex-noise` grain — so
- * the whole pre-boot experience reads as ONE continuous cobalt world;
- * each screen is a slide on the same plate.
+ * the whole pre-boot experience reads as ONE continuous room; each screen
+ * is a slide on the same plate. Cobalt is the accent on that plate, not
+ * the plate itself (it was the surface until the ink redesign).
  *
  * Chrome: top-left brand mark (logo + VEX), bottom-right version. The
  * optional serif title + subline keep the type ramp single-sourced;
@@ -16,9 +17,10 @@
  *   - `data-vex-screen={screen}` is the stable e2e/test selector.
  *   - `data-vex-onboarding="true"` keeps the shared onboarding accent
  *     scope (scrollbars, `--vex-onboarding-accent`) alive.
- *   - `data-vex-gate="true"` applies the paper-on-cobalt token
- *     re-projection from `global-css/setup-gate.css` (stock Button =
- *     paper pill, paper focus rings, paper-alpha input hairlines).
+ *   - `data-vex-gate="true"` applies the pre-shell token re-projection
+ *     from `global-css/setup-gate.css`: stock Button = cobalt pill with a
+ *     white label, cobalt focus rings, visible white-alpha hairlines, the
+ *     solid text tiers, AND the pre-shell type scale.
  */
 
 import { type JSX, type ReactNode } from "react";
@@ -67,7 +69,7 @@ export function SetupFrame({
           className="h-7 w-7 select-none object-contain"
         />
       </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.58)]">
+      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-[var(--color-text-muted)]">
         v{__VEX_APP_VERSION__}
       </span>
 
@@ -77,17 +79,27 @@ export function SetupFrame({
        * scroll wells anywhere beneath). */}
       <div
         className={cn(
+          // max-w = readable measure (640/560) + 4rem for .vex-gate-page's
+          // symmetric scrollbar gutter (setup-gate.css) — keeps the thumb
+          // off the text column without narrowing or de-centering it.
           "vex-gate-page relative z-10 flex max-h-full w-full flex-col",
-          maxWidth === "lg" ? "max-w-[640px]" : "max-w-[560px]",
+          maxWidth === "lg" ? "max-w-[704px]" : "max-w-[624px]",
         )}
       >
+        {/* Centered header (owner review 2026-07-27): the title used to sit
+         * flush-left above centered CTAs, which read unbalanced. Only the
+         * HEADER centers — the bodies below keep their own alignment, so a
+         * centered header over a left-aligned probe list, service table or
+         * password form is the intended composition. The wizard's step
+         * header matches this rhythm via the `[data-vex-gate]` scope.
+         * `text-2xl` is 40px here: the gate re-pins `--text-2xl`. */}
         {title !== undefined ? (
-          <header className="vex-rise mb-6 flex flex-col gap-2">
-            <h1 className="font-serif text-[28px] font-normal leading-tight text-[var(--color-text-primary)]">
+          <header className="vex-rise mb-6 flex flex-col items-center gap-2 text-center">
+            <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">
               {title}
             </h1>
             {subline !== undefined ? (
-              <p className="text-[13px] leading-relaxed text-[rgba(243,244,247,0.78)]">
+              <p className="text-lg leading-relaxed text-[var(--color-text-secondary)]">
                 {subline}
               </p>
             ) : null}

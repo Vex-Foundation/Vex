@@ -83,7 +83,7 @@ export function StrengthMeter({
         <span className="text-muted-foreground">
           10 characters minimum. Must score at least &quot;Good&quot;.
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="vex-micro text-muted-foreground">
           {labelText}
         </span>
       </div>

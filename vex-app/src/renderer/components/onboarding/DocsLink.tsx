@@ -22,10 +22,11 @@ export function DocsLink({ href, label }: DocsLinkProps): JSX.Element {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      // Token-driven (A2 review finding): --color-primary/--color-ring
-      // resolve to paper inside [data-vex-gate] and to the cobalt accent on
-      // ink scopes — never a cobalt ring on the cobalt plate.
-      className="inline-flex items-center gap-1 self-start text-xs text-[var(--color-primary)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
+      // Token-driven: the label reads `--vex-accent-text` (the accent's
+      // lighter mix) because accent AS TEXT on the #070b1e pre-shell plate
+      // needs it — raw #1f44ff is 3.09:1 there, the mix is 7.99:1. The
+      // focus ring is a solid mark and keeps --color-ring.
+      className="inline-flex items-center gap-1 self-start text-xs text-[var(--vex-accent-text,var(--color-accent-secondary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
     >
       {label}
       <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} aria-hidden />

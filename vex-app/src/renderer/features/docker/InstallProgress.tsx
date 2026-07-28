@@ -43,7 +43,7 @@ export function InstallProgressStrip({ active }: InstallProgressProps): JSX.Elem
     // the progress bar sit directly on the surface.
     <div className="flex flex-col gap-2.5 py-1">
       <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(243,244,247,0.78)]">
+        <span className="vex-micro text-[var(--color-text-secondary)]">
           {phase}
         </span>
         {percent !== null ? (
@@ -64,7 +64,7 @@ export function InstallProgressStrip({ active }: InstallProgressProps): JSX.Elem
         />
       </div>
       {progress?.message ? (
-        <p className="text-[11px] leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
           {progress.message}
         </p>
       ) : null}

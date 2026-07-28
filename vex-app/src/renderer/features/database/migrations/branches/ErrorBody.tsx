@@ -33,7 +33,7 @@ export function ErrorBody({
       <SetupStatusCard tone="error" title="Migration failed" detail={message} />
 
       {failedAt !== null ? (
-        <p className="text-xs leading-relaxed text-[rgba(243,244,247,0.78)]">
+        <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
           Failed at migration{" "}
           <span className="font-mono text-[var(--color-text-primary)]">
             v{failedAt.version}
@@ -47,14 +47,14 @@ export function ErrorBody({
 
       {appliedBeforeFailure.length > 0 ? (
         expanded ? (
-          <pre className="max-h-40 overflow-auto rounded-lg border border-white/[0.14] bg-black/40 p-3 font-mono text-[10px] leading-relaxed text-[var(--color-text-primary)]">
+          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-[var(--color-text-primary)]">
             <code>{appliedBeforeFailure.join("\n")}</code>
           </pre>
         ) : (
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="self-start font-mono text-[11px] text-[color-mix(in_oklab,var(--vex-onboarding-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+            className="self-start font-mono text-xs text-[var(--vex-accent-text,var(--color-accent-secondary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
           >
             Show {appliedBeforeFailure.length} applied before failure
           </button>

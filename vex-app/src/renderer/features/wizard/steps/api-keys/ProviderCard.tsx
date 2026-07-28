@@ -56,7 +56,7 @@ export interface ProviderCardProps {
 
 const CARD_CHROME = cn(
   // A3 boxless: one hairline-separated section per provider, no tile.
-  "flex flex-col gap-3 border-t border-white/[0.10] pt-5",
+  "flex flex-col gap-3 border-t border-[var(--color-border)] pt-5",
 );
 
 const ICON_TILE_CHROME = cn(
@@ -74,7 +74,7 @@ function StatusWord({ status }: { status: ProviderCardStatus }): JSX.Element {
   return (
     <span
       className={cn(
-        "shrink-0 font-mono text-[10px] uppercase tracking-[0.18em]",
+        "shrink-0 vex-micro",
         STATUS_WORD_COLOR[status.tone],
       )}
     >
@@ -132,7 +132,7 @@ export function ProviderCard({
             </h3>
             <StatusWord status={status} />
           </div>
-          <p className="text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+          <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
             {description}
           </p>
           {detail ? (

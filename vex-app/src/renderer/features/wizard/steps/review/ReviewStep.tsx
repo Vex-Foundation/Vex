@@ -141,12 +141,12 @@ export function ReviewStep({
           className={cn(
             // A3 boxless: a quiet row above the sub-step, hairline only.
             "flex items-center justify-between gap-3",
-            "border-b border-white/[0.12] pb-3",
+            "border-b border-[var(--color-border)] pb-3",
             "text-xs text-[var(--color-text-secondary)]",
           )}
           data-vex-wizard-review-editing={editingStep}
         >
-          <span className="font-mono uppercase tracking-[0.18em]">
+          <span className="vex-micro">
             Editing · {editingMeta.label}
           </span>
           <button
@@ -154,10 +154,10 @@ export function ReviewStep({
             onClick={() => setEditingStep(null)}
             className={cn(
               "inline-flex items-center gap-1 rounded-md",
-              "border border-white/[0.16] bg-white/[0.08] px-2 py-1",
-              "font-mono text-[10px] uppercase tracking-[0.18em]",
+              "border border-[var(--color-border)] bg-white/[0.08] px-2 py-1",
+              "vex-micro",
               "text-[var(--color-text-secondary)]",
-              "hover:border-white/[0.2] hover:text-[var(--color-text-primary)]",
+              "hover:border-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
             )}
           >
