@@ -2,12 +2,42 @@ import type { ChatRequest, ChatRequestEffort } from "@openrouter/sdk/models/chat
 import { unrecognized } from "@openrouter/sdk/types";
 import type {
   InferenceConfig,
+  InferenceRequestContext,
   ProviderMessage,
   ReasoningEffort,
   ToolDefinition,
 } from "../types.js";
 import { normalizeToolSchemaForProvider } from "../schema-normalizer.js";
 import { mapMessages } from "./mappers.js";
+import { buildProviderPreferences } from "./provider-prefs.js";
+
+/**
+ * OpenRouter's documented cap on `session_id` (`chatrequest.d.ts`: "Maximum of
+ * 256 characters").
+ */
+const MAX_SESSION_ID_LENGTH = 256;
+
+/**
+ * Resolve the sticky routing key for a request.
+ *
+ * A mission run is the tighter grouping — every turn of one run shares a
+ * prefix — so it wins over the session when present. Falls back to the session
+ * id for ordinary chat.
+ *
+ * Returns `undefined` rather than truncating an over-long id: a sliced
+ * identifier could COLLIDE with a different conversation and pin two unrelated
+ * runs to one provider, whereas omitting it simply restores OpenRouter's own
+ * message-hash derivation. Our ids are UUID-shaped (~36 chars), so the cap is
+ * unreachable in practice — this is a boundary guard, not an expected path.
+ */
+export function resolveStickyRoutingKey(
+  context: InferenceRequestContext | undefined,
+): string | undefined {
+  if (context === undefined) return undefined;
+  const key = (context.missionRunId ?? context.sessionId).trim();
+  if (key.length === 0 || key.length > MAX_SESSION_ID_LENGTH) return undefined;
+  return key;
+}
 
 /**
  * Model families that require EXPLICIT `cache_control` breakpoints per the
@@ -63,6 +93,7 @@ export function buildOpenRouterParams(
   config: InferenceConfig,
   stream: boolean,
   responseFormat?: ChatRequest["responseFormat"],
+  context?: InferenceRequestContext,
 ): ChatRequest {
   // Breakpoints ONLY for explicit-cache model families AND when the catalog
   // reports cache-read pricing ("model supports cache" detection). Everything
@@ -70,6 +101,20 @@ export function buildOpenRouterParams(
   // providers and for models without cache pricing.
   const applyBreakpoints =
     isExplicitCacheModel(config.model) && config.cachePricePerM !== null;
+
+  // Routing preferences are owned by `buildProviderPreferences` (tools OR
+  // responseFormat ⇒ requireParameters; optional W3 endpoint pin). Composed
+  // here so every send path gets the same treatment from one place; omitted
+  // entirely when no lever applies, keeping unaffected callers byte-identical.
+  const provider = buildProviderPreferences({
+    hasTools: tools.length > 0,
+    hasResponseFormat: responseFormat !== undefined,
+    endpointTag: config.endpointTag,
+  });
+
+  // Sticky provider routing (`session_id` on the wire). Absent for background
+  // callers that pass no context — see `InferenceRequestContext`.
+  const sessionId = resolveStickyRoutingKey(context);
 
   const params: ChatRequest = {
     model: config.model,
@@ -95,6 +140,8 @@ export function buildOpenRouterParams(
     // API-level output-format enforcement (F31 Layer B). Omitted by default so
     // every caller that passes nothing keeps a byte-identical wire request.
     ...(responseFormat !== undefined && { responseFormat }),
+    ...(provider !== undefined && { provider }),
+    ...(sessionId !== undefined && { sessionId }),
   };
 
   if (tools.length > 0) {

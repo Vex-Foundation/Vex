@@ -25,6 +25,7 @@
 import type {
   InferenceConfig,
   InferenceProvider,
+  InferenceRequestContext,
   InferenceResponse,
   InferenceUsage,
   ParsedToolCall,
@@ -55,6 +56,12 @@ export interface RunStreamingInferenceOptions {
   readonly onDelta?: (chunk: StreamChunk, sequence: number) => void;
   /** Aborts the in-flight inference stream (chat-turn "stop generating"). */
   readonly signal?: AbortSignal;
+  /**
+   * Groups this request for sticky provider routing. Passed to BOTH the
+   * streaming attempt and the buffered fallback, so a fallback cannot land on
+   * a different provider than the stream it replaces.
+   */
+  readonly context?: InferenceRequestContext;
 }
 
 interface ToolCallAccumulator {
@@ -131,8 +138,9 @@ async function bufferedFallback(
   messages: ProviderMessage[],
   tools: ToolDefinition[],
   config: InferenceConfig,
+  context: InferenceRequestContext | undefined,
 ): Promise<StreamingInferenceResult> {
-  const response = await provider.chatCompletion(messages, tools, config);
+  const response = await provider.chatCompletion(messages, tools, config, context);
   return { response, aborted: false, usageObserved: true };
 }
 
@@ -147,7 +155,7 @@ export async function runStreamingInference(
   config: InferenceConfig,
   options: RunStreamingInferenceOptions = {},
 ): Promise<StreamingInferenceResult> {
-  const { onDelta, signal } = options;
+  const { onDelta, signal, context } = options;
 
   // Pre-aborted → no inference at all; empty partial, never a fallback.
   if (signal?.aborted) {
@@ -162,12 +170,12 @@ export async function runStreamingInference(
       reason: "no_stream_method",
       provider: provider.id,
     });
-    return bufferedFallback(provider, messages, tools, config);
+    return bufferedFallback(provider, messages, tools, config, context);
   }
 
   let stream: AsyncIterable<StreamChunk>;
   try {
-    const candidate = provider.chatCompletionStream(messages, tools, config, signal);
+    const candidate = provider.chatCompletionStream(messages, tools, config, signal, context);
     if (!isAsyncIterable(candidate)) {
       if (signal?.aborted) {
         return { response: emptyResponse(), aborted: true, usageObserved: false };
@@ -176,7 +184,7 @@ export async function runStreamingInference(
         reason: "not_async_iterable",
         provider: provider.id,
       });
-      return bufferedFallback(provider, messages, tools, config);
+      return bufferedFallback(provider, messages, tools, config, context);
     }
     stream = candidate;
   } catch (err) {
@@ -188,7 +196,7 @@ export async function runStreamingInference(
       provider: provider.id,
       error: err instanceof Error ? err.message : String(err),
     });
-    return bufferedFallback(provider, messages, tools, config);
+    return bufferedFallback(provider, messages, tools, config, context);
   }
 
   let sequence = 0;
@@ -272,7 +280,7 @@ export async function runStreamingInference(
         provider: provider.id,
         error: err instanceof Error ? err.message : String(err),
       });
-      return bufferedFallback(provider, messages, tools, config);
+      return bufferedFallback(provider, messages, tools, config, context);
     } else {
       throw err;
     }

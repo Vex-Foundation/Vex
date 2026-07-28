@@ -83,7 +83,9 @@ describe("buildOpenRouterParams — responseFormat spread (F31 Layer B)", () => 
   it("omits the responseFormat key entirely when none is passed (4 callers byte-identical)", () => {
     const params = buildOpenRouterParams(MESSAGES, [], makeConfig(), false);
     expect("responseFormat" in params).toBe(false);
-    // Never composes provider routing at the params layer either.
+    // W2 moved `provider` composition INTO this layer, so the key is absent
+    // here for a positive reason rather than by construction: no tools, no
+    // responseFormat and no endpoint pin ⇒ no lever ⇒ no `provider` key.
     expect("provider" in params).toBe(false);
   });
 

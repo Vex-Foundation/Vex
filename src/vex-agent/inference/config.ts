@@ -33,6 +33,15 @@ export interface EnvConfig {
   openrouterApiKey: string | null;
   /** Model ID — required for OpenRouter */
   agentModel: string | null;
+  /**
+   * Optional pinned OpenRouter endpoint `tag` (`OPENROUTER_ENDPOINT_TAG`),
+   * written by the wizard's provider select. `null` ⇒ "Auto": OpenRouter's own
+   * routing, which is also the only mode where its sticky `session_id` applies.
+   * Never validated against a list here — the wizard authorises the tag before
+   * persisting it, and an endpoint that later disappears must surface as a
+   * loud routing failure, not a silent fallback.
+   */
+  openrouterEndpointTag: string | null;
   /** Sampling temperature — OpenRouter only */
   temperature: number | null;
   /** Max output tokens per response */
@@ -64,6 +73,8 @@ export function loadEnvConfig(): EnvConfig {
   // OPENROUTER_API_KEY + AGENT_MODEL — strings, no numeric validation.
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? null;
   const agentModel = process.env.AGENT_MODEL?.trim() ?? null;
+  const rawEndpointTag = process.env.OPENROUTER_ENDPOINT_TAG?.trim() ?? "";
+  const openrouterEndpointTag = rawEndpointTag.length > 0 ? rawEndpointTag : null;
 
   // AGENT_CONTEXT_LIMIT / AGENT_MAX_OUTPUT_TOKENS / AGENT_TEMPERATURE —
   // delegated to shared parser (returns collected ParseErrors so we
@@ -91,6 +102,7 @@ export function loadEnvConfig(): EnvConfig {
     contextLimit: agentParse.value.contextLimit,
     openrouterApiKey,
     agentModel,
+    openrouterEndpointTag,
     temperature: agentParse.value.temperature,
     maxOutputTokens: agentParse.value.maxOutputTokens,
   };
