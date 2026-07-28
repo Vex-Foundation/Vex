@@ -31,6 +31,23 @@ vi.mock("@vex-agent/tools/protocols/pendle/market-lookup.js", () => ({
   })),
 }));
 
+// R5b: the exit actions (pt.redeem, lp.remove, claim) resolve through the
+// matured-capable lane. Delegates to the SAME market doubles this suite
+// already sets up, wrapped in the {market, maturity} envelope.
+vi.mock("@vex-agent/tools/protocols/pendle/matured-market-lookup.js", () => ({
+  resolveExitMarketByAddress: vi.fn(async (_chainId: number, addr: string) => ({
+    market: {
+        address: addr,
+        yt: "0x04b7fa1e727d7290d6e24fa9b426d0c940283a95",
+        sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
+        underlyingAsset: UNDERLYING,
+        pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c",
+        expiry: "2027-12-30T00:00:00.000Z",
+      },
+    maturity: "active",
+  })),
+}));
+
 const WALLET = "0x742d35cc6634c0532925a3b844bc454e4438f44e";
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),

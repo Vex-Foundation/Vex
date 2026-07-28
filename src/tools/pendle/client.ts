@@ -143,6 +143,34 @@ export class PendleClient {
   }
 
   /**
+   * MATURED markets on one chain — the sibling of `getActiveMarkets`, and the
+   * only new fetch R5b needs to make a matured PT redeemable (G-02 / D18).
+   *
+   * Same envelope, same row shape, so `validateMarkets` applies VERBATIM.
+   * LIVE-VERIFIED 2026-07-27 on chain 1: `{markets:[…]}` with 420 rows whose key
+   * set matches the active endpoint's, and 420/420 carrying a parseable past
+   * expiry (zero missing, zero unparseable, zero future).
+   *
+   * ENDPOINT CHOICE, and what it does NOT decide. This uses the same
+   * `/v1/{chainId}/…` family the money path already depends on for
+   * `markets/active`, so the R5b change adds no NEW class of dependency. Both
+   * that endpoint and this one are absent from the published OpenAPI
+   * enumeration (gap G-03), and whether the money path should migrate to the
+   * documented `/v2/markets/all` — which has a DIFFERENT envelope and would move
+   * the active path too — remains an OPEN OWNER QUESTION for F-3. This method
+   * deliberately does not pre-empt it: it keeps the two market fetches on the
+   * same footing so they can be migrated together, in one decision.
+   *
+   * Note the read lane answers the same question from the documented catalogue
+   * (`market-read.ts` → `/v2/markets/all`). That is not duplication to collapse:
+   * the read lane must never feed a money path, and this one must never feed a
+   * read, which is why they hold separate clients and separate types.
+   */
+  getInactiveMarkets(chainId: number): Promise<PendleMarket[]> {
+    return this.get(`/v1/${chainId}/markets/inactive`, PENDLE_CU.markets, PENDLE_TTL.markets, validateMarkets);
+  }
+
+  /**
    * One chain's Pendle assets (metadata + prices + `baseType`). Cached per chain
    * URL (5m). A shape we cannot read RAISES `PENDLE_INVALID_RESPONSE` — callers
    * must treat that as "unknown", never as "this chain has no assets".

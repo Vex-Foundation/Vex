@@ -206,6 +206,10 @@ describe("moves-db getMovesForSession — agent_activity half (Agent Scan §4.7)
       // legacy derivation this seam is meant to retire.
       activityKind: "swap",
       eventRole: "swap",
+      // Migration 053 Option C: the second token leg belongs to two-instrument
+      // Pendle actions only — a swap has none.
+      secondaryInputLeg: null,
+      secondaryOutputLeg: null,
       createdAt: "2026-07-10T10:00:00.000Z",
     });
   });

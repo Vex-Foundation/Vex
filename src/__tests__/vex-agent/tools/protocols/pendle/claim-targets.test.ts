@@ -17,10 +17,15 @@ import type { PendleMarket, PendleMarketPosition } from "@tools/pendle/types.js"
 
 const mockGetPositions = vi.fn();
 const mockGetActiveMarkets = vi.fn();
+const mockGetInactiveMarkets = vi.fn();
 vi.mock("@tools/pendle/client.js", () => ({
   getPendleClient: () => ({
     getPositions: (...a: unknown[]) => mockGetPositions(...a),
     getActiveMarkets: (...a: unknown[]) => mockGetActiveMarkets(...a),
+    // R5b: the sweep indexes BOTH catalogues so a matured market is never
+    // silently absent from eligible AND skipped. Empty here keeps these cases
+    // about the CAP; the matured cases live in market-resolution-matrix.test.ts.
+    getInactiveMarkets: (...a: unknown[]) => mockGetInactiveMarkets(...a),
   }),
 }));
 
@@ -81,7 +86,8 @@ beforeEach(() => {
 describe("buildPendleClaimTargets — honest accounting past the cap", () => {
   it("reports the FULL eligible total and every market it left out, not just what it took", async () => {
     const { markets, positions } = fourteenEligible();
-    mockGetActiveMarkets.mockResolvedValue(markets);
+    mockGetInactiveMarkets.mockResolvedValue([]);
+  mockGetActiveMarkets.mockResolvedValue(markets);
     mockGetPositions.mockResolvedValue([{ chainId: CHAIN_ID, openPositions: positions }]);
 
     const targets = await buildPendleClaimTargets(CHAIN_ID, WALLET, null);
@@ -175,6 +181,12 @@ describe("buildPendleClaimTargets — honest accounting past the cap", () => {
 describe("buildPendleClaimTargets — explicit market escape hatch", () => {
   it("scopes to the requested market with NO cap in force", async () => {
     mockGetActiveMarkets.mockResolvedValue([market(11)]);
+    // The explicit path now READS POSITIONS FIRST (G-40 / D13): it used to add
+    // the requested market unconditionally and broadcast a no-op gas burn for a
+    // market the wallet is not in. `no-op-broadcast-gates.test.ts` owns the
+    // refusal side; this case proves the escape hatch still works when the
+    // position is real.
+    mockGetPositions.mockResolvedValue([{ chainId: CHAIN_ID, openPositions: [ytPosition(11)] }]);
 
     const targets = await buildPendleClaimTargets(CHAIN_ID, WALLET, marketAddress(11));
 
@@ -183,7 +195,7 @@ describe("buildPendleClaimTargets — explicit market escape hatch", () => {
     expect(targets.selectedMarketCount).toBe(1);
     expect(targets.intendedMarkets.has(marketAddress(11).toLowerCase())).toBe(true);
     expect(targets.intendedYts.size).toBe(1);
-    expect(mockGetPositions).not.toHaveBeenCalled();
+    expect(mockGetPositions).toHaveBeenCalled();
   });
 
   it("says the market is not active on this chain instead of 'nothing to claim'", async () => {

@@ -11,9 +11,9 @@
  *     (LIVE tools) PLUS the static LEGACY_TOOL_PRODUCTS map (DELETED tools),
  *     and contains ONLY trade-impacting tools (product ∈ {spot,perps,prediction,
  *     bridge,order} for live tools, +{lp} for legacy-only history).
- *   - non-trade LIVE mutating tools (lend/stake/lp/utility) are EXCLUDED —
- *     Pendle's live `pendle.lp.add`/`.remove` NEVER surface here, even though
- *     "lp" IS a legacy-only product (zap's deleted history).
+ *   - non-trade LIVE mutating tools (stake/utility) are EXCLUDED; `lend`
+ *     (Phase 3/W5) and Pendle's `yield` mutations (Batch B card B2, migration
+ *     053 — PT/YT/PY, LP add/remove, reward claim) DO surface here.
  *   - read tools are never present (they are not in MUTATION_MATRIX at all).
  *   - EVERY deleted Agent Scan tool (old buy/sell split, limitOrder, zap,
  *     Polymarket trade tools) DOES reappear via the legacy map.
@@ -65,14 +65,15 @@ describe("transactions failure classifier", () => {
     expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.withdraw")).toBe("lend");
   });
 
-  it("excludes non-trade mutating tools (lp, utility) but INCLUDES lend (Agent Scan Phase 3/W5)", () => {
+  it("excludes utility tools but INCLUDES lend (Phase 3/W5) and Pendle's yield mutations (Batch B)", () => {
     // lend was added to TRANSACTION_PRODUCTS (migration 049, W5) — Jupiter
     // Lend deposit/withdraw are real wallet-impacting mutations with the same
     // pending/confirmed/definitively_failed lifecycle as swaps.
     expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.deposit")).toBe("lend");
     expect(FAILURE_TOOL_PRODUCTS.get("solana.lend.withdraw")).toBe("lend");
-    // lp (Pendle plain LP records) → "lp" (not a tx product)
-    expect(FAILURE_TOOL_PRODUCTS.has("pendle.lp.add")).toBe(false);
+    // Pendle LP is NO LONGER excluded — Batch B card B2 gave every Pendle
+    // mutation the `yield` product (migration 053).
+    expect(FAILURE_TOOL_PRODUCTS.get("pendle.lp.add")).toBe("yield");
     // utility → "social" (not in TYPE_TO_PRODUCT as a tx product)
     expect(FAILURE_TOOL_PRODUCTS.has("hyperliquid.risk.proposeSetup")).toBe(false);
   });
@@ -131,10 +132,24 @@ describe("transactions failure classifier", () => {
     expect(FAILURE_TOOL_PRODUCTS.has("polymarket.clob.heartbeat")).toBe(false);
   });
 
-  it("Pendle's LIVE lp.add/lp.remove stay excluded even though 'lp' is a recognized legacy product", () => {
-    expect(FAILURE_TOOL_PRODUCTS.has("pendle.lp.add")).toBe(false);
-    expect(FAILURE_TOOL_PRODUCTS.has("pendle.lp.remove")).toBe(false);
+  it("Pendle's LIVE mutations surface under 'yield', not under the legacy-only 'lp' product", () => {
+    // Batch B card B2 (migration 053): every Pendle mutation — PT/YT/PY, LP
+    // add/remove and the reward claim — records as `kind: 'yield'` in
+    // agent_activity, so a FAILED attempt must reach the failure half too.
+    // Their matrix `expectedType: "yield"` is intentionally absent from
+    // TYPE_TO_PRODUCT, so LEGACY_TOOL_PRODUCTS is their product authority.
+    for (const toolId of [
+      "pendle.pt.buy", "pendle.pt.sell", "pendle.pt.redeem",
+      "pendle.yt.buy", "pendle.yt.sell",
+      "pendle.py.mint", "pendle.py.redeem",
+      "pendle.lp.add", "pendle.lp.remove", "pendle.claim",
+    ]) {
+      expect(FAILURE_TOOL_PRODUCTS.get(toolId), toolId).toBe("yield");
+      expect(LEGACY_TOOL_PRODUCTS.get(toolId), toolId).toBe("yield");
+    }
+    // "lp" itself is still legacy-only (the deleted zap tools' history).
     expect(TRANSACTION_PRODUCTS.has("lp")).toBe(false);
+    expect(TRANSACTION_PRODUCTS.has("yield")).toBe(true);
   });
 
   it("failureToolsForProduct(undefined) returns the full allowlist", () => {

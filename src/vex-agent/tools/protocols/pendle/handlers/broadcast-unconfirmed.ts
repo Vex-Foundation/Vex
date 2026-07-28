@@ -9,16 +9,20 @@
  * agent was told a funded, already-broadcast trade had simply FAILED — and was
  * free to retry it with real funds (phase-4 card H-4).
  *
- * The wording is deliberately NOT the KyberSwap one
- * (`kyberswap/handlers/swap.ts`), which promises the attempt "is recorded as
- * pending and will resolve automatically". KyberSwap can promise that: it
- * writes an activity row and a settlement decoder resolves it. Pendle has
- * NEITHER — no `pendle` settlement decoder exists, and because this result is
- * `success: false`, `runtime/capture.ts` skips capture entirely, so NO row is
- * written for any sweep to resolve. Copying that clause would be exactly the
- * "claim more than the evidence supports" defect this card removes; phase-3
- * DEFECT 3 (a definitive provider refusal reported as "broadcast, pending") was
- * its mirror image and cost hours on a funded run.
+ * SCOPE, POST-CARD-B1. This is now the NARROW residual case. Pendle writes a
+ * durable `agent_activity` row through `signed-broadcast.ts` and a `pendle`
+ * settlement decoder is registered, so the ordinary post-broadcast outcomes —
+ * ambiguous submit, mined revert, undecodable receipt — are owned there and
+ * carry their own honest wording. This function is reached ONLY when something
+ * throws in a handler's own read-back AFTER `sendPendleRouterTx` already
+ * returned; the row exists and the repair sweep owns it, but the handler can no
+ * longer state the outcome itself.
+ *
+ * The wording therefore keeps its refusal-to-retry, and now also tells the truth
+ * that Pendle could NOT tell before: the attempt IS recorded and WILL resolve.
+ * Saying "Vex has NOT recorded this transaction" today would be its own version
+ * of the phase-3 DEFECT 3 error — claiming more (or here, less) than the
+ * evidence supports, in the direction that makes an agent act wrongly.
  *
  * `broadcast_unconfirmed` is the repo's existing term for this state
  * (`relay/handlers/bridge.ts`, `khalani/handlers/bridge-execute.ts`) and is
@@ -59,9 +63,9 @@ export function broadcastUnconfirmedFailure(
       `${toolId}: broadcast_unconfirmed — the transaction WAS BROADCAST on-chain ` +
       `(tx ${txHash}) and its outcome is UNKNOWN. Vex failed AFTER signing, while ` +
       `reading the result back. DO NOT retry: the trade may already have executed, ` +
-      `and a retry could execute it a second time with real funds. Vex has NOT ` +
-      `recorded this transaction — nothing will confirm, track, or resolve it ` +
-      `automatically. Surface the hash to the user and confirm it on a block ` +
+      `and a retry could execute it a second time with real funds. The attempt IS ` +
+      `recorded as pending and resolves automatically once the receipt is read. ` +
+      `Surface the hash to the user and confirm it on a block ` +
       `explorer before acting on this position again. Post-broadcast failure ` +
       `reason: ${detail} (that reason describes the failed read-back only — ` +
       `disregard any "retry" wording in it).`,

@@ -67,4 +67,25 @@ export interface MoveRow {
   readonly activity_kind?: string | null;
   /** `agent_activity.event_role`; always NULL on the legacy arm. */
   readonly event_role?: string | null;
+  /**
+   * agent_activity YIELD rows only — migration 053's Option-C SECOND-LEG
+   * column family (`agent_activity_second_leg_roles_only` binds it to
+   * `yield_py`/`yield_lp`, so every other row leaves it NULL). A `py.mint` is
+   * 1→2 (one token in, PT **and** YT out) and a pre-expiry `py.redeem` is 2→1;
+   * without these the feed renders half the action. Optional so a caller
+   * constructing this row shape before the columns existed still type-checks.
+   *
+   * Raw amounts travel WITH their decimals (rules/90) — `*_in2_raw` alone is
+   * the canonical thousandfold-error shape.
+   */
+  readonly token_in2_address?: string | null;
+  readonly token_in2_symbol?: string | null;
+  readonly token_in2_decimals?: number | null;
+  readonly amount_in2_human?: string | null;
+  readonly executed_amount_in2_raw?: string | null;
+  readonly token_out2_address?: string | null;
+  readonly token_out2_symbol?: string | null;
+  readonly token_out2_decimals?: number | null;
+  readonly amount_out2_human?: string | null;
+  readonly executed_amount_out2_raw?: string | null;
 }

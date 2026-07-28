@@ -41,17 +41,22 @@ import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 import { resolveMarketByAddress, buildAssetMap, priceUsdFor } from "../market-lookup.js";
+import { resolveExitMarketByAddress } from "../matured-market-lookup.js";
+import { explainUnresolvedPendleMarket } from "../matured-refusal.js";
 import { selectSafeRoute, type PendleTxIntent } from "../calldata.js";
 import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
+import { recordPendleRefusal, sendPendleRouterTx } from "./signed-broadcast.js";
 import {
   DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
+  legInput,
   legUsd,
   requirePendleChain,
   requireTokenAddress,
   resolveInputToken,
-  slippageFraction,
+  resolvePendleSlippage,
+  unsettledResult,
 } from "./shared.js";
 
 /** The bounded Pendle market context stamped onto every LP capture's meta. */
@@ -90,16 +95,25 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
     const receiver = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
     const marketAddress = requireTokenAddress(marketRaw);
 
-    // INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): the `market` must be
-    // an active Pendle market on the resolved chain. A quote with no market anchor
-    // must never record an LP identity that could authorize an execute on the wrong
+    // INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): the `market` must
+    // resolve on the resolved chain. A quote with no market anchor must never
+    // record an LP identity that could authorize an execute on the wrong
     // instrument.
-    const market = await resolveMarketByAddress(chainId, marketAddress);
+    //
+    // R5b matrix: a REMOVE quote resolves matured markets (removal is legal
+    // after expiry and must quote for the position the user actually holds); an
+    // ADD quote stays ACTIVE-ONLY and names maturity as the refusal reason.
+    const market = direction === "remove"
+      ? (await resolveExitMarketByAddress(chainId, marketAddress))?.market ?? null
+      : await resolveMarketByAddress(chainId, marketAddress);
     if (!market || !market.address) {
-      return fail("`market` is not an active Pendle market on this chain — find it via pendle.yields.");
+      if (direction === "add") {
+        return fail(await explainUnresolvedPendleMarket(chainId, chainEntry.slug, marketAddress, { action: "lp.add", leg: "market" }));
+      }
+      return fail("`market` is not a Pendle market on this chain — find it via pendle.yields.");
     }
     const marketAddr = getAddress(market.address);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.lp.quote", num(p, "slippageBps"));
     const client = getPendleClient();
     const assetMap = await buildAssetMap(chainId);
     const slippageBpsEcho = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
@@ -111,7 +125,7 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
         receiver,
         inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
         outputs: [marketAddr],
-        slippage,
+        slippage: slippage.fraction,
       });
       if (!response || response.routes.length === 0) return fail("Pendle returned no add-liquidity route for these tokens.");
       if (response.action !== "add-liquidity") {
@@ -156,7 +170,7 @@ async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecut
       receiver,
       inputs: [{ token: marketAddr, amount: amountWei.toString() }],
       outputs: [outputToken],
-      slippage,
+      slippage: slippage.fraction,
     });
     if (!response || response.routes.length === 0) return fail("Pendle returned no remove-liquidity route.");
     if (response.action !== "remove-liquidity") {
@@ -198,26 +212,48 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
   // everything after the broadcast is a read-back that can throw, and the catch
   // MUST be able to tell the agent the deposit is already on-chain.
   let txHash: Hex | undefined;
+  const toolId = "pendle.lp.add";
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail(`${toolId} requires an active session.`);
     const marketAddress = requireTokenAddress(marketRaw);
+    /** A pre-signature refusal, recorded as a hashless `definitively_failed` row. */
+    const refuse = async (
+      failureCode: Parameters<typeof recordPendleRefusal>[1],
+      message: string,
+    ): Promise<ToolResult> => {
+      await recordPendleRefusal(
+        {
+          toolId, eventRole: "yield_lp", chainId, chainSlug,
+          walletAddress: resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"),
+          sessionId, intentParams: p, tokenOut: { tokenAddress: marketAddress },
+        },
+        failureCode,
+        message,
+      );
+      return fail(message);
+    };
+    // ACTIVE-ONLY (R5b matrix): adding liquidity after expiry is impossible, so
+    // the financial resolver never sees a matured market here; the reason is
+    // named from the read-only classification lane instead.
     const market = await resolveMarketByAddress(chainId, marketAddress);
     if (!market || !market.address) {
-      return fail("No active Pendle market at this address — check pendle.yields.");
+      return refuse("route_not_found", await explainUnresolvedPendleMarket(chainId, chainSlug, marketAddress, { action: "lp.add", leg: "market" }));
     }
     const marketAddr = getAddress(market.address);
     const tokenIn = await resolveInputToken(chainEntry, tokenInRaw);
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.lp.add", num(p, "slippageBps"));
 
     if (p.dryRun === true) {
       const response = await getPendleClient().convertMulti(chainId, {
         receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
         inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
         outputs: [marketAddr],
-        slippage,
+        slippage: slippage.fraction,
       });
       const best = response?.routes[0];
       return ok({ dryRun: true, action: "add", market: marketAddr, tokenIn: tokenIn.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null });
@@ -237,16 +273,18 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
       receiver: wallet,
       inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
       outputs: [marketAddr],
-      slippage,
+      slippage: slippage.fraction,
     });
-    if (!response) return fail("Pendle returned no add-liquidity route for these tokens.");
+    if (!response) return refuse("route_not_found", "Pendle returned no add-liquidity route for these tokens.");
     if (response.action !== "add-liquidity") {
-      return fail("Pendle did not return an add-liquidity route for this market.");
+      return refuse("route_not_found", "Pendle did not return an add-liquidity route for this market.");
     }
 
     const intent: PendleTxIntent = {
       action: "lp-add",
       wallet,
+      // The tolerance this route is held to — see calldata/price-floor.ts.
+      slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
       isNative: tokenIn.isNative,
@@ -266,26 +304,48 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
       });
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
-    txHash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: getAddress(route.tx.to),
-      data: route.tx.data as Hex,
-      value: tokenIn.isNative ? amountWei : 0n,
-    });
-
+    // Read BEFORE signing — the staged row's legs need their decimals.
     const assetMap = await buildAssetMap(chainId);
-    const lpOut = route.outputs.find((o) => o.token.toLowerCase() === marketAddr.toLowerCase())?.amount ?? "0";
+    const quotedLpOut = route.outputs.find((o) => o.token.toLowerCase() === marketAddr.toLowerCase())?.amount ?? "0";
     const lpDec = assetMap.get(marketAddr.toLowerCase())?.decimals ?? 18;
-    const inUsd = legUsd(assetMap, tokenIn.address, humanAmount(amountWei, tokenIn.decimals));
+    const quotedInUsd = legUsd(assetMap, tokenIn.address, humanAmount(amountWei, tokenIn.decimals));
+
+    // SINGLE-TOKEN add is the shipped shape — one in, one out. The Option-C
+    // second-leg columns stay NULL, and migration 053's `yield_lp` predicate
+    // applies its dual invariants only where they are populated.
+    const broadcast = await sendPendleRouterTx(
+      publicClient,
+      walletClient,
+      { to: getAddress(route.tx.to), data: route.tx.data as Hex, value: tokenIn.isNative ? amountWei : 0n },
+      {
+        toolId, eventRole: "yield_lp", chainId, chainSlug, walletAddress: wallet, sessionId,
+        intentParams: p,
+        tokenIn: legInput(tokenIn.address, assetMap.get(tokenIn.address.toLowerCase())?.symbol, tokenIn.decimals, amountWei.toString(), humanAmount(amountWei, tokenIn.decimals).toString()),
+        tokenOut: legInput(marketAddr, assetMap.get(marketAddr.toLowerCase())?.symbol, lpDec, quotedLpOut, humanAmount(quotedLpOut, lpDec).toString()),
+        ...(quotedInUsd !== null ? { usdInEst: String(quotedInUsd) } : {}),
+        routeProvenance: { action: "lp-add", aggregator: route.data.aggregatorType, market: marketAddr },
+      },
+    );
+    txHash = broadcast.txHash;
+    if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
+
+    const lpOut = broadcast.executed.amountOutRaw ?? quotedLpOut;
+    const depositedWei = BigInt(broadcast.executed.amountInRaw ?? amountWei.toString());
+    const inUsd = legUsd(assetMap, tokenIn.address, humanAmount(depositedWei, tokenIn.decimals));
 
     logger.info("pendle.lp.add.executed", { market: marketAddr, aggregator: route.data.aggregatorType });
 
     return {
       success: true,
-      output: JSON.stringify({ txHash, action: "add", market: marketAddr, tokenIn: tokenIn.address, amountIn: amountInRaw, lpOut: humanAmount(lpOut, lpDec).toString() }, null, 2),
+      output: JSON.stringify({
+        txHash, action: "add", market: marketAddr, tokenIn: tokenIn.address,
+        amountIn: amountInRaw,
+        executedLpOut: humanAmount(lpOut, lpDec).toString(),
+        quotedLpOut: humanAmount(quotedLpOut, lpDec).toString(),
+      }, null, 2),
       data: {
         txHash,
+        _executionId: broadcast.executionId,
         _tradeCapture: {
           type: "lp",
           chain: chainSlug,
@@ -306,7 +366,8 @@ async function executePendleLpAdd(p: Record<string, unknown>, context: ProtocolE
               {
                 legType: "deposit",
                 tokenAddress: tokenIn.address,
-                amountRaw: amountWei.toString(),
+                // The DECODED deposit — a cashflow leg is evidence, not intent.
+                amountRaw: depositedWei.toString(),
                 amountUsd: inUsd !== null ? String(inUsd) : undefined,
               },
             ],
@@ -329,15 +390,39 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
   // everything after the broadcast is a read-back that can throw, and the catch
   // MUST be able to tell the agent the withdrawal is already on-chain.
   let txHash: Hex | undefined;
+  const toolId = "pendle.lp.remove";
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail(`${toolId} requires an active session.`);
     const marketAddress = requireTokenAddress(marketRaw);
-    const market = await resolveMarketByAddress(chainId, marketAddress);
-    if (!market || !market.address) {
-      return fail("No active Pendle market at this address — check pendle.yields.");
+    /** A pre-signature refusal, recorded as a hashless `definitively_failed` row. */
+    const refuse = async (
+      failureCode: Parameters<typeof recordPendleRefusal>[1],
+      message: string,
+    ): Promise<ToolResult> => {
+      await recordPendleRefusal(
+        {
+          toolId, eventRole: "yield_lp", chainId, chainSlug,
+          walletAddress: resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"),
+          sessionId, intentParams: p, tokenIn: { tokenAddress: marketAddress },
+        },
+        failureCode,
+        message,
+      );
+      return fail(message);
+    };
+    // EXIT PATH (R5b): removal is legal after expiry — Pendle documents remove
+    // as "callable regardless of the market's expiry" — so this resolves the
+    // matured catalogue too. An inactive row is only believed on a parseable,
+    // past expiry; anything else is refused by name inside the resolver.
+    const resolved = await resolveExitMarketByAddress(chainId, marketAddress);
+    if (!resolved || !resolved.market.address) {
+      return refuse("route_not_found", "No Pendle market at this address — check pendle.yields (includeMatured:true covers expired markets).");
     }
+    const market = resolved.market;
     const marketAddr = getAddress(market.address);
     const outRaw = str(p, "tokenOut");
     const outputToken = outRaw
@@ -345,11 +430,11 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return fail("No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return refuse("route_not_found", "No output token — pass tokenOut (the market has no underlying to default to).");
     // LP token decimals read ON-CHAIN (the market IS a plain ERC-20 LP token).
     const lpToken = await resolveInputToken(chainEntry, marketRaw);
     const amountWei = parseUnits(amountInRaw, lpToken.decimals);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.lp.remove", num(p, "slippageBps"));
 
     if (p.dryRun === true) {
       return ok({ dryRun: true, action: "remove", market: marketAddr, tokenOut: outputToken });
@@ -368,16 +453,18 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
       receiver: wallet,
       inputs: [{ token: marketAddr, amount: amountWei.toString() }],
       outputs: [outputToken],
-      slippage,
+      slippage: slippage.fraction,
     });
-    if (!response) return fail("Pendle returned no remove-liquidity route.");
+    if (!response) return refuse("route_not_found", "Pendle returned no remove-liquidity route.");
     if (response.action !== "remove-liquidity") {
-      return fail("Pendle did not return a remove-liquidity route for this market.");
+      return refuse("route_not_found", "Pendle did not return a remove-liquidity route for this market.");
     }
 
     const intent: PendleTxIntent = {
       action: "lp-remove",
       wallet,
+      // The tolerance this route is held to — see calldata/price-floor.ts.
+      slippageBps: slippage.bps,
       // The "input" being spent is the LP (market) token — approvals bind to it.
       inputToken: marketAddr,
       inputAmountWei: amountWei,
@@ -410,26 +497,43 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
       fullExit = false;
     }
 
-    txHash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: getAddress(route.tx.to),
-      data: route.tx.data as Hex,
-      value: 0n,
-    });
-
     const assetMap = await buildAssetMap(chainId);
-    const outAmount = route.outputs[0]?.amount ?? "0";
+    const quotedOutRaw = route.outputs[0]?.amount ?? "0";
     const outDec = assetMap.get(outputToken.toLowerCase())?.decimals ?? null;
+    const lpDec = assetMap.get(marketAddr.toLowerCase())?.decimals ?? lpToken.decimals;
+
+    const broadcast = await sendPendleRouterTx(
+      publicClient,
+      walletClient,
+      { to: getAddress(route.tx.to), data: route.tx.data as Hex, value: 0n },
+      {
+        toolId, eventRole: "yield_lp", chainId, chainSlug, walletAddress: wallet, sessionId,
+        intentParams: p,
+        tokenIn: legInput(marketAddr, assetMap.get(marketAddr.toLowerCase())?.symbol, lpDec, amountWei.toString(), humanAmount(amountWei, lpDec).toString()),
+        tokenOut: legInput(outputToken, assetMap.get(outputToken.toLowerCase())?.symbol, outDec, quotedOutRaw, humanAmount(quotedOutRaw, outDec).toString()),
+        routeProvenance: { action: "lp-remove", aggregator: route.data.aggregatorType, market: marketAddr, fullExit },
+      },
+    );
+    txHash = broadcast.txHash;
+    if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
+
+    const outAmount = broadcast.executed.amountOutRaw ?? quotedOutRaw;
     const outUsd = legUsd(assetMap, outputToken, humanAmount(outAmount, outDec));
 
     logger.info("pendle.lp.remove.executed", { market: marketAddr, fullExit, aggregator: route.data.aggregatorType });
 
     return {
       success: true,
-      output: JSON.stringify({ txHash, action: "remove", market: marketAddr, tokenOut: outputToken, amountIn: amountInRaw, amountOut: humanAmount(outAmount, outDec).toString(), fullExit }, null, 2),
+      output: JSON.stringify({
+        txHash, action: "remove", market: marketAddr, tokenOut: outputToken,
+        amountIn: amountInRaw,
+        executedAmountOut: humanAmount(outAmount, outDec).toString(),
+        quotedAmountOut: humanAmount(quotedOutRaw, outDec).toString(),
+        fullExit,
+      }, null, 2),
       data: {
         txHash,
+        _executionId: broadcast.executionId,
         _tradeCapture: {
           type: "lp",
           chain: chainSlug,
@@ -452,6 +556,7 @@ async function executePendleLpRemove(p: Record<string, unknown>, context: Protoc
               {
                 legType: "withdraw",
                 tokenAddress: outputToken,
+                // The DECODED withdrawal — a cashflow leg is evidence, not intent.
                 amountRaw: outAmount,
                 amountUsd: outUsd !== null ? String(outUsd) : undefined,
               },

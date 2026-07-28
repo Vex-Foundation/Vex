@@ -40,9 +40,16 @@ import { TYPE_TO_PRODUCT } from "@vex-agent/sync/activity-populator.js";
 /**
  * Products that count as transactions for the unified feed. A failed mutation
  * whose derived product is NOT in this set (e.g. stake/lp/reward, or a
- * utility tool) is excluded from the failure half. Gates ONLY the LIVE
- * `MUTATION_MATRIX` derivation below — unchanged by FIX-SPINE round 1
- * (Pendle's live `pendle.lp.add`/`.remove` stay excluded, exactly as before).
+ * utility tool) is excluded from the failure half. Gates the LIVE
+ * `MUTATION_MATRIX` derivation below AND (via `LEGACY_TRANSACTION_PRODUCTS`)
+ * the static map's recognized values.
+ *
+ * `yield` added (Batch B, migration 053): every Pendle mutation — PT/YT/PY,
+ * LP add/remove and the reward claim — is now a real wallet-impacting action
+ * recorded in `agent_activity` as `kind: 'yield'`, so a FAILED attempt must
+ * reach the failure half too. This SUPERSEDES the previous exclusion of
+ * Pendle's LP and reward mutations (they were excluded only because their
+ * old `lp`/`reward` capture products were not transaction products).
  *
  * `lend` added (Agent Scan Phase 3/W5, migration 049): Jupiter Lend
  * deposit/withdraw are real wallet-impacting mutations with the same
@@ -58,16 +65,15 @@ export const TRANSACTION_PRODUCTS: ReadonlySet<string> = new Set([
   "bridge",
   "order",
   "lend",
+  "yield",
 ]);
 
 /**
  * Products that count as transactions ONLY in `LEGACY_TOOL_PRODUCTS` below —
  * `lp` exists ONLY here (never in `TRANSACTION_PRODUCTS`) because the ONLY
- * "lp" product this feed ever surfaces is the DELETED zap tools' history;
- * Pendle's LIVE `pendle.lp.add`/`.remove` must stay excluded from the
- * failure feed exactly as before (they never had a matrix-derived "lp"
- * product, and adding "lp" to `TRANSACTION_PRODUCTS` itself would have
- * accidentally started including them too).
+ * "lp" product this feed ever surfaces is the DELETED zap tools' history.
+ * Pendle's live LP mutations reach the feed under `yield` (see above), not
+ * under `lp`.
  */
 export const LEGACY_TRANSACTION_PRODUCTS: ReadonlySet<string> = new Set([
   ...TRANSACTION_PRODUCTS,
@@ -75,7 +81,8 @@ export const LEGACY_TRANSACTION_PRODUCTS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Static map for tools DELETED from the live `MUTATION_MATRIX` by Agent Scan
+ * Static map for tools whose product cannot be derived from the live matrix:
+ * tools DELETED from the live `MUTATION_MATRIX` by Agent Scan
  * (FIX-SPINE round 1, finding 1/2/16, C9) — a historical `protocol_executions`
  * row for one of these toolIds still surfaces in the failure feed (derived
  * product from THIS map) instead of silently vanishing once the matrix row
@@ -85,6 +92,22 @@ export const LEGACY_TRANSACTION_PRODUCTS: ReadonlySet<string> = new Set([
  * (checked by the test suite).
  */
 export const LEGACY_TOOL_PRODUCTS: ReadonlyMap<string, string> = new Map([
+  // Pendle (Batch B, card B2) — the ONE case where a LIVE matrix tool needs an
+  // entry here. Its `expectedType: "yield"` is deliberately absent from
+  // `TYPE_TO_PRODUCT` (that map describes the legacy proj_activity projector,
+  // which Pendle no longer feeds), so `deriveTransactionProduct` returns null
+  // for these toolIds and THIS map is their single source of product truth —
+  // which also means their history survives the matrix rows being deleted.
+  ["pendle.pt.buy", "yield"],
+  ["pendle.pt.sell", "yield"],
+  ["pendle.pt.redeem", "yield"],
+  ["pendle.yt.buy", "yield"],
+  ["pendle.yt.sell", "yield"],
+  ["pendle.py.mint", "yield"],
+  ["pendle.py.redeem", "yield"],
+  ["pendle.lp.add", "yield"],
+  ["pendle.lp.remove", "yield"],
+  ["pendle.claim", "yield"],
   // Old per-venue swap split, replaced by the unified *.swap.execute pair.
   ["kyberswap.swap.sell", "spot"],
   ["kyberswap.swap.buy", "spot"],

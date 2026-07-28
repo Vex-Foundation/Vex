@@ -5,7 +5,7 @@
  * contract this mapper implements.
  */
 
-import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import type { MoveItem, MoveSecondaryLeg } from "@shared/schemas/portfolio-moves.js";
 import { coerceBridgeLegs } from "@shared/schemas/bridge-legs.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import {
@@ -51,6 +51,45 @@ function toMoveStatus(value: string | null): MoveStatus | null {
     : null;
 }
 
+/**
+ * Build the SECOND token leg of a two-instrument `yield` action (migration
+ * 053's Option-C family) — see `moveSecondaryLegSchema` for why this is NOT the
+ * bridge `legs` shape.
+ *
+ * Returns `null` unless the row actually names a second instrument: the
+ * presence of `token*2_address` is the discriminator migration 053 constraints
+ * 6/7 are written around (an amount with no token is rejected at the DB, and a
+ * `yield_py` must populate exactly one of the two sides). A one-leg
+ * `yield_pt`/`yield_yt`/`yield_claim` therefore returns `null` here and renders
+ * exactly as it did before this leg existed.
+ *
+ * Amount honesty is IDENTICAL to the primary yield leg — the same
+ * `resolveAgentActivityAmount` status rule over this leg's OWN raw+decimals
+ * pair, so a confirmed leg shows receipt truth and a pending one shows its
+ * quote echo. Never the raw base-unit string, and never this leg's amount read
+ * at the other leg's scale.
+ */
+function resolveYieldSecondaryLeg(
+  status: MoveStatus | null,
+  address: string | null | undefined,
+  symbol: string | null | undefined,
+  requestedHuman: string | null | undefined,
+  executedRaw: string | null | undefined,
+  decimals: number | null | undefined,
+): MoveSecondaryLeg | null {
+  if (address == null) return null;
+  return {
+    token: address,
+    tokenSymbol: sanitizeTokenSymbol(symbol ?? null),
+    amount: resolveAgentActivityAmount(
+      status,
+      requestedHuman ?? null,
+      executedRaw ?? null,
+      decimals ?? null,
+    ),
+  };
+}
+
 /** Map one UNION-ALL row (`MoveRow`) to the renderer-facing `MoveItem` DTO. */
 export function mapMoveRow(row: MoveRow): MoveItem {
   const isAgentActivity = row.source === "agent_activity";
@@ -67,6 +106,10 @@ export function mapMoveRow(row: MoveRow): MoveItem {
   const isLendOrPrediction =
     isAgentActivity &&
     (row.product_type === "lend" || row.product_type === "prediction");
+  // Migration 053: `yield` is its own kind. The amount RULE it follows is the
+  // plain-swap one (see the block below); what it adds is the Option-C SECOND
+  // token leg, which no other kind has.
+  const isYield = isAgentActivity && row.product_type === "yield";
   const moveStatus = toMoveStatus(row.status);
 
   // Amount honesty by source:
@@ -77,6 +120,14 @@ export function mapMoveRow(row: MoveRow): MoveItem {
   //  - agent_activity BRIDGE (Q2) / lend / prediction (W5 R3/R5):
   //    executed when independently verified, else the quoted amount
   //    shown explicitly as an estimate;
+  //  - agent_activity YIELD (migration 053): the PLAIN-SWAP rule, NOT the
+  //    estimate-basis one. Migration 053's per-role confirmed-leg CHECKs
+  //    make a confirmed yield row's executed legs mandatory on every side
+  //    the role populates, so the confirmed-without-decode case those two
+  //    kinds need a labelled fallback for is unreachable here. Note this
+  //    keeps `yield_claim`'s input BLANK by construction (constraint 9
+  //    forbids an executed input leg on a claim) — correct: a claim
+  //    spends nothing, and the quote echo must not be shown as one;
   //  - legacy `success`: its own column IS the fill (unambiguous).
   let inputAmount: string | null;
   let outputAmount: string | null;
@@ -155,6 +206,30 @@ export function mapMoveRow(row: MoveRow): MoveItem {
     // no second place for the two arms to disagree.
     activityKind: row.activity_kind ?? null,
     eventRole: row.event_role ?? null,
+    // YIELD rows only — the second instrument of a `py.mint` (1→2) or a
+    // pre-expiry `py.redeem` (2→1). Every other kind (and every one-leg yield
+    // role) stays `null`, so nothing outside Pendle's two-instrument actions
+    // changes shape.
+    secondaryInputLeg: isYield
+      ? resolveYieldSecondaryLeg(
+          moveStatus,
+          row.token_in2_address,
+          row.token_in2_symbol,
+          row.amount_in2_human,
+          row.executed_amount_in2_raw,
+          row.token_in2_decimals,
+        )
+      : null,
+    secondaryOutputLeg: isYield
+      ? resolveYieldSecondaryLeg(
+          moveStatus,
+          row.token_out2_address,
+          row.token_out2_symbol,
+          row.amount_out2_human,
+          row.executed_amount_out2_raw,
+          row.token_out2_decimals,
+        )
+      : null,
     createdAt: toIso(row.created_at),
   };
 }

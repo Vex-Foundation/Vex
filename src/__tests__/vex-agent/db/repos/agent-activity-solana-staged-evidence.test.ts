@@ -297,6 +297,14 @@ describe("recoverStaleHashlessIntents", () => {
         "predict_close",
         "predict_sell",
         "swap",
+        // Migration 053 (Pendle). EVM-only, locally signed through ONE choke
+        // point, and owned by no Pendle-side sweep — so a row abandoned between
+        // intent creation and staging is reapable here or nowhere.
+        "yield_pt",
+        "yield_yt",
+        "yield_py",
+        "yield_lp",
+        "yield_claim",
       ].sort(),
     );
   });
@@ -314,7 +322,11 @@ describe("recoverStaleHashlessIntents", () => {
     const [, params] = mockQuery.mock.calls[0]!;
     const allowedRoles = params![3] as string[];
 
-    const evmOnlyRoles = ["allowance", "allowance_reset"];
+    // Pendle is EVM-only, so its five roles join the EVM-only column.
+    const evmOnlyRoles = [
+      "allowance", "allowance_reset",
+      "yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_claim",
+    ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee
     // leg is planned for either origin family — `khalani/bridge-executor.ts`'s

@@ -107,19 +107,16 @@ describe("capture contract — structural coverage", () => {
     expect(MUTATION_MATRIX.get("solana.predict.closeAll")!.fanOut).toBe("items");
   });
 
-  it("'trade' kind tools with capture:full total 7 (no PnL role split — just the coarse kind)", () => {
-    // pendle.pt.buy/sell/redeem (3); pendle.yt.buy/sell (2); pendle.py.mint/redeem
-    // (2) = 7. Agent Scan Phase 3 removed the 9 hyperliquid.spot.trade/perp.*
-    // rows that used to bring this total to 21; W5 (migration 049) flipped
-    // solana.predict.buy/sell/claim/closeAll AND solana.swap.execute (the
-    // fee-bearing /build atomic flip, §6) to capture:"none" — those five,
-    // plus the two Agent Scan unified EVM executes, are ALSO kind:"trade" but
-    // capture:"none" — excluded here on purpose.
-    const trade = getToolsByKind("trade").filter(([, c]) => c.capture === "full");
-    expect(trade.length).toBe(7);
-    for (const [toolId, c] of trade) {
-      expect(c.capture, `${toolId} should have capture:full`).toBe("full");
-    }
+  it("NO live matrix tool is capture:full any more (Batch B card B2 flipped the last seven — Pendle)", () => {
+    // The 7 that used to be here were pendle.pt.buy/sell/redeem, pendle.yt.buy/
+    // sell and pendle.py.mint/redeem; card B2 flipped every Pendle mutation to
+    // capture:"none" (migration 053 — the handler writes `kind: 'yield'` rows
+    // to agent_activity directly). Every mutating tool in the repo now owns its
+    // durable truth; the legacy proj_activity projection has no live producer.
+    // The `capture: "full"` branch of capture-validator.ts stays supported for
+    // the next protocol that needs it (exercised below against pendle-free
+    // fixtures via the unknown-tool/synthetic paths).
+    expect([...MUTATION_MATRIX].filter(([, c]) => c.capture === "full")).toEqual([]);
   });
 
   it("no utility-kind tools are currently classified (Hyperliquid removal deleted the only one)", () => {
@@ -129,7 +126,7 @@ describe("capture contract — structural coverage", () => {
     expect(getToolsByKind("utility")).toEqual([]);
   });
 
-  it("audit tools are capture:full EXCEPT the staged agent_activity write paths (Phase 2 bridges + W5/Batch5 lend)", () => {
+  it("every audit tool is now a staged agent_activity write path (Phase 2 bridges + W5/Batch5 lend + Batch B pendle.claim)", () => {
     const audit = getToolsByKind("audit");
     expect(audit.length).toBeGreaterThan(0);
     // khalani.bridge / relay.bridge record their full staged lifecycle in
@@ -139,7 +136,8 @@ describe("capture contract — structural coverage", () => {
     // exactly these five.
     const captureNone = audit.filter(([, c]) => c.capture === "none").map(([id]) => id).sort();
     expect(captureNone).toEqual([
-      "khalani.bridge", "relay.bridge", "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",
+      "khalani.bridge", "pendle.claim", "relay.bridge",
+      "solana.lend.borrowOperate", "solana.lend.deposit", "solana.lend.withdraw",
     ]);
     for (const [toolId, c] of audit) {
       if (captureNone.includes(toolId)) continue;
@@ -147,9 +145,12 @@ describe("capture contract — structural coverage", () => {
     }
   });
 
-  it("projection kind has exactly the two Pendle LP lifecycle rows (zap's projection rows were deleted)", () => {
+  it("projection kind has exactly the two Pendle LP lifecycle rows, both capture:none (Batch B card B2)", () => {
     const projection = getToolsByKind("projection");
     expect(projection.map(([id]) => id).sort()).toEqual(["pendle.lp.add", "pendle.lp.remove"]);
+    for (const [toolId, c] of projection) {
+      expect(c.capture, `${toolId} should have capture:none`).toBe("none");
+    }
   });
 });
 
@@ -211,30 +212,22 @@ describe("capture contract — contract invariants", () => {
 
 // ── Capture validator tests ────────────────────────────────────
 
-// W5 (design §6): solana.swap.execute flipped capture:"full"->"none" — the
-// generic capture:"full" validator tests below now use `pendle.pt.buy`
-// (same requiredFields/expectedType shape) as their live-matrix example
-// instead. NOTE: the two former "neutral swap" tests (stableSwap/
-// ambiguousSwap `tradeSide` exception) are REMOVED here, not ported — that
-// `exceptions` entry existed ONLY on solana.swap.execute's row (no other
-// matrix entry ever declared it), so with solana.swap.execute now
-// capture:"none" there is no remaining live row to exercise it. The
-// `hasRequiredFieldException` stableSwap/ambiguousSwap branch in
-// `capture-validator.ts` is consequently dead code with no matrix consumer —
-// flagged for the coordinator rather than silently removed (out of this
-// card's stated scope).
+// Batch B card B2: Pendle flipped capture:"full"->"none", so NO live matrix
+// tool is capture:"full" any more and the generic capture:"full" validator
+// arms (missing capture, wrong type, missing required field) have no live
+// example left to exercise. They are NOT deleted silently: the branches stay
+// in `capture-validator.ts` for the next protocol that declares a capture, and
+// the structural pin above ("NO live matrix tool is capture:full any more") is
+// what will fail loudly if one appears without matching validator coverage.
+// The `hasRequiredFieldException` stableSwap/ambiguousSwap branch is likewise
+// dead with no matrix consumer — flagged for the coordinator rather than
+// silently removed (out of this card's stated scope).
 describe("capture contract — runtime validator", () => {
-  it("validates a trade capture with all required fields", () => {
-    const valid = validateCaptureContract("pendle.pt.buy", {
-      type: "swap", walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-    });
-    expect(valid).toBe(true);
-  });
-
-  it("rejects capture:full with null tradeCapture", () => {
-    expect(validateCaptureContract("pendle.pt.buy", null)).toBe(false);
+  it("passes capture:none regardless of tradeCapture — every Pendle mutation (Batch B card B2)", () => {
+    for (const toolId of ["pendle.pt.buy", "pendle.py.mint", "pendle.lp.add", "pendle.claim"]) {
+      expect(validateCaptureContract(toolId, null), toolId).toBe(true);
+      expect(validateCaptureContract(toolId, { type: "yield" }), toolId).toBe(true);
+    }
   });
 
   it("passes capture:none regardless of tradeCapture (e.g. the Agent Scan unified executes)", () => {
@@ -251,50 +244,6 @@ describe("capture contract — runtime validator", () => {
     expect(validateCaptureContract("solana.predict.claim", null)).toBe(true);
     expect(validateCaptureContract("solana.predict.claim", { type: "prediction" })).toBe(true);
     expect(validateCaptureContract("solana.predict.closeAll", null)).toBe(true);
-  });
-
-  it("rejects unexpected type", () => {
-    const valid = validateCaptureContract("pendle.pt.buy", {
-      type: "prediction", walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("rejects capture without type field (type is required for all capture:full)", () => {
-    const valid = validateCaptureContract("pendle.pt.buy", {
-      walletAddress: "0x", tradeSide: "buy",
-      instrumentKey: "solana:BONK", inputTokenAddress: "0xA", outputTokenAddress: "0xB",
-      inputAmount: "100", outputAmount: "200",
-    });
-    expect(valid).toBe(false);
-  });
-
-  it("validates real matrix tools — pendle.lp.add requires type+positionKey+status", () => {
-    // Missing positionKey
-    expect(validateCaptureContract("pendle.lp.add", {
-      type: "lp", status: "open",
-    })).toBe(false);
-
-    // Complete
-    expect(validateCaptureContract("pendle.lp.add", {
-      type: "lp", status: "open", positionKey: "123",
-    })).toBe(true);
-  });
-
-  it("validates real matrix tools — pendle.claim requires type+walletAddress+status", () => {
-    // khalani.bridge flipped to capture:none in Phase 2, and
-    // solana.lend.deposit/withdraw flipped to capture:none in Phase 3/W5
-    // (both own their lifecycle directly in agent_activity now) — pendle.claim
-    // is the live capture:full audit tool that carries this pin today.
-    expect(validateCaptureContract("pendle.claim", {
-      type: "reward", status: "open",
-    })).toBe(false);
-
-    expect(validateCaptureContract("pendle.claim", {
-      type: "reward", status: "open", walletAddress: "0x123",
-    })).toBe(true);
   });
 
   it("passes capture:none regardless of tradeCapture — solana.lend.deposit/withdraw (W5 staged Solana seam)", () => {

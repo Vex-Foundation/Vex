@@ -45,7 +45,7 @@ import { PENDLE_ERC20_ABI } from "@tools/pendle/constants.js";
 import { pendleChainSlug } from "@tools/pendle/chains.js";
 import type { PendleAsset } from "@tools/pendle/types.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
-import * as activityRepo from "@vex-agent/db/repos/activity.js";
+import * as trackedTokensRepo from "@vex-agent/db/repos/tracked-tokens.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import logger from "@utils/logger.js";
@@ -78,10 +78,14 @@ async function collectPendlePtRows(
 
   // DB READ — propagates (a failing tracked-token query is a local-DB fault the
   // operator must see, not a condition to paper over).
-  const trackedAddrs = await activityRepo.getTrackedEvmTokensForChain({
-    walletAddress,
-    chainKeys: [slug],
-  });
+  //
+  // Batch B card B2: the source is `tracked_tokens`, NOT `proj_activity`. The
+  // Pendle tools are `capture: "none"` (same commit-atom) so they no longer
+  // write the capture rows the old `activity.getTrackedEvmTokensForChain` scan
+  // depended on; `pendle-acquisition-pin.ts` pins each confirmed acquisition
+  // instead. `tracked_tokens` is chainId-keyed, so the chain scoping is exact
+  // rather than slug-matched.
+  const trackedAddrs = await trackedTokensRepo.getTrackedTokenAddressesForChain(walletAddress, chainId);
   if (trackedAddrs.length === 0) return null;
 
   // RPC + API — FAIL-SOFT. On any error, signal "don't touch existing rows".
@@ -103,7 +107,8 @@ async function collectPendlePtRows(
     }
 
     // Restrict to tokens Pendle recognizes as PT ON THIS CHAIN (self-limiting to
-    // PT holdings — equivalent to the PT addresses recorded in proj_activity).
+    // PT holdings — the pins written by `pendle-acquisition-pin.ts` also cover
+    // YT/LP, which this balance path deliberately does not price).
     const ptAddrs: Address[] = [];
     for (const raw of trackedAddrs) {
       let addr: Address;

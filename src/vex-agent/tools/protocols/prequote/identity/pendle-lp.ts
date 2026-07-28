@@ -20,6 +20,7 @@ import { getAddress } from "viem";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveMarketByAddress } from "../../pendle/market-lookup.js";
+import { resolveExitMarketByAddress } from "../../pendle/matured-market-lookup.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
@@ -51,8 +52,22 @@ function requireAddr(raw: string, label: string): string {
   }
 }
 
-/** Resolve the shared LP leg: chainId + the validated market (address + underlying) + wallet. */
-async function resolveLpLeg(params: Record<string, unknown>, context: ProtocolExecutionContext) {
+/**
+ * Resolve the shared LP leg: chainId + the validated market (address +
+ * underlying) + wallet.
+ *
+ * `maturity` is REQUIRED rather than defaulted, because the two directions sit
+ * on opposite sides of the R5b matrix and a default would silently pick one:
+ * `"active_only"` for an ADD (adding liquidity after expiry is impossible) and
+ * `"allow_matured"` for a REMOVE (Pendle documents removal as callable
+ * regardless of expiry, and an identity that cannot be built for a matured
+ * market would block the exit at the gate).
+ */
+async function resolveLpLeg(
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+  maturity: "active_only" | "allow_matured",
+) {
   const marketRaw = pStr(params, "market");
   const amount = pStr(params, "amountIn");
   if (!marketRaw || !amount) {
@@ -63,9 +78,16 @@ async function resolveLpLeg(params: Record<string, unknown>, context: ProtocolEx
     throw new VexError(ErrorCodes.PENDLE_API_ERROR, "Pendle LP identity on an unsupported chain.");
   }
   const marketAddress = requireAddr(marketRaw, "LP market");
-  const market = await resolveMarketByAddress(chainId, marketAddress);
+  const market = maturity === "allow_matured"
+    ? (await resolveExitMarketByAddress(chainId, marketAddress))?.market ?? null
+    : await resolveMarketByAddress(chainId, marketAddress);
   if (!market || !market.address) {
-    throw new VexError(ErrorCodes.PENDLE_MARKET_NOT_FOUND, "No active Pendle market at this address.");
+    throw new VexError(
+      ErrorCodes.PENDLE_MARKET_NOT_FOUND,
+      maturity === "allow_matured"
+        ? "No Pendle market at this address."
+        : "No active Pendle market at this address.",
+    );
   }
   const wallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
   return {
@@ -92,7 +114,7 @@ export async function buildPendleLpAddIdentity(
     throw new VexError(ErrorCodes.AGENT_VALIDATION_ERROR, "Pendle LP add identity missing tokenIn.");
   }
   const tokenIn = requireAddr(tokenInRaw, "LP add tokenIn");
-  const leg = await resolveLpLeg(params, context);
+  const leg = await resolveLpLeg(params, context, "active_only");
   return {
     kind: "lp_add",
     sessionId,
@@ -119,7 +141,7 @@ export async function buildPendleLpRemoveIdentity(
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
 ): Promise<LpRemoveMatchInput> {
-  const leg = await resolveLpLeg(params, context);
+  const leg = await resolveLpLeg(params, context, "allow_matured");
   const tokenOutRaw = pStr(params, "tokenOut");
   let tokenOut: string;
   if (tokenOutRaw) {

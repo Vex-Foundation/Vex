@@ -17,6 +17,44 @@ import { encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import { PENDLE_ROUTER, PENDLE_ROUTER_REDEEM_ABI } from "@tools/pendle/constants.js";
+import { classifyPendleExpiry } from "./market-maturity.js";
+
+/**
+ * The fallback's PRECONDITION: the position must already be matured (P1-14).
+ *
+ * `redeemPyToSy` burns PT alone, which the protocol permits only AFTER expiry —
+ * before it, the call needs the YT too and MUST revert on-chain. The redeem
+ * handler reaches this branch whenever Convert returns anything other than a
+ * `redeem-py` action, INCLUDING a perfectly good `"swap"` and any transport
+ * failure, so without this check a pre-expiry redeem approves the PT and
+ * broadcasts a transaction that cannot succeed. `market.expiry` was already in
+ * hand at the call site and simply never consulted.
+ *
+ * An UNKNOWN maturity is refused, not assumed: a missing or unparseable expiry
+ * is not evidence that a PT has matured. Same doctrine the R5b resolver applies
+ * to inactive rows.
+ *
+ * `now` is injected so the boundary is testable without a clock stub.
+ */
+export function assertPtMaturedForFallback(expiry: string | null, now: Date = new Date()): void {
+  const classified = classifyPendleExpiry(expiry, now);
+  if (classified.state === "unreadable") {
+    throw new VexError(
+      ErrorCodes.PENDLE_UNSAFE_TX,
+      classified.reason === "missing"
+        ? "Pendle refused to sign: this market publishes no expiry, so maturity cannot be proven."
+        : "Pendle refused to sign: this market's expiry could not be read, so maturity cannot be proven.",
+      "The direct redeem path only works on a matured PT. Re-check the market with pendle.market.get before retrying.",
+    );
+  }
+  if (classified.state === "not_matured") {
+    throw new VexError(
+      ErrorCodes.PENDLE_UNSAFE_TX,
+      `Pendle refused to sign: this PT has not matured yet (expires ${expiry}), and the direct redeem would revert on-chain.`,
+      "Nothing was signed or spent. To exit before maturity sell the PT with pendle.pt.sell, or redeem the full PT+YT pair with pendle.py.redeem.",
+    );
+  }
+}
 
 export interface RedeemPyToSyPlan {
   to: Address;

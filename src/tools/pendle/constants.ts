@@ -347,6 +347,49 @@ export const PENDLE_ROUTER_ABI = [
 ] as const;
 
 /**
+ * `callAndReflect` — the Router's MULTI-LEG wrapper.
+ *
+ * LIVE-CAPTURED 2026-07-27 from a chain-1 `roll-over-pt` convert (recorded in
+ * `__tests__/…/pendle/floor-fixtures.ts` as `rollOverPt`): selector `0x9fa02c86`,
+ * shape `callAndReflect(address reflector, bytes selfCall1, bytes selfCall2,
+ * bytes reflectCall)`, `selfCall2` empty, each non-empty leg carrying a nested
+ * Router call. Leg 1's decoded receiver was the REFLECTOR
+ * (`0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd`), not the wallet; the final
+ * leg's receiver was the wallet and its min-out equalled our computed floor to
+ * the atomic unit.
+ *
+ * DELIBERATELY SEPARATE FROM {@link PENDLE_ROUTER_ABI}, exactly as the claim ABI
+ * is: the single-leg swap decode path must never accept a reflect selector.
+ * `calldata/decode.ts` reaches it only through `decodeReflectCall`, which
+ * recurses into every leg with the ordinary `decodeRouterCall` so an inner
+ * selector outside the 9 pinned ones is refused by the same allowlist.
+ *
+ * NO ACTION MAPS TO THIS TODAY. R5a ships the mechanism; the inner-leg layouts
+ * (the live capture carries `0x3346d3a3` and `0x2a50917c`, neither pinned) are
+ * probed and added by R5d. Until then every real reflect body is refused.
+ */
+export const PENDLE_REFLECT_SELECTOR = "0x9fa02c86" as const;
+
+export const PENDLE_REFLECT_ABI = [
+  {
+    type: "function",
+    name: "callAndReflect",
+    stateMutability: "payable",
+    inputs: [
+      { name: "reflector", type: "address" },
+      { name: "selfCall1", type: "bytes" },
+      { name: "selfCall2", type: "bytes" },
+      { name: "reflectCall", type: "bytes" },
+    ],
+    outputs: [
+      { name: "selfRes1", type: "bytes" },
+      { name: "selfRes2", type: "bytes" },
+      { name: "reflectRes", type: "bytes" },
+    ],
+  },
+] as const;
+
+/**
  * Minimal Router ABI for the API-independent redeem fallback
  * (`redeemPyToSy(receiver, YT, netPyIn, minSyOut)` from IPActionMiscV3). The
  * always-exit path when the Convert API is unavailable for a MATURED position.

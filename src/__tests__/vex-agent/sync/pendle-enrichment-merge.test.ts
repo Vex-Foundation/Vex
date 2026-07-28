@@ -51,9 +51,12 @@ vi.mock("@tools/pendle/evm-client.js", () => ({
   getPendlePublicClient: () => ({ multicall: mockMulticall }),
 }));
 
+// Batch B card B2: the discovery source is `tracked_tokens` (pinned by
+// `pendle-acquisition-pin.ts` after each confirmed acquisition), NOT the
+// `proj_activity` capture scan the Pendle tools no longer write.
 const mockGetTracked = vi.fn();
-vi.mock("@vex-agent/db/repos/activity.js", () => ({
-  getTrackedEvmTokensForChain: (...a: unknown[]) => mockGetTracked(...a),
+vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
+  getTrackedTokenAddressesForChain: (...a: unknown[]) => mockGetTracked(...a),
 }));
 
 const mockReplace = vi.fn();
@@ -172,7 +175,7 @@ describe("enrichPendleBalances — real client against the captured catalogue", 
       tokenSymbol: "PT-SIERRA-6AUG2026",
     });
     expect(only?.balanceUsd).toBeCloseTo(12.5 * price(PENDLE_CHAIN1_ASSETS, PT_CHAIN1), 10);
-    expect(mockGetTracked).toHaveBeenCalledWith({ walletAddress: WALLET, chainKeys: ["ethereum"] });
+    expect(mockGetTracked).toHaveBeenCalledWith(WALLET, 1);
   });
 
   it("reads the PER-CHAIN URL for the chain it was asked about", async () => {

@@ -113,6 +113,17 @@ export interface CreatePendingActivityEventInput {
   sessionId: string;
   tokenIn?: AgentActivityLegInput;
   tokenOut?: AgentActivityLegInput;
+  /**
+   * Option-C SECOND legs (migration 053). Valid ONLY on `eventRole`
+   * `'yield_py'`/`'yield_lp'` — `agent_activity_second_leg_roles_only` rejects
+   * them anywhere else, and `agent_activity_yield_py_has_one_second_leg`
+   * requires a `yield_py` row to populate EXACTLY one side (mint splits 1→PT+YT
+   * so it carries `tokenOut2`; a pre-expiry redeem burns PT+YT→1 so it carries
+   * `tokenIn2`). Populating both sides, or neither, is a shape no Pendle action
+   * produces and the DB refuses it.
+   */
+  tokenIn2?: AgentActivityLegInput;
+  tokenOut2?: AgentActivityLegInput;
   usdInEst?: string;
   /**
    * DEPRECATED (migration 050) — the mixed-meaning column. Keep dual-writing it
@@ -156,6 +167,21 @@ export interface RecordPreBroadcastFailureInput {
   sessionId: string;
   tokenIn?: AgentActivityLegInput;
   tokenOut?: AgentActivityLegInput;
+  /**
+   * Option-C SECOND legs (migration 053) — same role binding as
+   * `CreatePendingActivityEventInput.tokenIn2`/`tokenOut2`. A refusal states
+   * them WHENEVER it knows them: a `py.mint` refused on a price floor knows
+   * both minted instruments from the quote, and dropping the YT would make the
+   * failed row narrower than the succeeded one for no reason.
+   *
+   * They stay optional because a PY refusal often fires BEFORE the second
+   * instrument is resolvable (an unresolved market is the commonest refusal,
+   * and the YT address is exactly what that resolution failed to produce) —
+   * `agent_activity_yield_py_has_one_second_leg` exempts precisely this
+   * hashless `definitively_failed` shape.
+   */
+  tokenIn2?: AgentActivityLegInput;
+  tokenOut2?: AgentActivityLegInput;
   failureCode: AgentActivityFailureCode;
   failureReason: string;
 }
@@ -182,7 +208,9 @@ export async function createPendingActivityEvent(
        usd_network_gas_est, usd_venue_fee_est, usd_destination_prepay_est, usd_vex_fee_est,
        vex_fee_token_address, vex_fee_token_symbol, vex_fee_token_decimals,
        vex_fee_amount_raw, vex_fee_amount_human,
-       usd_source, route_provenance
+       usd_source, route_provenance,
+       token_in2_address, token_in2_symbol, token_in2_decimals, amount_in2_human, amount_in2_raw,
+       token_out2_address, token_out2_symbol, token_out2_decimals, amount_out2_human, amount_out2_raw
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9, $10,
@@ -192,7 +220,9 @@ export async function createPendingActivityEvent(
        $24::numeric, $25::numeric, $26::numeric, $27::numeric,
        $28, $29, $30,
        $31, $32,
-       $33, $34::jsonb
+       $33, $34::jsonb,
+       $35, $36, $37, $38, $39,
+       $40, $41, $42, $43, $44
      ) RETURNING *`;
   const bindParams = [
     input.protocolExecutionId,
@@ -231,6 +261,16 @@ export async function createPendingActivityEvent(
     input.vexFee?.amountHuman ?? null,
     input.usdSource ?? null,
     nullableJsonb(input.routeProvenance ?? null),
+    input.tokenIn2?.tokenAddress ?? null,
+    input.tokenIn2?.tokenSymbol ?? null,
+    input.tokenIn2?.tokenDecimals ?? null,
+    input.tokenIn2?.amountHuman ?? null,
+    input.tokenIn2?.amountRaw ?? null,
+    input.tokenOut2?.tokenAddress ?? null,
+    input.tokenOut2?.tokenSymbol ?? null,
+    input.tokenOut2?.tokenDecimals ?? null,
+    input.tokenOut2?.amountHuman ?? null,
+    input.tokenOut2?.amountRaw ?? null,
   ];
   const row = client
     ? await queryOneWith<Record<string, unknown>>(client, sql, bindParams)
@@ -311,13 +351,17 @@ export async function recordPreBroadcastFailure(
        chain_id, chain_slug, chain_family, wallet_address, session_id,
        token_in_address, token_in_symbol, token_in_decimals, amount_in_human, amount_in_raw,
        token_out_address, token_out_symbol, token_out_decimals, amount_out_human, amount_out_raw,
+       token_in2_address, token_in2_symbol, token_in2_decimals, amount_in2_human, amount_in2_raw,
+       token_out2_address, token_out2_symbol, token_out2_decimals, amount_out2_human, amount_out2_raw,
        status, failure_code, failure_reason
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9, $10,
        $11, $12, $13, $14, $15,
        $16, $17, $18, $19, $20,
-       'definitively_failed', $21, $22
+       $21, $22, $23, $24, $25,
+       $26, $27, $28, $29, $30,
+       'definitively_failed', $31, $32
      ) RETURNING *`;
   const bindParams = [
     input.protocolExecutionId,
@@ -340,6 +384,16 @@ export async function recordPreBroadcastFailure(
     input.tokenOut?.tokenDecimals ?? null,
     input.tokenOut?.amountHuman ?? null,
     input.tokenOut?.amountRaw ?? null,
+    input.tokenIn2?.tokenAddress ?? null,
+    input.tokenIn2?.tokenSymbol ?? null,
+    input.tokenIn2?.tokenDecimals ?? null,
+    input.tokenIn2?.amountHuman ?? null,
+    input.tokenIn2?.amountRaw ?? null,
+    input.tokenOut2?.tokenAddress ?? null,
+    input.tokenOut2?.tokenSymbol ?? null,
+    input.tokenOut2?.tokenDecimals ?? null,
+    input.tokenOut2?.amountHuman ?? null,
+    input.tokenOut2?.amountRaw ?? null,
     input.failureCode,
     sanitizeFailureReason(input.failureReason),
   ];

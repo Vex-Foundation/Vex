@@ -15,10 +15,14 @@ import { PENDLE_NATIVE_TOKEN, PENDLE_ERC20_ABI } from "@tools/pendle/constants.j
 import { getPendleChain, resolvePendleChainId, type PendleChain } from "@tools/pendle/chains.js";
 import { getPendlePublicClient } from "@tools/pendle/evm-client.js";
 import type { PendleAsset } from "@tools/pendle/types.js";
+import type { AgentActivityLegInput } from "@vex-agent/db/repos/agent-activity.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
+import type { ToolResult } from "../../../types.js";
+import { checkSlippageBps } from "../../slippage-policy.js";
 import { priceUsdFor } from "../market-lookup.js";
+import type { PendleBroadcastResult } from "./signed-broadcast.js";
 
 /** Default slippage (bps) when the caller omits it — matches the redeem identity builder. */
 export const DEFAULT_SLIPPAGE_BPS = 50;
@@ -28,35 +32,57 @@ export function isNativeInput(input: string): boolean {
   return lower === "native" || lower === "eth" || lower === PENDLE_NATIVE_TOKEN.toLowerCase();
 }
 
+/** The tolerance a Pendle trade runs at, in the two forms the path needs. */
+export interface PendleSlippage {
+  /**
+   * Whole basis points — what the PRICE FLOOR is computed from
+   * (`calldata/price-floor.ts`).
+   */
+  readonly bps: number;
+  /** The same tolerance as the fraction Pendle's Convert API expects. */
+  readonly fraction: number;
+}
+
 /**
- * Convert a caller-supplied basis-point tolerance to the fraction Pendle's
- * Convert API expects. An OMITTED value takes {@link DEFAULT_SLIPPAGE_BPS};
- * an INVALID one is rejected.
+ * Resolve a caller-supplied basis-point tolerance for a Pendle trade. An
+ * OMITTED value takes {@link DEFAULT_SLIPPAGE_BPS}; an INVALID or
+ * OUT-OF-POLICY one is REJECTED.
  *
- * This used to read `bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS`,
- * which silently substituted 50 bps for a negative input — a caller that passes
- * `-1` has made an error, and quietly trading with a tolerance they never asked
- * for hides it at a price-protection boundary. A fractional value is rejected
- * for the same reason it is at the manifest gate: `0.5` could mean 0.5 bps or
- * 0.5%, and rounding a price-protection parameter is guessing.
+ * Two defects closed here, both at a price-protection boundary:
  *
- * Defense-in-depth only — `unit: "bps"` on the Pendle manifests
- * (`runtime/bps-param.ts`) rejects both cases before any handler runs. Every
- * caller sits inside a handler-level `try/catch` that returns `fail(...)`.
+ * 1. This used to read `bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS`,
+ *    silently substituting 50 bps for a negative input. A caller that passes
+ *    `-1` has made an error, and quietly trading with a tolerance they never
+ *    asked for hides it. A fractional value is rejected for the same reason it
+ *    is at the manifest gate: `0.5` could mean 0.5 bps or 0.5%, and rounding a
+ *    price-protection parameter is guessing.
  *
- * The 5000 bps cap below is PRE-EXISTING and deliberately left untouched;
- * changing or removing it is a separate, owner-gated decision.
+ * 2. Pendle then CLAMPED with `Math.min(bps, 5000)` — the only venue in the tree
+ *    exempt from `protocols/slippage-policy.ts`, which every other venue obeys
+ *    and which is explicit that out-of-range is "REJECTED, never clamped"
+ *    (`VEX_MAX_SLIPPAGE_BPS = 1000`). Because the clamp applied identically on
+ *    the quote and the execute, the prequote digests still collided and a
+ *    `slippageBps: 999999` trade executed at 50% tolerance with nothing
+ *    surfaced. Pendle now runs the shared policy check (owner decision Q8, G-40
+ *    / P1-4); no venue maximum is passed because Pendle publishes none below
+ *    Vex's, which is the fail-safe reading.
+ *
+ * Returning BOTH forms from ONE resolution is deliberate: the quote is sent the
+ * fraction and the floor is derived from the bps, and if those ever came from
+ * separate calls the guard could hold a route to a tolerance the caller did not
+ * trade at.
+ *
+ * `toolId` names the offending call for the agent, matching KyberSwap's
+ * `resolveKyberSlippageBps`. Every caller sits inside a handler-level
+ * `try/catch` that returns `fail(...)`.
  */
-export function slippageFraction(bps: number | undefined): number {
-  if (bps === undefined) return DEFAULT_SLIPPAGE_BPS / 10_000;
-  if (!Number.isInteger(bps) || bps < 0) {
-    throw new VexError(
-      ErrorCodes.INVALID_AMOUNT,
-      `Invalid slippageBps: ${bps}`,
-      "slippageBps must be a whole, non-negative number of basis points (1 bps = 0.01%).",
-    );
+export function resolvePendleSlippage(toolId: string, bps: number | undefined): PendleSlippage {
+  const value = bps ?? DEFAULT_SLIPPAGE_BPS;
+  const violation = checkSlippageBps(`Parameter "slippageBps" for ${toolId}`, value);
+  if (violation !== null) {
+    throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid slippageBps: ${value}`, violation);
   }
-  return Math.min(bps, 5000) / 10_000;
+  return { bps: value, fraction: value / 10_000 };
 }
 
 /** Model-facing failure detail — code-keyed + bounded, never upstream text. */
@@ -142,6 +168,59 @@ export function requireTokenAddress(raw: string): Address {
 export function humanAmount(wei: string | bigint, decimals: number | null): number {
   const n = Number(formatUnits(BigInt(wei), decimals ?? 18));
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Build one `agent_activity` leg. Every field the row needs to be READABLE
+ * travels together (rules/90): a raw amount whose decimals are unknown is the
+ * canonical thousandfold-error shape — `"1047061"` is 1.05 at 6 decimals and
+ * 0.00105 at 9 — so an unknown `decimals` also drops the human rendering rather
+ * than pairing a raw amount with a guessed one.
+ */
+export function legInput(
+  address: string,
+  symbol: string | null | undefined,
+  decimals: number | null | undefined,
+  amountRaw: string,
+  amountHuman: string,
+): AgentActivityLegInput {
+  return {
+    tokenAddress: address,
+    ...(symbol ? { tokenSymbol: symbol } : {}),
+    ...(decimals !== null && decimals !== undefined
+      ? { tokenDecimals: decimals, amountRaw, amountHuman }
+      : { amountRaw }),
+  };
+}
+
+/**
+ * The ONE model-facing wording for a Pendle broadcast that did not end in a
+ * proven fill — reverted, unprovable, or a claim that swept nothing.
+ *
+ * Always `success: false`, deliberately: `runtime/capture.ts` skips capture on a
+ * failed result, and a mined-but-unproven trade must NOT project a lot from
+ * amounts nobody decoded. The durable row already exists and carries the truth;
+ * this is what the AGENT is told, and it never claims more than the evidence
+ * supports.
+ */
+export function unsettledResult(toolId: string, broadcast: PendleBroadcastResult): ToolResult {
+  if (broadcast.kind === "confirmed") {
+    throw new Error("unsettledResult: called with a confirmed broadcast");
+  }
+  logger.warn("pendle.handler.unsettled", {
+    toolId,
+    kind: broadcast.kind,
+    ...(broadcast.kind === "unproven" ? { reason: broadcast.reason } : {}),
+  });
+  return {
+    success: false,
+    // The hash is appended AFTER the owned sentence, never woven into it: the
+    // sentence is the contract and must stay quotable verbatim, but an agent
+    // that cannot see the hash cannot check the transaction on an explorer,
+    // which is the one useful thing it can still do.
+    output: `${toolId}: ${broadcast.message} (tx ${broadcast.txHash})`,
+    data: { _executionId: broadcast.executionId, txHash: broadcast.txHash, status: broadcast.kind },
+  };
 }
 
 /** USD value of a leg from the Pendle asset map, with a best-effort fallback. */

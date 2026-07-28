@@ -23,6 +23,26 @@ vi.mock("@vex-agent/tools/protocols/pendle/market-lookup.js", () => ({
   priceUsdFor: vi.fn(() => null),
 }));
 
+// R5b: the exit actions (pt.redeem, lp.remove, claim) resolve through the
+// matured-capable lane. Delegates to the SAME market doubles this suite
+// already sets up, wrapped in the {market, maturity} envelope.
+// R5b: a failed active-only lookup now NAMES the reason from the read-only
+// classification lane. Stubbed so the refusal text is produced offline — the
+// lane is network-bounded in production (`read/client.ts` fetchWithTimeout),
+// but a unit test must not reach for it.
+vi.mock("@vex-agent/tools/protocols/pendle/market-read.js", () => ({
+  resolveMarketForRead: vi.fn(async () => ({ status: "not_found" })),
+}));
+
+vi.mock("@vex-agent/tools/protocols/pendle/matured-market-lookup.js", () => ({
+  resolveExitMarketByPt: async (...a: unknown[]) => {
+    const m = await mockResolveMarketByPt(...a);
+    return m ? { market: m, maturity: "active" } : null;
+  },
+  resolveExitMarketByAddress: vi.fn(async () => null),
+  resolveExitYtForPt: vi.fn(async () => null),
+}));
+
 const mockConvert = vi.fn();
 vi.mock("@tools/pendle/client.js", () => ({
   getPendleClient: () => ({ convert: (...a: unknown[]) => mockConvert(...a) }),
@@ -177,7 +197,39 @@ describe("pendle.pt.quote — symmetric instrument guard", () => {
       ctx,
     );
     expect(res.success).toBe(false);
-    expect(res.output).toContain("Neither token is an active Pendle PT");
+    // The GUARD is what this case pins: refuse, and never reach Convert. The
+    // WORDING moved in R5b — "Neither token is an active Pendle PT" is now
+    // sourced from the read-only classification lane, which distinguishes a
+    // matured market from a genuinely absent one instead of collapsing both into
+    // "not active". Here the lane reports a proven absence, so the refusal says
+    // the full catalogue (matured included) was read and found nothing.
+    expect(res.output).toMatch(/No Pendle market on ethereum has PT/);
+    expect(res.output).toMatch(/including matured markets/);
+    expect(mockConvert).not.toHaveBeenCalled();
+  });
+
+  it("names MATURITY as the reason when the PT belongs to a matured market", async () => {
+    // The defect this replaces: a matured PT answered "not an active Pendle PT",
+    // which reads as "this PT does not exist" and sends the agent hunting for
+    // another address instead of to pendle.pt.redeem.
+    mockResolveMarketByPt.mockResolvedValue(null);
+    const { resolveMarketForRead } = await import("@vex-agent/tools/protocols/pendle/market-read.js");
+    vi.mocked(resolveMarketForRead).mockResolvedValueOnce({
+      status: "found",
+      matured: true,
+      matchedBy: "pt",
+      catalogScope: "inactive",
+      market: { address: "0xafb7d6d1e9bca5b675adc9b4f52f0cdfddec9654", expiry: "2026-04-02T00:00:00.000Z" },
+    } as never);
+
+    const res = await PENDLE_PT_HANDLERS["pendle.pt.quote"]!(
+      { chain: "ethereum", tokenIn: USDC, tokenOut: YT, amountIn: "100" },
+      ctx,
+    );
+
+    expect(res.success).toBe(false);
+    expect(res.output).toMatch(/matured on 2026-04-02/);
+    expect(res.output).toMatch(/pendle\.pt\.redeem/);
     expect(mockConvert).not.toHaveBeenCalled();
   });
 

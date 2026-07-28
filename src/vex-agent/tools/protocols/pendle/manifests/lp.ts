@@ -60,7 +60,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Remove single-token liquidity from a Pendle market — burns the market's LP token and returns ONE output token. TODAY THIS WORKS ONLY BEFORE EXPIRY: Pendle itself allows removal from a matured market, but Vex resolves markets from the active list, so a matured market cannot currently be removed here. LP is not a fixed-rate lock and no longer earns swap fees or rewards after expiry. Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.lp.quote (direction remove) first.",
+      "Remove single-token liquidity from a Pendle market — burns the market's LP token and returns ONE output token. Works BEFORE AND AFTER expiry: a matured market can still be exited here. LP is not a fixed-rate lock and no longer earns swap fees or rewards after expiry, so there is no reason to hold a matured LP position. Approval-gated; pins the canonical Pendle Router. REQUIRES a fresh matching pendle.lp.quote (direction remove) first.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

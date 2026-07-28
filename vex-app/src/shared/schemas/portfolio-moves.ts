@@ -86,6 +86,38 @@ export const moveStatusSchema = z.enum(["pending", "confirmed", "failed"]);
 export type MoveStatus = z.infer<typeof moveStatusSchema>;
 
 /**
+ * The SECOND instrument of a two-instrument `yield` action (migration 053's
+ * Option-C column family). DELIBERATELY NOT the bridge `legs` shape: a bridge
+ * leg is a separate TRANSACTION (its own chain, tx hash, status, failure code)
+ * of one logical move, whereas this is a second TOKEN LEG of the SAME
+ * transaction — it has no hash and no independent lifecycle of its own, and
+ * borrowing `legs` would assert both.
+ *
+ * Populated only where the on-chain action genuinely has two instruments on
+ * one side: `py.mint` is 1→2 (one token in, PT **and** YT out — the second
+ * OUTPUT leg) and a pre-expiry `py.redeem` is 2→1 (PT **and** YT in — the
+ * second INPUT leg). Migration 053 constraint 7 makes exactly one of the two
+ * sides populated for `yield_py`.
+ *
+ *  - `token`       — the second instrument's contract address; `null` when the
+ *                    row recorded an amount it could not attribute.
+ *  - `tokenSymbol` — bounded display symbol, UNTRUSTED exactly like
+ *                    `inputTokenSymbol` (same sanitizer, same no-brand-icon
+ *                    rule); never overrides `token` identity.
+ *  - `amount`      — the HUMAN amount, resolved by the same status rule and the
+ *                    same BigInt-safe raw+decimals formatter as the primary
+ *                    leg. NEVER a base-unit integer string.
+ */
+export const moveSecondaryLegSchema = z
+  .object({
+    token: z.string().nullable(),
+    tokenSymbol: z.string().min(1).max(MOVE_TOKEN_SYMBOL_MAX).nullable(),
+    amount: z.string().nullable(),
+  })
+  .strict();
+export type MoveSecondaryLeg = z.infer<typeof moveSecondaryLegSchema>;
+
+/**
  * One MOVES row — an executed-trade ACTIVITY row (a fill) or, for
  * `source: "agent_activity"`, one swap ATTEMPT (pending/confirmed/failed).
  * Batch captures legitimately produce multiple fills per `execution_id`, so
@@ -261,6 +293,22 @@ export const moveItemSchema = z
      * `activityKind` above.
      */
     eventRole: z.string().max(EVENT_ROLE_MAX_LENGTH).nullable().optional(),
+    /**
+     * YIELD rows only (migration 053, Option C) — the SECOND token leg of a
+     * two-instrument Pendle action, on whichever side the action populates:
+     * `secondaryOutputLeg` for a `py.mint` (one token in, PT **and** YT out),
+     * `secondaryInputLeg` for a pre-expiry `py.redeem` (PT **and** YT in, one
+     * token out). `null`/absent on every other row, including a one-leg
+     * `yield_pt`/`yield_yt`/`yield_claim`, which must keep rendering exactly as
+     * before.
+     *
+     * A renderer that ignores these still shows a TRUE (if partial) primary
+     * leg; one that reads them shows the whole action. Optional-and-nullable
+     * for the same reason as `activityKind` above — `undefined` and `null` mean
+     * the same thing, so consumers read `?? null` and never branch on it.
+     */
+    secondaryInputLeg: moveSecondaryLegSchema.nullable().optional(),
+    secondaryOutputLeg: moveSecondaryLegSchema.nullable().optional(),
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();
