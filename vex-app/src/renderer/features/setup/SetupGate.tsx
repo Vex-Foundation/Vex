@@ -35,9 +35,8 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { GATE_SIGIL_PALETTE } from "./gate-sigil-palette.js";
 import {
   GatePrologue,
-  readLastPlayedVersion,
   resolveProloguePlay,
-  writeLastPlayedVersion,
+  sanitizeStoredPrologueVersion,
   type ProloguePlay,
 } from "./gate-prologue/index.js";
 import { useSetupOrchestrator } from "./useSetupOrchestrator.js";
@@ -51,6 +50,7 @@ export function SetupGate(): JSX.Element | null {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const openUnlock = useUiStore((s) => s.openUnlock);
   const prologueReplay = useUiStore((s) => s.prologueReplayNonce);
+  const setPrologueVersion = useUiStore((s) => s.setPrologueVersion);
   const reduced = useReducedMotion() === true;
 
   const { status, handoff } = useSetupOrchestrator();
@@ -72,7 +72,11 @@ export function SetupGate(): JSX.Element | null {
     if (isTourReplay) return "full";
     return resolveProloguePlay({
       appVersion: __VEX_APP_VERSION__,
-      lastPlayedVersion: readLastPlayedVersion(),
+      // Rehydrated store state is user-writable localStorage under the
+      // persist whitelist — sanitise before the policy reads it.
+      lastPlayedVersion: sanitizeStoredPrologueVersion(
+        useUiStore.getState().prologueVersion,
+      ),
       reducedMotion: false,
     });
   });
@@ -85,8 +89,8 @@ export function SetupGate(): JSX.Element | null {
     setPrologueDone(true);
     if (persistedRef.current || isTourReplay) return;
     persistedRef.current = true;
-    writeLastPlayedVersion(__VEX_APP_VERSION__);
-  }, [isTourReplay]);
+    setPrologueVersion(__VEX_APP_VERSION__);
+  }, [isTourReplay, setPrologueVersion]);
 
   // Apply the handoff to the view machine beneath the plate, give React
   // one frame to mount the target screen, then start the curtain.
