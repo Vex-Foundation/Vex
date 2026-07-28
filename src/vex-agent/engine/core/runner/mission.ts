@@ -26,6 +26,7 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import logger from "@utils/logger.js";
 import { finalizeMissionRunError } from "./mission-finalize.js";
+import { isRunnerLeaseLostError } from "../../runtime/lease-loss.js";
 
 import {
   prepareMissionStart,
@@ -116,7 +117,10 @@ export async function startMission(missionId: string): Promise<TurnResult> {
  * the IPC layer's resume path goes through the shared runtime
  * dispatcher (`request-resume.ts` / `_shared/runtime-resume-dispatch`).
  */
-export async function resumeMissionRun(runId: string): Promise<TurnResult> {
+export async function resumeMissionRun(
+  runId: string,
+  leaseSignal?: AbortSignal,
+): Promise<TurnResult> {
   logger.info("engine.mission.resume", { runId });
 
   // Read run + check terminal status OUTSIDE the finalize-on-error try.
@@ -147,8 +151,12 @@ export async function resumeMissionRun(runId: string): Promise<TurnResult> {
       mission,
       provider,
       config,
+      leaseSignal,
     });
   } catch (err) {
+    // Another runner owns the session now. Never let this stale invocation
+    // rewrite the shared row to paused_error after the new owner took over.
+    if (isRunnerLeaseLostError(err)) throw err;
     // Skip double-finalize: `resumePreparedMissionRun` already wraps
     // its internal turn loop in a try/catch that calls
     // `finalizeMissionRunError` and throws `MissionRunPausedError`.

@@ -155,6 +155,9 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 const runnerModule = await import("../../../../../vex-agent/engine/core/runner.js");
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
 const { MissionRunPausedError } = await import("../../../../../vex-agent/engine/types.js");
+const { RunnerLeaseLostError } = await import(
+  "../../../../../vex-agent/engine/runtime/lease-loss.js"
+);
 const { ITERATION_LIMIT_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
 
 function makeProvider() {
@@ -404,6 +407,30 @@ describe("runner", () => {
         }),
         expect.anything(),
       );
+    });
+
+    it("exits a stale runner without finalizing state after lease loss", async () => {
+      const leaseController = new AbortController();
+      const leaseLost = new RunnerLeaseLostError("session-1");
+      leaseController.abort(leaseLost);
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "running", iterationCount: 5,
+      });
+      mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockRejectedValueOnce(leaseLost);
+
+      await expect(
+        resumeMissionRun("run-1", leaseController.signal),
+      ).rejects.toBe(leaseLost);
+
+      expect(mockRunTurnLoop.mock.calls[0]?.[11]).toBe(leaseController.signal);
+      expect(mockUpdateRunStatus).toHaveBeenCalledTimes(1);
+      expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-1", "running");
+      expect(mockSetMissionStatus).not.toHaveBeenCalled();
     });
 
     it("throws if run not found", async () => {

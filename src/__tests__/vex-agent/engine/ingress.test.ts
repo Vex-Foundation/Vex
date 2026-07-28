@@ -111,7 +111,7 @@ vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
     lease: { sessionId: "s1", missionRunId: null, ownerId: "test-owner", processKind: "electron_main", acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date() },
     ownerId: "test-owner",
     release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
+    signal: new AbortController().signal,
   }),
 }));
 
@@ -184,7 +184,10 @@ describe("ingress.routeUserMessage", () => {
       }),
     );
     expect(mockAddOperatorCue).toHaveBeenCalled();
-    expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1");
+    expect(mockResumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      expect.any(AbortSignal),
+    );
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 

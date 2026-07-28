@@ -357,6 +357,42 @@ describe("turn-loop", () => {
       expect(provider.chatCompletion).toHaveBeenCalled();
     });
 
+    it("does not dispatch tool calls returned by inference after the deadline", async () => {
+      vi.useFakeTimers();
+      const startedAt = new Date("2026-07-21T10:00:00.000Z");
+      vi.setSystemTime(startedAt);
+      const deadline = startedAt.getTime() + 1_000;
+      const provider = makeProvider([{
+        toolCalls: [{ id: "late-call", name: "wallet_balances", arguments: {} }],
+      }]);
+      provider.chatCompletion.mockImplementationOnce(async () => {
+        vi.setSystemTime(deadline);
+        return {
+          content: null,
+          toolCalls: [{ id: "late-call", name: "wallet_balances", arguments: {} }],
+          usage: {
+            promptTokens: 1_000,
+            completionTokens: 200,
+            cachedTokens: 0,
+            reasoningTokens: 0,
+          },
+        };
+      });
+
+      try {
+        const result = await runTurnLoop(
+          makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+          [], null, 0, provider as any, makeConfig() as any, [],
+          { ...defaultLoopConfig, maxIterations: 1, missionDeadlineMs: deadline },
+        );
+
+        expect(result.stopReason).toBe("deadline_reached");
+        expect(mockDispatchTool).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does not stop early when missionDeadlineMs is null/undefined (no box)", async () => {
       const provider = makeProvider([{ content: "Working..." }]);
 

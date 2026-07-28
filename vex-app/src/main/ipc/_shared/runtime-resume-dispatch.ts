@@ -27,6 +27,7 @@ import { controlFailedError } from "../runtime/_errors.js";
 import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
 import { emitControlStateAfterChange } from "../runtime/_emit-control-state.js";
 import { classifyRunLeaseState } from "./lease-state.js";
+import { resolvePendingApprovalId } from "./pending-approval.js";
 
 export interface ResumeFlowInput {
   readonly sessionId: string;
@@ -84,9 +85,14 @@ export async function runResumeDispatch(
       // the lease between this read and the claim.
     }
     if (status === "paused_approval") {
+      const pendingApproval = await resolvePendingApprovalId(
+        input.sessionId,
+        ctx.requestId,
+      );
+      if (!pendingApproval.ok) return pendingApproval;
       return ok({
         outcome: "blocked_approval",
-        pendingApprovalId: runId,
+        pendingApprovalId: pendingApproval.data,
       });
     }
     if (status === "paused_error") {
@@ -173,7 +179,7 @@ export async function runResumeDispatch(
         const { resumeMissionRun } = await import(
           "@vex-agent/engine/index.js"
         );
-        await resumeMissionRun(runId);
+        await resumeMissionRun(runId, handle.signal);
         await markCleared(auditRequest.id, "resumed");
       } catch (cause) {
         log.warn(

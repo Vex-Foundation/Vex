@@ -55,6 +55,7 @@ export async function runPreparedMissionRecover(
       mission: prepared.mission,
       provider: prepared.provider,
       config: prepared.config,
+      leaseSignal: prepared.sessionLease.signal,
     });
   } finally {
     await releaseLeaseAndEmitControlState(

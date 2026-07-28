@@ -21,7 +21,7 @@ export interface WakeDeps {
   /** Persist a `wake_due` banner for the resume path to pick up. */
   injectWakeBanner(sessionId: string, reason: string | null, dueAt: string): Promise<void>;
   /** Resume a mission run. */
-  resumeMissionRun(runId: string): Promise<void>;
+  resumeMissionRun(runId: string, leaseSignal?: AbortSignal): Promise<void>;
   /**
    * Pre-claim provider/config gate. `claimDue` is destructive
    * (pending→consumed) and the subsequent resume runs the agent turn loop,
@@ -61,7 +61,7 @@ export function buildProductionDeps(): WakeDeps {
         },
       );
     },
-    resumeMissionRun: async (runId) => {
+    resumeMissionRun: async (runId, leaseSignal) => {
       // Lazy dynamic import so wake/executor.ts doesn't introduce a circular
       // dependency through the engine barrel. The ESM runtime caches the
       // promise after the first resolve, so there's no per-tick cost.
@@ -69,7 +69,7 @@ export function buildProductionDeps(): WakeDeps {
       // so every caller — wake executor, ingress preempt, approval resume —
       // gets it idempotently.
       const engine = await import("@vex-agent/engine/index.js");
-      await engine.resumeMissionRun(runId);
+      await engine.resumeMissionRun(runId, leaseSignal);
     },
     isProviderReady: isWakeProviderConfigured,
   };

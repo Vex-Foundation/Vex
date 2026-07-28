@@ -70,7 +70,7 @@ export async function runResumeAfterDecision(
 ): Promise<TurnResult> {
   try {
     const { resumeMissionRun } = await import("../runner/mission.js");
-    return await resumeMissionRun(cont.missionRunId);
+    return await resumeMissionRun(cont.missionRunId, cont.leaseHandle.signal);
   } finally {
     const { releaseLeaseAndEmitControlState } = await import(
       "../../runtime/release-and-emit.js"
