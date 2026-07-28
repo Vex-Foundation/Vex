@@ -19,10 +19,12 @@
  *      strings; SDK raw messages NEVER surfaced — codex turn 3
  *      YELLOW).
  *
- * Skip-card branch: when `envState.provider.configured` is true the
- * user sees the current provider + modelLabel summary (with the
- * resolved brand icon for the model prefix) + Continue button.
- * "Reconfigure" reveals the form.
+ * Configured branch: when `envState.provider.configured` is true the
+ * whole screen is delegated to `ConfiguredProviderPanel`, which shows
+ * the three configured facts (key status, model, routing) and hosts an
+ * inline delta editor able to save a model/endpoint change WITHOUT the
+ * operator re-typing the API key. "Reconfigure" there falls back to
+ * THIS file's full first-run form, unchanged.
  *
  * AGENT_MODEL is NOT a secret — model ids are public catalogue
  * entries — so it stays in React state. The OPENROUTER_API_KEY input
@@ -47,6 +49,7 @@ import { PasswordField } from "../../../components/common/PasswordField.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
   persistProvider,
+  useProviderEndpoints,
   useProviderModels,
   useInvalidateEnvStateAfterProviderWrite,
 } from "../../../lib/api/provider.js";
@@ -56,9 +59,12 @@ import {
 } from "../../../lib/api/wizard.js";
 import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
-import { CAUSE_HINTS, uiCopyFor, type ServerError } from "./provider/error-ui.js";
+import { type ServerError } from "./provider/error-ui.js";
+import { ConfiguredProviderPanel } from "./provider/ConfiguredProviderPanel.js";
 import { ModelBrandIcon } from "./provider/ModelBrandIcon.js";
 import { ModelPicker } from "./provider/ModelPicker.js";
+import { EndpointPicker } from "./provider/EndpointPicker.js";
+import { ProviderErrorAlert } from "./provider/ProviderErrorAlert.js";
 
 export interface ProviderStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -78,6 +84,8 @@ export function ProviderStep({
   const invalidateEnvState = useInvalidateEnvStateAfterProviderWrite();
 
   const [model, setModel] = useState<string>("");
+  /** Pinned endpoint tag, or `null` for "Auto (recommended)". */
+  const [endpointTag, setEndpointTag] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<ServerError | null>(null);
@@ -90,12 +98,36 @@ export function ProviderStep({
   const configured = providerState?.configured ?? false;
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
+  const effectiveEndpointTag = providerState?.endpointTag ?? null;
   const providerModels = useProviderModels(!configured || showOverride);
   const providerModelsResult = providerModels.data;
   const catalogueModels =
     providerModelsResult?.ok === true ? providerModelsResult.data.models : [];
   const catalogueFailed =
     providerModels.isError || providerModelsResult?.ok === false;
+
+  // The provider (endpoint) select appears only for an EXACT catalogue match.
+  // A manually typed or unlisted model id has no endpoint list we can
+  // authorise a pin against, so it stays Auto-only — and this also guarantees
+  // one fetch per selected model instead of one per keystroke.
+  const selectedCatalogueModelId =
+    catalogueModels.find((option) => option.modelId === model.trim())
+      ?.modelId ?? null;
+  const providerEndpoints = useProviderEndpoints(selectedCatalogueModelId);
+  const providerEndpointsResult = providerEndpoints.data;
+  const endpointOptions =
+    providerEndpointsResult?.ok === true
+      ? providerEndpointsResult.data.endpoints
+      : [];
+  const endpointsFailed =
+    providerEndpoints.isError || providerEndpointsResult?.ok === false;
+
+  // Changing the model invalidates any pin: endpoint tags are per-model, and
+  // carrying one across would submit a tag main will (correctly) reject.
+  const onModelChange = useCallback((next: string) => {
+    setModel(next);
+    setEndpointTag(null);
+  }, []);
 
   const openLogsFolder = useCallback(() => {
     // Fire-and-forget one-shot action: opening the OS file manager has no
@@ -144,10 +176,13 @@ export function ProviderStep({
       }
 
       // Snapshot, clear ref SYNCHRONOUSLY before await (skill §14).
+      // Omitting `endpointTag` is the Auto contract: main REMOVES any
+      // previously persisted pin rather than leaving a stale one behind.
       const payload: ProviderPersistInput = {
         provider: "openrouter",
         apiKey,
         model: modelTrim,
+        ...(endpointTag !== null && { endpointTag }),
       };
       if (apiKeyRef.current) {
         apiKeyRef.current.value = "";
@@ -178,69 +213,29 @@ export function ProviderStep({
         setSubmitting(false);
       }
     },
-    [advanceToReview, invalidateEnvState, model],
+    [advanceToReview, endpointTag, invalidateEnvState, model],
   );
 
   const meta = WIZARD_STEP_META.provider;
 
-  // ── Skip card ────────────────────────────────────────────────────
+  // ── Configured screen ────────────────────────────────────────────
+  // Owned by `ConfiguredProviderPanel`: status rows + an inline delta editor
+  // that can save a model/routing change WITHOUT re-entering the API key.
+  // "Reconfigure" still falls through to the full first-run form below.
   if (configured && !showOverride) {
     return (
-      <WizardStepPanel
-        panelDataAttr={{ kind: "provider", value: "skip" }}
-        icon={meta.icon}
+      <ConfiguredProviderPanel
+        providerName={effectiveName}
+        activeModel={effectiveModel}
+        activeEndpointTag={effectiveEndpointTag}
         flowMode={flowMode}
-        title="Provider is configured"
-        description={
-          effectiveName === "openrouter"
-            ? "OpenRouter is active. Changes apply the next time the agent starts."
-            : "A provider is configured."
-        }
-        footer={
-          <>
-            <Button
-              variant="ghost"
-              onClick={() => setShowOverride(true)}
-              disabled={stepAdvance.isPending}
-            >
-              Reconfigure
-            </Button>
-            <Button
-              onClick={() => {
-                void advanceToReview();
-              }}
-              disabled={stepAdvance.isPending}
-            >
-              {stepAdvance.isPending
-                ? "Continuing…"
-                : flowMode === "back-edit"
-                  ? "Done"
-                  : "Continue"}
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          {effectiveModel ? (
-            <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
-              <ModelBrandIcon modelId={effectiveModel} size={22} />
-              <div className="flex min-w-0 flex-col">
-                <span className="vex-micro text-[var(--color-text-muted)]">
-                  Active model
-                </span>
-                <code className="truncate font-mono text-sm text-[var(--color-text-primary)]">
-                  {effectiveModel}
-                </code>
-              </div>
-            </div>
-          ) : null}
-          {clientError ? (
-            <p className="text-sm text-[var(--color-danger)]" role="alert">
-              {clientError}
-            </p>
-          ) : null}
-        </div>
-      </WizardStepPanel>
+        onContinue={() => {
+          void advanceToReview();
+        }}
+        onReconfigure={() => setShowOverride(true)}
+        continuePending={stepAdvance.isPending}
+        advanceError={clientError}
+      />
     );
   }
 
@@ -341,7 +336,7 @@ export function ProviderStep({
             loading={providerModels.isLoading}
             failed={catalogueFailed}
             disabled={submitting || stepAdvance.isPending}
-            onChange={setModel}
+            onChange={onModelChange}
             onRetry={() => {
               void providerModels.refetch();
             }}
@@ -361,6 +356,21 @@ export function ProviderStep({
           </p>
         </div>
 
+        {selectedCatalogueModelId !== null ? (
+          <EndpointPicker
+            id="vex-provider-endpoint"
+            value={endpointTag}
+            endpoints={endpointOptions}
+            loading={providerEndpoints.isLoading}
+            failed={endpointsFailed}
+            disabled={submitting || stepAdvance.isPending}
+            onChange={setEndpointTag}
+            onRetry={() => {
+              void providerEndpoints.refetch();
+            }}
+          />
+        ) : null}
+
         {clientError ? (
           <p className="text-sm text-[var(--color-danger)]" role="alert">
             {clientError}
@@ -368,45 +378,10 @@ export function ProviderStep({
         ) : null}
 
         {serverError ? (
-          <div
-            role="alert"
-            data-vex-provider-error={String(serverError.code)}
-            className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] py-1 pl-3 text-sm text-[var(--color-danger)]"
-          >
-            <strong className="block font-semibold">
-              {uiCopyFor(String(serverError.code)).title}
-            </strong>
-            <p className="mt-1">
-              {uiCopyFor(String(serverError.code)).body}
-            </p>
-            {serverError.causeCode !== null ? (
-              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                Cause:{" "}
-                <code className="font-mono">{serverError.causeCode}</code>
-              </p>
-            ) : null}
-            {serverError.causeCode !== null &&
-            CAUSE_HINTS[serverError.causeCode] !== undefined ? (
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                {CAUSE_HINTS[serverError.causeCode]}
-              </p>
-            ) : null}
-            {serverError.correlationId ? (
-              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                Correlation id:{" "}
-                <code className="font-mono">
-                  {serverError.correlationId}
-                </code>{" "}
-                <button
-                  type="button"
-                  onClick={openLogsFolder}
-                  className="text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
-                >
-                  Open logs folder
-                </button>
-              </p>
-            ) : null}
-          </div>
+          <ProviderErrorAlert
+            error={serverError}
+            onOpenLogsFolder={openLogsFolder}
+          />
         ) : null}
 
         {successLatencyMs !== null ? (

@@ -24,6 +24,8 @@ export const onboardingKeys = {
   envState: () => ["onboarding", "envState"] as const,
   wizardState: () => ["onboarding", "wizardState"] as const,
   providerModels: () => ["onboarding", "providerModels"] as const,
+  providerEndpoints: (modelId: string) =>
+    ["onboarding", "providerEndpoints", modelId] as const,
   // C3 — full-archive restore screen. Metadata-only backup listing (no
   // secrets, no paths). Invalidated after a successful restore so the list
   // refreshes if the archive set changed.

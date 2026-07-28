@@ -9,6 +9,7 @@
 import {
   PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
   PROTOCOL_TOOLS,
+  isProtocolToolAvailable,
 } from "@vex-agent/tools/protocols/catalog.js";
 import {
   getGroupedAdvertisedProtocolNavigation,
@@ -18,9 +19,14 @@ import type { BridgeCapabilityView } from "@vex-agent/tools/protocols/khalani/ca
 
 // ── Auto-generation from manifests ──────────────────────────────
 
+/** How many example toolIds each namespace entry shows (scent, not a menu). */
+const EXAMPLE_TOOL_IDS_PER_NAMESPACE = 3;
+
 interface NamespaceSummary {
-  toolCount: number;
+  /** Tools that pass `isProtocolToolAvailable` RIGHT NOW (env-gated ones drop out). */
+  availableCount: number;
   hasMutating: boolean;
+  exampleToolIds: string[];
 }
 
 function groupByNamespace(
@@ -35,16 +41,22 @@ function groupByNamespace(
   return map;
 }
 
-function buildNamespaceSummaries(): Map<ProtocolNamespace, NamespaceSummary> {
-  const byNs = groupByNamespace(
-    PROTOCOL_TOOLS.filter((tool) => PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace)),
+function advertisedTools(): readonly ProtocolToolManifest[] {
+  return PROTOCOL_TOOLS.filter((tool) =>
+    PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
   );
+}
+
+function buildNamespaceSummaries(): Map<ProtocolNamespace, NamespaceSummary> {
+  const byNs = groupByNamespace(advertisedTools());
   const summaries = new Map<ProtocolNamespace, NamespaceSummary>();
 
   for (const [ns, tools] of byNs) {
+    const available = tools.filter(isProtocolToolAvailable);
     summaries.set(ns, {
-      toolCount: tools.length,
-      hasMutating: tools.some(t => t.mutating),
+      availableCount: available.length,
+      hasMutating: available.some(t => t.mutating),
+      exampleToolIds: available.slice(0, EXAMPLE_TOOL_IDS_PER_NAMESPACE).map(t => t.toolId),
     });
   }
 
@@ -53,22 +65,48 @@ function buildNamespaceSummaries(): Map<ProtocolNamespace, NamespaceSummary> {
 
 // ── Public API ──────────────────────────────────────────────────
 
-/** Cached result — built once per process. */
-let cached: string | null = null;
+/**
+ * Cached result, keyed by an AVAILABILITY FINGERPRINT rather than built once
+ * per process.
+ *
+ * `process.env` is NOT stable for the lifetime of the process: unlocking or
+ * locking the local secret vault sets and deletes provider keys in-place
+ * (`src/lib/local-secret-vault/env.ts`), which flips `isProtocolToolAvailable`
+ * for every `requiresEnv` manifest. A process-lifetime cache would keep serving
+ * counts from whichever posture happened to render first. The fingerprint is
+ * the sorted list of `requiresEnv` names that are PRESENT — env NAMES only,
+ * never values, so no secret material reaches this module's state. A mid-session
+ * key change rebuilds this layer once (and busts the KV-cache prefix once),
+ * which is the correct trade for telling the model the truth.
+ */
+let cached: { fingerprint: string; text: string } | null = null;
+
+/** Sorted, non-secret list of `requiresEnv` names currently satisfied. */
+export function protocolAvailabilityFingerprint(): string {
+  const present = new Set<string>();
+  for (const tool of advertisedTools()) {
+    if (tool.lifecycle !== "active") continue;
+    if (!tool.requiresEnv) continue;
+    if (!process.env[tool.requiresEnv]?.trim()) continue;
+    present.add(tool.requiresEnv);
+  }
+  return [...present].sort().join(",");
+}
 
 export function buildProtocolsPrompt(): string {
-  if (cached) return cached;
+  const fingerprint = protocolAvailabilityFingerprint();
+  if (cached && cached.fingerprint === fingerprint) return cached.text;
 
-  const advertisedTools = PROTOCOL_TOOLS.filter((tool) =>
-    PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
-  );
   const summaries = buildNamespaceSummaries();
+  const totalAvailable = [...summaries.values()].reduce((sum, s) => sum + s.availableCount, 0);
   const lines: string[] = [];
 
   lines.push("# Available Protocol Namespaces");
   lines.push("");
-  lines.push(`Total: ${advertisedTools.length} tools across ${summaries.size} namespaces.`);
-  lines.push("Use discover_tools(namespace=...) to explore any namespace.");
+  lines.push(`Total: ${totalAvailable} protocol actions across ${summaries.size} namespaces.`);
+  lines.push(
+    "This is a MAP, not a call menu: it tells you which namespace to search. The toolIds below are real, but their parameter schemas are not shown here — call `discover_tools(query=\"...\", namespace=\"...\")` to get the schema you build the call from.",
+  );
   lines.push("");
 
   // Heading discipline (P3 style contract): layer H1 → group H2 → namespace H3.
@@ -79,28 +117,23 @@ export function buildProtocolsPrompt(): string {
 
     for (const metadata of group.namespaces) {
       const summary = summaries.get(metadata.namespace);
-      if (!summary || summary.toolCount === 0) continue;
+      // A namespace is PRESERVED even at zero available actions (its absence
+      // would read as "this capability does not exist" instead of "a key is
+      // missing"); only a namespace with no cataloged tools at all is skipped.
+      if (!summary) continue;
 
-      lines.push(`### ${metadata.namespace}`);
+      lines.push(`### ${metadata.namespace} — \`${metadata.namespace}.*\` · ${summary.availableCount} actions`);
       lines.push(metadata.summary);
       lines.push(`Use when: ${metadata.whenToUse}`);
       if (metadata.preferInstead) {
         lines.push(`Use instead: ${metadata.preferInstead}`);
       }
-      lines.push(`Tools: ${summary.toolCount} cataloged.`);
-      if (summary.hasMutating) {
-        lines.push("Contains mutating tools (may require approval).");
-      }
-      if (metadata.facets.length > 0) {
-        lines.push("Paths:");
-        for (const facet of metadata.facets) {
-          lines.push(`- ${facet.label}: ${facet.summary}`);
-        }
-      }
-      if (metadata.exampleQueries.length > 0) {
-        lines.push("Examples:");
-        for (const example of metadata.exampleQueries) {
-          lines.push(`  ${example}`);
+      if (summary.availableCount === 0) {
+        lines.push("None of these actions are available in this install — a required API key is not configured. Do not call them.");
+      } else {
+        lines.push(`Examples: ${summary.exampleToolIds.join(", ")}`);
+        if (summary.hasMutating) {
+          lines.push("Contains mutating tools (may require approval).");
         }
       }
       lines.push("");
@@ -128,7 +161,7 @@ export function buildProtocolsPrompt(): string {
   lines.push("## Virtuals Agent Tokens");
   lines.push("");
   lines.push("`virtuals.*` is read-only agent-token intelligence — it never executes. Trade through the venue tools:");
-  lines.push("- A GRADUATED agent token trades on its chain's venue quoted in VIRTUAL: `uniswap.*` on Robinhood Chain, `kyberswap.*` on Base/Ethereum, `solana.*` on Solana. The `virtuals.get` result's `tradingRoute` hint names the exact venue and the VIRTUAL quote-token address — use it.");
+  lines.push("- A GRADUATED agent token trades against VIRTUAL on its chain's venue: `swap_quote`/`swap_execute` on EVM chains (Robinhood Chain, Base, Ethereum), `solana.*` on Solana. The `virtuals.get` result's `tradingRoute` hint names the VIRTUAL quote-token address — use it.");
   lines.push("- ANTI-SNIPER: before buying a graduated agent, call `virtuals.get` and check `antiSniper`. NEVER buy while `windowActive` is true — the buy tax starts near 99% at graduation and decays to ~1% over the window. Wait out `remainingSeconds`, or tell the user the token is inside its sniper-protection window.");
   lines.push("- UNDERGRAD means bonding-curve pre-graduation: illiquid, LP not locked, and it may never graduate. Treat UNDERGRAD agents with extreme caution and prefer graduated (AVAILABLE) ones.");
   lines.push("- `isVerified` is an anti-impersonation badge, not a quality or safety signal — never present it as one.");
@@ -159,8 +192,19 @@ export function buildProtocolsPrompt(): string {
   lines.push("- Check liquidity before sizing — thin markets mean high price impact on exit. Always preview with `pendle.pt.quote` (or `pendle.yt.quote` for YT) first; PT/YT buy/sell/redeem require a fresh matching quote and are approval-gated.");
   lines.push("");
 
-  cached = lines.join("\n");
-  return cached;
+  // ── Bridge Routing doctrine (STATIC half) — the invariant provider rules
+  // that used to be re-sent on every turn inside `buildBridgeCapabilityPrompt`.
+  // The LIVE Khalani chain list and the Relay-health-gated Robinhood line stay
+  // in that turn layer; nothing mutable belongs behind this cache.
+  lines.push("## Bridge Routing");
+  lines.push("");
+  lines.push("- Between two Khalani-supported chains, bridge with `bridge_quote` then `bridge` (they auto-route to `khalani.*`). The live chain list is in the turn state.");
+  lines.push("- Quote and execute on the SAME bridge provider (`khalani` or `relay`). The runtime enforces this.");
+  lines.push("- Balance reads on Robinhood Chain: `wallet_balances` scans it direct-RPC (alias `robinhood` / id 4663). `khalani_tokens_balances` does NOT cover it.");
+  lines.push("");
+
+  cached = { fingerprint, text: lines.join("\n") };
+  return cached.text;
 }
 
 /**
@@ -180,7 +224,9 @@ export function buildProtocolsPrompt(): string {
  */
 export function buildBridgeCapabilityPrompt(view: BridgeCapabilityView): string {
   const lines: string[] = [];
-  lines.push("## Bridge Routing");
+  // H1: one heading per turn layer (the invariant provider rules moved to the
+  // `## Bridge Routing` doctrine section of the static prefix).
+  lines.push("# Bridge Routing");
   lines.push("");
   if (view.kind === "available") {
     lines.push(`Bridge-supported chains (Khalani): ${view.chainNames.join(", ")}.`);
@@ -192,19 +238,12 @@ export function buildBridgeCapabilityPrompt(view: BridgeCapabilityView): string 
   } else {
     lines.push("Bridge chain list unavailable — verify by quoting.");
   }
-  lines.push("- Between two Khalani-supported chains, bridge with `khalani.*`.");
   if (view.kind === "available" && view.robinhoodViaRelay) {
     lines.push("Robinhood Chain (4663): bridges via Relay only.");
     lines.push(
-      "- To fund Robinhood Chain, bridge ETH, USDG, or VIRTUAL in with `relay.*`, then swap on-chain with `kyberswap.*`; reverse the flow to exit.",
+      "- To fund Robinhood Chain, bridge ETH, USDG, or VIRTUAL in with `relay.*`, then swap on-chain with `swap_quote`/`swap_execute`; reverse the flow to exit.",
     );
   }
-  lines.push(
-    "- Quote and execute on the SAME bridge provider (`khalani` or `relay`). The runtime enforces this.",
-  );
-  lines.push(
-    "Balance reads on Robinhood Chain: `wallet_balances` scans it direct-RPC (alias `robinhood` / id 4663). `khalani_tokens_balances` does NOT cover it.",
-  );
   return lines.join("\n");
 }
 

@@ -50,3 +50,35 @@ export function sanitizeForSystemPrompt(raw: string): string {
 
 /** Alias retained for the `resume-packet-sanitizer.test.ts` regression suite. */
 export const sanitizePreserveMd = sanitizeForSystemPrompt;
+
+/**
+ * Stricter variant for blocks whose text is authored OUTSIDE the prompt stack
+ * and rendered inside it: the user's free-form instructions markdown, tool-
+ * loaded documents (`# Loaded Content`), and stored memory titles/summaries.
+ *
+ * Everything `sanitizeForSystemPrompt` neutralizes, plus the two devices that
+ * let such a block impersonate the prompt's OWN structure:
+ *
+ *   - **Markdown headings** (`^#{1,6}\\s`) — a line reading `# Execution Policy`
+ *     inside a loaded document is indistinguishable from the real layer once
+ *     the layers are joined with newlines. Demoted so it can no longer open a
+ *     section.
+ *   - **Thematic breaks** — a line consisting solely of `---`, `***` or `___`
+ *     is the separator the stack itself uses between layers, so an injected one
+ *     reads as "the untrusted block ended here, what follows is the system".
+ *
+ * Same information-preserving design as the base sanitizer: a zero-width
+ * separator is inserted, no character is dropped. A human still reads the
+ * original text; the Markdown/template parse no longer matches.
+ *
+ * NOT used for the resume packet / conversation summary, which keep the base
+ * variant — their headings are the engine's own, not third-party text.
+ */
+export function sanitizeUntrustedBlock(raw: string): string {
+  let s = sanitizeForSystemPrompt(raw);
+  s = s.replace(/^(#{1,6})(?=\s)/gm, "​$1");
+  s = s.replace(/^([ \t]*)(-{3,}|\*{3,}|_{3,})([ \t]*)$/gm, (_m, lead: string, run: string, trail: string) =>
+    `${lead}${run.slice(0, 1)}​${run.slice(1)}${trail}`,
+  );
+  return s;
+}

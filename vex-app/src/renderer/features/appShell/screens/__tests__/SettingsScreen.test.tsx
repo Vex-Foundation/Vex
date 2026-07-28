@@ -132,7 +132,12 @@ function envFixture(overrides?: Partial<EnvState>): EnvState {
     },
     walletStatus: { evm: "present", solana: "present" },
     walletAddresses: { evm: "0xabc", solana: "sol1" },
-    provider: { configured: true, name: "openrouter", modelLabel: "gpt" },
+    provider: {
+      configured: true,
+      name: "openrouter",
+      modelLabel: "gpt",
+      endpointTag: null,
+    },
     setupCompleteFlag: true,
     ...overrides,
   };
@@ -203,7 +208,12 @@ describe("SettingsScreen", () => {
           rettiwtConfigured: false,
         },
         walletStatus: { evm: "present", solana: "missing" },
-        provider: { configured: false, name: null, modelLabel: null },
+        provider: {
+          configured: false,
+          name: null,
+          modelLabel: null,
+          endpointTag: null,
+        },
         embeddings: {
           configured: false,
           reachable: false,

@@ -8,11 +8,15 @@
  *    prompts/knowledge.test.ts before removing the formatter module,
  *  - BOTH knownKinds widths: top-5 slice for the state banner line vs the
  *    FULL list for the Active Memory block,
- *  - the three Memory Routing lines verbatim, always rendered.
+ *  - the three Memory Routing lines are NO LONGER here: the routing doctrine
+ *    is invariant, so it moved to the static `# Memory & Learning` layer
+ *    (memory-policy.ts) instead of being re-sent every turn. This file pins
+ *    that split from both sides.
  */
 
 import { describe, it, expect } from "vitest";
 import { buildMemorySection } from "@vex-agent/engine/prompts/memory-section.js";
+import { buildMemoryPolicyPrompt } from "@vex-agent/engine/prompts/memory-policy.js";
 import type { MemoryTurnContext } from "@vex-agent/memory/turn-context.js";
 import type {
   ActiveKnowledgeListItem,
@@ -59,29 +63,31 @@ const ROUTING_LINES = [
   "- Cross-session long-term memory (durable lessons / strategies / observed preferences from earlier sessions, incl. fresh un-consolidated signals) → `long_memory_search`.",
 ] as const;
 
-describe("buildMemorySection — structure + routing", () => {
-  it("always starts with '# Memory' and ends with the routing block", () => {
+describe("buildMemorySection — structure + routing split", () => {
+  it("always starts with '# Memory' and carries volatile state only", () => {
     const section = buildMemorySection(ctx());
     expect(section.startsWith("# Memory")).toBe(true);
-    const routingIdx = section.indexOf("## Memory Routing");
-    expect(routingIdx).toBeGreaterThan(0);
-    // Routing is the LAST sub-block (order anchor before the Tool Map).
+    expect(section).not.toContain("## Memory Routing");
+  });
+
+  it("the three routing lines render verbatim in the STATIC memory layer", () => {
+    const policy = buildMemoryPolicyPrompt();
+    expect(policy).toContain("## Memory Routing");
     for (const line of ROUTING_LINES) {
-      expect(section.indexOf(line)).toBeGreaterThan(routingIdx);
+      expect(policy).toContain(line);
     }
   });
 
-  it("renders the three routing lines verbatim", () => {
+  it("routing never duplicates into the turn state (single home)", () => {
     const section = buildMemorySection(ctx());
     for (const line of ROUTING_LINES) {
-      expect(section).toContain(line);
+      expect(section).not.toContain(line);
     }
   });
 
-  it("routing stays even when BOTH branches failed (section = header + routing)", () => {
+  it("both branches failed → header only (no fabricated empty-state)", () => {
     const section = buildMemorySection(ctx({ knowledge: null, sessionStats: null }));
     expect(section).toContain("# Memory");
-    expect(section).toContain("## Memory Routing");
     expect(section).not.toContain("[Session memories:");
     expect(section).not.toContain("[Long-term memory:");
     expect(section).not.toContain("## Active Memory");
@@ -118,7 +124,6 @@ describe("buildMemorySection — fail-state vs empty-state (fail ≠ empty)", ()
     expect(section).not.toContain("## Active Memory");
     // Session-memory line + routing still render.
     expect(section).toContain("[Session memories:");
-    expect(section).toContain("## Memory Routing");
   });
 
   it("populated session stats render counts, outstanding and themes", () => {
@@ -135,7 +140,7 @@ describe("buildMemorySection — fail-state vs empty-state (fail ≠ empty)", ()
     expect(section).toContain("[Session memories: 4 chunk(s) across 2 compact(s).");
     expect(section).toContain("3 outstanding item(s) unresolved.");
     expect(section).toContain("Recent themes: kyber_route_debug, wallet_allowance.");
-    expect(section).toContain("Tool: session_memory_search(semantic_intent, k≤5).]");
+    expect(section).toContain('Tool: session_memory_search(semantic_intent="...", k=5).]');
   });
 });
 
@@ -165,7 +170,7 @@ describe("buildMemorySection — two knownKinds widths (banner top-5 vs block fu
   it("banner shows entry count + recall tool when long-memory is non-empty", () => {
     const section = buildMemorySection(knowledgeCtx([], [{ kind: "memo", count: 3 }], 17));
     expect(section).toContain("[Long-term memory: 17 entries. Top kinds: memo (3).");
-    expect(section).toContain("Tool: long_memory_search(semantic_intent, k≤15).]");
+    expect(section).toContain('Tool: long_memory_search(semantic_intent="...", k=15).]');
   });
 });
 
@@ -228,8 +233,7 @@ describe("buildMemorySection — Active Memory block (ported drift-pins)", () =>
     );
     const section = buildMemorySection(knowledgeCtx(entries, []));
     const blockIdx = section.indexOf("## Active Memory");
-    const routingIdx = section.indexOf("## Memory Routing");
-    const block = section.slice(blockIdx, routingIdx);
+    const block = section.slice(blockIdx);
     expect(block.length).toBeLessThan(5000);
   });
 

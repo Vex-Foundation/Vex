@@ -33,7 +33,7 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("## Virtuals Agent Tokens");
       // Graduated tokens trade via the chain's venue tool quoted in VIRTUAL.
-      expect(prompt).toContain("trades on its chain's venue quoted in VIRTUAL");
+      expect(prompt).toContain("trades against VIRTUAL on its chain's venue");
       expect(prompt).toContain("`tradingRoute` hint");
       // NEVER buy while the anti-sniper window is active.
       expect(prompt).toContain("NEVER buy while `windowActive` is true");
@@ -156,15 +156,15 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
     // listed here — it only renders via the `ownTokenBanner` PromptStackOptions
     // pass-through, which this test's `buildPromptStack(makeContext())` call
     // never supplies, so it structurally never reaches the built text below.)
+    // 2026-07-28 (prompt-unambiguity W1/A1): three of the four fragments were
+    // REMOVED rather than deferred — the `## Virtuals Agent Tokens` doctrine and
+    // the `virtuals` navigation entry now use the reveal-compatible
+    // `swap_quote`/`swap_execute` wording instead of naming the hidden venue.
+    // Only $VEX's own listing fact remains deferred (it is a product fact about
+    // the agent's own token, not routing doctrine).
     const OWNER_DEFERRED_VIRTUALS_FRAGMENTS = [
       // engine/prompts/identity.ts — $VEX's own listing venue.
       "Your own token $VEX is live on Robinhood Chain, launched via Virtuals Protocol, trading on Uniswap V2 against VIRTUAL. Its unverified badge on Virtuals is normal anti-impersonation mechanics, not a warning.",
-      // engine/prompts/protocols.ts's hardcoded "## Virtuals Agent Tokens" doctrine.
-      "`uniswap.*` on Robinhood Chain, `kyberswap.*` on Base/Ethereum, `solana.*` on Solana. The `virtuals.get` result's `tradingRoute` hint names the exact venue and the VIRTUAL quote-token address — use it.",
-      // tools/protocols/navigation/entries-market.ts's "virtuals" entry, whenToUse.
-      "Trades execute via the venue tool named in each result's tradingRoute hint (uniswap on Robinhood, kyberswap on Base/ETH, solana on Solana).",
-      // Same entry, preferInstead.
-      "Use `dexscreener` for general multi-chain pair/liquidity research and `uniswap`/`kyberswap`/`solana` to execute the trade — Virtuals never executes.",
     ];
 
     function stripOwnerDeferredVirtualsContent(text: string): string {

@@ -123,16 +123,21 @@ describe("mission state prompts", () => {
     expect(prompt).not.toContain("research + planning phase");
     expect(prompt).not.toContain("research and planning phase");
 
-    // "discovery is a means to execution" must be SCOPED to mission RUN / agent
-    // execution wherever it appears — in `# Tool Model` §3 (tool-model.ts) and
-    // in `# Research` (research.ts) — never an unscoped global rule.
+    // "discovery is a means to execution" must be SCOPED to the execution
+    // phases wherever it appears — in `# Tool Model` §3 (tool-model.ts) and in
+    // `# Research` (research.ts) — never an unscoped global rule. A2 replaced
+    // the old scope marker "During mission RUN / agent execution": "agent
+    // execution" was not a phase this prompt ever defines, so the marker now
+    // names the two defined ones. The structural check is unchanged.
     const combined = `${buildToolModelPrompt()}\n\n${prompt}`;
     const discoveryPhrase = "discovery is a means to execution";
     expect(combined).toContain(discoveryPhrase);
     const segments = combined.split(discoveryPhrase);
     for (let i = 0; i < segments.length - 1; i += 1) {
       const before = segments[i];
-      const lastScope = before.lastIndexOf("During mission RUN / agent execution");
+      const lastScope = before.lastIndexOf(
+        "During mission RUN — or in AGENT chat when the user explicitly asked for the action —",
+      );
       const lastSentenceBreak = Math.max(before.lastIndexOf(". "), before.lastIndexOf("\n"));
       // The scope marker must be the nearest sentence-leading phrase before
       // this occurrence (i.e. no sentence boundary separates them).
@@ -149,6 +154,11 @@ describe("mission state prompts", () => {
   });
 
   it("makes active mission runs ignore stale setup start instructions", () => {
+    // The Jupiter steering line below is env-gated (A2): `solana.*` needs
+    // JUPITER_API_KEY, so recommending it without the key would point the model
+    // at a namespace the dispatcher refuses. Assert the WITH-key posture here.
+    const savedJupiterKey = process.env.JUPITER_API_KEY;
+    process.env.JUPITER_API_KEY = "test-jupiter-key";
     const prompt = buildMissionRunPrompt(
       makeMissionContext({ missionRunId: "run-1" }),
       {
@@ -168,6 +178,9 @@ describe("mission state prompts", () => {
     // false, contradictory guidance.
     expect(prompt).not.toContain("Execution lock (standing rule)");
     expect(prompt).not.toContain("blocked by the runtime gate");
+
+    if (savedJupiterKey === undefined) delete process.env.JUPITER_API_KEY;
+    else process.env.JUPITER_API_KEY = savedJupiterKey;
   });
 
 });

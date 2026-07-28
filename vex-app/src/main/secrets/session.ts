@@ -291,6 +291,36 @@ export function writeUnlockedSecrets(
   }
 }
 
+/**
+ * Read ONE stored secret from the unlocked vault, main-process only.
+ *
+ * Lives here because this module already owns the vault session (write +
+ * presence); a second read path elsewhere would be a second place to get the
+ * lock/scrub discipline wrong. `ok(null)` means "vault readable, this key is
+ * not set" — distinct from a locked/corrupt vault, which returns the mapped
+ * error so the caller can surface the real reason.
+ *
+ * The returned value is a SECRET. It must never be logged, echoed into an
+ * error message, or returned across IPC — the only sanctioned use is handing
+ * it to a main-side verifier/writer.
+ */
+export function readUnlockedSecret(
+  key: VaultSecretKey,
+): Result<string | null> {
+  const passwordResult = requireUnlockedMasterPassword();
+  if (!passwordResult.ok) return passwordResult;
+
+  try {
+    const contents = unlockSecretVault(passwordResult.data, {
+      filePath: SECRETS_VAULT_FILE,
+    });
+    const value = contents.secrets[key];
+    return ok(typeof value === "string" && value.length > 0 ? value : null);
+  } catch (cause) {
+    return toPublicError(cause);
+  }
+}
+
 export function getUnlockedSecretPresence(): SecretPresence {
   const status = getSecretSessionStatus();
   const secrets: Partial<Record<VaultSecretKey, boolean>> = {};

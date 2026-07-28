@@ -30,8 +30,37 @@ const trimmedSecret = z.string().trim().min(1).max(200);
 export const providerPersistInputSchema = z
   .object({
     provider: z.literal("openrouter"),
-    apiKey: trimmedSecret,
+    /**
+     * OPTIONAL (delta-save). Present ⇒ rotate: this value is verified and
+     * becomes the new vault entry. ABSENT ⇒ keep the currently stored key:
+     * main loads it from the encrypted vault, verifies `{storedKey, model}`
+     * with it, and leaves the vault entry untouched. If no key is stored and
+     * none is supplied, main rejects BY NAME (`provider.api_key_required`) —
+     * there is no silent fallback to an unverified configuration.
+     *
+     * Still `.trim().min(1)` when present, so a whitespace-only string is a
+     * validation error rather than an accidental "keep existing" — the
+     * renderer must OMIT the field to mean "keep".
+     */
+    apiKey: trimmedSecret.optional(),
     model: trimmedSecret,
+    /**
+     * Optional pinned OpenRouter endpoint `tag` (wizard provider select).
+     * Omitted/undefined ⇒ "Auto (recommended)" — no pin, and the writer
+     * REMOVES any previously persisted pin. UNTRUSTED: the handler verifies
+     * the tag belongs to the selected model's tool-capable endpoint list
+     * before anything is written.
+     */
+    endpointTag: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      // Closed charset matching live tags (`anthropic`, `anthropic/2`,
+      // `google-vertex/global`, `amazon-bedrock/eu-west-1`). Bounds what the
+      // rejection message may echo back and what may reach `.env`.
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/)
+      .optional(),
   })
   .strict();
 
@@ -53,9 +82,22 @@ export const PROVIDER_PERSIST_CANONICAL_ORDER = [
   "AGENT_PROVIDER",
 ] as const;
 
-export const providerPersistFieldNameSchema = z.enum(
-  PROVIDER_PERSIST_CANONICAL_ORDER,
-);
+/**
+ * `.env` key holding the optional pinned endpoint tag. Written ONLY when the
+ * operator picks an explicit provider; "Auto" removes it. Reported in
+ * `fieldsWritten` only when actually written, so the success summary never
+ * claims a key that is absent from disk.
+ */
+export const PROVIDER_ENDPOINT_TAG_ENV_KEY = "OPENROUTER_ENDPOINT_TAG";
+
+export const providerPersistFieldNameSchema = z.enum([
+  ...PROVIDER_PERSIST_CANONICAL_ORDER,
+  PROVIDER_ENDPOINT_TAG_ENV_KEY,
+]);
+
+export type ProviderPersistFieldName = z.infer<
+  typeof providerPersistFieldNameSchema
+>;
 
 export const providerPersistResultSchema = z
   .object({
@@ -76,6 +118,12 @@ export const providerModelOptionSchema = z
     contextLength: z.number().int().positive().nullable(),
     pricingInputPerMillion: z.number().finite().nonnegative().nullable(),
     pricingOutputPerMillion: z.number().finite().nonnegative().nullable(),
+    /**
+     * Unix seconds the model was published (`Model.created`). OPTIONAL and
+     * additive: an older cached payload, or a future catalogue row that stops
+     * reporting it, simply sorts LAST instead of breaking the schema.
+     */
+    created: z.number().int().positive().optional(),
   })
   .strict();
 

@@ -44,6 +44,16 @@ const PROVIDER_ERROR_UI: Readonly<Record<string, ErrorCopy>> = {
     body:
       "OpenRouter couldn't find that model id. Verify the model in the OpenRouter models catalogue and try again.",
   },
+  "provider.endpoint_unavailable": {
+    title: "Provider not available",
+    body:
+      "That provider isn't available for this model right now, or its tool-calling support couldn't be confirmed. Pick another provider or choose Auto, then retry.",
+  },
+  "provider.api_key_required": {
+    title: "API key needed",
+    body:
+      "There's no stored OpenRouter key to reuse, so this change can't be verified. Enter your API key and save again.",
+  },
   "provider.unavailable": {
     title: "OpenRouter unavailable",
     body:

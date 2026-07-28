@@ -47,9 +47,29 @@ const { MODEL_CONFIG_CACHE_TTL_MS, MODEL_CONFIG_STALE_RETRY_MS } = await import(
 
 const MODEL_ID = "test/model";
 
+/**
+ * Build a `/models` response in the shape `@openrouter/sdk` 1.1.13 actually
+ * returns: a PAGE ITERATOR whose pages each carry `result.data`. (0.12.79
+ * returned a single object with a bare `.data` — a mock still shaped that way
+ * would keep passing while the product read `undefined`.)
+ *
+ * Single-page by construction, which is the live case today: the default page
+ * size is 500 and the catalog is smaller.
+ */
+function catalogPages(rows: ReadonlyArray<Record<string, unknown>>) {
+  const page = { result: { data: rows } };
+  return {
+    ...page,
+    next: () => null,
+    [Symbol.asyncIterator]: async function* () {
+      yield page;
+    },
+  };
+}
+
 /** Build a `/models` catalog response containing MODEL_ID with the given pricing. */
 function catalog(pricing: Record<string, string>) {
-  return { data: [{ id: MODEL_ID, pricing }] };
+  return catalogPages([{ id: MODEL_ID, pricing }]);
 }
 
 /** Same, but with an explicit `supportedParameters` tag list (D6). */
@@ -57,7 +77,7 @@ function catalogWithParameters(
   pricing: Record<string, string>,
   supportedParameters: string[],
 ) {
-  return { data: [{ id: MODEL_ID, pricing, supportedParameters }] };
+  return catalogPages([{ id: MODEL_ID, pricing, supportedParameters }]);
 }
 
 const PRICING_A = {
@@ -192,7 +212,9 @@ describe("OpenRouterProvider.loadConfig caching (F4)", () => {
     await provider.loadConfig();
 
     vi.setSystemTime(MODEL_CONFIG_CACHE_TTL_MS + 1);
-    listMock.mockResolvedValueOnce({ data: [{ id: "other/model", pricing: PRICING_A }] });
+    listMock.mockResolvedValueOnce(
+      catalogPages([{ id: "other/model", pricing: PRICING_A }]),
+    );
     const config = await provider.loadConfig();
 
     expect(config).toBeNull(); // model_not_found stays loud despite a last-good

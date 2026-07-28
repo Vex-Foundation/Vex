@@ -29,11 +29,30 @@ function validRawModelRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * `@openrouter/sdk` 1.1.13 validates the `/models` envelope strictly: `links`
+ * and `total_count` are REQUIRED alongside `data` (0.12.79 accepted a bare
+ * `data`). The live API sends both; supply them here so these fixtures keep
+ * matching the real response shape rather than a subset the SDK once tolerated.
+ */
+function modelsEnvelope(body: unknown) {
+  if (typeof body !== "object" || body === null || !("data" in body)) return body;
+  const withData = body as { data: unknown[]; links?: unknown; total_count?: unknown };
+  return {
+    links: { next: null },
+    total_count: withData.data.length,
+    ...withData,
+  };
+}
+
 function fetcherReturning(body: unknown, status = 200) {
   return vi
     .fn()
     .mockResolvedValue(
-      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
+      new Response(JSON.stringify(modelsEnvelope(body)), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
     );
 }
 
@@ -48,8 +67,25 @@ function model(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * A `models.list` result in the shape `@openrouter/sdk` 1.1.13 returns: a page
+ * iterator whose pages each carry `result.data`. (0.12.79 resolved to a single
+ * object with a bare `.data`; a double still shaped that way would keep passing
+ * while the product read `undefined`.)
+ */
+function catalogPages(data: ReadonlyArray<unknown>) {
+  const page = { result: { data } };
+  return {
+    ...page,
+    next: () => null,
+    [Symbol.asyncIterator]: async function* () {
+      yield page;
+    },
+  };
+}
+
 function clientFactory(data: ReadonlyArray<ReturnType<typeof model>>) {
-  const list = vi.fn().mockResolvedValue({ data });
+  const list = vi.fn().mockResolvedValue(catalogPages(data));
   return { list, factory: () => ({ models: { list } }) as never };
 }
 
@@ -157,7 +193,7 @@ describe("provider model catalogue", () => {
 
 describe("in-flight dedup + abort detach (D1a)", () => {
   it("concurrent cold calls share ONE underlying fetch", async () => {
-    let resolveList: (value: { data: unknown[] }) => void = () => {};
+    let resolveList: (value: unknown) => void = () => {};
     const list = vi.fn().mockReturnValue(
       new Promise((resolve) => {
         resolveList = resolve;
@@ -167,7 +203,7 @@ describe("in-flight dedup + abort detach (D1a)", () => {
 
     const p1 = loadProviderModelCatalog({ clientFactory: factory });
     const p2 = loadProviderModelCatalog({ clientFactory: factory });
-    resolveList({ data: [model()] });
+    resolveList(catalogPages([model()]));
     const [r1, r2] = await Promise.all([p1, p2]);
 
     expect(list).toHaveBeenCalledTimes(1);
@@ -175,7 +211,7 @@ describe("in-flight dedup + abort detach (D1a)", () => {
   });
 
   it("a caller's own AbortSignal detaches ONLY that caller — the shared fetch keeps running for the other waiter", async () => {
-    let resolveList: (value: { data: unknown[] }) => void = () => {};
+    let resolveList: (value: unknown) => void = () => {};
     const list = vi.fn().mockReturnValue(
       new Promise((resolve) => {
         resolveList = resolve;
@@ -192,14 +228,14 @@ describe("in-flight dedup + abort detach (D1a)", () => {
 
     // The shared fetch is untouched by the aborted caller — it still
     // resolves for the waiter who never aborted.
-    resolveList({ data: [model()] });
+    resolveList(catalogPages([model()]));
     const result = await patient;
     expect(result.models).toHaveLength(1);
     expect(list).toHaveBeenCalledTimes(1);
   });
 
   it("an already-aborted signal rejects immediately without starting a fetch when one isn't already in flight", async () => {
-    const list = vi.fn().mockResolvedValue({ data: [model()] });
+    const list = vi.fn().mockResolvedValue(catalogPages([model()]));
     const factory = () => ({ models: { list } }) as never;
     const controller = new AbortController();
     controller.abort();
@@ -241,7 +277,7 @@ describe("failure cooldown (D1)", () => {
 
     // Past the cooldown window — retries the network.
     now += 10_001;
-    const recovered = vi.fn().mockResolvedValue({ data: [model()] });
+    const recovered = vi.fn().mockResolvedValue(catalogPages([model()]));
     const result = await loadProviderModelCatalog({
       clientFactory: () => ({ models: { list: recovered } }) as never,
       now: () => now,
@@ -298,7 +334,7 @@ describe("failure cooldown (D1)", () => {
       }),
     ).rejects.toBe(abort);
 
-    const recovered = vi.fn().mockResolvedValue({ data: [model()] });
+    const recovered = vi.fn().mockResolvedValue(catalogPages([model()]));
     const result = await loadProviderModelCatalog({
       clientFactory: () => ({ models: { list: recovered } }) as never,
       now: () => now,
@@ -315,7 +351,7 @@ describe("keyless catalogue client (SECURITY, blocker 1)", () => {
     try {
       const fetcher = vi.fn().mockImplementation(async (request: Request) => {
         expect(request.headers.has("authorization")).toBe(false);
-        return new Response(JSON.stringify({ data: [] }), {
+        return new Response(JSON.stringify(modelsEnvelope({ data: [] })), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -339,7 +375,7 @@ describe("successful refresh with failed hook extraction (D1)", () => {
       data: [
         validRawModelRow({
           id: "vendor/first",
-          reasoning: { supported_efforts: ["high"] },
+          reasoning: { mandatory: false, supported_efforts: ["high"] },
           supported_parameters: ["reasoning"],
         }),
       ],
@@ -353,7 +389,9 @@ describe("successful refresh with failed hook extraction (D1)", () => {
     now += 3_600_001;
     const secondFetcher = vi.fn().mockImplementation(async () => {
       const res = new Response(
-        JSON.stringify({ data: [validRawModelRow({ id: "vendor/first" })] }),
+        JSON.stringify(
+          modelsEnvelope({ data: [validRawModelRow({ id: "vendor/first" })] }),
+        ),
         { status: 200, headers: { "content-type": "application/json" } },
       );
       // The SDK's own body consumption never calls `.clone()` — only our
@@ -390,7 +428,7 @@ describe("getModelReasoningCapability (D1a read API)", () => {
       data: [
         validRawModelRow({
           id: "vendor/known",
-          reasoning: { supported_efforts: ["high"] },
+          reasoning: { mandatory: false, supported_efforts: ["high"] },
           supported_parameters: ["reasoning"],
         }),
       ],
@@ -405,7 +443,7 @@ describe("getModelReasoningCapability (D1a read API)", () => {
       data: [
         validRawModelRow({
           id: "vendor/a",
-          reasoning: { supported_efforts: ["high", "medium"] },
+          reasoning: { mandatory: false, supported_efforts: ["high", "medium"] },
           supported_parameters: ["reasoning", "reasoning_effort"],
         }),
         validRawModelRow({ id: "vendor/b", supported_parameters: ["tools"] }),

@@ -29,6 +29,7 @@ import { registerEmbeddingHandler } from "./onboarding/embedding.js";
 import { registerFinalizeHandler } from "./onboarding/finalize.js";
 import { registerProviderHandler } from "./onboarding/provider.js";
 import { registerProviderModelsHandler } from "./onboarding/provider-models.js";
+import { registerProviderEndpointsHandler } from "./onboarding/provider-endpoints.js";
 import { registerWalletHandlers } from "./onboarding/wallets.js";
 import { registerRuntimeHandlers } from "./runtime.js";
 import { registerSessionsCreateHandler } from "./sessions/create.js";
@@ -66,6 +67,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerAgentCoreHandler());
   teardowns.push(registerProviderHandler());
   teardowns.push(registerProviderModelsHandler());
+  teardowns.push(registerProviderEndpointsHandler());
   teardowns.push(registerFinalizeHandler());
   teardowns.push(registerSessionsCreateHandler());
   teardowns.push(registerSessionsListHandler());

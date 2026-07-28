@@ -26,6 +26,7 @@ import type { EventStream } from "@openrouter/sdk/lib/event-streams.js";
 import type {
   InferenceProvider,
   InferenceConfig,
+  InferenceRequestContext,
   InferenceResponse,
   InferenceUsage,
   StreamChunk,
@@ -46,53 +47,16 @@ import {
 } from "./config.js";
 
 import logger from "@utils/logger.js";
-import { extractCauseCode } from "../../lib/error-cause.js";
 import { normalizeOpenRouterError } from "./openrouter/errors.js";
 import { extractUsage, parseNonStreamingResponse } from "./openrouter/mappers.js";
 import { buildOpenRouterParams } from "./openrouter/params.js";
 import { computeRequestCost } from "./openrouter/cost.js";
 import { consumeOpenRouterStream } from "./openrouter/stream.js";
-
-// ── Pricing parse ────────────────────────────────────────────────
-//
-// OpenRouter `/models` pricing fields are per-TOKEN decimal strings. Convert
-// to per-1M and reject any non-finite result (missing field, non-numeric, NaN,
-// Infinity) so a malformed catalog entry can never propagate NaN into cost
-// math — it becomes `null`, and required prices fall back to 0 at the call site.
-function parsePricePerM(raw: unknown): number | null {
-  if (raw === undefined || raw === null || raw === "") return null;
-  const perToken = parseFloat(String(raw));
-  if (!Number.isFinite(perToken)) return null;
-  const perM = perToken * 1_000_000;
-  return Number.isFinite(perM) ? perM : null;
-}
-
-// ── api_unreachable hint selection (error-diagnostics D-RUNTIME) ─
-//
-// The generic "Check OPENROUTER_API_KEY" hint is actively misleading when the
-// real failure is TLS interception (antivirus/proxy) or DNS. Pick the hint
-// from the errno-shaped cause code; the code itself is logged alongside.
-const TLS_CAUSE_CODES: ReadonlySet<string> = new Set([
-  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-  "SELF_SIGNED_CERT_IN_CHAIN",
-  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
-  "DEPTH_ZERO_SELF_SIGNED_CERT",
-  "CERT_HAS_EXPIRED",
-]);
-const DNS_CAUSE_CODES: ReadonlySet<string> = new Set(["ENOTFOUND", "EAI_AGAIN"]);
-
-function apiUnreachableHint(causeCode: string | null): string {
-  if (causeCode !== null && TLS_CAUSE_CODES.has(causeCode)) {
-    return (
-      "TLS certificate verification failed — antivirus or proxy HTTPS " +
-      "inspection may be intercepting connections"
-    );
-  }
-  if (causeCode !== null && DNS_CAUSE_CODES.has(causeCode)) {
-    return "DNS lookup failed — check your network connection or DNS settings";
-  }
-  return "Check OPENROUTER_API_KEY and network connectivity";
-}
+import { asChatResult, asEventStream } from "./openrouter/chat-send.js";
+import {
+  fetchModelInferenceConfig,
+  type ModelConfigFetchResult,
+} from "./openrouter/model-catalog.js";
 
 // ── Provider ─────────────────────────────────────────────────────
 
@@ -105,6 +69,8 @@ export class OpenRouterProvider implements InferenceProvider {
   private readonly contextLimit: number;
   private readonly temperature: number | undefined;
   private readonly maxOutputTokens: number;
+  /** Pinned endpoint tag from `OPENROUTER_ENDPOINT_TAG`; undefined ⇒ Auto. */
+  private readonly endpointTag: string | undefined;
   private readonly client: OpenRouter;
 
   // ── loadConfig cache (F4) ───────────────────────────────────────
@@ -132,6 +98,7 @@ export class OpenRouterProvider implements InferenceProvider {
     this.apiKey = env.openrouterApiKey;
     this.model = env.agentModel;
     this.contextLimit = env.contextLimit;
+    this.endpointTag = env.openrouterEndpointTag ?? undefined;
     this.temperature = env.temperature ?? undefined;
     this.maxOutputTokens = env.maxOutputTokens;
 
@@ -221,107 +188,19 @@ export class OpenRouterProvider implements InferenceProvider {
 
   // ── _fetchConfig (uncached `/models` read) ──────────────────────
   //
-  // Classifies the outcome so `loadConfig()` can decide stale-vs-null:
-  //   - `success`              → catalog responded and contains `this.model`;
-  //   - `model_not_found`      → catalog responded but lacks the model (hard);
-  //   - `metadata_unavailable` → the `/models` request itself failed.
+  // Delegates to `fetchModelInferenceConfig`, which owns the catalog read,
+  // pricing parse and outcome classification. This wrapper exists only to
+  // supply the provider's own identity/limits.
 
-  private async _fetchConfig(): Promise<
-    | { kind: "success"; config: InferenceConfig }
-    | { kind: "model_not_found" }
-    | { kind: "metadata_unavailable" }
-  > {
-    let inputPricePerM = 0;
-    let outputPricePerM = 0;
-    let cachePricePerM: number | null = null;
-    let cacheWritePricePerM: number | null = null;
-    let reasoningPricePerM: number | null = null;
-
-    // `/models` transport/server/SDK failure → metadata_unavailable (the
-    // caller may serve a last-good config). A successful catalog that lacks
-    // the model is a distinct, hard `model_not_found`.
-    let models: Awaited<ReturnType<typeof this.client.models.list>>;
-    try {
-      models = await this.client.models.list({});
-    } catch (err) {
-      const causeCode = extractCauseCode(err);
-      logger.error("inference.openrouter.api_unreachable", {
-        model: this.model,
-        error: err instanceof Error ? err.message : String(err),
-        ...(causeCode !== null ? { causeCode } : {}),
-        hint: apiUnreachableHint(causeCode),
-      });
-      return { kind: "metadata_unavailable" };
-    }
-
-    const found = models.data?.find((m: { id: string }) => m.id === this.model);
-    if (!found) {
-      logger.error("inference.openrouter.model_not_found", {
-        model: this.model,
-        hint: "Check AGENT_MODEL or OpenRouter model availability",
-      });
-      return { kind: "model_not_found" };
-    }
-
-    if (found.pricing) {
-      // PublicPricing: prompt/completion are per-TOKEN strings (not per-1M).
-      // A malformed/non-numeric price must NOT poison cost math as NaN — guard
-      // each parse so a bad value falls back to 0 (required prices) or null
-      // (optional prices).
-      inputPricePerM = parsePricePerM(found.pricing.prompt) ?? 0;
-      outputPricePerM = parsePricePerM(found.pricing.completion) ?? 0;
-      cachePricePerM = parsePricePerM(found.pricing.inputCacheRead);
-      cacheWritePricePerM = parsePricePerM(found.pricing.inputCacheWrite);
-      reasoningPricePerM = parsePricePerM(found.pricing.internalReasoning);
-    }
-
-    // D6: the reasoning-EFFORT request gate is the catalog's own
-    // `supported_parameters` tag, independent of pricing — a model can be
-    // free to reason (no `internalReasoning` price) yet still accept an
-    // explicit effort, and vice versa. Untrusted provider response: guard
-    // for a missing/non-array field rather than trusting the SDK's type.
-    const supportedParameters: ReadonlyArray<string> = Array.isArray(
-      found.supportedParameters,
-    )
-      ? found.supportedParameters
-      : [];
-    // The request we emit is the `reasoning` OBJECT param, whose catalog tag
-    // is "reasoning"; some models additionally (or only) tag the flat
-    // "reasoning_effort" param. Either tag means the model accepts an effort
-    // choice — the OR keeps this gate symmetric with the app catalog's
-    // capability predicate, so a visible selector can never have its choice
-    // dropped here (coordinator fix, 2026-07-21).
-    const supportsReasoningEffort =
-      supportedParameters.includes("reasoning") ||
-      supportedParameters.includes("reasoning_effort");
-
-    logger.info("inference.openrouter.config_loaded", {
+  private async _fetchConfig(): Promise<ModelConfigFetchResult> {
+    return fetchModelInferenceConfig(this.client, {
+      providerId: this.id,
       model: this.model,
       contextLimit: this.contextLimit,
-      inputPricePerM: inputPricePerM.toFixed(4),
-      outputPricePerM: outputPricePerM.toFixed(4),
-      hasCachePrice: cachePricePerM !== null,
-      hasReasoningPrice: reasoningPricePerM !== null,
-      supportsReasoningEffort,
+      temperature: this.temperature,
+      maxOutputTokens: this.maxOutputTokens,
+      endpointTag: this.endpointTag,
     });
-
-    return {
-      kind: "success",
-      config: {
-        provider: this.id,
-        model: this.model,
-        contextLimit: this.contextLimit,
-        temperature: this.temperature,
-        maxOutputTokens: this.maxOutputTokens,
-        inputPricePerM,
-        outputPricePerM,
-        priceCurrency: "USD",
-        cachePricePerM,
-        cacheWritePricePerM,
-        reasoningPricePerM,
-        supportsReasoningEffort,
-      },
-    };
   }
 
   // ── chatCompletion (non-streaming, with tools) ──────────────────
@@ -330,15 +209,27 @@ export class OpenRouterProvider implements InferenceProvider {
     messages: ProviderMessage[],
     tools: ToolDefinition[],
     config: InferenceConfig,
+    context?: InferenceRequestContext,
   ): Promise<InferenceResponse> {
-    const params = buildOpenRouterParams(messages, tools, config, false);
+    const params = buildOpenRouterParams(
+      messages,
+      tools,
+      config,
+      false,
+      undefined,
+      context,
+    );
 
     let response: ChatResult;
     try {
-      // `stream: false` selects the non-streaming `ChatResult` overload — no cast.
-      response = await this.client.chat.send({
-        chatRequest: { ...params, stream: false },
-      });
+      // SDK 1.1.13 no longer narrows the return type per `stream` literal —
+      // `asChatResult` re-establishes it with a runtime guard (see chat-send.ts).
+      response = asChatResult(
+        await this.client.chat.send({
+          chatRequest: { ...params, stream: false },
+        }),
+        "chat completion",
+      );
     } catch (err) {
       throw normalizeOpenRouterError(err, "chat completion");
     }
@@ -353,23 +244,24 @@ export class OpenRouterProvider implements InferenceProvider {
     config: InferenceConfig,
     responseFormat?: ChatRequest["responseFormat"],
   ): Promise<{ content: string; usage: InferenceUsage }> {
+    // `provider.requireParameters` composition now lives in
+    // `buildOpenRouterParams` (via `buildProviderPreferences`) so tool-bearing
+    // and format-bearing requests are treated identically from one place.
+    //
+    // No request context: this path serves BACKGROUND work (memory judge,
+    // entity extraction, regime worker, compaction chunker) which shares no
+    // prefix with the conversation and stays deliberately ungrouped for sticky
+    // routing — see `InferenceRequestContext`.
     const params = buildOpenRouterParams(messages, [], config, false, responseFormat);
-
-    // When a structured `responseFormat` is requested (F31 judge, Layer B),
-    // pin `provider.requireParameters: true` so the request routes ONLY to
-    // endpoints that honor the format and FAILS LOUD (job retries) instead of
-    // silently returning prose. `allowFallbacks` stays default true, so a
-    // provider OUTAGE still falls back — but only among honoring endpoints.
-    // Callers that pass no `responseFormat` send a byte-identical wire request.
-    const provider: ChatRequest["provider"] =
-      responseFormat !== undefined ? { requireParameters: true } : undefined;
 
     let response: ChatResult;
     try {
-      // `stream: false` selects the non-streaming `ChatResult` overload — no cast.
-      response = await this.client.chat.send({
-        chatRequest: { ...params, stream: false, ...(provider && { provider }) },
-      });
+      response = asChatResult(
+        await this.client.chat.send({
+          chatRequest: { ...params, stream: false },
+        }),
+        "simple chat completion",
+      );
     } catch (err) {
       throw normalizeOpenRouterError(err, "simple chat completion");
     }
@@ -390,18 +282,30 @@ export class OpenRouterProvider implements InferenceProvider {
     tools: ToolDefinition[],
     config: InferenceConfig,
     signal?: AbortSignal,
+    context?: InferenceRequestContext,
   ): AsyncGenerator<StreamChunk> {
-    const params = buildOpenRouterParams(messages, tools, config, true);
+    const params = buildOpenRouterParams(
+      messages,
+      tools,
+      config,
+      true,
+      undefined,
+      context,
+    );
 
     let stream: EventStream<ChatStreamChunk>;
     try {
       // `signal` is a flattened RequestInit field on the SDK's RequestOptions
       // (takes precedence over the client timeout); it cancels the fetch so a
       // chat-turn "stop generating" tears down the HTTP stream (Stage 9-5a).
-      // `stream: true` selects the `EventStream<ChatStreamChunk>` overload — no cast.
-      stream = await this.client.chat.send(
-        { chatRequest: { ...params, stream: true } },
-        signal ? { signal } : undefined,
+      // SDK 1.1.13 no longer narrows the return type per `stream` literal —
+      // `asEventStream` re-establishes it with a runtime guard.
+      stream = asEventStream(
+        await this.client.chat.send(
+          { chatRequest: { ...params, stream: true } },
+          signal ? { signal } : undefined,
+        ),
+        "streaming chat completion",
       );
     } catch (err) {
       throw normalizeOpenRouterError(err, "streaming chat completion");

@@ -100,7 +100,12 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       evm: "present",
       solana: "present",
     },
-    provider: { configured: false, name: null, modelLabel: null },
+    provider: {
+      configured: false,
+      name: null,
+      modelLabel: null,
+      endpointTag: null,
+    },
     setupCompleteFlag: false,
   };
 }

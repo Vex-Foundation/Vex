@@ -16,7 +16,14 @@
  * selection point, not just in the system prompt.
  */
 
+import { buildMissingCapabilityNotice } from "./capability-availability.js";
+
 export function buildToolModelPrompt(): string {
+  // Live env read on every build (vault unlock/lock mutates process.env), so the
+  // notice describes the posture of THIS prompt build. "" when nothing is missing.
+  const missingCapabilityNotice = buildMissingCapabilityNotice();
+  const notice = missingCapabilityNotice.length > 0 ? `\n\n${missingCapabilityNotice}` : "";
+
   return `# Tool Model
 
 ## 1. Tool Selection
@@ -28,6 +35,25 @@ Two ways to call tools:
 2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.execute\`. The full multi-chain protocol surface lives here.
 
 Use the Tool Map: if a tool is not in it RIGHT NOW, it is not callable. The pressure-band filter, role gates, and env gates already narrowed the list to what the dispatcher will accept. Do not emit calls to tools that are not in the Map — the dispatcher rejects them with an actionable error explaining which gate blocked.
+
+Every call example in this prompt is written as \`tool_name(param="value")\`. That notation shows INTENT, not wire format — always emit a real tool call through the tools API, never the example text as a message.
+
+### Shortcuts are the same engines
+
+The curated shortcuts below run the SAME protocol code as the dotted toolIds they route to. PREFER the shortcut: it is one call instead of \`discover_tools\` + \`execute_tool\`, and its schema is already in front of you.
+
+| Shortcut | Runs |
+| --- | --- |
+| \`token_find\` | \`khalani.tokens.search\` (canonical token resolver) |
+| \`token_check\` | \`kyberswap.tokens.check\` (EVM honeypot / fee-on-transfer) |
+| \`khalani_chains_list\` | \`khalani.chains.list\` |
+| \`khalani_tokens_top\` | \`khalani.tokens.top\` |
+| \`khalani_tokens_balances\` | \`khalani.tokens.balances\` |
+| \`swap_quote\` / \`swap_execute\` | the chain's swap venue (EVM → \`kyberswap.swap.*\`, \`chain="solana"\` → \`solana.swap.*\`) |
+| \`bridge_quote\` / \`bridge\` | the route's bridge provider, auto-selected (\`khalani.*\`, or \`relay.*\` to/from Robinhood Chain) |
+| \`bridge_status\` | \`khalani.orders.get\` (with \`orderId\`) / \`khalani.orders.list\` |
+
+Reach for \`discover_tools\` for everything these shortcuts do not cover.
 
 ## 2. Live State (queried, not memorized)
 
@@ -46,7 +72,7 @@ If a fact is queryable live, querying is cheaper than remembering — and the me
 
 Rules:
 
-- **Discover first.** Never guess a toolId. Never execute a toolId from memory, from an old example, or from a previous transcript — discover or re-discover in the current turn. During mission RUN / agent execution, discovery is a means to execution: \`execute_tool\` follows. During planning (Capability Orientation), discovery is orientation only — see \`# Research\`.
-- **Reuse your plan's tools.** During mission RUN / agent execution, when an \`# Active Plan\` is in effect (provided in the turn state), reuse the exact toolIds listed in its tool-selection section instead of re-running \`discover_tools\` for the same need every turn. Re-discover only when a required tool is absent from the plan, looks stale, or a prior call failed.
-- **Mutation safety.** Every mutating call obeys the \`# Safety Contract\`: quote / preview before mutation, the 2-step transfer rule, and the pressure-barrier mutation gate.`;
+- **Discover first — for the schema, not just the name.** The toolIds printed in this prompt are real; their parameter schemas are NOT shown anywhere in it. Never build an \`execute_tool\` call without a \`discover_tools\` result from THIS session, and never execute a toolId from memory, from an old example, or from a previous transcript. During mission RUN — or in AGENT chat when the user explicitly asked for the action — discovery is a means to execution: \`execute_tool\` follows. During planning (mission SETUP / plan authoring, i.e. Capability Orientation), discovery is orientation only — see \`# Research\`.
+- **Reuse your plan's tools.** During mission RUN — or in AGENT chat when the user explicitly asked for the action — when an \`# Active Plan\` is in effect (provided in the turn state), reuse the exact toolIds listed in its tool-selection section instead of re-running \`discover_tools\` for the same need every turn. Re-discover only when a required tool is absent from the plan, looks stale, or a prior call failed.
+- **Mutation safety.** Every mutating call obeys the \`# Safety Contract\`: quote / preview before mutation, the 2-step transfer rule, and the pressure-barrier mutation gate.${notice}`;
 }

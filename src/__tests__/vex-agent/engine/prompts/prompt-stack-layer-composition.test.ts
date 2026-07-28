@@ -82,7 +82,11 @@ describe("prompt-stack — layer composition", () => {
       );
       const staticJoined = staticLayers.join("\n");
       expect(staticJoined).not.toContain("# Runtime Clock");
-      expect(staticJoined).not.toContain("# Memory Routing");
+      // `## Memory Routing` is invariant doctrine and now lives in the STATIC
+      // `# Memory & Learning` layer; what must stay out of the prefix is the
+      // volatile memory STATE, not the routing rule.
+      expect(staticJoined).not.toContain("[Session memories:");
+      expect(staticJoined).not.toContain("[Long-term memory:");
       expect(staticJoined).not.toContain("# Available Tool Map");
       expect(staticJoined).not.toContain("Iteration:");
       expect(staticJoined).not.toContain("Context pressure");
@@ -158,7 +162,7 @@ describe("prompt-stack — layer composition", () => {
       expect(staticJoined).not.toContain("Tool Map above");
       expect(staticJoined).not.toContain("Memory Routing block above");
       expect(staticJoined).toContain("Tool Map provided in the turn state");
-      expect(staticJoined).toContain("Memory Routing block in the turn state");
+      expect(staticJoined).toContain("The turn state carries their live counts.");
     });
 
     it("turn layers always start with the runtime clock; memorySection lands only when provided", () => {

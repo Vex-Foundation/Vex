@@ -13,22 +13,17 @@
  * waiter (D1a).
  */
 
-import {
-  HTTPClient,
+import type {
   OpenRouter,
-  type Fetcher,
-  type ResponseHook,
+  Fetcher,
+  ResponseHook,
 } from "@vex-lib/openrouter-client.js";
+import { createPublicOpenRouterClient } from "./openrouter-public-catalog-client.js";
 import {
   PROVIDER_MODEL_CATALOG_MAX,
   type ProviderListModelsResult,
   type ProviderModelOption,
 } from "@shared/schemas/provider.js";
-import {
-  OPENROUTER_APP_TITLE,
-  OPENROUTER_APP_URL,
-  OPENROUTER_NOOP_LOGGER,
-} from "./openrouter-app-identity.js";
 import {
   createReasoningCapabilityHook,
   type ModelReasoningCapabilityEntry,
@@ -75,27 +70,13 @@ let cooldownUntilMs = 0;
 let lastFailureCause: unknown = null;
 
 function defaultClientFactory(responseHook: ResponseHook, fetcher?: Fetcher): OpenRouter {
-  return new OpenRouter({
-    httpReferer: OPENROUTER_APP_URL,
-    appTitle: OPENROUTER_APP_TITLE,
+  // The keyless-client security invariant lives in
+  // `openrouter-public-catalog-client.ts` — shared with the endpoint
+  // catalogue so the two public reads cannot drift apart.
+  return createPublicOpenRouterClient({
     timeoutMs: CATALOG_TIMEOUT_MS,
-    retryConfig: { strategy: "none" },
-    debugLogger: OPENROUTER_NOOP_LOGGER,
-    httpClient: new HTTPClient({ fetcher }).addHook("response", responseHook),
-    // SECURITY: this client fetches the PUBLIC `/models` catalogue and must
-    // NEVER carry the user's OpenRouter key, even after vault unlock has
-    // populated `process.env.OPENROUTER_API_KEY` for the privileged engine
-    // client. Omitting `apiKey` here does NOT achieve that: the SDK's
-    // `resolveGlobalSecurity` (node_modules/@openrouter/sdk/esm/lib/security.js:128)
-    // reads `security?.apiKey ?? env().OPENROUTER_API_KEY` — a nullish
-    // (omitted/undefined) `apiKey` silently falls back to the env var and
-    // attaches it as `Authorization: Bearer <key>` (confirmed with an
-    // intercepted fetcher). An explicit empty string is NOT nullish, so it
-    // defeats that `??` fallback; `resolveSecurity`'s own value check then
-    // treats an empty string as "no security provided" (`!!"" === false`)
-    // and skips the Authorization header entirely — verify both steps
-    // against the installed SDK before changing this.
-    apiKey: "",
+    fetcher,
+    responseHook,
   });
 }
 
@@ -127,12 +108,26 @@ function providerIdFor(modelId: string): string {
   return raw.replace(/^~/, "").slice(0, 64) || "openrouter";
 }
 
+/**
+ * `Model.created` is typed `number` (unix SECONDS) by the installed SDK, but
+ * the catalogue is an untrusted provider response: a missing or malformed
+ * value becomes `undefined` so the row sorts LAST rather than poisoning the
+ * comparator with NaN.
+ */
+function parseCreatedUnixSeconds(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
+    return undefined;
+  }
+  return raw;
+}
+
 function normalizeModel(model: {
   readonly id: string;
   readonly name: string;
   readonly contextLength: number | null;
   readonly supportedParameters: ReadonlyArray<string>;
   readonly pricing: { readonly prompt: string; readonly completion: string };
+  readonly created?: unknown;
 }): ProviderModelOption | null {
   const modelId = model.id.trim();
   const displayName = model.name.trim();
@@ -145,6 +140,7 @@ function normalizeModel(model: {
   ) {
     return null;
   }
+  const created = parseCreatedUnixSeconds(model.created);
   return {
     modelId,
     displayName,
@@ -157,17 +153,32 @@ function normalizeModel(model: {
         : null,
     pricingInputPerMillion: parsePricePerMillion(model.pricing.prompt),
     pricingOutputPerMillion: parsePricePerMillion(model.pricing.completion),
+    ...(created !== undefined && { created }),
   };
 }
 
+/**
+ * Newest first. `created` (unix seconds) descending is the primary key so the
+ * wizard's first screenful is the current generation of models rather than
+ * whatever sorts alphabetically first.
+ *
+ * Rows WITHOUT a `created` value sort LAST regardless of the other keys — an
+ * unknown publication date must never be able to outrank a known-recent
+ * model. Ties fall back to `displayName` then `modelId`, both stable and
+ * total, so the order is deterministic and the catalogue cap always keeps the
+ * same 1,000 rows for the same input.
+ */
 function compareModels(a: ProviderModelOption, b: ProviderModelOption): number {
-  const providerOrder = a.providerId.localeCompare(b.providerId, undefined, {
+  if (a.created !== b.created) {
+    if (a.created === undefined) return 1;
+    if (b.created === undefined) return -1;
+    return b.created - a.created;
+  }
+  const nameOrder = a.displayName.localeCompare(b.displayName, undefined, {
     sensitivity: "base",
   });
-  if (providerOrder !== 0) return providerOrder;
-  return a.displayName.localeCompare(b.displayName, undefined, {
-    sensitivity: "base",
-  });
+  if (nameOrder !== 0) return nameOrder;
+  return a.modelId.localeCompare(b.modelId, undefined, { sensitivity: "base" });
 }
 
 async function fetchCatalogue(
@@ -186,11 +197,19 @@ async function fetchCatalogue(
     { timeoutMs: CATALOG_TIMEOUT_MS, retries: { strategy: "none" } },
   );
 
+  // `@openrouter/sdk` 1.1.13 returns a PAGE ITERATOR here; 0.12.79 returned a
+  // single response with `.data`. Each page carries `result.data`, and page 2+
+  // is fetched lazily only if we keep iterating. The default page size (500)
+  // exceeds today's filtered catalog, so this normally costs one request —
+  // but iterating means a future catalog larger than one page cannot silently
+  // truncate the model list the wizard offers.
   const unique = new Map<string, ProviderModelOption>();
-  for (const rawModel of response.data) {
-    const model = normalizeModel(rawModel);
-    if (model !== null && !unique.has(model.modelId)) {
-      unique.set(model.modelId, model);
+  for await (const page of response) {
+    for (const rawModel of page.result.data ?? []) {
+      const model = normalizeModel(rawModel);
+      if (model !== null && !unique.has(model.modelId)) {
+        unique.set(model.modelId, model);
+      }
     }
   }
   return {

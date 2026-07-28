@@ -37,11 +37,20 @@ export function buildWalletStateBanner(context: EngineContext): string {
     // real fail-closed happens at the tool call. Re-throw anything unexpected so
     // a genuine bug still surfaces.
     if (err instanceof VexError && err.code === ErrorCodes.WALLET_SCOPE_MISMATCH) {
-      return [
-        "# Session wallets",
-        "Wallet scope is unavailable for this session (mission contract drift or a removed wallet).",
-        "Wallet and protocol trading tools will fail closed until the session wallet scope / mission contract is re-accepted.",
-      ].join("\n");
+      // The recovery differs per session kind: an AGENT session has no mission
+      // contract to re-accept, so naming one there points the user at a step
+      // that does not exist for them.
+      return context.sessionKind === "mission"
+        ? [
+            "# Session wallets",
+            "Wallet scope is unavailable for this session (mission contract drift or a removed wallet).",
+            "Wallet and protocol trading tools will fail closed until the mission contract is re-accepted with a valid wallet selection.",
+          ].join("\n")
+        : [
+            "# Session wallets",
+            "Wallet scope is unavailable for this session (the selected wallet was removed or changed).",
+            "Wallet and protocol trading tools will fail closed. Tell the user to select a wallet for this session in the app; there is nothing you can do from here.",
+          ].join("\n");
     }
     throw err;
   }

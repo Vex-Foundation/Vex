@@ -29,6 +29,7 @@ import type {
   ProviderPersistResult,
   ProviderListModelsResult,
 } from "@shared/schemas/provider.js";
+import type { ProviderListEndpointsResult } from "@shared/schemas/provider-endpoints.js";
 import { modelsKeys, onboardingKeys, sessionModelKeys } from "./queryKeys.js";
 
 export async function persistProvider(
@@ -53,6 +54,29 @@ export function useProviderModels(
   enabled: boolean = true,
 ): UseQueryResult<Result<ProviderListModelsResult>> {
   return useQuery(providerModelsOptions(enabled));
+}
+
+/**
+ * Tool-capable endpoints ("providers") serving ONE model.
+ *
+ * Fetched once per SELECTED model, never per keystroke: the query is enabled
+ * only when the caller passes a model id that came from an exact catalogue
+ * selection. A typed-but-unlisted model id yields `null` here and the UI stays
+ * Auto-only, so a partially-typed id can never spray requests at OpenRouter.
+ */
+export function useProviderEndpoints(
+  modelId: string | null,
+): UseQueryResult<Result<ProviderListEndpointsResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: onboardingKeys.providerEndpoints(modelId ?? ""),
+      queryFn: () =>
+        window.vex.onboarding.providerListEndpoints({ modelId: modelId ?? "" }),
+      staleTime: PROVIDER_MODELS_STALE_MS,
+      retry: false,
+      enabled: modelId !== null && modelId.length > 0,
+    }),
+  );
 }
 
 export function useInvalidateEnvStateAfterProviderWrite(): () => void {

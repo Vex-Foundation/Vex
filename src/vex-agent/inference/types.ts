@@ -34,6 +34,14 @@ export interface InferenceConfig {
   model: string;
   /** Context window size in tokens — from AGENT_CONTEXT_LIMIT env */
   contextLimit: number;
+  /**
+   * Pinned OpenRouter endpoint `tag` from `OPENROUTER_ENDPOINT_TAG` (the
+   * wizard's provider select). Undefined ⇒ "Auto": no `provider.order`, so
+   * OpenRouter's own routing (and its sticky `session_id`) applies. Set,
+   * it becomes `order: [tag] + allowFallbacks: false` — see
+   * `openrouter/provider-prefs.ts` for why the trade-off is not additive.
+   */
+  endpointTag?: string;
   /** Sampling temperature. */
   temperature?: number;
   /** Max output tokens per response — from AGENT_MAX_OUTPUT_TOKENS env */
@@ -259,6 +267,31 @@ export interface ToolDefinition {
   };
 }
 
+// ── Request context (sticky provider routing) ────────────────────
+
+/**
+ * Identity of the conversation/mission a request belongs to.
+ *
+ * OpenRouter groups requests that share a sticky routing key onto the SAME
+ * upstream provider, which keeps the prompt cache warm across a multi-turn
+ * agent loop. Left to itself it DERIVES that key by hashing the opening
+ * messages — which is exactly what Vex's tape cannot guarantee, because
+ * compaction inserts a summary system message and shifts the history mid-run.
+ * Passing an explicit id instead makes the grouping stable across that drift.
+ *
+ * Threaded ONLY through the core conversational/tool turns (streaming plus its
+ * buffered fallback). Background work — the memory judge, entity extraction,
+ * regime worker and compaction chunker — deliberately stays ungrouped: those
+ * are one-shot calls that share no prefix with the conversation, so grouping
+ * them would pin an unrelated provider without any cache benefit.
+ */
+export interface InferenceRequestContext {
+  /** Conversation this request belongs to. */
+  readonly sessionId: string;
+  /** Mission run this request belongs to, when the turn is part of one. */
+  readonly missionRunId: string | null;
+}
+
 // ── Provider interface ───────────────────────────────────────────
 
 export interface InferenceProvider {
@@ -280,11 +313,17 @@ export interface InferenceProvider {
   /**
    * Non-streaming chat completion with tool calling.
    * Used by: inference loop (tool calling round-trip).
+   *
+   * `context` groups the request for sticky provider routing. It is optional so
+   * existing callers and test doubles stay valid; the buffered fallback in
+   * `runStreamingInference` passes the SAME context as the streaming attempt it
+   * replaces, so a fallback cannot silently land on a different provider.
    */
   chatCompletion(
     messages: ProviderMessage[],
     tools: ToolDefinition[],
     config: InferenceConfig,
+    context?: InferenceRequestContext,
   ): Promise<InferenceResponse>;
 
   /**
@@ -302,12 +341,16 @@ export interface InferenceProvider {
    *
    * `signal` (Stage 9-5a) cancels the in-flight HTTP stream for chat-turn
    * "stop generating". When omitted, the stream runs to completion as before.
+   *
+   * `context` groups the request for sticky provider routing (see
+   * `InferenceRequestContext`).
    */
   chatCompletionStream(
     messages: ProviderMessage[],
     tools: ToolDefinition[],
     config: InferenceConfig,
     signal?: AbortSignal,
+    context?: InferenceRequestContext,
   ): AsyncGenerator<StreamChunk>;
 
   /**

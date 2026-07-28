@@ -44,6 +44,10 @@ import type {
   ProviderPersistResult,
 } from "../../../schemas/provider.js";
 import type {
+  ProviderListEndpointsInput,
+  ProviderListEndpointsResult,
+} from "../../../schemas/provider-endpoints.js";
+import type {
   CompleteSetupInput,
   CompleteSetupResult,
 } from "../../../schemas/finalize.js";
@@ -115,6 +119,9 @@ export interface OnboardingBridge {
   readonly providerListModels: (
     input?: ProviderListModelsInput
   ) => Promise<Result<ProviderListModelsResult>>;
+  readonly providerListEndpoints: (
+    input: ProviderListEndpointsInput
+  ) => Promise<Result<ProviderListEndpointsResult>>;
   readonly completeSetup: (
     input: CompleteSetupInput
   ) => Promise<Result<CompleteSetupResult>>;
