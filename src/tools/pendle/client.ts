@@ -143,6 +143,34 @@ export class PendleClient {
   }
 
   /**
+   * MATURED markets on one chain — the sibling of `getActiveMarkets`, and the
+   * only new fetch R5b needs to make a matured PT redeemable (G-02 / D18).
+   *
+   * Same envelope, same row shape, so `validateMarkets` applies VERBATIM.
+   * LIVE-VERIFIED 2026-07-27 on chain 1: `{markets:[…]}` with 420 rows whose key
+   * set matches the active endpoint's, and 420/420 carrying a parseable past
+   * expiry (zero missing, zero unparseable, zero future).
+   *
+   * ENDPOINT CHOICE, and what it does NOT decide. This uses the same
+   * `/v1/{chainId}/…` family the money path already depends on for
+   * `markets/active`, so the R5b change adds no NEW class of dependency. Both
+   * that endpoint and this one are absent from the published OpenAPI
+   * enumeration (gap G-03), and whether the money path should migrate to the
+   * documented `/v2/markets/all` — which has a DIFFERENT envelope and would move
+   * the active path too — remains an OPEN OWNER QUESTION for F-3. This method
+   * deliberately does not pre-empt it: it keeps the two market fetches on the
+   * same footing so they can be migrated together, in one decision.
+   *
+   * Note the read lane answers the same question from the documented catalogue
+   * (`market-read.ts` → `/v2/markets/all`). That is not duplication to collapse:
+   * the read lane must never feed a money path, and this one must never feed a
+   * read, which is why they hold separate clients and separate types.
+   */
+  getInactiveMarkets(chainId: number): Promise<PendleMarket[]> {
+    return this.get(`/v1/${chainId}/markets/inactive`, PENDLE_CU.markets, PENDLE_TTL.markets, validateMarkets);
+  }
+
+  /**
    * One chain's Pendle assets (metadata + prices + `baseType`). Cached per chain
    * URL (5m). A shape we cannot read RAISES `PENDLE_INVALID_RESPONSE` — callers
    * must treat that as "unknown", never as "this chain has no assets".
@@ -245,6 +273,27 @@ export class PendleClient {
    * Multi-leg convert — the single code path for mint-py (one input → PT+YT) and
    * pre-expiry redeem-py (PT+YT → one output). Identical throttle/dedupe/error
    * handling to `convert`; only the inputs/outputs arity differs.
+   *
+   * R5d NEEDED NO CHANGE HERE, and that is a finding rather than an omission.
+   * Convert has no `action` parameter: the server INFERS the action from the
+   * input/output token shape, so all six new write actions are reachable through
+   * this one method with the EXACT same closed body key set that
+   * `convert-body-keys.test.ts` pins. Live-probed 2026-07-28, all HTTP 201:
+   *
+   *   mint-sy               inputs `[token]`      outputs `[SY]`
+   *   redeem-sy             inputs `[SY]`         outputs `[token]`
+   *   remove-liquidity-dual inputs `[LP]`         outputs `[token, PT]`
+   *   add-liquidity keep-YT inputs `[token]`      outputs `[LP, YT]`
+   *   roll-over-pt          inputs `[PT(mktA)]`   outputs `[PT(mktB)]`
+   *   transfer-liquidity    inputs `[LP(mktA)]`   outputs `[LP(mktB)]`
+   *   convert-lp-to-pt      inputs `[LP]`         outputs `[PT]`
+   *
+   * Adding a per-action wrapper method would be API surface with no behaviour
+   * behind it. Callers pass the token shape; the closed body stays closed.
+   *
+   * The RESPONSE's `outputs` order is the provider's own and does NOT echo the
+   * order requested here (measured both ways on the two dual actions) — never
+   * read a leg out of it positionally; see `calldata/price-floor.ts`.
    */
   async convertMulti(chainId: number, params: PendleConvertMultiParams): Promise<PendleConvertResponse | null> {
     const url = this.buildUrl(`/v3/sdk/${chainId}/convert`);

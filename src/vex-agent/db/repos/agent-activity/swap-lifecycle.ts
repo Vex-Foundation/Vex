@@ -57,6 +57,11 @@ export interface ConfirmActivityEventInput {
   executedAmountInRaw?: string;
   executedAmountOutHuman?: string;
   executedAmountOutRaw?: string;
+  /** Option-C executed second legs (migration 053) — see `assertYieldConfirmLegs`. */
+  executedAmountIn2Human?: string;
+  executedAmountIn2Raw?: string;
+  executedAmountOut2Human?: string;
+  executedAmountOut2Raw?: string;
 }
 
 export interface FailActivityEventInput {
@@ -177,11 +182,14 @@ export async function confirmActivityEvent(
         + "executedAmountInRaw + executedAmountOutRaw",
     );
   }
+  assertYieldConfirmLegs(current, input);
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE agent_activity
         SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW(),
             executed_amount_in_human = $2, executed_amount_in_raw = $3,
-            executed_amount_out_human = $4, executed_amount_out_raw = $5
+            executed_amount_out_human = $4, executed_amount_out_raw = $5,
+            executed_amount_in2_human = $6, executed_amount_in2_raw = $7,
+            executed_amount_out2_human = $8, executed_amount_out2_raw = $9
       WHERE id = $1 AND status = 'pending'
       RETURNING *`,
     [
@@ -190,10 +198,64 @@ export async function confirmActivityEvent(
       input.executedAmountInRaw ?? null,
       input.executedAmountOutHuman ?? null,
       input.executedAmountOutRaw ?? null,
+      input.executedAmountIn2Human ?? null,
+      input.executedAmountIn2Raw ?? null,
+      input.executedAmountOut2Human ?? null,
+      input.executedAmountOut2Raw ?? null,
     ],
   );
   if (row) return { applied: true, row: mapRow(row) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEvent") };
+}
+
+/**
+ * The repo-level half of migration 053's per-role confirmed-leg contract — the
+ * companion change that file's header names as REQUIRED, not optional: the
+ * `agent_activity_yield_confirmed_legs` CHECK proves legs are PRESENT, this
+ * proves the CALLER supplied them (and, for `yield_claim`, that it supplied no
+ * input leg it could not have spent). The guard mirrors the CHECK arm for arm,
+ * deliberately: a divergence between the two is how a row starts satisfying one
+ * and violating the other.
+ *
+ * The row's OWN `event_role` and second-leg tokens are read from the persisted
+ * row, never taken from the caller — same posture as the `'swap'` guard above.
+ */
+function assertYieldConfirmLegs(
+  current: AgentActivityEvent,
+  input: ConfirmActivityEventInput,
+): void {
+  const role = current.eventRole;
+  const fail = (detail: string): never => {
+    throw new Error(`agent_activity: confirmActivityEvent — event_role '${role}' ${detail}`);
+  };
+
+  if (role === "yield_claim") {
+    // A claim sweeps accrued income: nothing is spent, so an executed INPUT is
+    // not merely unnecessary, it is evidence the caller decoded the wrong thing.
+    if (!input.executedAmountOutRaw) fail("requires executedAmountOutRaw (the credited income)");
+    if (input.executedAmountInRaw) fail("must not carry an executed input leg — a claim spends nothing");
+    return;
+  }
+  // `yield_sy` joins the one-in-one-out arm: an SY wrap/unwrap moves exactly one
+  // instrument on each side, so it never reaches the Option-C dual checks below.
+  if (role === "yield_pt" || role === "yield_yt" || role === "yield_sy") {
+    if (!input.executedAmountInRaw || !input.executedAmountOutRaw) {
+      fail("requires executedAmountInRaw + executedAmountOutRaw");
+    }
+    return;
+  }
+  if (role === "yield_py" || role === "yield_lp") {
+    if (!input.executedAmountInRaw || !input.executedAmountOutRaw) {
+      fail("requires executedAmountInRaw + executedAmountOutRaw");
+    }
+    // Dual invariants apply ONLY where the row populated the dual columns.
+    if (current.tokenIn2Address && !input.executedAmountIn2Raw) {
+      fail("populated a second INPUT leg, so confirming it requires executedAmountIn2Raw");
+    }
+    if (current.tokenOut2Address && !input.executedAmountOut2Raw) {
+      fail("populated a second OUTPUT leg, so confirming it requires executedAmountOut2Raw");
+    }
+  }
 }
 
 /**

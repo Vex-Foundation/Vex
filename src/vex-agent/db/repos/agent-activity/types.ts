@@ -16,8 +16,13 @@
  * Swap rows (Phase 1), bridge rows (Phase 2, migration 045), or the W5
  * (migration 049) `lend`/`prediction` rows. Jupiter swaps reuse the existing
  * `swap` kind (protocol='jupiter') rather than adding a fifth kind.
+ * `wrap` is migration 051 (native <-> wrapped-native, no route/price/slippage);
+ * `yield` is migration 053 (Pendle PT/YT/PY/LP/claim, protocol='pendle') — kept
+ * out of `swap` because `py.mint` is a 1->2 split, `lp.add` a deposit and
+ * `yield_claim` an income sweep with NO input leg, none of which a swap's
+ * route/price/counterparty assertions describe.
  */
-export type AgentActivityKind = "swap" | "bridge" | "lend" | "prediction";
+export type AgentActivityKind = "swap" | "bridge" | "lend" | "prediction" | "wrap" | "yield";
 
 /**
  * Kinds valid through the GENERIC write path (`./swap-intent.js` +
@@ -53,6 +58,14 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * independent activity rows, one per tx). Both cover Forecast(bisonfi)
  * orders identically — the provider distinction lives in how the row is
  * SUBMITTED (managed `/execute` vs the generic path), never in the role.
+ * `wrap`/`unwrap` are migration 051. The six `yield_*` roles are migration 053
+ * (Pendle): `yield_pt`/`yield_yt`/`yield_sy` are one-in-one-out, `yield_py`
+ * carries a SECOND leg on exactly one side (mint splits 1->PT+YT, redeem burns
+ * PT+YT->1), `yield_lp` may carry one for the dual add/remove variants, and
+ * `yield_claim` has NO input leg at all. `yield_sy` is the SY wrapper leg
+ * (`pendle.sy.mint`/`pendle.sy.redeem`) — a wrap, never a split, and therefore
+ * barred from the second-leg family. A Pendle ERC-20 approval REUSES `allowance` /
+ * `allowance_reset` rather than forking a Pendle-specific role.
  */
 export type AgentActivityEventRole =
   | "allowance_reset"
@@ -69,7 +82,15 @@ export type AgentActivityEventRole =
   | "predict_buy"
   | "predict_sell"
   | "predict_claim"
-  | "predict_close";
+  | "predict_close"
+  | "wrap"
+  | "unwrap"
+  | "yield_pt"
+  | "yield_yt"
+  | "yield_py"
+  | "yield_lp"
+  | "yield_sy"
+  | "yield_claim";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";
@@ -175,6 +196,27 @@ export interface AgentActivityEvent {
   executedAmountInRaw: string | null;
   executedAmountOutHuman: string | null;
   executedAmountOutRaw: string | null;
+  // ── Option-C second-leg family (migration 053) — `yield_py`/`yield_lp` ONLY ──
+  //
+  // Mirrors the first-leg columns name for name. NULL on every other role
+  // (`agent_activity_second_leg_roles_only` enforces it), and a second-leg
+  // amount may never travel without its token/decimals
+  // (`agent_activity_second_leg_amount_has_token`) — a raw amount whose
+  // decimals are unknown is the canonical thousandfold-error shape.
+  tokenIn2Address: string | null;
+  tokenIn2Symbol: string | null;
+  tokenIn2Decimals: number | null;
+  amountIn2Human: string | null;
+  amountIn2Raw: string | null;
+  executedAmountIn2Human: string | null;
+  executedAmountIn2Raw: string | null;
+  tokenOut2Address: string | null;
+  tokenOut2Symbol: string | null;
+  tokenOut2Decimals: number | null;
+  amountOut2Human: string | null;
+  amountOut2Raw: string | null;
+  executedAmountOut2Human: string | null;
+  executedAmountOut2Raw: string | null;
   usdInEst: string | null;
   usdOutEst: string | null;
   /**

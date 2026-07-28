@@ -66,7 +66,7 @@
 import type { JSX } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
-import type { MoveItem } from "@shared/schemas/portfolio-moves.js";
+import type { MoveItem, MoveSecondaryLeg } from "@shared/schemas/portfolio-moves.js";
 import {
   explorerAccountUrl,
   explorerTxUrl,
@@ -197,6 +197,46 @@ export function MovesBlock({ sessionId }: { readonly sessionId: string }): JSX.E
   );
 }
 
+/**
+ * A SECOND token leg of the SAME transaction (yield rows only): both outputs
+ * of a `py.mint`, both inputs of a pre-expiry `py.redeem`, the second leg of a
+ * dual LP action. Rendered beside its primary ON THE SAME SIDE of the arrow —
+ * without it a two-instrument action reads as a misleading 1→1 move. Follows
+ * the primary legs' exact identity/amount policy (`tokenDisplay`,
+ * `amountDisplay`); secondary legs only exist on `agent_activity` rows, whose
+ * amounts arrive already proven human by the main-process mapper.
+ */
+function SecondaryLegSpan({
+  leg,
+  trustedHuman,
+  estimated,
+}: {
+  readonly leg: MoveSecondaryLeg;
+  readonly trustedHuman: boolean;
+  readonly estimated: boolean;
+}): JSX.Element {
+  const display = tokenDisplay(leg.token, leg.tokenSymbol, null);
+  const amount = amountDisplay(leg.amount, trustedHuman);
+  return (
+    <>
+      <span className="shrink-0 text-[var(--vex-text-3)]">+</span>
+      <span
+        title={display.full ?? undefined}
+        className="inline-flex min-w-0 items-center gap-1"
+      >
+        {display.iconSymbol !== null ? (
+          <TokenIcon symbol={display.iconSymbol} size={12} />
+        ) : null}
+        <span className="truncate">
+          {amount !== null
+            ? `${estimated ? "~" : ""}${amount} ${display.text}`
+            : display.text}
+        </span>
+      </span>
+    </>
+  );
+}
+
 function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const state = rowState(move);
   const protocolMark = resolveProtocolMark(move.venue);
@@ -216,6 +256,8 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
   const trustedHuman = move.source === "agent_activity";
   const inputAmount = amountDisplay(move.inputAmount, trustedHuman);
   const outputAmount = amountDisplay(move.outputAmount, trustedHuman);
+  const secondaryInput = move.secondaryInputLeg ?? null;
+  const secondaryOutput = move.secondaryOutputLeg ?? null;
   // R14: a bridge whose shown amounts are the QUOTE (not an independently
   // verified fill) marks both legs `~…` + a single trailing "est." tag, so a
   // quoted bridge amount never reads as an executed quantity.
@@ -280,6 +322,13 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
               : input.text}
           </span>
         </span>
+        {secondaryInput !== null ? (
+          <SecondaryLegSpan
+            leg={secondaryInput}
+            trustedHuman={trustedHuman}
+            estimated={estimated}
+          />
+        ) : null}
         <span className="shrink-0 text-[var(--vex-text-3)]">→</span>
         <span
           title={output.full ?? undefined}
@@ -294,6 +343,13 @@ function MoveRow({ move }: { readonly move: MoveItem }): JSX.Element {
               : output.text}
           </span>
         </span>
+        {secondaryOutput !== null ? (
+          <SecondaryLegSpan
+            leg={secondaryOutput}
+            trustedHuman={trustedHuman}
+            estimated={estimated}
+          />
+        ) : null}
         {estimated ? (
           <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
             est.

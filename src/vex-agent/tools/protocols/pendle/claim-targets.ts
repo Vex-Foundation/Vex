@@ -33,7 +33,7 @@ import { stripChainPrefix } from "@tools/pendle/validation.js";
 import type { PendleMarket } from "@tools/pendle/types.js";
 
 import type { PendleClaimYtBind } from "./calldata.js";
-import { resolveMarketByAddress } from "./market-lookup.js";
+import { resolveExitMarketByAddress } from "./matured-market-lookup.js";
 
 /** Max markets a single unscoped claim will sweep (keeps the tx + CU spend bounded). */
 export const MAX_CLAIM_MARKETS = 10;
@@ -45,7 +45,9 @@ export type PendleClaimSkipReason =
   /** The market is missing the YT bind material (`yt`/`underlyingAsset`/`sy`) a safe interest claim requires. */
   | "unbindable_yt"
   /** An explicitly requested market is not an active Pendle market on this chain. */
-  | "market_not_found";
+  | "market_not_found"
+  /** An explicitly requested market the wallet holds no claimable position in. */
+  | "no_position";
 
 export interface PendleClaimSkip {
   /** Lowercase market address (or the caller's raw input for `market_not_found`). */
@@ -86,6 +88,28 @@ function addYtTarget(intendedYts: Map<string, PendleClaimYtBind>, m: PendleMarke
 }
 
 /**
+ * Does the wallet hold a claimable (YT or LP) balance in this market, on THIS
+ * chain? A read failure PROPAGATES rather than degrading to "no" or "yes" — the
+ * caller must not claim blind, and must not be told a real position is absent.
+ */
+async function holdsClaimablePosition(
+  chainId: number,
+  wallet: string,
+  marketAddress: string,
+): Promise<boolean> {
+  const positionsByChain = await getPendleClient().getPositions(wallet);
+  const chainPositions = positionsByChain.find((p) => p.chainId === chainId);
+  for (const pos of chainPositions?.openPositions ?? []) {
+    const addr = stripChainPrefix(pos.marketId);
+    if (!addr || addr.toLowerCase() !== marketAddress) continue;
+    const hasYt = pos.yt != null && pos.yt.balance !== "0";
+    const hasLp = pos.lp != null && pos.lp.balance !== "0";
+    if (hasYt || hasLp) return true;
+  }
+  return false;
+}
+
+/**
  * Build the wallet's intended claim sets on one chain.
  *
  * With `explicitMarket`, the claim is scoped to that single market and the
@@ -104,7 +128,9 @@ export async function buildPendleClaimTargets(
   const intendedMarkets = new Set<string>();
 
   if (explicitMarket) {
-    const m = await resolveMarketByAddress(chainId, explicitMarket);
+    // EXIT PATH (R5b): accrued income does not stop being the user's because the
+    // market expired, so an explicitly requested MATURED market is claimable.
+    const m = (await resolveExitMarketByAddress(chainId, explicitMarket))?.market ?? null;
     if (!m) {
       return {
         intendedYts, intendedMarkets,
@@ -115,6 +141,21 @@ export async function buildPendleClaimTargets(
       };
     }
     const address = m.address.toLowerCase();
+    // HOLDING CHECK (G-40 / D13). The unscoped path derives its targets FROM the
+    // dashboard positions, so it can never select a market the wallet is not in;
+    // the explicit path used to add the market unconditionally and broadcast a
+    // no-op sweep that burns gas and claims nothing (live-probed). The same
+    // positions read the unscoped path already makes is the evidence, so the
+    // claim is refused BY NAME before any allowance or signature exists.
+    if (!(await holdsClaimablePosition(chainId, wallet, address))) {
+      return {
+        intendedYts, intendedMarkets,
+        eligibleMarketCount: 0,
+        selectedMarketCount: 0,
+        skipped: [{ market: address, reason: "no_position" }],
+        marketCap: null,
+      };
+    }
     const bound = addYtTarget(intendedYts, m);
     intendedMarkets.add(address);
     return {
@@ -127,12 +168,18 @@ export async function buildPendleClaimTargets(
   }
 
   const client = getPendleClient();
-  const [positionsByChain, markets] = await Promise.all([
+  // EXIT PATH (R5b): the sweep indexes BOTH catalogues. A matured market used to
+  // be dropped by `if (!m) continue` below — silently absent from eligible AND
+  // from skipped, which broke the honesty invariant this module exists to keep
+  // (G-02: "claim silently drops matured markets from both").
+  const [positionsByChain, activeMarkets, maturedMarkets] = await Promise.all([
     client.getPositions(wallet),
     client.getActiveMarkets(chainId),
+    client.getInactiveMarkets(chainId),
   ]);
   const marketByAddress = new Map<string, PendleMarket>();
-  for (const m of markets) marketByAddress.set(m.address.toLowerCase(), m);
+  // Active LAST so a row present in both catalogues resolves as active.
+  for (const m of [...maturedMarkets, ...activeMarkets]) marketByAddress.set(m.address.toLowerCase(), m);
   const chainPositions = positionsByChain.find((p) => p.chainId === chainId);
 
   const skipped: PendleClaimSkip[] = [];
@@ -187,6 +234,7 @@ export function describePendleClaimSkips(targets: PendleClaimTargets): string | 
   const capped = targets.skipped.filter((s) => s.reason === "market_cap").map((s) => s.market);
   const unbindable = targets.skipped.filter((s) => s.reason === "unbindable_yt").map((s) => s.market);
   const notFound = targets.skipped.filter((s) => s.reason === "market_not_found").map((s) => s.market);
+  const notHeld = targets.skipped.filter((s) => s.reason === "no_position").map((s) => s.market);
   const parts: string[] = [];
   if (capped.length > 0) {
     parts.push(
@@ -204,6 +252,12 @@ export function describePendleClaimSkips(targets: PendleClaimTargets): string | 
   }
   if (notFound.length > 0) {
     parts.push(`${notFound.join(", ")} is not an active Pendle market on this chain — nothing was claimed for it.`);
+  }
+  if (notHeld.length > 0) {
+    parts.push(
+      `The wallet holds no YT or LP position in ${notHeld.join(", ")} on this chain, so there is nothing to claim `
+      + "and no transaction was sent. Check pendle.position.value for the markets this wallet is actually in.",
+    );
   }
   return parts.join(" ");
 }

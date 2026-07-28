@@ -236,6 +236,7 @@ describe("uiStore", () => {
       sidebarOpen: true,
       bookOpen: true,
       hideDustBalances: true,
+      prologueVersion: null,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -423,6 +424,7 @@ describe("uiStore", () => {
       sidebarOpen: false,
       bookOpen: true,
       hideDustBalances: true,
+      prologueVersion: null,
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

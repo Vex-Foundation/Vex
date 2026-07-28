@@ -70,7 +70,55 @@ export const PENDLE_SELECTORS = {
   // selectors); test-pinned by decoding the live calldata against the ABI below.
   addLiquiditySingleToken: "0x12599ac6",
   removeLiquiditySingleToken: "0x60da0860",
+  // ── R5d additions ────────────────────────────────────────────────
+  // All nine below were LIVE-PROBED 2026-07-28 (quote-only chain-1 converts,
+  // recorded in `__tests__/…/pendle/r5d-fixtures.ts`) AND independently confirmed
+  // by computing the 4-byte selector from the derived signature — the two agree
+  // exactly, which is what pins each struct layout.
+  //
+  // SY wrap/unwrap (IPActionMiscV3) — one-in-one-out, arg1 is the SY (not a market):
+  //   mintSyFromToken : token → SY
+  //   redeemSyToToken : SY → token
+  mintSyFromToken: "0x2e071dc6",
+  redeemSyToToken: "0x339a5572",
+  // Dual/keep-YT liquidity (IPActionAddRemoveLiqV3) — TWO economically material
+  // min-outs each, hence two binding rows apiece in `calldata/price-floor.ts`:
+  //   removeLiquidityDualTokenAndPt : LP → token + PT
+  //   addLiquiditySingleTokenKeepYt : token → LP + kept YT
+  removeLiquidityDualTokenAndPt: "0xb00f09d7",
+  addLiquiditySingleTokenKeepYt: "0x3dbe1c55",
+  // LP → PT (IPActionAddRemoveLiqV3). NOT a callAndReflect action, despite the
+  // R5d card's premise: the live `convert-lp-to-pt` probe returned a PLAIN
+  // single-leg call. Its minPtOut sits at arg 3, NOT arg 2 like the other
+  // `min…Out`-at-2 methods — the position is why this needs its own row.
+  removeLiquiditySinglePt: "0x6b77ac9e",
+  // ── callAndReflect INNER legs ────────────────────────────────────
+  // These are ordinary Router methods that only ever appear NESTED inside a
+  // `callAndReflect` body, so they live in the SAME ABI and are decoded by the
+  // SAME `decodeRouterCall` allowlist — there is no second, weaker decoder.
+  // R5a captured the first two as unpinned and deliberately refused them; these
+  // are the layouts R5a said R5d would probe and pin.
+  //   roll-over-pt      : swapExactPtForSy → swapExactSyForPt
+  //   transfer-liquidity: removeLiquiditySingleSy → addLiquiditySingleSy
+  // Which pair appears depends on whether the two markets share an SY; when they
+  // do not (the Monad capture), the legs are the already-pinned token-routed
+  // `removeLiquiditySingleToken` / `addLiquiditySingleToken`.
+  swapExactPtForSy: "0x3346d3a3",
+  swapExactSyForPt: "0x2a50917c",
+  removeLiquiditySingleSy: "0xd13b4fdc",
+  addLiquiditySingleSy: "0x58bda475",
 } as const;
+
+/**
+ * `add-liquidity-dual` (`addLiquidityDualTokenAndPt`, selector `0x2756ce06`) is
+ * DELIBERATELY ABSENT from {@link PENDLE_SELECTORS} and from the ABI below.
+ *
+ * Owner decision Q24, on provider-defect evidence recorded as the
+ * `addLiquidityDual` capture in `floor-fixtures.ts`. It is pinned here as a
+ * NAMED exclusion — and asserted by test — so that a future session adding
+ * selectors cannot quietly restore it by pattern-matching the family.
+ */
+export const PENDLE_EXCLUDED_ADD_LIQUIDITY_DUAL_SELECTOR = "0x2756ce06" as const;
 
 export type PendleRouterMethod = keyof typeof PENDLE_SELECTORS;
 
@@ -85,6 +133,15 @@ export const PENDLE_SELECTOR_TO_METHOD: Readonly<Record<string, PendleRouterMeth
   [PENDLE_SELECTORS.redeemPyToSy]: "redeemPyToSy",
   [PENDLE_SELECTORS.addLiquiditySingleToken]: "addLiquiditySingleToken",
   [PENDLE_SELECTORS.removeLiquiditySingleToken]: "removeLiquiditySingleToken",
+  [PENDLE_SELECTORS.mintSyFromToken]: "mintSyFromToken",
+  [PENDLE_SELECTORS.redeemSyToToken]: "redeemSyToToken",
+  [PENDLE_SELECTORS.removeLiquidityDualTokenAndPt]: "removeLiquidityDualTokenAndPt",
+  [PENDLE_SELECTORS.addLiquiditySingleTokenKeepYt]: "addLiquiditySingleTokenKeepYt",
+  [PENDLE_SELECTORS.removeLiquiditySinglePt]: "removeLiquiditySinglePt",
+  [PENDLE_SELECTORS.swapExactPtForSy]: "swapExactPtForSy",
+  [PENDLE_SELECTORS.swapExactSyForPt]: "swapExactSyForPt",
+  [PENDLE_SELECTORS.removeLiquiditySingleSy]: "removeLiquiditySingleSy",
+  [PENDLE_SELECTORS.addLiquiditySingleSy]: "addLiquiditySingleSy",
 };
 
 /**
@@ -344,6 +401,265 @@ export const PENDLE_ROUTER_ABI = [
       { name: "netSyInterm", type: "uint256" },
     ],
   },
+  // ── R5d: SY wrap / unwrap (IPActionMiscV3) ───────────────────────
+  {
+    // token → SY. Live-probed selector 0x2e071dc6. arg1 is the SY contract, NOT a
+    // market — an SY wrap has no market, no maturity and no ApproxParams search,
+    // and there is no `limit` tuple (only four args). minSyOut at arg 2.
+    type: "function",
+    name: "mintSyFromToken",
+    stateMutability: "payable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "SY", type: "address" },
+      { name: "minSyOut", type: "uint256" },
+      { name: "input", type: "tuple", components: TOKEN_INPUT_COMPONENTS },
+    ],
+    outputs: [{ name: "netSyOut", type: "uint256" }],
+  },
+  {
+    // SY → token. Live-probed selector 0x339a5572. Mirror of mintSyFromToken:
+    // arg1 is the SY, arg2 is the ACTUAL SY burned, and the TokenOutput at arg 3
+    // carries the delivered token and its minTokenOut. No `limit` tuple.
+    type: "function",
+    name: "redeemSyToToken",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "SY", type: "address" },
+      { name: "netSyIn", type: "uint256" },
+      { name: "output", type: "tuple", components: TOKEN_OUTPUT_COMPONENTS },
+    ],
+    outputs: [{ name: "netTokenOut", type: "uint256" }],
+  },
+  // ── R5d: dual / keep-YT liquidity (IPActionAddRemoveLiqV3) ───────
+  {
+    // LP → token + PT. Live-probed selector 0xb00f09d7. TWO economically material
+    // minimums: the TokenOutput's minTokenOut (arg 3) protects the token leg and
+    // minPtOut (arg 4) protects the PT leg. No `limit` tuple. Both are bound
+    // independently in `calldata/price-floor.ts`.
+    type: "function",
+    name: "removeLiquidityDualTokenAndPt",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "netLpToRemove", type: "uint256" },
+      { name: "output", type: "tuple", components: TOKEN_OUTPUT_COMPONENTS },
+      { name: "minPtOut", type: "uint256" },
+    ],
+    outputs: [
+      { name: "netTokenOut", type: "uint256" },
+      { name: "netPtOut", type: "uint256" },
+    ],
+  },
+  {
+    // token → LP + KEPT YT. Live-probed selector 0x3dbe1c55. TWO minimums, both
+    // bare args: minLpOut (arg 2) and minYtOut (arg 3). The TokenInput sits at
+    // arg 4 and carries the actual spend. No `limit` tuple.
+    type: "function",
+    name: "addLiquiditySingleTokenKeepYt",
+    stateMutability: "payable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "minLpOut", type: "uint256" },
+      { name: "minYtOut", type: "uint256" },
+      { name: "input", type: "tuple", components: TOKEN_INPUT_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netLpOut", type: "uint256" },
+      { name: "netYtOut", type: "uint256" },
+      { name: "netSyInterm", type: "uint256" },
+    ],
+  },
+  {
+    // LP → PT. Live-probed selector 0x6b77ac9e. NOTE the position: minPtOut is at
+    // arg 3, AFTER netLpToRemove — not at arg 2 where the `min…Out` of the swap
+    // and single-token-add methods lives. Reading it at 2 would floor-check the
+    // LP amount against the PT output.
+    type: "function",
+    name: "removeLiquiditySinglePt",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "netLpToRemove", type: "uint256" },
+      { name: "minPtOut", type: "uint256" },
+      { name: "guessPtReceivedFromSy", type: "tuple", components: APPROX_PARAMS_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netPtOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+    ],
+  },
+  // ── R5d: callAndReflect INNER legs ───────────────────────────────
+  // Same ABI as every other Router method ON PURPOSE: `decodeReflectCall`
+  // recurses through `decodeRouterCall`, so these clear the identical allowlist,
+  // pendleSwap pin and floor binding as an outer call.
+  {
+    // PT → SY (roll-over leg 1). Live-probed selector 0x3346d3a3. minSyOut at
+    // arg 3. Its receiver is the REFLECTOR, which is why the reflector-receiver
+    // exception in `calldata/price-floor.ts` exists and is leg-1-only.
+    type: "function",
+    name: "swapExactPtForSy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "exactPtIn", type: "uint256" },
+      { name: "minSyOut", type: "uint256" },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netSyOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+    ],
+  },
+  {
+    // SY → PT (roll-over leg 2, the FINAL leg). Live-probed selector 0x2a50917c.
+    // minPtOut at arg 3; the live capture's value equalled our computed floor to
+    // the atomic unit.
+    type: "function",
+    name: "swapExactSyForPt",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "exactSyIn", type: "uint256" },
+      { name: "minPtOut", type: "uint256" },
+      { name: "guessPtOut", type: "tuple", components: APPROX_PARAMS_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netPtOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+    ],
+  },
+  {
+    // LP → SY (transfer-liquidity leg 1). Live-probed selector 0xd13b4fdc.
+    // minSyOut at arg 3.
+    type: "function",
+    name: "removeLiquiditySingleSy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "netLpToRemove", type: "uint256" },
+      { name: "minSyOut", type: "uint256" },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netSyOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+    ],
+  },
+  {
+    // SY → LP (transfer-liquidity leg 2, the FINAL leg). Live-probed selector
+    // 0x58bda475. minLpOut at arg 3.
+    type: "function",
+    name: "addLiquiditySingleSy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "receiver", type: "address" },
+      { name: "market", type: "address" },
+      { name: "netSyIn", type: "uint256" },
+      { name: "minLpOut", type: "uint256" },
+      { name: "guessPtReceivedFromSy", type: "tuple", components: APPROX_PARAMS_COMPONENTS },
+      { name: "limit", type: "tuple", components: LIMIT_ORDER_DATA_COMPONENTS },
+    ],
+    outputs: [
+      { name: "netLpOut", type: "uint256" },
+      { name: "netSyFee", type: "uint256" },
+    ],
+  },
+] as const;
+
+/**
+ * `callAndReflect` — the Router's MULTI-LEG wrapper.
+ *
+ * LIVE-CAPTURED 2026-07-27 from a chain-1 `roll-over-pt` convert (recorded in
+ * `__tests__/…/pendle/floor-fixtures.ts` as `rollOverPt`): selector `0x9fa02c86`,
+ * shape `callAndReflect(address reflector, bytes selfCall1, bytes selfCall2,
+ * bytes reflectCall)`, `selfCall2` empty, each non-empty leg carrying a nested
+ * Router call. Leg 1's decoded receiver was the REFLECTOR
+ * (`0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd`), not the wallet; the final
+ * leg's receiver was the wallet and its min-out equalled our computed floor to
+ * the atomic unit.
+ *
+ * DELIBERATELY SEPARATE FROM {@link PENDLE_ROUTER_ABI}, exactly as the claim ABI
+ * is: the single-leg swap decode path must never accept a reflect selector.
+ * `calldata/decode.ts` reaches it only through `decodeReflectCall`, which
+ * recurses into every leg with the ordinary `decodeRouterCall` so an inner
+ * selector outside the 9 pinned ones is refused by the same allowlist.
+ *
+ * R5d UPDATE (2026-07-28): the inner-leg layouts R5a deferred are now PROBED and
+ * PINNED — `swapExactPtForSy` (`0x3346d3a3`) → `swapExactSyForPt` (`0x2a50917c`)
+ * for `roll-over-pt`, and `removeLiquiditySingleSy` (`0xd13b4fdc`) →
+ * `addLiquiditySingleSy` (`0x58bda475`) for `transfer-liquidity`. Both pairs are
+ * in {@link PENDLE_ROUTER_ABI}, so a real reflect body now decodes instead of
+ * being refused wholesale. `roll-over-pt` and `transfer-liquidity` are the ONLY
+ * two actions that reach this wrapper.
+ */
+export const PENDLE_REFLECT_SELECTOR = "0x9fa02c86" as const;
+
+/**
+ * The `callAndReflect` reflector contract, PER CHAIN.
+ *
+ * Unlike the Router — which is byte-identical on all 11 chains — the reflector is
+ * NOT universal. MEASURED 2026-07-28 by one quote-only `transfer-liquidity`
+ * convert per chain, reading `contractCallParams[0]` (evidence recorded as
+ * `PENDLE_REFLECTOR_PROBES` in `__tests__/…/pendle/r5d-fixtures.ts`): chains 1,
+ * 56, 999, 8453, 9745 and 42161 all returned the canonical
+ * `0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd`, while MONAD (143) returned a
+ * DIFFERENT contract, `0x73d5dbf81a4f3bfa7b335e6a2d4638d6017a4fa8`.
+ *
+ * WHY THE MAP IS INCOMPLETE, AND WHY THAT IS THE SAFE SHAPE. Chains 10, 146,
+ * 5000 and 80094 had ZERO active markets at capture time, so no reflect route
+ * could be built and NO address was observed. They are OMITTED rather than
+ * defaulted to the canonical address: a reflector is the contract a leg is
+ * allowed to pay out to, so guessing one would hand an unverified address a
+ * receiver exemption. {@link pendleReflectorFor} returns `undefined` there and
+ * the caller must refuse — the reflect actions are simply unavailable on a chain
+ * whose reflector we have not measured, until someone measures it.
+ */
+export const PENDLE_REFLECTORS: Readonly<Record<number, Address>> = {
+  1: getAddress("0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd"),
+  56: getAddress("0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd"),
+  143: getAddress("0x73d5dbf81a4f3bfa7b335e6a2d4638d6017a4fa8"),
+  999: getAddress("0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd"),
+  8453: getAddress("0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd"),
+  9745: getAddress("0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd"),
+  42161: getAddress("0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd"),
+};
+
+/**
+ * The reflector pinned for `chainId`, or `undefined` when we have not measured
+ * one. Fails CLOSED by construction: callers must treat `undefined` as "no
+ * reflect action on this chain", never as "use the usual address".
+ */
+export function pendleReflectorFor(chainId: number): Address | undefined {
+  return PENDLE_REFLECTORS[chainId];
+}
+
+export const PENDLE_REFLECT_ABI = [
+  {
+    type: "function",
+    name: "callAndReflect",
+    stateMutability: "payable",
+    inputs: [
+      { name: "reflector", type: "address" },
+      { name: "selfCall1", type: "bytes" },
+      { name: "selfCall2", type: "bytes" },
+      { name: "reflectCall", type: "bytes" },
+    ],
+    outputs: [
+      { name: "selfRes1", type: "bytes" },
+      { name: "selfRes2", type: "bytes" },
+      { name: "reflectRes", type: "bytes" },
+    ],
+  },
 ] as const;
 
 /**
@@ -364,6 +680,18 @@ export const PENDLE_ROUTER_REDEEM_ABI = [
     ],
     outputs: [{ name: "netSyOut", type: "uint256" }],
   },
+] as const;
+
+/**
+ * Minimal SY ABI for the redeem fallback's floor (IStandardizedYield).
+ *
+ * `exchangeRate()` is 1e18-scaled accounting-asset-per-SY-share. A matured PT is
+ * denominated in the accounting asset, so `redeemPyToSy` pays
+ * `netPyIn * 1e18 / exchangeRate` SY shares — NOT 1:1. Live-measured 2026-07-28
+ * (see `agents_dm/agentscan-phase4/live-gate/free-lanes-2026-07-28.md`, LANE 2).
+ */
+export const PENDLE_SY_RATE_ABI = [
+  { type: "function", name: "exchangeRate", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 
 /**

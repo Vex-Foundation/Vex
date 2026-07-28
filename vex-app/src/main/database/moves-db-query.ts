@@ -193,7 +193,20 @@ export function buildLegacyMovesHalf(): string {
                -- reading product_type/trade_side. event_role has no legacy
                -- counterpart and stays NULL rather than being invented.
                ${legacyActivityKindSql("a.product_type")} AS activity_kind,
-               NULL::text AS event_role
+               NULL::text AS event_role,
+               -- Migration 053 Option-C second leg: a yield-only column family,
+               -- so the legacy half contributes typed NULLs to keep the two
+               -- UNION ALL column lists aligned.
+               NULL::text AS token_in2_address,
+               NULL::text AS token_in2_symbol,
+               NULL::smallint AS token_in2_decimals,
+               NULL::text AS amount_in2_human,
+               NULL::text AS executed_amount_in2_raw,
+               NULL::text AS token_out2_address,
+               NULL::text AS token_out2_symbol,
+               NULL::smallint AS token_out2_decimals,
+               NULL::text AS amount_out2_human,
+               NULL::text AS executed_amount_out2_raw
           FROM proj_activity a
           JOIN protocol_executions e ON e.id = a.execution_id
           LEFT JOIN protocol_capture_items ci
@@ -211,7 +224,14 @@ export function buildLegacyMovesHalf(): string {
 // LOGICAL row (`event_role = 'bridge_fill_expected'`, migration 045) OR
 // any `lend`/`prediction` row (migration 049, W5 — every event_role
 // under those kinds is its own standalone move: unlike EVM swaps,
-// Solana has no allowance legs, so there is no sub-event to exclude) —
+// Solana has no allowance legs, so there is no sub-event to exclude)
+// OR a `yield` row carrying one of the five LOGICAL Pendle roles
+// (migration 053). Yield is enumerated BY ROLE, never by `kind =
+// 'yield'`: Pendle is EVM, so a yield execution can carry
+// `allowance`/`allowance_reset` legs, and those are approval plumbing —
+// they must never appear as their own ledger row. Migration 053's
+// kind↔role binding pins the five yield roles to `kind = 'yield'`, so
+// the role list alone is exact —
 // allowance_reset/allowance/deposit/observed-fill/refund rows (kind=
 // 'swap' or 'bridge' only) are execution detail, surfaced only inside
 // `legs` (below), never as their own ledger row. `product_type` derives
@@ -243,6 +263,7 @@ export function buildAgentActivityMovesHalf(): string {
                  WHEN 'bridge' THEN 'bridge'
                  WHEN 'lend' THEN 'lend'
                  WHEN 'prediction' THEN 'prediction'
+                 WHEN 'yield' THEN 'yield'
                  ELSE 'spot'
                END AS product_type,
                aa.protocol AS venue,
@@ -296,7 +317,33 @@ export function buildAgentActivityMovesHalf(): string {
                -- bounds so a future vocabulary value can never fail output
                -- validation and blank the panel.
                LEFT(aa.kind, ${ACTIVITY_KIND_MAX_LENGTH}) AS activity_kind,
-               LEFT(aa.event_role, ${EVENT_ROLE_MAX_LENGTH}) AS event_role
+               LEFT(aa.event_role, ${EVENT_ROLE_MAX_LENGTH}) AS event_role,
+               -- Migration 053 Option C: the SECOND-LEG family. A py.mint is
+               -- 1 to 2 (one token in, PT AND YT out) and a pre-expiry
+               -- py.redeem is 2 to 1; selecting only the primary pair renders
+               -- half the action as if it were the whole of it.
+               --
+               -- Projected UNCONDITIONALLY, unlike the bridge-only columns
+               -- above, because migration 053's own constraint
+               -- agent_activity_second_leg_roles_only already forces all 14
+               -- columns NULL for every role except yield_py/yield_lp — a
+               -- CASE gate here would restate a DB invariant rather than add
+               -- one, and the mapper gates DISPLAY on the yield kind anyway.
+               --
+               -- The symbol columns are display-only, SQL-bounded here and
+               -- re-validated in JS by sanitizeTokenSymbol; each raw amount is
+               -- projected WITH its own decimals (rules/90) so the mapper can
+               -- never format a base-unit integer at the sibling leg's scale.
+               aa.token_in2_address,
+               LEFT(aa.token_in2_symbol, ${MOVE_TOKEN_SYMBOL_MAX}) AS token_in2_symbol,
+               aa.token_in2_decimals,
+               aa.amount_in2_human,
+               aa.executed_amount_in2_raw,
+               aa.token_out2_address,
+               LEFT(aa.token_out2_symbol, ${MOVE_TOKEN_SYMBOL_MAX}) AS token_out2_symbol,
+               aa.token_out2_decimals,
+               aa.amount_out2_human,
+               aa.executed_amount_out2_raw
           FROM agent_activity aa
          WHERE aa.wallet_address = ANY($1::text[])
            AND aa.session_id = $2
@@ -304,5 +351,8 @@ export function buildAgentActivityMovesHalf(): string {
              aa.event_role = 'swap'
              OR aa.event_role = 'bridge_fill_expected'
              OR aa.kind IN ('lend', 'prediction')
+             OR aa.event_role IN (
+               'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
+             )
            )`;
 }

@@ -75,19 +75,12 @@ export interface MutationContract {
 
 // ── Required field sets ──────────────────────────────────────────
 
-const TRADE_FIELDS = [
-  "type", "walletAddress", "tradeSide", "instrumentKey",
-  "inputTokenAddress", "outputTokenAddress", "inputAmount", "outputAmount",
-] as const;
-
-const PROJECTION_FIELDS = [
-  "type", "positionKey", "status",
-] as const;
-
-const AUDIT_FIELDS = [
-  "type", "walletAddress", "status",
-] as const;
-
+// NOTE (Batch B, card B2): with Pendle flipped to `capture: "none"`, NO live
+// matrix entry is `capture: "full"` any more — every mutating tool now writes
+// its durable truth directly to `agent_activity`. The former TRADE_FIELDS /
+// PROJECTION_FIELDS / AUDIT_FIELDS sets had no remaining consumer and were
+// removed with the flip; `capture-validator.ts` still enforces
+// `requiredFields` generically for the next tool that declares one.
 const NO_FIELDS: readonly string[] = [];
 
 // ── Matrix entries ─────────────────────────────────────────────
@@ -105,22 +98,25 @@ const entries: [string, MutationContract][] = [
   ["uniswap.swap.execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.swap.execute",    { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 
-  // Pendle fixed-yield PT (Ethereum v1). All three capture as spot swaps: buy
-  // opens a PT lot, sell (early exit) + redeem (matured, ~face) close it.
-  ["pendle.pt.buy",          { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
-  ["pendle.pt.sell",         { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
-  ["pendle.pt.redeem",       { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
-
-  // Pendle YT (variable/leveraged yield). Buy opens a YT lot, early-exit sell
-  // closes it. No redeem — a YT decays to zero rather than maturing to face.
-  ["pendle.yt.buy",          { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
-  ["pendle.yt.sell",         { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "single", requiredFields: TRADE_FIELDS }],
-
-  // Pendle PY mint / pre-expiry redeem (P4). ONE execution, TWO capture items (a
-  // PT leg + a YT leg) with DISTINCT instrument keys → fanOut:"items" AND
-  // strictItemsRequired (the summary must never substitute for the two items).
-  ["pendle.py.mint",         { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "items", requiredFields: TRADE_FIELDS, strictItemsRequired: true }],
-  ["pendle.py.redeem",       { kind: "trade", capture: "full", expectedType: "swap", previewSupport: true, fanOut: "items", requiredFields: TRADE_FIELDS, strictItemsRequired: true }],
+  // Pendle PT / YT / PY (Batch B, migration 053) — flipped capture:"full" ->
+  // "none" with the same staged `agent_activity` write path the Kyber/Uniswap/
+  // Solana executes use: the handler writes the durable truth DIRECTLY as
+  // `kind: 'yield'` rows, so the legacy `proj_activity` projection must never
+  // also run for these toolIds. `expectedType: "yield"` states the product
+  // these tools now record; it is intentionally NOT a `TYPE_TO_PRODUCT` key,
+  // so the failure-feed derivation defers to the explicit Pendle entries in
+  // `LEGACY_TOOL_PRODUCTS` (db/repos/transactions-failure-tools.ts).
+  ["pendle.pt.buy",          { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.pt.sell",         { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.pt.redeem",       { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.yt.buy",          { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.yt.sell",         { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  // PY mint/redeem stay fanOut:"items" + strictItemsRequired: the 1->2 (mint)
+  // and 2->1 (redeem) shape is what migration 053's Option-C second-leg family
+  // records, and the flags document that a summary can never stand in for the
+  // two distinct legs should capture ever be re-enabled for them.
+  ["pendle.py.mint",         { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "items", requiredFields: NO_FIELDS, strictItemsRequired: true }],
+  ["pendle.py.redeem",       { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "items", requiredFields: NO_FIELDS, strictItemsRequired: true }],
 
   // ── trade (predictions — Jupiter/Solana; W5 migration 049 converted
   // buy/sell/claim/closeAll to the staged `agent_activity` write path (K2:
@@ -137,8 +133,35 @@ const entries: [string, MutationContract][] = [
   // Pendle single-token LP add/remove (P5) — plain lp records only (LP
   // open-position/economics projection was cut for both zap and Pendle;
   // Pendle keeps the lifecycle row, zap's own tools are deleted outright).
-  ["pendle.lp.add",                 { kind: "projection", capture: "full", expectedType: "lp", previewSupport: true, fanOut: "single", requiredFields: PROJECTION_FIELDS }],
-  ["pendle.lp.remove",              { kind: "projection", capture: "full", expectedType: "lp", previewSupport: true, fanOut: "single", requiredFields: PROJECTION_FIELDS }],
+  // Flipped capture:"full" -> "none" with the rest of Pendle (Batch B, card B2).
+  ["pendle.lp.add",                 { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.lp.remove",              { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+
+  // Pendle SY wrap/unwrap (R5d card D3). One token in, one token out, so `trade`
+  // rather than `projection` — same classification as the PT/YT legs. Their quote
+  // lives INSIDE the tool as a `dryRun` param, which is exactly what
+  // `previewSupport: true` already means here.
+  ["pendle.sy.mint",                { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.sy.redeem",              { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+
+  // Pendle dual-leg LP (R5d card E3). `projection` like the plain lp.add/remove
+  // they vary — the LP leg's lifecycle is what gets recorded, not LP economics.
+  // fanOut:"items" + strictItemsRequired for BOTH: each produces TWO output
+  // instruments (token + PT, and LP + kept YT), and a single summary row could
+  // never stand in for two distinct legs — exactly the reason py.mint/redeem
+  // carry the same pair of flags.
+  ["pendle.lp.removeDual",          { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "items", requiredFields: NO_FIELDS, strictItemsRequired: true }],
+  ["pendle.lp.addKeepYt",           { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "items", requiredFields: NO_FIELDS, strictItemsRequired: true }],
+
+  // Pendle term mobility (R5d card E4) — one instrument in, one instrument out,
+  // so `trade` and fanOut:"single" like the SY pair. `pendle.lp.transfer` is a
+  // trade rather than a projection for the same reason: it is one position
+  // swapped for another, not liquidity being opened or closed. Their quote
+  // lives INSIDE the tool as a `dryRun` param, which is what previewSupport
+  // means here.
+  ["pendle.pt.rollover",            { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.lp.transfer",            { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.lp.toPt",                { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
 
   // ── audit (capture: full) ─────────────────────────────────
   // Khalani/Relay bridges (Agent Scan Phase 2, migration 045) write their durable
@@ -168,7 +191,7 @@ const entries: [string, MutationContract][] = [
   // Pendle income sweep — claims accrued YT interest + rewards / LP rewards to
   // the wallet. Not a spot trade (no input/output pair, no principal moved) →
   // audited as a "reward" income event.
-  ["pendle.claim",             { kind: "audit", capture: "full", expectedType: "reward", previewSupport: true,  fanOut: "single", requiredFields: AUDIT_FIELDS }],
+  ["pendle.claim",             { kind: "audit", capture: "none", expectedType: "yield", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────

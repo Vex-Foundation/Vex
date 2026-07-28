@@ -91,6 +91,19 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   "predict_sell",
   "predict_claim",
   "predict_close",
+  // Migration 053 (Pendle). Every one of the six is signed LOCALLY through the
+  // single `pendle/handlers/signed-broadcast.ts` choke point, exactly like the
+  // roles above, and NO Pendle-side sweep owns a hashless row: the EVM repair
+  // sweep's candidate query requires `submit_attempted_at IS NOT NULL`, which
+  // only `markActivityBroadcast` sets. Omitting them here would leave a row
+  // created between intent and staging (a crash, a CAS-miss refusal) pending
+  // forever — the exact hole this allowlist exists to close.
+  "yield_pt",
+  "yield_yt",
+  "yield_py",
+  "yield_lp",
+  "yield_sy",
+  "yield_claim",
 ];
 
 /**

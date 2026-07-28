@@ -37,6 +37,7 @@ import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 import { resolveMarketByYt, buildAssetMap } from "../market-lookup.js";
+import { explainUnresolvedPendleMarket } from "../matured-refusal.js";
 import { buildPendleClaimTargets, describePendleClaimSkips } from "../claim-targets.js";
 import {
   selectSafeRoute,
@@ -46,14 +47,17 @@ import {
   type PendleClaimIntent,
 } from "../calldata.js";
 import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
+import { recordPendleRefusal, sendPendleRouterTx } from "./signed-broadcast.js";
 import {
   failureDetail,
   humanAmount,
+  legInput,
   legUsd,
   requirePendleChain,
   requireTokenAddress,
   resolveInputToken,
-  slippageFraction,
+  resolvePendleSlippage,
+  unsettledResult,
 } from "./shared.js";
 
 /**
@@ -96,14 +100,14 @@ async function pendleYtQuote(p: Record<string, unknown>, context: ProtocolExecut
     const direction: "buy" | "sell" = marketByOut ? "buy" : "sell";
 
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.yt.quote", num(p, "slippageBps"));
 
     const client = getPendleClient();
     const response = await client.convert(chainId, {
       receiver,
       input: { token: tokenIn.address, amount: amountWei.toString() },
       outputToken: tokenOut,
-      slippage,
+      slippage: slippage.fraction,
     });
     if (!response || response.routes.length === 0) {
       return fail("Pendle returned no route for this YT trade.");
@@ -161,20 +165,46 @@ async function executePendleYtSwap(
   // everything after the broadcast is a read-back that can throw, and the catch
   // MUST be able to tell the agent the trade is already on-chain.
   let txHash: Hex | undefined;
+  const toolId = `pendle.yt.${tradeSide}`;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
+    // A mutation without a session has nothing to attribute its durable row to.
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail(`${toolId} requires an active session.`);
     const tokenIn = await resolveInputToken(chainEntry, tokenInRaw);
     const tokenOut = requireTokenAddress(tokenOutRaw);
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage(toolId, num(p, "slippageBps"));
 
     // YT + canonical market — buy: YT is tokenOut; sell: YT is tokenIn.
     const ytAddress = side === "yt-buy" ? tokenOut : tokenIn.address;
+
+    /** A pre-signature refusal, recorded as a hashless `definitively_failed` row. */
+    const refuse = async (
+      failureCode: Parameters<typeof recordPendleRefusal>[1],
+      message: string,
+    ): Promise<ToolResult> => {
+      await recordPendleRefusal(
+        {
+          toolId, eventRole: "yield_yt", chainId, chainSlug,
+          walletAddress: resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"),
+          sessionId, intentParams: p,
+          tokenIn: legInput(tokenIn.address, undefined, tokenIn.decimals, amountWei.toString(), humanAmount(amountWei, tokenIn.decimals).toString()),
+          tokenOut: { tokenAddress: tokenOut },
+        },
+        failureCode,
+        message,
+      );
+      return fail(message);
+    };
+
+    // ACTIVE-ONLY (R5b matrix): a matured YT has decayed to zero and there is no
+    // market to trade it into. Named from the read-only classification lane.
     const market = await resolveMarketByYt(chainId, ytAddress);
     if (!market || !market.address) {
-      return fail("No active Pendle market for this YT — check pendle.yields.");
+      return refuse("route_not_found", await explainUnresolvedPendleMarket(chainId, chainSlug, ytAddress, { action: tradeSide === "buy" ? "yt.buy" : "yt.sell", leg: "YT" }));
     }
     const expectedMarket = getAddress(market.address);
 
@@ -183,7 +213,7 @@ async function executePendleYtSwap(
         receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
         input: { token: tokenIn.address, amount: amountWei.toString() },
         outputToken: tokenOut,
-        slippage,
+        slippage: slippage.fraction,
       });
       const best = response?.routes[0];
       return ok({ dryRun: true, side: tradeSide, instrument: "yt", market: expectedMarket, expiry: market.expiry, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null, decayWarning: YT_DECAY_WARNING });
@@ -203,16 +233,18 @@ async function executePendleYtSwap(
       receiver: wallet,
       input: { token: tokenIn.address, amount: amountWei.toString() },
       outputToken: tokenOut,
-      slippage,
+      slippage: slippage.fraction,
     });
-    if (!response) return fail("Pendle returned no route for this YT trade.");
+    if (!response) return refuse("route_not_found", "Pendle returned no route for this YT trade.");
     if (response.action !== "swap") {
-      return fail("Pendle did not return a YT swap route — check the market is active and not matured.");
+      return refuse("route_not_found", "Pendle did not return a YT swap route — check the market is active and not matured.");
     }
 
     const intent: PendleTxIntent = {
       action: side as PendleAction,
       wallet,
+      // The tolerance this route is held to — see calldata/price-floor.ts.
+      slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
       isNative: tokenIn.isNative,
@@ -234,33 +266,58 @@ async function executePendleYtSwap(
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
 
-    const value = tokenIn.isNative ? amountWei : 0n;
-    txHash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: getAddress(route.tx.to),
-      data: route.tx.data as Hex,
-      value,
-    });
-
-    // Exact USD valuation from Pendle prices (the payment leg always has a price).
+    // Read BEFORE signing: the durable row's legs must carry their decimals, and
+    // the staged intent has to exist before a signature does.
     const assetMap = await buildAssetMap(chainId);
-    const outAmount = route.outputs[0]?.amount ?? "0";
+    const quotedOutRaw = route.outputs[0]?.amount ?? "0";
     const outDecimals = assetMap.get(tokenOut.toLowerCase())?.decimals ?? null;
     const inHuman = humanAmount(amountWei, tokenIn.decimals);
-    const outHuman = humanAmount(outAmount, outDecimals);
+    const quotedOutHuman = humanAmount(quotedOutRaw, outDecimals);
     const inUsd = legUsd(assetMap, tokenIn.address, inHuman);
+    const quotedOutUsd = legUsd(assetMap, tokenOut, quotedOutHuman);
+
+    const value = tokenIn.isNative ? amountWei : 0n;
+    const broadcast = await sendPendleRouterTx(
+      publicClient,
+      walletClient,
+      { to: getAddress(route.tx.to), data: route.tx.data as Hex, value },
+      {
+        toolId, eventRole: "yield_yt", chainId, chainSlug, walletAddress: wallet, sessionId,
+        intentParams: p,
+        tokenIn: legInput(tokenIn.address, assetMap.get(tokenIn.address.toLowerCase())?.symbol, tokenIn.decimals, amountWei.toString(), inHuman.toString()),
+        tokenOut: legInput(tokenOut, assetMap.get(tokenOut.toLowerCase())?.symbol, outDecimals, quotedOutRaw, quotedOutHuman.toString()),
+        ...(inUsd !== null ? { usdInEst: String(inUsd) } : {}),
+        ...(quotedOutUsd !== null ? { usdOutEst: String(quotedOutUsd) } : {}),
+        routeProvenance: { aggregator: route.data.aggregatorType, market: expectedMarket },
+      },
+    );
+    txHash = broadcast.txHash;
+    if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
+
+    // The RESULT is the decoded fill; the quote is reported beside it, never as it.
+    const outAmount = broadcast.executed.amountOutRaw ?? quotedOutRaw;
+    const executedInRaw = broadcast.executed.amountInRaw ?? amountWei.toString();
+    const outHuman = humanAmount(outAmount, outDecimals);
+    const executedInHuman = humanAmount(executedInRaw, tokenIn.decimals);
+    const executedInUsd = legUsd(assetMap, tokenIn.address, executedInHuman);
     const outUsd = legUsd(assetMap, tokenOut, outHuman);
-    const inputValueUsd = inUsd ?? outUsd ?? 0;
-    const outputValueUsd = outUsd ?? inUsd ?? 0;
+    const inputValueUsd = executedInUsd ?? outUsd ?? 0;
+    const outputValueUsd = outUsd ?? executedInUsd ?? 0;
 
     logger.info("pendle.yt.swap.executed", { side: tradeSide, market: expectedMarket, aggregator: route.data.aggregatorType });
 
     return {
       success: true,
-      output: JSON.stringify({ txHash, side: tradeSide, instrument: "yt", market: expectedMarket, tokenIn: tokenIn.address, tokenOut, amountIn: amountInRaw, amountOut: outHuman.toString() }, null, 2),
+      output: JSON.stringify({
+        txHash, side: tradeSide, instrument: "yt", market: expectedMarket,
+        tokenIn: tokenIn.address, tokenOut, amountIn: amountInRaw,
+        executedAmountIn: executedInHuman.toString(),
+        executedAmountOut: outHuman.toString(),
+        quotedAmountOut: quotedOutHuman.toString(),
+      }, null, 2),
       data: {
         txHash,
+        _executionId: broadcast.executionId,
         _tradeCapture: {
           type: "swap",
           chain: chainSlug, // resolves selective balance sync to the traded chain
@@ -269,8 +326,10 @@ async function executePendleYtSwap(
           outputToken: tokenOut,
           inputTokenAddress: tokenIn.address,
           outputTokenAddress: tokenOut,
-          // RAW base-unit strings — the spot lot projector BigInt()s these.
-          inputAmount: amountWei.toString(),
+          // RAW base-unit strings — the spot lot projector BigInt()s these, and
+          // they are the DECODED amounts: a lot opened at a quoted size that
+          // never arrived is a wrong lot forever.
+          inputAmount: executedInRaw,
           outputAmount: outAmount,
           inputValueUsd: String(inputValueUsd),
           outputValueUsd: String(outputValueUsd),
@@ -311,10 +370,16 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
   const chain = str(p, "chain");
   if (!chain) return fail("Missing required: chain");
   const marketParam = str(p, "market");
+  const toolId = "pendle.claim";
+  // Hoisted OUT of every inner scope (H-4): once the node has a hash, the agent
+  // must be told about it no matter what throws afterwards.
+  let txHash: Hex | undefined;
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail(`${toolId} requires an active session.`);
     const wallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
 
     const targets = await buildPendleClaimTargets(
@@ -360,7 +425,15 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
       yts: [...intendedYts.keys()],
       markets: [...intendedMarkets],
     });
-    if (!response) return fail("Pendle returned no claim transaction for these positions.");
+    if (!response) {
+      const reason = "Pendle returned no claim transaction for these positions.";
+      await recordPendleRefusal(
+        { toolId, eventRole: "yield_claim", chainId, chainSlug, walletAddress: signerAddr, sessionId, intentParams: p },
+        "route_not_found",
+        reason,
+      );
+      return fail(reason);
+    }
 
     // FULL fund-safety bind (Router pin, value 0, SYs/swaps empty, pendleSwap
     // pinned, tuples bound to OUR resolved underlying, YTs/markets ⊆ intended,
@@ -382,14 +455,52 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
     for (const approval of response.tokenApprovals) {
       await ensurePendleAllowanceExact(publicClient, walletClient, getAddress(approval.token), PENDLE_ROUTER, BigInt(approval.amount));
     }
-    const txHash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: getAddress(response.tx.to),
-      data: response.tx.data as Hex,
-      value: 0n,
-    });
+    /**
+     * THE CREDIT ANCHOR. A claim has NO input leg — nothing is spent — so the
+     * only evidence that it did anything is a decoded ERC-20 CREDIT to the
+     * wallet, and the decoder needs a token to prove that credit against.
+     *
+     * A sweep can span up to `MAX_CLAIM_MARKETS` markets, but migration 053
+     * binds the Option-C second-leg columns to `yield_py`/`yield_lp` ONLY, so a
+     * claim row can name exactly ONE. It names the first DECODED tuple's
+     * `tokenRedeemSy` — the market's underlying, and by `assertClaimSafe`'s own
+     * bind the ONLY token the Router may redeem that SY into, i.e. exactly what
+     * lands in the wallet (ActionMiscV3.sol:117-126).
+     *
+     * This deliberately UNDERSTATES: a multi-market sweep whose first market
+     * accrued nothing stays `pending` even though a later one paid. That is the
+     * fail-safe direction — an unproven claim reported as pending costs a
+     * re-check, whereas a claim confirmed on an unproven credit is a fabricated
+     * income record. Widening it needs a second-leg role binding, not a guess.
+     */
+    const assetMapForClaim = await buildAssetMap(chainId);
+    const creditAnchor = claim.yts[0]?.tokenRedeemSy ?? null;
+    const anchorSymbol = creditAnchor ? assetMapForClaim.get(creditAnchor.toLowerCase())?.symbol : undefined;
+    const anchorDecimals = creditAnchor ? assetMapForClaim.get(creditAnchor.toLowerCase())?.decimals ?? null : null;
 
+    const broadcast = await sendPendleRouterTx(
+      publicClient,
+      walletClient,
+      { to: getAddress(response.tx.to), data: response.tx.data as Hex, value: 0n },
+      {
+        toolId, eventRole: "yield_claim", chainId, chainSlug, walletAddress: signerAddr, sessionId,
+        intentParams: p,
+        // NO tokenIn, ever: a claim spends nothing, and the finalizer rejects a
+        // `yield_claim` confirmation that carries an executed input leg.
+        ...(creditAnchor
+          ? { tokenOut: { tokenAddress: creditAnchor, ...(anchorSymbol ? { tokenSymbol: anchorSymbol } : {}), ...(anchorDecimals !== null ? { tokenDecimals: anchorDecimals } : {}) } }
+          : {}),
+        routeProvenance: { action: "claim", claimedYtCount: claim.yts.length, claimedMarketCount: claim.markets.length },
+      },
+    );
+    txHash = broadcast.txHash;
+    // Receipt-success-with-zero-credits is NOT a successful claim: the sweep
+    // moved nothing this run, and saying otherwise would book income that does
+    // not exist. `unsettledResult` carries the honest `no_credit` wording.
+    if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
+
+    const claimedRaw = broadcast.executed.amountOutRaw ?? "0";
+    const claimedHuman = humanAmount(claimedRaw, anchorDecimals);
     const claimedYts = claim.yts.map((t) => t.yt.toLowerCase());
     const claimedMarkets = claim.markets.map((a) => a.toLowerCase());
     logger.info("pendle.claim.executed", { chain: chainSlug, yts: claimedYts.length, markets: claimedMarkets.length });
@@ -398,6 +509,10 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
       success: true,
       output: JSON.stringify({
         txHash, claimed: true, chain: chainSlug,
+        // The PROVEN credit, decoded from the receipt — and the one token it was
+        // proven against, so "0.42" is never mistaken for the whole sweep.
+        creditToken: creditAnchor,
+        executedCredit: claimedHuman.toString(),
         yts: claimedYts, markets: claimedMarkets,
         eligibleMarkets: targets.eligibleMarketCount,
         claimedMarkets: targets.selectedMarketCount,
@@ -407,6 +522,7 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
       }, null, 2),
       data: {
         txHash,
+        _executionId: broadcast.executionId,
         _tradeCapture: {
           // Income sweep — an audit-style record (type "reward", status "claimed"),
           // no input/output token pair to value. `chain` resolves selective sync.
@@ -421,12 +537,17 @@ async function pendleClaim(p: Record<string, unknown>, context: ProtocolExecutio
             chain: chainSlug,
             claimedYts,
             claimedMarkets,
+            creditToken: creditAnchor,
+            creditAmountRaw: claimedRaw,
           },
         },
       },
     };
   } catch (err) {
-    return fail(`Pendle claim failed (${failureDetail("pendle.claim", err)})`);
+    // H-4: a throw AFTER the node returned a hash must never read as "nothing
+    // happened" — the sweep may already be on-chain.
+    if (txHash !== undefined) return broadcastUnconfirmedFailure(toolId, txHash, err);
+    return fail(`Pendle claim failed (${failureDetail(toolId, err)})`);
   }
 }
 

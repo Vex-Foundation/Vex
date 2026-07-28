@@ -17,8 +17,12 @@
  * The refusals here are param-only and fire BEFORE any wallet resolution or
  * provider call, which is why these handlers can be driven with no mocks at all.
  *
- * Pendle's 5,000 bps cap is deliberately NOT covered: it is owner-deferred to
- * phase 4 (`pendle/handlers/shared.ts`).
+ * Pendle's 5,000 bps clamp — the last venue-local exemption, previously deferred
+ * to phase 4 — was REMOVED in R5a: `pendle/handlers/shared.ts` now resolves every
+ * tolerance through `checkSlippageBps` and rejects rather than clamping. Its
+ * cases live in `protocols/pendle/slippage-policy.test.ts` rather than here,
+ * because a Pendle handler reads token decimals ON-CHAIN before it reaches the
+ * tolerance, so it cannot be driven mock-free the way the four below can.
  */
 import { describe, it, expect } from "vitest";
 

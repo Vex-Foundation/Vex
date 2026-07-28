@@ -46,6 +46,9 @@ function mintIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "py-mint",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 100,
     inputToken: WSTETH,
     inputAmountWei: ONE,
     isNative: false,
@@ -59,6 +62,9 @@ function redeemPyIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "py-redeem",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 100,
     inputToken: PT,
     inputAmountWei: ONE,
     isNative: false,

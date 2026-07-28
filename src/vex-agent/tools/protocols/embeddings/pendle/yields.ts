@@ -10,25 +10,26 @@ import { PENDLE_CHAINS } from "../../pendle/discovery-text.js";
 export const PENDLE_YIELDS_DISCOVERY = {
   "pendle.yields": {
     embeddingText: embeddingText(
-      `Browse active Pendle fixed-yield markets across 11 chains including Ethereum, Arbitrum, Base and BSC — each principal token (PT) locks a fixed rate until its expiry date, ranked by liquidity or implied APY. ` +
-      `Use when the user wants to find, screen, or compare Pendle PT opportunities: the best fixed yield, the deepest markets, or the nearest maturities. ` +
-      `Each row carries the PT, YT and SY addresses, the chain, expiry, liquidity, implied APY, and a warning when a market pays speculative points rather than a real yield. ` +
-      `Example queries: best pendle fixed yield, pendle markets by liquidity, highest implied apy pendle, find a PT maturing soon on arbitrum. Read-only.`,
+      `Screen Pendle fixed-yield markets across all eleven chains — ethereum, optimism, bsc, monad, sonic, hyperevm, arbitrum, plasma, mantle, base and berachain — some of which may list no active markets. ` +
+      `Use when the user wants to find, rank or compare Pendle opportunities: the best fixed rate, the deepest markets, the nearest maturities, or ones that are not points farms. ` +
+      `Filter by chain, liquidity, implied APY, expiry window, days to maturity, underlying asset, category, and new or prime status, then page explicitly — nothing is trimmed silently. Matured markets are included on request. ` +
+      `Example queries: best pendle fixed yield, deepest pendle markets, PT maturing soon on arbitrum.`,
     ),
-    aliases: ["pendle yields", "fixed yield markets", "pendle PT list", "pendle fixed rate"],
-    exampleIntents: ["best pendle fixed yield", "list pendle markets", "highest implied apy pendle"],
+    aliases: ["pendle yields", "fixed yield markets", "pendle PT list", "pendle fixed rate", "screen pendle markets"],
+    exampleIntents: ["best pendle fixed yield", "list pendle markets", "highest implied apy pendle", "pendle markets expiring soon"],
     chains: PENDLE_CHAINS,
   },
 
   "pendle.position.value": {
     embeddingText: embeddingText(
-      `Value the session wallet's open Pendle PT positions across every Pendle chain — balance, chain, market, expiry, and USD value, marking each position as redeemable once it has matured. ` +
-      `Use when the user asks what their Pendle positions are worth, which ones have expired, or what is ready to redeem, on any chain. ` +
-      `A matured PT is valued at its face or accounting value, never the underlying spot price, so the number reflects redemption value rather than a speculative mark. ` +
-      `Example queries: what are my pendle positions worth, show my PT holdings, which pendle PTs can I redeem, pendle portfolio value. Read-only.`,
+      `Value every Pendle position the session wallet holds — principal tokens, yield tokens, liquidity positions and standardised yield holdings — on every Pendle chain. ` +
+      `Use when the user asks what their Pendle holdings are worth, which have matured, or what is ready to redeem or remove. ` +
+      `Each leg reports one state: earning, matured and redeemable, matured and removable, or expired worthless — with accrued unclaimed interest and rewards, the staked share of a liquidity position, and how old Pendle's numbers are. ` +
+      `A matured principal token is valued at face, never underlying spot. ` +
+      `Example queries: what are my pendle positions worth, which pendle positions can I redeem, my YT holdings.`,
     ),
-    aliases: ["pendle positions", "pendle portfolio value", "my PT holdings", "redeemable pendle"],
-    exampleIntents: ["what are my pendle positions worth", "which PTs can I redeem", "pendle holdings value"],
+    aliases: ["pendle positions", "pendle portfolio value", "my PT holdings", "my YT holdings", "redeemable pendle", "pendle LP value"],
+    exampleIntents: ["what are my pendle positions worth", "which PTs can I redeem", "pendle holdings value", "what pendle yield have I accrued"],
     chains: PENDLE_CHAINS,
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;

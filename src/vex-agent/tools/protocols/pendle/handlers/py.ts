@@ -38,18 +38,22 @@ import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
 
 import { resolveMarketByPt, buildAssetMap, priceUsdFor } from "../market-lookup.js";
+import { explainUnresolvedPendleMarket } from "../matured-refusal.js";
 import { selectSafeRoute, type PendleTxIntent } from "../calldata.js";
 import { ptUsdShare, splitWei } from "../py-leg-split.js";
 import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
+import { recordPendleRefusal, sendPendleRouterTx } from "./signed-broadcast.js";
 import {
   DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
+  legInput,
   legUsd,
   requirePendleChain,
   requireTokenAddress,
   resolveInputToken,
-  slippageFraction,
+  resolvePendleSlippage,
+  unsettledResult,
 } from "./shared.js";
 
 // ── Route output lookup ──────────────────────────────────────────────
@@ -78,12 +82,13 @@ async function pendlePyQuote(p: Record<string, unknown>, context: ProtocolExecut
     // active PT on the resolved chain (mirrors the P3-fixed quotes). A quote with
     // no PT anchor must never record a PY identity that could authorize an execute
     // on the wrong instrument.
+    // ACTIVE-ONLY (R5b matrix): both PY legs are pre-expiry actions.
     const market = await resolveMarketByPt(chainId, ptAddress);
     if (!market || !market.yt || !market.address) {
-      return fail("`pt` is not an active Pendle PT on this chain — find the PT via pendle.yields.");
+      return fail(await explainUnresolvedPendleMarket(chainId, chainEntry.slug, ptAddress, { action: direction === "mint" ? "py.mint" : "py.redeem", leg: "PT" }));
     }
     const ytAddress = getAddress(market.yt);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.py.quote", num(p, "slippageBps"));
     const client = getPendleClient();
     const assetMap = await buildAssetMap(chainId);
     const slippageBpsEcho = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
@@ -95,7 +100,7 @@ async function pendlePyQuote(p: Record<string, unknown>, context: ProtocolExecut
         receiver,
         inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
         outputs: [ptAddress, ytAddress],
-        slippage,
+        slippage: slippage.fraction,
       });
       if (!response || response.routes.length === 0) return fail("Pendle returned no mint route for these tokens.");
       if (response.action !== "mint-py") {
@@ -147,7 +152,7 @@ async function pendlePyQuote(p: Record<string, unknown>, context: ProtocolExecut
         { token: ytAddress, amount: amountWei.toString() },
       ],
       outputs: [outputToken],
-      slippage,
+      slippage: slippage.fraction,
     });
     if (!response || response.routes.length === 0) return fail("Pendle returned no pre-expiry redeem route.");
     if (response.action !== "redeem-py") {
@@ -191,26 +196,46 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
   // everything after the broadcast is a read-back that can throw, and the catch
   // MUST be able to tell the agent the mint is already on-chain.
   let txHash: Hex | undefined;
+  const toolId = "pendle.py.mint";
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail(`${toolId} requires an active session.`);
     const ptAddress = requireTokenAddress(ptRaw);
+    /** A pre-signature refusal, recorded as a hashless `definitively_failed` row. */
+    const refuse = async (
+      failureCode: Parameters<typeof recordPendleRefusal>[1],
+      message: string,
+    ): Promise<ToolResult> => {
+      await recordPendleRefusal(
+        {
+          toolId, eventRole: "yield_py", chainId, chainSlug,
+          walletAddress: resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"),
+          sessionId, intentParams: p, tokenOut: { tokenAddress: ptAddress },
+        },
+        failureCode,
+        message,
+      );
+      return fail(message);
+    };
+    // ACTIVE-ONLY (R5b matrix): minting PT+YT after expiry is impossible.
     const market = await resolveMarketByPt(chainId, ptAddress);
     if (!market || !market.yt || !market.address) {
-      return fail("No active Pendle market for this PT — check pendle.yields.");
+      return refuse("route_not_found", await explainUnresolvedPendleMarket(chainId, chainSlug, ptAddress, { action: "py.mint", leg: "PT" }));
     }
     const ytAddress = getAddress(market.yt);
     const tokenIn = await resolveInputToken(chainEntry, tokenInRaw);
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.py.mint", num(p, "slippageBps"));
 
     if (p.dryRun === true) {
       const response = await getPendleClient().convertMulti(chainId, {
         receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
         inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
         outputs: [ptAddress, ytAddress],
-        slippage,
+        slippage: slippage.fraction,
       });
       const best = response?.routes[0];
       return ok({ dryRun: true, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address, aggregator: best?.data.aggregatorType ?? null, priceImpact: best?.data.priceImpact ?? null, feeUsdEstimate: best?.data.feeUsd ?? null });
@@ -230,16 +255,18 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
       receiver: wallet,
       inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
       outputs: [ptAddress, ytAddress],
-      slippage,
+      slippage: slippage.fraction,
     });
-    if (!response) return fail("Pendle returned no mint route for these tokens.");
+    if (!response) return refuse("route_not_found", "Pendle returned no mint route for these tokens.");
     if (response.action !== "mint-py") {
-      return fail("Pendle did not return a mint route — for a plain PT buy use pendle.pt.buy.");
+      return refuse("route_not_found", "Pendle did not return a mint route — for a plain PT buy use pendle.pt.buy.");
     }
 
     const intent: PendleTxIntent = {
       action: "py-mint",
       wallet,
+      // The tolerance this route is held to — see calldata/price-floor.ts.
+      slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
       isNative: tokenIn.isNative,
@@ -261,28 +288,46 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
       });
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
-    txHash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: getAddress(route.tx.to),
-      data: route.tx.data as Hex,
-      value: tokenIn.isNative ? amountWei : 0n,
-    });
-
+    // Read BEFORE signing — the staged row's legs need their decimals.
     const assetMap = await buildAssetMap(chainId);
-    const ptOut = outputAmountFor(route.outputs, ptAddress);
-    const ytOut = outputAmountFor(route.outputs, ytAddress);
+    const quotedPtOut = outputAmountFor(route.outputs, ptAddress);
+    const quotedYtOut = outputAmountFor(route.outputs, ytAddress);
     const ptDec = assetMap.get(ptAddress.toLowerCase())?.decimals ?? null;
     const ytDec = assetMap.get(ytAddress.toLowerCase())?.decimals ?? null;
+
+    // OPTION C (migration 053): a mint is 1 → 2, so BOTH out legs are staged on
+    // the one row. `yield_py` populates exactly ONE side — the OUT side here —
+    // and confirming it requires proving both of them.
+    const broadcast = await sendPendleRouterTx(
+      publicClient,
+      walletClient,
+      { to: getAddress(route.tx.to), data: route.tx.data as Hex, value: tokenIn.isNative ? amountWei : 0n },
+      {
+        toolId, eventRole: "yield_py", chainId, chainSlug, walletAddress: wallet, sessionId,
+        intentParams: p,
+        tokenIn: legInput(tokenIn.address, assetMap.get(tokenIn.address.toLowerCase())?.symbol, tokenIn.decimals, amountWei.toString(), humanAmount(amountWei, tokenIn.decimals).toString()),
+        tokenOut: legInput(ptAddress, assetMap.get(ptAddress.toLowerCase())?.symbol, ptDec, quotedPtOut, humanAmount(quotedPtOut, ptDec).toString()),
+        tokenOut2: legInput(ytAddress, assetMap.get(ytAddress.toLowerCase())?.symbol, ytDec, quotedYtOut, humanAmount(quotedYtOut, ytDec).toString()),
+        routeProvenance: { action: "mint-py", aggregator: route.data.aggregatorType, market: market.address },
+      },
+    );
+    txHash = broadcast.txHash;
+    if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
+
+    // The DECODED mint — both minted legs proven from the receipt's own logs.
+    const ptOut = broadcast.executed.amountOutRaw ?? quotedPtOut;
+    const ytOut = broadcast.executed.amountOut2Raw ?? quotedYtOut;
+    const spentWei = BigInt(broadcast.executed.amountInRaw ?? amountWei.toString());
     const ptPrice = priceUsdFor(assetMap, ptAddress);
     const ytPrice = priceUsdFor(assetMap, ytAddress);
     const ptOutUsd = ptPrice !== null ? humanAmount(ptOut, ptDec) * ptPrice : null;
     const ytOutUsd = ytPrice !== null ? humanAmount(ytOut, ytDec) * ytPrice : null;
     const share = ptUsdShare(ptOutUsd, ytOutUsd);
-    const [ptInWei, ytInWei] = splitWei(amountWei, share);
+    // Split the amount ACTUALLY spent, not the amount requested.
+    const [ptInWei, ytInWei] = splitWei(spentWei, share);
     // Total paid value from the payment leg (which almost always has a price);
     // fall back to the summed leg USD when the payment token is unpriced.
-    const inTotalUsd = legUsd(assetMap, tokenIn.address, humanAmount(amountWei, tokenIn.decimals)) ?? ((ptOutUsd ?? 0) + (ytOutUsd ?? 0));
+    const inTotalUsd = legUsd(assetMap, tokenIn.address, humanAmount(spentWei, tokenIn.decimals)) ?? ((ptOutUsd ?? 0) + (ytOutUsd ?? 0));
     const ptInUsd = inTotalUsd * share;
     const ytInUsd = inTotalUsd * (1 - share);
 
@@ -328,9 +373,17 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
 
     return {
       success: true,
-      output: JSON.stringify({ txHash, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address, amountIn: amountInRaw, ptOut: humanAmount(ptOut, ptDec).toString(), ytOut: humanAmount(ytOut, ytDec).toString() }, null, 2),
+      output: JSON.stringify({
+        txHash, action: "mint", pt: ptAddress, yt: ytAddress, market: market.address,
+        amountIn: amountInRaw,
+        executedPtOut: humanAmount(ptOut, ptDec).toString(),
+        executedYtOut: humanAmount(ytOut, ytDec).toString(),
+        quotedPtOut: humanAmount(quotedPtOut, ptDec).toString(),
+        quotedYtOut: humanAmount(quotedYtOut, ytDec).toString(),
+      }, null, 2),
       data: {
         txHash,
+        _executionId: broadcast.executionId,
         // Audit-record summary (NOT projected — the fanOut:"items" strictItemsRequired
         // guard uses the items below for projection). Represents the whole mint.
         _tradeCapture: {
@@ -342,7 +395,7 @@ async function executePendleMint(p: Record<string, unknown>, context: ProtocolEx
           instrumentKey: `${chainSlug}:${ptAddress.toLowerCase()}`,
           inputTokenAddress: tokenIn.address,
           outputTokenAddress: ptAddress,
-          inputAmount: amountWei.toString(),
+          inputAmount: spentWei.toString(),
           outputAmount: ptOut,
           inputValueUsd: String(inTotalUsd),
           outputValueUsd: String(inTotalUsd),
@@ -372,14 +425,37 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
   // everything after the broadcast is a read-back that can throw, and the catch
   // MUST be able to tell the agent the redeem is already on-chain.
   let txHash: Hex | undefined;
+  const toolId = "pendle.py.redeem";
   try {
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail(`${toolId} requires an active session.`);
     const ptAddress = requireTokenAddress(ptRaw);
+    /** A pre-signature refusal, recorded as a hashless `definitively_failed` row. */
+    const refuse = async (
+      failureCode: Parameters<typeof recordPendleRefusal>[1],
+      message: string,
+    ): Promise<ToolResult> => {
+      await recordPendleRefusal(
+        {
+          toolId, eventRole: "yield_py", chainId, chainSlug,
+          walletAddress: resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"),
+          sessionId, intentParams: p, tokenIn: { tokenAddress: ptAddress },
+        },
+        failureCode,
+        message,
+      );
+      return fail(message);
+    };
+    // ACTIVE-ONLY (R5b matrix, Codex round-3 correction): the PT+YT pair
+    // redemption is a PRE-EXPIRY action; after maturity the PT redeems alone
+    // via pendle.pt.redeem, so the financial resolver never sees a matured
+    // market here — the refusal is named from the read-only lane.
     const market = await resolveMarketByPt(chainId, ptAddress);
     if (!market || !market.yt || !market.address) {
-      return fail("No active Pendle market for this PT — a MATURED PT uses pendle.pt.redeem.");
+      return refuse("route_not_found", await explainUnresolvedPendleMarket(chainId, chainSlug, ptAddress, { action: "py.redeem", leg: "PT" }));
     }
     const ytAddress = getAddress(market.yt);
     const outRaw = str(p, "tokenOut");
@@ -388,12 +464,12 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return fail("No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return refuse("route_not_found", "No output token — pass tokenOut (the market has no underlying to default to).");
     // PT decimals read ON-CHAIN (a PT is a plain ERC-20). PT and YT are minted 1:1
     // and share decimals, so the equal-leg burn amount uses the same wei.
     const ptToken = await resolveInputToken(chainEntry, ptRaw);
     const amountWei = parseUnits(amountInRaw, ptToken.decimals);
-    const slippage = slippageFraction(num(p, "slippageBps"));
+    const slippage = resolvePendleSlippage("pendle.py.redeem", num(p, "slippageBps"));
 
     if (p.dryRun === true) {
       return ok({ dryRun: true, action: "redeem", pt: ptAddress, yt: ytAddress, outputToken, market: market.address });
@@ -415,16 +491,18 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
         { token: ytAddress, amount: amountWei.toString() },
       ],
       outputs: [outputToken],
-      slippage,
+      slippage: slippage.fraction,
     });
-    if (!response) return fail("Pendle returned no pre-expiry redeem route.");
+    if (!response) return refuse("route_not_found", "Pendle returned no pre-expiry redeem route.");
     if (response.action !== "redeem-py") {
-      return fail("Pendle did not return a pre-expiry redeem route — a MATURED PT uses pendle.pt.redeem.");
+      return refuse("route_not_found", "Pendle did not return a pre-expiry redeem route — a MATURED PT uses pendle.pt.redeem.");
     }
 
     const intent: PendleTxIntent = {
       action: "py-redeem",
       wallet,
+      // The tolerance this route is held to — see calldata/price-floor.ts.
+      slippageBps: slippage.bps,
       inputToken: ptAddress,
       inputAmountWei: amountWei,
       isNative: false,
@@ -439,23 +517,38 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
     for (const approval of response.requiredApprovals) {
       await ensurePendleAllowanceExact(publicClient, walletClient, getAddress(approval.token), PENDLE_ROUTER, BigInt(approval.amount));
     }
-    txHash = await walletClient.sendTransaction({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      to: getAddress(route.tx.to),
-      data: route.tx.data as Hex,
-      value: 0n,
-    });
-
     const assetMap = await buildAssetMap(chainId);
-    const outAmount = route.outputs[0]?.amount ?? "0";
+    const quotedOutRaw = route.outputs[0]?.amount ?? "0";
     const outDec = assetMap.get(outputToken.toLowerCase())?.decimals ?? null;
-    const ptPrice = priceUsdFor(assetMap, ptAddress);
-    const ytPrice = priceUsdFor(assetMap, ytAddress);
     const ptDec = assetMap.get(ptAddress.toLowerCase())?.decimals ?? ptToken.decimals;
     const ytDec = assetMap.get(ytAddress.toLowerCase())?.decimals ?? ptToken.decimals;
-    const ptInUsd = ptPrice !== null ? humanAmount(amountWei, ptDec) * ptPrice : null;
-    const ytInUsd = ytPrice !== null ? humanAmount(amountWei, ytDec) * ytPrice : null;
+
+    // OPTION C (migration 053): a pre-expiry redeem is 2 → 1, so BOTH burned
+    // legs are staged on the one row — the mirror image of the mint above.
+    const broadcast = await sendPendleRouterTx(
+      publicClient,
+      walletClient,
+      { to: getAddress(route.tx.to), data: route.tx.data as Hex, value: 0n },
+      {
+        toolId, eventRole: "yield_py", chainId, chainSlug, walletAddress: wallet, sessionId,
+        intentParams: p,
+        tokenIn: legInput(ptAddress, assetMap.get(ptAddress.toLowerCase())?.symbol, ptDec, amountWei.toString(), humanAmount(amountWei, ptDec).toString()),
+        tokenIn2: legInput(ytAddress, assetMap.get(ytAddress.toLowerCase())?.symbol, ytDec, amountWei.toString(), humanAmount(amountWei, ytDec).toString()),
+        tokenOut: legInput(outputToken, assetMap.get(outputToken.toLowerCase())?.symbol, outDec, quotedOutRaw, humanAmount(quotedOutRaw, outDec).toString()),
+        routeProvenance: { action: "redeem-py", aggregator: route.data.aggregatorType, market: market.address },
+      },
+    );
+    txHash = broadcast.txHash;
+    if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
+
+    // The DECODED redeem — both burns and the credit proven from the receipt.
+    const outAmount = broadcast.executed.amountOutRaw ?? quotedOutRaw;
+    const ptBurnedWei = BigInt(broadcast.executed.amountInRaw ?? amountWei.toString());
+    const ytBurnedWei = BigInt(broadcast.executed.amountIn2Raw ?? amountWei.toString());
+    const ptPrice = priceUsdFor(assetMap, ptAddress);
+    const ytPrice = priceUsdFor(assetMap, ytAddress);
+    const ptInUsd = ptPrice !== null ? humanAmount(ptBurnedWei, ptDec) * ptPrice : null;
+    const ytInUsd = ytPrice !== null ? humanAmount(ytBurnedWei, ytDec) * ytPrice : null;
     const share = ptUsdShare(ptInUsd, ytInUsd);
     const outTotalUsd = legUsd(assetMap, outputToken, humanAmount(outAmount, outDec)) ?? ((ptInUsd ?? 0) + (ytInUsd ?? 0));
     const [ptOutWei, ytOutWei] = splitWei(BigInt(outAmount), share);
@@ -473,6 +566,7 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
     const legItem = (
       leg: "pt" | "yt",
       instrument: string,
+      burnedWei: bigint,
       outWei: bigint,
       inUsd: number | null,
       outUsd: number,
@@ -484,9 +578,10 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
       outputToken,
       inputTokenAddress: instrument,
       outputTokenAddress: outputToken,
-      // SELL: inputAmount is the RAW PT/YT quantity burned (reduces the lot);
-      // PT and YT burn EQUAL amounts.
-      inputAmount: amountWei.toString(),
+      // SELL: inputAmount is the RAW PT/YT quantity ACTUALLY burned (reduces the
+      // lot). Decoded per leg rather than assumed equal: the pair is minted 1:1,
+      // but a lot must record what the receipt proved, not what the shape implies.
+      inputAmount: burnedWei.toString(),
       outputAmount: outWei.toString(),
       inputValueUsd: String(inUsd ?? outUsd),
       outputValueUsd: String(outUsd),
@@ -503,9 +598,15 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
 
     return {
       success: true,
-      output: JSON.stringify({ txHash, action: "redeem", pt: ptAddress, yt: ytAddress, outputToken, amountIn: amountInRaw, amountOut: humanAmount(outAmount, outDec).toString() }, null, 2),
+      output: JSON.stringify({
+        txHash, action: "redeem", pt: ptAddress, yt: ytAddress, outputToken,
+        amountIn: amountInRaw,
+        executedAmountOut: humanAmount(outAmount, outDec).toString(),
+        quotedAmountOut: humanAmount(quotedOutRaw, outDec).toString(),
+      }, null, 2),
       data: {
         txHash,
+        _executionId: broadcast.executionId,
         _tradeCapture: {
           type: "swap",
           chain: chainSlug,
@@ -515,7 +616,7 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
           instrumentKey: `${chainSlug}:${ptAddress.toLowerCase()}`,
           inputTokenAddress: ptAddress,
           outputTokenAddress: outputToken,
-          inputAmount: amountWei.toString(),
+          inputAmount: ptBurnedWei.toString(),
           outputAmount: outAmount,
           inputValueUsd: String(outTotalUsd),
           outputValueUsd: String(outTotalUsd),
@@ -525,8 +626,8 @@ async function executePendleRedeemPy(p: Record<string, unknown>, context: Protoc
           meta: { protocol: "pendle", side: "redeem-py", pendle: pendleMeta },
         },
         _tradeCaptureItems: [
-          legItem("pt", ptAddress, ptOutWei, ptInUsd, ptOutUsd),
-          legItem("yt", ytAddress, ytOutWei, ytInUsd, ytOutUsd),
+          legItem("pt", ptAddress, ptBurnedWei, ptOutWei, ptInUsd, ptOutUsd),
+          legItem("yt", ytAddress, ytBurnedWei, ytOutWei, ytInUsd, ytOutUsd),
         ],
       },
     };

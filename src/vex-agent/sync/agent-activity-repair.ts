@@ -174,11 +174,20 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
       continue;
     }
 
+    // The Option-C second legs (migration 053) travel with the first ones or
+    // the confirm is REFUSED: `assertYieldConfirmLegs` requires
+    // `executedAmount{In,Out}2Raw` whenever the row itself populated
+    // `token_{in2,out2}_address`. Dropping them here left every PY mint/redeem
+    // and every dual LP row pending forever.
     const outcome = await confirmActivityEvent(event.id, {
       executedAmountInHuman: decoded.executedAmountInHuman,
       executedAmountInRaw: decoded.executedAmountInRaw,
       executedAmountOutHuman: decoded.executedAmountOutHuman,
       executedAmountOutRaw: decoded.executedAmountOutRaw,
+      executedAmountIn2Human: decoded.executedAmountIn2Human,
+      executedAmountIn2Raw: decoded.executedAmountIn2Raw,
+      executedAmountOut2Human: decoded.executedAmountOut2Human,
+      executedAmountOut2Raw: decoded.executedAmountOut2Raw,
     });
     if (outcome.applied) {
       confirmed++;
@@ -212,6 +221,17 @@ async function decodeSettlement(
       walletAddress: event.walletAddress,
       tokenInAddress: event.tokenInAddress,
       tokenOutAddress: event.tokenOutAddress,
+      // Option-C second-leg tokens (migration 053). A decoder can only prove a
+      // second leg it is told the token of — without these a two-instrument
+      // row would decode as one-in-one-out and then fail the confirm guard.
+      tokenIn2Address: event.tokenIn2Address,
+      tokenOut2Address: event.tokenOut2Address,
+      // Role + provenance are what a MULTI-ROLE venue needs to pick its decode
+      // rule (Pendle decodes a claim, a PT swap and a PT+YT mint differently,
+      // and its router-fallback redeem pays SY rather than the underlying).
+      // Single-role venues ignore both.
+      eventRole: event.eventRole,
+      routeProvenance: event.routeProvenance,
     });
     if (!decoded || (!decoded.executedAmountInRaw && !decoded.executedAmountOutRaw)) {
       return null;
@@ -230,23 +250,28 @@ async function decodeSettlement(
 }
 
 /**
- * Production `checkReceiptByHash` — a read-only Khalani-resolved viem client
- * per chain, `getTransactionReceipt` only. Never holds a signer/wallet client.
+ * Production `checkReceiptByHash` — a read-only viem client per chain,
+ * `getTransactionReceipt` only. Never holds a signer/wallet client.
  * `null` on "not yet mined" (`TransactionReceiptNotFoundError`) AND on any
  * transient lookup error — both leave the row `pending` for the next sweep.
  * The raw receipt is passed through UNDECODED on success — see the module
  * doc's settlement-decoder contract (C2).
+ *
+ * TWO CHAIN SOURCES, ONE POSTURE: the Khalani registry answers first (it is
+ * the bridge venue's own live chain list), and when it does not carry the
+ * chain the PENDLE registry answers instead. Pendle executes on 11 chains,
+ * some of which Khalani has never heard of (Monad, chain 143) — with a single
+ * source those rows could never be repaired at all, because the resolver threw
+ * and the bare catch reported it as "no answer yet" forever. Only the chain
+ * SOURCE widens here: an actual RPC failure still returns `null` and still
+ * leaves the row pending, exactly as before.
  */
 export function buildProductionRepairDeps(): RepairDeps {
   return {
     checkReceiptByHash: async ({ chainId, txHash }): Promise<ReceiptCheckResult | null> => {
       try {
-        const { getKhalaniClient } = await import("@tools/khalani/client.js");
-        const { getChain } = await import("@tools/khalani/chains.js");
-        const { createDynamicPublicClient } = await import("@tools/khalani/evm-client.js");
-        const chains = await getKhalaniClient().getChains();
-        const chain = getChain(chainId, chains);
-        const client = createDynamicPublicClient(chain, chains);
+        const client = await resolveReadOnlyReceiptClient(chainId);
+        if (!client) return null;
         const receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
         return receipt.status === "success" ? { status: "success", receipt } : { status: "reverted" };
       } catch {
@@ -254,4 +279,32 @@ export function buildProductionRepairDeps(): RepairDeps {
       }
     },
   };
+}
+
+/** Just enough of a viem public client for a receipt lookup — this sweep must never reach a broadcast/sign capability. */
+interface ReceiptLookupClient {
+  getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{ status: string }>;
+}
+
+/** Khalani registry first, Pendle registry as the fallback chain source. `null` when neither knows the chain. */
+async function resolveReadOnlyReceiptClient(chainId: number): Promise<ReceiptLookupClient | null> {
+  try {
+    const { getKhalaniClient } = await import("@tools/khalani/client.js");
+    const { getChain } = await import("@tools/khalani/chains.js");
+    const { createDynamicPublicClient } = await import("@tools/khalani/evm-client.js");
+    const chains = await getKhalaniClient().getChains();
+    const chain = getChain(chainId, chains);
+    return createDynamicPublicClient(chain, chains);
+  } catch {
+    // Khalani does not carry this chain (or its chain list is unavailable) —
+    // fall through to the Pendle registry rather than reporting "no answer".
+  }
+  try {
+    const { getPendleChain } = await import("@tools/pendle/chains.js");
+    if (!getPendleChain(chainId)) return null;
+    const { getPendlePublicClient } = await import("@tools/pendle/evm-client.js");
+    return getPendlePublicClient(chainId);
+  } catch {
+    return null;
+  }
 }

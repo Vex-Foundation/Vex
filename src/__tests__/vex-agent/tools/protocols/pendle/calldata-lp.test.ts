@@ -45,6 +45,18 @@ function lpAddIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "lp-add",
     wallet: WALLET,
+    // 51, not the 50 this capture was requested at — a MEASURED property of the
+    // provider, not a fudge. LP add is the ONE action whose min-out is not a
+    // clean function of the quoted output, because minLpOut also absorbs the
+    // on-chain `guessPtReceivedFromSy` search. This 2026-07-06 capture embeds a
+    // ~50.25 bps haircut for a 50 bps request, i.e. fractionally BELOW our
+    // floor; a 2026-07-27 sweep (25/50/100/200/500 bps × two sizes — see
+    // `price-floor.test.ts`) found the provider applying only ~HALF the
+    // requested haircut, comfortably above it. The guard refuses the first shape
+    // and passes the second, which is the fail-safe direction: no funds can
+    // leak, and the remedy for a false refusal is a higher slippageBps, never a
+    // wider allowance (rules/90 — absolute, never a percentage).
+    slippageBps: 51,
     inputToken: WSTETH,
     inputAmountWei: ONE,
     isNative: false,
@@ -57,6 +69,9 @@ function lpRemoveIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "lp-remove",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 100,
     // The LP (market) token is the spend token — approvals bind to it.
     inputToken: MARKET,
     inputAmountWei: ONE,

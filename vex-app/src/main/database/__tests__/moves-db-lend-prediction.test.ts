@@ -172,6 +172,9 @@ describe("moves-db getMovesForSession — agent_activity lend/prediction (W5, mi
         // above is the legacy derivation, this is the real column.
         activityKind: "lend",
         eventRole: "lend_deposit",
+        // Migration 053 Option C: yield-only; a lend row never carries one.
+        secondaryInputLeg: null,
+        secondaryOutputLeg: null,
         createdAt: "2026-07-24T10:00:00.000Z",
       },
     ]);

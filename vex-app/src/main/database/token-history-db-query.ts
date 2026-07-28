@@ -405,6 +405,7 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
           WHEN 'bridge' THEN 'bridge'
           WHEN 'lend' THEN 'lend'
           WHEN 'prediction' THEN 'prediction'
+          WHEN 'yield' THEN 'yield'
           ELSE 'spot'
         END AS product_type,
         NULL::text AS trade_side,
@@ -465,6 +466,9 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
           aa.event_role = 'swap'
           OR aa.event_role = 'bridge_fill_expected'
           OR aa.kind IN ('lend', 'prediction')
+          OR aa.event_role IN (
+            'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
+          )
         )
         AND (
           (
@@ -473,6 +477,28 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
             AND (
               ${addr("aa.token_in_address")} = $${addressParam}
               OR ${addr("aa.token_out_address")} = $${addressParam}
+            )
+          )
+          OR
+          (
+            -- YIELD (migration 053). Single-chain like a swap, but the
+            -- Option-C second-leg columns are part of the row's IDENTITY:
+            -- a py.mint is 1 -> 2 (PT AND YT out) and a pre-expiry
+            -- py.redeem is 2 -> 1. Matching only the first leg would hide
+            -- the mint from the SECOND output token's own history — the
+            -- instrument the user is most likely looking at. The *2
+            -- columns are constrained to yield_py/yield_lp (migration
+            -- 053 constraint 5), so they are NULL — and this arm is a
+            -- no-op — for every other role.
+            aa.event_role IN (
+              'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
+            )
+            AND aa.chain_id = $${chainIdParam}::bigint
+            AND (
+              ${addr("aa.token_in_address")} = $${addressParam}
+              OR ${addr("aa.token_out_address")} = $${addressParam}
+              OR ${addr("aa.token_in2_address")} = $${addressParam}
+              OR ${addr("aa.token_out2_address")} = $${addressParam}
             )
           )
           OR

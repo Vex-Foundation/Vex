@@ -25,6 +25,18 @@ export interface DecodedSettlement {
   readonly executedAmountInRaw?: string;
   readonly executedAmountOutHuman?: string;
   readonly executedAmountOutRaw?: string;
+  /**
+   * Option-C SECOND-LEG executed amounts (migration 053's
+   * `executed_amount_{in2,out2}_{raw,human}` family) — a decode of a venue
+   * whose single row legitimately has two inputs or two outputs (Pendle's
+   * PT+YT mint/redeem, a dual-sided LP leg, a two-token claim). Absent for
+   * every single-leg venue; a decoder that returns one MUST have proven it
+   * from the receipt exactly like the first leg.
+   */
+  readonly executedAmountIn2Human?: string;
+  readonly executedAmountIn2Raw?: string;
+  readonly executedAmountOut2Human?: string;
+  readonly executedAmountOut2Raw?: string;
 }
 
 export interface SettlementDecoderInput {
@@ -35,6 +47,24 @@ export interface SettlementDecoderInput {
   readonly walletAddress: string;
   readonly tokenInAddress: string | null;
   readonly tokenOutAddress: string | null;
+  /**
+   * The row's `event_role` VERBATIM. Deliberately a plain string, not the
+   * `AgentActivityEventRole` union: a decoder is registered per venue and must
+   * be able to switch on the roles ITS venue writes without this shared seam
+   * having to know every venue's role vocabulary. Decoders must DECLINE a role
+   * they do not own rather than guess a decode rule for it.
+   */
+  readonly eventRole: string;
+  /** Option-C second-leg token addresses (migration 053), when the row populates them; `null`/absent for a single-leg row. */
+  readonly tokenIn2Address?: string | null;
+  readonly tokenOut2Address?: string | null;
+  /**
+   * The row's persisted `route_provenance` JSONB — UNTRUSTED; a decoder must
+   * validate anything it reads out of it (same posture as the Solana
+   * settlement dispatch). Carries the venue discriminants a receipt alone
+   * cannot supply, e.g. Pendle's `deliveredPath`.
+   */
+  readonly routeProvenance?: Record<string, unknown> | null;
 }
 
 export type SettlementDecoder = (

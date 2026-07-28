@@ -30,6 +30,23 @@ import { jsonb } from "../params.js";
 export type PrequoteFamily = "eip155" | "solana";
 // 'mint' / 'redeem_py' land with the Pendle PY surface (P4); 'lp_add' / 'lp_remove'
 // with the LP surface (P5). All widen the DB CHECK via migration 035.
+//
+// R5d adds the seven kinds below (DB CHECK widened by migration 054). Each is a
+// SEPARATE kind rather than a reuse of an existing one because `kind` is what the
+// two gate reads scope on: a kind shared between two actions lets one action's
+// prequote authorize the other's execute even when the material differs, and a
+// kind shared with `swap` lets an ordinary DEX quote authorize a Pendle write.
+//   - 'sy_mint' / 'sy_redeem'   : the SY wrap/unwrap pair. They were BOTH stored
+//     under 'swap' before this migration (`handlers/sy-prequote.ts` said so in a
+//     comment: "no migration"), which is exactly the shortcut described above.
+//   - 'lp_remove_dual'          : LP → (token, PT). Not 'lp_remove' — two output
+//     legs, a different price floor, a different execute surface.
+//   - 'lp_add_keep_yt'          : token → (LP, YT). Not 'lp_add', same reason.
+//   - 'pt_rollover'             : PT(marketA) → PT(marketB).
+//   - 'lp_transfer'             : LP(marketA) → LP(marketB).
+//   - 'lp_to_pt'                : LP → PT.
+// The TS union and the SQL CHECK are held in lockstep by
+// `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
 export type PrequoteKind =
   | "swap"
   | "bridge"
@@ -37,7 +54,14 @@ export type PrequoteKind =
   | "mint"
   | "redeem_py"
   | "lp_add"
-  | "lp_remove";
+  | "lp_remove"
+  | "sy_mint"
+  | "sy_redeem"
+  | "lp_remove_dual"
+  | "lp_add_keep_yt"
+  | "pt_rollover"
+  | "lp_transfer"
+  | "lp_to_pt";
 export type SafetyVerdict = "pass" | "fail" | "unknown";
 
 export interface SwapPrequote {

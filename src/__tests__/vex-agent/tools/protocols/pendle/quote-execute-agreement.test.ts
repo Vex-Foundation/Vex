@@ -23,6 +23,12 @@ const mockResolveYtForPt = vi.fn();
 vi.mock("@vex-agent/tools/protocols/pendle/market-lookup.js", () => ({
   resolveYtForPt: (...a: unknown[]) => mockResolveYtForPt(...a),
 }));
+// R5b: the exit actions (pt.redeem, lp.remove, claim) resolve through the
+// matured-capable lane. Delegates to the SAME market doubles this suite
+// already sets up, wrapped in the {market, maturity} envelope.
+vi.mock("@vex-agent/tools/protocols/pendle/matured-market-lookup.js", () => ({
+  resolveExitYtForPt: (...a: unknown[]) => mockResolveYtForPt(...a),
+}));
 const mockResolveSelectedAddress = vi.fn();
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: (...a: unknown[]) => mockResolveSelectedAddress(...a),

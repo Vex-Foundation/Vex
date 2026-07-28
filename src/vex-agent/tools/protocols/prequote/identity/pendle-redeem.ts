@@ -19,7 +19,7 @@ import { getAddress } from "viem";
 
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
-import { resolveYtForPt } from "../../pendle/market-lookup.js";
+import { resolveExitYtForPt } from "../../pendle/matured-market-lookup.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
@@ -75,9 +75,14 @@ export async function buildPendleRedeemIdentity(
     throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, "Pendle redeem PT is not a valid address.");
   }
 
-  const yt = await resolveYtForPt(chainId, ptAddress);
+  // EXIT PATH (R5b): a redeem identity must be buildable for a MATURED PT —
+  // otherwise the quote records nothing and the execute gate blocks the very
+  // position the tool exists for. Both sides call THIS builder, so record and
+  // gate keep colliding by construction; only WHICH markets can produce an
+  // identity changed, never the identity material.
+  const yt = await resolveExitYtForPt(chainId, ptAddress);
   if (!yt) {
-    throw new VexError(ErrorCodes.PENDLE_MARKET_NOT_FOUND, "No active Pendle market for this PT.");
+    throw new VexError(ErrorCodes.PENDLE_MARKET_NOT_FOUND, "No Pendle market for this PT.");
   }
 
   const wallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");

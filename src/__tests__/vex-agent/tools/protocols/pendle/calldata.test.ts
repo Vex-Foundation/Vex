@@ -56,6 +56,9 @@ function buyIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "buy",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 100,
     inputToken: USDC,
     inputAmountWei: 100000000n,
     isNative: false,
@@ -69,6 +72,9 @@ function sellIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "sell",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 100,
     inputToken: PT,
     inputAmountWei: 100000000000000000000n,
     isNative: false,
@@ -83,6 +89,9 @@ function redeemIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "redeem",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 100,
     inputToken: PT_REDEEM,
     inputAmountWei: 100000000n,
     isNative: false,
@@ -304,6 +313,7 @@ describe("pendle native buy — value binding", () => {
   const nativeIntent = (over: Partial<PendleTxIntent> = {}): PendleTxIntent => ({
     action: "buy",
     wallet: WALLET,
+    slippageBps: 100,
     inputToken: getAddress("0x0000000000000000000000000000000000000000"),
     inputAmountWei: 1000000000000000000n,
     isNative: true,
@@ -380,6 +390,9 @@ function ytBuyIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "yt-buy",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 50,
     inputToken: USDC,
     inputAmountWei: 100000000n,
     isNative: false,
@@ -392,6 +405,9 @@ function ytSellIntent(over: Partial<PendleTxIntent> = {}): PendleTxIntent {
   return {
     action: "yt-sell",
     wallet: WALLET,
+    // The tolerance this LIVE capture was quoted at, measured from its own
+    // embedded min-out vs its quoted output (see price-floor.test.ts).
+    slippageBps: 50,
     inputToken: YT_SUSDE,
     inputAmountWei: 1000000000000000000000n,
     isNative: false,

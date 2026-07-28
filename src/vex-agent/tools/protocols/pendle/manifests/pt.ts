@@ -19,7 +19,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Preview a Pendle PT trade — quote buying a PT with a payment token, selling a PT early, or redeeming a matured PT (output, price impact, feeUsdEstimate — Pendle's own estimated route fee in USD — aggregator, liquidity). Records the safety preview the buy/sell/redeem tools require before they broadcast. Read-only.",
+      "Preview a Pendle PT trade — quote buying a PT with a payment token, selling a PT early, or redeeming a matured PT (output, price impact, feeUsdEstimate — Pendle's own estimated route fee in USD — aggregator, liquidity). Quotes route through Pendle's AMM only — limit-order liquidity is excluded, so a better resting price may exist. Exact-output is impossible: you specify amountIn and receive an estimate, never a guaranteed amountOut. This call has a SIDE EFFECT — it records the prequote authorization the matching broadcast tool requires, so quoting arms that tool for ~15 minutes. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -61,7 +61,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Redeem a MATURED Pendle principal token (PT) for its accounting asset (~1:1) after expiry. Approval-gated; pins the canonical Pendle Router; falls back to a direct on-chain redeem when the pricing service is unavailable. REQUIRES a fresh matching pendle.pt.quote first.",
+      "Redeem a MATURED Pendle principal token (PT) for its accounting asset (~1:1) after expiry. Approval-gated; pins the canonical Pendle Router. If Pendle's pricing service is unavailable it falls back to a direct on-chain redeem that delivers SY (the wrapped yield-bearing token), NOT the underlying asset — the result names it as `deliveredAsset`; unwrap it with pendle.sy.redeem to finish the exit. REQUIRES a fresh matching pendle.pt.quote first.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

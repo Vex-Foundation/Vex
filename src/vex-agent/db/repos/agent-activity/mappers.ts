@@ -45,6 +45,21 @@ export function mapRow(r: Record<string, unknown>): AgentActivityEvent {
     executedAmountInRaw: r.executed_amount_in_raw as string | null,
     executedAmountOutHuman: r.executed_amount_out_human as string | null,
     executedAmountOutRaw: r.executed_amount_out_raw as string | null,
+    // Option-C second leg (migration 053) — see `types.ts` for the role binding.
+    tokenIn2Address: r.token_in2_address as string | null,
+    tokenIn2Symbol: r.token_in2_symbol as string | null,
+    tokenIn2Decimals: nullableInt(r.token_in2_decimals),
+    amountIn2Human: r.amount_in2_human as string | null,
+    amountIn2Raw: r.amount_in2_raw as string | null,
+    executedAmountIn2Human: r.executed_amount_in2_human as string | null,
+    executedAmountIn2Raw: r.executed_amount_in2_raw as string | null,
+    tokenOut2Address: r.token_out2_address as string | null,
+    tokenOut2Symbol: r.token_out2_symbol as string | null,
+    tokenOut2Decimals: nullableInt(r.token_out2_decimals),
+    amountOut2Human: r.amount_out2_human as string | null,
+    amountOut2Raw: r.amount_out2_raw as string | null,
+    executedAmountOut2Human: r.executed_amount_out2_human as string | null,
+    executedAmountOut2Raw: r.executed_amount_out2_raw as string | null,
     usdInEst: r.usd_in_est as string | null,
     usdOutEst: r.usd_out_est as string | null,
     usdFeeEst: r.usd_fee_est as string | null,
@@ -90,6 +105,11 @@ export function mapRow(r: Record<string, unknown>): AgentActivityEvent {
     createdAt: toIso(r.created_at),
     updatedAt: toIso(r.updated_at),
   };
+}
+
+/** A nullable SMALLINT/INT column — `Number(null)` is 0, which would silently invent 0 decimals. */
+function nullableInt(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 export function toIso(value: unknown): string {

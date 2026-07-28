@@ -1,28 +1,19 @@
 /**
- * Prologue play policy — the decision table and its storage adapter.
+ * Prologue play policy — the decision table and the rehydration sanitiser.
  *
  * These call the REAL exported functions (no re-implementation of the rule
- * in the assertions); the storage cases drive the real localStorage that
- * jsdom provides, plus a throwing stub for the disabled-storage path.
+ * in the assertions). The module is pure: storage itself lives in
+ * `stores/uiStore.ts`'s Zustand persist (the sanctioned renderer
+ * localStorage path), so what these cases pin is the untrusted-payload
+ * boundary and the decision table.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
-  PROLOGUE_VERSION_KEY,
-  readLastPlayedVersion,
   resolveProloguePlay,
-  writeLastPlayedVersion,
+  sanitizeStoredPrologueVersion,
 } from "../prologue-policy.js";
-
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
-afterEach(() => {
-  window.localStorage.clear();
-  vi.restoreAllMocks();
-});
 
 describe("resolveProloguePlay", () => {
   it("plays FULL on a fresh install (nothing recorded yet)", () => {
@@ -74,44 +65,32 @@ describe("resolveProloguePlay", () => {
   });
 });
 
-describe("version persistence", () => {
-  it("round-trips a written version", () => {
-    writeLastPlayedVersion("1.2.3");
-    expect(readLastPlayedVersion()).toBe("1.2.3");
+describe("sanitizeStoredPrologueVersion", () => {
+  // Storage moved into `uiStore`'s Zustand persist (the sanctioned renderer
+  // localStorage path); the payload stays user-writable, so the sanitiser is
+  // the boundary these cases pin.
+  it("passes a plausible stored version through", () => {
+    expect(sanitizeStoredPrologueVersion("1.2.3")).toBe("1.2.3");
   });
 
-  it("reads null when nothing was ever recorded", () => {
-    expect(readLastPlayedVersion()).toBeNull();
+  it("answers null for a non-string (never-recorded, hand-edited, corrupt)", () => {
+    expect(sanitizeStoredPrologueVersion(null)).toBeNull();
+    expect(sanitizeStoredPrologueVersion(undefined)).toBeNull();
+    expect(sanitizeStoredPrologueVersion(42)).toBeNull();
+    expect(sanitizeStoredPrologueVersion({ v: "1.2.3" })).toBeNull();
   });
 
   it("rejects a hand-edited empty or oversized value (storage is user-writable)", () => {
-    window.localStorage.setItem(PROLOGUE_VERSION_KEY, "");
-    expect(readLastPlayedVersion()).toBeNull();
-
-    window.localStorage.setItem(PROLOGUE_VERSION_KEY, "x".repeat(65));
-    expect(readLastPlayedVersion()).toBeNull();
-  });
-
-  it("degrades to FULL (null) when storage throws instead of crashing boot", () => {
-    vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
-      throw new Error("storage disabled");
-    });
-    expect(readLastPlayedVersion()).toBeNull();
-  });
-
-  it("swallows a throwing write — a launch that cannot persist just replays", () => {
-    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
-      throw new Error("quota exceeded");
-    });
-    expect(() => writeLastPlayedVersion("1.2.3")).not.toThrow();
+    expect(sanitizeStoredPrologueVersion("")).toBeNull();
+    expect(sanitizeStoredPrologueVersion("x".repeat(65))).toBeNull();
+    expect(sanitizeStoredPrologueVersion("x".repeat(64))).toBe("x".repeat(64));
   });
 
   it("a rejected stored value resolves to a FULL play end-to-end", () => {
-    window.localStorage.setItem(PROLOGUE_VERSION_KEY, "");
     expect(
       resolveProloguePlay({
         appVersion: "0.1.4",
-        lastPlayedVersion: readLastPlayedVersion(),
+        lastPlayedVersion: sanitizeStoredPrologueVersion(""),
         reducedMotion: false,
       }),
     ).toBe("full");

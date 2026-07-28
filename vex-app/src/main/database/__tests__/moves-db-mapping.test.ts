@@ -305,6 +305,9 @@ describe("moves-db getMovesForSession — tolerant mapping", () => {
         // read as absent — the tolerant contract the DTO exists to guarantee.
         activityKind: null,
         eventRole: null,
+        // Migration 053 Option C: yield-only; a legacy row never carries one.
+        secondaryInputLeg: null,
+        secondaryOutputLeg: null,
         createdAt: "2026-05-21T10:00:00.000Z",
       },
     ]);
