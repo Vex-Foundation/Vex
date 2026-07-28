@@ -5,6 +5,7 @@ import {
   buildPromptStack,
   buildProtocolsPrompt,
   buildPermissionPrompt,
+  resolveExecutionPhase,
   resetProtocolsPromptCache,
 } from "../../../../vex-agent/engine/prompts/index.js";
 import { makeContext, joinedStack } from "./_prompt-stack-helpers.js";
@@ -18,27 +19,63 @@ describe("prompt-stack — permission & safety", () => {
 
   describe("permission prompts", () => {
     it("agent / restricted requires approval for mutations", () => {
-      const prompt = buildPermissionPrompt({ mode: "agent", permission: "restricted" });
+      const prompt = buildPermissionPrompt({ phase: "agent", permission: "restricted" });
       expect(prompt).toContain("approval");
       expect(prompt).toContain("Mutating tools");
     });
 
     it("agent / full grants full authority", () => {
-      const prompt = buildPermissionPrompt({ mode: "agent", permission: "full" });
+      const prompt = buildPermissionPrompt({ phase: "agent", permission: "full" });
       expect(prompt).toContain("bypasses only the generic session approval gate");
       expect(prompt).toContain("Per-tool\n  policies always apply");
     });
 
-    it("mission / restricted requires approval and supports loop_defer", () => {
-      const prompt = buildPermissionPrompt({ mode: "mission", permission: "restricted" });
+    it("mission RUN / restricted requires approval and supports loop_defer", () => {
+      const prompt = buildPermissionPrompt({ phase: "mission_run", permission: "restricted" });
       expect(prompt).toContain("approval");
       expect(prompt).toContain("loop_defer");
     });
 
-    it("mission / full grants full authority", () => {
-      const prompt = buildPermissionPrompt({ mode: "mission", permission: "full" });
+    it("mission RUN / full grants full authority", () => {
+      const prompt = buildPermissionPrompt({ phase: "mission_run", permission: "full" });
       expect(prompt).toContain("bypasses only the generic session approval gate");
       expect(prompt).toContain("Per-tool\n  policies always apply");
+    });
+
+    // Mission SETUP used to receive the mission RUN policy ("take proactive
+    // actions", `loop_defer`), contradicting the setup execution lock shown
+    // three layers later. The phase input, derived from missionRunId, splits
+    // them.
+    it("mission SETUP carries the execution lock and the draft-first job, never the run loop", () => {
+      for (const permission of ["restricted", "full"] as const) {
+        const prompt = buildPermissionPrompt({ phase: "mission_setup", permission });
+        expect(prompt).toContain("MISSION SETUP");
+        expect(prompt).toContain("mission_draft_update");
+        expect(prompt).toContain("LOCKED during");
+        expect(prompt).not.toContain("loop_defer");
+        expect(prompt).not.toContain("proactive");
+      }
+    });
+
+    it("resolveExecutionPhase derives the phase from sessionKind + missionRunId", () => {
+      expect(resolveExecutionPhase({ sessionKind: "agent", missionRunId: null })).toBe("agent");
+      expect(resolveExecutionPhase({ sessionKind: "agent", missionRunId: "run-1" })).toBe("agent");
+      expect(resolveExecutionPhase({ sessionKind: "mission", missionRunId: null })).toBe("mission_setup");
+      expect(resolveExecutionPhase({ sessionKind: "mission", missionRunId: undefined })).toBe("mission_setup");
+      expect(resolveExecutionPhase({ sessionKind: "mission", missionRunId: "run-1" })).toBe("mission_run");
+    });
+
+    it("the stack selects the setup policy for a mission session with no active run", () => {
+      const setup = buildPromptStack(makeContext({ sessionKind: "mission", sessionPermission: "restricted" }))
+        .staticLayers.join("\n");
+      expect(setup).toContain("# Execution Policy: MISSION SETUP / RESTRICTED");
+      expect(setup).not.toContain("# Execution Policy: MISSION RUN");
+
+      const run = buildPromptStack(makeContext({
+        sessionKind: "mission", sessionPermission: "restricted", missionId: "m-1", missionRunId: "run-1",
+      })).staticLayers.join("\n");
+      expect(run).toContain("# Execution Policy: MISSION RUN / RESTRICTED");
+      expect(run).not.toContain("MISSION SETUP");
     });
   });
 
@@ -147,8 +184,8 @@ describe("prompt-stack — permission & safety", () => {
     });
 
     it("FULL permission variants no longer duplicate the safety bullets", () => {
-      const agentFull = buildPermissionPrompt({ mode: "agent", permission: "full" });
-      const missionFull = buildPermissionPrompt({ mode: "mission", permission: "full" });
+      const agentFull = buildPermissionPrompt({ phase: "agent", permission: "full" });
+      const missionFull = buildPermissionPrompt({ phase: "mission_run", permission: "full" });
       for (const policy of [agentFull, missionFull]) {
         // Authority marker (wave-3 P3 rewording: full bypasses ONLY the
         // generic session approval gate; per-tool policy always applies).

@@ -5,7 +5,13 @@ import {
   buildProtocolsPrompt,
   resetProtocolsPromptCache,
 } from "../../../../vex-agent/engine/prompts/index.js";
-import { PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST, PROTOCOL_TOOLS } from "../../../../vex-agent/tools/protocols/catalog.js";
+import { protocolAvailabilityFingerprint } from "../../../../vex-agent/engine/prompts/protocols.js";
+import {
+  PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
+  PROTOCOL_NAMESPACE_ALLOWLIST,
+  PROTOCOL_TOOLS,
+  isProtocolToolAvailable,
+} from "../../../../vex-agent/tools/protocols/catalog.js";
 import { makeContext, joinedStack } from "./_prompt-stack-helpers.js";
 
 describe("prompt-stack — protocols prompt", () => {
@@ -16,12 +22,12 @@ describe("prompt-stack — protocols prompt", () => {
   // ── Protocols generated from catalog ────────────────────────
 
   describe("protocols prompt", () => {
-    it("mentions total tool count from actual catalog", () => {
+    it("mentions the AVAILABLE action count from the actual catalog", () => {
       const prompt = buildProtocolsPrompt();
-      const advertisedToolCount = PROTOCOL_TOOLS.filter((tool) =>
+      const availableToolCount = PROTOCOL_TOOLS.filter((tool) =>
         PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST.includes(tool.namespace),
-      ).length;
-      expect(prompt).toContain(`Total: ${advertisedToolCount} tools`);
+      ).filter(isProtocolToolAvailable).length;
+      expect(prompt).toContain(`Total: ${availableToolCount} protocol actions`);
     });
 
     it("contains all advertised namespaces from catalog", () => {
@@ -41,13 +47,27 @@ describe("prompt-stack — protocols prompt", () => {
       }
     });
 
-    it("keeps protocol navigation free of live availability state", () => {
+    it("gives each namespace its prefix, an action count, and example toolIds (scent, not a menu)", () => {
       const prompt = buildProtocolsPrompt();
 
-      expect(prompt).toContain("Tools: ");
-      expect(prompt).toContain("cataloged.");
-      expect(prompt).not.toContain(" active /");
+      expect(prompt).toContain("`dexscreener.*`");
+      expect(prompt).toMatch(/· \d+ actions/);
+      expect(prompt).toContain("Examples: dexscreener.");
+      // The full per-action documentation lives behind discovery, not here.
+      expect(prompt).not.toContain("Paths:");
       expect(prompt).not.toContain("Requires env:");
+    });
+
+    it("never advertises a non-advertised namespace (reveal safety)", () => {
+      const prompt = buildProtocolsPrompt().toLowerCase();
+      const hidden = PROTOCOL_NAMESPACE_ALLOWLIST.filter(
+        (ns) => !(PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(ns),
+      );
+      expect(hidden.length).toBeGreaterThan(0);
+      for (const ns of hidden) {
+        expect(prompt, `non-advertised namespace "${ns}" leaked into the protocols prompt`)
+          .not.toContain(ns.toLowerCase());
+      }
     });
 
     it("renders explicit product groups instead of heuristic families", () => {
@@ -69,20 +89,20 @@ describe("prompt-stack — protocols prompt", () => {
       );
 
       for (const ns of namespacesWithMutating) {
-        // The namespace section should mention mutating
         const nsSection = prompt.split(`### ${ns}`)[1]?.split("##")[0] ?? "";
+        // Env-gated namespaces can legitimately have zero AVAILABLE actions in
+        // this install; the marker describes what is callable, not the catalog.
+        if (nsSection.includes("· 0 actions")) continue;
         expect(nsSection).toContain("mutating");
       }
     });
 
     it("is not hardcoded — count changes with catalog", () => {
       const prompt = buildProtocolsPrompt();
-      // The total count rendered in the prompt is the advertised tool count
-      // (see `buildProtocolsPrompt`), not the full catalog size.
-      const advertisedToolCount = PROTOCOL_TOOLS.filter((tool) =>
+      const availableToolCount = PROTOCOL_TOOLS.filter((tool) =>
         (PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST as readonly string[]).includes(tool.namespace),
-      ).length;
-      expect(prompt).toContain(String(advertisedToolCount));
+      ).filter(isProtocolToolAvailable).length;
+      expect(prompt).toContain(String(availableToolCount));
     });
   });
 
@@ -147,25 +167,52 @@ describe("prompt-stack — protocols prompt", () => {
       resetProtocolsPromptCache();
     });
 
-    it("static protocols layer is deterministic: no live env/availability info even when a namespace is fully gated", () => {
-      // Wave-3 P2: the static prefix must be KV-cache stable, so live
-      // availability ("N active") and env hints moved out; discovery and the
-      // Tool Map carry the live picture.
+    // SUPERSEDED CONTRACT (2026-07-28): the static layer used to hide live
+    // availability for KV-cache stability, which meant it advertised actions a
+    // key-less install cannot call. `process.env` is not process-stable anyway
+    // (the secret vault sets/deletes keys on unlock/lock), so the layer is now
+    // availability-aware and its cache is keyed by a non-secret fingerprint of
+    // the PRESENT `requiresEnv` names. A mid-session key change rebuilds it
+    // once — the accepted cost of telling the model the truth.
+    it("counts only AVAILABLE actions and preserves the namespace at zero", () => {
       delete process.env.JUPITER_API_KEY;
-      resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
-      const solanaSection = prompt.split("### solana")[1]?.split("##")[0] ?? "";
-      expect(solanaSection).toContain("cataloged.");
-      expect(solanaSection).not.toContain("Requires env:");
-      expect(solanaSection).not.toContain("active");
+      const solanaSection = prompt.split("### solana")[1]?.split("###")[0] ?? "";
+      expect(solanaSection).toContain("· 0 actions");
+      expect(solanaSection).toContain("a required API key is not configured");
+      // PRESERVED, never deleted: its absence would read as "this capability
+      // does not exist" rather than "a key is missing".
+      expect(prompt).toContain("### solana");
     });
 
-    it("does not render 'Requires env' hint when env is present", () => {
+    it("rebuilds across absent → present → absent env transitions (no stale cache)", () => {
+      delete process.env.JUPITER_API_KEY;
+      const absent = buildProtocolsPrompt();
+      expect(protocolAvailabilityFingerprint()).not.toContain("JUPITER_API_KEY");
+      expect(absent.split("### solana")[1]?.split("###")[0] ?? "").toContain("· 0 actions");
+
+      // No resetProtocolsPromptCache() anywhere below: the cache must notice
+      // the env change on its own, exactly as it does when the vault unlocks
+      // mid-session.
       process.env.JUPITER_API_KEY = "test-jupiter-key";
-      resetProtocolsPromptCache();
-      const prompt = buildProtocolsPrompt();
-      const solanaSection = prompt.split("### solana")[1]?.split("##")[0] ?? "";
-      expect(solanaSection).not.toContain("Requires env:");
+      const present = buildProtocolsPrompt();
+      expect(protocolAvailabilityFingerprint()).toContain("JUPITER_API_KEY");
+      expect(present).not.toBe(absent);
+      const presentSolana = present.split("### solana")[1]?.split("###")[0] ?? "";
+      expect(presentSolana).not.toContain("· 0 actions");
+      expect(presentSolana).toContain("Examples: solana.");
+
+      delete process.env.JUPITER_API_KEY;
+      const absentAgain = buildProtocolsPrompt();
+      expect(absentAgain).toBe(absent);
+    });
+
+    it("the fingerprint carries env NAMES only, never values", () => {
+      process.env.JUPITER_API_KEY = "sk-super-secret-value";
+      const fingerprint = protocolAvailabilityFingerprint();
+      expect(fingerprint).toContain("JUPITER_API_KEY");
+      expect(fingerprint).not.toContain("sk-super-secret-value");
+      expect(buildProtocolsPrompt()).not.toContain("sk-super-secret-value");
     });
   });
 });

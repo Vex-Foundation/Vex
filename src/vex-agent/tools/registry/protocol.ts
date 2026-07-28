@@ -22,7 +22,7 @@ const EXECUTE_TOOL_DESCRIPTION = [
   "Contract:",
   "- `toolId` must come from `discover_tools` (same session). Long-memory recall may hint at which namespace or approach to try, but the authoritative toolId still comes from discover.",
   "- `params` must match the tool's manifest schema — types, required fields, and value formats as returned by discover (build the call from the `params` schema).",
-  "- Mutating tools (check the `mutating` flag from discover) require approval in `restricted`/`off` loop modes; preview / dryRun variants bypass approval and are safe for iterative planning.",
+  "- Mutating tools (check the `mutating` flag from discover) require approval in `restricted`/`off` loop modes. A preview / dryRun variant is a READ: it needs no approval and is safe for iterative planning. Everything mutating needs approval — there is no approval-free mutation.",
   "- On error, diagnose and adapt — do not retry the same call in a tight loop. Present the error and next step to the user or the mission loop.",
 ].join(" ");
 
@@ -33,7 +33,7 @@ export const PROTOCOL_TOOLS: readonly ToolDef[] = [
       "Search advertised protocol tools by short English intent. Write what the user wants to do, including assets, chains, venue, or product hints when useful.",
       "Protocol/product names are allowed in the query as hints: Khalani, KyberSwap, Jupiter, DexScreener. Do not invent dotted toolIds or internal implementation names; use only toolIds returned by this response.",
       "Examples: 'estimate moving 250 USDC from Ethereum to Solana', 'use KyberSwap to preview a USDC to ETH swap on Base', 'use Jupiter to see USDC earn rates', 'show trending meme coins on Solana'.",
-      "Optional namespace narrows search to one active namespace: khalani, kyberswap, solana, dexscreener. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
+      "Optional namespace narrows search to one advertised namespace — the `namespace` parameter's own description lists them. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
       "Results include toolId, mutating, score, whyMatched, params, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Every advertised tool is active and executable; build the call from the `params` schema and use the returned toolId with execute_tool in the same session.",
       "Pressure advisory: when context usage is at barrier or critical (≥ 88%), mutating result rows are tagged `unavailable_at_pressure: true`. The dispatcher will hard-deny `execute_tool` on those rows — call `compact_now` first to free context, or stay on read-only / preview variants in the same namespace. Absent flag means available at the current band.",
     ].join(" "),

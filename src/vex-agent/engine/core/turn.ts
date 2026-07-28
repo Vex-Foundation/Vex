@@ -118,6 +118,13 @@ export async function executeTurn(
     config,
     {
       signal,
+      // Sticky provider routing: group every turn of this conversation (or
+      // mission run) onto one upstream provider so the prompt cache survives
+      // our compaction-driven prefix drift.
+      context: {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId,
+      },
       onDelta: (chunk, sequence) => {
         streamDeltaBus.emit(
           toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),

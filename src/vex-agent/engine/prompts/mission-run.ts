@@ -6,6 +6,7 @@
  */
 
 import type { EngineContext } from "../types.js";
+import { isProtocolNamespaceAvailable } from "./capability-availability.js";
 
 export interface MissionRunContext {
   /** Frozen mission summary for prompt injection. */
@@ -52,7 +53,12 @@ export function buildMissionRunPrompt(
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
   lines.push("- Use DexScreener, Jupiter/Solana, wallet, agent scan, or web research only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
-  lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
+  // Env-gated recommendation: the `solana.*` namespace needs JUPITER_API_KEY.
+  // Recommending it in an install without the key sends the model at a tool the
+  // dispatcher will refuse — same availability predicate the registry uses.
+  if (isProtocolNamespaceAvailable("solana")) {
+    lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
+  }
   lines.push("- Log significant decisions with rationale for audit trail");
   lines.push("");
 
@@ -89,5 +95,9 @@ export function buildMissionRunPrompt(
  * per-slice semantics.
  */
 export function buildMissionTurnState(iterationCount: number): string {
-  return `Iteration: ${iterationCount}`;
+  return [
+    "# Mission Iteration",
+    "",
+    `Iteration: ${iterationCount} — how many times the mission loop has woken you since this run started. It is not a budget and not a stop condition.`,
+  ].join("\n");
 }

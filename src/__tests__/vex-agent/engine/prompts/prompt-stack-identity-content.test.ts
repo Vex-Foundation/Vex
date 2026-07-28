@@ -111,8 +111,8 @@ describe("prompt-stack — identity content", () => {
     it("repositions dexscreener as the market-discovery backbone in the protocols prompt", () => {
       const prompt = buildProtocolsPrompt();
       const dexSection = prompt.split("### dexscreener")[1]?.split("##")[0] ?? "";
-      expect(dexSection).toContain("market-discovery backbone");
-      expect(dexSection).toContain("discover → resolve address → verify liquidity → quote");
+      expect(dexSection).toContain("market-research backbone");
+      expect(dexSection).toContain("Research flow: discover → resolve the address with `token_find` → verify liquidity → quote on a venue.");
       expect(dexSection).toContain("robinhood");
     });
   });

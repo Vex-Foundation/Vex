@@ -64,7 +64,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupLabel: "Cross-chain",
     summary: "Keyless cross-chain bridge (Relay) — the ONLY bridge to/from Robinhood Chain (4663); also bridges across its wider chain registry.",
     whenToUse:
-      "Use to bridge funds to or from Robinhood Chain (Khalani does not cover 4663): bridge ETH/USDG/VIRTUAL in to fund trading, or bridge back out. Trade on-chain after bridging in via kyberswap; if it cannot route, a backup venue is offered automatically in its failure message.",
+      "Use to bridge funds to or from Robinhood Chain (Khalani does not cover 4663): bridge ETH/USDG/VIRTUAL in to fund trading, or bridge back out.",
     preferInstead:
       "Use `khalani` for bridges between its supported chains; use `relay` whenever either side is Robinhood Chain (or Khalani lacks the route).",
     exampleQueries: [
@@ -160,11 +160,11 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
     summary:
-      "Pendle yield trading across 11 chains (Ethereum, Arbitrum, Base, BSC, and more) — principal tokens (PT) lock a FIXED rate until expiry; yield tokens (YT) are VARIABLE, leveraged yield that DECAYS to zero at expiry. Discover markets, value positions, buy / sell / redeem PT, buy / sell YT, mint / redeem the PT+YT pair, add / remove single-token liquidity (LP), and claim accrued income through the pinned Pendle Router.",
+      "Pendle term-yield markets across 11 chains (Ethereum, Arbitrum, Base, BSC, and more): discover markets, value positions, trade principal tokens (PT) and yield tokens (YT), mint/redeem the PT+YT pair, provide single-token liquidity, and claim accrued income.",
     whenToUse:
-      "Use when the user wants Pendle yield on any of its 11 chains: find markets by liquidity or implied APY, value holdings, buy a PT to lock a fixed rate, sell a PT early (market-priced), redeem a matured PT (~1:1), buy a YT for variable/leveraged yield (worth zero at expiry), sell a YT early, add or remove single-token liquidity (LP earns swap fees until expiry, not a fixed lock), or claim accrued interest and rewards. Preview PT/YT/LP actions with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote first.",
+      "Use when the user wants Pendle term yield: find markets by liquidity or implied APY, value holdings, trade a PT or a YT, add/remove single-token liquidity, or claim accrued interest and rewards. The PT/YT/LP rules live in the Fixed Yield (Pendle) doctrine below.",
     preferInstead:
-      "Use `kyberswap` for ordinary spot swaps (if it cannot route, a backup venue is offered automatically in its failure message); Pendle is specifically for term yield. A PT is fixed yield; a YT is variable and can lose money. Points programs are NOT a guaranteed yield.",
+      "Use `kyberswap` for ordinary spot swaps; Pendle is specifically for term yield.",
     exampleQueries: [
       'discover_tools(query="pendle fixed yield", namespace="pendle")',
       'discover_tools(query="buy YT variable yield", namespace="pendle")',
@@ -254,9 +254,9 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     advertised: true,
     groupId: "market-research",
     groupLabel: "Market Research",
-    summary: "The market-discovery backbone: read-only, multi-chain DEX intelligence — search any token on any chain (chainId filter, including robinhood), resolve token addresses, verify pair liquidity/momentum, and read trending narratives, attention/boost signals, CTO signals, ads, and paid-order verification.",
+    summary: "The market-research backbone: read-only, multi-chain DEX intelligence — search any token on any chain (chainId filter, including robinhood), resolve token addresses, verify pair liquidity/momentum, and read trending narratives, attention/boost signals, CTO signals, ads, and paid-order verification.",
     whenToUse:
-      "Reach for it FIRST on any discovery or research step: search a token on any chain (optionally filtered by chainId such as robinhood, or by minimum liquidity), resolve its address before a trade, and verify the pair's liquidity and momentum. Separate genuine narratives (trending/meta) from paid attention (boost/attention signals), and check profiles, community takeovers, ads, or paid-order verification. Canonical flow: discover → resolve address → verify liquidity → quote.",
+      "Reach for it FIRST on any RESEARCH step (it never executes): search a token on any chain, verify the pair's liquidity and momentum, and separate genuine narratives (trending/meta) from paid attention (boost/attention signals). Research flow: discover → resolve the address with `token_find` → verify liquidity → quote on a venue.",
     preferInstead:
       "Use `kyberswap`, `solana`, or `khalani` for execution after the discovery step — DexScreener never executes.",
     exampleQueries: [
@@ -312,9 +312,9 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     summary:
       "Read-only Virtuals Protocol agent-token intelligence — screen, inspect, and track agent tokens on Robinhood (chain 4663), Base, Solana, and Ethereum: status (bonding-curve UNDERGRAD vs graduated), holders, market cap in VIRTUAL, the anti-sniper buy-tax window, recent graduations, and the genesis launch calendar.",
     whenToUse:
-      "Use to discover or vet a Virtuals agent token before trading it: list/screen agents on a chain, get one agent's full detail (ALWAYS before buying a graduated token — check the anti-sniper window; never buy while it is active), watch the 'what just graduated' feed, or browse the genesis launch calendar. Trades execute via the venue tool named in each result's tradingRoute hint (uniswap on Robinhood, kyberswap on Base/ETH, solana on Solana).",
+      "Use to discover or vet a Virtuals agent token before trading it: list/screen agents on a chain, get one agent's full detail, watch the 'what just graduated' feed, or browse the genesis launch calendar. The trading rules live in the Virtuals Agent Tokens doctrine below.",
     preferInstead:
-      "Use `dexscreener` for general multi-chain pair/liquidity research and `uniswap`/`kyberswap`/`solana` to execute the trade — Virtuals never executes.",
+      "Use `dexscreener` for general multi-chain pair/liquidity research, and `swap_quote`/`swap_execute` (or `solana.*` on Solana) to execute the trade — Virtuals never executes.",
     exampleQueries: [
       'discover_tools(query="list agent tokens on robinhood", namespace="virtuals")',
       'discover_tools(query="virtuals agent detail anti-sniper", namespace="virtuals")',

@@ -148,8 +148,11 @@ describe("turn — Active Memory drift guard (façade + memory-section seam)", (
     const provider = makeProvider();
     const turnState = await runTurnAndGetTurnState(provider);
     expect(turnState).not.toContain("## Active Memory");
-    // …and the section still anchors the routing rule.
-    expect(turnState).toContain("## Memory Routing");
+    // Routing doctrine is invariant and now renders once in the STATIC
+    // `# Memory & Learning` layer, so it is deliberately absent from the turn
+    // state; the `# Memory` header still anchors the volatile section.
+    expect(turnState).not.toContain("## Memory Routing");
+    expect(turnState).toContain("# Memory");
   });
 
   it("turn state includes '# Active Memory' when repo returns hot-context entries", async () => {
@@ -237,6 +240,6 @@ describe("turn — Active Memory drift guard (façade + memory-section seam)", (
     expect(provider.chatCompletion).toHaveBeenCalled();
     expect(turnState).not.toContain("[Long-term memory:");
     expect(turnState).not.toContain("Skip long_memory_search");
-    expect(turnState).toContain("## Memory Routing");
+    expect(turnState).not.toContain("## Memory Routing");
   });
 });

@@ -8,8 +8,9 @@
  *
  * The `long_memory_suggest` lifecycle ("manager owns promotion/supersede/
  * expiry; you never manage it") and the memory-substrate description each had
- * three copies before — now stated once here. The turn-state `# Memory Routing`
- * block (memory-section.ts) still carries the per-question decision hierarchy.
+ * three copies before — now stated once here. The `## Memory Routing` decision
+ * hierarchy moved HERE from the turn-state `# Memory` layer: it is invariant
+ * doctrine, so it renders once in the cache prefix instead of every turn.
  *
  * Honest-uncertainty wording (rule 2) is product behavior — preserved verbatim
  * (rules/90-vex-project.md: preserve honest uncertainty).
@@ -18,7 +19,13 @@
 export function buildMemoryPolicyPrompt(): string {
   return `# Memory & Learning
 
-You learn from yourself across two memory substrates. See the Memory Routing block in the turn state for the per-question decision hierarchy.
+You learn from yourself across two memory substrates. The turn state carries their live counts.
+
+## Memory Routing
+
+- Current state (balances, prices, gas, positions, quotes) → live tools (\`wallet_balances\`, \`khalani_tokens_balances\`, \`agent_scan\`).
+- Something earlier in THIS conversation/mission → \`session_memory_search\` (per-session narrative).
+- Cross-session long-term memory (durable lessons / strategies / observed preferences from earlier sessions, incl. fresh un-consolidated signals) → \`long_memory_search\`.
 
 ## Substrates
 
