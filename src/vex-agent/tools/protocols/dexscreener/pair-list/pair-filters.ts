@@ -25,7 +25,12 @@
  * `dexscreener.tokenPairs` with the address on that chain).
  */
 
-import { filterRows, type FilterOutcome, type RowRejection } from "../list-core/index.js";
+import {
+  filterRows,
+  type ExplainDropsOptions,
+  type FilterOutcome,
+  type RowRejection,
+} from "../list-core/index.js";
 
 import type { PairListFilters } from "./list-query.js";
 import type { PairRow, PairWindow } from "./pair-metrics.js";
@@ -80,6 +85,32 @@ function includesFolded(haystack: readonly string[], needle: string | null | und
   return haystack.includes(folded);
 }
 
+function strOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * One threshold rule, with the metric it reads named EXACTLY ONCE.
+ *
+ * `rejects` and `rowValueOf` must read the same number: `explainDrops` reports the
+ * value that caused the drop, and a rule where the two drifted apart would show
+ * the agent a number that passed while claiming it failed. Supplying the metric
+ * once makes that impossible rather than merely unlikely.
+ */
+function thresholdRejection(
+  reason: string,
+  metricOf: (row: PairRow) => number | null,
+  threshold: number | null,
+  passes: (value: number | null, threshold: number | null) => boolean,
+): RowRejection<PairRow> {
+  return {
+    reason,
+    rejects: (row) => !passes(metricOf(row), threshold),
+    rowValueOf: metricOf,
+    threshold,
+  };
+}
+
 /**
  * Build the ordered rejection list for one query.
  *
@@ -99,18 +130,24 @@ function rejectionsFor(
     rejections.push({
       reason: "chainIds",
       rejects: (row) => !includesFolded(chainIds, row.pair.chainId),
+      rowValueOf: (row) => strOrNull(row.pair.chainId),
+      threshold: chainIds,
     });
   }
   if (dexIds !== null) {
     rejections.push({
       reason: "dexIds",
       rejects: (row) => !includesFolded(dexIds, row.pair.dexId),
+      rowValueOf: (row) => strOrNull(row.pair.dexId),
+      threshold: dexIds,
     });
   }
   if (excludeDexIds !== null) {
     rejections.push({
       reason: "excludeDexIds",
       rejects: (row) => includesFolded(excludeDexIds, row.pair.dexId),
+      rowValueOf: (row) => strOrNull(row.pair.dexId),
+      threshold: excludeDexIds,
     });
   }
   if (labels !== null) {
@@ -120,12 +157,16 @@ function rejectionsFor(
         const rowLabels = Array.isArray(row.pair.labels) ? row.pair.labels : [];
         return !rowLabels.some((label) => includesFolded(labels, label));
       },
+      rowValueOf: (row) => (Array.isArray(row.pair.labels) ? row.pair.labels : null),
+      threshold: labels,
     });
   }
   if (quoteSymbols !== null) {
     rejections.push({
       reason: "quoteSymbols",
       rejects: (row) => !includesFolded(quoteSymbols, row.pair.quoteToken?.symbol ?? null),
+      rowValueOf: (row) => strOrNull(row.pair.quoteToken?.symbol),
+      threshold: quoteSymbols,
     });
   }
 
@@ -151,73 +192,60 @@ function rejectionsFor(
     });
   }
 
-  // Thresholds.
+  // Thresholds. The metric each one reads is the field named in its param text
+  // (`../../manifests/pair-list-params.ts`) — one filter, one field, one place.
   rejections.push(
-    {
-      reason: "minLiquidityUsd",
-      rejects: (row) => !passesMin(row.metrics.liquidityUsd, filters.minLiquidityUsd),
-    },
-    {
-      reason: "maxLiquidityUsd",
-      rejects: (row) => !passesMax(row.metrics.liquidityUsd, filters.maxLiquidityUsd),
-    },
-    {
-      reason: "minQuoteDepthTokens",
-      rejects: (row) =>
-        !passesMin(row.metrics.liquidityQuoteTokens, filters.minQuoteDepthTokens),
-    },
-    {
-      reason: "minVolumeUsd",
-      rejects: (row) => !passesMin(row.metrics.windows[window].volumeUsd, filters.minVolumeUsd),
-    },
-    {
-      reason: "maxVolumeUsd",
-      rejects: (row) => !passesMax(row.metrics.windows[window].volumeUsd, filters.maxVolumeUsd),
-    },
-    { reason: "minFdvUsd", rejects: (row) => !passesMin(row.metrics.fdvUsd, filters.minFdvUsd) },
-    { reason: "maxFdvUsd", rejects: (row) => !passesMax(row.metrics.fdvUsd, filters.maxFdvUsd) },
-    {
-      reason: "minMarketCapUsd",
-      rejects: (row) => !passesMin(row.metrics.marketCapUsd, filters.minMarketCapUsd),
-    },
-    {
-      reason: "maxMarketCapUsd",
-      rejects: (row) => !passesMax(row.metrics.marketCapUsd, filters.maxMarketCapUsd),
-    },
-    {
-      reason: "minTurnoverRatio",
-      rejects: (row) =>
-        !passesMin(row.metrics.windows.h24.turnoverRatio, filters.minTurnoverRatio),
-    },
-    {
-      reason: "maxTurnoverRatio",
-      rejects: (row) =>
-        !passesMax(row.metrics.windows.h24.turnoverRatio, filters.maxTurnoverRatio),
-    },
-    {
-      reason: "minTxnCount",
-      rejects: (row) => !passesMin(row.metrics.windows[window].txnCount, filters.minTxnCount),
-    },
-    {
-      reason: "minBuySellRatio",
-      rejects: (row) =>
-        !passesMin(row.metrics.windows[window].buySellRatio, filters.minBuySellRatio),
-    },
-    {
-      reason: "maxBuySellRatio",
-      rejects: (row) =>
-        !passesMax(row.metrics.windows[window].buySellRatio, filters.maxBuySellRatio),
-    },
-    {
-      reason: "minPriceChangePct",
-      rejects: (row) =>
-        !passesSignedMin(row.metrics.windows[window].priceChangePct, filters.minPriceChangePct),
-    },
-    {
-      reason: "maxPriceChangePct",
-      rejects: (row) =>
-        !passesSignedMax(row.metrics.windows[window].priceChangePct, filters.maxPriceChangePct),
-    },
+    thresholdRejection("minLiquidityUsd", (row) => row.metrics.liquidityUsd, filters.minLiquidityUsd, passesMin),
+    thresholdRejection("maxLiquidityUsd", (row) => row.metrics.liquidityUsd, filters.maxLiquidityUsd, passesMax),
+    thresholdRejection(
+      "minQuoteDepthTokens",
+      (row) => row.metrics.liquidityQuoteTokens,
+      filters.minQuoteDepthTokens,
+      passesMin,
+    ),
+    thresholdRejection("minVolumeUsd", (row) => row.metrics.windows[window].volumeUsd, filters.minVolumeUsd, passesMin),
+    thresholdRejection("maxVolumeUsd", (row) => row.metrics.windows[window].volumeUsd, filters.maxVolumeUsd, passesMax),
+    thresholdRejection("minFdvUsd", (row) => row.metrics.fdvUsd, filters.minFdvUsd, passesMin),
+    thresholdRejection("maxFdvUsd", (row) => row.metrics.fdvUsd, filters.maxFdvUsd, passesMax),
+    thresholdRejection("minMarketCapUsd", (row) => row.metrics.marketCapUsd, filters.minMarketCapUsd, passesMin),
+    thresholdRejection("maxMarketCapUsd", (row) => row.metrics.marketCapUsd, filters.maxMarketCapUsd, passesMax),
+    thresholdRejection(
+      "minTurnoverRatio",
+      (row) => row.metrics.windows.h24.turnoverRatio,
+      filters.minTurnoverRatio,
+      passesMin,
+    ),
+    thresholdRejection(
+      "maxTurnoverRatio",
+      (row) => row.metrics.windows.h24.turnoverRatio,
+      filters.maxTurnoverRatio,
+      passesMax,
+    ),
+    thresholdRejection("minTxnCount", (row) => row.metrics.windows[window].txnCount, filters.minTxnCount, passesMin),
+    thresholdRejection(
+      "minBuySellRatio",
+      (row) => row.metrics.windows[window].buySellRatio,
+      filters.minBuySellRatio,
+      passesMin,
+    ),
+    thresholdRejection(
+      "maxBuySellRatio",
+      (row) => row.metrics.windows[window].buySellRatio,
+      filters.maxBuySellRatio,
+      passesMax,
+    ),
+    thresholdRejection(
+      "minPriceChangePct",
+      (row) => row.metrics.windows[window].priceChangePct,
+      filters.minPriceChangePct,
+      passesSignedMin,
+    ),
+    thresholdRejection(
+      "maxPriceChangePct",
+      (row) => row.metrics.windows[window].priceChangePct,
+      filters.maxPriceChangePct,
+      passesSignedMax,
+    ),
   );
 
   // Age. `pairCreatedAt` is absent on ~9 % of rows; those rows are excluded by
@@ -227,17 +255,22 @@ function rejectionsFor(
   if (wantsAge) {
     rejections.push({
       reason: "unknownAge",
+      // No `rowValueOf`: this rule IS the statement that the row has no age.
       rejects: (row) => row.metrics.pairAgeSeconds === null,
     });
     rejections.push(
-      {
-        reason: "minPairAgeSeconds",
-        rejects: (row) => !passesMin(row.metrics.pairAgeSeconds, filters.minPairAgeSeconds),
-      },
-      {
-        reason: "maxPairAgeSeconds",
-        rejects: (row) => !passesMax(row.metrics.pairAgeSeconds, filters.maxPairAgeSeconds),
-      },
+      thresholdRejection(
+        "minPairAgeSeconds",
+        (row) => row.metrics.pairAgeSeconds,
+        filters.minPairAgeSeconds,
+        passesMin,
+      ),
+      thresholdRejection(
+        "maxPairAgeSeconds",
+        (row) => row.metrics.pairAgeSeconds,
+        filters.maxPairAgeSeconds,
+        passesMax,
+      ),
     );
   }
 
@@ -249,6 +282,7 @@ export function filterPairRows(
   rows: readonly PairRow[],
   filters: PairListFilters,
   window: PairWindow,
+  explain?: ExplainDropsOptions<PairRow>,
 ): FilterOutcome<PairRow> {
-  return filterRows(rows, rejectionsFor(filters, window));
+  return filterRows(rows, rejectionsFor(filters, window), explain);
 }

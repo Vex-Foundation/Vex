@@ -1,22 +1,37 @@
 /**
- * Twitter/X concise output projection (P0-5).
+ * Twitter/X output projection.
  *
  * The Rettiwt client returns verbose `ITweet` / `IUser` / `ISpace` payloads
  * (profile/banner image URLs, entities, pinned tweets, full participant lists)
  * that routinely push tool output past the 16 KiB overflow threshold while
  * carrying little signal for the agent. This module curates the output string
  * BEFORE `ok()` — the only lever, since the internal-tool `data` is dropped at
- * the batch loop and only the `output` string reaches the model (plan §6).
+ * the batch loop and only the `output` string reaches the model.
  *
- * `concise` is the DEFAULT; `detailed` returns the verbatim client output via a
- * `response_format` knob on the handler (see `twitter-account.ts`).
+ * THIS PROJECTION IS THE ONLY SHAPE (W2B). The `response_format: "detailed"`
+ * escape hatch was retired: it existed to dump the verbatim client payload,
+ * measured at 26,082 B and 30,321 B on ordinary 20-row searches — 1.59x and
+ * 1.85x the overflow cap — and the fields it added beyond this projection are
+ * profile images, banners, entities and inflated quoted tweets, none of which
+ * serve the tool's two jobs. Retirement is enforced by NAME-REJECTION in the
+ * handler, never by silent deletion.
+ *
+ * NOTHING HERE IS TRUNCATED. `fullText` is 43 % of a concise payload and it
+ * still ships whole: hostile text is LABELLED (see `research-provenance.ts`),
+ * never cut.
  *
  * The client output originates from an external API, so every field is treated
  * as possibly-missing: arrays/nested objects are narrowed defensively before
  * use rather than trusting the rettiwt-api static types.
  */
 
+import type { TwitterAccountParams } from "@tools/twitter-account/schema.js";
 import type { TwitterAccountResult } from "@tools/twitter-account/types.js";
+import {
+  RESEARCH_EXTERNAL_CONTENT_WARNING,
+  collectExternalContentFields,
+  collectExternalContentPatterns,
+} from "./research-provenance.js";
 
 // ── Concise output shapes ────────────────────────────────────────
 
@@ -39,7 +54,10 @@ export interface ConciseTweetAuthor {
 export interface ConciseTweet {
   id?: string;
   url?: string;
+  /** The provider's ISO string, preserved. */
   createdAt?: string;
+  /** Epoch ms for age arithmetic; null when the provider date cannot be parsed. */
+  createdAtMs?: number | null;
   fullText?: string;
   lang?: string;
   likeCount?: number;
@@ -102,6 +120,17 @@ function optArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+/**
+ * Epoch ms for a provider date string, or null when it cannot be read. Never
+ * NaN: a NaN in a payload is a number the agent cannot distinguish from a real
+ * one until it does arithmetic with it.
+ */
+function optEpochMs(value: string | undefined): number | null | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 // ── Field projectors ─────────────────────────────────────────────
 
 /** Lean per-tweet author projection. */
@@ -135,10 +164,12 @@ export function projTweet(t: unknown): ConciseTweet {
     .map((m) => (isRecord(m) ? optString(m.type) : undefined))
     .filter((type): type is string => type !== undefined);
 
+  const createdAt = optString(t.createdAt);
   const projected: ConciseTweet = {
     id: optString(t.id),
     url: optString(t.url),
-    createdAt: optString(t.createdAt),
+    createdAt,
+    createdAtMs: optEpochMs(createdAt),
     fullText: optString(t.fullText),
     lang: optString(t.lang),
     likeCount: optNumber(t.likeCount),
@@ -201,8 +232,22 @@ export function projSpace(s: unknown): ConciseSpace {
 
 // ── Result-level projection ──────────────────────────────────────
 
+type TweetSearchParams = Extract<TwitterAccountParams, { action: "tweet_search" }>;
+
+/**
+ * What the search actually asked X for, AFTER normalization — the derived
+ * `startDate` behind `withinHours` and the `includeWords` behind `cashtags`.
+ * Echoing the resolved values is what makes "no results" diagnosable: an agent
+ * can see whether its own floor or window emptied the payload.
+ */
+export type TweetSearchFiltersApplied =
+  Partial<NonNullable<TweetSearchParams["filter"]>> & { query?: string; count?: number };
+
 interface ConciseBase {
+  externalContentWarning: string;
+  externalContentFields: string[];
   action: string;
+  filtersApplied?: TweetSearchFiltersApplied;
   rateLimit?: TwitterAccountResult["rateLimit"];
 }
 
@@ -215,6 +260,16 @@ type ConciseTwitterResult =
   | (ConciseBase & { users: ConciseUser[]; next: string })
   // Fallback for an unexpected action: surface the raw data rather than drop it.
   | (ConciseBase & { data: unknown });
+
+/**
+ * Dot paths carrying text a stranger wrote. Identity (`id`, `authorId`, `url`)
+ * is deliberately absent for the same reason `tokenAddress` is not flagged on a
+ * DexScreener row: training the agent to distrust identity would poison the one
+ * value on the row it is supposed to act on.
+ */
+const TWEET_EXTERNAL_PATHS = ["fullText", "author.userName", "author.fullName"] as const;
+const USER_EXTERNAL_PATHS = ["userName", "fullName", "description"] as const;
+const SPACE_EXTERNAL_PATHS = ["title"] as const;
 
 /** Actions whose cursored `items[]` are tweets. */
 const TWEET_LIST_ACTIONS: ReadonlySet<string> = new Set([
@@ -237,50 +292,77 @@ function nextCursor(data: Record<string, unknown>): string {
   return optString(data.next) ?? "";
 }
 
+export interface ProjectTwitterOptions {
+  /** Present only for `tweet_search`, where the caller resolved a filter. */
+  readonly filtersApplied?: TweetSearchFiltersApplied;
+}
+
 /**
- * Project a Twitter/X client result into its concise shape. `action` drives the
- * shape; `rateLimit` and the cursor `next` are preserved. `data` is narrowed
- * defensively — the client output originates from an external API.
- *
- * When `format` is `'detailed'` callers should bypass this and return the
- * verbatim result; this function always produces the concise projection.
+ * Build the envelope in ONE literal so key order is deterministic:
+ * `externalContentWarning` FIRST (owner directive), then the dot paths, then
+ * the action, then the payload. `JSON.stringify` preserves insertion order, so
+ * this order is the wire contract and is pinned by test.
+ */
+function envelope<T extends object>(
+  result: TwitterAccountResult,
+  externalContentFields: string[],
+  options: ProjectTwitterOptions,
+  payload: T,
+): ConciseBase & T {
+  return {
+    externalContentWarning: RESEARCH_EXTERNAL_CONTENT_WARNING,
+    externalContentFields,
+    action: result.action,
+    ...(options.filtersApplied !== undefined ? { filtersApplied: options.filtersApplied } : {}),
+    ...(result.rateLimit ? { rateLimit: result.rateLimit } : {}),
+    ...payload,
+  };
+}
+
+/**
+ * Project a Twitter/X client result into the shape the agent reads. `action`
+ * drives the payload; `rateLimit` and the cursor `next` are preserved. `data`
+ * is narrowed defensively — the client output originates from an external API.
  */
 export function projectTwitterResult(
   result: TwitterAccountResult,
-  _format: "concise" | "detailed",
+  options: ProjectTwitterOptions = {},
 ): ConciseTwitterResult {
-  const base: ConciseBase = result.rateLimit
-    ? { action: result.action, rateLimit: result.rateLimit }
-    : { action: result.action };
   const data = isRecord(result.data) ? result.data : {};
 
   if (result.action === "account_status") {
-    return { ...base, account: projUser(data.account) };
+    const account = projUser(data.account);
+    return envelope(result, collectExternalContentFields(account, USER_EXTERNAL_PATHS, "account"), options, { account });
   }
   if (result.action === "user_details") {
-    return { ...base, user: projUser(data.user) };
+    const user = projUser(data.user);
+    return envelope(result, collectExternalContentFields(user, USER_EXTERNAL_PATHS, "user"), options, { user });
   }
   if (result.action === "tweet_details") {
-    return { ...base, tweet: projTweet(data.tweet) };
+    const tweet = projTweet(data.tweet);
+    return envelope(result, collectExternalContentFields(tweet, TWEET_EXTERNAL_PATHS, "tweet"), options, { tweet });
   }
   if (result.action === "space_details") {
-    return { ...base, space: projSpace(data.space) };
+    const space = projSpace(data.space);
+    return envelope(result, collectExternalContentFields(space, SPACE_EXTERNAL_PATHS, "space"), options, { space });
   }
   if (TWEET_LIST_ACTIONS.has(result.action)) {
-    return {
-      ...base,
-      tweets: optArray(data.items).map(projTweet),
+    const tweets = optArray(data.items).map(projTweet);
+    return envelope(result, collectExternalContentPatterns(tweets, "tweets", TWEET_EXTERNAL_PATHS), options, {
+      tweets,
       next: nextCursor(data),
-    };
+    });
   }
   if (USER_LIST_ACTIONS.has(result.action)) {
-    return {
-      ...base,
-      users: optArray(data.items).map(projUser),
+    const users = optArray(data.items).map(projUser);
+    return envelope(result, collectExternalContentPatterns(users, "users", USER_EXTERNAL_PATHS), options, {
+      users,
       next: nextCursor(data),
-    };
+    });
   }
 
   // Unknown action — preserve the raw payload instead of silently dropping it.
-  return { ...base, data: result.data };
+  // Its shape is unknown, so no path can be named honestly; the warning still
+  // leads the payload.
+  return envelope(result, [], options, { data: result.data });
 }

@@ -128,12 +128,12 @@ pool) → pairs (deep stats)**; discovery flow: **trending (narratives) → meta
 
 | Tool ID | Backing method | Notes |
 |---------|----------------|-------|
-| `dexscreener.search` | `search` | Optional `chainId` / `minLiquidityUsd` / `limit` client-side filters; sorted by liquidity |
+| `dexscreener.search` | `search` | Optional `chainIds` / `minLiquidityUsd` / `limit` client-side filters; relevance order (the provider's), not a liquidity sort |
 | `dexscreener.pairs` | `getPairs` | Concise pair for one pool |
 | `dexscreener.tokens` | `getTokens` | Batch (≤30) concise pairs |
-| `dexscreener.tokenPairs` | `getTokenPairs` | All pools for a token, deepest first; canonical pool resolver |
+| `dexscreener.tokenPairs` | `getTokenPairs` | Up to 30 provider-selected pools for a token (Vex sorts deepest-first); canonical pool resolver |
 | `dexscreener.profiles` | `getProfiles` | Latest profiles |
-| `dexscreener.profiles.recent` | `getProfilesRecentUpdates` | **undocumented** — recently updated profiles + `updatedAt`/`cto` |
+| `dexscreener.profiles.recent` | `getProfilesRecentUpdates` | **undocumented** — recently updated profiles + `updatedAt`/`cto` (emitted agent-side as `communityTakeover`) |
 | `dexscreener.boosts` | `getBoosts` | Latest boosts |
 | `dexscreener.boosts.top` | `getTopBoosts` | Top boosts |
 | `dexscreener.communityTakeovers` | `getCommunityTakeovers` | CTO events |
@@ -334,7 +334,7 @@ via other protocols:
 2. ANALYSIS
    dexscreener.tokens / dexscreener.pairs (price, volume, liquidity, FDV, txns)
    dexscreener.tokenPairs (all pools, find deepest liquidity → pool address)
-   dexscreener.orders (paid-promotion legitimacy signal)
+   dexscreener.orders (paid-promotion SPEND record — not a legitimacy signal)
 
 3. REAL-TIME MONITORING (ws-client.ts)
    community-takeovers / boosts / profiles streams

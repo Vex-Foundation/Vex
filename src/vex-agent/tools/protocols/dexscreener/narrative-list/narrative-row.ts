@@ -56,7 +56,16 @@ export interface AgentDexNarrative {
   marketCapUsd: number | null;
   liquidityUsd: number | null;
   volumeUsdH24: number | null;
-  /** Already a percent (`-3.07` = −3.07 %) in the selected `window`. */
+  /**
+   * Which window `marketCapChangePctSelected` was resolved against.
+   *
+   * FALSIFIED LIVE in the persona gate: the default row carried exactly one
+   * change number, resolved by a silent `window` default of h24, and nothing on
+   * the row said which window that was. An agent that quotes or ranks the row
+   * has left the envelope behind, so the timeframe has to travel WITH the value.
+   */
+  windowSelected: NarrativeWindow;
+  /** Already a percent (`-3.07` = −3.07 %) in the window named by `windowSelected`. */
   marketCapChangePctSelected: number | null;
 
   // Opt-in via `fields`.
@@ -136,6 +145,7 @@ export function projectAgentNarrative(
     marketCapUsd: metrics.marketCapUsd,
     liquidityUsd: metrics.liquidityUsd,
     volumeUsdH24: metrics.volumeUsdH24,
+    windowSelected: window,
     marketCapChangePctSelected: metrics.marketCapChangePct[window],
   };
 

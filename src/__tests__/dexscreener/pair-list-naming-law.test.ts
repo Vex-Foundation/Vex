@@ -58,6 +58,9 @@ const NON_NUMERIC_FIELDS = new Set([
   "dexScreenerUrl",
   "decimalsAvailable",
   "priceSanity",
+  // The window the `*Selected` values were resolved against — a timeframe label
+  // ("h24"), not a quantity. It carries no unit because it IS one.
+  "windowSelected",
 ]);
 
 /** Project one real row with every field turned on. */
@@ -107,6 +110,10 @@ describe("AgentDexPair naming law", () => {
     const emitted = new Set(Object.keys(fullRow()));
     // `priceSanity` is attached per-tool by `tokenPairs`, not selected via `fields`.
     emitted.delete("priceSanity");
+    // `windowSelected` is an unconditional ECHO of the resolved `window` param,
+    // not a selectable field: it is always emitted, so offering it in `fields`
+    // would be a selector that can only ever be a no-op.
+    emitted.delete("windowSelected");
     expect([...emitted].sort()).toEqual([...ALL_PAIR_FIELDS].sort());
   });
 

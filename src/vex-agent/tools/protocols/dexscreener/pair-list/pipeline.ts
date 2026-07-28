@@ -74,7 +74,17 @@ export function buildPairListFromRows(
 ): PairListResult {
   const { query } = request;
 
-  const { kept, droppedByFilter } = filterPairRows(rows, query.filters, query.window);
+  const { kept, droppedByFilter, droppedRows, droppedRowsTruncated } = filterPairRows(
+    rows,
+    query.filters,
+    query.window,
+    query.explainDrops
+      // Best-effort identity. A provider row with no pair address is `null`
+      // rather than an invented key — the index still locates it in THIS
+      // response, which is all the record claims.
+      ? { rowIdOf: (row) => (typeof row.pair.pairAddress === "string" ? row.pair.pairAddress : null) }
+      : undefined,
+  );
   const sorted = sortPairRows(kept, query.sortBy, query.sortDir, query.window);
 
   const windowed = takeRowWindow(sorted, query.offset, query.limit);
@@ -106,6 +116,7 @@ export function buildPairListFromRows(
     offset: query.offset,
     filtersApplied: query.filtersApplied,
     droppedByFilter,
+    ...(droppedRows === undefined ? {} : { droppedRows, droppedRowsTruncated }),
     externalContentFields: collectExternalContentPaths(
       pairs,
       "pairs",

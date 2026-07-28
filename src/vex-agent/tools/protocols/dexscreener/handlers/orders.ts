@@ -4,21 +4,23 @@
  *
  * Kept in its own module because it is the only DexScreener tool that is neither
  * a pair list nor a feed: it answers "has this specific token paid DexScreener
- * for visibility", which is a per-token legitimacy question rather than a window
+ * for visibility", which is a per-token spend question rather than a window
  * over the market.
  */
 
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import type { ProtocolHandler } from "../../types.js";
 import { str, ok, fail } from "../../handler-helpers.js";
+import { missingRequired } from "./missing-params.js";
 
 export const DEXSCREENER_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.orders": async (p) => {
     const chainId = str(p, "chainId"), tokenAddress = str(p, "tokenAddress");
-    if (!chainId || !tokenAddress) return fail("Missing required: chainId, tokenAddress");
+    const missing = missingRequired("dexscreener.orders", { chainId, tokenAddress });
+    if (missing) return fail(missing);
     const client = getDexScreenerClient();
     // The endpoint answers with BOTH the paid-order history and the
-    // boost-payment ledger for the same token. Both are legitimacy signals, so
+    // boost-payment ledger for the same token. Both are spend signals, so
     // both are surfaced; the ledger used to be discarded entirely.
     const result = await client.getOrders(chainId, tokenAddress);
     return ok({

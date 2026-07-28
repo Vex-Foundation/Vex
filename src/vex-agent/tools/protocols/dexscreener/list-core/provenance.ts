@@ -25,6 +25,7 @@
  */
 
 import { EXTERNAL_CONTENT_WARNING } from "./external-text.js";
+import type { DroppedRowRecord } from "./row-window.js";
 
 /**
  * DexScreener's hard per-call row cap on the pair and promotional-feed
@@ -116,6 +117,15 @@ export interface ListEnvelope {
   hasMore: boolean;
   filtersApplied: Record<string, string | number | boolean | readonly string[]>;
   droppedByFilter: Record<string, number>;
+  /**
+   * A capped SAMPLE of dropped rows with the value each one lost by — present
+   * only when `explainDrops` was requested, so the default payload is unchanged.
+   * `droppedByFilter` above stays the full census either way.
+   */
+  droppedRows?: DroppedRowRecord[];
+  droppedRowsTruncated?: boolean;
+  /** Echo of `omitFields`. Present only when the caller supplied it. */
+  fieldsOmitted?: string[];
   externalContentWarning: string;
   externalContentFields: string[];
   tokenDecimalsNote?: string;
@@ -141,6 +151,11 @@ export interface BuildEnvelopeInput {
   readonly offset: number;
   readonly filtersApplied: Record<string, string | number | boolean | readonly string[]>;
   readonly droppedByFilter: Record<string, number>;
+  /** Omit unless `explainDrops` was requested — the default payload must not change. */
+  readonly droppedRows?: DroppedRowRecord[];
+  readonly droppedRowsTruncated?: boolean;
+  /** Omit unless `omitFields` was supplied. */
+  readonly fieldsOmitted?: readonly string[];
   readonly externalContentFields: string[];
   readonly includeDecimalsNote: boolean;
 }
@@ -166,6 +181,15 @@ export function buildPairListEnvelope(input: BuildEnvelopeInput): ListEnvelope {
     externalContentWarning: EXTERNAL_CONTENT_WARNING,
     externalContentFields: input.externalContentFields,
   };
+  // Every optional key below is assigned ONLY when the caller asked for the
+  // feature. A payload that carries `droppedRows: []` or `fieldsOmitted: []` on
+  // a default call has changed the default call, which is the one thing the
+  // byte budget cannot absorb.
+  if (input.droppedRows !== undefined) {
+    envelope.droppedRows = input.droppedRows;
+    envelope.droppedRowsTruncated = input.droppedRowsTruncated ?? false;
+  }
+  if (input.fieldsOmitted !== undefined) envelope.fieldsOmitted = [...input.fieldsOmitted];
   if (input.includeDecimalsNote) envelope.tokenDecimalsNote = TOKEN_DECIMALS_RESOLVER_NOTE;
   return envelope;
 }

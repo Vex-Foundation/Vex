@@ -48,6 +48,7 @@ import {
   profilesRecent,
 } from "./_feed-captures.js";
 import { searchUsdc, tokenPairsBonk, tokenPairsWeth, tokensEthereum40 } from "./_pair-captures.js";
+import { DEXSCREENER_BYTE_BUDGET_BYTES } from "./_byte-budget.js";
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -56,7 +57,6 @@ const READ_CTX: ProtocolExecutionContext = {
   walletPolicy: { kind: "none" },
 };
 
-const CONTEXT_CAP_BYTES = 16_384;
 
 interface FlowCall {
   readonly toolId: string;
@@ -161,7 +161,7 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("fresh-on-chain");
     expect(flow.calls).toHaveLength(2);
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
   // ── Flow 2 — paid-promotion check ──────────────────────────────
@@ -191,7 +191,7 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("paid-promotion");
     expect(flow.calls).toHaveLength(3);
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
     // The counts are promotion packs, never a currency amount.
     for (const row of rows(boosted)) {
       expect(row.boostCountTotal === null || typeof row.boostCountTotal === "number").toBe(true);
@@ -227,7 +227,7 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("narrative-rotation");
     expect(flow.calls).toHaveLength(2);
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
   // ── Flow 4 — rug-check before buying ───────────────────────────
@@ -262,7 +262,7 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("rug-check");
     expect(flow.calls).toHaveLength(3);
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
   // ── Flow 5 — pick an execution venue / exit liquidity at size ───
@@ -288,7 +288,7 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("exit-liquidity");
     expect(flow.calls).toHaveLength(1);
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
   // ── Flow 6 — portfolio refresh ─────────────────────────────────
@@ -315,7 +315,7 @@ describe("DexScreener research flows — generality", () => {
 
     flow.report("portfolio-refresh");
     expect(flow.calls).toHaveLength(2);
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
   });
 
   // ── The generality claim, asserted rather than asserted-about ───
@@ -340,7 +340,7 @@ describe("DexScreener research flows — generality", () => {
     // families with one spelling each, and every call fit the cap.
     expect(flow.vocabulary()).toContain("chainIds");
     expect(flow.vocabulary()).toContain("limit");
-    expect(flow.calls.every((entry) => entry.bytes < CONTEXT_CAP_BYTES)).toBe(true);
+    expect(flow.calls.every((entry) => entry.bytes < DEXSCREENER_BYTE_BUDGET_BYTES)).toBe(true);
     expect(flow.calls).toHaveLength(9);
   });
 });

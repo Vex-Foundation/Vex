@@ -44,7 +44,18 @@ export interface AgentDexPair {
   priceUsd: string | null;
   /** A hint, not a floor — see `turnoverRatioH24` and `liquidityQuoteTokens`. */
   liquidityUsd: number | null;
-  /** USD traded in the window named by `filtersApplied.window`. */
+  /**
+   * Which window the `*Selected` fields below were resolved against.
+   *
+   * Emitted on the ROW, beside the values it explains, not only in the
+   * envelope's `filtersApplied`. A context-free agent reading
+   * `priceChangePctSelected: 12.4` out of a row it has quoted, copied or ranked
+   * has no way back to the envelope, and `window` has a silent default of h24 —
+   * so the number arrived with its timeframe unstated. Falsified live in the
+   * persona gate on `trending`, and the same hole existed here.
+   */
+  windowSelected: PairWindow;
+  /** USD traded in the window named by `windowSelected`. */
   volumeUsdSelected: number | null;
   /** Already a percent (`1.08` = +1.08 %) in the selected window. */
   priceChangePctSelected: number | null;
@@ -150,6 +161,7 @@ export function projectAgentPair(row: PairRow, options: ProjectAgentPairOptions)
     quoteSymbol: displayText(tokenField(pair.quoteToken, "symbol")),
     priceUsd: strOrNull(pair.priceUsd),
     liquidityUsd: metrics.liquidityUsd,
+    windowSelected: window,
     volumeUsdSelected: selected.volumeUsd,
     priceChangePctSelected: selected.priceChangePct,
     turnoverRatioH24: metrics.windows.h24.turnoverRatio,

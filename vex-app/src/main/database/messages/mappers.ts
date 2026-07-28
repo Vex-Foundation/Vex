@@ -162,8 +162,9 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   // of the centered-uppercase notice styling.
   if (row.message_type === "mission_setup") return "text";
   if (row.message_type !== null && row.message_type !== "chat") {
-    // Other engine markers (wake banners, overflow stubs, runtime
-    // notices) surface as the catch-all "runtime_notice" kind.
+    // Other engine markers (wake banners, LEGACY pre-D-4 overflow stubs from
+    // the removed blob mechanism, runtime notices) surface as the catch-all
+    // "runtime_notice" kind.
     return "runtime_notice";
   }
   return "text";

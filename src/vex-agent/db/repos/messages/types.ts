@@ -35,8 +35,9 @@ export interface Message {
    * Engine metadata. `messageType` / `source` / `visibility` come from the
    * dedicated columns (set by the existing `addMessage` contract); `payload`
    * is the free-form JSONB envelope introduced by PR-7 (wake banners carry
-   * `{ reason, dueAt }`; overflow stubs will carry `{ overflow, blobKey, … }`
-   * in PR-11). Every consumer MUST treat `payload` as untrusted.
+   * `{ reason, dueAt }`). LEGACY ONLY: rows written before D-4 may still carry
+   * `{ overflow, blobKey, … }` from the removed blob mechanism — tolerated on
+   * read, never produced. Every consumer MUST treat `payload` as untrusted.
    */
   metadata?: MessageMetadata | null;
 }
@@ -49,7 +50,7 @@ export type MessageWithId = Message & { id: number };
  *
  * `payload` (PR-7) is the free-form envelope persisted into the
  * `messages.metadata` JSONB column. Shape is intentionally loose so new
- * engine-written message kinds (wake banners, overflow stubs, …) can extend
+ * engine-written message kinds (wake banners, legacy overflow stubs, …) can extend
  * without a migration. Every producer MUST define its own shape in code and
  * treat `payload` as untrusted when reading.
  */

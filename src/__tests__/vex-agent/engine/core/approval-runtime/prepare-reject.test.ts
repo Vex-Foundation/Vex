@@ -81,10 +81,6 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   emitTranscriptAppend: vi.fn(),
 }));
 
-vi.mock("@vex-agent/engine/wake/blob-refresh.js", () => ({
-  refreshBlobTtlForRecentMessages: vi.fn().mockResolvedValue(0),
-}));
-
 vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
   hydrateEngineSession: vi.fn(),
 }));

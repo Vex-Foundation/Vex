@@ -24,6 +24,7 @@ import {
   readBoolean,
   readEnum,
   readNumber,
+  readOmitFields,
   readStringList,
   type FiltersApplied,
   type NumericParamSpecs,
@@ -95,9 +96,26 @@ export interface PairListQuery {
   limit: number | null;
   offset: number;
   filters: PairListFilters;
+  /** When true the envelope carries a capped sample of dropped rows with their values. */
+  explainDrops: boolean;
   /** Echo of what was actually applied — only keys the caller supplied, normalised. */
   filtersApplied: FiltersApplied;
 }
+
+/**
+ * The pair family omits NOTHING, and the reason is the parameter's whole text.
+ *
+ * Every issuer-authored field beyond the symbols is already additive via
+ * `fields`, so subtracting it is the same as not asking for it; and the symbols
+ * themselves are how a row is identified. A parameter whose every input is
+ * either a no-op or a mistake is refused with the reason, not silently honoured.
+ */
+export const PAIR_OMIT_FIELDS_NOTE =
+  "Pair rows can omit nothing. Every issuer-authored text field beyond the symbols (baseName, "
+  + "quoteName, socialPlatforms, imageUrl) is already opt-in via \"fields\" — simply do not request "
+  + "it — and baseSymbol/quoteSymbol are row identity, never omittable. Price, liquidity, volume "
+  + "and every other number here is financially consumed and stays. Use \"fields\" to control what "
+  + "a pair row costs.";
 
 export type PairListQueryParse =
   | { readonly ok: true; readonly query: PairListQuery }
@@ -169,12 +187,22 @@ export function parsePairListQuery(
 
   const includeAllWindows = readBoolean(params, "includeAllWindows");
   if (!includeAllWindows.ok) return includeAllWindows;
-  const requestedFields = readStringList(params, "fields", { lowercase: false });
+  const requestedFields = readStringList(params, "fields", { lowercase: false, acceptsArray: false });
   if (!requestedFields.ok) return requestedFields;
   const fields = resolvePairFields(requestedFields.value, includeAllWindows.value);
   if (!fields.ok) return fields;
   if (requestedFields.value !== null) filtersApplied.fields = requestedFields.value;
   if (includeAllWindows.value) filtersApplied.includeAllWindows = true;
+
+  // Refused for every name — see PAIR_OMIT_FIELDS_NOTE. Read anyway (rather than
+  // left undeclared) so the refusal carries the reason instead of the runtime's
+  // generic "unknown parameter".
+  const omitFields = readOmitFields(params, { allowed: [], note: PAIR_OMIT_FIELDS_NOTE });
+  if (!omitFields.ok) return omitFields;
+
+  const explainDrops = readBoolean(params, "explainDrops");
+  if (!explainDrops.ok) return explainDrops;
+  if (explainDrops.value) filtersApplied.explainDrops = true;
 
   const limit = readNumber(params, "limit", NUMERIC_PARAMS);
   if (!limit.ok) return limit;
@@ -182,7 +210,7 @@ export function parsePairListQuery(
   if (!offset.ok) return offset;
 
   // Identity / venue.
-  const chainIdsRead = readStringList(params, "chainIds", { lowercase: true });
+  const chainIdsRead = readStringList(params, "chainIds", { lowercase: true, acceptsArray: true });
   if (!chainIdsRead.ok) return chainIdsRead;
   if (chainIdsRead.value !== null && defaults.allowChainFilter !== true) {
     return {
@@ -198,18 +226,18 @@ export function parsePairListQuery(
   // AND measurably degrades lexical tool retrieval (the duplicate key and its
   // description both score on "chain", which was enough to push
   // `khalani.tokens.search` out of the golden top-3 for "cross chain token
-  // search"). An agent working from the not-yet-rewritten description gets
+  // search"). An agent that still tries the old spelling gets
   // `Unknown parameter "chainId" … Allowed parameters: query, chainIds, …` from
   // the runtime param boundary, which names the replacement and is correctable in
   // one turn.
   const chainIds: string[] | null = chainIdsRead.value;
-  const dexIds = readStringList(params, "dexIds", { lowercase: true });
+  const dexIds = readStringList(params, "dexIds", { lowercase: true, acceptsArray: true });
   if (!dexIds.ok) return dexIds;
-  const excludeDexIds = readStringList(params, "excludeDexIds", { lowercase: true });
+  const excludeDexIds = readStringList(params, "excludeDexIds", { lowercase: true, acceptsArray: true });
   if (!excludeDexIds.ok) return excludeDexIds;
-  const labels = readStringList(params, "labels", { lowercase: true });
+  const labels = readStringList(params, "labels", { lowercase: true, acceptsArray: true });
   if (!labels.ok) return labels;
-  const quoteSymbols = readStringList(params, "quoteSymbols", { lowercase: true });
+  const quoteSymbols = readStringList(params, "quoteSymbols", { lowercase: true, acceptsArray: true });
   if (!quoteSymbols.ok) return quoteSymbols;
 
   const listEchoes: readonly (readonly [string, string[] | null])[] = [
@@ -262,6 +290,7 @@ export function parsePairListQuery(
       sortDir: sortDir.value,
       limit: limit.value,
       offset: offset.value ?? 0,
+      explainDrops: explainDrops.value,
       filters: {
         chainIds,
         dexIds: dexIds.value,

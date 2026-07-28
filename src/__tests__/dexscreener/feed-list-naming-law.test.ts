@@ -71,7 +71,15 @@ const NON_NUMERIC_FEED_FIELDS = new Set([
   "links",
 ]);
 
-const NON_NUMERIC_NARRATIVE_FIELDS = new Set(["slug", "name", "iconEmoji", "description"]);
+const NON_NUMERIC_NARRATIVE_FIELDS = new Set([
+  "slug",
+  "name",
+  "iconEmoji",
+  "description",
+  // The window `marketCapChangePctSelected` was resolved against — a timeframe
+  // label ("h24"), not a quantity. It carries no unit because it IS one.
+  "windowSelected",
+]);
 
 const ASOF_MS = Date.UTC(2026, 6, 28);
 

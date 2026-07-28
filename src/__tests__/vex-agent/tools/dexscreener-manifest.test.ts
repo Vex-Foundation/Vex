@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
+import type { ProtocolToolManifest } from "../../../vex-agent/tools/protocols/types.js";
 import { DEXSCREENER_TOOLS } from "../../../vex-agent/tools/protocols/dexscreener/manifest.js";
+
+function toolById(toolId: string): ProtocolToolManifest {
+  const tool = DEXSCREENER_TOOLS.find(t => t.toolId === toolId);
+  if (tool === undefined) throw new Error(`no manifest declares ${toolId}`);
+  return tool;
+}
+
+function descriptionOf(toolId: string): string {
+  return toolById(toolId).description;
+}
+
+function passageOf(toolId: string): string {
+  const passage = toolById(toolId).discovery?.embeddingText;
+  if (passage === undefined) throw new Error(`no embeddingText for ${toolId}`);
+  return passage;
+}
 
 describe("dexscreener manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
@@ -270,5 +287,159 @@ describe("dexscreener manifest", () => {
     expect(orders.discovery?.embeddingText?.toLowerCase()).toContain("marketing");
     expect(ads.discovery?.embeddingText).toContain("ad placements");
     expect(ads.discovery?.embeddingText?.toLowerCase()).toContain("visibility");
+  });
+
+  // ── The honest client-side-window disclosure (D-3) ────────────────
+  //
+  // Every windowed tool must SAY that its filters, sorts and windows run in
+  // Vex over rows DexScreener already chose. Without it a filtered-to-empty
+  // answer reads to a context-free agent as "this does not exist", which is
+  // the failure `droppedByFilter` exists to prevent — and the description is
+  // the only place the agent reads before it calls.
+  //
+  // Pinned as the load-bearing FRAGMENT of each tool's clause, not the whole
+  // string, so prose stays editable while the claim cannot silently drift.
+  // Each family's number differs and is measured, not assumed: the pair/feed
+  // families are capped at 30 by the provider, `meta` is not (31 rows
+  // observed), `trending` returns a provider-chosen size, the takeover feed
+  // has only an observed bound, and `attention` merges two ≤30 windows.
+
+  const WINDOW_CLAUSE_FRAGMENTS: readonly (readonly [string, string])[] = [
+    ["dexscreener.search", "at most 30 provider-chosen rows per call"],
+    ["dexscreener.tokens", "at most 30 provider-chosen rows per call"],
+    ["dexscreener.tokenPairs", "at most 30 pools per token"],
+    ["dexscreener.pairs", "returns only the pool(s) you name"],
+    ["dexscreener.profiles", "feed window of at most 30 rows per call"],
+    ["dexscreener.profiles.recent", "feed window of at most 30 rows per call"],
+    ["dexscreener.boosts", "feed window of at most 30 rows per call"],
+    ["dexscreener.boosts.top", "feed window of at most 30 rows per call"],
+    ["dexscreener.ads", "feed window of at most 30 rows per call"],
+    ["dexscreener.communityTakeovers", "observed ≤30 rows"],
+    ["dexscreener.trending", "whose size the provider chooses"],
+    ["dexscreener.meta", "can exceed 30 rows"],
+    ["dexscreener.attention", "each ≤30 provider-chosen rows"],
+  ];
+
+  for (const [toolId, fragment] of WINDOW_CLAUSE_FRAGMENTS) {
+    it(`${toolId} description discloses its client-side window`, () => {
+      expect(descriptionOf(toolId)).toContain(fragment);
+    });
+  }
+
+  it("every windowed tool states that no server-side option exists", () => {
+    for (const [toolId] of WINDOW_CLAUSE_FRAGMENTS) {
+      expect(descriptionOf(toolId), `${toolId} description`).toMatch(/no server-side/i);
+    }
+  });
+
+  // `orders` is a per-token record lookup with no window at all: the clause
+  // would itself be a false statement there, so its ABSENCE is pinned.
+  it("dexscreener.orders carries no window clause (it has no window)", () => {
+    const orders = descriptionOf("dexscreener.orders");
+    expect(orders).not.toMatch(/no server-side/i);
+    expect(orders).not.toContain("at most 30");
+    expect(orders).not.toContain("provider-chosen rows");
+    expect(orders).not.toContain("feed window");
+  });
+
+  it("dexscreener.attention names only the profile and boost windows it merges", () => {
+    const attention = descriptionOf("dexscreener.attention");
+    expect(attention).toContain("token-profile");
+    expect(attention).toContain("paid-boost");
+    // attention-merge.ts joins /token-profiles/latest/v1 and
+    // /token-boosts/latest/v1 — the ad feed is NOT part of the merge.
+    expect(attention).not.toMatch(/\bads?\b/i);
+  });
+
+  // ── Descriptions must not contradict the runtime (D-3) ────────────
+
+  it("dexscreener.search names chainIds and never the rejected singular chainId", () => {
+    const search = descriptionOf("dexscreener.search");
+    expect(search).toContain("chainIds");
+    // Word-boundary, not substring: `chainIds` contains `chainId`, so a plain
+    // `toContain` check would pass while the description still taught the
+    // spelling the param reader hard-rejects (pair-list/list-query.ts).
+    expect(search).not.toMatch(/\bchainId\b/);
+  });
+
+  it("dexscreener.search no longer claims a liquidity sort", () => {
+    const search = descriptionOf("dexscreener.search");
+    expect(search).not.toContain("sorted by liquidity");
+    expect(search.toLowerCase()).toContain("relevance");
+  });
+
+  it("search query text no longer promises pool-address uniqueness", () => {
+    // Falsified live in the persona gate: one EVM pool address returned rows on
+    // ethereum AND pulsechain. EVM addresses recur across chains.
+    const query = toolById("dexscreener.search").params.find(p => p.key === "query");
+    if (query === undefined) throw new Error("search has no query param");
+    expect(query.description).not.toContain("exactly that one pool");
+    expect(query.description).toContain("more than one chain");
+  });
+
+  it("dexscreener.trending names its single change field and the selecting window", () => {
+    // Falsified live: the default row carries exactly one change field,
+    // marketCapChangePctSelected, resolved against `window` (default h24) —
+    // not plural "change windows".
+    const trending = descriptionOf("dexscreener.trending");
+    expect(trending).not.toContain("change windows");
+    expect(trending).toContain("marketCapChangePctSelected");
+    expect(trending).toContain("default h24");
+  });
+
+  it("dexscreener.profiles does not claim to be a trending feed", () => {
+    // Three-way retrieval collision with `trending` and `attention`: this feed
+    // is the latest token-profile listing, per-chain and freshness-boundable.
+    expect(descriptionOf("dexscreener.profiles")).not.toMatch(/trending/i);
+    expect(descriptionOf("dexscreener.profiles")).toContain("chainIds");
+    expect(descriptionOf("dexscreener.profiles")).toContain("updatedWithinSeconds");
+  });
+
+  it("dexscreener.communityTakeovers makes no price prediction", () => {
+    const cto = descriptionOf("dexscreener.communityTakeovers");
+    expect(cto).not.toContain("precedes price action");
+    expect(cto).not.toMatch(/strong trading signal/i);
+  });
+
+  it("dexscreener.orders is framed as a spend record, not a legitimacy check", () => {
+    const orders = descriptionOf("dexscreener.orders");
+    expect(orders).toContain("paid DEX Screener for");
+    expect(orders).not.toMatch(/legitimac|legitimate/i);
+  });
+
+  // ── Retrieval passages carry the same corrections (D-3) ───────────
+  //
+  // The passage is what dense retrieval matches on, so a falsehood left here
+  // keeps being taught even after the description is fixed. DexScreener's
+  // metadata declares no aliases or exampleIntents, so these pin bounded
+  // semantic claims in `embeddingText` itself.
+
+  it("orders passage no longer frames paid promotion as a legitimacy check", () => {
+    expect(passageOf("dexscreener.orders")).not.toMatch(/legitimac|legit/i);
+  });
+
+  it("community-takeover passage no longer predicts price action", () => {
+    expect(passageOf("dexscreener.communityTakeovers")).not.toContain("precedes price action");
+  });
+
+  it("search passage no longer claims results are sorted by liquidity", () => {
+    expect(passageOf("dexscreener.search")).not.toContain("sorted by liquidity");
+  });
+
+  it("both profile passages retrieve chain-generic fresh-token discovery", () => {
+    // "new tokens on <chain>" is the intent these two feeds actually answer —
+    // and DexScreener spans dozens of chains, so neither passage may read as
+    // if a hardcoded handful were the only ones.
+    for (const toolId of ["dexscreener.profiles", "dexscreener.profiles.recent"]) {
+      const passage = passageOf(toolId);
+      expect(passage.toLowerCase(), `${toolId} passage`).toContain("new tokens");
+      expect(passage.toLowerCase(), `${toolId} passage`).toContain("any supported chain");
+    }
+  });
+
+  it("profiles.recent passage keeps its change-feed meaning", () => {
+    const passage = passageOf("dexscreener.profiles.recent");
+    expect(passage).toContain("updatedAt");
+    expect(passage.toLowerCase()).toContain("community-takeover");
   });
 });

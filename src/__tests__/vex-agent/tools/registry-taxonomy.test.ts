@@ -81,7 +81,6 @@ describe("ActionKind — pinned critical classifications", () => {
     ["chain_read", "read"],
     ["agent_scan", "read"],
     ["session_memory_search", "read"],
-    ["tool_output_read", "read"],
     ["long_memory_search", "read"],
     ["long_memory_get", "read"],
 

@@ -12,15 +12,22 @@
 
 import {
   WINDOW_NUMERIC_PARAMS,
+  readBoolean,
   readEnum,
   readNumber,
+  readOmitFields,
   readStringList,
   type FiltersApplied,
   type NumericParamSpecs,
 } from "../list-core/index.js";
 import { PAIR_WINDOWS } from "../pair-list/index.js";
 
-import { resolveNarrativeFields, type NarrativeFieldSelection } from "./narrative-fields.js";
+import {
+  OMITTABLE_NARRATIVE_FIELDS,
+  OMIT_NARRATIVE_FIELDS_NOTE,
+  resolveNarrativeFields,
+  type NarrativeFieldSelection,
+} from "./narrative-fields.js";
 
 /** The same four windows as the pair family — one vocabulary for "which timeframe". */
 export type NarrativeWindow = (typeof PAIR_WINDOWS)[number];
@@ -56,6 +63,10 @@ export interface NarrativeListQuery {
   limit: number | null;
   offset: number;
   filters: NarrativeListFilters;
+  /** When true the envelope carries a capped sample of dropped rows with their values. */
+  explainDrops: boolean;
+  /** Echoed as `fieldsOmitted`. `null` when the caller supplied no `omitFields`. */
+  fieldsOmitted: readonly string[] | null;
   filtersApplied: FiltersApplied;
 }
 
@@ -89,11 +100,17 @@ export function parseNarrativeListQuery(
   filtersApplied.sortBy = sortBy.value;
   filtersApplied.sortDir = sortDir.value;
 
-  const requestedFields = readStringList(params, "fields", { lowercase: false });
+  const requestedFields = readStringList(params, "fields", { lowercase: false, acceptsArray: false });
   if (!requestedFields.ok) return requestedFields;
-  const fields = resolveNarrativeFields(requestedFields.value);
+  const omitFields = readOmitFields(params, {
+    allowed: OMITTABLE_NARRATIVE_FIELDS,
+    note: OMIT_NARRATIVE_FIELDS_NOTE,
+  });
+  if (!omitFields.ok) return omitFields;
+  const fields = resolveNarrativeFields(requestedFields.value, omitFields.value);
   if (!fields.ok) return fields;
   if (requestedFields.value !== null) filtersApplied.fields = requestedFields.value;
+  if (omitFields.value !== null) filtersApplied.omitFields = omitFields.value;
 
   const limit = readNumber(params, "limit", NARRATIVE_NUMERIC_PARAMS);
   if (!limit.ok) return limit;
@@ -103,7 +120,7 @@ export function parseNarrativeListQuery(
   // A narrative is a THEME and spans every chain at once, so there is nothing on
   // a row for a chain filter to match. Refused by name rather than ignored, and
   // the refusal names the two tools that do answer the question.
-  const chainIds = readStringList(params, "chainIds", { lowercase: true });
+  const chainIds = readStringList(params, "chainIds", { lowercase: true, acceptsArray: true });
   if (!chainIds.ok) return chainIds;
   if (chainIds.value !== null) {
     return {
@@ -123,6 +140,10 @@ export function parseNarrativeListQuery(
     if (read.value !== null) filtersApplied[key] = read.value;
   }
 
+  const explainDrops = readBoolean(params, "explainDrops");
+  if (!explainDrops.ok) return explainDrops;
+  if (explainDrops.value) filtersApplied.explainDrops = true;
+
   return {
     ok: true,
     query: {
@@ -132,6 +153,8 @@ export function parseNarrativeListQuery(
       sortDir: sortDir.value,
       limit: limit.value,
       offset: offset.value ?? 0,
+      explainDrops: explainDrops.value,
+      fieldsOmitted: omitFields.value,
       filters: {
         minTokenCount: numeric.minTokenCount ?? null,
         minMarketCapUsd: numeric.minMarketCapUsd ?? null,
