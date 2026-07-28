@@ -51,7 +51,12 @@ function withOpenRouterKey(): void {
 describe("probeProvider", () => {
   it("returns name:null when env file is missing", async () => {
     const result = await probeProvider(envFile);
-    expect(result).toEqual({ configured: false, name: null, modelLabel: null });
+    expect(result).toEqual({
+      configured: false,
+      name: null,
+      modelLabel: null,
+      endpointTag: null,
+    });
   });
 
   it("configures explicit OpenRouter when key is in vault and model is in env", async () => {

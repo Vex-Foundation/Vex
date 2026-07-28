@@ -73,6 +73,7 @@ export const CH = {
     embeddingConfigure: "vex:onboarding:embeddingConfigure",
     agentCoreConfigure: "vex:onboarding:agentCoreConfigure",
     providerListModels: "vex:onboarding:providerListModels",
+    providerListEndpoints: "vex:onboarding:providerListEndpoints",
     providerTest: "vex:onboarding:providerTest",
     providerPersist: "vex:onboarding:providerPersist",
     completeSetup: "vex:onboarding:completeSetup",

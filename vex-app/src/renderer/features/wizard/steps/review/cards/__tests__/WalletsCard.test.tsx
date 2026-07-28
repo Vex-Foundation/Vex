@@ -120,6 +120,7 @@ function makeEnvState(
       configured: true,
       name: "openrouter",
       modelLabel: "openrouter/auto",
+      endpointTag: null,
     },
     setupCompleteFlag: true,
   };

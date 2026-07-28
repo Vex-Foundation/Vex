@@ -50,6 +50,8 @@ export const VEX_ERROR_CODES = [
   "provider.model_unsupported",
   "provider.unavailable",
   "provider.test_failed",
+  "provider.endpoint_unavailable",
+  "provider.api_key_required",
   "support.persist_failed",
   "wallets.invalid_selection",
   "approvals.expired",

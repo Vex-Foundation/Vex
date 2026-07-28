@@ -15,6 +15,8 @@ import type {
   ProviderListModelsInput,
   ProviderPersistInput,
 } from "../../shared/schemas/provider.js";
+import { providerListEndpointsInputSchema } from "../../shared/schemas/provider-endpoints.js";
+import type { ProviderListEndpointsInput } from "../../shared/schemas/provider-endpoints.js";
 import {
   walletAddInputSchema,
   walletExportAllInputSchema,
@@ -192,6 +194,13 @@ export const onboarding = {
       CH.onboarding.providerListModels,
       input,
       providerListModelsInputSchema
+    );
+  },
+  providerListEndpoints(input: ProviderListEndpointsInput) {
+    return invokeWithSchema(
+      CH.onboarding.providerListEndpoints,
+      input,
+      providerListEndpointsInputSchema
     );
   },
   completeSetup(input: CompleteSetupInput) {

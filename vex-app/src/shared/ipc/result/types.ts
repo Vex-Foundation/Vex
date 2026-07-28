@@ -166,6 +166,20 @@ export type VexErrorCode =
   | "provider.model_unsupported"
   | "provider.unavailable"
   | "provider.test_failed"
+  /**
+   * The renderer asked to pin an OpenRouter endpoint tag that main cannot
+   * confirm is a tool-capable endpoint of the selected model (unknown tag,
+   * or the endpoint catalogue could not be read). Nothing is persisted —
+   * the operator retries or chooses Auto. `retryable: true`.
+   */
+  | "provider.endpoint_unavailable"
+  /**
+   * A `providerPersist` call omitted `apiKey` (delta-save: "keep the stored
+   * key") but no OpenRouter key is present in the encrypted vault — so there
+   * is nothing to verify against. Nothing is persisted; the operator must
+   * supply a key. `retryable: true`, `userActionable: true`.
+   */
+  | "provider.api_key_required"
   | "support.persist_failed"
   /**
    * Unknown/unresolvable wallet id in a renderer-supplied selection

@@ -30,6 +30,7 @@ const validState: EnvState = {
     configured: false,
     name: null,
     modelLabel: null,
+    endpointTag: null,
   },
   secrets: {
     vaultConfigured: true,
@@ -92,6 +93,7 @@ describe("envStateSchema", () => {
         configured: true,
         name: "openrouter",
         modelLabel: "anthropic/claude-sonnet-4.5",
+        endpointTag: null,
       },
     };
     expect(envStateSchema.safeParse(state).success).toBe(true);

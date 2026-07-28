@@ -17,6 +17,7 @@
  */
 
 import { readEnvValue } from "./env-state.js";
+import { PROVIDER_ENDPOINT_TAG_ENV_KEY } from "@shared/schemas/provider.js";
 import type { ProviderState } from "@shared/schemas/onboarding.js";
 import { log } from "../logger/index.js";
 import { getUnlockedSecretPresence } from "../secrets/session.js";
@@ -32,12 +33,16 @@ function capLabel(value: string | null): string | null {
 
 export async function probeProvider(envPath: string): Promise<ProviderState> {
   const secretPresence = getUnlockedSecretPresence();
-  const [modelValue, agentProvider] =
+  const [modelValue, agentProvider, endpointTagValue] =
     await Promise.all([
       readEnvValue(envPath, "AGENT_MODEL"),
       readEnvValue(envPath, "AGENT_PROVIDER"),
+      readEnvValue(envPath, PROVIDER_ENDPOINT_TAG_ENV_KEY),
     ]);
   const hasOpenRouterKey = secretPresence.secrets.OPENROUTER_API_KEY === true;
+  // Routing label only — read straight from `.env`, capped like the model
+  // label so a hand-edited file cannot push an unbounded string across IPC.
+  const endpointTag = capLabel(endpointTagValue);
 
   // Step 1: explicit AGENT_PROVIDER wins.
   // Bogus explicit value → engine logs error + returns null + agent won't
@@ -52,6 +57,7 @@ export async function probeProvider(envPath: string): Promise<ProviderState> {
         configured: openrouterReady,
         name: "openrouter",
         modelLabel: capLabel(modelValue),
+        endpointTag,
       };
     }
     // Explicit but unsupported (e.g. `AGENT_PROVIDER=bogus`) — fail closed.
@@ -60,7 +66,7 @@ export async function probeProvider(envPath: string): Promise<ProviderState> {
     log.warn(
       `[provider-state] AGENT_PROVIDER is set to an unsupported value; treating as not configured`,
     );
-    return { configured: false, name: null, modelLabel: null };
+    return { configured: false, name: null, modelLabel: null, endpointTag: null };
   }
 
   // Step 2: fallback to key+model → openrouter.
@@ -69,9 +75,11 @@ export async function probeProvider(envPath: string): Promise<ProviderState> {
       configured: true,
       name: "openrouter",
       modelLabel: capLabel(modelValue),
+      endpointTag,
     };
   }
 
-  // Step 3: not configured.
-  return { configured: false, name: null, modelLabel: null };
+  // Step 3: not configured. A stale pin from a previous configuration is
+  // reported as absent — there is no active routing to describe.
+  return { configured: false, name: null, modelLabel: null, endpointTag: null };
 }

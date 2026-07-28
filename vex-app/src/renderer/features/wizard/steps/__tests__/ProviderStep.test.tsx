@@ -52,6 +52,10 @@ vi.mock("../../../../lib/api/provider.js", () => ({
   persistProvider: (input: ProviderPersistInput) => mockPersistProvider(input),
   useInvalidateEnvStateAfterProviderWrite: () => mockInvalidate,
   useProviderModels: (enabled: boolean) => mockUseProviderModels(enabled),
+  // The endpoint select is exercised in `provider/__tests__/EndpointPicker.test.tsx`
+  // and `main/ipc/onboarding/__tests__/provider-endpoint-pin.test.ts`; here it
+  // only needs to stay inert so these pre-existing assertions keep their scope.
+  useProviderEndpoints: () => ({ data: undefined, isLoading: false, isError: false, refetch: () => undefined }),
 }));
 
 vi.mock("../../../../lib/api/wizard.js", async () => {
@@ -96,7 +100,13 @@ function envState(
       dbReachable: true,
     },
     walletStatus: { evm: "present", solana: "present" },
-    provider: { configured: false, name: null, modelLabel: null, ...overrides },
+    provider: {
+      configured: false,
+      name: null,
+      modelLabel: null,
+      endpointTag: null,
+      ...overrides,
+    },
     setupCompleteFlag: false,
   };
 }

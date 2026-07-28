@@ -19,7 +19,9 @@
 import { appendMultipleToDotenvFile } from "@vex-lib/dotenv.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
+  PROVIDER_ENDPOINT_TAG_ENV_KEY,
   PROVIDER_PERSIST_CANONICAL_ORDER,
+  type ProviderPersistFieldName,
   type ProviderPersistInput,
 } from "@shared/schemas/provider.js";
 import { ENV_FILE } from "../paths/config-dir.js";
@@ -37,7 +39,7 @@ type CanonicalKey = (typeof PROVIDER_PERSIST_CANONICAL_ORDER)[number];
 const PROVIDER_AGENT_VALUE = "openrouter";
 
 export interface ProviderWriteResult {
-  readonly fieldsWritten: ReadonlyArray<CanonicalKey>;
+  readonly fieldsWritten: ReadonlyArray<ProviderPersistFieldName>;
 }
 
 /**
@@ -51,26 +53,50 @@ export async function writeProvider(
 ): Promise<Result<ProviderWriteResult>> {
   const targetFile = options.envFile ?? ENV_FILE;
 
-  const updates: Record<CanonicalKey, string> = {
-    OPENROUTER_API_KEY: input.apiKey,
+  // Delta-save: an ABSENT `apiKey` means "keep the stored key". The vault
+  // entry is then left completely untouched — we do not read-then-rewrite it,
+  // so a keep-key model change cannot corrupt or re-encrypt a working secret.
+  // The caller has already verified the selection against the stored key.
+  const rotatedApiKey = input.apiKey;
+
+  const updates: Record<Exclude<CanonicalKey, "OPENROUTER_API_KEY">, string> = {
     AGENT_MODEL: input.model,
     AGENT_PROVIDER: PROVIDER_AGENT_VALUE,
   };
 
+  // "Auto (recommended)" is the ABSENCE of a pin, so it must actively erase a
+  // previous one: `null` deletes the key from `.env` in the same atomic
+  // read-replace-rename as the model/provider write. A file-only delete is
+  // not enough — `loadProviderDotenv` (which the caller runs next) only SETS
+  // keys the file contains, so a pin already resident in `process.env` from a
+  // prior configuration would survive reconfiguration and keep routing to the
+  // old endpoint. Deleting it here, inside the env-write lock, closes that.
+  const endpointTag = input.endpointTag?.trim();
+  const pinnedTag =
+    endpointTag !== undefined && endpointTag.length > 0 ? endpointTag : null;
+
   try {
-    const secretWrite = writeUnlockedSecrets({
-      OPENROUTER_API_KEY: input.apiKey,
-    });
-    if (!secretWrite.ok) return secretWrite;
+    if (rotatedApiKey !== undefined) {
+      const secretWrite = writeUnlockedSecrets({
+        OPENROUTER_API_KEY: rotatedApiKey,
+      });
+      if (!secretWrite.ok) return secretWrite;
+    }
+    // Runs on BOTH paths: any plaintext managed secret left in `.env` by a
+    // manual edit is scrubbed even when this save rotates nothing.
     stripManagedSecretsFromDotenvFile(targetFile);
     appendMultipleToDotenvFile(
       {
         OPENROUTER_API_KEY: null,
         AGENT_MODEL: updates.AGENT_MODEL,
         AGENT_PROVIDER: updates.AGENT_PROVIDER,
+        [PROVIDER_ENDPOINT_TAG_ENV_KEY]: pinnedTag,
       },
       targetFile,
     );
+    if (pinnedTag === null) {
+      delete process.env[PROVIDER_ENDPOINT_TAG_ENV_KEY];
+    }
   } catch (cause) {
     log.error(
       `[provider-writer] failed to persist provider keys to ${targetFile}`,
@@ -89,7 +115,14 @@ export async function writeProvider(
   }
 
   log.info(`[provider-writer] persisted provider keys to ${targetFile}`);
-  return ok({
-    fieldsWritten: [...PROVIDER_PERSIST_CANONICAL_ORDER] as ReadonlyArray<CanonicalKey>,
-  });
+  // Report only what this save actually wrote, in canonical order. The vault
+  // key is omitted on a keep-key delta save and the pin key on "Auto" — both
+  // are absent from THIS write, and claiming them would be a lie.
+  const fieldsWritten: ReadonlyArray<ProviderPersistFieldName> = [
+    ...PROVIDER_PERSIST_CANONICAL_ORDER.filter(
+      (field) => field !== "OPENROUTER_API_KEY" || rotatedApiKey !== undefined,
+    ),
+    ...(pinnedTag !== null ? ([PROVIDER_ENDPOINT_TAG_ENV_KEY] as const) : []),
+  ];
+  return ok({ fieldsWritten });
 }

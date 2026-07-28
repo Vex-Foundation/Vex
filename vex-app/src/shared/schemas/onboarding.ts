@@ -61,6 +61,14 @@ export const providerStateSchema = z
     configured: z.boolean(),
     name: z.enum(["openrouter"]).nullable(),
     modelLabel: z.string().max(200).nullable(),
+    /**
+     * The pinned OpenRouter endpoint tag (`OPENROUTER_ENDPOINT_TAG`), or
+     * `null` for "Auto (recommended)". NON-SECRET: a routing label, the same
+     * value the renderer already picks in the wizard. Exposed so the
+     * configured screen can show what is actually in effect and prefill the
+     * edit form — no key material is added to this shape.
+     */
+    endpointTag: z.string().max(200).nullable(),
   })
   .strict();
 
