@@ -10,10 +10,8 @@
 
 export { GatePrologue, type GatePrologueProps } from "./GatePrologue.js";
 export {
-  PROLOGUE_VERSION_KEY,
-  readLastPlayedVersion,
   resolveProloguePlay,
-  writeLastPlayedVersion,
+  sanitizeStoredPrologueVersion,
   type ProloguePlay,
 } from "./prologue-policy.js";
 export { FULL_TIMELINE, CONDENSED_TIMELINE } from "./prologue-phases.js";

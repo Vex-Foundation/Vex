@@ -260,6 +260,15 @@ interface UiState {
    * Persisted (see partialize) — a relaunch keeps the user's choice.
    */
   readonly hideDustBalances: boolean;
+  /**
+   * Build version whose gate prologue last COMPLETED (or was skipped), or
+   * null if never. COSMETIC — `gate-prologue/prologue-policy.ts` condenses
+   * the cinematic on a repeat launch of the same version. Persisted (see
+   * partialize) via this store's Zustand persist — the only sanctioned
+   * renderer localStorage path (`check-build-artifacts.mjs`); coerced on
+   * every rehydrate in `merge` below because the payload is user-writable.
+   */
+  readonly prologueVersion: string | null;
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
@@ -269,6 +278,8 @@ interface UiState {
   readonly dismissSetupGate: () => void;
   /** Re-arm the boot gate and replay its full prologue (dev Setup Tour). */
   readonly replayPrologue: () => void;
+  /** Record the version whose prologue just finished (or was skipped). */
+  readonly setPrologueVersion: (version: string) => void;
   /** Arm the unlock-success curtain — called ONLY after the unlock IPC succeeds. */
   readonly beginUnlockCurtain: () => void;
   /** The curtain finished its reveal and unmounts. */
@@ -352,6 +363,7 @@ export const useUiStore = create<UiState>()(
       reasoningEffortBySession: {},
       reviewModal: "none",
       hideDustBalances: true,
+      prologueVersion: null,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
@@ -363,6 +375,7 @@ export const useUiStore = create<UiState>()(
           setupGateActive: true,
           prologueReplayNonce: state.prologueReplayNonce + 1,
         })),
+      setPrologueVersion: (prologueVersion) => set({ prologueVersion }),
       beginUnlockCurtain: () => set({ unlockCurtainActive: true }),
       dismissUnlockCurtain: () => set({ unlockCurtainActive: false }),
       openWizard: (wizardEntryMode) =>
@@ -411,13 +424,14 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         bookOpen: state.bookOpen,
         hideDustBalances: state.hideDustBalances,
+        prologueVersion: state.prologueVersion,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -436,6 +450,12 @@ export const useUiStore = create<UiState>()(
       //       the same TRUE default a fresh install gets, so an upgrading
       //       install's dust airdrops hide immediately instead of the field
       //       hydrating `undefined`.
+      //   v7: `prologueVersion` added (gate-prologue play policy, moved here
+      //       from a direct localStorage adapter so the renderer keeps ONE
+      //       sanctioned storage path) — seed null: an upgrading install has
+      //       never recorded a completed prologue under this key, and null
+      //       resolves to the full play, the same first-impression a fresh
+      //       install gets.
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -445,6 +465,9 @@ export const useUiStore = create<UiState>()(
         if (version < 5) next = { ...next, theme: "chronos" };
         if (version < 6 && !("hideDustBalances" in next)) {
           next = { ...next, hideDustBalances: true };
+        }
+        if (version < 7 && !("prologueVersion" in next)) {
+          next = { ...next, prologueVersion: null };
         }
         return next;
       },
@@ -466,7 +489,16 @@ export const useUiStore = create<UiState>()(
           typeof incoming?.hideDustBalances === "boolean"
             ? incoming.hideDustBalances
             : true;
-        return { ...current, ...incoming, theme, hideDustBalances };
+        // Same posture for the prologue flag: a non-string, empty or
+        // absurdly long hand-edited value degrades to null — which the play
+        // policy resolves to the FULL prologue, never a crash.
+        const prologueVersion: string | null =
+          typeof incoming?.prologueVersion === "string" &&
+          incoming.prologueVersion.length > 0 &&
+          incoming.prologueVersion.length <= 64
+            ? incoming.prologueVersion
+            : null;
+        return { ...current, ...incoming, theme, hideDustBalances, prologueVersion };
       },
     }
   )
