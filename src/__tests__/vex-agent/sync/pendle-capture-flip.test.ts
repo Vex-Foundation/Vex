@@ -44,6 +44,21 @@ const PENDLE_MUTATING_TOOLS = [
   "pendle.py.redeem",
   "pendle.lp.add",
   "pendle.lp.remove",
+  // R5d: the SY wrap pair mutates too, and `transactions-failure-tools.ts`
+  // already maps both to the `yield` product. Additive — nothing else about this
+  // expected set changes.
+  "pendle.sy.mint",
+  "pendle.sy.redeem",
+  // R5d card E5: the dual-LP pair (E3) and the three term-mobility writes (E4)
+  // are Pendle broadcasts on the same terms — `capture: "none"` because their
+  // handlers write `kind: 'yield'` rows straight to `agent_activity`, and the
+  // `yield` product so a FAILED attempt is still filed somewhere. Additive
+  // again: no existing id's classification changes.
+  "pendle.lp.removeDual",
+  "pendle.lp.addKeepYt",
+  "pendle.pt.rollover",
+  "pendle.lp.transfer",
+  "pendle.lp.toPt",
   "pendle.claim",
 ] as const;
 

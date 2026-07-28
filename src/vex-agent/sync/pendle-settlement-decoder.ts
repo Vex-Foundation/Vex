@@ -24,7 +24,7 @@
  * Pendle activity spine — do not diverge from it here):
  *   - `yield_claim`  — the executed OUTPUT credit only. A claim spends no
  *     principal, so requiring an input leg would leave every claim pending.
- *   - `yield_pt` / `yield_yt` — one-in-one-out: a proven outflow AND a proven
+ *   - `yield_pt` / `yield_yt` / `yield_sy` — one-in-one-out: a proven outflow AND a proven
  *     inflow.
  *   - `yield_py` — BOTH Option-C legs on the populated side: a mint (PT+YT
  *     out) must prove both OUT legs, a redeem (PT+YT in) must prove both IN
@@ -186,6 +186,9 @@ export function decodePendleSettlement(input: SettlementDecoderInput): DecodedSe
     }
     case "yield_pt":
     case "yield_yt":
+    // `yield_sy` is one-in-one-out like the PT/YT arm: an SY wrap moves exactly
+    // one instrument in and one out, and it has no second leg to prove.
+    case "yield_sy":
       return decodeLegs(logs, wallet, input.tokenInAddress, outToken, null, null);
     case "yield_py":
       // Option C: mint proves both OUT legs, redeem proves both IN legs.

@@ -93,7 +93,7 @@ describe("agent_activity kind/role — SQL CHECK <-> TS union lockstep", () => {
     const roles = parseInListCheck("agent_activity_event_role_valid", "event_role");
     expect(kinds).toContain("yield");
     expect(parseTsUnion("AgentActivityKind")).toContain("yield");
-    for (const role of ["yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_claim"]) {
+    for (const role of ["yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_sy", "yield_claim"]) {
       expect(roles).toContain(role);
       expect(parseTsUnion("AgentActivityEventRole")).toContain(role);
     }

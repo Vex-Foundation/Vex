@@ -107,6 +107,16 @@ export const LEGACY_TOOL_PRODUCTS: ReadonlyMap<string, string> = new Map([
   ["pendle.py.redeem", "yield"],
   ["pendle.lp.add", "yield"],
   ["pendle.lp.remove", "yield"],
+  ["pendle.sy.mint", "yield"],
+  ["pendle.sy.redeem", "yield"],
+  // R5d card E5 — the dual-leg LP pair (E3) and the three term-mobility moves
+  // (E4). Same reasoning as every row above: a FAILED attempt must still be
+  // filed under a product, and `yield` is the only one that describes them.
+  ["pendle.lp.removeDual", "yield"],
+  ["pendle.lp.addKeepYt", "yield"],
+  ["pendle.pt.rollover", "yield"],
+  ["pendle.lp.transfer", "yield"],
+  ["pendle.lp.toPt", "yield"],
   ["pendle.claim", "yield"],
   // Old per-venue swap split, replaced by the unified *.swap.execute pair.
   ["kyberswap.swap.sell", "spot"],

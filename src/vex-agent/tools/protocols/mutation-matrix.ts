@@ -137,6 +137,32 @@ const entries: [string, MutationContract][] = [
   ["pendle.lp.add",                 { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
   ["pendle.lp.remove",              { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
 
+  // Pendle SY wrap/unwrap (R5d card D3). One token in, one token out, so `trade`
+  // rather than `projection` — same classification as the PT/YT legs. Their quote
+  // lives INSIDE the tool as a `dryRun` param, which is exactly what
+  // `previewSupport: true` already means here.
+  ["pendle.sy.mint",                { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.sy.redeem",              { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+
+  // Pendle dual-leg LP (R5d card E3). `projection` like the plain lp.add/remove
+  // they vary — the LP leg's lifecycle is what gets recorded, not LP economics.
+  // fanOut:"items" + strictItemsRequired for BOTH: each produces TWO output
+  // instruments (token + PT, and LP + kept YT), and a single summary row could
+  // never stand in for two distinct legs — exactly the reason py.mint/redeem
+  // carry the same pair of flags.
+  ["pendle.lp.removeDual",          { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "items", requiredFields: NO_FIELDS, strictItemsRequired: true }],
+  ["pendle.lp.addKeepYt",           { kind: "projection", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "items", requiredFields: NO_FIELDS, strictItemsRequired: true }],
+
+  // Pendle term mobility (R5d card E4) — one instrument in, one instrument out,
+  // so `trade` and fanOut:"single" like the SY pair. `pendle.lp.transfer` is a
+  // trade rather than a projection for the same reason: it is one position
+  // swapped for another, not liquidity being opened or closed. Their quote
+  // lives INSIDE the tool as a `dryRun` param, which is what previewSupport
+  // means here.
+  ["pendle.pt.rollover",            { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.lp.transfer",            { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pendle.lp.toPt",                { kind: "trade", capture: "none", expectedType: "yield", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+
   // ── audit (capture: full) ─────────────────────────────────
   // Khalani/Relay bridges (Agent Scan Phase 2, migration 045) write their durable
   // truth DIRECTLY to `agent_activity` (via `db/repos/agent-activity.ts`) across

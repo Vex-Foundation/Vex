@@ -145,9 +145,17 @@ describe("capture contract — structural coverage", () => {
     }
   });
 
-  it("projection kind has exactly the two Pendle LP lifecycle rows, both capture:none (Batch B card B2)", () => {
+  it("projection kind is exactly the Pendle LP lifecycle rows, all capture:none (Batch B card B2; R5d E5)", () => {
+    // The dual-leg pair joined at card E5 on the same terms as lp.add/lp.remove:
+    // an LP lifecycle row, no LP economics, and never a second quote-derived
+    // truth beside the handler's own agent_activity write.
     const projection = getToolsByKind("projection");
-    expect(projection.map(([id]) => id).sort()).toEqual(["pendle.lp.add", "pendle.lp.remove"]);
+    expect(projection.map(([id]) => id).sort()).toEqual([
+      "pendle.lp.add",
+      "pendle.lp.addKeepYt",
+      "pendle.lp.remove",
+      "pendle.lp.removeDual",
+    ]);
     for (const [toolId, c] of projection) {
       expect(c.capture, `${toolId} should have capture:none`).toBe("none");
     }

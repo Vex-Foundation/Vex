@@ -15,7 +15,9 @@
  *                         contain NOTHING else — buy/sell AND py-mint: the single
  *                         input token at the input amount (native → empty);
  *                         redeem AND py-redeem: the {YT, PT} pair (Convert asks
- *                         both), each at the input amount. Spender is IMPLICIT =
+ *                         both), each at the input amount. SY wrap/unwrap take
+ *                         the single-input rule too: mint approves the payment
+ *                         token, redeem approves the SY. Spender is IMPLICIT =
  *                         the pinned Router.
  *   5. Calldata bind    : FULL `decodeFunctionData` against the complete Router
  *                         ABI and assert EVERY intent-relevant param — the
@@ -58,7 +60,32 @@ export type PendleAction =
   // a TokenInput (like a buy); remove approves the LP/MARKET token and carries a
   // TokenOutput (like a sell), with the LP amount as the actual spend.
   | "lp-add"
-  | "lp-remove";
+  | "lp-remove"
+  // The DUAL liquidity pair, R5d. Both are plain single-leg routes with TWO
+  // declared outputs: `lp-remove-dual` burns LP into (token, PT) and
+  // `lp-add-keep-yt` deposits a token into (LP, YT). They are SEPARATE actions
+  // from `lp-add`/`lp-remove` rather than extra methods on them: the keep-YT add
+  // reports the SAME Convert action string as a plain add (`"add-liquidity"`),
+  // so the METHOD row below is the only thing that stops a plain-add route from
+  // satisfying a keep-YT intent, and each carries its own two-field price floor.
+  | "lp-remove-dual"
+  | "lp-add-keep-yt"
+  // SY wrap (token → SY) and unwrap (SY → token), R5d. Unlike every action
+  // above, these belong to NO market: an SY has no maturity, no PT and no YT,
+  // so arg 1 is the SY CONTRACT and is bound against `expectedSy`.
+  | "sy-mint"
+  | "sy-redeem"
+  // LP → PT in one shot, R5d. Live-probed 2026-07-28 as a PLAIN single-leg
+  // `removeLiquiditySinglePt` — NOT a `callAndReflect` action, despite sharing a
+  // family with the two below — so it is bound right here like any other
+  // single-leg route, with `minPtOut` at arg 3.
+  | "lp-to-pt"
+  // The two `callAndReflect` actions, R5d. Their calldata is a multi-leg wrapper
+  // that `decodeRouterCall` cannot read, so they are bound by
+  // `./bind-reflect.ts`, NOT here. They appear in this union only so a single
+  // `PendleAction` names every write action; see ACTION_METHODS.
+  | "pt-rollover"
+  | "lp-transfer";
 
 export interface PendleTxIntent {
   action: PendleAction;
@@ -88,6 +115,8 @@ export interface PendleTxIntent {
   ptAddress?: Address;
   /** Sell/redeem: the quoted output token — asserted against TokenOutput.tokenOut. */
   expectedOutputToken?: Address;
+  /** SY wrap/unwrap: the SY contract the caller named. Asserted against arg 1. */
+  expectedSy?: Address;
 }
 
 /** Method(s) a given action may legitimately carry. */
@@ -106,6 +135,24 @@ const ACTION_METHODS: Record<PendleAction, readonly PendleRouterMethod[]> = {
   // LP single-token add/remove each carry their OWN method (never a swap).
   "lp-add": ["addLiquiditySingleToken"],
   "lp-remove": ["removeLiquiditySingleToken"],
+  // The dual pair each carry their OWN method. A plain `addLiquiditySingleToken`
+  // can therefore never satisfy a keep-YT intent even though Convert labels both
+  // routes `"add-liquidity"`, and a single-token remove can never satisfy a dual
+  // remove.
+  "lp-remove-dual": ["removeLiquidityDualTokenAndPt"],
+  "lp-add-keep-yt": ["addLiquiditySingleTokenKeepYt"],
+  // SY wrap/unwrap each carry their OWN method — never a swap, never a mint-py.
+  "sy-mint": ["mintSyFromToken"],
+  "sy-redeem": ["redeemSyToToken"],
+  // LP → PT carries its OWN single-leg method.
+  "lp-to-pt": ["removeLiquiditySinglePt"],
+  // EMPTY BY DESIGN, not by omission. `pt-rollover` and `lp-transfer` are
+  // `callAndReflect` bodies; `callAndReflect` is not a PendleRouterMethod and can
+  // never decode here. An empty row means NO single-leg method is valid for these
+  // actions, so routing one through `assertRouteSafe` refuses instead of binding
+  // it loosely. `./bind-reflect.ts` owns them.
+  "pt-rollover": [],
+  "lp-transfer": [],
 };
 
 // ── Approval-set binding ────────────────────────────────────────────
@@ -196,12 +243,19 @@ export function assertRouteSafe(
   // carry the market at arg 1, bound against intent.expectedMarket.
   const bindsYt =
     intent.action === "redeem" || intent.action === "py-redeem" || intent.action === "py-mint";
-  const expectedTarget = bindsYt ? intent.expectedYt : intent.expectedMarket;
+  const bindsSy = intent.action === "sy-mint" || intent.action === "sy-redeem";
+  const expectedTarget = bindsSy
+    ? intent.expectedSy
+    : bindsYt
+      ? intent.expectedYt
+      : intent.expectedMarket;
   if (expectedTarget && call.marketOrYt !== getAddress(expectedTarget)) {
     return unsafe(
-      bindsYt
-        ? "transaction YT does not match the position"
-        : "transaction market does not match the quote",
+      bindsSy
+        ? "transaction SY does not match the one requested"
+        : bindsYt
+          ? "transaction YT does not match the position"
+          : "transaction market does not match the quote",
     );
   }
 
@@ -217,15 +271,18 @@ export function assertRouteSafe(
     call.method === "swapExactTokenForPt" ||
     call.method === "swapExactTokenForYt" ||
     call.method === "mintPyFromToken" ||
-    call.method === "addLiquiditySingleToken"
+    call.method === "addLiquiditySingleToken" ||
+    call.method === "addLiquiditySingleTokenKeepYt" ||
+    call.method === "mintSyFromToken"
   ) {
     const expectedIn = intent.isNative ? PENDLE_NATIVE_TOKEN : getAddress(intent.inputToken);
     if (!call.input || call.input.token !== expectedIn) {
       return unsafe("transaction input token does not match the quoted input");
     }
   }
-  // Sell / redeemPyToToken / lp-remove: the tuple's output token must be the
-  // quoted output (removeLiquiditySingleToken also carries a TokenOutput).
+  // Sell / redeemPyToToken / lp-remove / sy-redeem: the tuple's output token must
+  // be the quoted output (removeLiquiditySingleToken and redeemSyToToken also
+  // carry a TokenOutput).
   if (call.output && intent.expectedOutputToken) {
     if (call.output.token !== getAddress(intent.expectedOutputToken)) {
       return unsafe("transaction output token does not match the quote");

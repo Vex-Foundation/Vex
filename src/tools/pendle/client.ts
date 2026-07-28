@@ -273,6 +273,27 @@ export class PendleClient {
    * Multi-leg convert — the single code path for mint-py (one input → PT+YT) and
    * pre-expiry redeem-py (PT+YT → one output). Identical throttle/dedupe/error
    * handling to `convert`; only the inputs/outputs arity differs.
+   *
+   * R5d NEEDED NO CHANGE HERE, and that is a finding rather than an omission.
+   * Convert has no `action` parameter: the server INFERS the action from the
+   * input/output token shape, so all six new write actions are reachable through
+   * this one method with the EXACT same closed body key set that
+   * `convert-body-keys.test.ts` pins. Live-probed 2026-07-28, all HTTP 201:
+   *
+   *   mint-sy               inputs `[token]`      outputs `[SY]`
+   *   redeem-sy             inputs `[SY]`         outputs `[token]`
+   *   remove-liquidity-dual inputs `[LP]`         outputs `[token, PT]`
+   *   add-liquidity keep-YT inputs `[token]`      outputs `[LP, YT]`
+   *   roll-over-pt          inputs `[PT(mktA)]`   outputs `[PT(mktB)]`
+   *   transfer-liquidity    inputs `[LP(mktA)]`   outputs `[LP(mktB)]`
+   *   convert-lp-to-pt      inputs `[LP]`         outputs `[PT]`
+   *
+   * Adding a per-action wrapper method would be API surface with no behaviour
+   * behind it. Callers pass the token shape; the closed body stays closed.
+   *
+   * The RESPONSE's `outputs` order is the provider's own and does NOT echo the
+   * order requested here (measured both ways on the two dual actions) — never
+   * read a leg out of it positionally; see `calldata/price-floor.ts`.
    */
   async convertMulti(chainId: number, params: PendleConvertMultiParams): Promise<PendleConvertResponse | null> {
     const url = this.buildUrl(`/v3/sdk/${chainId}/convert`);

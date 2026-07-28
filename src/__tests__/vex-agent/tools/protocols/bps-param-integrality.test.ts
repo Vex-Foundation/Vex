@@ -238,7 +238,10 @@ describe("manifest bps declarations", () => {
       m.params.filter((p) => p.unit === "bps").map((p) => `${m.toolId}.${p.key}`),
     );
 
-    expect(declared.length).toBe(20);
+    // 20 + the five R5d slippageBps declarations that reject rather than clamp
+    // like the rest: the Pendle SY wrap/unwrap pair (card D3), the dual-LP pair
+    // (E3) and the three term-mobility moves (E4) — registered by card E5.
+    expect(declared.length).toBe(27);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
       new Set(["solana", "kyberswap", "uniswap", "pendle"]),
     );

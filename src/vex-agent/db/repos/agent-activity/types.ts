@@ -58,11 +58,13 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * independent activity rows, one per tx). Both cover Forecast(bisonfi)
  * orders identically — the provider distinction lives in how the row is
  * SUBMITTED (managed `/execute` vs the generic path), never in the role.
- * `wrap`/`unwrap` are migration 051. The five `yield_*` roles are migration 053
- * (Pendle): `yield_pt`/`yield_yt` are one-in-one-out, `yield_py` carries a
- * SECOND leg on exactly one side (mint splits 1->PT+YT, redeem burns PT+YT->1),
- * `yield_lp` may carry one for the dual add/remove variants, and `yield_claim`
- * has NO input leg at all. A Pendle ERC-20 approval REUSES `allowance` /
+ * `wrap`/`unwrap` are migration 051. The six `yield_*` roles are migration 053
+ * (Pendle): `yield_pt`/`yield_yt`/`yield_sy` are one-in-one-out, `yield_py`
+ * carries a SECOND leg on exactly one side (mint splits 1->PT+YT, redeem burns
+ * PT+YT->1), `yield_lp` may carry one for the dual add/remove variants, and
+ * `yield_claim` has NO input leg at all. `yield_sy` is the SY wrapper leg
+ * (`pendle.sy.mint`/`pendle.sy.redeem`) — a wrap, never a split, and therefore
+ * barred from the second-leg family. A Pendle ERC-20 approval REUSES `allowance` /
  * `allowance_reset` rather than forking a Pendle-specific role.
  */
 export type AgentActivityEventRole =
@@ -87,6 +89,7 @@ export type AgentActivityEventRole =
   | "yield_yt"
   | "yield_py"
   | "yield_lp"
+  | "yield_sy"
   | "yield_claim";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */

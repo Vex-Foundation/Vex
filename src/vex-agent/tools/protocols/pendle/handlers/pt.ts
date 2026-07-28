@@ -560,7 +560,7 @@ async function executePendleRedeem(p: Record<string, unknown>, context: Protocol
     // across to an output nobody valued.
     const outputValueUsd = outUsd ?? (usedFallback ? 0 : inputValueUsd);
     const deliveredNote = usedFallback
-      ? "Redeemed via the Router fallback, which pays SY — NOT the market's underlying. The amount is the SY credit decoded from the receipt. Unwrapping SY to the underlying needs pendle.sy.redeem, which does not exist yet."
+      ? "Redeemed via the Router fallback, which pays SY — NOT the market's underlying. The amount is the SY credit decoded from the receipt. To finish the exit, unwrap that SY with pendle.sy.redeem, passing this deliveredAsset as its `sy`."
       : null;
 
     logger.info("pendle.pt.redeem.executed", { pt: ptAddress, fallback: usedFallback });

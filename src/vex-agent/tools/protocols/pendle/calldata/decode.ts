@@ -65,7 +65,13 @@ export interface DecodedRouterCall {
   method: PendleRouterMethod;
   /** Where the proceeds land (arg 0 on every allowed method). */
   receiver: Address;
-  /** Market (swaps, LP) or YT (mint/redeem) — arg 1 on every allowed method. */
+  /**
+   * Arg 1 on every allowed method: the MARKET (swaps, LP add/remove), the YT
+   * (PY mint/redeem) or — since R5d — the SY CONTRACT (`mintSyFromToken` /
+   * `redeemSyToToken`, which have no market and no maturity). The caller knows
+   * which of the three its action expects and binds accordingly; this layer only
+   * reports what arg 1 says.
+   */
   marketOrYt: Address;
   /**
    * The ACTUAL spend amount the Router will pull: TokenInput.netTokenIn (buy),
@@ -251,6 +257,103 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
         args,
       };
     }
+    // ── R5d: SY wrap / unwrap ──────────────────────────────────────
+    case "mintSyFromToken": {
+      // mintSyFromToken(receiver, SY, minSyOut, TokenInput) — arg1 is the SY
+      // CONTRACT, not a market or a YT. There is no `limit` tuple to check.
+      const input = args[3] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
+      assertKnownPendleSwap(input.pendleSwap, "the SY mint's input leg");
+      return {
+        method: "mintSyFromToken",
+        receiver,
+        marketOrYt,
+        spendWei: input.netTokenIn,
+        input: { token: getAddress(input.tokenIn) },
+        args,
+      };
+    }
+    case "redeemSyToToken": {
+      // redeemSyToToken(receiver, SY, netSyIn, TokenOutput) — arg1 is the SY,
+      // arg2 the ACTUAL SY burned. No `limit` tuple.
+      const output = args[3] as { tokenOut: string; pendleSwap: string };
+      assertKnownPendleSwap(output.pendleSwap, "the SY redeem's output leg");
+      return {
+        method: "redeemSyToToken",
+        receiver,
+        marketOrYt,
+        spendWei: args[2] as bigint,
+        output: { token: getAddress(output.tokenOut) },
+        args,
+      };
+    }
+    // ── R5d: dual / keep-YT liquidity ──────────────────────────────
+    case "removeLiquidityDualTokenAndPt": {
+      // removeLiquidityDualTokenAndPt(receiver, market, netLpToRemove,
+      // output(TokenOutput), minPtOut) — arg2 is the ACTUAL LP burned. The PT leg
+      // has NO token field in the calldata; the floor binding resolves it as the
+      // route output that is not the TokenOutput's token. No `limit` tuple.
+      const output = args[3] as { tokenOut: string; pendleSwap: string };
+      assertKnownPendleSwap(output.pendleSwap, "the dual LP remove's output leg");
+      return {
+        method: "removeLiquidityDualTokenAndPt",
+        receiver,
+        marketOrYt,
+        spendWei: args[2] as bigint,
+        output: { token: getAddress(output.tokenOut) },
+        args,
+      };
+    }
+    case "addLiquiditySingleTokenKeepYt": {
+      // addLiquiditySingleTokenKeepYt(receiver, market, minLpOut, minYtOut,
+      // input(TokenInput)) — the TokenInput is at arg 4 (two bare minimums
+      // precede it, where the plain single-token add has one min + a guess
+      // tuple). No `limit` tuple.
+      const input = args[4] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
+      assertKnownPendleSwap(input.pendleSwap, "the keep-YT LP add's input leg");
+      return {
+        method: "addLiquiditySingleTokenKeepYt",
+        receiver,
+        marketOrYt,
+        spendWei: input.netTokenIn,
+        input: { token: getAddress(input.tokenIn) },
+        args,
+      };
+    }
+    case "removeLiquiditySinglePt": {
+      // removeLiquiditySinglePt(receiver, market, netLpToRemove, minPtOut,
+      // guessPtReceivedFromSy, limit) — the proceeds are PT, so there is no
+      // TokenOutput tuple and no pendleSwap to pin. `limit` is at arg 5.
+      assertNoLimitFills(args, 5);
+      return {
+        method: "removeLiquiditySinglePt",
+        receiver,
+        marketOrYt,
+        spendWei: args[2] as bigint,
+        args,
+      };
+    }
+    // ── R5d: callAndReflect inner legs ─────────────────────────────
+    // Each is reached ONLY through `decodeReflectCall`'s recursion, but it is
+    // decoded here, by the same allowlist, so an inner leg can never be read by a
+    // weaker decoder than an outer call. None carries a TokenInput/TokenOutput:
+    // every one moves PT/SY/LP, which are protocol tokens, not swap legs — so
+    // there is no pendleSwap to pin on any of them.
+    case "swapExactPtForSy": {
+      assertNoLimitFills(args, 4);
+      return { method: "swapExactPtForSy", receiver, marketOrYt, spendWei: args[2] as bigint, args };
+    }
+    case "swapExactSyForPt": {
+      assertNoLimitFills(args, 5);
+      return { method: "swapExactSyForPt", receiver, marketOrYt, spendWei: args[2] as bigint, args };
+    }
+    case "removeLiquiditySingleSy": {
+      assertNoLimitFills(args, 4);
+      return { method: "removeLiquiditySingleSy", receiver, marketOrYt, spendWei: args[2] as bigint, args };
+    }
+    case "addLiquiditySingleSy": {
+      assertNoLimitFills(args, 5);
+      return { method: "addLiquiditySingleSy", receiver, marketOrYt, spendWei: args[2] as bigint, args };
+    }
     default:
       return unsafe("transaction calls an unknown Router method");
   }
@@ -266,12 +369,21 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
 // — the documented exception `./bind-route.ts` enforces — while the final leg's
 // receiver was the wallet and its min-out equalled our computed floor EXACTLY.
 //
-// SCOPE (R5a): this is the MECHANISM only. No shipped action maps to
-// `callAndReflect`, and the inner selectors the live capture carries
-// (`0x3346d3a3`, `0x2a50917c`) are NOT in `PENDLE_ROUTER_ABI`, so every real
-// reflect body is refused today — deliberately, and proven by test. R5d pins
-// those layouts from its own probes and adds their binding rows; nothing here
-// guesses them.
+// R5d (2026-07-28) PINNED THE INNER LAYOUTS R5a deferred. Re-probed live and
+// confirmed by computing each selector from its derived signature:
+//   roll-over-pt       : swapExactPtForSy (0x3346d3a3) → swapExactSyForPt (0x2a50917c)
+//   transfer-liquidity : removeLiquiditySingleSy (0xd13b4fdc) → addLiquiditySingleSy (0x58bda475)
+// Both pairs are now in `PENDLE_ROUTER_ABI`, so a real reflect body DECODES
+// rather than being refused wholesale. Which pair appears depends on whether the
+// two markets share an SY; when they do not (the chain-143 capture), the legs are
+// the already-pinned `removeLiquiditySingleToken` / `addLiquiditySingleToken`.
+//
+// `roll-over-pt` and `transfer-liquidity` are the ONLY actions that reach this
+// wrapper. `convert-lp-to-pt` does NOT: it live-probed as a plain single-leg
+// `removeLiquiditySinglePt`.
+//
+// The reflector itself is NOT universal — see `PENDLE_REFLECTORS` — so a caller
+// must pin the per-chain address before granting the leg-1 receiver exception.
 
 export interface DecodedReflectCall {
   /** The reflector contract leg 1 is allowed to pay out to. */

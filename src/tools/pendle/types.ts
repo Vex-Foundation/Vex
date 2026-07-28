@@ -90,8 +90,27 @@ export interface PendleUserPositions {
 
 // ── convert (mutating quote / broadcast plan) ──────────────────────
 
-/** Convert `action` discriminant (only the ones we act on are meaningful). */
-export type PendleConvertAction = "swap" | "mint-py" | "redeem-py" | string;
+/**
+ * Convert `action` discriminant (only the ones we act on are meaningful).
+ *
+ * The R5d members were observed live 2026-07-28. Two of them are NOT distinct
+ * action strings and the difference matters when matching: the keep-YT LP add
+ * reports plain `"add-liquidity"`, and `convert-lp-to-pt` reports plain
+ * `"remove-liquidity"` — in both cases it is the route's METHOD, not this field,
+ * that identifies which variant came back.
+ */
+export type PendleConvertAction =
+  | "swap"
+  | "mint-py"
+  | "redeem-py"
+  | "mint-sy"
+  | "redeem-sy"
+  | "remove-liquidity-dual"
+  | "add-liquidity"
+  | "remove-liquidity"
+  | "roll-over-pt"
+  | "transfer-liquidity"
+  | string;
 
 export interface PendleTokenAmount {
   token: string;

@@ -101,7 +101,15 @@ BEGIN
   END IF;
 END$$;
 
--- ── 2. The five yield roles join the role vocabulary ────────────────────────
+-- ── 2. The six yield roles join the role vocabulary ─────────────────────────
+--
+-- `yield_sy` is the SY wrapper leg (`pendle.sy.mint` / `pendle.sy.redeem`): a
+-- token wrapped into a standardized-yield share, or unwrapped back. It is
+-- ONE-IN-ONE-OUT — a wrap, never a split — so it takes the ordinary leg shape
+-- and is deliberately NOT admitted to the second-leg family (constraint 5).
+-- It gets its own role rather than reusing `yield_pt` because the instrument it
+-- moves is not a PT, and a feed that called an SY position a PT position would
+-- name a maturity the row does not have.
 --
 -- `allowance` / `allowance_reset` are REUSED rather than forked into
 -- `pendle_allowance`: they are already in the role enum, already in
@@ -120,7 +128,7 @@ BEGIN
         'lend_deposit', 'lend_withdraw', 'lend_borrow_operate',
         'predict_buy', 'predict_sell', 'predict_claim', 'predict_close',
         'wrap', 'unwrap',
-        'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
+        'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_sy', 'yield_claim'
       ));
   END IF;
 END$$;
@@ -155,7 +163,7 @@ BEGIN
         OR
         (kind = 'yield' AND event_role IN (
           'allowance_reset', 'allowance',
-          'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
+          'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_sy', 'yield_claim'
         ))
       );
   END IF;
@@ -187,6 +195,11 @@ ALTER TABLE agent_activity
 -- Without this, 14 unconstrained nullable columns quietly become a
 -- general-purpose second leg that any future writer can populate on any role,
 -- and the per-role predicates below stop meaning anything.
+--
+-- The predicate is an ALLOWLIST, so `yield_sy` is excluded by construction and
+-- needs no new clause — stated here because "the SY role was forgotten" and
+-- "the SY role is forbidden a second leg" read identically in the SQL. It is
+-- the latter: an SY wrap moves exactly one instrument on each side.
 
 DO $$
 BEGIN
@@ -300,15 +313,16 @@ BEGIN
   END IF;
 END$$;
 
--- ── 8. Confirmed yield legs — ONE constraint, FIVE per-role predicates ──────
+-- ── 8. Confirmed yield legs — ONE constraint, per-role predicates ───────────
 --
 -- Deliberately a single named constraint (`agent_activity_yield_confirmed_legs`)
--- rather than four siblings: the five roles disagree about what "both legs" even
+-- rather than four siblings: the roles disagree about what "both legs" even
 -- means, and splitting them across constraints hides that disagreement from a
 -- reader who greps for only one of the names. Each arm is an implication scoped
 -- to its own role, so the arms cannot interfere.
 --
---   * `yield_pt` / `yield_yt` — one in, one out. The ordinary shape.
+--   * `yield_pt` / `yield_yt` / `yield_sy` — one in, one out. The ordinary
+--     shape; `yield_sy` wraps or unwraps a single instrument and never splits.
 --   * `yield_claim`           — an OUTPUT credit and NOTHING more. The role with
 --     no input leg: a claim sweeps accrued income, nothing is spent. Requiring
 --     an executed input would make the one shape a claim always has UNWRITABLE
@@ -335,7 +349,7 @@ BEGIN
         status <> 'confirmed'
         OR (
           (
-            event_role NOT IN ('yield_pt', 'yield_yt')
+            event_role NOT IN ('yield_pt', 'yield_yt', 'yield_sy')
             OR (executed_amount_in_raw IS NOT NULL AND executed_amount_out_raw IS NOT NULL)
           )
           AND (

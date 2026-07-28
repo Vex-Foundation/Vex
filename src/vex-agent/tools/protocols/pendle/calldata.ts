@@ -17,6 +17,10 @@
  *   ./calldata/bind-route.ts  — "is this the trade the caller asked for?"
  *                               Router pin, sender/value/approval binds, the
  *                               intent↔calldata comparison, route selection.
+ *   ./calldata/bind-reflect.ts— the same question for a `callAndReflect` body:
+ *                               the per-chain reflector pin, the per-leg
+ *                               receiver/market/spend binds, and the reflect
+ *                               echo cross-check.
  *   ./calldata/price-floor.ts — "at a price they authorised?" The per-selector,
  *                               per-field minimum-output binding table, the
  *                               floor arithmetic, and the `price_floor` refusal.
@@ -42,6 +46,13 @@ export {
   type PendleAction,
   type PendleTxIntent,
 } from "./calldata/bind-route.js";
+
+export {
+  assertReflectRouteSafe,
+  selectSafeReflectRoute,
+  type PendleReflectAction,
+  type PendleReflectIntent,
+} from "./calldata/bind-reflect.js";
 
 export {
   PENDLE_FLOOR_ALLOWANCE_RAW,

@@ -33,11 +33,23 @@ describe("pendle manifest", () => {
     "pendle.lp.quote",
     "pendle.lp.add",
     "pendle.lp.remove",
+    // SY wrap/unwrap (2, R5d card D3) — dryRun-in-tool, no separate *.quote
+    "pendle.sy.mint",
+    "pendle.sy.redeem",
+    // Dual-leg LP (2, R5d card E3) — one action, TWO output instruments.
+    // dryRun-in-tool.
+    "pendle.lp.removeDual",
+    "pendle.lp.addKeepYt",
+    // Term mobility (3, R5d card E4) — move a position between maturities or
+    // between position types without leaving Pendle. dryRun-in-tool.
+    "pendle.pt.rollover",
+    "pendle.lp.transfer",
+    "pendle.lp.toPt",
   ];
 
-  it("has 22 tools total", () => {
-    expect(PENDLE_TOOLS).toHaveLength(22);
-    expect(EXPECTED_TOOL_IDS).toHaveLength(22);
+  it("has 29 tools total", () => {
+    expect(PENDLE_TOOLS).toHaveLength(29);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(29);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {
@@ -79,6 +91,13 @@ describe("pendle manifest", () => {
     "pendle.py.redeem",
     "pendle.lp.add",
     "pendle.lp.remove",
+    "pendle.sy.mint",
+    "pendle.sy.redeem",
+    "pendle.lp.removeDual",
+    "pendle.lp.addKeepYt",
+    "pendle.pt.rollover",
+    "pendle.lp.transfer",
+    "pendle.lp.toPt",
   ];
 
   it("has exactly the expected mutating tools", () => {

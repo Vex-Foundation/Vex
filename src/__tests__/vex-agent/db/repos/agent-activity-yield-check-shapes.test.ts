@@ -97,6 +97,33 @@ describe("053 — agent_activity_yield_confirmed_legs, per role", () => {
     ).toBe(false);
   });
 
+  it("accepts a confirmed yield_sy with one executed leg on each side", () => {
+    // SY mint/redeem is a WRAP, not a split: one token in, one SY out (or the
+    // reverse). It gets `yield_pt`'s ordinary shape, never a second leg.
+    const shape = row({
+      event_role: "yield_sy",
+      executed_amount_in_raw: "1000000",
+      executed_amount_out_raw: "999000",
+    });
+    expect(evaluateSqlCheck(CONFIRMED_LEGS, shape)).toBe(true);
+  });
+
+  it("rejects a confirmed yield_sy missing either executed leg", () => {
+    expect(
+      evaluateSqlCheck(
+        CONFIRMED_LEGS,
+        row({ event_role: "yield_sy", executed_amount_in_raw: "1000000" }),
+      ),
+    ).toBe(false);
+    expect(
+      evaluateSqlCheck(
+        CONFIRMED_LEGS,
+        row({ event_role: "yield_sy", executed_amount_out_raw: "999000" }),
+      ),
+    ).toBe(false);
+    expect(evaluateSqlCheck(CONFIRMED_LEGS, row({ event_role: "yield_sy" }))).toBe(false);
+  });
+
   it("leaves a PENDING row alone whatever its legs — ambiguity never terminalizes", () => {
     expect(evaluateSqlCheck(CONFIRMED_LEGS, row({ status: "pending" }))).toBe(true);
     expect(
@@ -198,8 +225,8 @@ describe("053 — second-leg columns are bound to yield_py / yield_lp", () => {
     }
   });
 
-  it("rejects a populated second leg on yield_pt / yield_yt / yield_claim / swap", () => {
-    for (const eventRole of ["yield_pt", "yield_yt", "yield_claim", "swap"]) {
+  it("rejects a populated second leg on yield_pt / yield_yt / yield_sy / yield_claim / swap", () => {
+    for (const eventRole of ["yield_pt", "yield_yt", "yield_sy", "yield_claim", "swap"]) {
       const shape = row({ event_role: eventRole, token_out2_address: "0xyt" });
       expect(evaluateSqlCheck(SECOND_LEG_ROLES, shape)).toBe(false);
     }
@@ -342,6 +369,7 @@ describe("053 — the yield arm of the kind<->role binding", () => {
       "yield_yt",
       "yield_py",
       "yield_lp",
+      "yield_sy",
       "yield_claim",
       "allowance",
       "allowance_reset",

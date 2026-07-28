@@ -160,9 +160,9 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
     summary:
-      "Pendle yield trading across 11 chains (Ethereum, Arbitrum, Base, BSC, and more; some listed chains currently have no active markets) — principal tokens (PT) lock a FIXED rate until expiry; yield tokens (YT) are VARIABLE, leveraged yield that DECAYS to zero at expiry. Discover markets, inspect one market's tokens, rates, history and depth, value positions, buy / sell / redeem PT, buy / sell YT, mint / redeem the PT+YT pair, add / remove single-token liquidity (LP), and claim accrued income through the pinned Pendle Router.",
+      "Pendle yield trading across 11 chains (Ethereum, Arbitrum, Base, BSC, and more; some listed chains currently have no active markets) — principal tokens (PT) lock a FIXED rate until expiry; yield tokens (YT) are VARIABLE, leveraged yield that DECAYS to zero at expiry. Discover markets, inspect one market's tokens, rates, history and depth, value positions, buy / sell / redeem PT, buy / sell YT, mint / redeem the PT+YT pair, add / remove single-token liquidity (LP), take an LP out as BOTH a token and a PT or add while keeping the YT, roll a PT to a later maturity, move LP between markets, convert LP into the same market's PT, wrap / unwrap SY, and claim accrued income through the pinned Pendle Router.",
     whenToUse:
-      "Use when the user wants Pendle yield on any of its 11 chains: find markets by liquidity or implied APY, inspect one market (accepted tokens, current rates, APY history, price candles, order-book depth), value holdings, buy a PT to lock a fixed rate, sell a PT early (market-priced), redeem a matured PT (~1:1), buy a YT for variable/leveraged yield (worth zero at expiry), sell a YT early, add or remove single-token liquidity (LP earns swap fees until expiry, not a fixed lock), or claim accrued interest and rewards. Preview PT/YT/LP actions with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote first.",
+      "Use when the user wants Pendle yield on any of its 11 chains: find markets by liquidity or implied APY, inspect one market (accepted tokens, current rates, APY history, price candles, order-book depth), value holdings, buy a PT to lock a fixed rate, sell a PT early (market-priced), redeem a matured PT (~1:1), buy a YT for variable/leveraged yield (worth zero at expiry), sell a YT early, add or remove single-token liquidity (LP earns swap fees until expiry, not a fixed lock), EXTEND A MATURING POSITION rather than exiting it (pendle.pt.rollover rolls a PT to a later expiry; pendle.lp.transfer moves LP to another market; pendle.lp.toPt converts LP into the same market's PT), take an LP out as a token AND a PT at once or add liquidity keeping the YT, wrap a token into SY or unwrap SY back to a token (also how to finish a matured PT redeem that fell back to paying SY), or claim accrued interest and rewards. Preview PT/YT/LP actions with pendle.pt.quote / pendle.yt.quote / pendle.lp.quote first; the SY tools carry their own preview as a dryRun param.",
     preferInstead:
       "Use `kyberswap` for ordinary spot swaps (if it cannot route, a backup venue is offered automatically in its failure message); Pendle is specifically for term yield. A PT is fixed yield; a YT is variable and can lose money. Points programs are NOT a guaranteed yield.",
     exampleQueries: [
@@ -171,7 +171,18 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       'discover_tools(query="claim pendle rewards", namespace="pendle")',
     ],
     aliases: ["pendle", "fixed yield", "variable yield", "principal token", "yield token", "PT", "YT"],
-    discoveryHints: ["pendle fixed yield", "buy PT", "buy YT variable yield", "sell YT early", "claim pendle rewards", "implied apy"],
+    discoveryHints: [
+      "pendle fixed yield",
+      "buy PT",
+      "buy YT variable yield",
+      "sell YT early",
+      "claim pendle rewards",
+      "implied apy",
+      "roll my PT to a later expiry",
+      "extend my fixed rate",
+      "move my pendle liquidity",
+      "turn my LP into PT",
+    ],
     facets: [
       {
         label: "Yield markets",
@@ -199,9 +210,42 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       },
       {
         label: "Liquidity (LP)",
-        summary: "Quote, add, or remove single-token Pendle liquidity (earns swap fees until expiry; not a fixed lock).",
+        summary:
+          "Quote, add, or remove single-token Pendle liquidity (earns swap fees until expiry; not a fixed lock). Two-output variants are under Dual-leg liquidity; moving or converting an existing LP is under Move a position.",
         toolPrefixes: ["pendle.lp"],
         hints: ["add pendle liquidity", "provide single-token LP", "remove pendle liquidity", "withdraw pendle LP", "pendle pool fees"],
+      },
+      {
+        label: "Dual-leg liquidity",
+        summary:
+          "Liquidity actions that produce TWO instruments instead of one: remove into a plain token AND the market's PT, or add with one token and KEEP the YT the deposit produces. Both deposits are still SINGLE-token — Pendle has no two-token add.",
+        toolPrefixes: ["pendle.lp.removeDual", "pendle.lp.addKeepYt"],
+        hints: [
+          "remove pendle liquidity into a token and PT",
+          "exit pendle LP but keep the principal token",
+          "add pendle liquidity and keep the YT",
+          "provide pendle LP without selling the yield token",
+        ],
+      },
+      {
+        label: "Move a position (term mobility)",
+        summary:
+          "Move a Pendle position between maturities or between position types in ONE transaction, without withdrawing to a token first: roll a PT into a later-expiry PT, move LP from one market's pool to another, or convert LP into the SAME market's PT. The source may be matured; the destination may not.",
+        toolPrefixes: ["pendle.pt.rollover", "pendle.lp.transfer", "pendle.lp.toPt"],
+        hints: [
+          "roll my pendle PT into a later expiry",
+          "extend my fixed rate",
+          "move my pendle liquidity to another market",
+          "turn my pendle LP into PT",
+          "my pendle position is about to expire",
+        ],
+      },
+      {
+        label: "SY wrap and unwrap",
+        summary:
+          "Wrap a plain token into Pendle SY (the standardised-yield form PT and YT are minted from), or unwrap SY back to a token. This is also the recovery path when a matured PT redeem falls back to paying SY instead of the market's underlying.",
+        toolPrefixes: ["pendle.sy"],
+        hints: ["wrap into pendle SY", "unwrap pendle SY", "standardised yield token", "my pendle redeem paid SY", "turn SY back into a token"],
       },
       {
         label: "Market detail and history",

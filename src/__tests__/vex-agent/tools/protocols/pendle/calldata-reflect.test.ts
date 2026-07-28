@@ -16,10 +16,13 @@
  *    `decodeRouterCall` allowlist, and the reflector-receiver exception is
  *    granted to LEG 1 ONLY.
  *
- * MECHANISM ONLY (R5a). No shipped action maps to `callAndReflect`, and the
- * inner selectors the live `roll-over-pt` capture carries are not in the ABI, so
- * every real reflect body is refused today — asserted below, deliberately. R5d
- * pins those layouts from its own probes.
+ * R5d CLOSED R5a's DEFERRAL (2026-07-28). The inner layouts are now probed and
+ * pinned, so the live roll-over body DECODES instead of being refused wholesale.
+ * This suite keeps its original subject — the pendleSwap pin and the recursive
+ * decode mechanism, including the fail-closed behaviour on an unknown inner
+ * selector. The full R5d contract (the nine new selectors, their per-field floor
+ * rows, and the per-chain reflector registry) lives in
+ * `./r5d-selectors-floor.test.ts`.
  */
 
 import { describe, it, expect } from "vitest";
@@ -149,9 +152,23 @@ describe("callAndReflect is decoded recursively", () => {
     expectUnsafe(() => decodeRouterCall(route("rollOverPt").tx.data), /unknown Router method|does not decode/);
   });
 
-  it("REFUSES the LIVE roll-over capture — its inner selectors are not allowlisted", () => {
-    // Fail-closed and on purpose: R5d probes and pins 0x3346d3a3 / 0x2a50917c.
-    expectUnsafe(() => decodeReflectCall(route("rollOverPt").tx.data), /does not decode as a known Router method/);
+  it("DECODES the LIVE roll-over capture — R5d pinned its inner selectors", () => {
+    // R5a deliberately refused this body and named the closure: "R5d pins those
+    // layouts from its own probes". It has. `0x3346d3a3` / `0x2a50917c` are now
+    // `swapExactPtForSy` / `swapExactSyForPt` in PENDLE_ROUTER_ABI, confirmed by
+    // computing each selector from its signature (see `r5d-selectors-floor.test.ts`,
+    // which owns the full R5d contract). This case is kept to pin the TRANSITION:
+    // the allowlist grew, and it grew to exactly these two methods.
+    const decoded = decodeReflectCall(route("rollOverPt").tx.data);
+    expect(decoded.legs.map((l) => l.method)).toEqual(["swapExactPtForSy", "swapExactSyForPt"]);
+  });
+
+  it("still REFUSES an inner selector that is NOT allowlisted", () => {
+    // The fail-closed property R5a established survives the R5d additions.
+    expectUnsafe(
+      () => decodeReflectCall(twoLegReflect({ leg2: ("0xabcdef01" + "00".repeat(160)) as Hex })),
+      /does not decode as a known Router method/,
+    );
   });
 
   it("decodes a body whose legs ARE allowlisted, skipping the empty leg", () => {

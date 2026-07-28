@@ -312,6 +312,54 @@ describe("moves-db getMovesForSession — agent_activity yield (Pendle, migratio
     expect(row?.outputAmount).toBe("10");
   });
 
+  it("a confirmed DUAL yield_lp renders BOTH output legs — an LP exit into a token AND a PT (R5d)", async () => {
+    mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        yieldRow({
+          event_role: "yield_lp",
+          // `pendle.lp.removeDual`: 1 LP burned → wstETH **and** the market's PT.
+          // Migration 053 allows the Option-C columns on `yield_lp` and applies
+          // the dual invariants only where they are populated — this is the
+          // populated shape, which the single-token add/remove never produces.
+          input_token: "0x3333333333333333333333333333333333333333",
+          input_token_symbol: "PENDLE-LPT",
+          input_amount: "1.0",
+          executed_amount_in_raw: "1000000000000000000",
+          token_in_decimals: 18,
+          output_token: "0x4444444444444444444444444444444444444444",
+          output_token_symbol: "wstETH",
+          output_amount: "1.69",
+          executed_amount_out_raw: "1691767389559584722",
+          token_out_decimals: 18,
+          token_out2_address: "0x5555555555555555555555555555555555555555",
+          token_out2_symbol: "PT-wstETH",
+          token_out2_decimals: 18,
+          amount_out2_human: "0.121",
+          executed_amount_out2_raw: "121462685181226835",
+        }),
+      ],
+    });
+
+    const result = await getMovesForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const row = result.data[0];
+    expect(row?.eventRole).toBe("yield_lp");
+    expect(row?.inputAmount).toBe("1");
+    expect(row?.outputAmount).toBe("1.691767389559584722");
+    // Without the second leg the feed would report a one-token LP exit for an
+    // action that returned two instruments.
+    expect(row?.secondaryOutputLeg).toEqual({
+      token: "0x5555555555555555555555555555555555555555",
+      tokenSymbol: "PT-wstETH",
+      amount: "0.121462685181226835",
+    });
+    expect(row?.secondaryOutputLeg?.amount).not.toBe("121462685181226835");
+    // A dual REMOVE populates the OUT side only.
+    expect(row?.secondaryInputLeg).toBeNull();
+  });
+
   it("a PENDING yield_py shows the second leg's quote echo, not a settlement claim", async () => {
     mocks.getSessionWalletScope.mockResolvedValue(scopeOk(WALLET_A, null));
     mocks.query.mockResolvedValueOnce({

@@ -52,8 +52,13 @@ describe("market-data Pendle reads — registration", () => {
     expect(NEW_TOOLS.map((t) => t.toolId)).toEqual(EXPECTED_IDS);
   });
 
-  it("is composed into the live Pendle tool list, taking it from sixteen to twenty-two", () => {
-    expect(PENDLE_TOOLS).toHaveLength(22);
+  // The six reads took the list from sixteen to twenty-two at card R4; R5d then
+  // added the SY pair (D3), the dual-LP pair (E3) and the three term-mobility
+  // writes (E4), so the live total is twenty-nine. What this guard exists to
+  // prove is unchanged: all six are still composed in and still identical
+  // objects, not copies that could drift.
+  it("is composed into the live Pendle tool list, all six still present", () => {
+    expect(PENDLE_TOOLS).toHaveLength(29);
     const live = new Map(PENDLE_TOOLS.map((t) => [t.toolId, t]));
     for (const tool of NEW_TOOLS) expect(live.get(tool.toolId)).toBe(tool);
   });

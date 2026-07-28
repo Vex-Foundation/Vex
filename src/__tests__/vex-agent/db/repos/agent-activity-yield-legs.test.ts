@@ -154,11 +154,23 @@ describe("confirmActivityEvent enforces migration 053's PER-ROLE leg contract", 
     await expect(repo.confirmActivityEvent(1, {})).rejects.toThrow(/requires executedAmountOutRaw/);
   });
 
-  it.each(["yield_pt", "yield_yt"])("%s requires BOTH executed legs", async (role) => {
+  it.each(["yield_pt", "yield_yt", "yield_sy"])("%s requires BOTH executed legs", async (role) => {
     currentRow({ event_role: role });
     await expect(repo.confirmActivityEvent(1, { executedAmountInRaw: "1" })).rejects.toThrow(
       /requires executedAmountInRaw \+ executedAmountOutRaw/,
     );
+  });
+
+  it("yield_sy confirms on one executed leg per side — a wrap is never a split", async () => {
+    currentRow({ event_role: "yield_sy" });
+    mockQueryOne.mockResolvedValueOnce(yieldRow({ event_role: "yield_sy", status: "confirmed" }));
+
+    const res = await repo.confirmActivityEvent(1, {
+      executedAmountInRaw: "1000000",
+      executedAmountOutRaw: "999000",
+    });
+
+    expect(res.applied).toBe(true);
   });
 
   it("yield_py requires the SECOND leg whenever the row populated one", async () => {
@@ -216,8 +228,8 @@ describe("confirmActivityEvent enforces migration 053's PER-ROLE leg contract", 
 
 // ── 3. Hashless recovery covers every yield role ─────────────────────
 
-describe("the five yield roles are reapable by the hashless-intent sweep", () => {
-  it.each(["yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_claim"])(
+describe("every yield role is reapable by the hashless-intent sweep", () => {
+  it.each(["yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_sy", "yield_claim"])(
     "%s is in the locally-signable allowlist, so a crash before staging is recovered",
     async (role) => {
       // Every Pendle mutation is signed locally through ONE choke point, and no

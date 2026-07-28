@@ -75,14 +75,14 @@ import logger from "@utils/logger.js";
 export const PENDLE_ACTIVITY_PROTOCOL = "pendle";
 
 /**
- * The five `yield_*` roles (migration 053). Narrowed from the full role union so
+ * The six `yield_*` roles (migration 053). Narrowed from the full role union so
  * a Pendle caller cannot accidentally write a `swap`/`lend`/`bridge` row through
  * this path — the `agent_activity_kind_role_binding` CHECK would reject it, but
  * failing at the type boundary beats failing at the database.
  */
 export type PendleActivityRole = Extract<
   AgentActivityEventRole,
-  "yield_pt" | "yield_yt" | "yield_py" | "yield_lp" | "yield_claim"
+  "yield_pt" | "yield_yt" | "yield_py" | "yield_lp" | "yield_sy" | "yield_claim"
 >;
 
 export interface PendleRouterTx {

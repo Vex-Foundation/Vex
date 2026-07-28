@@ -61,7 +61,7 @@ export const PENDLE_PT_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pendle",
     lifecycle: "active",
     description:
-      "Redeem a MATURED Pendle principal token (PT) for its accounting asset (~1:1) after expiry. Approval-gated; pins the canonical Pendle Router. If Pendle's pricing service is unavailable it falls back to a direct on-chain redeem that delivers SY (the wrapped yield-bearing token), NOT the underlying asset — Vex has no tool to unwrap SY yet, so those proceeds would sit until one ships. REQUIRES a fresh matching pendle.pt.quote first.",
+      "Redeem a MATURED Pendle principal token (PT) for its accounting asset (~1:1) after expiry. Approval-gated; pins the canonical Pendle Router. If Pendle's pricing service is unavailable it falls back to a direct on-chain redeem that delivers SY (the wrapped yield-bearing token), NOT the underlying asset — the result names it as `deliveredAsset`; unwrap it with pendle.sy.redeem to finish the exit. REQUIRES a fresh matching pendle.pt.quote first.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

@@ -73,7 +73,43 @@ export type PendleMinOutLocation =
  * list. The explicit-index form exists for R5d's dual-output selectors, where
  * each field genuinely protects its own leg.
  */
-export type PendleMinOutCoverage = "all" | readonly number[];
+export type PendleMinOutCoverage =
+  | "all"
+  | readonly number[]
+  /**
+   * The single route output whose token equals the one {@link source} names in
+   * the calldata — used by a DUAL selector, where each field protects one
+   * specific leg.
+   */
+  | { readonly kind: "outputMatching"; readonly source: PendleMinOutTokenSource }
+  /**
+   * The single route output whose token is NOT the one {@link source} names.
+   * A dual action has exactly two outputs and the calldata names only one of
+   * them, so the other field's leg is identified by elimination.
+   */
+  | { readonly kind: "outputOtherThan"; readonly source: PendleMinOutTokenSource };
+
+/**
+ * Where in the calldata to read the token that a dual selector's min-out field
+ * protects.
+ *
+ * WHY THIS EXISTS INSTEAD OF AN INDEX (measured 2026-07-28, R5d probes). The
+ * provider's `outputs` array is in ITS OWN canonical order, not the order we
+ * requested: asking `remove-liquidity-dual` for `[underlying, PT]` and for
+ * `[PT, underlying]` both returned `[PT, underlying]`, and `add-liquidity`
+ * keep-YT returned `[LP, YT]` whichever way it was asked. So an index row would
+ * encode an undocumented provider convention that we cannot influence and did
+ * not verify across markets — and getting it backwards is not a refusal, it is a
+ * min-out checked against the WRONG leg's floor (on the dual remove those two
+ * amounts differ by ~14x, so a swapped pair would wave through a route paying a
+ * fraction of the quote). Resolving by token cannot silently mismatch: if the
+ * pairing is not unique, the guard refuses.
+ */
+export type PendleMinOutTokenSource =
+  /** `TokenOutput.tokenOut` from the tuple at `index`. */
+  | { readonly kind: "tokenOutputTuple"; readonly index: number }
+  /** The `market` argument at `index` — for an LP leg the market IS the LP token. */
+  | { readonly kind: "marketArg"; readonly index: number };
 
 export interface PendleMinOutBinding {
   /** The calldata parameter's own name — what a refusal names to the agent. */
@@ -123,6 +159,76 @@ export const PENDLE_MIN_OUT_BINDINGS: Readonly<
   redeemPyToToken: [{ field: "minTokenOut", location: { kind: "tokenOutput", index: 3 }, coversOutputs: "all" }],
   removeLiquiditySingleToken: [
     { field: "minTokenOut", location: { kind: "tokenOutput", index: 3 }, coversOutputs: "all" },
+  ],
+
+  // ── R5d rows (LIVE-VERIFIED 2026-07-28, chain 1, 100 bps, quote-only) ──
+  //
+  // | selector                      | field       | location             | outputs bound        |
+  // |-------------------------------|-------------|----------------------|----------------------|
+  // | mintSyFromToken               | minSyOut    | arg 2                | SY                   |
+  // | redeemSyToToken               | minTokenOut | arg 3 `.minTokenOut` | payment token        |
+  // | removeLiquidityDualTokenAndPt | minTokenOut | arg 3 `.minTokenOut` | the token leg        |
+  // | removeLiquidityDualTokenAndPt | minPtOut    | arg 4                | the PT leg (by elim) |
+  // | addLiquiditySingleTokenKeepYt | minLpOut    | arg 2                | the LP leg (= market)|
+  // | addLiquiditySingleTokenKeepYt | minYtOut    | arg 3                | the YT leg (by elim) |
+  // | removeLiquiditySinglePt       | minPtOut    | arg 3                | PT                   |
+  // | swapExactPtForSy              | minSyOut    | arg 3                | SY (intermediate)    |
+  // | swapExactSyForPt              | minPtOut    | arg 3                | PT                   |
+  // | removeLiquiditySingleSy       | minSyOut    | arg 3                | SY (intermediate)    |
+  // | addLiquiditySingleSy          | minLpOut    | arg 3                | LP                   |
+  //
+  // Six of these sat EXACTLY on `floor(output × (10000 − 100) / 10000)` in the
+  // captures (delta 0). The LP-add-shaped ones (keep-YT's two, the transfer's
+  // final minLpOut) sat ABOVE our floor — they err SAFE, exactly as
+  // `addLiquiditySingleToken` does in the R5a captures.
+  mintSyFromToken: [{ field: "minSyOut", location: { kind: "arg", index: 2 }, coversOutputs: "all" }],
+  redeemSyToToken: [
+    { field: "minTokenOut", location: { kind: "tokenOutput", index: 3 }, coversOutputs: "all" },
+  ],
+  removeLiquidityDualTokenAndPt: [
+    {
+      field: "minTokenOut",
+      location: { kind: "tokenOutput", index: 3 },
+      coversOutputs: { kind: "outputMatching", source: { kind: "tokenOutputTuple", index: 3 } },
+    },
+    {
+      // The PT leg carries no token anywhere in the calldata, so it is the output
+      // that is NOT the TokenOutput's token. A dual remove has exactly two.
+      field: "minPtOut",
+      location: { kind: "arg", index: 4 },
+      coversOutputs: { kind: "outputOtherThan", source: { kind: "tokenOutputTuple", index: 3 } },
+    },
+  ],
+  addLiquiditySingleTokenKeepYt: [
+    {
+      // A Pendle market contract IS its LP token, so arg 1 names the LP leg.
+      field: "minLpOut",
+      location: { kind: "arg", index: 2 },
+      coversOutputs: { kind: "outputMatching", source: { kind: "marketArg", index: 1 } },
+    },
+    {
+      field: "minYtOut",
+      location: { kind: "arg", index: 3 },
+      coversOutputs: { kind: "outputOtherThan", source: { kind: "marketArg", index: 1 } },
+    },
+  ],
+  // NOTE the index: minPtOut is at arg 3 here, not arg 2. Reading it at 2 would
+  // compare the LP amount being burned against the PT output's floor.
+  removeLiquiditySinglePt: [
+    { field: "minPtOut", location: { kind: "arg", index: 3 }, coversOutputs: "all" },
+  ],
+  // callAndReflect inner legs. Each has ONE min-out at arg 3. When such a leg is
+  // the FINAL one it is floored against `route.outputs` like any single-leg
+  // route; when it is intermediate it only has to be non-zero, because the
+  // intermediate SY amount appears nowhere in the quote to re-derive a floor from
+  // (see {@link assertReflectFloorBound}).
+  swapExactPtForSy: [{ field: "minSyOut", location: { kind: "arg", index: 3 }, coversOutputs: "all" }],
+  swapExactSyForPt: [{ field: "minPtOut", location: { kind: "arg", index: 3 }, coversOutputs: "all" }],
+  removeLiquiditySingleSy: [
+    { field: "minSyOut", location: { kind: "arg", index: 3 }, coversOutputs: "all" },
+  ],
+  addLiquiditySingleSy: [
+    { field: "minLpOut", location: { kind: "arg", index: 3 }, coversOutputs: "all" },
   ],
 };
 
@@ -183,17 +289,67 @@ function calldataOutputToken(args: readonly unknown[], binding: PendleMinOutBind
   return typeof token === "string" ? token.toLowerCase() : null;
 }
 
+/**
+ * The token a dual selector's coverage rule keys on, read from the CALLDATA (not
+ * from the quote), lowercased for comparison. Refuses rather than returning null:
+ * a coverage rule we cannot evaluate must not silently degrade to "no leg".
+ */
+function coverageToken(args: readonly unknown[], source: PendleMinOutTokenSource, field: string): string {
+  if (source.kind === "marketArg") {
+    const market = args[source.index];
+    if (typeof market !== "string") return unsafe(`price_floor: ${field} cannot read the market from the calldata`);
+    return market.toLowerCase();
+  }
+  const tuple = args[source.index];
+  if (typeof tuple !== "object" || tuple === null) {
+    return unsafe(`price_floor: ${field} cannot read the output token from the calldata`);
+  }
+  const token = (tuple as Record<string, unknown>).tokenOut;
+  if (typeof token !== "string") {
+    return unsafe(`price_floor: ${field} cannot read the output token from the calldata`);
+  }
+  return token.toLowerCase();
+}
+
+/**
+ * Resolve the EXACTLY ONE route output a token-keyed coverage rule selects.
+ *
+ * Fails closed on any ambiguity — zero matches (the calldata protects a leg the
+ * route does not declare) and more than one (two outputs of the same token, so
+ * "the other one" is not well defined) are both refusals, never a guess.
+ */
+function soleOutput(
+  outputs: readonly PendleTokenAmount[],
+  keep: (token: string) => boolean,
+  field: string,
+  describe: string,
+): readonly PendleTokenAmount[] {
+  const matched = outputs.filter((o) => keep(o.token.toLowerCase()));
+  if (matched.length !== 1) {
+    return unsafe(`price_floor: ${field} does not resolve to exactly one ${describe} the route declares`);
+  }
+  return matched;
+}
+
 function coveredOutputs(
   outputs: readonly PendleTokenAmount[],
   coverage: PendleMinOutCoverage,
   field: string,
+  args: readonly unknown[],
 ): readonly PendleTokenAmount[] {
   if (coverage === "all") return outputs;
-  return coverage.map((i) => {
-    const output = outputs[i];
-    if (output === undefined) return unsafe(`price_floor: ${field} covers an output the route does not declare`);
-    return output;
-  });
+  if (Array.isArray(coverage)) {
+    return coverage.map((i) => {
+      const output = outputs[i];
+      if (output === undefined) return unsafe(`price_floor: ${field} covers an output the route does not declare`);
+      return output;
+    });
+  }
+  const rule = coverage as Exclude<PendleMinOutCoverage, "all" | readonly number[]>;
+  const token = coverageToken(args, rule.source, field);
+  return rule.kind === "outputMatching"
+    ? soleOutput(outputs, (t) => t === token, field, "output")
+    : soleOutput(outputs, (t) => t !== token, field, "counterpart output");
 }
 
 /**
@@ -220,7 +376,7 @@ export function assertRouteFloorBound(
   }
   for (const binding of bindings) {
     const declared = readMinOutField(call.args, binding);
-    const outputs = coveredOutputs(route.outputs, binding.coversOutputs, binding.field);
+    const outputs = coveredOutputs(route.outputs, binding.coversOutputs, binding.field, call.args);
     if (outputs.length === 0) {
       return unsafe(`price_floor: ${binding.field} cannot be checked — the route declares no output`);
     }

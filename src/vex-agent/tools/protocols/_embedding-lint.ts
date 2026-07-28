@@ -19,7 +19,11 @@
  *   - **Mutating tools include an action verb in the first sentence** —
  *     keeps passages grounded in execution intent rather than read-only
  *     description (which would mismatch user "swap"/"buy"/"bridge"
- *     intent at retrieval time).
+ *     intent at retrieval time). The verb list is an OPEN enumeration,
+ *     extended as new on-chain actions ship (`Wrap`/`Unwrap` arrived with
+ *     Pendle SY, `Roll` with the Pendle maturity roll). Add a genuine action
+ *     verb here rather than bending a passage's opener away from the word a
+ *     user would actually say.
  *
  * Length bounds (50-800 chars after whitespace collapse) catch passages
  * that are too short to have semantic content or too long for focused
@@ -45,7 +49,7 @@ const BANNED_PHRASES: readonly { phrase: string; reason: string }[] = [
   { phrase: "helper for", reason: "downplays — name the action directly" },
 ];
 
-const ACTION_VERB_PATTERN = /\b(Run|Execute|Submit|Bridge|Swap|Buy|Sell|Mint|Send|Place|Cancel|Withdraw|Deposit|Move|Transfer|Borrow|Lend|Stake|Unstake|Claim|Open|Close|Approve|Set|Trade|Purchase|Redeem|Bid|Ask|Add|Remove|Migrate|Convert|Exit|Enter|Rebalance|Repay|Settle|Sign|Issue|Burn|Lock|Unlock|Fill|Take|Make|Post|Create|Update|Delete|Pay|Reward|Vote|Wrap|Unwrap)\b/i;
+const ACTION_VERB_PATTERN = /\b(Run|Execute|Submit|Bridge|Swap|Buy|Sell|Mint|Send|Place|Cancel|Withdraw|Deposit|Move|Transfer|Borrow|Lend|Stake|Unstake|Claim|Open|Close|Approve|Set|Trade|Purchase|Redeem|Bid|Ask|Add|Remove|Migrate|Convert|Exit|Enter|Rebalance|Repay|Settle|Sign|Issue|Burn|Lock|Unlock|Fill|Take|Make|Post|Create|Update|Delete|Pay|Reward|Vote|Wrap|Unwrap|Roll)\b/i;
 
 function firstSentence(passage: string): string {
   const split = passage.split(/[.!?]/);

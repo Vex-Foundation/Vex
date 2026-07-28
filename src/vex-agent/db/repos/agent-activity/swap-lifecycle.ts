@@ -236,7 +236,9 @@ function assertYieldConfirmLegs(
     if (input.executedAmountInRaw) fail("must not carry an executed input leg — a claim spends nothing");
     return;
   }
-  if (role === "yield_pt" || role === "yield_yt") {
+  // `yield_sy` joins the one-in-one-out arm: an SY wrap/unwrap moves exactly one
+  // instrument on each side, so it never reaches the Option-C dual checks below.
+  if (role === "yield_pt" || role === "yield_yt" || role === "yield_sy") {
     if (!input.executedAmountInRaw || !input.executedAmountOutRaw) {
       fail("requires executedAmountInRaw + executedAmountOutRaw");
     }
