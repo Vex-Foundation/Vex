@@ -79,6 +79,7 @@ describe("DexScreener feed + narrative param validation", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   // ── limit: the value that meant two opposite things ─────────────
@@ -144,6 +145,18 @@ describe("DexScreener feed + narrative param validation", () => {
   // array natural. Both spellings are now accepted and must agree exactly —
   // see `./list-string-array-params.test.ts` for the equivalence pins.
   it("chainIds sent as an array is accepted and means the same as the comma string", async () => {
+    // The clock is FROZEN for the two calls, and only the clock — `toFake: ["Date"]`
+    // leaves timers alone so the awaited handlers still settle normally. Both
+    // payloads carry `eventAgeSeconds`, floor((now − updatedAt)/1000) per row
+    // (`feed-list/feed-row.ts:304-311`), computed from `Date.now()` at response
+    // time (`handlers/feeds.ts:111`). The 30 fixture rows carry 30 different
+    // millisecond fractions, so ANY delay between the two calls flips roughly
+    // delayMs/1000 × 30 rows to a different whole second. That is the flake: it
+    // is not a rare second boundary, it is one boundary per row per second, and
+    // a loaded CI runner supplies the delay. Freezing pins the equivalence being
+    // asserted — the two spellings — instead of the clock.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date());
     const fromArray = await run("dexscreener.profiles", { chainIds: ["base", "solana"] });
     const fromString = await run("dexscreener.profiles", { chainIds: "base,solana" });
     expect(fromArray.ok).toBe(true);

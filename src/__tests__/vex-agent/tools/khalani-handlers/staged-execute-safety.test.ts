@@ -165,6 +165,20 @@ vi.mock("@vex-agent/tools/registry/relay-reveal.js", () => ({
   resolveRelayRevealRoute: (...a: unknown[]) => mockResolveRelayRevealRoute(...(a as [])),
 }));
 
+/**
+ * The fee-on-transfer oracle is a LIVE NETWORK CALL on the EVM pre-quote path
+ * (`bridge-execute.ts:272` → `bridge-fee/fee-eligibility.ts:57`). Unstubbed it
+ * cost ~550 ms per EVM case and, on a loaded runner, outlived vitest's 10 s
+ * timeout — the still-running handler then consumed the NEXT test's
+ * `mockResolvedValueOnce` values and called the CAS mocks after
+ * `clearAllMocks`. Stubbed exactly as in the sibling `bridge-fee-execute.test.ts`;
+ * the eligibility logic itself still runs for real.
+ */
+const mockHoneypotFot = vi.fn(async () => ({ isHoneypot: false, isFOT: false, tax: 0 }));
+vi.mock("@tools/kyberswap/token-api/client.js", () => ({
+  getKyberTokenApiClient: () => ({ getHoneypotFotInfo: (...a: unknown[]) => mockHoneypotFot(...(a as [])) }),
+}));
+
 const mockLoggerWarn = vi.fn();
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: (...a: unknown[]) => mockLoggerWarn(...a), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
