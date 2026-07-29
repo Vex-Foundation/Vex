@@ -51,6 +51,9 @@ const mockCasMarkResumeConsumed = vi.fn();
 const mockHasResumeCompleted = vi.fn();
 const mockLockResumeCueMessageIdWith = vi.fn();
 const mockAttachResumeCueMessageWith = vi.fn();
+// Durable-outcome read the cue wording is chosen from. Default `null` (row
+// unreadable) → the neutral cue, which is what these cases assert.
+const mockLockLifecycleRowWith = vi.fn().mockResolvedValue(null);
 const mockGetPendingLifecycleForSession = vi.fn().mockResolvedValue([]);
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   markResumeAttempted: (...a: unknown[]) => mockMarkResumeAttempted(...a),
@@ -60,6 +63,7 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
     mockLockResumeCueMessageIdWith(...a),
   attachResumeCueMessageWith: (...a: unknown[]) =>
     mockAttachResumeCueMessageWith(...a),
+  lockLifecycleRowWith: (...a: unknown[]) => mockLockLifecycleRowWith(...a),
   getPendingLifecycleForSession: (...a: unknown[]) =>
     mockGetPendingLifecycleForSession(...a),
 }));

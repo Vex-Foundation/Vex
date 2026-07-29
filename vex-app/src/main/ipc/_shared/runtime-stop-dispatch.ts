@@ -88,6 +88,64 @@ async function signalLocalAbortBestEffort(
   }
 }
 
+/**
+ * Stop a session that has no mission run — a Full-Autonomous agent chat.
+ *
+ * Same two-step shape as the live-lease mission branch, and the same ordering
+ * for the same reason:
+ *
+ *   1. DURABLE FIRST. `enqueueSessionStopRequest` writes a session-scoped
+ *      `stop_terminal` (a `stop_terminal` row with a NULL `mission_run_id`) and
+ *      cancels the pending continuation wake in ONE transaction under the
+ *      session control lock. That single transaction is what stops a Stop from
+ *      racing the wake executor into starting a fresh slice: either the wake is
+ *      cancelled before it is claimed, or the continuation scheduler's own gate
+ *      — which takes the same lock — sees this row and refuses to schedule.
+ *
+ *   2. IN-PROCESS SECOND, best-effort. `abortSessionSliceLocal` fires the
+ *      AbortController of a slice already airborne in THIS process, so an
+ *      in-flight provider call is cancelled instead of running to completion.
+ *      A JavaScript signal is not a database effect and is NOT serialized by
+ *      the advisory lock — it is a latency optimisation on top of the durable
+ *      truth, never the truth itself. A crash between the two steps still
+ *      leaves the stop recoverable, because step 1 already committed; a slice
+ *      that misses the signal still refuses to continue at its next gate.
+ *
+ * Reported as `queued`: the durable request is what was committed, matching how
+ * the graceful mission branch reports itself.
+ */
+async function stopChatSession(
+  sessionId: string,
+  ctx: StopFlowContext,
+): Promise<Result<StopFlowResult>> {
+  const { enqueueSessionStopRequest } = await import(
+    "@vex-agent/engine/runtime/lease-and-status.js"
+  );
+  const enqueued = await enqueueSessionStopRequest({
+    sessionId,
+    correlationId: ctx.requestId,
+  });
+
+  try {
+    const { abortSessionSliceLocal } = await import(
+      "@vex-agent/engine/index.js"
+    );
+    const signalled = abortSessionSliceLocal(sessionId);
+    log.info(
+      `[ipc:${ctx.channelLabel}] session slice abort signalled=${signalled} `
+      + `correlationId=${ctx.requestId}`,
+    );
+  } catch (cause) {
+    log.warn(
+      `[ipc:${ctx.channelLabel}] session slice abort failed correlationId=${ctx.requestId}`,
+      cause,
+    );
+  }
+
+  await emitControlStateAfterChange(sessionId, ctx.requestId);
+  return ok({ outcome: "queued", requestId: enqueued.requestId });
+}
+
 export async function runStopDispatch(
   input: StopFlowInput,
   ctx: StopFlowContext,
@@ -98,7 +156,12 @@ export async function runStopDispatch(
     const state = await getActiveRunForSession(input.sessionId);
     if (!state.ok) return state;
     if (!state.data.hasActiveRun) {
-      return ok({ outcome: "no_active_run" });
+      // No mission run — but "no run" is NOT the same as "nothing to stop".
+      // A Full-Autonomous agent SESSION can be running a wake-driven slice, or
+      // sitting on a pending continuation wake that is about to start one, with
+      // no run row anywhere. Returning `no_active_run` here meant the Stop
+      // button could not stop autonomous work at all.
+      return stopChatSession(input.sessionId, ctx);
     }
     const status = state.data.status;
     if (

@@ -37,6 +37,9 @@
 import { OpenRouterError } from "../../../lib/openrouter-client.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 import { redact } from "../../../lib/diagnostics/text-redaction.js";
+import { boundedErrorClass, OPENROUTER_ERROR_CLASSES } from "./error-class.js";
+import { boundedErrorType } from "./provider-signals.js";
+import { retryAfterSecondsFromError } from "./retry-after.js";
 
 /** Max characters of a scrubbed provider message kept in the normalized error. */
 const MAX_MESSAGE_LEN = 300;
@@ -176,6 +179,78 @@ export function attachErrorType(target: Error, errorType: string | null): Error 
 }
 
 /**
+ * Attach the SDK error CLASS name as a LEAN, NON-ENUMERABLE own-property
+ * (`errorClass`) — same idiom as `attachStatus` / `attachCauseCode`.
+ *
+ * Unlike `errorType`, this value comes from a CLOSED dictionary
+ * (`error-class.ts`): it identifies which `@openrouter/sdk` class was thrown,
+ * which is our own compile-time dependency rather than provider-controlled
+ * data. It is the ONLY discriminator for the six status-less shapes
+ * (`SDKValidationError` + the five transports), which would otherwise reach
+ * the classifier as `status: null` and be indistinguishable from an unknown
+ * failure. No-op for `null`.
+ */
+export function attachErrorClass(target: Error, errorClass: string | null): Error {
+  if (errorClass === null) return target;
+  Object.defineProperty(target, "errorClass", {
+    value: errorClass,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach the provider's retry hint, in whole seconds, as a LEAN,
+ * NON-ENUMERABLE own-property (`retryAfterSeconds`). Parsed and bounded by
+ * `retry-after.ts` from the original error's response headers BEFORE the raw
+ * headers object is discarded — a small integer is the only thing that
+ * survives. No-op for `null`.
+ */
+export function attachRetryAfterSeconds(
+  target: Error,
+  retryAfterSeconds: number | null,
+): Error {
+  if (retryAfterSeconds === null) return target;
+  Object.defineProperty(target, "retryAfterSeconds", {
+    value: retryAfterSeconds,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Own-property readers used ONLY by the re-normalization fallback below: they
+ * recover signals a PREVIOUS `normalizeOpenRouterError` pass already attached,
+ * re-validating each through the same bounds so a second pass can never widen
+ * what the first pass admitted.
+ */
+function ownProperty(err: Record<string, unknown>, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(err, key) ? err[key] : undefined;
+}
+
+function ownBoundedErrorClass(err: Record<string, unknown>): string | null {
+  const value = ownProperty(err, "errorClass");
+  return typeof value === "string" && OPENROUTER_ERROR_CLASSES.has(value)
+    ? value
+    : null;
+}
+
+function ownRetryAfterSeconds(err: Record<string, unknown>): number | null {
+  const value = ownProperty(err, "retryAfterSeconds");
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+function ownErrorType(err: Record<string, unknown>): string | null {
+  return boundedErrorType(ownProperty(err, "errorType"));
+}
+
+/**
  * Normalize an unknown thrown value into a lean, redacted Error that preserves
  * the HTTP status as own-properties (`statusCode`/`status`) for the mission
  * auto-retry classifier, plus the errno-shaped `causeCode` own-property
@@ -211,5 +286,22 @@ export function normalizeOpenRouterError(err: unknown, operation: string): Error
   // Attach the status + errno cause code as lean own-properties so the mission
   // classifier (status) and diagnostics call-sites (causeCode) read them
   // directly (own-property based, not message-regex) — never via `.cause`.
+  //
+  // The class name and the retry hint are captured from the ORIGINAL error
+  // here, at the only point they still exist: `normalized` is a plain `Error`,
+  // so its `name` is `"Error"` and its headers are gone. Both are bounded
+  // (closed class dictionary; integer seconds) and carry no provider text.
+  //
+  // RE-NORMALIZATION: a mid-stream rejection reaches this function a second
+  // time (`openrouter.ts` normalizes both the send and the iterator), and by
+  // then the signals live only as own-properties on the already-normalized
+  // error. Falling back to them keeps the second pass lossless instead of
+  // silently erasing what the first pass captured.
+  attachErrorClass(normalized, boundedErrorClass(err) ?? ownBoundedErrorClass(err));
+  attachRetryAfterSeconds(
+    normalized,
+    retryAfterSecondsFromError(err) ?? ownRetryAfterSeconds(err),
+  );
+  attachErrorType(normalized, ownErrorType(err));
   return attachCauseCode(attachStatus(normalized, status), extractCauseCode(err));
 }

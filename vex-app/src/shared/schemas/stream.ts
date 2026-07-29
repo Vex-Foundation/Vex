@@ -13,7 +13,10 @@
  *    them — the canonical, redacted args arrive later via the persisted
  *    `tool_call` message DTO.
  *  - `error` deltas carry a safe generic message (the bridge replaces the
- *    raw provider string); only the numeric `code` is preserved.
+ *    raw provider string); only the numeric `code` and the bounded
+ *    `errorType` enum label are preserved. The label is what lets the preview
+ *    say "rate-limited" instead of only "Stream error"; it is an enum member,
+ *    not provider prose.
  *  - every object is `.strict()` so any drift in the engine payload is
  *    dropped at the boundary rather than forwarded.
  *
@@ -32,6 +35,7 @@ export const streamDeltaTypeSchema = z.enum([
   "usage",
   "done",
   "error",
+  "aborted",
 ]);
 export type StreamDeltaType = z.infer<typeof streamDeltaTypeSchema>;
 
@@ -63,11 +67,44 @@ export const streamDeltaPayloadSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("reasoning"), text: z.string() }).strict(),
   z.object({ kind: z.literal("usage"), usage: streamUsageSchema }).strict(),
   z.object({ kind: z.literal("done") }).strict(),
+  /**
+   * Terminal signal for a turn that ended by ABORT (user stop, or a deadline).
+   * No assistant row is ever persisted for such a stream, so the
+   * `transcriptAppend` that normally retires the live preview never arrives.
+   *
+   * A `leaseActive:false` control event is NOT a substitute — it fires on
+   * every normal chat completion too, so clearing on it erases a live preview
+   * before the assistant row has been refetched.
+   *
+   * Correlated by the event's `streamId`, so a consumer clears exactly the
+   * stream that ended and never a newer one that started in between. Bounded
+   * to the discriminant alone: no reason string, no provider text.
+   */
+  z.object({ kind: z.literal("aborted") }).strict(),
   z
     .object({
       kind: z.literal("error"),
       message: z.string(),
       code: z.number().nullable(),
+      /**
+       * OpenRouter's canonical `ApiErrorType` from the chunk's
+       * `error.metadata.errorType`. The engine bus carries it; before this it
+       * was dropped AGAIN at the main bridge, so the preview could only ever
+       * render the literal "Stream error" — the message field is a safe
+       * generic by design, which left nothing to say WHY.
+       *
+       * OPEN enum, carried verbatim and bounded by shape/length. Consumers map
+       * it through `classifyEngineFailure`, which has a total default; nothing
+       * may switch on it directly. `.optional()` so an older/other producer
+       * that omits it still validates.
+       */
+      errorType: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z][a-z0-9_]*$/)
+        .nullable()
+        .optional(),
     })
     .strict(),
 ]);

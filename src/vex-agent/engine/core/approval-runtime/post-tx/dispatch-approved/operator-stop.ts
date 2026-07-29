@@ -50,8 +50,14 @@ export const OPERATOR_STOP_ERROR_KIND = "operator_stop_before_dispatch";
 export const STOP_APPLY_FAILED_ERROR_KIND = "operator_stop_apply_failed";
 
 /**
- * The slot was taken but the operator had already stopped the run, so the
+ * The slot was taken but the operator had already stopped this work, so the
  * approved tool is NOT dispatched.
+ *
+ * Applies to BOTH scopes, deliberately through one function. A session-scoped
+ * stop leaves an approved chat tool in exactly the same position as a
+ * run-scoped one — claimed, `dispatching`, and forbidden to run — so it gets
+ * the same settlement rather than a second shape that could drift from this
+ * one. The only difference is that there is no run row to name.
  *
  * The `dispatching` row still has to be settled — the reconciler treats an
  * abandoned `dispatching` row as "the tool MAY have run" and escalates it to
@@ -67,8 +73,11 @@ export const STOP_APPLY_FAILED_ERROR_KIND = "operator_stop_apply_failed";
 export async function abandonDispatchAfterOperatorStop(args: {
   readonly approvalId: string;
   readonly sessionId: string;
-  readonly missionRunId: string;
+  /** `null` for a session-scoped stop — a chat session has no run row. */
+  readonly missionRunId: string | null;
   readonly runStatus: MissionRunStatus;
+  /** Which stop landed. Log-only; the settlement is identical either way. */
+  readonly scope: "run" | "session";
   readonly toolCallId: string;
   readonly continuation: PreparedContinuation | null;
 }): Promise<ApprovePrepareOutcome> {
@@ -78,6 +87,7 @@ export async function abandonDispatchAfterOperatorStop(args: {
     sessionId: args.sessionId,
     missionRunId: args.missionRunId,
     runStatus: args.runStatus,
+    scope: args.scope,
   });
   // The continuation's release is in a `finally` because ownership of it has
   // ALREADY moved here — the caller nulled its own reference before delegating,
@@ -132,18 +142,31 @@ export async function abandonDispatchAfterOperatorStop(args: {
  * here must not replace either.
  *
  * A failure is reported as its OWN outcome, `apply_failed`, and never as
- * `clear`. There is no independent durable consumer that would land the queued
- * request afterwards: the only reader of an open `stop_terminal` row is
- * `observeAndApplyControl`, and its only caller is the turn-loop iteration
- * checkpoint (`turn-loop-observe.ts`). A run that is being parked in
- * `paused_error` — which is what every caller of this helper is about to do —
- * reaches no further iteration boundary, so the row would sit `pending` until
- * a user-initiated resume of the SAME run, and never at all if the user never
- * resumes. No sweep, reconciler or scheduler reads that table (verified by
- * grepping every `runtime_control_requests` reference in `src/`). Reporting
- * `clear` therefore told the caller "no stop is queued" when the truth was "we
- * could not find out" — so callers now decide for themselves, and must not
- * proceed as though the run were free to continue.
+ * `clear`. Reporting `clear` would tell the caller "no stop is queued" when the
+ * truth is "we could not find out" — so callers decide for themselves, and must
+ * not proceed as though the work were free to continue.
+ *
+ * The reason that matters is that almost nothing else will land the row later.
+ * For a MISSION run, the only reader of an open `stop_terminal` is
+ * `observeAndApplyControl`, whose only caller is the turn-loop iteration
+ * checkpoint (`turn-loop-observe.ts`); a run being parked in `paused_error`
+ * reaches no further boundary, so the row sits `pending` until a user-initiated
+ * resume of the SAME run, and never at all if the user never resumes.
+ *
+ * For a SESSION-scoped stop the readers are different but the conclusion is the
+ * same: the continuation scheduler's gate and the wake-driven slice's pre-slice
+ * gate both consume one, but a session whose slice just ended may never run
+ * either again. (This paragraph replaces an older claim that a chat session had
+ * no stop row to read at all — true before session-scoped stops existed, false
+ * now, and the stale premise is what left this function skipping them.)
+ *
+ * BOTH SCOPES ARE HANDLED. This used to early-return `clear` whenever
+ * `missionRunId` was null — the same false premise the pre-dispatch gate
+ * carried, in the narrower post-dispatch window. The consequence was a session
+ * stop queued WHILE an approved chat tool was executing never being landed: the
+ * request stayed `pending` and the continuation was handed back, resuming the
+ * agent on a session the operator had stopped. The executed tool is still never
+ * undone — that is the in-flight rule, not a scope question.
  */
 export type QueuedOperatorStopOutcome =
   | OperatorStopGate
@@ -154,8 +177,10 @@ export async function applyQueuedOperatorStop(args: {
   readonly sessionId: string;
   readonly missionRunId: string | null;
 }): Promise<QueuedOperatorStopOutcome> {
-  if (args.missionRunId === null) return { kind: "clear" };
   try {
+    // No scope test: the gate itself decides what a stop means for this
+    // session, and it consumes a session-scoped one exactly as it consumes a
+    // run-scoped one. Skipping the call for a null run was the gap.
     const gate = await gateOnOperatorStopTransaction({
       sessionId: args.sessionId,
       missionRunId: args.missionRunId,
@@ -166,6 +191,7 @@ export async function applyQueuedOperatorStop(args: {
         sessionId: args.sessionId,
         missionRunId: args.missionRunId,
         runStatus: gate.runStatus,
+        scope: gate.scope,
       });
     }
     return gate;

@@ -52,6 +52,23 @@ vi.mock(
   () => ({ scheduleDeferredResumeRetries: vi.fn() }),
 );
 
+/**
+ * The approved-dispatch stop gate. A chat session (`missionRunId: null`) used to
+ * short-circuit to `clear` WITHOUT opening a transaction, on the reasoning that
+ * `stop_terminal` was run-scoped so there was nothing to observe. That is no
+ * longer true: a session-scoped stop is a real row now, so this gate opens a
+ * transaction for a chat session too — an approved money-path dispatch must not
+ * proceed after the operator stopped the session. Mocked `clear` here so this
+ * file stays about ref derivation.
+ */
+const mockGateOnOperatorStopTransaction = vi.fn().mockResolvedValue({
+  kind: "clear",
+});
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  gateOnOperatorStopTransaction: (...a: unknown[]) =>
+    mockGateOnOperatorStopTransaction(...a),
+}));
+
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));

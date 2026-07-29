@@ -50,6 +50,13 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   }),
   hasResumeCompleted: vi.fn(async () => intentRow.resumeConsumedAt !== null),
   lockResumeCueMessageIdWith: vi.fn(async () => intentRow.resumeCueMessageId),
+  // The cue picks its wording from the durable outcome read under the same
+  // lock. These are REJECTED approvals, so the neutral cue is the correct
+  // choice — nothing executed, and the cue must not say otherwise.
+  lockLifecycleRowWith: vi.fn(async () => ({
+    decision: "rejected",
+    executionStatus: "not_started",
+  })),
   attachResumeCueMessageWith: vi.fn(
     async (_client: unknown, _approvalId: string, id: number) => {
       intentRow.resumeCueMessageId = id;

@@ -1,0 +1,271 @@
+/**
+ * Composer Stop — reaches a BACKGROUND slice, and reaches it DURABLY.
+ *
+ * Two defects are pinned here, both of which left a running agent with no
+ * working stop:
+ *
+ *  1. The Stop control rendered only while a submit was pending. A wake-driven
+ *     background slice holds the session lease with no pending submit in this
+ *     window, so the user could watch the agent work with no way to interrupt
+ *     it anywhere in the UI.
+ *  2. Stop called only the request-local `stopTurn()`, which aborts THIS
+ *     renderer's in-flight request. That cannot touch a slice this window did
+ *     not start — it abandons the client's request rather than stopping the
+ *     run. The durable `runtime.requestStop` route queues a `stop_terminal`
+ *     the engine actually observes.
+ *
+ * Both routes fire, deliberately: the local abort stays as the instant path
+ * for the foreground case, the durable request makes the stop real.
+ */
+
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const mockStopTurn = vi.fn();
+const mockRequestStopMutate = vi.fn();
+const mockUseRuntimeState = vi.fn();
+let submitPending = false;
+
+vi.mock("@hugeicons/react", () => ({ HugeiconsIcon: () => null }));
+vi.mock("@hugeicons/core-free-icons", () => ({
+  StopCircleIcon: "StopCircleIcon",
+  ArrowUp01Icon: "ArrowUp01Icon",
+  SentIcon: "SentIcon",
+}));
+
+vi.mock("../../../lib/api/chat.js", () => ({
+  useSubmitChat: () => ({
+    isPending: submitPending,
+    mutateAsync: vi.fn(),
+    stop: mockStopTurn,
+  }),
+}));
+
+vi.mock("../../../lib/api/runtime.js", () => ({
+  useRuntimeState: (...a: unknown[]) => mockUseRuntimeState(...a),
+  useRequestStop: () => ({ mutateAsync: mockRequestStopMutate }),
+}));
+
+const { useComposerSubmit } = await import("../composer-submit.js");
+const { ComposerSendControl } = await import("../ComposerSendControl.js");
+
+const SESSION = "00000000-0000-4000-8000-000000000001";
+
+/** The runtime DTO shape the composer reads; `leaseActive` is the live signal. */
+function runtimeState(leaseActive: boolean) {
+  return {
+    data: {
+      ok: true,
+      data: { sessionId: SESSION, status: null, leaseActive },
+    },
+  };
+}
+
+function wrapper({ children }: { children: ReactNode }) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return createElement(QueryClientProvider, { client }, children);
+}
+
+function renderComposerSubmit() {
+  return renderHook(() => useComposerSubmit(SESSION, null, false, null), {
+    wrapper,
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  submitPending = false;
+  mockRequestStopMutate.mockResolvedValue({ ok: true, data: { outcome: "queued" } });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("stop availability", () => {
+  it("offers Stop for a background slice with no pending submit", () => {
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+
+    const { result } = renderComposerSubmit();
+
+    expect(result.current.submitPending).toBe(false);
+    expect(result.current.stopAvailable).toBe(true);
+  });
+
+  it("offers no Stop when the session is idle", () => {
+    mockUseRuntimeState.mockReturnValue(runtimeState(false));
+
+    const { result } = renderComposerSubmit();
+
+    expect(result.current.stopAvailable).toBe(false);
+  });
+
+  it("treats an unreadable runtime state as not-live", () => {
+    mockUseRuntimeState.mockReturnValue({ data: { ok: false, error: {} } });
+
+    const { result } = renderComposerSubmit();
+
+    expect(result.current.stopAvailable).toBe(false);
+  });
+});
+
+describe("stop routing — one route per case, never both", () => {
+  /**
+   * The stranded-row defect. A foreground turn is observed only through the
+   * request-local AbortSignal, so a durable `stop_terminal` row queued here
+   * has no consumer on this path: it outlives the turn and is later applied
+   * to an unrelated approval resume or continuation — stopping work the user
+   * never asked to stop.
+   */
+  it("FOREGROUND: aborts locally and queues NO durable stop row", async () => {
+    submitPending = true;
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    expect(mockStopTurn).toHaveBeenCalledTimes(1);
+    expect(mockRequestStopMutate).not.toHaveBeenCalled();
+  });
+
+  it("FOREGROUND: a later approval/continuation is unaffected — no row to strand", async () => {
+    submitPending = true;
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    // Zero open session-stop rows were ever requested, so nothing exists to be
+    // consumed by the next approval resume or continuation.
+    expect(mockRequestStopMutate).toHaveBeenCalledTimes(0);
+    expect(result.current.stopRequested).toBe(true);
+  });
+
+  it("BACKGROUND: uses the durable route only — stopTurn has nothing to cancel", async () => {
+    submitPending = false;
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    expect(mockRequestStopMutate).toHaveBeenCalledWith({ sessionId: SESSION });
+    expect(mockStopTurn).not.toHaveBeenCalled();
+    expect(result.current.stopRequested).toBe(true);
+  });
+});
+
+describe("a durable stop that did not land must not read as success", () => {
+  it("restores an actionable Stop on an application-level {ok:false}", async () => {
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    mockRequestStopMutate.mockResolvedValue({
+      ok: false,
+      error: { code: "control_failed", message: "internal" },
+    });
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    // NOT stuck on the disabled "Stopping…" key while the agent runs on.
+    expect(result.current.stopRequested).toBe(false);
+    expect(result.current.notice?.tone).toBe("error");
+    expect(result.current.notice?.text).toMatch(/still going/i);
+  });
+
+  it("restores an actionable Stop on a transport rejection", async () => {
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    mockRequestStopMutate.mockRejectedValue(new Error("ipc down"));
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    expect(result.current.stopRequested).toBe(false);
+    expect(result.current.notice?.tone).toBe("error");
+  });
+
+  it("keeps the acknowledgment when the stop DID land", async () => {
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    expect(result.current.stopRequested).toBe(true);
+    expect(result.current.notice).toBeNull();
+  });
+
+  it("surfaces no provider or IPC text in the failure copy", async () => {
+    mockUseRuntimeState.mockReturnValue(runtimeState(true));
+    mockRequestStopMutate.mockRejectedValue(
+      new Error("ECONNREFUSED 127.0.0.1:5777 sk-live-SECRET"),
+    );
+    const { result } = renderComposerSubmit();
+
+    await act(async () => {
+      result.current.onStop();
+    });
+
+    expect(result.current.notice?.text).not.toMatch(/ECONNREFUSED|SECRET|5777/);
+  });
+});
+
+describe("ComposerSendControl", () => {
+  function renderControl(props: Record<string, unknown>) {
+    return render(
+      createElement(ComposerSendControl, {
+        reasoningCapability: null,
+        reasoningStageIsAgent: false,
+        effectiveReasoningEffort: null,
+        modelsResolved: true,
+        globalModelId: null,
+        onReasoningPick: vi.fn(),
+        stopAvailable: false,
+        stopRequested: false,
+        onStop: vi.fn(),
+        submitDisabled: false,
+        ...props,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any) as ReactNode,
+    );
+  }
+
+  it("renders the Stop key whenever a slice is live", () => {
+    renderControl({ stopAvailable: true });
+    expect(screen.getByRole("button", { name: /stop/i })).not.toBeNull();
+  });
+
+  it("renders Send when nothing is running", () => {
+    renderControl({ stopAvailable: false });
+    expect(screen.queryByRole("button", { name: /^stop$/i })).toBeNull();
+  });
+
+  it("clicking Stop calls the handler", () => {
+    const onStop = vi.fn();
+    renderControl({ stopAvailable: true, onStop });
+
+    fireEvent.click(screen.getByRole("button", { name: /stop/i }));
+
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the disabled Stopping acknowledgment once requested", () => {
+    renderControl({ stopAvailable: true, stopRequested: true });
+    const key = screen.getByRole("button", { name: /stopping/i });
+    expect((key as HTMLButtonElement).disabled).toBe(true);
+  });
+});

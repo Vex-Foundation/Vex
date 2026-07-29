@@ -59,10 +59,16 @@ import {
   APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
   APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
   BATCH_ABORTED_BY_COMPACT_OUTPUT,
+  BATCH_ABORTED_BY_DEADLINE_OUTPUT,
+  BATCH_ABORTED_BY_TIMEOUT_OUTPUT,
   BATCH_ABORTED_BY_USER_STOP_OUTPUT,
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
+import {
+  evaluateBatchDeadlines,
+  type BatchDeadlines,
+} from "./turn-loop-tool-batch/deadline.js";
 import {
   dispatchPreparedActionFollowUp,
   resolvePreparedActionFollowUp,
@@ -86,6 +92,13 @@ export async function processTurnToolBatch(args: {
    * chat turns pass the "stop generating" inference signal.
    */
   readonly abortSignal?: AbortSignal;
+  /**
+   * Wall-clock bounds, checked at the top of each per-call iteration — never
+   * mid-dispatch, for the same reason as the Stop above. Without this both
+   * bounds are only sampled between iterations, so a slow batch overshoots them
+   * by an unbounded margin. See `./turn-loop-tool-batch/deadline.ts`.
+   */
+  readonly deadlines?: BatchDeadlines;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
   const executedCalls: ParsedToolCall[] = [];
@@ -145,6 +158,24 @@ export async function processTurnToolBatch(args: {
     if (args.abortSignal?.aborted) {
       drainUndispatchedCalls(i, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
       batchStopReason = "user_stopped";
+      break;
+    }
+
+    // ── Wall-clock bounds, also at the TOP of the iteration ──
+    // Ordered AFTER the Stop (an operator's explicit request outranks a bound
+    // that merely expired) and, like it, never mid-dispatch. This is the only
+    // place either bound can be observed inside a batch, so it is what keeps
+    // the overshoot to a single tool call instead of a whole batch.
+    const breach = evaluateBatchDeadlines(args.deadlines, Date.now());
+    if (breach !== null) {
+      const isMissionDeadline = breach.kind === "mission_deadline";
+      drainUndispatchedCalls(
+        i,
+        isMissionDeadline
+          ? BATCH_ABORTED_BY_DEADLINE_OUTPUT
+          : BATCH_ABORTED_BY_TIMEOUT_OUTPUT,
+      );
+      batchStopReason = isMissionDeadline ? "deadline_reached" : "timeout";
       break;
     }
 

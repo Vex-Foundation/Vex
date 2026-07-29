@@ -194,7 +194,13 @@ describe("operator-stop boundary (integration, two real clients)", () => {
       missionRunId: seeded.missionRunId,
     });
 
-    expect(verdict).toEqual({ kind: "stopped", runStatus: "stopped" });
+    // `scope` distinguishes a run-scoped stop from the session-scoped one a
+    // Full-Autonomous agent slice uses; this path is always run-scoped.
+    expect(verdict).toEqual({
+      kind: "stopped",
+      runStatus: "stopped",
+      scope: "run",
+    });
     // The gate did not merely detect the stop — it applied the canonical one.
     expect(await runStatus(seeded.missionRunId)).toBe("stopped");
     expect(await stopReason(seeded.missionRunId)).toBe("user_stopped");
@@ -228,8 +234,16 @@ describe("operator-stop boundary (integration, two real clients)", () => {
       missionRunId: seeded.missionRunId,
     });
 
-    expect(first).toEqual({ kind: "stopped", runStatus: "stopped" });
-    expect(second).toEqual({ kind: "stopped", runStatus: "stopped" });
+    expect(first).toEqual({
+      kind: "stopped",
+      runStatus: "stopped",
+      scope: "run",
+    });
+    expect(second).toEqual({
+      kind: "stopped",
+      runStatus: "stopped",
+      scope: "run",
+    });
     expect(await stopReason(seeded.missionRunId)).toBe("user_stopped");
   });
 

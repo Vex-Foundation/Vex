@@ -153,6 +153,38 @@ function validatedCauseCode(cause: unknown): string | null {
 }
 
 /**
+ * Enum-label shape for the provider's `ApiErrorType` — mirrors the cap in
+ * `inference/openrouter/provider-signals.ts` (not imported: no inference
+ * dependency from this file). An OPEN enum, so any plausible label survives.
+ */
+const ENUM_LABEL_SHAPE = /^[a-z][a-z0-9_]{0,63}$/;
+
+function validatedErrorType(cause: unknown): string | null {
+  const v = ownProperty(cause, "errorType");
+  return typeof v === "string" && ENUM_LABEL_SHAPE.test(v) ? v : null;
+}
+
+/**
+ * SDK class names are a CLOSED dictionary, but checking membership here would
+ * mean duplicating that 24-name vocabulary into this inference-free file. The
+ * closed check already ran where the value was captured
+ * (`inference/openrouter/error-class.ts`) and runs AGAIN as a `z.enum` at the
+ * IPC boundary; this layer only needs to guarantee the value is a bounded
+ * class-name-shaped token and not a smuggled message.
+ */
+const CLASS_NAME_SHAPE = /^[A-Z][A-Za-z0-9]{2,63}$/;
+
+function validatedErrorClass(cause: unknown): string | null {
+  const v = ownProperty(cause, "errorClass");
+  return typeof v === "string" && CLASS_NAME_SHAPE.test(v) ? v : null;
+}
+
+function validatedRetryAfterSeconds(cause: unknown): number | null {
+  const v = ownProperty(cause, "retryAfterSeconds");
+  return typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null;
+}
+
+/**
  * Recoverable failure surfaced by `startMission` / `resumeMissionRun` when a
  * provider call (or the surrounding hydrate / status update / prompt prep)
  * throws. The run is persisted in `paused_error` first, then this error is
@@ -175,6 +207,17 @@ export class MissionRunPausedError extends Error {
    */
   readonly statusCode: number | null;
   readonly causeCode: string | null;
+  /**
+   * Provider error taxonomy carried alongside the transport shape, so the app
+   * can answer "why did my mission stop" in bounded codes instead of a generic
+   * failure. `errorType` is OpenRouter's OPEN `ApiErrorType` (stream path
+   * only); `errorClass` names the SDK class that was thrown (the only signal
+   * the six status-less shapes have); `retryAfterSeconds` is the provider's
+   * own retry hint. All three are `null` when the cause carried nothing.
+   */
+  readonly errorType: string | null;
+  readonly errorClass: string | null;
+  readonly retryAfterSeconds: number | null;
   constructor(args: {
     runId: string;
     missionId: string;
@@ -190,6 +233,9 @@ export class MissionRunPausedError extends Error {
     this.sessionId = args.sessionId;
     this.statusCode = validatedStatusCode(args.cause);
     this.causeCode = validatedCauseCode(args.cause);
+    this.errorType = validatedErrorType(args.cause);
+    this.errorClass = validatedErrorClass(args.cause);
+    this.retryAfterSeconds = validatedRetryAfterSeconds(args.cause);
   }
 }
 

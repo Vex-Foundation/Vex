@@ -13,7 +13,9 @@
  * existing `messages.getTail` IPC after invalidation.
  */
 
+import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
+import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
 import type { ControlStateEvent } from "@shared/schemas/runtime.js";
 import type { StreamDeltaEvent } from "@shared/schemas/stream.js";
 
@@ -57,5 +59,43 @@ export interface EngineEventsBridge {
    */
   readonly onControlState: (
     cb: (event: ControlStateEvent) => void,
+  ) => () => void;
+
+  /**
+   * Subscribe to `EV.engine.error` events — emitted when a turn, mission,
+   * wake tick, compact job or approval resume FAILS. Before this channel
+   * existed a background failure died in a log and a provider 429 reached
+   * the user as "Unable to process the message".
+   *
+   * The payload is BOUNDED CODES ONLY: a user-facing `category`, the
+   * provider's error type/class, an HTTP status and a retry hint. It never
+   * carries provider prose — the raw message stays server-side, the same
+   * doctrine that keeps `memory_jobs.last_error` out of every DTO. The
+   * renderer maps `category` to copy.
+   *
+   * `event.sessionId` is NULLABLE, and the null is a positive claim that the
+   * failure is system-wide (memory maintenance owns no session) rather than an
+   * unknown. Subscribers must therefore route on it explicitly: a
+   * session-scoped consumer IGNORES null events, and the app-wide surface
+   * takes ONLY those. Treating null as a wildcard would render a global
+   * failure inside one conversation's banner.
+   *
+   * Returns an idempotent unsubscribe function.
+   */
+  readonly onEngineError: (
+    cb: (event: EngineErrorEvent) => void,
+  ) => () => void;
+
+  /**
+   * Subscribe to `EV.engine.missionUpdate` events — broadcast after a
+   * COMMITTED change to the mission surface (draft patch, readiness flip,
+   * contract acceptance, approval enqueue). The renderer invalidates the
+   * matching queries; it never reconstructs a draft or an approval row from
+   * the payload, which carries only ids, a kind and a timestamp.
+   *
+   * Returns an idempotent unsubscribe function.
+   */
+  readonly onMissionUpdate: (
+    cb: (event: MissionUpdateEvent) => void,
   ) => () => void;
 }

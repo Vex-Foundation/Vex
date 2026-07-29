@@ -26,20 +26,26 @@
  * implementation of what a user stop means; this module only decides WHEN to
  * invoke it.
  *
- * Chat sessions (`missionRunId === null`) always gate `clear`: a
- * `stop_terminal` request is run-scoped and `runStopDispatch` never mints one
- * without an active run. "Stop generating" on a chat turn is the in-process
- * inference abort signal, which the turn loop and the tool batch already
- * observe directly.
+ * SESSION SCOPE (`missionRunId === null`). This used to short-circuit to
+ * `clear` on the reasoning that `stop_terminal` was run-scoped and nothing ever
+ * minted one without a run. That stopped being true when a Full-Autonomous
+ * agent SESSION gained its own wake-driven continuation: such a slice spends
+ * money and can act on-chain with no run row anywhere, so a stop had to be able
+ * to name the SESSION. It does now — a `stop_terminal` row with a NULL
+ * `mission_run_id` (see `apply-session-stop.ts` for why that shape, and why it
+ * needed no migration) — and this gate CONSUMES it, exactly as the run-scoped
+ * branch consumes its own. An interactive chat turn is unaffected: no such row
+ * is minted for it, so it still gates `clear`.
  *
  * Lock order: this module takes SESSION CONTROL LOCK → OPEN CONTROL REQUESTS →
  * RUN, the canonical prefix documented in `session-control-lock.ts`.
  */
 
 import type { PoolClient } from "pg";
-import { queryOneWith, withTransaction } from "../../../db/client.js";
+import { executeWith, queryOneWith, withTransaction } from "../../../db/client.js";
 import * as controlRequestsRepo from "../../../db/repos/runtime-control-requests.js";
 import { TERMINAL_RUN_STATUSES, type MissionRunStatus } from "../../types.js";
+import { applySessionStopWithClient } from "./apply-session-stop.js";
 import { applyUserStopWithClient } from "./apply-user-stop.js";
 import { lockOpenControlRequests } from "./control-request-locks.js";
 import {
@@ -61,7 +67,17 @@ interface RunStatusRow {
  */
 export type OperatorStopGate =
   | { readonly kind: "clear" }
-  | { readonly kind: "stopped"; readonly runStatus: MissionRunStatus };
+  | {
+    readonly kind: "stopped";
+    readonly runStatus: MissionRunStatus;
+    /**
+     * Which thing was stopped. `"run"` reports the real `mission_runs` status;
+     * `"session"` has no run row and reports the `cancelled` terminal by
+     * convention. Callers that surface a status to a human should check this
+     * before claiming anything about a run.
+     */
+    readonly scope: "run" | "session";
+  };
 
 export interface OperatorStopGateInput {
   readonly sessionId: string;
@@ -80,10 +96,27 @@ export async function gateOnOperatorStopWithClient(
   input: OperatorStopGateInput,
 ): Promise<OperatorStopGate> {
   const { missionRunId } = input;
-  if (missionRunId === null) return { kind: "clear" };
 
   // Lock order step 1 — the canonical open-request set, before the run row.
   const openRequests = await lockOpenControlRequests(client, input.sessionId);
+
+  if (missionRunId === null) {
+    // Session scope: the only requests that can stop this work are the ones
+    // naming NO run. A run-scoped request belongs to a run and is not ours.
+    const sessionStop = openRequests.find(
+      (row) => row.kind === "stop_terminal" && row.mission_run_id === null,
+    );
+    if (sessionStop === undefined) return { kind: "clear" };
+    await applySessionStopWithClient(client, {
+      sessionId: input.sessionId,
+      lockedRequests: openRequests,
+    });
+    // There is no run row, so no run status exists to report. `cancelled` is
+    // the taxonomy's terminal for "this work is not going to continue" — the
+    // same convention this file already uses for a run row that vanished — and
+    // `scope` is what a caller reads when it needs to know which it got.
+    return { kind: "stopped", runStatus: "cancelled", scope: "session" };
+  }
 
   // Lock order step 2 — the run row.
   const run = await queryOneWith<RunStatusRow>(
@@ -94,9 +127,11 @@ export async function gateOnOperatorStopWithClient(
   // A run row that vanished is as dead as a terminal one; `cancelled` is the
   // taxonomy's terminal for "this run is not going to continue" and keeps the
   // caller on the status SETS instead of a bespoke literal.
-  if (run === null) return { kind: "stopped", runStatus: "cancelled" };
+  if (run === null) {
+    return { kind: "stopped", runStatus: "cancelled", scope: "run" };
+  }
   if (TERMINAL_RUN_STATUSES.has(run.status)) {
-    return { kind: "stopped", runStatus: run.status };
+    return { kind: "stopped", runStatus: run.status, scope: "run" };
   }
 
   const queuedStop = openRequests.find(
@@ -112,21 +147,20 @@ export async function gateOnOperatorStopWithClient(
     missionRunId,
     lockedRequests: openRequests,
   });
-  return { kind: "stopped", runStatus: "stopped" };
+  return { kind: "stopped", runStatus: "stopped", scope: "run" };
 }
 
 /**
  * Own-transaction variant, for a caller standing between two commits rather
  * than inside one (the approved-dispatch gate).
  *
- * A session with no run short-circuits WITHOUT opening a transaction at all:
- * `stop_terminal` is run-scoped, so there is nothing to observe and no reason
- * to make every chat approval pay for a lock round-trip.
+ * A session with no run no longer short-circuits: a session-scoped
+ * `stop_terminal` is a real row now, so skipping the transaction would skip the
+ * only place it can be observed.
  */
 export async function gateOnOperatorStopTransaction(
   input: OperatorStopGateInput,
 ): Promise<OperatorStopGate> {
-  if (input.missionRunId === null) return { kind: "clear" };
   return withSessionControlLock(input.sessionId, (client) =>
     gateOnOperatorStopWithClient(client, input),
   );
@@ -185,6 +219,74 @@ export async function enqueueOperatorStopRequest(
       },
       client,
     );
+    return { outcome: "queued", requestId: request.id };
+  });
+}
+
+export type EnqueueSessionStopOutcome =
+  | { readonly outcome: "queued"; readonly requestId: string }
+  /** A session-scoped stop was already open — this call added nothing. */
+  | { readonly outcome: "already_queued"; readonly requestId: string };
+
+export interface EnqueueSessionStopInput {
+  readonly sessionId: string;
+  readonly correlationId?: string | null;
+}
+
+/**
+ * Queue a SESSION-scoped `stop_terminal` — the operator stopping autonomous
+ * work that has no mission run (a Full-Autonomous agent chat slice).
+ *
+ * One transaction under the session control lock, so the insert is strictly
+ * ordered against every `gateOnOperatorStop` for the same session: a gate that
+ * commits first already committed the step it was guarding (and this stop
+ * applies after it), and a gate that commits second is guaranteed to SEE this
+ * row. That includes the continuation scheduler — which is how a Stop cannot
+ * race a wake into existence.
+ *
+ * The pending wake is cancelled in THIS transaction too, not in a follow-up:
+ * a stop that clears the request but leaves a due wake behind would be undone
+ * by the executor moments later.
+ *
+ * Idempotent. A second press finds the open row and returns it rather than
+ * stacking duplicates the gate would have to consume one by one.
+ */
+export async function enqueueSessionStopRequest(
+  input: EnqueueSessionStopInput,
+): Promise<EnqueueSessionStopOutcome> {
+  return withTransaction(async (client): Promise<EnqueueSessionStopOutcome> => {
+    await acquireSessionControlLock(client, input.sessionId);
+    const openRequests = await lockOpenControlRequests(client, input.sessionId);
+
+    const existing = openRequests.find(
+      (row) => row.kind === "stop_terminal" && row.mission_run_id === null,
+    );
+    if (existing !== undefined) {
+      return { outcome: "already_queued", requestId: existing.id };
+    }
+
+    const request = await controlRequestsRepo.enqueueRequest(
+      {
+        sessionId: input.sessionId,
+        missionRunId: null,
+        kind: "stop_terminal",
+        requestedBy: "user",
+        correlationId: input.correlationId ?? null,
+      },
+      client,
+    );
+
+    // Same-transaction wake cancellation — see the doc comment above.
+    await executeWith(
+      client,
+      `UPDATE loop_wake_requests
+          SET status           = 'cancelled',
+              cancelled_at     = NOW(),
+              cancelled_reason = 'consumed_by_session_stop'
+        WHERE session_id = $1 AND status = 'pending'`,
+      [input.sessionId],
+    );
+
     return { outcome: "queued", requestId: request.id };
   });
 }

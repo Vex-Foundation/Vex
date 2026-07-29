@@ -56,7 +56,16 @@ export {
   withSessionControlLock,
 } from "./session-control-lock.js";
 export {
+  applySessionStopTransaction,
+  applySessionStopWithClient,
+  type ApplySessionStopInput,
+  type ApplySessionStopOutcome,
+} from "./apply-session-stop.js";
+export {
   enqueueOperatorStopRequest,
+  enqueueSessionStopRequest,
+  type EnqueueSessionStopInput,
+  type EnqueueSessionStopOutcome,
   gateOnOperatorStopTransaction,
   gateOnOperatorStopWithClient,
   type EnqueueOperatorStopInput,

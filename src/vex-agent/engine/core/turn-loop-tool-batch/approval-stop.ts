@@ -22,6 +22,7 @@ import {
   acquireSessionControlLock,
   gateOnOperatorStopWithClient,
 } from "@vex-agent/engine/runtime/lease-and-status.js";
+import { emitMissionUpdate } from "@vex-agent/engine/runtime/mission-bus.js";
 import logger from "@utils/logger.js";
 import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
 import {
@@ -167,7 +168,7 @@ export async function enqueueApprovalIntent(args: {
   // the existing pattern of "queue insert, then updateStatus outside
   // tx" could leave a pending approval without the run actually
   // paused if the status update fails.
-  return withTransaction(async (client): Promise<ApprovalEnqueueOutcome> => {
+  const outcome = await withTransaction(async (client): Promise<ApprovalEnqueueOutcome> => {
     // Restricted-mode stop race: the operator can stop the run WHILE this tool
     // is in flight. A row-lock re-check alone is not enough — it proves the run
     // was not terminal, not that the operator had not pressed Stop, and a
@@ -230,4 +231,18 @@ export async function enqueueApprovalIntent(args: {
     }
     return { kind: "enqueued", approvalId };
   });
+
+  // Emit-after-commit: the queue row, the intent row and the
+  // `paused_approval` flip are all durable here, so a subscriber that
+  // refetches `listPending` on this signal always finds the card. The
+  // auto-rejected arm emits nothing — that approval can never be decided,
+  // so there is no card to show.
+  if (outcome.kind === "enqueued") {
+    emitMissionUpdate({
+      sessionId: context.sessionId,
+      missionId: context.missionId,
+      kind: "approval_enqueued",
+    });
+  }
+  return outcome;
 }

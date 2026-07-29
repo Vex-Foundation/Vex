@@ -44,8 +44,12 @@
  *   deliberately drop a continuation (`discardContinuation` after an operator
  *   Stop) leave the run in a terminal or paused status, and a resume claim only
  *   accepts `APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES` (`running`,
- *   `paused_approval`). Chat sessions have no such suppression path at all —
- *   `applyQueuedOperatorStop` returns `clear` when there is no run.
+ *   `paused_approval`). Chat sessions now have the SAME suppression path: a
+ *   session-scoped `stop_terminal` is a real control request, and
+ *   `applyQueuedOperatorStop` consults the gate for a run-less session too, so
+ *   its continuation is discarded rather than resumed. (It used to return
+ *   `clear` whenever there was no run — the premise that a session could not be
+ *   stopped, which is no longer true.)
  *
  *   IT CANNOT FAIL A TURN. Every caller invokes this from a `finally`;
  *   `dispatchPendingApprovalResumesAfterRelease` swallows everything, including

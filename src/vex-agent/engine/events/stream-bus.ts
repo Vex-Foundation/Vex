@@ -34,7 +34,8 @@ export type StreamDeltaType =
   | "reasoning"
   | "usage"
   | "done"
-  | "error";
+  | "error"
+  | "aborted";
 
 /**
  * Schema-specific, discriminated delta payloads. `kind` mirrors the
@@ -53,7 +54,38 @@ export type StreamDeltaPayload =
   | { readonly kind: "reasoning"; readonly text: string }
   | { readonly kind: "usage"; readonly usage: InferenceUsage }
   | { readonly kind: "done" }
-  | { readonly kind: "error"; readonly message: string; readonly code: number | null };
+  /**
+   * The turn ended by ABORT — user stop, or a deadline — so no assistant row
+   * will ever be persisted for this stream.
+   *
+   * WHY IT EXISTS. Every other way a stream ends is followed by a
+   * `transcriptAppend` that tells the renderer the preview is now redundant.
+   * An abort produces nothing, so the preview had no correlated end signal at
+   * all. The available substitute — a `leaseActive:false` control event — is
+   * NOT one: that fires on every normal chat completion too, so clearing on it
+   * erases a live preview before the assistant row has been refetched.
+   *
+   * Correlated by `streamId`, so a consumer can clear exactly the stream that
+   * ended and never a newer one that started in between. Bounded to the
+   * discriminant: no reason string, no provider text.
+   */
+  | { readonly kind: "aborted" }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly code: number | null;
+      /**
+       * OpenRouter's canonical `ApiErrorType` off the chunk's
+       * `error.metadata.errorType`, bounded upstream by
+       * `inference/openrouter/provider-signals.ts`. An OPEN enum carried
+       * VERBATIM — any consumer that branches on it needs a total default.
+       *
+       * Present here because this bus was the drop site: the chunk carried it
+       * and the delta mapping silently discarded it, so the only canonical
+       * taxonomy the provider gives us never reached a human.
+       */
+      readonly errorType: string | null;
+    };
 
 export interface StreamDeltaEvent {
   readonly type: typeof STREAM_DELTA_EVENT_TYPE;
@@ -140,8 +172,33 @@ function toDeltaPayload(chunk: StreamChunk): StreamDeltaPayload {
         kind: "error",
         message: chunk.errorMessage ?? "stream error",
         code: chunk.errorCode ?? null,
+        errorType: chunk.errorType ?? null,
       };
   }
+}
+
+/**
+ * Build the terminal `aborted` delta for a stream that ended without
+ * persisting an assistant row. Separate from `toStreamDeltaEvent` because it
+ * has no originating provider chunk — the turn runner knows the abort, the
+ * provider never reports it.
+ */
+export function toStreamAbortedEvent(
+  sessionId: string,
+  streamId: string,
+  sequence: number,
+  correlationId: string | null = null,
+): StreamDeltaEvent {
+  return {
+    type: STREAM_DELTA_EVENT_TYPE,
+    sessionId,
+    streamId,
+    sequence,
+    deltaType: "aborted",
+    delta: { kind: "aborted" },
+    createdAt: new Date().toISOString(),
+    correlationId,
+  };
 }
 
 /**

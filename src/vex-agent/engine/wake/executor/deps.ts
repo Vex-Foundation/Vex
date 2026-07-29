@@ -23,6 +23,12 @@ export interface WakeDeps {
   /** Resume a mission run. */
   resumeMissionRun(runId: string): Promise<void>;
   /**
+   * Continue a Full-Autonomous agent session whose runtime slice was exhausted.
+   * Called with the session lease ALREADY HELD by the executor, exactly like
+   * `resumeMissionRun` is called under the run lease.
+   */
+  continueAgentSession(sessionId: string): Promise<void>;
+  /**
    * Pre-claim provider/config gate. `claimDue` is destructive
    * (pending→consumed) and the subsequent resume runs the agent turn loop,
    * which needs the inference provider. The executor must NOT claim wake rows
@@ -70,6 +76,16 @@ export function buildProductionDeps(): WakeDeps {
       // gets it idempotently.
       const engine = await import("@vex-agent/engine/index.js");
       await engine.resumeMissionRun(runId);
+    },
+    continueAgentSession: async (sessionId) => {
+      // Same lazy-import rationale as `resumeMissionRun` above. Imported from
+      // the runner module directly (not the engine barrel) because this entry
+      // point is deliberately lease-held — the barrel's `processAgentTurn`
+      // claims its own lease and would deadlock against the executor's.
+      const { continueAgentSessionUnderLease } = await import(
+        "../../core/runner/agent.js"
+      );
+      await continueAgentSessionUnderLease(sessionId);
     },
     isProviderReady: isWakeProviderConfigured,
   };

@@ -21,6 +21,12 @@
  */
 
 import { z } from "zod";
+import {
+  engineCauseCodeSchema,
+  engineErrorClassSchema,
+  engineErrorTypeSchema,
+  engineStatusCodeSchema,
+} from "./engine-error.js";
 import { missionRunStatusSchema } from "./sessions.js";
 
 // ── DTO returned by runtime.getState ────────────────────────────────
@@ -52,6 +58,40 @@ export const runtimeStateDtoSchema = z
     pendingControlKind: z
       .enum(["pause_after_step", "stop_terminal", "resume", "cancel_wake"])
       .nullable(),
+    /**
+     * Bounded classification of the failure that paused this run, read from
+     * `mission_runs.stop_evidence_json`.
+     *
+     * CODES, NEVER PROSE. The evidence row also holds `errorMessage` and the
+     * run holds `stop_summary`; neither may ever appear here. They are raw
+     * provider/exception text — the same untrusted free-text class as
+     * `memory_jobs.last_error`, which is excluded from every DTO with a test
+     * asserting the omission. The renderer classifies from these codes and
+     * writes its own copy; the human-readable text stays server-side in the
+     * logs and in mission evidence.
+     *
+     * OPTIONAL, and every key inside it optional too: evidence written before
+     * the engine persisted these signals has none of them, and a run that
+     * paused for a reason with nothing classifiable to say has none either.
+     * Absent ⇒ the renderer shows its generic framing. A consumer must treat
+     * `errorType` as an OPEN enum with a total default branch — it is
+     * OpenRouter's canonical `ApiErrorType`, carried verbatim.
+     */
+    lastError: z
+      .object({
+        // SAME validators as the live `EV.engine.error` payload — deliberately
+        // imported rather than restated. Two vocabularies for one concept is
+        // the exact failure this channel exists to avoid: a renderer that maps
+        // `errorClass` from the push event but sees an arbitrary 120-char
+        // string from the DTO would need two mapping tables, and the looser
+        // one would quietly become the real contract.
+        errorType: engineErrorTypeSchema.optional(),
+        errorClass: engineErrorClassSchema.optional(),
+        statusCode: engineStatusCodeSchema.optional(),
+        causeCode: engineCauseCodeSchema.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type RuntimeStateDto = z.infer<typeof runtimeStateDtoSchema>;

@@ -50,3 +50,34 @@ export const ITERATION_LIMIT_REPLY =
   "so I've paused rather than keep spinning. Tell me how you'd like me to " +
   "proceed — continue, narrow the task, or ask me something specific — and " +
   "I'll pick up from here.";
+
+/**
+ * The `timeout` sibling of `ITERATION_LIMIT_REPLY`.
+ *
+ * Before this existed, `agent.ts` and `setup-turn.ts` special-cased ONLY
+ * `iteration_limit`, so a turn that ran out of wall-clock returned `text: null`
+ * and the user saw a completely silent turn. Reusing `ITERATION_LIMIT_REPLY`
+ * would have closed the hole dishonestly — the tool-use budget was NOT
+ * exhausted, the clock ran out, and those call for different next steps from
+ * the user.
+ *
+ * The duration is derived from `DEFAULT_LOOP_CONFIG.timeoutMs` (the bound both
+ * agent and setup turns actually run on) so the sentence cannot drift away from
+ * the value it claims.
+ */
+export const TIMEOUT_REPLY =
+  `I ran out of time for this turn (the ${Math.round(DEFAULT_LOOP_CONFIG.timeoutMs / 60_000)}-minute ` +
+  "wall-clock limit) before producing a final answer, so I've paused here rather " +
+  "than leave you with nothing. Tell me how you'd like me to proceed — continue, " +
+  "narrow the task, or ask me something specific — and I'll pick up from here.";
+
+/**
+ * The deterministic reply for a turn that exhausted a runtime bound without the
+ * model ever emitting text. Honest about WHICH bound fired; never a generic
+ * "budget" paragraph and never a cost figure.
+ */
+export function runtimeBoundExhaustedReply(
+  trigger: "iteration_limit" | "timeout",
+): string {
+  return trigger === "timeout" ? TIMEOUT_REPLY : ITERATION_LIMIT_REPLY;
+}

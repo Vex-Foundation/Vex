@@ -63,6 +63,7 @@ export function registerMissionStartHandler(): () => void {
             missionRunId: runId,
             correlationId: ctx.requestId,
             channelLabel: "vex:mission:start",
+            scope: "mission",
           },
         );
         await emitControlStateAfterChange(sessionId, ctx.requestId);

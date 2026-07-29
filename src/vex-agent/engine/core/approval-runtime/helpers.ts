@@ -96,6 +96,36 @@ export const APPROVAL_RESOLVED_CUE =
   "Continue.]";
 
 /**
+ * Cue variant for the ONE case where the engine can prove the action happened:
+ * the approval was decided `approved` AND its execution status is durably
+ * `succeeded`. Only then may the cue say the transaction executed.
+ *
+ * Every other arm — `rejected`, expired, policy-drift, `failed`, and above all
+ * `indeterminate` — keeps `APPROVAL_RESOLVED_CUE`, which claims nothing about
+ * execution. That split is the whole point (rules/90: never claim more than
+ * the evidence supports). Telling the model "it executed" on an indeterminate
+ * dispatch would be inventing a money-path result nobody observed; telling it
+ * nothing on a proven success made it re-ask the user whether the transaction
+ * had gone through, which is the complaint this variant answers.
+ *
+ * "Do not repeat it" is stated explicitly because the failure mode of a
+ * success the model does not recognise is a duplicate on-chain action.
+ *
+ * The verification pointer is hedged with "if available": tool availability is
+ * per-session, and naming a tool the session cannot call would be another
+ * small untruth in a banner whose entire value is that it does not contain
+ * any.
+ */
+export const APPROVAL_RESOLVED_EXECUTED_CUE =
+  "[Engine: approval_resolved — the pending approval was APPROVED and the " +
+  "action executed successfully. Its result is recorded in this conversation " +
+  "as the tool result for the tool call that was awaiting approval; other " +
+  "messages may have been recorded after it. The transaction has already " +
+  "happened — do not repeat it. You can verify the resulting on-chain / " +
+  "portfolio state with the `agent_scan` tool if it is available to you. " +
+  "Continue.]";
+
+/**
  * How old a `dispatching` stamp must be before the reconciler will even
  * CONSIDER calling it abandoned. Set above `LEASE_TTL_MS` so a runner that is
  * merely slow (but still heartbeating) is never in scope.

@@ -12,6 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
@@ -63,7 +64,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
-      engine: { onControlState },
+      engine: makeEngineBridgeStub({ onControlState }),
       approvals: { listPendingAll },
     },
   });

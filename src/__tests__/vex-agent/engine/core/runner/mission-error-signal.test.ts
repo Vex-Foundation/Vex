@@ -33,6 +33,12 @@ describe("readMissionErrorSignal", () => {
       causeCode: "ECONNRESET",
       retryable: true,
       name: "CustomError",
+      // Widened for the error channel: the provider taxonomy now travels
+      // beside the transport shape. All null here — this fixture attaches
+      // none of the three.
+      errorType: null,
+      errorClass: null,
+      retryAfterSeconds: null,
     });
   });
 
@@ -88,6 +94,9 @@ describe("readMissionErrorSignal", () => {
       causeCode: null,
       retryable: null,
       name: null,
+      errorType: null,
+      errorClass: null,
+      retryAfterSeconds: null,
     });
   });
 });

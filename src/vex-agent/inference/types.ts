@@ -32,7 +32,14 @@ export interface InferenceConfig {
   provider: string;
   /** Model ID, e.g. "anthropic/claude-sonnet-4" */
   model: string;
-  /** Context window size in tokens — from AGENT_CONTEXT_LIMIT env */
+  /**
+   * EFFECTIVE context window in tokens: `min(AGENT_CONTEXT_LIMIT, the model's
+   * real window from the `/models` catalog)`. The env value alone is an
+   * operator throttle and can exceed what the model accepts; banding against
+   * it would put every pressure band above the provider's hard limit. See
+   * `inference/context-window.ts`. Resolved once per `loadConfig()` fetch and
+   * read once at turn setup, so an active turn never surprise-shrinks.
+   */
   contextLimit: number;
   /**
    * Pinned OpenRouter endpoint `tag` from `OPENROUTER_ENDPOINT_TAG` (the

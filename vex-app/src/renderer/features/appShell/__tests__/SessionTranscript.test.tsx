@@ -229,6 +229,7 @@ describe("SessionTranscript", () => {
           text: "streaming…",
           phase: "streaming",
           toolName: null,
+          errorType: null,
           reasoningText: "",
           reasoningTokens: null,
           startedAtMs: Date.now(),

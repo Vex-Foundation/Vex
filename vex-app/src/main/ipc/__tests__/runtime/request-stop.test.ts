@@ -26,6 +26,8 @@ const mockEmitControlStateAfterChange = vi.fn();
 const mockEnqueueOperatorStopRequest = vi.fn();
 const mockAbortActiveMissionForSession = vi.fn();
 const mockSignalMissionRunAbortLocal = vi.fn();
+const mockEnqueueSessionStopRequest = vi.fn();
+const mockAbortSessionSliceLocal = vi.fn();
 
 /** Ordered trace of the two side effects, to pin "durable write first". */
 const callOrder: string[] = [];
@@ -76,6 +78,10 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
     callOrder.push("enqueueOperatorStopRequest");
     return mockEnqueueOperatorStopRequest(...a);
   },
+  enqueueSessionStopRequest: (...a: unknown[]) => {
+    callOrder.push("enqueueSessionStopRequest");
+    return mockEnqueueSessionStopRequest(...a);
+  },
 }));
 vi.mock("@vex-agent/engine/index.js", () => ({
   abortActiveMissionForSession: (...a: unknown[]) =>
@@ -83,6 +89,10 @@ vi.mock("@vex-agent/engine/index.js", () => ({
   signalMissionRunAbortLocal: (...a: unknown[]) => {
     callOrder.push("signalMissionRunAbortLocal");
     return mockSignalMissionRunAbortLocal(...a);
+  },
+  abortSessionSliceLocal: (...a: unknown[]) => {
+    callOrder.push("abortSessionSliceLocal");
+    return mockAbortSessionSliceLocal(...a);
   },
 }));
 
@@ -128,6 +138,11 @@ beforeEach(() => {
   mockEnsureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
   mockEmitControlStateAfterChange.mockResolvedValue(undefined);
   mockSignalMissionRunAbortLocal.mockReturnValue(true);
+  mockAbortSessionSliceLocal.mockReturnValue(true);
+  mockEnqueueSessionStopRequest.mockResolvedValue({
+    outcome: "queued",
+    requestId: "55555555-5555-4555-8555-555555555555",
+  });
   electronMock.__handlers.clear();
   registerRuntimeRequestStopHandler();
 });
@@ -265,21 +280,115 @@ describe("runtime.requestStop", () => {
     },
   );
 
-  it("returns no_active_run when the session has no run", async () => {
+  /**
+   * CONTRACT CHANGE (round 9). "No mission run" no longer means "nothing to
+   * stop": a Full-Autonomous agent session runs wake-driven slices with no run
+   * row, and the operator must be able to stop them. The dispatcher falls
+   * through to the session-scoped stop; the run-scoped machinery stays untouched,
+   * which is what this case originally protected.
+   */
+  it("falls through to the SESSION-scoped stop when the session has no run", async () => {
     mockGetActiveRunForSession.mockResolvedValueOnce({
       ok: true,
-      data: { hasActiveRun: false, missionRunId: null, status: null },
+      data: {
+        hasActiveRun: false,
+        missionRunId: null,
+        status: null,
+        leaseActive: false,
+      },
     });
 
     const r = await call({ sessionId: SESSION });
 
-    expect(r.data).toEqual({ outcome: "no_active_run" });
-    expect(mockSignalMissionRunAbortLocal).not.toHaveBeenCalled();
+    expect(r.data?.outcome).toBe("queued");
+    expect(mockEnqueueSessionStopRequest).toHaveBeenCalledWith({
+      sessionId: SESSION,
+      correlationId: REQUEST_ID,
+    });
+    expect(mockEnqueueOperatorStopRequest).not.toHaveBeenCalled();
+    expect(mockAbortActiveMissionForSession).not.toHaveBeenCalled();
   });
 
   it("rejects a non-uuid sessionId at the schema boundary", async () => {
     const r = await call({ sessionId: "not-a-uuid" });
     expect(r.ok).toBe(false);
     expect(mockGetActiveRunForSession).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The chat-session branch — the operator stopping AUTONOMOUS work that has no
+ * mission run.
+ *
+ * A Full-Autonomous agent session runs wake-driven slices: they spend money and
+ * can act on-chain, with no `mission_runs` row anywhere. This dispatcher used to
+ * read "no active run" and return `no_active_run`, so the Stop button was inert
+ * against exactly the work most worth stopping. The renderer path is unchanged
+ * (`window.vex.runtime.requestStop` → this channel); only what it finds here is.
+ */
+describe("runtime.requestStop — chat session with no mission run", () => {
+  function noRunState() {
+    return { ok: true, data: { hasActiveRun: false, missionRunId: null, status: null, leaseActive: false } };
+  }
+
+  it("persists the SESSION-scoped request FIRST, then fires the slice abort", async () => {
+    mockGetActiveRunForSession.mockResolvedValueOnce(noRunState());
+
+    const r = await call({ sessionId: SESSION });
+
+    expect(r.ok).toBe(true);
+    expect(r.data?.outcome).toBe("queued");
+    // Same ordering rule as the mission branch: durable truth before the
+    // best-effort in-process signal.
+    expect(callOrder).toEqual([
+      "enqueueSessionStopRequest",
+      "abortSessionSliceLocal",
+    ]);
+    expect(mockEnqueueSessionStopRequest).toHaveBeenCalledWith({
+      sessionId: SESSION,
+      correlationId: REQUEST_ID,
+    });
+    expect(mockAbortSessionSliceLocal).toHaveBeenCalledWith(SESSION);
+    // Never the run-scoped machinery — there is no run.
+    expect(mockEnqueueOperatorStopRequest).not.toHaveBeenCalled();
+    expect(mockAbortActiveMissionForSession).not.toHaveBeenCalled();
+  });
+
+  it("still reports queued when no slice lives in this process", async () => {
+    mockGetActiveRunForSession.mockResolvedValueOnce(noRunState());
+    mockAbortSessionSliceLocal.mockReturnValue(false);
+
+    const r = await call({ sessionId: SESSION });
+
+    // The durable request is what makes the stop land — it also cancels the
+    // pending continuation wake, so a slice that has not started never will.
+    expect(r.data?.outcome).toBe("queued");
+  });
+
+  it("a throwing slice abort does not fail the stop (best-effort)", async () => {
+    mockGetActiveRunForSession.mockResolvedValueOnce(noRunState());
+    mockAbortSessionSliceLocal.mockImplementation(() => {
+      throw new Error("registry exploded");
+    });
+
+    const r = await call({ sessionId: SESSION });
+
+    expect(r.ok).toBe(true);
+    expect(r.data?.outcome).toBe("queued");
+    expect(mockEmitControlStateAfterChange).toHaveBeenCalled();
+  });
+
+  it("reports the already-open request when Stop is pressed twice", async () => {
+    mockGetActiveRunForSession.mockResolvedValueOnce(noRunState());
+    mockEnqueueSessionStopRequest.mockResolvedValueOnce({
+      outcome: "already_queued",
+      requestId: "55555555-5555-4555-8555-555555555555",
+    });
+
+    const r = await call({ sessionId: SESSION });
+
+    expect(r.ok).toBe(true);
+    expect(r.data?.outcome).toBe("queued");
+    expect(r.data?.requestId).toBe("55555555-5555-4555-8555-555555555555");
   });
 });

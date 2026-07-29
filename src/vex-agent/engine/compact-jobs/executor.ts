@@ -41,6 +41,8 @@ import {
 import { loadArchivedPrefix } from "./archived-prefix.js";
 import { callChunkerLLM } from "./chunker-call.js";
 import { emitCompactWorkerPermanentlyFailedBug } from "./bug-emit.js";
+import { emitEngineError } from "../runtime/error-bus.js";
+import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
 import { processChunkerOutput } from "./chunk-processing.js";
 import { shouldEmitHeartbeatFailure } from "./heartbeat-rate-limit.js";
 import {
@@ -291,10 +293,39 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
       terminal: result.terminal,
       ok: result.ok,
     });
-    // Phase 2 BUG-REPORTING emit (puzzle 03) — extracted to
-    // `bug-emit.ts` for scaling. Only TERMINAL failures surface;
-    // non-terminal failures are operational noise (the job retries).
-    if (result.terminal) {
+    // Only a terminal failure THIS WORKER actually settled surfaces.
+    //
+    // `ok` is not redundant with `terminal`: `markFailed` decides `terminal`
+    // from a SELECT, then re-checks ownership in the UPDATE's WHERE clause. If
+    // another worker reclaimed the row in between (recoverStaleRunning after a
+    // heartbeat lapse), the CAS matches zero rows and the repo returns
+    // `{ ok: false, terminal: true }` — nothing was written, the job is still
+    // alive under its new owner, and the retry may well succeed. Reporting on
+    // `terminal` alone told the user their compaction had permanently failed
+    // when it had not, and filed a bug report to match.
+    //
+    // Non-terminal failures stay silent either way: the job retries, and a
+    // banner per attempt is noise, not signal.
+    if (result.ok && result.terminal) {
+      // A compact job that gives up permanently is a real failure the user
+      // must be able to see: the session's context is not being compacted, so
+      // the NEXT turn is the one that hits the context wall. Until the error
+      // channel existed this produced a bug report and a log line and nothing
+      // the window could render.
+      //
+      // Bounded codes only — `errorMsg` is raw provider/exception text and
+      // stays in the bug report, server-side. `readMissionErrorSignal` reads
+      // own-properties only and never walks `.cause`.
+      const signal = readMissionErrorSignal(err);
+      emitEngineError({
+        sessionId: job.sessionId,
+        scope: "compact",
+        errorType: signal.errorType,
+        errorClass: signal.errorClass,
+        statusCode: signal.status,
+        causeCode: signal.causeCode,
+        retryAfterSeconds: signal.retryAfterSeconds,
+      });
       await emitCompactWorkerPermanentlyFailedBug({
         jobId: job.id,
         sessionId: job.sessionId,

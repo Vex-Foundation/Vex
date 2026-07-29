@@ -9,10 +9,11 @@
  * still surfaces errors for the active session; the global badge stays silent
  * rather than showing a broken count).
  *
- * Freshness: a two-tier poll (`usePendingApprovalsAll`) — faster while the
- * panel is open, slower while idle — plus `useGlobalApprovalsLiveSync`, which
- * pushes a refresh on any session's control-state transition. Chat-session
- * approvals emit no control-state event, so the poll is the primary net.
+ * Freshness: push first — `useMissionUpdateLiveSync` invalidates `pendingAll`
+ * on `approval_enqueued`, which is emitted post-commit for chat AND mission
+ * sessions alike, and `useGlobalApprovalsLiveSync` adds any session's
+ * control-state transition. The two-tier poll (faster while the panel is open,
+ * slower while idle) is now the dropped-event fallback, not the primary net.
  *
  * Chrome follows the repo-native anchored-panel pattern
  * (`components/ui/select-menu.tsx`): no portals, no inline styles, outside
@@ -37,10 +38,19 @@ import {
 } from "../../lib/api/approvals.js";
 import { GlobalApprovalItem } from "./GlobalApprovals/GlobalApprovalItem.js";
 
-/** Idle poll — the app-wide read opens a short-lived pg client per tick. */
-const IDLE_POLL_MS = 15_000;
-/** Faster poll while the panel is open (A2 two-tier cadence). */
-const PANEL_OPEN_POLL_MS = 5_000;
+/**
+ * Idle fallback poll — the app-wide read opens a short-lived pg client per
+ * tick. Slowed 15s → 60s: `useMissionUpdateLiveSync` invalidates `pendingAll`
+ * on `approval_enqueued`, so the badge no longer depends on this tick to
+ * appear. Retained as the net for a dropped event.
+ */
+const IDLE_POLL_MS = 60_000;
+/**
+ * While the panel is OPEN the user is looking at a live list, so it keeps a
+ * faster cadence than the idle net (5s → 15s). Still slower than before the
+ * push existed, and still not the primary freshness path.
+ */
+const PANEL_OPEN_POLL_MS = 15_000;
 /** LIMIT 100 in SQL; the badge collapses anything past this to "99+". */
 const MAX_BADGE_COUNT = 99;
 

@@ -29,6 +29,12 @@ vi.mock("../../../lib/api/messages.js", () => ({
 vi.mock("../../../lib/api/usage.js", () => ({
   useUsageLiveSync: () => undefined,
 }));
+// The engine-error channel mounts a subscriber from SessionPanel for EVERY
+// session. These tests never stub `window.vex`, so the hook is mocked out the
+// same way the other live-sync hooks above are.
+vi.mock("../../../lib/api/engine-errors.js", () => ({
+  useEngineErrorLiveSync: () => {},
+}));
 vi.mock("../../../lib/api/streams.js", () => ({
   useStreamPreviewSync: () => undefined,
 }));
@@ -39,6 +45,18 @@ vi.mock("../../../lib/api/runtime.js", async (importActual) => {
   return {
     ...actual,
     useControlStateLiveSync: () => undefined,
+  };
+});
+// Same treatment as the control-state spine above: `SessionPanel` also mounts
+// the mission-update push subscription, which reaches for `window.vex.engine`.
+// Its behaviour is covered by `lib/api/__tests__/mission-update-live-sync.test.ts`.
+vi.mock("../../../lib/api/mission.js", async (importActual) => {
+  const actual = await importActual<
+    typeof import("../../../lib/api/mission.js")
+  >();
+  return {
+    ...actual,
+    useMissionUpdateLiveSync: () => undefined,
   };
 });
 vi.mock("../../../lib/api/sessions.js", async (importActual) => {

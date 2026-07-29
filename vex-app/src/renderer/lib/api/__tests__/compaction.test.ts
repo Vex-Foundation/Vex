@@ -8,6 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
+import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -21,7 +23,20 @@ import {
 } from "../compaction.js";
 import { compactionKeys } from "../queryKeys.js";
 
-type TranscriptListener = (event: { sessionId: string }) => void;
+type TranscriptListener = (event: TranscriptAppendEvent) => void;
+
+/** Minimal valid append event — the hook only reads `sessionId`. */
+function transcriptAppend(sessionId: string): TranscriptAppendEvent {
+  return {
+    type: "engine.transcript.append",
+    sessionId,
+    messageId: 1,
+    role: "assistant",
+    createdAt: "2026-05-21T10:00:00.000Z",
+    messageType: null,
+    correlationId: null,
+  };
+}
 
 let lastListener: TranscriptListener | null = null;
 const unsubscribeMock = vi.fn();
@@ -33,12 +48,12 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
-      engine: {
-        onTranscriptAppend: (cb: TranscriptListener) => {
+      engine: makeEngineBridgeStub({
+        onTranscriptAppend: (cb) => {
           lastListener = cb;
           return unsubscribeMock;
         },
-      },
+      }),
     },
   });
 });
@@ -119,10 +134,10 @@ describe("useCompactionLiveSync", () => {
     const spy = vi.spyOn(client, "invalidateQueries");
     renderHook(() => useCompactionLiveSync(A), { wrapper: makeWrapper(client) });
 
-    lastListener!({ sessionId: B });
+    lastListener!(transcriptAppend(B));
     expect(spy).not.toHaveBeenCalled();
 
-    lastListener!({ sessionId: A });
+    lastListener!(transcriptAppend(A));
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]![0]).toEqual({
       queryKey: compactionKeys.status(A),

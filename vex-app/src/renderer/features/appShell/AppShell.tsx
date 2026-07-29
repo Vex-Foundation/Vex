@@ -47,10 +47,17 @@ import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
+import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
+import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 
 export function AppShell(): JSX.Element {
+  // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
+  // compact failure for a session the user is not currently looking at must
+  // still be waiting for them when they select it. Filtering retention by the
+  // selected session dropped exactly those events.
+  useEngineErrorRetentionSync();
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const theme = useUiStore((s) => s.theme);
   const bookOpen = useUiStore((s) => s.bookOpen);
@@ -149,6 +156,12 @@ function NormalShell({
             <MissionRail activeSessionId={activeSessionId} />
           </div>
           <div className="flex items-center justify-end gap-3">
+            {/* Session-LESS failures (memory maintenance) surface here: they
+             * belong to no conversation, so `SessionErrorBanner` could only
+             * show them by pretending they happened inside whichever session
+             * happened to be open. Renders null when there is nothing to say,
+             * like the approvals badge, so the flank stays empty when idle. */}
+            <GlobalErrorBanner />
             <GlobalApprovals />
           </div>
         </header>

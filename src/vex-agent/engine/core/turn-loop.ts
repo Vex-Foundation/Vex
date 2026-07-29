@@ -30,6 +30,10 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import logger from "@utils/logger.js";
 import { executeTurn, saveAssistantMessage } from "./turn.js";
+import {
+  streamDeltaBus,
+  toStreamAbortedEvent,
+} from "@vex-agent/engine/events/index.js";
 import type { TurnLoopConfig, TurnLoopResult } from "./turn-loop/state.js";
 export type { TurnLoopConfig, TurnLoopResult } from "./turn-loop/state.js";
 import {
@@ -271,9 +275,31 @@ export async function runTurnLoop(
     // flag first would silently drop that partial row.
     if (turnResult.inferenceAborted) {
       if (turnResult.content) {
+        // Non-empty partial output becomes a durable `chat_stopped` row. Its
+        // `transcriptAppend` is what retires the live preview — the same
+        // handoff every ordinary turn uses. Emitting a terminal stream delta
+        // here as well would clear the preview BEFORE this row is refetched,
+        // which is precisely the swap gap the preview machinery exists to
+        // avoid. So: persist, and stay quiet on the stream channel.
         await saveAssistantMessage(context.sessionId, turnResult.content, null, {
           stopped: true,
         });
+      } else {
+        // Nothing was persisted and nothing ever will be for this stream, so
+        // no `transcriptAppend` is coming. Without a terminal delta the
+        // preview would sit frozen until the 60 s orphan timer. Correlated by
+        // `streamId` so a consumer clears exactly this stream and never a
+        // newer one that started in between.
+        //
+        // Best-effort, like every emission on this bus: listener errors are
+        // isolated by the bus and a preview signal must never break the turn.
+        streamDeltaBus.emit(
+          toStreamAbortedEvent(
+            context.sessionId,
+            turnResult.streamId,
+            turnResult.nextStreamSequence,
+          ),
+        );
       }
       stopReason = "user_stopped";
       break;
@@ -300,6 +326,13 @@ export async function runTurnLoop(
         // signal (pos 11), so fall back to it. The batch checks this at the
         // TOP of each call — never mid-dispatch.
         abortSignal: abortSignal ?? inferenceAbortSignal,
+        // Both wall-clock bounds as absolute epochs, so the batch can observe
+        // them between calls. The iteration-boundary checks above stay exactly
+        // as they were — this only bounds the overshoot WITHIN one batch.
+        deadlines: {
+          turnTimeoutAtMs: startTime + loopConfig.timeoutMs,
+          missionDeadlineAtMs: loopConfig.missionDeadlineMs ?? null,
+        },
       });
       totalToolCalls += batchOutcome.toolCallsExecuted;
       lastText = batchOutcome.lastText;

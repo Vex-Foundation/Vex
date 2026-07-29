@@ -112,6 +112,7 @@ export function registerApproveHandler(): () => void {
               ...(missionRunId !== undefined ? { missionRunId } : {}),
               correlationId: ctx.requestId,
               channelLabel: "vex:approvals:approve",
+              scope: "approval",
             },
           );
         }
@@ -186,6 +187,7 @@ export function registerRejectHandler(): () => void {
               ...(missionRunId !== undefined ? { missionRunId } : {}),
               correlationId: ctx.requestId,
               channelLabel: "vex:approvals:reject",
+              scope: "approval",
             },
           );
         }

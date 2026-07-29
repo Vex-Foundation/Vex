@@ -118,6 +118,28 @@ function approvedMissionSnapshot() {
   } as unknown as Parameters<typeof applyApproveSideEffects>[1];
 }
 
+/**
+ * A CHAT-session approval: `mission_run_id` is null. Since session-scoped stop
+ * became a first-class control request, the gate can legitimately return
+ * `stopped` for one of these — which is precisely the case the old
+ * `missionRunId !== null` guard let fall through to `dispatchTool`.
+ */
+function approvedChatSnapshot() {
+  return {
+    type: "approved_in_tx" as const,
+    queueResolvedAt: "2026-07-28T00:00:00.000Z",
+    row: {
+      approval_id: "appr-1",
+      session_id: "s1",
+      mission_run_id: null,
+      tool_call_id: null,
+      queue_tool_call_id: "tc-1",
+      queue_tool_call: { command: "kyberswap_swap", args: {} },
+      queue_permission_at_enqueue: "restricted",
+    },
+  } as unknown as Parameters<typeof applyApproveSideEffects>[1];
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockHydrateEngineSession.mockResolvedValue(null);
@@ -410,5 +432,185 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
       "engine.approval_runtime.stop_apply_unresolved",
       expect.objectContaining({ approvalId: "appr-1" }),
     );
+  });
+});
+
+/**
+ * THE SESSION-SCOPE HOLE (round-10 blocker 1, money-path).
+ *
+ * The gate branch used to read `stopGate.kind === "stopped" && missionRunId !==
+ * null`, justified by a comment asserting that `stopped` was unreachable
+ * without a run. That stopped being true the moment a session-scoped
+ * `stop_terminal` became real: the gate now legitimately returns `stopped` for
+ * a chat session, the `missionRunId !== null` half of the condition is false,
+ * and control FELL THROUGH to `dispatchTool`.
+ *
+ * The consequence is the worst one available on this runtime: an approved
+ * mutating tool — a swap, a transfer — executing after the operator pressed
+ * Stop. Nothing else neutralised the slot, either: the intent is already
+ * `dispatching`, and `applySessionStopWithClient` only rejects PENDING
+ * approvals, so this row was invisible to the stop it should have obeyed.
+ */
+describe("applyApproveSideEffects — SESSION-scoped operator stop", () => {
+  beforeEach(() => {
+    mockClaimResumeContinuation.mockResolvedValue({
+      outcome: "claimed",
+      continuation: {
+        kind: "chat_session",
+        sessionId: "s1",
+        approvalId: "appr-1",
+        ownerId: "approve-appr-1",
+        leaseHandle: { release: vi.fn() },
+      },
+    });
+  });
+
+  it("does NOT dispatch the approved tool when the SESSION was stopped", async () => {
+    mockGateOnOperatorStopTransaction.mockResolvedValue({
+      kind: "stopped",
+      runStatus: "cancelled",
+      scope: "session",
+    });
+
+    const outcome = await applyApproveSideEffects(
+      "appr-1",
+      approvedChatSnapshot(),
+    );
+
+    // The whole point: real funds do not move after Stop — on a chat session
+    // exactly as on a mission run.
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    expect(mockCommitApprovedToolResult).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("run_terminated");
+  });
+
+  it("settles the dispatching row structurally, so the reconciler cannot call it indeterminate", async () => {
+    mockGateOnOperatorStopTransaction.mockResolvedValue({
+      kind: "stopped",
+      runStatus: "cancelled",
+      scope: "session",
+    });
+
+    await applyApproveSideEffects("appr-1", approvedChatSnapshot());
+
+    // The SAME settlement shape as the mission path — not a second one.
+    expect(mockCommitDispatchFailureToolResult).toHaveBeenCalledTimes(1);
+    const call = mockCommitDispatchFailureToolResult.mock.calls[0]![0] as {
+      approvalId: string;
+      toolCallId: string;
+      content: string;
+    };
+    expect(call.approvalId).toBe("appr-1");
+    expect(call.toolCallId).toBe("tc-1");
+    expect(call.content).toContain("operator_stop_before_dispatch");
+  });
+
+  it("releases the chat continuation instead of leaking the session lease", async () => {
+    mockGateOnOperatorStopTransaction.mockResolvedValue({
+      kind: "stopped",
+      runStatus: "cancelled",
+      scope: "session",
+    });
+
+    await applyApproveSideEffects("appr-1", approvedChatSnapshot());
+
+    expect(mockDiscardContinuation).toHaveBeenCalledTimes(1);
+  });
+
+  it("a CLEAR gate on a chat session still dispatches normally", async () => {
+    mockGateOnOperatorStopTransaction.mockResolvedValue({ kind: "clear" });
+
+    await applyApproveSideEffects("appr-1", approvedChatSnapshot());
+
+    // The fix must not turn every chat approval into a refusal.
+    expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * THE TWIN GAP (post-dispatch window).
+ *
+ * `applyQueuedOperatorStop` early-returned `clear` for a chat session on the
+ * same false premise the pre-dispatch branch carried: that a stop could not
+ * exist without a run. So a session stop queued WHILE an approved chat tool was
+ * executing was never landed — the request stayed `pending`, the continuation
+ * was handed back, and the agent resumed on a session the operator had stopped.
+ *
+ * Narrower than the pre-dispatch hole (the tool has already run, and that
+ * outcome is legitimately durable — the in-flight rule), but the same class:
+ * the durable consequence is a stopped session being resumed.
+ */
+describe("applyApproveSideEffects — SESSION stop queued DURING the dispatch", () => {
+  beforeEach(() => {
+    mockClaimResumeContinuation.mockResolvedValue({
+      outcome: "claimed",
+      continuation: {
+        kind: "chat_session",
+        sessionId: "s1",
+        approvalId: "appr-1",
+        ownerId: "approve-appr-1",
+        leaseHandle: { release: vi.fn() },
+      },
+    });
+  });
+
+  it("lands the session stop and does NOT resume the agent", async () => {
+    mockGateOnOperatorStopTransaction
+      // Pre-dispatch: nothing queued yet, so the approved tool runs.
+      .mockResolvedValueOnce({ kind: "clear" })
+      // The operator presses Stop while it is in flight.
+      .mockResolvedValueOnce({
+        kind: "stopped",
+        runStatus: "cancelled",
+        scope: "session",
+      });
+
+    const outcome = await applyApproveSideEffects(
+      "appr-1",
+      approvedChatSnapshot(),
+    );
+
+    // The tool DID run and its result is durable — never undone.
+    expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    expect(mockCommitApprovedToolResult).toHaveBeenCalledTimes(1);
+    expect(outcome.kind).toBe("dispatched");
+
+    // THE POINT: the stop was consulted for the session (not skipped), and the
+    // continuation was released instead of resuming the agent.
+    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(2);
+    expect(mockGateOnOperatorStopTransaction).toHaveBeenLastCalledWith({
+      sessionId: "s1",
+      missionRunId: null,
+    });
+    expect(mockDiscardContinuation).toHaveBeenCalledTimes(1);
+  });
+
+  it("a clear post-dispatch gate still resumes the chat session normally", async () => {
+    mockGateOnOperatorStopTransaction.mockResolvedValue({ kind: "clear" });
+
+    const outcome = await applyApproveSideEffects(
+      "appr-1",
+      approvedChatSnapshot(),
+    );
+
+    // The fix must not strand every chat approval's continuation.
+    expect(outcome.kind).toBe("dispatched");
+    expect(mockDiscardContinuation).not.toHaveBeenCalled();
+  });
+
+  it("NEVER THROWS: a gate failure is reported as apply_failed, never as clear", async () => {
+    mockGateOnOperatorStopTransaction
+      .mockResolvedValueOnce({ kind: "clear" })
+      .mockRejectedValueOnce(new Error("db blip"));
+
+    // `apply_failed` on the post-dispatch path escalates to a post-decision
+    // error rather than resuming on a guess — the contract is unchanged for a
+    // chat session, which previously could not even reach it.
+    await expect(
+      applyApproveSideEffects("appr-1", approvedChatSnapshot()),
+    ).rejects.toThrow(/operator_stop_apply_failed/);
+
+    // The committed result survives the escalation.
+    expect(mockCommitApprovedToolResult).toHaveBeenCalledTimes(1);
   });
 });

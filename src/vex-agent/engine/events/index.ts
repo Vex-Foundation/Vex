@@ -27,6 +27,7 @@ export {
   STREAM_DELTA_EVENT_TYPE,
   StreamDeltaBus,
   streamDeltaBus,
+  toStreamAbortedEvent,
   toStreamDeltaEvent,
   type StreamDeltaEvent,
   type StreamDeltaListener,

@@ -411,9 +411,17 @@ export async function finalizeMissionRunError(
 ): Promise<void> {
   const errorMessage = formatErrorMessage(err);
   const errorClass = err instanceof Error ? err.constructor.name : typeof err;
-  // Errno-shaped transport signal (own-property, never message text) — fed
-  // into both the persisted evidence below AND the bug-report `context`.
-  const causeCode = readMissionErrorSignal(err).causeCode;
+  // Bounded transport signals (own-properties, never message text) — fed into
+  // the persisted evidence below AND the bug-report `context`.
+  //
+  // `errorClass` above is `err.constructor.name`, which is very nearly always
+  // the useless literal "Error"; the signal's own `errorClass` comes from the
+  // CLOSED SDK dictionary and its `errorType` is OpenRouter's canonical enum.
+  // Persisting THOSE is what lets the runtime DTO expose a `lastError` the
+  // renderer can classify — one vocabulary, the same one the engine error
+  // push channel uses. The free-text `errorMessage` stays server-side.
+  const signal = readMissionErrorSignal(err);
+  const causeCode = signal.causeCode;
   // Log first — even if the DB write below fails, the failure stays visible.
   logger.error("engine.mission.runtime_throw", {
     runId,
@@ -436,6 +444,13 @@ export async function finalizeMissionRunError(
           errorMessage,
           errorClass,
           causeCode,
+          // Bounded classification vocabulary — read by the runtime DTO's
+          // `lastError`. Keys are omitted when null so evidence written by
+          // older code and evidence with nothing to say look identical to the
+          // reader (absent ⇒ no lastError).
+          ...(signal.errorType !== null ? { errorType: signal.errorType } : {}),
+          ...(signal.errorClass !== null ? { sdkErrorClass: signal.errorClass } : {}),
+          ...(signal.status !== null ? { statusCode: signal.status } : {}),
           occurredAt: new Date().toISOString(),
           missionId,
           runId,

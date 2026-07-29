@@ -227,11 +227,21 @@ export async function applyApproveSideEffects(
       sessionId,
       missionRunId,
     });
-    // `stopped` is only reachable for a run-scoped session — the gate returns
-    // `clear` immediately when there is no run — so the `missionRunId` test
-    // narrows the type without a non-null assertion rather than adding a
-    // reachable branch.
-    if (stopGate.kind === "stopped" && missionRunId !== null) {
+    // EVERY `stopped` verdict suppresses the dispatch, whatever its scope.
+    //
+    // This used to read `&& missionRunId !== null`, on the reasoning that the
+    // gate could not return `stopped` without a run. Once a session-scoped
+    // `stop_terminal` became a real row that reasoning inverted into a
+    // money-path hole: the gate legitimately reported `stopped` for a chat
+    // session, the second half of the condition was false, and control fell
+    // through to `dispatchTool` — an approved swap or transfer executing after
+    // the operator pressed Stop. Nothing downstream would have caught it: the
+    // intent is already `dispatching`, and a session stop only rejects PENDING
+    // approvals.
+    //
+    // The lesson generalises, so the branch is written to need no update if a
+    // third scope ever appears: `stopped` means stopped.
+    if (stopGate.kind === "stopped") {
       const held = continuation;
       continuation = null;
       return abandonDispatchAfterOperatorStop({
@@ -239,6 +249,7 @@ export async function applyApproveSideEffects(
         sessionId,
         missionRunId,
         runStatus: stopGate.runStatus,
+        scope: stopGate.scope,
         toolCallId: toolCall.toolCallId,
         continuation: held,
       });

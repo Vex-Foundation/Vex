@@ -131,7 +131,12 @@ export type ApprovePrepareOutcome =
   | {
       readonly kind: "run_terminated";
       readonly approvalId: string;
-      readonly missionRunId: string;
+      /**
+       * `null` when the STOP was session-scoped — a chat session has no run
+       * row. `runStatus` then carries the `cancelled` terminal by convention
+       * (see `gateOnOperatorStopWithClient`), not a real `mission_runs` status.
+       */
+      readonly missionRunId: string | null;
       readonly runStatus: MissionRunStatus;
     };
 

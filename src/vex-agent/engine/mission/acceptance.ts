@@ -21,10 +21,12 @@
  *      `chk_missions_acceptance_atomicity` rejects partial state at
  *      the DB level too).
  *
- * No engine event is emitted yet — phase 6 wires the IPC layer's
- * TanStack onSuccess invalidation. A cross-window
- * `engine.mission.accepted` topic lands with the right-rail
- * subscriber in puzzle 10 (per the plan).
+ * On a successful acceptance the `accepted` mission-update event is
+ * emitted AFTER the transaction commits (`runtime/mission-bus.ts`), so
+ * the renderer learns "Start mission" is live from a push instead of
+ * waiting out its fallback poll. The IPC layer's TanStack onSuccess
+ * invalidation still runs for the caller's own window; the bus is what
+ * reaches every other subscriber.
  */
 
 import { withTransaction } from "../../db/client.js";
@@ -35,6 +37,7 @@ import {
 } from "../../db/repos/missions.js";
 import * as missionRunsRepo from "../../db/repos/mission-runs.js";
 import * as sessionPlansRepo from "../../db/repos/session-plans.js";
+import { emitMissionUpdate } from "../runtime/mission-bus.js";
 
 import {
   CONTRACT_HASH_VERSION,
@@ -222,7 +225,7 @@ export async function acceptContract(
   input: AcceptContractInput,
 ): Promise<AcceptContractOutcome> {
   try {
-    return await withTransaction(async (client): Promise<AcceptContractOutcome> => {
+    const outcome = await withTransaction(async (client): Promise<AcceptContractOutcome> => {
     // 1. Row-locked read.
     const mission: Mission | null = await getMissionForUpdate(client, input.missionId);
     if (!mission) {
@@ -336,6 +339,20 @@ export async function acceptContract(
       ...(planAcceptedAt !== undefined ? { planAcceptedAt } : {}),
     } as const;
     });
+
+    // Emit-after-commit. This is the signal that removes the "Start mission
+    // button appears late" latency: the acceptance columns are durable by the
+    // time any subscriber can observe this, so the refetch it triggers can
+    // never read a pre-acceptance row. Only the success arm emits — a refused
+    // acceptance changed nothing to refetch.
+    if (outcome.outcome === "accepted") {
+      emitMissionUpdate({
+        sessionId: input.sessionId,
+        missionId: input.missionId,
+        kind: "accepted",
+      });
+    }
+    return outcome;
   } catch (err) {
     // Rollback sentinels caught OUTSIDE the TX → the TX already rolled back
     // (neither contract nor plan accepted). Map to the structured outcomes;

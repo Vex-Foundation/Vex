@@ -132,7 +132,14 @@ describe("stream bridge", () => {
       );
       expect(broadcastMock).toHaveBeenCalledTimes(1);
       const payload = lastBroadcast();
-      expect(payload.delta).toEqual({ kind: "error", message: "Stream error", code: 429 });
+      expect(payload.delta).toEqual({
+        kind: "error",
+        message: "Stream error",
+        code: 429,
+        // Bounded enum label now crosses beside the code; `null` when the
+        // provider reported no type. The generic message is unchanged.
+        errorType: null,
+      });
       expect(JSON.stringify(payload)).not.toContain("FAKE_SECRET");
     } finally {
       teardown();

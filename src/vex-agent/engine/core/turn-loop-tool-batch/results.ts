@@ -33,6 +33,25 @@ export const BATCH_ABORTED_BY_USER_STOP_OUTPUT =
   + "It did NOT execute and had no effect.";
 
 /**
+ * Synthetic tool-result emitted for batch tool calls that were never dispatched
+ * because the TURN's wall-clock slice expired mid-batch. Same pairing contract
+ * as the other drains. Distinct from the deadline drain below because the
+ * consequences differ: a slice is continued, a contract deadline is not.
+ */
+export const BATCH_ABORTED_BY_TIMEOUT_OUTPUT =
+  "batch_aborted_by_timeout: the turn's wall-clock limit expired before this tool call was dispatched. "
+  + "It did NOT execute and had no effect.";
+
+/**
+ * Synthetic tool-result emitted for batch tool calls that were never dispatched
+ * because the mission's contract deadline passed mid-batch. The mission is over;
+ * these calls must not be re-emitted.
+ */
+export const BATCH_ABORTED_BY_DEADLINE_OUTPUT =
+  "batch_aborted_by_deadline: the mission's deadline passed before this tool call was dispatched. "
+  + "It did NOT execute and had no effect.";
+
+/**
  * Synthetic tool-result for a call that returned "approval required" onto a
  * run that had already gone terminal. The approval is auto-rejected in the
  * enqueue transaction; this keeps the call/result pairing intact.

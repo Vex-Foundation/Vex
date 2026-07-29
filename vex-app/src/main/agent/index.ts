@@ -11,6 +11,8 @@
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
 import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupControlBridge } from "./control-bridge.js";
+import { setupErrorBridge } from "./error-bridge.js";
+import { setupMissionUpdateBridge } from "./mission-update-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
 
@@ -28,6 +30,11 @@ export function setupAgentBridges(): () => void {
   teardowns.push(setupControlBridge());
   // Puzzle 09 — ephemeral, sanitized token/tool/usage stream preview.
   teardowns.push(setupStreamBridge());
+  // Error channel — bounded failure codes for turns, missions, wakes,
+  // compact jobs and approval resumes. Without it these die in a log.
+  teardowns.push(setupErrorBridge());
+  // Mission surface push — replaces the draft/diff/approval discovery polls.
+  teardowns.push(setupMissionUpdateBridge());
 
   // Puzzle 03 — install the production BugReportSink for engine emit
   // points (turn-loop / wake / compact). Teardown resets to noop.

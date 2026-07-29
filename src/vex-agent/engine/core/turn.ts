@@ -24,7 +24,11 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { sanitizeForSystemPrompt } from "../prompts/sanitize.js";
 import { repairOrphanedToolCalls } from "./transcript-integrity.js";
-import { appendMessage, streamDeltaBus, toStreamDeltaEvent } from "@vex-agent/engine/events/index.js";
+import {
+  appendMessage,
+  streamDeltaBus,
+  toStreamDeltaEvent,
+} from "@vex-agent/engine/events/index.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import logger from "@utils/logger.js";
@@ -44,6 +48,23 @@ export interface SingleTurnResult {
   inferenceAborted: boolean;
   /** True iff a provider usage chunk was observed before the stream exited. */
   usageObserved: boolean;
+  /**
+   * Identity of the stream this turn previewed, so the CALLER can emit the
+   * terminal `aborted` delta correlated to it.
+   *
+   * The emit deliberately does not live here. Whether an aborted stream ends
+   * with a persisted `chat_stopped` assistant row is decided by the turn loop
+   * AFTER this function returns, and that decision is exactly what determines
+   * whether a terminal delta is wanted: a persisted row brings its own
+   * `transcriptAppend`, which has always owned the preview handoff. Emitting
+   * at stream exit cleared the preview before that row arrived and reopened
+   * the swap gap on the stop-with-partial-content path.
+   *
+   * `nextStreamSequence` continues the stream's monotonic counter, so a
+   * terminal delta orders after every delta the turn emitted.
+   */
+  streamId: string;
+  nextStreamSequence: number;
 }
 
 /**
@@ -111,6 +132,9 @@ export async function executeTurn(
   // the deferred save in turn-loop. Emission is best-effort and never throws
   // into the turn (the bus + onDelta both isolate listener errors).
   const streamId = randomUUID();
+  // Highest sequence emitted for this stream, so the terminal `aborted` delta
+  // continues the same monotonic counter rather than restarting it.
+  let lastSequence = -1;
   const { response, aborted, usageObserved } = await runStreamingInference(
     provider,
     repair.messages,
@@ -126,6 +150,7 @@ export async function executeTurn(
         missionRunId: context.missionRunId,
       },
       onDelta: (chunk, sequence) => {
+        lastSequence = sequence;
         streamDeltaBus.emit(
           toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
         );
@@ -180,6 +205,8 @@ export async function executeTurn(
     promptTokens,
     inferenceAborted: aborted,
     usageObserved,
+    streamId,
+    nextStreamSequence: lastSequence + 1,
   };
 }
 

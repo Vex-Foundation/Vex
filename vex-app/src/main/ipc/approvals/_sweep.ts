@@ -64,6 +64,7 @@ export async function runScheduledSweep(): Promise<void> {
         ...(missionRunId !== undefined ? { missionRunId } : {}),
         correlationId,
         channelLabel: "vex:approvals:sweep",
+        scope: "approval",
       });
     }
     log.info(

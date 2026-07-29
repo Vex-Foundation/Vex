@@ -125,7 +125,7 @@ export async function prepareApprove(
       return {
         kind: "run_terminated",
         approvalId,
-        missionRunId: snapshot.row.mission_run_id!,
+        missionRunId: snapshot.row.mission_run_id,
         runStatus: snapshot.runStatus,
       };
 

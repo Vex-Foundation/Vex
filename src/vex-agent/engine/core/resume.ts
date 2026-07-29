@@ -124,7 +124,9 @@ export async function approveAndResume(
 
     case "run_terminated":
       throw new Error(
-        `Approval ${approvalId} cannot be applied: mission run ${outcome.missionRunId} is ${outcome.runStatus}`,
+        outcome.missionRunId === null
+          ? `Approval ${approvalId} cannot be applied: the session was stopped`
+          : `Approval ${approvalId} cannot be applied: mission run ${outcome.missionRunId} is ${outcome.runStatus}`,
       );
   }
 }

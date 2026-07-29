@@ -42,6 +42,9 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   // a streaming provider used in these tests doesn't crash on `emit`.
   streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
   toStreamDeltaEvent: vi.fn(),
+  // Terminal signal for an aborted turn — these very tests drive the abort
+  // path, so `executeTurn` reaches this emit.
+  toStreamAbortedEvent: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -443,6 +446,15 @@ describe("turn-loop", () => {
       expect((stopped![1] as { content: string }).content).toBe("partial");
       // The aborted stream must NOT fall back to a fresh buffered call.
       expect(provider.chatCompletion).not.toHaveBeenCalled();
+
+      // Same rule as the chat path: a persisted `chat_stopped` row owns the
+      // preview handoff through its `transcriptAppend`, so no terminal stream
+      // delta is emitted here. An operator Stop on a mission behaves exactly
+      // like one on a chat turn in this respect.
+      const { toStreamAbortedEvent } = await import(
+        "@vex-agent/engine/events/index.js"
+      );
+      expect(toStreamAbortedEvent).not.toHaveBeenCalled();
     });
 
     it("mission run does NOT stop mid-stream without the inference signal (pre-fix shape)", async () => {

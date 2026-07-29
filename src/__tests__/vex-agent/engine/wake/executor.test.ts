@@ -20,13 +20,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ECONNREFUSED at 127.0.0.1:5777 in the test environment).
 const mockClaimRunLeaseAndFlipToRunning = vi.fn();
 const mockClaimRunForAutoRetry = vi.fn();
+const mockClaimSessionLease = vi.fn();
+const mockScheduleAgentSessionContinuation = vi.fn();
+const mockAppendEngineMessage = vi.fn();
+
+vi.mock("@vex-agent/engine/core/runner/runtime-continuation.js", () => ({
+  scheduleAgentSessionContinuation: (...a: unknown[]) =>
+    mockScheduleAgentSessionContinuation(...a),
+}));
+
+vi.mock("@vex-agent/engine/events/index.js", () => ({
+  appendEngineMessage: (...a: unknown[]) => mockAppendEngineMessage(...a),
+  appendMessage: vi.fn(),
+  emitTranscriptAppend: vi.fn(),
+}));
 const mockReleaseLease = vi.fn().mockResolvedValue(undefined);
 const mockCreateLeaseHandle = vi.fn();
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) => mockClaimRunLeaseAndFlipToRunning(...a),
   claimRunForAutoRetry: (...a: unknown[]) => mockClaimRunForAutoRetry(...a),
-  claimSessionLease: vi.fn(),
+  claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
   observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
 }));
 
@@ -97,6 +111,7 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
     casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
+    continueAgentSession: vi.fn().mockResolvedValue(undefined),
     isProviderReady: vi.fn(() => true),
     ...overrides,
   };
@@ -123,6 +138,207 @@ describe("wake.executor.tick", () => {
     mockReleaseLease.mockReset();
     mockReleaseLease.mockResolvedValue(undefined);
     mockClaimRunForAutoRetry.mockReset();
+    mockClaimSessionLease.mockReset();
+    mockClaimSessionLease.mockResolvedValue({
+      outcome: "claimed",
+      lease: makeStubLease(null),
+    });
+    mockScheduleAgentSessionContinuation.mockReset();
+    mockScheduleAgentSessionContinuation.mockResolvedValue({
+      scheduled: true,
+      dueAt: "2026-04-20T12:00:05.000Z",
+    });
+    mockAppendEngineMessage.mockReset();
+    mockAppendEngineMessage.mockResolvedValue(undefined);
+  });
+
+  // ── Session-scoped agent continuation (no mission run row) ───────
+  //
+  // The trap this covers: the executor claims by RUN STATUS, and a
+  // Full-Autonomous agent session has no run row at all. A wake row with
+  // `missionRunId: null` must take the session-lease claim path and must never
+  // reach `getMissionRun` (which would report `skipped_mission_run_missing`
+  // and silently drop the continuation).
+  describe("agent-session wakes", () => {
+    const agentWake = () =>
+      makeWake({
+        id: "wake-agent-1",
+        missionRunId: null,
+        reason: "iteration_limit: runtime slice exhausted; continue autonomously",
+        payload: { trigger: "iteration_limit", automatic: true },
+      });
+
+    it("continues the session under a session-lease claim, never a run claim", async () => {
+      const deps = makeDeps({ claimDue: vi.fn().mockResolvedValue([agentWake()]) });
+
+      const results = await tick(new Date("2026-04-20T12:00:01.000Z"), 10, deps);
+
+      expect(results[0]!.outcome).toEqual({
+        kind: "agent_session_continued",
+        sessionId: "sess-1",
+      });
+      expect(mockClaimSessionLease).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess-1" }),
+      );
+      expect(deps.getMissionRun).not.toHaveBeenCalled();
+      expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
+      expect(deps.resumeMissionRun).not.toHaveBeenCalled();
+      expect(deps.injectWakeBanner).toHaveBeenCalledWith(
+        "sess-1",
+        "iteration_limit: runtime slice exhausted; continue autonomously",
+        "2026-04-20T12:00:00.000Z",
+      );
+      expect(deps.continueAgentSession).toHaveBeenCalledWith("sess-1");
+    });
+
+    it("banner precedes the continuation, and the lease is always released", async () => {
+      const deps = makeDeps({ claimDue: vi.fn().mockResolvedValue([agentWake()]) });
+
+      await tick(new Date(), 10, deps);
+
+      expect(deps.injectWakeBanner).toHaveBeenCalledBefore(
+        deps.continueAgentSession as never,
+      );
+      expect(mockReleaseLease).toHaveBeenCalledWith(
+        expect.anything(),
+        "sess-1",
+      );
+    });
+
+    /**
+     * The blocker: `claimDue` already CONSUMED the row, and an agent session has
+     * no run row as backup evidence. Dropping it on `lease_busy` lost the
+     * continuation permanently. The lease holder is NOT necessarily the
+     * continuation — approval resume and the end-of-turn hook take it too.
+     */
+    it("RE-SCHEDULES instead of dropping when the session lease is busy", async () => {
+      mockClaimSessionLease.mockResolvedValue({ outcome: "lease_busy" });
+      const deps = makeDeps({ claimDue: vi.fn().mockResolvedValue([agentWake()]) });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(results[0]!.outcome).toMatchObject({
+        kind: "rescheduled_lease_busy",
+        sessionId: "sess-1",
+        attempt: 1,
+        scheduled: true,
+      });
+      // No work was started against a session someone else is driving.
+      expect(deps.injectWakeBanner).not.toHaveBeenCalled();
+      expect(deps.continueAgentSession).not.toHaveBeenCalled();
+      // A replacement row exists — the continuation survives.
+      expect(mockScheduleAgentSessionContinuation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "sess-1",
+          trigger: "iteration_limit",
+          attempt: 1,
+        }),
+      );
+    });
+
+    it("backs off exponentially and preserves the original trigger", async () => {
+      mockClaimSessionLease.mockResolvedValue({ outcome: "lease_busy" });
+      const deps = makeDeps({
+        claimDue: vi.fn().mockResolvedValue([
+          makeWake({
+            missionRunId: null,
+            payload: { trigger: "timeout", automatic: true, attempt: 3 },
+          }),
+        ]),
+      });
+
+      await tick(new Date(), 10, deps);
+
+      expect(mockScheduleAgentSessionContinuation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trigger: "timeout",
+          attempt: 4,
+          delayMs: 40_000, // 5s * 2^3
+        }),
+      );
+    });
+
+    it("caps the backoff delay", async () => {
+      mockClaimSessionLease.mockResolvedValue({ outcome: "lease_busy" });
+      const deps = makeDeps({
+        claimDue: vi.fn().mockResolvedValue([
+          makeWake({
+            missionRunId: null,
+            payload: { trigger: "iteration_limit", attempt: 9 },
+          }),
+        ]),
+      });
+
+      await tick(new Date(), 10, deps);
+
+      expect(mockScheduleAgentSessionContinuation).toHaveBeenCalledWith(
+        expect.objectContaining({ attempt: 10, delayMs: 60_000 }),
+      );
+    });
+
+    /**
+     * An attempt cap WAS built here and was removed: a cap is a terminal ceiling
+     * by another name, and under full autonomy there are no ceilings. Recording
+     * an abandonment does not preserve autonomy, it documents its loss. The
+     * delay is bounded instead; the one-pending-row-per-session index means an
+     * unbounded retry cannot grow the queue.
+     */
+    it("keeps retrying past any former cap — no terminal ceiling", async () => {
+      mockClaimSessionLease.mockResolvedValue({ outcome: "lease_busy" });
+      const deps = makeDeps({
+        claimDue: vi.fn().mockResolvedValue([
+          makeWake({
+            missionRunId: null,
+            payload: { trigger: "iteration_limit", attempt: 500 },
+          }),
+        ]),
+      });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(results[0]!.outcome).toMatchObject({
+        kind: "rescheduled_lease_busy",
+        attempt: 501,
+        scheduled: true,
+      });
+      // Still bounded where it must be — the DELAY, not the attempts.
+      expect(mockScheduleAgentSessionContinuation).toHaveBeenCalledWith(
+        expect.objectContaining({ attempt: 501, delayMs: 60_000 }),
+      );
+      // No "abandoned" transcript row: nothing was abandoned.
+      expect(mockAppendEngineMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not re-schedule when the gate refuses (session stopped meanwhile)", async () => {
+      mockClaimSessionLease.mockResolvedValue({ outcome: "lease_busy" });
+      mockScheduleAgentSessionContinuation.mockResolvedValue({
+        scheduled: false,
+        dueAt: "2026-04-20T12:00:05.000Z",
+      });
+      const deps = makeDeps({ claimDue: vi.fn().mockResolvedValue([agentWake()]) });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(results[0]!.outcome).toMatchObject({
+        kind: "rescheduled_lease_busy",
+        scheduled: false,
+      });
+    });
+
+    it("releases the lease when the continuation throws", async () => {
+      const deps = makeDeps({
+        claimDue: vi.fn().mockResolvedValue([agentWake()]),
+        continueAgentSession: vi.fn().mockRejectedValue(new Error("provider down")),
+      });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(results[0]!.outcome).toEqual({
+        kind: "error",
+        message: "provider down",
+      });
+      expect(mockReleaseLease).toHaveBeenCalled();
+    });
   });
 
   // ── Phase 4d: error_retry wakes ──────────────────────────────────

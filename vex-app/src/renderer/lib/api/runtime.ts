@@ -3,7 +3,7 @@
  *
  * `useRuntimeState` is read-only and kept fresh by
  * `useControlStateLiveSync` (F5): push invalidation on
- * `EV.engine.controlState`, plus a 30s fallback poll for missed events.
+ * `EV.engine.controlState`, plus a 60s fallback poll for missed events.
  *
  * The four control mutation hooks (`useRequestPause`, `useRequestStop`,
  * `useRequestResume`, `useCancelWake`) call the LIVE puzzle-03 control
@@ -54,10 +54,14 @@ export function useRuntimeState(
  * Runtime-state fallback invalidation cadence — covers a `controlState`
  * event that is missed (dropped at the preload Zod gate, fired before
  * this hook subscribed, or lost across a lifecycle edge). Exported for
- * tests. Pending approvals keep their own faster poll in
- * `ApprovalsRegion`, so this net only needs to cover composer gating.
+ * tests.
+ *
+ * Slowed 8s → 60s: every committed transition already pushes, so this only
+ * needs to cover composer gating after a DROPPED event. Pending approvals no
+ * longer keep a faster poll anywhere — they are push-first too — so this is a
+ * true net rather than a second freshness path.
  */
-export const RUNTIME_STATE_FALLBACK_POLL_MS = 8_000;
+export const RUNTIME_STATE_FALLBACK_POLL_MS = 60_000;
 
 /**
  * Subscribe the active session to the engine control-state spine (F5).

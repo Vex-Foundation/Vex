@@ -104,6 +104,7 @@ vi.mock("../../../../lib/api/messages.js", () => ({
 }));
 vi.mock("../../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({ data: { ok: true, data: { status: null } } }),
+  useRequestStop: () => ({ mutateAsync: async () => undefined }),
 }));
 
 const mockUseAvailableModels = vi.fn();

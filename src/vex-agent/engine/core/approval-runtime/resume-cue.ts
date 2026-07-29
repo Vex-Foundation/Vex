@@ -16,6 +16,11 @@
  * directions: no duplicate cue, and no recorded cue that is missing from the
  * conversation.
  *
+ * The wording is chosen from the DURABLE outcome read under the same row lock
+ * (`selectResumeCue`): a proven `approved` + `succeeded` pair says the
+ * transaction executed and points at verification; everything else — including
+ * `indeterminate` — keeps the neutral cue that claims nothing.
+ *
  * This also removes the orphan the chat path used to accept. An attempt that
  * loses the race no longer needs to be ordered behind the winner — it simply
  * finds the slot taken and writes nothing.
@@ -30,7 +35,10 @@ import {
 } from "../../events/index.js";
 import logger from "@utils/logger.js";
 
-import { APPROVAL_RESOLVED_CUE } from "./helpers.js";
+import {
+  APPROVAL_RESOLVED_CUE,
+  APPROVAL_RESOLVED_EXECUTED_CUE,
+} from "./helpers.js";
 
 /**
  * Deliberately NOT the operator-interrupt banner — that means "the user
@@ -41,6 +49,31 @@ const CUE_METADATA = {
   messageType: "approval_resolved",
   visibility: "internal",
 } as const;
+
+/**
+ * Pick the cue wording from the DURABLY recorded outcome.
+ *
+ * Fails closed in every direction: a missing row, a null decision, a
+ * non-`approved` decision, or any execution status other than `succeeded`
+ * (including `dispatching`, `failed` and `indeterminate`) yields the neutral
+ * cue, which asserts nothing about whether the action ran. Only a proven
+ * `approved` + `succeeded` pair earns the sentence that says it executed.
+ */
+export function selectResumeCue(
+  lifecycle: {
+    readonly decision: string | null;
+    readonly executionStatus: string;
+  } | null,
+): string {
+  if (
+    lifecycle !== null
+    && lifecycle.decision === "approved"
+    && lifecycle.executionStatus === "succeeded"
+  ) {
+    return APPROVAL_RESOLVED_EXECUTED_CUE;
+  }
+  return APPROVAL_RESOLVED_CUE;
+}
 
 /**
  * Append the approval-resolved cue for `approvalId`, or do nothing because an
@@ -60,9 +93,18 @@ export async function appendApprovalResolvedCueOnce(
       await approvalIntentsRepo.lockResumeCueMessageIdWith(client, approvalId);
     if (existingCueMessageId !== null) return null;
 
+    // Read the durable outcome under the SAME row lock the cue slot was taken
+    // with, so the wording can never describe a state the row has since left.
+    // The lock is already held by the call above — this is a second read of a
+    // locked row, not a second lock.
+    const lifecycle = await approvalIntentsRepo.lockLifecycleRowWith(
+      client,
+      approvalId,
+    );
+
     const row = await appendEngineMessage(
       sessionId,
-      APPROVAL_RESOLVED_CUE,
+      selectResumeCue(lifecycle),
       { ...CUE_METADATA },
       { client },
     );

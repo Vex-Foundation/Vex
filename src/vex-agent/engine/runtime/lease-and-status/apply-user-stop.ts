@@ -161,7 +161,7 @@ async function consumeStopRequestsForRun(
  * goes through `approvalsRepo.rejectWith`, so the reject semantics stay
  * owned by the repo.
  */
-async function rejectPendingApprovalsWithClient(
+export async function rejectPendingApprovalsWithClient(
   client: PoolClient,
   sessionId: string,
 ): Promise<number> {

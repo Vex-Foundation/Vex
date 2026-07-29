@@ -15,6 +15,9 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
     reasoningTokens: null,
     startedAtMs: Date.now(),
     status: "working",
+    // No provider error type by default — the bubble's error branch maps a
+    // null label through the classifier's total default.
+    errorType: null,
     ...overrides,
   };
 }
@@ -126,7 +129,10 @@ describe("StreamingBubble", () => {
     expect(
       container.querySelector('[data-vex-stream-phase="error"]'),
     ).not.toBeNull();
-    expect(screen.getByText("Stream error")).not.toBeNull();
+    // The strip no longer says the opaque "Stream error": with no errorType
+    // the category classifier lands on `unknown`, whose copy still NAMES what
+    // failed. Raw provider text remains excluded at every layer.
+    expect(screen.getByText("The provider call failed")).not.toBeNull();
     expect(container.textContent).not.toContain("raw-provider-leak");
   });
 

@@ -57,6 +57,7 @@ import {
   unregisterMissionRunAbortController,
 } from "./abort.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+import { maxIterationsForPermission } from "./iteration-budget.js";
 import type { PreparedMissionStart } from "./mission-prepare.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import type { Permission } from "../../types.js";
@@ -201,6 +202,11 @@ export async function runPreparedMissionStart(
 
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
+      // Permission-aware per-turn iteration budget — see `iteration-budget.ts`.
+      // A Full-Autonomous MISSION gets the same generous budget as a
+      // Full-Autonomous agent session (owner decision 2026-07-29); a restricted
+      // mission is byte-identical to before (`DEFAULT_LOOP_CONFIG`'s 50).
+      maxIterations: maxIterationsForPermission(prepared.permission),
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
       // Deadline from FROZEN inputs (run started_at + snapshot durationMinutes),
@@ -358,6 +364,10 @@ export async function resumePreparedMissionRun(
 
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
+      // Permission-aware per-turn iteration budget — see `iteration-budget.ts`.
+      // Same rule on resume as on start; a resumed slice must not silently get
+      // a different budget from the one the run started with.
+      maxIterations: maxIterationsForPermission(permission),
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
       // Deadline from FROZEN inputs (run started_at + the SAME snapshot the run

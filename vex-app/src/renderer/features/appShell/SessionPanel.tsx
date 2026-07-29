@@ -54,7 +54,10 @@ import {
   useTranscriptLiveSync,
 } from "../../lib/api/messages.js";
 import { useControlStateLiveSync } from "../../lib/api/runtime.js";
+import { useMissionUpdateLiveSync } from "../../lib/api/mission.js";
 import { useStreamPreviewSync } from "../../lib/api/streams.js";
+import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
+import { SessionErrorBanner } from "./SessionErrorBanner.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { cn } from "../../lib/utils.js";
@@ -89,6 +92,15 @@ export function SessionPanel({
   useUsageLiveSync(activeSessionId);
   useStreamPreviewSync(activeSessionId);
   useControlStateLiveSync(activeSessionId);
+  // Mission-update push (accept / draft / approval-enqueued). Mounted HERE and
+  // not in `MissionControls` on purpose: that component is mission-gated, so
+  // an agent session — where chat approvals are enqueued — would never
+  // subscribe.
+  useMissionUpdateLiveSync(activeSessionId);
+  // Session-agnostic: an agent-mode session failing in the background used to
+  // surface nothing at all, because the only error UI lived behind a
+  // mission-mode gate.
+  useEngineErrorLiveSync(activeSessionId);
   const detailQuery = useSession(activeSessionId);
   // Shared with SessionTranscript (same query key → no extra IPC): lets the
   // panel tell an empty/idle session apart so it can show the centered landing.
@@ -230,6 +242,11 @@ export function SessionPanel({
                   top-layer dialog (`MissionContractModal` /
                   `PlanDisplayModal`), which keeps the Accept action pinned and
                   reachable. The transcript now owns the full column height. */}
+              {/* Above the transcript and OUTSIDE the mission-mode gate —
+                  every session gets an error surface. */}
+              {activeSession !== null ? (
+                <SessionErrorBanner sessionId={activeSession.id} />
+              ) : null}
               {activeSession !== null ? (
                 <SessionTranscript sessionId={activeSession.id} />
               ) : null}

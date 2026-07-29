@@ -289,7 +289,7 @@ describe("applyApproveSideEffects — terminal stop outranks paused_error", () =
     expect(runRow.stopReason).toBe("approval_post_decision");
   });
 
-  it("a chat session has no run to stop and still reports the dispatch failure", async () => {
+  it("a chat session consults BOTH gates and still reports the dispatch failure", async () => {
     const chatSnapshot = {
       ...approvedMissionSnapshot(),
       row: {
@@ -315,11 +315,18 @@ describe("applyApproveSideEffects — terminal stop outranks paused_error", () =
       applyApproveSideEffects("appr-1", chatSnapshot),
     ).rejects.toBeInstanceOf(ApprovalDispatchError);
 
-    // No run row exists, so there is nothing to stop and nothing to park. The
-    // single call is the step-2b gate, which the real implementation
-    // short-circuits to `clear` for a run-less session; the failure exit adds
-    // none of its own.
-    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(1);
+    // CONTRACT CHANGE (round 10). A chat session HAS something to stop now: a
+    // session-scoped `stop_terminal`. Both gates therefore run — the step-2b
+    // gate before the dispatch, and the failure-exit consumer after it, which
+    // lands a Stop queued while the tool was in flight. Skipping the second one
+    // was the gap that let an agent resume on a stopped session.
+    //
+    // There is still nothing to PARK: `flipRunToPausedError` needs a run row and
+    // is correctly not reached (asserted below).
+    // (This file's gate stub takes no args by design — that the session-scoped
+    // call carries `missionRunId: null` is asserted in
+    // `dispatch-approved-stop-gate.test.ts`.)
+    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(2);
     expect(mockUpdateStatusIfNotTerminal).not.toHaveBeenCalled();
     expect(mockCommitDispatchFailureToolResult).toHaveBeenCalledTimes(1);
   });

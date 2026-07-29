@@ -89,6 +89,7 @@ vi.mock("../../../../lib/api/messages.js", () => ({
 let runStatus: MissionRunStatus | null = null;
 vi.mock("../../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({ data: { ok: true, data: { status: runStatus } } }),
+  useRequestStop: () => ({ mutateAsync: async () => undefined }),
 }));
 
 vi.mock("../../../../lib/api/models.js", () => ({
