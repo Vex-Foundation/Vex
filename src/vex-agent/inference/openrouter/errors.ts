@@ -21,6 +21,11 @@
  * own-property (NOT `.cause`) precisely so no serializer can walk it back into
  * the raw body/headers/PII the SDK error held.
  *
+ * The SDK-depth phase adds one more own-property in the same lean idiom:
+ * `errorType`, OpenRouter's canonical `ApiErrorType` off a mid-stream error
+ * chunk (see `attachErrorType`). Its sibling `providerCode` is deliberately
+ * NOT carried — free-form provider text.
+ *
  * Error-diagnostics phase (D-RUNTIME): the errno-shaped cause code extracted
  * from the ORIGINAL caught error's `.cause` chain rides along the same way —
  * a lean `causeCode` own-property (a closed-dictionary string, never message
@@ -136,6 +141,33 @@ export function attachCauseCode(target: Error, causeCode: string | null): Error 
   if (causeCode === null) return target;
   Object.defineProperty(target, "causeCode", {
     value: causeCode,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach OpenRouter's canonical error type (`ApiErrorType`, from a mid-stream
+ * error chunk's `error.metadata.errorType`) as a LEAN, NON-ENUMERABLE
+ * own-property — same idiom as `attachStatus` / `attachCauseCode`, and for the
+ * same reason: explicitly NOT `.cause`, so no serializer can walk back to the
+ * raw body/headers/PII.
+ *
+ * `ApiErrorType` is an OPEN enum in the installed SDK, so the value is carried
+ * VERBATIM rather than mapped onto a closed set — any consumer that switches on
+ * it needs a total default branch. Mapping bounded error categories for the UI
+ * is deliberately NOT done here (that is the error-channel work, Wave 2).
+ *
+ * The sibling `metadata.providerCode` is NOT attached anywhere: it is free-form
+ * upstream provider text with no bounded vocabulary, which is exactly the kind
+ * of value this module exists to keep out of logs. No-op for `null`.
+ */
+export function attachErrorType(target: Error, errorType: string | null): Error {
+  if (errorType === null) return target;
+  Object.defineProperty(target, "errorType", {
+    value: errorType,
     enumerable: false,
     writable: false,
     configurable: true,

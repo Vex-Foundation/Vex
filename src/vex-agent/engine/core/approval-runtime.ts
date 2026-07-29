@@ -34,9 +34,11 @@ import {
   applyPolicyDriftSideEffects,
   applyRejectSideEffects,
 } from "./approval-runtime/post-tx.js";
+import type { ApprovalExecutionStatus } from "../../db/repos/approval-intents.js";
 import {
   buildPolicyDriftToolResultContent,
   buildRejectedToolResultContent,
+  sanitizeRejectReason,
   toIsoNow,
   toIsoOrNull,
   TOOL_RESULT_EXPIRED_MESSAGE,
@@ -52,6 +54,7 @@ export {
   ApprovalDispatchError,
   ApprovalDecisionInconsistencyError,
   ApprovalPostDecisionError,
+  continuationMissionRunId,
   type ApprovePrepareOutcome,
   type RejectPrepareOutcome,
   type PreparedContinuation,
@@ -64,6 +67,23 @@ export {
 } from "./approval-runtime/continuation.js";
 
 export { sweepExpiredApprovals } from "./approval-runtime/sweep.js";
+
+/**
+ * Lifecycle reconciler — the durable floor under every faster resume path.
+ * Runs in the SAME scheduled cycle as `sweepExpiredApprovals` (one timer, two
+ * passes); see `./approval-runtime/reconcile.ts` for the branch table.
+ */
+export {
+  reconcileApprovalLifecycle,
+  type ReconcileResult,
+} from "./approval-runtime/reconcile.js";
+
+/**
+ * Deliver any resume this session still owes the agent. The desktop host calls
+ * this after a turn releases its lease; the engine also calls it internally on
+ * a busy-lease deferral.
+ */
+export { resumePendingApprovalsForSession } from "./approval-runtime/deferred-resume.js";
 
 // ────────────────────────────────────────────────────────────────────────
 // prepareApprove
@@ -87,12 +107,8 @@ export async function prepareApprove(
         resolvedAt:
           toIsoOrNull(snapshot.row.queue_resolved_at) ?? toIsoNow(),
         executionStatus:
-          (snapshot.row.execution_status as
-            | "not_started"
-            | "dispatching"
-            | "succeeded"
-            | "failed"
-            | null) ?? "not_started",
+          (snapshot.row.execution_status as ApprovalExecutionStatus | null)
+          ?? "not_started",
         missionRunId: snapshot.row.mission_run_id,
       };
 
@@ -151,12 +167,23 @@ export async function prepareApprove(
 // prepareReject
 // ────────────────────────────────────────────────────────────────────────
 
+/**
+ * `reason` is user-authored text that becomes model-visible transcript content,
+ * so it is sanitised (control characters stripped, length-bound) before it
+ * reaches the snapshot tx — the same value is persisted as
+ * `approval_intents.decision_reason` and rendered into the rejection
+ * tool-result, and neither may carry forged banner lines.
+ */
 export async function prepareReject(
   approvalId: string,
-  reason: string = TOOL_RESULT_REJECTED_DEFAULT_REASON,
+  reason?: string,
 ): Promise<RejectPrepareOutcome> {
+  const sanitized =
+    reason === undefined ? "" : sanitizeRejectReason(reason);
+  const effectiveReason =
+    sanitized.length > 0 ? sanitized : TOOL_RESULT_REJECTED_DEFAULT_REASON;
   const snapshot = await withTransaction((client) =>
-    buildRejectSnapshot(client, approvalId, reason),
+    buildRejectSnapshot(client, approvalId, effectiveReason),
   );
 
   switch (snapshot.type) {

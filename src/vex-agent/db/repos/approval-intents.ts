@@ -24,9 +24,14 @@
  *   - `getExpired(now)`                       — non-tx scan used by the
  *                                               scheduled TTL sweep.
  *
+ * The post-decision EXECUTION lifecycle (migration 056: dispatch CAS, atomic
+ * result commit, resume consumption, reconciler reads) lives in
+ * `./approval-intents/lifecycle.ts` and is re-exported below — one table, one
+ * public surface, two reasons to change.
+ *
  * All scalar columns expose ISO-8601 strings; `pg` returns `Date` for
- * `TIMESTAMPTZ` so `toIso{,OrNull}` normalise before the value crosses
- * the repo interface.
+ * `TIMESTAMPTZ` so `toIso{,OrNull}` (`./approval-intents/row-mapping.ts`)
+ * normalise before the value crosses the repo interface.
  */
 
 import type { PoolClient } from "pg";
@@ -38,13 +43,45 @@ import type {
 } from "../../engine/core/approval-intent-preview.js";
 import { query, queryOne, execute } from "../client.js";
 import { jsonb } from "../params.js";
+import { toIso, toIsoOrNull } from "./approval-intents/row-mapping.js";
+
+/**
+ * Execution lifecycle (migration 056) — dispatch CAS, atomic result commit,
+ * resume consumption, and the reconciler/deferred-resume reads. Re-exported by
+ * name so `import * as approvalIntentsRepo` remains the single public surface
+ * for this table; the split exists because the lifecycle has a different reason
+ * to change than the decision CAS above it.
+ */
+export {
+  casMarkDispatching,
+  commitExecutionResultWith,
+  attachResultMessageWith,
+  markResumeAttempted,
+  casMarkResumeConsumed,
+  hasResumeCompleted,
+  lockResumeCueMessageIdWith,
+  attachResumeCueMessageWith,
+  casMarkIndeterminateWith,
+  getIncompleteLifecycle,
+  getPendingLifecycleForSession,
+  lockLifecycleRowWith,
+  type ApprovalLifecycleRow,
+} from "./approval-intents/lifecycle.js";
 
 export type ApprovalDecision = "approved" | "rejected" | "rejected_stop";
+/**
+ * `indeterminate` (migration 056) is the honest terminal state for an approved
+ * dispatch whose outcome cannot be proven — the process died between the
+ * `dispatching` mark and the result commit. Recovery must NEVER re-dispatch an
+ * approved money-path tool, so an unprovable outcome is reported as unknown
+ * rather than guessed as success or failure.
+ */
 export type ApprovalExecutionStatus =
   | "not_started"
   | "dispatching"
   | "succeeded"
-  | "failed";
+  | "failed"
+  | "indeterminate";
 
 export interface ApprovalIntent {
   approvalId: string;
@@ -211,21 +248,6 @@ const SELECT_COLUMNS =
   "action_kind, risk_level, preview_json, policy_json, " +
   "expires_at, idempotency_key, created_at, decided_at, " +
   "decision, decision_reason, execution_status, execution_result_hash";
-
-/**
- * `pg` returns `TIMESTAMPTZ` columns as `Date` objects (driver-side
- * parsing). The repo interface stores them as ISO-8601 strings so the
- * boundary (IPC DTO, JSONB equality, snapshot comparison) stays scalar.
- * Codex final review puzzle 5/2 — same pattern as the other repos.
- */
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-function toIsoOrNull(value: string | Date | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  return toIso(value);
-}
 
 function mapRow(r: Record<string, unknown>): ApprovalIntent {
   return {

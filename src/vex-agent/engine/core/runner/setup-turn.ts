@@ -29,6 +29,7 @@ import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendEngineMessage, appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
+import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, ITERATION_LIMIT_REPLY } from "./shared.js";
 
 export async function processMissionSetupTurn(
@@ -235,9 +236,6 @@ export async function processMissionSetupTurn(
       missionStatus,
     };
   } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "../../runtime/release-and-emit.js"
-    );
     await releaseLeaseAndEmitControlState(sessionLease, sessionId);
   }
 }

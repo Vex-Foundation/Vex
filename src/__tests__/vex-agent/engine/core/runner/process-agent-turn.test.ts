@@ -154,6 +154,9 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 
 const runnerModule = await import("../../../../../vex-agent/engine/core/runner.js");
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
+const { runAgentTurnUnderLease } = await import(
+  "../../../../../vex-agent/engine/core/runner/agent.js"
+);
 const { MissionRunPausedError } = await import("../../../../../vex-agent/engine/types.js");
 const { ITERATION_LIMIT_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
 
@@ -341,6 +344,107 @@ describe("runner", () => {
         expect.objectContaining({ content: ITERATION_LIMIT_REPLY }),
         expect.anything(),
       );
+    });
+  });
+
+  // ── runAgentTurnUnderLease — resumed-turn claim hook ─────────
+
+  /**
+   * The claim hook is how a resumed turn's durable "I consumed this" marker
+   * gets written BY the work it fences instead of before it. Stamping earlier
+   * meant any failure in the fallible preparation (provider resolution, the
+   * engine cue append, hydrate) permanently suppressed recovery for that
+   * approval — the exact failure the marker exists to prevent.
+   */
+  describe("runAgentTurnUnderLease — resumed-turn claim", () => {
+    function provider() {
+      return makeProvider() as unknown as Parameters<
+        typeof runAgentTurnUnderLease
+      >[1];
+    }
+    const config = {
+      provider: "openrouter",
+      model: "test",
+      contextLimit: 128000,
+      maxOutputTokens: 4096,
+    } as unknown as Parameters<typeof runAgentTurnUnderLease>[2];
+
+    it("claims only AFTER hydrate and only BEFORE the model call", async () => {
+      const order: string[] = [];
+      mockHydrate.mockImplementation(async () => {
+        order.push("hydrate");
+        return makeHydratedSession();
+      });
+      mockRunTurnLoop.mockImplementation(async () => {
+        order.push("turn-loop");
+        return {
+          text: "ok",
+          toolCallsMade: 0,
+          pendingApprovals: [],
+          stopReason: null,
+        };
+      });
+
+      await runAgentTurnUnderLease(
+        "session-1",
+        provider(),
+        config,
+        undefined,
+        async () => {
+          order.push("claim");
+          return true;
+        },
+      );
+
+      expect(order).toEqual(["hydrate", "claim", "turn-loop"]);
+    });
+
+    it("a hydrate failure never reaches the claim, so the resume stays recoverable", async () => {
+      const claim = vi.fn().mockResolvedValue(true);
+      mockHydrate.mockResolvedValueOnce(null);
+
+      await expect(
+        runAgentTurnUnderLease(
+          "session-1",
+          provider(),
+          config,
+          undefined,
+          claim,
+        ),
+      ).rejects.toThrow("not found");
+
+      // Nothing was consumed — a later attempt path can still deliver the wake.
+      expect(claim).not.toHaveBeenCalled();
+    });
+
+    it("a losing claim abandons the turn without calling the model", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
+
+      const result = await runAgentTurnUnderLease(
+        "session-1",
+        provider(),
+        config,
+        undefined,
+        async () => false,
+      );
+
+      expect(mockRunTurnLoop).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ text: null, toolCallsMade: 0 });
+    });
+
+    it("no hook (an ordinary turn) runs unchanged", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Hello!",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+      });
+
+      const result = await runAgentTurnUnderLease("session-1", provider(), config);
+
+      expect(mockRunTurnLoop).toHaveBeenCalledTimes(1);
+      expect(result.text).toBe("Hello!");
     });
   });
 });

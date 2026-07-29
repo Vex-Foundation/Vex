@@ -1,5 +1,5 @@
 /**
- * Compact chunker LLM call (Track 2). Extracted from `executor.ts`
+ * Archive chunking worker's LLM call. Extracted from `executor.ts`
  * for scaling — `callChunkerLLM` is a pure async function that owns
  * its OpenRouter invocation + JSON parse + Zod validate. No
  * dependency on the worker lifecycle or `claimLost` flag.
@@ -9,11 +9,17 @@
  * (codex flagged that as a permanent-loss bug). Throw instead so
  * `processJob`'s catch leaves the outbox row in `pending` with a
  * backoff for retry.
+ *
+ * The provider is INJECTABLE (`JudgeProvider`, the same structural interface
+ * its three background siblings already use — judge, entity extraction,
+ * regime worker) so tests drive it with a deterministic stub instead of a
+ * live OpenRouter call.
  */
 
 import { z } from "zod";
 import type { CompactJob } from "../../db/repos/compact-jobs/index.js";
-import { TRACK2_TIMEOUT_MS } from "./policy.js";
+import type { JudgeProvider } from "@vex-agent/memory/manager/judge.js";
+import { CHUNKER_CALL_TIMEOUT_MS } from "./policy.js";
 import logger from "@utils/logger.js";
 import {
   renderRedactedArchivedTranscript,
@@ -42,26 +48,51 @@ export type ChunkerChunk = z.infer<typeof ChunkerOutputSchema>["chunks"][number]
 export interface ChunkerCallResult {
   chunks: ChunkerChunk[];
   transcriptRedactionCounts: { hard: number; mask: number };
+  /** Provider-reported USD cost for this call, or null when unreported. */
+  costUsd: number | null;
+  /** Model the loaded config actually resolved to, or null when unreadable. */
+  model: string | null;
 }
+
+/**
+ * Default provider factory — constructs the env-driven OpenRouter provider,
+ * fresh PER CALL.
+ *
+ * The per-call construction is deliberate, not an oversight: the constructor
+ * reads `OPENROUTER_API_KEY` / `AGENT_MODEL` out of `process.env`, which the
+ * secret vault populates on unlock and scrubs on lock. Reusing a cached
+ * provider (or the registry singleton) would pin the worker to whatever
+ * credentials and model existed at first use, so a vault unlock or a model
+ * change would not take effect until the app restarted.
+ */
+async function defaultProvider(): Promise<JudgeProvider> {
+  const { OpenRouterProvider } = await import("@vex-agent/inference/openrouter.js");
+  return new OpenRouterProvider();
+}
+
+/** The `model` field we need off the otherwise-opaque provider config. */
+const configModelShape = z.object({ model: z.string().min(1) });
+
+/** Provider-reported cost, shaped like the judge's own reader. */
+const costShape = z.object({
+  usage: z.object({ cost: z.number().nullable().optional() }).optional(),
+});
 
 export async function callChunkerLLM(
   job: CompactJob,
   archivedPrefix: ReadonlyArray<ArchivedPrefixRow>,
+  makeProvider: () => Promise<JudgeProvider> = defaultProvider,
 ): Promise<ChunkerCallResult> {
-  // Use the same env-driven OpenRouter constructor the in-turn
-  // provider uses. Worker calls it on-demand so settings changes
-  // after restart pick up the new model. If env is missing or the
-  // loader can't produce a config, we THROW (not silently return [])
-  // so `processJob`'s catch leaves the outbox row in `pending` with a
-  // backoff for retry. Returning an empty array here would let
-  // `markCompleted(0 chunks)` silently lose the job — codex flagged
-  // this as a permanent-loss bug.
+  // If env is missing or the loader can't produce a config, we THROW (not
+  // silently return []) so `processJob`'s catch leaves the outbox row in
+  // `pending` with a backoff for retry. Returning an empty array here would
+  // let `markCompleted(0 chunks)` silently lose the job — codex flagged this
+  // as a permanent-loss bug.
   if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
     logger.warn("compact-worker.provider_config_missing", { jobId: job.id });
     throw new Error("compact_worker_provider_config_missing");
   }
-  const { OpenRouterProvider } = await import("@vex-agent/inference/openrouter.js");
-  const provider = new OpenRouterProvider();
+  const provider = await makeProvider();
   const config = await provider.loadConfig();
   if (!config) {
     logger.warn("compact-worker.provider_config_load_failed", { jobId: job.id });
@@ -97,18 +128,30 @@ export async function callChunkerLLM(
     .filter(Boolean)
     .join("\n\n");
 
-  const response = await Promise.race([
-    provider.chatCompletionSimple(
+  // A real deadline, not a race the loser ignores. The previous
+  // `Promise.race([call, setTimeout])` rejected on time but ABANDONED the HTTP
+  // request, which kept streaming and billing tokens for an answer already
+  // discarded. `AbortSignal.timeout` cancels the fetch itself.
+  const timeoutSignal = AbortSignal.timeout(CHUNKER_CALL_TIMEOUT_MS);
+  let response: Awaited<ReturnType<JudgeProvider["chatCompletionSimple"]>>;
+  try {
+    response = await provider.chatCompletionSimple(
       [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       config,
-    ),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("chunker_timeout")), TRACK2_TIMEOUT_MS),
-    ),
-  ]);
+      undefined,
+      timeoutSignal,
+    );
+  } catch (err) {
+    // Preserve the named failure the retry/backoff logging keys on. The
+    // cancelled request surfaces as the SDK's abort error, which says nothing
+    // about WHY we cancelled; no `cause` is attached, matching the deliberate
+    // no-`.cause` discipline of the OpenRouter error normalizer.
+    if (timeoutSignal.aborted) throw new Error("chunker_timeout");
+    throw err;
+  }
 
   const text = response.content?.trim() ?? "";
   const jsonStart = text.indexOf("{");
@@ -123,8 +166,17 @@ export async function callChunkerLLM(
   if (!validated.success) {
     throw new Error(`chunker_schema_invalid: ${validated.error.message}`);
   }
+  // Cost + model are best-effort audit data (persisted on `compact_jobs`, NOT
+  // on `usage_log` — that table means "this conversation" and feeds the user's
+  // session totals in the sidebar; background work must not inflate it).
+  const costParse = costShape.safeParse(response);
+  const costUsd = costParse.success ? costParse.data.usage?.cost ?? null : null;
+  const modelParse = configModelShape.safeParse(config);
+
   return {
     chunks: validated.data.chunks,
     transcriptRedactionCounts: redactionCounts,
+    costUsd,
+    model: modelParse.success ? modelParse.data.model : null,
   };
 }

@@ -258,23 +258,30 @@ export async function runTurnLoop(
     currentTokenCount = turnResult.promptTokens;
     observeBand(currentTokenCount, "post_turn_text");
 
-    if (abortSignal?.aborted) {
-      stopReason = "user_stopped";
-      break;
-    }
-
-    // Chat-turn "stop generating" (9-5a): the consumer CAPTURED the abort at
-    // stream exit, so this is race-free — a turn that merely completed as the
-    // user clicked stop has `inferenceAborted=false` and falls through to the
-    // normal path. On a real abort, persist the partial text as a `chat_stopped`
-    // row (partial tool calls were already dropped by the consumer) so the
-    // ephemeral preview is replaced by a durable row.
+    // Stop-during-inference (9-5a): the consumer CAPTURED the abort at stream
+    // exit, so this is race-free — a turn that merely completed as the user
+    // clicked stop has `inferenceAborted=false` and falls through. On a real
+    // abort, persist the partial text as a `chat_stopped` row (partial tool
+    // calls were already dropped by the consumer) so the ephemeral preview is
+    // replaced by a durable row.
+    //
+    // Checked BEFORE the bare `abortSignal` break: mission runs now pass the
+    // same signal in BOTH positions, so an operator Stop cancels the stream
+    // and MUST still persist what the model had produced. Testing the boundary
+    // flag first would silently drop that partial row.
     if (turnResult.inferenceAborted) {
       if (turnResult.content) {
         await saveAssistantMessage(context.sessionId, turnResult.content, null, {
           stopped: true,
         });
       }
+      stopReason = "user_stopped";
+      break;
+    }
+
+    // Boundary stop with a turn that completed anyway (nothing to persist —
+    // the normal text/tool paths below are what would have saved it).
+    if (abortSignal?.aborted) {
       stopReason = "user_stopped";
       break;
     }
@@ -287,6 +294,12 @@ export async function runTurnLoop(
         currentTokenCount,
         contextLimit: loopConfig.contextLimit,
         lastTextSoFar: lastText,
+        // Stop must be felt inside a multi-tool batch, not only at the next
+        // iteration boundary. Mission runs thread the run's abort signal
+        // (pos 10); chat turns only ever get the "stop generating" inference
+        // signal (pos 11), so fall back to it. The batch checks this at the
+        // TOP of each call — never mid-dispatch.
+        abortSignal: abortSignal ?? inferenceAbortSignal,
       });
       totalToolCalls += batchOutcome.toolCallsExecuted;
       lastText = batchOutcome.lastText;
@@ -319,6 +332,7 @@ export async function runTurnLoop(
       }
       if (batchOutcome.kind === "plan_acceptance_pause") {
         await applyPlanAcceptancePausePostBatch({
+          sessionId: context.sessionId,
           missionRunId: context.missionRunId ?? null,
         });
         stopReason = "plan_acceptance_required";

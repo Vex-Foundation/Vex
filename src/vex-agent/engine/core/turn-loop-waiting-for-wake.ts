@@ -22,6 +22,7 @@ import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { maybeRunForcedCompactFallback } from "@vex-agent/engine/compact-jobs/forced-fallback.js";
 import { computeBand } from "./context-band.js";
+import logger from "@utils/logger.js";
 
 export async function applyWaitingForWakePostBatch(args: {
   readonly sessionId: string;
@@ -38,11 +39,49 @@ export async function applyWaitingForWakePostBatch(args: {
       await args.handlePostCompactBookkeeping();
     }
   }
-  if (args.missionRunId !== null) {
-    await missionRunsRepo.updateStatus(
-      args.missionRunId,
+  const { sessionId, missionRunId } = args;
+  if (missionRunId === null) return;
+
+  // DURABLE STOP CONSUMER (full rationale in `runner/mission-auto-retry.ts`).
+  // Parking is the last iteration boundary this run reaches until the wake
+  // fires, so a `stop_terminal` queued a moment ago has no other reader. Gate +
+  // park commit together under the session control lock.
+  //
+  // TERMINAL-STOP PRECEDENCE. Parking for a wake is a RECOVERY write — it
+  // never moves a run TO terminal — so it goes through the repo CAS. The
+  // window here is unusually wide: the forced-compaction await above can span
+  // a whole compaction, and an operator Stop landing inside it would be
+  // overwritten AND the run re-opened into a resumable state the wake
+  // executor would later pick up.
+  const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
+    "@vex-agent/engine/runtime/lease-and-status.js"
+  );
+  const outcome = await withSessionControlLock(sessionId, async (client) => {
+    const gate = await gateOnOperatorStopWithClient(client, {
+      sessionId,
+      missionRunId,
+    });
+    // Fail-closed: a stopped run gets no park write at all.
+    if (gate.kind === "stopped") return "stop_consumed" as const;
+    const parked = await missionRunsRepo.updateStatusIfNotTerminal(
+      missionRunId,
       "paused_wake",
       "waiting_for_wake",
+      undefined,
+      client,
     );
+    return parked ? ("parked" as const) : ("superseded" as const);
+  });
+  if (outcome === "stop_consumed") {
+    logger.info("engine.mission.wake_pause_consumed_operator_stop", {
+      sessionId,
+      runId: missionRunId,
+    });
+  } else if (outcome === "superseded") {
+    logger.warn("engine.mission.pause_after_terminal", {
+      sessionId,
+      runId: missionRunId,
+      pauseStatus: "paused_wake",
+    });
   }
 }

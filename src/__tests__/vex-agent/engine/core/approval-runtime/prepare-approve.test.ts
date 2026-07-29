@@ -79,7 +79,21 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   appendMessage: (...a: unknown[]) => mockAppendMessage(...a),
   appendEngineMessage: vi.fn(),
   emitTranscriptAppend: vi.fn(),
+  TRANSCRIPT_APPEND_EVENT_TYPE: "transcript.append",
 }));
+
+// In-process backoff retries (A5 attempt 2) — stubbed so the suite never arms
+// real timers. The retry ladder has its own coverage in deferred-resume tests.
+const mockScheduleDeferredResumeRetries = vi.fn();
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/deferred-resume.js",
+  () => ({
+    scheduleDeferredResumeRetries: (...a: unknown[]) =>
+      mockScheduleDeferredResumeRetries(...a),
+    dispatchPendingApprovalResumes: vi.fn(),
+    resumePendingApprovalsForSession: vi.fn(),
+  }),
+);
 
 vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
   hydrateEngineSession: vi.fn(),
@@ -88,7 +102,7 @@ vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
 // mission-runs repo: getRunBySession (used inside snapshot tx with client)
 // reaches client.query via queryOneWith. updateStatus called outside tx for
 // paused_error transition — mocked directly.
-const mockMissionRunsUpdateStatus = vi.fn().mockResolvedValue(undefined);
+const mockMissionRunsUpdateStatus = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/mission-runs.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/db/repos/mission-runs.js")>(
     "@vex-agent/db/repos/mission-runs.js",
@@ -96,14 +110,46 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", async () => {
   return {
     ...actual,
     updateStatus: (...a: unknown[]) => mockMissionRunsUpdateStatus(...a),
+    // ATROPOS-2 made the paused_error flip terminal-safe; `flipRunToPausedError`
+    // now goes through the CAS variant. Same spy, same assertions.
+    updateStatusIfNotTerminal: (...a: unknown[]) =>
+      mockMissionRunsUpdateStatus(...a),
   };
 });
 
-// Lease + status helpers (lazy-imported inside continuation.ts)
+// Lease + status helpers (lazy-imported inside continuation.ts). `claimSessionLease`
+// is the CHAT arm — a chat approval now claims a plain session lease instead of
+// silently having no continuation at all.
 const mockClaimRunLeaseAndFlipToRunning = vi.fn();
+const mockClaimSessionLease = vi.fn();
+/**
+ * Operator-stop gate the approved dispatch runs between the slot CAS and the
+ * dispatch. Stubbed `clear` by default so this file stays about the ORDERING
+ * contract; the gate's own behaviour is proven in
+ * `operator-stop-boundary.test.ts` (decision logic) and in
+ * `integration/engine/operator-stop-boundary.int.test.ts` (real two-client
+ * interleaving), because a SQL stub cannot demonstrate a serialization
+ * boundary.
+ */
+const mockGateOnOperatorStopTransaction = vi
+  .fn()
+  .mockResolvedValue({ kind: "clear" });
+
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) =>
     mockClaimRunLeaseAndFlipToRunning(...a),
+  claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
+  gateOnOperatorStopTransaction: (...a: unknown[]) =>
+    mockGateOnOperatorStopTransaction(...a),
+  // The `paused_error` recovery flip carries the durable operator-Stop consumer,
+  // so it reaches the control plane too. Stubbed to "no stop raced us"; the
+  // consumer's own behaviour is pinned by
+  // `approval-runtime/paused-error-flip-stop-consumer.test.ts`.
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  withSessionControlLock: async <T>(
+    _sessionId: string,
+    fn: (client: unknown) => Promise<T>,
+  ): Promise<T> => fn({}),
 }));
 
 const mockCreateLeaseHandle = vi.fn();
@@ -137,6 +183,16 @@ vi.mock("@utils/logger.js", () => ({
 // the non-tx audit calls. getExpired is mocked per-test for sweep cases.
 const mockMarkExecutionStatus = vi.fn().mockResolvedValue(undefined);
 const mockGetExpired = vi.fn().mockResolvedValue([]);
+// Lifecycle CAS helpers (migration 056). `casMarkDispatching` is the guard that
+// takes the dispatch slot — `false` means another writer owns the dispatch and
+// this path must NOT run the tool.
+const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
+const mockCasMarkResumeConsumed = vi.fn().mockResolvedValue(true);
+const mockMarkResumeAttempted = vi.fn().mockResolvedValue(undefined);
+// `true` = this writer still owned the `dispatching` slot when the result
+// landed. The repo write is CAS-fenced on that status.
+const mockCommitExecutionResultWith = vi.fn().mockResolvedValue(true);
+const mockAttachResultMessageWith = vi.fn().mockResolvedValue(undefined);
 vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/db/repos/approval-intents.js")>(
     "@vex-agent/db/repos/approval-intents.js",
@@ -145,6 +201,13 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
     ...actual,
     markExecutionStatus: (...a: unknown[]) => mockMarkExecutionStatus(...a),
     getExpired: (...a: unknown[]) => mockGetExpired(...a),
+    casMarkDispatching: (...a: unknown[]) => mockCasMarkDispatching(...a),
+    casMarkResumeConsumed: (...a: unknown[]) => mockCasMarkResumeConsumed(...a),
+    markResumeAttempted: (...a: unknown[]) => mockMarkResumeAttempted(...a),
+    commitExecutionResultWith: (...a: unknown[]) =>
+      mockCommitExecutionResultWith(...a),
+    attachResultMessageWith: (...a: unknown[]) =>
+      mockAttachResultMessageWith(...a),
   };
 });
 
@@ -286,9 +349,43 @@ beforeEach(() => {
   mockMarkExecutionStatus.mockReset();
   mockGetExpired.mockReset();
   mockClaimRunLeaseAndFlipToRunning.mockReset();
+  mockClaimSessionLease.mockReset();
   mockCreateLeaseHandle.mockReset();
   mockResumeMissionRun.mockReset();
   mockReleaseLeaseAndEmit.mockReset();
+  mockCasMarkDispatching.mockReset();
+  mockCasMarkResumeConsumed.mockReset();
+  mockMarkResumeAttempted.mockReset();
+  mockCommitExecutionResultWith.mockReset();
+  mockAttachResultMessageWith.mockReset();
+  mockScheduleDeferredResumeRetries.mockReset();
+
+  // Transcript writes return the inserted row — the atomic commit needs its id
+  // to stamp `result_message_id` in the SAME transaction.
+  mockAppendMessage.mockResolvedValue({
+    id: 4242,
+    role: "tool",
+    content: "",
+    timestamp: "2026-05-23T20:00:00.000Z",
+  });
+  mockCasMarkDispatching.mockResolvedValue(true);
+  mockCasMarkResumeConsumed.mockResolvedValue(true);
+  mockMarkResumeAttempted.mockResolvedValue(undefined);
+  // `true` = this writer still owned the `dispatching` slot (CAS-fenced write).
+  mockCommitExecutionResultWith.mockResolvedValue(true);
+  mockAttachResultMessageWith.mockResolvedValue(undefined);
+  mockReleaseLeaseAndEmit.mockResolvedValue(undefined);
+
+  // Chat sessions claim a plain session lease.
+  mockClaimSessionLease.mockResolvedValue({
+    outcome: "claimed",
+    lease: {
+      sessionId: SESSION_ID,
+      missionRunId: null,
+      ownerId: "approve-x",
+      processKind: "electron_main",
+    },
+  });
 
   // Default lease claim path — happy: claim succeeds, handle returned.
   mockClaimRunLeaseAndFlipToRunning.mockResolvedValue({
@@ -319,12 +416,19 @@ describe("prepareApprove", () => {
     expect(outcome.continuation).not.toBeNull();
     expect(outcome.toolResult.success).toBe(true);
 
-    // Dispatching audit transition + final markExecutionStatus succeeded
-    expect(mockMarkExecutionStatus).toHaveBeenCalledWith(APPROVAL_ID, "dispatching");
-    const finalCall = mockMarkExecutionStatus.mock.calls.find(
-      (c) => c[1] === "succeeded",
+    // Dispatch slot taken via the CAS (`not_started -> dispatching`), which
+    // also stamps `dispatch_started_at`.
+    expect(mockCasMarkDispatching).toHaveBeenCalledWith(APPROVAL_ID);
+
+    // Result + result_message_id committed together with the transcript row.
+    expect(mockCommitExecutionResultWith).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        approvalId: APPROVAL_ID,
+        status: "succeeded",
+        resultMessageId: 4242,
+      }),
     );
-    expect(finalCall).toBeDefined();
 
     // Tool-result message appended with visibility='internal', success=true
     expect(mockAppendMessage).toHaveBeenCalledWith(
@@ -335,6 +439,8 @@ describe("prepareApprove", () => {
         visibility: "internal",
         payload: { success: true },
       }),
+      // Caller-owned transaction: storage-only append, caller emits after COMMIT.
+      expect.objectContaining({ client: expect.anything() }),
     );
 
     // Snapshot tx executed FOR UPDATE OF i, q
@@ -342,6 +448,53 @@ describe("prepareApprove", () => {
       c.sql.includes("FOR UPDATE OF i, q"),
     );
     expect(snapshotCall).toBeDefined();
+  });
+
+  it("ORDERING: the continuation is claimed BEFORE the tool is dispatched", async () => {
+    // The single most important ordering property in this module. With
+    // dispatch-first, a busy lease meant the funds had already moved while the
+    // IPC reported `dispatch_failed` — the user was told the opposite of the
+    // truth. Claiming first makes a busy lease observable while nothing has
+    // happened yet.
+    const order: string[] = [];
+    programSnapshotOnly(buildSnapshotRow());
+    mockClaimRunLeaseAndFlipToRunning.mockImplementation(async () => {
+      order.push("claim");
+      return {
+        outcome: "claimed",
+        previousStatus: "paused_approval",
+        lease: { sessionId: SESSION_ID, missionRunId: "run-1", ownerId: "approve-x", processKind: "electron_main" },
+        wakeCancelledCount: 0,
+      };
+    });
+    mockCasMarkDispatching.mockImplementation(async () => {
+      order.push("cas_dispatching");
+      return true;
+    });
+    mockDispatchTool.mockImplementation(async () => {
+      order.push("dispatch");
+      return { success: true, output: "ok" };
+    });
+
+    await prepareApprove(APPROVAL_ID);
+
+    expect(order).toEqual(["claim", "cas_dispatching", "dispatch"]);
+  });
+
+  it("CAS loses the dispatch slot → deferred, tool NEVER dispatched (no double-spend)", async () => {
+    // Another writer (the reconciler) already took `not_started -> dispatching`.
+    // Losing that CAS is the guard that makes a second execution of an approved
+    // money-path action impossible.
+    programSnapshotOnly(buildSnapshotRow());
+    mockCasMarkDispatching.mockResolvedValue(false);
+    mockDispatchTool.mockResolvedValue({ success: true, output: "SHOULD NOT RUN" });
+
+    const outcome = await prepareApprove(APPROVAL_ID);
+
+    expect(outcome.kind).toBe("deferred_busy");
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    // The lease we claimed is handed straight back.
+    expect(mockReleaseLeaseAndEmit).toHaveBeenCalled();
   });
 
   it("dispatch returns success:false → executionStatus='failed', continuation still present (controlled failure)", async () => {
@@ -358,7 +511,7 @@ describe("prepareApprove", () => {
     expect(outcome.toolResult.output).toBe("Insufficient funds");
   });
 
-  it("dispatch THROWS → ApprovalDispatchError, mission flipped to paused_error, NO continuation", async () => {
+  it("dispatch THROWS → ApprovalDispatchError, mission flipped to paused_error, claimed lease RELEASED", async () => {
     programSnapshotOnly(buildSnapshotRow());
     const dispatchErr = new TypeError("network down");
     mockDispatchTool.mockRejectedValue(dispatchErr);
@@ -367,11 +520,12 @@ describe("prepareApprove", () => {
       ApprovalDispatchError,
     );
 
-    // execution_status='failed' written before the throw
-    const failCall = mockMarkExecutionStatus.mock.calls.find(
-      (c) => c[1] === "failed",
+    // execution_status='failed' + result_message_id committed atomically with
+    // the structural transcript row.
+    expect(mockCommitExecutionResultWith).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "failed", resultMessageId: 4242 }),
     );
-    expect(failCall).toBeDefined();
 
     // Mission run flipped to paused_error (NOT running)
     expect(mockMissionRunsUpdateStatus).toHaveBeenCalledWith(
@@ -381,10 +535,16 @@ describe("prepareApprove", () => {
       expect.objectContaining({
         evidence: expect.objectContaining({ approvalId: APPROVAL_ID }),
       }),
+      // The flip now runs inside the durable-Stop consumer's transaction, so it
+      // carries that transaction's client.
+      expect.anything(),
     );
 
-    // NO lease claim (continuation must not be created on throw path)
-    expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
+    // CONTRACT CHANGE (claim-before-dispatch): the lease IS claimed up front
+    // now, so the throw path must hand it back rather than never take it. No
+    // continuation escapes to the caller — the error carries no continuation.
+    expect(mockClaimRunLeaseAndFlipToRunning).toHaveBeenCalled();
+    expect(mockReleaseLeaseAndEmit).toHaveBeenCalled();
 
     // Tool-result written with structural error + errorHash, success=false
     expect(mockAppendMessage).toHaveBeenCalledWith(
@@ -396,6 +556,7 @@ describe("prepareApprove", () => {
       expect.objectContaining({
         payload: expect.objectContaining({ success: false, dispatchError: true }),
       }),
+      expect.objectContaining({ client: expect.anything() }),
     );
   });
 
@@ -424,7 +585,7 @@ describe("prepareApprove", () => {
     expect(content).not.toContain("0x");
   });
 
-  it("appendMessage throws AFTER successful dispatch → ApprovalPostDecisionError, mission flipped to paused_error", async () => {
+  it("result commit throws AFTER successful dispatch → ApprovalPostDecisionError, mission flipped to paused_error, status NOT advanced", async () => {
     programSnapshotOnly(buildSnapshotRow());
     mockDispatchTool.mockResolvedValue({ success: true, output: "Tx 0xabc" });
     mockAppendMessage.mockRejectedValueOnce(new Error("transcript pg connection lost"));
@@ -433,12 +594,17 @@ describe("prepareApprove", () => {
       ApprovalPostDecisionError,
     );
 
-    // execution_status='succeeded' was written BEFORE the throw (audit shows
-    // the tool ran), then paused_error transition fires for recovery.
-    const succeededCall = mockMarkExecutionStatus.mock.calls.find(
-      (c) => c[1] === "succeeded",
+    // CONTRACT CHANGE (atomic commit): the status is no longer written ahead of
+    // the transcript row. Because both live in ONE transaction, a failure rolls
+    // BOTH back, so the intent stays `dispatching` — which is exactly the state
+    // the reconciler knows how to resolve honestly (`indeterminate`, never a
+    // re-dispatch). Previously the row was left claiming `succeeded` with no
+    // tool result anywhere in the conversation.
+    expect(mockMarkExecutionStatus).not.toHaveBeenCalledWith(
+      APPROVAL_ID,
+      "succeeded",
+      expect.anything(),
     );
-    expect(succeededCall).toBeDefined();
     expect(mockMissionRunsUpdateStatus).toHaveBeenCalledWith(
       "run-1",
       "paused_error",
@@ -446,12 +612,20 @@ describe("prepareApprove", () => {
       expect.objectContaining({
         evidence: expect.objectContaining({ approvalId: APPROVAL_ID }),
       }),
+      // The flip now runs inside the durable-Stop consumer's transaction, so it
+      // carries that transaction's client.
+      expect.anything(),
     );
   });
 
-  it("lease claim returns null (lease_busy) → ApprovalPostDecisionError, mission flipped to paused_error", async () => {
+  it("lease busy → deferred_busy: tool NEVER dispatched, run NOT flipped to paused_error", async () => {
+    // CONTRACT CHANGE (A3/A5). Old behaviour dispatched first and then failed
+    // the claim, so the funds had already moved when the IPC said
+    // `dispatch_failed`. Now the claim comes first: a busy lease means nothing
+    // has happened, the intent stays `approved`/`not_started`, and the durable
+    // resume paths finish the job.
     programSnapshotOnly(buildSnapshotRow());
-    mockDispatchTool.mockResolvedValue({ success: true, output: "ok" });
+    mockDispatchTool.mockResolvedValue({ success: true, output: "SHOULD NOT RUN" });
     mockClaimRunLeaseAndFlipToRunning.mockResolvedValueOnce({
       outcome: "lease_busy",
       currentLease: {
@@ -465,26 +639,24 @@ describe("prepareApprove", () => {
       },
     });
 
-    await expect(prepareApprove(APPROVAL_ID)).rejects.toBeInstanceOf(
-      ApprovalPostDecisionError,
-    );
+    const outcome = await prepareApprove(APPROVAL_ID);
 
-    expect(mockMissionRunsUpdateStatus).toHaveBeenCalledWith(
-      "run-1",
-      "paused_error",
-      "approval_post_decision",
-      expect.objectContaining({
-        evidence: expect.objectContaining({
-          approvalId: APPROVAL_ID,
-          errorKind: "ResumeClaimFailed",
-        }),
-      }),
-    );
+    expect(outcome.kind).toBe("deferred_busy");
+    if (outcome.kind !== "deferred_busy") throw new Error("kind mismatch");
+    expect(outcome.resultCommitted).toBe(false);
+
+    // The tool must NOT have run.
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    expect(mockCasMarkDispatching).not.toHaveBeenCalled();
+    // No paused_error — the approval is recoverable without operator action.
+    expect(mockMissionRunsUpdateStatus).not.toHaveBeenCalled();
+    // Fast in-process retry armed.
+    expect(mockScheduleDeferredResumeRetries).toHaveBeenCalledWith(SESSION_ID);
   });
 
-  it("lease claim returns null (status_mismatch) → ApprovalPostDecisionError, mission flipped to paused_error", async () => {
+  it("status_mismatch → ApprovalPostDecisionError, mission flipped to paused_error (NOT deferred — retrying could never succeed)", async () => {
     programSnapshotOnly(buildSnapshotRow());
-    mockDispatchTool.mockResolvedValue({ success: true, output: "ok" });
+    mockDispatchTool.mockResolvedValue({ success: true, output: "SHOULD NOT RUN" });
     mockClaimRunLeaseAndFlipToRunning.mockResolvedValueOnce({
       outcome: "status_mismatch",
       currentStatus: "cancelled",
@@ -494,6 +666,10 @@ describe("prepareApprove", () => {
       ApprovalPostDecisionError,
     );
 
+    // The run has left the resumable statuses, so this is permanent, not busy.
+    // The tool is still never dispatched.
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+
     expect(mockMissionRunsUpdateStatus).toHaveBeenCalledWith(
       "run-1",
       "paused_error",
@@ -503,6 +679,9 @@ describe("prepareApprove", () => {
           errorKind: "ResumeClaimFailed",
         }),
       }),
+      // The flip now runs inside the durable-Stop consumer's transaction, so it
+      // carries that transaction's client.
+      expect.anything(),
     );
   });
 
@@ -588,15 +767,47 @@ describe("prepareApprove", () => {
     await expect(prepareApprove(APPROVAL_ID)).rejects.toThrow(/not found/);
   });
 
-  it("chat session (mission_run_id null) → continuation null, no lease claim", async () => {
+  it("chat session (mission_run_id null) → CHAT continuation claimed via the session lease", async () => {
+    // THE PRODUCT FIX. Previously a chat approval returned `continuation: null`
+    // and the agent was never told its tool had run — the conversation simply
+    // stopped. A chat session now claims a plain session lease (there is no
+    // mission run to flip) so the same resume machinery applies.
     programSnapshotOnly(buildSnapshotRow({ mission_run_id: null }));
     mockDispatchTool.mockResolvedValue({ success: true, output: "Chat result" });
 
     const outcome = await prepareApprove(APPROVAL_ID);
     if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
-    expect(outcome.continuation).toBeNull();
     expect(outcome.missionRunId).toBeNull();
+    expect(outcome.continuation).not.toBeNull();
+    expect(outcome.continuation?.kind).toBe("chat_session");
+    // Session lease, never the mission-run lease-and-flip.
+    expect(mockClaimSessionLease).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION_ID }),
+    );
     expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
+  });
+
+  it("chat session with a busy session lease → deferred_busy, tool NEVER dispatched", async () => {
+    programSnapshotOnly(buildSnapshotRow({ mission_run_id: null }));
+    mockDispatchTool.mockResolvedValue({ success: true, output: "SHOULD NOT RUN" });
+    mockClaimSessionLease.mockResolvedValueOnce({
+      outcome: "lease_busy",
+      currentLease: {
+        sessionId: SESSION_ID,
+        missionRunId: null,
+        ownerId: "in-flight-turn",
+        processKind: "electron_main",
+        acquiredAt: new Date(),
+        heartbeatAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const outcome = await prepareApprove(APPROVAL_ID);
+
+    expect(outcome.kind).toBe("deferred_busy");
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    expect(mockScheduleDeferredResumeRetries).toHaveBeenCalledWith(SESSION_ID);
   });
 
   // ── B-001 — approve-time live-policy re-enforcement (fail-closed) ────────
@@ -694,7 +905,9 @@ describe("prepareApprove", () => {
       if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
       expect(outcome.executionStatus).toBe("succeeded");
       expect(mockDispatchTool).toHaveBeenCalledTimes(1);
-      expect(mockMarkExecutionStatus).toHaveBeenCalledWith(APPROVAL_ID, "dispatching");
+      // `dispatching` is now taken through the CAS (which also stamps
+      // `dispatch_started_at`) rather than an unconditional status write.
+      expect(mockCasMarkDispatching).toHaveBeenCalledWith(APPROVAL_ID);
 
       // Approve CAS fired; reject CAS did not.
       const approveCas = clientQueryLog.find(

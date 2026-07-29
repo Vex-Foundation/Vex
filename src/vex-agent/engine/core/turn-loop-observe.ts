@@ -20,6 +20,7 @@
 import logger from "@utils/logger.js";
 
 export type ObserveControlOutcome =
+  /** No request, or one that was cleared as stale (never applied to this run). */
   | { kind: "no_request" }
   | { kind: "paused_user_applied"; correlationId: string | null }
   | { kind: "stop_applied"; correlationId: string | null }
@@ -35,8 +36,20 @@ export async function observePendingControlRequest(args: {
     );
     const outcome = await observeAndApplyControl({
       sessionId: args.sessionId,
+      // Run-scoped: a request minted for an earlier run is cleared as stale
+      // by the helper instead of stopping/pausing THIS run.
+      missionRunId: args.missionRunId,
       kinds: ["pause_after_step", "stop_terminal"],
     });
+    if (outcome.outcome === "stale_cleared") {
+      logger.warn("turn-loop.stale_control_request_cleared", {
+        sessionId: args.sessionId,
+        missionRunId: args.missionRunId,
+        requestKind: outcome.request.kind,
+        requestMissionRunId: outcome.request.missionRunId,
+      });
+      return { kind: "no_request" };
+    }
     if (outcome.outcome === "paused_user_applied") {
       return {
         kind: "paused_user_applied",

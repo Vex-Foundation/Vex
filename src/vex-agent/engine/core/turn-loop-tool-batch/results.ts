@@ -21,6 +21,36 @@ export const BATCH_ABORTED_BY_COMPACT_OUTPUT =
   "batch_aborted_by_compact: this tool call was emitted in the same batch as compact_now and was not dispatched. "
   + "The conversation has been compacted; re-emit this call on the next turn if it is still relevant.";
 
+/**
+ * Synthetic tool-result emitted for batch tool calls that were never
+ * dispatched because the operator stopped the run mid-batch. Same pairing
+ * contract as the compact drain: the persisted assistant message keeps the
+ * FULL emitted batch in its `tool_calls` JSONB, so every call still has
+ * exactly one result and the transcript stays balanced on reload.
+ */
+export const BATCH_ABORTED_BY_USER_STOP_OUTPUT =
+  "batch_aborted_by_user_stop: the operator stopped the run before this tool call was dispatched. "
+  + "It did NOT execute and had no effect.";
+
+/**
+ * Synthetic tool-result for a call that returned "approval required" onto a
+ * run that had already gone terminal. The approval is auto-rejected in the
+ * enqueue transaction; this keeps the call/result pairing intact.
+ */
+export const APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT =
+  "approval_auto_rejected: this action required approval, but the mission run had already ended. "
+  + "The approval was rejected automatically and the action did NOT execute.";
+
+/**
+ * Synthetic tool-result for a call that returned "approval required" while the
+ * operator's Stop was already in flight. No approval row is created at all —
+ * enqueueing one would park a live, approvable action on a run that is about
+ * to go terminal. Keeps the call/result pairing intact.
+ */
+export const APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT =
+  "approval_skipped_by_user_stop: this action required approval, but the operator stopped the run "
+  + "while the call was in flight. No approval was created and the action did NOT execute.";
+
 interface ExecutedResult {
   toolCallId: string;
   toolName: string;

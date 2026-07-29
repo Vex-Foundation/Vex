@@ -19,6 +19,10 @@
  */
 
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
 
 import { executeCompactNow } from "@vex-agent/engine/compact-jobs/service.js";
@@ -57,51 +61,97 @@ async function seedLongConversation(sessionId: string): Promise<void> {
   }
 }
 
-function execFilePromise(
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+
+/**
+ * Scratch dir prefix for the spawned child scripts. The dirs MUST live under
+ * `src/` and OUTSIDE `src/__tests__/`: tsx resolves the `@vex-agent/*`
+ * tsconfig path alias only for files the root `tsconfig.json` actually
+ * matches, and that config excludes `src/__tests__`. Each call gets its own
+ * top-level dir (no shared parent to leave behind) and removes it in a
+ * `finally`, so nothing is left in the tree.
+ */
+const CHILD_SCRATCH_PREFIX = resolve(REPO_ROOT, "src/__integration-child-");
+
+/**
+ * Run a command and, on failure, reject with a PLAIN error carrying a
+ * truncated, printable summary.
+ *
+ * Attaching the child's raw stderr to the rejected error is what previously
+ * hid this test's real failure: tsx's stderr echoes a minified bundle line
+ * whose trailing sourcemap comment made Vitest's stack pretty-printer throw
+ * inside `convert-source-map`, replacing the assertion failure with an
+ * unrelated "Unexpected token" crash. Keep the failure legible.
+ */
+function execFileSummarized(
   file: string,
   args: string[],
   options: { cwd: string; env: NodeJS.ProcessEnv; timeout: number },
 ): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolveExec, reject) => {
     execFile(file, args, options, (error, stdout, stderr) => {
       if (error) {
-        reject(Object.assign(error, { stdout, stderr }));
+        const printable = (text: string): string =>
+          text.replace(/[^\x20-\x7E\n]/g, "?").split(/\r?\n/).slice(-20).join("\n").slice(-2000);
+        reject(
+          new Error(
+            `child compact failed (${error.message.split("\n")[0]})\n` +
+              `--- stdout tail ---\n${printable(stdout)}\n` +
+              `--- stderr tail ---\n${printable(stderr)}`,
+          ),
+        );
         return;
       }
-      resolve({ stdout, stderr });
+      resolveExec({ stdout, stderr });
     });
   });
 }
 
 async function runChildCompact(sessionId: string, summary: string): Promise<unknown> {
-  const script = [
-    "import { executeCompactNow } from '@vex-agent/engine/compact-jobs/service.js';",
-    "const result = await executeCompactNow({",
-    "  sessionId: process.env.VEX_CHILD_SESSION_ID,",
-    "  agentSummary: process.env.VEX_CHILD_SUMMARY,",
-    "  preserveMd: null,",
-    "  threadThemesHints: [],",
-    "  source: 'agent_tool',",
-    "});",
-    "console.log(JSON.stringify(result));",
-  ].join("\n");
+  // `tsx -e` is NOT usable here: the eval source has no on-disk path, so tsx
+  // resolves it against no tsconfig and `@vex-agent/*` fails with
+  // MODULE_NOT_FOUND. Write a real `.mts` file inside the tsconfig's include
+  // set instead — that also restores top-level await.
+  const scratchDir = `${CHILD_SCRATCH_PREFIX}${randomUUID()}`;
+  const scriptPath = resolve(scratchDir, "compact-child.mts");
+  const script = `import { executeCompactNow } from "@vex-agent/engine/compact-jobs/service.js";
 
-  const { stdout } = await execFilePromise(
-    "pnpm",
-    ["exec", "tsx", "-e", script],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        VEX_CHILD_SESSION_ID: sessionId,
-        VEX_CHILD_SUMMARY: summary,
+const result = await executeCompactNow({
+  sessionId: process.env.VEX_CHILD_SESSION_ID!,
+  agentSummary: process.env.VEX_CHILD_SUMMARY!,
+  preserveMd: null,
+  threadThemesHints: [],
+  source: "agent_tool",
+});
+await new Promise<void>((done) => {
+  process.stdout.write(JSON.stringify(result) + "\\n", () => done());
+});
+// Explicit exit: the DB pool keeps the event loop alive otherwise.
+process.exit(0);
+`;
+
+  await mkdir(scratchDir, { recursive: true });
+  try {
+    await writeFile(scriptPath, script, "utf8");
+    const { stdout } = await execFileSummarized(
+      "pnpm",
+      ["exec", "tsx", scriptPath],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          VEX_CHILD_SESSION_ID: sessionId,
+          VEX_CHILD_SUMMARY: summary,
+        },
+        timeout: 20_000,
       },
-      timeout: 20_000,
-    },
-  );
-  const line = stdout.trim().split(/\r?\n/).findLast((candidate) => candidate.startsWith("{"));
-  if (!line) throw new Error(`child compact produced no JSON stdout: ${stdout}`);
-  return JSON.parse(line);
+    );
+    const line = stdout.trim().split(/\r?\n/).findLast((candidate) => candidate.startsWith("{"));
+    if (!line) throw new Error(`child compact produced no JSON stdout: ${stdout}`);
+    return JSON.parse(line);
+  } finally {
+    await rm(scratchDir, { recursive: true, force: true });
+  }
 }
 
 describe("executeCompactNow concurrency (integration)", () => {

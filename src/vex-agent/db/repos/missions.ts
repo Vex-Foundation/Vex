@@ -196,11 +196,17 @@ export async function setApprovedAt(
   }
 }
 
-export async function clearApprovedAt(id: string): Promise<void> {
-  await execute(
-    "UPDATE missions SET approved_at = NULL, updated_at = NOW() WHERE id = $1",
-    [id],
-  );
+export async function clearApprovedAt(
+  id: string,
+  client?: PoolClient,
+): Promise<void> {
+  const sql =
+    "UPDATE missions SET approved_at = NULL, updated_at = NOW() WHERE id = $1";
+  if (client) {
+    await executeWith(client, sql, [id]);
+  } else {
+    await execute(sql, [id]);
+  }
 }
 
 export async function getMission(id: string): Promise<Mission | null> {

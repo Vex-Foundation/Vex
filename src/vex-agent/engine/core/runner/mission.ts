@@ -19,6 +19,7 @@
 import {
   MissionRunPausedError,
   TERMINAL_RUN_STATUSES,
+  type ResumedTurnClaim,
   type TurnResult,
 } from "../../types.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
@@ -115,8 +116,18 @@ export async function startMission(missionId: string): Promise<TurnResult> {
  * Resume a mission run after checkpoint or restart. Non-IPC entry —
  * the IPC layer's resume path goes through the shared runtime
  * dispatcher (`request-resume.ts` / `_shared/runtime-resume-dispatch`).
+ *
+ * `claimTurn` (optional) is the resumed-turn guard: it runs after the
+ * fallible pre-resume reads and immediately before the run core, and a
+ * `false` return abandons the resume without running it. It only
+ * REPORTS whether an earlier attempt already completed this resume —
+ * the durable marker is written by the caller after this function
+ * returns, so a failure anywhere below leaves the approval recoverable.
  */
-export async function resumeMissionRun(runId: string): Promise<TurnResult> {
+export async function resumeMissionRun(
+  runId: string,
+  claimTurn?: ResumedTurnClaim,
+): Promise<TurnResult> {
   logger.info("engine.mission.resume", { runId });
 
   // Read run + check terminal status OUTSIDE the finalize-on-error try.
@@ -136,6 +147,20 @@ export async function resumeMissionRun(runId: string): Promise<TurnResult> {
 
     const mission = await missionsRepo.getMission(run.missionId);
     if (!mission) throw new Error(`Mission ${run.missionId} not found`);
+
+    // Everything above is fallible pre-resume work; from here the run
+    // core actually starts, so this is where a resumed turn checks that
+    // it is still the one that should deliver the wake. Everything BELOW
+    // is fallible too — which is why nothing durable is written here.
+    if (claimTurn !== undefined && !(await claimTurn())) {
+      return {
+        text: null,
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+        missionStatus: null,
+      };
+    }
 
     // Permission read from session is deferred to
     // `resumePreparedMissionRun`'s `hydrateEngineSession` so a missing

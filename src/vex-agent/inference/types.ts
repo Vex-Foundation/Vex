@@ -136,6 +136,25 @@ export interface InferenceResponse {
   usage: InferenceUsage;
   /** Reasoning output (OpenRouter extended thinking) */
   reasoning?: string | null;
+  /**
+   * Provider's terminal reason for the completion (`stop`, `tool_calls`,
+   * `length`, `content_filter`, …). An OPEN provider enum carried VERBATIM —
+   * never exhaustively switched on; an unrecognized label is legal data, so
+   * any consumer needs a total default branch. `null` when the provider did
+   * not report one (or the turn was aborted before it arrived).
+   *
+   * Persisted to `usage_log.finish_reason` (migration 055) and logged. In THIS
+   * package it is record-only: nothing branches on `length` yet — acting on a
+   * truncated completion is a separate product decision.
+   */
+  finishReason?: string | null;
+  /**
+   * Provider's generation identifier for this request — the key that ties a
+   * `usage_log` row to OpenRouter's own activity log. `null` when unreported.
+   * The streaming and buffered paths are contractually behaviour-equivalent,
+   * so both populate it.
+   */
+  generationId?: string | null;
 }
 
 // ── Streaming chunk ──────────────────────────────────────────────
@@ -169,6 +188,28 @@ export interface StreamChunk {
   // error
   errorMessage?: string;
   errorCode?: number;
+  /**
+   * Canonical OpenRouter error type from the chunk's `error.metadata.errorType`
+   * (`ApiErrorType`). An OPEN enum — carried verbatim, never mapped to a closed
+   * set here. The sibling `providerCode` is deliberately not carried: it is
+   * free-form upstream text.
+   */
+  errorType?: string;
+
+  /**
+   * Provider finish reason, present on `done` chunks. Carried for ALL reasons
+   * the provider reports — including `length`, `content_filter` and labels
+   * this SDK version does not enumerate — so a truncated completion is
+   * distinguishable after the fact. Open enum: needs a total default branch.
+   */
+  finishReason?: string;
+
+  /**
+   * Provider generation id, echoed on stream chunks. Emitted on the `done`
+   * chunk so the consumer can attribute the completion without inspecting
+   * every chunk.
+   */
+  generationId?: string;
 }
 
 // ── Provider balance ─────────────────────────────────────────────
@@ -318,21 +359,40 @@ export interface InferenceProvider {
    * existing callers and test doubles stay valid; the buffered fallback in
    * `runStreamingInference` passes the SAME context as the streaming attempt it
    * replaces, so a fallback cannot silently land on a different provider.
+   *
+   * `signal` cancels the in-flight HTTP request. The buffered fallback passes
+   * the turn's signal, so a "stop generating" that lands after the stream has
+   * already fallen back still tears the request down instead of leaving it to
+   * burn tokens nobody is waiting for.
    */
   chatCompletion(
     messages: ProviderMessage[],
     tools: ToolDefinition[],
     config: InferenceConfig,
     context?: InferenceRequestContext,
+    signal?: AbortSignal,
   ): Promise<InferenceResponse>;
 
   /**
    * Simple non-streaming completion without tools.
-   * Used by: compaction, session summary, Vex Papa.
+   * Used by: compaction chunker, memory judge, entity extraction, regime worker.
+   *
+   * `responseFormat` is typed `unknown` here on purpose: this interface is
+   * provider-agnostic (no transport details), but the concrete
+   * `OpenRouterProvider` takes a typed OpenRouter format object in this
+   * position, and the structural `JudgeProvider` (memory/manager/judge.ts)
+   * already declares it the same way. Declaring the position keeps the
+   * trailing `signal` at the SAME index on every one of those surfaces.
+   *
+   * `signal` cancels the in-flight HTTP request. Every background caller passes
+   * an `AbortSignal.timeout(...)` so a call that outlives its deadline is
+   * actually cancelled rather than abandoned mid-flight.
    */
   chatCompletionSimple(
     messages: ProviderMessage[],
     config: InferenceConfig,
+    responseFormat?: unknown,
+    signal?: AbortSignal,
   ): Promise<{ content: string; usage: InferenceUsage }>;
 
   /**

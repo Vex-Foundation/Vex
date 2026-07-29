@@ -1,6 +1,6 @@
 /**
- * Archived-prefix loading + rendering for the compact chunker
- * (Track 2). Extracted from `executor.ts` for scaling — these
+ * Archived-prefix loading + rendering for the archive chunking
+ * worker. Extracted from `executor.ts` for scaling — these
  * helpers don't depend on the worker lifecycle or the chunker
  * loop's `claimLost` flag, so they extract cleanly.
  *

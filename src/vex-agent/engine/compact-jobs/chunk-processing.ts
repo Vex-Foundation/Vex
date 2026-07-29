@@ -1,5 +1,5 @@
 /**
- * Per-chunk processing for the compact-jobs Track 2 worker. Extracted
+ * Per-chunk processing for the archive chunking worker. Extracted
  * from `executor.ts` for scaling.
  *
  * For each raw chunk from the chunker LLM:

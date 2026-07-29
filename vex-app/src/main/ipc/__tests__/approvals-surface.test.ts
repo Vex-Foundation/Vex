@@ -56,7 +56,18 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
     errored: 0,
     continuations: [],
   }),
+  // Second pass of the same scheduled cycle (no extra timer).
+  reconcileApprovalLifecycle: vi.fn().mockResolvedValue({
+    examined: 0,
+    dispatched: 0,
+    indeterminate: 0,
+    resumed: 0,
+    skippedLeaseHeld: 0,
+    errored: 0,
+  }),
   runResumeAfterDecision: vi.fn(),
+  continuationMissionRunId: (cont: { kind: string; missionRunId?: string }) =>
+    cont.kind === "mission_run" ? cont.missionRunId : undefined,
   discardContinuation: vi.fn(),
   ApprovalDispatchError: class extends Error {},
   ApprovalPostDecisionError: class extends Error {},

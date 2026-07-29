@@ -12,7 +12,7 @@ import {
 describe("context-band / computeBand (PR2 cutover — 4-band)", () => {
   const LIMIT = 128_000;
 
-  describe("normal band — tokenCount below WARNING (0.85)", () => {
+  describe("normal band — tokenCount below WARNING (0.80)", () => {
     it("empty session (0 tokens) is normal", () => {
       expect(computeBand(0, LIMIT)).toBe("normal");
     });
@@ -21,14 +21,18 @@ describe("context-band / computeBand (PR2 cutover — 4-band)", () => {
       expect(computeBand(LIMIT * 0.5, LIMIT)).toBe("normal");
     });
 
-    it("just below warning threshold (84.99%) is normal", () => {
-      expect(computeBand(LIMIT * 0.8499, LIMIT)).toBe("normal");
+    it("just below warning threshold (79.99%) is normal", () => {
+      expect(computeBand(LIMIT * 0.7999, LIMIT)).toBe("normal");
     });
   });
 
-  describe("warning band — tokenCount in [0.85, 0.88)", () => {
-    it("exactly at warning threshold (85%) is warning", () => {
+  describe("warning band — tokenCount in [0.80, 0.88)", () => {
+    it("exactly at warning threshold (80%) is warning", () => {
       expect(computeBand(LIMIT * PRESSURE_WARNING_FRACTION, LIMIT)).toBe("warning");
+    });
+
+    it("85% usage is warning (was the old warning threshold; still pre-barrier)", () => {
+      expect(computeBand(LIMIT * 0.85, LIMIT)).toBe("warning");
     });
 
     it("86% usage is warning", () => {
@@ -91,10 +95,20 @@ describe("context-band / computeBand (PR2 cutover — 4-band)", () => {
   });
 
   describe("threshold constants", () => {
-    it("warning = 0.85, barrier = 0.88, critical = 0.92 (PR2 cutover thresholds)", () => {
-      expect(PRESSURE_WARNING_FRACTION).toBe(0.85);
+    it("warning = 0.80, barrier = 0.88, critical = 0.92", () => {
+      expect(PRESSURE_WARNING_FRACTION).toBe(0.80);
       expect(PRESSURE_BARRIER_FRACTION).toBe(0.88);
       expect(PRESSURE_CRITICAL_FRACTION).toBe(0.92);
+    });
+
+    // Ordering invariant, not a restatement of the values above: `classifyPressure` tests the
+    // thresholds top-down, so any future edit that inverts two of them mis-bands silently rather
+    // than failing loudly. Kept separate so it survives a deliberate re-tuning of the numbers.
+    it("bands are strictly ordered: 0 < WARNING < BARRIER < CRITICAL <= 1", () => {
+      expect(PRESSURE_WARNING_FRACTION).toBeGreaterThan(0);
+      expect(PRESSURE_WARNING_FRACTION).toBeLessThan(PRESSURE_BARRIER_FRACTION);
+      expect(PRESSURE_BARRIER_FRACTION).toBeLessThan(PRESSURE_CRITICAL_FRACTION);
+      expect(PRESSURE_CRITICAL_FRACTION).toBeLessThanOrEqual(1);
     });
   });
 });

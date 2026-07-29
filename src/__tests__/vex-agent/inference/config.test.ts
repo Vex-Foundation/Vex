@@ -45,7 +45,7 @@ describe("loadEnvConfig", () => {
 
   it("uses fallback context limit when not set", () => {
     const config = loadEnvConfig();
-    expect(config.contextLimit).toBe(128_000);
+    expect(config.contextLimit).toBe(256_000);
   });
 
   it("parses valid AGENT_CONTEXT_LIMIT", () => {

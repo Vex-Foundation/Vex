@@ -62,3 +62,11 @@ export type { AbortMissionRunResult, StopMissionRunForEditResult } from "./core/
 export { retryActiveMissionRun } from "./core/runner/retry.js";
 
 export * from "./types.js";
+
+/**
+ * Host-only, write-free local abort signal. `vex-app`'s stop IPC persists the
+ * run-scoped control request FIRST, then calls this so a live in-flight
+ * provider call is cancelled immediately instead of at the next iteration
+ * boundary. See `core/runner/abort.ts`.
+ */
+export { signalMissionRunAbortLocal } from "./core/runner/abort.js";

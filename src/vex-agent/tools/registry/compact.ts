@@ -21,7 +21,7 @@ export const COMPACT_TOOLS: readonly ToolDef[] = [
     actionKind: "local_write",
     visibility: { band: "barrier" },
     description: [
-      "Compact the conversation when the context-pressure banner says ACTION REQUIRED (≥ 88% of context limit). Archives the conversation prefix to long-term storage, bumps the checkpoint generation, and enqueues async Track 2 chunking; the next 2 turns get a deterministic resume packet (rolling summary + outstanding items + recent decisions + recent tool outcomes).",
+      "Compact the conversation when the context-pressure banner says ACTION REQUIRED (≥ 88% of context limit). Archives the conversation prefix to long-term storage, bumps the checkpoint generation, and enqueues asynchronous archive chunking; the next 2 turns get a deterministic resume packet (rolling summary + outstanding items + recent decisions + recent tool outcomes).",
       "Write each argument deliberately — the model AFTER the compact reads these. Examples below.",
       "",
       "conversation_summary (REQUIRED, ≤4000 chars) — your full-context understanding of what happened, becomes the new rolling summary verbatim. Write it in English (persisted-memory contract; translate first when the conversation happened in another language):",
@@ -34,7 +34,7 @@ export const COMPACT_TOOLS: readonly ToolDef[] = [
       "✗ \"- ETH balance was 1.23.\" (live state — re-query via wallet_balances)",
       "✗ \"- Currently optimistic about the trade.\" (mood, not fact)",
       "",
-      "thread_themes_hints (optional, 1-3 items, each ≤500 chars) — theme slug suggestions for Track 2 chunker, written as English snake_case slugs (persisted-memory contract):",
+      "thread_themes_hints (optional, 1-3 items, each ≤500 chars) — theme slug suggestions for the archive chunking worker, written as English snake_case slugs (persisted-memory contract):",
       "✓ [\"kyber_quote_timeout_debug\", \"base_swap_route_validation\"]",
       "✗ [\"debug\", \"task\", \"memory\"] (stoplist — rejected by validator)",
       "",

@@ -18,6 +18,7 @@
  */
 
 import { OpenRouter } from "@openrouter/sdk";
+import { MetadataLevel } from "@openrouter/sdk/models/metadatalevel.js";
 import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
 import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
 import type { ChatStreamChunk } from "@openrouter/sdk/models/chatstreamchunk.js";
@@ -57,6 +58,15 @@ import {
   fetchModelInferenceConfig,
   type ModelConfigFetchResult,
 } from "./openrouter/model-catalog.js";
+import { observeRoutingMetadata } from "./openrouter/routing-metadata.js";
+import { composeRequestDeadline } from "./openrouter/request-deadline.js";
+
+/**
+ * Opt-in level for `openrouter_metadata` on the response. The SDK's own
+ * `MetadataLevel` constant rather than a bare "enabled" string, so a rename in
+ * the SDK is a compile error instead of a silently-ignored envelope field.
+ */
+const ROUTING_METADATA_ENABLED = MetadataLevel.Enabled;
 
 // ── Provider ─────────────────────────────────────────────────────
 
@@ -117,6 +127,21 @@ export class OpenRouterProvider implements InferenceProvider {
         },
       },
     });
+  }
+
+  // ── send options (cancellation + deadline) ──────────────────────
+  //
+  // Every `chat.send` goes through here so no path can accidentally trade the
+  // request ceiling for cancellation. The SDK arms its configured `timeoutMs`
+  // ONLY when the send passes no signal, so handing it a raw caller signal
+  // DISABLES the deadline outright — see `openrouter/request-deadline.ts` for
+  // the SDK line numbers. Composing keeps both; no caller signal still means no
+  // options object, leaving the SDK's own timeout in charge exactly as before.
+  private sendOptions(
+    signal: AbortSignal | undefined,
+  ): { signal: AbortSignal } | undefined {
+    const bounded = composeRequestDeadline(signal, OPENROUTER_SDK_TIMEOUT_MS);
+    return bounded ? { signal: bounded } : undefined;
   }
 
   // ── loadConfig (cached) ─────────────────────────────────────────
@@ -210,6 +235,7 @@ export class OpenRouterProvider implements InferenceProvider {
     tools: ToolDefinition[],
     config: InferenceConfig,
     context?: InferenceRequestContext,
+    signal?: AbortSignal,
   ): Promise<InferenceResponse> {
     const params = buildOpenRouterParams(
       messages,
@@ -225,13 +251,26 @@ export class OpenRouterProvider implements InferenceProvider {
       // SDK 1.1.13 no longer narrows the return type per `stream` literal —
       // `asChatResult` re-establishes it with a runtime guard (see chat-send.ts).
       response = asChatResult(
-        await this.client.chat.send({
-          chatRequest: { ...params, stream: false },
-        }),
+        await this.client.chat.send(
+          {
+            // Request-ENVELOPE field, a sibling of `chatRequest` — NOT part of
+            // `ChatRequest`, so it deliberately does not live in
+            // `buildOpenRouterParams` (verified against the installed SDK:
+            // esm/models/operations/sendchatcompletionrequest.d.ts). One of the
+            // exactly TWO conversational sends that opt in; see routing-metadata.ts.
+            xOpenRouterMetadata: ROUTING_METADATA_ENABLED,
+            chatRequest: { ...params, stream: false },
+          },
+          this.sendOptions(signal),
+        ),
         "chat completion",
       );
     } catch (err) {
       throw normalizeOpenRouterError(err, "chat completion");
+    }
+
+    if (response.openrouterMetadata) {
+      observeRoutingMetadata(response.openrouterMetadata, "chat completion");
     }
 
     return parseNonStreamingResponse(response);
@@ -243,6 +282,7 @@ export class OpenRouterProvider implements InferenceProvider {
     messages: ProviderMessage[],
     config: InferenceConfig,
     responseFormat?: ChatRequest["responseFormat"],
+    signal?: AbortSignal,
   ): Promise<{ content: string; usage: InferenceUsage }> {
     // `provider.requireParameters` composition now lives in
     // `buildOpenRouterParams` (via `buildProviderPreferences`) so tool-bearing
@@ -252,14 +292,22 @@ export class OpenRouterProvider implements InferenceProvider {
     // entity extraction, regime worker, compaction chunker) which shares no
     // prefix with the conversation and stays deliberately ungrouped for sticky
     // routing — see `InferenceRequestContext`.
+    //
+    // No `xOpenRouterMetadata` either: routing provenance is a CONVERSATIONAL
+    // concern (see routing-metadata.ts), so this envelope stays byte-identical
+    // to what background callers already send. `signal` is the caller's
+    // per-call deadline — every background caller now passes one, and it is
+    // strictly tighter than the client ceiling `sendOptions` composes in, so
+    // the caller's own timeout is what actually fires.
     const params = buildOpenRouterParams(messages, [], config, false, responseFormat);
 
     let response: ChatResult;
     try {
       response = asChatResult(
-        await this.client.chat.send({
-          chatRequest: { ...params, stream: false },
-        }),
+        await this.client.chat.send(
+          { chatRequest: { ...params, stream: false } },
+          this.sendOptions(signal),
+        ),
         "simple chat completion",
       );
     } catch (err) {
@@ -295,15 +343,24 @@ export class OpenRouterProvider implements InferenceProvider {
 
     let stream: EventStream<ChatStreamChunk>;
     try {
-      // `signal` is a flattened RequestInit field on the SDK's RequestOptions
-      // (takes precedence over the client timeout); it cancels the fetch so a
-      // chat-turn "stop generating" tears down the HTTP stream (Stage 9-5a).
+      // `signal` is a flattened RequestInit field on the SDK's RequestOptions;
+      // it cancels the fetch so a chat-turn "stop generating" tears down the
+      // HTTP stream (Stage 9-5a). It does NOT merely take precedence over the
+      // client timeout — supplying one suppresses that timeout entirely, which
+      // is why it goes through `sendOptions` to be composed with the deadline.
       // SDK 1.1.13 no longer narrows the return type per `stream` literal —
       // `asEventStream` re-establishes it with a runtime guard.
       stream = asEventStream(
         await this.client.chat.send(
-          { chatRequest: { ...params, stream: true } },
-          signal ? { signal } : undefined,
+          {
+            // The SECOND (and last) conversational send that opts into routing
+            // provenance — envelope field, sibling of `chatRequest`. The
+            // metadata rides the stream chunks; `consumeOpenRouterStream` logs
+            // the first one it sees.
+            xOpenRouterMetadata: ROUTING_METADATA_ENABLED,
+            chatRequest: { ...params, stream: true },
+          },
+          this.sendOptions(signal),
         ),
         "streaming chat completion",
       );

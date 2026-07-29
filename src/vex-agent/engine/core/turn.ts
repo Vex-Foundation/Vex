@@ -162,6 +162,14 @@ export async function executeTurn(
       // cache-write tokens — persisted at log time (D-SAVINGS).
       cachedSavings: cost.breakdown.cachedSavings,
       cacheWriteTokens: response.usage.cacheWriteTokens ?? 0,
+      // Provider provenance (migration 055). `generationId` is the only key
+      // that reconciles this row against OpenRouter's own activity log;
+      // `finishReason` makes a truncated completion (`length`) distinguishable
+      // from a complete one after the fact. Both already bounded at the
+      // inference boundary; `?? null` covers a provider that reported neither
+      // and an abort that ended the turn before they arrived.
+      generationId: response.generationId ?? null,
+      finishReason: response.finishReason ?? null,
     });
     await sessionsRepo.updateTokenCount(context.sessionId, promptTokens);
   }

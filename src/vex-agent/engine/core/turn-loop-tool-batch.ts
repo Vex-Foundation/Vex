@@ -56,7 +56,10 @@ import {
   enqueueApprovalIntent,
 } from "./turn-loop-tool-batch/approval-stop.js";
 import {
+  APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
+  APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
   BATCH_ABORTED_BY_COMPACT_OUTPUT,
+  BATCH_ABORTED_BY_USER_STOP_OUTPUT,
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
@@ -75,6 +78,14 @@ export async function processTurnToolBatch(args: {
   readonly currentTokenCount: number;
   readonly contextLimit: number;
   readonly lastTextSoFar: string | null;
+  /**
+   * Operator Stop. Checked at the top of each per-call iteration AND again
+   * once a dispatch returns — never mid-dispatch: a signing / broadcast call
+   * already in flight must always be allowed to finish, because we cannot know
+   * whether it already moved funds. Mission runs pass the run's abort signal;
+   * chat turns pass the "stop generating" inference signal.
+   */
+  readonly abortSignal?: AbortSignal;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
   const executedCalls: ParsedToolCall[] = [];
@@ -95,6 +106,28 @@ export async function processTurnToolBatch(args: {
 
   const dispatchBand = computeBand(args.currentTokenCount, args.contextLimit);
 
+  /**
+   * Pair every call from `fromIndex` onward with a synthetic result so the
+   * persisted assistant message's `tool_calls` JSONB still reflects the FULL
+   * emitted batch and the provider's tool_call/tool_result pairing stays
+   * balanced after a reload. Used by both batch-abort paths (compact commit
+   * and operator stop).
+   */
+  function drainUndispatchedCalls(fromIndex: number, output: string): void {
+    for (let j = fromIndex; j < turnResult.toolCalls.length; j++) {
+      const skipped = turnResult.toolCalls[j];
+      if (skipped === undefined) continue;
+      executedCalls.push(skipped);
+      executedResults.push({
+        toolCallId: skipped.id,
+        toolName: skipped.name,
+        output,
+        success: false,
+        explorerRefs: [],
+      });
+    }
+  }
+
   for (let i = 0; i < turnResult.toolCalls.length; i++) {
     const toolCall = turnResult.toolCalls[i];
     // `i < turnResult.toolCalls.length` guarantees this index is populated;
@@ -102,6 +135,19 @@ export async function processTurnToolBatch(args: {
     // stricter tsconfig type-checks this file too) and narrows `toolCall` for
     // every use below.
     if (toolCall === undefined) continue;
+
+    // ── Operator Stop, checked at the TOP of the iteration ──
+    // Deliberately BEFORE `dispatchTool` and never inside it: a call already
+    // in flight (a signature, a broadcast) must run to completion so we never
+    // lose the outcome of something that may already have moved funds.
+    // Everything from here on was NOT dispatched, so drain it with synthetic
+    // results and reuse the existing `user_stopped` stop reason.
+    if (args.abortSignal?.aborted) {
+      drainUndispatchedCalls(i, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
+      batchStopReason = "user_stopped";
+      break;
+    }
+
     toolCallsExecuted++;
 
     const toolContext = buildToolContext(context, dispatchBand);
@@ -122,6 +168,38 @@ export async function processTurnToolBatch(args: {
       result,
     );
 
+    // ── Operator Stop, re-checked AFTER the dispatch returned ──
+    // The pre-dispatch check above only proves the operator had not stopped
+    // when this call STARTED. A Stop that arrives while the call is in flight
+    // must still be honoured before the runtime takes its next irreversible
+    // step, and there are two of those right below: enqueueing an approval
+    // (a durable, approvable action parked on a run that is about to die) and
+    // dispatching the prepared-action follow-up — the leg that actually signs.
+    // The call we just ran is persisted truthfully; everything after it is
+    // drained unexecuted, so the tool_call/tool_result pairing survives.
+    if (args.abortSignal?.aborted) {
+      executedCalls.push(toolCall);
+      executedResults.push({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        // A `pendingApproval` result means nothing executed and no approval
+        // will now be created — say that, rather than echoing an
+        // "approval required" line no approval backs.
+        output: resultForTranscript.pendingApproval
+          ? APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT
+          : resultForTranscript.output,
+        success: resultForTranscript.pendingApproval
+          ? false
+          : resultForTranscript.success,
+        explorerRefs: resultForTranscript.pendingApproval
+          ? []
+          : deriveExplorerRefs(resultForTranscript.data),
+      });
+      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
+      batchStopReason = "user_stopped";
+      break;
+    }
+
     // ── Approval break: call was dispatched but has no result in messages ──
     // "awaiting approval" state lives in approval_queue, not in transcript.
     if (resultForTranscript.pendingApproval) {
@@ -136,13 +214,30 @@ export async function processTurnToolBatch(args: {
 
       executedCalls.push(toolCall);
 
-      approvalId = await enqueueApprovalIntent({
+      const enqueueOutcome = await enqueueApprovalIntent({
         context,
         toolCall,
         result: resultForTranscript,
         toolContext,
         intentActionKind,
       });
+      if (enqueueOutcome.kind === "auto_rejected") {
+        // The run went terminal while this tool was in flight, so the
+        // approval was rejected inside the enqueue transaction instead of
+        // parking on a dead run. Give this call a result (pairing) and drain
+        // the rest — none of them were dispatched.
+        executedResults.push({
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
+          success: false,
+          explorerRefs: [],
+        });
+        drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
+        batchStopReason = "user_stopped";
+        break;
+      }
+      approvalId = enqueueOutcome.approvalId;
       batchStopReason = "approval_required";
       break; // remaining calls are NOT dispatched
     }
@@ -176,6 +271,11 @@ export async function processTurnToolBatch(args: {
         followUp,
         toolCallsExecuted,
         lastText: turnResult.content ?? args.lastTextSoFar,
+        // The follow-up is the signing leg: it re-checks the Stop immediately
+        // before dispatching the confirm and again before enqueueing its
+        // approval, because the transcript write between here and there is a
+        // real window.
+        abortSignal: args.abortSignal,
       });
     }
 
@@ -223,18 +323,7 @@ export async function processTurnToolBatch(args: {
         // tool_calls JSONB so the provider's tool_call/tool_result
         // pairing stays balanced after reload.
         compactCommittedThisBatch = true;
-        for (let j = i + 1; j < turnResult.toolCalls.length; j++) {
-          const skipped = turnResult.toolCalls[j];
-          if (skipped === undefined) continue;
-          executedCalls.push(skipped);
-          executedResults.push({
-            toolCallId: skipped.id,
-            toolName: skipped.name,
-            output: BATCH_ABORTED_BY_COMPACT_OUTPUT,
-            success: false,
-            explorerRefs: [],
-          });
-        }
+        drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_COMPACT_OUTPUT);
         break;
       }
     }

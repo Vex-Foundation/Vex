@@ -22,7 +22,9 @@ const mockAddEngineMessage = vi.fn();
 const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
 const mockIncrementIterations = vi.fn().mockResolvedValue(1);
-const mockUpdateStatus = vi.fn();
+// Resolves `true` so the terminal-safe CAS (`updateStatusIfNotTerminal`) reads
+// as "the write landed"; `updateStatus` ignores the value.
+const mockUpdateStatus = vi.fn().mockResolvedValue(true);
 const mockSetLastCheckpoint = vi.fn();
 const mockEnqueueApproval = vi.fn();
 
@@ -52,6 +54,10 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   incrementIterations: (...a: unknown[]) => mockIncrementIterations(...a),
   updateStatus: (...a: unknown[]) => mockUpdateStatus(...a),
+  // The critical-band escalation writes `paused_error` through the terminal-safe
+  // CAS so an operator Stop that landed during the forced compaction is not
+  // overwritten. Same spy, same assertions — the guard is what changed.
+  updateStatusIfNotTerminal: (...a: unknown[]) => mockUpdateStatus(...a),
   setLastCheckpoint: (...a: unknown[]) => mockSetLastCheckpoint(...a),
 }));
 
@@ -85,6 +91,8 @@ vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   enqueue: (...a: unknown[]) => mockEnqueueApproval(...a),
   enqueueWith: (...a: unknown[]) => mockEnqueueApproval(...a.slice(1)),
+  // Used only by the enqueue transaction's dead-run auto-reject branch.
+  rejectWith: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
@@ -110,6 +118,11 @@ vi.mock("@vex-agent/db/client.js", () => ({
     if (typeof sql === "string" && sql.includes("INSERT INTO messages") && sql.includes("RETURNING id, created_at")) {
       return { id: 1, created_at: new Date().toISOString() };
     }
+    // The approval-enqueue transaction re-reads the run under its row lock;
+    // a live run keeps the normal `paused_approval` path.
+    if (typeof sql === "string" && sql.includes("FROM mission_runs") && sql.includes("FOR UPDATE")) {
+      return { status: "running" };
+    }
     return null;
   }),
   executeWith: vi.fn().mockResolvedValue(1),
@@ -123,7 +136,14 @@ vi.mock("@vex-agent/db/client.js", () => ({
 }));
 
 // Puzzle 3 atomic lease helpers.
-vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", async (importOriginal) => ({
+  // `importOriginal` on purpose: the operator-stop gate the approval
+  // enqueue now runs must stay the REAL implementation, driven by the SQL
+  // stubs above. Stubbing it out would turn the terminal-run assertions
+  // below into a test of the mock.
+  ...(await importOriginal<
+    typeof import("@vex-agent/engine/runtime/lease-and-status.js")
+  >()),
   claimRunLeaseAndFlipToRunning: vi.fn().mockResolvedValue({
     outcome: "claimed",
     previousStatus: "paused_wake",

@@ -8,8 +8,12 @@
  * mission-mode only.
  */
 
-import type { TurnResult } from "../../types.js";
-import type { ReasoningEffort } from "@vex-agent/inference/types.js";
+import type { ResumedTurnClaim, TurnResult } from "../../types.js";
+import type {
+  InferenceConfig,
+  InferenceProvider,
+  ReasoningEffort,
+} from "@vex-agent/inference/types.js";
 import { hydrateEngineSession } from "../hydrate.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
 import { runTurnLoop } from "../turn-loop.js";
@@ -18,6 +22,7 @@ import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
+import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, ITERATION_LIMIT_REPLY } from "./shared.js";
 
 // ── processAgentTurn ────────────────────────────────────────────
@@ -98,6 +103,42 @@ export async function processAgentTurn(
       { source: "user", messageType: "chat", visibility: "user" },
     );
 
+    return await runAgentTurnUnderLease(sessionId, provider, config, signal);
+  } finally {
+    // The end-of-turn resume hook (A5 attempt 3) fires inside this helper,
+    // strictly after the release. See `end-of-turn-resume-hook.ts`.
+    await releaseLeaseAndEmitControlState(sessionLease, sessionId);
+  }
+}
+
+/**
+ * Run one agent turn with the session lease ALREADY HELD by the caller, and
+ * WITHOUT appending a user message.
+ *
+ * Extracted from `processAgentTurn` so the approval-resume path can re-invoke
+ * the agent after an approved tool result lands: that path has no user input to
+ * append and holds its own lease, but everything from hydrate onwards must be
+ * identical to a normal turn. `processAgentTurn` keeps its exact prior
+ * behaviour by claiming the lease, appending the user message, and delegating
+ * here.
+ *
+ * The caller owns the lease lifecycle — this function never claims or releases.
+ *
+ * `claimTurn` (optional) is the resumed-turn guard: it runs after hydrate and
+ * immediately before the model call — the moment this turn actually begins
+ * consuming what it was woken for — and a `false` return abandons the turn
+ * without calling the model. It only REPORTS whether an earlier attempt already
+ * completed this resume; the durable marker is written by the caller after this
+ * function returns, so a failure in the model call or the tool batch still
+ * leaves the approval recoverable.
+ */
+export async function runAgentTurnUnderLease(
+  sessionId: string,
+  provider: InferenceProvider,
+  config: InferenceConfig,
+  signal?: AbortSignal,
+  claimTurn?: ResumedTurnClaim,
+): Promise<TurnResult> {
   // Hydrate
   const hydrated = await hydrateEngineSession(sessionId);
   if (!hydrated) throw new Error(`Session ${sessionId} not found`);
@@ -134,6 +175,21 @@ export async function processAgentTurn(
     baseVisibility,
   };
 
+  // The transcript (including whatever this turn was woken to observe) is
+  // loaded and the next step is the model call — this is "begins consuming".
+  // A read-only check: everything fallible on BOTH sides of it leaves the
+  // resume recoverable, because nothing durable is written until this function
+  // returns to its caller.
+  if (claimTurn !== undefined && !(await claimTurn())) {
+    return {
+      text: null,
+      toolCallsMade: 0,
+      pendingApprovals: [],
+      stopReason: null,
+      missionStatus: null,
+    };
+  }
+
   const result = await runTurnLoop(
     agentContext,
     hydrated.messages,
@@ -148,34 +204,28 @@ export async function processAgentTurn(
     signal, // inferenceAbortSignal (9-5a) — chat-turn "stop generating"
   );
 
-    // Graceful cap-hit reply: when the loop exhausted maxIterations WITHOUT the
-    // model ever emitting text (`text` is null/empty), persist a deterministic
-    // assistant message so the user never sees a silent empty turn. Only when
-    // text is empty — a partial earlier reply (lastText) is preserved as-is.
-    // The turn-loop persists real assistant text itself, so nothing was saved
-    // on this path; we persist the synthesised reply here as a normal
-    // user-visible assistant message (same metadata saveAssistantMessage uses).
-    let text = result.text;
-    if (result.stopReason === "iteration_limit" && !text) {
-      text = ITERATION_LIMIT_REPLY;
-      await appendMessage(
-        sessionId,
-        { role: "assistant", content: text, timestamp: new Date().toISOString() },
-        { source: "assistant", messageType: "chat", visibility: "user" },
-      );
-    }
-
-    return {
-      text,
-      toolCallsMade: result.toolCallsMade,
-      pendingApprovals: result.pendingApprovals,
-      stopReason: result.stopReason,
-      missionStatus: null,
-    };
-  } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "../../runtime/release-and-emit.js"
+  // Graceful cap-hit reply: when the loop exhausted maxIterations WITHOUT the
+  // model ever emitting text (`text` is null/empty), persist a deterministic
+  // assistant message so the user never sees a silent empty turn. Only when
+  // text is empty — a partial earlier reply (lastText) is preserved as-is.
+  // The turn-loop persists real assistant text itself, so nothing was saved
+  // on this path; we persist the synthesised reply here as a normal
+  // user-visible assistant message (same metadata saveAssistantMessage uses).
+  let text = result.text;
+  if (result.stopReason === "iteration_limit" && !text) {
+    text = ITERATION_LIMIT_REPLY;
+    await appendMessage(
+      sessionId,
+      { role: "assistant", content: text, timestamp: new Date().toISOString() },
+      { source: "assistant", messageType: "chat", visibility: "user" },
     );
-    await releaseLeaseAndEmitControlState(sessionLease, sessionId);
   }
+
+  return {
+    text,
+    toolCallsMade: result.toolCallsMade,
+    pendingApprovals: result.pendingApprovals,
+    stopReason: result.stopReason,
+    missionStatus: null,
+  };
 }

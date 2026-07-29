@@ -15,7 +15,25 @@ const mockSetApprovedAt = vi.fn();
 const mockCreateRun = vi.fn();
 const mockGetRun = vi.fn();
 const mockUpdateRunStatus = vi.fn();
+// Guarded writes: `startRunIfNotTerminal` is the resume's running flip,
+// `updateStatusIfNotTerminal` the recovery parks. Default = row not terminal.
+const mockStartRunIfNotTerminal = vi.fn().mockResolvedValue(true);
+const mockUpdateRunStatusIfNotTerminal = vi.fn().mockResolvedValue(true);
 const mockEnqueueWake = vi.fn();
+
+// The paused_error park now runs the DURABLE OPERATOR-STOP CONSUMER inside its
+// own transaction (see `mission-auto-retry.ts`): it takes the session control
+// lock and gates on a queued `stop_terminal` request before writing. Both
+// collaborators are stubbed to "no stop queued" here so these tests keep
+// asserting the park itself.
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/operator-stop-boundary.js",
+  () => ({ gateOnOperatorStopWithClient: async () => ({ kind: "clear" }) }),
+);
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js",
+  () => ({ acquireSessionControlLock: async () => undefined }),
+);
 
 vi.mock("@vex-agent/inference/registry.js", () => ({
   resolveProvider: () => mockResolveProvider(),
@@ -71,6 +89,9 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   createRun: (...a: unknown[]) => mockCreateRun(...a),
   getRun: (...a: unknown[]) => mockGetRun(...a),
   updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),
+  startRunIfNotTerminal: (...a: unknown[]) => mockStartRunIfNotTerminal(...a),
+  updateStatusIfNotTerminal: (...a: unknown[]) =>
+    mockUpdateRunStatusIfNotTerminal(...a),
   getActiveRun: vi.fn().mockResolvedValue(null),
   getActiveRunBySession: vi.fn().mockResolvedValue(null),
   getLatestFailedRunBySession: vi.fn().mockResolvedValue(null),
@@ -391,7 +412,8 @@ describe("runner", () => {
 
       await expect(resumeMissionRun("run-1")).rejects.toBeInstanceOf(MissionRunPausedError);
 
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-1", "running");
+      // The resume's running flip goes through the terminal-guarded CAS.
+      expect(mockStartRunIfNotTerminal).toHaveBeenCalledWith("run-1");
       expect(mockUpdateRunStatus).toHaveBeenCalledWith(
         "run-1",
         "paused_error",
@@ -409,6 +431,82 @@ describe("runner", () => {
     it("throws if run not found", async () => {
       mockGetRun.mockResolvedValueOnce(null);
       await expect(resumeMissionRun("nonexistent")).rejects.toThrow("not found");
+    });
+
+    // ── Resumed-turn claim hook ──────────────────────────────
+
+    /**
+     * The approval-resume path passes its durable "I consumed this" marker in
+     * here so it is written by the run core rather than before it. Stamping it
+     * earlier meant a failure anywhere in the pre-resume reads (provider,
+     * config, mission lookup) permanently suppressed recovery for that
+     * approval — the exact failure the marker exists to prevent.
+     */
+    describe("resumed-turn claim", () => {
+      function readyRun() {
+        mockGetRun.mockResolvedValueOnce({
+          id: "run-1", missionId: "mission-1", sessionId: "session-1",
+          status: "paused_approval", iterationCount: 1,
+        });
+        mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
+        mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+          sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+        }));
+        mockRunTurnLoop.mockResolvedValueOnce({
+          text: "resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+        });
+      }
+
+      it("claims only after the pre-resume reads, and before the run core", async () => {
+        const order: string[] = [];
+        mockGetRun.mockResolvedValueOnce({
+          id: "run-1", missionId: "mission-1", sessionId: "session-1",
+          status: "paused_approval", iterationCount: 1,
+        });
+        mockGetMission.mockImplementationOnce(async () => {
+          order.push("mission-read");
+          return makeReadyMission({ status: "running" });
+        });
+        mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+          sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+        }));
+        mockRunTurnLoop.mockImplementationOnce(async () => {
+          order.push("turn-loop");
+          return { text: "resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null };
+        });
+
+        await resumeMissionRun("run-1", async () => {
+          order.push("claim");
+          return true;
+        });
+
+        expect(order).toEqual(["mission-read", "claim", "turn-loop"]);
+      });
+
+      it("a pre-resume failure never reaches the claim", async () => {
+        const claim = vi.fn().mockResolvedValue(true);
+        mockGetRun.mockResolvedValueOnce({
+          id: "run-1", missionId: "mission-1", sessionId: "session-1",
+          status: "paused_approval", iterationCount: 1,
+        });
+        mockResolveProvider.mockResolvedValueOnce(null);
+
+        await expect(resumeMissionRun("run-1", claim)).rejects.toThrow(
+          "No inference provider",
+        );
+
+        // Unconsumed — a later attempt path can still deliver the resume.
+        expect(claim).not.toHaveBeenCalled();
+      });
+
+      it("a losing claim abandons the resume without running the turn", async () => {
+        readyRun();
+
+        const result = await resumeMissionRun("run-1", async () => false);
+
+        expect(mockRunTurnLoop).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ text: null, toolCallsMade: 0 });
+      });
     });
   });
 });

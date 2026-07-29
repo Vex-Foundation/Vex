@@ -32,7 +32,7 @@ export const DEFAULT_LOOP_CONFIG: TurnLoopConfig = {
   // context-pressure compaction are the independent wall-clock backstops.
   maxIterations: 50,
   timeoutMs: 600_000, // 10 minutes
-  contextLimit: 128_000,
+  contextLimit: 256_000,
 };
 
 /**

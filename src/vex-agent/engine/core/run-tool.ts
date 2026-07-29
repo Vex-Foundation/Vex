@@ -43,7 +43,7 @@ import * as missionsRepo from "../../db/repos/missions.js";
 import { computeBand } from "./context-band.js";
 import logger from "../../../utils/logger.js";
 
-const DEFAULT_CONTEXT_LIMIT = 128_000;
+const DEFAULT_CONTEXT_LIMIT = 256_000;
 
 /**
  * Invoke an internal / protocol tool directly by name with structured args.

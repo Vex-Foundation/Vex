@@ -62,5 +62,8 @@ export async function runPreparedMissionRecover(
       prepared.sessionId,
       { missionRunId: prepared.newRunId },
     );
+    // A recovered run is a lease-releasing turn like any other; the end-of-turn
+    // resume hook fires inside the helper above, so an approval resolved while
+    // it was running gets the sub-second resume instead of the retry ladder.
   }
 }

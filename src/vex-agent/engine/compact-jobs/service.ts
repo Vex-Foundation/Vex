@@ -5,9 +5,9 @@
  *   - the `compact_now` tool handler (agent-driven path)
  *   - the forced-fallback path at critical band (runtime-driven path)
  *
- * Track 1 semantics — everything below runs in a single atomic transaction
- * under `withCheckpointMutex` so wake/ingress paths cannot observe a
- * half-archived transcript:
+ * Compact-commit semantics — everything below runs in a single atomic
+ * transaction under `withCheckpointMutex` so wake/ingress paths cannot observe
+ * a half-archived transcript. Pure DB work: no inference call happens here.
  *   1. Redact summary / preserve / themes via memory/redaction
  *   2. SELECT session FOR UPDATE; compute `nextGen = checkpoint_generation + 1`
  *   3. Reload live messages with ids
@@ -18,12 +18,12 @@
  *      - setRollingSummary(sessionId, agent_summary)  -- REPLACE, not merge
  *      - UPDATE sessions SET checkpoint_generation = nextGen
  *      - archivePrefix(...) OR forkToolMessageToArchive(...) with giant
- *        placeholder referencing the compact_job id (Track 2 will produce
- *        the narrative chunk asynchronously)
+ *        placeholder referencing the compact_job id (the archive chunking
+ *        worker will produce the narrative chunk asynchronously)
  *      - enqueueJob({...}) — idempotent on (session_id, generation)
  *   7. Commit; return `{kind:'committed', generation, archivedMessages, jobId}`
  *
- * Track 2 (chunking) NEVER blocks compact. If the worker fails or the
+ * The archive chunking worker NEVER blocks compact. If it fails or the
  * provider is down, the row stays in `compact_jobs` with `status='pending'`
  * for retry; the compact itself has already committed.
  */
@@ -37,6 +37,10 @@ import { selectPrefixWithGiantFallback } from "@vex-agent/engine/checkpoint/pref
 import { withCheckpointMutex } from "./state.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import { buildGiantToolPlaceholder } from "./giant-tool.js";
+import {
+  COMPACT_COMMIT_MAX_ATTEMPTS,
+  COMPACT_COMMIT_RETRY_BACKOFF_MS,
+} from "./policy.js";
 import logger from "@utils/logger.js";
 
 export interface CompactCommitArgs {
@@ -61,11 +65,64 @@ export type CompactCommitResult =
       reason: "empty_session" | "no_compactable";
     };
 
-export async function executeCompactNow(input: CompactCommitArgs): Promise<CompactCommitResult> {
-  return withCheckpointMutex(input.sessionId, () => executeCompactNowInner(input));
+/**
+ * Records whether the transaction reached its `COMMIT` statement.
+ *
+ * This is the ONLY thing that makes retrying safe, so it is an explicit
+ * parameter rather than an inferred condition. See `executeCompactNow`.
+ */
+interface CommitAttemptTracker {
+  commitAttempted: boolean;
 }
 
-async function executeCompactNowInner(input: CompactCommitArgs): Promise<CompactCommitResult> {
+export async function executeCompactNow(input: CompactCommitArgs): Promise<CompactCommitResult> {
+  return withCheckpointMutex(input.sessionId, async () => {
+    // Retry the whole inner call — but ONLY for failures that happened strictly
+    // BEFORE `COMMIT` was issued.
+    //
+    // Why the boundary is load-bearing: `executeCompactNowInner` recomputes
+    // `nextGen` from a FRESH `SELECT … FOR UPDATE` on every attempt. If the
+    // first attempt actually committed and then something threw on the way out,
+    // a retry would read the already-bumped generation, bump it AGAIN, enqueue
+    // a SECOND chunking job and archive a SECOND prefix. `enqueueJob` is
+    // idempotent on `(session_id, checkpoint_generation)`, which protects a
+    // replay of the SAME generation — it cannot protect a different one. So a
+    // post-COMMIT failure must propagate untouched.
+    //
+    // A pre-COMMIT failure rolled the transaction back and wrote nothing, so
+    // replaying it is safe and spares the caller a lost compact exactly when
+    // context pressure is critical. These are three DATABASE attempts: this
+    // path makes no inference call at all (that is the archive chunking
+    // worker, which has its own separate retry budget).
+    for (let attempt = 1; ; attempt++) {
+      const tracker: CommitAttemptTracker = { commitAttempted: false };
+      try {
+        return await executeCompactNowInner(input, tracker);
+      } catch (err) {
+        if (tracker.commitAttempted || attempt >= COMPACT_COMMIT_MAX_ATTEMPTS) {
+          throw err;
+        }
+        logger.warn("compact.commit_retry", {
+          sessionId: input.sessionId,
+          source: input.source,
+          attempt,
+          maxAttempts: COMPACT_COMMIT_MAX_ATTEMPTS,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await delay(COMPACT_COMMIT_RETRY_BACKOFF_MS);
+      }
+    }
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function executeCompactNowInner(
+  input: CompactCommitArgs,
+  tracker: CommitAttemptTracker,
+): Promise<CompactCommitResult> {
   // Pre-compute redactions on every text field (counts surfaced in audit).
   const summaryR = redact(input.agentSummary);
   const preserveR = input.preserveMd === null ? null : redact(input.preserveMd);
@@ -117,12 +174,18 @@ async function executeCompactNowInner(input: CompactCommitArgs): Promise<Compact
       return { kind: "noop", reason: plan.reason };
     }
 
+    // The source range records which ARCHIVED rows feed this chunking job —
+    // `archived-prefix.ts` reads `messages_archive` over exactly this span. In
+    // giant_tool mode only the bloated row is forked to the archive, so the
+    // range is that single row; recording the (never-archived) parent
+    // assistant here made the provenance record claim a row the archive does
+    // not hold.
     const sourceStartMessageId =
-      plan.mode === "prefix" ? plan.prefix[0]?.id ?? null : plan.virtualPrefix[0]?.id ?? null;
+      plan.mode === "prefix" ? plan.prefix[0]?.id ?? null : plan.bloatedMessageId;
     const sourceEndMessageId =
       plan.mode === "prefix"
         ? plan.prefix[plan.prefix.length - 1]?.id
-        : plan.virtualPrefix[plan.virtualPrefix.length - 1]?.id;
+        : plan.bloatedMessageId;
 
     if (sourceEndMessageId === undefined) {
       await tx.query("ROLLBACK").catch(() => undefined);
@@ -148,7 +211,7 @@ async function executeCompactNowInner(input: CompactCommitArgs): Promise<Compact
       [input.sessionId, nextGen],
     );
 
-    // 3. Enqueue Track 2 chunking job first — we need its id to embed in the
+    // 3. Enqueue the archive chunking job first — we need its id to embed in the
     //    giant-tool placeholder if applicable. Idempotent on (session, gen).
     const enq = await enqueueJob(
       {
@@ -178,6 +241,12 @@ async function executeCompactNowInner(input: CompactCommitArgs): Promise<Compact
       archivedMessages = 1;
     }
 
+    // Point of no return. Set BEFORE issuing COMMIT, never after: if the
+    // COMMIT itself throws we cannot know whether the server applied it, so
+    // the only safe assumption is that it did — retrying would risk a second
+    // generation bump. Everything above this line rolled back cleanly and is
+    // replayable.
+    tracker.commitAttempted = true;
     await tx.query("COMMIT");
 
     logger.info("compact.committed", {

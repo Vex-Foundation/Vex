@@ -10,8 +10,8 @@
  */
 
 import {
-  TRACK2_RETRY_BACKOFF_BASE_MS,
-  TRACK2_TIMEOUT_MS,
+  CHUNKER_RETRY_BACKOFF_BASE_MS,
+  CHUNKER_CALL_TIMEOUT_MS,
   WORKER_HEARTBEAT_INTERVAL_MS,
   WORKER_MAX_ATTEMPTS,
   WORKER_STALE_THRESHOLD_MS,
@@ -25,11 +25,18 @@ export {
   WORKER_MAX_ATTEMPTS,
 };
 
-/** Per-judge-LLM-call timeout (mirrors Track 2's chunker timeout). */
-export const JUDGE_TIMEOUT_MS = TRACK2_TIMEOUT_MS;
+/**
+ * Per-judge-LLM-call timeout — deliberately the SAME value as the archive
+ * chunking worker's per-call deadline, so the background workers share one
+ * timeout discipline. Raising `CHUNKER_CALL_TIMEOUT_MS` (30s → 90s, to absorb
+ * the OpenRouter SDK's own 60s retry envelope) therefore also raises the memory
+ * judge's and entity extraction's deadline. That is intended; both are async
+ * background jobs with their own retry budget, and neither blocks a turn.
+ */
+export const JUDGE_TIMEOUT_MS = CHUNKER_CALL_TIMEOUT_MS;
 
 /** Initial retry backoff (× attempt_count for an exponential schedule). */
-export const MEMORY_RETRY_BACKOFF_BASE_MS = TRACK2_RETRY_BACKOFF_BASE_MS;
+export const MEMORY_RETRY_BACKOFF_BASE_MS = CHUNKER_RETRY_BACKOFF_BASE_MS;
 
 // ── Poll / sweep cadence ────────────────────────────────────────────
 

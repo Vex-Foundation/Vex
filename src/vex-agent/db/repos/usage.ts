@@ -32,17 +32,32 @@ export interface UsageEntry {
   provider?: string;
   model?: string;
   currency?: string;
+  /**
+   * Provider's own generation identifier for this request (migration 055) —
+   * the only key that ties this row to OpenRouter's activity log. Already
+   * length-bounded and shape-checked at the inference boundary
+   * (`inference/openrouter/provider-signal.ts`); absent/unreported ⇒ NULL.
+   */
+  generationId?: string | null;
+  /**
+   * Provider's terminal reason for the completion (migration 055), e.g.
+   * `stop` / `tool_calls` / `length`. An OPEN provider enum carried verbatim —
+   * never switched on exhaustively here. Bounded at the inference boundary
+   * (see `generationId`); absent/unreported ⇒ NULL.
+   */
+  finishReason?: string | null;
 }
 
 export async function logUsage(sessionId: string, entry: UsageEntry): Promise<void> {
   const totalTokens = entry.promptTokens + entry.completionTokens;
   await execute(
-    `INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, total_tokens, cached_tokens, reasoning_tokens, cost, provider, model, currency, cached_savings, cache_write_tokens)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    `INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, total_tokens, cached_tokens, reasoning_tokens, cost, provider, model, currency, cached_savings, cache_write_tokens, generation_id, finish_reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [sessionId, entry.promptTokens, entry.completionTokens, totalTokens,
      entry.cachedTokens ?? 0, entry.reasoningTokens ?? 0, entry.cost,
      entry.provider ?? null, entry.model ?? null, entry.currency ?? "USD",
-     entry.cachedSavings ?? 0, entry.cacheWriteTokens ?? 0],
+     entry.cachedSavings ?? 0, entry.cacheWriteTokens ?? 0,
+     entry.generationId ?? null, entry.finishReason ?? null],
   );
 }
 

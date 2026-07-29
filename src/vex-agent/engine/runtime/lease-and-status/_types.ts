@@ -61,11 +61,23 @@ export type ClaimSessionLeaseOutcome =
 
 export interface ObserveControlInput {
   readonly sessionId: string;
+  /**
+   * The run this checkpoint belongs to — the run-scoping anchor. A control
+   * request that names a different run (or names none) is cleared as stale
+   * instead of being applied here. `null` only for a session with no run,
+   * where every request resolves to the "no active run" no-op.
+   */
+  readonly missionRunId: string | null;
   readonly kinds: readonly ControlRequestKind[];
 }
 
 export type ObserveControlOutcome =
   | { readonly outcome: "no_request" }
+  /**
+   * A pending request was found but was minted for a DIFFERENT run. It has
+   * been cleared and NOT applied; the caller continues as if none existed.
+   */
+  | { readonly outcome: "stale_cleared"; readonly request: ControlRequest }
   | {
     readonly outcome: "paused_user_applied";
     readonly request: ControlRequest;

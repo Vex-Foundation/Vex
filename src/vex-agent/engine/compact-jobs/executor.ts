@@ -1,5 +1,5 @@
 /**
- * Compact-jobs executor — Track 2 chunking worker.
+ * Compact-jobs executor — archive chunking worker.
  *
  * Mirrors `engine/wake/executor.ts` structure: poll loop with idempotent
  * shutdown, in-memory per-session mutex preventing concurrent processing
@@ -44,7 +44,7 @@ import { emitCompactWorkerPermanentlyFailedBug } from "./bug-emit.js";
 import { processChunkerOutput } from "./chunk-processing.js";
 import { shouldEmitHeartbeatFailure } from "./heartbeat-rate-limit.js";
 import {
-  TRACK2_RETRY_BACKOFF_BASE_MS,
+  CHUNKER_RETRY_BACKOFF_BASE_MS,
   WORKER_HEARTBEAT_INTERVAL_MS,
   WORKER_STALE_THRESHOLD_MS,
 } from "@vex-agent/engine/compact-jobs/policy.js";
@@ -156,7 +156,7 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
   // Cancellation flag — flipped to `true` when the heartbeat reports the
   // worker has lost ownership of this row (another worker recovered the
   // stale claim). Checked between expensive stages so we cap wasted work
-  // and avoid the doubly-claimed compact path producing duplicate Track 2
+  // and avoid the doubly-claimed compact path producing duplicate chunker
   // output. The owner-checked `markCompleted` / `markFailed` at terminal
   // states already prevents state corruption — this is the upstream
   // cost-control guard codex P2 round 3 requested.
@@ -234,7 +234,11 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
     }
     const { inserted, rejectedExclusion } = chunkOutcome;
 
-    const inferenceModel = process.env.AGENT_MODEL ?? "unknown";
+    // Model as the loaded config actually RESOLVED it, falling back to the env
+    // var only when the config was unreadable. The two can disagree — the
+    // provider reads env at construction while a config load can be served
+    // from cache — and the audit row should record what the call used.
+    const inferenceModel = chunkerCall.model ?? process.env.AGENT_MODEL ?? "unknown";
     const completedOk = await markCompleted(job.id, workerId, {
       chunksInserted: inserted,
       chunksRejectedByExclusion: rejectedExclusion,
@@ -245,7 +249,13 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
       chunksRejectedByRedaction: 0,
       inferenceProvider: "openrouter",
       inferenceModel,
-      costUsd: null, // cost telemetry deferred to PR3
+      // Real provider-reported cost for the chunker call. The column already
+      // existed and was hardcoded null. This stays on `compact_jobs` and is
+      // deliberately NOT written to `usage_log`: that table feeds the user's
+      // per-session totals in the right sidebar and must keep meaning "this
+      // conversation", not "this conversation plus background maintenance".
+      // `null` when the provider did not report a cost.
+      costUsd: chunkerCall.costUsd,
     });
     if (completedOk) {
       logger.info("compact-worker.completed", {
@@ -272,7 +282,7 @@ async function processJob(job: CompactJob, workerId: string): Promise<void> {
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    const backoff = TRACK2_RETRY_BACKOFF_BASE_MS * Math.max(1, job.attemptCount);
+    const backoff = CHUNKER_RETRY_BACKOFF_BASE_MS * Math.max(1, job.attemptCount);
     const result = await markFailed(job.id, workerId, errorMsg, backoff);
     logger.warn("compact-worker.job_failed", {
       jobId: job.id,

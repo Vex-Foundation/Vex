@@ -28,6 +28,7 @@ import {
   TERMINAL_RUN_STATUSES,
 } from "../../types.js";
 import logger from "@utils/logger.js";
+import { releaseLeaseAndEmitControlState } from "@vex-agent/engine/runtime/release-and-emit.js";
 
 const RETRYABLE_FROM_STATUSES: readonly MissionRunStatus[] = [
   "paused_error",
@@ -119,11 +120,11 @@ export async function retryActiveMissionRun(sessionId: string): Promise<TurnResu
     const { resumeMissionRun } = await import("./mission.js");
     return await resumeMissionRun(run.id);
   } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "@vex-agent/engine/runtime/release-and-emit.js"
-    );
     await releaseLeaseAndEmitControlState(handle, sessionId, {
       missionRunId: run.id,
     });
+    // A retried run releases the same session lease every other turn does, so
+    // an approval resolved while it was running resumes via the end-of-turn
+    // hook inside the helper above rather than on the retry ladder.
   }
 }

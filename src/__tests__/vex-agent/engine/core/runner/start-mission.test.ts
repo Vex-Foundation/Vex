@@ -15,7 +15,25 @@ const mockSetApprovedAt = vi.fn();
 const mockCreateRun = vi.fn();
 const mockGetRun = vi.fn();
 const mockUpdateRunStatus = vi.fn();
+// Terminal-safe CAS used by the RECOVERY writes (paused_wake / paused_error).
+// Defaults to `true` = the row was still non-terminal.
+const mockUpdateRunStatusIfNotTerminal = vi.fn().mockResolvedValue(true);
 const mockEnqueueWake = vi.fn();
+const mockApplyUserStopTransaction = vi.fn();
+
+// The paused_error park now runs the DURABLE OPERATOR-STOP CONSUMER inside its
+// own transaction (see `mission-auto-retry.ts`): it takes the session control
+// lock and gates on a queued `stop_terminal` request before writing. Both
+// collaborators are stubbed to "no stop queued" here so these tests keep
+// asserting the park itself.
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/operator-stop-boundary.js",
+  () => ({ gateOnOperatorStopWithClient: async () => ({ kind: "clear" }) }),
+);
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js",
+  () => ({ acquireSessionControlLock: async () => undefined }),
+);
 
 vi.mock("@vex-agent/inference/registry.js", () => ({
   resolveProvider: () => mockResolveProvider(),
@@ -71,6 +89,9 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   createRun: (...a: unknown[]) => mockCreateRun(...a),
   getRun: (...a: unknown[]) => mockGetRun(...a),
   updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),
+  updateStatusIfNotTerminal: (...a: unknown[]) =>
+    mockUpdateRunStatusIfNotTerminal(...a),
+  startRunIfNotTerminal: vi.fn().mockResolvedValue(true),
   getActiveRun: vi.fn().mockResolvedValue(null),
   getActiveRunBySession: vi.fn().mockResolvedValue(null),
   getLatestFailedRunBySession: vi.fn().mockResolvedValue(null),
@@ -132,6 +153,14 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
     lease: { sessionId: "s", missionRunId: null, ownerId: "test-owner", processKind: "electron_main", acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date() },
   }),
   observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
+  applyUserStopTransaction: (...a: unknown[]) => mockApplyUserStopTransaction(...a),
+  // The `paused_wake` park in `mission-finalize.ts` carries the durable
+  // operator-Stop consumer; stubbed to "no stop raced us".
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  withSessionControlLock: async <T>(
+    _sessionId: string,
+    fn: (client: unknown) => Promise<T>,
+  ): Promise<T> => fn({}),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
@@ -156,6 +185,7 @@ const runnerModule = await import("../../../../../vex-agent/engine/core/runner.j
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
 const { MissionRunPausedError } = await import("../../../../../vex-agent/engine/types.js");
 const { ITERATION_LIMIT_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
+const { signalMissionRunAbortLocal } = await import("../../../../../vex-agent/engine/core/runner/abort.js");
 
 function makeProvider() {
   return {
@@ -392,7 +422,10 @@ describe("runner", () => {
 
       expect(result.missionStatus).toBe("completed");
       expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "completed");
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+      // Terminal-stop precedence: a business outcome reaches terminal through
+      // the CAS, so a Stop that already committed is not overwritten. The
+      // assertion is unchanged in strength — only the helper it names.
+      expect(mockUpdateRunStatusIfNotTerminal).toHaveBeenCalledWith(
         expect.any(String),
         "completed",
         "goal_reached",
@@ -417,7 +450,7 @@ describe("runner", () => {
 
       expect(result.missionStatus).toBe("failed");
       expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed");
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+      expect(mockUpdateRunStatusIfNotTerminal).toHaveBeenCalledWith(
         expect.any(String),
         "failed",
         "no_viable_opportunity",
@@ -440,7 +473,7 @@ describe("runner", () => {
 
       expect(result.missionStatus).toBe("failed");
       expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed");
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+      expect(mockUpdateRunStatusIfNotTerminal).toHaveBeenCalledWith(
         expect.any(String),
         "failed",
         "emergency_stop",
@@ -471,7 +504,9 @@ describe("runner", () => {
       expect(wakeInput.sessionId).toBe("session-1");
       expect(wakeInput.missionRunId).toEqual(expect.stringMatching(/^run-/));
       expect(wakeInput.payload).toMatchObject({ trigger: "iteration_limit", automatic: true });
-      expect(mockUpdateRunStatus).toHaveBeenCalledWith(
+      // Guarded CAS, not the unconditional write: parking for a wake must not
+      // re-open a run an operator Stop already took terminal.
+      expect(mockUpdateRunStatusIfNotTerminal).toHaveBeenCalledWith(
         expect.any(String),
         "paused_wake",
         "waiting_for_wake",
@@ -479,6 +514,9 @@ describe("runner", () => {
           summary: expect.stringContaining("iteration_limit"),
           evidence: expect.objectContaining({ trigger: "iteration_limit" }),
         }),
+        // The park now runs inside the durable-Stop consumer's transaction, so
+        // it carries that transaction's client.
+        expect.anything(),
       );
       expect(mockAddEngineMessage).toHaveBeenCalledWith(
         "session-1",
@@ -509,6 +547,43 @@ describe("runner", () => {
             missionId: "mission-1",
           }),
         }),
+        expect.anything(),
+      );
+    });
+
+    it("an operator Stop outranks a throw during unwind — canonical stop, never paused_error", async () => {
+      // Codex Wave-1 defect 8: the operator's Stop fires the in-process
+      // AbortController; the loop then throws while unwinding (persisting the
+      // aborted turn). Routing that through error finalization would overwrite
+      // the user's stop with a recoverable-looking `paused_error` AND leave the
+      // durable `stop_terminal` request pending forever, because the loop that
+      // would have observed it is gone.
+      mockGetMission.mockResolvedValueOnce(makeReadyMission());
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({ sessionKind: "mission" }));
+      mockApplyUserStopTransaction.mockResolvedValueOnce({
+        outcome: "stopped",
+        previousStatus: "running",
+        rejectedApprovals: 0,
+        wakeCancelledCount: 0,
+        consumedRequests: 1,
+      });
+      mockRunTurnLoop.mockImplementationOnce(async (ctx: { missionRunId: string }) => {
+        expect(signalMissionRunAbortLocal(ctx.missionRunId)).toBe(true);
+        throw new Error("persisting the aborted turn failed");
+      });
+
+      await expect(startMission("mission-1")).rejects.toBeInstanceOf(MissionRunPausedError);
+
+      const runId = mockCommitMissionStart.mock.calls[0]![0].runId as string;
+      expect(mockApplyUserStopTransaction).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        missionRunId: runId,
+      });
+      expect(mockUpdateRunStatus).not.toHaveBeenCalledWith(
+        expect.any(String),
+        "paused_error",
+        expect.anything(),
+        expect.anything(),
         expect.anything(),
       );
     });

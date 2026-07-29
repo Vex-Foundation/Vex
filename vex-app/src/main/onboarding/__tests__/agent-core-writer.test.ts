@@ -105,7 +105,7 @@ describe("writeAgentCoreConfig", () => {
   });
 
   it("accepts maxOutputTokens within the agent context limit", async () => {
-    // AGENT max=20000 is within the agent context default (128000) → OK.
+    // AGENT max=20000 is within the agent context default (256000) → OK.
     const r = await writeAgentCoreConfig(
       { maxOutputTokens: 20_000 },
       { envFile },

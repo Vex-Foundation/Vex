@@ -51,6 +51,7 @@ export function registerApproveHandler(): () => void {
         const {
           prepareApprove,
           runResumeAfterDecision,
+          continuationMissionRunId,
           ApprovalDispatchError,
           ApprovalPostDecisionError,
           ApprovalDecisionInconsistencyError,
@@ -86,10 +87,13 @@ export function registerApproveHandler(): () => void {
           throw cause;
         }
 
-        // Dispatch background continuation when a mission resume was claimed.
+        // Dispatch the background continuation when a resume was claimed. This
+        // now covers CHAT sessions too (`kind: 'chat_session'`), which is the
+        // whole point of the fix — a chat approval used to carry no
+        // continuation, so the tool ran and the agent was never re-invoked.
         // Cached/already_*/run_terminated NEVER carry a continuation by design.
         // `policy_drift_blocked` (B-001) is a fail-closed rejection that still
-        // resumes the run so the agent observes the auto-rejection.
+        // resumes so the agent observes the auto-rejection.
         const continuation =
           outcome.kind === "dispatched"
             ? outcome.continuation
@@ -100,11 +104,12 @@ export function registerApproveHandler(): () => void {
                 ? outcome.autoRejection.continuation
                 : null;
         if (continuation !== null) {
+          const missionRunId = continuationMissionRunId(continuation);
           dispatchPreparedMission(
             () => runResumeAfterDecision(continuation),
             {
               sessionId: continuation.sessionId,
-              missionRunId: continuation.missionRunId,
+              ...(missionRunId !== undefined ? { missionRunId } : {}),
               correlationId: ctx.requestId,
               channelLabel: "vex:approvals:approve",
             },
@@ -139,13 +144,19 @@ export function registerRejectHandler(): () => void {
         const {
           prepareReject,
           runResumeAfterDecision,
+          continuationMissionRunId,
           ApprovalPostDecisionError,
           ApprovalDecisionInconsistencyError,
         } = await import("@vex-agent/engine/core/approval-runtime.js");
 
         let outcome: Awaited<ReturnType<typeof prepareReject>>;
         try {
-          outcome = await prepareReject(input.id);
+          // The operator's reason finally reaches the engine. It arrived
+          // through a `.strict()` Zod gate in preload AND again here, and the
+          // engine strips control characters before it becomes model-visible
+          // transcript text — it is untrusted input on a path the model reads
+          // every turn.
+          outcome = await prepareReject(input.id, input.reason);
         } catch (cause) {
           if (cause instanceof ApprovalPostDecisionError) {
             log.warn(
@@ -166,11 +177,13 @@ export function registerRejectHandler(): () => void {
         }
 
         if (outcome.kind === "rejected" && outcome.continuation !== null) {
+          const continuation = outcome.continuation;
+          const missionRunId = continuationMissionRunId(continuation);
           dispatchPreparedMission(
-            () => runResumeAfterDecision(outcome.continuation!),
+            () => runResumeAfterDecision(continuation),
             {
               sessionId: outcome.sessionId,
-              missionRunId: outcome.continuation.missionRunId,
+              ...(missionRunId !== undefined ? { missionRunId } : {}),
               correlationId: ctx.requestId,
               channelLabel: "vex:approvals:reject",
             },

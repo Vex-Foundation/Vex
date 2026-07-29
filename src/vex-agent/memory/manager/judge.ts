@@ -48,6 +48,14 @@ export interface JudgeProvider {
     // `OpenRouterProvider.chatCompletionSimple` accepts a typed optional 3rd arg
     // and remains assignable.
     responseFormat?: unknown,
+    /**
+     * Per-call deadline. Every background caller passes an
+     * `AbortSignal.timeout(...)` so an overdue request is CANCELLED rather
+     * than abandoned mid-flight (an abandoned one keeps streaming and billing
+     * tokens for a result already discarded). Optional so test stubs that
+     * ignore it stay assignable.
+     */
+    signal?: AbortSignal,
   ): Promise<{ content: string; usage?: { cost?: number | null } }>;
 }
 
@@ -90,19 +98,27 @@ export async function callJudge(
   const systemPrompt = buildJudgeSystemPrompt();
   const userPrompt = buildJudgeUserPrompt(ctx);
 
-  const response = await Promise.race([
-    provider.chatCompletionSimple(
+  // Real cancellation, not an abandoned race: the old
+  // `Promise.race([call, setTimeout])` rejected on time but left the HTTP
+  // request running, burning tokens for a verdict already thrown away.
+  const timeoutSignal = AbortSignal.timeout(JUDGE_TIMEOUT_MS);
+  let response: Awaited<ReturnType<JudgeProvider["chatCompletionSimple"]>>;
+  try {
+    response = await provider.chatCompletionSimple(
       [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       config,
       judgeResponseFormat,
-    ),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("memory_judge_timeout")), JUDGE_TIMEOUT_MS),
-    ),
-  ]);
+      timeoutSignal,
+    );
+  } catch (err) {
+    // Keep the named timeout error the callers/logs already recognize; the
+    // raw abort error would only say "aborted", not why.
+    if (timeoutSignal.aborted) throw new Error("memory_judge_timeout");
+    throw err;
+  }
 
   const text = response.content?.trim() ?? "";
   const jsonStart = text.indexOf("{");

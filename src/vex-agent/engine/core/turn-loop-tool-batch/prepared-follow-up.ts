@@ -17,7 +17,12 @@ import {
   enqueueApprovalIntent,
 } from "./approval-stop.js";
 import type { ToolBatchOutcome } from "./outcome.js";
-import { mapBatchOutcome, persistBatchTranscript } from "./results.js";
+import {
+  APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
+  APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
+  mapBatchOutcome,
+  persistBatchTranscript,
+} from "./results.js";
 
 export interface PreparedFollowUpResolution {
   readonly resultForTranscript: ToolResult;
@@ -71,6 +76,12 @@ export async function dispatchPreparedActionFollowUp(args: {
   readonly followUp: ValidatedPreparedActionFollowUp;
   readonly toolCallsExecuted: number;
   readonly lastText: string | null;
+  /**
+   * Operator Stop. Re-checked here because this module dispatches the leg that
+   * SIGNS, and the caller's check happens before a transcript write that is a
+   * real window. Never checked mid-dispatch — a call in flight always finishes.
+   */
+  readonly abortSignal?: AbortSignal;
 }): Promise<ToolBatchOutcome> {
   await persistBatchTranscript({
     sessionId: args.context.sessionId,
@@ -79,6 +90,23 @@ export async function dispatchPreparedActionFollowUp(args: {
     executedResults: args.executedResults,
     liveMessages: args.liveMessages,
   });
+
+  // ── Stop check immediately BEFORE the signing dispatch ──
+  // The prepare above is already persisted, so the transcript is balanced.
+  // The confirm was synthesized by the engine and never emitted by the model,
+  // so there is nothing to pair: simply do not dispatch it. The underlying
+  // wallet intent expires on its own; nothing is signed and nothing broadcast.
+  if (args.abortSignal?.aborted) {
+    return mapBatchOutcome({
+      batchStopReason: "user_stopped",
+      batchStopOutput: null,
+      batchStopPayload: undefined,
+      compactCommittedThisBatch: false,
+      approvalId: null,
+      toolCallsExecuted: args.toolCallsExecuted,
+      lastText: args.lastText,
+    });
+  }
 
   const syntheticCall: ParsedToolCall = {
     id: `prepared-follow-up-${randomUUID()}`,
@@ -108,8 +136,41 @@ export async function dispatchPreparedActionFollowUp(args: {
 
   const toolCallsExecuted = args.toolCallsExecuted + 1;
   if (result.pendingApproval) {
+    // ── Stop check AFTER the confirm returned, before the enqueue ──
+    // The dispatch was allowed to finish, but a Stop that landed while it was
+    // in flight must not leave a live, approvable wallet action parked on a
+    // run the operator just ended. Nothing executed (that is what
+    // `pendingApproval` means), so pairing the synthetic call with a truthful
+    // "no approval was created" result is the complete record.
+    if (args.abortSignal?.aborted) {
+      await persistBatchTranscript({
+        sessionId: args.context.sessionId,
+        content: null,
+        executedCalls: [syntheticCall],
+        executedResults: [
+          {
+            toolCallId: syntheticCall.id,
+            toolName: syntheticCall.name,
+            output: APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
+            success: false,
+            explorerRefs: [],
+          },
+        ],
+        liveMessages: args.liveMessages,
+        systemOriginated: true,
+      });
+      return mapBatchOutcome({
+        batchStopReason: "user_stopped",
+        batchStopOutput: APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
+        batchStopPayload: undefined,
+        compactCommittedThisBatch: false,
+        approvalId: null,
+        toolCallsExecuted,
+        lastText: args.lastText,
+      });
+    }
     const intentActionKind = assertApprovalActionKind(result, syntheticCall);
-    const approvalId = await enqueueApprovalIntent({
+    const enqueueOutcome = await enqueueApprovalIntent({
       context: args.context,
       toolCall: syntheticCall,
       result,
@@ -118,6 +179,37 @@ export async function dispatchPreparedActionFollowUp(args: {
       trustedPreview: args.followUp.approvalPreview,
       trustedExpiresAt: args.followUp.expiresAt,
     });
+    if (enqueueOutcome.kind === "auto_rejected") {
+      // The run went terminal while the prepared action was in flight, so the
+      // approval was rejected inside the enqueue transaction rather than
+      // parked on a dead run. Persist a paired result and end the batch on
+      // the existing `user_stopped` reason.
+      await persistBatchTranscript({
+        sessionId: args.context.sessionId,
+        content: null,
+        executedCalls: [syntheticCall],
+        executedResults: [
+          {
+            toolCallId: syntheticCall.id,
+            toolName: syntheticCall.name,
+            output: APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
+            success: false,
+            explorerRefs: [],
+          },
+        ],
+        liveMessages: args.liveMessages,
+        systemOriginated: true,
+      });
+      return mapBatchOutcome({
+        batchStopReason: "user_stopped",
+        batchStopOutput: APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
+        batchStopPayload: undefined,
+        compactCommittedThisBatch: false,
+        approvalId: null,
+        toolCallsExecuted,
+        lastText: args.lastText,
+      });
+    }
     // System-originated: this call was synthesized by the engine from a
     // validated prepared-action contract, never produced by the model. The
     // provenance stamp (source:"engine" + a distinct messageType) lives in
@@ -136,7 +228,7 @@ export async function dispatchPreparedActionFollowUp(args: {
       batchStopOutput: null,
       batchStopPayload: undefined,
       compactCommittedThisBatch: false,
-      approvalId,
+      approvalId: enqueueOutcome.approvalId,
       toolCallsExecuted,
       lastText: args.lastText,
     });

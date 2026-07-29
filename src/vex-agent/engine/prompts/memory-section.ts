@@ -66,7 +66,7 @@ function buildMemoryStateBanner(stats: SessionMemoryStats): string {
     return [
       `[Session memories: 0 chunks, ${stats.compactCount} compact(s) done.`,
       `Skip session_memory_search — nothing to find.`,
-      `Chunks become available after the first compact at ~88% context, produced asynchronously by Track 2.]`,
+      `Chunks become available after the first compact at ~88% context, produced asynchronously by the archive chunking worker.]`,
     ].join(" ");
   }
   const themesLine =

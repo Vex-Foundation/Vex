@@ -412,5 +412,62 @@ describe("turn-loop", () => {
         expect.objectContaining({ messageType: "operator_interrupt" }),
       );
     });
+
+    // C1: a mission run threads its abort signal into BOTH positions, so an
+    // operator Stop cancels the in-flight provider call instead of waiting for
+    // the next iteration boundary. Before the fix the mission callers passed
+    // the signal only as `abortSignal` and the stream ran to completion.
+    it("Stop during a mission turn aborts the in-flight stream and persists the partial text", async () => {
+      const controller = new AbortController();
+      const provider = makeStreamingProvider(async function* (): AsyncGenerator<StreamChunk> {
+        yield { type: "content", text: "par" };
+        yield { type: "content", text: "tial" };
+        controller.abort();
+        yield { type: "content", text: "DROPPED" };
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 5 },
+        {},
+        controller.signal, // abortSignal
+        controller.signal, // inferenceAbortSignal — the fix
+      );
+
+      expect(result.stopReason).toBe("user_stopped");
+      const stopped = mockAddMessage.mock.calls.find(
+        (c) => (c[2] as { messageType?: string } | undefined)?.messageType === "chat_stopped",
+      );
+      expect(stopped).toBeDefined();
+      expect((stopped![1] as { content: string }).content).toBe("partial");
+      // The aborted stream must NOT fall back to a fresh buffered call.
+      expect(provider.chatCompletion).not.toHaveBeenCalled();
+    });
+
+    it("mission run does NOT stop mid-stream without the inference signal (pre-fix shape)", async () => {
+      // Characterization of the exact defect: with the signal wired only into
+      // the boundary position the stream runs to completion. Kept so a future
+      // refactor that silently drops position 11 fails loudly above.
+      const controller = new AbortController();
+      const chunks: string[] = [];
+      const provider = makeStreamingProvider(async function* (): AsyncGenerator<StreamChunk> {
+        yield { type: "content", text: "par" };
+        controller.abort();
+        chunks.push("still-generating");
+        yield { type: "content", text: "tial" };
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 5 },
+        {},
+        controller.signal, // abortSignal only
+      );
+
+      expect(chunks).toEqual(["still-generating"]);
+      expect(result.stopReason).toBe("user_stopped");
+    });
   });
 });

@@ -1,28 +1,97 @@
 /**
- * Approval runtime — approved-tool dispatch (context construction + wallet
- * hydration + the single resumed-dispatch path).
+ * Approval runtime — approved-tool dispatch: the single resumed-dispatch path.
  *
  * `applyApproveSideEffects` is the ONLY path that dispatches a tool from the
- * approval runtime: it hydrates the session wallet scope, builds the resumed
- * `InternalToolContext`, dispatches, maps the result + appends the approved
- * tool-result, then claims+flips the mission run. Every post-decision side
- * effect is wrapped so a failure flips the run to `paused_error` with audit
- * evidence.
+ * approval runtime. This file owns the ORDER; the steps it orders live in the
+ * sibling `dispatch-approved/` folder, one responsibility each:
+ *
+ *   `operator-stop.ts`       — what a user Stop does to this dispatch, before
+ *                              it leaves the runtime and after.
+ *   `dispatch-failure.ts`    — making an unhandled dispatch throw durable.
+ *   `resumed-tool-context.ts`— the wallet scope an approved tool resumes under.
+ *
+ * The ORDER is the safety property:
+ *
+ *   1. claim the continuation (mission lease flip, or chat session lease);
+ *   2. CAS `not_started -> dispatching`, stamping `dispatch_started_at`;
+ *   3. build the resumed tool context (reads only, moves nothing);
+ *   3b. OPERATOR-STOP GATE under the session control lock;
+ *   3c. dispatch;
+ *   4. commit result + `result_message_id` atomically;
+ *   5. apply a Stop queued during the unlocked dispatch, which suppresses the
+ *      resume;
+ *   6. otherwise hand the continuation back so the agent is resumed.
+ *
+ * Step 3b is the boundary that stops an approved MUTATING tool from executing
+ * after the user pressed Stop. It sits IMMEDIATELY BEFORE `dispatchTool`,
+ * because any await between the gate and the call is a window in which a Stop
+ * can commit while the tool has still not started — a not-yet-started call is
+ * exactly the one the gate exists to refuse. Context construction therefore
+ * runs before it; that step only hydrates the session, so nothing has happened
+ * yet when the gate lands. It still sits AFTER the CAS on purpose: the CAS
+ * commit is the moment this dispatch becomes publicly committed-to, so any
+ * stop inserted later necessarily sees `execution_status = 'dispatching'` and
+ * is a stop against a call already in flight — which must be allowed to
+ * finish, since we cannot know whether it already moved funds. Any stop
+ * inserted EARLIER is visible to the gate, which lands it and refuses to
+ * dispatch. There is no third interleaving: both the gate and
+ * `enqueueOperatorStopRequest` pass through the same session advisory lock.
+ *
+ * The gate's transaction COMMITS BEFORE `dispatchTool` runs. Holding a lock
+ * across a provider/wallet call would let a stuck HTTP request block the
+ * operator's Stop itself, which is the opposite of the point; the price is
+ * that a stop arriving during the dispatch is honoured after it, exactly as
+ * the in-flight rule already requires. `applyQueuedOperatorStop` is what
+ * honours it: it LANDS the queued stop durably instead of merely logging it.
+ *
+ * TERMINAL-STOP PRECEDENCE — the second safety property of this module.
+ * A terminal user stop outranks every other terminal state, and that has to
+ * hold on the failure exits, not only when everything works. Two rules:
+ *
+ *   a. the dispatch RESULT is committed BEFORE the stop is applied, on every
+ *      path. The tool may already have moved funds; that fact is durable
+ *      history and must never be lost to a stop that arrived after it.
+ *   b. the stop is applied BEFORE any `paused_error` parking decision, and
+ *      every parking write here goes through `flipRunToPausedError`, whose
+ *      repo CAS refuses to write a terminal row. So once the stop lands, no
+ *      failure arm can reopen the run — the ordering and the CAS are two
+ *      halves of the same invariant, not two independent guards.
+ *
+ * Nothing is ever re-dispatched: applying a stop only settles state that
+ * already exists.
+ *
+ * Claim-before-dispatch is the fix for the worst failure this module had: with
+ * dispatch first, a busy lease meant the funds had already moved while the IPC
+ * reported `dispatch_failed` and the run flipped to `paused_error`. Now a busy
+ * lease is observed while nothing has happened yet, so the honest answer is
+ * "deferred" and the approval survives as a durable pending resume.
+ *
+ * The CAS in step 2 is what makes double-dispatch impossible: the scheduled
+ * reconciler resolves the same `approved` / `not_started` rows, and exactly one
+ * of the two writers can win the transition.
  *
  * Dispatch error categories (Codex puzzle-5 phase-3 review points 1 + 3 + 8):
  *   - controlled (`success:false`)            → tool-result with output,
- *                                               mission resumes via
- *                                               continuation.
- *   - unhandled dispatch throw                → mission flipped to
- *                                               `paused_error`, NO
- *                                               continuation, throws
+ *                                               agent resumes via continuation.
+ *   - unhandled dispatch throw                → structural tool-result,
+ *                                               mission flipped to
+ *                                               `paused_error`, continuation
+ *                                               discarded, throws
  *                                               `ApprovalDispatchError`.
  *   - post-dispatch persistence failure       → mission flipped to
  *                                               `paused_error`, throws
  *                                               `ApprovalPostDecisionError`.
- *   - lease claim returns null (busy/mismatch)→ mission flipped to
- *                                               `paused_error`, throws
- *                                               `ApprovalPostDecisionError`.
+ *   - lease busy                              → NO dispatch, `deferred_busy`.
+ *   - result commit superseded                → the reconciler already called
+ *                                               this dispatch `indeterminate`;
+ *                                               the commit rolls back so the
+ *                                               verdict is not overwritten and
+ *                                               no second tool result lands.
+ *                                               NO `paused_error` flip.
+ *   - run left the resumable statuses         → `paused_error` +
+ *                                               `ApprovalPostDecisionError`
+ *                                               (not transient — retrying
+ *                                               would loop forever).
  *
  * Transcript content for dispatch failures is structural-only (errorKind +
  * errorHash). Raw / redacted error message text is intentionally absent —
@@ -31,40 +100,41 @@
 
 import * as approvalIntentsRepo from "../../../../db/repos/approval-intents.js";
 import { dispatchTool } from "../../../../tools/dispatcher.js";
-import type { InternalToolContext } from "../../../../tools/internal/types.js";
-import { buildSessionWalletResolution, hydrateEngineSession } from "../../hydrate.js";
-import type { WalletResolution } from "@tools/wallet/multi-auth.js";
-import type { WalletPolicy } from "@vex-agent/engine/types.js";
-import { appendMessage } from "../../../events/index.js";
+import { gateOnOperatorStopTransaction } from "@vex-agent/engine/runtime/lease-and-status.js";
 import logger from "@utils/logger.js";
 
-import { claimResumeContinuation } from "../continuation.js";
+import { claimResumeContinuation, discardContinuation } from "../continuation.js";
+import { scheduleDeferredResumeRetries } from "../deferred-resume.js";
 import {
-  buildDispatchFailedToolResultContent,
   extractToolCall,
+  RESULT_SUPERSEDED_ERROR_KIND,
   shortSha256,
   summarizeErrorForLog,
-  toIsoNow,
 } from "../helpers.js";
 import type { ApproveSnapshot } from "../snapshot.js";
 import {
   ApprovalDispatchError,
   ApprovalPostDecisionError,
+  ApprovalResultSupersededError,
   type ApprovePrepareOutcome,
   type PreparedContinuation,
 } from "../types.js";
 
 import { deriveExplorerRefs } from "../../explorer-refs.js";
 import { flipRunToPausedError, RESUME_CLAIM_ERROR_KIND } from "./recovery.js";
+import { commitApprovedToolResult } from "./result-message.js";
+import { onDispatchThrow } from "./dispatch-approved/dispatch-failure.js";
 import {
-  appendApprovedToolResult,
-  markApprovedExecutionStatus,
-} from "./result-message.js";
+  abandonDispatchAfterOperatorStop,
+  applyQueuedOperatorStop,
+  STOP_APPLY_FAILED_ERROR_KIND,
+} from "./dispatch-approved/operator-stop.js";
+import { buildResumedApprovalToolContext } from "./dispatch-approved/resumed-tool-context.js";
 
 /**
- * Side effects after `approved_in_tx` snapshot — dispatch the tool, write
- * the tool-result, mark execution_status, claim+flip the mission run,
- * return the IPC-facing outcome.
+ * Side effects after `approved_in_tx` snapshot — claim the continuation, take
+ * the dispatch slot, dispatch the tool, commit the result, return the
+ * IPC-facing outcome.
  */
 export async function applyApproveSideEffects(
   approvalId: string,
@@ -78,40 +148,104 @@ export async function applyApproveSideEffects(
 
   const toolCall = extractToolCall(row.queue_tool_call, fallbackToolCallId);
 
+  let continuation: PreparedContinuation | null = null;
   try {
-    await approvalIntentsRepo.markExecutionStatus(approvalId, "dispatching");
-
-    // Wallet scope for the resumed dispatch: hydrate the session so a resumed
-    // wallet_send_confirm signs with the session's selected wallet under the
-    // mission policy, never the primary. Cold approval-resume path.
-    const walletHydrated = await hydrateEngineSession(sessionId);
-    const walletResolution: WalletResolution = walletHydrated
-      ? buildSessionWalletResolution(walletHydrated.context)
-      : { source: "session", evm: null, solana: null };
-    const walletPolicy: WalletPolicy = walletHydrated?.context.walletPolicy
-      ?? { kind: "invalid", reason: "session_unavailable" };
-
-    const toolContext: InternalToolContext = {
+    // ── 1. Claim BEFORE dispatch ────────────────────────────────────────
+    const claim = await claimResumeContinuation({
       sessionId,
-      loadedDocuments: new Map(),
-      sessionPermission: row.queue_permission_at_enqueue,
-      approved: true,
       missionRunId,
-      missionId: null,
-      sessionKind: "agent",
-      // Resuming an action the user already approved is explicit per-action
-      // authorization — the plan-acceptance gate (agent-autonomy) does not
-      // re-gate it (and the gate already cleared it at enqueue time).
-      planMode: false,
-      contextUsageBand: "normal",
-      sourceSurface: "vex_agent",
-      sourceSession: sessionId,
-      walletResolution,
-      walletPolicy,
-    };
+      approvalId,
+      ownerPrefix: "approve",
+    });
+    if (claim.outcome === "busy") {
+      // Nothing has run. The intent stays `approved` / `not_started`, which is
+      // exactly the state the reconciler knows how to finish safely.
+      logger.info("engine.approval_runtime.approve_deferred_busy", {
+        approvalId,
+        sessionId,
+        missionRunId,
+      });
+      scheduleDeferredResumeRetries(sessionId);
+      return {
+        kind: "deferred_busy",
+        approvalId,
+        resolvedAt: snapshot.queueResolvedAt,
+        sessionId,
+        missionRunId,
+        resultCommitted: false,
+      };
+    }
+    if (claim.outcome === "status_mismatch") {
+      // The run is no longer resumable (terminal / cancelled). Retrying can
+      // never succeed, so escalate rather than defer.
+      throw new ApprovalPostDecisionError(
+        approvalId,
+        RESUME_CLAIM_ERROR_KIND,
+        shortSha256("resume_claim_failed"),
+      );
+    }
+    continuation = claim.continuation;
+
+    // ── 2. Take the dispatch slot ───────────────────────────────────────
+    const tookSlot = await approvalIntentsRepo.casMarkDispatching(approvalId);
+    if (!tookSlot) {
+      // Another writer already owns this dispatch. We must NOT run the tool a
+      // second time — hand the lease back and let the owner finish.
+      logger.warn("engine.approval_runtime.dispatch_slot_taken", {
+        approvalId,
+        sessionId,
+        missionRunId,
+      });
+      await discardContinuation(continuation);
+      continuation = null;
+      return {
+        kind: "deferred_busy",
+        approvalId,
+        resolvedAt: snapshot.queueResolvedAt,
+        sessionId,
+        missionRunId,
+        resultCommitted: false,
+      };
+    }
+
+    // ── 3. Dispatch ─────────────────────────────────────────────────────
+    // Context construction first, gate second: everything between the gate and
+    // `dispatchTool` is a window in which a committed Stop would still permit a
+    // call that has not started. Hydrating the session is a read — it moves no
+    // funds — so building it BEFORE the gate costs nothing and leaves the gate
+    // adjacent to the dispatch.
+    const toolContext = await buildResumedApprovalToolContext({
+      sessionId,
+      missionRunId,
+      permissionAtEnqueue: row.queue_permission_at_enqueue,
+    });
+
+    // ── 3b. Operator-Stop gate (see the module header) ──────────────────
+    // Immediately before the external call, and still AFTER the CAS in step 2.
+    // Held only for that transaction; released before the dispatch below.
+    const stopGate = await gateOnOperatorStopTransaction({
+      sessionId,
+      missionRunId,
+    });
+    // `stopped` is only reachable for a run-scoped session — the gate returns
+    // `clear` immediately when there is no run — so the `missionRunId` test
+    // narrows the type without a non-null assertion rather than adding a
+    // reachable branch.
+    if (stopGate.kind === "stopped" && missionRunId !== null) {
+      const held = continuation;
+      continuation = null;
+      return abandonDispatchAfterOperatorStop({
+        approvalId,
+        sessionId,
+        missionRunId,
+        runStatus: stopGate.runStatus,
+        toolCallId: toolCall.toolCallId,
+        continuation: held,
+      });
+    }
 
     // `data` is threaded through so the approved tool-result carries coherent
-    // explorer refs (metadata-only); `markApprovedExecutionStatus` still keys
+    // explorer refs (metadata-only); the committed execution status still keys
     // only off `success`/`output`.
     let dispatchResult: { success: boolean; output: string; data?: Record<string, unknown> };
     try {
@@ -124,6 +258,9 @@ export async function applyApproveSideEffects(
         toolContext,
       );
     } catch (cause) {
+      // The continuation is deliberately left owned by this scope: the outer
+      // catch releases it in its `finally`, AFTER the terminal status write,
+      // so the release does not publish a stale `running` to the renderer.
       await onDispatchThrow(
         approvalId,
         sessionId,
@@ -135,32 +272,46 @@ export async function applyApproveSideEffects(
       throw new Error("unreachable");
     }
 
-    await markApprovedExecutionStatus(approvalId, dispatchResult);
-
-    await appendApprovedToolResult(
+    // ── 4. Commit result + result_message_id in ONE transaction ─────────
+    // FIRST, before the stop below. The dispatch ran unlocked and may already
+    // have moved funds; that outcome is durable history and a Stop that
+    // arrived afterwards must not cost us the record of it.
+    await commitApprovedToolResult({
+      approvalId,
       sessionId,
-      toolCall.toolCallId,
+      toolCallId: toolCall.toolCallId,
       dispatchResult,
-      deriveExplorerRefs(dispatchResult.data),
-    );
+      explorerRefs: deriveExplorerRefs(dispatchResult.data),
+    });
 
-    let continuation: PreparedContinuation | null = null;
-    if (missionRunId !== null) {
-      continuation = await claimResumeContinuation(
-        sessionId,
-        missionRunId,
-        `approve-${approvalId}`,
+    // ── 5. A Stop that landed during the dispatch now takes effect ──────
+    // The executed call is NOT undone (the in-flight rule) and nothing is
+    // re-dispatched — but the operator's Stop is applied durably here rather
+    // than left queued for a resumed turn that this very stop means we must
+    // not start. Suppressing the continuation is the point: handing it back
+    // would resume the agent on a run the user just stopped.
+    const stopAfterDispatch = await applyQueuedOperatorStop({
+      approvalId,
+      sessionId,
+      missionRunId,
+    });
+    if (stopAfterDispatch.kind === "stopped") {
+      const held = continuation;
+      continuation = null;
+      if (held !== null) await discardContinuation(held);
+    } else if (stopAfterDispatch.kind === "apply_failed") {
+      // We could not find out whether a Stop is queued, and nothing else will
+      // land it for a run nobody is iterating (see the helper's docblock). The
+      // tool result is already committed, so the durable history is safe;
+      // resuming the agent is the one thing we must not do on a guess. Escalate
+      // as a post-decision failure: the catch funnel below retries the stop and
+      // then parks the run, which is exactly the treatment every other
+      // post-dispatch persistence failure gets.
+      throw new ApprovalPostDecisionError(
+        approvalId,
+        STOP_APPLY_FAILED_ERROR_KIND,
+        shortSha256(STOP_APPLY_FAILED_ERROR_KIND),
       );
-      if (continuation === null) {
-        // Lease claim returned `lease_busy` or `status_mismatch` — the run
-        // is stranded in `paused_approval` with a resolved approval. Flip to
-        // `paused_error` so /retry can recover.
-        throw new ApprovalPostDecisionError(
-          approvalId,
-          RESUME_CLAIM_ERROR_KIND,
-          shortSha256("resume_claim_failed"),
-        );
-      }
     }
 
     return {
@@ -170,6 +321,9 @@ export async function applyApproveSideEffects(
       executionStatus: dispatchResult.success ? "succeeded" : "failed",
       sessionId,
       missionRunId,
+      // `null` here is the honest "the tool ran, the agent was NOT resumed"
+      // shape the outcome already models (IPC maps it to `runtimeOutcome:
+      // "stopped"`), which is exactly what an operator Stop produces.
       continuation,
       toolResult: {
         success: dispatchResult.success,
@@ -177,97 +331,112 @@ export async function applyApproveSideEffects(
       },
     };
   } catch (cause) {
-    if (cause instanceof ApprovalDispatchError) throw cause;
-    if (cause instanceof ApprovalPostDecisionError) {
-      if (missionRunId !== null) {
-        await flipRunToPausedError(
+    // Any escape from the block above means no caller will consume the
+    // continuation. Release it rather than leak the lease until TTL — but only
+    // AFTER the terminal status is written, because the release emits the run's
+    // current status to the renderer and would otherwise publish a stale
+    // `running` right before we flip it to `paused_error`.
+    const held = continuation;
+    continuation = null;
+    try {
+      // TERMINAL-STOP PRECEDENCE — one funnel, every failure exit.
+      // Whatever went wrong above, the dispatch's own outcome (a committed
+      // result, or the structural failure row `onDispatchThrow` wrote) is
+      // already durable, so it is now safe to land the operator's queued Stop.
+      // It runs BEFORE any parking decision below: those all go through
+      // `flipRunToPausedError`, whose CAS then refuses to reopen the terminal
+      // row this call just produced. Never throws — see the helper.
+      const stopOnFailure = await applyQueuedOperatorStop({
+        approvalId,
+        sessionId,
+        missionRunId,
+      });
+      if (stopOnFailure.kind === "apply_failed") {
+        // Named, not swallowed: the run parks below (so nothing further runs),
+        // but a queued Stop may still be sitting `pending` with no independent
+        // consumer. It lands only if this same run is resumed later.
+        logger.error("engine.approval_runtime.stop_apply_unresolved", {
           approvalId,
+          sessionId,
           missionRunId,
-          cause.errorKind,
-          { errorHash: cause.errorHash },
+          errorKind: stopOnFailure.errorKind,
+        });
+      }
+
+      if (cause instanceof ApprovalDispatchError) {
+        // The flip lives here rather than in `onDispatchThrow` so there is
+        // exactly one ordering to reason about: result → stop → paused_error.
+        if (missionRunId !== null) {
+          await flipRunToPausedError({
+            approvalId,
+            sessionId,
+            missionRunId,
+            errorKind: cause.errorKind,
+            evidence: {
+              errorHash: cause.errorHash,
+              cause: "dispatch_threw",
+            },
+          });
+        }
+        throw cause;
+      }
+      if (cause instanceof ApprovalResultSupersededError) {
+        // We woke up after losing ownership: the reconciler already declared
+        // this dispatch `indeterminate`, wrote the honest tool result, and
+        // resumed the agent. The result transaction rolled back, so nothing was
+        // overwritten and no second tool result exists. Deliberately NOT a
+        // `paused_error` flip — the run has already been recovered, and
+        // knocking it back down would undo that recovery.
+        logger.warn("engine.approval_runtime.result_superseded", {
+          approvalId,
+          sessionId,
+          missionRunId,
+        });
+        throw new ApprovalPostDecisionError(
+          approvalId,
+          RESULT_SUPERSEDED_ERROR_KIND,
+          shortSha256(RESULT_SUPERSEDED_ERROR_KIND),
         );
       }
-      throw cause;
-    }
-    // Unhandled post-tx persistence failure (markExecutionStatus /
-    // appendMessage threw). Flip the run to `paused_error`
-    // and surface as ApprovalPostDecisionError so IPC can return a safe
-    // `approvals.dispatch_failed` error.
-    const errSummary = summarizeErrorForLog(cause);
-    logger.warn("engine.approval_runtime.post_decision_failed", {
-      approvalId,
-      sessionId,
-      missionRunId,
-      errorKind: errSummary.errorKind,
-      errorHash: errSummary.errorHash,
-    });
-    if (missionRunId !== null) {
-      await flipRunToPausedError(approvalId, missionRunId, errSummary.errorKind, {
+      if (cause instanceof ApprovalPostDecisionError) {
+        if (missionRunId !== null) {
+          await flipRunToPausedError({
+            approvalId,
+            sessionId,
+            missionRunId,
+            errorKind: cause.errorKind,
+            evidence: { errorHash: cause.errorHash },
+          });
+        }
+        throw cause;
+      }
+      // Unhandled post-tx persistence failure (CAS / result commit threw). Flip
+      // the run to `paused_error` and surface as ApprovalPostDecisionError so
+      // IPC can return a safe `approvals.dispatch_failed` error.
+      const errSummary = summarizeErrorForLog(cause);
+      logger.warn("engine.approval_runtime.post_decision_failed", {
+        approvalId,
+        sessionId,
+        missionRunId,
+        errorKind: errSummary.errorKind,
         errorHash: errSummary.errorHash,
       });
-    }
-    throw new ApprovalPostDecisionError(
-      approvalId,
-      errSummary.errorKind,
-      errSummary.errorHash,
-    );
-  }
-}
-
-async function onDispatchThrow(
-  approvalId: string,
-  sessionId: string,
-  missionRunId: string | null,
-  toolCallId: string,
-  cause: unknown,
-): Promise<never> {
-  const errSummary = summarizeErrorForLog(cause);
-  // Structural log only — never the raw message or cause.
-  logger.warn("engine.approval_runtime.dispatch_threw", {
-    approvalId,
-    sessionId,
-    missionRunId,
-    errorKind: errSummary.errorKind,
-    errorHash: errSummary.errorHash,
-  });
-
-  await approvalIntentsRepo.markExecutionStatus(
-    approvalId,
-    "failed",
-    errSummary.errorHash,
-  );
-
-  // Transcript content is structural-only (Codex point 3) — tool/protocol/
-  // wallet error messages can carry secrets that must never reach the agent.
-  await appendMessage(
-    sessionId,
-    {
-      role: "tool",
-      content: buildDispatchFailedToolResultContent(
+      if (missionRunId !== null) {
+        await flipRunToPausedError({
+          approvalId,
+          sessionId,
+          missionRunId,
+          errorKind: errSummary.errorKind,
+          evidence: { errorHash: errSummary.errorHash },
+        });
+      }
+      throw new ApprovalPostDecisionError(
+        approvalId,
         errSummary.errorKind,
         errSummary.errorHash,
-      ),
-      toolCallId,
-      timestamp: toIsoNow(),
-    },
-    {
-      source: "tool",
-      messageType: "tool_result",
-      visibility: "internal",
-      payload: { success: false, dispatchError: true },
-    },
-  );
-
-  if (missionRunId !== null) {
-    await flipRunToPausedError(approvalId, missionRunId, errSummary.errorKind, {
-      errorHash: errSummary.errorHash,
-      cause: "dispatch_threw",
-    });
+      );
+    } finally {
+      if (held !== null) await discardContinuation(held);
+    }
   }
-
-  throw new ApprovalDispatchError(
-    approvalId,
-    errSummary.errorKind,
-    errSummary.errorHash,
-  );
 }

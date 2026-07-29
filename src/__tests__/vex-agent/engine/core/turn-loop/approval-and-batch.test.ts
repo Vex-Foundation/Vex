@@ -11,7 +11,9 @@ const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
 const mockIncrementIterations = vi.fn().mockResolvedValue(1);
-const mockUpdateStatus = vi.fn();
+// Resolves `true` so the terminal-safe CAS (`updateStatusIfNotTerminal`) reads
+// as "the write landed"; `updateStatus` ignores the value.
+const mockUpdateStatus = vi.fn().mockResolvedValue(true);
 const mockSetLastCheckpoint = vi.fn();
 
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
@@ -47,6 +49,10 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   incrementIterations: (...a: unknown[]) => mockIncrementIterations(...a),
   updateStatus: (...a: unknown[]) => mockUpdateStatus(...a),
+  // The critical-band escalation writes `paused_error` through the terminal-safe
+  // CAS so an operator Stop that landed during the forced compaction is not
+  // overwritten. Same spy, same assertions — the guard is what changed.
+  updateStatusIfNotTerminal: (...a: unknown[]) => mockUpdateStatus(...a),
   setLastCheckpoint: (...a: unknown[]) => mockSetLastCheckpoint(...a),
 }));
 
@@ -84,18 +90,46 @@ vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
 // empty by design — tests that exercise the bridge counter add their own
 // db client mocks to inject content.
 
+const mockRejectApprovalWith = vi.fn().mockResolvedValue(null);
+const mockEnqueueApprovalWith = vi.fn();
+const mockCreateApprovalIntentWith = vi.fn();
+
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   enqueue: vi.fn(),
-  enqueueWith: vi.fn(),
+  enqueueWith: (...a: unknown[]) => mockEnqueueApprovalWith(...a),
+  // The enqueue transaction auto-rejects in-transaction when the run went
+  // terminal while the tool was in flight (restricted-mode stop race).
+  rejectWith: (...a: unknown[]) => mockRejectApprovalWith(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
-  createWith: vi.fn(),
+  createWith: (...a: unknown[]) => mockCreateApprovalIntentWith(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/usage.js", () => ({
   logUsage: vi.fn(),
 }));
+
+/**
+ * SQL-aware `queryOneWith`. Named (not inline) so a test can override the
+ * mission-run row the approval-enqueue transaction reads under its lock.
+ */
+const mockQueryOneWith = vi.fn().mockImplementation(
+  async (_exec: unknown, sql: string) => defaultQueryOneWith(sql),
+);
+
+async function defaultQueryOneWith(sql: string): Promise<unknown> {
+  if (typeof sql === "string" && sql.includes("INSERT INTO messages") && sql.includes("RETURNING id, created_at")) {
+    return { id: 1, created_at: new Date().toISOString() };
+  }
+  // The approval-enqueue transaction re-reads the run under a row lock before
+  // enqueueing (a terminal run auto-rejects instead of parking a live approval
+  // on it). Default to a healthy `running` run; the dead-run branch overrides.
+  if (typeof sql === "string" && sql.includes("FROM mission_runs") && sql.includes("FOR UPDATE")) {
+    return { status: "running" };
+  }
+  return null;
+}
 
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(),
@@ -113,12 +147,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   // `addMessageReturningId` does not throw "no row". Lease / control SQL
   // queries default to null — those paths are covered by the dedicated
   // `lease-and-status` mock below.
-  queryOneWith: vi.fn().mockImplementation(async (_exec: unknown, sql: string) => {
-    if (typeof sql === "string" && sql.includes("INSERT INTO messages") && sql.includes("RETURNING id, created_at")) {
-      return { id: 1, created_at: new Date().toISOString() };
-    }
-    return null;
-  }),
+  queryOneWith: (...a: unknown[]) => mockQueryOneWith(...a),
   executeWith: vi.fn().mockResolvedValue(1),
   withTransaction: vi.fn().mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => {
     const stubClient = {
@@ -132,7 +161,14 @@ vi.mock("@vex-agent/db/client.js", () => ({
 // Puzzle 3 atomic lease helpers — production calls these via dynamic imports
 // from runner/turn-loop/wake paths. Default outcomes: claimed lease + no
 // pending control request. Per-test overrides via `mockImplementationOnce`.
-vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", async (importOriginal) => ({
+  // `importOriginal` on purpose: the operator-stop gate the approval
+  // enqueue now runs must stay the REAL implementation, driven by the SQL
+  // stubs above. Stubbing it out would turn the terminal-run assertions
+  // below into a test of the mock.
+  ...(await importOriginal<
+    typeof import("@vex-agent/engine/runtime/lease-and-status.js")
+  >()),
   claimRunLeaseAndFlipToRunning: vi.fn().mockResolvedValue({
     outcome: "claimed",
     previousStatus: "paused_wake",
@@ -216,6 +252,10 @@ describe("turn-loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 0 });
+    mockRejectApprovalWith.mockResolvedValue(null);
+    mockQueryOneWith.mockImplementation(
+      async (_exec: unknown, sql: string) => defaultQueryOneWith(sql),
+    );
     mockForcedFallback.mockResolvedValue({
       kind: "committed",
       generation: 1,
@@ -349,12 +389,11 @@ describe("turn-loop", () => {
         actionKind: "user_wallet_broadcast",
       });
 
-      // Re-import the mocked modules so we can spy on the per-call PoolClient.
+      // Re-import the mocked db client so we can spy on the per-call PoolClient;
+      // the repo writes go through the module-level spies.
       const dbClient = await import("@vex-agent/db/client.js");
-      const approvalsMod = await import("@vex-agent/db/repos/approvals.js");
-      const intentsMod = await import("@vex-agent/db/repos/approval-intents.js");
-      const enqueueWithSpy = approvalsMod.enqueueWith as unknown as ReturnType<typeof vi.fn>;
-      const createWithSpy = intentsMod.createWith as unknown as ReturnType<typeof vi.fn>;
+      const enqueueWithSpy = mockEnqueueApprovalWith;
+      const createWithSpy = mockCreateApprovalIntentWith;
       const withTransactionSpy = dbClient.withTransaction as unknown as ReturnType<typeof vi.fn>;
 
       await runTurnLoop(
@@ -611,6 +650,214 @@ describe("turn-loop", () => {
       expect(result.stopPayload).toBeDefined();
       expect(result.stopPayload!.summary).toBe("Accumulated target SOL");
       expect(result.stopPayload!.evidence).toEqual({ balanceSol: 10.5 });
+    });
+  });
+
+  // ── C4: operator Stop inside a multi-tool batch ──────────────
+  describe("batch abort on operator stop", () => {
+    it("stops BETWEEN dispatches and drains the rest with paired synthetic results", async () => {
+      const controller = new AbortController();
+      const provider = makeProvider([
+        {
+          toolCalls: [
+            { id: "call-1", name: "web_research", arguments: { query: "a" } },
+            { id: "call-2", name: "web_research", arguments: { query: "b" } },
+            { id: "call-3", name: "wallet_balances", arguments: {} },
+          ],
+        },
+      ]);
+
+      let callIndex = 0;
+      mockDispatchTool.mockImplementation(() => {
+        callIndex++;
+        // The operator hits Stop while call-1 is in flight.
+        if (callIndex === 1) controller.abort();
+        return Promise.resolve({ success: true, output: `result-${callIndex}` });
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+        {},
+        controller.signal,
+        controller.signal,
+      );
+
+      expect(result.stopReason).toBe("user_stopped");
+      // The in-flight call-1 was allowed to finish; call-2/call-3 never
+      // reached the dispatcher.
+      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+
+      // Pairing invariant: the assistant message carries the FULL batch and
+      // every call has exactly one tool result, so a reload sees a balanced
+      // transcript.
+      const assistantSave = mockAddMessage.mock.calls.find(
+        (c: unknown[]) => (c[1] as Record<string, unknown>).role === "assistant",
+      );
+      const savedToolCalls = (assistantSave![1] as Record<string, unknown>).toolCalls as Array<Record<string, unknown>>;
+      expect(savedToolCalls.map((tc) => tc.id)).toEqual(["call-1", "call-2", "call-3"]);
+
+      const toolResults = mockAddMessage.mock.calls.filter(
+        (c: unknown[]) => (c[1] as Record<string, unknown>).role === "tool",
+      );
+      expect(toolResults).toHaveLength(3);
+      expect((toolResults[1]![1] as { content: string }).content).toContain(
+        "batch_aborted_by_user_stop",
+      );
+      expect((toolResults[2]![1] as { content: string }).content).toContain(
+        "batch_aborted_by_user_stop",
+      );
+    });
+
+    it("never interrupts a dispatch already in flight", async () => {
+      const controller = new AbortController();
+      controller.abort(); // already stopped before the batch begins
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "wallet_balances", arguments: {} }] },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: "never" });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+        {},
+        controller.signal,
+        controller.signal,
+      );
+
+      // An already-aborted signal short-circuits at the iteration-entry guard,
+      // so nothing is dispatched at all.
+      expect(result.stopReason).toBe("user_stopped");
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("never enqueues an approval for a call whose Stop landed while it was in flight", async () => {
+      // Codex Wave-1 defect 7: the Stop was only checked BEFORE a dispatch, so
+      // a call that came back asking for approval AFTER the operator stopped
+      // still parked a live, approvable action and flipped the run to
+      // `paused_approval`. Note the DB still reports the run as `running` here
+      // (the default locked read) — the durable stop has not landed yet, which
+      // is exactly why the in-process signal has to be re-read post-dispatch.
+      const controller = new AbortController();
+      const provider = makeProvider([
+        {
+          toolCalls: [
+            { id: "call-1", name: "execute_tool", arguments: { toolId: "solana.swap" } },
+            { id: "call-2", name: "wallet_balances", arguments: {} },
+          ],
+        },
+      ]);
+      mockDispatchTool.mockImplementation(() => {
+        controller.abort(); // operator hits Stop while call-1 is in flight
+        return Promise.resolve({
+          success: false,
+          output: "Approval required",
+          pendingApproval: true,
+          actionKind: "user_wallet_broadcast",
+        });
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1", sessionPermission: "restricted" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+        {},
+        controller.signal,
+        controller.signal,
+      );
+
+      expect(result.stopReason).toBe("user_stopped");
+      expect(result.pendingApprovals).toEqual([]);
+      // Nothing was written to the approval state machine at all — not even an
+      // audit row that would then have to be rejected.
+      expect(mockEnqueueApprovalWith).not.toHaveBeenCalled();
+      expect(mockCreateApprovalIntentWith).not.toHaveBeenCalled();
+      expect(mockRejectApprovalWith).not.toHaveBeenCalled();
+      expect(mockUpdateStatus).not.toHaveBeenCalledWith(
+        "run-1",
+        "paused_approval",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+      // The in-flight call was allowed to finish; call-2 never dispatched.
+      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+      // Pairing preserved, and the transcript says what actually happened.
+      const toolResults = mockAddMessage.mock.calls.filter(
+        (c: unknown[]) => (c[1] as Record<string, unknown>).role === "tool",
+      );
+      expect(toolResults).toHaveLength(2);
+      expect((toolResults[0]![1] as { content: string }).content).toContain(
+        "approval_skipped_by_user_stop",
+      );
+      expect((toolResults[1]![1] as { content: string }).content).toContain(
+        "batch_aborted_by_user_stop",
+      );
+    });
+  });
+
+  // ── C3: restricted-mode stop race ────────────────────────────
+  describe("approval enqueue onto a terminal run", () => {
+    it("auto-rejects instead of parking a live approval on a dead run", async () => {
+      // The run went terminal (operator Stop) while the tool was in flight.
+      // The enqueue transaction re-reads the run under its row lock.
+      mockQueryOneWith.mockImplementation(async (_exec: unknown, sql: string) => {
+        if (typeof sql === "string" && sql.includes("INSERT INTO messages") && sql.includes("RETURNING id, created_at")) {
+          return { id: 1, created_at: new Date().toISOString() };
+        }
+        if (typeof sql === "string" && sql.includes("FROM mission_runs") && sql.includes("FOR UPDATE")) {
+          return { status: "stopped" };
+        }
+        return null;
+      });
+
+      const provider = makeProvider([
+        {
+          toolCalls: [
+            { id: "call-1", name: "execute_tool", arguments: { toolId: "solana.swap" } },
+            { id: "call-2", name: "wallet_balances", arguments: {} },
+          ],
+        },
+      ]);
+      mockDispatchTool.mockResolvedValue({
+        success: false,
+        output: "Approval required",
+        pendingApproval: true,
+        actionKind: "user_wallet_broadcast",
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1", sessionPermission: "restricted" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+        {},
+        undefined,
+        undefined,
+      );
+
+      // No approval pause on a dead run.
+      expect(result.stopReason).toBe("user_stopped");
+      expect(result.pendingApprovals).toEqual([]);
+      // Rejected inside the enqueue transaction.
+      expect(mockRejectApprovalWith).toHaveBeenCalledTimes(1);
+      // The run is NOT flipped to paused_approval.
+      expect(mockUpdateStatus).not.toHaveBeenCalledWith(
+        "run-1",
+        "paused_approval",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+      // Pairing preserved for both calls.
+      const toolResults = mockAddMessage.mock.calls.filter(
+        (c: unknown[]) => (c[1] as Record<string, unknown>).role === "tool",
+      );
+      expect(toolResults).toHaveLength(2);
+      expect((toolResults[0]![1] as { content: string }).content).toContain(
+        "approval_auto_rejected",
+      );
     });
   });
 });

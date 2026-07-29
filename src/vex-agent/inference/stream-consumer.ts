@@ -34,7 +34,7 @@ import type {
   ToolDefinition,
 } from "./types.js";
 import logger from "@utils/logger.js";
-import { attachStatus, scrubMessage } from "./openrouter/errors.js";
+import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -70,9 +70,21 @@ interface ToolCallAccumulator {
   argsBuffer: string;
 }
 
-/** Fresh empty response for the abort-before-any-content case. */
+/**
+ * Fresh empty response for the abort-before-any-content case. `finishReason` /
+ * `generationId` are explicitly `null`, not omitted: nothing was generated, so
+ * "no reason reported" is the truth — and an explicit null keeps this shape
+ * equivalent to the buffered path's, which always sets both.
+ */
 function emptyResponse(): InferenceResponse {
-  return { content: "", toolCalls: null, usage: { ...ZERO_USAGE }, reasoning: null };
+  return {
+    content: "",
+    toolCalls: null,
+    usage: { ...ZERO_USAGE },
+    reasoning: null,
+    finishReason: null,
+    generationId: null,
+  };
 }
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<StreamChunk> {
@@ -132,15 +144,31 @@ function safeOnDelta(
   }
 }
 
-/** Wrap a buffered fallback completion in the streaming result shape. */
+/**
+ * Wrap a buffered fallback completion in the streaming result shape.
+ *
+ * The turn's `signal` is forwarded: a fallback is still the same turn, so a
+ * "stop generating" that lands after the stream degraded must cancel the
+ * buffered request too. Without it the HTTP call ran to completion and billed
+ * tokens for an answer nobody would read. Every caller below has already
+ * short-circuited on a PRE-aborted signal, so this only covers an abort that
+ * arrives DURING the fallback.
+ */
 async function bufferedFallback(
   provider: InferenceProvider,
   messages: ProviderMessage[],
   tools: ToolDefinition[],
   config: InferenceConfig,
   context: InferenceRequestContext | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<StreamingInferenceResult> {
-  const response = await provider.chatCompletion(messages, tools, config, context);
+  const response = await provider.chatCompletion(
+    messages,
+    tools,
+    config,
+    context,
+    signal,
+  );
   return { response, aborted: false, usageObserved: true };
 }
 
@@ -170,7 +198,7 @@ export async function runStreamingInference(
       reason: "no_stream_method",
       provider: provider.id,
     });
-    return bufferedFallback(provider, messages, tools, config, context);
+    return bufferedFallback(provider, messages, tools, config, context, signal);
   }
 
   let stream: AsyncIterable<StreamChunk>;
@@ -184,7 +212,7 @@ export async function runStreamingInference(
         reason: "not_async_iterable",
         provider: provider.id,
       });
-      return bufferedFallback(provider, messages, tools, config, context);
+      return bufferedFallback(provider, messages, tools, config, context, signal);
     }
     stream = candidate;
   } catch (err) {
@@ -196,7 +224,7 @@ export async function runStreamingInference(
       provider: provider.id,
       error: err instanceof Error ? err.message : String(err),
     });
-    return bufferedFallback(provider, messages, tools, config, context);
+    return bufferedFallback(provider, messages, tools, config, context, signal);
   }
 
   let sequence = 0;
@@ -208,6 +236,12 @@ export async function runStreamingInference(
   let reasoningSeen = false;
   let reasoningBuffer = "";
   let usage: InferenceUsage | null = null;
+  // Provider provenance carried off `done` chunks. LAST wins for the finish
+  // reason (a stream can legitimately emit more than one `done`, and the final
+  // one is the outcome); FIRST wins for the generation id (it identifies the
+  // generation we started — see `consumeOpenRouterStream`).
+  let finishReason: string | null = null;
+  let generationId: string | null = null;
   const toolCallAccumulator = new Map<number, ToolCallAccumulator>();
 
   try {
@@ -259,12 +293,24 @@ export async function runStreamingInference(
           // Scrub the provider-supplied message through the same redaction
           // pipeline as normalizeOpenRouterError before surfacing it, so a
           // token/URL/body embedded in a stream error never reaches logs/UI.
-          throw attachStatus(
-            new Error(scrubMessage(chunk.errorMessage ?? "stream error") ?? "stream error"),
-            chunk.errorCode,
+          // `errorType` is OpenRouter's canonical `ApiErrorType` — an OPEN
+          // enum, attached verbatim as a lean own-property in the same idiom
+          // as the status (never `.cause`, never a raw provider string).
+          throw attachErrorType(
+            attachStatus(
+              new Error(scrubMessage(chunk.errorMessage ?? "stream error") ?? "stream error"),
+              chunk.errorCode,
+            ),
+            chunk.errorType ?? null,
           );
         case "done":
-          // Informational only — assembly happens on generator exhaustion.
+          // Assembly still happens on generator exhaustion — `done` remains
+          // informational for control flow. It is now also where the provider
+          // reports the finish reason and generation id, so we record them.
+          if (chunk.finishReason !== undefined) finishReason = chunk.finishReason;
+          if (generationId === null && chunk.generationId !== undefined) {
+            generationId = chunk.generationId;
+          }
           break;
       }
     }
@@ -280,7 +326,7 @@ export async function runStreamingInference(
         provider: provider.id,
         error: err instanceof Error ? err.message : String(err),
       });
-      return bufferedFallback(provider, messages, tools, config, context);
+      return bufferedFallback(provider, messages, tools, config, context, signal);
     } else {
       throw err;
     }
@@ -299,6 +345,8 @@ export async function runStreamingInference(
           toolCalls,
           usage: resolvedUsage,
           reasoning,
+          finishReason,
+          generationId,
         }
       : {
           // Text path — content defaults to "" when no content delta arrived.
@@ -306,6 +354,8 @@ export async function runStreamingInference(
           toolCalls: null,
           usage: resolvedUsage,
           reasoning,
+          finishReason,
+          generationId,
         };
 
   return { response, aborted, usageObserved };

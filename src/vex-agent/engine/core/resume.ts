@@ -99,6 +99,24 @@ export async function approveAndResume(
       );
     }
 
+    case "deferred_busy":
+      // The decision committed but another runner holds the session lease, so
+      // the tool was deliberately NOT dispatched. The approval survives as a
+      // durable pending resume; this synchronous wrapper simply reports that
+      // nothing ran rather than pretending it did.
+      logger.info("engine.resume.deferred_busy", {
+        approvalId,
+        sessionId: outcome.sessionId,
+        missionRunId: outcome.missionRunId,
+      });
+      return {
+        text: null,
+        toolCallsMade: 0,
+        pendingApprovals: [approvalId],
+        stopReason: null,
+        missionStatus: null,
+      };
+
     case "already_rejected":
       throw new Error(
         `Approval ${approvalId} cannot be applied: already ${outcome.decision}`,

@@ -16,12 +16,17 @@
  *      run's session. `approveAndResume` CAS in `approvalsRepo.approve`
  *      then fails because the row is no longer `pending`.
  *   3. Either firing the in-process `AbortSignal` (live loop, status drives
- *      itself to `cancelled` via `finalizeMissionRunStatus`) OR finalising
- *      directly when no controller is registered (paused states / out-of-
- *      process runs).
+ *      itself to the canonical stop via `finalizeMissionRunStatus`) OR
+ *      finalising directly when no controller is registered (paused states /
+ *      out-of-process runs).
  *   4. The companion `resumeMissionRun` terminal guard now includes
  *      `cancelled`, and `approveAndResume` has a defensive pre-dispatch
  *      check that rejects when the active run is terminal.
+ *
+ * Canonical user-stop terminal state: the direct-finalise path runs the SAME
+ * `applyUserStopTransaction` the observer and finalize paths run, so a run
+ * stopped by the operator always lands on `stopped` + `user_stopped` (the
+ * parent mission on `cancelled`), never a second spelling.
  *
  * Multi-process note: the `AbortController` registry below is per-process.
  * If two processes run the same engine (e.g. a dev host and the desktop app),
@@ -34,7 +39,6 @@
 
 import { type MissionStatus, TERMINAL_RUN_STATUSES } from "../../types.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import logger from "@utils/logger.js";
 import { rejectPendingApprovalsForSession } from "./approvals-cleanup.js";
@@ -69,6 +73,26 @@ export function hasMissionRunAbortController(runId: string): boolean {
   return controllers.has(runId);
 }
 
+/**
+ * Fire the in-process `AbortController` for `runId` if THIS process holds
+ * one. Writes nothing — the durable control request is the caller's
+ * responsibility and must already be persisted before this is called, so a
+ * crash between the two leaves the durable truth intact.
+ *
+ * This is what makes the IPC Stop button cancel an in-flight provider call
+ * instead of waiting for the next iteration boundary: Electron main hosts the
+ * engine in-process, so the registry is reachable from the IPC handler.
+ * Returns `false` when no controller is registered (paused run, or the run
+ * lives in another process) — the caller then relies on the durable request
+ * or the direct abort path.
+ */
+export function signalMissionRunAbortLocal(runId: string): boolean {
+  const controller = controllers.get(runId);
+  if (controller === undefined) return false;
+  controller.abort();
+  return true;
+}
+
 export function consumeMissionRunAbortIntent(runId: string): "edit" | null {
   const intent = abortIntents.get(runId) ?? null;
   abortIntents.delete(runId);
@@ -95,7 +119,16 @@ export interface AbortMissionRunResult {
 }
 
 export interface StopMissionRunForEditResult {
+  /**
+   * `true` only when the operator's edit is in effect — either THIS call
+   * performed the stop-for-edit transition, or the sibling finalize path did
+   * it first for the same intent. `false` means the edit LOST to a committed
+   * ordinary Stop (or another terminal outcome): nothing was written, the
+   * mission stayed `cancelled`, and the caller must report that truthfully
+   * rather than a successful edit.
+   */
   stopped: boolean;
+  /** The parent mission's real status after the call — never a guess. */
   finalStatus: MissionStatus;
   rejectedApprovals: number;
 }
@@ -125,12 +158,12 @@ export async function abortMissionRun(runId: string): Promise<AbortMissionRunRes
     });
   }
 
-  // (a) `running` with live in-process loop → fire AbortSignal. Loop checks
-  // `abortSignal?.aborted` at the top of each iteration (turn-loop.ts:138),
-  // sets `stopReason = "user_stopped"`, breaks, and `finalizeMissionRunStatus`
-  // (mission.ts:329) maps that to `cancelled`.
-  if (run.status === "running" && controllers.has(runId)) {
-    controllers.get(runId)!.abort();
+  // (a) `running` with live in-process loop → fire AbortSignal. The signal
+  // now also cancels the in-flight inference (mission-run.ts threads it as
+  // BOTH the boundary and the inference signal), so the loop unwinds
+  // immediately, sets `stopReason = "user_stopped"` and lets
+  // `finalizeMissionRunStatus` run the shared stop transaction.
+  if (run.status === "running" && signalMissionRunAbortLocal(runId)) {
     logger.info("engine.mission.abort_signaled", {
       runId,
       sessionId: run.sessionId,
@@ -138,10 +171,25 @@ export async function abortMissionRun(runId: string): Promise<AbortMissionRunRes
     return { aborted: true, finalStatus: "running", rejectedApprovals };
   }
 
-  // (b) Paused states or out-of-process running → finalise directly using
-  // the same status mapping the loop would have produced for `user_stopped`.
-  await missionRunsRepo.updateStatus(runId, "cancelled", "user_stopped");
-  await missionsRepo.setStatus(run.missionId, "cancelled");
+  // (b) Paused states or out-of-process running → finalise directly through
+  // the SHARED stop transaction, so this path and the loop's own finalize
+  // leave byte-identical state.
+  const { applyUserStopTransaction } = await import(
+    "../../runtime/lease-and-status.js"
+  );
+  const applied = await applyUserStopTransaction({
+    sessionId: run.sessionId,
+    missionRunId: runId,
+  });
+  if (applied.outcome !== "stopped") {
+    // Raced to terminal (or the row vanished) between our read and the lock.
+    logger.info("engine.mission.abort_already_terminal", {
+      runId,
+      sessionId: run.sessionId,
+      outcome: applied.outcome,
+    });
+    return { aborted: false, finalStatus: "cancelled", rejectedApprovals };
+  }
   logger.info("engine.mission.abort_finalized_directly", {
     runId,
     sessionId: run.sessionId,
@@ -165,6 +213,11 @@ export async function abortActiveMissionForSession(
  * This is intentionally distinct from `abortMissionRun`: the run is terminal,
  * but the parent mission returns to `draft` instead of `cancelled`, so the
  * operator can save an updated draft and start a fresh run.
+ *
+ * A committed ordinary Stop OUTRANKS this. The whole transition (run row +
+ * mission demotion) lives in `applyStopForEditTransaction`, which gates the
+ * demotion on winning the run transition under the run row lock — see that
+ * module for why the winner cannot be identified from the status value.
  */
 export async function stopActiveMissionForEdit(
   sessionId: string,
@@ -188,17 +241,13 @@ export async function stopMissionRunForEdit(
     };
   }
 
+  // Defensive: the wake executor could be about to claim a `paused_wake` row.
+  // The transition below cancels the session's wakes inside its transaction as
+  // well; this only shortens the window before it.
   await loopWakeRepo.cancelForSession(run.sessionId, "user_edit");
-  const rejectedApprovals = await rejectPendingApprovalsForSession(run.sessionId);
-  if (rejectedApprovals > 0) {
-    logger.info("engine.mission.edit_rejected_approvals", {
-      runId,
-      sessionId: run.sessionId,
-      count: rejectedApprovals,
-    });
-  }
 
-  if (run.status === "running" && controllers.has(runId)) {
+  const abortSignalled = run.status === "running" && controllers.has(runId);
+  if (abortSignalled) {
     abortIntents.set(runId, "edit");
     controllers.get(runId)!.abort();
     logger.info("engine.mission.edit_abort_signaled", {
@@ -207,27 +256,66 @@ export async function stopMissionRunForEdit(
     });
   }
 
-  await missionRunsRepo.updateStatus(
-    runId,
-    "stopped",
-    "user_stopped",
-    { summary: "Mission stopped for operator edit" },
+  const { applyStopForEditTransaction } = await import(
+    "../../runtime/lease-and-status.js"
   );
-  await missionsRepo.clearApprovedAt(run.missionId);
-  await missionsRepo.setStatus(run.missionId, "draft");
+  const applied = await applyStopForEditTransaction({
+    sessionId: run.sessionId,
+    missionRunId: runId,
+  });
+
+  if (applied.outcome === "run_not_found") {
+    return { stopped: false, finalStatus: "cancelled", rejectedApprovals: 0 };
+  }
+
+  if (applied.outcome === "lost_to_terminal") {
+    // OWNER DECISION: a committed user Stop is FINAL. We wrote nothing, the
+    // mission keeps whatever terminal state the winner gave it, and the caller
+    // reports that instead of a successful edit.
+    logger.info("engine.mission.edit_lost_to_terminal_stop", {
+      runId,
+      sessionId: run.sessionId,
+      runStatus: applied.currentRunStatus,
+      missionStatus: applied.missionStatus,
+    });
+    return {
+      stopped: false,
+      finalStatus: applied.missionStatus,
+      rejectedApprovals: 0,
+    };
+  }
+
+  if (applied.outcome === "already_edited") {
+    // The loop we just signalled unwound and ran the finalize edit arm before
+    // this transaction got the run lock. The edit IS in effect — reporting a
+    // loss here would be as untruthful as reporting a win after a real Stop.
+    return {
+      stopped: true,
+      finalStatus: applied.missionStatus,
+      rejectedApprovals: 0,
+    };
+  }
+
+  if (applied.rejectedApprovals > 0) {
+    logger.info("engine.mission.edit_rejected_approvals", {
+      runId,
+      sessionId: run.sessionId,
+      count: applied.rejectedApprovals,
+    });
+  }
   // A draft that was already complete before the stop-for-edit (e.g. the
   // operator just wanted to re-review, not change anything) would otherwise
   // sit at 'draft' forever — no model patch is coming to promote it.
-  const reconciled = await reconcileDraftReadiness(run.missionId);
+  const reconciled = await reconcileDraftReadiness(applied.missionId);
   logger.info("engine.mission.edit_finalized", {
     runId,
     sessionId: run.sessionId,
-    previousStatus: run.status,
+    previousStatus: applied.previousStatus,
   });
 
   return {
     stopped: true,
     finalStatus: reconciled.promoted ? "ready" : "draft",
-    rejectedApprovals,
+    rejectedApprovals: applied.rejectedApprovals,
   };
 }

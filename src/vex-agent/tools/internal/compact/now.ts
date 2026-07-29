@@ -102,8 +102,8 @@ export async function handleCompactNow(
     success: true,
     output:
       `Compact committed. Archived ${result.archivedMessages} message(s) (plan: ${result.planMode}). ` +
-      `Generation ${result.generation}. Track 2 chunking job ${result.jobId} enqueued for async processing — ` +
-      `the narrative chunks will become recallable via session_memory_search once Track 2 lands. ` +
+      `Generation ${result.generation}. Archive chunking job ${result.jobId} enqueued for async processing — ` +
+      `the narrative chunks will become recallable via session_memory_search once that worker lands them. ` +
       `Remaining tool calls in this batch will be aborted; resume packet will inject on the next turn.`,
     data: {
       generation: result.generation,

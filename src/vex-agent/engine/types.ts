@@ -102,6 +102,28 @@ export const ACTIVE_OR_PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new 
 ]);
 
 /**
+ * The statuses from which a resolved approval's resume may claim its run and
+ * flip it back to `running`. A run outside this set cannot be resumed until it
+ * moves, and no amount of retrying moves it.
+ *
+ * TWO consumers that must never drift: the claim gate itself
+ * (`approval-runtime/continuation.ts` passes it as `fromStatuses`) and the
+ * fairness ordering of the approval-lifecycle scans
+ * (`db/repos/approval-intents/lifecycle.ts`), which sorts rows whose run is
+ * outside this set last so they cannot crowd newer approvals out of a
+ * fixed-size batch. If the ordering disagreed with the gate it would either
+ * deprioritise claimable rows or promote unclaimable ones.
+ *
+ * A list rather than a `ReadonlySet` because both consumers need one: the lease
+ * claim takes `readonly MissionRunStatus[]`, and the scan passes it to Postgres
+ * as an `= ANY($n)` array parameter.
+ */
+export const APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES = [
+  "paused_approval",
+  "running",
+] as const satisfies readonly MissionRunStatus[];
+
+/**
  * Read a validated own-property off an unvalidated thrown value — the same
  * "own-properties only, never `.cause`" idiom as
  * `core/runner/mission-error-signal.ts` / `inference/openrouter/errors.ts`,
@@ -230,7 +252,14 @@ export type MessageType =
    * tool_call, even though the row keeps `role: "assistant"` for the
    * provider transcript format.
    */
-  | "prepared_action_follow_up";
+  | "prepared_action_follow_up"
+  /**
+   * Engine cue injected when an approval decision has been resolved and its
+   * tool result is already in the transcript — the agent is being woken to
+   * continue from it. Distinct from `operator_interrupt` (which means the user
+   * cut in) and from `approval_pause` (which means the run STOPPED to ask).
+   */
+  | "approval_resolved";
 
 export type MessageVisibility = "user" | "internal";
 
@@ -412,3 +441,24 @@ export interface MessageMetadata {
   visibility?: MessageVisibility;
   originSessionId?: string;
 }
+
+// ── Resumed-turn consumption claim ──────────────────────────────
+
+/**
+ * Guard hook for a turn that resumes previously-recorded work — today, an
+ * approval whose tool result is already sitting in the transcript.
+ *
+ * The lease-held turn core calls it ONCE, at the moment it actually begins
+ * consuming that result: after the transcript is loaded and immediately before
+ * the model call. Returning `false` means an EARLIER attempt already carried
+ * this resume through to completion, and the core must abandon the turn without
+ * calling the model.
+ *
+ * It is a read, not a claim, and the core writes nothing when it returns
+ * `true`. The durable marker is written by the caller AFTER the core returns,
+ * because "a resume started" and "a resume finished" are different facts:
+ * ending eligibility at the start makes a crash anywhere in the rest of the
+ * turn permanent, and concurrent resumes are already impossible — the caller
+ * holds the session/run runner lease across the whole call.
+ */
+export type ResumedTurnClaim = () => Promise<boolean>;
