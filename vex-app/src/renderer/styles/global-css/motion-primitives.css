@@ -23,38 +23,6 @@
   animation: vex-entry-settle 180ms cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
-/* Needle Bloom-and-Resolve. The signature motion: at reasoning-end /
- * answer-start the live gutter node fires ONE accent bloom (asymmetric —
- * peaks ~38% then decays, a resolve arc not a blink) and the answer body
- * resolves in beneath it. One-shot, `both`, rests perfectly still: the only
- * cobalt flare outside a continuous in-flight needle. CSP-safe (build-time
- * @keyframes; the bloom is a one-shot animated drop-shadow, never a resting
- * glow). Gated in StreamingBubble so it does NOT fire while a pending
- * approval freezes the strip (trust = stillness). */
-@keyframes vex-signal-resolve {
-  0% {
-    filter: drop-shadow(0 0 0 transparent);
-    transform: scale(0.92);
-    opacity: 0.65;
-  }
-  38% {
-    filter: drop-shadow(
-      0 0 6px color-mix(in oklab, var(--vex-accent) 80%, transparent)
-    );
-    transform: scale(1.12);
-    opacity: 1;
-  }
-  100% {
-    filter: drop-shadow(0 0 0 transparent);
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.vex-signal-resolve {
-  animation: vex-signal-resolve 520ms cubic-bezier(0.25, 1, 0.5, 1) both;
-}
-
 @keyframes vex-answer-resolve {
   from {
     opacity: 0;

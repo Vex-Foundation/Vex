@@ -8,8 +8,7 @@
  *    requested legs and the receipt-derived executed legs; exactly one of them
  *    may honestly be shown, and which one depends on the lifecycle status. That
  *    rule is NOT re-implemented here — it is delegated to the shared
- *    `./agent-activity-amount.js`, the same module `moves-db` and
- *    `token-history-db` use. A plain SWAP uses `resolveAgentActivityAmount`
+ *    `./agent-activity-amount.js`, the same module `token-history-db` uses. A plain SWAP uses `resolveAgentActivityAmount`
  *    (blank rather than mislabelled; its confirmed-without-decode case is
  *    unreachable — migration 044's `agent_activity_confirmed_swap_has_executed_legs`
  *    CHECK enforces it). Every other kind uses

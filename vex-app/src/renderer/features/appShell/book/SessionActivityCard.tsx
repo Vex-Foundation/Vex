@@ -144,7 +144,12 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
           statusTitle={entry.failureCode ?? undefined}
         />
       </div>
-      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] font-mono text-[10.5px] tabular-nums text-[var(--vex-text-2)]">
+      {/* REGISTER (C2): the dense numeric line is Instrument Sans with
+        * `tabular-nums`, NOT mono — mono is reserved for technical artifacts
+        * (code, raw JSON, addresses, tx hashes). The figures still align in a
+        * column because the tabular figure set, not the face, is what does
+        * that work. */}
+      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] text-[10.5px] tabular-nums text-[var(--vex-text-2)]">
         <Leg
           amount={legAmountText(entry.input)}
           symbol={legSymbolText(entry.input)}

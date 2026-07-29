@@ -3,12 +3,13 @@
  * builder. See `agent-scan-db.ts`'s module doc for the source / scope /
  * pagination contract these builders implement.
  *
- * The connection helpers mirror `token-history-db-query.ts` / `moves-db-query.ts`
- * rather than being shared with them — the established per-feed pattern in this
- * directory, so each feed owns its own log prefix and its own user-facing
- * failure message. (Three near-identical copies is now a real extraction
- * candidate; it is deliberately NOT done here, because touching the two live
- * feeds' connection paths is not this change's job.)
+ * The connection helpers mirror `token-history-db-query.ts` rather than being
+ * shared with it — the established per-feed pattern in this directory, so each
+ * feed owns its own log prefix and its own user-facing failure message. (A
+ * third copy lived in the MOVES feed until that pipeline was retired; two
+ * near-identical copies remain a real extraction candidate, deliberately NOT
+ * done here because touching the live feed's connection path is not this
+ * change's job.)
  *
  * FILTERS COMPILE TO BOUND PARAMETERS ONLY. Not one filter value is ever
  * interpolated into SQL text: each is pushed onto the parameter array and
@@ -207,7 +208,7 @@ const LOGICAL_ROW_PREDICATE = `(
  * Every sibling leg of a BRIDGE execution, ordered by `event_index`. No LIMIT
  * (OWNER RULE: feed output is never truncated). Non-bridge kinds have no
  * multi-leg shape — one role per on-chain tx — so `legs` stays null for them,
- * exactly as `moves-db-query.ts` and `token-history-db-query.ts` do.
+ * exactly as `token-history-db-query.ts` does.
  */
 const LEGS_EXPR = `CASE WHEN aa.kind = 'bridge' THEN (
           SELECT jsonb_agg(jsonb_build_object(

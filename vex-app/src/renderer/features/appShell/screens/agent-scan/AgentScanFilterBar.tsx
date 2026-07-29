@@ -2,7 +2,8 @@
  * Agent Scan filter bar — the controls that narrow the feed, plus the state
  * shape they drive.
  *
- * ONE grammar for every control: a hairline mono chip that lights cobalt when
+ * ONE grammar for every control: a hairline small-caps chip (the sans support
+ * face — see CHIP_BASE) that lights cobalt when
  * active (`aria-pressed` carries the same state to assistive tech). Kinds and
  * protocols are MULTI-select, status and chain family are single-select
  * toggles — that mirrors what the query contract can express
@@ -115,8 +116,17 @@ export function toggleValue(
     : [...list, value];
 }
 
+/**
+ * REGISTER (C2): the chip stamp is Instrument Sans small caps, NOT mono —
+ * mono is reserved for technical artifacts (code, raw JSON, addresses, tx
+ * hashes), and no new mono uppercase label may be added anywhere. `.vex-micro`
+ * is the class for this stamp, but it is UNLAYERED and therefore beats a
+ * Tailwind `text-[…]` utility, so a call site that needs a size other than its
+ * 10px default (these chips are 9px) spells the register out instead — the
+ * `font-sans text-[9px] uppercase` pattern the composer pins use.
+ */
 const CHIP_BASE =
-  "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-mono text-[9px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]";
+  "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-sans text-[9px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]";
 
 const CHIP_IDLE =
   "border-[var(--vex-line)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]";
@@ -155,7 +165,7 @@ function FilterGroup({
 }): JSX.Element {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="w-[58px] shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+      <span className="w-[58px] shrink-0 font-sans text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
         {label}
       </span>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</div>
@@ -262,7 +272,7 @@ export function AgentScanFilterBar({
             </span>
           ) : null}
           {active > 0 ? (
-            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)]">
+            <span className="font-sans text-[9px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)]">
               {active} filter{active === 1 ? "" : "s"} active
             </span>
           ) : null}
@@ -272,7 +282,7 @@ export function AgentScanFilterBar({
             // Clear resets the user-chosen filters and PRESERVES the session
             // scope — clearing must not silently widen an audit feed.
             onClick={() => onChange({ ...EMPTY_FILTER_STATE, sessionId: state.sessionId })}
-            className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] underline-offset-2 transition-colors hover:text-[var(--vex-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="font-sans text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] underline-offset-2 transition-colors hover:text-[var(--vex-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
           >
             Clear
           </button>

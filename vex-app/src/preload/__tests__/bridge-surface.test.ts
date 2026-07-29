@@ -157,6 +157,11 @@ describe("preload bridge surface", () => {
       "CH.portfolio.read",
       // Chronos-shell — read-only, global-scope per-token TX history.
       "CH.portfolio.listTokenHistory",
+      // Agent Scan — read-only executed-activity feed (the surviving feed
+      // after the `listMoves` pipeline was retired). It was missing from this
+      // curated list, which is exactly the gap a manually maintained surface
+      // list develops: a live bridge method nobody was pinning.
+      "CH.portfolio.listAgentScan",
       "CH.sessions.getModel",
       "CH.sessions.exportMarkdown",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".

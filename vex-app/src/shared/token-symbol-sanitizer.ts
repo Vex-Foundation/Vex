@@ -1,22 +1,24 @@
 /**
  * Token symbol sanitizer — the trust boundary for display-only token labels
- * sourced from provider/capture data (moves-db trade-capture JSON, portfolio
- * balance rows). These strings are attacker-influenceable: any on-chain
+ * sourced from provider/capture data (agent-activity / token-history
+ * trade-capture JSON, portfolio balance rows). These strings are attacker-influenceable: any on-chain
  * token can self-declare arbitrary metadata, including a symbol that
  * impersonates a well-known asset ("SOL", "USDC", …). Every captured/provider
  * symbol MUST pass through `sanitizeTokenSymbol` before it is used as
  * display text or handed to a symbol-keyed icon lookup (e.g. `TokenIcon`).
  *
  * Pure, dependency-free (no main/renderer/electron imports) so BOTH the main
- * process (moves-db.ts, extracting from capture JSON) and the untrusted
- * renderer (MovesBlock.tsx, PositionChains.tsx, rendering provider-supplied
- * symbols) consume one sanitizer and can never drift.
+ * process (`agent-scan-db-mappers.ts` / `token-history-db-mappers.ts`,
+ * extracting from capture JSON) and the untrusted renderer
+ * (`token-leg-display.ts`, `PositionChains.tsx`, `TokenHoldingRow.tsx`,
+ * rendering provider-supplied symbols) consume one sanitizer and can never
+ * drift.
  *
  * Strategy: allowlist, not blocklist. Real token tickers are short ASCII
  * strings. Restricting to `[A-Za-z0-9._$-]` (starting with an alphanumeric)
  * rejects, in one pass and WITHOUT a Unicode confusables database:
- *   - control characters (the original narrower `moves-db` regex covered
- *     only this class);
+ *   - control characters (the original narrower capture-side regex this
+ *     replaced covered only this class);
  *   - bidi control characters (RLO/LRO/embeddings/isolates, U+061C ALM);
  *   - zero-width characters (ZWSP/ZWNJ/ZWJ, BOM/ZWNBSP, word joiner);
  *   - Unicode confusables (Cyrillic/Greek/other lookalike glyphs) — none of
@@ -28,7 +30,7 @@
  */
 
 /** Shared bound: capture-item/provider symbols are extracted length-bounded
- * at 64 chars server-side (moves-db SQL `LEFT(...)`) and validated again here
+ * at 64 chars server-side (the feed SQL's `LEFT(...)`) and validated again here
  * and at the IPC schema boundary — all three sites must agree on one number. */
 export const TOKEN_SYMBOL_MAX_LENGTH = 64;
 

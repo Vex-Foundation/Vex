@@ -154,12 +154,6 @@
   transition: height 220ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-/* Dissolves the oldest visible line of the working strip's reasoning tail
- * (S4) — a mask, not a painted gradient. */
-.vex-fade-top {
-  mask-image: linear-gradient(to bottom, transparent, black 18px);
-}
-
 /* The signing stroke — ink drawing the signature line inside the
  * New-session key (S1). Base span scales from the left on hover (CSS
  * transition on a class toggle); while a session is being created the

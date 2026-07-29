@@ -75,7 +75,6 @@
       "src/main/database/messages/connection.ts::TS2345": 2,
       "src/main/database/mission-runs-db.ts::TS2345": 3,
       "src/main/database/missions-db.ts::TS2345": 3,
-      "src/main/database/moves-db-query.ts::TS2345": 2,
       "src/main/database/portfolio-db.ts::TS2345": 3,
       "src/main/database/sessions/connection.ts::TS2345": 2,
       "src/main/database/sessions/delete.ts::TS2532": 1,

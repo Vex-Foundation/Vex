@@ -40,8 +40,8 @@ function usdField(value: number | string | null, provenance: "recorded" | "estim
 }
 
 /**
- * Unit provenance for a LEGACY (`proj_activity`) amount column, mirroring
- * `MovesBlock.tsx`'s `amountDisplay` discipline exactly: the engine recorded
+ * Unit provenance for a LEGACY (`proj_activity`) amount column, applying the
+ * `amountDisplay` discipline of the retired MOVES block exactly: the engine recorded
  * HUMAN-readable amounts only for some captures (a dotted decimal that
  * parses to a finite positive number); anything else — including a raw
  * base-unit integer with no dot — is honestly `"unknown"` rather than
@@ -97,7 +97,7 @@ function toTokenHistorySwapStatus(value: string | null): TokenHistorySwapStatus 
  * human value like "50" is a VALID result, not a rejection). WHICH value is
  * honest to show depends on the row's status — delegated to
  * `resolveAgentActivityAmount` (`./agent-activity-amount.js`, shared with
- * `moves-db.ts` — contract C20): `confirmed` computes from the raw executed
+ * `agent-scan-db.ts` — contract C20): `confirmed` computes from the raw executed
  * leg + decimals; `pending` uses the requested echo; anything else is
  * `null`. Never a blind COALESCE of executed/requested in SQL.
  */
@@ -217,10 +217,11 @@ export function mapEntry(row: PageRow): TokenHistoryEntry {
     // event_role='swap' OR kind IN ('lend','prediction') (migration 049, W5)
     // → a `kind: "swap"` entry (the DTO's `kind` union stays swap/bridge/
     // transfer; `productType` — 'spot'/'lend'/'prediction' — is what
-    // distinguishes them, mirroring `moves-db.ts`). Amount provenance is
+    // distinguishes them, mirroring `agent-scan-db-mappers.ts`). Amount
+    // provenance is
     // status-dependent (C20 — see `agentActivityAmountField`); no
     // dot-detection heuristic gates a whole-number result (C27). NOTE
-    // (deliberate scope limit, not an oversight): unlike `moves-db.ts`,
+    // (deliberate scope limit, not an oversight): unlike the Agent Scan feed,
     // this entry has NO `amountBasis` field to carry an "estimated" label —
     // `swapEntrySchema` was never given one (only `bridgeEntrySchema` has
     // it), and `TokenHistoryScreen.tsx`'s own `amountBasis` read is

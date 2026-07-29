@@ -5,9 +5,10 @@
  * reduced to the allow-listed `SessionMessageDto`, and is the single mapper
  * shared by all three query paths (`getMessageTail`, `listMessages`,
  * `getMessageAround`). Raw `metadata` JSONB is deliberately never selected in
- * full; the ONLY narrow projection off that column is the validated
- * `metadata -> 'explorerRefs'` sub-key (see `MESSAGE_ROW_COLUMNS` +
- * `extractExplorerRefs`). The `message_type` top-level column remains the
+ * full; every read off that column is a NARROW, individually validated sub-key
+ * projection (see `MESSAGE_ROW_COLUMNS`): `explorerRefs`, `success`,
+ * `reasoning`, and `durationMs` — four of them today, each with its own
+ * fail-to-null schema. The `message_type` top-level column remains the
  * discriminator for row kind.
  */
 
