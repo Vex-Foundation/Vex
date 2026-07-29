@@ -1,9 +1,11 @@
 /**
  * Token-leg display policy — the ONE grammar for printing an activity/swap
  * leg's token identity and amount. Extracted move-only from `MovesBlock.tsx`
- * (which pinned it first) so the token-history screen reuses the exact same
- * brand-gating rules instead of duplicating them. Behavior is pinned by
- * `__tests__/MovesBlock.test.tsx`.
+ * (which pinned it first, and which the session-UI redesign deleted) so the
+ * token-history screen, the agent-scan rows and the transcript's swap/bridge
+ * tool cards all reuse the exact same brand-gating rules instead of
+ * duplicating them. Behavior — brand gating AND the amount audit — is pinned
+ * by `lib/__tests__/token-leg-display.test.ts`.
  *
  * The GOVERNING invariant: a brand ticker + brand logo may be rendered ONLY
  * when a `KNOWN_MINTS` address proves the identity; no untrusted string
@@ -159,12 +161,22 @@ const AMOUNT_FORMAT = new Intl.NumberFormat("en-US", {
  * integer" for those. Render ONLY dotted-decimal strings that parse to a
  * finite positive number; everything else — null, integers, non-numeric —
  * renders nothing, so legacy rows keep their amount-less legs.
+ *
+ * STRICT, NOT PERMISSIVE (Codex review round 2 finding 1). The whole string
+ * must be a canonical unsigned decimal. `Number.parseFloat` stops at the first
+ * invalid character, so it read `"240.31garbage"` as `240.31` and printed a
+ * hostile payload's prefix as a clean figure; `"1e21"`, `" 1.5"` and `"1.5 "`
+ * were accepted the same way. A value that is not exactly a decimal is not a
+ * value we can honestly print, so it renders nothing.
  */
+const UNSIGNED_DECIMAL = /^\d+(\.\d+)?$/;
+
 export function amountDisplay(
   amount: string | null,
   trustedHuman = false,
 ): string | null {
   if (amount === null) return null;
+  if (!UNSIGNED_DECIMAL.test(amount)) return null;
   if (!trustedHuman && !amount.includes(".")) return null;
   const parsed = Number.parseFloat(amount);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;

@@ -143,6 +143,20 @@ describe("resolveToolIdentity — generic wrappers", () => {
     expect(identity.title).toBe("Execute tool");
   });
 
+  it.each([
+    ["a lookalike of a curated venue", '{"toolId":"kyberswapp.swap.quote"}'],
+    ["an arbitrary valid namespace", '{"toolId":"totally_new_venue.do.thing"}'],
+    ["a bare namespace with no action", '{"toolId":"evil"}'],
+  ])(
+    "gives NO venue to %s — a syntactically valid namespace is not provenance",
+    (_label, args) => {
+      const identity = resolveToolIdentity("execute_tool", args);
+      expect(identity.protocol).toBeNull();
+      // The wrapper's own honest name — never an attacker-named venue title.
+      expect(identity.title).toBe("Execute tool");
+    },
+  );
+
   it("labels discover_tools as discovery with no venue when args prove none", () => {
     expect(resolveToolIdentity("discover_tools", null)).toEqual({
       protocol: null,

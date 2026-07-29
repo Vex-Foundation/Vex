@@ -19,7 +19,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { resolveProtocolMark } from "../protocol-marks.js";
+import { isCuratedProtocol, resolveProtocolMark } from "../protocol-marks.js";
 
 describe("resolveProtocolMark — curated venues", () => {
   it.each([
@@ -102,5 +102,25 @@ describe("resolveProtocolMark — fallbacks", () => {
         expect(mark.src).toMatch(/^\/(protocols|logo)\//);
       }
     }
+  });
+});
+
+describe("isCuratedProtocol — the gate for UNTRUSTED venue strings", () => {
+  it("recognises a curated venue regardless of case or padding", () => {
+    expect(isCuratedProtocol("kyberswap")).toBe(true);
+    expect(isCuratedProtocol("  KyberSwap ")).toBe(true);
+    expect(isCuratedProtocol("solana")).toBe(true);
+  });
+
+  it.each([
+    ["a lookalike", "kyberswapp"],
+    ["an arbitrary namespace", "totally_new_venue"],
+    ["empty", ""],
+  ])("rejects %s so it can never earn a venue title", (_label, protocol) => {
+    expect(isCuratedProtocol(protocol)).toBe(false);
+  });
+
+  it("rejects null", () => {
+    expect(isCuratedProtocol(null)).toBe(false);
   });
 });

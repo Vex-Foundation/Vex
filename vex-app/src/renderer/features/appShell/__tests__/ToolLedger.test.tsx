@@ -392,7 +392,28 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(notRun.container.querySelector("[data-vex-tool-duration]")).toBeNull();
   });
 
-  it("renders swap legs from the sanitized payload instead of raw JSON", () => {
+  it("renders executed swap legs from the sanitized payload instead of raw JSON", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+          output: '{"amountOut":"240.31"}',
+          success: true,
+        }),
+      }),
+    );
+    const legs = container.querySelector('[data-vex-tool-legs="executed"]');
+    expect(legs).not.toBeNull();
+    expect(legs?.textContent).toContain("1.5");
+    expect(legs?.textContent).toContain("SOL");
+    expect(legs?.textContent).toContain("240.31");
+    expect(legs?.textContent).toContain("USDC");
+    // An executed summary carries no outcome caveat.
+    expect(legs?.querySelector("[data-vex-tool-leg-outcome]")).toBeNull();
+  });
+
+  it("labels an UNKNOWN-outcome act as requested and ignores its untrusted output", () => {
     const { container } = render(
       createElement(ToolActRow, {
         act: act({
@@ -402,12 +423,47 @@ describe("ToolActRow — friendly card presentation", () => {
         }),
       }),
     );
-    const legs = container.querySelector("[data-vex-tool-legs]");
+    const legs = container.querySelector('[data-vex-tool-legs="requested"]');
     expect(legs).not.toBeNull();
+    expect(
+      legs?.querySelector('[data-vex-tool-leg-outcome="requested"]')?.textContent,
+    ).toBe("Requested");
     expect(legs?.textContent).toContain("1.5");
+    expect(legs?.textContent).not.toContain("240.31");
+  });
+
+  it("labels a FAILED act and prints no amount as fact", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+          output: '{"amountOut":"240.31"}',
+          success: false,
+        }),
+      }),
+    );
+    const legs = container.querySelector('[data-vex-tool-legs="failed"]');
+    expect(
+      legs?.querySelector('[data-vex-tool-leg-outcome="failed"]')?.textContent,
+    ).toBe("Failed");
+    expect(legs?.textContent).not.toContain("1.5");
+    expect(legs?.textContent).not.toContain("240.31");
+    // The tokens still name themselves — that is not a claim of movement.
     expect(legs?.textContent).toContain("SOL");
-    expect(legs?.textContent).toContain("240.31");
-    expect(legs?.textContent).toContain("USDC");
+  });
+
+  it("never dresses an unknown execute_tool namespace as a venue", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "execute_tool",
+          toolArgs: '{"toolId":"kyberswapp.swap.quote"}',
+        }),
+      }),
+    );
+    expect(container.querySelector("[data-vex-protocol-mark]")).toBeNull();
+    expect(screen.getByRole("button", { name: /Execute tool/ })).not.toBeNull();
   });
 
   it("shows NO legs when the payload cannot be parsed — never a guessed trade", () => {

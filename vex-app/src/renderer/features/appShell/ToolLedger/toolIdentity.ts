@@ -28,7 +28,10 @@
  * Pure: no React, no IO, trivially unit-testable.
  */
 
-import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
+import {
+  isCuratedProtocol,
+  resolveProtocolMark,
+} from "../../../lib/protocol-marks.js";
 
 /** Coarse act category — drives the glyph and the leg-line eligibility. */
 export type ToolCategory =
@@ -147,12 +150,22 @@ function toolIdAction(toolArgs: string | null): string | null {
   return rest.length === 0 ? null : humanizeToolName(rest);
 }
 
-/** Identity for the `execute_tool` / `discover_tools` generic wrappers. */
+/**
+ * Identity for the `execute_tool` / `discover_tools` generic wrappers.
+ *
+ * The namespace comes from UNTRUSTED args text, so it is admitted ONLY when
+ * `isCuratedProtocol` recognises it (Codex review round 2 finding 1). Syntactic
+ * validity is not provenance: `{"toolId":"kyberswapp.swap"}` would otherwise
+ * have earned a "Kyberswapp ·" title and a venue-looking monogram ring, which
+ * is a lie about who the agent dealt with. An unknown namespace falls through
+ * to the wrapper's own honest generic presentation.
+ */
 function genericWrapperIdentity(
   toolName: string,
   toolArgs: string | null,
 ): ToolIdentity {
-  const protocol = parseToolIdNamespace(toolArgs);
+  const parsedNamespace = parseToolIdNamespace(toolArgs);
+  const protocol = isCuratedProtocol(parsedNamespace) ? parsedNamespace : null;
   const label = venueLabel(protocol);
   const action = toolIdAction(toolArgs);
   const category: ToolCategory =

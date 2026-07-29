@@ -85,6 +85,20 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
  * `features/appShell/screens/agent-scan/agent-scan-protocols.ts`.
  */
 
+/**
+ * Is this venue string one we actually KNOW? The fallback branch of
+ * `resolveProtocolMark` deliberately keeps an unrecognised venue's own text
+ * (a feed row's protocol comes from our own main-process capture, so naming it
+ * is honest). A caller whose venue string comes from UNTRUSTED payload text —
+ * the transcript's `execute_tool` `toolId` namespace — must gate on this
+ * FIRST: an arbitrary syntactically-valid namespace must never be handed a
+ * venue-looking monogram and title. See `ToolLedger/toolIdentity.ts`.
+ */
+export function isCuratedProtocol(protocol: string | null): boolean {
+  if (protocol === null) return false;
+  return CURATED[protocol.trim().toLowerCase()] !== undefined;
+}
+
 /** First character of a label, uppercased, for the monogram ring. */
 function monogramInitial(label: string): string {
   return label.charAt(0).toUpperCase();

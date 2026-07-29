@@ -158,12 +158,16 @@ export function ToolActRow({
   );
   // Legs are a swap/bridge affordance only — parsing every act's payload for
   // token-shaped keys would let an unrelated tool's args draw a trade line.
+  // The persisted outcome rides along: only `success === true` may read the
+  // untrusted output and render as an executed summary; `false` renders a
+  // failed treatment and UNKNOWN (null / legacy / unpaired) renders a visibly
+  // distinct "Requested" line — never an executed-looking one.
   const legs = useMemo(
     () =>
       identity.category === "swap" || identity.category === "bridge"
-        ? resolveToolLegs(act.toolArgs, act.output)
+        ? resolveToolLegs(act.toolArgs, act.output, act.success)
         : null,
-    [identity.category, act.toolArgs, act.output],
+    [identity.category, act.toolArgs, act.output, act.success],
   );
   return (
     <div

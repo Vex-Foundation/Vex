@@ -2,11 +2,21 @@
  * SWAP / BRIDGE LEG LINE — the "VEX → USDC" summary a friendly tool card shows
  * instead of raw JSON as its primary view.
  *
- * Reads the SANITIZED args/output strings the DTO carries. Those are
- * untrusted, 2000-char-capped text: a large payload is TRUNCATED and
- * `JSON.parse` throws. Every failure mode — truncated, malformed, missing
- * token key, non-string token, unrecognised shape — returns `null`, and the
- * card then shows no legs at all.
+ * Reads the SANITIZED args/output strings the DTO carries. Both are untrusted.
+ * `toolArgs` is capped at 2000 chars by `toolCallDisplaySchema`; the OUTPUT
+ * string is a `tool_result` row's `content` and is NOT bounded by the DTO at
+ * all, so this module applies its own `MAX_PARSE_CHARS` gate before ever
+ * handing text to `JSON.parse` — a multi-megabyte tool result must never cost
+ * the renderer a synchronous parse per visible card. Every failure mode —
+ * oversized, truncated, malformed, missing token key, non-string token,
+ * unrecognised shape — returns `null`, and the card then shows no legs at all.
+ *
+ * OUTCOME IS PART OF THE TRUTH (rules/90). A leg pair carries the execution
+ * outcome the engine persisted (`SessionMessageDto.success`, `null` = UNKNOWN,
+ * never success). Only a PROVEN-successful act may read the untrusted output
+ * for its numbers; a requested or failed act is parsed from the ARGS alone and
+ * the renderer must label it as such, so a pending, denied, or failed call can
+ * never be dressed up as a completed trade.
  *
  * NEVER GUESS AN AMOUNT (rules/90 money-path discipline). Token identity goes
  * through `lib/token-leg-display.ts`'s `tokenDisplay` (the ONE brand-gating
@@ -30,9 +40,20 @@ export interface ToolLeg {
   readonly amount: string | null;
 }
 
+/**
+ * What the ledger is allowed to CLAIM about this leg pair:
+ *  - `executed` — the engine persisted `success: true`; the output may be read
+ *    and the numbers may be presented as what happened.
+ *  - `failed` — persisted `success: false`; no amount is presented as fact.
+ *  - `requested` — UNKNOWN outcome (pending, denied, unpaired, legacy row).
+ *    Args-only, and the renderer must mark it visibly as a request.
+ */
+export type ToolLegOutcome = "executed" | "failed" | "requested";
+
 export interface ToolLegPair {
   readonly from: ToolLeg;
   readonly to: ToolLeg;
+  readonly outcome: ToolLegOutcome;
 }
 
 /** Key aliases the swap/bridge tools use for each side of a leg pair. */
@@ -41,14 +62,25 @@ const TO_TOKEN_KEYS = ["tokenOut", "toToken", "outputMint", "buyToken", "tokenTo
 const FROM_AMOUNT_KEYS = ["amountIn", "sellAmount", "fromAmount", "amount"];
 const TO_AMOUNT_KEYS = ["amountOut", "outAmount", "toAmount", "expectedOut"];
 
+/**
+ * Hard bound on any payload this module hands to `JSON.parse`. Tool OUTPUT is
+ * an unbounded DTO string and every visible swap/bridge card would parse it
+ * synchronously on the renderer's main thread — an unbounded parse per card is
+ * a CPU/memory denial path. 20k chars is far above any legitimate swap/bridge
+ * payload whose leg keys sit at the root (or one level into `params`), so the
+ * gate costs no real leg line; an oversized payload simply shows no legs.
+ */
+const MAX_PARSE_CHARS = 20_000;
+
 /** Parse a sanitized payload into a plain record; fail-closed to `null`. */
 function parseRecord(text: string | null): Record<string, unknown> | null {
   if (text === null || text.length === 0) return null;
+  if (text.length > MAX_PARSE_CHARS) return null; // never parse unbounded text
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return null; // truncated at the 2000-char cap, or not JSON at all
+    return null; // truncated, or not JSON at all
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
@@ -106,20 +138,37 @@ function readAmount(
   return null;
 }
 
+/** Persisted outcome → what this pair may claim. `null`/absent = UNKNOWN. */
+function legOutcome(success: boolean | null | undefined): ToolLegOutcome {
+  if (success === true) return "executed";
+  if (success === false) return "failed";
+  return "requested";
+}
+
 /**
  * Resolve the leg pair for a swap/bridge act, or `null` when it cannot be
  * proven. BOTH token sides must be present — a half-read pair would render an
  * arrow pointing at nothing, which reads as a completed leg that never was.
- * The out-amount is looked for in the OUTPUT first (what actually happened),
- * falling back to the args (what was requested).
+ *
+ * Record precedence follows the OUTCOME, not convenience:
+ *  - `executed` (persisted `success === true`): the OUTPUT is read first —
+ *    what actually happened outranks what was requested — with the args as
+ *    the fallback.
+ *  - everything else: the ARGS only. An unproven act's untrusted output must
+ *    not supply tokens or amounts, because the renderer would then be
+ *    presenting an attacker-controllable string as a request the user made.
  */
 export function resolveToolLegs(
   toolArgs: string | null,
   output: string | null,
+  success: boolean | null | undefined,
 ): ToolLegPair | null {
+  const outcome = legOutcome(success);
   const argRecords = candidateRecords(toolArgs);
-  const outputRecords = candidateRecords(output);
-  const all = [...outputRecords, ...argRecords];
+  const all =
+    outcome === "executed"
+      ? [...candidateRecords(output), ...argRecords]
+      : argRecords;
 
   const fromToken = readString(all, FROM_TOKEN_KEYS);
   const toToken = readString(all, TO_TOKEN_KEYS);
@@ -134,5 +183,6 @@ export function resolveToolLegs(
       token: tokenDisplay(toToken, null, null),
       amount: amountDisplay(readAmount(all, TO_AMOUNT_KEYS)),
     },
+    outcome,
   };
 }
