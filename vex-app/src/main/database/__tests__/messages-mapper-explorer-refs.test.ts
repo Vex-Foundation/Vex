@@ -15,7 +15,7 @@ import {
 
 const BASE: Omit<
   MessageRow,
-  "role" | "explorer_refs" | "reasoning" | "duration_ms"
+  "role" | "explorer_refs" | "reasoning" | "duration_ms" | "success"
 > = {
   id: 1,
   session_id: "00000000-0000-4000-8000-00000000abcd",
@@ -32,6 +32,7 @@ function row(p: {
   readonly explorer_refs: unknown;
   readonly reasoning?: unknown;
   readonly duration_ms?: unknown;
+  readonly success?: unknown;
 }): MessageRow {
   return {
     ...BASE,
@@ -39,6 +40,7 @@ function row(p: {
     explorer_refs: p.explorer_refs,
     reasoning: p.reasoning ?? null,
     duration_ms: p.duration_ms ?? null,
+    success: p.success ?? null,
   };
 }
 
@@ -141,6 +143,24 @@ describe("toDto — durationMs projection (metadata -> 'durationMs')", () => {
     expect(
       toDto(row({ role: "assistant", explorer_refs: null, duration_ms: 2314 }))
         .durationMs,
+    ).toBeNull();
+  });
+
+  it("projects success only on tool rows; malformed → null = UNKNOWN, never success", () => {
+    expect(
+      toDto(row({ role: "tool", explorer_refs: null, success: true })).success,
+    ).toBe(true);
+    expect(
+      toDto(row({ role: "tool", explorer_refs: null, success: false })).success,
+    ).toBe(false);
+    expect(
+      toDto(row({ role: "assistant", explorer_refs: null, success: true })).success,
+    ).toBeNull();
+    expect(
+      toDto(row({ role: "tool", explorer_refs: null, success: "true" })).success,
+    ).toBeNull();
+    expect(
+      toDto(row({ role: "tool", explorer_refs: null, success: 1 })).success,
     ).toBeNull();
   });
 
