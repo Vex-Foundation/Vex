@@ -52,6 +52,8 @@ function msg(p: {
     toolName: p.toolName ?? null,
     toolCalls: null,
     explorerRefs: null,
+    reasoning: null,
+    durationMs: null,
   };
 }
 

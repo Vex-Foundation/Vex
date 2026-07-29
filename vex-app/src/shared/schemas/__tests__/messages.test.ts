@@ -55,6 +55,8 @@ describe("messages schemas", () => {
       toolName: null,
       toolCalls: null,
       explorerRefs: null,
+      reasoning: null,
+      durationMs: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -74,6 +76,8 @@ describe("messages schemas", () => {
         { toolCallId: "call_2", toolName: "dexscreener:search", toolArgs: null },
       ],
       explorerRefs: null,
+      reasoning: null,
+      durationMs: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -93,6 +97,8 @@ describe("messages schemas", () => {
         { chain: "hyperliquid", txRef: "0xabc" },
         { chain: "solana", txRef: "5sig" },
       ],
+      reasoning: null,
+      durationMs: 2314,
     });
     expect(parsed.success).toBe(true);
   });
@@ -113,6 +119,8 @@ describe("messages schemas", () => {
       toolName: null,
       toolCalls: null,
       explorerRefs: refs,
+      reasoning: null,
+      durationMs: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -129,8 +137,69 @@ describe("messages schemas", () => {
       toolName: null,
       toolCalls: null,
       explorerRefs: [{ chain: "solana", txRef: "a".repeat(129) }],
+      reasoning: null,
+      durationMs: null,
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("accepts persisted reasoning on an assistant row and bounds it at 20k", () => {
+    const base = {
+      id: 30,
+      sessionId: SESSION,
+      role: "assistant",
+      kind: "text",
+      content: "answer",
+      createdAt: ISO,
+      toolCallId: null,
+      toolName: null,
+      toolCalls: null,
+      explorerRefs: null,
+      durationMs: null,
+    };
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
+        .success,
+    ).toBe(true);
+    expect(
+      sessionMessageDtoSchema.safeParse({
+        ...base,
+        reasoning: "a".repeat(20_001),
+      }).success,
+    ).toBe(false);
+    // Empty string is not a reasoning trace — the mapper collapses it to null.
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, reasoning: "" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a malformed durationMs (negative, fractional, over 24h)", () => {
+    const base = {
+      id: 31,
+      sessionId: SESSION,
+      role: "tool",
+      kind: "tool_result",
+      content: "{}",
+      createdAt: ISO,
+      toolCallId: "call_1",
+      toolName: null,
+      toolCalls: null,
+      explorerRefs: null,
+      reasoning: null,
+    };
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
+    ).toBe(false);
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, durationMs: 12.5 }).success,
+    ).toBe(false);
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, durationMs: 86_400_001 })
+        .success,
+    ).toBe(false);
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, durationMs: 0 }).success,
+    ).toBe(true);
   });
 
   it("rejects toolArgs over the 2000-char cap (boundary size limit)", () => {
@@ -147,6 +216,8 @@ describe("messages schemas", () => {
         { toolCallId: "c", toolName: "x:y", toolArgs: "a".repeat(2001) },
       ],
       explorerRefs: null,
+      reasoning: null,
+      durationMs: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -168,6 +239,8 @@ describe("messages schemas", () => {
       toolName: "x:y",
       toolCalls: calls,
       explorerRefs: null,
+      reasoning: null,
+      durationMs: null,
     });
     expect(parsed.success).toBe(false);
   });

@@ -111,6 +111,25 @@ export type ExplorerRef = z.infer<typeof explorerRefSchema>;
 export const explorerRefsSchema = z.array(explorerRefSchema).max(8);
 
 /**
+ * Bounded projection of `messages.metadata -> 'reasoning'` (assistant rows).
+ * The engine tail-truncates at 16 384 chars before persisting (mirror of the
+ * renderer's live REASONING_TEXT_CAP, keeping the NEWEST chars); the schema
+ * bound carries slack so a cap change on one side cannot silently drop pages.
+ */
+export const reasoningProjectionSchema = z.string().min(1).max(20_000);
+
+/**
+ * Bounded projection of `messages.metadata -> 'durationMs'` (tool-result
+ * rows): wall-clock execution time stamped inside the engine's `dispatchTool`.
+ * Upper bound is 24h — anything larger is a corrupt row, not a slow tool.
+ */
+export const toolDurationMsProjectionSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(86_400_000);
+
+/**
  * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
  * shipped wholesale; `explorerRefs` is the FIRST narrowly allow-listed,
  * mapper-validated projection off that column (tool-result rows only). Other
@@ -150,6 +169,21 @@ export const sessionMessageDtoSchema = z
      * mapper never throws on malformed JSONB — it collapses to `null`.
      */
     explorerRefs: explorerRefsSchema.nullable(),
+    /**
+     * Model reasoning persisted for an assistant row (validated projection of
+     * `messages.metadata -> 'reasoning'`). Required and `null` on non-assistant
+     * rows, on rows persisted before the projection existed, and when the
+     * provider emitted no reasoning. Renderer displays it ONLY through
+     * `MarkdownContent` (never raw HTML).
+     */
+    reasoning: reasoningProjectionSchema.nullable(),
+    /**
+     * Tool execution wall-clock in ms for a `tool_result` row (validated
+     * projection of `messages.metadata -> 'durationMs'`). Required and `null`
+     * on non-tool rows, legacy rows, and synthetic never-executed results —
+     * a call that did not run must carry `null`, never `0`.
+     */
+    durationMs: toolDurationMsProjectionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

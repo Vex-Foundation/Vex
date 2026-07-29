@@ -25,6 +25,8 @@ function dto(p: {
   readonly toolCallId?: string | null;
   readonly toolCalls?: SessionMessageDto["toolCalls"];
   readonly explorerRefs?: SessionMessageDto["explorerRefs"];
+  readonly reasoning?: SessionMessageDto["reasoning"];
+  readonly durationMs?: SessionMessageDto["durationMs"];
   readonly id?: number;
 }): SessionMessageDto {
   return {
@@ -38,6 +40,8 @@ function dto(p: {
     toolName: p.toolName ?? null,
     toolCalls: p.toolCalls ?? null,
     explorerRefs: p.explorerRefs ?? null,
+    reasoning: p.reasoning ?? null,
+    durationMs: p.durationMs ?? null,
   };
 }
 

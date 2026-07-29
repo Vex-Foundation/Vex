@@ -35,6 +35,8 @@ function message(
     toolName: null,
     toolCalls: null,
     explorerRefs: null,
+    reasoning: null,
+    durationMs: null,
     ...overrides,
   };
 }
