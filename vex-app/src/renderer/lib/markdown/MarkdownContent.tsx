@@ -27,8 +27,7 @@
 import { lexer, type Token } from "marked";
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Copy01Icon } from "@hugeicons/core-free-icons";
+import { Copy01Icon, VexIcon } from "../../components/icons/index.js";
 
 /** ASCII control chars (U+0000–U+001F) and DEL (U+007F) are never valid in a URL. */
 function hasControlChars(value: string): boolean {
@@ -473,7 +472,7 @@ function CodeBlock({
           className="flex items-center text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {copyState === "idle" ? (
-            <HugeiconsIcon icon={Copy01Icon} size={12} aria-hidden />
+            <VexIcon icon={Copy01Icon} size={12} aria-hidden />
           ) : (
             <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
               {copyState === "copied" ? "Copied" : "Copy failed"}

@@ -13,12 +13,12 @@
  */
 
 import type { JSX } from "react";
-import type { IconSvgElement } from "@hugeicons/react";
+import type { IconGlyph } from "../../../../components/icons/index.js";
 import { Button } from "../../../../components/ui/button.js";
 import { WizardStepPanel } from "../../WizardStepPanel.js";
 
 export interface ApiKeysSkipPanelProps {
-  readonly icon: IconSvgElement;
+  readonly icon: IconGlyph;
   readonly formError: string | null;
   readonly advancePending: boolean;
   readonly onContinue: () => void;

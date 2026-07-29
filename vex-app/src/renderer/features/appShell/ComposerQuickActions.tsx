@@ -21,7 +21,7 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { VexIcon } from "../../components/icons/index.js";
 import { QUICK_ACTIONS } from "./composer-quick-actions.js";
 
 export function ComposerQuickActions({
@@ -46,7 +46,7 @@ export function ComposerQuickActions({
           className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-[var(--vex-line)] px-3 py-1.5 font-sans text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-2)] transition duration-150 hover:scale-[1.02] hover:border-[var(--vex-accent-border)] hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {/* Intent glyph — decorative accent mark, not part of the label. */}
-          <HugeiconsIcon
+          <VexIcon
             icon={action.icon}
             size={13}
             className="shrink-0 text-[var(--vex-accent-text)]"

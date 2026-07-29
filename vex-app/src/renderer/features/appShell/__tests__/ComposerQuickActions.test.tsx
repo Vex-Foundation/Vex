@@ -4,20 +4,20 @@
  * numbering is GONE (parallel starters, not an ordered sequence), and picking a
  * chip seeds the draft with its full prompt.
  *
- * HugeiconsIcon is stubbed to a span that surfaces the icon reference as a
+ * VexIcon is stubbed to a span that surfaces the icon reference as a
  * `data-icon` attribute so the per-chip glyph is assertable in jsdom.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: ({ icon }: { icon: unknown }) => (
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: ({ icon }: { icon: unknown }) => (
     <span data-icon={String(icon)} />
   ),
 }));
 
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../components/icons/icon-glyphs.js", () => ({
   FireIcon: "FireIcon",
   PercentSquareIcon: "PercentSquareIcon",
 }));

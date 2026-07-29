@@ -8,8 +8,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { StarIcon } from "@hugeicons/core-free-icons";
+import { StarIcon, VexIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 
 export function PinToggle({
@@ -39,7 +38,7 @@ export function PinToggle({
         className,
       )}
     >
-      <HugeiconsIcon icon={StarIcon} size={13} aria-hidden />
+      <VexIcon icon={StarIcon} size={13} aria-hidden />
     </button>
   );
 }

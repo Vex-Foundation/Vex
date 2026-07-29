@@ -41,14 +41,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 // The proven icon set for a real-SessionComposer mount (copied from
 // composer-console.test.tsx — the quick-action chips consume FireIcon/
 // ChartLineData01Icon/PercentSquareIcon, the send/stop key the arrows).
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Add01Icon: "Add01Icon",
   CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
   Download01Icon: "Download01Icon",

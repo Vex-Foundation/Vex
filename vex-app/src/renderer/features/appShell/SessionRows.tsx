@@ -9,8 +9,11 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Archive02Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
+import {
+  Archive02Icon,
+  StopCircleIcon,
+  VexIcon,
+} from "../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { DotmSquare3 } from "../../components/ui/dotm-square-3.js";
 import { type SessionGroup } from "./sessionListModel.js";
@@ -129,7 +132,7 @@ export function SessionsErrorPlaceholder({
       sidebarOpen={sidebarOpen}
       text={message}
       tone="error"
-      icon={<HugeiconsIcon icon={StopCircleIcon} size={18} aria-hidden />}
+      icon={<VexIcon icon={StopCircleIcon} size={18} aria-hidden />}
     />
   );
 }
@@ -143,7 +146,7 @@ export function SessionsEmptyPlaceholder({
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
       text="No sessions"
-      icon={<HugeiconsIcon icon={Archive02Icon} size={18} aria-hidden />}
+      icon={<VexIcon icon={Archive02Icon} size={18} aria-hidden />}
     />
   );
 }

@@ -39,8 +39,11 @@
 
 import { useId, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, Wallet01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  VexIcon,
+  Wallet01Icon,
+} from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
 import { PortfolioOverviewCard } from "./PortfolioOverviewCard.js";
@@ -112,7 +115,7 @@ export function WelcomePortfolioPanel({
         // the stack rode over a shrunken handle).
         className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--vex-line)] bg-[var(--vex-rail-strong)] text-[var(--vex-text-2)] shadow-[0_14px_32px_-16px_rgba(0,0,0,0.85)] transition-colors hover:border-[var(--vex-line-strong)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
-        <HugeiconsIcon
+        <VexIcon
           icon={bookOpen ? ArrowDown01Icon : Wallet01Icon}
           size={17}
           aria-hidden

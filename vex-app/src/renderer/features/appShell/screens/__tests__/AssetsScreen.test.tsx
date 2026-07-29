@@ -27,10 +27,10 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Cancel01Icon: "Cancel01Icon",
   ViewIcon: "ViewIcon",
 }));

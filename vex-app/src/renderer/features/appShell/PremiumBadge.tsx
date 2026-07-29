@@ -33,13 +33,14 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   AlertCircleIcon,
   CheckmarkCircle02Icon,
+  type IconGlyph,
   InformationCircleIcon,
   Target02Icon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 export type PremiumBadgeState =
@@ -55,7 +56,7 @@ interface PremiumBadgeBaseProps {
   readonly state: PremiumBadgeState;
   /** Optional leading icon — defaults to the per-state icon. Full variant
    * only; the compact pill renders a status dot instead. */
-  readonly icon?: IconSvgElement;
+  readonly icon?: IconGlyph;
   /** Opt-in to the "ready" opacity pulse. Ignored unless state === "ready". */
   readonly shimmer?: boolean;
   /** h-7 single-line header pill (dot + label + caption) instead of the
@@ -88,7 +89,7 @@ interface StateMeta {
   /** Compact-pill status dot fill — the same tone as the icon/text. */
   readonly dotClass: string;
   /** Default per-state icon (overridable via the `icon` prop). */
-  readonly icon: IconSvgElement;
+  readonly icon: IconGlyph;
   readonly dataState: string;
 }
 
@@ -181,7 +182,7 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
     </>
   ) : (
     <>
-      <HugeiconsIcon
+      <VexIcon
         icon={Icon}
         size={16}
         aria-hidden

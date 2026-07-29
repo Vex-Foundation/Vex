@@ -36,11 +36,11 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   PanelRightCloseIcon,
   PanelRightOpenIcon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { SessionRuntimeBar } from "./SessionRuntimeBar.js";
 import { BookBlock } from "./book/BookBlock.js";
@@ -104,7 +104,7 @@ export function BookPanel({
           label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
           onClick={onToggle}
         >
-          <HugeiconsIcon
+          <VexIcon
             icon={bookOpen ? PanelRightCloseIcon : PanelRightOpenIcon}
             size={17}
             aria-hidden

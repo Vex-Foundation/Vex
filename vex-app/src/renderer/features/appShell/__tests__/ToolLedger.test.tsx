@@ -20,7 +20,7 @@ import {
   Search01Icon,
   TerminalIcon,
   Wrench01Icon,
-} from "@hugeicons/core-free-icons";
+} from "../../../components/icons/index.js";
 import { ToolActRow } from "../ToolLedger/ToolActRow.js";
 import { ToolGroupRow } from "../ToolLedger/ToolGroupRow.js";
 import { toolGlyph } from "../ToolLedger/toolGlyph.js";

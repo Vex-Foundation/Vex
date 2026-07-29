@@ -28,8 +28,11 @@
 
 import { useEffect, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+  VexIcon,
+} from "../../../components/icons/index.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
@@ -220,7 +223,7 @@ export function SettingsScreen({
                   className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--vex-line)] px-4 text-[13px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
                   data-vex-settings-back
                 >
-                  <HugeiconsIcon icon={ArrowLeft01Icon} size={14} aria-hidden />
+                  <VexIcon icon={ArrowLeft01Icon} size={14} aria-hidden />
                   Settings
                 </button>
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
@@ -288,7 +291,7 @@ function SettingsRegister({
                 className="flex w-full items-center gap-4 rounded-lg px-3 py-4 text-left transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--vex-line)] text-[var(--vex-text-2)]">
-                  <HugeiconsIcon
+                  <VexIcon
                     icon={WIZARD_STEP_META[meta.stepId].icon}
                     size={17}
                     aria-hidden
@@ -310,7 +313,7 @@ function SettingsRegister({
                 >
                   {status.word}
                 </span>
-                <HugeiconsIcon
+                <VexIcon
                   icon={ArrowRight01Icon}
                   size={14}
                   aria-hidden

@@ -15,7 +15,7 @@ import { createElement, type ReactNode } from "react";
 
 import { SessionRuntimeBar } from "../SessionRuntimeBar.js";
 
-// Isolate from the @thesvg/@hugeicons brand-icon SVG lib.
+// Isolate from the @thesvg brand-icon SVG lib and the icon layer.
 vi.mock("../../wizard/steps/provider/ModelBrandIcon.js", () => ({
   ModelBrandIcon: () =>
     createElement("span", { "data-testid": "brand-icon" }),

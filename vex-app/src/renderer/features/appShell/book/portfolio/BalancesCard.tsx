@@ -16,8 +16,10 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowRight01Icon,
+  VexIcon,
+} from "../../../../components/icons/index.js";
 import { usePortfolio } from "../../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
@@ -83,7 +85,7 @@ export function BalancesCard(): JSX.Element {
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
           >
             View all assets
-            <HugeiconsIcon icon={ArrowRight01Icon} size={13} aria-hidden />
+            <VexIcon icon={ArrowRight01Icon} size={13} aria-hidden />
           </button>
         </>
       )}

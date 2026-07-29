@@ -28,11 +28,11 @@ import type { ReasoningCapability } from "@shared/schemas/reasoning.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Add01Icon: "Add01Icon",
   CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
   Download01Icon: "Download01Icon",

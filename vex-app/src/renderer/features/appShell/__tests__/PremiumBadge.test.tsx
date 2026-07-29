@@ -8,15 +8,15 @@
  * work — for both the full (dialog-header) geometry and the `compact` header
  * pill the cluster renders.
  *
- * @hugeicons/react is mocked to render nothing (the icon lib is ESM + heavy);
+ * VexIcon is mocked to render nothing (the icon lib is ESM + heavy);
  * the badge's behavior is independent of the glyph.
  */
 
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 const { PremiumBadge } = await import("../PremiumBadge.js");

@@ -31,10 +31,10 @@ import {
   USDC_BASE,
 } from "./_token-history-fixtures.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Cancel01Icon: "Cancel01Icon",
   ViewIcon: "ViewIcon",
   ArrowUpRight01Icon: "ArrowUpRight01Icon",

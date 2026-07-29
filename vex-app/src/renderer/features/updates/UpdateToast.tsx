@@ -21,13 +21,13 @@
  */
 
 import { useEffect, type JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertCircleIcon,
   ArrowUp01Icon,
   Cancel01Icon,
   CheckmarkCircle01Icon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../components/icons/index.js";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 import { Button } from "../../components/ui/button.js";
 
@@ -142,7 +142,7 @@ export function UpdateToast({
             onClick={onDismissError}
             className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
           >
-            <HugeiconsIcon icon={Cancel01Icon} size={14} aria-hidden />
+            <VexIcon icon={Cancel01Icon} size={14} aria-hidden />
           </button>
         ) : null}
       </div>
@@ -299,7 +299,7 @@ function ToastIcon({
   }
   if (status.kind === "downloaded") {
     return (
-      <HugeiconsIcon
+      <VexIcon
         icon={CheckmarkCircle01Icon}
         size={14}
         className="mt-0.5 shrink-0 text-primary"
@@ -309,7 +309,7 @@ function ToastIcon({
   }
   if (status.kind === "blockedByOperation" || status.kind === "error") {
     return (
-      <HugeiconsIcon
+      <VexIcon
         icon={AlertCircleIcon}
         size={14}
         className="mt-0.5 shrink-0 text-destructive"
@@ -318,7 +318,7 @@ function ToastIcon({
     );
   }
   return (
-    <HugeiconsIcon
+    <VexIcon
       icon={ArrowUp01Icon}
       size={14}
       className="mt-0.5 shrink-0 text-primary"

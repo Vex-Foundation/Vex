@@ -10,11 +10,11 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
   RefreshIcon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../../../components/icons/index.js";
 import type { ProviderModelOption } from "@shared/schemas/provider.js";
 import { Input } from "../../../../components/ui/input.js";
 import { cn } from "../../../../lib/utils.js";
@@ -170,7 +170,7 @@ export function ModelPicker({
           onKeyDown={onKeyDown}
           className="pr-10 font-mono text-xs"
         />
-        <HugeiconsIcon
+        <VexIcon
           icon={ArrowDown01Icon}
           size={15}
           aria-hidden
@@ -210,7 +210,7 @@ export function ModelPicker({
                 onClick={onRetry}
                 className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
               >
-                <HugeiconsIcon icon={RefreshIcon} size={12} aria-hidden />
+                <VexIcon icon={RefreshIcon} size={12} aria-hidden />
                 Retry
               </button>
             </div>

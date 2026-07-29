@@ -14,7 +14,7 @@
  *
  * The API hooks are mocked (no IPC) and the heavy review modals are stubbed to
  * a marker that echoes its `open` prop, so the cluster's own logic is exercised
- * in isolation. @hugeicons/react is mocked (ESM-heavy; the badge glyph is
+ * in isolation. VexIcon is mocked (ESM-heavy; the badge glyph is
  * irrelevant to behaviour).
  */
 
@@ -28,8 +28,8 @@ import type {
 import type { PlanGetResult } from "@shared/schemas/session-plan.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 const mockUseSession = vi.fn();

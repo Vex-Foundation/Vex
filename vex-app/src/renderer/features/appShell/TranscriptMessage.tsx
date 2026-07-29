@@ -15,8 +15,7 @@
  */
 
 import type { JSX, ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { StopCircleIcon } from "@hugeicons/core-free-icons";
+import { StopCircleIcon, VexIcon } from "../../components/icons/index.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
 import { CompactionMarker } from "./CompactionMarker.js";
@@ -163,7 +162,7 @@ export function TranscriptMessage({
           <AssistantCaption createdAt={row.createdAt} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
-            <HugeiconsIcon icon={StopCircleIcon} size={12} aria-hidden />
+            <VexIcon icon={StopCircleIcon} size={12} aria-hidden />
             <span>Stopped</span>
           </div>
         </div>

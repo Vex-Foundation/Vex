@@ -6,14 +6,17 @@
  * chip renders. Hidden in mission mode and once the transcript has messages.
  */
 
-import type { IconSvgElement } from "@hugeicons/react";
-import { FireIcon, PercentSquareIcon } from "@hugeicons/core-free-icons";
+import {
+  FireIcon,
+  type IconGlyph,
+  PercentSquareIcon,
+} from "../../components/icons/index.js";
 
 export interface QuickAction {
   readonly label: string;
   readonly prompt: string;
-  /** hugeicons glyph matching the chip's intent (rendered via HugeiconsIcon). */
-  readonly icon: IconSvgElement;
+  /** Glyph matching the chip's intent (rendered via VexIcon). */
+  readonly icon: IconGlyph;
 }
 
 export const QUICK_ACTIONS: readonly QuickAction[] = [

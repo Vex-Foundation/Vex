@@ -14,8 +14,10 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowUpRight01Icon,
+  VexIcon,
+} from "../../../components/icons/index.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
 import type { ExplorerRef } from "@shared/schemas/messages.js";
 
@@ -66,7 +68,7 @@ export function ExplorerRefLinks({
           className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {ref.label}
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} aria-hidden />
+          <VexIcon icon={ArrowUpRight01Icon} size={11} aria-hidden />
         </a>
       ))}
     </div>

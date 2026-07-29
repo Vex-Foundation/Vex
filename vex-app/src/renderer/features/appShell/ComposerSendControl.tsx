@@ -14,8 +14,11 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUp01Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowUp01Icon,
+  StopCircleIcon,
+  VexIcon,
+} from "../../components/icons/index.js";
 import type { ReasoningCapability, ReasoningEffort } from "@shared/schemas/reasoning.js";
 import { cn } from "../../lib/utils.js";
 import {
@@ -103,7 +106,7 @@ export function ComposerSendControl({
               "border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[var(--vex-text-3)]",
             )}
           >
-            <HugeiconsIcon icon={StopCircleIcon} size={16} aria-hidden />
+            <VexIcon icon={StopCircleIcon} size={16} aria-hidden />
           </button>
         ) : (
           <button
@@ -115,7 +118,7 @@ export function ComposerSendControl({
               "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]",
             )}
           >
-            <HugeiconsIcon icon={StopCircleIcon} size={16} aria-hidden />
+            <VexIcon icon={StopCircleIcon} size={16} aria-hidden />
           </button>
         )
       ) : (
@@ -133,7 +136,7 @@ export function ComposerSendControl({
               : "border-transparent bg-[var(--vex-accent)] text-[var(--vex-accent-contrast)] hover:bg-[var(--vex-accent-hover)] active:scale-[0.96]",
           )}
         >
-          <HugeiconsIcon icon={ArrowUp01Icon} size={16} aria-hidden />
+          <VexIcon icon={ArrowUp01Icon} size={16} aria-hidden />
         </button>
       )}
     </div>

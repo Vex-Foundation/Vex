@@ -9,7 +9,7 @@
  */
 
 import type { JSX } from "react";
-import type { IconSvgElement } from "@hugeicons/react";
+import type { IconGlyph } from "../../../../components/icons/index.js";
 import { EMBEDDING_DIM } from "@shared/embedding-defaults.js";
 import { type WizardFlowMode } from "../../../../lib/api/wizard.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -21,7 +21,7 @@ interface EmbeddingsState {
 }
 
 export interface EmbeddingSkipCardProps {
-  readonly icon: IconSvgElement;
+  readonly icon: IconGlyph;
   readonly embeddingsState: EmbeddingsState | null;
   readonly flowMode: WizardFlowMode;
   readonly isPending: boolean;

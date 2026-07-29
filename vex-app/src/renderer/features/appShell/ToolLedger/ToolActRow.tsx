@@ -14,11 +14,11 @@
  */
 
 import { useId, useState, type JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   CheckmarkCircle01Icon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
@@ -56,7 +56,7 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
     >
-      <HugeiconsIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
+      <VexIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
       Confirmed
     </span>
   );
@@ -129,7 +129,7 @@ export function ToolActRow({
           onClick={() => setOpen((v) => !v)}
           className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <HugeiconsIcon
+          <VexIcon
             icon={toolGlyph(act.toolName)}
             size={14}
             aria-hidden
@@ -139,7 +139,7 @@ export function ToolActRow({
             {act.toolName}
           </span>
           {/* Chevron stays even when stamped — it is the expand affordance. */}
-          <HugeiconsIcon
+          <VexIcon
             icon={ArrowRight01Icon}
             size={12}
             aria-hidden
