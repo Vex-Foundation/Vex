@@ -84,6 +84,8 @@ export async function processTurnToolBatch(args: {
     output: string;
     success: boolean;
     explorerRefs: readonly ExplorerRef[];
+    /** Present only for entries that actually ran — never 0 for synthetic ones. */
+    durationMs?: number;
   }> = [];
 
   let toolCallsExecuted = 0;
@@ -157,6 +159,9 @@ export async function processTurnToolBatch(args: {
       // Derive explorer refs from `result.data` HERE — the transcript drops
       // `data`, so this is the last place the structured capture is available.
       explorerRefs: deriveExplorerRefs(resultForTranscript.data),
+      ...(resultForTranscript.durationMs !== undefined
+        ? { durationMs: resultForTranscript.durationMs }
+        : {}),
     });
 
     // A validated prepared-action follow-up short-circuits the rest of this
@@ -170,6 +175,7 @@ export async function processTurnToolBatch(args: {
         context,
         toolContext,
         content: turnResult.content,
+        reasoning: turnResult.reasoning,
         executedCalls,
         executedResults,
         liveMessages,
@@ -246,6 +252,7 @@ export async function processTurnToolBatch(args: {
     executedCalls,
     executedResults,
     liveMessages,
+    reasoning: turnResult.reasoning,
   });
 
   // Update lastText from current turn (assistant may have content alongside toolCalls)

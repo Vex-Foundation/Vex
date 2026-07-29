@@ -112,4 +112,61 @@ describe("persistBatchTranscript — inline tool-result persistence", () => {
       explorerRefs: EXPLORER_REFS,
     });
   });
+
+  it("persists durationMs for an executed entry and omits it for a synthetic one", async () => {
+    const liveMessages: Message[] = [];
+    await persistBatchTranscript({
+      sessionId: "s1",
+      content: null,
+      executedCalls: [
+        { id: "tc-3", name: "web_research", arguments: {} },
+        { id: "tc-4", name: "token_find", arguments: {} },
+      ],
+      executedResults: [
+        {
+          toolCallId: "tc-3",
+          toolName: "web_research",
+          output: "ok",
+          success: true,
+          explorerRefs: [],
+          durationMs: 1234,
+        },
+        // Compact-drained / never-executed shape: no duration at all.
+        {
+          toolCallId: "tc-4",
+          toolName: "token_find",
+          output: "batch_aborted_by_compact: …",
+          success: false,
+          explorerRefs: [],
+        },
+      ],
+      liveMessages,
+    });
+
+    const payloads = appendMessage.mock.calls
+      .filter(([, msg]) => (msg as { role?: string }).role === "tool")
+      .map(([, , meta]) => (meta as { payload?: Record<string, unknown> }).payload);
+
+    expect(payloads[0]).toEqual({ success: true, durationMs: 1234 });
+    // Never 0 — the key is absent so the app reads "unknown", not "instant".
+    expect(payloads[1]).toEqual({ success: false });
+  });
+
+  it("forwards the turn's reasoning to the deferred assistant save", async () => {
+    await persistBatchTranscript({
+      sessionId: "s1",
+      content: "working on it",
+      executedCalls: [{ id: "tc-5", name: "web_research", arguments: {} }],
+      executedResults: [],
+      liveMessages: [],
+      reasoning: "I should search first",
+    });
+
+    expect(saveAssistantMessage).toHaveBeenCalledWith(
+      "s1",
+      "working on it",
+      [{ id: "tc-5", name: "web_research", arguments: {} }],
+      expect.objectContaining({ reasoning: "I should search first" }),
+    );
+  });
 });

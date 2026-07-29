@@ -48,12 +48,17 @@ export async function markApprovedExecutionStatus(
  * for the desktop app. Omitted entirely when empty. This is a metadata-only
  * attachment: the approval decision, gating, and dispatch behavior are
  * unchanged.
+ *
+ * `durationMs` (optional) is the POST-approval dispatch wall clock from
+ * `ToolResult.durationMs`. Omitted when unknown — notably the dispatch-throw
+ * row appended by `onDispatchThrow`, which never received a result to measure.
  */
 export async function appendApprovedToolResult(
   sessionId: string,
   toolCallId: string,
   dispatchResult: { success: boolean; output: string },
   explorerRefs: readonly ExplorerRef[] = [],
+  durationMs?: number,
 ): Promise<void> {
   await appendMessage(
     sessionId,
@@ -70,6 +75,7 @@ export async function appendApprovedToolResult(
       payload: {
         success: dispatchResult.success,
         ...(explorerRefs.length > 0 ? { explorerRefs } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
       },
     },
   );

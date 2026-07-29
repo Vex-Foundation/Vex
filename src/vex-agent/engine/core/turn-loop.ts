@@ -273,6 +273,7 @@ export async function runTurnLoop(
       if (turnResult.content) {
         await saveAssistantMessage(context.sessionId, turnResult.content, null, {
           stopped: true,
+          reasoning: turnResult.reasoning,
         });
       }
       stopReason = "user_stopped";
@@ -282,7 +283,11 @@ export async function runTurnLoop(
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
       const batchOutcome = await processTurnToolBatch({
         context,
-        turnResult: { content: turnResult.content, toolCalls: turnResult.toolCalls },
+        turnResult: {
+          content: turnResult.content,
+          toolCalls: turnResult.toolCalls,
+          reasoning: turnResult.reasoning,
+        },
         liveMessages,
         currentTokenCount,
         contextLimit: loopConfig.contextLimit,
@@ -356,6 +361,7 @@ export async function runTurnLoop(
         context,
         liveMessages,
         content: turnResult.content,
+        reasoning: turnResult.reasoning,
         mergeOperatorInstructions,
       });
       if (textOutcome.kind === "mission_run_continue") {

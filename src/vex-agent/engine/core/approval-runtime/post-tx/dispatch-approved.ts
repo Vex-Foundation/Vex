@@ -113,7 +113,15 @@ export async function applyApproveSideEffects(
     // `data` is threaded through so the approved tool-result carries coherent
     // explorer refs (metadata-only); `markApprovedExecutionStatus` still keys
     // only off `success`/`output`.
-    let dispatchResult: { success: boolean; output: string; data?: Record<string, unknown> };
+    // `durationMs` measures the POST-approval dispatch only — the clock lives
+    // inside `dispatchTool`, so the time spent waiting for the user's decision
+    // is deliberately excluded.
+    let dispatchResult: {
+      success: boolean;
+      output: string;
+      data?: Record<string, unknown>;
+      durationMs?: number;
+    };
     try {
       dispatchResult = await dispatchTool(
         {
@@ -142,6 +150,7 @@ export async function applyApproveSideEffects(
       toolCall.toolCallId,
       dispatchResult,
       deriveExplorerRefs(dispatchResult.data),
+      dispatchResult.durationMs,
     );
 
     let continuation: PreparedContinuation | null = null;

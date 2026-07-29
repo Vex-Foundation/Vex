@@ -34,6 +34,13 @@ export interface SingleTurnResult {
   content: string | null;
   /** Tool calls from model — null when text only. */
   toolCalls: ParsedToolCall[] | null;
+  /**
+   * Reasoning trace for this turn, when the provider returned one. Populated
+   * on BOTH the streaming path and the buffered `chatCompletion` fallback
+   * (see `runStreamingInference`). Carried to the deferred assistant save so
+   * it lands on the durable row instead of only in the ephemeral preview.
+   */
+  reasoning: string | null;
   /** Token usage from this request. */
   promptTokens: number;
   /**
@@ -169,6 +176,7 @@ export async function executeTurn(
   return {
     content: response.content,
     toolCalls: response.toolCalls,
+    reasoning: response.reasoning ?? null,
     promptTokens,
     inferenceAborted: aborted,
     usageObserved,
@@ -251,6 +259,27 @@ function markHistoryTail(messages: ProviderMessage[], hasSummary: boolean): void
 }
 
 /**
+ * Maximum reasoning characters persisted on an assistant row.
+ *
+ * MUST stay in lockstep with the renderer's `REASONING_TEXT_CAP` and with the
+ * `sessionMessageDtoSchema` bound (C1) — a longer write would fail DTO
+ * validation and drop the whole page.
+ */
+export const REASONING_PAYLOAD_CAP = 16_384;
+
+/**
+ * Cap the reasoning trace, KEEPING THE TAIL. The end of a reasoning trace is
+ * where the model states its conclusion, so an over-long trace loses its
+ * opening, never its ending. Whitespace-only traces are dropped entirely so
+ * the JSONB column carries no empty-string noise.
+ */
+function reasoningForPayload(reasoning: string | null | undefined): string | null {
+  if (reasoning === null || reasoning === undefined) return null;
+  if (reasoning.trim().length === 0) return null;
+  return reasoning.slice(-REASONING_PAYLOAD_CAP);
+}
+
+/**
  * Save an assistant message to DB.
  *
  * Exported for use by turn-loop (deferred save after canonical batch prefix
@@ -260,7 +289,12 @@ export async function saveAssistantMessage(
   sessionId: string,
   content: string | null,
   toolCalls: ParsedToolCall[] | null,
-  opts?: { readonly stopped?: boolean; readonly systemOriginated?: boolean },
+  opts?: {
+    readonly stopped?: boolean;
+    readonly systemOriginated?: boolean;
+    /** Provider reasoning trace for this turn; capped + tail-kept on persist. */
+    readonly reasoning?: string | null;
+  },
 ): Promise<void> {
   const hasContent = content !== null && content !== undefined;
   const hasToolCalls = toolCalls !== null && toolCalls !== undefined && toolCalls.length > 0;
@@ -288,6 +322,15 @@ export async function saveAssistantMessage(
           : "chat",
     visibility: "user",
   };
+
+  // `payload` is the ONLY part of MessageMetadata that reaches the
+  // `messages.metadata` JSONB column (db/repos/messages/write.ts), so the
+  // reasoning trace rides there — the desktop app reads it as the column's
+  // top-level `metadata -> 'reasoning'`. Omitted entirely when there is none.
+  const reasoning = reasoningForPayload(opts?.reasoning);
+  if (reasoning !== null) {
+    metadata.payload = { reasoning };
+  }
 
   await appendMessage(
     sessionId,

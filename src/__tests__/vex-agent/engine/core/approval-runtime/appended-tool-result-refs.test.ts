@@ -49,4 +49,22 @@ describe("appendApprovedToolResult — explorerRefs", () => {
     expect(meta.payload).toEqual({ success: false });
     expect(meta.payload).not.toHaveProperty("explorerRefs");
   });
+
+  it("attaches durationMs (post-approval dispatch only) when the caller measured one", async () => {
+    await appendApprovedToolResult("s1", "tc-1", { success: true, output: "{}" }, [], 4200);
+
+    const meta = mockAppendMessage.mock.calls[0]![2] as {
+      payload?: Record<string, unknown>;
+    };
+    expect(meta.payload).toEqual({ success: true, durationMs: 4200 });
+  });
+
+  it("omits durationMs when the dispatch reported none", async () => {
+    await appendApprovedToolResult("s1", "tc-1", { success: true, output: "{}" });
+
+    const meta = mockAppendMessage.mock.calls[0]![2] as {
+      payload?: Record<string, unknown>;
+    };
+    expect(meta.payload).not.toHaveProperty("durationMs");
+  });
 });

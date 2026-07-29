@@ -92,6 +92,35 @@ describe("session Markdown export", () => {
     expect(markdown).toContain("[redacted]");
   });
 
+  it("quotes persisted assistant reasoning before the prose, redacted like content", () => {
+    const apiKey = `sk-or-v1-${"b".repeat(32)}`;
+    const markdown = renderSessionMarkdown(SESSION, [
+      message({
+        id: 1,
+        role: "assistant",
+        content: "Token confirmed.",
+        reasoning: `Checked the mint.\nThen used ${apiKey}.`,
+      }),
+    ]);
+
+    expect(markdown).toContain("> **Reasoning**");
+    expect(markdown).toContain("> Checked the mint.");
+    expect(markdown).not.toContain(apiKey);
+    expect(markdown.indexOf("> **Reasoning**")).toBeLessThan(
+      markdown.indexOf("Token confirmed."),
+    );
+  });
+
+  it("emits no Reasoning section for user rows or when reasoning is null", () => {
+    const markdown = renderSessionMarkdown(SESSION, [
+      message({ id: 1, role: "user", content: "Buy ANSEM.", reasoning: "leaked?" }),
+      message({ id: 2, role: "assistant", content: "Done.", reasoning: null }),
+    ]);
+
+    expect(markdown).not.toContain("Reasoning");
+    expect(markdown).not.toContain("leaked?");
+  });
+
   it("leaves a tx hash in tool prose legible (export precision contract)", () => {
     const txHash =
       "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";

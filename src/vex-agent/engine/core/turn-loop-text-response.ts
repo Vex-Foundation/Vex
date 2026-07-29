@@ -34,10 +34,14 @@ export async function handleTextResponse(args: {
   /** MUTATED: pushed with assistant message and (in mission-run) the [Engine: continue] system marker. */
   readonly liveMessages: Message[];
   readonly content: string;
+  /** Provider reasoning trace for this turn; persisted on the assistant row. */
+  readonly reasoning: string | null;
   readonly mergeOperatorInstructions: () => Promise<void>;
 }): Promise<TextResponseOutcome> {
   // Deferred save: text-only assistant message
-  await saveAssistantMessage(args.context.sessionId, args.content, null);
+  await saveAssistantMessage(args.context.sessionId, args.content, null, {
+    reasoning: args.reasoning,
+  });
 
   args.liveMessages.push({
     role: "assistant",

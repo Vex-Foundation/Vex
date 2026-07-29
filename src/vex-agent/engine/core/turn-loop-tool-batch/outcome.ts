@@ -15,6 +15,8 @@ import type {
 export interface BatchTurnResult {
   readonly content: string | null;
   readonly toolCalls: ParsedToolCall[];
+  /** Provider reasoning trace for this turn; persisted on the assistant row. */
+  readonly reasoning: string | null;
 }
 
 export interface StopPayload {

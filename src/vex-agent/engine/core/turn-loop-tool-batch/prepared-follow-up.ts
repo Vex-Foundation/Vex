@@ -59,13 +59,21 @@ export async function dispatchPreparedActionFollowUp(args: {
   readonly context: EngineContext;
   readonly toolContext: InternalToolContext;
   readonly content: string | null;
+  /** Provider reasoning trace of the model turn that emitted the prepare call. */
+  readonly reasoning: string | null;
   readonly executedCalls: ParsedToolCall[];
+  /**
+   * Structurally the orchestrator's `ExecutedResult`, re-declared inline here.
+   * `durationMs` is optional for the same reason as there: absent when the
+   * entry never executed, never `0`.
+   */
   readonly executedResults: Array<{
     readonly toolCallId: string;
     readonly toolName: string;
     readonly output: string;
     readonly success: boolean;
     readonly explorerRefs: readonly ExplorerRef[];
+    readonly durationMs?: number;
   }>;
   readonly liveMessages: Message[];
   readonly followUp: ValidatedPreparedActionFollowUp;
@@ -78,6 +86,7 @@ export async function dispatchPreparedActionFollowUp(args: {
     executedCalls: args.executedCalls,
     executedResults: args.executedResults,
     liveMessages: args.liveMessages,
+    reasoning: args.reasoning,
   });
 
   const syntheticCall: ParsedToolCall = {
@@ -153,6 +162,7 @@ export async function dispatchPreparedActionFollowUp(args: {
         output: result.output,
         success: result.success,
         explorerRefs: deriveExplorerRefs(result.data),
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
       },
     ],
     liveMessages: args.liveMessages,

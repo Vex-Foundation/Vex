@@ -214,6 +214,22 @@ export interface ToolResult {
   /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
   /**
+   * Wall-clock milliseconds the dispatch took, stamped by `dispatchTool` on
+   * both the success and the handler-thrown return path. Covers routing plus
+   * handler execution INCLUDING any retries the handler performs internally.
+   *
+   * ABSENT (never `0`) whenever nothing executed: the pressure-band and
+   * plan-acceptance early denies, and every synthetic result the engine
+   * fabricates itself (compact-drained batch entries, auto-rejected
+   * approvals, calls that were never dispatched). A `0` would be rendered by
+   * the app as "took 0 ms", which would be a lie.
+   *
+   * An approval-resumed dispatch measures the POST-approval run only — the
+   * clock lives inside `dispatchTool`, so the time an intent spent waiting on
+   * the user is deliberately not counted.
+   */
+  durationMs?: number;
+  /**
    * Action taxonomy stamp — what kind of action this dispatch actually performed
    * (see `./taxonomy.ts`). Stamped by:
    *  - `dispatchTool` as a fallback from `getActionKind(toolName)` for internal
