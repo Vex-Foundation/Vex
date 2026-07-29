@@ -57,6 +57,7 @@ describe("messages schemas", () => {
       explorerRefs: null,
       reasoning: null,
       durationMs: null,
+      success: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -78,6 +79,7 @@ describe("messages schemas", () => {
       explorerRefs: null,
       reasoning: null,
       durationMs: null,
+      success: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -99,6 +101,7 @@ describe("messages schemas", () => {
       ],
       reasoning: null,
       durationMs: 2314,
+      success: true,
     });
     expect(parsed.success).toBe(true);
   });
@@ -121,6 +124,7 @@ describe("messages schemas", () => {
       explorerRefs: refs,
       reasoning: null,
       durationMs: null,
+      success: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -139,6 +143,7 @@ describe("messages schemas", () => {
       explorerRefs: [{ chain: "solana", txRef: "a".repeat(129) }],
       reasoning: null,
       durationMs: null,
+      success: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -156,6 +161,7 @@ describe("messages schemas", () => {
       toolCalls: null,
       explorerRefs: null,
       durationMs: null,
+      success: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
@@ -186,6 +192,7 @@ describe("messages schemas", () => {
       toolCalls: null,
       explorerRefs: null,
       reasoning: null,
+      success: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
@@ -218,6 +225,7 @@ describe("messages schemas", () => {
       explorerRefs: null,
       reasoning: null,
       durationMs: null,
+      success: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -241,6 +249,7 @@ describe("messages schemas", () => {
       explorerRefs: null,
       reasoning: null,
       durationMs: null,
+      success: null,
     });
     expect(parsed.success).toBe(false);
   });

@@ -188,6 +188,7 @@ function msg(id: number): SessionMessageDto {
     explorerRefs: null,
     reasoning: null,
     durationMs: null,
+    success: null,
   };
 }
 

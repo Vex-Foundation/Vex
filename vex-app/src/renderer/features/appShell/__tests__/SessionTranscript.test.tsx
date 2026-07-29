@@ -54,6 +54,7 @@ function msg(p: {
     explorerRefs: null,
     reasoning: null,
     durationMs: null,
+    success: null,
   };
 }
 

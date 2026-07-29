@@ -130,6 +130,15 @@ export const toolDurationMsProjectionSchema = z
   .max(86_400_000);
 
 /**
+ * Bounded projection of `messages.metadata -> 'success'` (tool-result rows):
+ * the engine's persisted execution outcome. `null` on legacy rows persisted
+ * before the projection existed — the renderer must treat null as UNKNOWN
+ * outcome (never as success) when gating outcome-dependent display such as
+ * swap/bridge leg lines.
+ */
+export const toolSuccessProjectionSchema = z.boolean();
+
+/**
  * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
  * shipped wholesale; `explorerRefs` is the FIRST narrowly allow-listed,
  * mapper-validated projection off that column (tool-result rows only). Other
@@ -184,6 +193,12 @@ export const sessionMessageDtoSchema = z
      * a call that did not run must carry `null`, never `0`.
      */
     durationMs: toolDurationMsProjectionSchema.nullable(),
+    /**
+     * Execution outcome for a `tool_result` row (validated projection of
+     * `messages.metadata -> 'success'`). Required and `null` on non-tool rows
+     * and legacy rows; null means UNKNOWN, never success.
+     */
+    success: toolSuccessProjectionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

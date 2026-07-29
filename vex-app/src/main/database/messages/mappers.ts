@@ -15,6 +15,7 @@ import {
   explorerRefsSchema,
   reasoningProjectionSchema,
   toolDurationMsProjectionSchema,
+  toolSuccessProjectionSchema,
   type ExplorerRef,
   type MessageCursor,
   type MessageKind,
@@ -40,17 +41,19 @@ export interface MessageRow {
   readonly reasoning: unknown;
   /** ONLY the `durationMs` sub-key of `messages.metadata` (tool-result rows). */
   readonly duration_ms: unknown;
+  /** ONLY the `success` sub-key of `messages.metadata` (tool-result rows). */
+  readonly success: unknown;
 }
 
 // Raw `metadata` JSONB is still deliberately NOT selected in full — the strict
-// "metadata completely omitted" posture stands. Exactly THREE narrowly
+// "metadata completely omitted" posture stands. Exactly FOUR narrowly
 // allow-listed sub-key projections exist (`explorerRefs`, `reasoning`,
-// `durationMs`); the SELECT reaches only those sub-keys and the mapper
+// `durationMs`, `success`); the SELECT reaches only those sub-keys and the mapper
 // zod-validates each before it reaches the DTO (JSONB is untrusted at this
 // boundary). The `message_type` column (migration 002) remains the engine's
 // authoritative marker discriminator.
 export const MESSAGE_ROW_COLUMNS =
-  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms";
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -214,6 +217,17 @@ function extractDurationMs(row: MessageRow): number | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * Validate the `metadata -> 'success'` projection. ONLY tool-result rows carry
+ * an outcome; anything non-boolean → `null` = UNKNOWN. Callers must never
+ * treat null as success.
+ */
+function extractSuccess(row: MessageRow): boolean | null {
+  if (row.role !== "tool") return null;
+  const parsed = toolSuccessProjectionSchema.safeParse(row.success);
+  return parsed.success ? parsed.data : null;
+}
+
 export function toDto(row: MessageRow): SessionMessageDto {
   // Extract the tool name once: it drives BOTH the recall-kind decision
   // and the DTO's `toolName` field.
@@ -234,6 +248,7 @@ export function toDto(row: MessageRow): SessionMessageDto {
     explorerRefs: extractExplorerRefs(row),
     reasoning: extractReasoning(row),
     durationMs: extractDurationMs(row),
+    success: extractSuccess(row),
   };
 }
 

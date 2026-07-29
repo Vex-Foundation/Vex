@@ -37,6 +37,7 @@ function message(
     explorerRefs: null,
     reasoning: null,
     durationMs: null,
+    success: null,
     ...overrides,
   };
 }

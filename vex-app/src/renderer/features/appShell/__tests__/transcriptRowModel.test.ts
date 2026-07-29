@@ -28,6 +28,7 @@ function dto(p: {
   readonly explorerRefs?: SessionMessageDto["explorerRefs"];
   readonly reasoning?: SessionMessageDto["reasoning"];
   readonly durationMs?: SessionMessageDto["durationMs"];
+  readonly success?: SessionMessageDto["success"];
   readonly id?: number;
 }): SessionMessageDto {
   return {
@@ -43,6 +44,7 @@ function dto(p: {
     explorerRefs: p.explorerRefs ?? null,
     reasoning: p.reasoning ?? null,
     durationMs: p.durationMs ?? null,
+    success: p.success ?? null,
   };
 }
 

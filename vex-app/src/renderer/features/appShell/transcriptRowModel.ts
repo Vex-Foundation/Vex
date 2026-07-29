@@ -90,6 +90,12 @@ export interface TranscriptRowModel {
    * NOT zero: the renderer must print no chip at all rather than "0 s".
    */
   readonly durationMs?: number | null;
+  /**
+   * Tool RESULT rows: engine-persisted execution outcome (contract C1
+   * `success` projection). `null` = UNKNOWN (legacy row) — callers must never
+   * treat it as success.
+   */
+  readonly success?: boolean | null;
 }
 
 function assertNever(value: never): never {
@@ -224,6 +230,7 @@ export function toTranscriptRow(
         explorerRefs: dto.explorerRefs,
         // Measured wall clock; merges onto the paired act in the S5 post-pass.
         durationMs: dto.durationMs,
+        success: dto.success,
       };
     }
     // tool_call row: prose (content) + one disclosure per executed tool.
@@ -313,6 +320,13 @@ export interface ToolCallActView {
    * not zero; a not-run call must never read as "0 s".
    */
   readonly durationMs?: number | null;
+  /**
+   * Execution outcome merged from this act's paired `tool_result` row.
+   * Absent/`null` until a result pairs or on legacy rows = UNKNOWN — display
+   * gated on outcome (e.g. swap/bridge leg lines) must require `true`, never
+   * treat null as success.
+   */
+  readonly success?: boolean | null;
 }
 
 /** Aggregation entry replacing a run of ≥TOOL_GROUP_MIN_CALLS calls. */
@@ -369,6 +383,7 @@ interface MutableAct {
   output: string | null;
   explorerRefs?: readonly ExplorerRef[] | null;
   durationMs?: number | null;
+  success?: boolean | null;
 }
 
 function transformToolRun(
@@ -411,6 +426,9 @@ function transformToolRun(
         // call never executed, and must stay absent rather than become 0.
         if (row.durationMs !== null && row.durationMs !== undefined) {
           act.durationMs = row.durationMs;
+        }
+        if (row.success !== null && row.success !== undefined) {
+          act.success = row.success;
         }
         consumedResultIds.add(row.id);
       }
