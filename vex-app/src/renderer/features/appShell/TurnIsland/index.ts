@@ -1,13 +1,8 @@
 /**
- * TurnIsland public gate. `StreamingBubble` mounts `TurnIsland`; the state
- * derivation is exported for tests and for any surface that needs to reason
- * about the turn without rendering it. Everything else here is internal.
+ * TurnIsland public gate. The island's ONE public contract is the component
+ * `StreamingBubble` mounts; the state derivation (`islandTurnState.ts`) is a
+ * module-internal detail that its own unit tests import directly, so it is
+ * deliberately not re-exported here.
  */
 
 export { TurnIsland } from "./TurnIsland.js";
-export {
-  resolveTurnIslandView,
-  STREAM_ERROR_LABEL,
-  type TurnIslandState,
-  type TurnIslandView,
-} from "./islandTurnState.js";

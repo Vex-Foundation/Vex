@@ -101,7 +101,10 @@ function AssistantCaption({
   readonly createdAt: string;
 }): JSX.Element {
   return (
-    <span className="mb-1 flex items-baseline gap-2 font-mono text-[10px] uppercase tracking-[0.14em] tabular-nums">
+    // Register C2: a speaker caption is HUMAN chrome, so it wears the support
+    // small-caps stamp (`.vex-micro`, sans) — mono is reserved for genuinely
+    // technical strings (code, raw JSON, addresses, tx hashes).
+    <span className="vex-micro mb-1 flex items-baseline gap-2 tabular-nums">
       <TapeClock createdAt={createdAt} />
       <span className="text-[var(--vex-text-3)]">Vex</span>
     </span>
@@ -143,7 +146,8 @@ export function TranscriptMessage({
           <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-xl border border-[var(--vex-line-strong)] bg-white/[0.04] px-3.5 py-2.5 font-serif text-[16.5px] leading-[1.65] text-foreground">
             {row.content}
           </div>
-          <span className="mt-1 flex items-baseline justify-end gap-2 font-mono text-[10px] uppercase tabular-nums">
+          {/* Same C2 human-caption register as the assistant stamp. */}
+          <span className="vex-micro mt-1 flex items-baseline justify-end gap-2 tabular-nums">
             <span className="text-[var(--vex-text-3)]">You</span>
             <TapeClock createdAt={row.createdAt} />
           </span>
@@ -231,9 +235,13 @@ export function TranscriptMessage({
       );
     case "tool_group":
       // Wrap in the 28px gutter so the collapsed "{N} tool calls" box clears the
-      // tape spine (left-[9px]) instead of colliding with it.
+      // tape spine (left-[9px]) instead of colliding with it. The folded
+      // reasoning (a prose-less call row's trace, which the aggregation would
+      // otherwise swallow) keeps the same collapsible block it has everywhere
+      // else, above the ledger line.
       return (
         <div className="pl-7">
+          <ReasonedBlock reasoning={row.reasoning} />
           <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
         </div>
       );

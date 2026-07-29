@@ -22,9 +22,10 @@
  *      (directional shadows and the select-beam's lit-item shadow live in
  *      globals.css, outside this scan by design).
  *
- * Scope: every non-test .ts/.tsx under features/appShell, plus the two
- * shared primitives the shell composes for popover/dialog chrome
- * (components/ui/dialog.tsx, components/ui/select-menu.tsx). Onboarding
+ * Scope: every non-test .ts/.tsx under features/appShell, plus the three
+ * shared primitives the shell composes for popover/dialog chrome and the
+ * turn island (components/ui/dialog.tsx, components/ui/select-menu.tsx,
+ * components/ui/dynamic-island.tsx). Onboarding
  * surfaces are a separate, finished language and are NOT scanned.
  *
  * Sources are read via `import.meta.glob(..., ?raw)` — Vite inlines the
@@ -51,6 +52,12 @@ const SHELL_SOURCES: Record<string, string> = {
     [
       "../../../components/ui/dialog.tsx",
       "../../../components/ui/select-menu.tsx",
+      // The Turn Island's shell primitive: owned source rendered INSIDE the
+      // chat column, so the shell's surface law (solid ink + hairlines, never
+      // glass, never a resting glow) binds it exactly like an appShell file.
+      // It complies today; scanning it keeps that a red build instead of a
+      // review comment.
+      "../../../components/ui/dynamic-island.tsx",
     ],
     { query: "?raw", import: "default", eager: true },
   ),

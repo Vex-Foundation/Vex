@@ -353,6 +353,71 @@ describe("TranscriptMessage persisted reasoning", () => {
       container.querySelectorAll('[data-vex-reasoning="persisted"]'),
     ).toHaveLength(1);
   });
+
+  it("renders the folded trace above a tool_group ledger line", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 10,
+          createdAt: ISO,
+          distinctToolNames: ["search:web"],
+          calls: [
+            { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: "r1" },
+          ],
+          reasoning: "why I ran the whole chain",
+        },
+      }),
+    );
+    expect(
+      container.querySelectorAll('[data-vex-reasoning="persisted"]'),
+    ).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+  });
+
+  it("renders no block on a tool_group that folded no trace", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 10,
+          createdAt: ISO,
+          distinctToolNames: ["search:web"],
+          calls: [
+            { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: null },
+          ],
+          reasoning: null,
+        },
+      }),
+    );
+    expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
+  });
+});
+
+// ── C2 typographic register: human captions are NOT mono ────────────────────
+
+describe("TranscriptMessage caption register (contract C2)", () => {
+  it("stamps both speaker captions with the sans small-caps class, never font-mono", () => {
+    const { container: assistant } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    const { container: user } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "user", content: "hi" }),
+      }),
+    );
+    for (const [name, container] of [
+      ["Vex", assistant],
+      ["You", user],
+    ] as const) {
+      const caption = container.querySelector(".vex-micro");
+      expect(caption, `${name} caption`).not.toBeNull();
+      expect(caption?.className).not.toContain("font-mono");
+      expect(caption?.textContent).toContain(name);
+    }
+  });
 });
 
 // ── Friendly tool cards: the duration chip's null-vs-measured law ───────────

@@ -339,6 +339,17 @@ export interface ToolGroupRowModel {
   readonly distinctToolNames: readonly string[];
   /** First contributing call row's timestamp. */
   readonly createdAt: string;
+  /**
+   * The persisted reasoning of the first PROSE-LESS call row folded into this
+   * group (contract C1). Aggregation may drop the call/result interleaving, it
+   * must never drop the turn's thinking: a prose-less call row has no other
+   * row to carry its reasoning once it is folded in, so the group carries it
+   * and renders the same collapsible block above the ledger line. Call rows
+   * that DO have prose keep their own document row (emitted above the group)
+   * and their own reasoning with it — which is why only prose-less rows are
+   * harvested here and the block can never render twice for one turn.
+   */
+  readonly reasoning?: string | null;
 }
 
 /** What the transcript actually renders: plain rows plus group entries. */
@@ -442,6 +453,7 @@ function transformToolRun(
   const grouped = allActs.length >= TOOL_GROUP_MIN_CALLS;
   const entries: TranscriptEntry[] = [];
   let groupEmitted = false;
+  const foldedReasoning = grouped ? firstProselessReasoning(run) : null;
   for (const row of run) {
     if (row.toolKind === "call") {
       const acts = actsByRowId.get(row.id) ?? [];
@@ -460,6 +472,7 @@ function transformToolRun(
           calls: allActs,
           distinctToolNames: dedupeToolNames(allActs),
           createdAt: row.createdAt,
+          reasoning: foldedReasoning,
         });
         groupEmitted = true;
       }
@@ -471,6 +484,25 @@ function transformToolRun(
     entries.push(row);
   }
   return entries;
+}
+
+/**
+ * The reasoning a grouped run would otherwise LOSE: the first call row that
+ * carries a trace but no prose of its own. Prose-bearing rows survive the fold
+ * as their own document row (which renders their reasoning), so harvesting
+ * them here would double-render one turn's thinking.
+ */
+function firstProselessReasoning(
+  run: readonly TranscriptRowModel[],
+): string | null {
+  for (const row of run) {
+    if (row.toolKind !== "call" || row.content.length > 0) continue;
+    const reasoning = row.reasoning;
+    if (reasoning !== null && reasoning !== undefined && reasoning.length > 0) {
+      return reasoning;
+    }
+  }
+  return null;
 }
 
 function dedupeToolNames(acts: readonly MutableAct[]): string[] {

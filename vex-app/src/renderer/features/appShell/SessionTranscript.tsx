@@ -217,6 +217,25 @@ export function SessionTranscript({
     if (el !== null) el.scrollTop = el.scrollHeight;
   }, [sessionId]);
 
+  // FIRST PAGE LANDED → jump to newest. The session-change effect above can
+  // only reach the scroller when one is already mounted; opening an UNCACHED
+  // session renders the loading branch first, so that effect finds
+  // `scrollRef.current === null` and the transcript would otherwise open at
+  // its OLDEST visible row. This layout effect is the landing counterpart: it
+  // fires once per session, on the commit where rows first exist, before paint.
+  // Declared ABOVE the newest-row effect on purpose — if the same commit also
+  // carries a live user append, that effect runs after and its top-anchor wins.
+  const bottomJumpedFor = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (bottomJumpedFor.current === sessionId || items.length === 0) return;
+    const el = scrollRef.current;
+    if (el === null) return;
+    bottomJumpedFor.current = sessionId;
+    el.scrollTop = el.scrollHeight;
+    pinnedToBottom.current = true;
+    setShowLatest(false);
+  }, [sessionId, items.length]);
+
   // New newest message. A just-SENT user message (a LIVE append — its id is
   // outside the settled set, the same signal that drives the entry-settle
   // print) anchors at the viewport TOP: the reading position for the reply
@@ -256,16 +275,19 @@ export function SessionTranscript({
     syncLatestVisibility();
   }, [newestId, newestVariant, newestIsLiveAppend, syncLatestVisibility]);
 
-  // Preview signature — every VISIBLE preview change (new stream, new text,
-  // tool name, phase), so a tool-only or error bubble is accounted for and not
-  // just streamed text. It NO LONGER drives a scroll (that follow effect is
-  // deleted): it only re-measures whether the growing bubble has left the
-  // viewport, which is what raises the pill. The spacer-retirement effect
-  // below still depends on this value.
+  // Preview signature — every VISIBLE preview change, so the pill measurement
+  // sees the bubble grow no matter WHICH part of it is growing: streamed text,
+  // the tool name, the phase, and the island's own live reasoning (its status
+  // and reasoning length), which flushes independently of the answer text and
+  // expands the island into a panel. Omitting reasoning let the surface grow
+  // past the fold without ever raising the pill. It NO LONGER drives a scroll
+  // (that follow effect is deleted): it only re-measures whether the growing
+  // bubble has left the viewport. The spacer-retirement effect below still
+  // depends on this value.
   const previewSig =
     preview === null
       ? null
-      : `${preview.streamId}:${preview.phase}:${preview.toolName ?? ""}:${preview.text.length}`;
+      : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningText.length}`;
   useEffect(() => {
     if (previewSig === null) return;
     syncLatestVisibility();
@@ -285,7 +307,12 @@ export function SessionTranscript({
     if (!had || previewSig !== null) return;
     const spacer = anchorSpacerRef.current;
     if (spacer !== null) spacer.style.height = "0px";
-  }, [previewSig]);
+    // Retiring the spacer CHANGES the scroll geometry (scrollHeight shrinks,
+    // and the browser may clamp scrollTop), so the pill must be re-derived
+    // from the new measurements — a stale pill would point at a bottom that
+    // is already in view.
+    syncLatestVisibility();
+  }, [previewSig, syncLatestVisibility]);
 
   // After an intentional older-page fetch settles, hold the viewport if a page
   // was actually prepended (oldest id changed); clear the anchor either way —

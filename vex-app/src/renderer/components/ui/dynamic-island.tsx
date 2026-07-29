@@ -25,7 +25,13 @@
  *    consumer, and the repo deletes dead code rather than carrying it.
  *  - Colors are `--vex-*` tokens on a SOLID INK surface: no glass filter and
  *    no resting glow — the shell design guard bans both by raw text scan.
- *  - `prefers-reduced-motion` collapses every spring to a hard cut.
+ *  - The reference's `DynamicDiv`/`DynamicTitle`/`DynamicDescription` content
+ *    wrappers are NOT carried: this island composes one `DynamicContainer` per
+ *    state view, so they had zero consumers, and the repo deletes dead code
+ *    rather than keeping speculative API.
+ *  - `prefers-reduced-motion` collapses every spring to a hard cut — and so
+ *    does the `frozen` freeze (`resolveIslandMotion`), which consumers raise
+ *    when motion would misrepresent progress.
  *
  * MOTION-POLICY: `motion.*` with initial/animate/exit/transition only. No
  * `layout`/`layoutId` (they inject a runtime stylesheet the CSP blocks).
@@ -48,7 +54,7 @@ import { cn } from "../../lib/utils.js";
 /** A named shape. Consumers define which of these their states map onto. */
 export type IslandSizePreset = "hidden" | "pill" | "stamp" | "row" | "panel";
 
-export interface IslandShape {
+interface IslandShape {
   /** `"100%"` fills the host column; a number is a px cap. */
   readonly width: number | "100%";
   /** `"auto"` lets streaming content grow the shell; a number is px. */
@@ -61,7 +67,7 @@ export interface IslandShape {
  * a chat-column surface: a status pill, a settled stamp, a full-width tool row,
  * and a growing panel for live reasoning.
  */
-export const ISLAND_SHAPES: Readonly<Record<IslandSizePreset, IslandShape>> = {
+const ISLAND_SHAPES: Readonly<Record<IslandSizePreset, IslandShape>> = {
   hidden: { width: 0, height: 0, borderRadius: 0 },
   pill: { width: 168, height: 30, borderRadius: 15 },
   stamp: { width: 232, height: 28, borderRadius: 14 },
@@ -81,6 +87,33 @@ interface IslandContextValue {
   readonly state: IslandState;
   readonly setSize: (size: IslandSizePreset) => void;
   readonly shapes: Readonly<Record<IslandSizePreset, IslandShape>>;
+  /** THE FREEZE — see `frozen` on the provider. */
+  readonly frozen: boolean;
+}
+
+/**
+ * The motion config for one island transition. Pure and exported because the
+ * freeze is a TRUST property, not a decoration: a consumer that declares the
+ * island frozen must be able to prove, in a unit test, that every transition
+ * it produces is a hard cut — no springs, no entry offset. `changed` is the
+ * content cross-fade signal (a new size means new content); shell transitions
+ * pass `true` because their target values carry the change themselves.
+ */
+export function resolveIslandMotion(
+  reduceMotion: boolean,
+  frozen: boolean,
+  changed: boolean,
+): {
+  readonly still: boolean;
+  readonly enterOffset: number;
+  readonly transition: Record<string, unknown>;
+} {
+  const still = reduceMotion || frozen;
+  return {
+    still,
+    enterOffset: still || !changed ? 0 : 4,
+    transition: still ? { duration: 0 } : SPRING_SNAPPY,
+  };
 }
 
 const IslandContext = createContext<IslandContextValue | undefined>(undefined);
@@ -99,9 +132,18 @@ function islandReducer(state: IslandState, action: IslandAction): IslandState {
 export function DynamicIslandProvider({
   children,
   initialSize = "pill",
+  frozen = false,
 }: {
   readonly children: ReactNode;
   readonly initialSize?: IslandSizePreset;
+  /**
+   * THE FREEZE. While true, EVERY transition this island runs — the shell's
+   * shape morph and every content wrapper's cross-fade — becomes a duration-0
+   * hard cut. Consumers set it when motion would lie about progress (Vex
+   * awaiting a signature): trust is stillness, and a shell that keeps springing
+   * while it waits for the user's pen reads as work that is not happening.
+   */
+  readonly frozen?: boolean;
 }): JSX.Element {
   const [state, dispatch] = useReducer(islandReducer, {
     size: initialSize,
@@ -113,8 +155,13 @@ export function DynamicIslandProvider({
   }, []);
 
   const value = useMemo(
-    (): IslandContextValue => ({ state, setSize, shapes: ISLAND_SHAPES }),
-    [state, setSize],
+    (): IslandContextValue => ({
+      state,
+      setSize,
+      shapes: ISLAND_SHAPES,
+      frozen,
+    }),
+    [state, setSize, frozen],
   );
 
   return <IslandContext.Provider value={value}>{children}</IslandContext.Provider>;
@@ -155,13 +202,15 @@ export function DynamicIsland({
 } & Record<string, unknown>): JSX.Element {
   const willChange = useWillChange();
   const reduceMotion = useReducedMotion() === true;
-  const { state, shapes } = useDynamicIslandSize();
+  const { state, shapes, frozen } = useDynamicIslandSize();
   const shape = shapes[state.size];
+  const motionConfig = resolveIslandMotion(reduceMotion, frozen, true);
 
   return (
     <motion.div
       id={id}
       data-vex-island-size={state.size}
+      data-vex-island-still={motionConfig.still ? "" : undefined}
       className={cn(
         "overflow-hidden border border-[var(--vex-line)] bg-[var(--vex-surface-1)] text-left",
         className,
@@ -170,7 +219,7 @@ export function DynamicIsland({
         width: shape.width === "100%" ? "100%" : `${shape.width}px`,
         height: shape.height === "auto" ? "auto" : shape.height,
         borderRadius: shape.borderRadius,
-        transition: reduceMotion ? { duration: 0 } : SPRING_SNAPPY,
+        transition: motionConfig.transition,
       }}
       style={{ willChange }}
       {...rest}
@@ -188,13 +237,18 @@ function useContentMotion(): {
   readonly transition: Record<string, unknown>;
 } {
   const reduceMotion = useReducedMotion() === true;
-  const { state } = useDynamicIslandSize();
+  const { state, frozen } = useDynamicIslandSize();
   const changed = state.size !== state.previousSize;
+  const { still, enterOffset, transition } = resolveIslandMotion(
+    reduceMotion,
+    frozen,
+    changed,
+  );
   return {
-    initial: { opacity: changed && !reduceMotion ? 0 : 1, y: changed && !reduceMotion ? 4 : 0 },
+    initial: { opacity: enterOffset === 0 ? 1 : 0, y: enterOffset },
     animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: reduceMotion ? 0 : -4 },
-    transition: reduceMotion ? { duration: 0 } : SPRING_SNAPPY,
+    exit: { opacity: 0, y: still ? 0 : -4 },
+    transition,
   };
 }
 
@@ -215,53 +269,3 @@ export function DynamicContainer({
   );
 }
 
-/** Animated block inside a state view. */
-export function DynamicDiv({
-  className,
-  children,
-}: {
-  readonly className?: string;
-  readonly children?: ReactNode;
-}): JSX.Element {
-  const willChange = useWillChange();
-  const motionProps = useContentMotion();
-  return (
-    <motion.div {...motionProps} style={{ willChange }} className={className}>
-      {children}
-    </motion.div>
-  );
-}
-
-/** Animated heading inside a state view. */
-export function DynamicTitle({
-  className,
-  children,
-}: {
-  readonly className?: string;
-  readonly children?: ReactNode;
-}): JSX.Element {
-  const willChange = useWillChange();
-  const motionProps = useContentMotion();
-  return (
-    <motion.h3 {...motionProps} style={{ willChange }} className={className}>
-      {children}
-    </motion.h3>
-  );
-}
-
-/** Animated body line inside a state view. */
-export function DynamicDescription({
-  className,
-  children,
-}: {
-  readonly className?: string;
-  readonly children?: ReactNode;
-}): JSX.Element {
-  const willChange = useWillChange();
-  const motionProps = useContentMotion();
-  return (
-    <motion.p {...motionProps} style={{ willChange }} className={className}>
-      {children}
-    </motion.p>
-  );
-}

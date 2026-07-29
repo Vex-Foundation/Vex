@@ -171,7 +171,14 @@ export function TurnIsland({
         </span>
         {streaming ? <span>{view.label}</span> : null}
       </span>
-      <DynamicIslandProvider initialSize={view.size}>
+      {/* THE FREEZE reaches the SHELL, not just the loading bar: while a
+          signature is pending the island's shape morph and every content
+          cross-fade become hard cuts, so the surface goes genuinely still
+          instead of springing into the awaiting state. */}
+      <DynamicIslandProvider
+        initialSize={view.size}
+        frozen={view.state === "awaiting"}
+      >
         <DynamicIsland id="vex-turn-island">
           <IslandBody view={view} preview={preview} />
         </DynamicIsland>

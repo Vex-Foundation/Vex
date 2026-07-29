@@ -60,17 +60,11 @@ export function resolveTurnIslandView(
     };
   }
 
-  if (preview.phase !== "streaming") {
-    return {
-      state: "settled",
-      size: hasReasoning ? "stamp" : "hidden",
-      label: hasReasoning ? reasonedStampLabel(preview.reasoningTokens) : "",
-      tone: "neutral",
-      animated: false,
-      showElapsed: false,
-    };
-  }
-
+  // Ahead of the settled branch, per the documented precedence: a turn that
+  // stopped streaming BECAUSE it is waiting on a signature is not settled. The
+  // stream ends the moment the tool call needs approval, so ordering these the
+  // other way dressed a blocked turn as a finished one and dropped the one
+  // label that tells the user the pen is with them.
   if (awaitingApproval) {
     return {
       state: "awaiting",
@@ -79,6 +73,17 @@ export function resolveTurnIslandView(
       tone: "pin",
       animated: false,
       showElapsed: true,
+    };
+  }
+
+  if (preview.phase !== "streaming") {
+    return {
+      state: "settled",
+      size: hasReasoning ? "stamp" : "hidden",
+      label: hasReasoning ? reasonedStampLabel(preview.reasoningTokens) : "",
+      tone: "neutral",
+      animated: false,
+      showElapsed: false,
     };
   }
 

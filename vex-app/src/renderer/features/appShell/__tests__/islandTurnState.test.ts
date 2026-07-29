@@ -107,6 +107,26 @@ describe("resolveTurnIslandView — precedence", () => {
     expect(bare).toMatchObject({ state: "settled", size: "hidden", label: "" });
   });
 
+  it("a DONE turn with a pending signature is awaiting, not settled", () => {
+    // The stream ends the moment a tool call needs approval, so `done` +
+    // pending is the ORDINARY shape of a blocked turn. Ranking settled first
+    // dressed it as finished and dropped the one label that says the pen is
+    // with the user.
+    const view = resolveTurnIslandView(
+      preview({ phase: "done", reasoningText: "t", reasoningTokens: 900 }),
+      true,
+    );
+    expect(view.state).toBe("awaiting");
+    expect(view.label).toBe("Awaiting signature");
+    expect(view.animated).toBe(false);
+  });
+
+  it("an error still outranks a pending signature", () => {
+    expect(
+      resolveTurnIslandView(preview({ phase: "error" }), true).state,
+    ).toBe("error");
+  });
+
   it("the elapsed counter runs only while the turn is live", () => {
     expect(resolveTurnIslandView(preview(), false).showElapsed).toBe(true);
     expect(resolveTurnIslandView(preview(), true).showElapsed).toBe(true);
