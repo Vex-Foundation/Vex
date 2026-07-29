@@ -13,10 +13,13 @@
  *
  * OUTCOME IS PART OF THE TRUTH (rules/90). A leg pair carries the execution
  * outcome the engine persisted (`SessionMessageDto.success`, `null` = UNKNOWN,
- * never success). Only a PROVEN-successful act may read the untrusted output
- * for its numbers; a requested or failed act is parsed from the ARGS alone and
- * the renderer must label it as such, so a pending, denied, or failed call can
- * never be dressed up as a completed trade.
+ * never success) COMBINED with the act's operation identity from
+ * `toolOperation.ts` — because `success` only means the CALL succeeded, not
+ * that funds moved: a successful `swap_quote` is a preview, not a trade. Only
+ * a proven-successful act may read the untrusted output for its numbers; a
+ * requested or failed act is parsed from the ARGS alone. Only a proven MUTATING
+ * operation may render without a label, so a preview, a pending, a denied or a
+ * failed call can never be dressed up as a completed trade.
  *
  * NEVER GUESS AN AMOUNT (rules/90 money-path discipline). Token identity goes
  * through `lib/token-leg-display.ts`'s `tokenDisplay` (the ONE brand-gating
@@ -32,6 +35,7 @@ import {
   tokenDisplay,
   type TokenDisplay,
 } from "../../../lib/token-leg-display.js";
+import type { ToolOperation } from "./toolOperation.js";
 
 export interface ToolLeg {
   /** Token identity resolved through the shared brand-gating grammar. */
@@ -42,13 +46,25 @@ export interface ToolLeg {
 
 /**
  * What the ledger is allowed to CLAIM about this leg pair:
- *  - `executed` — the engine persisted `success: true`; the output may be read
- *    and the numbers may be presented as what happened.
+ *  - `executed` — a proven MUTATING operation the engine persisted as
+ *    `success: true`; the output may be read and the numbers may be presented
+ *    as what happened. The ONLY unlabelled outcome.
+ *  - `quote` — a proven READ-ONLY preview that succeeded. Its numbers are
+ *    real quote numbers, so the output may be read, but nothing moved and the
+ *    renderer must say "Quote".
+ *  - `completed` — the call succeeded but its operation identity is unproven
+ *    (`toolOperation.ts` `unproven`). Numbers may be read; the claim stops at
+ *    "the call completed".
  *  - `failed` — persisted `success: false`; no amount is presented as fact.
  *  - `requested` — UNKNOWN outcome (pending, denied, unpaired, legacy row).
  *    Args-only, and the renderer must mark it visibly as a request.
  */
-export type ToolLegOutcome = "executed" | "failed" | "requested";
+export type ToolLegOutcome =
+  | "executed"
+  | "quote"
+  | "completed"
+  | "failed"
+  | "requested";
 
 export interface ToolLegPair {
   readonly from: ToolLeg;
@@ -138,11 +154,26 @@ function readAmount(
   return null;
 }
 
-/** Persisted outcome → what this pair may claim. `null`/absent = UNKNOWN. */
-function legOutcome(success: boolean | null | undefined): ToolLegOutcome {
-  if (success === true) return "executed";
+/**
+ * Persisted outcome × operation identity → what this pair may claim.
+ * `null`/absent success = UNKNOWN. A successful call is only ever `executed`
+ * when the operation was PROVEN mutating (rules/90: label more, claim less).
+ */
+function legOutcome(
+  success: boolean | null | undefined,
+  operation: ToolOperation,
+): ToolLegOutcome {
   if (success === false) return "failed";
-  return "requested";
+  if (success !== true) return "requested";
+  if (operation === "mutating") return "executed";
+  return operation === "quote" ? "quote" : "completed";
+}
+
+/** Outcomes proven successful — the only ones that may read untrusted output. */
+function readsOutput(outcome: ToolLegOutcome): boolean {
+  return (
+    outcome === "executed" || outcome === "quote" || outcome === "completed"
+  );
 }
 
 /**
@@ -151,9 +182,9 @@ function legOutcome(success: boolean | null | undefined): ToolLegOutcome {
  * arrow pointing at nothing, which reads as a completed leg that never was.
  *
  * Record precedence follows the OUTCOME, not convenience:
- *  - `executed` (persisted `success === true`): the OUTPUT is read first —
- *    what actually happened outranks what was requested — with the args as
- *    the fallback.
+ *  - a SUCCEEDED call (`executed`, `quote`, `completed`): the OUTPUT is read
+ *    first — what the call returned outranks what was requested — with the
+ *    args as the fallback.
  *  - everything else: the ARGS only. An unproven act's untrusted output must
  *    not supply tokens or amounts, because the renderer would then be
  *    presenting an attacker-controllable string as a request the user made.
@@ -162,13 +193,13 @@ export function resolveToolLegs(
   toolArgs: string | null,
   output: string | null,
   success: boolean | null | undefined,
+  operation: ToolOperation,
 ): ToolLegPair | null {
-  const outcome = legOutcome(success);
+  const outcome = legOutcome(success, operation);
   const argRecords = candidateRecords(toolArgs);
-  const all =
-    outcome === "executed"
-      ? [...candidateRecords(output), ...argRecords]
-      : argRecords;
+  const all = readsOutput(outcome)
+    ? [...candidateRecords(output), ...argRecords]
+    : argRecords;
 
   const fromToken = readString(all, FROM_TOKEN_KEYS);
   const toToken = readString(all, TO_TOKEN_KEYS);

@@ -235,13 +235,18 @@ export function TranscriptMessage({
       );
     case "tool_group":
       // Wrap in the 28px gutter so the collapsed "{N} tool calls" box clears the
-      // tape spine (left-[9px]) instead of colliding with it. The folded
-      // reasoning (a prose-less call row's trace, which the aggregation would
-      // otherwise swallow) keeps the same collapsible block it has everywhere
-      // else, above the ledger line.
+      // tape spine (left-[9px]) instead of colliding with it. EVERY folded
+      // trace (the prose-less call rows' reasoning, which the aggregation would
+      // otherwise swallow) gets its OWN collapsible block — the same one used
+      // everywhere else — stacked in turn order above the ledger line, so a
+      // group never silently drops the later halves of the turn's thinking.
+      // Index keys are correct here: the list is a fixed, ordered projection of
+      // the group model, never reordered or spliced.
       return (
         <div className="pl-7">
-          <ReasonedBlock reasoning={row.reasoning} />
+          {(row.reasonings ?? []).map((trace, index) => (
+            <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
+          ))}
           <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
         </div>
       );

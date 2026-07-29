@@ -137,7 +137,7 @@ export function SessionTranscript({
   );
   // One pass that correlates each tool_result row to its call's name, then
   // the S5 act-ledger post-pass: merge outputs into call acts and collapse
-  // runs of ≥3 calls into one group entry.
+  // runs of ≥TOOL_GROUP_MIN_CALLS (6) calls into one group entry.
   const rows = useMemo(
     () => groupTranscriptRows(toTranscriptRows(items)),
     [items],

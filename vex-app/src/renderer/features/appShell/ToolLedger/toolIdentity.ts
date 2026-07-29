@@ -204,7 +204,9 @@ export function resolveToolIdentity(
     const protocol = venueInToolName(name);
     return { protocol, title: withVenue("Swap", protocol), category: "swap" };
   }
-  if (name.startsWith("bridge_")) {
+  // `bridge` — the PRIMARY mutating bridge alias — carries no `bridge_`
+  // prefix (see `action-aliases.ts`), so the exact name is matched too.
+  if (name === "bridge" || name.startsWith("bridge_")) {
     const protocol = venueInToolName(name);
     return { protocol, title: withVenue("Bridge", protocol), category: "bridge" };
   }

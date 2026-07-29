@@ -7,17 +7,28 @@
  * A leg whose amount could not be proven human-readable prints its token
  * ALONE — an omitted number is honest, an invented one is not.
  *
- * OUTCOME IS VISIBLE (rules/90 money-path honesty). Only a PROVEN-successful
- * act renders the bare executed summary. A `requested` pair (pending, denied,
- * unpaired, or legacy-unknown outcome) wears an explicit "Requested" prefix so
- * it can never be mistaken for a completed trade; a `failed` pair wears
- * "Failed" and prints NO amounts at all, because a number beside a failed call
- * reads as money that moved.
+ * OUTCOME IS VISIBLE (rules/90 money-path honesty). ONLY a proven MUTATING
+ * operation that succeeded renders the bare executed summary. Everything else
+ * wears a prefix that says what it actually was: "Quote" for a successful
+ * read-only preview (a swap_quote that moved nothing must never look like a
+ * trade), "Completed" when the call succeeded but its quote-versus-execution
+ * identity is unproven, "Requested" for a pending/denied/unpaired/legacy
+ * unknown outcome, and "Failed" — which additionally prints NO amounts at all,
+ * because a number beside a failed call reads as money that moved.
  */
 
 import type { JSX } from "react";
 import { TokenIcon } from "../../../components/common/TokenIcon.js";
 import type { ToolLeg, ToolLegOutcome, ToolLegPair } from "./toolLegs.js";
+
+/** Prefix text per outcome; `null` ONLY for a proven, successful execution. */
+const OUTCOME_LABELS: Readonly<Record<ToolLegOutcome, string | null>> = {
+  executed: null,
+  quote: "Quote",
+  completed: "Completed",
+  failed: "Failed",
+  requested: "Requested",
+};
 
 /** Visibly distinct prefix for anything that is not a proven execution. */
 function OutcomeLabel({
@@ -25,13 +36,14 @@ function OutcomeLabel({
 }: {
   readonly outcome: ToolLegOutcome;
 }): JSX.Element | null {
-  if (outcome === "executed") return null;
+  const label = OUTCOME_LABELS[outcome];
+  if (label === null) return null;
   return (
     <span
       data-vex-tool-leg-outcome={outcome}
       className="shrink-0 rounded-[3px] border border-[var(--vex-line)] px-1 py-px text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
     >
-      {outcome === "failed" ? "Failed" : "Requested"}
+      {label}
     </span>
   );
 }

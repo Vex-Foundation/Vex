@@ -6,13 +6,29 @@
  * reads as a completed leg that never happened. NEVER GUESS AN AMOUNT: a raw
  * base-unit integer carries no decimals to read it by, so it renders no number
  * at all rather than a possible thousandfold error. OUTCOME IS PART OF THE
- * CLAIM: only a persisted `success === true` yields an `executed` pair, and
- * only an executed pair may read the untrusted OUTPUT. BOUNDED PARSING: an
+ * CLAIM: an `executed` pair needs BOTH a persisted `success === true` AND a
+ * proven MUTATING operation (a successful quote is a preview, not a trade),
+ * and only a succeeded pair may read the untrusted OUTPUT. BOUNDED PARSING: an
  * oversized output is never handed to `JSON.parse` at all.
  */
 
 import { describe, expect, it } from "vitest";
 import { resolveToolLegs } from "../ToolLedger/toolLegs.js";
+import type { ToolOperation } from "../ToolLedger/toolOperation.js";
+
+/**
+ * Thin call-through. The operation identity (quote vs execution) is its own
+ * axis, pinned in its own describe below; every case that is not ABOUT it
+ * reads a proven MUTATING act — the only kind that may claim "executed".
+ */
+function legsFor(
+  toolArgs: string | null,
+  output: string | null,
+  success: boolean | null | undefined,
+  operation: ToolOperation = "mutating",
+) {
+  return resolveToolLegs(toolArgs, output, success, operation);
+}
 
 const SWAP_ARGS = '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}';
 
@@ -25,19 +41,19 @@ describe("resolveToolLegs — fail-closed parsing", () => {
     ["only ONE side present", '{"tokenIn":"SOL"}', null],
     ["non-string tokens", '{"tokenIn":1,"tokenOut":2}', null],
   ])("returns null for %s", (_label, args, output) => {
-    expect(resolveToolLegs(args, output, true)).toBeNull();
+    expect(legsFor(args, output, true)).toBeNull();
   });
 });
 
 describe("resolveToolLegs — amounts are never invented", () => {
   it("renders a dotted-decimal human amount", () => {
-    const legs = resolveToolLegs(SWAP_ARGS, '{"amountOut":"240.31"}', true);
+    const legs = legsFor(SWAP_ARGS, '{"amountOut":"240.31"}', true);
     expect(legs?.from.amount).toBe("1.5");
     expect(legs?.to.amount).toBe("240.31");
   });
 
   it("renders NO amount for a raw base-unit integer (no decimals to read it by)", () => {
-    const legs = resolveToolLegs(
+    const legs = legsFor(
       '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1500000000"}',
       null,
       true,
@@ -49,7 +65,7 @@ describe("resolveToolLegs — amounts are never invented", () => {
   });
 
   it("renders NO amount for numeric junk with a valid prefix", () => {
-    const legs = resolveToolLegs(
+    const legs = legsFor(
       '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5garbage"}',
       '{"amountOut":"240.31<script>"}',
       true,
@@ -59,7 +75,7 @@ describe("resolveToolLegs — amounts are never invented", () => {
   });
 
   it("still names both tokens when neither amount can be proven", () => {
-    const legs = resolveToolLegs('{"tokenIn":"SOL","tokenOut":"USDC"}', null, true);
+    const legs = legsFor('{"tokenIn":"SOL","tokenOut":"USDC"}', null, true);
     expect(legs?.from.token.text).toBe("SOL");
     expect(legs?.to.token.text).toBe("USDC");
     expect(legs?.from.amount).toBeNull();
@@ -69,24 +85,69 @@ describe("resolveToolLegs — amounts are never invented", () => {
 
 describe("resolveToolLegs — execution outcome gates the claim", () => {
   it("marks a proven success as executed", () => {
-    expect(resolveToolLegs(SWAP_ARGS, null, true)?.outcome).toBe("executed");
+    expect(legsFor(SWAP_ARGS, null, true)?.outcome).toBe("executed");
   });
 
   it("marks a persisted failure as failed", () => {
-    expect(resolveToolLegs(SWAP_ARGS, null, false)?.outcome).toBe("failed");
+    expect(legsFor(SWAP_ARGS, null, false)?.outcome).toBe("failed");
   });
 
   it.each([
     ["null (legacy / unpaired row)", null],
     ["undefined (never merged a result)", undefined],
   ])("treats UNKNOWN outcome %s as requested, never executed", (_l, success) => {
-    expect(resolveToolLegs(SWAP_ARGS, null, success)?.outcome).toBe("requested");
+    expect(legsFor(SWAP_ARGS, null, success)?.outcome).toBe("requested");
+  });
+});
+
+// `success` means THE CALL succeeded, not that funds moved. A successful
+// swap_quote is a preview; only a proven MUTATING operation may claim
+// "executed" (rules/90 money-path honesty).
+describe("resolveToolLegs — operation identity gates the executed claim", () => {
+  it("marks a successful QUOTE as a quote, never executed", () => {
+    expect(resolveToolLegs(SWAP_ARGS, null, true, "quote")?.outcome).toBe(
+      "quote",
+    );
+  });
+
+  it("marks a successful UNPROVEN operation as completed, never executed", () => {
+    expect(resolveToolLegs(SWAP_ARGS, null, true, "unproven")?.outcome).toBe(
+      "completed",
+    );
+  });
+
+  it.each(["quote", "unproven"] as const)(
+    "still reports a %s act's persisted failure as failed",
+    (operation) => {
+      expect(resolveToolLegs(SWAP_ARGS, null, false, operation)?.outcome).toBe(
+        "failed",
+      );
+    },
+  );
+
+  it.each(["quote", "unproven"] as const)(
+    "still reports a %s act's UNKNOWN outcome as requested",
+    (operation) => {
+      expect(resolveToolLegs(SWAP_ARGS, null, null, operation)?.outcome).toBe(
+        "requested",
+      );
+    },
+  );
+
+  it("lets a successful quote read its own output numbers", () => {
+    const legs = resolveToolLegs(
+      SWAP_ARGS,
+      '{"amountOut":"240.31"}',
+      true,
+      "quote",
+    );
+    expect(legs?.to.amount).toBe("240.31");
   });
 });
 
 describe("resolveToolLegs — untrusted output is trusted only when executed", () => {
   it("prefers the executed OUTPUT's out-amount (what happened) over the args", () => {
-    const legs = resolveToolLegs(
+    const legs = legsFor(
       '{"tokenIn":"SOL","tokenOut":"USDC","amountOut":"999.0"}',
       '{"amountOut":"240.31"}',
       true,
@@ -101,7 +162,7 @@ describe("resolveToolLegs — untrusted output is trusted only when executed", (
     "IGNORES the output entirely for a %s act — hostile text cannot invent a leg",
     (_label, success) => {
       // Args prove nothing at all; only the output is token-shaped.
-      const legs = resolveToolLegs(
+      const legs = legsFor(
         '{"note":"hi"}',
         '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"9.9"}',
         success,
@@ -111,7 +172,7 @@ describe("resolveToolLegs — untrusted output is trusted only when executed", (
   );
 
   it("takes the ARGS' tokens for an unproven act even when the output disagrees", () => {
-    const legs = resolveToolLegs(
+    const legs = legsFor(
       '{"tokenIn":"SOL","tokenOut":"USDC"}',
       '{"tokenIn":"WBTC","tokenOut":"WBTC","amountOut":"5.0"}',
       null,
@@ -124,7 +185,7 @@ describe("resolveToolLegs — untrusted output is trusted only when executed", (
   it("skips parsing an OVERSIZED output rather than blocking the renderer", () => {
     const oversized = `{"amountOut":"240.31","pad":"${"x".repeat(21_000)}"}`;
     expect(oversized.length).toBeGreaterThan(20_000);
-    const legs = resolveToolLegs(SWAP_ARGS, oversized, true);
+    const legs = legsFor(SWAP_ARGS, oversized, true);
     // Args still carry the pair; the unparsed output contributes nothing.
     expect(legs?.from.amount).toBe("1.5");
     expect(legs?.to.amount).toBeNull();
@@ -133,7 +194,7 @@ describe("resolveToolLegs — untrusted output is trusted only when executed", (
 
 describe("resolveToolLegs — shapes and provenance", () => {
   it("reads the execute_tool wrapper's nested params (one level only)", () => {
-    const legs = resolveToolLegs(
+    const legs = legsFor(
       '{"toolId":"kyberswap.swap.quote","params":{"tokenIn":"ETH","tokenOut":"USDC","amountIn":"0.25"}}',
       null,
       true,
@@ -145,7 +206,7 @@ describe("resolveToolLegs — shapes and provenance", () => {
 
   it("truncates a raw mint through the shared token-display grammar", () => {
     const mint = "So11111111111111111111111111111111111111112";
-    const legs = resolveToolLegs(
+    const legs = legsFor(
       `{"inputMint":"${mint}","outputMint":"7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"}`,
       null,
       true,

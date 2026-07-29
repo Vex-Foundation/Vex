@@ -12,8 +12,9 @@
  * the ledger knew is lost.
  *
  * Two deterministic stamps survive unchanged: "Awaiting signature" from the
- * approval queue, and "Confirmed" when a `wallet_send_confirm` result carries
- * the tool's strict `{ status: "confirmed", txHash }` output contract.
+ * approval queue, and "Confirmed" when the engine persisted `success: true`
+ * for a `wallet_send_confirm` act AND its (bounded) output carries the tool's
+ * strict `{ status: "confirmed", txHash }` contract.
  *
  * Collapsed by default (today's disclosure contract). The expanded body is a
  * recessed well; args/output are sanitized strings rendered as INERT TEXT
@@ -38,15 +39,32 @@ import { ToolLegLine } from "./ToolLegLine.js";
 import { formatToolDuration } from "./toolDuration.js";
 import { resolveToolIdentity } from "./toolIdentity.js";
 import { resolveToolLegs } from "./toolLegs.js";
+import { resolveToolOperation } from "./toolOperation.js";
 import { toolGlyph } from "./toolGlyph.js";
 
 /**
- * Recognise only the successful wallet-confirm output contract. Tool output
- * is still treated as untrusted text: malformed JSON, lookalike tools, a
- * missing hash, or any non-confirmed status all fail closed to no stamp.
+ * Hard bound on the untrusted output text this module hands to `JSON.parse` —
+ * the same 20k gate `toolLegs.ts` applies, for the same reason: tool output is
+ * an UNBOUNDED DTO string and a multi-megabyte payload must never cost the
+ * renderer a synchronous parse per visible card. Far above any legitimate
+ * `{ status, txHash }` receipt, so the gate costs no real stamp.
+ */
+const MAX_PARSE_CHARS = 20_000;
+
+/**
+ * Recognise only the successful wallet-confirm output contract. Two proofs are
+ * required, and the persisted one comes FIRST: the engine must have recorded
+ * `success === true` for this act (rules/90 — a "Confirmed" stamp is a claim
+ * that funds moved, and untrusted output text may confirm that claim but may
+ * never make it on its own). Then the output must carry the tool's strict
+ * `{ status: "confirmed", txHash }` contract. Malformed JSON, an oversized
+ * payload, lookalike tools, a missing hash, or any non-confirmed status all
+ * fail closed to no stamp.
  */
 function isConfirmedWalletTransfer(act: ToolCallActView): boolean {
+  if (act.success !== true) return false;
   if (act.toolName !== "wallet_send_confirm" || act.output === null) return false;
+  if (act.output.length > MAX_PARSE_CHARS) return false;
   try {
     const parsed: unknown = JSON.parse(act.output);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -156,18 +174,23 @@ export function ToolActRow({
     () => resolveToolIdentity(act.toolName, act.toolArgs),
     [act.toolName, act.toolArgs],
   );
-  // Legs are a swap/bridge affordance only — parsing every act's payload for
-  // token-shaped keys would let an unrelated tool's args draw a trade line.
-  // The persisted outcome rides along: only `success === true` may read the
-  // untrusted output and render as an executed summary; `false` renders a
-  // failed treatment and UNKNOWN (null / legacy / unpaired) renders a visibly
-  // distinct "Requested" line — never an executed-looking one.
+  // Legs are a money-operation affordance only — parsing every act's payload
+  // for token-shaped keys would let an unrelated tool's args draw a trade
+  // line. `resolveToolOperation` (not the coarse category) decides both
+  // eligibility and what the line may CLAIM: a proven mutating op that
+  // succeeded renders the bare executed summary, a proven quote renders a
+  // labelled preview, an unproven money-shaped op renders labelled, and
+  // anything else gets no legs at all.
+  const operation = useMemo(
+    () => resolveToolOperation(act.toolName, identity.protocol, act.toolArgs),
+    [act.toolName, identity.protocol, act.toolArgs],
+  );
   const legs = useMemo(
     () =>
-      identity.category === "swap" || identity.category === "bridge"
-        ? resolveToolLegs(act.toolArgs, act.output, act.success)
-        : null,
-    [identity.category, act.toolArgs, act.output, act.success],
+      operation === null
+        ? null
+        : resolveToolLegs(act.toolArgs, act.output, act.success, operation),
+    [operation, act.toolArgs, act.output, act.success],
   );
   return (
     <div

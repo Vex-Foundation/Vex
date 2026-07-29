@@ -340,16 +340,18 @@ export interface ToolGroupRowModel {
   /** First contributing call row's timestamp. */
   readonly createdAt: string;
   /**
-   * The persisted reasoning of the first PROSE-LESS call row folded into this
-   * group (contract C1). Aggregation may drop the call/result interleaving, it
-   * must never drop the turn's thinking: a prose-less call row has no other
-   * row to carry its reasoning once it is folded in, so the group carries it
-   * and renders the same collapsible block above the ledger line. Call rows
-   * that DO have prose keep their own document row (emitted above the group)
-   * and their own reasoning with it — which is why only prose-less rows are
-   * harvested here and the block can never render twice for one turn.
+   * The persisted reasoning of EVERY PROSE-LESS call row folded into this
+   * group, in turn order (contract C1). Aggregation may drop the call/result
+   * interleaving, it must never drop the turn's thinking: a prose-less call
+   * row has no other row to carry its reasoning once it is folded in, so the
+   * group carries them ALL and renders one collapsible block per trace, in
+   * order, above the ledger line — keeping only the first silently discarded
+   * every later trace in the same group. Call rows that DO have prose keep
+   * their own document row (emitted above the group) and their own reasoning
+   * with it, which is why only prose-less rows are harvested here and no trace
+   * can render twice for one turn. Empty when no folded row carried a trace.
    */
-  readonly reasoning?: string | null;
+  readonly reasonings?: readonly string[];
 }
 
 /** What the transcript actually renders: plain rows plus group entries. */
@@ -453,7 +455,7 @@ function transformToolRun(
   const grouped = allActs.length >= TOOL_GROUP_MIN_CALLS;
   const entries: TranscriptEntry[] = [];
   let groupEmitted = false;
-  const foldedReasoning = grouped ? firstProselessReasoning(run) : null;
+  const foldedReasonings = grouped ? proselessReasonings(run) : [];
   for (const row of run) {
     if (row.toolKind === "call") {
       const acts = actsByRowId.get(row.id) ?? [];
@@ -472,7 +474,7 @@ function transformToolRun(
           calls: allActs,
           distinctToolNames: dedupeToolNames(allActs),
           createdAt: row.createdAt,
-          reasoning: foldedReasoning,
+          reasonings: foldedReasonings,
         });
         groupEmitted = true;
       }
@@ -487,22 +489,21 @@ function transformToolRun(
 }
 
 /**
- * The reasoning a grouped run would otherwise LOSE: the first call row that
- * carries a trace but no prose of its own. Prose-bearing rows survive the fold
- * as their own document row (which renders their reasoning), so harvesting
- * them here would double-render one turn's thinking.
+ * The reasoning a grouped run would otherwise LOSE: EVERY call row that
+ * carries a trace but no prose of its own, in turn order. Prose-bearing rows
+ * survive the fold as their own document row (which renders their reasoning),
+ * so harvesting them here would double-render one turn's thinking.
  */
-function firstProselessReasoning(
-  run: readonly TranscriptRowModel[],
-): string | null {
+function proselessReasonings(run: readonly TranscriptRowModel[]): string[] {
+  const traces: string[] = [];
   for (const row of run) {
     if (row.toolKind !== "call" || row.content.length > 0) continue;
     const reasoning = row.reasoning;
     if (reasoning !== null && reasoning !== undefined && reasoning.length > 0) {
-      return reasoning;
+      traces.push(reasoning);
     }
   }
-  return null;
+  return traces;
 }
 
 function dedupeToolNames(acts: readonly MutableAct[]): string[] {

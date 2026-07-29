@@ -124,6 +124,9 @@ describe("ToolActRow", () => {
       createElement(ToolActRow, {
         act: act({
           toolName: "wallet_send_confirm",
+          // BOTH proofs are required: the engine's persisted success AND the
+          // tool's strict output contract.
+          success: true,
           output: JSON.stringify({
             txHash: "solana-signature",
             chain: "solana",
@@ -143,19 +146,45 @@ describe("ToolActRow", () => {
   });
 
   it("does not infer confirmation from malformed, failed, or unrelated output", () => {
+    const confirmedOutput = JSON.stringify({
+      txHash: "hash",
+      status: "confirmed",
+    });
     const cases = [
-      act({ toolName: "wallet_send_confirm", output: "not json" }),
+      act({ toolName: "wallet_send_confirm", success: true, output: "not json" }),
       act({
         toolName: "wallet_send_confirm",
+        success: true,
         output: JSON.stringify({ txHash: "hash", status: "failed" }),
       }),
       act({
         toolName: "wallet_send_confirm",
+        success: true,
         output: JSON.stringify({ status: "confirmed" }),
       }),
       act({
         toolName: "wallet_balances",
-        output: JSON.stringify({ txHash: "hash", status: "confirmed" }),
+        success: true,
+        output: confirmedOutput,
+      }),
+      // A "Confirmed" stamp claims funds moved. The persisted outcome must
+      // prove it: output text alone — however well-formed — never can.
+      act({
+        toolName: "wallet_send_confirm",
+        success: false,
+        output: confirmedOutput,
+      }),
+      act({
+        toolName: "wallet_send_confirm",
+        success: null,
+        output: confirmedOutput,
+      }),
+      act({ toolName: "wallet_send_confirm", output: confirmedOutput }),
+      // Oversized output is never handed to JSON.parse at all (20k bound).
+      act({
+        toolName: "wallet_send_confirm",
+        success: true,
+        output: `{"status":"confirmed","txHash":"hash","pad":"${"x".repeat(21_000)}"}`,
       }),
     ];
 
@@ -411,6 +440,98 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(legs?.textContent).toContain("USDC");
     // An executed summary carries no outcome caveat.
     expect(legs?.querySelector("[data-vex-tool-leg-outcome]")).toBeNull();
+  });
+
+  // QUOTE vs EXECUTION (rules/90). `success` proves the CALL succeeded, never
+  // that funds moved — a successful preview must never render as a trade.
+  it.each(["swap_quote", "bridge_quote"])(
+    "labels a SUCCESSFUL %s as a Quote, never a bare executed summary",
+    (toolName) => {
+      const { container } = render(
+        createElement(ToolActRow, {
+          act: act({
+            toolName,
+            toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+            output: '{"amountOut":"240.31"}',
+            success: true,
+          }),
+        }),
+      );
+      const legs = container.querySelector('[data-vex-tool-legs="quote"]');
+      expect(legs).not.toBeNull();
+      expect(
+        legs?.querySelector('[data-vex-tool-leg-outcome="quote"]')?.textContent,
+      ).toBe("Quote");
+      // The quote's own numbers are honest — the LABEL is what makes them a
+      // preview rather than a completed trade.
+      expect(legs?.textContent).toContain("240.31");
+      expect(container.querySelector('[data-vex-tool-legs="executed"]')).toBeNull();
+    },
+  );
+
+  // `bridge` — the primary MUTATING bridge — carries no `bridge_` prefix, so a
+  // prefix-only rule silently gave it no legs at all.
+  it("renders legs for the exact-name `bridge` act, gated on the persisted outcome", () => {
+    const bridgeAct = (success: boolean | null) =>
+      act({
+        toolName: "bridge",
+        toolArgs: '{"fromToken":"USDC","toToken":"USDC","amount":"1.5"}',
+        output: '{"amountOut":"1.49"}',
+        success,
+      });
+
+    const executed = render(createElement(ToolActRow, { act: bridgeAct(true) }));
+    const legs = executed.container.querySelector('[data-vex-tool-legs="executed"]');
+    expect(legs).not.toBeNull();
+    expect(legs?.querySelector("[data-vex-tool-leg-outcome]")).toBeNull();
+    executed.unmount();
+
+    const pending = render(createElement(ToolActRow, { act: bridgeAct(null) }));
+    expect(
+      pending.container.querySelector(
+        '[data-vex-tool-legs="requested"] [data-vex-tool-leg-outcome="requested"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  // The curated `execute_tool` wrapper nests the real call under `params`;
+  // that parser path was unreachable from the card until now.
+  it("reaches the leg parser through a curated execute_tool, always labelled", () => {
+    const wrapper = (toolId: string) =>
+      act({
+        toolName: "execute_tool",
+        toolArgs: JSON.stringify({
+          toolId,
+          params: { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1.5" },
+        }),
+        success: true,
+      });
+
+    // A proven quote toolId downgrades the claim to a preview.
+    const quoted = render(
+      createElement(ToolActRow, { act: wrapper("kyberswap.swap.quote") }),
+    );
+    expect(
+      quoted.container.querySelector('[data-vex-tool-leg-outcome="quote"]')
+        ?.textContent,
+    ).toBe("Quote");
+    expect(quoted.container.querySelector("[data-vex-tool-legs]")?.textContent).toContain(
+      "SOL",
+    );
+    quoted.unmount();
+
+    // Anything else: mutating identity is NEVER derived from untrusted args,
+    // so the card says the call completed and nothing more.
+    const opaque = render(
+      createElement(ToolActRow, { act: wrapper("kyberswap.swap.execute") }),
+    );
+    expect(
+      opaque.container.querySelector('[data-vex-tool-leg-outcome="completed"]')
+        ?.textContent,
+    ).toBe("Completed");
+    expect(
+      opaque.container.querySelector('[data-vex-tool-legs="executed"]'),
+    ).toBeNull();
   });
 
   it("labels an UNKNOWN-outcome act as requested and ignores its untrusted output", () => {

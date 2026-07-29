@@ -220,10 +220,10 @@ describe("grouping × persisted reasoning (contract C1)", () => {
         callDto(6, ["f"]),
       ]),
     );
-    expect(group(entries)?.reasoning).toBe("why I opened the ledger");
+    expect(group(entries)?.reasonings).toEqual(["why I opened the ledger"]);
   });
 
-  it("takes the FIRST contributing trace when several prose-less rows carry one", () => {
+  it("keeps EVERY contributing trace, in turn order", () => {
     const entries = groupTranscriptRows(
       toTranscriptRows([
         callDto(1, ["a"]),
@@ -234,14 +234,16 @@ describe("grouping × persisted reasoning (contract C1)", () => {
         callDto(6, ["f"]),
       ]),
     );
-    expect(group(entries)?.reasoning).toBe("first trace");
+    // Keeping only the first silently discarded the rest of the turn's
+    // thinking — the group is the ONLY carrier a prose-less row has.
+    expect(group(entries)?.reasonings).toEqual(["first trace", "second trace"]);
   });
 
-  it("leaves the group trace null when no folded row carried one", () => {
+  it("leaves the group traces empty when no folded row carried one", () => {
     const entries = groupTranscriptRows(
       toTranscriptRows([callDto(1, ["a", "b", "c", "d", "e", "f"])]),
     );
-    expect(group(entries)?.reasoning).toBeNull();
+    expect(group(entries)?.reasonings).toEqual([]);
   });
 
   it("never double-carries a PROSE row's trace — the split prose row keeps it", () => {
@@ -257,6 +259,6 @@ describe("grouping × persisted reasoning (contract C1)", () => {
     expect(prose.variant === "tool_group" ? null : prose.reasoning).toBe(
       "the trace",
     );
-    expect(group(entries)?.reasoning).toBeNull();
+    expect(group(entries)?.reasonings).toEqual([]);
   });
 });

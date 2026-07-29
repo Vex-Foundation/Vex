@@ -365,7 +365,7 @@ describe("TranscriptMessage persisted reasoning", () => {
           calls: [
             { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: "r1" },
           ],
-          reasoning: "why I ran the whole chain",
+          reasonings: ["why I ran the whole chain"],
         },
       }),
     );
@@ -373,6 +373,31 @@ describe("TranscriptMessage persisted reasoning", () => {
       container.querySelectorAll('[data-vex-reasoning="persisted"]'),
     ).toHaveLength(1);
     expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+  });
+
+  it("renders EVERY folded trace, in turn order, above the ledger line", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 10,
+          createdAt: ISO,
+          distinctToolNames: ["search:web"],
+          calls: [
+            { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: "r1" },
+          ],
+          reasonings: ["first trace", "second trace"],
+        },
+      }),
+    );
+    const blocks = container.querySelectorAll('[data-vex-reasoning="persisted"]');
+    expect(blocks).toHaveLength(2);
+    // Collapsed by default — expand both to read the traces themselves.
+    for (const block of blocks) {
+      fireEvent.click(block.querySelector("button")!);
+    }
+    expect(blocks[0]?.textContent).toContain("first trace");
+    expect(blocks[1]?.textContent).toContain("second trace");
   });
 
   it("renders no block on a tool_group that folded no trace", () => {
@@ -386,7 +411,7 @@ describe("TranscriptMessage persisted reasoning", () => {
           calls: [
             { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: null },
           ],
-          reasoning: null,
+          reasonings: [],
         },
       }),
     );
