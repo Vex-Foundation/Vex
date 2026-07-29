@@ -34,7 +34,7 @@ const ISO = "2026-05-26T10:00:00.000Z";
 function act(over: Partial<ToolCallActView> = {}): ToolCallActView {
   return {
     toolCallId: "c1",
-    toolName: "wallet:read",
+    toolName: "wallet_balances",
     toolArgs: '{"chain":"base"}',
     output: null,
     ...over,
@@ -76,7 +76,7 @@ describe("ToolActRow", () => {
     expect(
       container.querySelector('[data-vex-message-role="tool"]'),
     ).not.toBeNull();
-    const btn = screen.getByRole("button", { name: /wallet:read/ });
+    const btn = screen.getByRole("button", { name: /Wallet balances/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText('{"chain":"base"}')).toBeNull();
     fireEvent.click(btn);
@@ -94,7 +94,7 @@ describe("ToolActRow", () => {
         act: act({ toolArgs: injected, output: injected }),
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet balances/ }));
     expect(container.querySelector("img")).toBeNull();
     expect(screen.getAllByText(injected)).toHaveLength(2);
   });
@@ -102,13 +102,13 @@ describe("ToolActRow", () => {
   it("shows the Output section only when a result merged; hints cover empties", () => {
     // No merge → quiet: Args only.
     const first = render(createElement(ToolActRow, { act: act({ toolArgs: null }) }));
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet balances/ }));
     expect(screen.getByText("(no parameters)")).not.toBeNull();
     expect(screen.queryByText("Output")).toBeNull();
     first.unmount();
     // Merged-but-empty output → Output section with the empty hint.
     render(createElement(ToolActRow, { act: act({ output: "" }) }));
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet balances/ }));
     expect(screen.getByText("Output")).not.toBeNull();
     expect(screen.getByText("(no output)")).not.toBeNull();
   });
@@ -287,10 +287,10 @@ describe("ToolGroupRow", () => {
     );
     const header = screen.getByRole("button", { name: /3 tool calls/ });
     expect(header.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("file:read")).toBeNull();
+    expect(screen.queryByText("File read")).toBeNull();
     fireEvent.click(header);
     expect(header.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("file:read")).not.toBeNull();
+    expect(screen.getByText("File read")).not.toBeNull();
     // Group container + 3 member act rows all carry the tool role attr.
     expect(
       container.querySelectorAll('[data-vex-message-role="tool"]').length,
@@ -345,5 +345,104 @@ describe("ToolGroupRow", () => {
       }),
     );
     expect(screen.queryByText(/awaiting signature/i)).toBeNull();
+  });
+});
+
+// ── FRIENDLY TOOL CARDS (session-UI redesign) ──────────────────────────────
+
+describe("ToolActRow — friendly card presentation", () => {
+  it("prints a human title and keeps the raw symbol reachable as the tooltip", () => {
+    render(
+      createElement(ToolActRow, {
+        act: act({ toolName: "swap_execute_uniswap" }),
+      }),
+    );
+    const btn = screen.getByRole("button", { name: /Swap · Uniswap/ });
+    expect(btn.getAttribute("title")).toBe("swap_execute_uniswap");
+  });
+
+  it("wears the venue mark when contract C5 proves one", () => {
+    const { container } = render(
+      createElement(ToolActRow, { act: act({ toolName: "bridge_execute_relay" }) }),
+    );
+    expect(
+      container.querySelector('[data-vex-protocol-mark="Relay"]'),
+    ).not.toBeNull();
+  });
+
+  it("falls back to the category glyph — never a borrowed brand — with no venue", () => {
+    const { container } = render(
+      createElement(ToolActRow, { act: act({ toolName: "wallet_balances" }) }),
+    );
+    expect(container.querySelector("[data-vex-protocol-mark]")).toBeNull();
+    expect(container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("shows the duration chip only for a MEASURED duration", () => {
+    const measured = render(
+      createElement(ToolActRow, { act: act({ durationMs: 2340 }) }),
+    );
+    expect(
+      measured.container.querySelector("[data-vex-tool-duration]")?.textContent,
+    ).toBe("2.3 s");
+    measured.unmount();
+
+    // A call that never ran carries null — and must show nothing at all.
+    const notRun = render(createElement(ToolActRow, { act: act() }));
+    expect(notRun.container.querySelector("[data-vex-tool-duration]")).toBeNull();
+  });
+
+  it("renders swap legs from the sanitized payload instead of raw JSON", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+          output: '{"amountOut":"240.31"}',
+        }),
+      }),
+    );
+    const legs = container.querySelector("[data-vex-tool-legs]");
+    expect(legs).not.toBeNull();
+    expect(legs?.textContent).toContain("1.5");
+    expect(legs?.textContent).toContain("SOL");
+    expect(legs?.textContent).toContain("240.31");
+    expect(legs?.textContent).toContain("USDC");
+  });
+
+  it("shows NO legs when the payload cannot be parsed — never a guessed trade", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "swap_execute_uniswap",
+          // Truncated at the DTO's 2000-char cap.
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USD',
+        }),
+      }),
+    );
+    expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
+  });
+
+  it("never draws legs for a non-swap act, however token-shaped its args are", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "wallet_balances",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+        }),
+      }),
+    );
+    expect(container.querySelector("[data-vex-tool-legs]")).toBeNull();
+  });
+
+  it("keeps Args/Output as inert <pre> text inside the expanded body", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({ toolName: "swap_execute_uniswap", output: "{}" }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Swap · Uniswap/ }));
+    const pres = container.querySelectorAll("pre");
+    expect(pres.length).toBe(2);
   });
 });

@@ -1,5 +1,21 @@
+/**
+ * THE IN-FLIGHT TURN — `StreamingBubble` (the thin mount) + the `TurnIsland`
+ * it renders.
+ *
+ * Pins the island's state machine end to end: Working → Thinking (FULL live
+ * reasoning as markdown, no masked peek, no "Ephemeral — not retained" label
+ * now that reasoning is persisted) → Calling {tool} → Writing (answer below,
+ * "Reasoned" stamp above). Plus the invariants inherited from the working
+ * strip it replaces: the elapsed m:ss counter, the awaiting-signature FREEZE,
+ * the sr-only `role="status"` announcements, and an error branch that shows a
+ * safe generic line and NEVER the raw text or the trace.
+ *
+ * `data-vex-island-state` is the seam — the visual shell may be retuned
+ * without rewriting these assertions.
+ */
+
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 
 import { StreamingBubble } from "../StreamingBubble.js";
@@ -19,7 +35,16 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
   };
 }
 
-describe("StreamingBubble", () => {
+/** The island's declared state for the rendered preview. */
+function islandState(container: HTMLElement): string | null {
+  return (
+    container
+      .querySelector("[data-vex-island-state]")
+      ?.getAttribute("data-vex-island-state") ?? null
+  );
+}
+
+describe("StreamingBubble — answer stream", () => {
   it("renders streamed markdown text with the semantic stream-preview contract (photo-free)", () => {
     const { container } = render(
       createElement(StreamingBubble, {
@@ -31,11 +56,10 @@ describe("StreamingBubble", () => {
     expect(root?.getAttribute("data-vex-stream-phase")).toBe("streaming");
     expect(root?.getAttribute("data-vex-message-role")).toBe("assistant");
     expect(root?.getAttribute("aria-busy")).toBe("true");
-    // S4: the shell is photo-free — no avatar image survives the rebrand.
+    // The shell is photo-free — no avatar image survives the rebrand.
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Hello");
     expect(container.textContent).toContain("world");
-    // sr-only phase status (announced, not the growing text).
     expect(screen.getByText("Vex is responding")).not.toBeNull();
   });
 
@@ -50,71 +74,102 @@ describe("StreamingBubble", () => {
     expect(link?.getAttribute("href")).toContain("example.com");
     expect(link?.closest('[aria-hidden="true"]')).toBeNull();
   });
+});
 
-  it("shows the Calling status word with the tool name while a tool is preparing", () => {
+describe("TurnIsland — state transitions", () => {
+  it("starts in the compact Working state", () => {
     const { container } = render(
-      createElement(StreamingBubble, {
-        preview: preview({ status: "calling", toolName: "swap" }),
-      }),
+      createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
-    const hint = container.querySelector('[data-vex-tool-state="preparing"]');
-    expect(hint).not.toBeNull();
-    expect(hint?.textContent).toContain("Calling");
-    expect(hint?.textContent).toContain("swap");
+    expect(islandState(container)).toBe("working");
+    expect(container.textContent).toContain("Working");
   });
 
-  it("renders the elapsed counter ticking from startedAtMs (m:ss)", () => {
-    render(
-      createElement(StreamingBubble, {
-        preview: preview({ startedAtMs: Date.now() }),
-      }),
-    );
-    // Robust to test-runner latency: any m:ss reading proves the counter runs.
-    expect(screen.getByText(/^\d+:\d{2}$/)).not.toBeNull();
-  });
-
-  it("shows the live reasoning tail with the ephemerality label while thinking", () => {
+  it("expands into Thinking and renders the FULL reasoning as live markdown", () => {
     const { container } = render(
       createElement(StreamingBubble, {
-        preview: preview({ status: "thinking", reasoningText: "weigh the ledger options" }),
+        preview: preview({
+          status: "thinking",
+          reasoningText: "weigh the **ledger** options",
+        }),
       }),
     );
+    expect(islandState(container)).toBe("thinking");
     expect(container.textContent).toContain("Thinking");
-    expect(container.textContent).toContain("weigh the ledger options");
-    expect(screen.getByText("Ephemeral — not retained")).not.toBeNull();
-    const trace = screen.getByRole("button", { name: "Reasoning trace" });
-    expect(trace.getAttribute("aria-expanded")).toBe("false");
+    // Markdown, not a pre-wrapped raw tail: the emphasis becomes an element.
+    const reasoning = container.querySelector("[data-vex-island-reasoning]");
+    expect(reasoning).not.toBeNull();
+    expect(reasoning?.textContent).toContain("weigh the");
+    expect(reasoning?.querySelector("strong")?.textContent).toBe("ledger");
   });
 
-  it("toggles aria-expanded when the reasoning trace is clicked", () => {
-    render(
+  it("retires the ephemerality label — reasoning is persisted now", () => {
+    const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ status: "thinking", reasoningText: "trace" }),
       }),
     );
-    const trace = screen.getByRole("button", { name: "Reasoning trace" });
-    fireEvent.click(trace);
-    expect(trace.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.click(trace);
-    expect(trace.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("Ephemeral");
   });
 
-  it("collapses the trace to a 'Reasoned' summary once the answer streams, reopenable", () => {
+  it("shows Calling with the tool name while a tool is preparing", () => {
+    const { container } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ status: "calling", toolName: "swap_execute_uniswap" }),
+      }),
+    );
+    expect(islandState(container)).toBe("calling");
+    const label = container.querySelector("[data-vex-island-label]");
+    expect(label?.textContent).toContain("Calling");
+    expect(label?.textContent).toContain("swap_execute_uniswap");
+    // Contract C5: a protocol-backed tool wears its venue mark.
+    expect(
+      container.querySelector('[data-vex-protocol-mark="Uniswap"]'),
+    ).not.toBeNull();
+  });
+
+  it("settles to the Writing stamp with the answer streaming below it", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({
           status: "writing",
           text: "The answer",
-          reasoningText: "hidden-trace",
+          reasoningText: "the trace",
           reasoningTokens: 1234,
         }),
       }),
     );
+    expect(islandState(container)).toBe("writing");
+    // Same stamp grammar the persisted ReasonedBlock uses.
     expect(container.textContent).toContain("Reasoned · 1.2K tokens");
-    // Collapsed summary hides the full trace until the user reopens it.
-    expect(container.textContent).not.toContain("hidden-trace");
-    fireEvent.click(screen.getByRole("button", { name: "Reasoning trace" }));
-    expect(container.textContent).toContain("hidden-trace");
+    // The answer is below the island, and the trace is no longer on screen.
+    expect(container.textContent).toContain("The answer");
+    expect(container.textContent).not.toContain("the trace");
+  });
+
+  it("renders the elapsed counter ticking from startedAtMs (m:ss)", () => {
+    render(
+      createElement(StreamingBubble, { preview: preview({ startedAtMs: Date.now() }) }),
+    );
+    // Robust to test-runner latency: any m:ss reading proves the counter runs.
+    expect(screen.getByText(/^\d+:\d{2}$/)).not.toBeNull();
+  });
+});
+
+describe("TurnIsland — freeze, error, and settle", () => {
+  it("FREEZES into the awaiting-signature register while an approval is pending", () => {
+    const { container } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ status: "thinking", reasoningText: "mid-thought" }),
+        awaitingApproval: true,
+      }),
+    );
+    expect(islandState(container)).toBe("awaiting");
+    expect(container.querySelector("[data-vex-stream-awaiting]")).not.toBeNull();
+    // The status word yields to the awaiting register…
+    expect(screen.queryByText("Thinking")).toBeNull();
+    // …and it is announced to screen readers as well as shown.
+    expect(screen.getAllByText("Awaiting signature").length).toBeGreaterThan(1);
   });
 
   it("shows a safe generic error line and never the raw text on error phase", () => {
@@ -126,6 +181,7 @@ describe("StreamingBubble", () => {
     expect(
       container.querySelector('[data-vex-stream-phase="error"]'),
     ).not.toBeNull();
+    expect(islandState(container)).toBe("error");
     expect(screen.getByText("Stream error")).not.toBeNull();
     expect(container.textContent).not.toContain("raw-provider-leak");
   });
@@ -140,25 +196,7 @@ describe("StreamingBubble", () => {
     expect(container.textContent).not.toContain("private-trace");
   });
 
-  // S5 circuit-break: the default (no prop) keeps every pin above unchanged;
-  // a pending approval freezes the machine into the awaiting register.
-  it("renders the Awaiting-signature status word while an approval is pending", () => {
-    const { container } = render(
-      createElement(StreamingBubble, {
-        preview: preview({ status: "working" }),
-        awaitingApproval: true,
-      }),
-    );
-    const awaiting = container.querySelector("[data-vex-stream-awaiting]");
-    expect(awaiting).not.toBeNull();
-    expect(awaiting?.textContent).toBe("Awaiting signature");
-    // The working status word yields to the awaiting register.
-    expect(screen.queryByText("Working")).toBeNull();
-    // Announced to screen readers as well (sr-only status).
-    expect(screen.getAllByText("Awaiting signature").length).toBeGreaterThan(1);
-  });
-
-  it("drops the indicator once the stream is done", () => {
+  it("drops the busy indicator once the stream is done", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ text: "final", phase: "done", status: "writing" }),
@@ -166,6 +204,7 @@ describe("StreamingBubble", () => {
     );
     expect(container.querySelector('[data-vex-stream-phase="done"]')).not.toBeNull();
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(islandState(container)).toBe("settled");
     expect(screen.getByText("Vex responded")).not.toBeNull();
   });
 });

@@ -20,6 +20,7 @@ import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
+import { ReasonedBlock } from "./ReasonedBlock.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
 import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
@@ -107,10 +108,14 @@ function AssistantCaption({
   );
 }
 
-/** Document-typography wrapper around the safe markdown renderer. */
+/**
+ * Document-typography wrapper around the safe markdown renderer. Prose is the
+ * serif VOICE register (contract C2: `font-serif`, ~16.5px/1.65) — Lane SHELL
+ * owns the class-level typography law, this file only consumes it.
+ */
 function AssistantBody({ content }: { readonly content: string }): JSX.Element {
   return (
-    <div className="break-words text-[15px] leading-[1.7] text-foreground">
+    <div className="break-words font-serif text-[16.5px] leading-[1.65] text-foreground">
       <MarkdownContent text={content} />
     </div>
   );
@@ -134,7 +139,8 @@ export function TranscriptMessage({
     case "user":
       return (
         <div data-vex-message-role="user" className="flex flex-col items-end">
-          <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-xl border border-[var(--vex-line-strong)] bg-white/[0.04] px-3.5 py-2.5 text-sm leading-relaxed text-foreground">
+          {/* Operator prose shares the serif voice register (contract C2). */}
+          <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-xl border border-[var(--vex-line-strong)] bg-white/[0.04] px-3.5 py-2.5 font-serif text-[16.5px] leading-[1.65] text-foreground">
             {row.content}
           </div>
           <span className="mt-1 flex items-baseline justify-end gap-2 font-mono text-[10px] uppercase tabular-nums">
@@ -148,6 +154,7 @@ export function TranscriptMessage({
         <div data-vex-message-role="assistant" className="relative pl-7">
           <AssistantAvatar working={agentWorking} />
           <AssistantCaption createdAt={row.createdAt} />
+          <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
         </div>
       );
@@ -160,6 +167,7 @@ export function TranscriptMessage({
         >
           <AssistantAvatar working={agentWorking} />
           <AssistantCaption createdAt={row.createdAt} />
+          <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
             <VexIcon icon={StopCircleIcon} size={12} aria-hidden />
@@ -195,7 +203,16 @@ export function TranscriptMessage({
             <div className="relative pl-7">
               <AssistantAvatar working={agentWorking} />
               <AssistantCaption createdAt={row.createdAt} />
+              <ReasonedBlock reasoning={row.reasoning} />
               <AssistantBody content={row.content} />
+            </div>
+          ) : null}
+          {/* A prose-less tool row carries the turn's reasoning itself — the
+              split rows share `dto.id`, and `splitToolCallProse` guarantees
+              only ONE of them ever holds it, so this can never double-render. */}
+          {row.content.length === 0 ? (
+            <div className="pl-7">
+              <ReasonedBlock reasoning={row.reasoning} />
             </div>
           ) : null}
           {/* One registered act per executed call — collapsed by default. Each

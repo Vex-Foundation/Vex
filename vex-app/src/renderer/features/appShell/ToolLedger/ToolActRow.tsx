@@ -1,19 +1,29 @@
 /**
  * THE ACT LEDGER — one registered act (S5): a tool call plus its merged
- * output. The transcript shows REGISTERED FACTS: most rows stay quiet — name
- * + Args (+ Output when a result paired in the same run). Two deterministic
- * stamps are supported: "Awaiting signature" from the approval queue, and
- * "Confirmed" when a `wallet_send_confirm` result carries the tool's strict
- * `{ status: "confirmed", txHash }` output contract.
+ * output, presented as a FRIENDLY CARD.
+ *
+ * The card's header reads as a fact about the world rather than a symbol dump:
+ * the protocol mark (contract C5 — venue logo when provenance is proven, the
+ * category glyph otherwise), a human title ("Swap · KyberSwap", "Memory
+ * recall"), the swap/bridge leg line when one can be parsed fail-closed, and
+ * the measured duration chip when — and ONLY when — a duration was actually
+ * measured (`null` is not zero; a call that never ran must never read "0 s").
+ * The raw tool name stays available as the header's `title` tooltip so nothing
+ * the ledger knew is lost.
+ *
+ * Two deterministic stamps survive unchanged: "Awaiting signature" from the
+ * approval queue, and "Confirmed" when a `wallet_send_confirm` result carries
+ * the tool's strict `{ status: "confirmed", txHash }` output contract.
  *
  * Collapsed by default (today's disclosure contract). The expanded body is a
- * recessed well; args/output are sanitized strings rendered as TEXT (`<pre>`
- * pre-wrap) — never HTML. CSP-safe: the one-shot reveal uses the stylesheet
+ * recessed well; args/output are sanitized strings rendered as INERT TEXT
+ * (`<pre>` pre-wrap) — never HTML, and the friendly header never replaces the
+ * ability to read them. CSP-safe: the one-shot reveal uses the stylesheet
  * `.vex-entry-settle` keyframes (180ms, collapsed to its final frame under
  * prefers-reduced-motion by the global rule).
  */
 
-import { useId, useState, type JSX } from "react";
+import { useId, useMemo, useState, type JSX } from "react";
 import {
   ArrowRight01Icon,
   CheckmarkCircle01Icon,
@@ -23,6 +33,11 @@ import { cn } from "../../../lib/utils.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
+import { ProtocolMark } from "./ProtocolMark.js";
+import { ToolLegLine } from "./ToolLegLine.js";
+import { formatToolDuration } from "./toolDuration.js";
+import { resolveToolIdentity } from "./toolIdentity.js";
+import { resolveToolLegs } from "./toolLegs.js";
 import { toolGlyph } from "./toolGlyph.js";
 
 /**
@@ -58,6 +73,28 @@ function ConfirmedStamp(): JSX.Element {
     >
       <VexIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
       Confirmed
+    </span>
+  );
+}
+
+/**
+ * Measured-duration chip. Rendered ONLY for a real measurement — the caller
+ * passes `null` through for every never-executed / synthetic / legacy act and
+ * this returns nothing at all.
+ */
+function DurationChip({
+  durationMs,
+}: {
+  readonly durationMs: number | null | undefined;
+}): JSX.Element | null {
+  const text = formatToolDuration(durationMs ?? null);
+  if (text === null) return null;
+  return (
+    <span
+      data-vex-tool-duration=""
+      className="shrink-0 tabular-nums text-[11px] text-[var(--vex-text-3)]"
+    >
+      {text}
     </span>
   );
 }
@@ -115,10 +152,24 @@ export function ToolActRow({
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const confirmed = isConfirmedWalletTransfer(act);
+  const identity = useMemo(
+    () => resolveToolIdentity(act.toolName, act.toolArgs),
+    [act.toolName, act.toolArgs],
+  );
+  // Legs are a swap/bridge affordance only — parsing every act's payload for
+  // token-shaped keys would let an unrelated tool's args draw a trade line.
+  const legs = useMemo(
+    () =>
+      identity.category === "swap" || identity.category === "bridge"
+        ? resolveToolLegs(act.toolArgs, act.output)
+        : null,
+    [identity.category, act.toolArgs, act.output],
+  );
   return (
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
+      data-vex-tool-category={identity.category}
       className="overflow-hidden rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02]"
     >
       <div className="flex items-center gap-2 pr-2">
@@ -127,24 +178,29 @@ export function ToolActRow({
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          // The raw symbol stays reachable even though the card shows prose.
+          title={act.toolName}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <VexIcon
-            icon={toolGlyph(act.toolName)}
-            size={14}
-            aria-hidden
-            className="shrink-0 text-[var(--vex-text-3)]"
+          <ProtocolMark
+            protocol={identity.protocol}
+            fallbackGlyph={toolGlyph(act.toolName)}
+            size={16}
           />
-          <span className="min-w-0 truncate font-mono text-[12px] text-[var(--vex-text-2)]">
-            {act.toolName}
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="min-w-0 truncate text-[12.5px] text-foreground">
+              {identity.title}
+            </span>
+            {legs !== null ? <ToolLegLine legs={legs} /> : null}
           </span>
+          <DurationChip durationMs={act.durationMs} />
           {/* Chevron stays even when stamped — it is the expand affordance. */}
           <VexIcon
             icon={ArrowRight01Icon}
             size={12}
             aria-hidden
             className={cn(
-              "ml-auto shrink-0 text-[var(--vex-text-3)] transition-transform",
+              "shrink-0 text-[var(--vex-text-3)] transition-transform",
               open && "rotate-90",
             )}
           />

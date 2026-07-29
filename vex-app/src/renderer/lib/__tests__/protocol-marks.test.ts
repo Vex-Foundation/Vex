@@ -5,10 +5,12 @@
  * Pins the same doctrine `token-marks.test.ts` pins for tokens: a bundled
  * asset is granted ONLY to a venue actually present in the curated map, every
  * other value degrades to a monogram, and nothing ever resolves to a remote
- * URL. The eight venue strings below are the complete vocabulary the tools
- * emit (`khalani`, `kyberswap`, `pendle`, `relay`, `uniswap`, `jupiter`,
- * `dexscreener`, `polymarket`); `polymarket` deliberately has no bundled asset
- * and MUST take the monogram rather than borrow another brand's mark.
+ * URL. The venue strings below are the complete vocabulary the tools emit
+ * (`khalani`, `kyberswap`, `pendle`, `relay`, `uniswap`, `jupiter`,
+ * `dexscreener`, `polymarket`, plus the `solana`/`virtuals` toolId
+ * namespaces); `polymarket` and `solana` deliberately have no bundled asset
+ * and MUST take the monogram rather than borrow another brand's mark —
+ * `/protocols/jupiter.jpg` is Jupiter's mark, not Solana's.
  *
  * This map is a LOOK-UP of venue artwork, NOT a list of what a feed can
  * contain — `agent-scan/agent-scan-protocols.ts` owns that, and the two must
@@ -28,6 +30,7 @@ describe("resolveProtocolMark — curated venues", () => {
     ["pendle", "/protocols/pendle.jpg", "Pendle"],
     ["relay", "/protocols/relay.png", "Relay"],
     ["uniswap", "/protocols/uniswap.png", "Uniswap"],
+    ["virtuals", "/logo/virtuals.svg", "Virtuals"],
   ])("resolves %s to its bundled asset", (protocol, src, label) => {
     const mark = resolveProtocolMark(protocol);
     expect(mark).toEqual({ kind: "local", src, label });
@@ -48,6 +51,15 @@ describe("resolveProtocolMark — fallbacks", () => {
       kind: "monogram",
       label: "Polymarket",
       initial: "P",
+    });
+  });
+
+  it("gives solana the monogram — jupiter.jpg is Jupiter's mark, never Solana's", () => {
+    const mark = resolveProtocolMark("solana");
+    expect(mark).toEqual({
+      kind: "monogram",
+      label: "Solana",
+      initial: "S",
     });
   });
 
@@ -80,11 +92,14 @@ describe("resolveProtocolMark — fallbacks", () => {
       "pendle",
       "relay",
       "uniswap",
+      "virtuals",
     ]) {
       const mark = resolveProtocolMark(protocol);
       expect(mark?.kind).toBe("local");
       if (mark?.kind === "local") {
-        expect(mark.src.startsWith("/protocols/")).toBe(true);
+        // Same-origin bundled path only — `/protocols/*` (venue artwork) or
+        // `/logo/*` (marks the landing surfaces already ship). Never a URL.
+        expect(mark.src).toMatch(/^\/(protocols|logo)\//);
       }
     }
   });

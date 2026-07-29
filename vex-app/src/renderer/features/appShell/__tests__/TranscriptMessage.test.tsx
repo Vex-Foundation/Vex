@@ -125,7 +125,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
     expect(
       container.querySelector('[data-vex-message-role="tool"]'),
     ).not.toBeNull();
-    const btn = screen.getByRole("button", { name: /wallet:read/ });
+    const btn = screen.getByRole("button", { name: /Wallet read/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false"); // collapsed by default
     expect(screen.queryByText('{"chain":"base"}')).toBeNull();
     fireEvent.click(btn);
@@ -158,7 +158,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
         },
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet read/ }));
     expect(screen.getByText("Output")).not.toBeNull();
     expect(screen.getByText("0.5 ETH")).not.toBeNull();
   });
@@ -204,12 +204,12 @@ describe("TranscriptMessage tool acts (S5)", () => {
     const header = screen.getByRole("button", { name: /3 tool calls/ });
     expect(header.getAttribute("aria-expanded")).toBe("false");
     // Members hidden while collapsed.
-    expect(screen.queryByText("search:web")).toBeNull();
+    expect(screen.queryByText("Search web")).toBeNull();
     fireEvent.click(header);
     expect(header.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("search:web")).not.toBeNull();
-    expect(screen.getByText("file:read")).not.toBeNull();
-    expect(screen.getByText("wallet:read")).not.toBeNull();
+    expect(screen.getByText("Search web")).not.toBeNull();
+    expect(screen.getByText("File read")).not.toBeNull();
+    expect(screen.getByText("Wallet read")).not.toBeNull();
     // Semantic contract: group container AND every member act row keep the
     // tool role attr (tests and tooling query it).
     expect(
@@ -293,5 +293,105 @@ describe("TranscriptMessage agent activity avatar", () => {
       container.querySelector('[data-vex-agent-avatar-state="settled"]'),
     ).not.toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
+  });
+});
+
+// ── Persisted reasoning on transcript rows (contract C1) ────────────────────
+
+describe("TranscriptMessage persisted reasoning", () => {
+  it("renders NOTHING when an assistant row carries no reasoning (null = today)", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
+  });
+
+  it("mounts the collapsible Reasoned block above the assistant body", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "assistant", content: "Done." }),
+          reasoning: "I checked the balances first.",
+        },
+      }),
+    );
+    const block = container.querySelector('[data-vex-reasoning="persisted"]');
+    expect(block).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    // Collapsed: the answer stays the first thing read.
+    expect(container.textContent).not.toContain("I checked the balances first.");
+  });
+
+  it("renders the block on a stopped assistant row too", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "assistant_stopped", content: "Partial." }),
+          reasoning: "trace",
+        },
+      }),
+    );
+    expect(container.querySelector('[data-vex-reasoning="persisted"]')).not.toBeNull();
+  });
+
+  it("renders exactly ONE block on a prose-less tool row carrying reasoning", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "tool", content: "" }),
+          toolKind: "call" as const,
+          reasoning: "trace",
+          toolActs: [
+            { toolCallId: "c1", toolName: "wallet_balances", toolArgs: null, output: null },
+          ],
+        },
+      }),
+    );
+    expect(
+      container.querySelectorAll('[data-vex-reasoning="persisted"]'),
+    ).toHaveLength(1);
+  });
+});
+
+// ── Friendly tool cards: the duration chip's null-vs-measured law ───────────
+
+describe("TranscriptMessage tool card duration", () => {
+  function toolRowWith(durationMs: number | null | undefined) {
+    return {
+      ...row({ variant: "tool", content: "" }),
+      toolKind: "call" as const,
+      toolActs: [
+        {
+          toolCallId: "c1",
+          toolName: "wallet_balances",
+          toolArgs: null,
+          output: "ok",
+          durationMs,
+        },
+      ],
+    };
+  }
+
+  it("shows a measured duration as a chip", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, { row: toolRowWith(2340) }),
+    );
+    expect(
+      container.querySelector("[data-vex-tool-duration]")?.textContent,
+    ).toBe("2.3 s");
+  });
+
+  it("shows NO chip for a call that never ran — null must not read as 0 s", () => {
+    for (const value of [null, undefined]) {
+      const view = render(
+        createElement(TranscriptMessage, { row: toolRowWith(value) }),
+      );
+      expect(
+        view.container.querySelector("[data-vex-tool-duration]"),
+      ).toBeNull();
+      view.unmount();
+    }
   });
 });

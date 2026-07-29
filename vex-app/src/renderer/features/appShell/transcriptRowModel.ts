@@ -73,6 +73,23 @@ export interface TranscriptRowModel {
    * `toolCalls` with no output.
    */
   readonly toolActs?: readonly ToolCallActView[];
+  /**
+   * Assistant rows: the PERSISTED model reasoning for this turn (contract C1,
+   * `SessionMessageDto.reasoning`). `null` on every non-assistant row, on
+   * legacy rows written before the engine persisted it, and whenever the
+   * provider emitted none — the renderer shows NOTHING in that case rather
+   * than an empty "Reasoned" affordance. When a `tool_call` DTO splits into a
+   * prose row + a tool row (`splitToolCallProse`), the reasoning rides the
+   * PROSE row when there is one and the tool row otherwise — never both, even
+   * though the two rows share `dto.id`.
+   */
+  readonly reasoning?: string | null;
+  /**
+   * Tool RESULT rows: measured execution wall clock (contract C1). `null` for
+   * never-executed / auto-rejected / synthetic / legacy rows — and `null` is
+   * NOT zero: the renderer must print no chip at all rather than "0 s".
+   */
+  readonly durationMs?: number | null;
 }
 
 function assertNever(value: never): never {
@@ -158,6 +175,11 @@ export function toTranscriptRows(
  * tool row, so the text and tools render in chronological order. Every other
  * DTO — including a `tool_call` with empty/whitespace-only content — maps to a
  * single row exactly as before.
+ *
+ * The persisted `reasoning` follows the PROSE row when a split happens (that
+ * is where the turn's words live, and it is the row the reader associates with
+ * the thinking); the tool row is then emitted reasoning-free so the collapsible
+ * block can never render twice for one `dto.id`.
  */
 function splitToolCallProse(
   dto: SessionMessageDto,
@@ -171,8 +193,9 @@ function splitToolCallProse(
         label: null,
         content: dto.content,
         createdAt: dto.createdAt,
+        reasoning: dto.reasoning,
       },
-      toTranscriptRow({ ...dto, content: "" }, nameByCallId),
+      toTranscriptRow({ ...dto, content: "", reasoning: null }, nameByCallId),
     ];
   }
   return [toTranscriptRow(dto, nameByCallId)];
@@ -199,6 +222,8 @@ export function toTranscriptRow(
         // pair this output with its call inside the same tool run.
         toolCallId: dto.toolCallId,
         explorerRefs: dto.explorerRefs,
+        // Measured wall clock; merges onto the paired act in the S5 post-pass.
+        durationMs: dto.durationMs,
       };
     }
     // tool_call row: prose (content) + one disclosure per executed tool.
@@ -210,6 +235,7 @@ export function toTranscriptRow(
       content: dto.content,
       createdAt: dto.createdAt,
       toolCalls: dto.toolCalls ?? [],
+      reasoning: dto.reasoning,
     };
   }
   if (variant === "notice") {
@@ -228,6 +254,7 @@ export function toTranscriptRow(
     label: resolveLabel(variant, dto.toolName),
     content: dto.content,
     createdAt: dto.createdAt,
+    reasoning: dto.reasoning,
   };
 }
 
@@ -253,8 +280,15 @@ function resolveLabel(
 // post-pass over `toTranscriptRows` output — every existing variant passes
 // through untouched; only `variant === "tool"` rows are restructured.
 
-/** A run only aggregates when it registers at least this many CALLS. */
-export const TOOL_GROUP_MIN_CALLS = 3;
+/**
+ * A run only aggregates when it registers at least this many CALLS.
+ *
+ * Owner decree (session-UI redesign): collapse only ABOVE five calls. At 3 the
+ * ledger was hiding ordinary two-and-three-step work behind a disclosure the
+ * reader had to open to see what Vex did — the collapse is for long chains,
+ * not for a normal turn.
+ */
+export const TOOL_GROUP_MIN_CALLS = 6;
 
 /**
  * One registered act: the sanitized call display plus its merged output.
@@ -272,6 +306,13 @@ export interface ToolCallActView {
    * the act renderer then shows no link.
    */
   readonly explorerRefs?: readonly ExplorerRef[] | null;
+  /**
+   * Measured execution wall clock merged from this act's paired `tool_result`
+   * row (contract C1). Absent/`null` until a result pairs, or when the call
+   * never actually executed — the card then shows NO duration chip. `null` is
+   * not zero; a not-run call must never read as "0 s".
+   */
+  readonly durationMs?: number | null;
 }
 
 /** Aggregation entry replacing a run of ≥TOOL_GROUP_MIN_CALLS calls. */
@@ -327,6 +368,7 @@ interface MutableAct {
   readonly toolArgs: string | null;
   output: string | null;
   explorerRefs?: readonly ExplorerRef[] | null;
+  durationMs?: number | null;
 }
 
 function transformToolRun(
@@ -364,6 +406,11 @@ function transformToolRun(
         act.output = row.content;
         if (row.explorerRefs !== null && row.explorerRefs !== undefined) {
           act.explorerRefs = row.explorerRefs;
+        }
+        // Only a MEASURED duration merges: a null on the result row means the
+        // call never executed, and must stay absent rather than become 0.
+        if (row.durationMs !== null && row.durationMs !== undefined) {
+          act.durationMs = row.durationMs;
         }
         consumedResultIds.add(row.id);
       }
