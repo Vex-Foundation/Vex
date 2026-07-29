@@ -1,20 +1,23 @@
 /**
- * BookPanel — the right-edge STAGE ROUTER (welcome redesign, 2026-07-20)
- * plus the session rail's own chrome.
+ * BookPanel — the right-edge STAGE ROUTER plus the session rail's own chrome,
+ * after the card redesign.
  *
  * Pins:
  *   - WELCOME stage (activeSessionId null): the rail is REPLACED by the
  *     floating Portfolio tab (WelcomePortfolioPanel, mocked here — its own
  *     collapsed/expanded behavior has a dedicated suite) receiving the SAME
- *     persisted bookOpen flag; no rail chrome (version stamp / chevron /
- *     instrument blocks) mounts at all,
- *   - SESSION stage: today's rail, unchanged — the version stamp renders in
- *     the header when expanded and hides when collapsed (chevron-only
- *     spine), the chevron's accessible label flips with bookOpen and calls
- *     onToggle, the instrument blocks render only when expanded.
+ *     persisted bookOpen flag; no rail chrome (version stamp / chevron / card
+ *     stack) mounts at all,
+ *   - SESSION stage: the version stamp renders in the header when expanded and
+ *     hides when collapsed (chevron-only spine), the chevron's accessible
+ *     label flips with bookOpen and calls onToggle,
+ *   - the SESSION card stack is the card system in the decreed ORDER —
+ *     Position, Wallets, Balances, Activity, Runtime & Cost, Session — and
+ *     mounts only when expanded. The retired MOVES block and the
+ *     `BookBlock` ledger grammar are gone; nothing here may reintroduce them.
  *
- * The child instrument blocks are mocked — this suite owns the router and
- * the rail's chrome, not the blocks' data wiring.
+ * The child cards are mocked — this suite owns the router and the rail's
+ * chrome, not the cards' data wiring.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -24,16 +27,24 @@ vi.mock("../../../components/icons/VexIcon.js", () => ({
   VexIcon: () => null,
 }));
 vi.mock("../book/PositionBlock.js", () => ({
-  PositionBlock: () => <div data-testid="position-block" />,
+  PositionBlock: () => <div data-testid="card-position" />,
 }));
-vi.mock("../book/MovesBlock.js", () => ({
-  MovesBlock: () => <div data-testid="moves-block" />,
+vi.mock("../book/SessionWalletsCard.js", () => ({
+  SessionWalletsCard: () => <div data-testid="card-wallets" />,
+}));
+vi.mock("../book/portfolio/BalancesCard.js", () => ({
+  BalancesCard: ({ sessionId }: { readonly sessionId?: string | null }) => (
+    <div data-testid="card-balances" data-session-id={sessionId ?? ""} />
+  ),
+}));
+vi.mock("../book/SessionActivityCard.js", () => ({
+  SessionActivityCard: () => <div data-testid="card-activity" />,
+}));
+vi.mock("../book/SessionRuntimeCard.js", () => ({
+  SessionRuntimeCard: () => <div data-testid="card-runtime" />,
 }));
 vi.mock("../book/SessionBlock.js", () => ({
-  SessionBlock: () => <div data-testid="session-block" />,
-}));
-vi.mock("../SessionRuntimeBar.js", () => ({
-  SessionRuntimeBar: () => <div data-testid="runtime-bar" />,
+  SessionBlock: () => <div data-testid="card-session" />,
 }));
 // The welcome-stage floating Portfolio tab has its own suite
 // (WelcomePortfolioPanel.test.tsx); here the router only needs to prove it
@@ -51,25 +62,31 @@ const { BookPanel } = await import("../BookPanel.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
 
+/** The decreed session card order, top to bottom. */
+const CARD_ORDER = [
+  "card-position",
+  "card-wallets",
+  "card-balances",
+  "card-activity",
+  "card-runtime",
+  "card-session",
+] as const;
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("BookPanel chrome", () => {
   it("shows the version stamp + Collapse chevron when expanded", () => {
-    render(
-      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
-    );
+    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
     expect(screen.getByText(/^v/)).not.toBeNull();
     expect(
       screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
     ).not.toBeNull();
-    // Instrument blocks render when expanded.
-    expect(screen.queryByTestId("position-block")).not.toBeNull();
-    expect(screen.queryByTestId("moves-block")).not.toBeNull();
+    expect(screen.queryByTestId("card-position")).not.toBeNull();
   });
 
-  it("hides the version + blocks when collapsed, keeping the Expand chevron", () => {
+  it("hides the version + cards when collapsed, keeping the Expand chevron", () => {
     render(
       <BookPanel activeSessionId={SESSION} bookOpen={false} onToggle={() => {}} />,
     );
@@ -77,15 +94,14 @@ describe("BookPanel chrome", () => {
     expect(
       screen.getByRole("button", { name: /Expand the BOOK panel/i }),
     ).not.toBeNull();
-    expect(screen.queryByTestId("position-block")).toBeNull();
-    expect(screen.queryByTestId("moves-block")).toBeNull();
+    for (const id of CARD_ORDER) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
   });
 
   it("invokes onToggle from the chevron", () => {
     const onToggle = vi.fn();
-    render(
-      <BookPanel activeSessionId={SESSION} bookOpen onToggle={onToggle} />,
-    );
+    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={onToggle} />);
     fireEvent.click(
       screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
     );
@@ -96,14 +112,13 @@ describe("BookPanel chrome", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
     const tab = screen.getByTestId("welcome-portfolio-panel");
     expect(tab.getAttribute("data-book-open")).toBe("true");
-    // The rail's chrome and instrument blocks never mount on welcome.
     expect(screen.queryByText(/^v/)).toBeNull();
     expect(
       screen.queryByRole("button", { name: /the BOOK panel/i }),
     ).toBeNull();
-    expect(screen.queryByTestId("position-block")).toBeNull();
-    expect(screen.queryByTestId("moves-block")).toBeNull();
-    expect(screen.queryByTestId("session-block")).toBeNull();
+    for (const id of CARD_ORDER) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
   });
 
   it("passes the persisted bookOpen=false through to the welcome tab (collapsed handle)", () => {
@@ -114,18 +129,28 @@ describe("BookPanel chrome", () => {
       screen.getByTestId("welcome-portfolio-panel").getAttribute("data-book-open"),
     ).toBe("false");
   });
+});
 
-  it("keeps the SESSION rail on session stage — the welcome tab never mounts there", () => {
-    render(
+describe("BookPanel session card stack", () => {
+  it("mounts every card of the decreed stack, in order", () => {
+    const { container } = render(
       <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
     );
-    expect(screen.queryByTestId("welcome-portfolio-panel")).toBeNull();
-    // Pinned rail assertion (no regression): the expanded rail still carries
-    // its version stamp + collapse chevron + the session instrument blocks.
-    expect(screen.getByText(/^v/)).not.toBeNull();
+    const rendered = Array.from(
+      container.querySelectorAll("[data-testid^='card-']"),
+    ).map((node) => node.getAttribute("data-testid"));
+    expect(rendered).toEqual([...CARD_ORDER]);
+  });
+
+  it("scopes the Balances card to THIS session (never the global portfolio)", () => {
+    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
     expect(
-      screen.getByRole("button", { name: /Collapse the BOOK panel/i }),
-    ).not.toBeNull();
-    expect(screen.queryByTestId("position-block")).not.toBeNull();
+      screen.getByTestId("card-balances").getAttribute("data-session-id"),
+    ).toBe(SESSION);
+  });
+
+  it("keeps the SESSION rail on session stage — the welcome tab never mounts there", () => {
+    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
+    expect(screen.queryByTestId("welcome-portfolio-panel")).toBeNull();
   });
 });

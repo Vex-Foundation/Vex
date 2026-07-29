@@ -181,10 +181,15 @@ export function SidebarProfile({
     (screen: ProfileMenuScreen, event: MouseEvent<HTMLButtonElement>): void => {
       const rect = event.currentTarget.getBoundingClientRect();
       setOpen(false);
-      setShellRoute({
-        kind: screen,
-        origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      });
+      const origin = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      // Agent Scan carries a session scope (C4). Opened from the PROFILE menu
+      // it is always the FULL global feed — the session-narrowed preset comes
+      // only from the session rail's Activity card.
+      setShellRoute(
+        screen === "agentScan"
+          ? { kind: "agentScan", origin, sessionId: null }
+          : { kind: screen, origin },
+      );
     },
     [setShellRoute],
   );

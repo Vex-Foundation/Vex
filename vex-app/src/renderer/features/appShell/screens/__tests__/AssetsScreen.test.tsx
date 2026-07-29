@@ -15,7 +15,11 @@
  *     toggling flips the persisted uiStore preference and re-shows/re-hides,
  *   - THE EYE: rows with exact `(chainId, tokenAddress)` identity carry the
  *     token-history eye; clicking routes to `tokenHistory` with the row's
- *     identity + `returnTo: "assets"`; identity-less rows carry NO eye.
+ *     identity + `returnTo: { kind: "assets", sessionId }`; identity-less rows
+ *     carry NO eye,
+ *   - SESSION SCOPE (C4): a `sessionId` on the route reads THAT session's
+ *     portfolio (never the global one), retitles the screen, and rides along
+ *     on the eye's `returnTo` so the close path restores the same scope.
  *
  * The sibling screens and the portfolio query hook are mocked — this suite
  * owns the assets branch, not Memory/Sessions/HowVexWorks/TokenHistory or
@@ -134,7 +138,7 @@ describe("AssetsScreen", () => {
     expect(screen.queryByRole("dialog", { name: "All assets" })).toBeNull();
 
     act(() => {
-      useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN });
+      useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
     });
 
     expect(screen.getByRole("dialog", { name: "All assets" })).not.toBeNull();
@@ -151,7 +155,7 @@ describe("AssetsScreen", () => {
   });
 
   it("closes on Escape back to shellRoute 'none' (ShellScreen chrome contract)", () => {
-    useUiStore.setState({ shellRoute: { kind: "assets", origin: ORIGIN } });
+    useUiStore.setState({ shellRoute: { kind: "assets", origin: ORIGIN, sessionId: null } });
     render(<ShellScreens />);
     expect(screen.getByRole("dialog", { name: "All assets" })).not.toBeNull();
 
@@ -165,7 +169,7 @@ describe("AssetsScreen", () => {
       isError: false,
       data: { ok: true, data: portfolio([]) },
     });
-    useUiStore.setState({ shellRoute: { kind: "assets", origin: null } });
+    useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
     render(<ShellScreens />);
     expect(
       screen.getByText(/No balances yet — fund a wallet/i),
@@ -195,7 +199,7 @@ describe("AssetsScreen — token-history eye", () => {
         ]),
       },
     });
-    useUiStore.setState({ shellRoute: { kind: "assets", origin: null } });
+    useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
     render(<ShellScreens />);
 
     // Exactly one eye: the identity-less row stays non-interactive.
@@ -213,7 +217,7 @@ describe("AssetsScreen — token-history eye", () => {
       symbol: "USDC",
       tokenName: "USD Coin",
     });
-    expect(route.returnTo).toBe("assets");
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
     // jsdom rects are all-zero — the pin is that a measured rect object
     // (not null) rode along as the expand origin.
     expect(route.origin).toEqual({ x: 0, y: 0, width: 0, height: 0 });
@@ -230,7 +234,7 @@ describe("AssetsScreen — token-history eye", () => {
           symbol: "USDC",
           tokenName: "USD Coin",
         },
-        returnTo: "assets",
+        returnTo: { kind: "assets", sessionId: null },
       },
     });
     render(<ShellScreens />);
@@ -246,6 +250,7 @@ describe("AssetsScreen — token-history eye", () => {
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "assets",
       origin: null,
+      sessionId: null,
     });
     expect(screen.getByRole("dialog", { name: "All assets" })).not.toBeNull();
   });
@@ -268,7 +273,7 @@ describe("AssetsScreen — hide dust", () => {
       isError: false,
       data: { ok: true, data: portfolio(TOKENS_WITH_DUST) },
     });
-    useUiStore.setState({ shellRoute: { kind: "assets", origin: null } });
+    useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
     return render(<ShellScreens />);
   }
 
@@ -313,5 +318,67 @@ describe("AssetsScreen — hide dust", () => {
     expect(rows).toHaveLength(4);
     expect(rows.some((row) => row.includes("Seeyuh"))).toBe(false);
     expect(screen.getByText(/2 dust assets hidden/i)).not.toBeNull();
+  });
+});
+
+describe("AssetsScreen — session scope (C4)", () => {
+  const SESSION = "00000000-0000-4000-8000-0000000000ab";
+  const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+
+  it("reads the SESSION portfolio, not the global one, and says so in the title", () => {
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, sessionId: SESSION },
+    });
+    render(<ShellScreens />);
+    // The scope reaches the query hook — a narrowed register must never be
+    // fed the global read.
+    expect(mockUsePortfolio).toHaveBeenCalledWith(SESSION);
+    expect(
+      screen.getByRole("dialog", { name: "Session assets" }),
+    ).not.toBeNull();
+  });
+
+  it("carries the session scope onto the eye's returnTo, so the close path restores it", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ok: true,
+        data: portfolio([
+          token({
+            tokenName: "USD Coin",
+            symbol: "USDC",
+            chainId: 8453,
+            tokenAddress: USDC_BASE,
+            balanceUsd: 100,
+          }),
+        ]),
+      },
+    });
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, sessionId: SESSION },
+    });
+    render(<ShellScreens />);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /^Token history:/ })[0]!,
+    );
+    const route = useUiStore.getState().shellRoute;
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: SESSION });
+  });
+
+  it("states the SESSION empty invitation, never the global one", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: portfolio([]) },
+    });
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, sessionId: SESSION },
+    });
+    render(<ShellScreens />);
+    expect(
+      screen.getByText(/No balances in this session's wallets yet/i),
+    ).not.toBeNull();
   });
 });

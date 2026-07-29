@@ -18,7 +18,10 @@ import type {
   TokenHistoryEntry,
 } from "@shared/schemas/token-history.js";
 import type { Result } from "@shared/ipc/result.js";
-import type { ShellRoute } from "../../../../stores/uiStore.js";
+import type {
+  ShellRoute,
+  ShellRouteReturnTo,
+} from "../../../../stores/uiStore.js";
 
 export const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 export const TX_HASH = "0xabc123def456";
@@ -30,7 +33,14 @@ export const ROUTE_TOKEN = {
   tokenName: "USD Coin",
 } as const;
 
-export function tokenHistoryRoute(returnTo: "shell" | "assets"): ShellRoute {
+/**
+ * `returnTo` is an OBJECT since the session-scope round (C4): the `assets`
+ * return carries the scope the register was in, so a session-scoped
+ * All-assets screen comes back session-scoped.
+ */
+export function tokenHistoryRoute(
+  returnTo: ShellRouteReturnTo,
+): ShellRoute {
   return {
     kind: "tokenHistory",
     origin: null,

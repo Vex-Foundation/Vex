@@ -1,22 +1,30 @@
 /**
- * POSITION per-chain holdings — the chain switcher for a session's portfolio
- * (owner request: chain marks from the brand icon set, Ethereum as the
- * standing EVM default, robinhood/base/arbitrum as quick switches, a "more"
- * dialog for every other network holding a balance, top-3 tokens per chain,
- * and the Solana group headed by the Solana mark instead of a "SOL" label).
+ * POSITION per-chain holdings — the UNIFIED chain switcher for a portfolio's
+ * chain breakdown.
+ *
+ * ONE CHIP ROW (owner decree, card redesign): the EVM quick chains AND Solana
+ * are peers in a single selectable row, so "which chain am I looking at?" has
+ * exactly one answer at a time. Solana is therefore COLLAPSED BY DEFAULT — it
+ * used to render as a permanently-open second section below the EVM group,
+ * which made the card read as two competing registers and pushed the rest of
+ * the stack off screen. Selecting the Solana chip swaps the token list to
+ * Solana exactly as an EVM chip swaps it to that network.
+ *
+ * The "more" dialog is the network browser: it lists EVERY funded chain in
+ * this position — EVM networks AND Solana — not just the EVM ones, matching
+ * what the chip row can now select.
  *
  * Data: `PortfolioDto.chains` — the purpose-built per-chain breakdown
- * (non-negative totals; top-3 tokens each, positive-USD or UNPRICED). An
- * unpriced holding (`balanceUsd: null` — no price source) shows its
- * `amount + symbol` with a muted em dash, and a chain total that would print
- * $0.00 renders as the same muted dash (owner decision: show funds, never a
- * fabricated $0.00). Selection is local UI state; the parent remounts this
- * component per session (React `key`), so a session switch always lands back
- * on Ethereum.
+ * (non-negative totals; top-3 tokens each, positive-USD or UNPRICED; the
+ * server cap stands, this file never widens it). An unpriced holding
+ * (`balanceUsd: null` — no price source) shows its `amount + symbol` with a
+ * muted em dash, and a chain total that would print $0.00 renders as the same
+ * muted dash: show funds, never a fabricated $0.00. Selection is local UI
+ * state; the parent remounts this component per session (React `key`), so a
+ * session switch always lands back on the default chain.
  *
- * Grammar: landing .ws-stat rows (hairline separations, mono figures,
- * tabular-nums), accent rationed to the selected-chain ring. Icon-only chain
- * buttons carry explicit `aria-label`s; the marks themselves are decorative.
+ * Icon-only chain buttons carry explicit `aria-label`s ("Show Solana assets",
+ * "Show Base assets", …); the marks themselves are decorative.
  */
 
 import { useState, type JSX } from "react";
@@ -43,6 +51,11 @@ import { formatTokenQuantity, formatUsd } from "../../../lib/format.js";
 import { cn } from "../../../lib/utils.js";
 import { MIN_DISPLAY_USD } from "./portfolio/TokenHoldingRow.js";
 
+/** Solana's own display name — `chainDisplay` covers it, kept for the caption. */
+function chainName(chainId: number): string {
+  return chainDisplay(chainId).name;
+}
+
 export function PositionChains({
   chains,
   hasEvmWallet,
@@ -52,102 +65,77 @@ export function PositionChains({
   readonly hasEvmWallet: boolean;
   readonly hasSolanaWallet: boolean;
 }): JSX.Element | null {
-  const [selectedEvmId, setSelectedEvmId] = useState(DEFAULT_EVM_CHAIN_ID);
+  // The standing default is Ethereum when the scope has an EVM wallet;
+  // a Solana-only scope opens on Solana rather than on an empty EVM chain.
+  const [selectedChainId, setSelectedChainId] = useState(
+    hasEvmWallet ? DEFAULT_EVM_CHAIN_ID : SOLANA_CHAIN_ID,
+  );
   const [moreOpen, setMoreOpen] = useState(false);
-
-  const evmChains = chains.filter((c) => c.family === "evm");
-  const solana = chains.find((c) => c.chainId === SOLANA_CHAIN_ID) ?? null;
-  const selected =
-    evmChains.find((c) => c.chainId === selectedEvmId) ?? null;
 
   if (!hasEvmWallet && !hasSolanaWallet) return null;
 
-  return (
-    <div className="flex flex-col gap-3" data-vex-area="position-chains">
-      {hasEvmWallet ? (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <ChainIcon chainId={selectedEvmId} size={14} />
-              <span className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-2)]">
-                {chainDisplay(selectedEvmId).name}
-              </span>
-            </span>
-            {selected !== null ? (
-              <ChainTotalFigure totalUsd={selected.totalUsd} />
-            ) : null}
-          </div>
-          <div
-            role="group"
-            aria-label="EVM network"
-            className="flex items-center gap-1"
-          >
-            {EVM_QUICK_CHAIN_IDS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                title={chainDisplay(id).name}
-                aria-label={`Show ${chainDisplay(id).name} assets`}
-                aria-pressed={id === selectedEvmId}
-                onClick={() => setSelectedEvmId(id)}
-                className={cn(
-                  // A faint plinth behind every mark keeps dark-inked brand
-                  // icons visible on the ink canvas (owner report: "Base was
-                  // invisible"); the native title names the network on hover.
-                  "inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/[0.05] transition-colors",
-                  id === selectedEvmId
-                    ? "border-[var(--vex-accent-border-strong)]"
-                    : "border-transparent hover:border-[var(--vex-line-strong)]",
-                )}
-              >
-                <ChainIcon chainId={id} size={13} />
-              </button>
-            ))}
-            {/* Always offered — the dialog is the network browser (funded
-             * chains only); its empty state explains itself. */}
-            <button
-              type="button"
-              aria-haspopup="dialog"
-              onClick={() => setMoreOpen(true)}
-              className="inline-flex h-6 items-center rounded-full border border-transparent px-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--vex-text-3)] transition-colors hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]"
-            >
-              more
-            </button>
-          </div>
-          <ChainTokenList
-            chainId={selectedEvmId}
-            tokens={selected?.tokens ?? []}
-          />
-        </div>
-      ) : null}
+  // The chip row: EVM quick chains (only with an EVM wallet) then Solana
+  // (only with a Solana wallet) — peers in ONE row, one selection.
+  const chipChainIds: readonly number[] = [
+    ...(hasEvmWallet ? EVM_QUICK_CHAIN_IDS : []),
+    ...(hasSolanaWallet ? [SOLANA_CHAIN_ID] : []),
+  ];
 
-      {hasSolanaWallet ? (
-        <div
-          className={cn(
-            "flex flex-col gap-1.5",
-            hasEvmWallet && "border-t border-[var(--vex-line)] pt-3",
-          )}
+  const selected = chains.find((c) => c.chainId === selectedChainId) ?? null;
+  // Every FUNDED chain in this position, both families — what the dialog lists.
+  const fundedChains = chains.filter(
+    (c) => c.family === "evm" || c.chainId === SOLANA_CHAIN_ID,
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5" data-vex-area="position-chains">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <ChainIcon chainId={selectedChainId} size={14} />
+          <span className="truncate text-[11px] text-[var(--vex-text-2)]">
+            {chainName(selectedChainId)}
+          </span>
+        </span>
+        {selected !== null ? (
+          <ChainTotalFigure totalUsd={selected.totalUsd} />
+        ) : null}
+      </div>
+
+      <div role="group" aria-label="Network" className="flex items-center gap-1">
+        {chipChainIds.map((id) => (
+          <button
+            key={id}
+            type="button"
+            title={chainName(id)}
+            aria-label={`Show ${chainName(id)} assets`}
+            aria-pressed={id === selectedChainId}
+            onClick={() => setSelectedChainId(id)}
+            className={cn(
+              // A faint plinth behind every mark keeps dark-inked brand icons
+              // visible on the ink canvas (owner report: "Base was
+              // invisible"); the native title names the network on hover.
+              "inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/[0.05] transition-colors",
+              id === selectedChainId
+                ? "border-[var(--vex-accent-border-strong)]"
+                : "border-transparent hover:border-[var(--vex-line-strong)]",
+            )}
+          >
+            <ChainIcon chainId={id} size={13} />
+          </button>
+        ))}
+        {/* Always offered — the dialog is the network browser (funded chains
+         * only); its empty state explains itself. */}
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => setMoreOpen(true)}
+          className="inline-flex h-6 items-center rounded-full border border-transparent px-1.5 text-[10.5px] text-[var(--vex-text-3)] transition-colors hover:border-[var(--vex-line-strong)] hover:text-[var(--vex-text-2)]"
         >
-          <div className="flex items-center justify-between gap-2">
-            {/* Mark + name, mirroring the EVM group header — a nameless icon
-             * row read as a duplicate of the SOL token line under it (owner
-             * report: "podwójna ikona SOL"). */}
-            <span className="flex min-w-0 items-center gap-1.5">
-              <ChainIcon chainId={SOLANA_CHAIN_ID} size={14} />
-              <span className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-2)]">
-                Solana
-              </span>
-            </span>
-            {solana !== null ? (
-              <ChainTotalFigure totalUsd={solana.totalUsd} />
-            ) : null}
-          </div>
-          <ChainTokenList
-            chainId={SOLANA_CHAIN_ID}
-            tokens={solana?.tokens ?? []}
-          />
-        </div>
-      ) : null}
+          more
+        </button>
+      </div>
+
+      <ChainTokenList chainId={selectedChainId} tokens={selected?.tokens ?? []} />
 
       {/* Mounted only while open: a closed native <dialog> still sits in the
        * DOM, and its network list would shadow the visible header text for
@@ -158,27 +146,28 @@ export function PositionChains({
             <DialogHeader className="gap-1.5 border-[var(--vex-line)] py-4">
               <DialogTitle>Networks</DialogTitle>
               <DialogDescription>
-                EVM networks holding a balance in this position.
+                Every network holding a balance in this position.
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
-              {evmChains.length > 0 ? (
+              {fundedChains.length > 0 ? (
                 <ul className="flex flex-col">
-                  {evmChains.map((c) => (
+                  {fundedChains.map((c) => (
                     <li key={c.chainId}>
                       <button
                         type="button"
-                        aria-pressed={c.chainId === selectedEvmId}
+                        aria-label={`Show ${chainName(c.chainId)} assets`}
+                        aria-pressed={c.chainId === selectedChainId}
                         onClick={() => {
-                          setSelectedEvmId(c.chainId);
+                          setSelectedChainId(c.chainId);
                           setMoreOpen(false);
                         }}
                         className="flex w-full items-center justify-between gap-3 border-b border-[var(--vex-line)] py-2 text-left transition-colors last:border-b-0 hover:text-[var(--vex-text)]"
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <ChainIcon chainId={c.chainId} size={14} />
-                          <span className="truncate font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]">
-                            {chainDisplay(c.chainId).name}
+                          <span className="truncate text-[12px] text-[var(--vex-text-2)]">
+                            {chainName(c.chainId)}
                           </span>
                         </span>
                         <ChainTotalFigure totalUsd={c.totalUsd} />
@@ -188,7 +177,7 @@ export function PositionChains({
                 </ul>
               ) : (
                 <p className="text-[11px] text-[var(--vex-text-3)]">
-                  No funded EVM networks yet.
+                  No funded networks yet.
                 </p>
               )}
             </DialogBody>
@@ -200,9 +189,9 @@ export function PositionChains({
 }
 
 /**
- * One chain-total figure on the .ws-stat register. Totals that would print
- * `$0.00` (an unpriced-only chain totals 0 by construction) render as a
- * muted em dash — the funds show on the token rows, never a fabricated $0.00.
+ * One chain-total figure. Totals that would print `$0.00` (an unpriced-only
+ * chain totals 0 by construction) render as a muted em dash — the funds show
+ * on the token rows, never a fabricated $0.00.
  */
 function ChainTotalFigure({
   totalUsd,
@@ -213,7 +202,7 @@ function ChainTotalFigure({
   return (
     <span
       className={cn(
-        "shrink-0 font-mono text-[11px] tabular-nums",
+        "shrink-0 text-[11px] tabular-nums",
         unpriced ? "text-[var(--vex-text-3)]" : "text-[var(--vex-text)]",
       )}
     >
@@ -223,11 +212,11 @@ function ChainTotalFigure({
 }
 
 /**
- * Top-3 holdings of one chain — token mark + symbol + muted quantity + USD
- * on .ws-stat rows. UNPRICED rows (`balanceUsd: null`) with a positive
- * amount stay visible with a muted em dash for the missing valuation. An
- * empty (or all-sub-cent) list states the fact quietly instead of leaving
- * a gap: Ethereum stays the standing default even with nothing on it.
+ * Top-3 holdings of the SELECTED chain — token mark + symbol + muted quantity
+ * + USD. UNPRICED rows (`balanceUsd: null`) with a positive amount stay
+ * visible with a muted em dash for the missing valuation. An empty (or
+ * all-sub-cent) list states the fact quietly instead of leaving a gap: the
+ * default chain stays selected even with nothing on it.
  *
  * `token.symbol` is provider-supplied and UNTRUSTED — any on-chain token can
  * self-declare arbitrary metadata, including a symbol that impersonates a
@@ -239,10 +228,10 @@ function ChainTotalFigure({
  * survives sanitization as text, so the mark itself goes through
  * `resolveTokenMark` (shared `lib/token-marks.ts`, chain-aware verified
  * matrix) — a brand `<svg>` is granted only when BOTH the line's
- * `(chainId, tokenAddress)` AND its expected on-chain symbol match a
- * verified row; anything else renders the chain-FAMILY mark (Ethereum/
- * Solana), never a fabricated brand and never a bare monogram for a
- * holding on a recognized chain.
+ * `(chainId, tokenAddress)` AND its expected on-chain symbol match a verified
+ * row; anything else renders the chain-FAMILY mark (Ethereum/Solana), never a
+ * fabricated brand and never a bare monogram for a holding on a recognized
+ * chain.
  */
 function ChainTokenList({
   chainId,
@@ -258,8 +247,8 @@ function ChainTokenList({
   );
   if (displayable.length === 0) {
     return (
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-        No assets on {chainDisplay(chainId).name}
+      <p className="text-[11px] text-[var(--vex-text-3)]">
+        No assets on {chainName(chainId)}
       </p>
     );
   }
@@ -277,11 +266,11 @@ function ChainTokenList({
           >
             <span className="flex min-w-0 flex-1 items-center gap-2">
               <TokenMark mark={mark} size={13} />
-              <span className="truncate font-mono text-[11px] text-[var(--vex-text-2)]">
+              <span className="truncate text-[11.5px] text-[var(--vex-text-2)]">
                 {symbol !== null && symbol.length > 0 ? symbol : "—"}
               </span>
             </span>
-            <span className="flex shrink-0 items-baseline gap-2 font-mono text-[11px] tabular-nums">
+            <span className="flex shrink-0 items-baseline gap-2 text-[11px] tabular-nums">
               {quantity !== null ? (
                 <span className="text-[var(--vex-text-3)]">{quantity}</span>
               ) : null}

@@ -152,8 +152,10 @@ function mockQuery(
   });
 }
 
-function mountScreen(): void {
-  render(<AgentScanScreen origin={null} onClose={() => undefined} />);
+function mountScreen(sessionId: string | null = null): void {
+  render(
+    <AgentScanScreen origin={null} sessionId={sessionId} onClose={() => undefined} />,
+  );
 }
 
 /** The filters argument the screen most recently handed the hook. */
@@ -510,5 +512,68 @@ describe("AgentScanScreen — rows and audit detail", () => {
     mountScreen();
     expect(screen.getByText("PENDING")).not.toBeNull();
     expect(screen.getByText("tracking delayed")).not.toBeNull();
+  });
+});
+
+describe("AgentScanScreen — session preset (C4)", () => {
+  const SESSION = "00000000-0000-4000-8000-0000000000ac";
+
+  it("sends the session scope to the read — a preset silently dropped would render the GLOBAL history", () => {
+    mockQuery([availablePage([entry({ id: "a-1" })])]);
+    mountScreen(SESSION);
+    expect(lastFilters()).toEqual({ sessionId: SESSION });
+  });
+
+  it("shows the preset as a VISIBLE scope chip — a narrowed audit feed is never silent", () => {
+    mockQuery([availablePage([entry({ id: "a-1" })])]);
+    mountScreen(SESSION);
+    expect(screen.getByText("this session")).not.toBeNull();
+  });
+
+  it("the scope chip is NOT a toggle (no aria-pressed) — it cannot be cleared from the bar", () => {
+    mockQuery([availablePage([entry({ id: "a-1" })])]);
+    mountScreen(SESSION);
+    expect(
+      screen.getByText("this session").getAttribute("aria-pressed"),
+    ).toBeNull();
+  });
+
+  it("Clear resets the user's filters and PRESERVES the session scope", () => {
+    mockQuery([availablePage([entry({ id: "a-1" })])]);
+    mountScreen(SESSION);
+    // Narrow further with a real filter, then clear it.
+    fireEvent.click(screen.getByRole("button", { name: "bridge" }));
+    expect(lastFilters()).toEqual({ kinds: ["bridge"], sessionId: SESSION });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(lastFilters()).toEqual({ sessionId: SESSION });
+    // And the scope chip survives the clear.
+    expect(screen.getByText("this session")).not.toBeNull();
+  });
+
+  it("a GLOBAL feed carries no scope chip and no sessionId", () => {
+    mockQuery([availablePage([entry({ id: "a-1" })])]);
+    mountScreen(null);
+    expect(screen.queryByText("this session")).toBeNull();
+    expect(lastFilters()).toEqual({});
+  });
+
+  it("an empty SESSION feed says so — never 'the agent has done nothing'", () => {
+    mockQuery([availablePage([])]);
+    mountScreen(SESSION);
+    expect(
+      screen.getByText(/hasn't executed anything on-chain in this session/i),
+    ).not.toBeNull();
+    expect(screen.queryByText(/No activity recorded yet/i)).toBeNull();
+  });
+
+  it("keeps the filters object REFERENTIALLY STABLE across re-renders (query-key refetch hazard)", () => {
+    mockQuery([availablePage([entry({ id: "a-1" })])]);
+    mountScreen(SESSION);
+    const calls = mockUseAgentScanInfinite.mock.calls;
+    // The screen re-renders several times during mount + virtualization; every
+    // call must receive the SAME object, or each render mints a new cache key.
+    expect(calls.length).toBeGreaterThan(1);
+    for (const call of calls) expect(call[0]).toBe(calls[0]![0]);
   });
 });

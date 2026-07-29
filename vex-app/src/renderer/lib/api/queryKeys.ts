@@ -211,12 +211,6 @@ export const portfolioKeys = {
   readWallet: (walletAddress: string) =>
     ["portfolio", "wallet", walletAddress] as const,
   /**
-   * MOVES (move 0.3) — the session's executed-trade activity. Keyed by
-   * `sessionId` so each session's feed is a distinct cache entry. A
-   * `null`/global view has no MOVES (it is session-scoped).
-   */
-  moves: (sessionId: string) => ["portfolio", "moves", sessionId] as const,
-  /**
    * Token history (chronos-shell) — the global-scope per-token TX history
    * screen. Keyed by the exact `(chainId, tokenAddress)` identity so
    * switching tokens (or re-opening the same one) hits a distinct/reused

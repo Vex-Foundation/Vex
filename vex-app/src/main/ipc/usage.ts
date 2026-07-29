@@ -18,6 +18,14 @@ import {
   type SessionUsageTotalsDto,
 } from "@shared/schemas/usage.js";
 import { AGENT_CONTEXT_LIMIT, parseAgentEnv } from "@vex-lib/agent-config.js";
+// Main MAY import the engine (precedent: `main/market/dexscreener-pair.ts`).
+// The pressure bands have exactly ONE owner — the engine policy module — and
+// are carried to the renderer through the DTO rather than re-declared there.
+import {
+  PRESSURE_BARRIER_FRACTION,
+  PRESSURE_CRITICAL_FRACTION,
+  PRESSURE_WARNING_FRACTION,
+} from "@vex-agent/engine/core/context-pressure-policy.js";
 import {
   getContextWindow,
   getLastTurn,
@@ -98,7 +106,22 @@ function registerGetContextWindowHandler(): () => void {
     outputSchema: contextWindowResultSchema,
     handle: async (input, ctx): Promise<Result<ContextWindowResult>> => {
       const contextLimit = resolveContextLimit();
-      const outcome = await getContextWindow(input.sessionId, contextLimit);
+      const read = await getContextWindow(input.sessionId, contextLimit);
+      // Stamp the engine's pressure bands onto a present window, so the
+      // renderer's meter markers stay tied to the thresholds that actually
+      // gate compaction. A `null` window (unknown/deleted session) stays null.
+      const outcome: Result<ContextWindowResult> =
+        read.ok && read.data !== null
+          ? {
+              ok: true,
+              data: {
+                ...read.data,
+                pressureWarningFraction: PRESSURE_WARNING_FRACTION,
+                pressureBarrierFraction: PRESSURE_BARRIER_FRACTION,
+                pressureCriticalFraction: PRESSURE_CRITICAL_FRACTION,
+              },
+            }
+          : read;
       if (outcome.ok) {
         log.info(
           `[ipc:vex:usage:getContextWindow] ok sessionId=${input.sessionId} ` +

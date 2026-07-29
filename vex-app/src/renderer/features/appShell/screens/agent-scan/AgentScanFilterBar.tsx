@@ -42,6 +42,14 @@ export interface AgentScanFilterState {
   readonly status: AgentScanStatusFilter | null;
   readonly protocols: readonly string[];
   readonly chainFamily: AgentScanChainFamilyFilter | null;
+  /**
+   * SESSION PRESET — set by the caller (the session rail's Activity card
+   * "View all"), never by a control in this bar. It is a NON-CLEARABLE scope,
+   * not a user-toggled filter: Clear resets everything else and leaves it in
+   * place, and it renders as its own visible chip so a session-narrowed feed
+   * can never be mistaken for the whole history. `null` = the global feed.
+   */
+  readonly sessionId: string | null;
 }
 
 export const EMPTY_FILTER_STATE: AgentScanFilterState = {
@@ -49,9 +57,16 @@ export const EMPTY_FILTER_STATE: AgentScanFilterState = {
   status: null,
   protocols: [],
   chainFamily: null,
+  sessionId: null,
 };
 
-/** How many constraints are active — drives the pinned count and Clear key. */
+/**
+ * How many USER-CLEARABLE constraints are active — drives the pinned count
+ * and the Clear key. The session preset is deliberately excluded: it is a
+ * scope the user cannot clear from here, and counting it would promise a
+ * Clear that does nothing to it. Its own chip carries that narrowing
+ * visibly instead.
+ */
 export function activeFilterCount(state: AgentScanFilterState): number {
   return (
     state.kinds.length +
@@ -59,6 +74,11 @@ export function activeFilterCount(state: AgentScanFilterState): number {
     (state.status !== null ? 1 : 0) +
     (state.chainFamily !== null ? 1 : 0)
   );
+}
+
+/** True when the feed is narrowed at all — by a filter OR by the session preset. */
+export function isFeedNarrowed(state: AgentScanFilterState): boolean {
+  return activeFilterCount(state) > 0 || state.sessionId !== null;
 }
 
 /**
@@ -72,11 +92,16 @@ export function toAgentScanFilters(state: AgentScanFilterState): AgentScanFilter
     statuses?: AgentScanStatusFilter[];
     protocols?: string[];
     chainFamily?: AgentScanChainFamilyFilter;
+    sessionId?: string;
   } = {};
   if (state.kinds.length > 0) filters.kinds = [...state.kinds];
   if (state.status !== null) filters.statuses = [state.status];
   if (state.protocols.length > 0) filters.protocols = [...state.protocols];
   if (state.chainFamily !== null) filters.chainFamily = state.chainFamily;
+  // The session scope NARROWS the read server-side (`agentScanFiltersSchema`
+  // already carries it) — it was silently dropped here before, so a
+  // "session" feed rendered the global history.
+  if (state.sessionId !== null) filters.sessionId = state.sessionId;
   return filters;
 }
 
@@ -222,19 +247,36 @@ export function AgentScanFilterBar({
         ))}
       </FilterGroup>
 
-      {active > 0 ? (
+      {state.sessionId !== null || active > 0 ? (
         // The narrowing must never be invisible on an audit surface.
-        <div className="flex items-center gap-2 pl-[66px]">
-          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)]">
-            {active} filter{active === 1 ? "" : "s"} active
-          </span>
+        <div className="flex flex-wrap items-center gap-2 pl-[66px]">
+          {state.sessionId !== null ? (
+            // NOT a FilterChip: it carries no `aria-pressed` and no toggle,
+            // because it is a scope the user cannot clear from this bar.
+            <span
+              data-vex-area="agent-scan-session-scope"
+              className={cn(CHIP_BASE, CHIP_ACTIVE, "cursor-default")}
+              title="This feed is narrowed to one session"
+            >
+              this session
+            </span>
+          ) : null}
+          {active > 0 ? (
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)]">
+              {active} filter{active === 1 ? "" : "s"} active
+            </span>
+          ) : null}
+          {active > 0 ? (
           <button
             type="button"
-            onClick={() => onChange(EMPTY_FILTER_STATE)}
+            // Clear resets the user-chosen filters and PRESERVES the session
+            // scope — clearing must not silently widen an audit feed.
+            onClick={() => onChange({ ...EMPTY_FILTER_STATE, sessionId: state.sessionId })}
             className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] underline-offset-2 transition-colors hover:text-[var(--vex-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
           >
             Clear
           </button>
+          ) : null}
         </div>
       ) : null}
     </section>

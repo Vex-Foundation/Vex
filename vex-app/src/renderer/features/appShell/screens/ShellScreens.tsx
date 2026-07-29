@@ -7,9 +7,12 @@
  *
  *  - every screen closes back to `{ kind: "none" }`,
  *  - EXCEPT a token-history screen opened FROM the All-assets screen
- *    (`returnTo: "assets"`), which returns there — remounted with a null
- *    origin (centered expand): the original morph origin belonged to a row
- *    instance that no longer exists, so reusing it would anchor a stale rect.
+ *    (`returnTo.kind === "assets"`), which returns there — remounted with a
+ *    null origin (centered expand): the original morph origin belonged to a
+ *    row instance that no longer exists, so reusing it would anchor a stale
+ *    rect. The return CARRIES `returnTo.sessionId`, so a session-scoped
+ *    All-assets register comes back session-scoped; re-minting a bare global
+ *    route here silently widened the register behind the user's back.
  */
 
 import { useCallback, type JSX } from "react";
@@ -31,8 +34,12 @@ export function ShellScreens(): JSX.Element {
     // Read the CURRENT route at close time (not a render-time capture):
     // Escape rides a window listener, so the callback may outlive a route swap.
     const current = useUiStore.getState().shellRoute;
-    if (current.kind === "tokenHistory" && current.returnTo === "assets") {
-      setShellRoute({ kind: "assets", origin: null });
+    if (current.kind === "tokenHistory" && current.returnTo.kind === "assets") {
+      setShellRoute({
+        kind: "assets",
+        origin: null,
+        sessionId: current.returnTo.sessionId,
+      });
       return;
     }
     setShellRoute({ kind: "none" });
@@ -45,11 +52,23 @@ export function ShellScreens(): JSX.Element {
       ) : route.kind === "sessions" ? (
         <SessionsScreen key="sessions" origin={route.origin} onClose={close} />
       ) : route.kind === "agentScan" ? (
-        <AgentScanScreen key="agentScan" origin={route.origin} onClose={close} />
+        <AgentScanScreen
+          // Identity-keyed on the scope: swapping between the global feed and
+          // a session preset must remount, not reuse the old filter state.
+          key={`agentScan:${route.sessionId ?? "global"}`}
+          origin={route.origin}
+          sessionId={route.sessionId}
+          onClose={close}
+        />
       ) : route.kind === "howItWorks" ? (
         <HowVexWorksScreen key="howItWorks" origin={route.origin} onClose={close} />
       ) : route.kind === "assets" ? (
-        <AssetsScreen key="assets" origin={route.origin} onClose={close} />
+        <AssetsScreen
+          key={`assets:${route.sessionId ?? "global"}`}
+          origin={route.origin}
+          sessionId={route.sessionId}
+          onClose={close}
+        />
       ) : route.kind === "settings" ? (
         <SettingsScreen
           key="settings"

@@ -273,7 +273,7 @@ describe("uiStore", () => {
         symbol: "USDC",
         tokenName: "USD Coin",
       },
-      returnTo: "assets",
+      returnTo: { kind: "assets", sessionId: null },
     });
     const route = useUiStore.getState().shellRoute;
     expect(route.kind).toBe("tokenHistory");
@@ -284,7 +284,7 @@ describe("uiStore", () => {
       symbol: "USDC",
       tokenName: "USD Coin",
     });
-    expect(route.returnTo).toBe("assets");
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
     // Closing drops the payload with the route — nothing to clear separately.
     useUiStore.getState().setShellRoute({ kind: "none" });
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
@@ -404,7 +404,7 @@ describe("uiStore", () => {
         symbol: "USDC",
         tokenName: "USD Coin",
       },
-      returnTo: "shell",
+      returnTo: { kind: "shell" },
     });
     useUiStore.getState().openWizard("setup");
     useUiStore.getState().openUnlock("wizard");

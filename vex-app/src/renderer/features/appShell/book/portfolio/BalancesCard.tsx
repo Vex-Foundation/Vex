@@ -1,12 +1,19 @@
 /**
- * Balances — the top holdings across every configured wallet on the welcome
- * Portfolio tab: the five largest-USD lines from the global portfolio read
- * (unpriced lines sort last), in the shared `TokenHoldingRow` grammar
- * (address-verified marks, sanitized names, em-dash unpriced convention).
+ * Balances — the top holdings of a portfolio read, in the shared
+ * `TokenHoldingRow` grammar (address-verified marks, sanitized names, em-dash
+ * unpriced convention). ONE card serves both stages:
  *
- * The "View all assets" footer measures its OWN rect and opens the
- * All-assets ShellScreen morphing out of the exact row pressed — the same
- * expand-from-trigger pattern the profile-menu rows use for Memory/Sessions.
+ *  - `sessionId === null` — the welcome Portfolio tab: the five largest-USD
+ *    lines across every configured wallet.
+ *  - `sessionId` a uuid — the session rail: the five largest-USD lines of
+ *    THAT session's wallet scope, flat across chains (the session DTO's
+ *    `portfolio.tokens[]`; a `chainId: null` row is a real aggregate line and
+ *    renders without a chain suffix, it is never dropped).
+ *
+ * The "View all" footer measures its OWN rect and opens the All-assets
+ * ShellScreen morphing out of the exact row pressed — carrying the SAME scope
+ * this card is showing, so the full register can never be wider than the card
+ * that led to it.
  *
  * Dust (sub-cent priced) rows are filtered out BEFORE the top-5 cut, per the
  * `hideDustBalances` uiStore preference — a dust row must never consume a
@@ -33,12 +40,18 @@ import {
 /** The card shows the top holdings only; the All-assets screen has the rest. */
 const TOP_TOKENS = 5;
 
-export function BalancesCard(): JSX.Element {
-  const query = usePortfolio(null);
+export function BalancesCard({
+  sessionId = null,
+}: {
+  /** `null` = the global inventory portfolio; a uuid narrows to one session. */
+  readonly sessionId?: string | null;
+} = {}): JSX.Element {
+  const query = usePortfolio(sessionId);
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
   const result = query.data;
   const portfolio = result?.ok ? result.data : null;
+  // Dust filter runs BEFORE the cut — see the module doc.
   const top =
     portfolio !== null
       ? filterDustTokens(
@@ -53,6 +66,7 @@ export function BalancesCard(): JSX.Element {
     setShellRoute({
       kind: "assets",
       origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      sessionId,
     });
   };
 
@@ -66,7 +80,9 @@ export function BalancesCard(): JSX.Element {
         </CardStateNote>
       ) : top.length === 0 ? (
         <CardStateNote>
-          No balances yet — fund a wallet and your holdings appear here.
+          {sessionId === null
+            ? "No balances yet — fund a wallet and your holdings appear here."
+            : "No balances in this session's wallets yet — fund them and your holdings appear here."}
         </CardStateNote>
       ) : (
         <>
@@ -75,7 +91,7 @@ export function BalancesCard(): JSX.Element {
               <TokenHoldingRow
                 key={tokenLineKey(token)}
                 token={token}
-                historyReturnTo="shell"
+                historyReturnTo={{ kind: "shell" }}
               />
             ))}
           </ul>

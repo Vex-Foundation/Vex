@@ -155,8 +155,6 @@ describe("preload bridge surface", () => {
       "CH.memory.getStats",
       // Stage 3 — read-only dual-scope POSITION portfolio.
       "CH.portfolio.read",
-      // Move 0.3 — read-only per-session executed-trade activity (MOVES).
-      "CH.portfolio.listMoves",
       // Chronos-shell — read-only, global-scope per-token TX history.
       "CH.portfolio.listTokenHistory",
       "CH.sessions.getModel",

@@ -221,3 +221,41 @@ describe("usage schemas", () => {
     expect(contextWindowResultSchema.safeParse(null).success).toBe(true);
   });
 });
+
+/**
+ * The context-pressure band edges the meter draws. They have exactly ONE
+ * owner — the engine's `context-pressure-policy.ts` — and travel to the
+ * renderer on this DTO so no marker can drift from the fraction that actually
+ * gates compaction. The fields are OPTIONAL so a payload minted by an older
+ * main still parses (both sides validate this DTO).
+ */
+describe("contextWindowDtoSchema — pressure bands (additive)", () => {
+  const BASE = { sessionId: SESSION, tokensUsed: 100, contextLimit: 200_000 };
+
+  it("accepts a payload WITHOUT the fractions (older main, backward compatible)", () => {
+    expect(contextWindowDtoSchema.safeParse(BASE).success).toBe(true);
+  });
+
+  it("accepts the engine's real band edges", () => {
+    const parsed = contextWindowDtoSchema.safeParse({
+      ...BASE,
+      pressureWarningFraction: 0.85,
+      pressureBarrierFraction: 0.88,
+      pressureCriticalFraction: 0.92,
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.pressureBarrierFraction).toBe(0.88);
+  });
+
+  it("rejects out-of-range fractions — a marker outside the bar is meaningless", () => {
+    for (const bad of [0, -0.1, 1.5]) {
+      expect(
+        contextWindowDtoSchema.safeParse({
+          ...BASE,
+          pressureBarrierFraction: bad,
+        }).success,
+      ).toBe(false);
+    }
+  });
+});

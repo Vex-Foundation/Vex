@@ -115,12 +115,26 @@ export type ContextWindowInput = z.infer<typeof contextWindowInputSchema>;
  *    uses for pressure bands. `null` when the configured value is invalid
  *    (the engine would reject it) — the renderer then shows the token
  *    count without a limit bar instead of a fabricated default.
+ *  - `pressureWarningFraction` / `pressureBarrierFraction` /
+ *    `pressureCriticalFraction` are the ENGINE's own context-pressure band
+ *    edges (`src/vex-agent/engine/core/context-pressure-policy.ts`), read by
+ *    main and carried here so the renderer's meter markers can never drift
+ *    from the thresholds that actually gate compaction. The renderer MUST
+ *    NOT hardcode them.
+ *
+ * ADDITIVE + OPTIONAL. The three fractions are optional so a payload minted
+ * by an older main still parses (both sides validate this DTO); a consumer
+ * that does not see them simply draws no markers rather than inventing
+ * positions.
  */
 export const contextWindowDtoSchema = z
   .object({
     sessionId: z.string().uuid(),
     tokensUsed: z.number().int().min(0),
     contextLimit: z.number().int().positive().nullable(),
+    pressureWarningFraction: z.number().gt(0).lte(1).optional(),
+    pressureBarrierFraction: z.number().gt(0).lte(1).optional(),
+    pressureCriticalFraction: z.number().gt(0).lte(1).optional(),
   })
   .strict();
 export type ContextWindowDto = z.infer<typeof contextWindowDtoSchema>;

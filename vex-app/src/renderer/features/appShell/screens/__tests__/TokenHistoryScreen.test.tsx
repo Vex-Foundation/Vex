@@ -29,6 +29,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { TokenHistoryDto } from "@shared/schemas/token-history.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import type { ShellRouteReturnTo } from "../../../../stores/uiStore.js";
 import {
   availablePage,
   swapEntry,
@@ -103,10 +104,14 @@ function mockQuery(
   });
 }
 
-function mountScreen(returnTo: "shell" | "assets" = "shell"): void {
+function mountScreen(
+  returnTo: ShellRouteReturnTo = { kind: "shell" },
+): void {
   useUiStore.setState({ shellRoute: tokenHistoryRoute(returnTo) });
   render(<ShellScreens />);
 }
+
+const SESSION = "00000000-0000-4000-8000-0000000000aa";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -147,18 +152,30 @@ describe("TokenHistoryScreen — chrome and disclosure", () => {
 
   it("routes back to `returnTo` on Escape: 'shell' closes to none", () => {
     mockQuery([availablePage([])]);
-    mountScreen("shell");
+    mountScreen({ kind: "shell" });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
   });
 
   it("routes back to `returnTo` on Escape: 'assets' remounts the assets route with a NULL origin", () => {
     mockQuery([availablePage([])]);
-    mountScreen("assets");
+    mountScreen({ kind: "assets", sessionId: null });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "assets",
       origin: null,
+      sessionId: null,
+    });
+  });
+
+  it("PRESERVES the session scope on the 'assets' return — the register never re-mints global", () => {
+    mockQuery([availablePage([])]);
+    mountScreen({ kind: "assets", sessionId: SESSION });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "assets",
+      origin: null,
+      sessionId: SESSION,
     });
   });
 });

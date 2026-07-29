@@ -1,5 +1,8 @@
 /**
- * POSITION — the wallet portfolio block for the BOOK panel (stage 4).
+ * POSITION — the wallet portfolio card. Card-system grammar (`PortfolioCard`,
+ * C3) since the book became one card stack: the serif display total from
+ * `PortfolioOverviewCard`'s hero convention, the snapshot/PnL line, and the
+ * resolved wallet COUNT in the card's trailing slot.
  *
  * Dual-scope, driven purely by `activeSessionId`:
  *   - `null`     → GLOBAL inventory portfolio, titled "Portfolio".
@@ -9,30 +12,20 @@
  * discriminated scope and main resolves the server-side allow-list. This
  * component only renders the resolved DTO.
  *
- * Surface shows: the live total USD (blue rationed to this one figure), the
- * most recent snapshot total + PnL when present, and the resolved wallet
- * COUNT. SESSION scope then renders the redesigned register — copy-ready
- * deposit addresses (DepositAddresses) + the per-chain holdings switcher
- * (PositionChains); GLOBAL (the welcome/empty state) delegates to
- * `GlobalWalletSwitcher` (WP-L2), which owns the wallet-identity
- * presentation (`GlobalWalletAddresses`) + the legacy flat top-holdings list
- * as the "All wallets" default, AND — when more than one wallet is
- * configured — a per-wallet chip switcher that swaps in the SAME
- * chain-grouped `PositionChains` presentation the session view uses, scoped
- * to just that one wallet. Loading / error / empty (no wallets) states are
- * boxless lines on the same register.
+ * SESSION scope renders the unified chain switcher (`PositionChains` — one
+ * chip row over EVM quick chains + Solana, per-chain top-3 for the selected
+ * chain). GLOBAL delegates to `GlobalWalletSwitcher` (WP-L2), which owns the
+ * wallet-identity presentation + the flat top-holdings list as the "All
+ * wallets" default AND — with more than one wallet configured — a per-wallet
+ * chip switcher that swaps in the SAME `PositionChains` presentation scoped to
+ * one wallet.
  *
- * The hero Total above `GlobalWalletSwitcher` (this component's `TotalRow`)
- * ALWAYS stays the full cross-wallet aggregate — selecting one wallet in the
- * switcher never changes it; the wallet-scoped body shows that wallet's own
- * total separately (session-style), per owner decision.
+ * The hero Total above `GlobalWalletSwitcher` ALWAYS stays the full
+ * cross-wallet aggregate — selecting one wallet in the switcher never changes
+ * it; the wallet-scoped body shows that wallet's own total separately.
  *
- * `hero` = the BOOK column's single dominant section. The de-boxed column has
- * no tile chrome to strengthen, so hero presence lives in CONTENT: the total
- * figure scales up to the giant Archivo treatment (27px vs 22px).
- *
- * Signal Tape language: surface/hairline/text trio; blue ONLY on the live
- * total, semantic up/down on the PnL; `tabular-nums` on every figure.
+ * Signal Tape language: serif display figure, semantic up/down on the PnL,
+ * `tabular-nums` on every figure.
  */
 
 import type { JSX } from "react";
@@ -40,17 +33,14 @@ import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import { usePortfolio } from "../../../lib/api/portfolio.js";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
 import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
-import { BookBlock } from "./BookBlock.js";
-import { DepositAddresses } from "./DepositAddresses.js";
+import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
 import { PositionChains } from "./PositionChains.js";
 
 export function PositionBlock({
   activeSessionId,
-  hero = false,
 }: {
   readonly activeSessionId: string | null;
-  readonly hero?: boolean;
 }): JSX.Element {
   const isSession = activeSessionId !== null;
   const title = isSession ? "Position" : "Portfolio";
@@ -61,39 +51,35 @@ export function PositionBlock({
 
   if (query.isLoading) {
     return (
-      <BookBlock title={title}>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-          Loading…
-        </p>
-      </BookBlock>
+      <PortfolioCard eyebrow={title}>
+        <CardStateNote tone="loading">Loading…</CardStateNote>
+      </PortfolioCard>
     );
   }
 
   if ((result !== undefined && !result.ok) || query.isError) {
     return (
-      <BookBlock title={title}>
-        <p className="text-[11px] text-[var(--vex-warn-text)]">
+      <PortfolioCard eyebrow={title}>
+        <CardStateNote tone="warn">
           Couldn&apos;t load your portfolio.
-        </p>
-      </BookBlock>
+        </CardStateNote>
+      </PortfolioCard>
     );
   }
 
   if (portfolio === null || portfolio.walletCount === 0) {
     return (
-      <BookBlock title={title}>
-        <p className="text-[11px] text-[var(--vex-text-3)]">
-          {isSession
-            ? "No wallets in this session."
-            : "No wallets configured."}
-        </p>
-      </BookBlock>
+      <PortfolioCard eyebrow={title}>
+        <CardStateNote>
+          {isSession ? "No wallets in this session." : "No wallets configured."}
+        </CardStateNote>
+      </PortfolioCard>
     );
   }
 
   return (
-    <BookBlock
-      title={title}
+    <PortfolioCard
+      eyebrow={title}
       trailing={`${portfolio.walletCount} ${
         portfolio.walletCount === 1 ? "wallet" : "wallets"
       }`}
@@ -102,43 +88,31 @@ export function PositionBlock({
         <SessionPositionBody
           portfolio={portfolio}
           sessionId={activeSessionId}
-          hero={hero}
         />
       ) : (
-        <PositionBody portfolio={portfolio} hero={hero} />
+        <PositionBody portfolio={portfolio} />
       )}
-    </BookBlock>
+    </PortfolioCard>
   );
 }
 
 /**
- * Session-scope body — the redesigned register (owner request): the hero
- * total, the session's copy-ready deposit addresses, then the per-chain
- * holdings switcher (EVM default Ethereum + quick chains + "more" dialog,
- * Solana headed by its mark). The legacy flat token list stays GLOBAL-only.
+ * Session-scope body: the hero total, then the unified chain switcher.
  * `key={sessionId}` remounts the switcher per session so the selected chain
- * always resets to Ethereum.
+ * always resets to the default.
  */
 function SessionPositionBody({
   portfolio,
   sessionId,
-  hero,
 }: {
   readonly portfolio: PortfolioDto;
   readonly sessionId: string;
-  readonly hero: boolean;
 }): JSX.Element {
   const walletsQuery = useSessionWallets(sessionId);
   const scope = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   return (
     <div className="flex flex-col gap-2.5">
-      <TotalRow
-        liveTotalUsd={portfolio.liveTotalUsd}
-        snapshotTotalUsd={portfolio.snapshotTotalUsd}
-        pnlVsPrev={portfolio.pnlVsPrev}
-        hero={hero}
-      />
-      <DepositAddresses sessionId={sessionId} />
+      <TotalFigure portfolio={portfolio} />
       <PositionChains
         key={sessionId}
         chains={portfolio.chains}
@@ -151,59 +125,43 @@ function SessionPositionBody({
 
 function PositionBody({
   portfolio,
-  hero,
 }: {
   readonly portfolio: PortfolioDto;
-  readonly hero: boolean;
 }): JSX.Element {
-  const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev } = portfolio;
   return (
     <div className="flex flex-col gap-2.5">
-      <TotalRow
-        liveTotalUsd={liveTotalUsd}
-        snapshotTotalUsd={snapshotTotalUsd}
-        pnlVsPrev={pnlVsPrev}
-        hero={hero}
-      />
+      <TotalFigure portfolio={portfolio} />
       <GlobalWalletSwitcher portfolio={portfolio} />
     </div>
   );
 }
 
-function TotalRow({
-  liveTotalUsd,
-  snapshotTotalUsd,
-  pnlVsPrev,
-  hero,
+/**
+ * The card's ONE display figure: the live total in the serif hero treatment
+ * (`PortfolioOverviewCard` grammar, 34px), with the snapshot total and the
+ * PnL versus it underneath when the DTO carries them. `snapshotAt` stays
+ * UNRENDERED — a second timestamp beside "vs last snapshot" adds a figure the
+ * user cannot act on and did not ask for; it has not earned a line.
+ */
+function TotalFigure({
+  portfolio,
 }: {
-  readonly liveTotalUsd: number;
-  readonly snapshotTotalUsd: number | null;
-  readonly pnlVsPrev: number | null;
-  readonly hero: boolean;
+  readonly portfolio: PortfolioDto;
 }): JSX.Element {
-  // Blue is rationed to the single live-total figure — the one number the
-  // panel is built around. Everything else stays on the muted text trio.
-  // Hero = the landing display treatment: giant Archivo 800, tight-tracked.
+  const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev } = portfolio;
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-        Total
-      </span>
-      <span
-        className={`font-display font-extrabold leading-[1.05] tracking-[-0.02em] tabular-nums text-[var(--vex-accent-text)] ${
-          hero ? "text-[27px]" : "text-[22px]"
-        }`}
-      >
+    <div className="flex flex-col gap-1">
+      <span className="text-[10.5px] text-[var(--vex-text-3)]">Total value</span>
+      {/* Serif is rationed to this ONE display figure (typography law, C2). */}
+      <span className="font-serif text-[34px] leading-none tracking-[-0.01em] tabular-nums text-foreground">
         {formatUsd(liveTotalUsd)}
       </span>
       {snapshotTotalUsd !== null ? (
-        <span className="flex items-baseline gap-1.5 text-[11px] text-[var(--vex-text-3)]">
-          <span className="tabular-nums">
-            snapshot {formatUsd(snapshotTotalUsd)}
-          </span>
+        <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-[var(--vex-text-3)]">
+          <span>snapshot {formatUsd(snapshotTotalUsd)}</span>
           {pnlVsPrev !== null ? (
             <span
-              className={`tabular-nums ${pnlToneClass(pnlVsPrev)}`}
+              className={pnlToneClass(pnlVsPrev)}
               aria-label={`Profit and loss versus previous snapshot ${formatUsdDelta(pnlVsPrev)}`}
             >
               {formatUsdDelta(pnlVsPrev)}

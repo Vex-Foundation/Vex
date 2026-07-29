@@ -95,7 +95,7 @@ function mockQuery(pages: readonly Result<TokenHistoryDto>[]): void {
 }
 
 function mountScreen(): void {
-  useUiStore.setState({ shellRoute: tokenHistoryRoute("shell") });
+  useUiStore.setState({ shellRoute: tokenHistoryRoute({ kind: "shell" }) });
   render(<ShellScreens />);
 }
 
