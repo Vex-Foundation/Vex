@@ -28,16 +28,16 @@ import {
 import { ModelBrandIcon } from "../wizard/steps/provider/ModelBrandIcon.js";
 
 /**
- * Shared geometry for the round send control's three states (send / stop /
- * stopping) — one fixed circle so every hard-cut swap holds its slot in the
- * input row. h-10 = Grok's 40px round key inside the ~56px resting pill
- * (owner decree 2026-07-21). Send fills the accent with the accent-contrast
- * glyph; the disabled (empty) send is a ghost hairline circle; stop keeps
- * the accent rim; stopping goes inert while the floating tag above the pill
- * carries the "Stopping…" label.
+ * Shared geometry for the send control's three states (send / stop /
+ * stopping) — one fixed 40px key so every hard-cut swap holds its slot in the
+ * input row. `rounded-xl` echoes the surface's rounded-2xl instead of the
+ * retired pill's circle (composer rebuild, owner decree 2026-07-29). Send
+ * fills the accent with the accent-contrast glyph; the disabled (empty) send
+ * is a ghost hairline key; stop keeps the accent rim; stopping goes inert
+ * while the floating tag above the surface carries the "Stopping…" label.
  */
 const SEND_KEY_BASE =
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export interface ComposerSendControlProps {
   readonly reasoningCapability: ReasoningCapability | null;

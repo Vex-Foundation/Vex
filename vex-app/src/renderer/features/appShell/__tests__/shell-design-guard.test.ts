@@ -120,20 +120,13 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "(--vex-glass) with backdrop-blur over the Eclipse photo backdrop. " +
       "Glass is allowed ONLY on the two side rails.",
   },
-  {
-    // Owner-decreed THIRD sanctioned glass surface (Signal Console redesign):
-    // the composer floats over the Eclipse backdrop exactly like the two rails, so
-    // it wears the same translucent ink (--vex-glass / --vex-glass-strong on
-    // focus) + backdrop-blur. This is the ONLY expansion of the glass law —
-    // the guard still reddens on backdrop-blur ANYWHERE else in the shell.
-    file: "features/appShell/SessionComposer.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-sanctioned glass instrument: the Signal Console composer floats " +
-      "as translucent ink (--vex-glass / --vex-glass-strong) with " +
-      "backdrop-blur over the Eclipse photo backdrop, like the two rails. " +
-      "Glass is allowed on the two side rails AND this composer — nowhere else.",
-  },
+  // REMOVED (composer rebuild, owner decree 2026-07-29): the Signal Console
+  // composer and its starter-chips band were the third and seventh sanctioned
+  // glass surfaces. Both are now SOLID ink (--vex-surface-1) with a flat
+  // --vex-line border, so neither carries backdrop-blur any more and their
+  // exemptions were dead entries. The glass roster is back to: the two side
+  // rails, the ShellScreen overlays, the profile menu, the Dialog base, and
+  // the portfolio cards. The banned list itself is unchanged.
   {
     // Owner decree 2026-07-20, Chronos glass law: every full-app ShellScreen
     // overlay (Memory / Sessions / How Vex works) is a floating glass
@@ -186,26 +179,6 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "portfolio cards wear translucent ink (--vex-rail) with " +
       "backdrop-blur + static grain over the Eclipse backdrop, via this " +
       "one card chrome that every card composes.",
-  },
-  {
-    // Owner decree 2026-07-21: the starter chips row under the Signal
-    // Console needs a legibility assist over the bright regions of the
-    // Eclipse sky, so it joins the Chronos glass family as a slim
-    // pill-band (lighter furniture than a card) — translucent ink
-    // (--vex-rail) + backdrop-blur + a --vex-line hairline, rounded-2xl to
-    // harmonize with the console pill above it. Full sanctioned glass
-    // roster after this entry: the two side rails, the composer, the
-    // ShellScreen overlays, the profile menu, the Dialog base, the
-    // portfolio cards, and this quick-actions chip row — nowhere else.
-    file: "features/appShell/ComposerQuickActions.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-decreed glass legibility assist (2026-07-21): the starter " +
-      "chips row wears translucent ink (--vex-rail) with backdrop-blur + " +
-      "a --vex-line hairline as a slim pill-band, so the chips stay " +
-      "readable over bright regions of the Eclipse backdrop — matching " +
-      "the Chronos glass family used by the console pill and portfolio " +
-      "cards.",
   },
 ];
 

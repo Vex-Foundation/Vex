@@ -106,6 +106,11 @@ function getScroller(container: HTMLElement): HTMLElement {
   return el as HTMLElement;
 }
 
+/** The "↓ latest" jump pill — absent from the DOM while the bottom is in view. */
+function latestPill(container: HTMLElement): HTMLElement | null {
+  return container.querySelector("[data-vex-latest-pill]");
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   useStreamStore.setState({ bySessionId: {} });
@@ -310,12 +315,13 @@ describe("SessionTranscript", () => {
     expect(screen.getByText("newest")).not.toBeNull();
   });
 
-  it("does not wedge after an older-page failure: a later new message still bottom-follows", async () => {
+  it("never auto-follows a new assistant row — it raises the ↓ latest pill instead", async () => {
     let withExtra = false;
     listMock.mockImplementation((input: { readonly cursor: unknown }) => {
       if (input.cursor !== null) return Promise.resolve(failure); // older fails
-      // The live arrival is an ASSISTANT row — bottom-follow semantics. (A
-      // live USER row now top-anchors instead; covered by its own test.)
+      // The live arrival is an ASSISTANT row. Chat NEVER auto-scrolls for it
+      // (owner decree 2026-07-29) — not even from a bottom-pinned viewport.
+      // Only a live USER append anchors; covered by its own test below.
       const items = withExtra
         ? [
             msg({ id: 3, role: "user", kind: "text", content: "newest" }),
@@ -338,18 +344,21 @@ describe("SessionTranscript", () => {
     Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
     Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
 
-    // Scroll to the top → older fetch fails → banner; the anchor must clear.
+    // Scroll to the top → older fetch fails → banner; the anchor must clear so
+    // it can never wedge a later load (the original regression this covers).
     scroller.scrollTop = 0;
     fireEvent.scroll(scroller);
     await waitFor(() => {
       expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull();
     });
 
-    // User scrolls back to the bottom → re-pinned (500 - 300 - 200 = 0 < 48).
+    // User scrolls back to the bottom (500 - 300 - 200 = 0).
     scroller.scrollTop = 300;
     fireEvent.scroll(scroller);
+    expect(latestPill(container)).toBeNull();
 
-    // A new newest message arrives via a live refetch; the list grows taller.
+    // A new newest message arrives via a live refetch; the list grows taller,
+    // pushing the new row out of view (700 - 300 - 200 = 200 > 48).
     withExtra = true;
     Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 700 });
     await act(async () => {
@@ -359,8 +368,98 @@ describe("SessionTranscript", () => {
       expect(screen.getByText("newer")).not.toBeNull();
     });
 
-    // Bottom-follow ran (a stale anchor would have blocked it) → scrolled to 700.
-    expect(scroller.scrollTop).toBe(700);
+    // The reading position is UNTOUCHED — no bottom-follow, no jump.
+    expect(scroller.scrollTop).toBe(300);
+    // ...and the pill offers the jump instead.
+    expect(latestPill(container)).not.toBeNull();
+  });
+
+  it("keeps the ↓ latest pill hidden when the newest row lands in view", async () => {
+    let withExtra = false;
+    listMock.mockImplementation(() => {
+      const items = withExtra
+        ? [
+            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
+            msg({ id: 4, role: "assistant", kind: "text", content: "newer" }),
+          ]
+        : [msg({ id: 3, role: "user", kind: "text", content: "newest" })];
+      return Promise.resolve(page(items, null));
+    });
+    setVex();
+    const client = freshClient();
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(client) },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("newest")).not.toBeNull();
+    });
+
+    const scroller = getScroller(container);
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
+    scroller.scrollTop = 300;
+    fireEvent.scroll(scroller);
+
+    // The row lands but the viewport still shows the bottom (distance 0) —
+    // offering a jump to content already on screen would be noise.
+    withExtra = true;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
+    });
+    await waitFor(() => {
+      expect(screen.getByText("newer")).not.toBeNull();
+    });
+    expect(scroller.scrollTop).toBe(300);
+    expect(latestPill(container)).toBeNull();
+  });
+
+  it("raises the ↓ latest pill while a reply streams out of view, and the pill jumps to the bottom", async () => {
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    setVex();
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("newest")).not.toBeNull();
+    });
+
+    const scroller = getScroller(container);
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 900 });
+    // The reader has scrolled up, away from the bottom.
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+
+    // A reply starts streaming below the fold. The transcript must NOT follow
+    // it (owner decree: chat never auto-scrolls during streaming).
+    act(() => {
+      useStreamStore.setState({
+        bySessionId: {
+          [SESSION]: {
+            streamId: "s1",
+            text: "streaming…",
+            phase: "streaming",
+            toolName: null,
+            reasoningText: "",
+            reasoningTokens: null,
+            startedAtMs: Date.now(),
+            status: "writing",
+          },
+        },
+      });
+    });
+    expect(scroller.scrollTop).toBe(100);
+
+    const pill = latestPill(container);
+    expect(pill).not.toBeNull();
+    // Instant jump on click — no smooth behavior, so it is reduced-motion safe.
+    fireEvent.click(pill as HTMLElement);
+    expect(scroller.scrollTop).toBe(900);
+    await waitFor(() => expect(latestPill(container)).toBeNull());
   });
 
   it("anchors a just-sent user message at the viewport top with a run-out spacer", async () => {

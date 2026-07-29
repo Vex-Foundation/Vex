@@ -150,20 +150,24 @@ beforeEach(() => {
 });
 
 describe("SessionComposer — Signal Console chrome", () => {
-  it("wraps the composer in the .vex-console glass pill (single row, no context strip)", () => {
+  it("wraps the composer in the .vex-console SOLID surface (single row, no context strip)", () => {
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     const form = container.querySelector('[data-vex-area="chat-composer"]');
     expect(form).not.toBeNull();
-    // Glass pill: the .vex-console class (which owns the traveling border
-    // shimmer in globals.css) + the glass token surface + the
-    // (guard-whitelisted) backdrop-blur + the resting rounded-full Grok
-    // radius (the multiline relax to rounded-[28px] never engages in jsdom).
+    // Solid surface (composer rebuild, owner decree 2026-07-29): the
+    // .vex-console class (which owns the border/shadow contract in
+    // globals.css) + an OPAQUE ink fill + a CONSTANT rounded-2xl radius. The
+    // glass fill and its backdrop filter are gone — asserted as an absence,
+    // because the file no longer holds a design-guard exemption for them —
+    // and so is the rounded-full ⇄ rounded-[28px] relax.
     expect(form?.className).toContain("vex-console");
-    expect(form?.className).toContain("bg-[var(--vex-glass)]");
-    expect(form?.className).toContain("backdrop-blur-xl");
-    expect(form?.className).toContain("rounded-full");
+    expect(form?.className).toContain("bg-[var(--vex-surface-1)]");
+    expect(form?.className).not.toContain("bg-[var(--vex-glass)]");
+    expect(form?.className).not.toMatch(/backdrop-blur/);
+    expect(form?.className).toContain("rounded-2xl");
+    expect(form?.className).not.toMatch(/rounded-full|rounded-\[28px\]/);
     expect(form?.getAttribute("data-vex-console-state")).toBe("input");
     // The two-layer card is gone: no context strip and no session-context
     // label live inside the pill anymore.
@@ -416,7 +420,7 @@ describe("SessionComposer — Signal Console chrome", () => {
   });
 });
 
-describe("SessionComposer — console ring states (globals.css contract)", () => {
+describe("SessionComposer — console border states (globals.css contract)", () => {
   /** First rule block for a selector — `indexOf` finds the MAIN rule; the
    * reduced-motion overrides repeat the focus/approval selectors later. */
   function blockFor(selector: string): string {
@@ -426,30 +430,45 @@ describe("SessionComposer — console ring states (globals.css contract)", () =>
     return GLOBALS_CSS.slice(start, end);
   }
 
-  it("resting ring is ONE flat hairline — no conic arc, no animation (owner correction 2026-07-21 round 2)", () => {
-    const rest = blockFor(".vex-console::before");
-    expect(rest).toContain("var(--vex-line)");
-    expect(rest).not.toContain("conic-gradient");
-    expect(rest).not.toContain("animation:");
-    expect(rest).not.toContain("--vex-console-angle");
+  it("the resting border is ONE flat --vex-line hairline with a directional drop", () => {
+    const rest = blockFor(".vex-console");
+    expect(rest).toContain("border: 1px solid var(--vex-line)");
+    // Directional (0 Ypx offsets), never a `0 0` resting glow.
+    expect(rest).toContain("box-shadow: 0 18px 40px -22px");
+    expect(rest).not.toContain("box-shadow: 0 0");
   });
 
-  it("the traveling arc exists ONLY for focus (subtle accent) and approval (amber)", () => {
-    const focus = blockFor(".vex-console:focus-within::before");
-    expect(focus).toContain("conic-gradient");
-    expect(focus).toContain("animation: vex-console-travel");
-    expect(focus).toContain("--vex-accent");
+  it("focus steps the border to the accent hairline; approval recolors it amber", () => {
+    const focus = blockFor(".vex-console:focus-within");
+    expect(focus).toContain("border-color: var(--vex-accent-border)");
+    // The focus drop stays DIRECTIONAL — an accent layer cast downward, not a
+    // halo around the surface.
+    expect(focus).toContain("0 8px 20px -12px");
+    expect(focus).not.toContain("conic-gradient");
 
+    // The approval recolor is declared on a two-selector rule so a focused
+    // field cannot hide the pause; anchor on the second (focus) selector,
+    // which is the one immediately preceding the block.
     const approval = blockFor(
-      '.vex-console[data-vex-console-state="approval"]::before',
+      '.vex-console[data-vex-console-state="approval"]:focus-within',
     );
-    expect(approval).toContain("conic-gradient");
-    expect(approval).toContain("animation: vex-console-travel");
-    expect(approval).toContain("--vex-pin");
+    expect(approval).toContain("border-color: var(--vex-pin-border)");
+  });
 
-    // No OTHER .vex-console rule animates the ring: exactly the two
-    // animation declarations above ride the travel keyframes.
-    const travelUses = GLOBALS_CSS.split("animation: vex-console-travel").length - 1;
-    expect(travelUses).toBe(2);
+  it("the traveling conic shimmer is GONE from the whole stylesheet, mechanism and all", () => {
+    // The owner's verdict was that the traveling arc looked wrong, so it was
+    // DELETED rather than disabled. Pin every piece of the retired mechanism
+    // across the entire hand-written sheet: the masked ring pseudo-element,
+    // both conic gradients, the @property-registered angle, and its keyframes.
+    // A partial revert (e.g. keyframes left behind) reddens here.
+    // Literal identifiers only — prose in the surrounding comments may still
+    // describe what was removed, and should: the deletion has a reason worth
+    // recording. These four names cannot survive as prose.
+    expect(GLOBALS_CSS).not.toContain(".vex-console::before");
+    expect(GLOBALS_CSS).not.toContain("--vex-console-angle");
+    expect(GLOBALS_CSS).not.toContain("vex-console-travel");
+    // (`@property` itself is NOT asserted away — other partials register their
+    // own animatable custom properties legitimately. The console's angle,
+    // named above, is the one that had to go.)
   });
 });

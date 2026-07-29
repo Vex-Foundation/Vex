@@ -12,11 +12,12 @@
  * `normalizeReasoningCapability` in `shared/schemas/reasoning.ts` owns
  * that set), with "none" labelled "Off".
  *
- * Anatomy: the {@link SelectMenu} primitive restyled into the pill's quiet
- * grammar — a ghost text trigger (no border, no glass at rest; the label in
- * --vex-text-2 lifting to foreground on hover), h-10 so it sits level with
- * the round send key, opening UPWARD (the pill sits low on the session
- * stage). Menu physics, the ARIA combobox/listbox contract and the
+ * Anatomy: the {@link SelectMenu} primitive restyled into the composer's
+ * quiet grammar — a ghost text trigger (no border, no fill at rest; the label
+ * in --vex-text-2 lifting to foreground over a --vex-surface-2 wash on
+ * hover), `rounded-xl` + h-10 so it sits level with the send key and echoes
+ * the surface's rounded-2xl, opening UPWARD (the composer sits low on the
+ * session stage). Sans, not serif: this is a CONTROL, not prose. Menu physics, the ARIA combobox/listbox contract and the
  * selected-dot convention all come from SelectMenu as-is. The trigger's
  * min-width doubles as the floating panel's width (SelectMenu's panel spans
  * its trigger), sized so the longest label ("Minimal") never truncates.
@@ -91,7 +92,7 @@ export function ReasoningEffortSelect({
       // glass-on-glass); justify-start seats the chevron right after the
       // label (the Grok "Szybki ⌄" read); min-w keeps the upward panel wide
       // enough for every label. Focus ring stays SelectMenu's repo default.
-      className="h-10 w-auto min-w-[6.5rem] justify-start rounded-full border-transparent bg-transparent px-3 text-[13px] text-[var(--vex-text-2)] transition-colors hover:text-foreground"
+      className="h-10 w-auto min-w-[6.5rem] justify-start rounded-xl border-transparent bg-transparent px-3 font-sans text-[13px] text-[var(--vex-text-2)] transition-colors hover:bg-[var(--vex-surface-2)] hover:text-foreground"
       />
   );
 }
@@ -113,7 +114,7 @@ export function ReasoningEffortPlaceholder(): JSX.Element {
     <span
       aria-hidden
       data-vex-reasoning-placeholder
-      className="inline-flex h-10 min-w-[6.5rem] shrink-0 items-center rounded-full px-3"
+      className="inline-flex h-10 min-w-[6.5rem] shrink-0 items-center rounded-xl px-3"
     >
       <span className="h-2.5 w-10 rounded-full bg-[var(--vex-line-strong)] opacity-60" />
     </span>

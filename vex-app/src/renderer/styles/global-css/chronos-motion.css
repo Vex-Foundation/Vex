@@ -133,13 +133,16 @@
   animation: vex-session-enter 520ms cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
-/* Composer growth glide — the Grok pill's auto-grow made macOS-smooth
+/* Composer growth glide — the composer's auto-grow made macOS-smooth
  * (owner smoothness decree 2026-07-22). The textarea SNAPS to its measured
  * height (text layout + caret need real geometry immediately); the field
  * slot wearing this class receives the SAME measured px height from the
- * same SessionComposer layout effect and TRANSITIONS it — on the exact
- * 220ms clock and curve of `.vex-console`'s border-radius relax, so pill
- * height and radius move as ONE gesture. `overflow: clip` masks the
+ * same SessionComposer layout effect and TRANSITIONS it on a 220ms clock.
+ * (That clock was originally SHARED with `.vex-console`'s border-radius
+ * relax so height and radius moved as one gesture; the rebuilt console holds
+ * a CONSTANT rounded-2xl radius, so height is the only thing still moving —
+ * the timing is kept because the glide itself was never the problem.)
+ * `overflow: clip` masks the
  * pre-sized textarea while the slot catches up: growth reveals the new
  * caret line downward; shrink closes the bottom edge upward — the top
  * (anchored) text line never moves. The first write always lands on an

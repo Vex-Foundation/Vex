@@ -249,13 +249,16 @@ function renderBlock(token: Token, key: number, opts: RenderOptions): ReactNode 
           </h3>
         );
       }
+      // Chat headings keep their original semantic decision (no h-tags in
+      // chat prose) and now scale within the SERIF voice: Instrument Serif has
+      // no weight axis, so hierarchy is size, never a (synthesized) bold.
       return (
         <p
           key={key}
           className={
             token.depth <= 2
-              ? "mt-5 text-[17px] font-semibold text-foreground"
-              : "text-[15px] font-semibold text-foreground"
+              ? "mt-5 text-[21px] leading-tight text-foreground"
+              : "text-[18px] leading-snug text-foreground"
           }
         >
           {renderInline(token.tokens, opts)}
@@ -508,7 +511,20 @@ export function MarkdownContent({
     return <p className="whitespace-pre-wrap break-words">{text}</p>;
   }
   return (
-    <div className="flex flex-col gap-2 break-words">
+    // THE VOICE (typography register, owner decree 2026-07-29): chat prose is
+    // set in Instrument Serif via `.vex-serif-prose` (landing-motifs.css) —
+    // ~16.5px/1.65, `font-synthesis-weight: none` so the browser can never
+    // fake a bold the face does not have, and `strong` resolves to serif
+    // italic. The class also pins the technical opt-outs (code/pre stay mono,
+    // tables stay sans + tabular-nums), which is why it is ONE class here
+    // rather than per-node utilities. The `article` variant is long-form
+    // static repo markdown with its own heading scale and stays on the
+    // support face.
+    <div
+      className={`flex flex-col gap-2 break-words${
+        opts.variant === "chat" ? " vex-serif-prose" : ""
+      }`}
+    >
       {renderBlocks(tokens, opts)}
     </div>
   );

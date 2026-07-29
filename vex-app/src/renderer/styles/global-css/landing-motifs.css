@@ -2,31 +2,57 @@
  *  LANDING MOTIF UTILITIES — the projectvex.ai signature set    *
  * ============================================================ */
 
-/* Eyebrow — the landing .eyebrow: mono micro-label. Formerly carried a
- * leading ::before rule (28px currentColor hairline); removed app-wide by
- * owner decree (2026-07-20: no dash rules) — the mark read as visual noise
- * next to group headers, the welcome tagline, and block titles. The dash
- * sweep (2026-07-20) also retired the last multi-child call site
- * (UnlockScreen's mirrored trailing dash on "Master Vault · Sealed"), so
- * `gap` is dropped too — every call site is single-child text now. Color
- * comes from the accent-text family (readable cobalt on ink). */
+/* ─────────────────────────────────────────────────────────────────────────
+ * THE TYPOGRAPHY REGISTER (White House pass, owner decree 2026-07-29)
+ *
+ * The app-wide voice is the whitehouse.gov pair: Instrument Serif (voice) +
+ * Instrument Sans (support). JetBrains Mono is DEMOTED to strictly technical
+ * artifacts only — code blocks, raw JSON args/output, addresses, tx hashes.
+ * The mono-uppercase micro-label language is retired shell-wide, which is why
+ * the two classes below flip family at the CLASS level: every one of their
+ * ~40 call sites changes register in one edit, and no new mono uppercase
+ * label may be added anywhere.
+ *
+ * SUPPORT-SIDE (sans small caps), NOT serif — the sanctioned fallback:
+ * Instrument Serif is a high-contrast display face whose hairline strokes
+ * disappear at the 10px these two classes render at, and it has NO weight
+ * axis, so the ~6 call sites that pair `.vex-micro` with `font-semibold` /
+ * `font-medium` would have forced the browser to SYNTHESIZE a bold the
+ * register explicitly forbids. Instrument Sans is the support half of the
+ * same whitehouse.gov pair, carries a real 400–700 axis, and stays crisp at
+ * micro sizes — so the small-caps stamp is sans and the serif is reserved
+ * for prose and display, where it is actually read. See `.vex-serif-prose`
+ * below for the voice side.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Eyebrow — the section/group label. Formerly carried a leading ::before rule
+ * (28px currentColor hairline); removed app-wide by owner decree (2026-07-20:
+ * no dash rules) — the mark read as visual noise next to group headers, the
+ * welcome tagline, and block titles. The dash sweep (2026-07-20) also retired
+ * the last multi-child call site (UnlockScreen's mirrored trailing dash on
+ * "Master Vault · Sealed"), so `gap` is dropped too — every call site is
+ * single-child text now. Color comes from the accent-text family (readable
+ * cobalt on ink). */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 10px;
-  letter-spacing: 0.26em;
+  /* Tightened from the mono 0.26em: a proportional face needs less optical
+   * separation than a monospaced one at the same size. */
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(
     --vex-accent-text,
     color-mix(in oklab, var(--color-accent-primary) 55%, white)
   );
 }
-/* Micro-label — the mono stamp the app repeats everywhere a value needs a
- * caption: stepper lines, trailing meta rows, status words, version stamps,
+
+/* Micro-label — the small-caps stamp the app repeats everywhere a value needs
+ * a caption: stepper lines, trailing meta rows, status words, version stamps,
  * inline tags. Extracted (INK REDESIGN, 2026-07-27) from ~25 duplicated
  * `font-mono text-[10px] uppercase tracking-[0.18em]` call sites so the two
- * worlds can size the stamp independently: the shell keeps the 10px/0.18em
+ * worlds can size the stamp independently: the shell keeps the 10px/0.14em
  * default below, the pre-shell re-pins both vars in the
  * `[data-vex-gate="true"]` scope (global-css/setup-gate.css) to 12px/0.14em.
  * That split matters because most of those call sites live in wizard step
@@ -36,18 +62,45 @@
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
  * site that needs a different size must not use this class. */
 .vex-micro {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--vex-micro-size, 0.625rem);
-  letter-spacing: var(--vex-micro-tracking, 0.18em);
+  letter-spacing: var(--vex-micro-tracking, 0.14em);
   text-transform: uppercase;
 }
 
-/* Welcome-stage modifier ONLY (White House/Instrument typography pass): swaps
- * the eyebrow's hardcoded mono face for the sans display face without
- * touching every other `.vex-eyebrow` call site (memory/session dialogs
- * etc. stay mono). */
-.vex-eyebrow--sans {
+/* Serif prose — the VOICE side of the register: assistant/user/composer body
+ * copy. `font-synthesis-weight: none` is load-bearing, not decoration:
+ * Instrument Serif ships as static 400 + 400 italic with NO weight axis, so
+ * any `font-weight: 600/700` reaching this subtree would be FAKED by the
+ * browser (smeared, off-register strokes). Emphasis is carried by the italic
+ * instead — `strong` inside serif prose renders as serif italic (the
+ * editorial convention), which is why the rule below overrides weight rather
+ * than relying on call sites to avoid bold.
+ *
+ * Technical artifacts opt OUT and stay mono/sans: `code`, `pre`, and `table`
+ * descendants inherit nothing from this rule (raw JSON, addresses, tx hashes
+ * and scanned numeric columns must never be set in a display serif). */
+.vex-serif-prose {
+  font-family: var(--font-serif);
+  font-size: 16.5px;
+  line-height: 1.65;
+  font-synthesis-weight: none;
+}
+.vex-serif-prose strong,
+.vex-serif-prose b {
+  font-weight: 400;
+  font-style: italic;
+}
+.vex-serif-prose code,
+.vex-serif-prose pre {
+  font-family: var(--font-mono);
+  font-style: normal;
+}
+.vex-serif-prose table {
   font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Grain — the landing .noise SVG turbulence, near-invisible. CSP-safe:

@@ -54,11 +54,17 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
 
-  /* Typography — self-hosted WOFF2 (CSP-clean). The whitehouse.gov 2026
-   * pair: body/UI AND display numerals = Instrument Sans (variable 400-700;
-   * `font-black` call sites resolve to the 700 cap); the editorial display
-   * voice (hero statements) = Instrument Serif; micro-labels, stamps and
-   * numerals = JetBrains Mono. Archivo + Inter Tight are retired. */
+  /* Typography — self-hosted WOFF2 (CSP-clean). THE REGISTER (owner decree
+   * 2026-07-29), the whitehouse.gov 2026 pair:
+   *   --font-serif = the VOICE: prose (assistant/user/composer body) and
+   *     display statements. Static 400 + italic, NO weight axis — emphasis is
+   *     the italic, never a synthesized bold (`.vex-serif-prose`).
+   *   --font-sans  = the SUPPORT: UI chrome, controls, the small-caps micro
+   *     labels (`.vex-eyebrow` / `.vex-micro`), and scanned numeric columns
+   *     with `tabular-nums` (variable 400-700; `font-black` resolves to 700).
+   *   --font-mono  = DEMOTED to technical artifacts ONLY: code blocks, raw
+   *     JSON args/output, addresses, tx hashes. No new mono uppercase labels.
+   * Archivo + Inter Tight are retired. */
   --font-sans:
     "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
