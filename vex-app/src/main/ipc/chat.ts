@@ -16,6 +16,10 @@ import {
   type ChatSubmitResult,
 } from "@shared/schemas/chat.js";
 import { closePool } from "@vex-agent/db/client.js";
+import {
+  classifyEngineError,
+  sessionNotFoundError,
+} from "./chat/engine-failure-copy.js";
 import { buildPoolConfig } from "../database/db-config.js";
 import {
   getSessionById,
@@ -23,78 +27,6 @@ import {
 } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
-
-function sessionNotFoundError(correlationId: string): VexError {
-  return {
-    code: "validation.invalid_input",
-    domain: "chat",
-    message: "Session not found.",
-    retryable: false,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
-function providerUnavailableError(correlationId: string): VexError {
-  return {
-    code: "provider.unavailable",
-    domain: "chat",
-    message: "No inference provider is available. Unlock Vex or complete provider setup, then retry.",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
-function providerTransientError(correlationId: string): VexError {
-  return {
-    code: "provider.unavailable",
-    domain: "chat",
-    message: "The inference provider is temporarily unavailable. Try again shortly.",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
-function invalidApiKeyError(correlationId: string): VexError {
-  return {
-    code: "provider.invalid_api_key",
-    domain: "chat",
-    message: "The inference provider rejected the API key. Verify it in provider setup and retry.",
-    retryable: false,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
-function insufficientCreditsError(correlationId: string): VexError {
-  return {
-    code: "provider.insufficient_credits",
-    domain: "chat",
-    message: "The inference provider account has insufficient credits. Add funds and retry.",
-    retryable: false,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
-function chatFailedError(correlationId: string): VexError {
-  return {
-    code: "internal.unexpected",
-    domain: "chat",
-    message: "Unable to process the message.",
-    retryable: true,
-    userActionable: false,
-    redacted: true,
-    correlationId,
-  };
-}
 
 function dbUnavailableError(correlationId: string): VexError {
   return {
@@ -106,77 +38,6 @@ function dbUnavailableError(correlationId: string): VexError {
     redacted: true,
     correlationId,
   };
-}
-
-/**
- * Transient transport `causeCode` allow-list — verbatim copy of the mission
- * runner's closed list (`mission-error-classifier.ts` TRANSIENT_CAUSE_CODES).
- * Deliberately duplicated rather than imported: the `@vex-agent` alias is the
- * privileged trust surface (rule 90), and a ~10-line local reader below does
- * not justify widening it just to reach one module's constant.
- */
-const TRANSIENT_TRANSPORT_CAUSE_CODES: ReadonlySet<string> = new Set([
-  "ETIMEDOUT",
-  "ECONNRESET",
-  "ECONNREFUSED",
-  "EAI_AGAIN",
-  "EPIPE",
-  "UND_ERR_CONNECT_TIMEOUT",
-  "UND_ERR_HEADERS_TIMEOUT",
-  "UND_ERR_BODY_TIMEOUT",
-  "UND_ERR_SOCKET",
-]);
-
-/**
- * Local own-property reader — same "own-properties only, never `.cause`"
- * idiom as `mission-error-signal.ts` / `engine/types.ts`, duplicated here
- * (not imported) for the same trust-surface reason as the allow-list above.
- * Reads the lean signals `MissionRunPausedError` propagates from its cause
- * (`statusCode`, `causeCode`), plus raw `status` for non-wrapped errors.
- */
-function chatErrorSignal(cause: unknown): { statusCode: number | null; causeCode: string | null } {
-  if (typeof cause !== "object" || cause === null) {
-    return { statusCode: null, causeCode: null };
-  }
-  const rec = cause as Record<string, unknown>;
-  // Own-property reads only — ordinary indexing would also resolve
-  // inherited prototype properties (e.g. `Error.prototype.name`), letting a
-  // caller "read" a signal that was never actually attached to this value.
-  const ownField = (key: string): unknown =>
-    Object.prototype.hasOwnProperty.call(rec, key) ? rec[key] : undefined;
-  const rawStatus = ownField("statusCode") ?? ownField("status");
-  const statusCode =
-    typeof rawStatus === "number" && Number.isFinite(rawStatus) ? rawStatus : null;
-  const rawCauseCode = ownField("causeCode");
-  const causeCode = typeof rawCauseCode === "string" ? rawCauseCode : null;
-  return { statusCode, causeCode };
-}
-
-function classifyEngineError(cause: unknown, correlationId: string): VexError {
-  if (
-    cause instanceof Error &&
-    (cause.message === "No inference provider available" ||
-      cause.message === "No inference config available")
-  ) {
-    return providerUnavailableError(correlationId);
-  }
-
-  const signal = chatErrorSignal(cause);
-  if (signal.statusCode === 401 || signal.statusCode === 403) {
-    return invalidApiKeyError(correlationId);
-  }
-  if (signal.statusCode === 402) {
-    return insufficientCreditsError(correlationId);
-  }
-  if (
-    signal.statusCode === 429 ||
-    (signal.statusCode !== null && signal.statusCode >= 500 && signal.statusCode <= 599) ||
-    (signal.causeCode !== null && TRANSIENT_TRANSPORT_CAUSE_CODES.has(signal.causeCode))
-  ) {
-    return providerTransientError(correlationId);
-  }
-
-  return chatFailedError(correlationId);
 }
 
 function makePostgresUrl(args: {

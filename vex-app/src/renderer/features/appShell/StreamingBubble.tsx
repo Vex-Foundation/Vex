@@ -22,6 +22,8 @@ import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { DotmCircular8 } from "../../components/ui/dotm-circular-8.js";
 import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
 import { cn } from "../../lib/utils.js";
+import { classifyEngineFailure } from "@shared/engine-error-classification.js";
+import { engineErrorCopy } from "@shared/engine-error-copy.js";
 
 /** m:ss from elapsed ms — clamped at 0 so clock skew never prints "-1:-7". */
 function formatElapsed(elapsedMs: number): string {
@@ -173,6 +175,13 @@ export function StreamingBubble({
     [preview.text],
   );
 
+  // Bounded label -> category -> fixed copy. The classifier is total, so a
+  // missing or unrecognized label lands on the honest `unknown` wording rather
+  // than the old "Stream error", which named nothing.
+  const streamErrorCopy = engineErrorCopy(
+    classifyEngineFailure({ errorType: preview.errorType }),
+  );
+
   return (
     <div
       data-vex-area="stream-preview"
@@ -262,8 +271,14 @@ export function StreamingBubble({
       ) : null}
       {preview.phase === "error" ? (
         <div className="flex flex-col gap-1">
-          {/* Safe generic only — raw provider text never reaches this strip. */}
-          <span className="text-sm text-destructive">Stream error</span>
+          {/* Category copy, NOT provider text. `errorType` is a bounded enum
+              label from the provider's own taxonomy; it is mapped through the
+              ONE shared classifier so this strip, the error banner and the
+              chat IPC mapper cannot disagree. With no label the copy falls
+              back to the honest `unknown` wording rather than "Stream error",
+              which told the user nothing. */}
+          <span className="text-sm text-destructive">{streamErrorCopy.title}</span>
+          <span className="text-xs text-destructive">{streamErrorCopy.body}</span>
           {preview.reasoningText.length > 0 ? (
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
               Reasoning interrupted

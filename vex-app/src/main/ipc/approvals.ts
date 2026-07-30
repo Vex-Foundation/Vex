@@ -15,16 +15,18 @@
  *      so the IPC handler returns immediately — Codex puzzle-5 phase-3
  *      review point 5: no blocking the renderer on a full resumed loop.
  *
- * A 5-minute scheduled sweep auto-rejects expired approvals even without
- * operator action. The first sweep fires right after registration so a
- * fresh app boot doesn't display a stale-pending card.
+ * A 5-minute scheduled cycle runs TWO passes (one timer, not two): the TTL
+ * sweep auto-rejects expired approvals even without operator action, and the
+ * lifecycle reconciler finishes anything a crash or a lost lease race left
+ * half-done. The first cycle fires right after registration so a fresh app boot
+ * doesn't display a stale-pending card.
  *
  * Submodules:
  *   - `./approvals/read.ts`           — list/get/history handler registrations.
  *   - `./approvals/decision.ts`       — approve/reject handler registrations.
  *   - `./approvals/_errors.ts`        — phase-3 `VexError` builders.
  *   - `./approvals/_map-outcomes.ts`  — outcome union → `Result` mapping.
- *   - `./approvals/_sweep.ts`         — scheduled TTL sweep helper.
+ *   - `./approvals/_sweep.ts`         — scheduled TTL sweep + reconciler pass.
  */
 
 import {

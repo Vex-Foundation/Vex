@@ -69,6 +69,10 @@ export async function routeToolCall(
       namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
       limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
       contextUsageBand: context.contextUsageBand,
+      // C8 mirror: the advisory flag must agree with the gate that will
+      // actually run. `=== true` keeps every context without the field on
+      // today's tagging.
+      preparationBypassesBarrier: context.preparationBypassesBarrier === true,
       // FIX-SPINE round 1, finding 8/C3 — lets discovery hide the canonical
       // hidden Uniswap swap manifests for a session that has not revealed them.
       sessionId: context.sessionId,
@@ -105,6 +109,7 @@ export async function routeToolCall(
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
+        preparationBypassesBarrier: context.preparationBypassesBarrier === true,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
       },
@@ -145,6 +150,7 @@ export async function routeToolCall(
         approved: context.approved,
         sessionId: context.sessionId,
         contextUsageBand: context.contextUsageBand,
+        preparationBypassesBarrier: context.preparationBypassesBarrier === true,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
       },

@@ -219,7 +219,15 @@ export type RegimeTickResult =
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 
-/** judge.ts-style race timeout (the underlying promise is abandoned, not cancelled). */
+/**
+ * Race timeout for the EVIDENCE-SOURCE fetches only (Tavily / Twitter). Those
+ * helpers take no `AbortSignal`, so the loser is abandoned rather than
+ * cancelled — acceptable here because they are cheap read-only searches, not
+ * metered token generation.
+ *
+ * The LLM classification call deliberately does NOT use this: it goes through
+ * `AbortSignal.timeout` below so an overdue generation is actually cancelled.
+ */
 async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     work,
@@ -323,17 +331,26 @@ export async function runRegimeTick(
     throw new Error("regime_provider_config_load_failed");
   }
 
-  const response = await withTimeout(
-    provider.chatCompletionSimple(
+  // Cancel, don't abandon: `REGIME_LLM_TIMEOUT_MS` is this worker's OWN
+  // deadline (independent of the chunker/judge constant) and it now aborts the
+  // in-flight request instead of leaving it to finish generating a regime
+  // classification nobody will read.
+  const timeoutSignal = AbortSignal.timeout(REGIME_LLM_TIMEOUT_MS);
+  let response: Awaited<ReturnType<JudgeProvider["chatCompletionSimple"]>>;
+  try {
+    response = await provider.chatCompletionSimple(
       [
         { role: "system", content: buildRegimeSystemPrompt() },
         { role: "user", content: buildRegimeUserPrompt({ webResults, tweets }) },
       ],
       config,
-    ),
-    REGIME_LLM_TIMEOUT_MS,
-    "regime_llm_timeout",
-  );
+      undefined,
+      timeoutSignal,
+    );
+  } catch (err) {
+    if (timeoutSignal.aborted) throw new Error("regime_llm_timeout");
+    throw err;
+  }
 
   const text = response.content?.trim() ?? "";
   const jsonStart = text.indexOf("{");

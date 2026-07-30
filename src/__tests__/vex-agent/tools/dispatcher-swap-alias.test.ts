@@ -351,7 +351,7 @@ describe("swap_execute alias — pressure-band hard-deny (target = mutating)", (
     expect(result.success).toBe(false);
     expect(result.output).toContain("blocked");
     expect(result.output).toContain("barrier");
-    expect(result.output).toContain("compact_now");
+    expect(result.output).not.toMatch(/compact_now/);
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 

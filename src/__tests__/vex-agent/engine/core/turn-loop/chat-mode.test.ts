@@ -14,6 +14,18 @@ const mockIncrementIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
 
+// The turn loop registers a compaction-apply boundary action. Stubbed inert
+// here: none of these tests exercise compaction, and the real module pulls the
+// archive/messages graph these harnesses deliberately mock. The action's own
+// behaviour lives in `turn-loop/compaction-apply-consumer.test.ts`.
+vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
+  createCompactionApplyAction: () => ({
+    name: "compaction_apply",
+    phase: "apply" as const,
+    run: async () => ({ kind: "continue" as const }),
+  }),
+}));
+
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
   addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),
@@ -42,6 +54,9 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   // a streaming provider used in these tests doesn't crash on `emit`.
   streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
   toStreamDeltaEvent: vi.fn(),
+  // Terminal signal for an aborted turn — these very tests drive the abort
+  // path, so `executeTurn` reaches this emit.
+  toStreamAbortedEvent: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -354,6 +369,52 @@ describe("turn-loop", () => {
       expect((stopped![1] as { content: string }).content).toBe("partial");
       // Aborted stream must NOT fall back to the buffered path.
       expect(provider.chatCompletion).not.toHaveBeenCalled();
+
+      // NO terminal stream delta on this path. The `chat_stopped` row above
+      // brings its own `transcriptAppend`, and that is what retires the live
+      // preview — the same handoff every ordinary turn uses. Emitting here too
+      // would clear the preview BEFORE this row is refetched, reopening the
+      // exact swap gap the preview machinery exists to avoid.
+      const { toStreamAbortedEvent } = await import(
+        "@vex-agent/engine/events/index.js"
+      );
+      expect(toStreamAbortedEvent).not.toHaveBeenCalled();
+    });
+
+    it("abort with EMPTY output emits the terminal delta (nothing will persist)", async () => {
+      const controller = new AbortController();
+      const provider = makeStreamingProvider(async function* (): AsyncGenerator<StreamChunk> {
+        // Aborted before the model produced anything persistable.
+        controller.abort();
+        yield { type: "content", text: "DROPPED" };
+      });
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+        {}, undefined, controller.signal,
+      );
+
+      expect(result.stopReason).toBe("user_stopped");
+      // Nothing persisted — so no `transcriptAppend` is ever coming for this
+      // stream, and the preview would sit frozen until the 60 s orphan timer.
+      const stopped = mockAddMessage.mock.calls.find(
+        (c) => (c[2] as { messageType?: string } | undefined)?.messageType === "chat_stopped",
+      );
+      expect(stopped).toBeUndefined();
+
+      const { toStreamAbortedEvent } = await import(
+        "@vex-agent/engine/events/index.js"
+      );
+      expect(toStreamAbortedEvent).toHaveBeenCalledTimes(1);
+      const [sessionId, streamId, sequence] = (
+        toStreamAbortedEvent as unknown as { mock: { calls: unknown[][] } }
+      ).mock.calls[0]!;
+      expect(typeof sessionId).toBe("string");
+      // Correlated to a real stream, continuing its sequence — a consumer must
+      // be able to tell WHICH stream ended.
+      expect(typeof streamId).toBe("string");
+      expect((streamId as string).length).toBeGreaterThan(0);
+      expect(sequence as number).toBeGreaterThanOrEqual(0);
     });
 
     it("boundary abortSignal (mission shape) does NOT persist a chat_stopped partial (9-5a regression)", async () => {
@@ -374,6 +435,14 @@ describe("turn-loop", () => {
       );
       expect(stopped).toBeUndefined();
       expect(provider.chatCompletion).not.toHaveBeenCalled();
+
+      // No inference ran, so there is no stream to declare terminated. Emitting
+      // here would tell the renderer to clear a preview that never existed —
+      // or, worse, a live one from an earlier turn.
+      const { toStreamAbortedEvent } = await import(
+        "@vex-agent/engine/events/index.js"
+      );
+      expect(toStreamAbortedEvent).not.toHaveBeenCalled();
     });
   });
 });

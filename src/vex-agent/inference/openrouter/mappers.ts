@@ -19,6 +19,8 @@ import type {
 
 import logger from "@utils/logger.js";
 
+import { boundedFinishReason, boundedGenerationId } from "./provider-signals.js";
+
 // ── Message mapping ──────────────────────────────────────────────
 
 const TOOL_RESULT_PLACEHOLDER_CONTENT =
@@ -246,6 +248,11 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
   const choice = response.choices?.[0];
   const msg = choice?.message;
   const usage = extractUsage(response.usage);
+  // Carried on BOTH response paths — the streaming and buffered results are
+  // contractually behaviour-equivalent, so a fallback must not silently drop
+  // provenance the streamed path would have had. Open enum ⇒ verbatim.
+  const finishReason = boundedFinishReason(choice?.finishReason);
+  const generationId = boundedGenerationId(response.id);
 
   // Tool calls
   const sdkToolCalls: ChatToolCall[] | undefined = msg?.toolCalls;
@@ -276,6 +283,8 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
         toolCalls: parsed,
         usage,
         reasoning: msg?.reasoning ?? null,
+        finishReason,
+        generationId,
       };
     }
   }
@@ -287,6 +296,8 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
     toolCalls: null,
     usage,
     reasoning: msg?.reasoning ?? null,
+    finishReason,
+    generationId,
   };
 }
 

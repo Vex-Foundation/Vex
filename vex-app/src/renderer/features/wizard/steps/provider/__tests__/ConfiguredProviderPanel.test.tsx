@@ -57,6 +57,13 @@ const ENDPOINT = {
   pricingOutputPerMillion: 15,
   pricingCacheReadPerMillion: 0.3,
   pricingCacheWritePerMillion: 3.75,
+  pricingReasoningPerMillion: null,
+  uptimeLast5mPercent: 99.5,
+  uptimeLast30mPercent: 99.6,
+  uptimeLast1dPercent: 99.7,
+  statusCode: 0,
+  isDeranked: false,
+  availabilityScore: 99.56,
 };
 
 function queryResult(data: unknown): Record<string, unknown> {
@@ -100,7 +107,14 @@ beforeEach(() => {
     queryResult({ ok: true, data: { models: [CATALOGUE_MODEL] } }),
   );
   mockUseProviderEndpoints.mockReturnValue(
-    queryResult({ ok: true, data: { modelId: ACTIVE_MODEL, endpoints: [ENDPOINT] } }),
+    queryResult({
+      ok: true,
+      data: {
+        modelId: ACTIVE_MODEL,
+        endpoints: [ENDPOINT],
+        suggestedEndpointTag: ENDPOINT.tag,
+      },
+    }),
   );
   mockPersistProvider.mockResolvedValue({
     ok: true,

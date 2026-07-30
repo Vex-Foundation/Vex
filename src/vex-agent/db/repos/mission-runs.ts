@@ -50,6 +50,11 @@ const ACTIVE_OR_PAUSED_SQL_IN = Array.from(ACTIVE_OR_PAUSED_RUN_STATUSES)
   .map((s) => `'${s}'`)
   .join(",");
 
+/** SQL `IN (…)` literal compiled once from `TERMINAL_RUN_STATUSES`. */
+const TERMINAL_SQL_IN = Array.from(TERMINAL_RUN_STATUSES)
+  .map((s) => `'${s}'`)
+  .join(",");
+
 const ALLOWED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   ...ACTIVE_RUN_STATUSES,
   ...PAUSED_RUN_STATUSES,
@@ -114,6 +119,55 @@ export async function createRun(
   }
 }
 
+/**
+ * UNCONDITIONAL status write — the narrow exception, not the default.
+ *
+ * INVARIANT (enforced repo-wide): a terminal user Stop (`status = 'stopped'`,
+ * `stop_reason = 'user_stopped'`) must never be overwritten or reopened by any
+ * other write. A terminal run row is immutable audit history.
+ *
+ * Choose the right helper:
+ *   - flipping a run to `running`      → `startRunIfNotTerminal`
+ *   - any pause / park / recovery write → `updateStatusIfNotTerminal`
+ *   - a write that moves a run TO a terminal state → `updateStatusIfNotTerminal`
+ *     as well, unless the caller is on the ALLOWLIST below. Reaching terminal is
+ *     not by itself a licence to overwrite a Stop: `completed` / `failed` are
+ *     outcomes decided from state that is stale by the time the write lands.
+ *
+ * THE ONE CRITERION for an allowlist entry: the caller holds the run row's
+ * `SELECT … FOR UPDATE` lock and has re-checked `TERMINAL_RUN_STATUSES` on the
+ * freshly-locked row INSIDE THE SAME TRANSACTION as the write. The guard is the
+ * lock, not the CAS.
+ *
+ * "It writes the `stopped`/`user_stopped` pair itself" is NOT a criterion and
+ * was removed after it proved wrong: stop-for-edit wrote that same pair and
+ * still clobbered a committed ordinary Stop, because the pair is identical but
+ * the PARENT MISSION state is not (`draft` versus `cancelled`). Writing the
+ * same status as the invariant's subject says nothing about whether you raced
+ * it. Only the locked re-check does.
+ *
+ * ALLOWLIST — the only callers that may use this function, and why:
+ *   1. `engine/runtime/lease-and-status/apply-user-stop.ts` — IS the user stop.
+ *      Reads the run `FOR UPDATE` and returns `already_terminal` without
+ *      writing when the re-check fails, in the same transaction as the write.
+ *   2. `engine/core/runner/mission-auto-retry.ts` — writes `paused_error` inside
+ *      a transaction that already re-checked `TERMINAL_RUN_STATUSES` under
+ *      `SELECT … FOR UPDATE` on the same row, behind the session control lock
+ *      and `gateOnOperatorStopWithClient`.
+ *   3. `engine/core/turn-loop-tool-batch/approval-stop.ts` — writes
+ *      `paused_approval` inside a transaction holding the session control lock
+ *      with `gateOnOperatorStopWithClient` already run (which locks the run row
+ *      and applies any queued stop).
+ *
+ * `engine/core/runner/abort.ts` and `engine/core/runner/mission-finalize.ts`
+ * were removed from this list: both now delegate the stop-for-edit transition
+ * to `lease-and-status/apply-stop-for-edit.ts`, which runs entirely inside
+ * entry 1's transaction.
+ *
+ * A NEW caller outside that list is a defect. `mission-runs-unconditional-status-write.test.ts`
+ * enumerates the call sites and fails when one appears — update the allowlist
+ * there and here together, with the reason, or use a guarded helper instead.
+ */
 export async function updateStatus(
   id: string,
   status: MissionRunStatus,
@@ -161,6 +215,83 @@ export async function updateStatus(
   } else {
     await execute(pausedSql, pausedParams);
   }
+}
+
+/**
+ * Guarded status write for RECOVERY paths — a terminal run row is immutable
+ * audit history and must never be re-opened.
+ *
+ * `updateStatus` is unconditional by design: it is how a run legitimately
+ * REACHES a terminal state. But every "something failed, park the run in
+ * `paused_error`" path is a decision made from knowledge that may already be
+ * stale — an operator Stop can have landed terminally in between. Overwriting
+ * it would erase what the user actually asked for and re-open a run whose
+ * approvals were already rejected and whose lease was already released. The
+ * guard is a CAS in the WHERE clause, not a read-then-write, so it holds under
+ * concurrency.
+ *
+ * `running` is excluded at the type level: this helper keeps prior stop
+ * evidence (COALESCE merge), whereas a flip to `running` must CLEAR it, and
+ * no recovery path needs that.
+ *
+ * Returns `true` when the row was updated, `false` when the run was already
+ * terminal or no longer exists.
+ */
+export async function updateStatusIfNotTerminal(
+  id: string,
+  status: Exclude<MissionRunStatus, "running">,
+  stopReason?: string,
+  stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  client?: PoolClient,
+): Promise<boolean> {
+  const ended = TERMINAL_RUN_STATUSES.has(status) ? "NOW()" : "ended_at";
+  const sql = `UPDATE mission_runs SET status = $1,
+     stop_reason = COALESCE($2, stop_reason),
+     stop_summary = COALESCE($3, stop_summary),
+     stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+     ended_at = ${ended}
+     WHERE id = $5 AND status NOT IN (${TERMINAL_SQL_IN})`;
+  const params = [
+    status,
+    stopReason ?? null,
+    stopPayload?.summary ?? null,
+    nullableJsonb(stopPayload?.evidence ?? null),
+    id,
+  ];
+  const affected = client
+    ? (await client.query(sql, params)).rowCount ?? 0
+    : await execute(sql, params);
+  return affected > 0;
+}
+
+/**
+ * Guarded `running` flip — the counterpart of `updateStatusIfNotTerminal` for
+ * the one status that helper excludes at the type level.
+ *
+ * `running` needs its own function because it CLEARS prior stop evidence
+ * (`stop_reason` / `stop_summary` / `stop_evidence_json` / `ended_at`) whereas
+ * `updateStatusIfNotTerminal` COALESCE-merges it. The terminal CAS in the
+ * WHERE clause is identical, and needed for the same reason: a resume decides
+ * "this run is resumable" from a read taken before several awaits (provider
+ * resolve, config load, mission read), and an operator Stop can land terminally
+ * inside that window. An unconditional flip would re-open a stopped run AND let
+ * the turn loop keep executing it.
+ *
+ * Returns `true` when the row was flipped, `false` when the run was already
+ * terminal or no longer exists — the caller must not run the turn on `false`.
+ */
+export async function startRunIfNotTerminal(
+  id: string,
+  client?: PoolClient,
+): Promise<boolean> {
+  const sql = `UPDATE mission_runs SET status = 'running',
+     stop_reason = NULL, stop_summary = NULL,
+     stop_evidence_json = NULL, ended_at = NULL
+     WHERE id = $1 AND status NOT IN (${TERMINAL_SQL_IN})`;
+  const affected = client
+    ? (await client.query(sql, [id])).rowCount ?? 0
+    : await execute(sql, [id]);
+  return affected > 0;
 }
 
 export async function setLastCheckpoint(id: string): Promise<void> {

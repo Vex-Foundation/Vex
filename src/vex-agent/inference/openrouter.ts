@@ -18,6 +18,7 @@
  */
 
 import { OpenRouter } from "@openrouter/sdk";
+import { MetadataLevel } from "@openrouter/sdk/models/metadatalevel.js";
 import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
 import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
 import type { ChatStreamChunk } from "@openrouter/sdk/models/chatstreamchunk.js";
@@ -57,6 +58,20 @@ import {
   fetchModelInferenceConfig,
   type ModelConfigFetchResult,
 } from "./openrouter/model-catalog.js";
+import { observeRoutingMetadata } from "./openrouter/routing-metadata.js";
+import { composeRequestDeadline } from "./openrouter/request-deadline.js";
+import {
+  sendWithEndpointFailover,
+  type EndpointFailoverDeps,
+} from "./openrouter/endpoint-failover.js";
+import { loadEndpointCandidates } from "./openrouter/endpoint-failover/endpoint-candidates.js";
+
+/**
+ * Opt-in level for `openrouter_metadata` on the response. The SDK's own
+ * `MetadataLevel` constant rather than a bare "enabled" string, so a rename in
+ * the SDK is a compile error instead of a silently-ignored envelope field.
+ */
+const ROUTING_METADATA_ENABLED = MetadataLevel.Enabled;
 
 // ── Provider ─────────────────────────────────────────────────────
 
@@ -117,6 +132,48 @@ export class OpenRouterProvider implements InferenceProvider {
         },
       },
     });
+  }
+
+  // ── send options (cancellation + deadline) ──────────────────────
+  //
+  // Every `chat.send` goes through here so no path can accidentally trade the
+  // request ceiling for cancellation. The SDK arms its configured `timeoutMs`
+  // ONLY when the send passes no signal, so handing it a raw caller signal
+  // DISABLES the deadline outright — see `openrouter/request-deadline.ts` for
+  // the SDK line numbers. Composing keeps both; no caller signal still means no
+  // options object, leaving the SDK's own timeout in charge exactly as before.
+  private sendOptions(
+    signal: AbortSignal | undefined,
+  ): { signal: AbortSignal } | undefined {
+    const bounded = composeRequestDeadline(signal, OPENROUTER_SDK_TIMEOUT_MS);
+    return bounded ? { signal: bounded } : undefined;
+  }
+
+  // ── endpoint failover (capacity retry + one sticky switch) ──────
+  //
+  // Every conversational send goes through `sendWithEndpointFailover`, at the
+  // SAME seam as `sendOptions` — so one implementation covers the streaming
+  // path, the buffered path, and the stream→buffered fallback, and none of
+  // them can drift. The policy itself lives in `openrouter/endpoint-failover.ts`;
+  // this only supplies the provider's reach into the world.
+  //
+  // Candidate endpoints come from the injected list when the app's catalogue
+  // supplied one, and otherwise from this client's own read of the same
+  // `endpoints.list` route (the app's catalogue module lives in the Electron
+  // main process and may not be imported here).
+  //
+  // PUBLIC because it is the only real producer of `loadCandidates` in the
+  // tree, and background callers need it too: a compaction branch resolving the
+  // session's switched endpoint (owner decision 4) must re-resolve that
+  // endpoint's price and context window, which is impossible without a
+  // candidate list. Reachable structurally through
+  // `endpointFailoverDepsFrom` — callers that hold the loose `JudgeProvider`
+  // shape rather than this class still find it. Named on the interface it
+  // serves, not on the class internals, so exposing it adds no new coupling.
+  failoverDeps(): EndpointFailoverDeps {
+    return {
+      loadCandidates: () => loadEndpointCandidates(this.client, this.model),
+    };
   }
 
   // ── loadConfig (cached) ─────────────────────────────────────────
@@ -210,31 +267,60 @@ export class OpenRouterProvider implements InferenceProvider {
     tools: ToolDefinition[],
     config: InferenceConfig,
     context?: InferenceRequestContext,
+    signal?: AbortSignal,
   ): Promise<InferenceResponse> {
-    const params = buildOpenRouterParams(
-      messages,
-      tools,
+    // The params are rebuilt PER ATTEMPT from the config the failover hands
+    // back: a switched attempt carries a different `provider.order`, so reusing
+    // a request built before the switch would send it straight back to the
+    // endpoint that just ran out of capacity.
+    const response = await sendWithEndpointFailover(
+      async (attemptConfig) => {
+        const params = buildOpenRouterParams(
+          messages,
+          tools,
+          attemptConfig,
+          false,
+          undefined,
+          context,
+        );
+        try {
+          // SDK 1.1.13 no longer narrows the return type per `stream` literal —
+          // `asChatResult` re-establishes it with a runtime guard (see chat-send.ts).
+          return asChatResult(
+            await this.client.chat.send(
+              {
+                // Request-ENVELOPE field, a sibling of `chatRequest` — NOT part of
+                // `ChatRequest`, so it deliberately does not live in
+                // `buildOpenRouterParams` (verified against the installed SDK:
+                // esm/models/operations/sendchatcompletionrequest.d.ts). One of the
+                // exactly TWO conversational sends that opt in; see routing-metadata.ts.
+                xOpenRouterMetadata: ROUTING_METADATA_ENABLED,
+                chatRequest: { ...params, stream: false },
+              },
+              this.sendOptions(signal),
+            ),
+            "chat completion",
+          );
+        } catch (err) {
+          // Normalized INSIDE the attempt: the failover classifier reads the
+          // lean own-properties this attaches (`statusCode`, `limitSource`, …),
+          // and a raw SDK error would carry none of them.
+          throw normalizeOpenRouterError(err, "chat completion");
+        }
+      },
       config,
-      false,
-      undefined,
       context,
+      this.failoverDeps(),
     );
 
-    let response: ChatResult;
-    try {
-      // SDK 1.1.13 no longer narrows the return type per `stream` literal —
-      // `asChatResult` re-establishes it with a runtime guard (see chat-send.ts).
-      response = asChatResult(
-        await this.client.chat.send({
-          chatRequest: { ...params, stream: false },
-        }),
-        "chat completion",
-      );
-    } catch (err) {
-      throw normalizeOpenRouterError(err, "chat completion");
-    }
+    const routing = response.openrouterMetadata
+      ? observeRoutingMetadata(response.openrouterMetadata, "chat completion")
+      : null;
 
-    return parseNonStreamingResponse(response);
+    return {
+      ...parseNonStreamingResponse(response),
+      servingProvider: routing?.provider ?? null,
+    };
   }
 
   // ── chatCompletionSimple (no tools) ─────────────────────────────
@@ -243,6 +329,7 @@ export class OpenRouterProvider implements InferenceProvider {
     messages: ProviderMessage[],
     config: InferenceConfig,
     responseFormat?: ChatRequest["responseFormat"],
+    signal?: AbortSignal,
   ): Promise<{ content: string; usage: InferenceUsage }> {
     // `provider.requireParameters` composition now lives in
     // `buildOpenRouterParams` (via `buildProviderPreferences`) so tool-bearing
@@ -252,19 +339,45 @@ export class OpenRouterProvider implements InferenceProvider {
     // entity extraction, regime worker, compaction chunker) which shares no
     // prefix with the conversation and stays deliberately ungrouped for sticky
     // routing — see `InferenceRequestContext`.
-    const params = buildOpenRouterParams(messages, [], config, false, responseFormat);
-
-    let response: ChatResult;
-    try {
-      response = asChatResult(
-        await this.client.chat.send({
-          chatRequest: { ...params, stream: false },
-        }),
-        "simple chat completion",
-      );
-    } catch (err) {
-      throw normalizeOpenRouterError(err, "simple chat completion");
-    }
+    //
+    // No `xOpenRouterMetadata` either: routing provenance is a CONVERSATIONAL
+    // concern (see routing-metadata.ts), so this envelope stays byte-identical
+    // to what background callers already send. `signal` is the caller's
+    // per-call deadline — every background caller now passes one, and it is
+    // strictly tighter than the client ceiling `sendOptions` composes in, so
+    // the caller's own timeout is what actually fires.
+    //
+    // Failover: this path carries NO request context, so it gets the bounded
+    // capacity RETRY and no endpoint switch — there is no session to make a
+    // switch sticky to and no session row to attribute one to. A background
+    // caller that wants the session's switched endpoint passes its config
+    // through `resolveSessionInferenceConfig` first (owner decision 4; that is
+    // the seam compaction uses).
+    const response: ChatResult = await sendWithEndpointFailover(
+      async (attemptConfig) => {
+        const params = buildOpenRouterParams(
+          messages,
+          [],
+          attemptConfig,
+          false,
+          responseFormat,
+        );
+        try {
+          return asChatResult(
+            await this.client.chat.send(
+              { chatRequest: { ...params, stream: false } },
+              this.sendOptions(signal),
+            ),
+            "simple chat completion",
+          );
+        } catch (err) {
+          throw normalizeOpenRouterError(err, "simple chat completion");
+        }
+      },
+      config,
+      undefined,
+      this.failoverDeps(),
+    );
 
     const msg = response.choices?.[0]?.message;
     const content = typeof msg?.content === "string" ? msg.content : "";
@@ -284,32 +397,15 @@ export class OpenRouterProvider implements InferenceProvider {
     signal?: AbortSignal,
     context?: InferenceRequestContext,
   ): AsyncGenerator<StreamChunk> {
-    const params = buildOpenRouterParams(
-      messages,
-      tools,
+    // Only the SEND is wrapped by the failover. A mid-stream failure is
+    // deliberately outside it: bytes have already reached the user, so
+    // replaying the request would duplicate content.
+    const stream: EventStream<ChatStreamChunk> = await sendWithEndpointFailover(
+      async (attemptConfig) => this.openStream(messages, tools, attemptConfig, signal, context),
       config,
-      true,
-      undefined,
       context,
+      this.failoverDeps(),
     );
-
-    let stream: EventStream<ChatStreamChunk>;
-    try {
-      // `signal` is a flattened RequestInit field on the SDK's RequestOptions
-      // (takes precedence over the client timeout); it cancels the fetch so a
-      // chat-turn "stop generating" tears down the HTTP stream (Stage 9-5a).
-      // SDK 1.1.13 no longer narrows the return type per `stream` literal —
-      // `asEventStream` re-establishes it with a runtime guard.
-      stream = asEventStream(
-        await this.client.chat.send(
-          { chatRequest: { ...params, stream: true } },
-          signal ? { signal } : undefined,
-        ),
-        "streaming chat completion",
-      );
-    } catch (err) {
-      throw normalizeOpenRouterError(err, "streaming chat completion");
-    }
 
     try {
       // Post-first-chunk (mid-stream) rejections from the async iterator
@@ -321,6 +417,54 @@ export class OpenRouterProvider implements InferenceProvider {
       yield* consumeOpenRouterStream(stream);
     } catch (err) {
       throw normalizeOpenRouterError(err, "streaming chat completion (mid-stream)");
+    }
+  }
+
+  /**
+   * Open ONE streaming send. Extracted so `sendWithEndpointFailover` can re-run
+   * exactly this — request build included, since a switched attempt needs a
+   * different `provider.order` — without re-entering the generator.
+   */
+  private async openStream(
+    messages: ProviderMessage[],
+    tools: ToolDefinition[],
+    config: InferenceConfig,
+    signal: AbortSignal | undefined,
+    context: InferenceRequestContext | undefined,
+  ): Promise<EventStream<ChatStreamChunk>> {
+    const params = buildOpenRouterParams(
+      messages,
+      tools,
+      config,
+      true,
+      undefined,
+      context,
+    );
+
+    try {
+      // `signal` is a flattened RequestInit field on the SDK's RequestOptions;
+      // it cancels the fetch so a chat-turn "stop generating" tears down the
+      // HTTP stream (Stage 9-5a). It does NOT merely take precedence over the
+      // client timeout — supplying one suppresses that timeout entirely, which
+      // is why it goes through `sendOptions` to be composed with the deadline.
+      // SDK 1.1.13 no longer narrows the return type per `stream` literal —
+      // `asEventStream` re-establishes it with a runtime guard.
+      return asEventStream(
+        await this.client.chat.send(
+          {
+            // The SECOND (and last) conversational send that opts into routing
+            // provenance — envelope field, sibling of `chatRequest`. The
+            // metadata rides the stream chunks; `consumeOpenRouterStream` logs
+            // the first one it sees and carries the serving provider to `done`.
+            xOpenRouterMetadata: ROUTING_METADATA_ENABLED,
+            chatRequest: { ...params, stream: true },
+          },
+          this.sendOptions(signal),
+        ),
+        "streaming chat completion",
+      );
+    } catch (err) {
+      throw normalizeOpenRouterError(err, "streaming chat completion");
     }
   }
 

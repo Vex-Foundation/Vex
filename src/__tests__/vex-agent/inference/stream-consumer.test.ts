@@ -16,6 +16,20 @@ const CFG = {} as InferenceConfig;
 const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 const USAGE = { promptTokens: 100, completionTokens: 20, totalTokens: 120 };
 
+/**
+ * Provider provenance for a stream whose `done` chunk carries no finish reason,
+ * no generation id and no serving provider — explicit `null`, never omitted, so
+ * the streamed shape stays equivalent to the buffered path's (which always sets
+ * all three). The cases below feed bare `{ type: "done" }` chunks, so this is
+ * their expected provenance; `provenance is carried off the done chunk` pins
+ * the populated case.
+ */
+const NO_PROVENANCE = {
+  finishReason: null,
+  generationId: null,
+  servingProvider: null,
+};
+
 function fromChunks(chunks: StreamChunk[]) {
   return async function* (): AsyncGenerator<StreamChunk> {
     for (const chunk of chunks) yield chunk;
@@ -55,7 +69,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "usage", usage: USAGE },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "Hello world", toolCalls: null, usage: USAGE, reasoning: null });
+    expect(res).toEqual({ content: "Hello world", toolCalls: null, usage: USAGE, reasoning: null, ...NO_PROVENANCE });
   });
 
   it("tool-only: assembles a parsed tool call, content is null", async () => {
@@ -71,6 +85,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       toolCalls: [{ id: "call-1", name: "transfer", arguments: { to: "0x1" } }],
       usage: USAGE,
       reasoning: null,
+      ...NO_PROVENANCE,
     });
   });
 
@@ -85,6 +100,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       toolCalls: [{ id: "c1", name: "t", arguments: {} }],
       usage: ZERO_USAGE,
       reasoning: null,
+      ...NO_PROVENANCE,
     });
   });
 
@@ -95,7 +111,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "content", text: "answer" },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "answer", toolCalls: null, usage: ZERO_USAGE, reasoning: "think more" });
+    expect(res).toEqual({ content: "answer", toolCalls: null, usage: ZERO_USAGE, reasoning: "think more", ...NO_PROVENANCE });
   });
 
   it("reasoning-only: content is empty string, toolCalls null", async () => {
@@ -103,12 +119,12 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "reasoning", reasoningText: "just thinking" },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: "just thinking" });
+    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: "just thinking", ...NO_PROVENANCE });
   });
 
   it("stream ends without a done chunk: still assembles", async () => {
     const res = await run([{ type: "content", text: "x" }]);
-    expect(res).toEqual({ content: "x", toolCalls: null, usage: ZERO_USAGE, reasoning: null });
+    expect(res).toEqual({ content: "x", toolCalls: null, usage: ZERO_USAGE, reasoning: null, ...NO_PROVENANCE });
   });
 
   it("trailing usage after done is not lost (assembly on exhaustion)", async () => {
@@ -118,7 +134,55 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "usage", usage: USAGE },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "a", toolCalls: null, usage: USAGE, reasoning: null });
+    expect(res).toEqual({ content: "a", toolCalls: null, usage: USAGE, reasoning: null, ...NO_PROVENANCE });
+  });
+
+  it("provenance is carried off the done chunk into the response", async () => {
+    const res = await run([
+      { type: "content", text: "a" },
+      { type: "done", finishReason: "stop", generationId: "gen-abc" },
+    ]);
+    expect(res.finishReason).toBe("stop");
+    expect(res.generationId).toBe("gen-abc");
+  });
+
+  it("carries a NON-terminal finish reason (length) through as data", async () => {
+    // `length` means the completion was TRUNCATED. Recording it is the whole
+    // point: previously it was indistinguishable from a complete answer.
+    // Nothing in this package branches on it — that is a product decision.
+    const res = await run([
+      { type: "content", text: "half a sen" },
+      { type: "done", finishReason: "length", generationId: "gen-trunc" },
+    ]);
+    expect(res).toEqual({
+      content: "half a sen",
+      toolCalls: null,
+      usage: ZERO_USAGE,
+      reasoning: null,
+      finishReason: "length",
+      generationId: "gen-trunc",
+      // No routing metadata on this stream — honestly unknown.
+      servingProvider: null,
+    });
+  });
+
+  it("carries a finish reason this SDK version does not enumerate (open enum)", async () => {
+    // `ChatFinishReasonEnum` is an OpenEnum — an unknown label is a legal
+    // provider response and must survive verbatim, not be coerced or dropped.
+    const res = await run([
+      { type: "content", text: "x" },
+      { type: "done", finishReason: "some_future_reason" },
+    ]);
+    expect(res.finishReason).toBe("some_future_reason");
+  });
+
+  it("keeps the LAST finish reason but the FIRST generation id across repeated done chunks", async () => {
+    const res = await run([
+      { type: "done", finishReason: "tool_calls", generationId: "gen-first" },
+      { type: "done", finishReason: "stop", generationId: "gen-second" },
+    ]);
+    expect(res.finishReason).toBe("stop");
+    expect(res.generationId).toBe("gen-first");
   });
 
   it("non-contiguous tool indices: parsed in numeric index order", async () => {
@@ -138,7 +202,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c1", toolCallName: "t", toolCallArgsDelta: "not json" },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: null });
+    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: null, ...NO_PROVENANCE });
   });
 
   it("partially malformed tool args → only valid calls survive (tool path)", async () => {
@@ -152,6 +216,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       toolCalls: [{ id: "c0", name: "good", arguments: { ok: 1 } }],
       usage: ZERO_USAGE,
       reasoning: null,
+      ...NO_PROVENANCE,
     });
   });
 });
@@ -184,7 +249,7 @@ describe("runStreamingInference — onDelta", () => {
         throw new Error("observer blew up");
       },
     );
-    expect(res).toEqual({ content: "ok", toolCalls: null, usage: ZERO_USAGE, reasoning: null });
+    expect(res).toEqual({ content: "ok", toolCalls: null, usage: ZERO_USAGE, reasoning: null, ...NO_PROVENANCE });
   });
 });
 
@@ -246,6 +311,57 @@ describe("runStreamingInference — error chunks (no fallback)", () => {
     expect(e?.message).not.toContain("https://api.example.com");
     expect(e?.message).toContain("Upstream error"); // scrubbed, not dropped
     expect(e?.statusCode).toBe(429); // status own-property still attached for the classifier
+  });
+
+  it("attaches errorType as a NON-ENUMERABLE own-property, never on .cause", async () => {
+    const provider = providerFrom(
+      fromChunks([
+        {
+          type: "error",
+          errorMessage: "context length exceeded",
+          errorCode: 400,
+          errorType: "context_length_exceeded",
+        },
+      ]),
+    );
+    const e = (await runStreamingInference(provider, MSGS, TOOLS, CFG).then(
+      () => null,
+      (err: unknown) => err,
+    )) as (Error & { errorType?: string }) | null;
+
+    expect(e?.errorType).toBe("context_length_exceeded");
+    // Non-enumerable, exactly like statusCode/causeCode: a serializer walking
+    // the error must not pick it up, and `.cause` must stay absent so nothing
+    // can be followed back to the raw SDK error's body/headers/PII.
+    expect(Object.keys(e as object)).not.toContain("errorType");
+    expect(JSON.stringify(e)).not.toContain("context_length_exceeded");
+    expect((e as { cause?: unknown }).cause).toBeUndefined();
+  });
+
+  it("carries an unenumerated errorType verbatim (ApiErrorType is an open enum)", async () => {
+    const provider = providerFrom(
+      fromChunks([
+        { type: "error", errorMessage: "boom", errorCode: 500, errorType: "brand_new_type" },
+      ]),
+    );
+    const e = (await runStreamingInference(provider, MSGS, TOOLS, CFG).then(
+      () => null,
+      (err: unknown) => err,
+    )) as (Error & { errorType?: string }) | null;
+
+    expect(e?.errorType).toBe("brand_new_type");
+  });
+
+  it("omits errorType entirely when the provider reported none", async () => {
+    const provider = providerFrom(
+      fromChunks([{ type: "error", errorMessage: "boom", errorCode: 500 }]),
+    );
+    const e = (await runStreamingInference(provider, MSGS, TOOLS, CFG).then(
+      () => null,
+      (err: unknown) => err,
+    )) as (Error & { errorType?: string }) | null;
+
+    expect(e?.errorType).toBeUndefined();
   });
 });
 

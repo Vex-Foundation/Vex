@@ -35,6 +35,7 @@ import {
   getRetryableCompactJob,
   listCompactionHistory,
 } from "../database/compaction-db.js";
+import { registerPreparationHandlers } from "./compaction/preparation.js";
 import { ensureEngineDbUrl } from "./runtime/_ensure-engine-db-url.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
@@ -207,5 +208,9 @@ export function registerCompactionHandlers(): ReadonlyArray<() => void> {
     registerGetStatusHandler(),
     registerListHistoryHandler(),
     registerRetryHandler(),
+    // Compaction v2 — the `compaction_preparations` track (bounded read + the
+    // one-CAS apply request). Its own module: different table, different
+    // lifecycle, different reason to change.
+    ...registerPreparationHandlers(),
   ];
 }

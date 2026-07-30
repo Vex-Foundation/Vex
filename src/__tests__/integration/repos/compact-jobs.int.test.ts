@@ -27,7 +27,7 @@ import {
   listPendingForSession,
   type NewCompactJob,
 } from "@vex-agent/db/repos/compact-jobs/index.js";
-import { execute } from "@vex-agent/db/client.js";
+import { execute, queryOne } from "@vex-agent/db/client.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
 function newJob(sessionId: string, gen: number, overrides: Partial<NewCompactJob> = {}): NewCompactJob {
@@ -285,7 +285,7 @@ describe("recoverStaleRunning (integration)", () => {
     expect(after?.status).toBe("running");
   });
 
-  it("recovers an abandoned Track 2 claim so the next worker can complete it", async () => {
+  it("recovers an abandoned Track 2 claim so the next worker can complete it once the backoff elapses", async () => {
     const sid = await makeSession();
     const enq = await enqueueJob(newJob(sid, 1));
     const firstClaim = await claimNextDueJob("worker-before-restart");
@@ -297,6 +297,21 @@ describe("recoverStaleRunning (integration)", () => {
     );
     const reset = await recoverStaleRunning(2 * 60_000);
     expect(reset).toBeGreaterThanOrEqual(1);
+
+    // `recoverStaleRunning` resets the row to pending WITH a backoff
+    // (`next_attempt_at = NOW() + min(staleThreshold, 30s)`), so the recovered
+    // job is deliberately NOT claimable straight away — `claimNextDueJob`
+    // requires `next_attempt_at <= NOW()`. Pin that documented contract, then
+    // fast-forward past the backoff to exercise the re-claim.
+    const recovered = await queryOne<{ status: string; due_in_future: boolean }>(
+      "SELECT status, next_attempt_at > NOW() AS due_in_future FROM compact_jobs WHERE id = $1",
+      [enq.job.id],
+    );
+    expect(recovered?.status).toBe("pending");
+    expect(recovered?.due_in_future).toBe(true);
+    expect(await claimNextDueJob("worker-too-early")).toBeNull();
+
+    await execute("UPDATE compact_jobs SET next_attempt_at = NOW() WHERE id = $1", [enq.job.id]);
 
     const secondClaim = await claimNextDueJob("worker-after-restart");
     expect(secondClaim?.id).toBe(enq.job.id);

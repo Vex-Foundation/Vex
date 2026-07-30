@@ -10,6 +10,7 @@
  */
 
 import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import logger from "@utils/logger.js";
 
 import type { ToolResult } from "../../../types.js";
@@ -128,11 +129,14 @@ async function markFailedChecked(
   cause: { errorKind: string; errorHash: string },
   txHash: string | null,
 ): Promise<void> {
-  const row = await walletIntentsRepo.markFailed(
-    intentId,
-    sessionId,
-    `${cause.errorKind}:${cause.errorHash}`,
-    txHash,
+  const row = await withSessionControlLock(sessionId, (client) =>
+    walletIntentsRepo.markFailedWith(
+      client,
+      intentId,
+      sessionId,
+      `${cause.errorKind}:${cause.errorHash}`,
+      txHash,
+    ),
   );
   if (row === null) {
     logger.warn("wallet.send.mark_failed_status_mismatch", {
@@ -153,10 +157,8 @@ async function finalizeConfirmed(
   let markedExecuted = false;
   let auditReason: string | null = null;
   try {
-    const row = await walletIntentsRepo.markExecuted(
-      intentId,
-      sessionId,
-      outcome.txHash,
+    const row = await withSessionControlLock(sessionId, (client) =>
+      walletIntentsRepo.markExecutedWith(client, intentId, sessionId, outcome.txHash),
     );
     if (row === null) {
       // CAS miss — status was not 'consuming' at write time. Possible
@@ -222,11 +224,8 @@ async function tryMarkAuditFailed(
   reason: string,
 ): Promise<void> {
   try {
-    const row = await walletIntentsRepo.markAuditFailed(
-      intentId,
-      sessionId,
-      txHash,
-      reason,
+    const row = await withSessionControlLock(sessionId, (client) =>
+      walletIntentsRepo.markAuditFailedWith(client, intentId, sessionId, txHash, reason),
     );
     if (row === null) {
       // markAuditFailed also requires status='consuming'. If we missed

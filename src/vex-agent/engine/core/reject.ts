@@ -79,6 +79,23 @@ export async function rejectApproval(
         outcome.reason ?? "",
       );
 
+    case "deferred_busy":
+      // The rejection IS recorded (tool-result committed); only the agent wake
+      // is outstanding, and a durable resume path owns it. Report the rejection
+      // as applied, because it was.
+      logger.info("engine.reject.deferred_busy", {
+        approvalId,
+        sessionId: outcome.sessionId,
+        missionRunId: outcome.missionRunId,
+      });
+      return synthesizeApprovalItem(
+        approvalId,
+        "rejected",
+        outcome.resolvedAt,
+        outcome.sessionId,
+        outcome.reason,
+      );
+
     case "already_approved":
       logger.warn("engine.reject.already_approved", {
         approvalId,

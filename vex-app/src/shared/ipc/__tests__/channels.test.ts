@@ -67,6 +67,24 @@ describe("CH / EV channel constants", () => {
     expect(EV.engine.streamDelta).toMatch(EVENT_PATTERN);
   });
 
+  it("ships EV.engine.error with the canonical channel name", () => {
+    // `setupErrorBridge` (in `main/agent/error-bridge.ts`) publishes the
+    // bounded failure signal here — the channel that makes a background
+    // failure visible instead of a log line. The renderer subscribes via
+    // `window.vex.engine.onEngineError`, which re-validates through
+    // `engineErrorEventSchema` before invoking the callback.
+    expect(EV.engine.error).toBe("vex:event:engine:error");
+    expect(EV.engine.error).toMatch(EVENT_PATTERN);
+  });
+
+  it("ships EV.engine.missionUpdate with the canonical channel name", () => {
+    // `setupMissionUpdateBridge` (in `main/agent/mission-update-bridge.ts`)
+    // publishes committed mission-surface changes here, replacing the
+    // draft/diff/approval discovery polls.
+    expect(EV.engine.missionUpdate).toBe("vex:event:engine:missionUpdate");
+    expect(EV.engine.missionUpdate).toMatch(EVENT_PATTERN);
+  });
+
   it("CH.messages/runtime/mission/approvals/wallets/models/usage namespaces exist", () => {
     expect(typeof CH.messages.getTail).toBe("string");
     expect(typeof CH.runtime.getState).toBe("string");

@@ -145,12 +145,18 @@ describe("mission state prompts", () => {
     }
   });
 
-  it("describes barrier dispatch from the current Tool Map rather than an obsolete safety subset", () => {
+  it("describes barrier dispatch truthfully rather than enumerating an obsolete safety subset", () => {
+    // Original intent (kept): never hard-code which safety classes dispatch —
+    // the Tool Map is the live answer. Updated for v2: the banner also stops
+    // instructing a tool call, because the runtime now compacts on its own.
     const prompt = buildContextPressureBanner("barrier", 0.9);
 
-    expect(prompt).toContain("Mutations are blocked until compaction completes");
-    expect(prompt).toContain("trust the current Tool Map for what remains callable");
-    expect(prompt).not.toContain("only read_only and compact_only tools dispatch");
+    expect(prompt).toContain("Mutating tools are unavailable");
+    expect(prompt).toContain("no tool call is required from you");
+    // Guards the ORIGINAL intent — the banner must not hard-code a safety-class
+    // enumeration, which would go stale exactly as the previous one did.
+    expect(prompt).not.toMatch(/only read_only and \w+ tools dispatch/);
+    expect(prompt).not.toMatch(/MUST call/);
   });
 
   it("makes active mission runs ignore stale setup start instructions", () => {

@@ -16,12 +16,53 @@ const endpoint = {
   pricingOutputPerMillion: 15,
   pricingCacheReadPerMillion: 0.3,
   pricingCacheWritePerMillion: 3.75,
+  pricingReasoningPerMillion: null,
+  uptimeLast5mPercent: 99.5,
+  uptimeLast30mPercent: 99.6,
+  uptimeLast1dPercent: 99.7,
+  statusCode: 0,
+  isDeranked: false,
+  availabilityScore: 99.56,
 };
 
 describe("providerListEndpoints schemas", () => {
   it("round-trips a result payload", () => {
-    const payload = { modelId: "anthropic/claude-sonnet-4.5", endpoints: [endpoint] };
+    const payload = {
+      modelId: "anthropic/claude-sonnet-4.5",
+      endpoints: [endpoint],
+      suggestedEndpointTag: "google-vertex/global",
+    };
     expect(providerListEndpointsResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("rejects an uptime percentage outside 0–100 at the boundary", () => {
+    for (const bad of [-1, 101, Number.NaN]) {
+      expect(
+        providerEndpointOptionSchema.safeParse({
+          ...endpoint,
+          uptimeLast5mPercent: bad,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("accepts a null uptime — absence is a legal, distinct value", () => {
+    expect(
+      providerEndpointOptionSchema.safeParse({
+        ...endpoint,
+        uptimeLast5mPercent: null,
+        uptimeLast30mPercent: null,
+        uptimeLast1dPercent: null,
+        availabilityScore: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a non-integer status code", () => {
+    expect(
+      providerEndpointOptionSchema.safeParse({ ...endpoint, statusCode: -2.5 })
+        .success,
+    ).toBe(false);
   });
 
   it("rejects unknown keys on an endpoint row", () => {

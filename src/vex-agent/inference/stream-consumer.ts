@@ -34,7 +34,7 @@ import type {
   ToolDefinition,
 } from "./types.js";
 import logger from "@utils/logger.js";
-import { attachStatus, scrubMessage } from "./openrouter/errors.js";
+import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -58,8 +58,18 @@ export interface RunStreamingInferenceOptions {
   readonly signal?: AbortSignal;
   /**
    * Groups this request for sticky provider routing. Passed to BOTH the
-   * streaming attempt and the buffered fallback, so a fallback cannot land on
-   * a different provider than the stream it replaces.
+   * streaming attempt and the buffered fallback, so the fallback is grouped
+   * identically to the stream it replaces.
+   *
+   * REVISED 2026-07-29: this used to claim the fallback "cannot land on a
+   * different provider". That was never a guarantee sticky grouping could
+   * make, and it is now explicitly not the contract — endpoint failover may
+   * move a session to a healthier endpoint mid-turn (owner decision, see
+   * `openrouter/endpoint-failover.ts`). What IS guaranteed is that the
+   * fallback and the stream share the same session identity, so the failover
+   * treats them as one session and the switch stays sticky across both.
+   * Which endpoint actually served a request is no longer a matter of
+   * inference: it is recorded per request in `usage_log.serving_provider`.
    */
   readonly context?: InferenceRequestContext;
 }
@@ -70,9 +80,23 @@ interface ToolCallAccumulator {
   argsBuffer: string;
 }
 
-/** Fresh empty response for the abort-before-any-content case. */
+/**
+ * Fresh empty response for the abort-before-any-content case. `finishReason` /
+ * `generationId` / `servingProvider` are explicitly `null`, not omitted: nothing
+ * was generated, so
+ * "no reason reported" is the truth — and an explicit null keeps this shape
+ * equivalent to the buffered path's, which always sets both.
+ */
 function emptyResponse(): InferenceResponse {
-  return { content: "", toolCalls: null, usage: { ...ZERO_USAGE }, reasoning: null };
+  return {
+    content: "",
+    toolCalls: null,
+    usage: { ...ZERO_USAGE },
+    reasoning: null,
+    finishReason: null,
+    generationId: null,
+    servingProvider: null,
+  };
 }
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<StreamChunk> {
@@ -132,15 +156,31 @@ function safeOnDelta(
   }
 }
 
-/** Wrap a buffered fallback completion in the streaming result shape. */
+/**
+ * Wrap a buffered fallback completion in the streaming result shape.
+ *
+ * The turn's `signal` is forwarded: a fallback is still the same turn, so a
+ * "stop generating" that lands after the stream degraded must cancel the
+ * buffered request too. Without it the HTTP call ran to completion and billed
+ * tokens for an answer nobody would read. Every caller below has already
+ * short-circuited on a PRE-aborted signal, so this only covers an abort that
+ * arrives DURING the fallback.
+ */
 async function bufferedFallback(
   provider: InferenceProvider,
   messages: ProviderMessage[],
   tools: ToolDefinition[],
   config: InferenceConfig,
   context: InferenceRequestContext | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<StreamingInferenceResult> {
-  const response = await provider.chatCompletion(messages, tools, config, context);
+  const response = await provider.chatCompletion(
+    messages,
+    tools,
+    config,
+    context,
+    signal,
+  );
   return { response, aborted: false, usageObserved: true };
 }
 
@@ -170,7 +210,7 @@ export async function runStreamingInference(
       reason: "no_stream_method",
       provider: provider.id,
     });
-    return bufferedFallback(provider, messages, tools, config, context);
+    return bufferedFallback(provider, messages, tools, config, context, signal);
   }
 
   let stream: AsyncIterable<StreamChunk>;
@@ -184,7 +224,7 @@ export async function runStreamingInference(
         reason: "not_async_iterable",
         provider: provider.id,
       });
-      return bufferedFallback(provider, messages, tools, config, context);
+      return bufferedFallback(provider, messages, tools, config, context, signal);
     }
     stream = candidate;
   } catch (err) {
@@ -196,7 +236,7 @@ export async function runStreamingInference(
       provider: provider.id,
       error: err instanceof Error ? err.message : String(err),
     });
-    return bufferedFallback(provider, messages, tools, config, context);
+    return bufferedFallback(provider, messages, tools, config, context, signal);
   }
 
   let sequence = 0;
@@ -208,6 +248,16 @@ export async function runStreamingInference(
   let reasoningSeen = false;
   let reasoningBuffer = "";
   let usage: InferenceUsage | null = null;
+  // Provider provenance carried off `done` chunks. LAST wins for the finish
+  // reason (a stream can legitimately emit more than one `done`, and the final
+  // one is the outcome); FIRST wins for the generation id (it identifies the
+  // generation we started — see `consumeOpenRouterStream`).
+  let finishReason: string | null = null;
+  let generationId: string | null = null;
+  // Upstream provider that served this stream (routing provenance, migration
+  // 059). Like `generationId`, the FIRST value reported wins: a provider that
+  // varied it mid-stream could otherwise re-attribute our usage row.
+  let servingProvider: string | null = null;
   const toolCallAccumulator = new Map<number, ToolCallAccumulator>();
 
   try {
@@ -259,12 +309,27 @@ export async function runStreamingInference(
           // Scrub the provider-supplied message through the same redaction
           // pipeline as normalizeOpenRouterError before surfacing it, so a
           // token/URL/body embedded in a stream error never reaches logs/UI.
-          throw attachStatus(
-            new Error(scrubMessage(chunk.errorMessage ?? "stream error") ?? "stream error"),
-            chunk.errorCode,
+          // `errorType` is OpenRouter's canonical `ApiErrorType` — an OPEN
+          // enum, attached verbatim as a lean own-property in the same idiom
+          // as the status (never `.cause`, never a raw provider string).
+          throw attachErrorType(
+            attachStatus(
+              new Error(scrubMessage(chunk.errorMessage ?? "stream error") ?? "stream error"),
+              chunk.errorCode,
+            ),
+            chunk.errorType ?? null,
           );
         case "done":
-          // Informational only — assembly happens on generator exhaustion.
+          // Assembly still happens on generator exhaustion — `done` remains
+          // informational for control flow. It is now also where the provider
+          // reports the finish reason and generation id, so we record them.
+          if (chunk.finishReason !== undefined) finishReason = chunk.finishReason;
+          if (generationId === null && chunk.generationId !== undefined) {
+            generationId = chunk.generationId;
+          }
+          if (servingProvider === null && chunk.servingProvider !== undefined) {
+            servingProvider = chunk.servingProvider;
+          }
           break;
       }
     }
@@ -280,7 +345,7 @@ export async function runStreamingInference(
         provider: provider.id,
         error: err instanceof Error ? err.message : String(err),
       });
-      return bufferedFallback(provider, messages, tools, config, context);
+      return bufferedFallback(provider, messages, tools, config, context, signal);
     } else {
       throw err;
     }
@@ -299,6 +364,9 @@ export async function runStreamingInference(
           toolCalls,
           usage: resolvedUsage,
           reasoning,
+          finishReason,
+          generationId,
+          servingProvider,
         }
       : {
           // Text path — content defaults to "" when no content delta arrived.
@@ -306,6 +374,9 @@ export async function runStreamingInference(
           toolCalls: null,
           usage: resolvedUsage,
           reasoning,
+          finishReason,
+          generationId,
+          servingProvider,
         };
 
   return { response, aborted, usageObserved };

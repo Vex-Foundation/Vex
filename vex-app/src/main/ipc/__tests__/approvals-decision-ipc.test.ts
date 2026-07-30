@@ -36,6 +36,14 @@ const mocks = vi.hoisted(() => ({
     errored: 0,
     continuations: [],
   }),
+  reconcileApprovalLifecycle: vi.fn().mockResolvedValue({
+    examined: 0,
+    dispatched: 0,
+    indeterminate: 0,
+    resumed: 0,
+    skippedLeaseHeld: 0,
+    errored: 0,
+  }),
   runResumeAfterDecision: vi.fn(),
   dispatchPreparedMission: vi.fn(),
   listPendingForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
@@ -119,8 +127,15 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
   expireApproval: (...a: unknown[]) => mocks.expireApproval(...a),
   sweepExpiredApprovals: (...a: unknown[]) =>
     mocks.sweepExpiredApprovals(...a),
+  // Lifecycle reconciler — runs in the SAME scheduled cycle as the TTL sweep.
+  reconcileApprovalLifecycle: (...a: unknown[]) =>
+    mocks.reconcileApprovalLifecycle(...a),
   runResumeAfterDecision: (...a: unknown[]) =>
     mocks.runResumeAfterDecision(...a),
+  // A chat continuation has no mission run; the helper narrows the union so
+  // the dispatch refs stay honest instead of carrying `undefined`.
+  continuationMissionRunId: (cont: { kind: string; missionRunId?: string }) =>
+    cont.kind === "mission_run" ? cont.missionRunId : undefined,
   discardContinuation: vi.fn(),
   ApprovalDispatchError: FakeApprovalDispatchError,
   ApprovalPostDecisionError: FakeApprovalPostDecisionError,
@@ -193,6 +208,14 @@ beforeEach(() => {
     errored: 0,
     continuations: [],
   });
+  mocks.reconcileApprovalLifecycle.mockResolvedValue({
+    examined: 0,
+    dispatched: 0,
+    indeterminate: 0,
+    resumed: 0,
+    skippedLeaseHeld: 0,
+    errored: 0,
+  });
   active = setupHandlers();
 });
 
@@ -204,8 +227,23 @@ afterEach(() => {
 // ── approve handler ────────────────────────────────────────────────────
 
 const STUB_CONTINUATION = {
+  kind: "mission_run",
   missionRunId: "run-1",
   sessionId: SESSION,
+  approvalId: "a-1",
+  ownerId: "approve-test",
+  leaseHandle: { lease: {}, ownerId: "approve-test", release: vi.fn() },
+} as never;
+
+/**
+ * A chat-session continuation — no mission run. Before the resume fix these
+ * did not exist: an Agent-Restricted approval returned `continuation: null`,
+ * nothing was dispatched, and the agent was never told its tool had run.
+ */
+const STUB_CHAT_CONTINUATION = {
+  kind: "chat_session",
+  sessionId: SESSION,
+  approvalId: "a-3",
   ownerId: "approve-test",
   leaseHandle: { lease: {}, ownerId: "approve-test", release: vi.fn() },
 } as never;
@@ -265,10 +303,50 @@ describe("approve handler decision outcome mapping", () => {
     expect(mocks.dispatchPreparedMission).toHaveBeenCalled();
   });
 
-  it("dispatched + chat session (no mission) → ok runtimeOutcome=stopped; NO background dispatch", async () => {
+  it("dispatched + chat session → ok runtimeOutcome=resumed; background dispatch FIRES (the resume fix)", async () => {
+    // CONTRACT CHANGE. This case previously pinned "chat ⇒ NO background
+    // dispatch", which encoded the bug: the tool ran, the result was recorded,
+    // and the agent was never re-invoked, while the IPC still said "agent will
+    // continue". A chat approval now carries a `chat_session` continuation.
     mocks.prepareApprove.mockResolvedValue({
       kind: "dispatched",
       approvalId: "a-3",
+      resolvedAt: "2026-05-23T20:02:00.000Z",
+      executionStatus: "succeeded",
+      sessionId: SESSION,
+      missionRunId: null,
+      continuation: STUB_CHAT_CONTINUATION,
+      toolResult: { success: true, output: "Chat result" },
+    });
+
+    const result = await call(CH.approvals.approve, { id: "a-3" });
+
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
+      runtimeOutcome: "resumed",
+      missionRunId: null,
+      cached: false,
+    });
+    expect(mocks.dispatchPreparedMission).toHaveBeenCalledTimes(1);
+    const refs = mocks.dispatchPreparedMission.mock.calls[0]![1] as Record<
+      string,
+      unknown
+    >;
+    expect(refs).toMatchObject({
+      sessionId: SESSION,
+      channelLabel: "vex:approvals:approve",
+    });
+    // No mission run exists, so the key is omitted entirely rather than
+    // carrying a misleading `undefined`.
+    expect(refs).not.toHaveProperty("missionRunId");
+  });
+
+  it("dispatched + chat session with NO continuation → runtimeOutcome=stopped, message does not promise a continuation", async () => {
+    // Defensive: if no continuation was claimed the message must not claim the
+    // agent is continuing — that phrasing is exactly what hid the original bug.
+    mocks.prepareApprove.mockResolvedValue({
+      kind: "dispatched",
+      approvalId: "a-3b",
       resolvedAt: "2026-05-23T20:02:00.000Z",
       executionStatus: "succeeded",
       sessionId: SESSION,
@@ -277,14 +355,37 @@ describe("approve handler decision outcome mapping", () => {
       toolResult: { success: true, output: "Chat result" },
     });
 
-    const result = await call(CH.approvals.approve, { id: "a-3" });
+    const result = await call(CH.approvals.approve, { id: "a-3b" });
+
+    expect(result.data).toMatchObject({ runtimeOutcome: "stopped" });
+    expect((result.data as { message: string }).message).not.toMatch(
+      /continuing|will continue/i,
+    );
+    expect(mocks.dispatchPreparedMission).not.toHaveBeenCalled();
+  });
+
+  it("deferred_busy → ok runtimeOutcome=deferred_busy with a truthful queued message; NO dispatch", async () => {
+    mocks.prepareApprove.mockResolvedValue({
+      kind: "deferred_busy",
+      approvalId: "a-3c",
+      resolvedAt: "2026-05-23T20:02:00.000Z",
+      sessionId: SESSION,
+      missionRunId: null,
+      resultCommitted: false,
+    });
+
+    const result = await call(CH.approvals.approve, { id: "a-3c" });
 
     expect(result.ok).toBe(true);
     expect(result.data).toMatchObject({
-      runtimeOutcome: "stopped",
-      missionRunId: null,
-      cached: false,
+      status: "approved",
+      runtimeOutcome: "deferred_busy",
+      executionStatus: "not_started",
     });
+    // The tool did NOT run, so the message must not imply a result.
+    const message = (result.data as { message: string }).message;
+    expect(message).toMatch(/queued/i);
+    expect(message).not.toMatch(/executed/i);
     expect(mocks.dispatchPreparedMission).not.toHaveBeenCalled();
   });
 
@@ -501,7 +602,10 @@ describe("reject handler decision outcome mapping", () => {
     });
   });
 
-  it("rejected + no mission → ok runtimeOutcome=stopped; NO background dispatch", async () => {
+  it("rejected + chat session → ok runtimeOutcome=resumed; background dispatch FIRES", async () => {
+    // CONTRACT CHANGE, mirroring the approve side: a rejection in an
+    // Agent-Restricted session used to end the conversation silently. The agent
+    // must be told its request was refused so it can choose another route.
     mocks.prepareReject.mockResolvedValue({
       kind: "rejected",
       approvalId: "r-2",
@@ -509,16 +613,93 @@ describe("reject handler decision outcome mapping", () => {
       sessionId: SESSION,
       missionRunId: null,
       reason: "No reason provided",
-      continuation: null,
+      continuation: STUB_CHAT_CONTINUATION,
     });
 
     const result = await call(CH.approvals.reject, { id: "r-2" });
 
     expect(result.data).toMatchObject({
-      runtimeOutcome: "stopped",
+      runtimeOutcome: "resumed",
       missionRunId: null,
     });
+    expect(mocks.dispatchPreparedMission).toHaveBeenCalledTimes(1);
+    const refs = mocks.dispatchPreparedMission.mock.calls[0]![1] as Record<
+      string,
+      unknown
+    >;
+    expect(refs).toMatchObject({ channelLabel: "vex:approvals:reject" });
+    expect(refs).not.toHaveProperty("missionRunId");
+  });
+
+  it("reject deferred_busy → ok deferred_busy; rejection recorded, wake queued", async () => {
+    mocks.prepareReject.mockResolvedValue({
+      kind: "deferred_busy",
+      approvalId: "r-2b",
+      resolvedAt: "2026-05-23T20:01:00.000Z",
+      sessionId: SESSION,
+      missionRunId: null,
+      reason: "No reason provided",
+    });
+
+    const result = await call(CH.approvals.reject, { id: "r-2b" });
+
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "rejected",
+      runtimeOutcome: "deferred_busy",
+      executionStatus: null,
+    });
     expect(mocks.dispatchPreparedMission).not.toHaveBeenCalled();
+  });
+
+  it("passes the operator's reason through to prepareReject", async () => {
+    // A7: `prepareReject` always accepted a reason; the IPC never sent one, so
+    // every refusal reached the model as "No reason provided".
+    mocks.prepareReject.mockResolvedValue({
+      kind: "rejected",
+      approvalId: "r-2c",
+      resolvedAt: "2026-05-23T20:01:00.000Z",
+      sessionId: SESSION,
+      missionRunId: null,
+      reason: "Too much slippage",
+      continuation: null,
+    });
+
+    await call(CH.approvals.reject, {
+      id: "r-2c",
+      reason: "Too much slippage",
+    });
+
+    expect(mocks.prepareReject).toHaveBeenCalledWith(
+      "r-2c",
+      "Too much slippage",
+    );
+  });
+
+  it("omitted reason reaches the engine as undefined (engine owns the default)", async () => {
+    mocks.prepareReject.mockResolvedValue({
+      kind: "rejected",
+      approvalId: "r-2d",
+      resolvedAt: "2026-05-23T20:01:00.000Z",
+      sessionId: SESSION,
+      missionRunId: null,
+      reason: "No reason provided",
+      continuation: null,
+    });
+
+    await call(CH.approvals.reject, { id: "r-2d" });
+
+    expect(mocks.prepareReject).toHaveBeenCalledWith("r-2d", undefined);
+  });
+
+  it("rejects an over-long reason at the IPC schema gate", async () => {
+    const result = await call(CH.approvals.reject, {
+      id: "r-2e",
+      reason: "x".repeat(501),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mocks.prepareReject).not.toHaveBeenCalled();
   });
 
   it("cached_rejected → ok cached=true; no dispatch", async () => {
@@ -624,5 +805,23 @@ describe("scheduled TTL sweep", () => {
         && (c[1] as { channelLabel?: string }).channelLabel === "vex:approvals:sweep",
     );
     expect(sweepDispatches.length).toBe(2);
+  });
+
+  it("the reconciler runs in the SAME cycle — no second timer", async () => {
+    await flushMicrotasks();
+
+    expect(mocks.sweepExpiredApprovals).toHaveBeenCalled();
+    expect(mocks.reconcileApprovalLifecycle).toHaveBeenCalled();
+  });
+
+  it("a TTL-sweep failure still lets the reconciler pass run", async () => {
+    // The reconciler is the only thing that can finish an abandoned money-path
+    // dispatch, so it must not share a failure domain with the TTL sweep.
+    teardownHandlers(active);
+    mocks.sweepExpiredApprovals.mockRejectedValueOnce(new Error("pg down"));
+    active = setupHandlers();
+    await flushMicrotasks();
+
+    expect(mocks.reconcileApprovalLifecycle).toHaveBeenCalled();
   });
 });

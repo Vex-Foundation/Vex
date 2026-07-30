@@ -1,0 +1,390 @@
+{
+  "data": [
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "canonical_slug": "anthropic/claude-4.5-sonnet-20250929",
+      "hugging_face_id": "",
+      "name": "Anthropic: Claude Sonnet 4.5",
+      "created": 1759161676,
+      "description": "Claude Sonnet 4.5 is Anthropic’s most advanced Sonnet model to date, optimized for real-world agents and coding workflows. It delivers state-of-the-art performance on coding benchmarks such as SWE-bench Verified, with...",
+      "context_length": 1000000,
+      "architecture": {
+        "modality": "text+image+file->text",
+        "input_modalities": [
+          "text",
+          "image",
+          "file"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Claude",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.000003",
+        "completion": "0.000015",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000003",
+        "input_cache_write": "0.00000375",
+        "input_cache_write_1h": "0.000006",
+        "overrides": [
+          {
+            "min_prompt_tokens": 200000,
+            "prompt": "0.000006",
+            "completion": "0.0000225",
+            "input_cache_read": "0.0000006",
+            "input_cache_write": "0.0000075",
+            "input_cache_write_1h": "0.000012"
+          }
+        ]
+      },
+      "top_provider": {
+        "context_length": 1000000,
+        "max_completion_tokens": 64000,
+        "is_moderated": true
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ],
+      "default_parameters": {
+        "temperature": 1,
+        "top_p": 1,
+        "top_k": null,
+        "frequency_penalty": null,
+        "presence_penalty": null,
+        "repetition_penalty": null
+      },
+      "supported_voices": null,
+      "knowledge_cutoff": "2025-01-31",
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/anthropic/claude-4.5-sonnet-20250929/endpoints"
+      },
+      "benchmarks": {
+        "design_arena": [
+          {
+            "arena": "models",
+            "category": "3d",
+            "elo": 1215,
+            "win_rate": 51.6,
+            "rank": 42
+          },
+          {
+            "arena": "models",
+            "category": "asciiart",
+            "elo": 1244,
+            "win_rate": 56.4,
+            "rank": 11
+          },
+          {
+            "arena": "models",
+            "category": "codecategories",
+            "elo": 1213,
+            "win_rate": 52.1,
+            "rank": 42
+          },
+          {
+            "arena": "models",
+            "category": "dataviz",
+            "elo": 1196,
+            "win_rate": 47.7,
+            "rank": 50
+          },
+          {
+            "arena": "models",
+            "category": "gamedev",
+            "elo": 1223,
+            "win_rate": 51.5,
+            "rank": 42
+          },
+          {
+            "arena": "models",
+            "category": "svg",
+            "elo": 1164,
+            "win_rate": 52.3,
+            "rank": 40
+          },
+          {
+            "arena": "models",
+            "category": "uicomponent",
+            "elo": 1210,
+            "win_rate": 50.2,
+            "rank": 43
+          },
+          {
+            "arena": "models",
+            "category": "website",
+            "elo": 1215,
+            "win_rate": 52.5,
+            "rank": 44
+          },
+          {
+            "arena": "agents",
+            "category": "fullstack",
+            "elo": 1092,
+            "win_rate": 43.5,
+            "rank": 22
+          },
+          {
+            "arena": "agents",
+            "category": "mobileapps",
+            "elo": 1212,
+            "win_rate": 54.2,
+            "rank": 13
+          },
+          {
+            "arena": "agents",
+            "category": "webapps",
+            "elo": 1126,
+            "win_rate": 44.8,
+            "rank": 28
+          }
+        ],
+        "artificial_analysis": {
+          "intelligence_index": 36.4,
+          "coding_index": 52.1,
+          "agentic_index": 24.6
+        }
+      },
+      "reasoning": {
+        "mandatory": false
+      }
+    },
+    {
+      "id": "aion-labs/aion-3.0",
+      "canonical_slug": "aion-labs/aion-3.0-20260707",
+      "hugging_face_id": null,
+      "name": "AionLabs: Aion-3.0",
+      "created": 1783443095,
+      "description": "Aion-3.0 is a multi-model roleplaying and storytelling system from AionLabs, built on the GLM family of models. It uses a collaborative generation process in which multiple specialized models each contribute...",
+      "context_length": 131072,
+      "architecture": {
+        "modality": "text->text",
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Other",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.000003",
+        "completion": "0.000006",
+        "input_cache_read": "0.00000075"
+      },
+      "top_provider": {
+        "context_length": 131072,
+        "max_completion_tokens": 32768,
+        "is_moderated": false
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "default_parameters": {},
+      "supported_voices": null,
+      "knowledge_cutoff": null,
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/aion-labs/aion-3.0-20260707/endpoints"
+      },
+      "reasoning": {
+        "mandatory": true
+      }
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-0613",
+      "canonical_slug": "openai/gpt-3.5-turbo-0613",
+      "hugging_face_id": null,
+      "name": "OpenAI: GPT-3.5 Turbo (older v0613)",
+      "created": 1706140800,
+      "description": "GPT-3.5 Turbo is OpenAI's fastest model. It can understand and generate natural language or code, and is optimized for chat and traditional completion tasks.\n\nTraining data up to Sep 2021.",
+      "context_length": 4095,
+      "architecture": {
+        "modality": "text->text",
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "GPT",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.000001",
+        "completion": "0.000002"
+      },
+      "top_provider": {
+        "context_length": 4095,
+        "max_completion_tokens": 4096,
+        "is_moderated": false
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_completion_tokens",
+        "presence_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_logprobs",
+        "top_p"
+      ],
+      "default_parameters": {},
+      "supported_voices": null,
+      "knowledge_cutoff": "2021-09-30",
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/openai/gpt-3.5-turbo-0613/endpoints"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-chat-v3.1",
+      "canonical_slug": "deepseek/deepseek-chat-v3.1",
+      "hugging_face_id": "deepseek-ai/DeepSeek-V3.1",
+      "name": "DeepSeek: DeepSeek V3.1",
+      "created": 1755779628,
+      "description": "DeepSeek-V3.1 is a large hybrid reasoning model (671B parameters, 37B active) that supports both thinking and non-thinking modes via prompt templates. It extends the DeepSeek-V3 base with a two-phase long-context...",
+      "context_length": 163840,
+      "architecture": {
+        "modality": "text->text",
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "DeepSeek",
+        "instruct_type": "deepseek-v3.1"
+      },
+      "pricing": {
+        "prompt": "0.00000025",
+        "completion": "0.00000095",
+        "input_cache_read": "0.00000013"
+      },
+      "top_provider": {
+        "context_length": 163840,
+        "max_completion_tokens": 32768,
+        "is_moderated": false
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "default_parameters": {},
+      "supported_voices": null,
+      "knowledge_cutoff": "2025-03-31",
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/deepseek/deepseek-chat-v3.1/endpoints"
+      },
+      "benchmarks": {
+        "design_arena": [
+          {
+            "arena": "models",
+            "category": "3d",
+            "elo": 1134,
+            "win_rate": 48,
+            "rank": 71
+          },
+          {
+            "arena": "models",
+            "category": "codecategories",
+            "elo": 1142,
+            "win_rate": 47.9,
+            "rank": 75
+          },
+          {
+            "arena": "models",
+            "category": "dataviz",
+            "elo": 1128,
+            "win_rate": 46.8,
+            "rank": 75
+          },
+          {
+            "arena": "models",
+            "category": "gamedev",
+            "elo": 1141,
+            "win_rate": 47.2,
+            "rank": 71
+          },
+          {
+            "arena": "models",
+            "category": "svg",
+            "elo": 1017,
+            "win_rate": 38.2,
+            "rank": 73
+          },
+          {
+            "arena": "models",
+            "category": "uicomponent",
+            "elo": 1120,
+            "win_rate": 47.5,
+            "rank": 74
+          },
+          {
+            "arena": "models",
+            "category": "website",
+            "elo": 1147,
+            "win_rate": 48,
+            "rank": 74
+          }
+        ]
+      },
+      "reasoning": {
+        "mandatory": false
+      }
+    }
+  ],
+  "total_count": 4,
+  "links": {
+    "next": null
+  }
+}

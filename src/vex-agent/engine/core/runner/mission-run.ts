@@ -14,7 +14,7 @@
  *   - lease release in finally
  *
  * `resumePreparedMissionRun`:
- *   - flip run → running
+ *   - flip run → running (terminal-guarded CAS; refuses a stopped run)
  *   - hydrate
  *   - runTurnLoop with iteration counter snapshot
  *   - finalize status
@@ -57,14 +57,72 @@ import {
   unregisterMissionRunAbortController,
 } from "./abort.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG } from "./shared.js";
+import { maxIterationsForPermission } from "./iteration-budget.js";
 import type { PreparedMissionStart } from "./mission-prepare.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import type { Permission } from "../../types.js";
+import logger from "@utils/logger.js";
 
 type Provider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
 type ProviderConfig = NonNullable<
   Awaited<ReturnType<Provider["loadConfig"]>>
 >;
+
+/**
+ * An operator Stop outranks a throw raised while the loop unwinds.
+ *
+ * When the run's `AbortController` has already fired, the user asked for the
+ * run to end. If persisting the aborted turn (or anything else on the way out)
+ * then throws, routing that through `finalizeMissionRunError` would park the
+ * run in `paused_error` — a recoverable-looking state the operator never asked
+ * for — AND leave the durable `stop_terminal` request pending forever, because
+ * the loop that would have observed it is gone. That is the stranded stop
+ * Codex flagged.
+ *
+ * So: run the SAME idempotent stop transaction every other stop path runs. It
+ * lands the canonical terminal state (`stopped` / `user_stopped`, mission
+ * `cancelled`), rejects pending approvals, cancels wakes, releases the lease
+ * and consumes this run's stop request. Idempotent — a no-op if the observer
+ * already applied it, and a no-op on an already-terminal run (e.g. the
+ * stop-for-edit path, which owns its own `draft` mission state).
+ *
+ * The original error is still logged and still re-thrown by the caller; only
+ * the persisted RUN STATE changes.
+ */
+async function finalizeUserStopAfterThrow(args: {
+  readonly sessionId: string;
+  readonly missionId: string;
+  readonly runId: string;
+  readonly err: unknown;
+}): Promise<void> {
+  logger.error("engine.mission.throw_during_operator_stop", {
+    runId: args.runId,
+    missionId: args.missionId,
+    sessionId: args.sessionId,
+    errorClass:
+      args.err instanceof Error ? args.err.constructor.name : typeof args.err,
+  });
+  try {
+    const { applyUserStopTransaction } = await import(
+      "../../runtime/lease-and-status.js"
+    );
+    await applyUserStopTransaction({
+      sessionId: args.sessionId,
+      missionRunId: args.runId,
+    });
+  } catch (stopErr) {
+    // The stop write itself failed. Do NOT fall back to error finalization —
+    // that would write the state we just decided is wrong. The durable
+    // control request stays pending, which is the recoverable outcome: the
+    // direct-abort path re-applies it.
+    logger.error("engine.mission.operator_stop_finalize_failed", {
+      runId: args.runId,
+      sessionId: args.sessionId,
+      errorClass:
+        stopErr instanceof Error ? stopErr.constructor.name : typeof stopErr,
+    });
+  }
+}
 
 /** Epoch ms -> ISO string for the agent-facing Runtime Clock, or null. */
 function deadlineMsToIso(deadlineMs: number | null | undefined): string | null {
@@ -139,13 +197,29 @@ export async function runPreparedMissionStart(
         ...baseVisibility,
         contextUsageBand: computeBand(hydrated.tokenCount, prepared.config.contextLimit),
         hasSessionMemory: false,
+        // Compaction axes are FALSE here by design: this is the runner's
+        // pre-loop bootstrap tools array, built before any per-turn preparation
+        // read exists. The loop rebuilds the surface every iteration from the
+        // real state (`buildTurnPromptStack`), so the conservative answer costs
+        // at most one turn without the bypass, while guessing could open it.
+        preparationBypassesBarrier: false,
+        hasCompactionSummaryReady: false,
       }),
     );
 
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
+      // Permission-aware per-turn iteration budget — see `iteration-budget.ts`.
+      // A Full-Autonomous MISSION gets the same generous budget as a
+      // Full-Autonomous agent session (owner decision 2026-07-29); a restricted
+      // mission is byte-identical to before (`DEFAULT_LOOP_CONFIG`'s 50).
+      maxIterations: maxIterationsForPermission(prepared.permission),
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
+    // The lease this runner actually holds. Threaded so the compaction-apply
+    // boundary action can PROVE ownership (equality against the live lease)
+    // rather than adopting whatever owner the row currently names.
+      runnerOwnerId: prepared.sessionLease.ownerId,
       // Deadline from FROZEN inputs (run started_at + snapshot durationMinutes),
       // never the live mission row — see mission-deadline.ts.
       missionDeadlineMs: resolveFrozenDeadlineMs(
@@ -169,7 +243,18 @@ export async function runPreparedMissionStart(
       tools,
       loopConfig,
       promptOptions,
-      controller.signal,
+      // The operator Stop signal is threaded into BOTH the tool-call
+      // iteration boundary (pos 10 `abortSignal`) AND the in-flight inference
+      // stream (pos 11 `inferenceAbortSignal`) — same shape as
+      // `setup-turn.ts`. Without pos 11 a Stop could not cancel a live
+      // provider call and the run kept generating until the call finished.
+      // Partial assistant text is persisted as a stopped row by the existing
+      // `turnResult.inferenceAborted` branch in `turn-loop.ts`; nothing on
+      // the mission-run path parses that text (mission patches only come from
+      // the `mission_draft_update` tool or the setup turn), so no
+      // `user_stopped` text guard is needed here.
+      controller.signal, // abortSignal
+      controller.signal, // inferenceAbortSignal
     );
 
     const missionStatus = await finalizeMissionRunStatus(
@@ -188,12 +273,21 @@ export async function runPreparedMissionStart(
       missionStatus,
     };
   } catch (err: unknown) {
-    await finalizeMissionRunError(
-      prepared.missionId,
-      prepared.runId,
-      prepared.sessionId,
-      err,
-    );
+    if (controller.signal.aborted) {
+      await finalizeUserStopAfterThrow({
+        sessionId: prepared.sessionId,
+        missionId: prepared.missionId,
+        runId: prepared.runId,
+        err,
+      });
+    } else {
+      await finalizeMissionRunError(
+        prepared.missionId,
+        prepared.runId,
+        prepared.sessionId,
+        err,
+      );
+    }
     throw new MissionRunPausedError({
       runId: prepared.runId,
       missionId: prepared.missionId,
@@ -207,6 +301,8 @@ export async function runPreparedMissionStart(
       prepared.sessionId,
       { missionRunId: prepared.runId },
     );
+    // The end-of-turn resume hook fires inside the helper above, strictly
+    // after the release. See `end-of-turn-resume-hook.ts`.
   }
 }
 
@@ -214,6 +310,15 @@ export async function runPreparedMissionStart(
 
 export interface PreparedResumeRun {
   readonly runId: string;
+  /**
+   * The session/run lease owner id the CALLER claimed and holds for the whole
+   * resume. Required, exactly like a mission START threads
+   * `prepared.sessionLease.ownerId`: the resumed turn loop can only force a
+   * prepared compaction apply by proving ownership by equality against the live
+   * lease, and every resume entry point (wake, auto-retry, approval
+   * continuation, ingress preempt, IPC resume/retry, recover) does hold one.
+   */
+  readonly runnerOwnerId: string;
   readonly run: MissionRun;
   readonly mission: Mission;
   readonly provider: Provider;
@@ -225,7 +330,18 @@ export async function resumePreparedMissionRun(
 ): Promise<TurnResult> {
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
-    await missionRunsRepo.updateStatus(prepared.runId, "running");
+    // GUARDED flip, not `updateStatus`. `resumeMissionRun` checks the run is
+    // non-terminal at the TOP of the function, then awaits a provider resolve,
+    // a config load and a mission read before reaching here — a check-then-act
+    // window an operator Stop can land inside. An unconditional flip would
+    // re-open the stopped run, clear the stop evidence the user's Stop wrote,
+    // and then run a whole turn on it. The CAS makes the refusal authoritative.
+    const started = await missionRunsRepo.startRunIfNotTerminal(prepared.runId);
+    if (!started) {
+      throw new Error(
+        `Run ${prepared.runId} reached a terminal status before the resume could start — refusing to re-open it`,
+      );
+    }
 
     const hydrated = await hydrateEngineSession(prepared.run.sessionId);
     if (!hydrated) {
@@ -263,13 +379,27 @@ export async function resumePreparedMissionRun(
         ...baseVisibility,
         contextUsageBand: computeBand(hydrated.tokenCount, prepared.config.contextLimit),
         hasSessionMemory: false,
+        // Compaction axes are FALSE here by design: this is the runner's
+        // pre-loop bootstrap tools array, built before any per-turn preparation
+        // read exists. The loop rebuilds the surface every iteration from the
+        // real state (`buildTurnPromptStack`), so the conservative answer costs
+        // at most one turn without the bypass, while guessing could open it.
+        preparationBypassesBarrier: false,
+        hasCompactionSummaryReady: false,
       }),
     );
 
     const loopConfig: TurnLoopConfig = {
       ...DEFAULT_LOOP_CONFIG,
+      // Permission-aware per-turn iteration budget — see `iteration-budget.ts`.
+      // Same rule on resume as on start; a resumed slice must not silently get
+      // a different budget from the one the run started with.
+      maxIterations: maxIterationsForPermission(permission),
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
+      // The lease this resume actually runs under — same contract as a mission
+      // start above, so a resumed slice can consume a prepared cutover too.
+      runnerOwnerId: prepared.runnerOwnerId,
       // Deadline from FROZEN inputs (run started_at + the SAME snapshot the run
       // was committed with), so a wake/resume re-derives the identical box —
       // never the live mission row. See mission-deadline.ts.
@@ -294,7 +424,10 @@ export async function resumePreparedMissionRun(
       tools,
       loopConfig,
       promptOptions,
-      controller.signal,
+      // Dual-signal Stop — see the rationale at the `runPreparedMissionStart`
+      // call site above.
+      controller.signal, // abortSignal
+      controller.signal, // inferenceAbortSignal
     );
 
     const missionStatus = await finalizeMissionRunStatus(
@@ -313,12 +446,22 @@ export async function resumePreparedMissionRun(
       missionStatus,
     };
   } catch (err: unknown) {
-    await finalizeMissionRunError(
-      prepared.run.missionId,
-      prepared.runId,
-      prepared.run.sessionId,
-      err,
-    );
+    // Same operator-Stop-outranks-a-throw rule as `runPreparedMissionStart`.
+    if (controller.signal.aborted) {
+      await finalizeUserStopAfterThrow({
+        sessionId: prepared.run.sessionId,
+        missionId: prepared.run.missionId,
+        runId: prepared.runId,
+        err,
+      });
+    } else {
+      await finalizeMissionRunError(
+        prepared.run.missionId,
+        prepared.runId,
+        prepared.run.sessionId,
+        err,
+      );
+    }
     throw new MissionRunPausedError({
       runId: prepared.runId,
       missionId: prepared.run.missionId,

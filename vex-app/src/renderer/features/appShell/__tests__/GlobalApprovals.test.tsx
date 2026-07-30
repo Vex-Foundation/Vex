@@ -9,7 +9,10 @@
  *   - approve on a rendered `ApprovalCard` fires the mutation with `{ id }`
  *     (the full risk-gated card is reused verbatim);
  *   - Escape + outside pointerdown close; Escape restores trigger focus (A6);
- *   - two-tier poll cadence 15s idle / 5s open (A2);
+ *   - two-tier FALLBACK poll cadence 60s idle / 15s open — slowed from
+ *     15s/5s once `useMissionUpdateLiveSync` began invalidating `pendingAll`
+ *     on `approval_enqueued`, so the badge is push-driven and the poll is the
+ *     dropped-event net (still two-tier: an open panel is a live list);
  *   - a count over 99 collapses to "99+" (A6).
  */
 
@@ -268,12 +271,12 @@ describe("GlobalApprovals — dismissal + focus (A6)", () => {
 });
 
 describe("GlobalApprovals — poll cadence + overflow", () => {
-  it("polls at 15s idle and 5s while the panel is open (A2)", () => {
+  it("falls back at 60s idle and 15s while the panel is open", () => {
     pendingState = { data: { ok: true, data: [makeRow()] } };
     renderBadge();
-    expect(refetchIntervals.at(-1)).toBe(15_000);
+    expect(refetchIntervals.at(-1)).toBe(60_000);
     fireEvent.click(getBadge());
-    expect(refetchIntervals.at(-1)).toBe(5_000);
+    expect(refetchIntervals.at(-1)).toBe(15_000);
   });
 
   it("collapses a count over 99 to '99+' (A6)", () => {

@@ -13,7 +13,9 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(__dirname, "dist/preload"),
-    emptyOutDir: true,
+    // Same race as vite.main.config.ts: keep the prebuilt bundle while the
+    // dev watcher starts, so the window never loads a missing preload.
+    emptyOutDir: !process.argv.includes("--watch"),
     target: "node22",
     sourcemap: true,
     minify: false,

@@ -38,8 +38,23 @@ export interface EnvConfig {
    * written by the wizard's provider select. `null` ⇒ "Auto": OpenRouter's own
    * routing, which is also the only mode where its sticky `session_id` applies.
    * Never validated against a list here — the wizard authorises the tag before
-   * persisting it, and an endpoint that later disappears must surface as a
-   * loud routing failure, not a silent fallback.
+   * persisting it.
+   *
+   * CONTRACT CHANGED 2026-07-29 (owner decision). This used to read "an
+   * endpoint that later disappears must surface as a loud routing failure, not
+   * a silent fallback". It no longer does, and leaving that sentence next to
+   * the current code would be worse than either behaviour. The pin is now a
+   * STARTING point, not a wall: after two consecutive CAPACITY failures a
+   * session switches once, to the sibling endpoint of the same model with the
+   * highest uptime, and stays there for the rest of the session. The switch is
+   * neither silent nor unbounded — it is logged, persisted to
+   * `session_endpoint_switches` (migration 059), and the serving endpoint of
+   * every request is recorded in `usage_log.serving_provider`.
+   *
+   * What did NOT change: a non-capacity failure (400/401/402/`content policy`/
+   * `context_length_exceeded`) still fails loudly on attempt one, and so does a
+   * 429 whose `limit_source` names our own account. See
+   * `openrouter/endpoint-failover.ts` for the whole policy.
    */
   openrouterEndpointTag: string | null;
   /** Sampling temperature — OpenRouter only */

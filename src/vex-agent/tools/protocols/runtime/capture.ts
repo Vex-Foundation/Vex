@@ -30,7 +30,7 @@ export async function captureExecution(
   // Defense-in-depth: preview results are NOT mutations — skip entire capture pipeline
   if (result.data?.dryRun === true) return;
 
-  const { completeExecutionIntent, recordExecution, getById } = await import("@vex-agent/db/repos/executions.js");
+  const { completeExecutionIntentWith, recordExecution, getById } = await import("@vex-agent/db/repos/executions.js");
   const paramsForStorage = sanitizeRecord(params);
   const resultData = sanitizeRecord(result.data ?? {});
   const tradeCapture = isRecord(resultData._tradeCapture) ? resultData._tradeCapture : null;
@@ -73,9 +73,38 @@ export async function captureExecution(
     tradeCapture, externalRefs, durationMs,
   );
   if (priorExecutionId !== undefined) {
-    await completeExecutionIntent(
-      priorExecutionId, resultData, result.success, tradeCapture, externalRefs, durationMs,
-    );
+    // Short, DB-only, under the session control lock — the handler's broadcast
+    // is already finished by the time capture runs, so nothing external happens
+    // inside it. An `intent` row is unresolved money state for the compaction
+    // safe-moment gate; settling it must be strictly ordered against that gate
+    // rather than able to interleave with it.
+    //
+    // A NULL session is deliberately completed WITHOUT the lock: the gate is
+    // session-scoped, so such a row is outside it by construction and there is
+    // no key to serialize on. (Widening the gate to a global scan would block
+    // unrelated sessions — see the KNOWN GAP in
+    // `db/repos/approval-intents/money-state.ts`.)
+    const completion = {
+      executionId: priorExecutionId,
+      result: resultData,
+      success: result.success,
+      tradeCapture,
+      externalRefs,
+      durationMs,
+    };
+    if (sessionId === null) {
+      const { withTransaction } = await import("@vex-agent/db/client.js");
+      await withTransaction((client) =>
+        completeExecutionIntentWith(client, completion),
+      );
+    } else {
+      const { withSessionControlLock } = await import(
+        "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js"
+      );
+      await withSessionControlLock(sessionId, (client) =>
+        completeExecutionIntentWith(client, completion),
+      );
+    }
   }
 
   // Enqueue sync runs for this namespace (only on success — failed mutations don't need projection refresh)

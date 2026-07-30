@@ -2,8 +2,13 @@
  * Loop wake requests repo — durable substrate for `loop_defer` and the wake
  * executor.
  *
- * Schema lives in `011_loop_wake_requests.sql`. Only mission_run wakes exist;
- * `mission_run_id` is always present.
+ * Schema lives in `011_loop_wake_requests.sql`, relaxed by
+ * `057_loop_wake_agent_sessions.sql`. Two shapes of wake share the table:
+ *   - MISSION RUN — `missionRunId` set. Claimed by run status (`paused_wake`).
+ *   - AGENT SESSION — `missionRunId` null. A Full-Autonomous agent chat has no
+ *     run row, so its continuation is session-scoped and the executor claims
+ *     the session lease instead. `loop_defer` still only ever writes the
+ *     mission shape.
  *
  * Rows progress one-way:
  *   pending → consumed (executor `claimDue`)
@@ -24,7 +29,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { getPool, query, queryOne, queryOneWith, execute } from "../client.js";
+import { getPool, query, queryOneWith, execute } from "../client.js";
 import { nullableJsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -34,7 +39,8 @@ export type LoopWakeStatus = "pending" | "consumed" | "cancelled";
 export interface LoopWakeRequest {
   id: string;
   sessionId: string;
-  missionRunId: string;
+  /** `null` for a session-scoped agent continuation — see the module header. */
+  missionRunId: string | null;
   dueAt: string;
   status: LoopWakeStatus;
   reason: string | null;
@@ -48,7 +54,7 @@ export interface LoopWakeRequest {
 interface LoopWakeRow {
   id: string;
   session_id: string;
-  mission_run_id: string;
+  mission_run_id: string | null;
   due_at: string | Date;
   status: string;
   reason: string | null;
@@ -88,7 +94,8 @@ function mapRow(r: LoopWakeRow): LoopWakeRequest {
 
 export interface EnqueueInput {
   sessionId: string;
-  missionRunId: string;
+  /** `null` schedules a session-scoped agent continuation (no run row). */
+  missionRunId: string | null;
   dueAt: Date;
   reason: string | null;
   payload: Record<string, unknown> | null;
@@ -97,12 +104,22 @@ export interface EnqueueInput {
 /**
  * Insert a pending wake row. Returns the inserted row, or `null` when a
  * pending row already exists for this session (partial unique index hits
- * `ON CONFLICT DO NOTHING`). Callers — today only the `loop_defer` handler
- * — treat `null` as a no-op and surface that back to the model so it
- * doesn't double-enqueue.
+ * `ON CONFLICT DO NOTHING`). The `loop_defer` handler treats `null` as a
+ * no-op and surfaces that back to the model so it doesn't double-enqueue.
+ *
+ * `client` lets a caller INSERT inside its own transaction. The agent-session
+ * continuation needs that: it decides "is this session still running?" and
+ * schedules the wake in ONE transaction under the session control lock, so a
+ * cancellation cannot land between the decision and the insert. Sampling the
+ * two separately is exactly the race that left a live wake on a stopped
+ * session. Callers without that requirement omit it and get the pool.
  */
-export async function enqueue(input: EnqueueInput): Promise<LoopWakeRequest | null> {
-  const row = await queryOne<LoopWakeRow>(
+export async function enqueue(
+  input: EnqueueInput,
+  client?: PoolClient,
+): Promise<LoopWakeRequest | null> {
+  const row = await queryOneWith<LoopWakeRow>(
+    client ?? getPool(),
     `INSERT INTO loop_wake_requests
        (session_id, mission_run_id, due_at, status, reason, payload)
      VALUES ($1, $2, $3::timestamptz, 'pending', $4, $5::jsonb)

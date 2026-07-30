@@ -12,6 +12,13 @@
  *     failures even though the lease release / status finalize lives
  *     inside the engine helper (`runPreparedMission{Start,Recover}`
  *     handle their own `finalizeMissionRunError`).
+ *   - an `engineErrorBus` emit so the FAILURE REACHES THE USER. This was
+ *     the single largest silent-failure surface in the app: five call
+ *     sites (mission start, mission recover, approval approve, approval
+ *     reject, and the TTL auto-reject sweep) all funnel through here, and
+ *     until now a throw produced a log line and nothing else — the window
+ *     simply sat there. Only bounded codes are emitted; the exception
+ *     message stays in the log and the bug report.
  *
  * Per puzzle 04 phase 6 codex review #3: no dedicated audit table for
  * mission start/recover — the `mission_runs` row IS the durable
@@ -19,6 +26,9 @@
  * the run lifecycle.
  */
 
+import { emitEngineError } from "@vex-agent/engine/runtime/error-bus.js";
+import type { EngineErrorScope } from "@vex-agent/engine/runtime/error-bus.js";
+import { readMissionErrorSignal } from "@vex-agent/engine/core/runner/mission-error-signal.js";
 import { log } from "../../logger/index.js";
 
 export interface DispatchRefs {
@@ -27,6 +37,13 @@ export interface DispatchRefs {
   readonly missionRunId?: string;
   readonly correlationId: string;
   readonly channelLabel: string;
+  /**
+   * Which runtime surface failed, for the renderer's framing. Required, not
+   * derived from `channelLabel`: an approval resume and a mission start are
+   * different things to a user, and parsing a log label to decide what to tell
+   * them would be a string-matching contract nobody would maintain.
+   */
+  readonly scope: EngineErrorScope;
 }
 
 /**
@@ -48,6 +65,27 @@ export function dispatchPreparedMission(
           `correlationId=${refs.correlationId}`,
         cause,
       );
+      // Bounded push FIRST: it needs no I/O and must not be lost if the
+      // bug-report sink below is unreachable. `readMissionErrorSignal` reads
+      // own-properties only and never walks `.cause`, so nothing from the raw
+      // provider error can ride along.
+      try {
+        const signal = readMissionErrorSignal(cause);
+        emitEngineError({
+          sessionId: refs.sessionId,
+          missionRunId: refs.missionRunId ?? null,
+          scope: refs.scope,
+          errorType: signal.errorType,
+          errorClass: signal.errorClass,
+          statusCode: signal.status,
+          causeCode: signal.causeCode,
+          retryAfterSeconds: signal.retryAfterSeconds,
+          correlationId: refs.correlationId,
+        });
+      } catch (emitErr) {
+        log.warn(`[ipc:${refs.channelLabel}] engine error emit failed`, emitErr);
+      }
+
       try {
         const { getBugReportSink } = await import(
           "@vex-agent/engine/support/bug-report-registry.js"

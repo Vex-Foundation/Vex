@@ -74,10 +74,14 @@ vi.mock("@vex-agent/db/client.js", () => ({
   query: (sql: string, params?: SqlParams) => mockQuery(sql, params),
   queryOne: (sql: string, params?: SqlParams) => mockQueryOne(sql, params),
   execute: (sql: string, params?: SqlParams) => mockExecute(sql, params),
-  queryWith: vi.fn(),
-  queryOneWith: vi.fn(),
+  // The agent-activity CAS writers now run inside a session-control-locked
+  // transaction, so they reach the `…With` client variants. Routed to the SAME
+  // fakes as their pool-level twins: the statement under test is identical, only
+  // the connection it travels on changed.
+  queryWith: (_c: unknown, sql: string, params?: unknown[]) => mockQuery(sql, params as never),
+  queryOneWith: (_c: unknown, sql: string, params?: unknown[]) => mockQueryOne(sql, params as never),
   executeWith: vi.fn(),
-  withTransaction: vi.fn(),
+  withTransaction: async (fn: (c: unknown) => Promise<unknown>) => fn({}),
   getPool: vi.fn(),
   closePool: vi.fn(),
 }));

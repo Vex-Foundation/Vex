@@ -14,7 +14,7 @@ import type { FormEvent } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { ReasoningEffort } from "@shared/schemas/reasoning.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
-import { useRuntimeState } from "../../lib/api/runtime.js";
+import { useRequestStop, useRuntimeState } from "../../lib/api/runtime.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import {
   FREE_TEXT_DISALLOWED,
@@ -52,11 +52,30 @@ export interface ComposerSubmit {
   readonly notice: ComposerNotice;
   readonly submitPending: boolean;
   readonly stopRequested: boolean;
+  /**
+   * Whether a Stop affordance should be offered at all.
+   *
+   * NOT the same as `submitPending`. A wake-driven background slice holds the
+   * session lease with no pending submit in this window, and while the control
+   * keyed off `submitPending` alone that run had NO stop affordance anywhere in
+   * the UI — the user could see the agent working and had no way to interrupt
+   * it. The lease is the honest signal for "something is running in this
+   * session", and it is already pushed to us on every committed transition.
+   */
+  readonly stopAvailable: boolean;
   readonly awaitingApproval: boolean;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   readonly onRetry: () => void;
   readonly onStop: () => void;
 }
+
+/**
+ * Bounded failure copy for a stop that did not land. No provider or IPC text —
+ * the user needs to know the run is still going and that pressing again is the
+ * right move, nothing else.
+ */
+const STOP_FAILED_NOTICE =
+  "Couldn't stop the run. It's still going — try Stop again.";
 
 export function useComposerSubmit(
   sessionId: string | null,
@@ -82,6 +101,13 @@ export function useComposerSubmit(
     (s) => s.setSessionReasoningEffort,
   );
   const runtimeQuery = useRuntimeState(sessionId);
+  const requestStop = useRequestStop();
+  // "Something is running in this session RIGHT NOW", from the lease rather
+  // than from a pending submit. Covers a wake-driven background slice, which
+  // holds the lease with no submit pending in this window. A failed/loading
+  // read reads as not-live so the control cannot flicker on a transient error.
+  const sliceLive =
+    runtimeQuery.data?.ok === true && runtimeQuery.data.data.leaseActive;
   const handedOffRef = useRef<string | null>(null);
 
   const [draft, setDraft] = useState<string>("");
@@ -103,11 +129,15 @@ export function useComposerSubmit(
     setNotice(null);
   }, [sessionId]);
 
-  // Reset the stop acknowledgment when the turn settles (success, error, or
-  // the retry path re-arming) so the next turn starts from a clean Stop key.
+  // Reset the stop acknowledgment when the work settles so the next turn
+  // starts from a clean Stop key. Both signals matter: a pending submit
+  // settling covers the foreground case, and the lease dropping covers a
+  // background slice — without the latter, stopping a background slice would
+  // leave the key stuck on the disabled "Stopping" state forever, because no
+  // submit was ever pending to settle.
   useEffect(() => {
-    if (!submitPending) setStopRequested(false);
-  }, [submitPending]);
+    if (!submitPending && !sliceLive) setStopRequested(false);
+  }, [submitPending, sliceLive]);
 
   // Single owner of a chat-turn submit + its failure/success notice. A
   // retryable provider error in a KNOWN agent session arms an inline Retry
@@ -293,10 +323,51 @@ export function useComposerSubmit(
   );
 
   const clearNotice = useCallback((): void => setNotice(null), []);
+  /**
+   * ONE route per case — never both.
+   *
+   * FOREGROUND (`submitPending`): the request-local `stopTurn()` only. This
+   * window owns the in-flight request and `processAgentTurn` observes that
+   * AbortSignal directly, so the abort is immediate and complete. Firing the
+   * durable route as well would INSERT a `stop_terminal` control row that no
+   * consumer on the foreground path ever observes — it outlives the turn it
+   * was meant for and is later applied to an unrelated approval resume or
+   * continuation, stopping something the user never asked to stop.
+   *
+   * BACKGROUND (lease held, no pending submit): the durable
+   * `runtime.requestStop` only. `stopTurn()` has nothing to cancel here — the
+   * slice belongs to a wake-driven continuation this window never started —
+   * and the durable row is exactly what that path's consumer observes.
+   *
+   * The split is the point: each route is the one the running work actually
+   * listens to, and neither leaves a row behind for work that is not running.
+   */
   const onStop = useCallback((): void => {
     setStopRequested(true);
-    stopTurn();
-  }, [stopTurn]);
+    if (submitPending) {
+      stopTurn();
+      return;
+    }
+    if (sessionId === null || sessionId.length === 0) return;
+    void (async () => {
+      try {
+        const result = await requestStop.mutateAsync({ sessionId });
+        // The mutation RESOLVES on an application-level failure — the Result
+        // envelope carries it. Ignoring `ok:false` left the key disabled on
+        // "Stopping…" while the agent kept running, which reads as a
+        // successful stop and is the worst possible lie on this control.
+        if (!result.ok) {
+          setStopRequested(false);
+          setNotice({ tone: "error", text: STOP_FAILED_NOTICE });
+        }
+      } catch {
+        // Transport-level failure — same recovery: give the user a Stop key
+        // that works again rather than a dead one.
+        setStopRequested(false);
+        setNotice({ tone: "error", text: STOP_FAILED_NOTICE });
+      }
+    })();
+  }, [stopTurn, requestStop, sessionId, submitPending]);
 
   return {
     draft,
@@ -305,6 +376,7 @@ export function useComposerSubmit(
     notice,
     submitPending,
     stopRequested,
+    stopAvailable: submitPending || sliceLive,
     awaitingApproval,
     onSubmit,
     onRetry,

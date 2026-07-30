@@ -1,0 +1,32 @@
+-- Generation id + finish reason on usage_log (SDK-DEPTH phase, 2026-07-28).
+--
+-- `generation_id` is OpenRouter's own per-request generation identifier
+-- (`ChatResult.id` on the buffered path, the SSE chunk `id` on the streamed
+-- one). It is the ONLY key that ties one of our usage rows back to a row in
+-- OpenRouter's activity/generation log, so a cost dispute or a "which call
+-- produced this?" question stops being unanswerable. Not a secret: it is an
+-- opaque provider id, no prompt or response content.
+--
+-- `finish_reason` is the provider's terminal reason for the completion
+-- (`stop`, `tool_calls`, `length`, `content_filter`, …). The runtime already
+-- receives it and threw it away, so a truncated answer (`length`) was
+-- indistinguishable from a complete one after the fact. Deliberately TEXT and
+-- NOT a CHECK-constrained enum: `ChatFinishReasonEnum` is an OPEN enum in the
+-- installed @openrouter/sdk (esm/models/chatfinishreasonenum.d.ts —
+-- `OpenEnum<…>`), so a value outside today's set is a legal provider response,
+-- and a CHECK would turn it into a failed INSERT on the turn path.
+--
+-- Both columns are NULLABLE with no default: a row written before this
+-- migration, or by a provider that reports neither, is honestly "unknown"
+-- rather than falsely "".  No backfill — historical generations are not
+-- recoverable.
+--
+-- A NEW numbered migration (not an edit of 001/032): the runner applies only
+-- `version > MAX(schema_version)`, so editing an applied file would be
+-- invisible to already-initialized databases — and `logUsage` is awaited
+-- WITHOUT a try/catch on the turn path, so a column this code writes but the
+-- database lacks would fail EVERY turn. Forward-only, idempotent
+-- (IF NOT EXISTS). Mirrored byte-identically in vex-app/resources/migrations/.
+
+ALTER TABLE usage_log ADD COLUMN IF NOT EXISTS generation_id TEXT NULL;
+ALTER TABLE usage_log ADD COLUMN IF NOT EXISTS finish_reason TEXT NULL;

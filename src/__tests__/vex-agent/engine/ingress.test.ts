@@ -184,7 +184,10 @@ describe("ingress.routeUserMessage", () => {
       }),
     );
     expect(mockAddOperatorCue).toHaveBeenCalled();
-    expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1");
+    expect(mockResumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      "ingress-preempt-run-1",
+    );
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 

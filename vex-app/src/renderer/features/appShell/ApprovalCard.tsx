@@ -98,6 +98,9 @@ export function ApprovalCard({
   }, []);
 
   const [inlineError, setInlineError] = useState<string | null>(null);
+  // Operator note sent with a rejection. Local to the card and cleared on a
+  // successful decision so it can never ride along to a later approval.
+  const [rejectReason, setRejectReason] = useState("");
   // S5 signed glint — set in the approve success handler BEFORE invalidation
   // so the one-shot light renders before the refetch unmounts the card. If
   // the unmount wins the race that is acceptable: the light is a grace note,
@@ -149,12 +152,17 @@ export function ApprovalCard({
 
   const fireReject = (): void => {
     setInlineError(null);
+    const trimmed = rejectReason.trim();
     reject.mutate(
-      { id: summary.id },
+      // Omit the key entirely when empty: `approvalActionInputSchema` is
+      // `.strict()` and treats `reason` as optional, and the engine's default
+      // ("No reason provided") is the right transcript text for a bare refusal.
+      { id: summary.id, ...(trimmed.length > 0 ? { reason: trimmed } : {}) },
       {
         onSuccess: async (result) => {
           if (result.ok) {
             setArmedAction(null);
+            setRejectReason("");
             await invalidateOnResolve();
           } else {
             setInlineError(result.error.message);
@@ -222,6 +230,8 @@ export function ApprovalCard({
         rejectRef={rejectRef}
         onReject={onRejectClick}
         onApprove={onApproveClick}
+        rejectReason={rejectReason}
+        onRejectReasonChange={setRejectReason}
       />
     </section>
   );

@@ -4,13 +4,13 @@
  *
  * The cutover exposes TWO independent pressure barriers at runtime:
  *   1. `checkPressureDeny` in `tools/dispatcher.ts` — synthetic error for any
- *      `mutating` / `compact_only` call that bypassed the catalog projection.
+ *      `mutating` call that bypassed the catalog projection.
  *   2. Inline guard in `tools/protocols/runtime.ts:executeProtocolTool` — same
  *      shape for the protocol meta-tool namespace (`discover_tools` /
  *      `execute_tool` → `executeProtocolTool`).
  *
  * Both must reject at barrier+ with a clear hint pointing the agent at
- * `compact_now`. The catalog-level filter (already covered in
+ * `compact_apply`. The catalog-level filter (already covered in
  * `tools/registry.test.ts`) is the soft signal; these are the runtime guards.
  */
 
@@ -69,13 +69,32 @@ describe("checkPressureDeny — runtime hard-deny (dispatcher)", () => {
     expect(checkPressureDeny("nonexistent_tool", "normal")).toBeNull();
   });
 
-  it("blocks mutating tools at barrier band with a compact_now hint", () => {
+  it("blocks mutating tools at barrier band, naming no tool the agent must call", () => {
     const result = checkPressureDeny("wallet_send_confirm", "barrier");
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
     expect(result!.output).toContain("blocked");
     expect(result!.output).toContain("barrier");
-    expect(result!.output).toContain("compact_now");
+    // The copy is agent-visible. Under v2 the runtime compacts on its own, so
+    // instructing a tool call here would produce a hallucinated one every turn.
+    expect(result!.output).not.toMatch(/compact_now/);
+    expect(result!.output).toContain("automatically");
+  });
+
+  it("BYPASS: a live preparation un-blocks mutating tools at barrier", () => {
+    expect(checkPressureDeny("wallet_send_confirm", "barrier", true)).toBeNull();
+  });
+
+  it("BYPASS does NOT extend to critical — forced apply owns that band", () => {
+    const result = checkPressureDeny("wallet_send_confirm", "critical", true);
+    expect(result).not.toBeNull();
+    expect(result!.success).toBe(false);
+  });
+
+  it("the bypass parameter DEFAULTS to false — omitting it keeps today's barrier", () => {
+    // Every pre-existing call site relies on this. A default of `true` would
+    // silently remove the barrier process-wide.
+    expect(checkPressureDeny("wallet_send_confirm", "barrier")).not.toBeNull();
   });
 
   it("blocks mutating tools at critical band", () => {
@@ -93,19 +112,12 @@ describe("checkPressureDeny — runtime hard-deny (dispatcher)", () => {
     expect(checkPressureDeny("wallet_send_confirm", "warning")).toBeNull();
   });
 
-  it("blocks compact_only tools below barrier", () => {
-    const normal = checkPressureDeny("compact_now", "normal");
-    const warning = checkPressureDeny("compact_now", "warning");
-    expect(normal).not.toBeNull();
-    expect(warning).not.toBeNull();
-    expect(normal!.success).toBe(false);
-    expect(warning!.success).toBe(false);
-    expect(normal!.output).toContain("only available at context pressure barrier");
-  });
-
-  it("ALLOWS compact_only tools at barrier and critical", () => {
-    expect(checkPressureDeny("compact_now", "barrier")).toBeNull();
-    expect(checkPressureDeny("compact_now", "critical")).toBeNull();
+  it("compact_apply is safe_at_barrier — never pressure-denied at any band", () => {
+    // It is the pressure RELIEF; gating it on pressure would be circular, and
+    // a prepared summary is worth applying the moment it exists.
+    for (const band of ["normal", "warning", "barrier", "critical"] as const) {
+      expect(checkPressureDeny("compact_apply", band), `compact_apply @ ${band}`).toBeNull();
+    }
   });
 
   it("ALLOWS read_only tools at every band", () => {
@@ -150,7 +162,7 @@ describe("executeProtocolTool — pressure guard (protocol runtime)", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("blocked");
     expect(result.output).toContain("barrier");
-    expect(result.output).toContain("compact_now");
+    expect(result.output).not.toMatch(/compact_now/);
     // Handler must NOT have been called.
     expect(mockGetHandler).not.toHaveBeenCalled();
   });

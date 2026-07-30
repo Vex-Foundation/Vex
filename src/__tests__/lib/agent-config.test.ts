@@ -25,7 +25,7 @@ describe("agent-config field metadata", () => {
     expect(AGENT_CONTEXT_LIMIT.kind).toBe("int");
     expect(AGENT_CONTEXT_LIMIT.min).toBe(1000);
     expect(AGENT_CONTEXT_LIMIT.max).toBe(2_000_000);
-    expect(AGENT_CONTEXT_LIMIT.default).toBe(128_000);
+    expect(AGENT_CONTEXT_LIMIT.default).toBe(256_000);
   });
 
   it("AGENT_TEMPERATURE has null default (no fixed value)", () => {
@@ -38,21 +38,21 @@ describe("parseAgentEnv", () => {
   it("returns defaults when env empty", () => {
     const r = parseAgentEnv({});
     expect(r.errors).toEqual([]);
-    expect(r.value).toEqual({ contextLimit: 128_000, maxOutputTokens: 16_384, temperature: null });
+    expect(r.value).toEqual({ contextLimit: 256_000, maxOutputTokens: 16_384, temperature: null });
   });
 
   it("blank string = unset (preserves engine contract)", () => {
     const r = parseAgentEnv({ AGENT_TEMPERATURE: "", AGENT_CONTEXT_LIMIT: "" });
     expect(r.errors).toEqual([]);
     expect(r.value.temperature).toBeNull();
-    expect(r.value.contextLimit).toBe(128_000);
+    expect(r.value.contextLimit).toBe(256_000);
   });
 
   it("whitespace-only = unset", () => {
     const r = parseAgentEnv({ AGENT_TEMPERATURE: "   ", AGENT_CONTEXT_LIMIT: "  \t " });
     expect(r.errors).toEqual([]);
     expect(r.value.temperature).toBeNull();
-    expect(r.value.contextLimit).toBe(128_000);
+    expect(r.value.contextLimit).toBe(256_000);
   });
 
   it("literal 0 accepted for temperature", () => {
@@ -120,7 +120,7 @@ describe("parseAgentEnv", () => {
       AGENT_TEMPERATURE: null,
     });
     expect(r.errors).toEqual([]);
-    expect(r.value.contextLimit).toBe(128_000);
+    expect(r.value.contextLimit).toBe(256_000);
     expect(r.value.temperature).toBeNull();
   });
 });

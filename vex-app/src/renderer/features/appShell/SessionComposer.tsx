@@ -57,7 +57,7 @@
  * edit/renew) are buttons in `MissionControls.tsx`, mounted by the parent.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
@@ -66,7 +66,11 @@ import {
   useTranscriptInfinite,
 } from "../../lib/api/messages.js";
 import { cn } from "../../lib/utils.js";
-import { placeholderFor } from "./composer-helpers.js";
+import {
+  CHAT_STOPPED_NOTICE_TEXT,
+  placeholderFor,
+} from "./composer-helpers.js";
+import { PostStopRedirectHint } from "./PostStopRedirectHint.js";
 import { useComposerFieldGrow } from "./composer-field-grow.js";
 import { useComposerReasoningEffort } from "./composer-reasoning.js";
 import { useComposerSubmit } from "./composer-submit.js";
@@ -116,6 +120,7 @@ export function SessionComposer({
     notice,
     submitPending,
     stopRequested,
+    stopAvailable,
     awaitingApproval,
     onSubmit,
     onRetry,
@@ -137,6 +142,19 @@ export function SessionComposer({
   const { textareaRef, fieldSlotRef, multiline, armCaretSeed } =
     useComposerFieldGrow(draft);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Post-stop redirect hint. Keyed off the notice the stop already produces —
+  // no extra state machine, and no way for it to appear when nothing stopped.
+  // Dismissal resets on each NEW stop so a user who dismissed it once still
+  // gets the offer the next time they interrupt the agent.
+  const justStopped =
+    notice !== null
+    && notice.tone === "info"
+    && notice.text === CHAT_STOPPED_NOTICE_TEXT;
+  const [redirectHintDismissed, setRedirectHintDismissed] = useState(false);
+  useEffect(() => {
+    if (justStopped) setRedirectHintDismissed(false);
+  }, [justStopped]);
 
   // Quick-action chips are starters for an EMPTY conversation. Show them on the
   // welcome screen and in a freshly created, still-empty session; hide them
@@ -177,7 +195,7 @@ export function SessionComposer({
   const submitDisabled = draftEmpty || submitPending;
   // Stop acknowledged and the turn still in flight — the send key goes
   // inert and the chrome-row hint swaps to the STOPPING… label.
-  const stopping = submitPending && stopRequested;
+  const stopping = stopAvailable && stopRequested;
 
   // Mission-mode placeholders stay owned by `placeholderFor`; the welcome /
   // agent default is the rotating crypto-utility set (`usePlaceholderRotator`).
@@ -214,6 +232,16 @@ export function SessionComposer({
           >
             Stopping…
           </span>
+        ) : null}
+
+        {justStopped && !redirectHintDismissed ? (
+          <PostStopRedirectHint
+            onRedirect={() => {
+              setRedirectHintDismissed(true);
+              textareaRef.current?.focus();
+            }}
+            onDismiss={() => setRedirectHintDismissed(true)}
+          />
         ) : null}
 
         <form
@@ -262,7 +290,7 @@ export function SessionComposer({
             modelsResolved={modelsResolved}
             globalModelId={globalModelId}
             onReasoningPick={handleReasoningPick}
-            submitPending={submitPending}
+            stopAvailable={stopAvailable}
             stopRequested={stopRequested}
             onStop={onStop}
             submitDisabled={submitDisabled}

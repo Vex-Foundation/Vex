@@ -142,6 +142,65 @@ describe("ApprovalCard", () => {
     );
   });
 
+  // ── A7: the operator's reject reason reaches the engine ────────────────
+  //
+  // `prepareReject` always accepted a reason but nothing ever sent one, so
+  // every refusal reached the model as "No reason provided" and the agent had
+  // nothing to adapt to.
+
+  it("sends the typed reason with the reject payload", () => {
+    renderCard(
+      makeSummary({ riskLevel: "low", actionKind: "local_write" }),
+      false,
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /reason for rejecting/i }),
+      { target: { value: "Slippage too high" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+
+    expect(mockRejectMutate).toHaveBeenCalledWith(
+      { id: "appr-1", reason: "Slippage too high" },
+      expect.any(Object),
+    );
+  });
+
+  it("omits `reason` entirely when blank (strict schema + engine default)", () => {
+    renderCard(
+      makeSummary({ riskLevel: "low", actionKind: "local_write" }),
+      false,
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /reason for rejecting/i }),
+      { target: { value: "   " } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+
+    const payload = mockRejectMutate.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toEqual({ id: "appr-1" });
+    expect(payload).not.toHaveProperty("reason");
+  });
+
+  it("the reason never rides along to an APPROVE payload", () => {
+    renderCard(
+      makeSummary({ riskLevel: "low", actionKind: "local_write" }),
+      false,
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /reason for rejecting/i }),
+      { target: { value: "not this one" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
   it("high-risk approve needs TWO clicks (first arms, second fires)", () => {
     renderCard(makeSummary(), false);
     fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));

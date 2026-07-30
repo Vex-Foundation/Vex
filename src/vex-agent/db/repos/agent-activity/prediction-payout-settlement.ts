@@ -56,7 +56,8 @@ import {
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/constants.js";
 import { PREDICTION_ORDER_PROVENANCE_KEY } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-order-provenance.js";
 
-import { queryOne } from "../../client.js";
+import { queryOne, queryOneWith } from "../../client.js";
+import { withActivitySessionLock } from "./session-lock.js";
 import { jsonb } from "../../params.js";
 
 import { mapRow } from "./mappers.js";
@@ -123,7 +124,13 @@ export async function confirmJupiterPredictionPayoutSettlement(
     return { applied: false, row: current };
   }
 
-  const row = await queryOne<Record<string, unknown>>(
+  // Under the session control lock — `pending` is money state the compaction
+  // safe-moment gate reads (see `./session-lock.ts`). `current` is the pre-read
+  // this function already does, so the session key costs no extra round trip.
+  // DB-only: the keeper's settle transaction was proven before this call.
+  const row = await withActivitySessionLock(current.sessionId, (client) =>
+    queryOneWith<Record<string, unknown>>(
+    client,
     // The provenance keys are BOUND, not interpolated, so this SQL and the
     // protocol's own key constants can never drift apart.
     `UPDATE agent_activity
@@ -168,7 +175,7 @@ export async function confirmJupiterPredictionPayoutSettlement(
       LEGACY_USDC_OUT_LEG.symbol,
       LEGACY_USDC_OUT_LEG.decimals,
     ],
-  );
+  ));
   if (row) return { applied: true, row: mapRow(row) };
 
   const after = await getActivityEventById(id);

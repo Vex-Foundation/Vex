@@ -22,6 +22,17 @@ export interface TurnLoopConfig {
    */
   baseVisibility?: ToolVisibilityBase;
   /**
+   * The owner id THIS runner acquired the session lease with.
+   *
+   * Required for the compaction-apply boundary action: consuming a cutover
+   * rewrites the transcript, so only the actual lease holder may do it, and the
+   * check is an EQUALITY against the live lease — never the row's current owner
+   * adopted as our identity. Absent ⇒ the action is not registered at all and no
+   * cutover is consumed, which is the safe default for a caller that does not
+   * hold a lease.
+   */
+  runnerOwnerId?: string;
+  /**
    * Hard mission time-box as an absolute epoch (ms). When set, the turn loop
    * stops with `deadline_reached` the moment `Date.now() >= missionDeadlineMs`,
    * independent of the agent — checked first each iteration, before another

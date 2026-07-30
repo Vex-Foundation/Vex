@@ -12,6 +12,11 @@
  *   - getPendingForSession session-scoped listing
  *   - TIMESTAMPTZ Date → ISO normalisation
  *   - rowCount=0 returns null (NEVER silent success)
+ *
+ * The WRITERS are client-bound (compaction contract C7 — they must run inside
+ * the caller's session-control-locked transaction), so their SQL is asserted
+ * against a fake `PoolClient` rather than the pool helpers. The READ paths stay
+ * pool-level and keep using the mocked client module.
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
@@ -22,13 +27,8 @@ type PoolQueryOneMock = Mock<
 type PoolQueryMock = Mock<
   (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>
 >;
-type PoolExecuteMock = Mock<
-  (sql: string, params?: unknown[]) => Promise<number>
->;
-
 let mockQueryOne: PoolQueryOneMock;
 let mockQuery: PoolQueryMock;
-let mockExecute: PoolExecuteMock;
 
 function resetMocks() {
   mockQueryOne = vi
@@ -37,16 +37,19 @@ function resetMocks() {
   mockQuery = vi
     .fn<(sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>>()
     .mockResolvedValue([]);
-  mockExecute = vi
-    .fn<(sql: string, params?: unknown[]) => Promise<number>>()
-    .mockResolvedValue(1);
 }
 resetMocks();
+
+/** Stand-in for the `PoolClient` a session-control-locked transaction yields. */
+function fakeClient(rows: Record<string, unknown>[] = []) {
+  return {
+    query: vi.fn().mockResolvedValue({ rows, rowCount: rows.length }),
+  };
+}
 
 vi.mock("@vex-agent/db/client.js", () => ({
   query: (sql: string, params?: unknown[]) => mockQuery(sql, params),
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
-  execute: (sql: string, params?: unknown[]) => mockExecute(sql, params),
   queryWith: vi.fn(),
   queryOneWith: vi.fn(),
   executeWith: vi.fn(),
@@ -108,11 +111,12 @@ function buildCreateInput(overrides: Partial<repo.CreateInput> = {}): repo.Creat
 
 // ── create ──────────────────────────────────────────────────────────────
 
-describe("create", () => {
+describe("createWith", () => {
   it("INSERTs 11 columns in declared order matching migration 025", async () => {
-    await repo.create(buildCreateInput());
-    expect(mockExecute).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockExecute.mock.calls[0]!;
+    const client = fakeClient();
+    await repo.createWith(client as never, buildCreateInput());
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(sql).toContain("INSERT INTO wallet_intents");
     expect(sql).toContain(
       "intent_id, session_id, wallet_address, network, chain_alias,\n  to_address, amount, token, preview_json, expires_at, idempotency_key",
@@ -133,12 +137,13 @@ describe("create", () => {
   });
 
   it("preserves null chain_alias / token for Solana native intent", async () => {
-    await repo.create(buildCreateInput({
+    const client = fakeClient();
+    await repo.createWith(client as never, buildCreateInput({
       network: "solana",
       chainAlias: null,
       token: null,
     }));
-    const [, params] = mockExecute.mock.calls[0]!;
+    const [, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(params![3]).toBe("solana");
     expect(params![4]).toBeNull();
     expect(params![7]).toBeNull();
@@ -206,11 +211,11 @@ describe("getById", () => {
 
 // ── consumeIfPending (CAS) ──────────────────────────────────────────────
 
-describe("consumeIfPending", () => {
+describe("consumeIfPendingWith", () => {
   it("CAS UPDATE with status='pending' AND session_id AND expires_at predicates", async () => {
-    mockQueryOne.mockResolvedValueOnce(fullRow({ status: "consuming" }));
-    await repo.consumeIfPending(INTENT_ID, SESSION_ID);
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const client = fakeClient([fullRow({ status: "consuming" })]);
+    await repo.consumeIfPendingWith(client as never, INTENT_ID, SESSION_ID);
+    const [sql, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(sql).toContain("UPDATE wallet_intents");
     expect(sql).toContain("SET status = 'consuming', consumed_at = NOW()");
     expect(sql).toContain("WHERE intent_id = $1");
@@ -222,14 +227,14 @@ describe("consumeIfPending", () => {
   });
 
   it("returns null when CAS misses (rowCount=0 NEVER silent success)", async () => {
-    mockQueryOne.mockResolvedValueOnce(null);
-    const result = await repo.consumeIfPending(INTENT_ID, SESSION_ID);
+    const client = fakeClient([]);
+    const result = await repo.consumeIfPendingWith(client as never, INTENT_ID, SESSION_ID);
     expect(result).toBeNull();
   });
 
   it("returns mapped WalletIntent with status='consuming' on CAS win", async () => {
-    mockQueryOne.mockResolvedValueOnce(fullRow({ status: "consuming", consumed_at: new Date() }));
-    const intent = await repo.consumeIfPending(INTENT_ID, SESSION_ID);
+    const client = fakeClient([fullRow({ status: "consuming", consumed_at: new Date() })]);
+    const intent = await repo.consumeIfPendingWith(client as never, INTENT_ID, SESSION_ID);
     expect(intent?.status).toBe("consuming");
     expect(intent?.consumedAt).not.toBeNull();
   });
@@ -237,13 +242,11 @@ describe("consumeIfPending", () => {
 
 // ── markExecuted ────────────────────────────────────────────────────────
 
-describe("markExecuted", () => {
+describe("markExecutedWith", () => {
   it("CAS UPDATE WHERE status='consuming' AND session_id, writes tx_hash", async () => {
-    mockQueryOne.mockResolvedValueOnce(
-      fullRow({ status: "executed", tx_hash: "0xtx" }),
-    );
-    await repo.markExecuted(INTENT_ID, SESSION_ID, "0xtx");
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const client = fakeClient([fullRow({ status: "executed", tx_hash: "0xtx" })]);
+    await repo.markExecutedWith(client as never, INTENT_ID, SESSION_ID, "0xtx");
+    const [sql, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(sql).toContain("SET status = 'executed', tx_hash = $3");
     expect(sql).toContain("AND session_id = $2");
     expect(sql).toContain("AND status = 'consuming'");
@@ -251,43 +254,39 @@ describe("markExecuted", () => {
   });
 
   it("returns null when CAS misses (race lost)", async () => {
-    mockQueryOne.mockResolvedValueOnce(null);
-    const result = await repo.markExecuted(INTENT_ID, SESSION_ID, "0xtx");
+    const client = fakeClient([]);
+    const result = await repo.markExecutedWith(client as never, INTENT_ID, SESSION_ID, "0xtx");
     expect(result).toBeNull();
   });
 });
 
 // ── markFailed ──────────────────────────────────────────────────────────
 
-describe("markFailed", () => {
+describe("markFailedWith", () => {
   it("writes failure_reason + optional tx_hash + status='failed' WHERE status='consuming' AND session_id", async () => {
-    mockQueryOne.mockResolvedValueOnce(
-      fullRow({ status: "failed", failure_reason: "TypeError:abc123" }),
-    );
-    await repo.markFailed(INTENT_ID, SESSION_ID, "TypeError:abc123", "0xtx");
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const client = fakeClient([fullRow({ status: "failed", failure_reason: "TypeError:abc123" })]);
+    await repo.markFailedWith(client as never, INTENT_ID, SESSION_ID, "TypeError:abc123", "0xtx");
+    const [sql, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(sql).toContain("SET status = 'failed', failure_reason = $3, tx_hash = $4");
     expect(sql).toContain("AND status = 'consuming'");
     expect(params).toEqual([INTENT_ID, SESSION_ID, "TypeError:abc123", "0xtx"]);
   });
 
   it("accepts null tx_hash for pre-broadcast failures", async () => {
-    mockQueryOne.mockResolvedValueOnce(fullRow({ status: "failed" }));
-    await repo.markFailed(INTENT_ID, SESSION_ID, "InsufficientBalance:def456");
-    const [, params] = mockQueryOne.mock.calls[0]!;
+    const client = fakeClient([fullRow({ status: "failed" })]);
+    await repo.markFailedWith(client as never, INTENT_ID, SESSION_ID, "InsufficientBalance:def456");
+    const [, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(params![3]).toBeNull();
   });
 });
 
 // ── markAuditFailed ─────────────────────────────────────────────────────
 
-describe("markAuditFailed", () => {
+describe("markAuditFailedWith", () => {
   it("writes status='audit_failed' + tx_hash + reason WHERE status='consuming' (distinct from failed)", async () => {
-    mockQueryOne.mockResolvedValueOnce(
-      fullRow({ status: "audit_failed", tx_hash: "0xtx" }),
-    );
-    await repo.markAuditFailed(INTENT_ID, SESSION_ID, "0xtx", "DbError:xyz");
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const client = fakeClient([fullRow({ status: "audit_failed", tx_hash: "0xtx" })]);
+    await repo.markAuditFailedWith(client as never, INTENT_ID, SESSION_ID, "0xtx", "DbError:xyz");
+    const [sql, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(sql).toContain("SET status = 'audit_failed', tx_hash = $3, failure_reason = $4");
     expect(sql).toContain("AND session_id = $2");
     expect(sql).toContain("AND status = 'consuming'");
@@ -297,11 +296,11 @@ describe("markAuditFailed", () => {
 
 // ── cancelIfPending (CAS) ───────────────────────────────────────────────
 
-describe("cancelIfPending", () => {
+describe("cancelIfPendingWith", () => {
   it("CAS UPDATE WHERE status='pending' AND session_id, sets status='cancelled' + cancelled_at", async () => {
-    mockQueryOne.mockResolvedValueOnce(fullRow({ status: "cancelled" }));
-    await repo.cancelIfPending(INTENT_ID, SESSION_ID);
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const client = fakeClient([fullRow({ status: "cancelled" })]);
+    await repo.cancelIfPendingWith(client as never, INTENT_ID, SESSION_ID);
+    const [sql, params] = client.query.mock.calls[0]! as [string, unknown[]];
     expect(sql).toContain("SET status = 'cancelled', cancelled_at = NOW()");
     expect(sql).toContain("AND session_id = $2");
     expect(sql).toContain("AND status = 'pending'");
@@ -309,8 +308,8 @@ describe("cancelIfPending", () => {
   });
 
   it("returns null when CAS misses (already terminal OR cross-session)", async () => {
-    mockQueryOne.mockResolvedValueOnce(null);
-    const result = await repo.cancelIfPending(INTENT_ID, SESSION_ID);
+    const client = fakeClient([]);
+    const result = await repo.cancelIfPendingWith(client as never, INTENT_ID, SESSION_ID);
     expect(result).toBeNull();
   });
 });

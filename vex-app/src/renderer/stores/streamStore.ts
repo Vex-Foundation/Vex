@@ -56,6 +56,14 @@ export interface StreamPreview {
   readonly startedAtMs: number;
   /** Derived working status — see `StreamWorkingStatus` for the rule. */
   readonly status: StreamWorkingStatus;
+  /**
+   * OpenRouter's canonical `ApiErrorType` from the error delta that ended this
+   * stream, or `null`. An OPEN enum carried verbatim — the bubble maps it
+   * through `classifyEngineFailure` (total default) and never switches on it.
+   * Kept so an errored preview can say WHY instead of only "Stream error";
+   * the delta's `message` is a safe generic by design and says nothing.
+   */
+  readonly errorType: string | null;
 }
 
 interface StreamStoreState {
@@ -75,6 +83,7 @@ function startPreview(streamId: string): StreamPreview {
     reasoningTokens: null,
     startedAtMs: Date.now(),
     status: "working",
+    errorType: null,
   };
 }
 
@@ -157,7 +166,13 @@ export function reducePreview(
     case "done":
       return { ...base, phase: "done" };
     case "error":
-      return { ...base, phase: "error" };
+      return { ...base, phase: "error", errorType: event.delta.errorType ?? null };
+    case "aborted":
+      // The preview is retired by the live-sync hook, which owns the clear and
+      // the streamId correlation. The reducer only records that the stream is
+      // no longer running, so nothing renders as still-streaming in the window
+      // between the abort and the clear.
+      return { ...base, phase: "done" };
   }
 }
 
@@ -199,6 +214,23 @@ function flushPendingReasoning(sessionId: string): void {
       ),
     },
   }));
+}
+
+/**
+ * The streamId currently OWNING this session's preview, materialized or not.
+ *
+ * A reasoning-only stream lives purely in the batching buffer for its first
+ * `REASONING_FLUSH_MS`, with no `bySessionId` entry yet. A consumer that
+ * correlates on the materialized entry alone would read "no live stream" and
+ * mistake that stream's own abort for a stale one — then the buffer would
+ * flush a moment later and the orphaned preview would survive to the idle
+ * timer. Reading the buffer here is what makes the correlation total.
+ */
+export function getLiveStreamId(sessionId: string): string | undefined {
+  return (
+    useStreamStore.getState().bySessionId[sessionId]?.streamId
+    ?? pendingReasoningBySession.get(sessionId)?.streamId
+  );
 }
 
 /** Test-only: drop every pending reasoning buffer + timer (isolation between tests). */

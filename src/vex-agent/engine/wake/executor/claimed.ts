@@ -1,15 +1,24 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import { AUTO_RETRY_WAKE_TRIGGER } from "../../core/runner/mission-auto-retry-policy.js";
 import logger from "@utils/logger.js";
+import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 
 import type { WakeDeps } from "./deps.js";
 import type { ClaimedWakeOutcome } from "./tick.js";
 import { handleAutoRetryClaimed } from "./auto-retry.js";
+import { handleAgentSessionClaimed } from "./agent-session.js";
 
 export async function handleClaimed(
   wake: LoopWakeRequest,
   deps: WakeDeps,
 ): Promise<ClaimedWakeOutcome> {
+  // Session-scoped continuation of a Full-Autonomous agent session. Routed on
+  // the row's own shape, before anything reads a run: there is no run row to
+  // read, and the claim is the session lease rather than a run-status CAS.
+  if (wake.missionRunId === null) {
+    return handleAgentSessionClaimed(wake, deps);
+  }
+
   const run = await deps.getMissionRun(wake.missionRunId);
   if (!run) {
     return { kind: "skipped_mission_run_missing" };
@@ -75,12 +84,9 @@ export async function handleClaimed(
   });
   try {
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-    await deps.resumeMissionRun(run.id);
+    await deps.resumeMissionRun(run.id, ownerId);
     return { kind: "resumed", runId: run.id };
   } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "../../runtime/release-and-emit.js"
-    );
     await releaseLeaseAndEmitControlState(handle, wake.sessionId, {
       missionRunId: run.id,
     });

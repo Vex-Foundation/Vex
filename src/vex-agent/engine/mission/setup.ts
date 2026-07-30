@@ -16,6 +16,7 @@ import { validateDraft } from "./validator.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 import { withTransaction } from "@vex-agent/db/client.js";
+import { emitMissionUpdate } from "../runtime/mission-bus.js";
 
 export interface SetupResult {
   missionId: string;
@@ -88,10 +89,12 @@ export async function applyMissionPatch(
   // Puzzle 04: model can no longer set `stopConditionsAccepted` — patch
   // parser drops it. Acceptance is host-only via `mission.acceptContract`
   // and lives on `missions.accepted_contract_hash` (mig 023).
+  let draftWasWritten = false;
   const extracted = extractMissionPatch(rawModelOutput);
   if (extracted) {
     const sanitized = sanitizePatch(extracted);
     if (Object.keys(sanitized).length > 0) {
+      draftWasWritten = true;
       const rowPatch = domainToRow(sanitized);
 
       // Phase 4d-5: read-merge-write the JSONB partial-update fields under a
@@ -140,12 +143,28 @@ export async function applyMissionPatch(
   // Keep status aligned with validation. Edits can clear a previously-ready
   // field, so a ready draft must fall back to draft until complete again.
   let status = updated.status;
+  let readinessChanged = false;
   if (validation.valid && updated.status === "draft") {
     await missionsRepo.setStatus(missionId, "ready");
     status = "ready";
+    readinessChanged = true;
   } else if (!validation.valid && updated.status === "ready") {
     await missionsRepo.setStatus(missionId, "draft");
     status = "draft";
+    readinessChanged = true;
+  }
+
+  // Emit-after-commit: every write above has resolved, so a subscriber that
+  // refetches on this signal is guaranteed to see the row we just wrote. A
+  // no-op patch (model sent nothing applicable, readiness unchanged) emits
+  // nothing — an event that implies a change nobody made is noise the
+  // renderer would pay a refetch for.
+  if (readinessChanged || draftWasWritten) {
+    emitMissionUpdate({
+      sessionId: updated.rootSessionId,
+      missionId,
+      kind: readinessChanged ? "readiness_changed" : "draft_updated",
+    });
   }
 
   const currentDraft = missionToDraft(updated);

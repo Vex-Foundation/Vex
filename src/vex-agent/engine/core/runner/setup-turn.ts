@@ -29,7 +29,9 @@ import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendEngineMessage, appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
-import { toToolDefinitions, DEFAULT_LOOP_CONFIG, ITERATION_LIMIT_REPLY } from "./shared.js";
+import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
+import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply } from "./shared.js";
+import { isContinuableRuntimeStop } from "./runtime-continuation.js";
 
 export async function processMissionSetupTurn(
   sessionId: string,
@@ -124,6 +126,13 @@ export async function processMissionSetupTurn(
     ...baseVisibility,
     contextUsageBand: computeBand(hydrated.tokenCount, config.contextLimit),
     hasSessionMemory: false,
+    // Compaction axes are FALSE here by design: this is the runner's
+    // pre-loop bootstrap tools array, built before any per-turn preparation
+    // read exists. The loop rebuilds the surface every iteration from the
+    // real state (`buildTurnPromptStack`), so the conservative answer costs
+    // at most one turn without the bypass, while guessing could open it.
+    preparationBypassesBarrier: false,
+    hasCompactionSummaryReady: false,
   }));
 
   const loopConfig: TurnLoopConfig = {
@@ -134,6 +143,10 @@ export async function processMissionSetupTurn(
     maxIterations: 25,
     contextLimit: config.contextLimit,
     baseVisibility,
+    // The lease this runner actually holds. Threaded so the compaction-apply
+    // boundary action can PROVE ownership (equality against the live lease)
+    // rather than adopting whatever owner the row currently names.
+    runnerOwnerId: ownerId,
   };
 
   const promptOptions: PromptStackOptions = {
@@ -163,13 +176,21 @@ export async function processMissionSetupTurn(
     signal, // inferenceAbortSignal
   );
 
-  // Graceful cap-hit reply (setup): when the loop exhausted maxIterations
-  // WITHOUT the model emitting text, synthesise a deterministic assistant
-  // message so the turn is never silent. The synthesised text is NOT model
-  // output, so it must NOT be parsed as a mission patch nor trigger the
-  // not-ready notice below. The turn-loop persists real model text itself;
-  // nothing was saved on this path, so we persist the synthesised reply here.
-  const capHit = result.stopReason === "iteration_limit" && !result.text;
+  // Graceful runtime-bound reply (setup): when the loop exhausted EITHER
+  // runtime bound WITHOUT the model emitting text, synthesise a deterministic
+  // assistant message so the turn is never silent. `timeout` used to fall
+  // through this check and hand the operator an empty turn mid-draft — the
+  // same hole `agent.ts` had. Setup is never continued: mission setup is a
+  // conversation with the operator, not autonomous work.
+  //
+  // The synthesised text is NOT model output, so it must NOT be parsed as a
+  // mission patch nor trigger the not-ready notice below. The turn-loop
+  // persists real model text itself; nothing was saved on this path, so we
+  // persist the synthesised reply here.
+  const capHit = isContinuableRuntimeStop(result.stopReason) && !result.text;
+  const capHitReply = isContinuableRuntimeStop(result.stopReason)
+    ? runtimeBoundExhaustedReply(result.stopReason)
+    : null;
   logger.info("engine.mission.setup_turn.timing", {
     sessionId,
     elapsedMs: Date.now() - startedAt,
@@ -177,10 +198,10 @@ export async function processMissionSetupTurn(
     stopReason: result.stopReason,
     capHit,
   });
-  if (capHit) {
+  if (capHit && capHitReply !== null) {
     await appendMessage(
       sessionId,
-      { role: "assistant", content: ITERATION_LIMIT_REPLY, timestamp: new Date().toISOString() },
+      { role: "assistant", content: capHitReply, timestamp: new Date().toISOString() },
       { source: "assistant", messageType: "mission_setup", visibility: "user" },
     );
   }
@@ -200,7 +221,7 @@ export async function processMissionSetupTurn(
   // mission can start unless the structured draft update made it ready.
   const latestSetupState = await getMissionSetupState(missionId);
   const missionStatus = (latestSetupState?.status ?? "draft") as MissionStatus;
-  let text = capHit ? ITERATION_LIMIT_REPLY : result.text;
+  let text = capHit ? capHitReply : result.text;
   if (
     !capHit
     && result.stopReason !== "user_stopped"
@@ -235,9 +256,6 @@ export async function processMissionSetupTurn(
       missionStatus,
     };
   } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "../../runtime/release-and-emit.js"
-    );
     await releaseLeaseAndEmitControlState(sessionLease, sessionId);
   }
 }

@@ -202,6 +202,80 @@ describe("approvals schemas", () => {
       }).success,
     ).toBe(false);
   });
+
+  // ── Reject reason: the untrusted-input gate ───────────────────────────
+  //
+  // This schema runs at BOTH boundaries (preload `invokeWithSchema` and the
+  // main-side envelope parse), so it is where an over-long or malformed reason
+  // is stopped before it can become model-visible transcript text.
+
+  it("accepts an optional reject reason and trims it", () => {
+    const parsed = approvalActionInputSchema.safeParse({
+      id: "approval-1",
+      reason: "  Slippage too high  ",
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.reason).toBe("Slippage too high");
+  });
+
+  it("rejects a reason over the 500-char bound", () => {
+    expect(
+      approvalActionInputSchema.safeParse({
+        id: "approval-1",
+        reason: "x".repeat(501),
+      }).success,
+    ).toBe(false);
+    expect(
+      approvalActionInputSchema.safeParse({
+        id: "approval-1",
+        reason: "x".repeat(500),
+      }).success,
+    ).toBe(true);
+  });
+
+  it("still rejects unknown keys (strict) — reason did not open the object", () => {
+    expect(
+      approvalActionInputSchema.safeParse({
+        id: "approval-1",
+        reason: "ok",
+        smuggled: "payload",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("`indeterminate` execution status parses (migration 056 widened the CHECK)", () => {
+    // If this enum lagged the DB, an approval whose dispatch outcome could not
+    // be proven would fail the strict DTO parse and vanish from the renderer
+    // instead of being shown as unknown.
+    expect(
+      approvalActionResultSchema.safeParse({
+        id: "approval-4",
+        status: "approved",
+        resolvedAt: ISO,
+        runtimeOutcome: "stopped",
+        executionStatus: "indeterminate",
+        missionRunId: null,
+        cached: true,
+        message: "Outcome unknown",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("`deferred_busy` runtime outcome parses", () => {
+    expect(
+      approvalActionResultSchema.safeParse({
+        id: "approval-5",
+        status: "approved",
+        resolvedAt: ISO,
+        runtimeOutcome: "deferred_busy",
+        executionStatus: "not_started",
+        missionRunId: null,
+        cached: false,
+        message: "Queued",
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe("approvalPendingGlobalDtoSchema (app-wide inbox)", () => {

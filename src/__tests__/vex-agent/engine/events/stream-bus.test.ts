@@ -156,11 +156,24 @@ describe("toStreamDeltaEvent", () => {
         errorMessage: "rate limited",
         errorCode: 429,
       }).delta,
-    ).toEqual({ kind: "error", message: "rate limited", code: 429 });
+    ).toEqual({
+      kind: "error",
+      message: "rate limited",
+      code: 429,
+      // The provider reported no `metadata.errorType` on this chunk. `null`,
+      // not absent: the field exists on every error delta so consumers never
+      // have to distinguish "no type" from "field not plumbed".
+      errorType: null,
+    });
   });
 
   it("falls back to safe defaults for an error chunk missing fields", () => {
     const event = toStreamDeltaEvent(SESSION, "s", 0, { type: "error" } as StreamChunk);
-    expect(event.delta).toEqual({ kind: "error", message: "stream error", code: null });
+    expect(event.delta).toEqual({
+      kind: "error",
+      message: "stream error",
+      code: null,
+      errorType: null,
+    });
   });
 });

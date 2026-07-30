@@ -30,12 +30,12 @@ vi.mock("../../../../../vex-agent/tools/internal/wallet/resolve.js", () => ({
 }));
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
-  create: vi.fn(),
+  createWith: vi.fn(),
   getById: vi.fn(),
-  consumeIfPending: vi.fn(),
-  markExecuted: vi.fn(),
-  markFailed: vi.fn(),
-  markAuditFailed: vi.fn(),
+  consumeIfPendingWith: vi.fn(),
+  markExecutedWith: vi.fn(),
+  markFailedWith: vi.fn(),
+  markAuditFailedWith: vi.fn(),
 }));
 
 vi.mock("@utils/logger.js", () => ({

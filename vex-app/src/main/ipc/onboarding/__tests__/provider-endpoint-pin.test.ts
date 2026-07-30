@@ -170,8 +170,16 @@ describe("providerListEndpoints handler", () => {
           pricingOutputPerMillion: 15,
           pricingCacheReadPerMillion: 0.3,
           pricingCacheWritePerMillion: 3.75,
+          pricingReasoningPerMillion: null,
+          uptimeLast5mPercent: 99.5,
+          uptimeLast30mPercent: 99.6,
+          uptimeLast1dPercent: 99.7,
+          statusCode: 0,
+          isDeranked: false,
+          availabilityScore: 99.56,
         },
       ],
+      suggestedEndpointTag: "anthropic",
     });
     const result = await list({ modelId: "anthropic/claude-sonnet-4.5" });
     expect(result.ok).toBe(true);

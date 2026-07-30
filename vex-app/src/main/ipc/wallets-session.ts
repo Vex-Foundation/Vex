@@ -229,12 +229,17 @@ function registerCancelPreparedIntentHandler(): () => void {
       if (!dbUrlOutcome.ok) return dbUrlOutcome;
 
       try {
-        const { cancelIfPending } = await import(
+        const { cancelIfPendingWith } = await import(
           "@vex-agent/db/repos/wallet-intents.js"
         );
-        const cancelled = await cancelIfPending(
-          input.intentId,
-          input.sessionId,
+        const { withSessionControlLock } = await import(
+          "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js"
+        );
+        // Cancellation moves the intent OUT of the compaction gate's live set,
+        // so it participates in the same session control lock as every other
+        // money-state writer. DB-only and short: nothing external runs inside.
+        const cancelled = await withSessionControlLock(input.sessionId, (client) =>
+          cancelIfPendingWith(client, input.intentId, input.sessionId),
         );
         if (cancelled !== null) {
           log.info(

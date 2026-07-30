@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
 import {
   act,
   fireEvent,
@@ -62,7 +63,9 @@ function setVex(): void {
         renew: renewMock,
       },
       chat: { submit: chatSubmitMock },
-      engine: { onTranscriptAppend: onTranscriptAppendMock },
+      engine: makeEngineBridgeStub({
+        onTranscriptAppend: onTranscriptAppendMock,
+      }),
     },
   });
 }

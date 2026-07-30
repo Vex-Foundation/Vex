@@ -54,10 +54,24 @@ export interface InternalToolContext {
   sessionKind: SessionKind;
   /**
    * Context-usage band at dispatch time — derived from the previous prompt's
-   * token count. Used by band-scoped handlers (`compact_now` at barrier+)
-   * for defense-in-depth against calls outside their intended band.
+   * token count. Used by band-scoped handlers for defense-in-depth against
+   * calls outside their intended band.
    */
   contextUsageBand: "normal" | "warning" | "barrier" | "critical";
+  /**
+   * True iff a live compaction preparation suppresses the `barrier` mutating
+   * block for this turn (contract C8). ABSENT ⇒ FALSE ⇒ today's barrier — the
+   * fail-closed default that every context builder except the live tool-batch
+   * path deliberately relies on.
+   *
+   * Producers that intentionally leave it unset, so a future reader knows the
+   * omission is a decision and not an oversight: `run-tool.ts`,
+   * `approval-runtime/post-tx/dispatch-approved/resumed-tool-context.ts`,
+   * `approval-intent-preview.ts`, `runner/setup-turn.ts`, `runner/agent.ts`,
+   * `runner/mission-run.ts`. None of them is the turn's live batch, so none of
+   * them has a per-turn preparation read to derive it from.
+   */
+  preparationBypassesBarrier?: boolean;
   /**
    * Origin of the call. Used for knowledge provenance (knowledge_entries.source_surface).
    * - undefined / "vex_agent": Vex Agent (mission loop, chat, scripts) — default

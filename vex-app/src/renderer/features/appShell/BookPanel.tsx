@@ -42,6 +42,7 @@ import {
   PanelRightOpenIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/utils.js";
+import { useSession } from "../../lib/api/sessions.js";
 import { SessionRuntimeBar } from "./SessionRuntimeBar.js";
 import { BookBlock } from "./book/BookBlock.js";
 import { MovesBlock } from "./book/MovesBlock.js";
@@ -59,6 +60,15 @@ export function BookPanel({
   readonly bookOpen: boolean;
   readonly onToggle: () => void;
 }): JSX.Element {
+  // The rail owns the session read that the RUNTIME & COST block's apply
+  // control needs: permission is a session-STATIC axis, so a prop cannot go
+  // stale, and the query is already cached by the mission rail under the same
+  // key. Called before the welcome-stage early return so hook order is stable.
+  const sessionQuery = useSession(activeSessionId);
+  const permission = sessionQuery.data?.ok
+    ? (sessionQuery.data.data?.permission ?? null)
+    : null;
+
   // WELCOME stage: the floating Portfolio tab replaces the rail entirely
   // (it is an absolute overlay, so the welcome canvas keeps its full width).
   if (activeSessionId === null) {
@@ -119,7 +129,11 @@ export function BookPanel({
           <PositionBlock activeSessionId={activeSessionId} hero />
           <MovesBlock sessionId={activeSessionId} />
           <BookBlock title="Runtime & Cost">
-            <SessionRuntimeBar sessionId={activeSessionId} layout="stack" />
+            <SessionRuntimeBar
+              sessionId={activeSessionId}
+              layout="stack"
+              permission={permission}
+            />
           </BookBlock>
           <SessionBlock sessionId={activeSessionId} />
         </div>

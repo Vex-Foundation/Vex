@@ -9,7 +9,7 @@
  * the ordering and the single-transaction invariant stay bit-for-bit.
  */
 
-import type { EngineContext } from "../../types.js";
+import type { EngineContext, MissionRunStatus } from "../../types.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
@@ -18,6 +18,12 @@ import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
 import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { withTransaction } from "@vex-agent/db/client.js";
+import {
+  acquireSessionControlLock,
+  gateOnOperatorStopWithClient,
+} from "@vex-agent/engine/runtime/lease-and-status.js";
+import { emitMissionUpdate } from "@vex-agent/engine/runtime/mission-bus.js";
+import logger from "@utils/logger.js";
 import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
 import {
   buildIntentPreview,
@@ -60,10 +66,29 @@ export function assertApprovalActionKind(
 }
 
 /**
+ * Outcome of the enqueue transaction.
+ *
+ * `auto_rejected` closes the restricted-mode stop race: a tool can still be
+ * in flight when the operator stops the run, so by the time it comes back
+ * asking for approval the run may be terminal — or a `stop_terminal` request
+ * may be queued and not yet applied. Enqueueing in either case would park a
+ * live, approvable action on a run nobody will ever resume. The row is still
+ * written (audit trail) but immediately rejected in the SAME transaction, and
+ * the run status is NOT flipped to `paused_approval`.
+ */
+export type ApprovalEnqueueOutcome =
+  | { readonly kind: "enqueued"; readonly approvalId: string }
+  | {
+    readonly kind: "auto_rejected";
+    readonly approvalId: string;
+    readonly runStatus: MissionRunStatus | null;
+  };
+
+/**
  * Build the approval id/preview/policy/expiry and run the SINGLE enqueue
  * transaction (queue + intent + mission-status flip). A partial state (queue
  * without intent, or queue+intent without `paused_approval`) is
- * unrepresentable. Returns the generated approval id.
+ * unrepresentable.
  */
 export async function enqueueApprovalIntent(args: {
   readonly context: EngineContext;
@@ -80,7 +105,7 @@ export async function enqueueApprovalIntent(args: {
   readonly trustedPreview?: IntentPreview;
   /** Optional prepared-action expiry; approval must not outlive it. */
   readonly trustedExpiresAt?: string;
-}): Promise<string> {
+}): Promise<ApprovalEnqueueOutcome> {
   const {
     context,
     toolCall,
@@ -143,7 +168,23 @@ export async function enqueueApprovalIntent(args: {
   // the existing pattern of "queue insert, then updateStatus outside
   // tx" could leave a pending approval without the run actually
   // paused if the status update fails.
-  await withTransaction(async (client) => {
+  const outcome = await withTransaction(async (client): Promise<ApprovalEnqueueOutcome> => {
+    // Restricted-mode stop race: the operator can stop the run WHILE this tool
+    // is in flight. A row-lock re-check alone is not enough — it proves the run
+    // was not terminal, not that the operator had not pressed Stop, and a
+    // `stop_terminal` request that has not been INSERTED yet cannot be locked.
+    // The session control lock is that boundary; the gate then applies a queued
+    // stop through the one shared stop body so we never enqueue an approvable
+    // action onto a run the user has already given up on.
+    await acquireSessionControlLock(client, context.sessionId);
+    const stopGate = await gateOnOperatorStopWithClient(client, {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+    });
+    const runIsDead = stopGate.kind === "stopped";
+    const deadRunStatus: MissionRunStatus | null =
+      stopGate.kind === "stopped" ? stopGate.runStatus : null;
+
     await approvalsRepo.enqueueWith(
       client,
       approvalId,
@@ -164,6 +205,21 @@ export async function enqueueApprovalIntent(args: {
       policyJson: intentPolicy,
       expiresAt: intentExpiresAt,
     });
+
+    if (runIsDead) {
+      // Auto-reject in the SAME transaction and leave the terminal run alone.
+      // The row exists for audit but can never be approved.
+      await approvalsRepo.rejectWith(client, approvalId);
+      logger.warn("engine.approval.auto_rejected_terminal_run", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId,
+        approvalId,
+        runStatus: deadRunStatus,
+        actionKind: intentActionKind,
+      });
+      return { kind: "auto_rejected", approvalId, runStatus: deadRunStatus };
+    }
+
     if (context.missionRunId) {
       await missionRunsRepo.updateStatus(
         context.missionRunId,
@@ -173,7 +229,20 @@ export async function enqueueApprovalIntent(args: {
         client,
       );
     }
+    return { kind: "enqueued", approvalId };
   });
 
-  return approvalId;
+  // Emit-after-commit: the queue row, the intent row and the
+  // `paused_approval` flip are all durable here, so a subscriber that
+  // refetches `listPending` on this signal always finds the card. The
+  // auto-rejected arm emits nothing — that approval can never be decided,
+  // so there is no card to show.
+  if (outcome.kind === "enqueued") {
+    emitMissionUpdate({
+      sessionId: context.sessionId,
+      missionId: context.missionId,
+      kind: "approval_enqueued",
+    });
+  }
+  return outcome;
 }

@@ -30,7 +30,7 @@ export function buildToolModelPrompt(): string {
 
 Two ways to call tools:
 
-1. **Direct internal tools** — called by name. Listed in the Tool Map provided in the turn state with their category. Examples: \`wallet_balances\`, \`session_memory_search\`, \`compact_now\`. Used for agent-level operations and curated read-only shortcuts.
+1. **Direct internal tools** — called by name. Listed in the Tool Map provided in the turn state with their category. Examples: \`wallet_balances\`, \`session_memory_search\`, \`compact_apply\`. Used for agent-level operations and curated read-only shortcuts.
 
 2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.execute\`. The full multi-chain protocol surface lives here.
 

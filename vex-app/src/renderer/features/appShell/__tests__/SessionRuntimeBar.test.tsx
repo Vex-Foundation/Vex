@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
 import { render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
@@ -53,10 +54,9 @@ function setVex(stub: VexStub): void {
         getStatus:
           stub.getCompactionStatus ?? vi.fn().mockResolvedValue(ok(null)),
       },
-      engine: {
-        // useCompactionLiveSync subscribes here; noop unsubscribe.
-        onTranscriptAppend: () => () => {},
-      },
+      // useCompactionLiveSync subscribes here; the shared stub supplies the
+      // full bridge surface with no-op unsubscribes.
+      engine: makeEngineBridgeStub(),
     },
   });
 }

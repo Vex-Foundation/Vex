@@ -16,7 +16,7 @@ import { getVisibleToolDefs, type ToolVisibilityContext } from "./visibility.js"
  * map's ORDER carries model-priority intent (e.g. protocol discovery /
  * execution first because everything mutating routes through them; reads
  * before writes within each substrate; runtime safety nets like
- * `compact_now` next to the substrate they protect). Do NOT alphabetize
+ * `compact_apply` next to the substrate they protect). Do NOT alphabetize
  * within categories — the declaration order is the LLM-facing order.
  */
 export interface ToolMapCategory {
@@ -71,7 +71,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     label: "Long-term memory — suggest a durable cross-session lesson (staged, not written)",
     toolNames: ["long_memory_suggest"],
   },
-  { label: "Context compaction — pressure only", toolNames: ["compact_now"] },
+  { label: "Context compaction — applies the prepared summary", toolNames: ["compact_apply"] },
   { label: "Wallet transfers", toolNames: ["wallet_send_prepare", "wallet_send_confirm"] },
   { label: "Mission setup draft", toolNames: ["mission_draft_update"] },
   { label: "Mission run stop", toolNames: ["mission_stop"] },

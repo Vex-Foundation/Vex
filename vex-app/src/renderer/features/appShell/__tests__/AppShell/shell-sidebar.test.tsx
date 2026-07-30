@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
 import type {
   ChatSubmitInput,
@@ -305,16 +306,11 @@ beforeEach(() => {
       messages: {
         list: messagesListMock,
       },
-      // Agent integration puzzle 2/09 + F5: SessionPanel mounts
-      // `useTranscriptLiveSync` + `useStreamPreviewSync` +
-      // `useControlStateLiveSync`, which subscribe to the engine bridge. Stubs
-      // return a no-op unsubscribe so tests that exercise the panel don't crash
-      // on missing bridge surface.
-      engine: {
-        onTranscriptAppend: () => () => {},
-        onStreamDelta: () => () => {},
-        onControlState: () => () => {},
-      },
+      // Agent integration puzzle 2/09 + F5: SessionPanel mounts the engine
+      // live-sync hooks, which subscribe to the engine bridge. The shared stub
+      // supplies the FULL bridge surface, so adding a subscriber does not
+      // break every AppShell test at once.
+      engine: makeEngineBridgeStub(),
       // T1: the sidebar mounts VexTokenCardCompact → useVexMarket reads
       // getVexSnapshot + subscribes onVexUpdate. Stubs keep the widget in its
       // loading state without a live market feed.

@@ -155,6 +155,14 @@ export const CH = {
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
     setAutoRetry: "vex:mission:setAutoRetry",
+    /**
+     * Post-stop affordance: hand a stopped mission a new operator instruction
+     * and restart it, instead of forcing the user to build a new mission from
+     * scratch. Registered here in the same pass as the engine error/mission
+     * event channels so the shared contract layer is touched once; the main
+     * handler is wired separately.
+     */
+    restartWithInstruction: "vex:mission:restartWithInstruction",
   },
 
   // Approvals — queue browsing + decisions. Pending/get/history are
@@ -213,10 +221,18 @@ export const CH = {
   // `listHistory` = the session's compaction-generation timeline for the
   // memory panel (both app-scoped; null for missing/foreign sessions).
   // `retry` re-enqueues a permanently-failed generation for another attempt.
+  //
+  // `getPreparation` / `requestApply` (compaction v2) belong to the SECOND
+  // compaction track — the `compaction_preparations` FSM behind the apply
+  // button. `getPreparation` is a bounded progress projection (no corpus, no
+  // summary, no error prose); `requestApply` performs exactly ONE compare-and-
+  // swap `summary_ready → apply_requested` and never a cutover.
   compaction: {
     getStatus: "vex:compaction:getStatus",
     listHistory: "vex:compaction:listHistory",
     retry: "vex:compaction:retry",
+    getPreparation: "vex:compaction:getPreparation",
+    requestApply: "vex:compaction:requestApply",
   },
 
   // Long-term memory — read-only list of the GLOBAL long-term memory store
@@ -367,14 +383,33 @@ export const EV = {
    *    turn as an EPHEMERAL, sanitized preview (token text, tool-call
    *    status WITHOUT raw args, usage, done, error). The renderer replaces
    *    it with the persisted message DTO on `transcriptAppend`.
+   *  - `error` fires when a turn, mission, wake, compact job or approval
+   *    resume FAILS. Before it, background failures died in a log and a
+   *    provider 429 reached the user as "Unable to process the message".
+   *    Payload is BOUNDED CODES ONLY — category, error type/class, status,
+   *    retry hint. Never provider prose: `errorMessage` / `stop_summary`
+   *    stay server-side, the same doctrine that keeps
+   *    `memory_jobs.last_error` out of every DTO.
+   *  - `missionUpdate` fires after a committed change to the mission
+   *    surface (draft patch, readiness flip, contract acceptance, approval
+   *    enqueue) so those surfaces stop discovering state by polling.
+   *  - `compactionPreparation` (compaction v2) fires after a COMMITTED
+   *    `compaction_preparations` transition. Payload is METADATA ONLY —
+   *    session id, the closed status enum, a `summaryReady` boolean and a
+   *    correlation id. The frozen corpus and the model-authored summary the
+   *    row carries never cross; the renderer re-reads
+   *    `compaction.getPreparation` on the signal.
    *
-   * DB remains source of truth for all three — events are refresh/preview
+   * DB remains source of truth for all six — events are refresh/preview
    * signals, never canonical state.
    */
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
     controlState: "vex:event:engine:controlState",
     streamDelta: "vex:event:engine:streamDelta",
+    error: "vex:event:engine:error",
+    missionUpdate: "vex:event:engine:missionUpdate",
+    compactionPreparation: "vex:event:engine:compactionPreparation",
   },
 } as const;
 

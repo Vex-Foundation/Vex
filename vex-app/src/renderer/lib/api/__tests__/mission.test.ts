@@ -17,6 +17,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
+import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -60,15 +62,7 @@ const mockMissionBridge = {
   setAutoRetry: vi.fn(),
 };
 
-type TranscriptListener = (event: {
-  type: string;
-  sessionId: string;
-  messageId: number;
-  role: string;
-  createdAt: string;
-  messageType: string | null;
-  correlationId: string | null;
-}) => void;
+type TranscriptListener = (event: TranscriptAppendEvent) => void;
 
 let lastSubscribedListener: TranscriptListener | null = null;
 const unsubscribeMock = vi.fn();
@@ -85,7 +79,9 @@ beforeEach(() => {
     writable: true,
     value: {
       mission: mockMissionBridge,
-      engine: { onTranscriptAppend: onTranscriptAppendMock },
+      engine: makeEngineBridgeStub({
+        onTranscriptAppend: onTranscriptAppendMock,
+      }),
     },
   });
 });
@@ -94,7 +90,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, "vex");
 });
 
-function sampleTranscriptEvent(sessionId: string) {
+function sampleTranscriptEvent(sessionId: string): TranscriptAppendEvent {
   return {
     type: "engine.transcript.append",
     sessionId,

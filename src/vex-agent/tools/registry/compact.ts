@@ -1,67 +1,51 @@
 /**
- * Compact tools — PR2 cutover.
+ * Compact tools — the agent's surface onto compaction v2.
  *
- * `compact_now` is the agent-driven entry point for compaction. Hidden when
- * pressure band is below `barrier` (>= 88% of context limit) via
- * `pressureSafety: "compact_only"` + `visibility.band: "barrier"`.
+ * `compact_apply` REPLACED `compact_now`. The difference is not cosmetic and
+ * the shape of the tool follows from it:
  *
- * Dispatcher hard-deny gives the strict semantics: at barrier/critical the
- * tool dispatches; below it the dispatcher returns an error. The visibility
- * band gate is the soft layer that keeps the LLM's catalog clean.
+ * `compact_now` asked the agent to WRITE the summary, mid-turn, as tool
+ * arguments — so it needed 4000 characters of instruction, it burned a turn,
+ * and its output quality depended on the agent's attention at exactly the
+ * moment its context was fullest. Under v2 the runtime forks a background
+ * summarization branch at the WARNING band, long before pressure bites. By the
+ * time the agent sees this tool, the summary already exists and has been
+ * validated. There is nothing left to write, so the tool takes NO arguments:
+ * it only says "apply the prepared compaction now".
+ *
+ * VISIBILITY — the axis is readiness, NOT the pressure band. Preparation
+ * finishes whenever branch A finishes, which is routinely still in the warning
+ * band. A `band: "barrier"` gate would hide a ready, useful, zero-risk action
+ * for the whole stretch where taking it is cheapest. So the gate is
+ * `requiresSummaryReady`, and `pressureSafety: "safe_at_barrier"` keeps it
+ * visible through barrier and critical, where the mutating surface is stripped.
+ *
+ * The tool NEVER performs the cutover. It queues a request that the runner
+ * consumes at its next iteration boundary — the only place holding the lease,
+ * the lock order and the money gate together. See `apply/request-apply.ts`.
  */
 
 import type { ToolDef } from "../types.js";
 
 export const COMPACT_TOOLS: readonly ToolDef[] = [
   {
-    name: "compact_now",
+    name: "compact_apply",
     kind: "internal",
     mutating: false,
-    pressureSafety: "compact_only",
+    pressureSafety: "safe_at_barrier",
     actionKind: "local_write",
-    visibility: { band: "barrier" },
+    visibility: { requiresSummaryReady: true },
     description: [
-      "Compact the conversation when the context-pressure banner says ACTION REQUIRED (≥ 88% of context limit). Archives the conversation prefix to long-term storage, bumps the checkpoint generation, and enqueues async Track 2 chunking; the next 2 turns get a deterministic resume packet (rolling summary + outstanding items + recent decisions + recent tool outcomes).",
-      "Write each argument deliberately — the model AFTER the compact reads these. Examples below.",
-      "",
-      "conversation_summary (REQUIRED, ≤4000 chars) — your full-context understanding of what happened, becomes the new rolling summary verbatim. Write it in English (persisted-memory contract; translate first when the conversation happened in another language):",
-      "✓ \"Mission is debugging Kyber quote timeout on Base. Tried 3 RPC providers (Ankr / public / Alchemy) — all return 5xx during the 14:00-14:30 UTC window. Decided to fall back to KyberSwap aggregator with rate-limit backoff. Swap approval pending. Mission state: SWAP_PENDING_APPROVAL.\"",
-      "✗ \"We talked about swaps and stuff.\"",
-      "✗ verbatim tool-call listings or copy-pasted system prompt content (the summary is YOUR digest, not raw transcript).",
-      "",
-      "preserve_md (optional, ≤2000 chars) — hard-priority facts that MUST survive, surfaced in the resume packet for 2 turns post-compact. Write it in English (persisted-memory contract):",
-      "✓ \"- Open loop: verify failed Kyber quote on Base after rate-limit backoff. - User wants manual approval > 0.5 SOL. - POPCAT exit decision deferred until USDC rebalance.\"",
-      "✗ \"- ETH balance was 1.23.\" (live state — re-query via wallet_balances)",
-      "✗ \"- Currently optimistic about the trade.\" (mood, not fact)",
-      "",
-      "thread_themes_hints (optional, 1-3 items, each ≤500 chars) — theme slug suggestions for Track 2 chunker, written as English snake_case slugs (persisted-memory contract):",
-      "✓ [\"kyber_quote_timeout_debug\", \"base_swap_route_validation\"]",
-      "✗ [\"debug\", \"task\", \"memory\"] (stoplist — rejected by validator)",
-      "",
-      "DO NOT include live snapshots (balances, prices, gas, intent IDs, tx hashes as facts) — those are queryable via wallet_balances / quote tools each turn and would just become stale in the rolling summary.",
-      "DO include: mission state, decision rationale, observed patterns, lessons from failures, open follow-ups, user signals/preferences observed.",
+      "Apply the compaction the runtime has already prepared in the background for this conversation.",
+      "This tool only appears when a prepared summary is READY, so calling it is always valid when you can see it.",
+      "It takes no arguments: the summary was written by a background branch from a frozen copy of the conversation, and it has already been validated.",
+      "Effect: the conversation prefix is archived, the rolling summary is replaced by the prepared one, and the checkpoint generation advances. Messages after the preparation's watermark are carried over verbatim, so nothing you have done since it was prepared is lost.",
+      "Timing: this QUEUES the cutover; the runtime performs it at the next safe boundary, which may be immediately after this turn. It is deliberately not instantaneous — the runtime will not rewrite the transcript while a payment, approval or on-chain action is unresolved.",
+      "You do not have to call this. The runtime applies a ready compaction on its own when context pressure becomes critical, and Full-Autonomous sessions apply it automatically. Calling it is how you relieve pressure EARLY, at a moment you choose — ideally after finishing a subtask rather than in the middle of one.",
     ].join(" "),
     parameters: {
       type: "object",
-      properties: {
-        conversation_summary: {
-          type: "string",
-          description:
-            "≤ 4000 chars. Your full-context understanding of the conversation: mission goal, decisions, current state, recent tool outcomes. Will become the new rolling summary verbatim.",
-        },
-        preserve_md: {
-          type: "string",
-          description:
-            "≤ 2000 chars (optional). Hard-priority facts the next session MUST remember — open loops, pending decisions, key entities (wallet addresses, market ids).",
-        },
-        thread_themes_hints: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Optional 1-3 thematic labels. Specific is better than generic — 'kyber_quote_timeout_pattern' good, 'debug' rejected.",
-        },
-      },
-      required: ["conversation_summary"],
+      properties: {},
       additionalProperties: false,
     },
   },

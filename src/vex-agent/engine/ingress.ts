@@ -29,6 +29,7 @@ import {
   addOperatorInstruction,
 } from "./core/operator-instructions.js";
 import logger from "@utils/logger.js";
+import { releaseLeaseAndEmitControlState } from "./runtime/release-and-emit.js";
 
 const QUEUED_INTERRUPT_TEXT =
   "Operator instruction queued for the active run. The model will read it at the next safe iteration boundary and continue.";
@@ -190,11 +191,8 @@ async function resumeMissionRunWithPreempt(
     });
     // `resumeMissionRun` refreshes tool_output_blob TTLs internally (PR-13
     // S-2), so we don't double-call here.
-    return await resumeMissionRun(runId);
+    return await resumeMissionRun(runId, ownerId);
   } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "./runtime/release-and-emit.js"
-    );
     await releaseLeaseAndEmitControlState(handle, sessionId, {
       missionRunId: runId,
     });

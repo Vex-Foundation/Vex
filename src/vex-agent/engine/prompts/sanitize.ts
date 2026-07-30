@@ -7,7 +7,7 @@
  * potential prompt-injection vector if the source is LLM-emitted prose or
  * tool output. Examples in PR2:
  *
- *   - `sessions.summary` — the agent's own `compact_now.conversation_summary`
+ *   - `sessions.summary` — LLM-authored prose (the prepared branch-A summary)
  *     argument, persisted then re-injected as `[Previous conversation
  *     summary]\n...` on every subsequent turn (durable injection).
  *   - `compact_jobs.preserve_md` — fenced inside the resume packet on the

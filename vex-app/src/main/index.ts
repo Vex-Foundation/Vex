@@ -39,6 +39,7 @@ import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
+import { setupCompactionPreparationWorker } from "./agent/compaction-preparation-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
@@ -168,6 +169,14 @@ async function initializeMainRuntime(): Promise<void> {
   // Started AFTER registerAllIpcHandlers so the agent bridges already exist.
   const stopCompactWorker = setupCompactWorker();
 
+  // 6a-prep. Own the compaction-v2 preparation branch loops (summary + memory
+  // chunks) so a forked preparation actually becomes appliable — otherwise it
+  // sits `preparing` forever and no cutover is ever offered. Same two gates as
+  // the compact worker: the supervisor waits for the compaction_preparations
+  // schema, and the executor's own pre-claim gate keeps both loops idle until
+  // the vault injects OPENROUTER_API_KEY / AGENT_MODEL.
+  const stopCompactionPreparationWorker = setupCompactionPreparationWorker();
+
   // 6a-wake. Own the engine wake executor so loop_defer-scheduled paused_wake
   // mission runs actually resume (otherwise deferred autonomous missions sleep
   // forever). Like the compact worker it stays idle until the loop_wake_requests
@@ -234,6 +243,7 @@ async function initializeMainRuntime(): Promise<void> {
     makeOrderedQuitCleanup(async () => {
       const results = await Promise.allSettled([
         stopCompactWorker(),
+        stopCompactionPreparationWorker(),
         stopWakeWorker(),
         stopSyncWorker(),
         stopMemoryManagerWorker(),

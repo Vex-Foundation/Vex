@@ -10,6 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
+import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -18,15 +20,7 @@ import { createElement } from "react";
 import { useUsageLiveSync, USAGE_LIVE_FALLBACK_POLL_MS } from "../usage.js";
 import { isUsageQueryForSession, usageKeys } from "../queryKeys.js";
 
-type TranscriptListener = (event: {
-  type: string;
-  sessionId: string;
-  messageId: number;
-  role: string;
-  createdAt: string;
-  messageType: string | null;
-  correlationId: string | null;
-}) => void;
+type TranscriptListener = (event: TranscriptAppendEvent) => void;
 
 let lastSubscribedListener: TranscriptListener | null = null;
 const unsubscribeMock = vi.fn();
@@ -39,12 +33,12 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
-      engine: {
-        onTranscriptAppend: (cb: TranscriptListener) => {
+      engine: makeEngineBridgeStub({
+        onTranscriptAppend: (cb) => {
           lastSubscribedListener = cb;
           return unsubscribeMock;
         },
-      },
+      }),
     },
   });
 });
@@ -65,7 +59,7 @@ function makeWrapper(client: QueryClient) {
   };
 }
 
-function sampleEvent(sessionId: string) {
+function sampleEvent(sessionId: string): TranscriptAppendEvent {
   return {
     type: "engine.transcript.append",
     sessionId,

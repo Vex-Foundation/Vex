@@ -50,7 +50,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).not.toContain("Mission run stop");
       expect(out).not.toContain("Mission run scheduling");
 
-      // compact_now is hidden below barrier
+      // The compaction category is absent while nothing is prepared
       expect(out).not.toContain("Context compaction");
 
       // Retired orientation tools never appear in the agent map.
@@ -60,11 +60,17 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
   });
 
   describe("agent chat, barrier band", () => {
-    it("drops mutating tools and surfaces compact_now", () => {
+    it("drops mutating tools; compact_apply appears only once a summary is ready", () => {
       const out = buildToolCatalogPrompt(makeCtx({ contextUsageBand: "barrier" }));
 
-      // compact_only emerges at barrier
-      expect(out).toContain("**Context compaction — pressure only:** compact_now");
+      // Readiness, not pressure, is what surfaces the tool.
+      expect(out).not.toContain("Context compaction");
+      const ready = buildToolCatalogPrompt(
+        makeCtx({ contextUsageBand: "barrier", hasCompactionSummaryReady: true }),
+      );
+      expect(ready).toContain(
+        "**Context compaction — applies the prepared summary:** compact_apply",
+      );
 
       // Mutating categories disappear (long_memory_suggest is pressureSafety
       // "mutating", so its category drops at barrier too)
@@ -117,8 +123,8 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).toContain("**Mission run stop:** mission_stop");
       // loop_defer is pressureSafety: "mutating" — gone at critical
       expect(out).not.toContain("Mission run scheduling");
-      // compact_now visible
-      expect(out).toContain("Context compaction");
+      // Nothing prepared ⇒ no compaction category, even at critical.
+      expect(out).not.toContain("Context compaction");
     });
   });
 
@@ -142,7 +148,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
   });
 
   describe("empty-category dropping", () => {
-    it("at agent normal band the Context compaction category is dropped (compact_now hidden below barrier)", () => {
+    it("the Context compaction category is dropped when no summary is prepared", () => {
       const out = buildToolCatalogPrompt(makeCtx());
       expect(out).not.toContain("Context compaction");
     });

@@ -240,3 +240,65 @@ export const missionStopResultSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("no_active_run") }).strict(),
 ]);
 export type MissionStopResult = z.infer<typeof missionStopResultSchema>;
+
+// ── restartWithInstruction (post-stop affordance) ───────────────
+//
+// After a mission stops, the user types what should change and restarts the
+// SAME already-accepted contract instead of rebuilding a mission from scratch.
+// The instruction is untrusted, model-visible text: it becomes a `user`
+// transcript row, so it is length-capped HERE as well as engine-side
+// (`RESTART_INSTRUCTION_MAX_LENGTH`). Validating in only one place would make
+// the boundary depend on the caller having done its job.
+//
+// The contract is NOT re-accepted on this path and cannot be edited from it.
+// A drifted draft returns `contract_dirty` and the host routes the user to
+// Review/Edit — starting a run against a contract the user never accepted is
+// exactly the consent bypass acceptance exists to prevent.
+
+/** Mirrors the engine's `RESTART_INSTRUCTION_MAX_LENGTH`. */
+export const MISSION_RESTART_INSTRUCTION_MAX_LENGTH = 500;
+
+export const missionRestartWithInstructionInputSchema = z
+  .object({
+    sessionId: sessionIdField,
+    missionId: missionIdField,
+    instruction: z.string().min(1).max(MISSION_RESTART_INSTRUCTION_MAX_LENGTH),
+  })
+  .strict();
+export type MissionRestartWithInstructionInput = z.infer<
+  typeof missionRestartWithInstructionInputSchema
+>;
+
+export const missionRestartWithInstructionResultSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z
+      .object({
+        outcome: z.literal("dispatched"),
+        missionRunId: z.string(),
+        sessionId: z.string(),
+      })
+      .strict(),
+    z.object({ outcome: z.literal("mission_not_found") }).strict(),
+    z
+      .object({
+        outcome: z.literal("session_mismatch"),
+        expectedSessionId: z.string(),
+      })
+      .strict(),
+    z.object({ outcome: z.literal("instruction_empty") }).strict(),
+    z
+      .object({
+        outcome: z.literal("contract_dirty"),
+        reason: z.enum(["not_accepted", "stale_acceptance", "plan_not_accepted"]),
+      })
+      .strict(),
+    z.object({ outcome: z.literal("run_active") }).strict(),
+    z.object({ outcome: z.literal("lease_busy") }).strict(),
+    z.object({ outcome: z.literal("not_ready") }).strict(),
+    z.object({ outcome: z.literal("provider_unavailable") }).strict(),
+  ],
+);
+export type MissionRestartWithInstructionResult = z.infer<
+  typeof missionRestartWithInstructionResultSchema
+>;
