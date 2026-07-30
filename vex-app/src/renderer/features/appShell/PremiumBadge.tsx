@@ -18,10 +18,11 @@
  *   - full (default): rounded-lg, icon + stacked label/caption — the dialog
  *     headers' status marker. Larger than `Stamp` but the same NOTARY token
  *     grammar as `MissionContractCardSections.headerMeta`.
- *   - `compact`: an h-7 mono pill for the DESK RULE header cluster — a still
- *     status dot + label + caption on one line (no icon). Pills are the
- *     landing's button silhouette; the dot is STILL (pulsing dots are retired
- *     shell-wide — state is color + words, never looping motion).
+ *   - `compact`: an h-7 pill for the DESK RULE header cluster — a still
+ *     ledger tick + label + caption on one line (no icon). Pills are the
+ *     landing's button silhouette; the tick is the notary mark shared with
+ *     `Stamp` and it is STILL (pulsing dots are retired shell-wide — state
+ *     is color + words, never looping motion).
  * Both keep a hairline tone border with text in the tone, never a filled
  * chip. Color carries meaning; neutrals carry the rest.
  *
@@ -55,11 +56,11 @@ interface PremiumBadgeBaseProps {
   readonly label: string;
   readonly state: PremiumBadgeState;
   /** Optional leading icon — defaults to the per-state icon. Full variant
-   * only; the compact pill renders a status dot instead. */
+   * only; the compact pill renders a ledger tick instead. */
   readonly icon?: IconGlyph;
   /** Opt-in to the "ready" opacity pulse. Ignored unless state === "ready". */
   readonly shimmer?: boolean;
-  /** h-7 single-line header pill (dot + label + caption) instead of the
+  /** h-7 single-line header pill (tick + label + caption) instead of the
    * full rounded-lg card. Defaults to false. */
   readonly compact?: boolean;
 }
@@ -86,8 +87,8 @@ interface StateMeta {
   /** Border + text tone (the only color the badge carries). */
   readonly toneClass: string;
   readonly iconClass: string;
-  /** Compact-pill status dot fill — the same tone as the icon/text. */
-  readonly dotClass: string;
+  /** Compact-pill ledger-tick fill — the same tone as the icon/text. */
+  readonly markClass: string;
   /** Default per-state icon (overridable via the `icon` prop). */
   readonly icon: IconGlyph;
   readonly dataState: string;
@@ -101,7 +102,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[var(--vex-line-strong)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)]",
         iconClass: "text-[var(--vex-text-3)]",
-        dotClass: "bg-[var(--vex-text-3)]",
+        markClass: "bg-[var(--vex-text-3)]",
         icon: Target02Icon,
         dataState: "preparing",
       };
@@ -111,7 +112,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]",
         iconClass: "text-[var(--vex-accent-text)]",
-        dotClass: "bg-[var(--vex-accent)]",
+        markClass: "bg-[var(--vex-accent)]",
         icon: InformationCircleIcon,
         dataState: "ready",
       };
@@ -121,7 +122,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success hover:bg-[color-mix(in_oklab,var(--color-success)_8%,transparent)]",
         iconClass: "text-success",
-        dotClass: "bg-success",
+        markClass: "bg-success",
         icon: CheckmarkCircle02Icon,
         dataState: "accepted",
       };
@@ -131,7 +132,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
         iconClass: "text-warning",
-        dotClass: "bg-warning",
+        markClass: "bg-warning",
         icon: InformationCircleIcon,
         dataState: "stale",
       };
@@ -141,7 +142,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
         toneClass:
           "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
         iconClass: "text-warning",
-        dotClass: "bg-warning",
+        markClass: "bg-warning",
         icon: AlertCircleIcon,
         dataState: "error",
       };
@@ -153,8 +154,8 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
 const BADGE_LAYOUT =
   "group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left";
 
-/** Compact layout — the DESK RULE header pill: dot + label + caption on one
- * h-7 line (the landing's mono-uppercase pill silhouette). */
+/** Compact layout — the DESK RULE header pill: ledger tick + label +
+ * caption on one h-7 line (the landing's pill silhouette). */
 const COMPACT_LAYOUT =
   "group inline-flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3";
 
@@ -166,19 +167,16 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
 
   const inner = compact ? (
     <>
-      {/* Still status dot — never a pulsing loop (pulse dots are retired
-       * shell-wide); "awaiting your action" is carried by the shimmer
-       * contract instead. */}
+      {/* Still LEDGER TICK — the notary mark shared with `Stamp` (the
+       * selection beam's bar at stamp scale). Never a pulsing loop (pulse
+       * dots are retired shell-wide); "awaiting your action" is carried by
+       * the shimmer contract instead. */}
       <span
         aria-hidden
-        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dotClass)}
+        className={cn("h-2.5 w-[2px] shrink-0 rounded-full", meta.markClass)}
       />
-      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-foreground">
-        {label}
-      </span>
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
-        {meta.caption}
-      </span>
+      <span className="vex-micro font-medium text-foreground">{label}</span>
+      <span className="vex-micro">{meta.caption}</span>
     </>
   ) : (
     <>
@@ -189,14 +187,13 @@ export function PremiumBadge(props: PremiumBadgeProps): JSX.Element {
         className={cn("shrink-0", meta.iconClass)}
       />
       <span className="flex min-w-0 flex-col gap-0.5">
-        {/* Landing register: the key's name is a mono micro-label (white),
-         * the state caption beneath carries the tone. */}
-        <span className="truncate font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-foreground">
+        {/* Register: the key's name is a sans small-caps micro-label
+         * (white); the state caption beneath carries the tone. Mono
+         * uppercase is retired shell-wide (landing-motifs.css). */}
+        <span className="vex-micro truncate font-medium text-foreground">
           {label}
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
-          {meta.caption}
-        </span>
+        <span className="vex-micro">{meta.caption}</span>
       </span>
     </>
   );
