@@ -14,7 +14,9 @@
  * field is null (absent) for a row that was never measured — it must NEVER be
  * a fabricated 0, which would read in the UI as "this took no time".
  *
- * `missionRunId` is null so the continuation-claim branch is skipped.
+ * The merged (compaction-v2 era) path claims the resume continuation and the
+ * dispatch slot unconditionally — both are faked to their idle outcomes here;
+ * their own suites cover the real behavior.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -22,6 +24,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockAppendMessage = vi.fn().mockResolvedValue({ id: 1 });
 vi.mock("@vex-agent/engine/events/index.js", () => ({
   appendMessage: (...a: unknown[]) => mockAppendMessage(...a),
+  emitTranscriptAppend: vi.fn(),
+  TRANSCRIPT_APPEND_EVENT_TYPE: "transcript.append",
   streamDeltaBus: { emit: vi.fn() },
   toStreamDeltaEvent: vi.fn(),
 }));
@@ -31,8 +35,25 @@ vi.mock("@vex-agent/tools/dispatcher.js", () => ({
   dispatchTool: (...a: unknown[]) => mockDispatchTool(...a),
 }));
 
+// Compaction-v2 merge: the commit is transactional (result-message's
+// commitApprovedToolResult) — the repo CAS, tx client and session lock are
+// faked exactly like the sink's own suite does; `true` = this writer still
+// owns the `dispatching` slot.
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   markExecutionStatus: vi.fn(),
+  commitExecutionResultWith: vi.fn().mockResolvedValue(true),
+  attachResultMessageWith: vi.fn(),
+}));
+
+const txClient = { query: vi.fn() };
+vi.mock("@vex-agent/db/client.js", () => ({
+  withTransaction: vi.fn(
+    async (fn: (client: unknown) => Promise<unknown>) => fn(txClient),
+  ),
+}));
+
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  acquireSessionControlLock: vi.fn(),
 }));
 
 vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
@@ -41,8 +62,49 @@ vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
 }));
 
 vi.mock("@vex-agent/engine/core/approval-runtime/continuation.js", () => ({
-  claimResumeContinuation: vi.fn(),
+  claimResumeContinuation: vi
+    .fn()
+    .mockResolvedValue({ outcome: "claimed", continuation: null }),
+  discardContinuation: vi.fn(),
 }));
+
+vi.mock("@vex-agent/engine/core/approval-runtime/deferred-resume.js", () => ({
+  scheduleDeferredResumeRetries: vi.fn(),
+}));
+
+// The two orchestration siblings the merged path calls BEFORE dispatch: the
+// slot gate (DB-only CAS transaction) and the resumed tool-context hydration.
+// Both are covered by their own suites; here they must only let the dispatch
+// proceed so the duration threading under test is reachable.
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved/dispatch-slot-gate.js",
+  () => ({
+    claimDispatchSlotUnderStopGate: vi.fn().mockResolvedValue({
+      tookSlot: true,
+      stopGate: { kind: "clear" },
+    }),
+  }),
+);
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved/resumed-tool-context.js",
+  () => ({
+    buildResumedApprovalToolContext: vi.fn().mockResolvedValue({
+      sessionId: "s1",
+      permission: "full",
+    }),
+  }),
+);
+
+// Post-dispatch operator-stop landing (its own suite covers the real thing);
+// idle outcome = the gate's "clear" kind, so the happy path proceeds.
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved/operator-stop.js",
+  () => ({
+    applyQueuedOperatorStop: vi.fn().mockResolvedValue({ kind: "clear" }),
+    abandonDispatchAfterOperatorStop: vi.fn(),
+    STOP_APPLY_FAILED_ERROR_KIND: "stop_apply_failed",
+  }),
+);
 
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

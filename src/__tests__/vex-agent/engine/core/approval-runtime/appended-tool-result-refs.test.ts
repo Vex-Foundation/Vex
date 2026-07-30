@@ -117,7 +117,13 @@ describe("commitApprovedToolResult — explorerRefs", () => {
   });
 
   it("attaches durationMs (post-approval dispatch only) when the caller measured one", async () => {
-    await appendApprovedToolResult("s1", "tc-1", { success: true, output: "{}" }, [], 4200);
+    await commitApprovedToolResult({
+      approvalId: "appr-1",
+      sessionId: "s1",
+      toolCallId: "tc-1",
+      dispatchResult: { success: true, output: "{}" },
+      durationMs: 4200,
+    });
 
     const meta = mockAppendMessage.mock.calls[0]![2] as {
       payload?: Record<string, unknown>;
@@ -126,7 +132,12 @@ describe("commitApprovedToolResult — explorerRefs", () => {
   });
 
   it("omits durationMs when the dispatch reported none", async () => {
-    await appendApprovedToolResult("s1", "tc-1", { success: true, output: "{}" });
+    await commitApprovedToolResult({
+      approvalId: "appr-1",
+      sessionId: "s1",
+      toolCallId: "tc-1",
+      dispatchResult: { success: true, output: "{}" },
+    });
 
     const meta = mockAppendMessage.mock.calls[0]![2] as {
       payload?: Record<string, unknown>;
