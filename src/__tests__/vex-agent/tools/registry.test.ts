@@ -235,10 +235,10 @@ describe("registry", () => {
     // ── PR2-cutover catalog-level pressure-safety filter (codex P1 #4) ──
     //
     // `getOpenAITools` must drop `pressureSafety: "mutating"` tools at
-    // `barrier`/`critical` bands and drop `pressureSafety: "compact_only"`
-    // tools at `normal`/`warning`. The dispatcher's hard-deny is the runtime
-    // safety net; this is the catalog projection that keeps the model from
-    // seeing tools it cannot use.
+    // `barrier`/`critical` bands, unless a live compaction preparation
+    // bypasses the barrier. The dispatcher's hard-deny is the runtime safety
+    // net; this is the catalog projection that keeps the model from seeing
+    // tools it cannot use.
     it("at barrier band: mutating tools are hidden from the LLM catalog", () => {
       const tools = getOpenAITools(defaultVisibilityContext({
         permission: "full",
@@ -268,38 +268,65 @@ describe("registry", () => {
       expect(names).not.toContain("swap_execute");
     });
 
-    it("at barrier band: compact_only tools (compact_now) ARE visible", () => {
+    it("compact_apply is visible whenever a prepared summary is READY — including below barrier", () => {
+      // The axis is readiness, not pressure. Preparation routinely finishes in
+      // the warning band, and that is the cheapest moment to apply it.
+      for (const band of ["normal", "warning", "barrier", "critical"] as const) {
+        const tools = getOpenAITools(defaultVisibilityContext({
+          permission: "full",
+          sessionKind: "mission",
+          missionRunActive: true,
+          contextUsageBand: band,
+          hasCompactionSummaryReady: true,
+        }));
+        expect(tools.map(t => t.function.name)).toContain("compact_apply");
+      }
+    });
+
+    it("compact_apply is HIDDEN when nothing is prepared, at every band", () => {
+      for (const band of ["normal", "warning", "barrier", "critical"] as const) {
+        const tools = getOpenAITools(defaultVisibilityContext({
+          permission: "full",
+          sessionKind: "mission",
+          missionRunActive: true,
+          contextUsageBand: band,
+        }));
+        expect(tools.map(t => t.function.name)).not.toContain("compact_apply");
+      }
+    });
+
+    it("barrier + live preparation: mutating tools STAY visible (C8 bypass)", () => {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "barrier",
+        preparationBypassesBarrier: true,
+      }));
+      expect(tools.map(t => t.function.name)).toContain("wallet_send_confirm");
+    });
+
+    it("critical + live preparation: mutating tools are STILL stripped (bypass is barrier-only)", () => {
+      // Forced apply owns the critical band. Letting fund-moving tools run at
+      // 92% context would be the security relaxation this bypass must not become.
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: "critical",
+        preparationBypassesBarrier: true,
+      }));
+      expect(tools.map(t => t.function.name)).not.toContain("wallet_send_confirm");
+    });
+
+    it("barrier WITHOUT a bypass keeps stripping mutating tools (fail-closed default)", () => {
       const tools = getOpenAITools(defaultVisibilityContext({
         permission: "full",
         sessionKind: "mission",
         missionRunActive: true,
         contextUsageBand: "barrier",
       }));
-      const names = tools.map(t => t.function.name);
-      expect(names).toContain("compact_now");
-    });
-
-    it("at normal band: compact_only tools (compact_now) are hidden", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({
-        permission: "full",
-        sessionKind: "mission",
-        missionRunActive: true,
-        contextUsageBand: "normal",
-      }));
-      const names = tools.map(t => t.function.name);
-      expect(names).not.toContain("compact_now");
-    });
-
-    it("at warning band: compact_only tools (compact_now) are hidden but mutating tools remain", () => {
-      const tools = getOpenAITools(defaultVisibilityContext({
-        permission: "full",
-        sessionKind: "mission",
-        missionRunActive: true,
-        contextUsageBand: "warning",
-      }));
-      const names = tools.map(t => t.function.name);
-      expect(names).not.toContain("compact_now");
-      expect(names).toContain("wallet_send_confirm");
+      expect(tools.map(t => t.function.name)).not.toContain("wallet_send_confirm");
     });
 
     it("read_only tools (session_memory_search, session_memory_resolve_item) are visible at every band when the session has memory", () => {

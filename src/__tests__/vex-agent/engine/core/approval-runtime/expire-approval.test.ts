@@ -121,6 +121,8 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", async () => {
 const mockClaimRunLeaseAndFlipToRunning = vi.fn();
 const mockClaimSessionLease = vi.fn();
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  acquireSessionControlLock: vi.fn(),
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) =>
     mockClaimRunLeaseAndFlipToRunning(...a),
   // CHAT arm — a chat-session decision now claims a plain session lease so the
@@ -175,7 +177,7 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
     ...actual,
     markExecutionStatus: (...a: unknown[]) => mockMarkExecutionStatus(...a),
     getExpired: (...a: unknown[]) => mockGetExpired(...a),
-    casMarkDispatching: (...a: unknown[]) => mockCasMarkDispatching(...a),
+    casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
     casMarkResumeConsumed: (...a: unknown[]) => mockCasMarkResumeConsumed(...a),
     markResumeAttempted: (...a: unknown[]) => mockMarkResumeAttempted(...a),
     commitExecutionResultWith: (...a: unknown[]) =>

@@ -24,14 +24,19 @@
  *    account-wide allowed-provider settings we do not control, so it cannot
  *    express a deterministic pin.
  *
- * The `endpointTag` argument exists but has no producer yet: the config field
- * that supplies it lands in W3 (wizard provider selection). Fixing the merge
- * contract now means W3 adds a value, not a code path.
+ * `endpointTag` has TWO producers now: the wizard's provider selection
+ * (`OPENROUTER_ENDPOINT_TAG`), and — since 2026-07-29 — endpoint failover,
+ * which replaces it after a session switches away from an endpoint that ran out
+ * of capacity (`openrouter/endpoint-failover.ts`). Both arrive here the same
+ * way, as a config field, so this module needs no branch for the difference.
  *
- * NOTE for W3: a manual `order` DISABLES OpenRouter's own sticky routing (its
- * docs: "Sticky routing is not used when you specify a manual provider order").
- * Pinned mode and sticky mode are a real trade-off — determinism versus
- * failover — not additive upgrades.
+ * A manual `order` DISABLES OpenRouter's own sticky routing (its docs: "Sticky
+ * routing is not used when you specify a manual provider order"), and
+ * `allowFallbacks: false` leaves exactly ONE eligible endpoint — which is what
+ * turned an upstream 429 into a hard wall on 2026-07-29. Pinned mode and the
+ * router's own failover remain a real trade-off, not additive upgrades; the
+ * runtime now supplies the missing failover ITSELF, deliberately, with a
+ * chosen target and a persisted record instead of an invisible reroute.
  */
 
 import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";

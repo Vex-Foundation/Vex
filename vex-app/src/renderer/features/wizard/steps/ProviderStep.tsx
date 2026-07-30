@@ -119,6 +119,10 @@ export function ProviderStep({
     providerEndpointsResult?.ok === true
       ? providerEndpointsResult.data.endpoints
       : [];
+  const suggestedEndpointTag =
+    providerEndpointsResult?.ok === true
+      ? providerEndpointsResult.data.suggestedEndpointTag
+      : null;
   const endpointsFailed =
     providerEndpoints.isError || providerEndpointsResult?.ok === false;
 
@@ -361,6 +365,7 @@ export function ProviderStep({
             id="vex-provider-endpoint"
             value={endpointTag}
             endpoints={endpointOptions}
+            suggestedEndpointTag={suggestedEndpointTag}
             loading={providerEndpoints.isLoading}
             failed={endpointsFailed}
             disabled={submitting || stepAdvance.isPending}

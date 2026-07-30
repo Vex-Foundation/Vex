@@ -7,37 +7,45 @@
  *
  *   `operator-stop.ts`       — what a user Stop does to this dispatch, before
  *                              it leaves the runtime and after.
+ *   `dispatch-slot-gate.ts`  — the ONE pre-dispatch transaction: stop gate and
+ *                              dispatch-slot claim, committed together.
  *   `dispatch-failure.ts`    — making an unhandled dispatch throw durable.
  *   `resumed-tool-context.ts`— the wallet scope an approved tool resumes under.
  *
  * The ORDER is the safety property:
  *
  *   1. claim the continuation (mission lease flip, or chat session lease);
- *   2. CAS `not_started -> dispatching`, stamping `dispatch_started_at`;
- *   3. build the resumed tool context (reads only, moves nothing);
- *   3b. OPERATOR-STOP GATE under the session control lock;
- *   3c. dispatch;
- *   4. commit result + `result_message_id` atomically;
- *   5. apply a Stop queued during the unlocked dispatch, which suppresses the
+ *   2. build the resumed tool context (reads only, moves nothing);
+ *   3. ONE transaction under the session control lock: OPERATOR-STOP GATE,
+ *      then CAS `not_started -> dispatching` stamping `dispatch_started_at`;
+ *   4. dispatch;
+ *   5. commit result + `result_message_id` atomically;
+ *   6. apply a Stop queued during the unlocked dispatch, which suppresses the
  *      resume;
- *   6. otherwise hand the continuation back so the agent is resumed.
+ *   7. otherwise hand the continuation back so the agent is resumed.
  *
- * Step 3b is the boundary that stops an approved MUTATING tool from executing
+ * Step 3 is the boundary that stops an approved MUTATING tool from executing
  * after the user pressed Stop. It sits IMMEDIATELY BEFORE `dispatchTool`,
  * because any await between the gate and the call is a window in which a Stop
  * can commit while the tool has still not started — a not-yet-started call is
  * exactly the one the gate exists to refuse. Context construction therefore
  * runs before it; that step only hydrates the session, so nothing has happened
- * yet when the gate lands. It still sits AFTER the CAS on purpose: the CAS
- * commit is the moment this dispatch becomes publicly committed-to, so any
- * stop inserted later necessarily sees `execution_status = 'dispatching'` and
- * is a stop against a call already in flight — which must be allowed to
- * finish, since we cannot know whether it already moved funds. Any stop
- * inserted EARLIER is visible to the gate, which lands it and refuses to
- * dispatch. There is no third interleaving: both the gate and
- * `enqueueOperatorStopRequest` pass through the same session advisory lock.
+ * yet when the gate lands.
  *
- * The gate's transaction COMMITS BEFORE `dispatchTool` runs. Holding a lock
+ * The slot CAS is INSIDE that same transaction. The two used to commit
+ * separately, with the CAS first, on the reasoning that the CAS commit is the
+ * moment this dispatch becomes publicly committed-to — so any stop inserted
+ * later necessarily sees `execution_status = 'dispatching'` and is a stop
+ * against a call already in flight, which must be allowed to finish since we
+ * cannot know whether it already moved funds. That reasoning is unchanged and
+ * now holds with NO window at all: gate and claim commit atomically, so a stop
+ * is either visible to the gate (which lands it and refuses to dispatch) or
+ * strictly after the claim. There is no third interleaving: the gate, the CAS
+ * and `enqueueOperatorStopRequest` all pass through the same session advisory
+ * lock. Merging them is also what makes this writer a participant in the
+ * compaction safe-moment gate — see `dispatch-slot-gate.ts`.
+ *
+ * That transaction COMMITS BEFORE `dispatchTool` runs. Holding a lock
  * across a provider/wallet call would let a stuck HTTP request block the
  * operator's Stop itself, which is the opposite of the point; the price is
  * that a stop arriving during the dispatch is honoured after it, exactly as
@@ -66,7 +74,7 @@
  * lease is observed while nothing has happened yet, so the honest answer is
  * "deferred" and the approval survives as a durable pending resume.
  *
- * The CAS in step 2 is what makes double-dispatch impossible: the scheduled
+ * The CAS in step 3 is what makes double-dispatch impossible: the scheduled
  * reconciler resolves the same `approved` / `not_started` rows, and exactly one
  * of the two writers can win the transition.
  *
@@ -98,9 +106,7 @@
  * tool/protocol/wallet errors can carry secrets the agent should not see.
  */
 
-import * as approvalIntentsRepo from "../../../../db/repos/approval-intents.js";
 import { dispatchTool } from "../../../../tools/dispatcher.js";
-import { gateOnOperatorStopTransaction } from "@vex-agent/engine/runtime/lease-and-status.js";
 import logger from "@utils/logger.js";
 
 import { claimResumeContinuation, discardContinuation } from "../continuation.js";
@@ -130,6 +136,7 @@ import {
   STOP_APPLY_FAILED_ERROR_KIND,
 } from "./dispatch-approved/operator-stop.js";
 import { buildResumedApprovalToolContext } from "./dispatch-approved/resumed-tool-context.js";
+import { claimDispatchSlotUnderStopGate } from "./dispatch-approved/dispatch-slot-gate.js";
 
 /**
  * Side effects after `approved_in_tx` snapshot — claim the continuation, take
@@ -186,9 +193,29 @@ export async function applyApproveSideEffects(
     }
     continuation = claim.continuation;
 
-    // ── 2. Take the dispatch slot ───────────────────────────────────────
-    const tookSlot = await approvalIntentsRepo.casMarkDispatching(approvalId);
-    if (!tookSlot) {
+    // ── 2. Build the resumed tool context ───────────────────────────────
+    // Context construction first, gate second: everything between the gate and
+    // `dispatchTool` is a window in which a committed Stop would still permit a
+    // call that has not started. Hydrating the session is a read — it moves no
+    // funds — so building it BEFORE the gate costs nothing and leaves the gate
+    // adjacent to the dispatch.
+    const toolContext = await buildResumedApprovalToolContext({
+      sessionId,
+      missionRunId,
+      permissionAtEnqueue: row.queue_permission_at_enqueue,
+    });
+
+    // ── 3. Operator-Stop gate + dispatch slot, ONE transaction ──────────
+    // See `dispatch-approved/dispatch-slot-gate.ts` for why these two writes
+    // share a transaction and why the CAS runs even on the stopped path. The
+    // transaction COMMITS here, before the dispatch below.
+    const slotGate = await claimDispatchSlotUnderStopGate({
+      approvalId,
+      sessionId,
+      missionRunId,
+    });
+
+    if (!slotGate.tookSlot) {
       // Another writer already owns this dispatch. We must NOT run the tool a
       // second time — hand the lease back and let the owner finish.
       logger.warn("engine.approval_runtime.dispatch_slot_taken", {
@@ -208,25 +235,7 @@ export async function applyApproveSideEffects(
       };
     }
 
-    // ── 3. Dispatch ─────────────────────────────────────────────────────
-    // Context construction first, gate second: everything between the gate and
-    // `dispatchTool` is a window in which a committed Stop would still permit a
-    // call that has not started. Hydrating the session is a read — it moves no
-    // funds — so building it BEFORE the gate costs nothing and leaves the gate
-    // adjacent to the dispatch.
-    const toolContext = await buildResumedApprovalToolContext({
-      sessionId,
-      missionRunId,
-      permissionAtEnqueue: row.queue_permission_at_enqueue,
-    });
-
-    // ── 3b. Operator-Stop gate (see the module header) ──────────────────
-    // Immediately before the external call, and still AFTER the CAS in step 2.
-    // Held only for that transaction; released before the dispatch below.
-    const stopGate = await gateOnOperatorStopTransaction({
-      sessionId,
-      missionRunId,
-    });
+    // ── 4. Dispatch ─────────────────────────────────────────────────────
     // EVERY `stopped` verdict suppresses the dispatch, whatever its scope.
     //
     // This used to read `&& missionRunId !== null`, on the reasoning that the
@@ -241,15 +250,15 @@ export async function applyApproveSideEffects(
     //
     // The lesson generalises, so the branch is written to need no update if a
     // third scope ever appears: `stopped` means stopped.
-    if (stopGate.kind === "stopped") {
+    if (slotGate.stopGate.kind === "stopped") {
       const held = continuation;
       continuation = null;
       return abandonDispatchAfterOperatorStop({
         approvalId,
         sessionId,
         missionRunId,
-        runStatus: stopGate.runStatus,
-        scope: stopGate.scope,
+        runStatus: slotGate.stopGate.runStatus,
+        scope: slotGate.stopGate.scope,
         toolCallId: toolCall.toolCallId,
         continuation: held,
       });
@@ -283,7 +292,7 @@ export async function applyApproveSideEffects(
       throw new Error("unreachable");
     }
 
-    // ── 4. Commit result + result_message_id in ONE transaction ─────────
+    // ── 5. Commit result + result_message_id in ONE transaction ─────────
     // FIRST, before the stop below. The dispatch ran unlocked and may already
     // have moved funds; that outcome is durable history and a Stop that
     // arrived afterwards must not cost us the record of it.
@@ -295,7 +304,7 @@ export async function applyApproveSideEffects(
       explorerRefs: deriveExplorerRefs(dispatchResult.data),
     });
 
-    // ── 5. A Stop that landed during the dispatch now takes effect ──────
+    // ── 6. A Stop that landed during the dispatch now takes effect ──────
     // The executed call is NOT undone (the in-flight rule) and nothing is
     // re-dispatched — but the operator's Stop is applied durably here rather
     // than left queued for a resumed turn that this very stop means we must

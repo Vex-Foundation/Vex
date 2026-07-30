@@ -112,7 +112,16 @@ export async function processAgentTurn(
       { source: "user", messageType: "chat", visibility: "user" },
     );
 
-    return await runAgentTurnUnderLease(sessionId, provider, config, signal);
+    return await runAgentTurnUnderLease(
+      sessionId,
+      provider,
+      config,
+      signal,
+      undefined,
+      undefined,
+      // This function claimed the lease above — it can prove ownership.
+      ownerId,
+    );
   } finally {
     // The end-of-turn resume hook (A5 attempt 3) fires inside this helper,
     // strictly after the release. See `end-of-turn-resume-hook.ts`.
@@ -157,6 +166,13 @@ export async function processAgentTurn(
  */
 export async function continueAgentSessionUnderLease(
   sessionId: string,
+  /**
+   * The session lease owner id the WAKE EXECUTOR claimed and holds around this
+   * whole call. Required, not optional: the slice runs a full turn loop, and
+   * without the owner its compaction cutover cannot prove ownership, so
+   * Full-Autonomous auto-apply silently never runs during a wake slice.
+   */
+  runnerOwnerId: string,
 ): Promise<TurnResult> {
   logger.info("engine.agent.wake_continuation", { sessionId });
 
@@ -218,6 +234,9 @@ export async function continueAgentSessionUnderLease(
       // Boundary position too: a background slice must stop at the next
       // iteration, not only mid-stream.
       controller.signal,
+      // The executor holds this session's lease for the whole slice, so the
+      // turn loop can prove ownership for a compaction cutover.
+      runnerOwnerId,
     );
   } finally {
     // (3) CONSUME what stopped us. An applied stop is consumed exactly once —
@@ -282,6 +301,17 @@ export async function runAgentTurnUnderLease(
    * existing caller.
    */
   boundarySignal?: AbortSignal,
+  /**
+   * The lease owner id the CALLER holds for this session. Threaded so the turn
+   * loop's compaction-apply boundary action can prove ownership by equality
+   * against the live lease.
+   *
+   * Omitted only by callers that hold no lease of their own. That is
+   * fail-closed by design: no proven ownership ⇒ the action is not registered
+   * and no cutover is consumed. Reading the row's current owner and adopting it
+   * would be impersonation, not a check.
+   */
+  runnerOwnerId?: string,
 ): Promise<TurnResult> {
   // Hydrate
   const hydrated = await hydrateEngineSession(sessionId);
@@ -304,6 +334,13 @@ export async function runAgentTurnUnderLease(
     ...baseVisibility,
     contextUsageBand: computeBand(hydrated.tokenCount, config.contextLimit),
     hasSessionMemory: false,
+    // Compaction axes are FALSE here by design: this is the runner's
+    // pre-loop bootstrap tools array, built before any per-turn preparation
+    // read exists. The loop rebuilds the surface every iteration from the
+    // real state (`buildTurnPromptStack`), so the conservative answer costs
+    // at most one turn without the bypass, while guessing could open it.
+    preparationBypassesBarrier: false,
+    hasCompactionSummaryReady: false,
   }));
 
   const loopConfig: TurnLoopConfig = {
@@ -318,6 +355,10 @@ export async function runAgentTurnUnderLease(
     maxIterations: maxIterationsForPermission(agentContext.sessionPermission),
     contextLimit: config.contextLimit,
     baseVisibility,
+    // The lease this runner actually holds. Threaded so the compaction-apply
+    // boundary action can PROVE ownership (equality against the live lease)
+    // rather than adopting whatever owner the row currently names.
+    ...(runnerOwnerId === undefined ? {} : { runnerOwnerId }),
   };
 
   // The transcript (including whatever this turn was woken to observe) is

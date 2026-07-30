@@ -262,7 +262,7 @@ async function runMissionRunResume(
   claimTurn: ResumedTurnClaim,
 ): Promise<TurnResult> {
   const { resumeMissionRun } = await import("../runner/mission.js");
-  return resumeMissionRun(cont.missionRunId, claimTurn);
+  return resumeMissionRun(cont.missionRunId, cont.ownerId, claimTurn);
 }
 
 /**
@@ -329,6 +329,10 @@ async function runChatSessionResume(
     config,
     undefined,
     claimTurn,
+    undefined,
+    // The continuation carries the lease this resume runs under, so the turn
+    // loop can prove ownership for a compaction cutover.
+    cont.ownerId,
   );
 }
 

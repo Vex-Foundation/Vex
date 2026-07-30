@@ -2,11 +2,11 @@
  * Context-usage band — classification of prompt pressure relative to the
  * provider's context window. Drives:
  *   - tool-surface projection (the LLM-visible catalog is narrowed to
- *     `safe_at_barrier` + `read_only` + `compact_only` once band reaches
+ *     `safe_at_barrier` + `read_only` once band reaches
  *     `barrier`),
  *   - dispatcher hard-deny on mutating tools at barrier+,
  *   - the runtime forced-fallback compact at `critical` (when the agent
- *     fails to call `compact_now` itself),
+ *     did not relieve the pressure itself),
  *   - the system-prompt context-pressure banner.
  *
  * Band is derived from the lagging `sessions.token_count` (the previous
@@ -91,11 +91,22 @@ export interface BandObservation {
  * logger emit.
  */
 export function createBandObserver(
-  contextLimit: number,
+  /**
+   * A GETTER is accepted alongside a fixed number because the effective window
+   * is no longer constant for a session: endpoint failover can switch a session
+   * to an endpoint with a narrower window mid-run, and a band computed against
+   * the old window would under-report pressure exactly when it matters (owner
+   * decision 7). The `previousBand` state deliberately survives a limit change,
+   * so a shrinking window shows up as a genuine upward transition rather than
+   * resetting the observer.
+   */
+  contextLimit: number | (() => number),
 ): (tokenCount: number) => BandObservation {
+  const resolveLimit =
+    typeof contextLimit === "function" ? contextLimit : () => contextLimit;
   let previousBand: ContextUsageBand | null = null;
   return (tokenCount: number): BandObservation => {
-    const band = computeBand(tokenCount, contextLimit);
+    const band = computeBand(tokenCount, resolveLimit());
     const isInitialElevated = previousBand === null && band !== "normal";
     const isUpwardTransition =
       previousBand !== null && bandRank(band) > bandRank(previousBand);

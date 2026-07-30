@@ -58,8 +58,18 @@ export interface RunStreamingInferenceOptions {
   readonly signal?: AbortSignal;
   /**
    * Groups this request for sticky provider routing. Passed to BOTH the
-   * streaming attempt and the buffered fallback, so a fallback cannot land on
-   * a different provider than the stream it replaces.
+   * streaming attempt and the buffered fallback, so the fallback is grouped
+   * identically to the stream it replaces.
+   *
+   * REVISED 2026-07-29: this used to claim the fallback "cannot land on a
+   * different provider". That was never a guarantee sticky grouping could
+   * make, and it is now explicitly not the contract — endpoint failover may
+   * move a session to a healthier endpoint mid-turn (owner decision, see
+   * `openrouter/endpoint-failover.ts`). What IS guaranteed is that the
+   * fallback and the stream share the same session identity, so the failover
+   * treats them as one session and the switch stays sticky across both.
+   * Which endpoint actually served a request is no longer a matter of
+   * inference: it is recorded per request in `usage_log.serving_provider`.
    */
   readonly context?: InferenceRequestContext;
 }
@@ -72,7 +82,8 @@ interface ToolCallAccumulator {
 
 /**
  * Fresh empty response for the abort-before-any-content case. `finishReason` /
- * `generationId` are explicitly `null`, not omitted: nothing was generated, so
+ * `generationId` / `servingProvider` are explicitly `null`, not omitted: nothing
+ * was generated, so
  * "no reason reported" is the truth — and an explicit null keeps this shape
  * equivalent to the buffered path's, which always sets both.
  */
@@ -84,6 +95,7 @@ function emptyResponse(): InferenceResponse {
     reasoning: null,
     finishReason: null,
     generationId: null,
+    servingProvider: null,
   };
 }
 
@@ -242,6 +254,10 @@ export async function runStreamingInference(
   // generation we started — see `consumeOpenRouterStream`).
   let finishReason: string | null = null;
   let generationId: string | null = null;
+  // Upstream provider that served this stream (routing provenance, migration
+  // 059). Like `generationId`, the FIRST value reported wins: a provider that
+  // varied it mid-stream could otherwise re-attribute our usage row.
+  let servingProvider: string | null = null;
   const toolCallAccumulator = new Map<number, ToolCallAccumulator>();
 
   try {
@@ -311,6 +327,9 @@ export async function runStreamingInference(
           if (generationId === null && chunk.generationId !== undefined) {
             generationId = chunk.generationId;
           }
+          if (servingProvider === null && chunk.servingProvider !== undefined) {
+            servingProvider = chunk.servingProvider;
+          }
           break;
       }
     }
@@ -347,6 +366,7 @@ export async function runStreamingInference(
           reasoning,
           finishReason,
           generationId,
+          servingProvider,
         }
       : {
           // Text path — content defaults to "" when no content delta arrived.
@@ -356,6 +376,7 @@ export async function runStreamingInference(
           reasoning,
           finishReason,
           generationId,
+          servingProvider,
         };
 
   return { response, aborted, usageObserved };

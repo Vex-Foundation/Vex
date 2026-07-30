@@ -17,14 +17,18 @@ const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 const USAGE = { promptTokens: 100, completionTokens: 20, totalTokens: 120 };
 
 /**
- * Provider provenance for a stream whose `done` chunk carries neither a finish
- * reason nor a generation id — explicit `null`, never omitted, so the streamed
- * shape stays equivalent to the buffered path's (which always sets both).
- * The cases below feed bare `{ type: "done" }` chunks, so this is their
- * expected provenance; `provenance is carried off the done chunk` pins the
- * populated case.
+ * Provider provenance for a stream whose `done` chunk carries no finish reason,
+ * no generation id and no serving provider — explicit `null`, never omitted, so
+ * the streamed shape stays equivalent to the buffered path's (which always sets
+ * all three). The cases below feed bare `{ type: "done" }` chunks, so this is
+ * their expected provenance; `provenance is carried off the done chunk` pins
+ * the populated case.
  */
-const NO_PROVENANCE = { finishReason: null, generationId: null };
+const NO_PROVENANCE = {
+  finishReason: null,
+  generationId: null,
+  servingProvider: null,
+};
 
 function fromChunks(chunks: StreamChunk[]) {
   return async function* (): AsyncGenerator<StreamChunk> {
@@ -157,6 +161,8 @@ describe("runStreamingInference — accumulation equivalence", () => {
       reasoning: null,
       finishReason: "length",
       generationId: "gen-trunc",
+      // No routing metadata on this stream — honestly unknown.
+      servingProvider: null,
     });
   });
 

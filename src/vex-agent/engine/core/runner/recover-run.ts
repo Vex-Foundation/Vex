@@ -51,6 +51,7 @@ export async function runPreparedMissionRecover(
 
     return await resumePreparedMissionRun({
       runId: prepared.newRunId,
+      runnerOwnerId: prepared.sessionLease.ownerId,
       run: prepared.run,
       mission: prepared.mission,
       provider: prepared.provider,

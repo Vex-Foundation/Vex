@@ -36,6 +36,7 @@ export function makeEngineBridgeStub(
     onControlState: () => noopUnsubscribe,
     onEngineError: () => noopUnsubscribe,
     onMissionUpdate: () => noopUnsubscribe,
+    onCompactionPreparation: () => noopUnsubscribe,
     ...overrides,
   };
 }

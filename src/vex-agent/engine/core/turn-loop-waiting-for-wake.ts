@@ -5,8 +5,9 @@
  * Ordering matters and is preserved bit-for-bit:
  *
  *   1. Read fresh session token count (best-effort).
- *   2. If the fresh band is `critical`, run forced-compact-before-wait.
- *      On committed compact, call `handlePostCompactBookkeeping`
+ *   2. If the fresh band is `critical`, run the SHARED critical-compaction
+ *      ladder before waiting (prepared apply → bounded wait → deterministic
+ *      fallback). On committed compact, call `handlePostCompactBookkeeping`
  *      (caller-provided callback because it closes over the loop's
  *      mutable state). On noop, proceed with stale state — the next
  *      resume will see critical and re-evaluate.
@@ -20,7 +21,7 @@
 
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
-import { maybeRunForcedCompactFallback } from "@vex-agent/engine/compact-jobs/forced-fallback.js";
+import { resolveCriticalCompaction } from "./critical-compaction.js";
 import { computeBand } from "./context-band.js";
 import logger from "@utils/logger.js";
 
@@ -29,13 +30,27 @@ export async function applyWaitingForWakePostBatch(args: {
   readonly missionRunId: string | null;
   readonly currentTokenCount: number;
   readonly contextLimit: number;
+  /** Forwarded to the ladder so a forced apply can prove lease ownership. */
+  readonly runnerOwnerId?: string;
+  readonly sessionPermission: "restricted" | "full";
   readonly handlePostCompactBookkeeping: () => Promise<void>;
 }): Promise<void> {
   const freshSession = await sessionsRepo.getSession(args.sessionId);
   const tokenCountAtWait = freshSession?.tokenCount ?? args.currentTokenCount;
   if (computeBand(tokenCountAtWait, args.contextLimit) === "critical") {
-    const fallback = await maybeRunForcedCompactFallback(args.sessionId);
-    if (fallback.kind === "committed") {
+    // The SAME ladder the proactive critical path runs — prepared apply first,
+    // bounded wait, then the deterministic fallback. Parking with a ready
+    // preparation unapplied would strand the session at critical until the wake
+    // fires, which can be hours.
+    const outcome = await resolveCriticalCompaction({
+      sessionId: args.sessionId,
+      missionRunId: args.missionRunId,
+      sessionPermission: args.sessionPermission,
+      ...(args.runnerOwnerId === undefined
+        ? {}
+        : { runnerOwnerId: args.runnerOwnerId }),
+    });
+    if (outcome.kind === "committed") {
       await args.handlePostCompactBookkeeping();
     }
   }

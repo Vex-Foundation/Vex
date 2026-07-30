@@ -197,6 +197,13 @@ export async function runPreparedMissionStart(
         ...baseVisibility,
         contextUsageBand: computeBand(hydrated.tokenCount, prepared.config.contextLimit),
         hasSessionMemory: false,
+        // Compaction axes are FALSE here by design: this is the runner's
+        // pre-loop bootstrap tools array, built before any per-turn preparation
+        // read exists. The loop rebuilds the surface every iteration from the
+        // real state (`buildTurnPromptStack`), so the conservative answer costs
+        // at most one turn without the bypass, while guessing could open it.
+        preparationBypassesBarrier: false,
+        hasCompactionSummaryReady: false,
       }),
     );
 
@@ -209,6 +216,10 @@ export async function runPreparedMissionStart(
       maxIterations: maxIterationsForPermission(prepared.permission),
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
+    // The lease this runner actually holds. Threaded so the compaction-apply
+    // boundary action can PROVE ownership (equality against the live lease)
+    // rather than adopting whatever owner the row currently names.
+      runnerOwnerId: prepared.sessionLease.ownerId,
       // Deadline from FROZEN inputs (run started_at + snapshot durationMinutes),
       // never the live mission row — see mission-deadline.ts.
       missionDeadlineMs: resolveFrozenDeadlineMs(
@@ -299,6 +310,15 @@ export async function runPreparedMissionStart(
 
 export interface PreparedResumeRun {
   readonly runId: string;
+  /**
+   * The session/run lease owner id the CALLER claimed and holds for the whole
+   * resume. Required, exactly like a mission START threads
+   * `prepared.sessionLease.ownerId`: the resumed turn loop can only force a
+   * prepared compaction apply by proving ownership by equality against the live
+   * lease, and every resume entry point (wake, auto-retry, approval
+   * continuation, ingress preempt, IPC resume/retry, recover) does hold one.
+   */
+  readonly runnerOwnerId: string;
   readonly run: MissionRun;
   readonly mission: Mission;
   readonly provider: Provider;
@@ -359,6 +379,13 @@ export async function resumePreparedMissionRun(
         ...baseVisibility,
         contextUsageBand: computeBand(hydrated.tokenCount, prepared.config.contextLimit),
         hasSessionMemory: false,
+        // Compaction axes are FALSE here by design: this is the runner's
+        // pre-loop bootstrap tools array, built before any per-turn preparation
+        // read exists. The loop rebuilds the surface every iteration from the
+        // real state (`buildTurnPromptStack`), so the conservative answer costs
+        // at most one turn without the bypass, while guessing could open it.
+        preparationBypassesBarrier: false,
+        hasCompactionSummaryReady: false,
       }),
     );
 
@@ -370,6 +397,9 @@ export async function resumePreparedMissionRun(
       maxIterations: maxIterationsForPermission(permission),
       contextLimit: prepared.config.contextLimit,
       baseVisibility,
+      // The lease this resume actually runs under — same contract as a mission
+      // start above, so a resumed slice can consume a prepared cutover too.
+      runnerOwnerId: prepared.runnerOwnerId,
       // Deadline from FROZEN inputs (run started_at + the SAME snapshot the run
       // was committed with), so a wake/resume re-derives the identical box —
       // never the live mission row. See mission-deadline.ts.

@@ -10,6 +10,14 @@
  *     (`compact-jobs/executor.ts`) that DOES call the model.
  * Their retry budgets are therefore unrelated: DB attempts vs provider calls.
  *
+ * NOT THE COMPACTION-V2 PIPELINE. The preparation branch workers have their
+ * own constants in two places — `db/repos/compaction-preparations/policy.ts`
+ * (lease/attempt/stale/backoff, because the SQL CAS predicates depend on them)
+ * and `engine/compaction/policy.ts` (poll cadence, call deadlines, summary
+ * length bounds). Nothing here is shared with them: this module belongs to the
+ * legacy `compact_jobs` chunker, which survives as the deterministic
+ * LLM-free-fallback path and is deliberately isolated from that wave.
+ *
  * No DB, no embeddings, no I/O. Tested as plain unit tests.
  */
 

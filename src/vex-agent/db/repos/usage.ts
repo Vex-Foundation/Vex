@@ -46,18 +46,27 @@ export interface UsageEntry {
    * (see `generationId`); absent/unreported ⇒ NULL.
    */
   finishReason?: string | null;
+  /**
+   * Upstream provider that actually served the request (migration 059), from
+   * OpenRouter routing metadata. `provider` above is the AGGREGATOR and has
+   * always been the literal `'openrouter'`, which is why per-request routing
+   * was unanswerable before this column. Bounded at the inference boundary
+   * (`openrouter/provider-signals.ts`); absent/unreported ⇒ NULL.
+   */
+  servingProvider?: string | null;
 }
 
 export async function logUsage(sessionId: string, entry: UsageEntry): Promise<void> {
   const totalTokens = entry.promptTokens + entry.completionTokens;
   await execute(
-    `INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, total_tokens, cached_tokens, reasoning_tokens, cost, provider, model, currency, cached_savings, cache_write_tokens, generation_id, finish_reason)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO usage_log (session_id, prompt_tokens, completion_tokens, total_tokens, cached_tokens, reasoning_tokens, cost, provider, model, currency, cached_savings, cache_write_tokens, generation_id, finish_reason, serving_provider)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [sessionId, entry.promptTokens, entry.completionTokens, totalTokens,
      entry.cachedTokens ?? 0, entry.reasoningTokens ?? 0, entry.cost,
      entry.provider ?? null, entry.model ?? null, entry.currency ?? "USD",
      entry.cachedSavings ?? 0, entry.cacheWriteTokens ?? 0,
-     entry.generationId ?? null, entry.finishReason ?? null],
+     entry.generationId ?? null, entry.finishReason ?? null,
+     entry.servingProvider ?? null],
   );
 }
 

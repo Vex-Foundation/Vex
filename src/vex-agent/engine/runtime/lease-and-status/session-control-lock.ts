@@ -25,7 +25,10 @@
  *      the session, ordered `(created_at ASC, id ASC)`
  *      (`control-request-locks.ts`);
  *   2. the `mission_runs` row;
- *   3. the session's pending `approval_queue` rows.
+ *   3. the session's pending `approval_queue` rows;
+ *   4. money-state rows (`wallet_intents`, `approval_intents`,
+ *      `protocol_executions`, `agent_activity`) — see the compaction gate
+ *      section below.
  *
  * A transaction may take any PREFIX-CONSISTENT subset, never out of order.
  * Because this lock is always taken FIRST, it can never be the second edge of
@@ -50,6 +53,29 @@
  * itself, which is the exact opposite of what this lock exists for. The
  * approved-dispatch gate (`operator-stop-boundary.ts`) is written around that
  * constraint — it commits and releases BEFORE `dispatchTool` runs.
+ *
+ * ## Second participant: the compaction safe-moment gate (contract C7)
+ *
+ * Operator Stop is no longer the only thing this boundary serializes. The
+ * compaction APPLY cutover rewrites a session's transcript, and it may only do
+ * so at a moment with no unresolved money state. It reads that state through
+ * `db/repos/approval-intents/money-state.ts` INSIDE its own transaction, under
+ * this lock.
+ *
+ * That read is a boundary only if the WRITERS take the lock too — for exactly
+ * the reason in "Why a row lock is not enough" above: a wallet intent or an
+ * approval row that does not exist yet cannot be locked, so a gate built on row
+ * locks alone would read `clear` a microsecond before money state appeared.
+ *
+ * Every money-state writer therefore does, in ONE short transaction:
+ * take this lock FIRST → perform the CAS → COMMIT — and only THEN makes any
+ * signing or provider call. The hold-duration rule below is what forces the
+ * commit to come first, and it applies to these writers with no exception: a
+ * wallet writer that held this lock across a broadcast would block the
+ * operator's Stop with a fund transfer.
+ *
+ * The lock order is unchanged; money rows are simply the LAST step, after the
+ * session row. See the money-state module header for the participant inventory.
  *
  * ## Key derivation lives here and nowhere else
  *

@@ -4,7 +4,7 @@
 
 import type { PoolClient } from "pg";
 
-import { query, queryOne, queryOneWith, execute } from "../client.js";
+import { query, queryOne, queryOneWith } from "../client.js";
 import { jsonb, jsonbByteLength, nullableJsonb } from "../params.js";
 import { redactBugPayload } from "../../../lib/diagnostics/redactor.js";
 
@@ -66,23 +66,49 @@ export async function createExecutionIntent(
   return row?.id ?? 0;
 }
 
-/** Finalize a durable pre-sign record with the known exchange outcome. */
-export async function completeExecutionIntent(
-  executionId: number,
-  result: Record<string, unknown>,
-  success: boolean,
-  tradeCapture: Record<string, unknown> | null,
-  externalRefs: Record<string, unknown>,
-  durationMs: number,
+const COMPLETE_EXECUTION_INTENT_SQL = `UPDATE protocol_executions
+   SET result = $2::jsonb, success = $3, trade_capture = $4::jsonb,
+       external_refs = $5::jsonb, duration_ms = $6,
+       execution_status = CASE WHEN $3 THEN 'succeeded' ELSE 'failed' END
+ WHERE id = $1 AND execution_status = 'intent'`;
+
+export interface CompleteExecutionIntentInput {
+  readonly executionId: number;
+  readonly result: Record<string, unknown>;
+  readonly success: boolean;
+  readonly tradeCapture: Record<string, unknown> | null;
+  readonly externalRefs: Record<string, unknown>;
+  readonly durationMs: number;
+}
+
+function toCompleteParams(input: CompleteExecutionIntentInput): unknown[] {
+  return [
+    input.executionId,
+    jsonb(input.result),
+    input.success,
+    nullableJsonb(input.tradeCapture),
+    jsonb(input.externalRefs),
+    input.durationMs,
+  ];
+}
+
+/**
+ * Finalize a durable pre-sign record with the known exchange outcome, on the
+ * CALLER's transaction. Client-bound with no pool-level twin, so the completion
+ * can only run under the session control lock: an `execution_status = 'intent'` row is
+ * unresolved money state for the compaction safe-moment gate
+ * (`approval-intents/money-state.ts`), and this write is what moves it out of
+ * that set. A reader under the lock is a boundary only if the writer takes it
+ * too.
+ *
+ * The CAS predicate (`execution_status = 'intent'`) is unchanged — only the
+ * transaction it runs in.
+ */
+export async function completeExecutionIntentWith(
+  client: PoolClient,
+  input: CompleteExecutionIntentInput,
 ): Promise<void> {
-  await execute(
-    `UPDATE protocol_executions
-       SET result = $2::jsonb, success = $3, trade_capture = $4::jsonb,
-           external_refs = $5::jsonb, duration_ms = $6,
-           execution_status = CASE WHEN $3 THEN 'succeeded' ELSE 'failed' END
-     WHERE id = $1 AND execution_status = 'intent'`,
-    [executionId, jsonb(result), success, nullableJsonb(tradeCapture), jsonb(externalRefs), durationMs],
-  );
+  await client.query(COMPLETE_EXECUTION_INTENT_SQL, toCompleteParams(input));
 }
 
 export async function recordExecution(

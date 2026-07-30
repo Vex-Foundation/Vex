@@ -44,6 +44,7 @@ describe("usage repo — logUsage", () => {
       currency: "USD",
       generationId: "gen-1751234567-abcdef",
       finishReason: "stop",
+      servingProvider: "DeepInfra",
     });
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
@@ -52,13 +53,19 @@ describe("usage repo — logUsage", () => {
     expect(sql).toContain("cache_write_tokens");
     expect(sql).toContain("generation_id");
     expect(sql).toContain("finish_reason");
+    expect(sql).toContain("serving_provider");
     // Positional params:
-    // [..., currency, cached_savings, cache_write_tokens, generation_id, finish_reason]
+    // [..., currency, cached_savings, cache_write_tokens, generation_id,
+    //  finish_reason, serving_provider]
+    //
+    // `provider` and `serving_provider` are DIFFERENT facts and both are
+    // asserted: the first is the aggregator we called ('openrouter'), the
+    // second the upstream that actually ran the model (migration 059).
     expect(params).toEqual([
       "session-1", 1000, 200, 1200, 600, 0, 0.001,
       "openrouter", "anthropic/claude-sonnet-4", "USD",
       -0.0033, 8000,
-      "gen-1751234567-abcdef", "stop",
+      "gen-1751234567-abcdef", "stop", "DeepInfra",
     ]);
   });
 
@@ -74,7 +81,7 @@ describe("usage repo — logUsage", () => {
     expect(params[11]).toBe(0); // cache_write_tokens
   });
 
-  it("writes NULL — not 0 or '' — for generation_id / finish_reason when unreported", async () => {
+  it("writes NULL — not 0 or '' — for generation_id / finish_reason / serving_provider when unreported", async () => {
     await logUsage("session-1", {
       promptTokens: 10,
       completionTokens: 5,
@@ -84,6 +91,9 @@ describe("usage repo — logUsage", () => {
     const [, params] = mockExecute.mock.calls[0] as [string, unknown[]];
     expect(params[12]).toBeNull(); // generation_id
     expect(params[13]).toBeNull(); // finish_reason
+    // Routing provenance is absent for every background one-shot (they do not
+    // request routing metadata) — honestly unknown, never an empty string.
+    expect(params[14]).toBeNull(); // serving_provider
   });
 
   it("carries an explicit null through unchanged (aborted turn, nothing reported)", async () => {

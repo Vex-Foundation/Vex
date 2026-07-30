@@ -40,6 +40,11 @@ vi.mock("@vex-agent/db/repos/runner-leases.js", () => ({
 }));
 
 const txClient = { query: vi.fn() };
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  acquireSessionControlLock: vi.fn(),
+}));
+
 vi.mock("@vex-agent/db/client.js", () => ({
   withTransaction: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => {
     const out = await fn(txClient);

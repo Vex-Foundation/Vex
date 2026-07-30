@@ -53,7 +53,7 @@ import { toIso, toIsoOrNull } from "./approval-intents/row-mapping.js";
  * to change than the decision CAS above it.
  */
 export {
-  casMarkDispatching,
+  casMarkDispatchingWith,
   commitExecutionResultWith,
   attachResultMessageWith,
   markResumeAttempted,

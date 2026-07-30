@@ -190,6 +190,13 @@ async function callUntrusted(channel: string, payload: unknown): Promise<ResultS
 }
 
 describe("compaction handler", () => {
+  it("registers the compaction-v2 preparation channels alongside the Track-2 ones", () => {
+    // The apply button is dead without these two; a silent drop from
+    // `registerCompactionHandlers` would otherwise only surface at runtime.
+    expect(handlers.has(CH.compaction.getPreparation)).toBe(true);
+    expect(handlers.has(CH.compaction.requestApply)).toBe(true);
+  });
+
   it("getStatus returns the mapped status DTO", async () => {
     mocks.getCompactionStatus.mockResolvedValueOnce({
       ok: true,

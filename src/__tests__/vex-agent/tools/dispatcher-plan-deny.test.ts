@@ -3,7 +3,7 @@
  *
  * When plan-mode is ON and the active plan is NOT user-accepted, side-effecting
  * tools are blocked until acceptance; reads, discovery, and the safe-control
- * allowlist (plan_write / mission_stop / compact_now / mission_draft_update)
+ * allowlist (plan_write / mission_stop / compact_apply / mission_draft_update)
  * pass. The gate reads LIVE plan state per call and resolves the EFFECTIVE
  * action kind for execute_tool (its own actionKind is "read"; the TARGET
  * manifest decides).
@@ -91,7 +91,7 @@ describe("checkPlanAcceptanceDeny — gate active (enabled, unaccepted)", () => 
   it("ALLOWS the safe-control allowlist", async () => {
     expect(await checkPlanAcceptanceDeny(call("plan_write"), ctx)).toBeNull();
     expect(await checkPlanAcceptanceDeny(call("mission_stop"), ctx)).toBeNull();
-    expect(await checkPlanAcceptanceDeny(call("compact_now"), ctx)).toBeNull();
+    expect(await checkPlanAcceptanceDeny(call("compact_apply"), ctx)).toBeNull();
   });
 
   // Stage 3 deadlock fix (B3): during mission setup with plan-mode ON, once an

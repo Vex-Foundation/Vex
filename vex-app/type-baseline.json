@@ -25,7 +25,6 @@
       "../src/vex-agent/engine/core/transcript-integrity.ts::TS18048": 2,
       "../src/vex-agent/engine/core/transcript-integrity.ts::TS2345": 2,
       "../src/vex-agent/engine/core/transcript-integrity.ts::TS2532": 2,
-      "../src/vex-agent/engine/core/turn.ts::TS2532": 2,
       "../src/vex-agent/engine/mission/patch-parser.ts::TS2532": 1,
       "../src/vex-agent/inference/openrouter/mappers.ts::TS18048": 3,
       "../src/vex-agent/inference/openrouter/mappers.ts::TS2339": 1,

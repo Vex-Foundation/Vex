@@ -126,6 +126,13 @@ export async function processMissionSetupTurn(
     ...baseVisibility,
     contextUsageBand: computeBand(hydrated.tokenCount, config.contextLimit),
     hasSessionMemory: false,
+    // Compaction axes are FALSE here by design: this is the runner's
+    // pre-loop bootstrap tools array, built before any per-turn preparation
+    // read exists. The loop rebuilds the surface every iteration from the
+    // real state (`buildTurnPromptStack`), so the conservative answer costs
+    // at most one turn without the bypass, while guessing could open it.
+    preparationBypassesBarrier: false,
+    hasCompactionSummaryReady: false,
   }));
 
   const loopConfig: TurnLoopConfig = {
@@ -136,6 +143,10 @@ export async function processMissionSetupTurn(
     maxIterations: 25,
     contextLimit: config.contextLimit,
     baseVisibility,
+    // The lease this runner actually holds. Threaded so the compaction-apply
+    // boundary action can PROVE ownership (equality against the live lease)
+    // rather than adopting whatever owner the row currently names.
+    runnerOwnerId: ownerId,
   };
 
   const promptOptions: PromptStackOptions = {

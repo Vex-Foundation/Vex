@@ -1,5 +1,13 @@
 import { CH } from "../../shared/ipc/channels.js";
 import {
+  compactionApplyRequestInputSchema,
+  compactionPreparationInputSchema,
+} from "../../shared/schemas/compaction-preparation.js";
+import type {
+  CompactionApplyRequestInput,
+  CompactionPreparationInput,
+} from "../../shared/schemas/compaction-preparation.js";
+import {
   compactionHistoryInputSchema,
   compactionRetryInputSchema,
   compactionStatusInputSchema,
@@ -32,6 +40,20 @@ export const compaction = {
       CH.compaction.retry,
       input,
       compactionRetryInputSchema,
+    );
+  },
+  getPreparation(input: CompactionPreparationInput) {
+    return invokeWithSchema(
+      CH.compaction.getPreparation,
+      input,
+      compactionPreparationInputSchema,
+    );
+  },
+  requestApply(input: CompactionApplyRequestInput) {
+    return invokeWithSchema(
+      CH.compaction.requestApply,
+      input,
+      compactionApplyRequestInputSchema,
     );
   },
 } satisfies CompactionBridge;

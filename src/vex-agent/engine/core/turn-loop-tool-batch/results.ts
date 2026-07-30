@@ -18,8 +18,8 @@ import type { StopPayload, ToolBatchOutcome } from "./outcome.js";
 
 /** Synthetic tool-result emitted for batch tool calls skipped after a `compact_committed` signal. */
 export const BATCH_ABORTED_BY_COMPACT_OUTPUT =
-  "batch_aborted_by_compact: this tool call was emitted in the same batch as compact_now and was not dispatched. "
-  + "The conversation has been compacted; re-emit this call on the next turn if it is still relevant.";
+  "batch_aborted_by_compact: the conversation was compacted while this batch was running, "
+  + "so this tool call was not dispatched. Re-emit it on the next turn if it is still relevant.";
 
 /**
  * Synthetic tool-result emitted for batch tool calls that were never

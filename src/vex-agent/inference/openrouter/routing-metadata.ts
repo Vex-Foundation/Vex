@@ -14,7 +14,12 @@
  *   one-shots (`chatCompletionSimple`: chunker, judge, entity extraction,
  *   regime) are not part of a conversation and get no benefit from routing
  *   provenance, so they keep a byte-identical envelope.
- * - LOG ONLY. Nothing here is persisted; no schema, no column, no event.
+ * - The SERVING PROVIDER is now also PERSISTED, to `usage_log.serving_provider`
+ *   (migration 059). `usage_log.provider` stores the literal `'openrouter'` —
+ *   the aggregator, not the upstream that ran the model — so "which request
+ *   went where" was unanswerable, which is precisely why the 2026-07-29
+ *   endpoint-level 429 was hard to diagnose. The rest of this projection stays
+ *   log-only.
  * - A BOUNDED projection, never the raw object. `OpenRouterMetadata` also
  *   carries `params`, `pipeline` and `summary`, which can echo request shape;
  *   emitting the whole thing would drift into logging request content.
@@ -88,13 +93,15 @@ export function summarizeRoutingMetadata(
 export function observeRoutingMetadata(
   metadata: OpenRouterMetadata,
   operation: string,
-): void {
+): RoutingMetadataSummary | null {
   try {
-    logger.info("inference.openrouter.routing", {
-      operation,
-      ...summarizeRoutingMetadata(metadata),
-    });
+    const summary = summarizeRoutingMetadata(metadata);
+    logger.info("inference.openrouter.routing", { operation, ...summary });
+    return summary;
   } catch {
-    // Telemetry must never affect the completion it describes.
+    // Telemetry must never affect the completion it describes. The RETURN is
+    // now consumed (the serving provider is persisted), so the failure case
+    // yields `null` — "we could not read it" — never a partial guess.
+    return null;
   }
 }

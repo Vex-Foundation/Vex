@@ -14,6 +14,10 @@
  * `execution_status = 'dispatching'`, so a dispatcher that woke up after the
  * reconciler already declared its outcome `indeterminate` cannot overwrite that
  * verdict or append a second tool result.
+ *
+ * And the money-gate participation: the session control lock is taken as the
+ * transaction's FIRST statement, so the write is ordered against the compaction
+ * safe-moment gate rather than able to interleave with it.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -21,6 +25,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockAppendMessage = vi.fn();
 const mockEmitTranscriptAppend = vi.fn();
 const mockCommitExecutionResultWith = vi.fn();
+const mockAcquireSessionControlLock = vi.fn();
 
 /** Ordered log proving the commit happens before the emit. */
 const callOrder: string[] = [];
@@ -40,6 +45,13 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
     return mockCommitExecutionResultWith(...a);
   },
   attachResultMessageWith: vi.fn(),
+}));
+
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  acquireSessionControlLock: (...a: unknown[]) => {
+    callOrder.push("session-lock");
+    return mockAcquireSessionControlLock(...a);
+  },
 }));
 
 const txClient = { query: vi.fn() };
@@ -135,7 +147,16 @@ describe("commitApprovedToolResult — atomicity", () => {
       dispatchResult: { success: true, output: "{}" },
     });
 
-    expect(callOrder).toEqual(["intent-update", "commit", "emit"]);
+    // The session control lock is the FIRST statement of the transaction —
+    // this writer settles `approval_intents` rows that the compaction
+    // safe-moment gate reads, so it must serialize with that gate.
+    expect(callOrder).toEqual([
+      "session-lock",
+      "intent-update",
+      "commit",
+      "emit",
+    ]);
+    expect(mockAcquireSessionControlLock).toHaveBeenCalledWith(txClient, "s1");
     expect(mockEmitTranscriptAppend).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "s1", messageId: 4242 }),
     );

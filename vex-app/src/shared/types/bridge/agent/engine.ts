@@ -13,6 +13,7 @@
  * existing `messages.getTail` IPC after invalidation.
  */
 
+import type { CompactionPreparationEvent } from "@shared/schemas/compaction-preparation.js";
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
@@ -97,5 +98,23 @@ export interface EngineEventsBridge {
    */
   readonly onMissionUpdate: (
     cb: (event: MissionUpdateEvent) => void,
+  ) => () => void;
+
+  /**
+   * Subscribe to `EV.engine.compactionPreparation` events — broadcast after a
+   * COMMITTED `compaction_preparations` transition (compaction v2). The
+   * renderer hook (`usePreparationLiveSync`) filters by `event.sessionId` and
+   * invalidates that session's preparation query, so the apply button reflects
+   * readiness without a fast poll.
+   *
+   * The payload is METADATA ONLY: the closed status enum, a `summaryReady`
+   * boolean and a correlation id. The frozen conversation corpus and the
+   * model-authored summary stored on the row never cross this boundary — the
+   * renderer re-reads the bounded DTO instead of reconstructing anything.
+   *
+   * Returns an idempotent unsubscribe function.
+   */
+  readonly onCompactionPreparation: (
+    cb: (event: CompactionPreparationEvent) => void,
   ) => () => void;
 }

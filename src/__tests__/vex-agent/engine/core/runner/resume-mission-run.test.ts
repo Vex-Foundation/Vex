@@ -300,6 +300,12 @@ describe("runner", () => {
     }));
   });
 
+  /**
+   * The lease owner every resume entry point claims before calling in. Named
+   * here so the propagation assertion below reads against a single value.
+   */
+  const RESUME_OWNER = "resume-owner-run-1";
+
   // ── resumeMissionRun ────────────────────────────────────────
 
   describe("resumeMissionRun", () => {
@@ -322,10 +328,37 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 1, pendingApprovals: [], stopReason: null,
       });
 
-      const result = await resumeMissionRun("run-1");
+      const result = await resumeMissionRun("run-1", RESUME_OWNER);
 
       expect(result.text).toBe("Resumed");
       expect(result.missionStatus).toBe("running");
+    });
+
+    /**
+     * Ownership propagation, end to end through the real resume chain
+     * (`resumeMissionRun` → `resumePreparedMissionRun` → loop config). Without
+     * it the resumed turn loop cannot prove it holds the lease, so a prepared
+     * compaction cutover is silently never applied on any resumed slice.
+     */
+    it("threads the CALLER's lease owner id into the resumed turn loop config", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "paused_wake", iterationCount: 5,
+      });
+      mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await resumeMissionRun("run-1", RESUME_OWNER);
+
+      const [, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
+      expect((loopConfig as { runnerOwnerId?: string }).runnerOwnerId).toBe(
+        RESUME_OWNER,
+      );
     });
 
     // WP-I1: the hard deadline holds ACROSS resumes — it is recomputed from
@@ -351,7 +384,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1");
+      await resumeMissionRun("run-1", RESUME_OWNER);
 
       const [context, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       const expectedMs = Date.parse("2026-01-01T00:00:00.000Z") + 60 * 60_000;
@@ -389,7 +422,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1");
+      await resumeMissionRun("run-1", RESUME_OWNER);
 
       const [context, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       const expectedMs = Date.parse("2026-01-01T00:00:00.000Z") + 5 * 60_000; // frozen 5, NOT live 999
@@ -410,7 +443,7 @@ describe("runner", () => {
       }));
       mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
 
-      await expect(resumeMissionRun("run-1")).rejects.toBeInstanceOf(MissionRunPausedError);
+      await expect(resumeMissionRun("run-1", RESUME_OWNER)).rejects.toBeInstanceOf(MissionRunPausedError);
 
       // The resume's running flip goes through the terminal-guarded CAS.
       expect(mockStartRunIfNotTerminal).toHaveBeenCalledWith("run-1");
@@ -430,7 +463,7 @@ describe("runner", () => {
 
     it("throws if run not found", async () => {
       mockGetRun.mockResolvedValueOnce(null);
-      await expect(resumeMissionRun("nonexistent")).rejects.toThrow("not found");
+      await expect(resumeMissionRun("nonexistent", RESUME_OWNER)).rejects.toThrow("not found");
     });
 
     // ── Resumed-turn claim hook ──────────────────────────────
@@ -475,7 +508,7 @@ describe("runner", () => {
           return { text: "resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null };
         });
 
-        await resumeMissionRun("run-1", async () => {
+        await resumeMissionRun("run-1", RESUME_OWNER, async () => {
           order.push("claim");
           return true;
         });
@@ -491,7 +524,7 @@ describe("runner", () => {
         });
         mockResolveProvider.mockResolvedValueOnce(null);
 
-        await expect(resumeMissionRun("run-1", claim)).rejects.toThrow(
+        await expect(resumeMissionRun("run-1", RESUME_OWNER, claim)).rejects.toThrow(
           "No inference provider",
         );
 
@@ -502,7 +535,7 @@ describe("runner", () => {
       it("a losing claim abandons the resume without running the turn", async () => {
         readyRun();
 
-        const result = await resumeMissionRun("run-1", async () => false);
+        const result = await resumeMissionRun("run-1", RESUME_OWNER, async () => false);
 
         expect(mockRunTurnLoop).not.toHaveBeenCalled();
         expect(result).toMatchObject({ text: null, toolCallsMade: 0 });

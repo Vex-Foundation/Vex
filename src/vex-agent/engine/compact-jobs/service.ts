@@ -1,27 +1,39 @@
 /**
- * executeCompactNow — the single compaction primitive of PR2.
+ * executeCompactNow — the LEGACY, LLM-free compaction primitive.
  *
  * Shared service called by:
- *   - the `compact_now` tool handler (agent-driven path)
+ *   - the deterministic critical-band forced fallback (`forced-fallback.ts`)
  *   - the forced-fallback path at critical band (runtime-driven path)
+ *
+ * This is the deterministic path: it archives a prefix of the transcript and
+ * hands the narrative work to the asynchronous `compact_jobs` chunking worker.
+ * It is NOT the prepared-apply cutover (compaction v2, `engine/compaction/`),
+ * which replaces the rolling summary with a pre-computed branch-A summary and
+ * touches `compact_jobs` not at all. The two paths deliberately share only the
+ * locked-transaction steps in `./commit-primitives.ts`; everything below this
+ * line — the giant-tool fallback, the enqueue and the source-range provenance —
+ * belongs to this path alone.
  *
  * Compact-commit semantics — everything below runs in a single atomic
  * transaction under `withCheckpointMutex` so wake/ingress paths cannot observe
  * a half-archived transcript. Pure DB work: no inference call happens here.
  *   1. Redact summary / preserve / themes via memory/redaction
- *   2. SELECT session FOR UPDATE; compute `nextGen = checkpoint_generation + 1`
+ *   2. lockSessionAndReadGeneration → `nextGen = checkpoint_generation + 1`
  *   3. Reload live messages with ids
  *   4. selectPrefixWithGiantFallback(messages) → plan
  *   5. If `noop` (empty prefix, no compactable tool) → return `{kind:'noop'}`
  *      without bumping generation. Caller decides whether to retry.
  *   6. Otherwise:
- *      - setRollingSummary(sessionId, agent_summary)  -- REPLACE, not merge
- *      - UPDATE sessions SET checkpoint_generation = nextGen
+ *      - replaceRollingSummaryAndBumpGeneration(...) — REPLACE, not merge,
+ *        and the bump + `token_count = 0` reset are inseparable
+ *      - enqueueJob({...}) — idempotent on (session_id, generation)
  *      - archivePrefix(...) OR forkToolMessageToArchive(...) with giant
  *        placeholder referencing the compact_job id (the archive chunking
  *        worker will produce the narrative chunk asynchronously)
- *      - enqueueJob({...}) — idempotent on (session_id, generation)
  *   7. Commit; return `{kind:'committed', generation, archivedMessages, jobId}`
+ *
+ * The whole inner call is wrapped in `runWithCommitRetry`, whose ONLY retry
+ * discriminator is `tracker.commitAttempted` — never the error type.
  *
  * The archive chunking worker NEVER blocks compact. If it fails or the
  * provider is down, the row stays in `compact_jobs` with `status='pending'`
@@ -29,12 +41,17 @@
  */
 
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
-import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { archivePrefix, forkToolMessageToArchive } from "@vex-agent/db/repos/sessions-archive.js";
 import { enqueueJob } from "@vex-agent/db/repos/compact-jobs/index.js";
 import { getPool } from "@vex-agent/db/client.js";
 import { selectPrefixWithGiantFallback } from "@vex-agent/engine/checkpoint/prefix.js";
 import { withCheckpointMutex } from "./state.js";
+import {
+  type CommitAttemptTracker,
+  lockSessionAndReadGeneration,
+  replaceRollingSummaryAndBumpGeneration,
+  runWithCommitRetry,
+} from "./commit-primitives.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import { buildGiantToolPlaceholder } from "./giant-tool.js";
 import {
@@ -65,58 +82,18 @@ export type CompactCommitResult =
       reason: "empty_session" | "no_compactable";
     };
 
-/**
- * Records whether the transaction reached its `COMMIT` statement.
- *
- * This is the ONLY thing that makes retrying safe, so it is an explicit
- * parameter rather than an inferred condition. See `executeCompactNow`.
- */
-interface CommitAttemptTracker {
-  commitAttempted: boolean;
-}
-
 export async function executeCompactNow(input: CompactCommitArgs): Promise<CompactCommitResult> {
-  return withCheckpointMutex(input.sessionId, async () => {
-    // Retry the whole inner call — but ONLY for failures that happened strictly
-    // BEFORE `COMMIT` was issued.
-    //
-    // Why the boundary is load-bearing: `executeCompactNowInner` recomputes
-    // `nextGen` from a FRESH `SELECT … FOR UPDATE` on every attempt. If the
-    // first attempt actually committed and then something threw on the way out,
-    // a retry would read the already-bumped generation, bump it AGAIN, enqueue
-    // a SECOND chunking job and archive a SECOND prefix. `enqueueJob` is
-    // idempotent on `(session_id, checkpoint_generation)`, which protects a
-    // replay of the SAME generation — it cannot protect a different one. So a
-    // post-COMMIT failure must propagate untouched.
-    //
-    // A pre-COMMIT failure rolled the transaction back and wrote nothing, so
-    // replaying it is safe and spares the caller a lost compact exactly when
-    // context pressure is critical. These are three DATABASE attempts: this
-    // path makes no inference call at all (that is the archive chunking
-    // worker, which has its own separate retry budget).
-    for (let attempt = 1; ; attempt++) {
-      const tracker: CommitAttemptTracker = { commitAttempted: false };
-      try {
-        return await executeCompactNowInner(input, tracker);
-      } catch (err) {
-        if (tracker.commitAttempted || attempt >= COMPACT_COMMIT_MAX_ATTEMPTS) {
-          throw err;
-        }
-        logger.warn("compact.commit_retry", {
-          sessionId: input.sessionId,
-          source: input.source,
-          attempt,
-          maxAttempts: COMPACT_COMMIT_MAX_ATTEMPTS,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        await delay(COMPACT_COMMIT_RETRY_BACKOFF_MS);
-      }
-    }
-  });
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return withCheckpointMutex(input.sessionId, async () =>
+    runWithCommitRetry(
+      {
+        sessionId: input.sessionId,
+        source: input.source,
+        maxAttempts: COMPACT_COMMIT_MAX_ATTEMPTS,
+        backoffMs: COMPACT_COMMIT_RETRY_BACKOFF_MS,
+      },
+      (tracker) => executeCompactNowInner(input, tracker),
+    ),
+  );
 }
 
 async function executeCompactNowInner(
@@ -146,18 +123,9 @@ async function executeCompactNowInner(
   try {
     await tx.query("BEGIN");
 
-    // Lock the session row and read the current generation FIRST. Selecting
-    // the prefix before the lock would let a second compacter plan against
-    // a stale transcript and serialize on the row lock — the second commit
-    // would then bump a SECOND generation using an obsolete cutoff. Reading
-    // messages + planning under the same connection as the FOR UPDATE makes
-    // the plan/commit pair atomic per session.
-    const genRow = await tx.query<{ checkpoint_generation: number }>(
-      "SELECT checkpoint_generation FROM sessions WHERE id = $1 FOR UPDATE",
-      [input.sessionId],
-    );
-    const currentGen = genRow.rows[0]?.checkpoint_generation ?? 0;
-    const nextGen = currentGen + 1;
+    // Lock the session row and read the current generation FIRST — see
+    // `lockSessionAndReadGeneration` for why the order is load-bearing.
+    const { nextGen } = await lockSessionAndReadGeneration(tx, input.sessionId);
 
     // Now read live messages + select prefix under the locked session — the
     // tx-aware variant of `getLiveMessagesWithId` reuses the FOR-UPDATE
@@ -192,26 +160,15 @@ async function executeCompactNowInner(
       return { kind: "noop", reason: "no_compactable" };
     }
 
-    // 1. Replace the rolling summary with the agent's narrative summary.
-    //    Wholesale REPLACE (not merge) — agent's full-context summary IS
-    //    the new rolling summary. Old merge semantics produced telephone-
-    //    game drift across many compactions.
-    await sessionsRepo.setRollingSummary(input.sessionId, redactedSummary, tx);
+    // 1. Replace the rolling summary, bump the generation and reset
+    //    token_count — one inseparable step, see the primitive's contract.
+    await replaceRollingSummaryAndBumpGeneration(tx, {
+      sessionId: input.sessionId,
+      summary: redactedSummary,
+      nextGen,
+    });
 
-    // 2. Bump generation atomically AND reset token_count so a restart in
-    //    the window between commit and the next executeTurn cannot resume
-    //    into a stale-critical band that would fire a redundant forced
-    //    fallback (which would noop, since the session was just compacted).
-    //    The next executeTurn writes the actual post-compact prompt size
-    //    via `sessionsRepo.updateTokenCount` — this 0 is only a safe
-    //    interim baseline. Same single UPDATE so the bump + reset commit
-    //    atomically with the archive write.
-    await tx.query(
-      "UPDATE sessions SET checkpoint_generation = $2, token_count = 0 WHERE id = $1",
-      [input.sessionId, nextGen],
-    );
-
-    // 3. Enqueue the archive chunking job first — we need its id to embed in the
+    // 2. Enqueue the archive chunking job first — we need its id to embed in the
     //    giant-tool placeholder if applicable. Idempotent on (session, gen).
     const enq = await enqueueJob(
       {

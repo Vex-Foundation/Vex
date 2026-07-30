@@ -40,6 +40,7 @@
 import { withTransaction } from "../../../db/client.js";
 import * as approvalIntentsRepo from "../../../db/repos/approval-intents.js";
 import * as runnerLeasesRepo from "../../../db/repos/runner-leases.js";
+import { acquireSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status.js";
 import logger from "@utils/logger.js";
 
 import {
@@ -170,6 +171,16 @@ async function resolveAbandonedDispatch(
   now: Date,
 ): Promise<RowOutcome> {
   const settled = await withTransaction(async (client) => {
+    // Session control lock FIRST, BEFORE the intent row lock — the global lock
+    // order in `lease-and-status/session-control-lock.ts` puts money-state rows
+    // last, and taking the row first here would be the out-of-order acquisition
+    // that order exists to forbid. It is also what makes the
+    // `dispatching → indeterminate` transition visible to the compaction
+    // safe-moment gate as a boundary rather than a race: `indeterminate` is the
+    // honest "we cannot prove what happened" verdict, and a transcript rewrite
+    // must never interleave with the moment it is written.
+    await acquireSessionControlLock(client, row.sessionId);
+
     const locked = await approvalIntentsRepo.lockLifecycleRowWith(
       client,
       row.approvalId,

@@ -39,6 +39,9 @@ export async function* consumeOpenRouterStream(
   // Routing metadata (`xOpenRouterMetadata: enabled`) rides the stream too.
   // Log it once — repeating it per chunk would be pure noise.
   let routingMetadataLogged = false;
+  // The serving provider off that same metadata block — carried to the `done`
+  // chunk so the turn can persist per-request routing provenance.
+  let servingProvider: string | null = null;
 
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta;
@@ -46,7 +49,11 @@ export async function* consumeOpenRouterStream(
     if (generationId === null) generationId = boundedGenerationId(chunk.id);
 
     if (!routingMetadataLogged && chunk.openrouterMetadata) {
-      observeRoutingMetadata(chunk.openrouterMetadata, "streaming chat completion");
+      const summary = observeRoutingMetadata(
+        chunk.openrouterMetadata,
+        "streaming chat completion",
+      );
+      servingProvider = summary?.provider ?? null;
       routingMetadataLogged = true;
     }
 
@@ -99,6 +106,7 @@ export async function* consumeOpenRouterStream(
         type: "done",
         finishReason,
         ...(generationId !== null && { generationId }),
+        ...(servingProvider !== null && { servingProvider }),
       };
     }
   }

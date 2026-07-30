@@ -83,6 +83,12 @@ export async function processTurnToolBatch(args: {
   readonly liveMessages: Message[];
   readonly currentTokenCount: number;
   readonly contextLimit: number;
+  /**
+   * C8 barrier bypass for this turn, derived from the loop's single per-turn
+   * preparation read. Defaults to `false` for callers that do not compute it,
+   * which is the fail-closed answer.
+   */
+  readonly preparationBypassesBarrier?: boolean;
   readonly lastTextSoFar: string | null;
   /**
    * Operator Stop. Checked at the top of each per-call iteration AND again
@@ -181,7 +187,11 @@ export async function processTurnToolBatch(args: {
 
     toolCallsExecuted++;
 
-    const toolContext = buildToolContext(context, dispatchBand);
+    const toolContext = buildToolContext(
+      context,
+      dispatchBand,
+      args.preparationBypassesBarrier === true,
+    );
 
     const result = await dispatchTool(
       { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },

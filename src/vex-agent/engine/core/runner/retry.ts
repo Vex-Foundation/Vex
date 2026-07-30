@@ -118,7 +118,7 @@ export async function retryActiveMissionRun(sessionId: string): Promise<TurnResu
   try {
     // Lazy import to break the runner ↔ retry circular dependency.
     const { resumeMissionRun } = await import("./mission.js");
-    return await resumeMissionRun(run.id);
+    return await resumeMissionRun(run.id, ownerId);
   } finally {
     await releaseLeaseAndEmitControlState(handle, sessionId, {
       missionRunId: run.id,

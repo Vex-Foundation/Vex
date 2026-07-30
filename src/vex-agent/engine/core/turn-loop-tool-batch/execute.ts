@@ -12,9 +12,18 @@ import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import { buildSessionWalletResolution } from "../hydrate.js";
 import type { computeBand } from "../context-band.js";
 
+/**
+ * `preparationBypassesBarrier` is set HERE and nowhere else. This is the live
+ * batch — the only dispatch path that runs inside a turn whose preparation
+ * state was actually read (once, at the top of the iteration). Every other
+ * producer of an `InternalToolContext` omits the field and therefore gets
+ * today's barrier; see the field's doc for the full list and why each omission
+ * is deliberate.
+ */
 export function buildToolContext(
   context: EngineContext,
   dispatchBand: ReturnType<typeof computeBand>,
+  preparationBypassesBarrier: boolean,
 ): InternalToolContext {
   const toolContext: InternalToolContext = {
     sessionId: context.sessionId,
@@ -28,6 +37,7 @@ export function buildToolContext(
     // snapshot from EngineContext; the gate's live read resolves acceptance).
     planMode: context.planMode ?? false,
     contextUsageBand: dispatchBand,
+    preparationBypassesBarrier,
     sourceSurface: "vex_agent",
     sourceSession: context.sessionId,
     walletResolution: buildSessionWalletResolution(context),

@@ -38,7 +38,12 @@
  * doc for the family-agnostic recovery contract.
  */
 
-import { execute, queryOne, query } from "../../client.js";
+import { execute, queryOne, query, queryOneWith, queryWith } from "../../client.js";
+import {
+  resolveActivitySessionByExecutionId,
+  resolveActivitySessionByRowId,
+  withActivitySessionLock,
+} from "./session-lock.js";
 
 import { assertFailureCode, sanitizeFailureReason } from "./validation.js";
 import { mapRow } from "./mappers.js";
@@ -183,7 +188,13 @@ export async function confirmActivityEvent(
     );
   }
   assertYieldConfirmLegs(current, input);
-  const row = await queryOne<Record<string, unknown>>(
+  // Under the session control lock: `pending` is money state the compaction
+  // safe-moment gate reads. `current` is the pre-read this function already
+  // does, so the session key costs no extra round trip. DB-only — the receipt
+  // lookup that produced these amounts finished before this call.
+  const row = await withActivitySessionLock(current.sessionId, (client) =>
+    queryOneWith<Record<string, unknown>>(
+    client,
     `UPDATE agent_activity
         SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW(),
             executed_amount_in_human = $2, executed_amount_in_raw = $3,
@@ -203,7 +214,7 @@ export async function confirmActivityEvent(
       input.executedAmountOut2Human ?? null,
       input.executedAmountOut2Raw ?? null,
     ],
-  );
+  ));
   if (row) return { applied: true, row: mapRow(row) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEvent") };
 }
@@ -268,14 +279,18 @@ export async function failActivityEvent(
   input: FailActivityEventInput,
 ): Promise<CasResult> {
   assertFailureCode(input.failureCode);
-  const row = await queryOne<Record<string, unknown>>(
-    `UPDATE agent_activity
+  // Under the session control lock — see `./session-lock.ts`. DB-only.
+  const sessionId = await resolveActivitySessionByRowId(id);
+  const row = await withActivitySessionLock(sessionId, (client) =>
+    queryOneWith<Record<string, unknown>>(
+      client,
+      `UPDATE agent_activity
         SET status = 'definitively_failed', failure_code = $2, failure_reason = $3,
             updated_at = NOW()
       WHERE id = $1 AND status = 'pending'
       RETURNING *`,
-    [id, input.failureCode, sanitizeFailureReason(input.failureReason)],
-  );
+      [id, input.failureCode, sanitizeFailureReason(input.failureReason)],
+    ));
   if (row) return { applied: true, row: mapRow(row) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "failActivityEvent") };
 }
@@ -329,7 +344,12 @@ export async function abortPlannedEvents(
   reason: string,
   toIndexExclusive?: number,
 ): Promise<AgentActivityEvent[]> {
-  const rows = await query<Record<string, unknown>>(
+  // Under the session control lock. Every row of one `protocol_execution_id`
+  // belongs to the same session, so a single key covers this multi-row CAS.
+  const sessionId = await resolveActivitySessionByExecutionId(executionId);
+  const rows = await withActivitySessionLock(sessionId, (client) =>
+    queryWith<Record<string, unknown>>(
+    client,
     `UPDATE agent_activity
         SET status = 'definitively_failed', failure_code = 'unknown',
             failure_reason = $3, updated_at = NOW()
@@ -340,7 +360,7 @@ export async function abortPlannedEvents(
     // C17: the stored reason is ALWAYS prefixed "not attempted:" — a single
     // enforcement point, whatever wording the venue caller passed in.
     [executionId, fromIndex, sanitizeFailureReason(`not attempted: ${reason}`), toIndexExclusive ?? null],
-  );
+  ));
   return rows.map(mapRow);
 }
 

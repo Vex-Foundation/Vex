@@ -57,6 +57,43 @@ export const providerEndpointOptionSchema = z
     pricingCacheReadPerMillion: z.number().finite().nonnegative().nullable(),
     /** BASE cache-WRITE price per 1M tokens; null when unpriced. */
     pricingCacheWritePerMillion: z.number().finite().nonnegative().nullable(),
+    /**
+     * BASE internal-reasoning price per 1M tokens; null when unpriced.
+     *
+     * The SDK's `Pricing` type declares `internalReasoning`, but the live
+     * endpoints route did NOT send it for any model checked on 2026-07-29
+     * (including the reasoning models `openai/o3` and `deepseek/deepseek-r1`),
+     * so in practice this is `null` today. Carried anyway because the runtime's
+     * `EndpointCandidate` has a `reasoningPricePerM` slot: a real null is the
+     * honest answer, and the field starts working by itself if OpenRouter
+     * begins publishing it.
+     */
+    pricingReasoningPerMillion: z.number().finite().nonnegative().nullable(),
+
+    // --- Availability (see `main/onboarding/provider-endpoint-availability.ts`
+    // for the ranking rule these feed). Every field below is `null` when
+    // OpenRouter reported no data. `null` means UNKNOWN — never render or
+    // compare it as a perfect score.
+    /** OpenRouter `uptime_last_5m`: successes / (successes + errors) * 100. */
+    uptimeLast5mPercent: z.number().min(0).max(100).nullable(),
+    /** OpenRouter `uptime_last_30m`, same ratio over 30 minutes. */
+    uptimeLast30mPercent: z.number().min(0).max(100).nullable(),
+    /** OpenRouter `uptime_last_1d`, same ratio over one day. */
+    uptimeLast1dPercent: z.number().min(0).max(100).nullable(),
+    /**
+     * Raw OpenRouter `status` enum (`0, -1, -2, -3, -5, -10`). `0` is normal,
+     * NEGATIVE means OpenRouter is deranking the endpoint. Kept raw so a new
+     * enum member survives this boundary instead of being flattened away.
+     */
+    statusCode: z.number().int().nullable(),
+    /** `statusCode < 0` — OpenRouter is routing traffic away from this row. */
+    isDeranked: z.boolean(),
+    /**
+     * Weighted mean of the uptime windows present, 0–100; `null` when the API
+     * reported no window. Derived by `computeAvailabilityScore`; carried on the
+     * DTO so main, the renderer and the runtime rank on ONE rule.
+     */
+    availabilityScore: z.number().min(0).max(100).nullable(),
   })
   .strict();
 
@@ -84,6 +121,18 @@ export const providerListEndpointsResultSchema = z
       .array(providerEndpointOptionSchema)
       .max(PROVIDER_ENDPOINT_LIST_MAX)
       .readonly(),
+    /**
+     * Tag of the endpoint Vex suggests: the top-ranked row, and only when its
+     * availability is both measured and not deranked. `null` when there is
+     * nothing honest to suggest.
+     *
+     * A HINT ONLY. It never changes the operator's selection — the wizard
+     * badges the row and leaves the choice alone.
+     *
+     * Carried at the RESULT level rather than as a per-row boolean so two rows
+     * cannot both claim to be suggested.
+     */
+    suggestedEndpointTag: z.string().trim().min(1).max(200).nullable(),
   })
   .strict();
 

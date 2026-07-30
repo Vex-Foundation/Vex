@@ -20,7 +20,7 @@
 // ── Chunking limits ──────────────────────────────────────────────
 
 /**
- * Maximum number of `thread_themes_hints` the agent may pass to `compact_now`.
+ * Maximum number of theme hints carried into the archive chunking worker.
  * Chunk count itself is intentionally UNCAPPED — the chunker LLM decides how
  * many narrative chunks the archived prefix warrants. Slicing or rejecting
  * past a hard cap would throw away the model's deliberate signal; see codex

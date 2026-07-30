@@ -45,11 +45,24 @@ const CAS_MARK_DISPATCHING_SQL = `UPDATE approval_intents
    AND execution_status = 'not_started'
  RETURNING approval_id`;
 
-export async function casMarkDispatching(approvalId: string): Promise<boolean> {
-  const rows = await query<{ approval_id: string }>(CAS_MARK_DISPATCHING_SQL, [
-    approvalId,
-  ]);
-  return rows.length > 0;
+/**
+ * Runs on the CALLER's transaction, with no pool-level twin: the slot claim
+ * MUST commit together with the operator-stop gate that guards it (see
+ * `post-tx/dispatch-approved/dispatch-slot-gate.ts`). Claiming the slot in its
+ * own transaction left a window in which a Stop could commit between the claim
+ * and the gate; sharing one transaction closes it.
+ *
+ * It is also what makes this writer a participant in the compaction safe-moment
+ * gate: `dispatching` is unresolved money state, and the reader in
+ * `../money-state.ts` is only a boundary if the writers take the same session
+ * control lock.
+ */
+export async function casMarkDispatchingWith(
+  client: PoolClient,
+  approvalId: string,
+): Promise<boolean> {
+  const res = await client.query(CAS_MARK_DISPATCHING_SQL, [approvalId]);
+  return (res.rowCount ?? 0) > 0;
 }
 
 /**
@@ -64,7 +77,7 @@ export async function casMarkDispatching(approvalId: string): Promise<boolean> {
  * `indeterminate` would overwrite that terminal verdict with a
  * success/failure it can no longer prove, AND append a second tool result for
  * a tool call that already has one. The dispatch slot CAS
- * (`casMarkDispatching`) is the only way into `dispatching`, so this predicate
+ * (`casMarkDispatchingWith`) is the only way into `dispatching`, so this predicate
  * says exactly "the writer that took the slot is still the writer settling it".
  */
 const COMMIT_EXECUTION_RESULT_SQL = `UPDATE approval_intents

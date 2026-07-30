@@ -142,6 +142,10 @@ export function ConfiguredProviderPanel({
     providerEndpointsResult?.ok === true
       ? providerEndpointsResult.data.endpoints
       : [];
+  const suggestedEndpointTag =
+    providerEndpointsResult?.ok === true
+      ? providerEndpointsResult.data.suggestedEndpointTag
+      : null;
   const endpointsFailed =
     providerEndpoints.isError || providerEndpointsResult?.ok === false;
 
@@ -333,6 +337,7 @@ export function ConfiguredProviderPanel({
                 id="vex-provider-edit-endpoint"
                 value={endpointTag}
                 endpoints={endpointOptions}
+                suggestedEndpointTag={suggestedEndpointTag}
                 loading={providerEndpoints.isLoading}
                 failed={endpointsFailed}
                 disabled={busy}

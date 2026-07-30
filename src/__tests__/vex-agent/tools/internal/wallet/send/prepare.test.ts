@@ -25,12 +25,22 @@ const mockMarkFailed = vi.fn();
 const mockMarkAuditFailed = vi.fn();
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
-  create: (...a: unknown[]) => mockCreate(...a),
+  createWith: (...a: unknown[]) => mockCreate(...a),
   getById: (...a: unknown[]) => mockGetById(...a),
-  consumeIfPending: (...a: unknown[]) => mockConsumeIfPending(...a),
-  markExecuted: (...a: unknown[]) => mockMarkExecuted(...a),
-  markFailed: (...a: unknown[]) => mockMarkFailed(...a),
-  markAuditFailed: (...a: unknown[]) => mockMarkAuditFailed(...a),
+  consumeIfPendingWith: (...a: unknown[]) => mockConsumeIfPending(...a),
+  markExecutedWith: (...a: unknown[]) => mockMarkExecuted(...a),
+  markFailedWith: (...a: unknown[]) => mockMarkFailed(...a),
+  markAuditFailedWith: (...a: unknown[]) => mockMarkAuditFailed(...a),
+}));
+
+// The money-state writers are client-bound and run inside a session-control-
+// locked transaction (compaction contract C7). Stub the lock so these unit
+// tests stay pool-free; `SENTINEL_CLIENT` is what the repo mocks receive as
+// their first argument.
+const SENTINEL_CLIENT = { __sessionControlLocked: true } as const;
+vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
+  withSessionControlLock: (_sessionId: string, fn: (c: unknown) => unknown) =>
+    Promise.resolve(fn(SENTINEL_CLIENT)),
 }));
 
 const mockExecuteSolana = vi.fn();
@@ -158,7 +168,7 @@ describe("handleWalletSendPrepare", () => {
 
     expect(result.success).toBe(true);
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    const createArgs = mockCreate.mock.calls[0][0];
+    const createArgs = mockCreate.mock.calls[0][1];
     expect(createArgs).toMatchObject({
       sessionId: SESSION_ID,
       walletAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
@@ -233,10 +243,10 @@ describe("handleWalletSendPrepare", () => {
       { network: "solana", to: "SoLAdr11111111111111111111111111111111", amount: "0.5" },
       makeContext(),
     );
-    expect(mockCreate.mock.calls[0][0].walletAddress).toBe(
+    expect(mockCreate.mock.calls[0][1].walletAddress).toBe(
       "SoLanaAddr1111111111111111111111111111111",
     );
-    expect(mockCreate.mock.calls[0][0].chainAlias).toBeNull();
+    expect(mockCreate.mock.calls[0][1].chainAlias).toBeNull();
     expect(result.preparedActionFollowUp).toMatchObject({
       args: { network: "solana" },
       approvalPreview: {

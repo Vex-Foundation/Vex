@@ -200,16 +200,19 @@ export async function executeProtocolTool(
   }
 
   // Pressure-barrier guard for protocol tools — at band ≥ barrier, mutating
-  // protocol calls are blocked unless they are preview/dryRun. The agent must
-  // call `compact_now` first to clear the barrier. Same semantics as the
-  // dispatcher's hard-deny for internal mutating tools.
+  // protocol calls are blocked unless they are preview/dryRun. Same semantics
+  // as the dispatcher's hard-deny for internal mutating tools, INCLUDING the
+  // C8 preparation bypass: this is the third mirror of one rule, and a
+  // protocol call must not be denied here after the catalog offered it.
   if (
     context.contextUsageBand
     && manifest.mutating
     && !isPreviewExecution(request.toolId, params)
   ) {
     const band = context.contextUsageBand;
-    if (band === "barrier" || band === "critical") {
+    const bypassed =
+      context.preparationBypassesBarrier === true && band === "barrier";
+    if ((band === "barrier" || band === "critical") && !bypassed) {
       logger.info("protocol.execute.pressure_denied", {
         toolId: request.toolId,
         band,
@@ -218,7 +221,8 @@ export async function executeProtocolTool(
         success: false,
         output:
           `${request.toolId} is blocked at context pressure ${band}. `
-          + `Call compact_now first to compact the conversation; the next turn after compaction restores the full tool set.`,
+          + `The runtime compacts this conversation automatically — no tool call is required from you. `
+          + `Continue with read-only or preview variants; the full tool set returns after the compaction lands.`,
       }, effectiveActionKind);
     }
   }

@@ -24,11 +24,11 @@
  * Codex puzzle-5 phase-3 review iterations v1/v2/v3 → GREEN LIGHT 2026-05-23.
  */
 
-import { withTransaction } from "../../db/client.js";
 import {
   buildApproveSnapshot,
   buildRejectSnapshot,
 } from "./approval-runtime/snapshot.js";
+import { withApprovalDecisionTransaction } from "./approval-runtime/snapshot/locked-transaction.js";
 import {
   applyApproveSideEffects,
   applyPolicyDriftSideEffects,
@@ -92,7 +92,7 @@ export { resumePendingApprovalsForSession } from "./approval-runtime/deferred-re
 export async function prepareApprove(
   approvalId: string,
 ): Promise<ApprovePrepareOutcome> {
-  const snapshot = await withTransaction((client) =>
+  const snapshot = await withApprovalDecisionTransaction(approvalId, (client) =>
     buildApproveSnapshot(client, approvalId),
   );
 
@@ -182,7 +182,7 @@ export async function prepareReject(
     reason === undefined ? "" : sanitizeRejectReason(reason);
   const effectiveReason =
     sanitized.length > 0 ? sanitized : TOOL_RESULT_REJECTED_DEFAULT_REASON;
-  const snapshot = await withTransaction((client) =>
+  const snapshot = await withApprovalDecisionTransaction(approvalId, (client) =>
     buildRejectSnapshot(client, approvalId, effectiveReason),
   );
 
@@ -226,7 +226,7 @@ export async function prepareReject(
 export async function expireApproval(
   approvalId: string,
 ): Promise<RejectPrepareOutcome> {
-  const snapshot = await withTransaction((client) =>
+  const snapshot = await withApprovalDecisionTransaction(approvalId, (client) =>
     buildRejectSnapshot(client, approvalId, TOOL_RESULT_EXPIRED_REASON),
   );
 

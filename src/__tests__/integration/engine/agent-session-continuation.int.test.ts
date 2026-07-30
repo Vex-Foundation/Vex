@@ -188,7 +188,22 @@ describe("agent-session continuation (integration)", () => {
       ttlMs: 60_000,
     });
 
-    const deps = makeDeps();
+    /**
+     * Captured from INSIDE the slice: the owner the executor passed, next to
+     * the owner of the lease actually live in `runner_leases` at that instant.
+     * It can only be observed here — the executor releases the lease in its
+     * `finally`, so after `tick` returns the row is gone.
+     */
+    const observedOwners: { passed: string; live: string | undefined }[] = [];
+    const deps = makeDeps({
+      continueAgentSession: vi.fn(async (_sessionId: string, ownerId: string) => {
+        const rows = await query<{ owner_id: string }>(
+          "SELECT owner_id FROM runner_leases WHERE session_id = $1",
+          [sessionId],
+        );
+        observedOwners.push({ passed: ownerId, live: rows[0]?.owner_id });
+      }),
+    });
     await tick(new Date(), 10, deps);
     expect(deps.continueAgentSession).not.toHaveBeenCalled();
 
@@ -207,7 +222,13 @@ describe("agent-session continuation (integration)", () => {
       kind: "agent_session_continued",
       sessionId,
     });
-    expect(deps.continueAgentSession).toHaveBeenCalledWith(sessionId);
+    // THE OWNERSHIP PROOF: the slice was handed the owner of the lease that is
+    // genuinely live for this session at that instant. Without it the slice's
+    // turn loop cannot prove ownership and silently never applies a prepared
+    // compaction cutover.
+    expect(observedOwners).toHaveLength(1);
+    expect(observedOwners[0]!.live).toBeDefined();
+    expect(observedOwners[0]!.passed).toBe(observedOwners[0]!.live);
     // Banner before the slice, and nothing left pending.
     expect(deps.injectWakeBanner).toHaveBeenCalled();
     expect(await pendingWakes(sessionId)).toHaveLength(0);

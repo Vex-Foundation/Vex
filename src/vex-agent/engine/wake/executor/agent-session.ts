@@ -112,7 +112,7 @@ export async function handleAgentSessionClaimed(
   });
   try {
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-    await deps.continueAgentSession(wake.sessionId);
+    await deps.continueAgentSession(wake.sessionId, ownerId);
     return { kind: "agent_session_continued", sessionId: wake.sessionId };
   } finally {
     await releaseLeaseAndEmitControlState(handle, wake.sessionId);

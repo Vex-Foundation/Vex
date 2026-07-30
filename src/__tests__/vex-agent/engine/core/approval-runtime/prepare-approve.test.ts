@@ -136,6 +136,7 @@ const mockGateOnOperatorStopTransaction = vi
   .mockResolvedValue({ kind: "clear" });
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  acquireSessionControlLock: vi.fn(),
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) =>
     mockClaimRunLeaseAndFlipToRunning(...a),
   claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
@@ -183,7 +184,7 @@ vi.mock("@utils/logger.js", () => ({
 // the non-tx audit calls. getExpired is mocked per-test for sweep cases.
 const mockMarkExecutionStatus = vi.fn().mockResolvedValue(undefined);
 const mockGetExpired = vi.fn().mockResolvedValue([]);
-// Lifecycle CAS helpers (migration 056). `casMarkDispatching` is the guard that
+// Lifecycle CAS helpers (migration 056). `casMarkDispatchingWith` is the guard that
 // takes the dispatch slot — `false` means another writer owns the dispatch and
 // this path must NOT run the tool.
 const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
@@ -201,7 +202,7 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
     ...actual,
     markExecutionStatus: (...a: unknown[]) => mockMarkExecutionStatus(...a),
     getExpired: (...a: unknown[]) => mockGetExpired(...a),
-    casMarkDispatching: (...a: unknown[]) => mockCasMarkDispatching(...a),
+    casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
     casMarkResumeConsumed: (...a: unknown[]) => mockCasMarkResumeConsumed(...a),
     markResumeAttempted: (...a: unknown[]) => mockMarkResumeAttempted(...a),
     commitExecutionResultWith: (...a: unknown[]) =>
@@ -418,7 +419,12 @@ describe("prepareApprove", () => {
 
     // Dispatch slot taken via the CAS (`not_started -> dispatching`), which
     // also stamps `dispatch_started_at`.
-    expect(mockCasMarkDispatching).toHaveBeenCalledWith(APPROVAL_ID);
+    expect(mockCasMarkDispatching).toHaveBeenCalledWith(
+        // The CAS now runs on the stop gate's transaction client — same
+        // predicate, one fewer commit. See `dispatch-slot-gate.ts`.
+        expect.anything(),
+        APPROVAL_ID,
+      );
 
     // Result + result_message_id committed together with the transcript row.
     expect(mockCommitExecutionResultWith).toHaveBeenCalledWith(
@@ -907,7 +913,12 @@ describe("prepareApprove", () => {
       expect(mockDispatchTool).toHaveBeenCalledTimes(1);
       // `dispatching` is now taken through the CAS (which also stamps
       // `dispatch_started_at`) rather than an unconditional status write.
-      expect(mockCasMarkDispatching).toHaveBeenCalledWith(APPROVAL_ID);
+      expect(mockCasMarkDispatching).toHaveBeenCalledWith(
+        // The CAS now runs on the stop gate's transaction client — same
+        // predicate, one fewer commit. See `dispatch-slot-gate.ts`.
+        expect.anything(),
+        APPROVAL_ID,
+      );
 
       // Approve CAS fired; reject CAS did not.
       const approveCas = clientQueryLog.find(

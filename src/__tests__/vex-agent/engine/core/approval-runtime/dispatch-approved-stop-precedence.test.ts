@@ -63,7 +63,7 @@ vi.mock("@vex-agent/tools/dispatcher.js", () => ({
 const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   markExecutionStatus: vi.fn(),
-  casMarkDispatching: (...a: unknown[]) => mockCasMarkDispatching(...a),
+  casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
 }));
 
 /** The repo CAS: a terminal run row is immutable audit history. */
@@ -88,8 +88,14 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
  * APPLIES through the one shared stop body — so a queued stop leaves the
  * canonical `stopped` / `user_stopped` pair behind, exactly like the real one.
  */
-const mockGateOnOperatorStopTransaction = vi.fn(async () => {
-  order.push("stop_gate");
+/**
+ * Both gates share ONE body, because in production they are the same shared
+ * stop body — the pre-dispatch one now runs on the caller's client (it shares
+ * a transaction with the slot CAS), the failure-exit consumer opens its own.
+ * They are logged under distinct labels so the ordering assertions can tell
+ * which of the two ran.
+ */
+function applyStopGate() {
   if (TERMINAL.has(runRow.status)) {
     return { kind: "stopped" as const, runStatus: runRow.status };
   }
@@ -97,14 +103,45 @@ const mockGateOnOperatorStopTransaction = vi.fn(async () => {
   runRow.status = "stopped";
   runRow.stopReason = "user_stopped";
   return { kind: "stopped" as const, runStatus: "stopped" };
+}
+
+/**
+ * The label for the PRE-dispatch step is taken from the lock acquisition, not
+ * from the gate: `flipRunToPausedError` consumes the same
+ * `gateOnOperatorStopWithClient` on the failure exit, but reaches it through
+ * `withSessionControlLock`. Only `dispatch-slot-gate.ts` acquires the lock on
+ * its own transaction, so this is the one unambiguous marker for it.
+ */
+const mockAcquireSessionControlLock = vi.fn(async () => {
+  order.push("pre_dispatch_stop_gate");
 });
+const mockGateOnOperatorStopTransaction = vi.fn(async () => {
+  order.push("stop_gate");
+  return applyStopGate();
+});
+vi.mock("@vex-agent/db/client.js", () => ({
+  // The pre-dispatch transaction (stop gate + slot CAS) is the only DB work
+  // this file's subject opens directly; both of its statements are mocked
+  // above, so the client is an inert stand-in.
+  withTransaction: async <T>(fn: (client: unknown) => Promise<T>): Promise<T> =>
+    fn({ query: vi.fn() }),
+}));
+
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  acquireSessionControlLock: (...a: unknown[]) =>
+    mockAcquireSessionControlLock(...a),
   gateOnOperatorStopTransaction: () => mockGateOnOperatorStopTransaction(),
+  // Consumed by BOTH the pre-dispatch slot gate and `flipRunToPausedError`.
+  // Stubbed `clear`: in every case in this file the stop is queued during or
+  // after the dispatch, so the pre-dispatch gate is legitimately clear, and the
+  // recovery flip must still reach its CAS to prove the CAS is what refuses it.
+  // A `stopped` pre-dispatch verdict is pinned in
+  // `dispatch-approved-stop-gate.test.ts`.
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
   // The `paused_error` recovery flip carries the durable operator-Stop consumer,
   // so it reaches the control plane too. Stubbed to "no stop raced us"; the
   // consumer's own behaviour is pinned by
   // `approval-runtime/paused-error-flip-stop-consumer.test.ts`.
-  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
   withSessionControlLock: async <T>(
     _sessionId: string,
     fn: (client: unknown) => Promise<T>,
@@ -203,7 +240,7 @@ describe("applyApproveSideEffects — terminal stop outranks paused_error", () =
     // and the parking attempt comes last, where the CAS refuses it.
     expect(mockCommitDispatchFailureToolResult).toHaveBeenCalledTimes(1);
     expect(order).toEqual([
-      "stop_gate",
+      "pre_dispatch_stop_gate",
       "dispatch",
       "commit_failure_result",
       "stop_gate",
@@ -246,7 +283,7 @@ describe("applyApproveSideEffects — terminal stop outranks paused_error", () =
     expect(runRow.status).toBe("stopped");
     expect(runRow.stopReason).toBe("user_stopped");
     expect(order).toEqual([
-      "stop_gate",
+      "pre_dispatch_stop_gate",
       "dispatch",
       "commit_result",
       "stop_gate",
@@ -326,7 +363,8 @@ describe("applyApproveSideEffects — terminal stop outranks paused_error", () =
     // (This file's gate stub takes no args by design — that the session-scoped
     // call carries `missionRunId: null` is asserted in
     // `dispatch-approved-stop-gate.test.ts`.)
-    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(2);
+    expect(mockAcquireSessionControlLock).toHaveBeenCalledTimes(1);
+    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(1);
     expect(mockUpdateStatusIfNotTerminal).not.toHaveBeenCalled();
     expect(mockCommitDispatchFailureToolResult).toHaveBeenCalledTimes(1);
   });

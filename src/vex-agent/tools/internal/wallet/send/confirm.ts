@@ -10,6 +10,7 @@
 import { walletAddressesEqual } from "@tools/wallet/inventory.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 
 import type { ToolResult } from "../../../types.js";
 import type { InternalToolContext } from "../../types.js";
@@ -83,9 +84,17 @@ export async function handleWalletSendConfirm(
   }
 
   // CAS-consume atomically; race losers get null.
-  const claimed = await walletIntentsRepo.consumeIfPending(
-    intentId,
-    context.sessionId,
+  //
+  // Under the session control lock, in a DB-ONLY transaction that COMMITS
+  // before the signing calls below. The lock makes this claim serialize with
+  // the compaction safe-moment gate: either the gate saw this row as
+  // `consuming` and deferred the cutover, or this claim landed strictly after
+  // the cutover committed. Holding the lock across `executeEvmTransfer` /
+  // `executeSolanaTransfer` would block the operator's Stop — the exact
+  // inversion the lock exists to prevent (session-control-lock.ts, hold
+  // duration).
+  const claimed = await withSessionControlLock(context.sessionId, (client) =>
+    walletIntentsRepo.consumeIfPendingWith(client, intentId, context.sessionId),
   );
   if (!claimed) {
     const cur = await walletIntentsRepo.getById(intentId, context.sessionId);

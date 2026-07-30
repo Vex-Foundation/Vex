@@ -32,7 +32,7 @@ vi.mock("@vex-agent/tools/dispatcher.js", () => ({
 const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   markExecutionStatus: vi.fn(),
-  casMarkDispatching: (...a: unknown[]) => mockCasMarkDispatching(...a),
+  casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
 }));
 
 vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
@@ -64,7 +64,17 @@ vi.mock(
 const mockGateOnOperatorStopTransaction = vi.fn().mockResolvedValue({
   kind: "clear",
 });
+vi.mock("@vex-agent/db/client.js", () => ({
+  // The pre-dispatch transaction (stop gate + slot CAS) is the only DB work
+  // this file's subject opens directly; both of its statements are mocked
+  // above, so the client is an inert stand-in.
+  withTransaction: async <T>(fn: (client: unknown) => Promise<T>): Promise<T> =>
+    fn({ query: vi.fn() }),
+}));
+
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  acquireSessionControlLock: vi.fn(),
   gateOnOperatorStopTransaction: (...a: unknown[]) =>
     mockGateOnOperatorStopTransaction(...a),
 }));

@@ -188,7 +188,12 @@ describe("wake.executor.tick", () => {
         "iteration_limit: runtime slice exhausted; continue autonomously",
         "2026-04-20T12:00:00.000Z",
       );
-      expect(deps.continueAgentSession).toHaveBeenCalledWith("sess-1");
+      // The EXACT lease the executor claimed reaches the slice — the slice's
+      // turn loop can only apply a prepared compaction by proving ownership.
+      expect(deps.continueAgentSession).toHaveBeenCalledWith(
+        "sess-1",
+        "wake-executor-wake-agent-1",
+      );
     });
 
     it("banner precedes the continuation, and the lease is always released", async () => {
@@ -362,7 +367,10 @@ describe("wake.executor.tick", () => {
         expect.objectContaining({ missionRunId: "run-1", expectedAttempt: 2 }),
       );
       expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
-      expect(deps.resumeMissionRun).toHaveBeenCalledWith("run-1");
+      expect(deps.resumeMissionRun).toHaveBeenCalledWith(
+        "run-1",
+        "auto-retry-wake-9",
+      );
     });
 
     it("CONSUMED-WAKE RACE: a human Recover stamped unsafe → claim ineligible → skip, no resume", async () => {
@@ -427,7 +435,10 @@ describe("wake.executor.tick", () => {
       "continue monitoring",
       "2026-04-20T12:00:00.000Z",
     );
-    expect(deps.resumeMissionRun).toHaveBeenCalledWith("run-1");
+    expect(deps.resumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      "wake-executor-wake-1",
+    );
   });
 
   it("skips when the run is no longer paused_wake (user preempt won the race)", async () => {

@@ -4,8 +4,9 @@
  *
  * Scope note, so the next session does not over-trust this file. What is
  * proven HERE is the wiring and the ordering inside `applyApproveSideEffects`:
- * that the gate runs AFTER the dispatch-slot CAS and BEFORE `dispatchTool`,
- * that a `stopped` verdict suppresses the dispatch entirely, that the
+ * that the gate and the dispatch-slot CAS share ONE locked transaction sitting
+ * immediately before `dispatchTool`, that a `stopped` verdict suppresses the
+ * dispatch entirely, that the
  * `dispatching` row is settled instead of being abandoned for the reconciler
  * to call `indeterminate`, that a Stop landing in the unlocked window AFTER
  * the dispatch is applied durably once the result is safe (never before it,
@@ -41,22 +42,35 @@ vi.mock("@vex-agent/tools/dispatcher.js", () => ({
 const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   markExecutionStatus: vi.fn(),
-  casMarkDispatching: (...a: unknown[]) => mockCasMarkDispatching(...a),
+  casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
 }));
 
+/**
+ * The PRE-dispatch gate. It runs on the caller's client now, because the
+ * slot CAS and the gate share one transaction — see `dispatch-slot-gate.ts`.
+ * The POST-dispatch consumer (`applyQueuedOperatorStop`) still opens its own
+ * transaction, so the two are separately observable here, which is what lets
+ * this file assert the ordering rather than assume it.
+ */
+const mockPreDispatchGate = vi.fn();
 const mockGateOnOperatorStopTransaction = vi.fn();
+const mockAcquireSessionControlLock = vi.fn();
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   gateOnOperatorStopTransaction: (...a: unknown[]) =>
     mockGateOnOperatorStopTransaction(...a),
-  // The `paused_error` recovery flip carries the durable operator-Stop consumer,
-  // so it reaches the control plane too. Stubbed to "no stop raced us"; the
-  // consumer's own behaviour is pinned by
-  // `approval-runtime/paused-error-flip-stop-consumer.test.ts`.
-  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  gateOnOperatorStopWithClient: (...a: unknown[]) => mockPreDispatchGate(...a),
+  acquireSessionControlLock: (...a: unknown[]) =>
+    mockAcquireSessionControlLock(...a),
   withSessionControlLock: async <T>(
     _sessionId: string,
     fn: (client: unknown) => Promise<T>,
   ): Promise<T> => fn({}),
+}));
+
+const preDispatchTxClient = { query: vi.fn() };
+vi.mock("@vex-agent/db/client.js", () => ({
+  withTransaction: async <T>(fn: (client: unknown) => Promise<T>): Promise<T> =>
+    fn(preDispatchTxClient),
 }));
 
 const mockHydrateEngineSession = vi.fn().mockResolvedValue(null);
@@ -146,6 +160,7 @@ beforeEach(() => {
   mockUpdateStatusIfNotTerminal.mockResolvedValue(true);
   mockCasMarkDispatching.mockResolvedValue(true);
   mockGateOnOperatorStopTransaction.mockResolvedValue({ kind: "clear" });
+  mockPreDispatchGate.mockResolvedValue({ kind: "clear" });
   mockDispatchTool.mockResolvedValue({ success: true, output: "{}", data: {} });
   mockClaimResumeContinuation.mockResolvedValue({
     outcome: "claimed",
@@ -162,7 +177,7 @@ beforeEach(() => {
 
 describe("applyApproveSideEffects — operator-stop gate", () => {
   it("does NOT dispatch the approved tool when the operator stopped the run", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "stopped",
     });
@@ -184,7 +199,7 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
   });
 
   it("reports the run's REAL terminal status, never a literal", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "cancelled",
     });
@@ -199,7 +214,7 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
   });
 
   it("settles the dispatching row with a structural, secret-free tool result", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "stopped",
     });
@@ -223,7 +238,7 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
   });
 
   it("hands the lease back instead of leaking it until TTL", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "stopped",
     });
@@ -233,8 +248,11 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
     expect(mockDiscardContinuation).toHaveBeenCalledTimes(1);
   });
 
-  it("ORDERING: the gate runs AFTER the slot CAS and IMMEDIATELY BEFORE the dispatch", async () => {
+  it("ORDERING: gate and slot CAS share one locked tx, IMMEDIATELY BEFORE the dispatch", async () => {
     const order: string[] = [];
+    mockAcquireSessionControlLock.mockImplementation(async () => {
+      order.push("session_lock");
+    });
     mockCasMarkDispatching.mockImplementation(async () => {
       order.push("cas");
       return true;
@@ -243,8 +261,12 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
       order.push("build_context");
       return null;
     });
-    mockGateOnOperatorStopTransaction.mockImplementation(async () => {
+    mockPreDispatchGate.mockImplementation(async () => {
       order.push("gate");
+      return { kind: "clear" };
+    });
+    mockGateOnOperatorStopTransaction.mockImplementation(async () => {
+      order.push("post_dispatch_gate");
       return { kind: "clear" };
     });
     mockDispatchTool.mockImplementation(async () => {
@@ -258,22 +280,28 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
 
     await applyApproveSideEffects("appr-1", approvedMissionSnapshot());
 
-    // CAS first: the commit that makes this dispatch publicly committed-to, so
-    // any Stop inserted later necessarily sees `dispatching`. Context
-    // construction second — it is a read and moves nothing, so it must NOT sit
-    // between the gate and the call (an await there is a window in which a
-    // committed Stop still permits a not-yet-started dispatch). Gate third,
-    // adjacent to the dispatch. Dispatch fourth, unlocked. Then the result is
-    // made durable, and only THEN is a Stop that landed during the unlocked
-    // window applied — an executed tool's outcome must never be lost to a stop
-    // that arrived after it.
+    // Context construction FIRST — it is a read and moves nothing, so it must
+    // NOT sit between the gate and the call (an await there is a window in
+    // which a committed Stop still permits a not-yet-started dispatch).
+    //
+    // Then ONE transaction: session control lock, gate, slot CAS. The CAS is
+    // still what makes this dispatch publicly committed-to, so any Stop
+    // inserted later necessarily sees `dispatching`; sharing the gate's
+    // transaction removes the window in which it could sit between the two.
+    // The gate precedes the CAS inside it because the global lock order puts
+    // money-state rows last.
+    //
+    // Dispatch next, unlocked. Then the result is made durable, and only THEN
+    // is a Stop that landed during the unlocked window applied — an executed
+    // tool's outcome must never be lost to a stop that arrived after it.
     expect(order).toEqual([
-      "cas",
       "build_context",
+      "session_lock",
       "gate",
+      "cas",
       "dispatch",
       "commit_result",
-      "gate",
+      "post_dispatch_gate",
     ]);
   });
 
@@ -287,7 +315,7 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
       stopCommitted = true; // the operator presses Stop mid-hydration
       return null;
     });
-    mockGateOnOperatorStopTransaction.mockImplementation(async () =>
+    mockPreDispatchGate.mockImplementation(async () =>
       stopCommitted
         ? { kind: "stopped", runStatus: "stopped" }
         : { kind: "clear" },
@@ -324,11 +352,16 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
     );
 
     expect(outcome.kind).toBe("deferred_busy");
-    expect(mockGateOnOperatorStopTransaction).not.toHaveBeenCalled();
+    expect(mockPreDispatchGate).not.toHaveBeenCalled();
+    expect(mockCasMarkDispatching).not.toHaveBeenCalled();
     expect(mockDispatchTool).not.toHaveBeenCalled();
   });
 
-  it("a lost slot CAS never reaches the gate — another writer owns the dispatch", async () => {
+  it("a lost slot CAS is observed in the SAME tx as the gate — another writer owns the dispatch", async () => {
+    // The gate now runs before the CAS inside one transaction, so unlike the
+    // old two-transaction shape it IS consulted here. What must not change is
+    // the consequence: a lost CAS means another writer owns this dispatch and
+    // the tool must not run a second time.
     mockCasMarkDispatching.mockResolvedValue(false);
 
     const outcome = await applyApproveSideEffects(
@@ -337,8 +370,9 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
     );
 
     expect(outcome.kind).toBe("deferred_busy");
-    expect(mockGateOnOperatorStopTransaction).not.toHaveBeenCalled();
+    expect(mockPreDispatchGate).toHaveBeenCalledTimes(1);
     expect(mockDispatchTool).not.toHaveBeenCalled();
+    expect(mockCommitApprovedToolResult).not.toHaveBeenCalled();
   });
 
   it("APPLIES a Stop that arrived DURING the dispatch, after committing the result", async () => {
@@ -360,13 +394,15 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
     mockCommitApprovedToolResult.mockImplementation(async () => {
       order.push("commit_result");
     });
-    mockGateOnOperatorStopTransaction.mockImplementation(async () => {
-      // First call is the pre-dispatch gate (nothing queued yet); the Stop is
-      // inserted while the unlocked dispatch runs, so the second call sees it.
+    // Nothing is queued when the pre-dispatch gate runs; the Stop is inserted
+    // while the unlocked dispatch runs, so the post-dispatch consumer sees it.
+    mockPreDispatchGate.mockImplementation(async () => {
       order.push("gate");
-      return order.filter((s) => s === "gate").length === 1
-        ? { kind: "clear" }
-        : { kind: "stopped", runStatus: "stopped" };
+      return { kind: "clear" };
+    });
+    mockGateOnOperatorStopTransaction.mockImplementation(async () => {
+      order.push("post_dispatch_gate");
+      return { kind: "stopped", runStatus: "stopped" };
     });
 
     const outcome = await applyApproveSideEffects(
@@ -374,7 +410,12 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
       approvedMissionSnapshot(),
     );
 
-    expect(order).toEqual(["gate", "dispatch", "commit_result", "gate"]);
+    expect(order).toEqual([
+      "gate",
+      "dispatch",
+      "commit_result",
+      "post_dispatch_gate",
+    ]);
     if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
     // The tool ran and its result is durable — that fact outranks the Stop.
     expect(outcome.executionStatus).toBe("succeeded");
@@ -398,7 +439,6 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
     // which a run about to be parked never reaches. So a failure now means
     // "we could not find out", and the agent is not resumed on a guess.
     mockGateOnOperatorStopTransaction
-      .mockResolvedValueOnce({ kind: "clear" })
       .mockRejectedValueOnce(new Error("db down"))
       .mockResolvedValue({ kind: "clear" });
 
@@ -420,9 +460,7 @@ describe("applyApproveSideEffects — operator-stop gate", () => {
 
   it("names an unresolved stop on the failure funnel instead of parking silently", async () => {
     mockDispatchTool.mockRejectedValue(new Error("tool blew up"));
-    mockGateOnOperatorStopTransaction
-      .mockResolvedValueOnce({ kind: "clear" })
-      .mockRejectedValue(new Error("db down"));
+    mockGateOnOperatorStopTransaction.mockRejectedValue(new Error("db down"));
 
     await expect(
       applyApproveSideEffects("appr-1", approvedMissionSnapshot()),
@@ -466,7 +504,7 @@ describe("applyApproveSideEffects — SESSION-scoped operator stop", () => {
   });
 
   it("does NOT dispatch the approved tool when the SESSION was stopped", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "cancelled",
       scope: "session",
@@ -485,7 +523,7 @@ describe("applyApproveSideEffects — SESSION-scoped operator stop", () => {
   });
 
   it("settles the dispatching row structurally, so the reconciler cannot call it indeterminate", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "cancelled",
       scope: "session",
@@ -506,7 +544,7 @@ describe("applyApproveSideEffects — SESSION-scoped operator stop", () => {
   });
 
   it("releases the chat continuation instead of leaking the session lease", async () => {
-    mockGateOnOperatorStopTransaction.mockResolvedValue({
+    mockPreDispatchGate.mockResolvedValue({
       kind: "stopped",
       runStatus: "cancelled",
       scope: "session",
@@ -555,15 +593,13 @@ describe("applyApproveSideEffects — SESSION stop queued DURING the dispatch", 
   });
 
   it("lands the session stop and does NOT resume the agent", async () => {
-    mockGateOnOperatorStopTransaction
-      // Pre-dispatch: nothing queued yet, so the approved tool runs.
-      .mockResolvedValueOnce({ kind: "clear" })
-      // The operator presses Stop while it is in flight.
-      .mockResolvedValueOnce({
-        kind: "stopped",
-        runStatus: "cancelled",
-        scope: "session",
-      });
+    // Pre-dispatch gate: nothing queued yet, so the approved tool runs (the
+    // beforeEach default). The operator presses Stop while it is in flight.
+    mockGateOnOperatorStopTransaction.mockResolvedValueOnce({
+      kind: "stopped",
+      runStatus: "cancelled",
+      scope: "session",
+    });
 
     const outcome = await applyApproveSideEffects(
       "appr-1",
@@ -577,7 +613,7 @@ describe("applyApproveSideEffects — SESSION stop queued DURING the dispatch", 
 
     // THE POINT: the stop was consulted for the session (not skipped), and the
     // continuation was released instead of resuming the agent.
-    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(2);
+    expect(mockGateOnOperatorStopTransaction).toHaveBeenCalledTimes(1);
     expect(mockGateOnOperatorStopTransaction).toHaveBeenLastCalledWith({
       sessionId: "s1",
       missionRunId: null,
@@ -599,9 +635,9 @@ describe("applyApproveSideEffects — SESSION stop queued DURING the dispatch", 
   });
 
   it("NEVER THROWS: a gate failure is reported as apply_failed, never as clear", async () => {
-    mockGateOnOperatorStopTransaction
-      .mockResolvedValueOnce({ kind: "clear" })
-      .mockRejectedValueOnce(new Error("db blip"));
+    mockGateOnOperatorStopTransaction.mockRejectedValueOnce(
+      new Error("db blip"),
+    );
 
     // `apply_failed` on the post-dispatch path escalates to a post-decision
     // error rather than resuming on a guess — the contract is unchanged for a

@@ -8,6 +8,7 @@
  */
 
 import { EV } from "../../shared/ipc/channels.js";
+import { compactionPreparationEventSchema } from "../../shared/schemas/compaction-preparation.js";
 import { engineErrorEventSchema } from "../../shared/schemas/engine-error.js";
 import { transcriptAppendEventSchema } from "../../shared/schemas/messages.js";
 import { missionUpdateEventSchema } from "../../shared/schemas/mission-update.js";
@@ -26,4 +27,10 @@ export const engine = {
   onEngineError: (cb) => subscribe(EV.engine.error, engineErrorEventSchema, cb),
   onMissionUpdate: (cb) =>
     subscribe(EV.engine.missionUpdate, missionUpdateEventSchema, cb),
+  onCompactionPreparation: (cb) =>
+    subscribe(
+      EV.engine.compactionPreparation,
+      compactionPreparationEventSchema,
+      cb,
+    ),
 } satisfies EngineEventsBridge;

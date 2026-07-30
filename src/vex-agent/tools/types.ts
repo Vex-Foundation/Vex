@@ -76,6 +76,18 @@ export interface ToolVisibility {
    * this flag only controls what the LLM sees.
    */
   requiresUniswapReveal?: boolean;
+  /**
+   * True → show only when the session has a VALIDATED prepared compaction
+   * summary (`ToolVisibilityContext.hasCompactionSummaryReady === true`).
+   * Used by `compact_apply`, whose whole precondition is readiness rather
+   * than a pressure band: preparation routinely completes while the session
+   * is still in the warning band, and hiding the tool until barrier would
+   * withhold the cheapest moment to take it.
+   *
+   * Deliberately NOT a band gate: that would key the tool off pressure,
+   * which is the wrong axis here.
+   */
+  requiresSummaryReady?: boolean;
 }
 
 /**
@@ -88,14 +100,12 @@ export interface ToolVisibility {
  * before further work.
  *
  * Bands `barrier` and `critical` block calls where `pressureSafety ===
- * "mutating"`. `compact_only` is visible only at those bands. `read_only`
- * and `safe_at_barrier` pass through.
+ * "mutating"`. `read_only` and `safe_at_barrier` pass through.
  */
 export type PressureSafety =
   | "safe_at_barrier"
   | "read_only"
-  | "mutating"
-  | "compact_only";
+  | "mutating";
 
 export interface ToolDef {
   /** Unique tool name — used by LLM in tool_calls */
@@ -321,7 +331,7 @@ export interface PreparedActionFollowUp {
  *
  * - stop_mission: parent mission stop (business stop reason)
  * - defer_until: the agent wants to sleep until a wake time (loop_defer)
- * - compact_committed: `compact_now` archived the conversation prefix, updated
+ * - compact_committed: a compaction archived the conversation prefix, updated
  *   the rolling summary, and enqueued a Track 2 chunking job (PR2). Turn-loop
  *   drains remaining tool calls in the batch with `batch_aborted_by_compact`,
  *   reloads live messages, merges operator interrupts, updates

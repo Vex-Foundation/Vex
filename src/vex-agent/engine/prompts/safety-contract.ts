@@ -57,7 +57,7 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 - **2-step transfer rule.** Step 1: quote / preview (non-mutating). Step 2: execute with explicit confirmation (mutating). Never skip step 1.
 - **Same-venue quote and execute.** A swap or bridge executes only against a fresh quote from the SAME venue/provider (e.g. a \`khalani\` quote cannot authorize a \`relay\` execute — the same rule holds for any revealed backup swap venue). The runtime enforces this — quote on the venue you intend to execute on.
-- **Mutating calls are blocked at the pressure barrier.** At ≥ 88% context the only mutating action available is \`compact_now\`; preview / dryRun passes through, the actual mutation does not. Compact first, then resume — the post-compact resume packet inherits the rolling summary you supplied as \`conversation_summary\`.
+- **Mutating calls are blocked at the pressure barrier.** At ≥ 88% context, preview / dryRun passes through but the actual mutation does not. You do not compact by hand: the runtime prepares and applies a compaction on its own, and while one is being prepared the barrier lifts and your full tool set stays available. If \`compact_apply\` is offered, a prepared summary is ready and calling it applies it early.
 
 ## DeFi safety rules
 

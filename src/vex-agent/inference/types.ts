@@ -27,6 +27,47 @@ export type ReasoningEffort =
   | "xhigh"
   | "max";
 
+/**
+ * One routable endpoint of the configured model, as the failover ranker needs
+ * it. This is the PRODUCER CONTRACT between the app's endpoint catalogue (which
+ * lives in the Electron main process and may not be imported here — the
+ * process-boundary check enforces that) and the runtime's endpoint failover.
+ *
+ * Provider-agnostic by shape, OpenRouter-shaped in practice. Every field is
+ * already VALIDATED by the producer: `tag`/`providerName` non-empty and
+ * length-bounded, `uptimePercent` within 0..100, prices in units of per-1M
+ * tokens, and `null` used honestly for "the catalogue reported nothing usable"
+ * rather than a zero that would read as free or as 0 % uptime.
+ */
+export interface EndpointCandidate {
+  /**
+   * Unique routing identifier — the value that becomes `provider.order[0]`.
+   * NEVER `providerName`: display names are non-unique (`anthropic` vs
+   * `anthropic/2`), so pinning on one is ambiguous.
+   */
+  readonly tag: string;
+  /** Display name. Non-unique; never used for routing. */
+  readonly providerName: string;
+  /**
+   * Ranking key (owner decision 1: highest uptime, not cheapest). Percentage,
+   * preferring the catalogue's 1-day window so the comparison is like-for-like;
+   * `null` ⇒ insufficient data, which must sort LAST.
+   */
+  readonly uptimePercent: number | null;
+  /**
+   * The ENDPOINT's own context window, which can differ from the model's
+   * headline window. Re-resolved into `contextLimit` on a switch (owner
+   * decision 7) so compaction cannot band against the wrong window.
+   */
+  readonly contextLength: number | null;
+  /** Per-1M-token prices. `null` ⇒ unreported; never coerced to 0. */
+  readonly inputPricePerM: number | null;
+  readonly outputPricePerM: number | null;
+  readonly cachePricePerM: number | null;
+  readonly cacheWritePricePerM: number | null;
+  readonly reasoningPricePerM: number | null;
+}
+
 export interface InferenceConfig {
   /** Provider identifier, e.g. "openrouter". */
   provider: string;
@@ -49,6 +90,16 @@ export interface InferenceConfig {
    * `openrouter/provider-prefs.ts` for why the trade-off is not additive.
    */
   endpointTag?: string;
+  /**
+   * Endpoints the failover may switch TO when the pinned one runs out of
+   * capacity. Injected by the app's endpoint catalogue (the producer contract —
+   * see {@link EndpointCandidate}); ABSENT means "no injected list", and the
+   * runtime then reads the same route itself through the SDK client it already
+   * holds. Injection wins when present: the app's catalogue is the one the user
+   * actually chose from, so a switch cannot land on an endpoint the wizard
+   * filtered out.
+   */
+  endpointCandidates?: readonly EndpointCandidate[];
   /** Sampling temperature. */
   temperature?: number;
   /** Max output tokens per response — from AGENT_MAX_OUTPUT_TOKENS env */
@@ -162,6 +213,20 @@ export interface InferenceResponse {
    * so both populate it.
    */
   generationId?: string | null;
+  /**
+   * Upstream provider that actually SERVED this request, from the routing
+   * metadata we opt into on conversational sends
+   * (`endpoints.available[].selected.provider`). Persisted to
+   * `usage_log.serving_provider` (migration 059) — `usage_log.provider` only
+   * ever said `'openrouter'`, so per-request routing was unanswerable.
+   *
+   * The router's provider NAME, not the routable endpoint `tag`: the installed
+   * SDK's `EndpointInfo` is `{model, provider, selected}` and carries no tag.
+   * `null`/absent when the response reported no usable routing metadata —
+   * including every background one-shot, which deliberately does not request
+   * it.
+   */
+  servingProvider?: string | null;
 }
 
 // ── Streaming chunk ──────────────────────────────────────────────
@@ -217,6 +282,14 @@ export interface StreamChunk {
    * every chunk.
    */
   generationId?: string;
+
+  /**
+   * Upstream provider that served this stream, from the routing metadata the
+   * router puts on an early chunk. Emitted on the `done` chunk alongside
+   * `generationId`, for the same reason: the consumer should not have to
+   * inspect every chunk to attribute the completion.
+   */
+  servingProvider?: string;
 }
 
 // ── Provider balance ─────────────────────────────────────────────
@@ -263,7 +336,7 @@ export interface RequestCost {
 export type ProviderMessageRole = "system" | "user" | "assistant" | "tool";
 
 /**
- * Cache-segment marker set by the ENGINE (`buildProviderMessages` knows the
+ * Cache-segment marker set by the ENGINE (`buildTurnEnvelope` knows the
  * segment boundaries — mid-tape system rows and the summary are not
  * distinguishable by role alone). The inference layer is purely mechanical:
  * it places provider cache breakpoints ONLY where a hint says so, never by
@@ -365,7 +438,10 @@ export interface InferenceProvider {
    * `context` groups the request for sticky provider routing. It is optional so
    * existing callers and test doubles stay valid; the buffered fallback in
    * `runStreamingInference` passes the SAME context as the streaming attempt it
-   * replaces, so a fallback cannot silently land on a different provider.
+   * replaces, so both are grouped as one session (see the revised contract note
+   * on `RunStreamingInferenceOptions.context` — endpoint failover CAN move a
+   * session to a different endpoint, and records which one served each
+   * request).
    *
    * `signal` cancels the in-flight HTTP request. The buffered fallback passes
    * the turn's signal, so a "stop generating" that lands after the stream has

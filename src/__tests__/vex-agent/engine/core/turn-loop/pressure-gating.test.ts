@@ -16,6 +16,18 @@ const mockIncrementIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn().mockResolvedValue(true);
 const mockSetLastCheckpoint = vi.fn();
 
+// The turn loop registers a compaction-apply boundary action. Stubbed inert
+// here: none of these tests exercise compaction, and the real module pulls the
+// archive/messages graph these harnesses deliberately mock. The action's own
+// behaviour lives in `turn-loop/compaction-apply-consumer.test.ts`.
+vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
+  createCompactionApplyAction: () => ({
+    name: "compaction_apply",
+    phase: "apply" as const,
+    run: async () => ({ kind: "continue" as const }),
+  }),
+}));
+
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
   addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),
@@ -438,8 +450,8 @@ describe("turn-loop", () => {
       // commits, the handlePostCompactBookkeeping reset currentTokenCount=0
       // and the loop recomputes turnBand to normal. Without that recompute,
       // buildTurnPromptStack would project the tools array at the "critical"
-      // band and the model would see the restricted (compact_only + read_only +
-      // safe_at_barrier) catalog AND the directive critical-pressure banner on
+      // band and the model would see the restricted (read_only +
+      // safe_at_barrier) catalog AND the critical-pressure banner on
       // the very first post-compact turn, wasting a turn.
       mockGetOpenAITools.mockClear();
       const provider = makeProvider([{ content: "post-compact reply" }]);

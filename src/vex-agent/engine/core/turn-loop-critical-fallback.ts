@@ -30,7 +30,10 @@
  * writes that move a run TO a terminal state.
  */
 
-import { maybeRunForcedCompactFallback } from "@vex-agent/engine/compact-jobs/forced-fallback.js";
+import {
+  resolveCriticalCompaction,
+  type CriticalCompactionInput,
+} from "./critical-compaction.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { pressureFraction, type ContextUsageBand } from "./context-band.js";
 import { emitCompactUnableAtCriticalBug } from "./turn-loop-bug-emit.js";
@@ -40,6 +43,18 @@ export const COMPACT_MAX_CONSECUTIVE_NOOPS = 2;
 
 export type CriticalBandOutcome =
   | { kind: "below_critical"; nextCriticalNoopCounter: 0 }
+  /**
+   * The cutover was correctly DECLINED (today: a queued operator Stop), not
+   * attempted and failed. `nextCriticalNoopCounter` is a PASSTHROUGH of the
+   * caller's value — never `+1`. Counting a correct refusal would walk the run
+   * toward `compact_unable_at_critical` (`COMPACT_MAX_CONSECUTIVE_NOOPS = 2`)
+   * for doing the right thing, so two consecutive deferrals must not escalate.
+   */
+  | {
+      kind: "gate_deferred";
+      nextCriticalNoopCounter: number;
+      reason: string;
+    }
   | {
       kind: "skip_one_shot";
       nextSkipCriticalCheckNextIter: false;
@@ -66,6 +81,14 @@ export async function tryCriticalBandFallback(args: {
   readonly criticalNoopCounter: number;
   readonly currentTokenCount: number;
   readonly contextLimit: number;
+  /** Forwarded to the ladder so a forced apply can prove lease ownership. */
+  readonly runnerOwnerId?: string;
+  readonly sessionPermission: "restricted" | "full";
+  /** Test seams for the shared ladder; production passes neither. */
+  readonly criticalCompactionOverrides?: Pick<
+    CriticalCompactionInput,
+    "readPreparationState" | "sleep"
+  >;
 }): Promise<CriticalBandOutcome> {
   // Below-critical: noop counter resets the moment band drops out of
   // critical — even if the drop is caused by something other than a
@@ -84,22 +107,35 @@ export async function tryCriticalBandFallback(args: {
     };
   }
 
-  const fallback = await maybeRunForcedCompactFallback(args.sessionId);
-  if (fallback.kind === "committed") {
-    logger.info("compact.forced_fallback.committed", {
-      sessionId: args.sessionId,
-      generation: fallback.generation,
-      jobId: fallback.jobId,
-      planMode: fallback.planMode,
-    });
+  // The shared ladder: prepared apply → bounded wait → deterministic fallback.
+  // Both critical paths in the loop go through it, so they cannot diverge.
+  const outcome = await resolveCriticalCompaction({
+    sessionId: args.sessionId,
+    missionRunId: args.missionRunId,
+    sessionPermission: args.sessionPermission,
+    ...(args.runnerOwnerId === undefined ? {} : { runnerOwnerId: args.runnerOwnerId }),
+    ...args.criticalCompactionOverrides,
+  });
+
+  if (outcome.kind === "committed") {
     return { kind: "committed", nextCriticalNoopCounter: 0 };
+  }
+
+  if (outcome.kind === "deferred") {
+    // PASSTHROUGH — see `gate_deferred`'s doc. The escalation block below stays
+    // reachable ONLY via genuine noops.
+    return {
+      kind: "gate_deferred",
+      nextCriticalNoopCounter: args.criticalNoopCounter,
+      reason: outcome.reason,
+    };
   }
 
   // Noop path — increment counter, log, maybe escalate.
   const nextCriticalNoopCounter = args.criticalNoopCounter + 1;
   logger.warn("compact.forced_fallback.noop", {
     sessionId: args.sessionId,
-    reason: fallback.reason,
+    reason: outcome.reason,
     consecutiveCount: nextCriticalNoopCounter,
   });
 
@@ -107,7 +143,7 @@ export async function tryCriticalBandFallback(args: {
     return {
       kind: "noop",
       nextCriticalNoopCounter,
-      reason: fallback.reason,
+      reason: outcome.reason,
     };
   }
 

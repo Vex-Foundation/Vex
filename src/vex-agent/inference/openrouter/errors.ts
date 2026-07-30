@@ -38,7 +38,11 @@ import { OpenRouterError } from "../../../lib/openrouter-client.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 import { redact } from "../../../lib/diagnostics/text-redaction.js";
 import { boundedErrorClass, OPENROUTER_ERROR_CLASSES } from "./error-class.js";
-import { boundedErrorType } from "./provider-signals.js";
+import {
+  boundedErrorType,
+  boundedLimitSource,
+  boundedProviderErrorCode,
+} from "./provider-signals.js";
 import { retryAfterSecondsFromError } from "./retry-after.js";
 
 /** Max characters of a scrubbed provider message kept in the normalized error. */
@@ -223,6 +227,64 @@ export function attachRetryAfterSeconds(
 }
 
 /**
+ * Attach `error.metadata.limit_source` — WHERE a 429's limit was applied — as a
+ * LEAN, NON-ENUMERABLE own-property (`limitSource`). Same idiom and same
+ * reasons as the attachers above: a short bounded token, never `.cause`, never
+ * a reference to the raw error.
+ *
+ * Unlike the others this one is a ROUTING input: the failover classifier reads
+ * it to decide whether switching endpoints can possibly help (see
+ * `endpoint-failover/capacity-failure.ts`). It is NOT user-facing copy. No-op
+ * for `null`.
+ */
+export function attachLimitSource(target: Error, limitSource: string | null): Error {
+  if (limitSource === null) return target;
+  Object.defineProperty(target, "limitSource", {
+    value: limitSource,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach `error.metadata.provider_error_code` (the UPSTREAM provider's own
+ * short code, e.g. `engine_overloaded`) as a LEAN, NON-ENUMERABLE own-property
+ * (`providerErrorCode`). Secondary capacity signal for the case where
+ * `limit_source` is absent. Same idiom; no-op for `null`.
+ */
+export function attachProviderErrorCode(
+  target: Error,
+  providerErrorCode: string | null,
+): Error {
+  if (providerErrorCode === null) return target;
+  Object.defineProperty(target, "providerErrorCode", {
+    value: providerErrorCode,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Read a bounded field out of the SDK error's `error.metadata` object. That
+ * object as a WHOLE is forbidden cargo (it carries `raw`, `remedy_hint` and
+ * provider message text — the very things this module exists to keep out of
+ * logs), so exactly two short, enum-shaped keys are lifted out of it by name
+ * and everything else is dropped with the error.
+ */
+function extractErrorMetadataField(
+  err: Record<string, unknown>,
+  key: string,
+): unknown {
+  if (!isRecord(err.error)) return undefined;
+  const metadata = err.error.metadata;
+  return isRecord(metadata) ? metadata[key] : undefined;
+}
+
+/**
  * Own-property readers used ONLY by the re-normalization fallback below: they
  * recover signals a PREVIOUS `normalizeOpenRouterError` pass already attached,
  * re-validating each through the same bounds so a second pass can never widen
@@ -248,6 +310,14 @@ function ownRetryAfterSeconds(err: Record<string, unknown>): number | null {
 
 function ownErrorType(err: Record<string, unknown>): string | null {
   return boundedErrorType(ownProperty(err, "errorType"));
+}
+
+function ownLimitSource(err: Record<string, unknown>): string | null {
+  return boundedLimitSource(ownProperty(err, "limitSource"));
+}
+
+function ownProviderErrorCode(err: Record<string, unknown>): string | null {
+  return boundedProviderErrorCode(ownProperty(err, "providerErrorCode"));
 }
 
 /**
@@ -303,5 +373,19 @@ export function normalizeOpenRouterError(err: unknown, operation: string): Error
     retryAfterSecondsFromError(err) ?? ownRetryAfterSeconds(err),
   );
   attachErrorType(normalized, ownErrorType(err));
+  // Capacity-routing signals off `error.metadata` (live-verified on a real 429,
+  // see `boundedLimitSource`). Read from the ORIGINAL error first; fall back to
+  // the own-properties a previous pass attached so re-normalization of a
+  // mid-stream rejection stays lossless, exactly like the signals above.
+  attachLimitSource(
+    normalized,
+    boundedLimitSource(extractErrorMetadataField(err, "limit_source"))
+      ?? ownLimitSource(err),
+  );
+  attachProviderErrorCode(
+    normalized,
+    boundedProviderErrorCode(extractErrorMetadataField(err, "provider_error_code"))
+      ?? ownProviderErrorCode(err),
+  );
   return attachCauseCode(attachStatus(normalized, status), extractCauseCode(err));
 }

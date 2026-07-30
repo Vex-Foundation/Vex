@@ -52,13 +52,22 @@ vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
   getById: (...a: unknown[]) => mocks.getById(...a),
-  cancelIfPending: (...a: unknown[]) => mocks.cancelIfPending(...a),
-  create: vi.fn(),
-  consumeIfPending: vi.fn(),
-  markExecuted: vi.fn(),
-  markFailed: vi.fn(),
-  markAuditFailed: vi.fn(),
+  cancelIfPendingWith: (...a: unknown[]) => mocks.cancelIfPending(...a),
+  createWith: vi.fn(),
+  consumeIfPendingWith: vi.fn(),
+  markExecutedWith: vi.fn(),
+  markFailedWith: vi.fn(),
+  markAuditFailedWith: vi.fn(),
   getPendingForSession: vi.fn(),
+}));
+
+// Cancellation is a money-state writer: it runs inside a session-control-locked
+// transaction (compaction contract C7). Stub the lock so this IPC test stays
+// pool-free; `SENTINEL_CLIENT` is the repo mock's first argument.
+const SENTINEL_CLIENT = { __sessionControlLocked: true } as const;
+vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
+  withSessionControlLock: (_sessionId: string, fn: (c: unknown) => unknown) =>
+    Promise.resolve(fn(SENTINEL_CLIENT)),
 }));
 
 vi.mock("../../logger/index.js", () => ({
@@ -298,7 +307,7 @@ describe("cancelPreparedIntent handler", () => {
       intentId: "intent-1",
       status: "cancelled",
     });
-    expect(mocks.cancelIfPending).toHaveBeenCalledWith("intent-1", SESSION);
+    expect(mocks.cancelIfPending).toHaveBeenCalledWith(SENTINEL_CLIENT, "intent-1", SESSION);
   });
 
   it("CAS miss (already terminal) → ok({status:'already_terminal'})", async () => {

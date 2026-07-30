@@ -67,7 +67,7 @@ export async function handleAutoRetryClaimed(
   });
   try {
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-    await deps.resumeMissionRun(run.id);
+    await deps.resumeMissionRun(run.id, ownerId);
     return { kind: "resumed", runId: run.id };
   } finally {
     await releaseLeaseAndEmitControlState(handle, wake.sessionId, {

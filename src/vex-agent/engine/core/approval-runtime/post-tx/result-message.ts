@@ -17,10 +17,19 @@
  * `engine/events/append-transcript.ts`: `appendMessage(..., { client })` is
  * storage-only and the caller emits AFTER the COMMIT, so a rollback can never
  * publish an event for a row that does not exist.
+ *
+ * Every own-transaction helper here takes the SESSION CONTROL LOCK as its first
+ * statement. These writes move `approval_intents` rows into terminal execution
+ * and decision states, which the compaction safe-moment gate reads to decide
+ * whether a transcript rewrite is safe; a reader under the lock is a boundary
+ * only if the writers take it too. The `…With` variants do not take it —
+ * their caller already holds it, and the advisory lock is transaction-scoped
+ * and re-entrant, so a nested acquisition would be a no-op either way.
  */
 
 import * as approvalIntentsRepo from "../../../../db/repos/approval-intents.js";
 import { withTransaction } from "../../../../db/client.js";
+import { acquireSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status.js";
 import {
   appendMessage,
   emitTranscriptAppend,
@@ -93,16 +102,24 @@ async function commitToolResultRow(
   metadata: MessageMetadata,
   updateIntent: (client: TxClient, resultMessageId: number) => Promise<void>,
 ): Promise<MessageWithId> {
-  const inserted = await withTransaction((client) =>
-    insertToolResultRowWith(
+  const inserted = await withTransaction(async (client) => {
+    // FIRST statement of the transaction, per the global lock order. Every
+    // caller of this helper settles an `approval_intents` decision or execution
+    // status — rows the compaction safe-moment gate reads — so this writer must
+    // serialize with that gate on the session control lock, or the gate's read
+    // is a snapshot of the past rather than a boundary. DB-only and short: the
+    // dispatch that produced `content` already finished, so nothing external
+    // happens under the lock. See `db/repos/approval-intents/money-state.ts`.
+    await acquireSessionControlLock(client, sessionId);
+    return insertToolResultRowWith(
       client,
       sessionId,
       content,
       toolCallId,
       metadata,
       updateIntent,
-    ),
-  );
+    );
+  });
 
   emitToolResultAppended(sessionId, inserted, metadata);
 

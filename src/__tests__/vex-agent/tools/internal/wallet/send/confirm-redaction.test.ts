@@ -25,12 +25,22 @@ const mockMarkFailed = vi.fn();
 const mockMarkAuditFailed = vi.fn();
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
-  create: (...a: unknown[]) => mockCreate(...a),
+  createWith: (...a: unknown[]) => mockCreate(...a),
   getById: (...a: unknown[]) => mockGetById(...a),
-  consumeIfPending: (...a: unknown[]) => mockConsumeIfPending(...a),
-  markExecuted: (...a: unknown[]) => mockMarkExecuted(...a),
-  markFailed: (...a: unknown[]) => mockMarkFailed(...a),
-  markAuditFailed: (...a: unknown[]) => mockMarkAuditFailed(...a),
+  consumeIfPendingWith: (...a: unknown[]) => mockConsumeIfPending(...a),
+  markExecutedWith: (...a: unknown[]) => mockMarkExecuted(...a),
+  markFailedWith: (...a: unknown[]) => mockMarkFailed(...a),
+  markAuditFailedWith: (...a: unknown[]) => mockMarkAuditFailed(...a),
+}));
+
+// The money-state writers are client-bound and run inside a session-control-
+// locked transaction (compaction contract C7). Stub the lock so these unit
+// tests stay pool-free; `SENTINEL_CLIENT` is what the repo mocks receive as
+// their first argument.
+const SENTINEL_CLIENT = { __sessionControlLocked: true } as const;
+vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
+  withSessionControlLock: (_sessionId: string, fn: (c: unknown) => unknown) =>
+    Promise.resolve(fn(SENTINEL_CLIENT)),
 }));
 
 const mockExecuteSolana = vi.fn();
@@ -178,7 +188,7 @@ describe("handleWalletSendConfirm — secret redaction", () => {
     expect(result.output).not.toContain("supersecret");
 
     // failure_reason persisted to DB is also structural-only
-    const reasonArg = mockMarkFailed.mock.calls[0][2];
+    const reasonArg = mockMarkFailed.mock.calls[0][3];
     expect(reasonArg).toMatch(/^Error:[a-f0-9]{16}$/);
     expect(reasonArg).not.toContain("sk_live");
   });

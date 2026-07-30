@@ -14,6 +14,18 @@ const mockIncrementIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
 
+// The turn loop registers a compaction-apply boundary action. Stubbed inert
+// here: none of these tests exercise compaction, and the real module pulls the
+// archive/messages graph these harnesses deliberately mock. The action's own
+// behaviour lives in `turn-loop/compaction-apply-consumer.test.ts`.
+vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
+  createCompactionApplyAction: () => ({
+    name: "compaction_apply",
+    phase: "apply" as const,
+    run: async () => ({ kind: "continue" as const }),
+  }),
+}));
+
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
   addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),

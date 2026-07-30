@@ -76,8 +76,8 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   long_memory_history: async () =>
     (await import("../internal/long-memory/history.js")).handleLongMemoryHistory,
 
-  // Compact primitive — agent-driven entry point for compaction at pressure
-  compact_now: async () => (await import("../internal/compact/now.js")).handleCompactNow,
+  // Compaction — queues the prepared cutover; the runner performs it
+  compact_apply: async () => (await import("../internal/compact/apply.js")).handleCompactApply,
 
   // Plan mode — author/refine the session's action plan (gated by requiresPlanMode)
   plan_write: async () => (await import("../internal/plan/write.js")).handlePlanWrite,

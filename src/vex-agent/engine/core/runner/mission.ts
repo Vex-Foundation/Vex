@@ -126,6 +126,14 @@ export async function startMission(missionId: string): Promise<TurnResult> {
  */
 export async function resumeMissionRun(
   runId: string,
+  /**
+   * The lease owner id the CALLER claimed and holds around this call. Required,
+   * not optional — every resume entry point (wake executor, auto-retry,
+   * approval continuation, ingress preempt, IPC resume/retry) claims a named
+   * lease first, and an optional parameter is precisely how that proof used to
+   * be dropped, leaving a resumed run unable to consume a prepared compaction.
+   */
+  runnerOwnerId: string,
   claimTurn?: ResumedTurnClaim,
 ): Promise<TurnResult> {
   logger.info("engine.mission.resume", { runId });
@@ -168,6 +176,7 @@ export async function resumeMissionRun(
     // rather than throwing here mid-resume.
     return await resumePreparedMissionRun({
       runId,
+      runnerOwnerId,
       run,
       mission,
       provider,

@@ -267,8 +267,8 @@ beforeEach(() => {
   mockDispatchAfterRelease.mockResolvedValue(undefined);
   // `runAgentTurnUnderLease(sessionId, provider, config, signal, claimTurn)`
   mockRunAgentTurnUnderLease.mockImplementation(turnCoreStub(4));
-  // `resumeMissionRun(runId, claimTurn)`
-  mockResumeMissionRun.mockImplementation(turnCoreStub(1));
+  // `resumeMissionRun(runId, runnerOwnerId, claimTurn)`
+  mockResumeMissionRun.mockImplementation(turnCoreStub(2));
   mockReleaseLeaseAndEmit.mockResolvedValue(undefined);
   mockLockAndLoadSnapshot.mockResolvedValue({
     approval_id: APPROVAL_ID,
@@ -578,8 +578,11 @@ describe("runResumeAfterDecision — chat session", () => {
     await runResumeAfterDecision(missionContinuation());
 
     expect(mockResumeMissionRun).toHaveBeenCalledTimes(1);
-    const [runId, claim] = mockResumeMissionRun.mock.calls[0]!;
+    const [runId, ownerId, claim] = mockResumeMissionRun.mock.calls[0]!;
     expect(runId).toBe("run-1");
+    // The continuation's own lease owner — the resumed loop proves ownership
+    // with it before consuming a prepared compaction cutover.
+    expect(ownerId).toBe("approve-x");
     expect(typeof claim).toBe("function");
     expect(mockCasMarkResumeConsumed).toHaveBeenCalledWith(APPROVAL_ID);
   });
@@ -591,7 +594,7 @@ describe("runResumeAfterDecision — chat session", () => {
    */
   it("a mission hydration failure BEFORE the model call leaves the result resumable by a later sweep", async () => {
     mockResumeMissionRun.mockImplementationOnce(
-      crashingTurnCoreStub(1, `Session ${SESSION_ID} not found`),
+      crashingTurnCoreStub(2, `Session ${SESSION_ID} not found`),
     );
 
     await expect(

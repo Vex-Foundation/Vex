@@ -1,7 +1,7 @@
 /**
  * Per-session in-memory serialization for the compact primitive.
  *
- * `executeCompactNow` (both the agent-driven `compact_now` tool path and the
+ * `executeCompactNow` (the deterministic forced-fallback path and the
  * runtime forced-fallback path) is single-flighted per `sessionId` so a
  * concurrent dispatch + wake-claim cannot observe a half-archived transcript.
  * This is a process-local mutex — single-process wake executor contract plus

@@ -62,11 +62,17 @@ export async function dispatchTool(
   const startTime = Date.now();
 
   // Pressure-band hard-deny: at barrier/critical bands, mutating tools are
-  // rejected with a synthetic error pointing the agent at compact_now. The
-  // soft filter (LLM-visible tool catalog projection) is the first layer;
-  // this is the runtime safety net for tools the model emits anyway.
+  // rejected with a synthetic error. The soft filter (LLM-visible tool catalog
+  // projection) is the first layer; this is the runtime safety net for tools
+  // the model emits anyway. The bypass flag is threaded through so this gate
+  // and the catalog filter agree exactly — `!== true` keeps every context that
+  // omits the field on today's barrier.
   if (context.contextUsageBand) {
-    const denied = checkPressureDeny(call.name, context.contextUsageBand);
+    const denied = checkPressureDeny(
+      call.name,
+      context.contextUsageBand,
+      context.preparationBypassesBarrier === true,
+    );
     if (denied) {
       logger.info("tools.dispatch.pressure_denied", {
         tool: call.name,

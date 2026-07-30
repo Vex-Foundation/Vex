@@ -35,6 +35,12 @@ vi.mock("../book/SessionBlock.js", () => ({
 vi.mock("../SessionRuntimeBar.js", () => ({
   SessionRuntimeBar: () => <div data-testid="runtime-bar" />,
 }));
+// The rail reads the session detail so it can hand `permission` down to the
+// RUNTIME & COST block's apply control. Stubbed here — this suite owns the
+// router and the chrome, not the session query.
+vi.mock("../../../lib/api/sessions.js", () => ({
+  useSession: () => ({ data: undefined }),
+}));
 // The welcome-stage floating Portfolio tab has its own suite
 // (WelcomePortfolioPanel.test.tsx); here the router only needs to prove it
 // mounts with the shared bookOpen flag.
