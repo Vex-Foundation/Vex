@@ -60,7 +60,10 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(__dirname, "dist/main"),
-    emptyOutDir: true,
+    // In `--watch` (dev) the prebuilt index.js must survive watcher startup:
+    // emptying the dir here races dev:electron, which launches the moment the
+    // renderer is up and dies on a missing dist/main/index.js.
+    emptyOutDir: !process.argv.includes("--watch"),
     target: "node22",
     sourcemap: true,
     minify: false,
