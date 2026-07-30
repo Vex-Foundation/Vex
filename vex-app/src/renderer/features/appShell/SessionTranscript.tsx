@@ -40,8 +40,7 @@ import {
   type JSX,
 } from "react";
 import { ArrowDown01Icon, VexIcon } from "../../components/icons/index.js";
-import type { Result } from "@shared/ipc/result.js";
-import type { MessagePage, SessionMessageDto } from "@shared/schemas/messages.js";
+import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
@@ -61,6 +60,11 @@ import {
   groupTranscriptRows,
   toTranscriptRows,
 } from "./transcriptRowModel.js";
+import {
+  trackSettledIds,
+  type SettledIdsTracker,
+} from "./SessionTranscript/settledIds.js";
+import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
 
 const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
@@ -71,57 +75,21 @@ const LOAD_OLDER_THRESHOLD_PX = 64;
 // the shared key, this one included. Fallback only — not deleted.
 const PENDING_APPROVALS_REFETCH_MS = 60_000;
 
-/**
- * Ids that must NOT animate: everything visible at the session's first
- * completed render plus every page later added via load-older (an older page
- * is history, not a live arrival). Tracked per session; `pageCount` detects
- * fetchNextPage appends (a live refetch replaces pages without growing the
- * array). Mutated during render — safe because the bookkeeping is idempotent,
- * which also makes StrictMode's double render/mount a no-op.
- */
-interface SettledIdsTracker {
-  readonly sessionId: string;
-  readonly ids: Set<number>;
-  pageCount: number;
-}
-
-function trackSettledIds(
-  tracker: SettledIdsTracker | null,
-  sessionId: string,
-  pages: readonly Result<MessagePage>[] | undefined,
-): SettledIdsTracker | null {
-  if (pages === undefined) {
-    // Nothing fetched yet for this session — keep waiting (a stale tracker
-    // from the previous session is dropped so its ids can't leak across).
-    return tracker !== null && tracker.sessionId === sessionId ? tracker : null;
-  }
-  if (tracker === null || tracker.sessionId !== sessionId) {
-    const ids = new Set<number>();
-    for (const page of pages) {
-      if (!page.ok) continue;
-      for (const item of page.data.items) ids.add(item.id);
-    }
-    return { sessionId, ids, pageCount: pages.length };
-  }
-  if (pages.length > tracker.pageCount) {
-    // Pages appended by fetchNextPage are older history → absorb as settled.
-    for (const page of pages.slice(tracker.pageCount)) {
-      if (!page.ok) continue;
-      for (const item of page.data.items) tracker.ids.add(item.id);
-    }
-    tracker.pageCount = pages.length;
-  }
-  return tracker;
-}
-
 export function SessionTranscript({
   sessionId,
 }: {
   readonly sessionId: string;
 }): JSX.Element {
   const query = useTranscriptInfinite(sessionId);
-  const preview = useStreamPreview(sessionId);
+  const streamPreview = useStreamPreview(sessionId);
   const chatSubmitting = useIsChatSubmitting(sessionId);
+  // THE TURN, not the round (see `turnPreview.ts`). This is what the whole
+  // rest of this component means by "a turn is in flight": it opens on the
+  // SEND rather than on the first provider delta, and it survives the
+  // mid-turn assistant rows a tool call persists. Both the ghost-moment and
+  // the scroll-jump reports were the round-scoped value leaking into
+  // turn-scoped decisions (the island's mount, the anchor run-out).
+  const preview = useTurnPreview(streamPreview, chatSubmitting);
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorSpacerRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -280,17 +248,19 @@ export function SessionTranscript({
 
   // Preview signature — every VISIBLE preview change, so the pill measurement
   // sees the bubble grow no matter WHICH part of it is growing: streamed text,
-  // the tool name, the phase, and the island's own live reasoning (its status
-  // and reasoning length), which flushes independently of the answer text and
-  // expands the island into a panel. Omitting reasoning let the surface grow
-  // past the fold without ever raising the pill. It NO LONGER drives a scroll
-  // (that follow effect is deleted): it only re-measures whether the growing
-  // bubble has left the viewport. The spacer-retirement effect below still
-  // depends on this value.
+  // the tool name, the phase, the island's own live reasoning (its status and
+  // active-segment length, which flushes independently of the answer text and
+  // expands the island into a panel), and the SETTLED segment count (each
+  // settle adds a collapsed stamp row). Omitting reasoning let the surface
+  // grow past the fold without ever raising the pill. It NO LONGER drives a
+  // scroll (that follow effect is deleted): it only re-measures whether the
+  // growing bubble has left the viewport. The spacer-retirement effect below
+  // still depends on this value — and because `preview` is now TURN-scoped,
+  // that retirement fires exactly once per turn instead of once per round.
   const previewSig =
     preview === null
       ? null
-      : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningText.length}`;
+      : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}`;
   useEffect(() => {
     if (previewSig === null) return;
     syncLatestVisibility();
@@ -414,13 +384,22 @@ export function SessionTranscript({
         onScroll={onScroll}
         data-vex-area="chat-transcript"
         data-state="ready"
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1 py-4"
+        // SCROLLBAR (owner visual round 2026-07-30: "do przesunięcia i
+        // upiększenia"). It used to float in the middle of the layout wearing
+        // the OS default, because the column's horizontal padding sat OUTSIDE
+        // the scroller — the bar was inset by that padding and read as a stray
+        // rule through the conversation. Now the scroller spans the full
+        // column width so the bar hugs its OUTER edge, `scrollbar-gutter:
+        // stable` reserves the track so content never shifts when it appears,
+        // and the row padding moved INSIDE (`px-3` on the content wrapper).
+        // `.vex-scroll` is the repo's thin cobalt treatment.
+        className="vex-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
       >
       {/* SIGNAL TAPE content wrapper — holds the single monotonic spine the
           whole session hangs off. It sizes to content, so the outer scroll
           math is unchanged: scrollHeight still equals total row height + py-4
           (the bottom-follow + load-older anchoring on scrollRef are untouched). */}
-      <div className="relative flex flex-col gap-3">
+      <div className="relative flex flex-col gap-3 px-3">
         {/* The spine hairline that used to run the gutter's full height was
             removed (seamless-chat owner review): a wall-to-wall vertical rule
             bracketed the conversation into its own box. The gutter still hosts

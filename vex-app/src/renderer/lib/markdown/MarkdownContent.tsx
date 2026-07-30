@@ -511,18 +511,19 @@ export function MarkdownContent({
     return <p className="whitespace-pre-wrap break-words">{text}</p>;
   }
   return (
-    // THE VOICE (typography register, owner decree 2026-07-29): chat prose is
-    // set in Instrument Serif via `.vex-serif-prose` (landing-motifs.css) —
-    // ~16.5px/1.65, `font-synthesis-weight: none` so the browser can never
-    // fake a bold the face does not have, and `strong` resolves to serif
-    // italic. The class also pins the technical opt-outs (code/pre stay mono,
-    // tables stay sans + tabular-nums), which is why it is ONE class here
-    // rather than per-node utilities. The `article` variant is long-form
-    // static repo markdown with its own heading scale and stays on the
-    // support face.
+    // THE READING REGISTER (typography law, owner readability round
+    // 2026-07-30): chat BODY copy is Instrument Sans 15px/1.65 via
+    // `.vex-chat-prose` (landing-motifs.css). Instrument Serif is a condensed
+    // DISPLAY face — it stays on the HEADINGS rendered per-node below, never
+    // on paragraph-length body text, which is what made the previous serif
+    // body hard to read. The class also pins the technical opt-outs (code/pre
+    // stay mono, tables stay sans + tabular-nums) and the no-synthesis guard
+    // on the serif survivors, which is why it is ONE class here rather than
+    // per-node utilities. The `article` variant is long-form static repo
+    // markdown with its own heading scale and stays on the support face.
     <div
       className={`flex flex-col gap-2 break-words${
-        opts.variant === "chat" ? " vex-serif-prose" : ""
+        opts.variant === "chat" ? " vex-chat-prose" : ""
       }`}
     >
       {renderBlocks(tokens, opts)}

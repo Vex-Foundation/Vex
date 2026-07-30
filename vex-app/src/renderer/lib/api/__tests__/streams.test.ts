@@ -11,8 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createElement, type ReactNode } from "react";
+import { QueryClient } from "@tanstack/react-query";
 
 import { STREAM_PREVIEW_IDLE_MS, useStreamPreviewSync } from "../streams.js";
 import {
@@ -20,140 +19,37 @@ import {
   useStreamStore,
   __resetPendingReasoningForTests,
 } from "../../../stores/streamStore.js";
+import { streamDeltaEventSchema } from "@shared/schemas/stream.js";
 import {
-  streamDeltaEventSchema,
-  type StreamDeltaEvent,
-} from "@shared/schemas/stream.js";
-import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
-import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
+  SESSION_A,
+  SESSION_B,
+  abortedDelta,
+  append,
+  emitAppend,
+  emitDelta,
+  flush,
+  hasDeltaSubscription,
+  makeWrapper,
+  offAppend,
+  offDelta,
+  reasoningDelta,
+  resetStreamEnv,
+  setupStreamEnv,
+  textDelta,
+} from "./streams/stream-sync-harness.js";
 
-const SESSION_A = "00000000-0000-4000-8000-00000000000a";
-const SESSION_B = "00000000-0000-4000-8000-00000000000b";
+beforeEach(setupStreamEnv);
+afterEach(resetStreamEnv);
 
-type DeltaCb = (e: StreamDeltaEvent) => void;
-type AppendCb = (e: TranscriptAppendEvent) => void;
-
-let deltaCb: DeltaCb | null;
-let appendCb: AppendCb | null;
-const offDelta = vi.fn();
-const offAppend = vi.fn();
-
-beforeEach(() => {
-  deltaCb = null;
-  appendCb = null;
-  offDelta.mockReset();
-  offAppend.mockReset();
-  useStreamStore.setState({ bySessionId: {} });
-  Object.defineProperty(window, "vex", {
-    configurable: true,
-    writable: true,
-    value: {
-      engine: makeEngineBridgeStub({
-        onStreamDelta: (cb) => {
-          deltaCb = cb;
-          return offDelta;
-        },
-        onTranscriptAppend: (cb) => {
-          appendCb = cb;
-          return offAppend;
-        },
-      }),
-    },
-  });
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-  // @ts-expect-error — test cleanup
-  delete window.vex;
-});
-
-function makeWrapper(client: QueryClient) {
-  return function Wrapper({ children }: { readonly children: ReactNode }) {
-    return createElement(QueryClientProvider, { client }, children);
-  };
-}
-
-function textDelta(sessionId: string, streamId = "s1", text = "hi"): StreamDeltaEvent {
-  return {
-    type: "engine.stream.delta",
-    sessionId,
-    streamId,
-    sequence: 0,
-    deltaType: "text",
-    delta: { kind: "text", text },
-    createdAt: "2026-05-26T10:00:00.000Z",
-    correlationId: null,
-  };
-}
-
-function append(
-  sessionId: string,
-  role: TranscriptAppendEvent["role"] = "assistant",
-): TranscriptAppendEvent {
-  return {
-    type: "engine.transcript.append",
-    sessionId,
-    messageId: 1,
-    role,
-    createdAt: "2026-05-26T10:00:00.000Z",
-    messageType: null,
-    correlationId: null,
-  };
-}
-
-/**
- * The REAL emitted shape, mirroring `toStreamAbortedEvent`
- * (`engine/events/stream-bus.ts`): same `streamId` as the stream it ends, at
- * `lastSequence + 1`, `deltaType: "aborted"`, and a delta that is the bare
- * discriminant — no reason string, no provider text.
- */
-function abortedDelta(
-  sessionId: string,
-  streamId = "s1",
-  sequence = 1,
-): StreamDeltaEvent {
-  return {
-    type: "engine.stream.delta",
-    sessionId,
-    streamId,
-    sequence,
-    deltaType: "aborted",
-    delta: { kind: "aborted" },
-    createdAt: "2026-05-26T10:00:00.000Z",
-    correlationId: null,
-  };
-}
-
-function reasoningDelta(
-  sessionId: string,
-  streamId = "s1",
-  text = "thinking",
-  sequence = 0,
-): StreamDeltaEvent {
-  return {
-    type: "engine.stream.delta",
-    sessionId,
-    streamId,
-    sequence,
-    deltaType: "reasoning",
-    delta: { kind: "reasoning", text },
-    createdAt: "2026-05-26T10:00:00.000Z",
-    correlationId: null,
-  };
-}
-
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("useStreamPreviewSync", () => {
   it("subscribes on mount, feeds deltas, and tears down on unmount", () => {
     const { unmount } = renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    expect(deltaCb).not.toBeNull();
-    expect(appendCb).not.toBeNull();
+    expect(hasDeltaSubscription()).toBe(true);
 
-    deltaCb!(textDelta(SESSION_A));
+    emitDelta(textDelta(SESSION_A));
     expect(useStreamStore.getState().bySessionId[SESSION_A]?.text).toBe("hi");
 
     unmount();
@@ -164,29 +60,29 @@ describe("useStreamPreviewSync", () => {
 
   it("no-ops on a null sessionId", () => {
     renderHook(() => useStreamPreviewSync(null), { wrapper: makeWrapper(new QueryClient()) });
-    expect(deltaCb).toBeNull();
+    expect(hasDeltaSubscription()).toBe(false);
   });
 
   it("ignores deltas for a different session", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), { wrapper: makeWrapper(new QueryClient()) });
-    deltaCb!(textDelta(SESSION_B));
+    emitDelta(textDelta(SESSION_B));
     expect(useStreamStore.getState().bySessionId[SESSION_B]).toBeUndefined();
   });
 
   it("clears the preview after a matching assistant append (post-refetch)", async () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), { wrapper: makeWrapper(new QueryClient()) });
-    deltaCb!(textDelta(SESSION_A));
+    emitDelta(textDelta(SESSION_A));
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeDefined();
 
-    appendCb!(append(SESSION_A, "assistant"));
+    emitAppend(append(SESSION_A, "assistant"));
     await flush();
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeUndefined();
   });
 
   it("does not clear on a non-assistant append", async () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), { wrapper: makeWrapper(new QueryClient()) });
-    deltaCb!(textDelta(SESSION_A));
-    appendCb!(append(SESSION_A, "tool"));
+    emitDelta(textDelta(SESSION_A));
+    emitAppend(append(SESSION_A, "tool"));
     await flush();
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeDefined();
   });
@@ -202,11 +98,11 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), { wrapper: makeWrapper(client) });
 
     // Stream s1 previews; its assistant append fires (refetch now pending).
-    deltaCb!(textDelta(SESSION_A, "s1", "first"));
-    appendCb!(append(SESSION_A, "assistant"));
+    emitDelta(textDelta(SESSION_A, "s1", "first"));
+    emitAppend(append(SESSION_A, "assistant"));
 
     // Before the refetch settles, the next turn's stream s2 begins.
-    deltaCb!(textDelta(SESSION_A, "s2", "second"));
+    emitDelta(textDelta(SESSION_A, "s2", "second"));
     expect(useStreamStore.getState().bySessionId[SESSION_A]?.streamId).toBe("s2");
 
     // s1's refetch resolves late — it must NOT clear s2's live preview.
@@ -225,10 +121,10 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    deltaCb!(textDelta(SESSION_A, "s1", "half a sen"));
+    emitDelta(textDelta(SESSION_A, "s1", "half a sen"));
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeDefined();
 
-    deltaCb!({
+    emitDelta({
       type: "engine.stream.delta",
       sessionId: SESSION_A,
       streamId: "s1",
@@ -249,7 +145,7 @@ describe("useStreamPreviewSync", () => {
   it("clears an orphaned preview after the idle timeout", () => {
     vi.useFakeTimers();
     renderHook(() => useStreamPreviewSync(SESSION_A), { wrapper: makeWrapper(new QueryClient()) });
-    deltaCb!(textDelta(SESSION_A));
+    emitDelta(textDelta(SESSION_A));
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeDefined();
 
     vi.advanceTimersByTime(STREAM_PREVIEW_IDLE_MS + 1);
@@ -279,10 +175,10 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    deltaCb!(textDelta(SESSION_A, "s1", "half a sen"));
+    emitDelta(textDelta(SESSION_A, "s1", "half a sen"));
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeDefined();
 
-    deltaCb!(abortedDelta(SESSION_A, "s1", 1));
+    emitDelta(abortedDelta(SESSION_A, "s1", 1));
 
     // Gone NOW — zero timer advance.
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeUndefined();
@@ -295,9 +191,9 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    deltaCb!(textDelta(SESSION_A, "s1", "still going"));
+    emitDelta(textDelta(SESSION_A, "s1", "still going"));
 
-    deltaCb!(abortedDelta(SESSION_B, "s9", 1));
+    emitDelta(abortedDelta(SESSION_B, "s9", 1));
 
     expect(useStreamStore.getState().bySessionId[SESSION_A]?.text).toBe(
       "still going",
@@ -326,9 +222,9 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    deltaCb!(textDelta(SESSION_A, "s1", "half a sen"));
+    emitDelta(textDelta(SESSION_A, "s1", "half a sen"));
 
-    deltaCb!({
+    emitDelta({
       type: "engine.stream.delta",
       sessionId: SESSION_A,
       streamId: "s1",
@@ -364,12 +260,12 @@ describe("useStreamPreviewSync", () => {
       wrapper: makeWrapper(new QueryClient()),
     });
     // Stream A ran, then stream B took over the preview.
-    deltaCb!(textDelta(SESSION_A, "s-a", "old turn"));
-    deltaCb!(textDelta(SESSION_A, "s-b", "new turn"));
+    emitDelta(textDelta(SESSION_A, "s-a", "old turn"));
+    emitDelta(textDelta(SESSION_A, "s-b", "new turn"));
     expect(useStreamStore.getState().bySessionId[SESSION_A]?.streamId).toBe("s-b");
 
     // A's abort finally lands.
-    deltaCb!(abortedDelta(SESSION_A, "s-a", 9));
+    emitDelta(abortedDelta(SESSION_A, "s-a", 9));
 
     const live = useStreamStore.getState().bySessionId[SESSION_A];
     expect(live?.streamId).toBe("s-b");
@@ -381,9 +277,9 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    deltaCb!(textDelta(SESSION_A, "s-b", "new turn"));
+    emitDelta(textDelta(SESSION_A, "s-b", "new turn"));
 
-    deltaCb!(abortedDelta(SESSION_A, "s-a", 9));
+    emitDelta(abortedDelta(SESSION_A, "s-a", 9));
 
     // A no-op abort must not leave the surviving preview without its
     // orphan timer — that would trade one stuck preview for another.
@@ -407,11 +303,11 @@ describe("useStreamPreviewSync", () => {
     });
 
     // Buffered only — nothing in the store yet.
-    deltaCb!(reasoningDelta(SESSION_A, "s-r", "thinking hard"));
+    emitDelta(reasoningDelta(SESSION_A, "s-r", "thinking hard"));
     expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeUndefined();
 
     // The abort for THAT stream, still inside the window.
-    deltaCb!(abortedDelta(SESSION_A, "s-r", 1));
+    emitDelta(abortedDelta(SESSION_A, "s-r", 1));
 
     // The buffer must have been cancelled, not merely left unflushed.
     vi.advanceTimersByTime(REASONING_FLUSH_MS + 1);
@@ -426,10 +322,10 @@ describe("useStreamPreviewSync", () => {
     renderHook(() => useStreamPreviewSync(SESSION_A), {
       wrapper: makeWrapper(new QueryClient()),
     });
-    deltaCb!(reasoningDelta(SESSION_A, "s-new", "fresh trace"));
+    emitDelta(reasoningDelta(SESSION_A, "s-new", "fresh trace"));
 
     // An older stream's abort must not cancel the NEW stream's buffer.
-    deltaCb!(abortedDelta(SESSION_A, "s-old", 9));
+    emitDelta(abortedDelta(SESSION_A, "s-old", 9));
 
     vi.advanceTimersByTime(REASONING_FLUSH_MS + 1);
     const live = useStreamStore.getState().bySessionId[SESSION_A];

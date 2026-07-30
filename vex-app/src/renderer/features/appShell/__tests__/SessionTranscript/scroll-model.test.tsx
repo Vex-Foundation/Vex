@@ -19,15 +19,18 @@ import { SessionTranscript } from "../../SessionTranscript.js";
 import { useStreamStore } from "../../../../stores/streamStore.js";
 import {
   SESSION,
+  anchorSpacer,
   failure,
   freshClient,
   getScroller,
   latestPill,
   listMock,
+  livePreview,
   msg,
   page,
   resetTranscriptEnv,
   setVex,
+  startChatTurn,
 } from "./transcript-harness.js";
 
 function makeWrapper(client: QueryClient) {
@@ -169,6 +172,7 @@ describe("SessionTranscript scroll model", () => {
             phase: "streaming",
             toolName: null,
             reasoningText: "",
+            reasoningSegments: [],
             reasoningTokens: null,
             startedAtMs: Date.now(),
             errorType: null,
@@ -220,6 +224,7 @@ describe("SessionTranscript scroll model", () => {
             phase: "streaming",
             toolName: null,
             reasoningText: "considering",
+            reasoningSegments: [],
             reasoningTokens: null,
             startedAtMs: Date.now(),
             errorType: null,
@@ -239,6 +244,7 @@ describe("SessionTranscript scroll model", () => {
             phase: "streaming",
             toolName: null,
             reasoningText: "considering the ledger at some length",
+            reasoningSegments: [],
             reasoningTokens: null,
             startedAtMs: Date.now(),
             errorType: null,
@@ -357,5 +363,146 @@ describe("SessionTranscript scroll model", () => {
     const spacer = scroller.querySelector("div[aria-hidden]:last-child");
     expect(spacer).not.toBeNull();
     expect((spacer as HTMLElement).style.height).not.toBe("104px");
+  });
+
+  /**
+   * THE MID-TURN JUMP (owner report 2026-07-30: "model odpowiedział →
+   * wywołał tool i przesunęło mnie w górę konwersacji").
+   *
+   * VERIFIED MECHANISM. A turn that calls a tool persists an ASSISTANT row
+   * mid-turn. `useStreamPreviewSync` fired its clear-on-assistant-append for
+   * that row, so `preview` went null WHILE THE TURN WAS STILL RUNNING. Null
+   * preview drives the spacer-retirement effect, which zeroes the anchor
+   * run-out; the run-out is what guarantees the scroll range under an
+   * anchored user message, so scrollHeight collapses under the viewport and
+   * the browser clamps scrollTop — the reader is thrown up the conversation.
+   *
+   * The spacer is the lever, so it is what these tests assert on: the anchor
+   * run-out is TURN-scoped, not round-scoped, and survives every mid-turn row.
+   */
+  it("keeps the anchor run-out open when a mid-turn tool row lands (no scroll jump)", async () => {
+    let round = 0;
+    listMock.mockImplementation(() => {
+      const items = [
+        msg({ id: 3, role: "user", kind: "text", content: "newest" }),
+        // Round 1: the user's send lands LIVE and anchors at the viewport top,
+        // opening the run-out beneath it.
+        ...(round > 0
+          ? [msg({ id: 4, role: "user", kind: "text", content: "just sent" })]
+          : []),
+        // Round 2: the assistant's tool_call row is persisted MID-TURN.
+        ...(round > 1
+          ? [msg({ id: 5, role: "assistant", kind: "text", content: "calling out" })]
+          : []),
+      ];
+      return Promise.resolve(page(items, null));
+    });
+    setVex();
+    const client = freshClient();
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(client) },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("newest")).not.toBeNull();
+    });
+    const scroller = getScroller(container);
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
+
+    // The send: the turn opens and the user row lands live.
+    const settleTurn = startChatTurn(client);
+    round = 1;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
+    });
+    await waitFor(() => {
+      expect(screen.getByText("just sent")).not.toBeNull();
+    });
+
+    // The reply streams; the run-out is open beneath the anchored send.
+    act(() => {
+      useStreamStore.setState({
+        bySessionId: { [SESSION]: livePreview({ text: "working on it" }) },
+      });
+    });
+    expect(anchorSpacer(container).style.height).toBe("104px");
+
+    // THE MOMENT OF THE BUG: the tool_call row persists and the live-sync
+    // hook retires the preview — but the TURN is still in flight.
+    round = 2;
+    await act(async () => {
+      useStreamStore.setState({ bySessionId: {} });
+      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
+    });
+    await waitFor(() => {
+      expect(screen.getByText("calling out")).not.toBeNull();
+    });
+
+    // The run-out is still open — the geometry never collapsed, so nothing
+    // clamped the reader's position.
+    expect(anchorSpacer(container).style.height).toBe("104px");
+
+    // ...and it retires only when the TURN itself settles.
+    await act(async () => {
+      settleTurn();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(anchorSpacer(container).style.height).toBe("0px");
+    });
+  });
+
+  /**
+   * THE GHOST MOMENT (owner report 2026-07-30: "moment wysłania wiadomości
+   * (jest ghost effect), nic nie ma na ekranie i user myśli że nic nie
+   * działa"). The island used to mount on the FIRST provider delta, which is
+   * a whole network round-trip after the send. It must mount on the SUBMIT.
+   */
+  it("shows the working island the INSTANT a turn is submitted, before any delta", async () => {
+    listMock.mockResolvedValue(
+      page([msg({ id: 3, role: "user", kind: "text", content: "newest" })], null),
+    );
+    setVex();
+    const client = freshClient();
+    const { container } = render(
+      createElement(SessionTranscript, { sessionId: SESSION }),
+      { wrapper: makeWrapper(client) },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("newest")).not.toBeNull();
+    });
+    // No turn, no island.
+    expect(container.querySelector("[data-vex-island-state]")).toBeNull();
+
+    const settleTurn = startChatTurn(client);
+    await waitFor(() => {
+      const island = container.querySelector("[data-vex-island-state]");
+      expect(island).not.toBeNull();
+      // Nothing is classified yet — the honest state is "working".
+      expect(island?.getAttribute("data-vex-island-state")).toBe("working");
+    });
+
+    // The first real delta takes over the same surface, not a second one.
+    act(() => {
+      useStreamStore.setState({
+        bySessionId: { [SESSION]: livePreview({ reasoningText: "hm", status: "thinking" }) },
+      });
+    });
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll("[data-vex-island-state]"),
+      ).toHaveLength(1);
+      expect(
+        container
+          .querySelector("[data-vex-island-state]")
+          ?.getAttribute("data-vex-island-state"),
+      ).toBe("thinking");
+    });
+
+    await act(async () => {
+      settleTurn();
+      await Promise.resolve();
+    });
   });
 });

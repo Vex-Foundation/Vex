@@ -56,12 +56,16 @@
 
   /* Typography — self-hosted WOFF2 (CSP-clean). THE REGISTER (owner decree
    * 2026-07-29), the whitehouse.gov 2026 pair:
-   *   --font-serif = the VOICE: prose (assistant/user/composer body) and
-   *     display statements. Static 400 + italic, NO weight axis — emphasis is
-   *     the italic, never a synthesized bold (`.vex-serif-prose`).
-   *   --font-sans  = the SUPPORT: UI chrome, controls, the small-caps micro
-   *     labels (`.vex-eyebrow` / `.vex-micro`), and scanned numeric columns
-   *     with `tabular-nums` (variable 400-700; `font-black` resolves to 700).
+   *   --font-serif = DISPLAY: markdown headings, display figures, the
+   *     composer's italic resting prompt, and the reasoning aside
+   *     (`.vex-reasoning-prose`). Static 400 + italic, NO weight axis — never
+   *     a synthesized bold. NOT body copy: the readability round (2026-07-30)
+   *     moved message bodies off it, matching the source register, where the
+   *     face is a heading face only.
+   *   --font-sans  = the READING + SUPPORT face: message body copy
+   *     (`.vex-chat-prose`, 15px/1.65), UI chrome, controls, the small-caps
+   *     micro labels (`.vex-eyebrow` / `.vex-micro`), and scanned numeric
+   *     columns with `tabular-nums` (variable 400-700; `font-black` → 700).
    *   --font-mono  = DEMOTED to technical artifacts ONLY: code blocks, raw
    *     JSON args/output, addresses, tx hashes. No new mono uppercase labels.
    * Archivo + Inter Tight are retired. */

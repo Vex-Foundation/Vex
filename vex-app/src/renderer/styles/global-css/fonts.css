@@ -5,7 +5,7 @@
  *
  * THE REGISTER (owner decree 2026-07-29 — the whitehouse.gov 2026 pair):
  *   - Instrument Serif = the VOICE. Prose (assistant/user/composer body copy)
- *     and display statements. See `.vex-serif-prose` in landing-motifs.css.
+ *     and display statements. See `.vex-reasoning-prose` in landing-motifs.css; body copy is sans (`.vex-chat-prose`).
  *   - Instrument Sans  = the SUPPORT. UI chrome, controls, small-caps micro
  *     labels (`.vex-eyebrow` / `.vex-micro`), and every scanned numeric column
  *     (with `tabular-nums`).
@@ -88,7 +88,7 @@
  * NO WEIGHT AXIS IS A HARD CONSTRAINT, not a footnote: any `font-weight`
  * above 400 on serif text is SYNTHESIZED (faked) by the browser. Every serif
  * subtree therefore sets `font-synthesis-weight: none` and expresses emphasis
- * with the ITALIC (see `.vex-serif-prose`, landing-motifs.css).
+ * with the ITALIC (see `.vex-reasoning-prose`, landing-motifs.css).
  *
  * This is the voice face of the register: prose and display statements. Never
  * a scanned numeric column — those are Instrument Sans + `tabular-nums`. */

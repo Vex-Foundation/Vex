@@ -7,7 +7,7 @@
  * with transform/opacity only (MOTION-POLICY safe). The overlay shows
  * exactly when a native placeholder would (empty draft), is
  * click-transparent, and the field keeps its aria-label accessible name.
- * The overlay's pl-4/py-[9px]/16.5px SERIF metrics MIRROR the textarea's so
+ * The overlay's pl-4/py-[9px]/15px SERIF metrics MIRROR the textarea's so
  * the faux prompt sits exactly on the caret line (change one, change both).
  * The prompt is italic, the draft upright. The slot wears `.vex-composer-grow`
  * (globals.css): `useComposerFieldGrow`'s layout effect mirrors the
@@ -58,7 +58,7 @@ export function ComposerField({
           // 2026-07-29): the faux placeholder is the composer's VOICE at rest,
           // set in the same Instrument Serif as the draft it stands in for,
           // italicised so it still reads as a prompt rather than typed text.
-          className="pointer-events-none absolute inset-0 overflow-hidden font-serif text-[16.5px] italic leading-[1.65] text-[var(--vex-text-3)]"
+          className="pointer-events-none absolute inset-0 overflow-hidden font-serif text-[15px] italic leading-[1.65] text-[var(--vex-text-3)]"
         >
           <AnimatePresence initial={false}>
             <motion.span
@@ -98,15 +98,18 @@ export function ComposerField({
         rows={1}
         aria-label="Session draft"
         className={
-          "block w-full resize-none overflow-y-auto bg-transparent font-serif leading-[1.65] text-foreground caret-[var(--vex-accent)] outline-none " +
-          // ONE 16.5px serif variant for welcome AND session (the prose
-          // register — the draft is set in the same voice the reply comes
-          // back in). The vertical padding builds the resting single-line
-          // height instead of a min-height, so the caret line and the faux
-          // placeholder overlay above always share the same origin — the two
-          // metrics MUST stay mirrored. pl-4: breathing room off the
-          // rounded-2xl edge.
-          "max-h-[200px] py-[9px] pr-1 text-[16.5px] pl-4"
+          "block w-full resize-none overflow-y-auto bg-transparent font-sans leading-[1.65] text-foreground caret-[var(--vex-accent)] outline-none " +
+          // TYPED text is set in the READING register (Instrument Sans
+          // 15px/1.65, owner readability round 2026-07-30) — the draft is set
+          // in the same face the reply comes back in, and a long draft is
+          // read, not displayed. The RESTING PROMPT stays serif italic (see
+          // the placeholder overlay above): a prompt is display, typing is
+          // reading. Both keep the SAME 15px/1.65 line box, so the caret line
+          // and the overlay still share one origin — the two metrics MUST
+          // stay mirrored. The vertical padding builds the resting
+          // single-line height instead of a min-height. pl-4: breathing room
+          // off the rounded-2xl edge.
+          "max-h-[200px] py-[9px] pr-1 text-[15px] pl-4"
         }
       />
     </div>

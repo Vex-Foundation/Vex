@@ -9,13 +9,17 @@
  */
 
 import { vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+import { MutationObserver, QueryClient } from "@tanstack/react-query";
+import { CHAT_SUBMIT_MUTATION_KEY } from "../../../../lib/api/chat.js";
 import type {
   MessageKind,
   MessageRole,
   SessionMessageDto,
 } from "@shared/schemas/messages.js";
-import { useStreamStore } from "../../../../stores/streamStore.js";
+import {
+  useStreamStore,
+  type StreamPreview,
+} from "../../../../stores/streamStore.js";
 
 export const SESSION = "00000000-0000-4000-8000-0000000000aa";
 export const ISO = "2026-05-26T10:00:00.000Z";
@@ -99,6 +103,58 @@ export function getScroller(container: HTMLElement): HTMLElement {
 /** The "↓ latest" jump pill — absent from the DOM while the bottom is in view. */
 export function latestPill(container: HTMLElement): HTMLElement | null {
   return container.querySelector("[data-vex-latest-pill]");
+}
+
+/**
+ * Put a chat turn IN FLIGHT for `SESSION` — a pending mutation under the real
+ * `CHAT_SUBMIT_MUTATION_KEY`, which is exactly what `useIsChatSubmitting`
+ * reads. Driven through the shared mutation cache rather than a mocked hook so
+ * the transcript's turn-scoping is exercised against the real signal.
+ *
+ * `chat.submit`'s promise spans the WHOLE turn (provider rounds AND tool
+ * execution), so "pending" here means "the turn has not settled" — the same
+ * meaning the product relies on. Returns the settle function.
+ */
+export function startChatTurn(client: QueryClient): () => void {
+  let settle: () => void = () => undefined;
+  const observer = new MutationObserver<unknown, Error, { sessionId: string }>(
+    client,
+    {
+      mutationKey: CHAT_SUBMIT_MUTATION_KEY,
+      mutationFn: () =>
+        new Promise<unknown>((resolve) => {
+          settle = () => resolve(undefined);
+        }),
+    },
+  );
+  void observer.mutate({ sessionId: SESSION }).catch(() => undefined);
+  return () => settle();
+}
+
+/** The anchor run-out spacer — the last aria-hidden child of the row list. */
+export function anchorSpacer(container: HTMLElement): HTMLElement {
+  const el = getScroller(container).querySelector("div[aria-hidden]:last-child");
+  if (el === null) throw new Error("anchor spacer not found");
+  return el as HTMLElement;
+}
+
+/** A streaming `StreamPreview`, with the fields a test cares about overridden. */
+export function livePreview(
+  over: Partial<StreamPreview> = {},
+): StreamPreview {
+  return {
+    streamId: "s1",
+    text: "",
+    phase: "streaming",
+    toolName: null,
+    reasoningSegments: [],
+    reasoningText: "",
+    reasoningTokens: null,
+    startedAtMs: Date.now(),
+    errorType: null,
+    status: "working",
+    ...over,
+  };
 }
 
 /** Per-test teardown shared by both suites. */

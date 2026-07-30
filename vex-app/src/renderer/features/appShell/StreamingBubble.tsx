@@ -6,7 +6,7 @@
  *     Working → Thinking → Calling → Writing, the elapsed counter, the
  *     awaiting-signature freeze, the sr-only announcements, the error branch);
  *  2. stream the answer markdown BELOW it, in the same gutter grammar as a
- *     persisted assistant row (relative pl-7).
+ *     persisted assistant row (relative pl-9).
  *
  * The `useMemo` on `preview.text` is load-bearing and must not be inlined: an
  * 80ms reasoning flush re-renders this component, and without the memo the
@@ -42,8 +42,10 @@ export function StreamingBubble({
       preview.text.length > 0 ? (
         // Resolves in once beneath the island — clarity "earned" by the
         // thinking. One-shot on first mount; text deltas reuse the same node
-        // so it never re-triggers. Serif voice register per contract C2.
-        <div className="vex-answer-resolve break-words font-serif text-[16.5px] leading-[1.65] text-foreground">
+        // so it never re-triggers. The reading register (Instrument Sans
+        // 15px/1.65) arrives with `.vex-chat-prose` inside MarkdownContent, so
+        // the live answer and the persisted row it becomes are set identically.
+        <div className="vex-answer-resolve break-words text-foreground">
           <MarkdownContent text={preview.text} />
         </div>
       ) : null,
@@ -56,7 +58,7 @@ export function StreamingBubble({
       data-vex-message-role="assistant"
       data-vex-stream-phase={preview.phase}
       aria-busy={streaming}
-      className="relative flex flex-col gap-2 pl-7"
+      className="relative flex flex-col gap-2 pl-9"
     >
       <TurnIsland preview={preview} awaitingApproval={awaitingApproval} />
       {/* The raw provider text never renders on the error path. */}

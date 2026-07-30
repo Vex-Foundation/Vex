@@ -17,6 +17,7 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
     text: "",
     phase: "streaming",
     toolName: null,
+    reasoningSegments: [],
     reasoningText: "",
     reasoningTokens: null,
     startedAtMs: 0,

@@ -21,8 +21,8 @@
  * register explicitly forbids. Instrument Sans is the support half of the
  * same whitehouse.gov pair, carries a real 400–700 axis, and stays crisp at
  * micro sizes — so the small-caps stamp is sans and the serif is reserved
- * for prose and display, where it is actually read. See `.vex-serif-prose`
- * below for the voice side.
+ * for headings, display and the reasoning aside. See `.vex-chat-prose`
+ * below for the reading side, and `.vex-reasoning-prose` for the aside.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* Eyebrow — the section/group label. Formerly carried a leading ::before rule
@@ -68,39 +68,80 @@
   text-transform: uppercase;
 }
 
-/* Serif prose — the VOICE side of the register: assistant/user/composer body
- * copy. `font-synthesis-weight: none` is load-bearing, not decoration:
- * Instrument Serif ships as static 400 + 400 italic with NO weight axis, so
- * any `font-weight: 600/700` reaching this subtree would be FAKED by the
- * browser (smeared, off-register strokes). Emphasis is carried by the italic
- * instead — `strong` inside serif prose renders as serif italic (the
- * editorial convention), which is why the rule below overrides weight rather
- * than relying on call sites to avoid bold.
+/* Chat prose — the READING register for message bodies.
  *
- * Technical artifacts opt OUT and stay mono/sans: `code`, `pre`, and `table`
- * descendants inherit nothing from this rule (raw JSON, addresses, tx hashes
- * and scanned numeric columns must never be set in a display serif). */
-.vex-serif-prose {
-  font-family: var(--font-serif);
-  font-size: 16.5px;
+ * TYPOGRAPHY LAW, CORRECTED (owner readability round, 2026-07-30). The
+ * previous pass set assistant/user body copy in Instrument Serif at 16.5px.
+ * That was a misreading of the source: whitehouse.gov uses Instrument Serif
+ * for HEADINGS only. It is a condensed, high-contrast DISPLAY face — at
+ * paragraph length and screen resolution its hairlines thin out and the
+ * narrow counters close up, and the owner's first live session reported the
+ * body as plainly hard to read.
+ *
+ * So the register splits, exactly as the source does:
+ *   BODY      → Instrument Sans, 15px/1.65 (the pre-redesign reading metric).
+ *   HEADINGS  → Instrument Serif, set per-node in `MarkdownContent`.
+ *   DISPLAY   → Instrument Serif, set per-node (position totals, hero figures).
+ *   REASONING → Instrument Serif ITALIC (`.vex-reasoning-prose` below) — a
+ *               deliberately different voice for a different kind of speech.
+ *   TECHNICAL → mono (code, raw JSON, addresses, tx hashes) / sans+tabular
+ *               (numeric columns). Unchanged.
+ *
+ * Consequence of leaving the serif: Instrument Sans HAS a real 400–700 weight
+ * axis, so `strong` is a genuine semibold again instead of the italic
+ * substitution the weightless serif forced. `font-synthesis-weight` is
+ * therefore no longer needed here — it survives on the serif subtrees below,
+ * which still cannot be synthesized. */
+.vex-chat-prose {
+  font-family: var(--font-sans);
+  font-size: 15px;
   line-height: 1.65;
-  font-synthesis-weight: none;
 }
-.vex-serif-prose strong,
-.vex-serif-prose b {
-  font-weight: 400;
-  font-style: italic;
+.vex-chat-prose strong,
+.vex-chat-prose b {
+  font-weight: 600;
 }
-.vex-serif-prose code,
-.vex-serif-prose pre {
+.vex-chat-prose code,
+.vex-chat-prose pre {
   font-family: var(--font-mono);
   font-style: normal;
+  font-weight: 400;
 }
-.vex-serif-prose table {
+.vex-chat-prose table {
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
+}
+/* The serif survivors inside chat prose are display-only (headings), and
+ * Instrument Serif still ships static 400 + 400 italic with NO weight axis —
+ * a `font-weight: 600` reaching them would be FAKED by the browser. */
+.vex-chat-prose :is(h1, h2, h3, h4, .font-serif) {
+  font-synthesis-weight: none;
+}
+
+/* Reasoning prose — the SECOND voice (owner decree 2026-07-30: "inna
+ * czcionka"). Vex thinking aloud is not Vex speaking, so it is not set in the
+ * speaking register: Instrument Serif ITALIC at a muted tone, the editorial
+ * convention for an aside. Worn by all three reasoning surfaces so they read
+ * as one object — the live segment streaming in the island, the settled
+ * segment stamps, and the persisted `ReasonedBlock`.
+ *
+ * The same technical opt-outs apply: a tool name, a JSON fragment or an
+ * address quoted inside a trace must not be italicised into illegibility. */
+.vex-reasoning-prose {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-synthesis-weight: none;
+  color: var(--vex-text-2);
+}
+.vex-reasoning-prose strong,
+.vex-reasoning-prose b {
+  font-weight: 400;
+}
+.vex-reasoning-prose :is(code, pre) {
+  font-family: var(--font-mono);
+  font-style: normal;
 }
 
 /* Grain — the landing .noise SVG turbulence, near-invisible. CSP-safe:

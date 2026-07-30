@@ -48,7 +48,12 @@ export function resolveTurnIslandView(
   preview: StreamPreview,
   awaitingApproval: boolean,
 ): TurnIslandView {
-  const hasReasoning = preview.reasoningText.length > 0;
+  // Reasoning is TURN-scoped: a turn that thought, called a tool, and is now
+  // writing has an empty ACTIVE buffer but a settled segment behind it. Both
+  // count, or the stamp would vanish at exactly the moment the turn had the
+  // most thinking to show for itself.
+  const hasReasoning =
+    preview.reasoningText.length > 0 || preview.reasoningSegments.length > 0;
 
   if (preview.phase === "error") {
     // Bounded label -> category -> fixed copy. The classifier is total, so a

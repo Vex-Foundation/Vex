@@ -2,17 +2,35 @@
  * THE TURN ACTIVITY ISLAND — every move Vex makes in the current turn, in one
  * morphing surface above the streaming answer.
  *
+ * DESIGN INTENT (owner visual round 2026-07-30: "obecny loading(thinking)
+ * zaprojektować jakoś ciekawie"). The waiting moment is not dressed up with a
+ * louder loader — it is filled with the only thing that is actually true, and
+ * filled IMMEDIATELY: the island now mounts on the SEND, not on the first
+ * provider delta, so the send can never read as a no-op. From there the turn
+ * writes itself as a stack of thoughts — settled ones fold up into serif
+ * stamps, the live one streams full-height beneath them — so waiting is spent
+ * reading rather than watching a spinner. The single motion in the whole
+ * surface is the cobalt shimmer sweeping the status word: the same mark the
+ * VEX speaker caption wears, meaning the same thing in both places — Vex is
+ * present. Everything else is stillness and the island's own shape morph, and
+ * the shimmer stops dead under reduced motion and under the
+ * awaiting-signature freeze, where motion would read as progress that is not
+ * happening.
+ *
  * States (derived purely in `islandTurnState.ts` from the `streamStore`
  * preview, never from timers):
  *
- *   Working   compact pill, the turn has begun and nothing is classified yet
+ *   Working   compact pill, the turn has begun and nothing is classified yet.
+ *             This is the state the SEND opens on (`turnPreview.ts`)
  *   Thinking  the island EXPANDS and the full reasoning streams inside it as
- *             live markdown (`LiveReasoning`) — the old 46px masked peek is
- *             gone; unreadable is not a design
+ *             live markdown (`LiveReasoning`) under a "Thinking:" caption —
+ *             no window, no clipping; unreadable is not a design
  *   Calling   a tool row: the protocol/tool mark (contract C5) + the tool name
- *             + a loading treatment
  *   Writing   the island settles to the "Reasoned" stamp and the ANSWER
  *             streams below it, exactly as before
+ *
+ * Above every state except the hidden one, `ReasoningSegments` stacks the
+ * thoughts this turn has already finished.
  *
  * Preserved from the working strip it replaces: the elapsed m:ss counter, the
  * awaiting-signature FREEZE (all motion stops, pin-tone label — trust equals
@@ -44,6 +62,7 @@ import { toolGlyph } from "../ToolLedger/toolGlyph.js";
 import { resolveToolIdentity } from "../ToolLedger/toolIdentity.js";
 import { ElapsedCounter } from "./ElapsedCounter.js";
 import { LiveReasoning } from "./LiveReasoning.js";
+import { ReasoningSegments } from "./ReasoningSegments.js";
 import {
   resolveTurnIslandView,
   type TurnIslandView,
@@ -57,19 +76,38 @@ const TONE_CLASS: Readonly<Record<TurnIslandView["tone"], string>> = {
 };
 
 /**
- * The "still working" cue while a tool runs. A 2px bar that breathes in
- * opacity only — killed outright by the freeze and by reduced motion (the
- * global `motion-reduce` rule), so it can only ever mean live work.
+ * THE STATUS WORD — and the island's only motion.
+ *
+ * While the turn is live the word wears `.vex-preview-shimmer`: a narrow
+ * cobalt band sweeping through the glyphs on a slow 7s loop, the SAME
+ * sanctioned gesture as the reasoning-effort selector's value and the VEX
+ * speaker caption. One mark, one meaning — Vex is present and this is live.
+ * It replaced a pulsing 2px bar that said the same thing in a third dialect.
+ *
+ * The base text stays SOLID at all times (the shimmer is an ::after duplicate
+ * clipped to the glyphs, never a background-clip on the text itself), so under
+ * `prefers-reduced-motion` — where the family drops the overlay entirely — and
+ * under the awaiting-signature freeze, the word is simply still and fully
+ * legible. `data-shimmer-text` must carry the identical string or the overlay
+ * would sweep the wrong glyphs.
  */
-function LoadingBar({ animated }: { readonly animated: boolean }): JSX.Element {
+function StatusWord({
+  label,
+  animated,
+  className,
+}: {
+  readonly label: string;
+  readonly animated: boolean;
+  readonly className?: string;
+}): JSX.Element {
   return (
     <span
-      aria-hidden
-      className={cn(
-        "h-[2px] w-8 shrink-0 rounded-full bg-[var(--vex-accent)]",
-        animated && "animate-pulse motion-reduce:animate-none",
-      )}
-    />
+      data-vex-island-label=""
+      className={cn(animated && "vex-preview-shimmer", className)}
+      data-shimmer-text={animated ? label : undefined}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -103,9 +141,16 @@ function IslandBody({
     return (
       <DynamicContainer className="flex flex-col gap-1.5 px-3 py-2">
         <span className="flex items-baseline justify-between gap-2">
-          <span className={cn("text-[11px]", TONE_CLASS[view.tone])}>
-            {view.label}
-          </span>
+          {/* The caption reads "Thinking:" — a speaker label introducing the
+              words below it, which is what the trace now is. The colon lives
+              here and not in the view descriptor because the same label is
+              announced to screen readers, where trailing punctuation is
+              noise. */}
+          <StatusWord
+            label={`${view.label}:`}
+            animated={view.animated}
+            className={cn("font-serif text-[13px] italic", TONE_CLASS[view.tone])}
+          />
           {view.showElapsed ? (
             <ElapsedCounter startedAtMs={preview.startedAtMs} />
           ) : null}
@@ -120,13 +165,11 @@ function IslandBody({
       {view.state === "calling" && preview.toolName !== null ? (
         <CallingMark toolName={preview.toolName} />
       ) : null}
-      <span
-        data-vex-island-label=""
+      <StatusWord
+        label={view.label}
+        animated={view.animated}
         className={cn("min-w-0 truncate text-[11px]", TONE_CLASS[view.tone])}
-      >
-        {view.label}
-      </span>
-      {view.state === "calling" ? <LoadingBar animated={view.animated} /> : null}
+      />
       {view.showElapsed ? (
         <span className="ml-auto flex items-center">
           <ElapsedCounter startedAtMs={preview.startedAtMs} />
@@ -171,7 +214,12 @@ export function TurnIsland({
         </span>
         {streaming ? <span>{view.label}</span> : null}
       </span>
-      {/* THE FREEZE reaches the SHELL, not just the loading bar: while a
+      {/* The thoughts this turn has already finished, folded. They sit ABOVE
+          the island because they are behind it in time — the turn reads top to
+          bottom as it happened. They persist across tool calls and across
+          provider rounds; only the end of the TURN retires them. */}
+      <ReasoningSegments segments={preview.reasoningSegments} />
+      {/* THE FREEZE reaches the SHELL, not just the status word: while a
           signature is pending the island's shape morph and every content
           cross-fade become hard cuts, so the surface goes genuinely still
           instead of springing into the awaiting state. */}

@@ -434,7 +434,11 @@ describe("TranscriptMessage caption register (contract C2)", () => {
       }),
     );
     for (const [name, container] of [
-      ["Vex", assistant],
+      // The assistant caption is literally "VEX": the shimmer overlay
+      // duplicates the text through `data-shimmer-text`, and CSS
+      // `text-transform` does not change the DOM string, so the DOM has to
+      // carry the cased form or the two layers would sweep different glyphs.
+      ["VEX", assistant],
       ["You", user],
     ] as const) {
       const caption = container.querySelector(".vex-micro");
@@ -442,6 +446,24 @@ describe("TranscriptMessage caption register (contract C2)", () => {
       expect(caption?.className).not.toContain("font-mono");
       expect(caption?.textContent).toContain(name);
     }
+  });
+
+  /**
+   * THE NAME SHIMMERS (owner visual round 2026-07-30). It must be the SAME
+   * sanctioned class family the reasoning-effort selector uses, and the
+   * overlay's `data-shimmer-text` must equal the rendered string exactly — a
+   * mismatch sweeps a band across glyphs that are not there.
+   */
+  it("wears the sanctioned shimmer on the VEX speaker name, with a matching overlay string", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    const name = container.querySelector(".vex-preview-shimmer");
+    expect(name).not.toBeNull();
+    expect(name?.textContent).toBe("VEX");
+    expect(name?.getAttribute("data-shimmer-text")).toBe(name?.textContent);
   });
 });
 

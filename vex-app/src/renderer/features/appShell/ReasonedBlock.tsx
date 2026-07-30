@@ -13,8 +13,15 @@
  * absent one.
  *
  * The trace renders through `MarkdownContent` (safe React elements, never an
- * HTML string) at the secondary 13px tone, collapsed by default so a long
- * trace never buries the answer it produced.
+ * HTML string), collapsed by default so a long trace never buries the answer
+ * it produced. Expanded shows the reasoning WHOLE — the cap is applied once,
+ * by the engine, at write time; nothing is trimmed again for display.
+ *
+ * REGISTER (owner decree 2026-07-30, "inna czcionka"): `.vex-reasoning-prose`
+ * — Instrument Serif ITALIC, muted. Thinking aloud is not speaking, so it is
+ * not set in the speaking face. The live island stream and the settled
+ * in-turn stamps wear the identical class, so one trace looks the same
+ * streaming, folded, and reopened a week later.
  */
 
 import { useId, useState, type JSX } from "react";
@@ -48,7 +55,7 @@ export function ReasonedBlock({
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded-[4px] text-left text-[11px] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="flex items-center gap-1 rounded-[4px] text-left font-serif text-[12px] italic text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
         <VexIcon
           icon={ArrowRight01Icon}
@@ -61,7 +68,7 @@ export function ReasonedBlock({
       {open ? (
         <div
           id={bodyId}
-          className="vex-entry-settle mt-1 border-l border-[var(--vex-line)] pl-3 text-[13px] leading-[1.6] text-[var(--vex-text-2)]"
+          className="vex-reasoning-prose vex-entry-settle mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
         >
           <MarkdownContent text={reasoning} />
         </div>
