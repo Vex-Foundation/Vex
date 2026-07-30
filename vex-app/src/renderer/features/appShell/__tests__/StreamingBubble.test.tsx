@@ -31,6 +31,7 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
     reasoningTokens: null,
     startedAtMs: Date.now(),
     status: "working",
+    errorType: null,
     ...overrides,
   };
 }

@@ -22,6 +22,7 @@ const PREVIEW: StreamPreview = {
   reasoningText: "",
   reasoningTokens: null,
   startedAtMs: 0,
+  errorType: null,
   status: "calling",
 };
 

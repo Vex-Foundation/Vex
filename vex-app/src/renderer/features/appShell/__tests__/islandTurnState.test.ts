@@ -20,6 +20,7 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
     reasoningText: "",
     reasoningTokens: null,
     startedAtMs: 0,
+    errorType: null,
     status: "working",
     ...overrides,
   };
@@ -78,7 +79,7 @@ describe("resolveTurnIslandView — precedence", () => {
     );
     expect(view).toMatchObject({
       state: "error",
-      label: "Stream error",
+      label: "The provider call failed",
       tone: "error",
       animated: false,
     });
