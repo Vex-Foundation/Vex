@@ -25,6 +25,7 @@ import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery
 import { toResultData } from "../protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
+import { parseDiscoverToolsArgs } from "./discover-tools-args.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
 
 /**
@@ -65,11 +66,17 @@ export async function routeToolCall(
 
   // Protocol meta-tools
   if (call.name === "discover_tools") {
+    // Wrong-typed arguments are answered by name, never dropped in silence —
+    // see `./discover-tools-args.ts`.
+    const validated = parseDiscoverToolsArgs(call.args);
+    if (!validated.ok) {
+      return { success: false, output: validated.message };
+    }
     const discoveryRequest = {
-      query: typeof call.args.query === "string" ? call.args.query : undefined,
-      namespace: typeof call.args.namespace === "string" ? call.args.namespace : undefined,
-      limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
-      list: call.args.list === true,
+      query: validated.args.query,
+      namespace: validated.args.namespace,
+      limit: validated.args.limit,
+      list: validated.args.list,
       contextUsageBand: context.contextUsageBand,
       // C8 mirror: the advisory flag must agree with the gate that will
       // actually run. `=== true` keeps every context without the field on

@@ -78,6 +78,41 @@ describe("agent_scan tool", () => {
       await handleAgentScan({ view: "activity", namespace: "khalani", productType: "bridge", limit: 5 }, ctx);
       expect(mockGetActivities).toHaveBeenCalledWith({ addresses: ["0xEVM", "SOL"], namespace: "khalani", productType: "bridge", limit: 5 });
     });
+
+    // `proj_activity.input_amount`/`output_amount` are written VERBATIM from
+    // each tool's `_tradeCapture` (activity-populator.ts) — no unit
+    // normalisation anywhere. The only live writers of those fields are the
+    // Pendle handlers, and they write RAW base units deliberately (the spot
+    // lot projector BigInt()s them). rules/90: a raw amount must travel with
+    // the decimals needed to read it, so a raw row must SAY it is raw.
+    function activityRow(over: Record<string, unknown> = {}) {
+      return {
+        namespace: "pendle", activityType: "swap", productType: "spot", tradeSide: "buy",
+        chain: "arbitrum", inputToken: "PT-wstETH", inputAmount: "1047061",
+        outputToken: "USDC", outputAmount: "2000000",
+        inputValueUsd: null, outputValueUsd: null, valuationSource: "pendle",
+        captureStatus: "executed", createdAt: "2026-07-30T00:00:00.000Z",
+        ...over,
+      };
+    }
+
+    it("labels Pendle amounts as raw base units, on both legs", async () => {
+      mockGetActivities.mockResolvedValueOnce([activityRow()]);
+      const r = await handleAgentScan({ view: "activity" }, ctx);
+      const [row] = r.data!.activities as Array<Record<string, unknown>>;
+      expect(row!.input).toBe("1047061 PT-wstETH (raw base units — resolve decimals before quoting)");
+      expect(row!.output).toBe("2000000 USDC (raw base units — resolve decimals before quoting)");
+    });
+
+    it("leaves a non-raw-source row's amounts exactly as before", async () => {
+      mockGetActivities.mockResolvedValueOnce([
+        activityRow({ namespace: "solana", inputToken: "SOL", inputAmount: "1.5", outputToken: null }),
+      ]);
+      const r = await handleAgentScan({ view: "activity" }, ctx);
+      const [row] = r.data!.activities as Array<Record<string, unknown>>;
+      expect(row!.input).toBe("1.5 SOL");
+      expect(row!.output).toBeNull();
+    });
   });
 
   describe("executions", () => {

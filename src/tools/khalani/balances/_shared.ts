@@ -20,7 +20,8 @@ export function chainNotInRegistryError(chainId: number): VexError {
   return new VexError(
     ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
     `Chain ${chainId} is not in the current Khalani registry.`,
-    "Refresh chains and retry.",
+    "The registry is fetched per run; if the chain was expected, retry this tool later. "
+    + "Otherwise use a chain the registry covers.",
   );
 }
 

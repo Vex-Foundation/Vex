@@ -9,7 +9,7 @@
  * bounded + code-keyed — upstream error text NEVER reaches the model.
  */
 
-import { formatUnits, getAddress, type Address } from "viem";
+import { getAddress, type Address } from "viem";
 
 import { PENDLE_NATIVE_TOKEN, PENDLE_ERC20_ABI } from "@tools/pendle/constants.js";
 import { getPendleChain, resolvePendleChainId, type PendleChain } from "@tools/pendle/chains.js";
@@ -20,6 +20,7 @@ import type { AgentActivityLegInput } from "@vex-agent/db/repos/agent-activity.j
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
+import { formatRawAmount } from "../../amount-display.js";
 import { checkSlippageBps } from "../../slippage-policy.js";
 import { priceUsdFor } from "../market-lookup.js";
 import type { PendleBroadcastResult } from "./signed-broadcast.js";
@@ -165,8 +166,14 @@ export function requireTokenAddress(raw: string): Address {
   }
 }
 
+/**
+ * Pendle's display reading of a wei amount. The conversion is owned by
+ * `protocols/amount-display.ts`; this keeps Pendle's own contract — the 18-
+ * decimal default, the numeric result, and the deliberate THROW on a
+ * malformed `wei` (`BigInt` below, unchanged) rather than a silent zero.
+ */
 export function humanAmount(wei: string | bigint, decimals: number | null): number {
-  const n = Number(formatUnits(BigInt(wei), decimals ?? 18));
+  const n = Number(formatRawAmount(BigInt(wei), decimals ?? 18));
   return Number.isFinite(n) ? n : 0;
 }
 

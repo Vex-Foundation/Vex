@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { dropEmptyModelValues } from "./empty-values.js";
+import { dropEmptyModelValues } from "@vex-agent/tools/internal/arg-validation.js";
 
 const TWENTY_MAX = 20;
 const HUNDRED_MAX = 100;
@@ -226,13 +226,18 @@ const TwitterAccountParamsCheckedSchema = TwitterAccountParamsBaseSchema.superRe
 
 /**
  * The model-facing contract. `dropEmptyModelValues` runs FIRST: at this boundary
- * an empty optional value means absent (see `./empty-values.ts`), so the model's
- * habit of filling every advertised field with `""` / `[]` costs neither the
- * call nor the criteria it did supply. Validation itself is unchanged — nothing
- * is invented, and a required field that arrived empty still fails.
+ * an empty optional value means absent (see
+ * `@vex-agent/tools/internal/arg-validation.ts`), so the model's habit of
+ * filling every advertised field with `""` / `[]` costs neither the call nor
+ * the criteria it did supply. Validation itself is unchanged — nothing is
+ * invented, and a required field that arrived empty still fails.
+ *
+ * `action` is preserved even when empty: it selects the union branch, so an
+ * empty one must fail as an unrecognised action (which lists the legal ones),
+ * never as a missing key.
  */
 export const TwitterAccountParamsSchema = z.preprocess(
-  dropEmptyModelValues,
+  (input) => dropEmptyModelValues(input, { preserveKeys: ["action"] }),
   TwitterAccountParamsCheckedSchema,
 );
 

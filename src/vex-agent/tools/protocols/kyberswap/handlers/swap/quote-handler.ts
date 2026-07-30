@@ -10,6 +10,7 @@ import { resolveTokenMetadataStrict, requireFeature, type ResolvedKyberTokenMeta
 import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import { parseUnits } from "viem";
+import { formatRawAmount } from "../../../amount-display.js";
 import { formatRouteSummary } from "../../helpers.js";
 import type { ProtocolHandler } from "../../../types.js";
 import { str, ok, fail } from "../../../handler-helpers.js";
@@ -18,6 +19,16 @@ import { revealOnEligibleFailure } from "./reveal-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { resolveQuoteSafetyLeg, type QuoteSafety, type QuoteSafetyLeg } from "./quote-safety.js";
 import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
+
+/**
+ * The human spelling of a raw base-unit amount for the summary string only —
+ * `routeSummary.amountOut` keeps the raw value. Falls back to the input when
+ * it is not an integer string (a display fallback must never throw a quote).
+ * The conversion is owned by `protocols/amount-display.ts`.
+ */
+function humanizeAmountOut(amountOutRaw: string, decimals: number): string {
+  return formatRawAmount(amountOutRaw, decimals) ?? amountOutRaw;
+}
 
 export const quoteHandler: ProtocolHandler = async (p, context) => {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
@@ -88,8 +99,15 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   // after — as one JSON key ordering, not a free-text prefix, so `output`
   // stays parseable (every tool in this codebase returns JSON via `ok()`,
   // and downstream tests/consumers rely on `JSON.parse(result.output)`).
+  //
+  // The summary's amountOut is HUMAN units (2026-07-30): a live session showed
+  // a weaker model copying the raw base-unit figure from this string into its
+  // user-facing reply ("~1926791258702869954560 VEX"). The raw value stays
+  // untouched in `routeSummary.amountOut` — machines read that; this string is
+  // the human/agent layer. Falls back to raw if the provider ever returns a
+  // non-integer string, rather than failing the quote over a display detail.
   const summary =
-    `Quote: ${amountInRaw} ${tokenInLabel} → ~${route.amountOut} ${tokenOutLabel} `
+    `Quote: ${amountInRaw} ${tokenInLabel} → ~${humanizeAmountOut(route.amountOut, tokenOut.decimals)} ${tokenOutLabel} `
     + `(~$${route.amountOutUsd} est.) on ${slug}. Gas ~$${route.gasUsd} est.`
     // On an L2 the L1 data fee can rival or exceed execution gas — quoting
     // only `gasUsd` understated the real cost of the trade.

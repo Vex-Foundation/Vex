@@ -15,14 +15,16 @@ import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
 
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
-import { num, ok, fail } from "../types.js";
+import { num, ok, fail, missingOrWrongTypeMessage } from "../types.js";
 
 export async function handleLongMemoryHistory(
   params: Record<string, unknown>,
   _context: InternalToolContext,
 ): Promise<ToolResult> {
   const id = num(params, "id");
-  if (id === undefined) return fail("Missing required parameter: id");
+  if (id === undefined) {
+    return fail(missingOrWrongTypeMessage(params, "id", "a number (the entry id from long_memory_search)"));
+  }
 
   const lineage = await knowledgeRepo.getLineageChain(id);
   if (!lineage) {

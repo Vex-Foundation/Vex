@@ -121,6 +121,36 @@ export function findCallerSuppliedForbiddenParam(
   return null;
 }
 
+/**
+ * The stricter, PRESENCE-based destination check for the MODEL-FACING alias
+ * boundary: the KEY being there at all is the attempt, whatever it holds.
+ *
+ * Why this exists next to the value-based check rather than replacing it.
+ * `findCallerSuppliedDestinationParam` answers "did a caller supply a refund
+ * ADDRESS?" — a contract other Khalani entry points depend on, and one where an
+ * empty string genuinely carries no address (it is also the stable empty token
+ * the identity builder already canonicalizes). The aliases ask a different
+ * question. They run an empty-value normalization pre-pass, so a `refundTo: ""`
+ * that the value-based check waves through would then be DROPPED — and the
+ * agent would be told nothing at all about a key Vex refuses on principle.
+ * `refundTo` has no legitimate value at any tool boundary, so at the alias the
+ * key's presence is reported by name rather than normalized away
+ * (`rules/90`: a supplied param is never silently discarded).
+ *
+ * Fee params keep the value-based rule: `referrer: ""` is the documented stable
+ * empty token, not an attempted overcharge.
+ */
+export function findCallerSuppliedForbiddenParamOrDestinationKey(
+  params: Readonly<Record<string, unknown>>,
+): CallerSuppliedParamRejection | null {
+  const fee = findCallerSuppliedFeeParam(params);
+  if (fee !== null) return { param: fee, reason: FEE_PARAM_REJECTION_REASON };
+  for (const key of KHALANI_DERIVED_DESTINATION_PARAMS) {
+    if (key in params) return { param: key, reason: DESTINATION_PARAM_REJECTION_REASON };
+  }
+  return null;
+}
+
 /** Return the first caller-supplied fund-destination param, else `null`. */
 export function findCallerSuppliedDestinationParam(
   params: Readonly<Record<string, unknown>>,

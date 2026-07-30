@@ -14,6 +14,7 @@
 
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
+import { missingOrWrongTypeMessage } from "./types.js";
 import { getKhalaniClient } from "@tools/khalani/client.js";
 import { resolveChainId, getChain } from "@tools/khalani/chains.js";
 import { createDynamicPublicClient } from "@tools/khalani/evm-client.js";
@@ -33,8 +34,22 @@ export async function handleChainRead(
   const action = str(params, "action");
   const chainIdRaw = str(params, "chainId");
 
-  if (!action) return { success: false, output: "Missing required: action" };
-  if (!chainIdRaw) return { success: false, output: "Missing required: chainId" };
+  if (!action) {
+    return {
+      success: false,
+      output: missingOrWrongTypeMessage(params, "action", 'a string ("tx_receipt" or "erc721_mint")'),
+    };
+  }
+  if (!chainIdRaw) {
+    return {
+      success: false,
+      output: missingOrWrongTypeMessage(
+        params,
+        "chainId",
+        'a chain slug or the STRING spelling of a chain id (e.g. "base" or "8453")',
+      ),
+    };
+  }
 
   // Resolve chain via khalani. Any throw here (unsupported chain, RPC discovery,
   // provider/SDK error) is reduced to a redacted, bounded summary so raw viem/RPC

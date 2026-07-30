@@ -38,8 +38,15 @@ export interface NumericCoercedParams {
   readonly coercedKeys: readonly string[];
 }
 
-/** The number a string losslessly spells, or `null` to leave the value alone. */
-function parseLosslessNumber(value: string): number | null {
+/**
+ * The number a string losslessly spells, or `null` to leave the value alone.
+ *
+ * Exported because `discover_tools` needs the identical admit/refuse rule: it
+ * is a meta-tool with no manifest, so it cannot go through
+ * `coerceNumericStringParams`, and a second hand-rolled "is this a number"
+ * would be the same decision made twice and drifting apart.
+ */
+export function parseLosslessNumber(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   const parsed = Number(trimmed);
