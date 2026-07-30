@@ -222,6 +222,44 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(legs?.textContent).toContain("SOL");
   });
 
+  it("labels an AMBIGUOUS broadcast PENDING, not Failed", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+          output: '{"txHash":"0xabc","status":"pending"}',
+          success: false,
+          displayStatus: "pending",
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-tool-legs="failed"]')).toBeNull();
+    const legs = container.querySelector('[data-vex-tool-legs="pending"]');
+    expect(legs).not.toBeNull();
+    expect(
+      legs?.querySelector('[data-vex-tool-leg-outcome="pending"]')?.textContent,
+    ).toBe("Pending");
+    // The REQUESTED figure is honest; the untrusted output supplies nothing.
+    expect(legs?.textContent).toContain("1.5");
+    expect(legs?.textContent).toContain("SOL");
+  });
+
+  it("keeps a plain failure FAILED when no pending status was persisted", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "swap_execute_uniswap",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+          output: null,
+          success: false,
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-tool-legs="pending"]')).toBeNull();
+    expect(container.querySelector('[data-vex-tool-legs="failed"]')).not.toBeNull();
+  });
+
   it("never dresses an unknown execute_tool namespace as a venue", () => {
     const { container } = render(
       createElement(ToolActRow, {

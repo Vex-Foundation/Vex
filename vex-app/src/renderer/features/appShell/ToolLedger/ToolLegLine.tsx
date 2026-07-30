@@ -13,8 +13,10 @@
  * read-only preview (a swap_quote that moved nothing must never look like a
  * trade), "Completed" when the call succeeded but its quote-versus-execution
  * identity is unproven, "Requested" for a pending/denied/unpaired/legacy
- * unknown outcome, and "Failed" — which additionally prints NO amounts at all,
- * because a number beside a failed call reads as money that moved.
+ * unknown outcome, "Pending" (amber) for a broadcast whose receipt never came
+ * back — neither a failure nor a completion, and its figures are the REQUESTED
+ * ones read from the args — and "Failed", which additionally prints NO amounts
+ * at all, because a number beside a failed call reads as money that moved.
  */
 
 import type { JSX } from "react";
@@ -27,8 +29,16 @@ const OUTCOME_LABELS: Readonly<Record<ToolLegOutcome, string | null>> = {
   quote: "Quote",
   completed: "Completed",
   failed: "Failed",
+  pending: "Pending",
   requested: "Requested",
 };
+
+/**
+ * The ONE outcome that wears a tone rather than the neutral chip: an ambiguous
+ * broadcast is unresolved, not benign, so it reads amber (`--color-warning`)
+ * like the other pending affordances in the app.
+ */
+const WARN_OUTCOMES: ReadonlySet<ToolLegOutcome> = new Set(["pending"]);
 
 /** Visibly distinct prefix for anything that is not a proven execution. */
 function OutcomeLabel({
@@ -38,10 +48,15 @@ function OutcomeLabel({
 }): JSX.Element | null {
   const label = OUTCOME_LABELS[outcome];
   if (label === null) return null;
+  const warn = WARN_OUTCOMES.has(outcome);
   return (
     <span
       data-vex-tool-leg-outcome={outcome}
-      className="shrink-0 rounded-[3px] border border-[var(--vex-line)] px-1 py-px text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+      className={
+        warn
+          ? "shrink-0 rounded-[3px] border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] px-1 py-px text-[10px] uppercase tracking-[0.12em] text-[var(--color-warning)]"
+          : "shrink-0 rounded-[3px] border border-[var(--vex-line)] px-1 py-px text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+      }
     >
       {label}
     </span>

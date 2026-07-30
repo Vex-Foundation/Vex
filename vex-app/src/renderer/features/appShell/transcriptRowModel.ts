@@ -16,6 +16,7 @@ import type {
   MessageRole,
   SessionMessageDto,
   ToolCallDisplay,
+  ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
 
 /** How a row is laid out + styled. */
@@ -96,6 +97,13 @@ export interface TranscriptRowModel {
    * treat it as success.
    */
   readonly success?: boolean | null;
+  /**
+   * Tool RESULT rows: engine-persisted DISPLAY status. `"pending"` marks an
+   * ambiguous broadcast (persisted `success: false` on purpose); `null` on
+   * every unambiguous result and on legacy rows. Read only together with
+   * `success === false`.
+   */
+  readonly displayStatus?: ToolDisplayStatus | null;
 }
 
 function assertNever(value: never): never {
@@ -231,6 +239,7 @@ export function toTranscriptRow(
         // Measured wall clock; merges onto the paired act in the S5 post-pass.
         durationMs: dto.durationMs,
         success: dto.success,
+        displayStatus: dto.displayStatus,
       };
     }
     // tool_call row: prose (content) + one disclosure per executed tool.
@@ -327,6 +336,13 @@ export interface ToolCallActView {
    * treat null as success.
    */
   readonly success?: boolean | null;
+  /**
+   * DISPLAY status merged from this act's paired `tool_result` row.
+   * `"pending"` ONLY for an ambiguous broadcast; absent/`null` otherwise. Read
+   * only alongside `success === false` — it splits "failed" from "broadcast,
+   * not yet confirmed" and never claims more than `success` supports.
+   */
+  readonly displayStatus?: ToolDisplayStatus | null;
 }
 
 /** Aggregation entry replacing a run of ≥TOOL_GROUP_MIN_CALLS calls. */
@@ -397,6 +413,7 @@ interface MutableAct {
   explorerRefs?: readonly ExplorerRef[] | null;
   durationMs?: number | null;
   success?: boolean | null;
+  displayStatus?: ToolDisplayStatus | null;
 }
 
 function transformToolRun(
@@ -442,6 +459,9 @@ function transformToolRun(
         }
         if (row.success !== null && row.success !== undefined) {
           act.success = row.success;
+        }
+        if (row.displayStatus !== null && row.displayStatus !== undefined) {
+          act.displayStatus = row.displayStatus;
         }
         consumedResultIds.add(row.id);
       }

@@ -23,7 +23,7 @@ export const PORTFOLIO_TOOLS: readonly ToolDef[] = [
       "- `summary`: balances-only portfolio overview (total USD, open position count, latest snapshot). No realized/unrealized PnL — compute that yourself from `transactions`' recorded amounts if you need it.",
       "- `executions`: the global protocol-call audit log (every tool execution, not wallet-scoped).",
       "Filters narrow the rows: `namespace` (protocol), `productType` (spot/perps/prediction/bridge/order/lend), `txHash`, `cursor`, `limit`.",
-      "Freshness caveat: balances/snapshots reflect the last indexer sync, not on-chain head. For real-time per-token balance (e.g. confirming a swap landed), prefer `wallet_balances` (EVM) or `khalani_tokens_balances`. For instrument prices, use the relevant quote tools in the kyberswap namespace.",
+      "Freshness caveat: balances/snapshots reflect the last indexer sync, not on-chain head. For real-time per-token balance (e.g. confirming a swap landed), prefer `wallet_balances`. For instrument prices, use the relevant quote tools in the kyberswap namespace.",
     ].join(" "),
     parameters: { type: "object", properties: {
       view: { type: "string", enum: ["transactions", "activity", "balances", "snapshots", "summary", "executions"], description: "What to inspect (see description for group breakdown)" },

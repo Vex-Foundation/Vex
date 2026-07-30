@@ -205,9 +205,14 @@ describe("khalani manifest", () => {
 
   // ── Canonical resolver ─────────────────────────────────────────
 
-  it("khalani.tokens.search is described as canonical resolver", () => {
+  // Canonicality is claimed in exactly ONE place (2026-07-30). Both this
+  // manifest and `token_find` used to call themselves "the canonical … token
+  // resolver" while being the SAME engine, which read as two competing tools.
+  // The manifest now points AT the shortcut instead of competing with it.
+  it("khalani.tokens.search names token_find as the canonical resolver rather than itself", () => {
     const tool = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.search")!;
-    expect(tool.description).toContain("canonical");
-    expect(tool.description).toContain("cross-chain token resolver");
+    expect(tool.description).toContain("token_find");
+    expect(tool.description).toContain("canonical token resolver");
+    expect(tool.description).not.toContain("canonical cross-chain token resolver");
   });
 });

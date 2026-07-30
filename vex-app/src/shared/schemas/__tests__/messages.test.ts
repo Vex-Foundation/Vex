@@ -58,6 +58,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -80,6 +81,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -102,6 +104,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: 2314,
       success: true,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -125,6 +128,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -144,6 +148,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -162,6 +167,7 @@ describe("messages schemas", () => {
       explorerRefs: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
@@ -179,6 +185,39 @@ describe("messages schemas", () => {
     ).toBe(false);
   });
 
+  it("accepts ONLY the 'pending' literal (or null) for displayStatus", () => {
+    const base = {
+      id: 32,
+      sessionId: SESSION,
+      role: "tool",
+      kind: "tool_result",
+      content: "{}",
+      createdAt: ISO,
+      toolCallId: "call_1",
+      toolName: null,
+      toolCalls: null,
+      explorerRefs: null,
+      reasoning: null,
+      durationMs: null,
+      success: false,
+    };
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, displayStatus: "pending" })
+        .success,
+    ).toBe(true);
+    expect(
+      sessionMessageDtoSchema.safeParse({ ...base, displayStatus: null }).success,
+    ).toBe(true);
+    for (const bad of ["confirmed", "PENDING", "", 1, true, {}]) {
+      expect(
+        sessionMessageDtoSchema.safeParse({ ...base, displayStatus: bad })
+          .success,
+      ).toBe(false);
+    }
+    // Required, not optional — an omitted key is a contract violation.
+    expect(sessionMessageDtoSchema.safeParse(base).success).toBe(false);
+  });
+
   it("rejects a malformed durationMs (negative, fractional, over 24h)", () => {
     const base = {
       id: 31,
@@ -193,6 +232,7 @@ describe("messages schemas", () => {
       explorerRefs: null,
       reasoning: null,
       success: null,
+      displayStatus: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
@@ -226,6 +266,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -250,6 +291,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: null,
+      displayStatus: null,
     });
     expect(parsed.success).toBe(false);
   });

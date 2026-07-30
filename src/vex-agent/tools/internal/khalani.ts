@@ -22,7 +22,4 @@ function makeKhalaniAliasHandler(name: KhalaniInternalToolName): InternalHandler
   );
 }
 
-export const handleKhalaniChainsList = makeKhalaniAliasHandler("khalani_chains_list");
-export const handleKhalaniTokensTop = makeKhalaniAliasHandler("khalani_tokens_top");
 export const handleTokenFind = makeKhalaniAliasHandler("token_find");
-export const handleKhalaniTokensBalances = makeKhalaniAliasHandler("khalani_tokens_balances");

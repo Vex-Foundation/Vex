@@ -150,6 +150,7 @@ export function useAgentScanInfinite(
     initialPageParam: null as AgentScanCursor | null,
     getNextPageParam: (lastPage) => getAgentScanNextPageParam(lastPage),
     staleTime: STALE_MS,
+    refetchInterval: REFETCH_MS,
   });
 }
 

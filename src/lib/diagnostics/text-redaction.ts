@@ -42,6 +42,7 @@ import {
   API_KEY_PREFIX_RE,
   BIP39_HEURISTIC_RE,
   EVM_ADDRESS_RE,
+  findBip39MnemonicRun,
   JWT_RE,
   PRIVATE_KEY_LABELLED_RE,
   RAW_HEX_KEY_RE,
@@ -90,11 +91,13 @@ export function redact(text: string): RedactionResult {
     return `[REDACTED:jwt]`;
   });
   out = out.replace(BIP39_HEURISTIC_RE, (match) => {
-    // Only redact if the match looks like a continuous mnemonic line —
-    // BIP39 phrases are typically self-contained without sentence punctuation.
-    if (/[.,;!?]/.test(match)) return match;
+    // The 12-24-word shape alone also matches ordinary prose. Redact only
+    // the run of real BIP39 wordlist words inside the match, and leave any
+    // surrounding prose the greedy shape regex swallowed intact.
+    const run = findBip39MnemonicRun(match);
+    if (run === null) return match;
     hardCount++;
-    return `[REDACTED:mnemonic]`;
+    return `${match.slice(0, run.start)}[REDACTED:mnemonic]${match.slice(run.end)}`;
   });
 
   // Tier 2 masks. Order: tx-hash first (longer), then EVM address (shorter),

@@ -11,6 +11,7 @@ import {
 } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 import { deriveExplorerRefs, type ExplorerRef } from "../explorer-refs.js";
+import { displayStatusPayload } from "../tool-display-status.js";
 import type { EngineContext } from "../../types.js";
 import {
   assertApprovalActionKind,
@@ -255,6 +256,10 @@ export async function dispatchPreparedActionFollowUp(args: {
         success: result.success,
         explorerRefs: deriveExplorerRefs(result.data),
         ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+        // DISPLAY-only axis: a prepared-action confirm IS a money move, so an
+        // ambiguous broadcast here is exactly the case the pending chip exists
+        // for. `success` is untouched.
+        ...displayStatusPayload(result.data),
       },
     ],
     liveMessages: args.liveMessages,

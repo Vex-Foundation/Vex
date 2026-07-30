@@ -49,6 +49,7 @@ import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
 import { computeBand } from "./context-band.js";
 import { deriveExplorerRefs, type ExplorerRef } from "./explorer-refs.js";
+import { displayStatusPayload } from "./tool-display-status.js";
 import type { BatchTurnResult, StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 import { buildToolContext } from "./turn-loop-tool-batch/execute.js";
 import {
@@ -237,6 +238,12 @@ export async function processTurnToolBatch(args: {
         explorerRefs: resultForTranscript.pendingApproval
           ? []
           : deriveExplorerRefs(resultForTranscript.data),
+        // Suppressed on the pendingApproval branch for the same reason the
+        // refs are: nothing executed, so the result's `data` describes an act
+        // that never happened.
+        ...(resultForTranscript.pendingApproval
+          ? {}
+          : displayStatusPayload(resultForTranscript.data)),
       });
       drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
       batchStopReason = "user_stopped";
@@ -298,6 +305,9 @@ export async function processTurnToolBatch(args: {
       ...(resultForTranscript.durationMs !== undefined
         ? { durationMs: resultForTranscript.durationMs }
         : {}),
+      // DISPLAY-only axis (never the model's truth): marks an ambiguous
+      // broadcast so the UI can say "Pending" instead of "Failed".
+      ...displayStatusPayload(resultForTranscript.data),
     });
 
     // A validated prepared-action follow-up short-circuits the rest of this

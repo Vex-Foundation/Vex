@@ -35,6 +35,7 @@ import {
   tokenDisplay,
   type TokenDisplay,
 } from "../../../lib/token-leg-display.js";
+import type { ToolDisplayStatus } from "@shared/schemas/messages.js";
 import type { ToolOperation } from "./toolOperation.js";
 
 export interface ToolLeg {
@@ -55,6 +56,10 @@ export interface ToolLeg {
  *  - `completed` — the call succeeded but its operation identity is unproven
  *    (`toolOperation.ts` `unproven`). Numbers may be read; the claim stops at
  *    "the call completed".
+ *  - `pending` — persisted `success: false` PLUS the engine's ambiguous-
+ *    broadcast display status: the transaction went out, the receipt never
+ *    came back. Neither a failure nor a completion, so it is labelled
+ *    "Pending" and — exactly like `requested` — reads the ARGS only.
  *  - `failed` — persisted `success: false`; no amount is presented as fact.
  *  - `requested` — UNKNOWN outcome (pending, denied, unpaired, legacy row).
  *    Args-only, and the renderer must mark it visibly as a request.
@@ -64,6 +69,7 @@ export type ToolLegOutcome =
   | "quote"
   | "completed"
   | "failed"
+  | "pending"
   | "requested";
 
 export interface ToolLegPair {
@@ -162,8 +168,13 @@ function readAmount(
 function legOutcome(
   success: boolean | null | undefined,
   operation: ToolOperation,
+  displayStatus: ToolDisplayStatus | null | undefined,
 ): ToolLegOutcome {
-  if (success === false) return "failed";
+  // The display axis only ever SPLITS a persisted failure; it can never
+  // upgrade an unknown or downgrade a success (rules/90: claim less).
+  if (success === false) {
+    return displayStatus === "pending" ? "pending" : "failed";
+  }
   if (success !== true) return "requested";
   if (operation === "mutating") return "executed";
   return operation === "quote" ? "quote" : "completed";
@@ -185,17 +196,19 @@ function readsOutput(outcome: ToolLegOutcome): boolean {
  *  - a SUCCEEDED call (`executed`, `quote`, `completed`): the OUTPUT is read
  *    first — what the call returned outranks what was requested — with the
  *    args as the fallback.
- *  - everything else: the ARGS only. An unproven act's untrusted output must
- *    not supply tokens or amounts, because the renderer would then be
- *    presenting an attacker-controllable string as a request the user made.
+ *  - everything else — including `pending`: the ARGS only. An unproven act's
+ *    untrusted output must not supply tokens or amounts, because the renderer
+ *    would then be presenting an attacker-controllable string as a request the
+ *    user made. A pending broadcast is unproven by definition.
  */
 export function resolveToolLegs(
   toolArgs: string | null,
   output: string | null,
   success: boolean | null | undefined,
   operation: ToolOperation,
+  displayStatus?: ToolDisplayStatus | null,
 ): ToolLegPair | null {
-  const outcome = legOutcome(success, operation);
+  const outcome = legOutcome(success, operation, displayStatus);
   const argRecords = candidateRecords(toolArgs);
   const all = readsOutput(outcome)
     ? [...candidateRecords(output), ...argRecords]

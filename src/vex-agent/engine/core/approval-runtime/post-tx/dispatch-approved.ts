@@ -127,6 +127,7 @@ import {
 } from "../types.js";
 
 import { deriveExplorerRefs } from "../../explorer-refs.js";
+import { displayStatusPayload } from "../../tool-display-status.js";
 import { flipRunToPausedError, RESUME_CLAIM_ERROR_KIND } from "./recovery.js";
 import { commitApprovedToolResult } from "./result-message.js";
 import { onDispatchThrow } from "./dispatch-approved/dispatch-failure.js";
@@ -309,6 +310,9 @@ export async function applyApproveSideEffects(
       toolCallId: toolCall.toolCallId,
       dispatchResult,
       explorerRefs: deriveExplorerRefs(dispatchResult.data),
+      // DISPLAY-only: an approved swap whose receipt never came back is the
+      // exact case that rendered a red FAILED above its own "pending" prose.
+      ...displayStatusPayload(dispatchResult.data),
       durationMs: dispatchResult.durationMs,
     });
 

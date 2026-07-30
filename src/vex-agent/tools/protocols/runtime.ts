@@ -33,6 +33,8 @@ import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { validateProtocolParams } from "./runtime/params.js";
+import { coerceStringArrayParams } from "./runtime/string-array-coercion.js";
+import { coerceNumericStringParams } from "./runtime/numeric-string-coercion.js";
 import { summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
 import { captureExecution } from "./runtime/capture.js";
@@ -105,7 +107,32 @@ export async function executeProtocolTool(
   // the target classification, NOT the `execute_tool` wrapper's `read`.
   // Preview / dryRun overrides to `read` regardless of `manifest.actionKind`
   // (Codex 1A Q3 ruling — preview is read-only simulation end-to-end).
-  const params = request.params ?? {};
+  // Input-spelling normalization BEFORE any gate reads the params: an
+  // `acceptsStringArray` param whose value arrived as a JSON-encoded array
+  // becomes the array the model meant. One narrow, logged, manifest-declared
+  // rewrite — see `./runtime/string-array-coercion.ts`. Every other value is
+  // the untouched model input.
+  const coerced = coerceStringArrayParams(manifest, request.params ?? {});
+  if (coerced.coercedKeys.length > 0) {
+    logger.info("protocol.params.json_string_array_coerced", {
+      toolId: request.toolId,
+      coercedKeys: coerced.coercedKeys,
+    });
+  }
+  // Second spelling normalization, same shape and same discipline: a param the
+  // manifest DECLARED `type: "number"` whose value arrived as a losslessly
+  // numeric string becomes that number. Amounts travel as STRING params in this
+  // repo (rule 90), so a declared-number param is structurally non-monetary and
+  // no amount is in reach — see `./runtime/numeric-string-coercion.ts`.
+  // `validateProtocolParams` below is unchanged and still gates the result.
+  const numeric = coerceNumericStringParams(manifest, coerced.params);
+  if (numeric.coercedKeys.length > 0) {
+    logger.info("protocol.params.numeric_string_coerced", {
+      toolId: request.toolId,
+      coercedKeys: numeric.coercedKeys,
+    });
+  }
+  const params = numeric.params;
   const effectiveActionKind: ActionKind = isPreviewExecution(request.toolId, params)
     ? "read"
     : manifest.actionKind;

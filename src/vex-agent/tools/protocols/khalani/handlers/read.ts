@@ -158,7 +158,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         output: `No ${walletFamily} chains matched chainIds="${str(params, "chainIds")}".`,
       };
     }
-    // Live read tool (khalani_tokens_balances): opt into the EVM native-coin
+    // Live read tool (khalani.tokens.balances): opt into the EVM native-coin
     // top-up, like wallet_balances. Only the sync/projection path stays
     // native-free (it full-replaces proj_balances).
     const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });

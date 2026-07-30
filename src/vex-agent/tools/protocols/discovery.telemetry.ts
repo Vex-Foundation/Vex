@@ -78,6 +78,7 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     totalCount: result.totalCount,
     hasMore: result.hasMore,
     topToolId: topTool?.toolId,
+    // Undefined for list-mode rows, which carry no score.
     topScore: topTool?.score,
     matchedToolIds,
     retrievalMethod: retrieval?.method,

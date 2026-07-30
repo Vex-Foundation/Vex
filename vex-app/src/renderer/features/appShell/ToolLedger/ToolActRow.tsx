@@ -189,8 +189,14 @@ export function ToolActRow({
     () =>
       operation === null
         ? null
-        : resolveToolLegs(act.toolArgs, act.output, act.success, operation),
-    [operation, act.toolArgs, act.output, act.success],
+        : resolveToolLegs(
+            act.toolArgs,
+            act.output,
+            act.success,
+            operation,
+            act.displayStatus,
+          ),
+    [operation, act.toolArgs, act.output, act.success, act.displayStatus],
   );
   return (
     <div

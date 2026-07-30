@@ -27,6 +27,9 @@ import {
 const REQUEST_TIMEOUT_MS = 30_000;
 const CHAINS_TTL_MS = 60 * 60 * 1000; // 1h
 
+/** Relay integration-attribution identifier, sent as `referrer` on every quote. */
+const RELAY_REFERRER = "vex";
+
 /**
  * Canonical Relay intent-status path. Single source of truth: used both to build
  * the status request AND to validate a quote's step `check.endpoint` before we
@@ -93,7 +96,12 @@ export class RelayClient {
   getQuote(request: RelayQuoteRequest): Promise<RelayQuoteResponse> {
     return this.request("/quote/v2", (raw) => RelayQuoteResponseSchema.parse(raw), {
       method: "POST",
-      body: request,
+      // `referrer` is Relay's integration-attribution field (their 2026-07-30
+      // request): a constant identifier recorded against the quote and the
+      // resulting transaction. Attribution only — it is NOT an app fee and
+      // never a caller/model input, so it is injected here, transport-side,
+      // on EVERY quote rather than trusted to each caller.
+      body: { ...request, referrer: RELAY_REFERRER },
     });
   }
 

@@ -183,6 +183,7 @@ function msg(id: number): SessionMessageDto {
     reasoning: null,
     durationMs: null,
     success: null,
+    displayStatus: null,
   };
 }
 

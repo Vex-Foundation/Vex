@@ -1,4 +1,5 @@
 import { TwitterAccountParamsSchema, type TwitterAccountParams } from "@tools/twitter-account/schema.js";
+import { describeReceivedValue } from "@tools/twitter-account/empty-values.js";
 import { executeTwitterAccountRequest } from "@tools/twitter-account/client.js";
 import {
   classifyTwitterFailure,
@@ -39,7 +40,7 @@ export async function handleTwitterAccount(
   const parsed = TwitterAccountParamsSchema.safeParse(params);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(`twitter_account: ${formatValidationIssue(issue)}`);
+    return fail(`twitter_account: ${formatValidationIssue(issue, params)}`);
   }
 
   try {
@@ -78,10 +79,26 @@ function resolvedSearchFilters(
   };
 }
 
+/**
+ * A rejection the model can act on: WHERE (the path), WHAT WAS EXPECTED (the
+ * schema's own message — custom refinements carry the good ones), and HOW THE
+ * VALUE ARRIVED, by shape. The shape matters because the commonest failing call
+ * is a field the model considers blank rather than supplied: naming
+ * "an empty string" and the empty-means-absent rule turns a mystery into an
+ * instruction. Values are never echoed — a query is user content.
+ */
 function formatValidationIssue(
   issue: { path: PropertyKey[]; message: string } | undefined,
+  rawParams: unknown,
 ): string {
   if (!issue) return "invalid arguments";
   const path = issue.path.map(String).join(".");
-  return path ? `${path}: ${issue.message}` : issue.message;
+  const received = describeReceivedValue(rawParams, issue.path);
+  const emptyNote = received !== null && received.startsWith("an empty")
+    ? ` — it arrived as ${received}, and an empty value means ABSENT at this boundary: `
+      + "supply a real value or omit the field entirely"
+    : received !== null
+      ? ` (received ${received})`
+      : "";
+  return path ? `${path}: ${issue.message}${emptyNote}` : `${issue.message}${emptyNote}`;
 }

@@ -221,6 +221,11 @@ async function decodeSettlement(
       walletAddress: event.walletAddress,
       tokenInAddress: event.tokenInAddress,
       tokenOutAddress: event.tokenOutAddress,
+      // The recorded input amount, NOT an executed truth — see the field's
+      // contract in `settlement-decoders.ts`. It is what lets a NATIVE
+      // tokenIn leg be decoded at all: that amount is the signed
+      // transaction's own value, and no log in the receipt carries it.
+      amountInRaw: event.amountInRaw,
       // Option-C second-leg tokens (migration 053). A decoder can only prove a
       // second leg it is told the token of — without these a two-instrument
       // row would decode as one-in-one-out and then fail the confirm guard.

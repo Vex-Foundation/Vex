@@ -31,11 +31,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Agent Scan (renamed from `portfolio`, Agent Scan plan v3 §1.9)
   agent_scan: async () => (await import("../internal/portfolio-inspect.js")).handleAgentScan,
 
-  // Khalani direct read aliases
-  khalani_chains_list: async () => (await import("../internal/khalani.js")).handleKhalaniChainsList,
-  khalani_tokens_top: async () => (await import("../internal/khalani.js")).handleKhalaniTokensTop,
+  // Khalani direct read alias (the other three were removed 2026-07-30 — their
+  // protocol tools remain reachable via discover_tools + execute_tool)
   token_find: async () => (await import("../internal/khalani.js")).handleTokenFind,
-  khalani_tokens_balances: async () => (await import("../internal/khalani.js")).handleKhalaniTokensBalances,
 
   // Action-named read-only aliases (Stage 8a) — quote/preview/status routers
   swap_quote: async () => (await import("../internal/action-aliases.js")).handleSwapQuote,

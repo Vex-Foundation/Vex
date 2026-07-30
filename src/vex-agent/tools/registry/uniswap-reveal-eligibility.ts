@@ -41,6 +41,32 @@
  *     Deliberately NOT extended to `KYBER_PRICE_FLOOR_VIOLATED`: that is a
  *     price condition a genuinely fresh quote can clear, and its own hint
  *     already tells the agent to re-quote.
+ *   - `pre_sign_revert` — the chain refused the `swap`-role leg's PRE-SIGN
+ *     `eth_estimateGas` and NOTHING was broadcast. Added 2026-07-30 after a
+ *     live 4663 session failed twice on router revert `"Call failed"` with the
+ *     fallback venue still locked. It closes an asymmetry that had it exactly
+ *     backwards: the SAME calldata reverting once MINED already revealed
+ *     (`swap_mined_revert`) even though gas was burned, while the pre-sign
+ *     refusal — nothing signed, nothing spent, strictly stronger evidence that
+ *     the venue cannot serve this trade — did not. Both call-site gates mirror
+ *     the mined-revert rules and live in `kyberswap/failure-mapping.ts`'s
+ *     `deriveKyberPreSignRevertRevealFailure`, not here: the leg role must be
+ *     `swap` (R1 — an approve leg refused is an ERC-20 allowance condition,
+ *     never venue evidence) and nothing may have been broadcast for it. The
+ *     R2/R3 limits apply unchanged — it makes a separately-quoted venue a
+ *     reasonable QUOTE candidate, it does not prove Kyber is at fault, and no
+ *     execution follows automatically.
+ *     ELIGIBLE FAILURE CODES ARE A CLOSED SET, not a deny-list:
+ *     `simulation_reverted`, `route_not_found`, `insufficient_liquidity`.
+ *     Deliberately excluded, for the same reason `KYBER_PRICE_FLOOR_VIOLATED`
+ *     is excluded above — each is a price/wallet/staleness condition a
+ *     genuinely fresh quote (or a corrected amount) can clear, so a second
+ *     venue is not the remedy and its own guidance already says what is:
+ *       - `slippage`            — the pool moved; re-quote at a higher tolerance.
+ *       - `allowance_or_balance`— the wallet was short; no venue fixes that.
+ *       - `deadline_expired`    — the quote went stale; re-quote promptly.
+ *     Every other code (including `broadcast_error` and `chain_unsupported`,
+ *     neither of which is a refusal of THIS route) stays ineligible by default.
  *
  * Never eligible: `4221` (`KYBER_WETH_NOT_CONFIGURED` — a config anomaly, not
  * route-not-found, even though it is numerically adjacent to the 4008/4010/4011
@@ -56,19 +82,32 @@
  * `mapAggregatorError`'s VexError mapping (that mapping is unchanged).
  */
 
+import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
+
 export type KyberRevealFailure =
   | { readonly kind: "chain_unsupported" }
   | { readonly kind: "kyber_code"; readonly code: number; readonly tokenInputsValidated?: boolean }
   | { readonly kind: "swap_mined_revert" }
-  | { readonly kind: "unsafe_build" };
+  | { readonly kind: "unsafe_build" }
+  | { readonly kind: "pre_sign_revert"; readonly failureCode: EvmRouterRevertFailureCode };
 
 const ROUTE_NOT_FOUND_CODES: ReadonlySet<number> = new Set([4008, 4010]);
 const TOKEN_NOT_FOUND_CODE = 4011;
+
+/** Closed set — see the `pre_sign_revert` entry in the file header for why each admitted code is admitted and each excluded one is excluded. */
+const REVEAL_ELIGIBLE_PRE_SIGN_FAILURE_CODES: ReadonlySet<EvmRouterRevertFailureCode> = new Set([
+  "simulation_reverted",
+  "route_not_found",
+  "insufficient_liquidity",
+]);
 
 export function isRevealEligibleKyberFailure(failure: KyberRevealFailure): boolean {
   if (failure.kind === "chain_unsupported") return true;
   if (failure.kind === "swap_mined_revert") return true;
   if (failure.kind === "unsafe_build") return true;
+  if (failure.kind === "pre_sign_revert") {
+    return REVEAL_ELIGIBLE_PRE_SIGN_FAILURE_CODES.has(failure.failureCode);
+  }
   if (failure.kind !== "kyber_code") return false;
 
   // Typed numeric equality — `typeof` guards against a numeric-looking string

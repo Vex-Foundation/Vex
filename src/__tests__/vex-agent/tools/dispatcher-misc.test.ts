@@ -22,15 +22,13 @@ describe("dispatcher — wallet, unknown, no-stubs", () => {
     expect(result.output).not.toContain("[STUB]");
   });
 
-  it("routes Khalani internal read aliases through live handlers", async () => {
+  it("routes the Khalani internal read alias through a live handler", async () => {
     const result = await dispatchTool(
-      { name: "khalani_chains_list", args: {}, toolCallId: "call_14b" },
+      { name: "token_find", args: { query: "USDC" }, toolCallId: "call_14b" },
       baseContext,
     );
 
     expect(result.success).toBe(true);
-    const parsed = JSON.parse(result.output);
-    expect(parsed.chains).toBeGreaterThan(0);
     expect(result.output).not.toContain("[STUB]");
   });
 

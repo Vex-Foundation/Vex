@@ -46,6 +46,7 @@ export function dto(p: {
     reasoning: p.reasoning ?? null,
     durationMs: p.durationMs ?? null,
     success: p.success ?? null,
+    displayStatus: null,
   };
 }
 

@@ -177,6 +177,12 @@ describe("uniswap.swap.execute — adversarial (FIX2-W0)", () => {
     expect(failActivityEvent).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
     expect((result.data as { txHash?: string } | undefined)?.txHash).toBe(SIGNED_TX_HASH);
+    // Characterization of the FULL agent-facing sentence: the safety-critical
+    // "Do not retry" AND the self-serve verification path that replaces it.
+    expect(result.output).toContain(
+      `Do not retry; this attempt is recorded as pending and will resolve automatically. `
+      + `You can verify it now yourself with chain_read (action tx_receipt, chainId=4663, txHash=${SIGNED_TX_HASH}).`,
+    );
   });
 
   it("(c) C16 — markBroadcastAccepted throwing after a successful broadcast preserves txHash, never a raw/generic failure", async () => {

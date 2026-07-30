@@ -15,6 +15,7 @@ import {
   DependentLegGasEstimateError,
   DEPENDENT_LEG_ESTIMATE_ATTEMPTS,
 } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import { RECEIPT_WAIT_ATTEMPTS } from "@tools/evm-chains/receipt-guard.js";
 
 const OWNER = "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79" as Address;
 const TO = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5" as Address;
@@ -26,6 +27,8 @@ function makeClients(opts: {
   sendThrows?: boolean;
   receiptThrows?: boolean;
   receiptStatus?: "success" | "reverted";
+  /** Per-attempt receipt-wait script (a receipt resolves, an Error rejects) — overrides `receiptThrows`/`receiptStatus`. */
+  receiptScript?: Array<{ status: string; logs: unknown[] } | Error>;
   gasEstimate?: bigint;
   estimateThrows?: boolean;
   /** Per-attempt estimate script (a bigint resolves, an Error rejects) — overrides the options above. */
@@ -38,6 +41,7 @@ function makeClients(opts: {
   const preparedRequests: Array<Record<string, unknown>> = [];
   const signedRequests: Array<Record<string, unknown>> = [];
   const script = opts.estimateScript ? [...opts.estimateScript] : undefined;
+  const receiptScript = opts.receiptScript ? [...opts.receiptScript] : undefined;
   const publicClient = {
     getBlockNumber: vi.fn(async () => {
       calls.push("getBlockNumber");
@@ -62,6 +66,12 @@ function makeClients(opts: {
     }),
     waitForTransactionReceipt: vi.fn(async () => {
       calls.push("waitForTransactionReceipt");
+      if (receiptScript) {
+        const next = receiptScript.shift();
+        if (next === undefined) throw new Error("test: waitForTransactionReceipt called past the scripted bound");
+        if (next instanceof Error) throw next;
+        return next;
+      }
       if (opts.receiptThrows) throw new Error("could not confirm");
       return { status: opts.receiptStatus ?? "success", logs: [] };
     }),
@@ -166,11 +176,45 @@ describe("signStageBroadcast", () => {
     const { publicClient, walletClient } = makeClients({ receiptThrows: true });
     const h = hooks();
 
-    const outcome = await signStageBroadcast(publicClient, walletClient, { to: TO, data: "0x" }, h);
+    const outcome = await signStageBroadcast(
+      publicClient, walletClient, { to: TO, data: "0x" }, h, undefined, { delayMs: 0 },
+    );
 
     expect(outcome).toEqual({ kind: "ambiguous", txHash: HASH, stage: "confirm" });
+    // Ambiguity is declared only after the BOUNDED retry of the read.
+    expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(RECEIPT_WAIT_ATTEMPTS);
     // The RPC DID accept the submission before confirmation became ambiguous.
     expect(h.onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a TRANSIENT receipt-wait failure — the swap confirms instead of going pending", async () => {
+    // The live incident: `waitForTransactionReceipt` threw once on an RPC
+    // hiccup for a swap that HAD already mined, and one throw was enough to
+    // record the row pending forever.
+    const { publicClient, walletClient, calls } = makeClients({
+      receiptScript: [new Error("HTTP request failed"), { status: "success", logs: [] }],
+    });
+    const h = hooks();
+
+    const outcome = await signStageBroadcast(
+      publicClient, walletClient, { to: TO, data: "0x" }, h, undefined, { delayMs: 0 },
+    );
+
+    expect(outcome).toEqual({ kind: "confirmed", txHash: HASH, receipt: { status: "success", logs: [] } });
+    expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(2);
+    // ONLY the read repeated. Re-sending a signed transaction can double-spend.
+    expect(calls.filter((c) => c === "sendRawTransaction")).toHaveLength(1);
+  });
+
+  it("never retries the wait after a MINED REVERT — a resolved receipt is a definitive answer", async () => {
+    const { publicClient, walletClient } = makeClients({ receiptStatus: "reverted" });
+
+    const outcome = await signStageBroadcast(
+      publicClient, walletClient, { to: TO, data: "0x" }, hooks(), undefined, { delayMs: 0 },
+    );
+
+    expect(outcome.kind).toBe("reverted");
+    expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(1);
   });
 });
 

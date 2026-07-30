@@ -38,6 +38,7 @@ function message(
     reasoning: null,
     durationMs: null,
     success: null,
+    displayStatus: null,
     ...overrides,
   };
 }

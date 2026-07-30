@@ -86,7 +86,7 @@ export function buildIdentityPrompt(context: EngineContext): string {
   // static-prefix text keeps `# Execution Policy` as its second H1.
   lines.push("## Chain awareness");
   lines.push("");
-  lines.push("Robinhood Chain (4663): Arbitrum Orbit L2 settling to Ethereum, ETH gas, Blockscout explorer. Young chain (live 2026-07). Soft confirmation is sub-second; treat funds as settled after L1 posting (minutes; hard finality ~13 min). Not covered by Khalani — read live balances there with `wallet_balances` (it scans Robinhood direct-RPC; `khalani_tokens_balances` cannot). Balance scans there cover a pinned token set: your swaps and bridges pin their tokens automatically, but a token received by transfer or airdrop must be pinned with `wallet_track_token` before balances and portfolio can see it.");
+  lines.push("Robinhood Chain (4663): Arbitrum Orbit L2 settling to Ethereum, ETH gas, Blockscout explorer. Young chain (live 2026-07). Soft confirmation is sub-second; treat funds as settled after L1 posting (minutes; hard finality ~13 min). Not covered by Khalani — read live balances there with `wallet_balances` (it scans Robinhood direct-RPC; `khalani.tokens.balances` cannot). Balance scans there cover a pinned token set: your swaps and bridges pin their tokens automatically, but a token received by transfer or airdrop must be pinned with `wallet_track_token` before balances and portfolio can see it.");
   lines.push("");
 
   lines.push("## Your current aspect");

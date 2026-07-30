@@ -7,8 +7,8 @@
  * `getMessageAround`). Raw `metadata` JSONB is deliberately never selected in
  * full; every read off that column is a NARROW, individually validated sub-key
  * projection (see `MESSAGE_ROW_COLUMNS`): `explorerRefs`, `success`,
- * `reasoning`, and `durationMs` — four of them today, each with its own
- * fail-to-null schema. The `message_type` top-level column remains the
+ * `reasoning`, `durationMs`, and `displayStatus` — five of them today, each
+ * with its own fail-to-null schema. The `message_type` top-level column remains the
  * discriminator for row kind.
  */
 
@@ -16,6 +16,7 @@ import {
   explorerRefsSchema,
   reasoningProjectionSchema,
   toolDurationMsProjectionSchema,
+  toolDisplayStatusProjectionSchema,
   toolSuccessProjectionSchema,
   type ExplorerRef,
   type MessageCursor,
@@ -23,6 +24,7 @@ import {
   type MessageRole,
   type SessionMessageDto,
   type ToolCallDisplay,
+  type ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
 import { sanitizeToolArgs } from "./redaction.js";
 
@@ -44,6 +46,8 @@ export interface MessageRow {
   readonly duration_ms: unknown;
   /** ONLY the `success` sub-key of `messages.metadata` (tool-result rows). */
   readonly success: unknown;
+  /** ONLY the `displayStatus` sub-key of `messages.metadata` (tool-result rows). */
+  readonly display_status: unknown;
 }
 
 // Raw `metadata` JSONB is still deliberately NOT selected in full — the strict
@@ -54,7 +58,7 @@ export interface MessageRow {
 // boundary). The `message_type` column (migration 002) remains the engine's
 // authoritative marker discriminator.
 export const MESSAGE_ROW_COLUMNS =
-  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success";
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success, metadata -> 'displayStatus' AS display_status";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -229,6 +233,18 @@ function extractSuccess(row: MessageRow): boolean | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * Validate the `metadata -> 'displayStatus'` projection. ONLY tool-result rows
+ * carry one; anything that is not the exact `"pending"` literal → `null` =
+ * no display status, and the row then renders off `success` exactly as before.
+ * This never overrides `success`; it only splits the `false` case in the UI.
+ */
+function extractDisplayStatus(row: MessageRow): ToolDisplayStatus | null {
+  if (row.role !== "tool") return null;
+  const parsed = toolDisplayStatusProjectionSchema.safeParse(row.display_status);
+  return parsed.success ? parsed.data : null;
+}
+
 export function toDto(row: MessageRow): SessionMessageDto {
   // Extract the tool name once: it drives BOTH the recall-kind decision
   // and the DTO's `toolName` field.
@@ -250,6 +266,7 @@ export function toDto(row: MessageRow): SessionMessageDto {
     reasoning: extractReasoning(row),
     durationMs: extractDurationMs(row),
     success: extractSuccess(row),
+    displayStatus: extractDisplayStatus(row),
   };
 }
 

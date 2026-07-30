@@ -728,7 +728,11 @@ async function executeUniswapSwap(
         logger.info("uniswap.swap.execute.ambiguous", { id: event.id, txHash: outcome.txHash });
         return {
           success: false,
-          output: `${toolId}: broadcast of the ${event.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically.`,
+          // "Do not retry" is the safety-critical half and never moves. The
+          // second half gives the agent a READ it can perform itself instead
+          // of waiting on the sweep — the alternative to waiting must never
+          // be a re-broadcast.
+          output: `${toolId}: broadcast of the ${event.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with chain_read (action tx_receipt, chainId=${deployment.chainId}, txHash=${outcome.txHash}).`,
           data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
         };
       }

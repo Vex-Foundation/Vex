@@ -54,6 +54,7 @@ export function msg(p: {
     reasoning: null,
     durationMs: null,
     success: null,
+    displayStatus: null,
   };
 }
 

@@ -48,6 +48,24 @@ export interface SettlementDecoderInput {
   readonly tokenInAddress: string | null;
   readonly tokenOutAddress: string | null;
   /**
+   * The row's persisted `amount_in_raw` — what the handler RECORDED as this
+   * leg's input before broadcasting, NOT an executed truth.
+   *
+   * A decoder may treat it as executed ONLY where its own venue's recording
+   * contract makes the two the same fact. The one such case today is a NATIVE
+   * tokenIn leg on an exact-input venue: the value is the signed transaction's
+   * own `tx.value` (KyberSwap records exactly that — see
+   * `kyberswap/handlers/swap/execute-plan.ts`'s C21 note), a mined success
+   * receipt proves it left the wallet, and no log carries it because a plain
+   * native transfer emits none.
+   *
+   * For an ERC-20 leg it is the REQUESTED amount and can legitimately differ
+   * from what executed (fee-on-transfer, dust, a partial fill upstream) — a
+   * decoder that echoed it back would record a quote as a settlement, which is
+   * the one thing this seam exists to prevent. Decode those from the receipt.
+   */
+  readonly amountInRaw?: string | null;
+  /**
    * The row's `event_role` VERBATIM. Deliberately a plain string, not the
    * `AgentActivityEventRole` union: a decoder is registered per venue and must
    * be able to switch on the roles ITS venue writes without this shared seam

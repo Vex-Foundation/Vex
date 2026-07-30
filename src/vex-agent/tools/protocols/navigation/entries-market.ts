@@ -26,7 +26,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupLabel: "Cross-chain",
     summary: "Cross-chain bridge, token resolver, balances, quotes, and order tracking across EVM + Solana chains.",
     whenToUse:
-      "Use when the task crosses chains or needs a canonical multi-chain token resolver, wallet balances, bridge quote, or bridge execution flow.",
+      "Use when the task crosses chains or needs multi-chain token resolution, wallet balances, a bridge quote, or a bridge execution flow. Token resolution is exposed as the `token_find` shortcut — prefer it. The full khalani toolset is listable with discover_tools for this namespace.",
     preferInstead:
       "Use `kyberswap` for EVM-only swaps and `solana` for Solana-only swaps.",
     exampleQueries: [

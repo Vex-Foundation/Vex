@@ -139,6 +139,21 @@ export const toolDurationMsProjectionSchema = z
 export const toolSuccessProjectionSchema = z.boolean();
 
 /**
+ * Bounded projection of `messages.metadata -> 'displayStatus'` (tool-result
+ * rows): the engine's DISPLAY-only status for a result whose outcome is
+ * genuinely ambiguous. Today the sole variant is `"pending"` — a transaction
+ * that WAS broadcast but whose receipt never came back. Such a result is
+ * persisted `success: false` on purpose (the model must not read ambiguity as
+ * success), so this second axis is what lets the renderer say "Pending"
+ * instead of contradicting the row's own "…recorded as pending" prose with a
+ * red "Failed". It NEVER upgrades a claim: pending is only ever read when
+ * `success === false`, and a pending act still reads its ARGS only, never its
+ * untrusted output. `null` on legacy rows and on every unambiguous result.
+ */
+export const toolDisplayStatusProjectionSchema = z.literal("pending");
+export type ToolDisplayStatus = z.infer<typeof toolDisplayStatusProjectionSchema>;
+
+/**
  * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
  * shipped wholesale; `explorerRefs` is the FIRST narrowly allow-listed,
  * mapper-validated projection off that column (tool-result rows only). Other
@@ -199,6 +214,14 @@ export const sessionMessageDtoSchema = z
      * and legacy rows; null means UNKNOWN, never success.
      */
     success: toolSuccessProjectionSchema.nullable(),
+    /**
+     * DISPLAY-only status for a `tool_result` row (validated projection of
+     * `messages.metadata -> 'displayStatus'`). Required and `null` on non-tool
+     * rows, legacy rows, and every unambiguous result. Read ONLY together with
+     * `success === false`; it splits "failed" from "broadcast, not yet
+     * confirmed" and never makes a claim `success` does not support.
+     */
+    displayStatus: toolDisplayStatusProjectionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

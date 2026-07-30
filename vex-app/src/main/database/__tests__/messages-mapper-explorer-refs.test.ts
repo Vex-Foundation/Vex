@@ -15,7 +15,7 @@ import {
 
 const BASE: Omit<
   MessageRow,
-  "role" | "explorer_refs" | "reasoning" | "duration_ms" | "success"
+  "role" | "explorer_refs" | "reasoning" | "duration_ms" | "success" | "display_status"
 > = {
   id: 1,
   session_id: "00000000-0000-4000-8000-00000000abcd",
@@ -41,6 +41,7 @@ function row(p: {
     reasoning: p.reasoning ?? null,
     duration_ms: p.duration_ms ?? null,
     success: p.success ?? null,
+    display_status: null,
   };
 }
 

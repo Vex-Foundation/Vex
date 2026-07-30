@@ -13,6 +13,7 @@ import type { Message, MessageMetadata } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { appendMessage } from "@vex-agent/engine/events/index.js";
 import type { ExplorerRef } from "../explorer-refs.js";
+import type { ToolDisplayStatus } from "../tool-display-status.js";
 import { saveAssistantMessage } from "../turn.js";
 import type { StopPayload, ToolBatchOutcome } from "./outcome.js";
 
@@ -83,6 +84,15 @@ interface ExecutedResult {
    * never-dispatched calls — leave it undefined; never `0`.
    */
   durationMs?: number;
+  /**
+   * DISPLAY-only status derived from the tool result's structured `data`
+   * (`deriveToolDisplayStatus`). Present ONLY for an ambiguous broadcast
+   * (`data.status === "pending"`); absent otherwise. It never changes what the
+   * model sees — `success` above stays authoritative for the model — it only
+   * lets the desktop app render "Pending" instead of a red "Failed" on the row
+   * whose own prose says the tx is pending.
+   */
+  displayStatus?: ToolDisplayStatus;
 }
 
 /**
@@ -140,7 +150,17 @@ export async function persistBatchTranscript(args: {
   // `durationMs` rides the same payload and surfaces as `metadata ->
   // 'durationMs'`. Omitted when the entry never executed — an absent key
   // reads as "unknown", a `0` would read as "instant", which would be false.
-  for (const { toolCallId, output, success, explorerRefs, durationMs } of executedResults) {
+  // `displayStatus` rides it too and surfaces as `metadata -> 'displayStatus'`.
+  // Omitted unless the result was an ambiguous broadcast; it is a DISPLAY axis
+  // only and never contradicts `success`, which stays the model's truth.
+  for (const {
+    toolCallId,
+    output,
+    success,
+    explorerRefs,
+    durationMs,
+    displayStatus,
+  } of executedResults) {
     const metadata: MessageMetadata = {
       source: "tool",
       messageType: "tool_result",
@@ -149,6 +169,7 @@ export async function persistBatchTranscript(args: {
         success,
         ...(explorerRefs.length > 0 ? { explorerRefs } : {}),
         ...(durationMs !== undefined ? { durationMs } : {}),
+        ...(displayStatus !== undefined ? { displayStatus } : {}),
       },
     };
 

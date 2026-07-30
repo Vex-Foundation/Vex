@@ -100,6 +100,60 @@ describe("resolveToolLegs — execution outcome gates the claim", () => {
   });
 });
 
+// An AMBIGUOUS broadcast — the tx went out, the receipt did not come back —
+// is persisted `success: false` on purpose (the model must not treat ambiguity
+// as success and must abort the remaining legs). Calling that "Failed" in the
+// UI is a lie the user can see: the same row's prose says it is pending. The
+// engine's `displayStatus` projection splits the display without touching the
+// model-facing outcome.
+describe("resolveToolLegs — pending is not failed", () => {
+  it("marks success:false + displayStatus 'pending' as pending", () => {
+    expect(
+      resolveToolLegs(SWAP_ARGS, null, false, "mutating", "pending")?.outcome,
+    ).toBe("pending");
+  });
+
+  it("still marks a plain persisted failure as failed", () => {
+    expect(
+      resolveToolLegs(SWAP_ARGS, null, false, "mutating", null)?.outcome,
+    ).toBe("failed");
+  });
+
+  it.each(["quote", "unproven", "mutating"] as const)(
+    "reports pending for a %s act too",
+    (operation) => {
+      expect(
+        resolveToolLegs(SWAP_ARGS, null, false, operation, "pending")?.outcome,
+      ).toBe("pending");
+    },
+  );
+
+  it("never upgrades a SUCCEEDED act — pending only ever splits success:false", () => {
+    expect(
+      resolveToolLegs(SWAP_ARGS, null, true, "mutating", "pending")?.outcome,
+    ).toBe("executed");
+  });
+
+  it("does NOT let an UNKNOWN outcome become pending", () => {
+    expect(
+      resolveToolLegs(SWAP_ARGS, null, null, "mutating", "pending")?.outcome,
+    ).toBe("requested");
+  });
+
+  it("reads the ARGS only — a pending act's untrusted output supplies nothing", () => {
+    const legs = resolveToolLegs(
+      SWAP_ARGS,
+      '{"tokenIn":"ATTACK","tokenOut":"EVIL","amountOut":"240.31"}',
+      false,
+      "mutating",
+      "pending",
+    );
+    expect(legs?.from.token.text).toBe("SOL");
+    expect(legs?.to.token.text).toBe("USDC");
+    expect(legs?.to.amount).toBeNull();
+  });
+});
+
 // `success` means THE CALL succeeded, not that funds moved. A successful
 // swap_quote is a preview; only a proven MUTATING operation may claim
 // "executed" (rules/90 money-path honesty).

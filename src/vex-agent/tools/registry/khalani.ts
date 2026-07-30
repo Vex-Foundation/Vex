@@ -2,11 +2,23 @@ import type { JsonSchema, JsonSchemaProperty, ToolDef } from "../types.js";
 import { KHALANI_TOOLS } from "../protocols/khalani/manifest.js";
 import type { ProtocolParamDef } from "../protocols/types.js";
 
+/**
+ * Internal-alias → protocol toolId, for the Khalani reads that earn a flat name.
+ *
+ * ONE alias remains by design (2026-07-30). `khalani_chains_list`,
+ * `khalani_tokens_top` and `khalani_tokens_balances` were removed: each was a
+ * tool-on-tool shortcut that no observed live session called, while every one
+ * of them cost schema tokens in every request. Their protocol tools are
+ * unchanged and still reachable through `discover_tools` + `execute_tool`
+ * (`khalani.chains.list`, `khalani.tokens.top`, `khalani.tokens.balances`).
+ *
+ * `token_find` stays because it is load-bearing: it sits on the hottest path in
+ * the product (address + decimals resolution before every swap and bridge) and
+ * is named by the swap chain-param docs, `chain_read`'s description, and the
+ * safety doctrine prose.
+ */
 export const KHALANI_INTERNAL_TO_PROTOCOL = {
-  khalani_chains_list: "khalani.chains.list",
-  khalani_tokens_top: "khalani.tokens.top",
   token_find: "khalani.tokens.search",
-  khalani_tokens_balances: "khalani.tokens.balances",
 } as const;
 
 export type KhalaniInternalToolName = keyof typeof KHALANI_INTERNAL_TO_PROTOCOL;
@@ -67,9 +79,6 @@ export function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSch
 }
 
 function internalDescription(name: string, protocolDescription: string): string {
-  if (name === "khalani_tokens_balances") {
-    return "Read your token balances on one wallet family (EVM or Solana) via Khalani. Defaults to your personal wallet — pass `address` only if you want to check a different one. Use wallet_balances if you want all your wallet families in one call.";
-  }
   if (name === "token_find") {
     return "Resolve a token symbol/name to its exact on-chain contract address(es) + decimals per chain (the canonical EVM token resolver). Use BEFORE any swap or bridge.";
   }

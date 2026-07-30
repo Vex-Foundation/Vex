@@ -214,6 +214,14 @@ export interface ProtocolDiscoveryRequest {
    * no advisory. `critical` still tags. Absent ⇒ false ⇒ today's tagging.
    */
   preparationBypassesBarrier?: boolean;
+  /**
+   * Namespace list mode. When true, `namespace` is REQUIRED and the response is
+   * the COMPLETE set of that protocol's advertised, available tools as lean
+   * rows ({@link ProtocolDiscoveryListItem} — no param schemas, no scores) with
+   * no ranking and no `limit` truncation. Without a namespace the request fails:
+   * dumping every namespace as one payload is forbidden.
+   */
+  list?: boolean;
 }
 
 export interface ProtocolDiscoveryItem {
@@ -242,6 +250,30 @@ export interface ProtocolDiscoveryItem {
 }
 
 /**
+ * Lean row emitted by namespace list mode (`list: true` + `namespace`). It
+ * deliberately carries NO `params`, `score`, or `whyMatched`: the point of a
+ * list is a complete, cheap index of what a protocol can do. The model follows
+ * up with a query or the exact toolId to get the param schema it builds the
+ * call from. Distinguished on the wire by `retrieval.method === "list"`.
+ */
+export interface ProtocolDiscoveryListItem {
+  toolId: string;
+  mutating: boolean;
+  description: string;
+  /**
+   * Exclusive-union markers: a list row NEVER carries the ranked item's fields.
+   * Declaring them `never` keeps `tools` readable without a narrowing dance —
+   * `item.params` types as `… | undefined` — while making an accidental
+   * assignment a compile error.
+   */
+  namespace?: never;
+  params?: never;
+  score?: never;
+  whyMatched?: never;
+  unavailable_at_pressure?: never;
+}
+
+/**
  * Retrieval metadata attached to a discovery result. Surfaces whether the
  * response was an unranked catalog listing, dense-ranked, or lexical fallback,
  * plus audit columns of the embedding used. The `embeddingModel`/`embeddingDim`
@@ -252,7 +284,7 @@ export interface ProtocolDiscoveryItem {
  * embedding-sidecar issues, not query problems).
  */
 export interface ProtocolDiscoveryRetrievalMeta {
-  method: "catalog" | "dense" | "lexical";
+  method: "catalog" | "dense" | "lexical" | "list";
   /** True when dense retrieval was attempted but lexical fallback produced the result. */
   denseFailed: boolean;
   /** Provider-reported embedding model (only set when dense retrieval ran). Telemetry-only. */
@@ -283,7 +315,11 @@ export interface ProtocolDiscoveryResult {
   totalCount: number;
   /** True when additional matching tools exist beyond this response. */
   hasMore: boolean;
-  tools: ProtocolDiscoveryItem[];
+  /**
+   * Ranked/catalog rows, or lean {@link ProtocolDiscoveryListItem} rows when
+   * `retrieval.method === "list"`. Narrow before reading `params`/`score`.
+   */
+  tools: (ProtocolDiscoveryItem | ProtocolDiscoveryListItem)[];
   warnings: string[];
   /** Optional retrieval metadata for telemetry. */
   retrieval?: ProtocolDiscoveryRetrievalMeta;

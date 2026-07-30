@@ -46,6 +46,23 @@ describe("text-redaction — Tier 1 hard redact", () => {
     expect(r.text).toContain("[REDACTED:mnemonic]");
     expect(r.hardRedactCount).toBe(1);
   });
+
+  it("redacts a real mnemonic that ordinary prose runs into", () => {
+    const r = redact(
+      "here the seed abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    );
+    expect(r.text).toContain("[REDACTED:mnemonic]");
+    expect(r.text).not.toContain("abandon");
+    expect(r.hardRedactCount).toBe(1);
+  });
+
+  it("leaves a long unpunctuated ordinary English sentence untouched", () => {
+    const prose =
+      "I want stable quotes here before agent tries again since kyber gave that pre-sign gas estimate error";
+    const r = redact(prose);
+    expect(r.text).toBe(prose);
+    expect(r.hardRedactCount).toBe(0);
+  });
 });
 
 describe("text-redaction — Tier 2 mask", () => {
