@@ -81,9 +81,6 @@ const { handleSessionMemorySearch } = await import(
 const { handleSessionMemoryResolveItem } = await import(
   "../../../../vex-agent/tools/internal/session-memory/resolve-item.js"
 );
-const { handleCompactNow } = await import(
-  "../../../../vex-agent/tools/internal/compact/now.js"
-);
 
 function makeContext(overrides: Record<string, unknown> = {}): never {
   return {

@@ -16,8 +16,16 @@
  *
  * Tool visibility: this helper builds the SINGLE `ToolVisibilityContext` for
  * the turn (runner-supplied static axes + the per-turn band + `hasSessionMemory`
- * signal) and uses that one object for BOTH the OpenAI tools array AND the
- * system-prompt Tool Map, so the two can never drift.
+ * signal + the two compaction-preparation axes) and uses that one object for
+ * BOTH the OpenAI tools array AND the system-prompt Tool Map, so the two can
+ * never drift.
+ *
+ * Compaction preparation: the state arrives as an ARGUMENT, already resolved
+ * once per iteration by the turn loop. It is deliberately not read here. This
+ * module already owns one DB read, and a second hidden one would make the
+ * compaction subsystem a per-turn dependency for the 99% of turns with no live
+ * preparation — and would let the banner, the tools array and the byte ceiling
+ * each see a different snapshot. One read, three consumers, one truth.
  */
 
 import type { EngineContext } from "../types.js";
@@ -26,6 +34,11 @@ import type {
   ToolDefinition,
 } from "@vex-agent/inference/types.js";
 import { pressureFraction, type ContextUsageBand } from "./context-band.js";
+import {
+  barrierBypassAllowed,
+  hasCompactionSummaryReady,
+  type PreparationPressureState,
+} from "./preparation-pressure-state.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
@@ -48,6 +61,12 @@ export interface TurnPromptStackResult {
   readonly promptOptions: PromptStackOptions;
   readonly tools: ToolDefinition[];
   readonly nextPostCompactBridgeRemaining: number;
+  /**
+   * The C8 barrier bypass this turn ran with — returned so the tool batch and
+   * the byte ceiling use the SAME decision the catalog was projected from,
+   * rather than recomputing it and risking a different answer.
+   */
+  readonly preparationBypassesBarrier: boolean;
 }
 
 export async function buildTurnPromptStack(args: {
@@ -65,10 +84,24 @@ export async function buildTurnPromptStack(args: {
    * the axes are derived from `context` so the single-ctx projection still holds.
    */
   readonly baseVisibility?: ToolVisibilityBase;
+  /**
+   * Compaction-preparation snapshot for this turn, resolved ONCE by the loop
+   * (fail-closed to `{kind:"none"}` on an unreadable state). Drives the banner
+   * copy, the barrier bypass and `compact_apply`'s visibility from one value.
+   * Defaults to `none` so non-loop callers keep today's behaviour exactly.
+   */
+  readonly preparationState?: PreparationPressureState;
 }): Promise<TurnPromptStackResult> {
+  const preparationState: PreparationPressureState =
+    args.preparationState ?? { kind: "none" };
+  const preparationBypassesBarrier = barrierBypassAllowed(preparationState);
   const turnFraction = pressureFraction(args.currentTokenCount, args.contextLimit);
   const promptOptions: PromptStackOptions = { ...args.basePromptOptions };
-  promptOptions.contextPressureBanner = buildContextPressureBanner(args.turnBand, turnFraction);
+  promptOptions.contextPressureBanner = buildContextPressureBanner(
+    args.turnBand,
+    turnFraction,
+    preparationState,
+  );
 
   // $VEX live-metrics banner (turn-state). Fully fail-soft inside the builder:
   // any fetch error yields "" so the banner is omitted and the turn is never
@@ -164,6 +197,8 @@ export async function buildTurnPromptStack(args: {
     ...base,
     contextUsageBand: args.turnBand,
     hasSessionMemory,
+    preparationBypassesBarrier,
+    hasCompactionSummaryReady: hasCompactionSummaryReady(preparationState),
   };
 
   // Project the tools array AND the Tool Map from the SAME visibilityCtx —
@@ -175,5 +210,6 @@ export async function buildTurnPromptStack(args: {
     promptOptions,
     tools,
     nextPostCompactBridgeRemaining,
+    preparationBypassesBarrier,
   };
 }

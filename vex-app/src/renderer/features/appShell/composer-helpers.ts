@@ -58,8 +58,16 @@ export function gatedReason(status: MissionRunStatus | null): string {
  * plain chat send shows NOTHING: the reply already renders in the transcript,
  * so a redundant "Message sent." line below the input is just noise.
  */
+/**
+ * Notice text for a turn the user stopped. A shared constant rather than a
+ * literal in two places: `PostStopRedirectHint` keys its "say what to do
+ * differently" affordance off this exact notice, and a silent copy edit here
+ * would make that affordance stop appearing with nothing failing.
+ */
+export const CHAT_STOPPED_NOTICE_TEXT = "Stopped.";
+
 export function submitSuccessText(data: ChatSubmitResult): string | null {
-  if (data.stopReason === "user_stopped") return "Stopped.";
+  if (data.stopReason === "user_stopped") return CHAT_STOPPED_NOTICE_TEXT;
   if (data.treatedAsInitialGoal) return "Mission goal received.";
   return null;
 }

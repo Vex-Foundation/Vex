@@ -13,7 +13,11 @@
  *    DROPPED. Mid-stream JSON fragments cannot be safely redacted; the
  *    canonical redacted args arrive later via the persisted `tool_call` DTO.
  *  - `error` deltas: the raw provider message is replaced with a safe generic
- *    (`"Stream error"`); only the numeric `code` is preserved.
+ *    (`"Stream error"`); the numeric `code` and the bounded `errorType` enum
+ *    label are preserved. The label is an enum member from the provider's own
+ *    taxonomy — bounded upstream, re-validated by the strict schema below —
+ *    and carrying it is what turns an opaque preview failure into "the
+ *    provider rate-limited us".
  *
  * The mapper is fail-closed + non-throwing: malformed engine input maps to
  * `null` (or, if it throws, is caught) and is dropped + logged — it never
@@ -96,12 +100,21 @@ export function toRendererStreamDelta(
     case "done":
       payload = { kind: "done" };
       break;
+    case "aborted":
+      // Discriminant only — nothing to sanitize, and nothing to add. The
+      // renderer needs to know THIS stream ended, not why.
+      payload = { kind: "aborted" };
+      break;
     case "error":
-      // Raw provider text is NOT trusted at the boundary — replace it.
+      // Raw provider text is NOT trusted at the boundary — replace it. The
+      // bounded `errorType` enum label DOES cross: it is a closed-vocabulary
+      // classification, not prose, and it is the only thing that lets the
+      // preview say why the stream died instead of just "Stream error".
       payload = {
         kind: "error",
         message: SAFE_STREAM_ERROR_MESSAGE,
         code: delta.code ?? null,
+        errorType: delta.errorType ?? null,
       };
       break;
     default:

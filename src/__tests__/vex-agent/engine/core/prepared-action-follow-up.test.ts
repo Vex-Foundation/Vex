@@ -21,26 +21,42 @@ vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/approval-stop.js", () => ({
   },
   enqueueApprovalIntent: (...args: unknown[]) => enqueueApprovalIntent(...args),
 }));
+const APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT = "approval_skipped_by_user_stop";
+
 vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/results.js", () => ({
   BATCH_ABORTED_BY_COMPACT_OUTPUT: "aborted",
+  BATCH_ABORTED_BY_USER_STOP_OUTPUT: "batch_aborted_by_user_stop",
+  APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT: "approval_auto_rejected",
+  APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT: "approval_skipped_by_user_stop",
   persistBatchTranscript: (...args: unknown[]) => persistBatchTranscript(...args),
   mapBatchOutcome: (args: {
     batchStopReason: string | null;
     approvalId: string | null;
     toolCallsExecuted: number;
     lastText: string | null;
-  }) => args.batchStopReason === "approval_required"
-    ? {
+  }) => {
+    if (args.batchStopReason === "approval_required") {
+      return {
         kind: "approval_break",
         pendingApprovalId: args.approvalId,
         toolCallsExecuted: args.toolCallsExecuted,
         lastText: args.lastText,
-      }
-    : {
-        kind: "normal_complete",
+      };
+    }
+    if (args.batchStopReason !== null) {
+      return {
+        kind: "engine_stop",
+        stopReason: args.batchStopReason,
         toolCallsExecuted: args.toolCallsExecuted,
         lastText: args.lastText,
-      },
+      };
+    }
+    return {
+      kind: "normal_complete",
+      toolCallsExecuted: args.toolCallsExecuted,
+      lastText: args.lastText,
+    };
+  },
 }));
 
 const { processTurnToolBatch } = await import(
@@ -88,8 +104,9 @@ function context(permission: "restricted" | "full") {
   } as any;
 }
 
-async function run(permission: "restricted" | "full") {
+async function run(permission: "restricted" | "full", abortSignal?: AbortSignal) {
   return processTurnToolBatch({
+    abortSignal,
     context: context(permission),
     turnResult: {
       content: "Preparing transfer.",
@@ -114,7 +131,12 @@ async function run(permission: "restricted" | "full") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  enqueueApprovalIntent.mockResolvedValue("approval-1");
+  // The enqueue transaction now returns a discriminated outcome so the batch
+  // can tell "parked for approval" from "auto-rejected onto a dead run".
+  enqueueApprovalIntent.mockResolvedValue({
+    kind: "enqueued",
+    approvalId: "approval-1",
+  });
   persistBatchTranscript.mockResolvedValue(undefined);
 });
 
@@ -272,6 +294,99 @@ describe("prepared-action follow-up handoff", () => {
           output: expect.stringContaining("Recursive"),
         }),
       ],
+    });
+  });
+
+  // ── Codex Wave-1 defect 7: post-dispatch Stop, money path ─────
+  // `wallet_send_prepare → wallet_send_confirm` is the one place the runtime
+  // dispatches a SECOND tool on its own initiative, and the confirm leg is the
+  // one that signs. A Stop that arrives while the prepare is in flight must
+  // reach a decision point BEFORE that second dispatch.
+  describe("operator Stop between prepare and confirm", () => {
+    it("does NOT dispatch the signing confirm when the Stop landed during the prepare", async () => {
+      const controller = new AbortController();
+      dispatchTool.mockImplementationOnce(() => {
+        controller.abort(); // operator hits Stop while prepare is in flight
+        return Promise.resolve(prepareResult());
+      });
+
+      const outcome = await run("full", controller.signal);
+
+      expect(outcome).toMatchObject({ kind: "engine_stop", stopReason: "user_stopped" });
+      // The signing leg never ran.
+      expect(dispatchTool).toHaveBeenCalledTimes(1);
+      expect(enqueueApprovalIntent).not.toHaveBeenCalled();
+      // The prepare DID run, so it is persisted truthfully and paired.
+      expect(persistBatchTranscript).toHaveBeenCalledTimes(1);
+      expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
+        executedCalls: [expect.objectContaining({ name: "wallet_send_prepare" })],
+        executedResults: [expect.objectContaining({ output: "prepared" })],
+      });
+    });
+
+    it("does NOT dispatch the confirm when the Stop lands during the prepare transcript write", async () => {
+      // The caller's check happens before a DB write; that write is a real
+      // window, so the follow-up module re-checks immediately before signing.
+      const controller = new AbortController();
+      dispatchTool.mockResolvedValueOnce(prepareResult());
+      persistBatchTranscript.mockImplementationOnce(() => {
+        controller.abort();
+        return Promise.resolve(undefined);
+      });
+
+      const outcome = await run("full", controller.signal);
+
+      expect(outcome).toMatchObject({ kind: "engine_stop", stopReason: "user_stopped" });
+      expect(dispatchTool).toHaveBeenCalledTimes(1);
+    });
+
+    it("never parks an approval for a confirm whose Stop landed while it was in flight", async () => {
+      // The confirm dispatch is allowed to finish (it may already have moved
+      // funds), but its "approval required" answer must NOT become a live,
+      // approvable wallet action on a run the operator just ended.
+      const controller = new AbortController();
+      dispatchTool
+        .mockResolvedValueOnce(prepareResult())
+        .mockImplementationOnce(() => {
+          controller.abort();
+          return Promise.resolve({
+            success: false,
+            output: "approval required",
+            pendingApproval: true,
+            actionKind: "user_wallet_broadcast",
+          });
+        });
+
+      const outcome = await run("restricted", controller.signal);
+
+      expect(outcome).toMatchObject({ kind: "engine_stop", stopReason: "user_stopped" });
+      expect(dispatchTool).toHaveBeenCalledTimes(2);
+      expect(enqueueApprovalIntent).not.toHaveBeenCalled();
+      // Pairing preserved: the synthetic confirm gets a truthful result row.
+      expect(persistBatchTranscript).toHaveBeenCalledTimes(2);
+      expect(persistBatchTranscript.mock.calls[1]![0]).toMatchObject({
+        executedCalls: [expect.objectContaining({ name: "wallet_send_confirm" })],
+        executedResults: [
+          expect.objectContaining({
+            success: false,
+            output: APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
+          }),
+        ],
+        systemOriginated: true,
+      });
+    });
+
+    it("keeps the normal handoff intact when no Stop is pending", async () => {
+      const controller = new AbortController();
+      dispatchTool
+        .mockResolvedValueOnce(prepareResult())
+        .mockResolvedValueOnce({ success: true, output: "transfer confirmed" });
+
+      const outcome = await run("full", controller.signal);
+
+      expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 2 });
+      expect(dispatchTool).toHaveBeenCalledTimes(2);
+      expect(enqueueApprovalIntent).not.toHaveBeenCalled();
     });
   });
 });

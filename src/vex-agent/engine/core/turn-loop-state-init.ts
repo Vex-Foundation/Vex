@@ -52,19 +52,29 @@ export async function armPostCompactBridge(args: {
 
 export function createBandObserverWithLog(args: {
   readonly sessionId: string;
-  readonly contextLimit: number;
+  /**
+   * Fixed window, or a GETTER when the session's effective window can change
+   * mid-run — which it can, because endpoint failover may switch to an endpoint
+   * with a narrower window (owner decision 7). The observer keeps its transition
+   * state across such a change, so the shrink surfaces as a real upward band
+   * transition instead of a silent re-baseline.
+   */
+  readonly contextLimit: number | (() => number);
 }): BandObserver {
-  const observer = createBandObserver(args.contextLimit);
+  const resolveLimit =
+    typeof args.contextLimit === "function" ? args.contextLimit : () => args.contextLimit as number;
+  const observer = createBandObserver(resolveLimit);
   return (tokenCount: number, source: BandObserveSource): ContextUsageBand => {
     const obs = observer(tokenCount);
     if (obs.emit) {
+      const contextLimit = resolveLimit();
       logger.info("compact.band_observed", {
         sessionId: args.sessionId,
         fromBand: obs.fromBand,
         toBand: obs.band,
-        fraction: pressureFraction(tokenCount, args.contextLimit),
+        fraction: pressureFraction(tokenCount, contextLimit),
         tokenCount,
-        contextLimit: args.contextLimit,
+        contextLimit,
         source,
       });
     }

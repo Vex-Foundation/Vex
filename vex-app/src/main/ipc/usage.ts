@@ -35,17 +35,40 @@ import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
 /**
- * Resolve the effective global context limit the engine uses for
- * pressure bands, via the shared `@vex-lib/agent-config` source of truth
- * (no duplicated bounds/defaults here). Unset → engine default; valid →
- * the configured value; invalid `AGENT_CONTEXT_LIMIT` → `null` (the
- * engine would reject it, so we surface "unavailable" instead of faking
- * the default).
+ * Resolve the context limit the gauge divides by — the SAME number the engine
+ * bands against, not the raw operator setting.
+ *
+ * `AGENT_CONTEXT_LIMIT` is a throttle, not a capability claim, and its default
+ * (256_000) is larger than many real model windows. The engine clamps it to
+ * the provider-reported window (`resolveEffectiveContextLimit`, applied while
+ * loading the inference config), so reading the env here would show the user
+ * "40% of 256k" on a 128k model while the engine was already at 80% of 131_072
+ * and about to compact. The gauge and the bands must divide by one number.
+ *
+ * Source order:
+ *   1. the loaded inference config's `contextLimit` — post-clamp, the truth;
+ *   2. the env value, when no provider/config is available yet (onboarding,
+ *      provider removed) — better than no gauge, and it is what the engine
+ *      would use if the catalog window stayed unknown;
+ *   3. `null` when `AGENT_CONTEXT_LIMIT` is invalid — the engine would reject
+ *      it, so the gauge says "unavailable" rather than faking the default.
  */
-function resolveContextLimit(): number | null {
+async function resolveContextLimit(): Promise<number | null> {
   const parsed = parseAgentEnv(process.env);
-  const invalid = parsed.errors.some((e) => e.key === AGENT_CONTEXT_LIMIT.key);
-  return invalid ? null : parsed.value.contextLimit;
+  if (parsed.errors.some((e) => e.key === AGENT_CONTEXT_LIMIT.key)) return null;
+
+  try {
+    const { resolveProvider } = await import("@vex-agent/inference/registry.js");
+    const provider = await resolveProvider();
+    const config = await provider?.loadConfig();
+    if (config) return config.contextLimit;
+  } catch (cause) {
+    // A catalog fetch failure must not remove the gauge — fall through to the
+    // configured value, which is exactly what the engine falls back to when
+    // the model window is unknown.
+    log.warn("[ipc:vex:usage:getContextWindow] effective-limit read failed", cause);
+  }
+  return parsed.value.contextLimit;
 }
 
 function registerGetSessionTotalsHandler(): () => void {
@@ -105,7 +128,7 @@ function registerGetContextWindowHandler(): () => void {
     inputSchema: contextWindowInputSchema,
     outputSchema: contextWindowResultSchema,
     handle: async (input, ctx): Promise<Result<ContextWindowResult>> => {
-      const contextLimit = resolveContextLimit();
+      const contextLimit = await resolveContextLimit();
       const read = await getContextWindow(input.sessionId, contextLimit);
       // Stamp the engine's pressure bands onto a present window, so the
       // renderer's meter markers stay tied to the thresholds that actually

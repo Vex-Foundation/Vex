@@ -66,7 +66,10 @@ const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
 // Same cadence as ApprovalsRegion — both observers share one query, so this
 // adds no IPC load; it only keeps the act-ledger stamps as fresh as the cards.
-const PENDING_APPROVALS_REFETCH_MS = 5_000;
+// Slowed 5s → 60s with the rest: `useMissionUpdateLiveSync` pushes
+// `approval_enqueued`, and TanStack invalidation refreshes every observer of
+// the shared key, this one included. Fallback only — not deleted.
+const PENDING_APPROVALS_REFETCH_MS = 60_000;
 
 /**
  * Ids that must NOT animate: everything visible at the session's first

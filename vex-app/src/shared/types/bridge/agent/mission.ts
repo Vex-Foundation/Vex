@@ -18,6 +18,8 @@ import type {
   MissionEditResult,
   MissionRetryInput,
   MissionRetryResult,
+  MissionRestartWithInstructionInput,
+  MissionRestartWithInstructionResult,
   MissionSetAutoRetryInput,
   MissionSetAutoRetryResult,
   MissionStartInput,
@@ -74,4 +76,13 @@ export interface MissionBridge {
   readonly setAutoRetry: (
     input: MissionSetAutoRetryInput,
   ) => Promise<Result<MissionSetAutoRetryResult>>;
+  /**
+   * Post-stop restart: append the user's "do this differently" instruction and
+   * start a NEW run against the SAME already-accepted contract. Refuses with
+   * `contract_dirty` when the draft drifted since acceptance — this path never
+   * re-accepts anything on the user's behalf.
+   */
+  readonly restartWithInstruction: (
+    input: MissionRestartWithInstructionInput,
+  ) => Promise<Result<MissionRestartWithInstructionResult>>;
 }

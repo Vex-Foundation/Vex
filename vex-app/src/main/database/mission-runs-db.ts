@@ -21,6 +21,12 @@ import {
   type MissionRunStatus,
 } from "@shared/schemas/sessions.js";
 import { type RuntimeStateDto } from "@shared/schemas/runtime.js";
+import {
+  engineCauseCodeSchema,
+  engineErrorClassSchema,
+  engineErrorTypeSchema,
+  engineStatusCodeSchema,
+} from "@shared/schemas/engine-error.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 
@@ -219,6 +225,10 @@ export async function getActiveRunForSession(
           lease_active: boolean | null;
           lease_expires_at: Date | null;
           pending_control_kind: string | null;
+          last_error_type: string | null;
+          last_error_class: string | null;
+          last_error_status: string | null;
+          last_error_cause_code: string | null;
         }
       >(
         `SELECT m.id, m.session_id, m.status, m.started_at, m.last_checkpoint_at,
@@ -227,7 +237,16 @@ export async function getActiveRunForSession(
                      THEN TRUE ELSE FALSE END               AS lease_active,
                 CASE WHEN l.session_id IS NOT NULL AND l.expires_at >= NOW()
                      THEN l.expires_at ELSE NULL END        AS lease_expires_at,
-                r.kind                                       AS pending_control_kind
+                r.kind                                       AS pending_control_kind,
+                -- BOUNDED extraction: four named keys, never the evidence
+                -- column itself and never the run summary. The evidence blob
+                -- also holds raw provider/exception text that must not leave
+                -- the main process, and selecting the whole column then picking
+                -- keys in TS would put that text one refactor away from a DTO.
+                m.stop_evidence_json->>'errorType'      AS last_error_type,
+                m.stop_evidence_json->>'sdkErrorClass'  AS last_error_class,
+                m.stop_evidence_json->>'statusCode'     AS last_error_status,
+                m.stop_evidence_json->>'causeCode'      AS last_error_cause_code
            FROM mission_runs m
            LEFT JOIN runner_leases l ON l.session_id = m.session_id
            LEFT JOIN LATERAL (
@@ -301,11 +320,81 @@ export async function getActiveRunForSession(
         pendingControlKind: normalisePendingControlKind(
           row.pending_control_kind,
         ),
+        ...buildLastError(row),
       });
     } catch (cause) {
       return dbError("getActiveRunForSession query failed", cause);
     }
   });
+}
+
+
+/**
+ * Narrow ONE evidence value through the shared boundary schema.
+ *
+ * The evidence JSONB is untrusted row data: it is written by the engine, but a
+ * row may predate the current writer, may have been written by a different
+ * version, or may simply be malformed. Validating with the SAME schemas the
+ * live `EV.engine.error` payload uses (rather than a local "any string up to
+ * 120 chars" bound) means the durable answer to "why did my run stop" and the
+ * live push event speak one vocabulary — so the renderer needs exactly one
+ * mapping table, and a value that would not have been allowed to cross as an
+ * event cannot sneak across as a DTO field instead.
+ *
+ * A failing value DEGRADES to absent rather than being truncated or coerced: a
+ * truncated code is not a code, and a renderer switching on it would land in a
+ * default branch anyway.
+ */
+function narrowEvidence<T>(
+  schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false } },
+  raw: unknown,
+): T | undefined {
+  // `undefined` as well as `null`: a driver that never saw the column (an
+  // older query shape, a partial row fixture) hands back an absent property,
+  // and a reader of untrusted row data must not assume which absence it gets.
+  if (raw === null || raw === undefined) return undefined;
+  const parsed = schema.safeParse(typeof raw === "string" ? raw.trim() : raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * Build the DTO's optional `lastError` from the four extracted evidence keys.
+ *
+ * Every key is independently optional and DEGRADES to absent: evidence written
+ * before the engine persisted these signals has none of them, and a value that
+ * fails the bound is dropped rather than truncated — a truncated provider code
+ * is not a code, and a renderer switching on it would land in a default branch
+ * anyway. When nothing survives, the field is omitted entirely, which the DTO
+ * reads as "no classification available".
+ *
+ */
+function buildLastError(row: {
+  readonly last_error_type?: string | null;
+  readonly last_error_class?: string | null;
+  readonly last_error_status?: string | null;
+  readonly last_error_cause_code?: string | null;
+}): { lastError?: RuntimeStateDto["lastError"] } {
+  const errorType = narrowEvidence(engineErrorTypeSchema, row.last_error_type);
+  const errorClass = narrowEvidence(engineErrorClassSchema, row.last_error_class);
+  const causeCode = narrowEvidence(engineCauseCodeSchema, row.last_error_cause_code);
+  // `statusCode` arrives as text from the JSONB `->>` operator. Parsed to a
+  // number first, then bounded to the real HTTP range by the shared schema —
+  // a malformed value is dropped, never coerced to 0.
+  const rawStatus = row.last_error_status;
+  const parsedStatus =
+    typeof rawStatus === "string" ? Number(rawStatus) : Number.NaN;
+  const statusCode = narrowEvidence(
+    engineStatusCodeSchema,
+    Number.isFinite(parsedStatus) ? parsedStatus : undefined,
+  );
+
+  const lastError = {
+    ...(errorType !== undefined ? { errorType } : {}),
+    ...(errorClass !== undefined ? { errorClass } : {}),
+    ...(statusCode !== undefined ? { statusCode } : {}),
+    ...(causeCode !== undefined ? { causeCode } : {}),
+  };
+  return Object.keys(lastError).length === 0 ? {} : { lastError };
 }
 
 const AGENT_WORK_UNVERIFIABLE =

@@ -21,6 +21,11 @@
  * own-property (NOT `.cause`) precisely so no serializer can walk it back into
  * the raw body/headers/PII the SDK error held.
  *
+ * The SDK-depth phase adds one more own-property in the same lean idiom:
+ * `errorType`, OpenRouter's canonical `ApiErrorType` off a mid-stream error
+ * chunk (see `attachErrorType`). Its sibling `providerCode` is deliberately
+ * NOT carried — free-form provider text.
+ *
  * Error-diagnostics phase (D-RUNTIME): the errno-shaped cause code extracted
  * from the ORIGINAL caught error's `.cause` chain rides along the same way —
  * a lean `causeCode` own-property (a closed-dictionary string, never message
@@ -32,6 +37,13 @@
 import { OpenRouterError } from "../../../lib/openrouter-client.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 import { redact } from "../../../lib/diagnostics/text-redaction.js";
+import { boundedErrorClass, OPENROUTER_ERROR_CLASSES } from "./error-class.js";
+import {
+  boundedErrorType,
+  boundedLimitSource,
+  boundedProviderErrorCode,
+} from "./provider-signals.js";
+import { retryAfterSecondsFromError } from "./retry-after.js";
 
 /** Max characters of a scrubbed provider message kept in the normalized error. */
 const MAX_MESSAGE_LEN = 300;
@@ -144,6 +156,171 @@ export function attachCauseCode(target: Error, causeCode: string | null): Error 
 }
 
 /**
+ * Attach OpenRouter's canonical error type (`ApiErrorType`, from a mid-stream
+ * error chunk's `error.metadata.errorType`) as a LEAN, NON-ENUMERABLE
+ * own-property — same idiom as `attachStatus` / `attachCauseCode`, and for the
+ * same reason: explicitly NOT `.cause`, so no serializer can walk back to the
+ * raw body/headers/PII.
+ *
+ * `ApiErrorType` is an OPEN enum in the installed SDK, so the value is carried
+ * VERBATIM rather than mapped onto a closed set — any consumer that switches on
+ * it needs a total default branch. Mapping bounded error categories for the UI
+ * is deliberately NOT done here (that is the error-channel work, Wave 2).
+ *
+ * The sibling `metadata.providerCode` is NOT attached anywhere: it is free-form
+ * upstream provider text with no bounded vocabulary, which is exactly the kind
+ * of value this module exists to keep out of logs. No-op for `null`.
+ */
+export function attachErrorType(target: Error, errorType: string | null): Error {
+  if (errorType === null) return target;
+  Object.defineProperty(target, "errorType", {
+    value: errorType,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach the SDK error CLASS name as a LEAN, NON-ENUMERABLE own-property
+ * (`errorClass`) — same idiom as `attachStatus` / `attachCauseCode`.
+ *
+ * Unlike `errorType`, this value comes from a CLOSED dictionary
+ * (`error-class.ts`): it identifies which `@openrouter/sdk` class was thrown,
+ * which is our own compile-time dependency rather than provider-controlled
+ * data. It is the ONLY discriminator for the six status-less shapes
+ * (`SDKValidationError` + the five transports), which would otherwise reach
+ * the classifier as `status: null` and be indistinguishable from an unknown
+ * failure. No-op for `null`.
+ */
+export function attachErrorClass(target: Error, errorClass: string | null): Error {
+  if (errorClass === null) return target;
+  Object.defineProperty(target, "errorClass", {
+    value: errorClass,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach the provider's retry hint, in whole seconds, as a LEAN,
+ * NON-ENUMERABLE own-property (`retryAfterSeconds`). Parsed and bounded by
+ * `retry-after.ts` from the original error's response headers BEFORE the raw
+ * headers object is discarded — a small integer is the only thing that
+ * survives. No-op for `null`.
+ */
+export function attachRetryAfterSeconds(
+  target: Error,
+  retryAfterSeconds: number | null,
+): Error {
+  if (retryAfterSeconds === null) return target;
+  Object.defineProperty(target, "retryAfterSeconds", {
+    value: retryAfterSeconds,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach `error.metadata.limit_source` — WHERE a 429's limit was applied — as a
+ * LEAN, NON-ENUMERABLE own-property (`limitSource`). Same idiom and same
+ * reasons as the attachers above: a short bounded token, never `.cause`, never
+ * a reference to the raw error.
+ *
+ * Unlike the others this one is a ROUTING input: the failover classifier reads
+ * it to decide whether switching endpoints can possibly help (see
+ * `endpoint-failover/capacity-failure.ts`). It is NOT user-facing copy. No-op
+ * for `null`.
+ */
+export function attachLimitSource(target: Error, limitSource: string | null): Error {
+  if (limitSource === null) return target;
+  Object.defineProperty(target, "limitSource", {
+    value: limitSource,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Attach `error.metadata.provider_error_code` (the UPSTREAM provider's own
+ * short code, e.g. `engine_overloaded`) as a LEAN, NON-ENUMERABLE own-property
+ * (`providerErrorCode`). Secondary capacity signal for the case where
+ * `limit_source` is absent. Same idiom; no-op for `null`.
+ */
+export function attachProviderErrorCode(
+  target: Error,
+  providerErrorCode: string | null,
+): Error {
+  if (providerErrorCode === null) return target;
+  Object.defineProperty(target, "providerErrorCode", {
+    value: providerErrorCode,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+  return target;
+}
+
+/**
+ * Read a bounded field out of the SDK error's `error.metadata` object. That
+ * object as a WHOLE is forbidden cargo (it carries `raw`, `remedy_hint` and
+ * provider message text — the very things this module exists to keep out of
+ * logs), so exactly two short, enum-shaped keys are lifted out of it by name
+ * and everything else is dropped with the error.
+ */
+function extractErrorMetadataField(
+  err: Record<string, unknown>,
+  key: string,
+): unknown {
+  if (!isRecord(err.error)) return undefined;
+  const metadata = err.error.metadata;
+  return isRecord(metadata) ? metadata[key] : undefined;
+}
+
+/**
+ * Own-property readers used ONLY by the re-normalization fallback below: they
+ * recover signals a PREVIOUS `normalizeOpenRouterError` pass already attached,
+ * re-validating each through the same bounds so a second pass can never widen
+ * what the first pass admitted.
+ */
+function ownProperty(err: Record<string, unknown>, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(err, key) ? err[key] : undefined;
+}
+
+function ownBoundedErrorClass(err: Record<string, unknown>): string | null {
+  const value = ownProperty(err, "errorClass");
+  return typeof value === "string" && OPENROUTER_ERROR_CLASSES.has(value)
+    ? value
+    : null;
+}
+
+function ownRetryAfterSeconds(err: Record<string, unknown>): number | null {
+  const value = ownProperty(err, "retryAfterSeconds");
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+function ownErrorType(err: Record<string, unknown>): string | null {
+  return boundedErrorType(ownProperty(err, "errorType"));
+}
+
+function ownLimitSource(err: Record<string, unknown>): string | null {
+  return boundedLimitSource(ownProperty(err, "limitSource"));
+}
+
+function ownProviderErrorCode(err: Record<string, unknown>): string | null {
+  return boundedProviderErrorCode(ownProperty(err, "providerErrorCode"));
+}
+
+/**
  * Normalize an unknown thrown value into a lean, redacted Error that preserves
  * the HTTP status as own-properties (`statusCode`/`status`) for the mission
  * auto-retry classifier, plus the errno-shaped `causeCode` own-property
@@ -179,5 +356,36 @@ export function normalizeOpenRouterError(err: unknown, operation: string): Error
   // Attach the status + errno cause code as lean own-properties so the mission
   // classifier (status) and diagnostics call-sites (causeCode) read them
   // directly (own-property based, not message-regex) — never via `.cause`.
+  //
+  // The class name and the retry hint are captured from the ORIGINAL error
+  // here, at the only point they still exist: `normalized` is a plain `Error`,
+  // so its `name` is `"Error"` and its headers are gone. Both are bounded
+  // (closed class dictionary; integer seconds) and carry no provider text.
+  //
+  // RE-NORMALIZATION: a mid-stream rejection reaches this function a second
+  // time (`openrouter.ts` normalizes both the send and the iterator), and by
+  // then the signals live only as own-properties on the already-normalized
+  // error. Falling back to them keeps the second pass lossless instead of
+  // silently erasing what the first pass captured.
+  attachErrorClass(normalized, boundedErrorClass(err) ?? ownBoundedErrorClass(err));
+  attachRetryAfterSeconds(
+    normalized,
+    retryAfterSecondsFromError(err) ?? ownRetryAfterSeconds(err),
+  );
+  attachErrorType(normalized, ownErrorType(err));
+  // Capacity-routing signals off `error.metadata` (live-verified on a real 429,
+  // see `boundedLimitSource`). Read from the ORIGINAL error first; fall back to
+  // the own-properties a previous pass attached so re-normalization of a
+  // mid-stream rejection stays lossless, exactly like the signals above.
+  attachLimitSource(
+    normalized,
+    boundedLimitSource(extractErrorMetadataField(err, "limit_source"))
+      ?? ownLimitSource(err),
+  );
+  attachProviderErrorCode(
+    normalized,
+    boundedProviderErrorCode(extractErrorMetadataField(err, "provider_error_code"))
+      ?? ownProviderErrorCode(err),
+  );
   return attachCauseCode(attachStatus(normalized, status), extractCauseCode(err));
 }

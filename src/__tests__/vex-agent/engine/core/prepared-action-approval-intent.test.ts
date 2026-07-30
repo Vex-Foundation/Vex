@@ -9,6 +9,13 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({ createWith }));
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({ updateStatus }));
 vi.mock("@vex-agent/db/client.js", () => ({
   withTransaction: async (fn: (client: object) => Promise<unknown>) => fn({}),
+  // The enqueue transaction now opens on the session control lock before the
+  // operator-stop gate reads anything. These sessions carry no mission run, so
+  // the gate short-circuits `clear` right after the lock — but the lock
+  // statement itself still has to go somewhere.
+  executeWith: vi.fn().mockResolvedValue(1),
+  queryWith: vi.fn().mockResolvedValue([]),
+  queryOneWith: vi.fn().mockResolvedValue(null),
 }));
 
 const { enqueueApprovalIntent } = await import(

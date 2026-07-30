@@ -97,23 +97,48 @@ export function usePendingApprovalsAll(
 }
 
 /**
- * Push a global-inbox refresh on any committed control-state transition.
- * Unlike the per-session `useControlStateLiveSync`, there is NO session
- * filter — a pending approval can appear or clear in ANY session, so every
- * `EV.engine.controlState` event invalidates the app-wide key. The event is
- * post-commit and can be missed (dropped at the preload Zod gate, or fired
- * before subscribe), so the poll in `GlobalApprovals` remains the primary
- * freshness net; this is only an accelerator. Pure side effect — mount once.
+ * Push a global-inbox refresh from ANY session — including sessions the user
+ * is not currently looking at.
+ *
+ * TWO subscriptions, both deliberately session-AGNOSTIC. The app-wide inbox
+ * exists precisely to surface an approval raised by a background session, so a
+ * session filter here would defeat the feature: the per-session hooks
+ * (`useControlStateLiveSync`, `useMissionUpdateLiveSync`) drop foreign-session
+ * events because their keys are session-scoped, and if this hook did the same
+ * a background approval would wait out the 60 s fallback poll before the badge
+ * appeared.
+ *
+ *  - `controlState`: covers the run-level transitions (a run entering
+ *    `paused_approval`, or an approval clearing).
+ *  - `missionUpdate` / `approval_enqueued`: emitted from inside the enqueue
+ *    transaction itself, so it is the earliest and most direct signal a new
+ *    approval exists — and the only one a CHAT-session approval produces at
+ *    all. Other mission-update kinds (draft edits, acceptance) say nothing
+ *    about approvals and are ignored rather than costing a global refetch.
+ *
+ * Both events are post-commit and can be missed (dropped at the preload Zod
+ * gate, or fired before subscribe), so the fallback poll in `GlobalApprovals`
+ * stays as the dropped-event net. Pure side effect — mount once.
  */
 export function useGlobalApprovalsLiveSync(): void {
   const queryClient = useQueryClient();
   useEffect(() => {
-    const off = window.vex.engine.onControlState(() => {
+    const invalidateInbox = (): void => {
       void queryClient.invalidateQueries({
         queryKey: approvalsKeys.pendingAll(),
       });
+    };
+
+    const offControlState = window.vex.engine.onControlState(invalidateInbox);
+    const offMissionUpdate = window.vex.engine.onMissionUpdate((event) => {
+      if (event.kind !== "approval_enqueued") return;
+      invalidateInbox();
     });
-    return off;
+
+    return () => {
+      offControlState();
+      offMissionUpdate();
+    };
   }, [queryClient]);
 }
 

@@ -70,6 +70,8 @@ import {
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
+import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
+import { MissionErrorAlert } from "./MissionControls/MissionErrorAlert.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
 import { planMissing } from "./MissionRail.js";
@@ -281,7 +283,10 @@ export function MissionControls({
     return (
       <>
         {canRecover ? (
-          <MissionErrorAlert stopReason={runtime.stopReason} />
+          <MissionErrorAlert
+            stopReason={runtime.stopReason}
+            lastError={runtime.lastError}
+          />
         ) : null}
         <div
           data-vex-area="mission-controls"
@@ -410,6 +415,14 @@ export function MissionControls({
         >
           Renew mission
         </button>
+        {/* Same terminal state, different intent: Renew clones the contract
+            into a draft that must be accepted again; this restarts the SAME
+            accepted contract with one added instruction. */}
+        <MissionRestartAffordance
+          sessionId={sessionId}
+          missionId={previousMissionId}
+          disabled={disabled}
+        />
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
     );
@@ -444,45 +457,6 @@ function AcceptancePendingNotice(): JSX.Element {
       Mission contract not accepted — on-chain actions (swaps, bridges, sends)
       are blocked until you accept the contract and start the mission.
     </p>
-  );
-}
-
-/**
- * Standing paused_error alert (issue #42): while the recover-eligible pause
- * persists, the mission is silently NOT monitoring the market or positions —
- * that has to be visible, not inferred from an agent reply. Persistent,
- * state-driven UI: no timers, no dismissal. If a recovery settles and the
- * refetched runtime is still paused_error, this simply stays/reappears — the
- * visible-failure signal the operator needs.
- */
-function MissionErrorAlert({
-  stopReason,
-}: {
-  readonly stopReason: string | null;
-}): JSX.Element {
-  // `provider_error` names the stop reason, not the cause — it covers both
-  // inference and runtime errors, so the copy must not claim a connection
-  // failure. The state is recoverable via the Recover button, so never say
-  // "unrecoverable".
-  const body =
-    stopReason === "provider_error"
-      ? "The mission paused after an inference or runtime error."
-      : "The mission paused after an unexpected error.";
-  return (
-    <div
-      role="alert"
-      data-vex-area="mission-error-alert"
-      className="mb-2 w-full rounded-lg border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2"
-    >
-      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-destructive">
-        Mission paused — error
-      </p>
-      <p className="mt-1 text-xs text-destructive">{body}</p>
-      <p className="mt-1 text-xs text-destructive">
-        The mission is not monitoring the market or your positions until you
-        recover it.
-      </p>
-    </div>
   );
 }
 

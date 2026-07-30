@@ -218,6 +218,44 @@ describe("preload bridge surface", () => {
     ).toContain("onControlState");
   });
 
+  it("exposes EV.engine.error and the error bridge method", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus, "EV.engine.error not referenced in preload").toContain(
+      "EV.engine.error",
+    );
+    expect(corpus, "onEngineError not exposed by the preload composer").toContain(
+      "onEngineError",
+    );
+  });
+
+  it("exposes EV.engine.missionUpdate and the mission-update bridge method", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus, "EV.engine.missionUpdate not referenced in preload").toContain(
+      "EV.engine.missionUpdate",
+    );
+    expect(corpus, "onMissionUpdate not exposed by the preload composer").toContain(
+      "onMissionUpdate",
+    );
+  });
+
+  it("exposes EV.engine.compactionPreparation and re-validates it in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(
+      corpus,
+      "EV.engine.compactionPreparation not referenced in preload",
+    ).toContain("EV.engine.compactionPreparation");
+    expect(
+      corpus,
+      "onCompactionPreparation not exposed by the preload composer",
+    ).toContain("onCompactionPreparation");
+    // The preload is the THIRD validation layer — a malformed emit must be
+    // dropped here, not handed to the renderer callback.
+    expect(
+      corpus,
+      "preload does not re-validate the compaction-preparation payload",
+    ).toContain("compactionPreparationEventSchema");
+  });
+
   it("exposes EV.market.vex and the market-update bridge method (T1)", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     expect(corpus, "EV.market.vex not referenced in preload").toContain(

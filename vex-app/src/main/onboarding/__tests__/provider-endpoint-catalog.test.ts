@@ -26,6 +26,13 @@ function endpoint(overrides: Record<string, unknown> = {}) {
     contextLength: 1_000_000,
     quantization: "unknown",
     supportedParameters: ["tools", "tool_choice", "max_tokens"],
+    // Availability as the same capture recorded it. Ranking behaviour has its
+    // own suite (`provider-endpoint-catalog-availability.test.ts`); these are
+    // here so the projection assertions below stay a full-row contract.
+    status: 0,
+    uptimeLast5m: 99.685110211426,
+    uptimeLast30m: 99.70970668279408,
+    uptimeLast1d: 99.71835783762081,
     pricing: {
       prompt: "0.000003",
       completion: "0.000015",
@@ -73,6 +80,13 @@ describe("provider endpoint catalogue", () => {
         pricingOutputPerMillion: 15,
         pricingCacheReadPerMillion: 0.3,
         pricingCacheWritePerMillion: 3.75,
+        pricingReasoningPerMillion: null,
+        uptimeLast5mPercent: 99.685110211426,
+        uptimeLast30mPercent: 99.70970668279408,
+        uptimeLast1dPercent: 99.71835783762081,
+        statusCode: 0,
+        isDeranked: false,
+        availabilityScore: expect.closeTo(99.699139, 5) as unknown as number,
       },
     ]);
   });
@@ -131,11 +145,22 @@ describe("provider endpoint catalogue", () => {
         pricingOutputPerMillion: null,
         pricingCacheReadPerMillion: null,
         pricingCacheWritePerMillion: null,
+        pricingReasoningPerMillion: null,
+        uptimeLast5mPercent: 99.685110211426,
+        uptimeLast30mPercent: 99.70970668279408,
+        uptimeLast1dPercent: 99.71835783762081,
+        statusCode: 0,
+        isDeranked: false,
+        availabilityScore: expect.closeTo(99.699139, 5) as unknown as number,
       },
     ]);
   });
 
-  it("orders cheapest base prompt price first and sorts unpriced endpoints last", async () => {
+  // Price is now a TIEBREAK below availability (see
+  // `provider-endpoint-catalog-availability.test.ts`). These three rows share
+  // identical uptime and status, so price is what decides — which is exactly
+  // the tier this asserts.
+  it("breaks an availability tie on cheapest base prompt price, unpriced last", async () => {
     const client = clientFactory([
       endpoint({ tag: "unpriced", pricing: {} }),
       endpoint({ tag: "pricey", pricing: { prompt: "0.00001", completion: "0.00002" } }),

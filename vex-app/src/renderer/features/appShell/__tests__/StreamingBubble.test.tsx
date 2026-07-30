@@ -172,7 +172,7 @@ describe("TurnIsland — freeze, error, and settle", () => {
     expect(screen.getAllByText("Awaiting signature").length).toBeGreaterThan(1);
   });
 
-  it("shows a safe generic error line and never the raw text on error phase", () => {
+  it("shows the classified error copy and never the raw text on error phase", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ phase: "error", text: "raw-provider-leak" }),
@@ -182,7 +182,12 @@ describe("TurnIsland — freeze, error, and settle", () => {
       container.querySelector('[data-vex-stream-phase="error"]'),
     ).not.toBeNull();
     expect(islandState(container)).toBe("error");
-    expect(screen.getByText("Stream error")).not.toBeNull();
+    // No errorType on the preview → the classifier's honest `unknown` copy
+    // (shared table with the error banner), never a bare "Stream error".
+    expect(screen.getByText("The provider call failed")).not.toBeNull();
+    expect(
+      screen.getByText(/cause was not reported/i),
+    ).not.toBeNull();
     expect(container.textContent).not.toContain("raw-provider-leak");
   });
 

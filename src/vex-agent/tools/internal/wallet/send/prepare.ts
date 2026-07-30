@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 
 import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 
 import type { ToolResult } from "../../../types.js";
 import type { InternalToolContext } from "../../types.js";
@@ -50,19 +51,25 @@ export async function handleWalletSendPrepare(
     token,
   });
 
-  await walletIntentsRepo.create({
-    intentId,
-    sessionId: context.sessionId,
-    walletAddress,
-    network,
-    chainAlias: chain,
-    toAddress: to,
-    amount,
-    token,
-    previewJson,
-    expiresAt,
-    idempotencyKey: intentId,
-  });
+  // Under the session control lock: creating the intent is the moment the
+  // session gains live money state, and the compaction safe-moment gate must
+  // never read `clear` a microsecond before this row appears. DB-only and
+  // committed here — no key decrypt, no broadcast on this path at all.
+  await withSessionControlLock(context.sessionId, (client) =>
+    walletIntentsRepo.createWith(client, {
+      intentId,
+      sessionId: context.sessionId,
+      walletAddress,
+      network,
+      chainAlias: chain,
+      toAddress: to,
+      amount,
+      token,
+      previewJson,
+      expiresAt,
+      idempotencyKey: intentId,
+    }),
+  );
 
   const result = ok({
     intentId,

@@ -1,6 +1,9 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import logger from "@utils/logger.js";
 
+import { emitEngineError } from "@vex-agent/engine/runtime/error-bus.js";
+import { readMissionErrorSignal } from "@vex-agent/engine/core/runner/mission-error-signal.js";
+
 import type { WakeDeps } from "./deps.js";
 import { handleClaimed } from "./claimed.js";
 
@@ -8,6 +11,20 @@ import { handleClaimed } from "./claimed.js";
 
 export type ClaimedWakeOutcome =
   | { kind: "resumed"; runId: string }
+  | { kind: "agent_session_continued"; sessionId: string }
+  /**
+   * The session lease was held by unrelated work, so a REPLACEMENT wake was
+   * enqueued with backoff. The continuation is not lost — this is the outcome
+   * that used to be `skipped_claim_lost`, which silently dropped it.
+   */
+  | {
+      kind: "rescheduled_lease_busy";
+      sessionId: string;
+      attempt: number;
+      dueAt: string;
+      /** False only when the gate refused (session stopped while backing off). */
+      scheduled: boolean;
+    }
   | { kind: "skipped_stale_status"; currentStatus: string }
   | { kind: "skipped_claim_lost" }
   | { kind: "skipped_mission_run_missing" }
@@ -50,6 +67,37 @@ export async function tick(
         missionRunId: wake.missionRunId,
         error: message,
       });
+      // Bounded push FIRST — it needs no I/O and must not be lost if the
+      // support DB behind the bug-report sink below is unreachable. Before
+      // this, a failed wake tick was a log line and nothing else: the user saw
+      // a scheduled continuation simply never happen.
+      //
+      // ONE emit site covers the whole executor. `handleClaimed` and the
+      // agent-session continuation path neither catch nor rethrow, so every
+      // failure in either arrives here.
+      //
+      // `readMissionErrorSignal` reads own-properties only and never walks
+      // `.cause`, so `message` above stays out of the payload — codes only.
+      try {
+        const signal = readMissionErrorSignal(err);
+        emitEngineError({
+          sessionId: wake.sessionId,
+          missionRunId: wake.missionRunId,
+          scope: "wake",
+          errorType: signal.errorType,
+          errorClass: signal.errorClass,
+          statusCode: signal.status,
+          causeCode: signal.causeCode,
+          retryAfterSeconds: signal.retryAfterSeconds,
+        });
+      } catch (emitErr) {
+        logger.warn("wake.executor.error_emit_failed", {
+          wakeId: wake.id,
+          errorClass:
+            emitErr instanceof Error ? emitErr.constructor.name : typeof emitErr,
+        });
+      }
+
       // Phase 2 BUG-REPORTING emit (puzzle 03): wake resume failures
       // surface as `wake_resume_failure` automatic reports. Fail-closed
       // through `emitBugReportSafe` — a support DB outage cannot break
@@ -70,7 +118,12 @@ export async function tick(
           description: message,
           refs: {
             sessionId: wake.sessionId,
-            missionRunId: wake.missionRunId,
+            // A session-scoped agent continuation has no run. `refs` takes an
+            // absent ref as `undefined`, so omit the key rather than asserting
+            // a null run id the schema does not model.
+            ...(wake.missionRunId !== null
+              ? { missionRunId: wake.missionRunId }
+              : {}),
           },
           agentContext: {
             stopReason: "system_error",

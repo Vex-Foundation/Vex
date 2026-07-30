@@ -5,7 +5,7 @@
  *
  * Sourced entirely from DB (no LLM calls, no embeddings). Includes:
  *   - The fresh rolling summary from `sessions.summary` (agent's own
- *     conversation_summary input to compact_now).
+ *     prepared branch-A summary).
  *   - The `preserve_md` field from the most recent `compact_jobs` row,
  *     sanitized via `sanitizePreserveMd` before injection. preserve_md is
  *     attacker-influenced data (agent supplied it, redaction stripped raw

@@ -24,7 +24,7 @@
     "dev:renderer": "vite --config vite.renderer.config.ts",
     "dev:main:watch": "vite build --config vite.main.config.ts --watch",
     "dev:preload:watch": "vite build --config vite.preload.config.ts --watch",
-    "dev:electron": "wait-on --log --timeout 60000 --delay 1500 http-get://127.0.0.1:5173/ && electron dist/main/index.js",
+    "dev:electron": "wait-on --log --timeout 60000 --delay 1500 http-get://127.0.0.1:5173/ dist/main/index.js dist/preload/index.cjs && electron dist/main/index.js",
     "dev": "pnpm run build:main && pnpm run build:preload && concurrently --kill-others --names \"renderer,main,preload,electron\" \"pnpm:dev:renderer\" \"pnpm:dev:main:watch\" \"pnpm:dev:preload:watch\" \"pnpm:dev:electron\"",
     "package": "pnpm run build && electron-builder --dir --publish never",
     "make": "pnpm run build && electron-builder --publish never",

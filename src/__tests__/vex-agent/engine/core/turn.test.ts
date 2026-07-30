@@ -36,6 +36,9 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 }));
 
 const { executeTurn } = await import("../../../../vex-agent/engine/core/turn.js");
+const { commitEndpointSwitch, resetAllSessionEndpointState } = await import(
+  "../../../../vex-agent/inference/openrouter/endpoint-failover/session-endpoint-state.js"
+);
 const { streamDeltaBus } = await import("../../../../vex-agent/engine/events/index.js");
 
 describe("turn", () => {
@@ -426,5 +429,98 @@ describe("turn", () => {
       expect(tail?.toolCallId).toBe("call-1");
       expect(tail?.content).toContain("placeholder");
     });
+  });
+});
+
+// ── endpoint failover: cost follows the endpoint that SERVED the turn ──
+
+describe("turn — cost is priced against the switched endpoint (owner decision 7)", () => {
+  const SWITCHED = {
+    tag: "baidu/fp8",
+    providerName: "Baidu",
+    uptimePercent: 99.9,
+    contextLength: 64_000,
+    inputPricePerM: 9,
+    outputPricePerM: 33,
+    cachePricePerM: null,
+    cacheWritePricePerM: null,
+    reasoningPricePerM: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAllSessionEndpointState();
+  });
+
+  function context() {
+    return {
+      sessionId: "session-switched",
+      sessionKind: "agent" as const,
+      sessionPermission: "restricted" as const,
+      missionId: null,
+      missionRunId: null,
+      selectedEvmWallet: null,
+      selectedSolanaWallet: null,
+      walletPolicy: { kind: "none" as const },
+      loadedDocuments: new Map<string, string>(),
+    };
+  }
+
+  /** Provider shaped like the real one: it exposes its own endpoint catalogue. */
+  function providerWithCatalogue() {
+    return {
+      id: "openrouter",
+      chatCompletion: vi.fn().mockResolvedValue({
+        content: "done",
+        toolCalls: null,
+        usage: { promptTokens: 1000, completionTokens: 200 },
+      }),
+      chatCompletionSimple: vi.fn(),
+      calculateCost: vi.fn().mockReturnValue({
+        totalCost: 0.05,
+        currency: "USD",
+        breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
+      }),
+      failoverDeps: () => ({ loadCandidates: async () => [SWITCHED] }),
+    };
+  }
+
+  const pinnedConfig = {
+    provider: "openrouter",
+    model: "anthropic/claude-sonnet-4",
+    contextLimit: 128_000,
+    endpointTag: "deepinfra/fp4",
+    maxOutputTokens: 4096,
+    inputPricePerM: 3,
+    outputPricePerM: 15,
+  };
+
+  it("prices the response with the NEW endpoint's rates once the session switched", async () => {
+    commitEndpointSwitch("session-switched", SWITCHED.tag);
+    const provider = providerWithCatalogue();
+
+    await executeTurn(context(), [], null, provider as any, pinnedConfig as any, []);
+
+    // The pre-send config said 3/15; the endpoint that served it charges 9/33.
+    // Pricing against the stale config would put a knowingly wrong number in
+    // `usage_log.cost`.
+    const pricingConfig = provider.calculateCost.mock.calls[0]?.[1] as {
+      inputPricePerM: number;
+      outputPricePerM: number;
+      endpointTag: string;
+    };
+    expect(pricingConfig.endpointTag).toBe(SWITCHED.tag);
+    expect(pricingConfig.inputPricePerM).toBe(9);
+    expect(pricingConfig.outputPricePerM).toBe(33);
+  });
+
+  it("uses the operator's own prices when the session never switched", async () => {
+    const provider = providerWithCatalogue();
+    await executeTurn(context(), [], null, provider as any, pinnedConfig as any, []);
+
+    const pricingConfig = provider.calculateCost.mock.calls[0]?.[1] as {
+      inputPricePerM: number;
+    };
+    expect(pricingConfig.inputPricePerM).toBe(3);
   });
 });

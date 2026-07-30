@@ -25,12 +25,22 @@ const mockMarkFailed = vi.fn();
 const mockMarkAuditFailed = vi.fn();
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
-  create: (...a: unknown[]) => mockCreate(...a),
+  createWith: (...a: unknown[]) => mockCreate(...a),
   getById: (...a: unknown[]) => mockGetById(...a),
-  consumeIfPending: (...a: unknown[]) => mockConsumeIfPending(...a),
-  markExecuted: (...a: unknown[]) => mockMarkExecuted(...a),
-  markFailed: (...a: unknown[]) => mockMarkFailed(...a),
-  markAuditFailed: (...a: unknown[]) => mockMarkAuditFailed(...a),
+  consumeIfPendingWith: (...a: unknown[]) => mockConsumeIfPending(...a),
+  markExecutedWith: (...a: unknown[]) => mockMarkExecuted(...a),
+  markFailedWith: (...a: unknown[]) => mockMarkFailed(...a),
+  markAuditFailedWith: (...a: unknown[]) => mockMarkAuditFailed(...a),
+}));
+
+// The money-state writers are client-bound and run inside a session-control-
+// locked transaction (compaction contract C7). Stub the lock so these unit
+// tests stay pool-free; `SENTINEL_CLIENT` is what the repo mocks receive as
+// their first argument.
+const SENTINEL_CLIENT = { __sessionControlLocked: true } as const;
+vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
+  withSessionControlLock: (_sessionId: string, fn: (c: unknown) => unknown) =>
+    Promise.resolve(fn(SENTINEL_CLIENT)),
 }));
 
 const mockExecuteSolana = vi.fn();
@@ -174,6 +184,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
 
     expect(result.success).toBe(true);
     expect(mockMarkExecuted).toHaveBeenCalledWith(
+      SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
       "0xtx123",
@@ -206,6 +217,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
       { chain: "Base", txRef: "0xtxRev" },
     ]);
     expect(mockMarkFailed).toHaveBeenCalledWith(
+      SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
       "ChainRevert:abcd1234abcd1234",
@@ -236,6 +248,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
       { chain: "Base", txRef: "0xtxUnk" },
     ]);
     expect(mockMarkFailed).toHaveBeenCalledWith(
+      SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
       "ConfirmationUnknown:deadbeef12345678",
@@ -259,6 +272,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     expect(result.output).toContain("before broadcast");
     expect(result.output).toContain("01234567abcdef00");
     expect(mockMarkFailed).toHaveBeenCalledWith(
+      SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
       "Error:01234567abcdef00",
@@ -285,6 +299,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     // Tx is real on-chain — ToolResult success despite audit failure
     expect(result.success).toBe(true);
     expect(mockMarkAuditFailed).toHaveBeenCalledWith(
+      SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
       "0xtxReal",
@@ -334,6 +349,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
 
     expect(result.success).toBe(true);
     expect(mockMarkAuditFailed).toHaveBeenCalledWith(
+      SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
       "0xtxRaceLost",

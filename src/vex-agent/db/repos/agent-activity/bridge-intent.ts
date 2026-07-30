@@ -27,6 +27,7 @@ import type { PoolClient } from "pg";
 import { queryOne, queryOneWith, withTransaction } from "../../client.js";
 import { nullableJsonb } from "../../params.js";
 import { createExecutionIntent } from "../executions.js";
+import { acquireSessionControlLock } from "../../../engine/runtime/lease-and-status/session-control-lock.js";
 
 import { assertFailureCode, sanitizeFailureReason } from "./validation.js";
 import { mapRow } from "./mappers.js";
@@ -328,6 +329,15 @@ export async function createBridgeActivityIntent(
   const normalizedRoute = buildNormalizedBridgeRoute(input.route);
   try {
     return await withTransaction(async (client) => {
+      // Session control lock FIRST — this transaction ADDS rows to the set the
+      // compaction safe-moment gate reads (`protocol_executions` at `intent`,
+      // `agent_activity` at `pending`). That is the direction that matters most:
+      // without the lock the gate could read `clear` a microsecond before this
+      // money state came into existence, and authorise a transcript rewrite over
+      // a broadcast about to happen. DB-only and short — every signing and
+      // broadcast call happens AFTER this transaction commits.
+      await acquireSessionControlLock(client, input.sessionId);
+
       const executionId = await createExecutionIntent(
         input.toolId, input.namespace, input.sessionId, input.intentParams, client,
       );
@@ -417,6 +427,15 @@ export async function createBridgePreBroadcastFailure(input: {
   assertFailureCode(input.failureCode);
   const normalizedRoute = buildNormalizedBridgeRoute(input.route);
   return withTransaction(async (client) => {
+    // Session control lock FIRST — this transaction ADDS rows to the set the
+    // compaction safe-moment gate reads (`protocol_executions` at `intent`,
+    // `agent_activity` at `pending`). That is the direction that matters most:
+    // without the lock the gate could read `clear` a microsecond before this
+    // money state came into existence, and authorise a transcript rewrite over
+    // a broadcast about to happen. DB-only and short — every signing and
+    // broadcast call happens AFTER this transaction commits.
+    await acquireSessionControlLock(client, input.sessionId);
+
     const executionId = await createExecutionIntent(
       input.toolId, input.namespace, input.sessionId, input.intentParams, client,
     );

@@ -11,6 +11,10 @@
 import logger from "@utils/logger.js";
 
 import { queryOne, queryOneWith, withTransaction } from "../../client.js";
+import {
+  resolveActivitySessionByExecutionId,
+  withActivitySessionLock,
+} from "./session-lock.js";
 
 import { insertBridgeRow, findPendingLogicalRow, buildNormalizedBridgeRoute } from "./bridge-intent.js";
 import type { BridgeRouteEndpoints } from "./bridge-intent.js";
@@ -103,7 +107,13 @@ export async function confirmBridgeExpectedFill(input: {
   readonly executedAmountOutHuman?: string;
   readonly executedAmountOutRaw?: string;
 }): Promise<CasResult> {
-  const row = await queryOne<Record<string, unknown>>(
+  // Under the session control lock — `pending` is money state the compaction
+  // safe-moment gate reads (see `./session-lock.ts`). DB-only: the provider
+  // status lookup that produced this evidence has already returned.
+  const sessionId = await resolveActivitySessionByExecutionId(input.executionId);
+  const row = await withActivitySessionLock(sessionId, (client) =>
+    queryOneWith<Record<string, unknown>>(
+    client,
     `UPDATE agent_activity
         SET status = 'confirmed', confirmed_at = NOW(),
             tx_hash = $2, evidence_source = $3,
@@ -127,7 +137,7 @@ export async function confirmBridgeExpectedFill(input: {
       input.executedAmountOutHuman ?? null,
       input.executedAmountOutRaw ?? null,
     ],
-  );
+  ));
   if (row) return { applied: true, row: mapRow(row) };
   const current = await findLogicalRowByExecution(input.executionId);
   if (!current) {

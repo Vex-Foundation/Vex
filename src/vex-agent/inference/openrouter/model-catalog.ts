@@ -11,6 +11,7 @@
 import type { OpenRouter } from "@openrouter/sdk";
 
 import type { InferenceConfig } from "../types.js";
+import { resolveEffectiveContextLimit } from "../context-window.js";
 import logger from "@utils/logger.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 
@@ -61,6 +62,11 @@ export function apiUnreachableHint(causeCode: string | null): string {
 export interface ModelConfigSpec {
   readonly providerId: string;
   readonly model: string;
+  /**
+   * Operator-configured ceiling (`AGENT_CONTEXT_LIMIT`). NOT the value that
+   * reaches `InferenceConfig.contextLimit` — the catalog row's real window
+   * clamps it first (see `context-window.ts`).
+   */
   readonly contextLimit: number;
   readonly temperature: number | undefined;
   readonly maxOutputTokens: number;
@@ -83,6 +89,13 @@ export type ModelConfigFetchResult =
 /** Minimal shape we consume from a catalog row (provider response = untrusted). */
 interface CatalogModelRow {
   readonly id: string;
+  /**
+   * The model's real context window in tokens. Typed `number | null` by the
+   * installed SDK (`models/model.d.ts`), declared `unknown` here because the
+   * catalog is an untrusted provider response — validated in
+   * `context-window.ts`, never trusted as typed.
+   */
+  readonly contextLength?: unknown;
   readonly pricing?:
     | {
         readonly prompt?: unknown;
@@ -186,9 +199,29 @@ export async function fetchModelInferenceConfig(
     supportedParameters.includes("reasoning") ||
     supportedParameters.includes("reasoning_effort");
 
+  // Effective context limit = min(configured, the model's REAL window). The
+  // configured value is an operator throttle; the catalog row is the only
+  // place the provider's actual window is known. Unknown/implausible window ⇒
+  // configured value unchanged — the catalog never blocks a run.
+  //
+  // Bounded logging: this whole function runs at most once per
+  // MODEL_CONFIG_CACHE_TTL_MS (1 h) per provider instance, so the warn below
+  // cannot flood a loop even though the limit is consulted every iteration.
+  const contextLimit = resolveEffectiveContextLimit(spec.contextLimit, found.contextLength);
+  if (contextLimit.reason !== "within_model_window") {
+    logger.warn("inference.openrouter.context_limit_adjusted", {
+      model: spec.model,
+      configured: contextLimit.configured,
+      effective: contextLimit.effective,
+      modelContextWindow: contextLimit.modelWindow,
+      reason: contextLimit.reason,
+    });
+  }
+
   logger.info("inference.openrouter.config_loaded", {
     model: spec.model,
-    contextLimit: spec.contextLimit,
+    contextLimit: contextLimit.effective,
+    modelContextWindow: contextLimit.modelWindow,
     inputPricePerM: inputPricePerM.toFixed(4),
     outputPricePerM: outputPricePerM.toFixed(4),
     hasCachePrice: cachePricePerM !== null,
@@ -201,7 +234,7 @@ export async function fetchModelInferenceConfig(
     config: {
       provider: spec.providerId,
       model: spec.model,
-      contextLimit: spec.contextLimit,
+      contextLimit: contextLimit.effective,
       temperature: spec.temperature,
       maxOutputTokens: spec.maxOutputTokens,
       ...(spec.endpointTag !== undefined && { endpointTag: spec.endpointTag }),

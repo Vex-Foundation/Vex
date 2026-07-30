@@ -14,6 +14,9 @@
  * at this layer.
  */
 
+import { OPENROUTER_ERROR_CLASSES } from "../../../inference/openrouter/error-class.js";
+import { boundedErrorType } from "../../../inference/openrouter/provider-signals.js";
+
 /** Validated own-property signals read off a thrown value's transport shape. */
 export interface MissionErrorSignal {
   readonly status: number | null;
@@ -21,6 +24,21 @@ export interface MissionErrorSignal {
   readonly causeCode: string | null;
   readonly retryable: boolean | null;
   readonly name: string | null;
+  /**
+   * OpenRouter's canonical `ApiErrorType` (OPEN enum, carried verbatim) when
+   * the failure came from a mid-stream error chunk. `null` on the throw path,
+   * which never carries it — that asymmetry is why `errorClass` exists.
+   */
+  readonly errorType: string | null;
+  /**
+   * SDK error class name from the CLOSED dictionary in
+   * `inference/openrouter/error-class.ts`. The only discriminator for the six
+   * status-less SDK shapes, which would otherwise arrive here as `status:
+   * null` and be indistinguishable from an unclassifiable failure.
+   */
+  readonly errorClass: string | null;
+  /** Provider retry hint in whole seconds, bounded at the inference boundary. */
+  readonly retryAfterSeconds: number | null;
 }
 
 const EMPTY_SIGNAL: MissionErrorSignal = {
@@ -29,6 +47,9 @@ const EMPTY_SIGNAL: MissionErrorSignal = {
   causeCode: null,
   retryable: null,
   name: null,
+  errorType: null,
+  errorClass: null,
+  retryAfterSeconds: null,
 };
 
 /**
@@ -71,6 +92,22 @@ function causeCodeField(err: Error, key: string): string | null {
   return typeof v === "string" && ERRNO_SHAPE.test(v) ? v : null;
 }
 
+/**
+ * `errorClass` is a CLOSED dictionary, so an unknown value is rejected — the
+ * opposite posture to `errorType`, whose open enum must survive verbatim.
+ */
+function boundedErrorClassName(value: unknown): string | null {
+  return typeof value === "string" && OPENROUTER_ERROR_CLASSES.has(value)
+    ? value
+    : null;
+}
+
+/** Positive whole seconds only — the same bound the inference layer applied. */
+function retryAfterSecondsField(err: Error, key: string): number | null {
+  const v = field(err, key);
+  return typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null;
+}
+
 function booleanField(err: Error, key: string): boolean | null {
   const v = field(err, key);
   return typeof v === "boolean" ? v : null;
@@ -89,5 +126,10 @@ export function readMissionErrorSignal(err: unknown): MissionErrorSignal {
     causeCode: causeCodeField(err, "causeCode"),
     retryable: booleanField(err, "retryable"),
     name: stringField(err, "name"),
+    // Re-validated here rather than trusted: this reader is fed by arbitrary
+    // thrown values, not only by `normalizeOpenRouterError` output.
+    errorType: boundedErrorType(field(err, "errorType")),
+    errorClass: boundedErrorClassName(field(err, "errorClass")),
+    retryAfterSeconds: retryAfterSecondsField(err, "retryAfterSeconds"),
   };
 }

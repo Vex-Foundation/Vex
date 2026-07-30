@@ -102,6 +102,28 @@ export const ACTIVE_OR_PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new 
 ]);
 
 /**
+ * The statuses from which a resolved approval's resume may claim its run and
+ * flip it back to `running`. A run outside this set cannot be resumed until it
+ * moves, and no amount of retrying moves it.
+ *
+ * TWO consumers that must never drift: the claim gate itself
+ * (`approval-runtime/continuation.ts` passes it as `fromStatuses`) and the
+ * fairness ordering of the approval-lifecycle scans
+ * (`db/repos/approval-intents/lifecycle.ts`), which sorts rows whose run is
+ * outside this set last so they cannot crowd newer approvals out of a
+ * fixed-size batch. If the ordering disagreed with the gate it would either
+ * deprioritise claimable rows or promote unclaimable ones.
+ *
+ * A list rather than a `ReadonlySet` because both consumers need one: the lease
+ * claim takes `readonly MissionRunStatus[]`, and the scan passes it to Postgres
+ * as an `= ANY($n)` array parameter.
+ */
+export const APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES = [
+  "paused_approval",
+  "running",
+] as const satisfies readonly MissionRunStatus[];
+
+/**
  * Read a validated own-property off an unvalidated thrown value — the same
  * "own-properties only, never `.cause`" idiom as
  * `core/runner/mission-error-signal.ts` / `inference/openrouter/errors.ts`,
@@ -131,6 +153,38 @@ function validatedCauseCode(cause: unknown): string | null {
 }
 
 /**
+ * Enum-label shape for the provider's `ApiErrorType` — mirrors the cap in
+ * `inference/openrouter/provider-signals.ts` (not imported: no inference
+ * dependency from this file). An OPEN enum, so any plausible label survives.
+ */
+const ENUM_LABEL_SHAPE = /^[a-z][a-z0-9_]{0,63}$/;
+
+function validatedErrorType(cause: unknown): string | null {
+  const v = ownProperty(cause, "errorType");
+  return typeof v === "string" && ENUM_LABEL_SHAPE.test(v) ? v : null;
+}
+
+/**
+ * SDK class names are a CLOSED dictionary, but checking membership here would
+ * mean duplicating that 24-name vocabulary into this inference-free file. The
+ * closed check already ran where the value was captured
+ * (`inference/openrouter/error-class.ts`) and runs AGAIN as a `z.enum` at the
+ * IPC boundary; this layer only needs to guarantee the value is a bounded
+ * class-name-shaped token and not a smuggled message.
+ */
+const CLASS_NAME_SHAPE = /^[A-Z][A-Za-z0-9]{2,63}$/;
+
+function validatedErrorClass(cause: unknown): string | null {
+  const v = ownProperty(cause, "errorClass");
+  return typeof v === "string" && CLASS_NAME_SHAPE.test(v) ? v : null;
+}
+
+function validatedRetryAfterSeconds(cause: unknown): number | null {
+  const v = ownProperty(cause, "retryAfterSeconds");
+  return typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null;
+}
+
+/**
  * Recoverable failure surfaced by `startMission` / `resumeMissionRun` when a
  * provider call (or the surrounding hydrate / status update / prompt prep)
  * throws. The run is persisted in `paused_error` first, then this error is
@@ -153,6 +207,17 @@ export class MissionRunPausedError extends Error {
    */
   readonly statusCode: number | null;
   readonly causeCode: string | null;
+  /**
+   * Provider error taxonomy carried alongside the transport shape, so the app
+   * can answer "why did my mission stop" in bounded codes instead of a generic
+   * failure. `errorType` is OpenRouter's OPEN `ApiErrorType` (stream path
+   * only); `errorClass` names the SDK class that was thrown (the only signal
+   * the six status-less shapes have); `retryAfterSeconds` is the provider's
+   * own retry hint. All three are `null` when the cause carried nothing.
+   */
+  readonly errorType: string | null;
+  readonly errorClass: string | null;
+  readonly retryAfterSeconds: number | null;
   constructor(args: {
     runId: string;
     missionId: string;
@@ -168,6 +233,9 @@ export class MissionRunPausedError extends Error {
     this.sessionId = args.sessionId;
     this.statusCode = validatedStatusCode(args.cause);
     this.causeCode = validatedCauseCode(args.cause);
+    this.errorType = validatedErrorType(args.cause);
+    this.errorClass = validatedErrorClass(args.cause);
+    this.retryAfterSeconds = validatedRetryAfterSeconds(args.cause);
   }
 }
 
@@ -230,7 +298,14 @@ export type MessageType =
    * tool_call, even though the row keeps `role: "assistant"` for the
    * provider transcript format.
    */
-  | "prepared_action_follow_up";
+  | "prepared_action_follow_up"
+  /**
+   * Engine cue injected when an approval decision has been resolved and its
+   * tool result is already in the transcript — the agent is being woken to
+   * continue from it. Distinct from `operator_interrupt` (which means the user
+   * cut in) and from `approval_pause` (which means the run STOPPED to ask).
+   */
+  | "approval_resolved";
 
 export type MessageVisibility = "user" | "internal";
 
@@ -419,3 +494,24 @@ export interface MessageMetadata {
    */
   payload?: Record<string, unknown>;
 }
+
+// ── Resumed-turn consumption claim ──────────────────────────────
+
+/**
+ * Guard hook for a turn that resumes previously-recorded work — today, an
+ * approval whose tool result is already sitting in the transcript.
+ *
+ * The lease-held turn core calls it ONCE, at the moment it actually begins
+ * consuming that result: after the transcript is loaded and immediately before
+ * the model call. Returning `false` means an EARLIER attempt already carried
+ * this resume through to completion, and the core must abandon the turn without
+ * calling the model.
+ *
+ * It is a read, not a claim, and the core writes nothing when it returns
+ * `true`. The durable marker is written by the caller AFTER the core returns,
+ * because "a resume started" and "a resume finished" are different facts:
+ * ending eligibility at the start makes a crash anywhere in the rest of the
+ * turn permanent, and concurrent resumes are already impossible — the caller
+ * holds the session/run runner lease across the whole call.
+ */
+export type ResumedTurnClaim = () => Promise<boolean>;

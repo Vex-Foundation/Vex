@@ -32,6 +32,7 @@ const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
 function toDiscoveryItem(
   entry: ScoredManifest,
   contextUsageBand: ProtocolDiscoveryRequest["contextUsageBand"],
+  preparationBypassesBarrier: boolean,
 ): ProtocolDiscoveryItem {
   const item: ProtocolDiscoveryItem = {
     toolId: entry.manifest.toolId,
@@ -44,9 +45,15 @@ function toDiscoveryItem(
   };
   // Only emit the advisory flag when it would be true — keeps payloads
   // minimal and gives the model a clear "absent = available" rule.
+  // While a live preparation bypasses the barrier the dispatcher WILL allow
+  // these calls, so tagging them unavailable would be a lie that steers the
+  // model away from tools it can actually use. `critical` still tags — the
+  // bypass never extends there.
+  const bypassed = preparationBypassesBarrier && contextUsageBand === "barrier";
   if (
     entry.manifest.mutating &&
-    (contextUsageBand === "barrier" || contextUsageBand === "critical")
+    (contextUsageBand === "barrier" || contextUsageBand === "critical") &&
+    !bypassed
   ) {
     item.unavailable_at_pressure = true;
   }
@@ -118,7 +125,11 @@ export async function discoverProtocolCapabilities(
     retrievalMeta = outcome.meta;
   }
 
-  const tools = scoredTools.slice(0, limit).map((entry) => toDiscoveryItem(entry, request.contextUsageBand));
+  const tools = scoredTools.slice(0, limit).map((entry) => toDiscoveryItem(
+    entry,
+    request.contextUsageBand,
+    request.preparationBypassesBarrier === true,
+  ));
   const warnings: string[] = [];
   if (tools.length === 0) {
     warnings.push("No protocol capabilities matched the query/filter.");

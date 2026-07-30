@@ -31,6 +31,20 @@ const mockRunTurnLoop = vi.fn();
 const mockAddMessage = vi.fn();
 const mockAddEngineMessage = vi.fn();
 
+// The paused_error park now runs the DURABLE OPERATOR-STOP CONSUMER inside its
+// own transaction (see `mission-auto-retry.ts`): it takes the session control
+// lock and gates on a queued `stop_terminal` request before writing. Both
+// collaborators are stubbed to "no stop queued" here so these tests keep
+// asserting the park itself.
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/operator-stop-boundary.js",
+  () => ({ gateOnOperatorStopWithClient: async () => ({ kind: "clear" }) }),
+);
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js",
+  () => ({ acquireSessionControlLock: async () => undefined }),
+);
+
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getRun: (...a: unknown[]) => mockGetRun(...a),
   updateStatus: (...a: unknown[]) => mockUpdateRunStatus(...a),

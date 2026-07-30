@@ -8,7 +8,10 @@
  */
 
 import { EV } from "../../shared/ipc/channels.js";
+import { compactionPreparationEventSchema } from "../../shared/schemas/compaction-preparation.js";
+import { engineErrorEventSchema } from "../../shared/schemas/engine-error.js";
 import { transcriptAppendEventSchema } from "../../shared/schemas/messages.js";
+import { missionUpdateEventSchema } from "../../shared/schemas/mission-update.js";
 import { controlStateEventSchema } from "../../shared/schemas/runtime.js";
 import { streamDeltaEventSchema } from "../../shared/schemas/stream.js";
 import type { EngineEventsBridge } from "../../shared/types/bridge/agent/engine.js";
@@ -21,4 +24,13 @@ export const engine = {
     subscribe(EV.engine.streamDelta, streamDeltaEventSchema, cb),
   onControlState: (cb) =>
     subscribe(EV.engine.controlState, controlStateEventSchema, cb),
+  onEngineError: (cb) => subscribe(EV.engine.error, engineErrorEventSchema, cb),
+  onMissionUpdate: (cb) =>
+    subscribe(EV.engine.missionUpdate, missionUpdateEventSchema, cb),
+  onCompactionPreparation: (cb) =>
+    subscribe(
+      EV.engine.compactionPreparation,
+      compactionPreparationEventSchema,
+      cb,
+    ),
 } satisfies EngineEventsBridge;

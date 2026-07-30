@@ -16,6 +16,8 @@
  */
 
 import type { IslandSizePreset } from "../../../components/ui/dynamic-island.js";
+import { classifyEngineFailure } from "@shared/engine-error-classification.js";
+import { engineErrorCopy } from "@shared/engine-error-copy.js";
 import type { StreamPreview } from "../../../stores/streamStore.js";
 import { reasonedStampLabel } from "../reasoning-stamp.js";
 
@@ -34,14 +36,13 @@ export interface TurnIslandView {
   /** The visible (and announced) status line. */
   readonly label: string;
   readonly tone: "neutral" | "accent" | "pin" | "error";
+  /** Classified error explanation (error state only) — fixed copy, never the trace. */
+  readonly errorBody?: string;
   /** Whether any in-island motion may run at all (the freeze kills it). */
   readonly animated: boolean;
   /** Whether the elapsed m:ss counter is mounted. */
   readonly showElapsed: boolean;
 }
-
-/** Safe generic only — raw provider error text never reaches the island. */
-export const STREAM_ERROR_LABEL = "Stream error";
 
 export function resolveTurnIslandView(
   preview: StreamPreview,
@@ -50,10 +51,20 @@ export function resolveTurnIslandView(
   const hasReasoning = preview.reasoningText.length > 0;
 
   if (preview.phase === "error") {
+    // Bounded label -> category -> fixed copy. The classifier is total, so a
+    // missing or unrecognized `errorType` lands on the honest `unknown`
+    // wording rather than a generic "Stream error" that named nothing. Raw
+    // provider text still never reaches the island — only the fixed copy of
+    // the ONE shared classifier this strip, the error banner and the chat IPC
+    // mapper all consult, so the three surfaces cannot disagree.
+    const copy = engineErrorCopy(
+      classifyEngineFailure({ errorType: preview.errorType }),
+    );
     return {
       state: "error",
       size: "row",
-      label: STREAM_ERROR_LABEL,
+      label: copy.title,
+      errorBody: copy.body,
       tone: "error",
       animated: false,
       showElapsed: false,

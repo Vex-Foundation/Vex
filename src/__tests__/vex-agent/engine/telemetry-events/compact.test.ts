@@ -69,9 +69,9 @@ vi.mock("@vex-agent/embeddings/config.js", () => ({
   MAX_EMBEDDING_DIM: 8192,
 }));
 
-const mockExecuteCompactNow = vi.fn();
-vi.mock("@vex-agent/engine/compact-jobs/service.js", () => ({
-  executeCompactNow: (...a: unknown[]) => mockExecuteCompactNow(...a),
+const mockRequestApply = vi.fn();
+vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
+  requestApply: (...a: unknown[]) => mockRequestApply(...a),
 }));
 
 const { default: logger } = await import("@utils/logger.js");
@@ -81,8 +81,8 @@ const { handleSessionMemorySearch } = await import(
 const { handleSessionMemoryResolveItem } = await import(
   "../../../../vex-agent/tools/internal/session-memory/resolve-item.js"
 );
-const { handleCompactNow } = await import(
-  "../../../../vex-agent/tools/internal/compact/now.js"
+const { handleCompactApply } = await import(
+  "../../../../vex-agent/tools/internal/compact/apply.js"
 );
 
 function makeContext(overrides: Record<string, unknown> = {}): never {
@@ -167,58 +167,55 @@ const BANNED_EVENT_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   },
 ];
 
-describe("compact.now.called + compact.now.noop rename", () => {
+describe("compact_apply telemetry (compact.now.* retired with the tool)", () => {
   let infoSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     infoSpy = vi.spyOn(logger, "info").mockImplementation(() => logger);
-    mockExecuteCompactNow.mockReset();
+    mockRequestApply.mockReset();
   });
 
   afterEach(() => {
     infoSpy.mockRestore();
   });
 
-  it("fires compact.now.called at handler entry with lengths + band", async () => {
-    mockExecuteCompactNow.mockResolvedValue({
-      kind: "committed",
-      generation: 1,
-      archivedMessages: 10,
-      jobId: 5,
-      planMode: "agent_tool",
-      redactionCounts: { hard: 0, mask: 0 },
-    });
-    await handleCompactNow(
-      {
-        conversation_summary: "summary text here that fits constraints",
-        preserve_md: "preserve",
-        thread_themes_hints: ["theme_one", "theme_two"],
-      },
-      makeContext({ contextUsageBand: "barrier" }),
-    );
+  it("fires compact.apply.tool_called with the band and the outcome", async () => {
+    mockRequestApply.mockResolvedValue({ kind: "queued", preparationId: 7 });
+
+    await handleCompactApply({}, makeContext({ contextUsageBand: "barrier" }));
+
     expect(infoSpy).toHaveBeenCalledWith(
-      "compact.now.called",
+      "compact.apply.tool_called",
       expect.objectContaining({
         sessionId: "session-test",
-        summaryLen: "summary text here that fits constraints".length,
-        preserveLen: "preserve".length,
-        themeCount: 2,
         band: "barrier",
+        outcome: "queued",
       }),
     );
   });
 
-  it("fires renamed compact.now.noop on noop result (not old compact_now.noop)", async () => {
-    mockExecuteCompactNow.mockResolvedValue({ kind: "noop", reason: "empty_prefix" });
-    await handleCompactNow(
-      { conversation_summary: "summary" },
-      makeContext(),
-    );
+  it("records an honest refusal under the SAME event name, never a silent success", async () => {
+    mockRequestApply.mockResolvedValue({ kind: "no_preparation" });
+
+    const result = await handleCompactApply({}, makeContext());
+
+    expect(result.success).toBe(false);
     expect(infoSpy).toHaveBeenCalledWith(
-      "compact.now.noop",
-      expect.objectContaining({ sessionId: "session-test", reason: "empty_prefix" }),
+      "compact.apply.tool_called",
+      expect.objectContaining({ outcome: "no_preparation" }),
     );
-    const oldNameCalls = infoSpy.mock.calls.filter((c) => c[0] === "compact_now.noop");
-    expect(oldNameCalls).toHaveLength(0);
+  });
+
+  it("emits nothing under the retired compact.now.* / compact_now.* namespaces", async () => {
+    // The tool that owned those events is gone. This asserts the removal did
+    // not leave a stray emitter behind AND that nothing re-introduced the
+    // pre-rename underscore form the lint above bans.
+    mockRequestApply.mockResolvedValue({ kind: "queued", preparationId: 1 });
+    await handleCompactApply({}, makeContext());
+
+    const retired = infoSpy.mock.calls.filter((c) =>
+      String(c[0]).startsWith("compact.now.") || String(c[0]).startsWith("compact_now."),
+    );
+    expect(retired).toHaveLength(0);
   });
 });

@@ -79,12 +79,23 @@ export const approvalDecisionSchema = z.enum([
 ]);
 export type ApprovalDecision = z.infer<typeof approvalDecisionSchema>;
 
-/** Mirrors `approval_intents.execution_status` CHECK from migration 024. */
+/**
+ * Mirrors `approval_intents.execution_status` CHECK from migration 024, widened
+ * by migration 056.
+ *
+ * `indeterminate` is the honest terminal state for an approved dispatch whose
+ * outcome could not be proven — the runtime stopped between taking the dispatch
+ * slot and recording the result. It MUST be listed here: this schema is
+ * `.strict()`-adjacent and validated on both sides of the IPC boundary, so an
+ * unlisted value would make the approval unreadable by the renderer rather than
+ * merely unfamiliar.
+ */
 export const approvalExecutionStatusSchema = z.enum([
   "not_started",
   "dispatching",
   "succeeded",
   "failed",
+  "indeterminate",
 ]);
 export type ApprovalExecutionStatus = z.infer<
   typeof approvalExecutionStatusSchema
@@ -210,9 +221,26 @@ export type ApprovalGetHistoryInput = z.infer<
   typeof approvalGetHistoryInputSchema
 >;
 
+/** Upper bound on the user-authored reject reason (engine mirrors this). */
+export const APPROVAL_REJECT_REASON_MAX = 500;
+
+/**
+ * Input for `approvals.approve` / `approvals.reject`.
+ *
+ * `reason` is optional and only consumed by reject — the engine's
+ * `prepareReject` already accepted one, but nothing ever passed it, so every
+ * rejection reached the model as "No reason provided".
+ *
+ * It is UNTRUSTED user text that ends up as model-visible transcript content,
+ * so it is trimmed and hard-bounded here (validated at the preload gate AND
+ * again in main, because `.strict()` schemas guard both) and additionally
+ * stripped of control characters engine-side before it is rendered — a reason
+ * must never be able to forge lines that look like engine control banners.
+ */
 export const approvalActionInputSchema = z
   .object({
     id: z.string().min(1),
+    reason: z.string().trim().max(APPROVAL_REJECT_REASON_MAX).optional(),
   })
   .strict();
 export type ApprovalActionInput = z.infer<typeof approvalActionInputSchema>;
@@ -223,11 +251,20 @@ export type ApprovalActionInput = z.infer<typeof approvalActionInputSchema>;
  * Puzzle 5 phase 3 fills the body. Field semantics:
  *   - `status`            — final `approval_queue.status` after the IPC call.
  *   - `resolvedAt`        — when the queue row was resolved (ISO-8601).
- *   - `runtimeOutcome`    — `'resumed'` when a background mission-run
- *                           continuation was scheduled, `'stopped'` for
- *                           chat sessions / dispatched tool with no run,
- *                           `'unavailable'` reserved for the old phase-1
- *                           fail-closed path.
+ *   - `runtimeOutcome`    — what actually happened to the agent, never a guess:
+ *                           `'resumed'`       a continuation was claimed and
+ *                                             the agent is being re-invoked
+ *                                             (mission run OR chat session);
+ *                           `'deferred_busy'` another runner holds the session
+ *                                             lease, so the wake is queued and
+ *                                             will be delivered by a retry, the
+ *                                             end-of-turn hook, or the
+ *                                             reconciler;
+ *                           `'stopped'`       nothing further will run (an
+ *                                             idempotent replay of an already
+ *                                             resolved decision);
+ *                           `'unavailable'`   reserved for the old phase-1
+ *                                             fail-closed path.
  *   - `executionStatus`   — tool dispatch outcome (`'succeeded'`/`'failed'`
  *                           for approve; null for reject). Independent of
  *                           `runtimeOutcome`: a mission run can resume even
@@ -244,7 +281,12 @@ export const approvalActionResultSchema = z
     id: z.string().min(1),
     status: approvalStatusSchema,
     resolvedAt: z.string().datetime({ offset: true }).nullable(),
-    runtimeOutcome: z.enum(["resumed", "stopped", "unavailable"]),
+    runtimeOutcome: z.enum([
+      "resumed",
+      "deferred_busy",
+      "stopped",
+      "unavailable",
+    ]),
     executionStatus: approvalExecutionStatusSchema.nullable(),
     missionRunId: z.string().nullable(),
     cached: z.boolean(),

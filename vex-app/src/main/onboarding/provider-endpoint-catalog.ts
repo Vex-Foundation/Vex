@@ -22,6 +22,13 @@
  * per-million numbers (a malformed value becomes `null`, never NaN) and
  * labelled as base rates in the UI.
  *
+ * AVAILABILITY: the SDK also publishes `uptimeLast5m/30m/1d` and a `status`
+ * derank enum. Those are carried through to the renderer and DECIDE THE ORDER
+ * of this list (price is now only a tiebreak) — see
+ * `provider-endpoint-availability.ts` for the rule and the live 429 evidence
+ * behind it. `latencyLast30m`/`throughputLast30m` are NOT carried: the SDK
+ * documents them as authenticated-only and this client is keyless by design.
+ *
  * CACHING: a small per-model snapshot cache with the same failure-cooldown
  * discipline as `provider-model-catalog.ts`. Bounded by
  * `ENDPOINT_CACHE_MAX_MODELS` so a renderer that walks the whole catalogue
@@ -36,6 +43,11 @@ import {
   type ProviderListEndpointsResult,
 } from "@shared/schemas/provider-endpoints.js";
 import { createPublicOpenRouterClient } from "./openrouter-public-catalog-client.js";
+import {
+  compareEndpointsByAvailability,
+  computeAvailabilityScore,
+  suggestedEndpointTagOf,
+} from "./provider-endpoint-availability.js";
 
 const ENDPOINT_TTL_MS = 3_600_000;
 const ENDPOINT_TIMEOUT_MS = 15_000;
@@ -69,12 +81,17 @@ interface RawEndpointRow {
   readonly contextLength?: unknown;
   readonly quantization?: unknown;
   readonly supportedParameters?: unknown;
+  readonly uptimeLast5m?: unknown;
+  readonly uptimeLast30m?: unknown;
+  readonly uptimeLast1d?: unknown;
+  readonly status?: unknown;
   readonly pricing?:
     | {
         readonly prompt?: unknown;
         readonly completion?: unknown;
         readonly inputCacheRead?: unknown;
         readonly inputCacheWrite?: unknown;
+        readonly internalReasoning?: unknown;
       }
     | undefined;
 }
@@ -85,6 +102,29 @@ function parsePricePerMillion(raw: unknown): number | null {
   if (!Number.isFinite(perToken) || perToken < 0) return null;
   const perMillion = perToken * 1_000_000;
   return Number.isFinite(perMillion) ? perMillion : null;
+}
+
+/**
+ * An uptime window, or `null` when absent/out of range. OpenRouter documents
+ * these as percentages and sends `null` for "insufficient data"; anything
+ * outside 0–100 is a provider response we do not understand, so it becomes
+ * UNKNOWN rather than being clamped into a number the UI would present as fact.
+ */
+function parseUptimePercent(raw: unknown): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  if (raw < 0 || raw > 100) return null;
+  return raw;
+}
+
+/**
+ * The raw `status` enum. Kept as the integer OpenRouter sent so a future enum
+ * member survives; bounded because it is untrusted input, and non-integers are
+ * rejected rather than rounded.
+ */
+function parseEndpointStatus(raw: unknown): number | null {
+  if (typeof raw !== "number" || !Number.isInteger(raw)) return null;
+  if (raw < -100 || raw > 100) return null;
+  return raw;
 }
 
 function boundedString(raw: unknown, maxLength: number): string | null {
@@ -117,6 +157,13 @@ export function normalizeEndpoint(row: RawEndpointRow): ProviderEndpointOption |
       ? row.contextLength
       : null;
 
+  const uptimeWindows = {
+    uptimeLast5mPercent: parseUptimePercent(row.uptimeLast5m),
+    uptimeLast30mPercent: parseUptimePercent(row.uptimeLast30m),
+    uptimeLast1dPercent: parseUptimePercent(row.uptimeLast1d),
+  };
+  const statusCode = parseEndpointStatus(row.status);
+
   return {
     tag,
     providerName,
@@ -126,27 +173,15 @@ export function normalizeEndpoint(row: RawEndpointRow): ProviderEndpointOption |
     pricingOutputPerMillion: parsePricePerMillion(row.pricing?.completion),
     pricingCacheReadPerMillion: parsePricePerMillion(row.pricing?.inputCacheRead),
     pricingCacheWritePerMillion: parsePricePerMillion(row.pricing?.inputCacheWrite),
+    pricingReasoningPerMillion: parsePricePerMillion(row.pricing?.internalReasoning),
+    ...uptimeWindows,
+    statusCode,
+    // Absent status is NOT deranked: OpenRouter omits the field rather than
+    // sending a negative one, and inventing a derank from silence would demote
+    // a healthy endpoint.
+    isDeranked: statusCode !== null && statusCode < 0,
+    availabilityScore: computeAvailabilityScore(uptimeWindows),
   };
-}
-
-/**
- * Cheapest first on the BASE prompt price, then completion, then tag.
- * Endpoints with unknown pricing sort last — an unpriced row must not look
- * like a free one.
- */
-function compareEndpoints(
-  a: ProviderEndpointOption,
-  b: ProviderEndpointOption,
-): number {
-  const priceOrder =
-    (a.pricingInputPerMillion ?? Number.POSITIVE_INFINITY) -
-    (b.pricingInputPerMillion ?? Number.POSITIVE_INFINITY);
-  if (priceOrder !== 0) return priceOrder;
-  const outputOrder =
-    (a.pricingOutputPerMillion ?? Number.POSITIVE_INFINITY) -
-    (b.pricingOutputPerMillion ?? Number.POSITIVE_INFINITY);
-  if (outputOrder !== 0) return outputOrder;
-  return a.tag.localeCompare(b.tag, undefined, { sensitivity: "base" });
 }
 
 function rememberSnapshot(modelId: string, entry: CacheEntry): void {
@@ -192,11 +227,16 @@ async function fetchEndpoints(
     }
   }
 
+  // Rank BEFORE truncating, so the cap drops the least available endpoints
+  // rather than an arbitrary tail of the provider's own ordering.
+  const ranked = [...byTag.values()]
+    .sort(compareEndpointsByAvailability)
+    .slice(0, PROVIDER_ENDPOINT_LIST_MAX);
+
   return {
     modelId,
-    endpoints: [...byTag.values()]
-      .sort(compareEndpoints)
-      .slice(0, PROVIDER_ENDPOINT_LIST_MAX),
+    endpoints: ranked,
+    suggestedEndpointTag: suggestedEndpointTagOf(ranked),
   };
 }
 

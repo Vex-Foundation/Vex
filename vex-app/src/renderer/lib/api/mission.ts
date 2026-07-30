@@ -50,10 +50,13 @@ import type {
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
+  MissionRestartWithInstructionInput,
+  MissionRestartWithInstructionResult,
   MissionStopInput,
   MissionStopResult,
 } from "@shared/schemas/mission.js";
 import {
+  approvalsKeys,
   missionKeys,
   runtimeKeys,
 } from "./queryKeys.js";
@@ -121,11 +124,17 @@ export function useRenewableMissionSource(
 }
 
 /**
- * 30s fallback invalidation cadence for the mission draft/diff queries —
- * mirrors `TRANSCRIPT_LIVE_FALLBACK_POLL_MS`/`USAGE_LIVE_FALLBACK_POLL_MS`.
- * Exported for tests.
+ * Fallback invalidation cadence for the mission draft/diff queries.
+ *
+ * Slowed 30s → 60s because `useMissionUpdateLiveSync` now pushes the same
+ * invalidation the moment the mission row commits. This is no longer the path
+ * that makes the review bar appear — it is the safety net for an event that
+ * never arrived (dropped at the preload Zod gate, fired before the hook
+ * subscribed, lost across a window lifecycle edge). It is deliberately NOT
+ * deleted: without it a dropped event strands the review bar invisible with no
+ * way back. Exported for tests.
  */
-export const MISSION_LIVE_FALLBACK_POLL_MS = 30_000;
+export const MISSION_LIVE_FALLBACK_POLL_MS = 60_000;
 
 /**
  * Keep a mission session's draft + diff queries fresh so the review-&-accept
@@ -161,6 +170,57 @@ export function useMissionLiveSync(sessionId: string | null): void {
       off();
       window.clearInterval(intervalId);
     };
+  }, [sessionId, queryClient]);
+}
+
+/**
+ * Subscribe a session to `EV.engine.missionUpdate` — the push that replaces
+ * poll latency on the two affordances the user notices most: "Start mission"
+ * appearing after acceptance, and a new approval card appearing after the
+ * agent asks for one.
+ *
+ * WHERE THIS MOUNTS, AND WHY NOT IN `MissionControls`. `useMissionLiveSync`
+ * lives inside mission-gated `MissionControls`, so an agent (non-mission)
+ * session never mounts it — and an agent session is exactly where a chat
+ * approval gets enqueued. This hook therefore mounts in `SessionPanel`
+ * alongside `useControlStateLiveSync`, which is rendered for every active
+ * session regardless of kind.
+ *
+ * Invalidation is split by `kind` so a consumer that only cares about
+ * approvals does not refetch a draft on every model patch:
+ *   - `approval_enqueued` → the session's pending list ONLY. The app-wide
+ *     inbox is NOT invalidated here: this hook drops foreign-session events
+ *     (its keys are session-scoped), so it structurally cannot serve a
+ *     background session's approval. That job belongs to the session-agnostic
+ *     `useGlobalApprovalsLiveSync`, which owns `pendingAll`.
+ *   - everything else → the draft + the session's diff prefix, which is what
+ *     the contract card and the review bar read.
+ *
+ * The engine emits only AFTER the producing transaction commits, so a refetch
+ * triggered here can never race ahead of the row it is going to read.
+ */
+export function useMissionUpdateLiveSync(sessionId: string | null): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (sessionId === null || sessionId.length === 0) return;
+
+    const off = window.vex.engine.onMissionUpdate((event) => {
+      if (event.sessionId !== sessionId) return;
+      if (event.kind === "approval_enqueued") {
+        void queryClient.invalidateQueries({
+          queryKey: approvalsKeys.pending(sessionId),
+        });
+        return;
+      }
+      void queryClient.invalidateQueries({
+        queryKey: missionKeys.draft(sessionId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: missionKeys.diffsForSession(sessionId),
+      });
+    });
+
+    return off;
   }, [sessionId, queryClient]);
 }
 
@@ -361,6 +421,34 @@ export function useMissionStop(): UseMutationResult<
       // Stop flips the latest mission_run terminal → mission becomes
       // a renewable source candidate (or stops being one if the new
       // terminal is `cancelled` rather than `completed`). Invalidate.
+      qc.invalidateQueries({
+        queryKey: missionKeys.renewableSource(input.sessionId),
+      });
+    },
+  });
+}
+
+/**
+ * Post-stop restart with a redirection instruction.
+ *
+ * A NEW run against the SAME accepted contract, so the invalidation set is the
+ * one `useMissionStart` uses plus `renewableSource`: the previous terminal run
+ * stops being the renew candidate the moment a new run exists, and leaving it
+ * cached is what makes a "Renew mission" button linger next to a running
+ * mission.
+ */
+export function useMissionRestartWithInstruction(): UseMutationResult<
+  Result<MissionRestartWithInstructionResult>,
+  Error,
+  MissionRestartWithInstructionInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.restartWithInstruction(input),
+    retry: false,
+    onSuccess: (_result, input) => {
+      qc.invalidateQueries({ queryKey: runtimeKeys.state(input.sessionId) });
+      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
       qc.invalidateQueries({
         queryKey: missionKeys.renewableSource(input.sessionId),
       });

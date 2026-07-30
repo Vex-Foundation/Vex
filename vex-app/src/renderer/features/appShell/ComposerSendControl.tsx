@@ -46,7 +46,13 @@ export interface ComposerSendControlProps {
   readonly modelsResolved: boolean;
   readonly globalModelId: string | null;
   readonly onReasoningPick: (effort: ReasoningEffort) => void;
-  readonly submitPending: boolean;
+  /**
+   * Render the Stop key. Broader than `submitPending`: a background slice
+   * (wake-driven continuation) holds the session lease with no submit pending,
+   * and keying this control off `submitPending` alone left that run with no
+   * stop affordance anywhere in the UI.
+   */
+  readonly stopAvailable: boolean;
   readonly stopRequested: boolean;
   readonly onStop: () => void;
   readonly submitDisabled: boolean;
@@ -59,7 +65,7 @@ export function ComposerSendControl({
   modelsResolved,
   globalModelId,
   onReasoningPick,
-  submitPending,
+  stopAvailable,
   stopRequested,
   onStop,
   submitDisabled,
@@ -95,7 +101,7 @@ export function ComposerSendControl({
         <ReasoningEffortPlaceholder />
       ) : null}
       {/* THE SEND CONTROL — three hard-cut states in one round slot. */}
-      {submitPending ? (
+      {stopAvailable ? (
         stopRequested ? (
           <button
             type="button"

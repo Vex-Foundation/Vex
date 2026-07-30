@@ -1,23 +1,26 @@
 /**
  * Caller-level: `applyApproveSideEffects` derives explorer refs from the
  * approved dispatch's `result.data` (capture-shaped) and PASSES them to
- * `appendApprovedToolResult` — the derivation happens at the caller, not by
+ * `commitApprovedToolResult` — the derivation happens at the caller, not by
  * injecting refs into the sink. Approval-gated financial actions are the most
  * important case for a validated tx link, so this pins the wiring end to end.
  *
- * `missionRunId` is null so the continuation-claim branch is skipped; the test
- * asserts only the ref derivation + hand-off.
+ * `missionRunId` is null (chat session), which since the lifecycle work means a
+ * CHAT continuation is claimed rather than none at all — the whole point of the
+ * fix. The claim is stubbed as successful so this test stays about ref
+ * derivation; `prepare-approve.test.ts` owns the ordering contract.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockAppendApprovedToolResult = vi.fn();
-const mockMarkApprovedExecutionStatus = vi.fn();
+const mockCommitApprovedToolResult = vi.fn();
 vi.mock(
   "@vex-agent/engine/core/approval-runtime/post-tx/result-message.js",
   () => ({
-    appendApprovedToolResult: (...a: unknown[]) => mockAppendApprovedToolResult(...a),
-    markApprovedExecutionStatus: (...a: unknown[]) => mockMarkApprovedExecutionStatus(...a),
+    commitApprovedToolResult: (...a: unknown[]) =>
+      mockCommitApprovedToolResult(...a),
+    commitDispatchFailureToolResult: vi.fn(),
+    commitDecisionToolResult: vi.fn(),
   }),
 );
 
@@ -26,8 +29,10 @@ vi.mock("@vex-agent/tools/dispatcher.js", () => ({
   dispatchTool: (...a: unknown[]) => mockDispatchTool(...a),
 }));
 
+const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   markExecutionStatus: vi.fn(),
+  casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
 }));
 
 vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
@@ -35,8 +40,43 @@ vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
   buildSessionWalletResolution: vi.fn(),
 }));
 
+const mockClaimResumeContinuation = vi.fn();
 vi.mock("@vex-agent/engine/core/approval-runtime/continuation.js", () => ({
-  claimResumeContinuation: vi.fn(),
+  claimResumeContinuation: (...a: unknown[]) =>
+    mockClaimResumeContinuation(...a),
+  discardContinuation: vi.fn(),
+}));
+
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/deferred-resume.js",
+  () => ({ scheduleDeferredResumeRetries: vi.fn() }),
+);
+
+/**
+ * The approved-dispatch stop gate. A chat session (`missionRunId: null`) used to
+ * short-circuit to `clear` WITHOUT opening a transaction, on the reasoning that
+ * `stop_terminal` was run-scoped so there was nothing to observe. That is no
+ * longer true: a session-scoped stop is a real row now, so this gate opens a
+ * transaction for a chat session too — an approved money-path dispatch must not
+ * proceed after the operator stopped the session. Mocked `clear` here so this
+ * file stays about ref derivation.
+ */
+const mockGateOnOperatorStopTransaction = vi.fn().mockResolvedValue({
+  kind: "clear",
+});
+vi.mock("@vex-agent/db/client.js", () => ({
+  // The pre-dispatch transaction (stop gate + slot CAS) is the only DB work
+  // this file's subject opens directly; both of its statements are mocked
+  // above, so the client is an inert stand-in.
+  withTransaction: async <T>(fn: (client: unknown) => Promise<T>): Promise<T> =>
+    fn({ query: vi.fn() }),
+}));
+
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  acquireSessionControlLock: vi.fn(),
+  gateOnOperatorStopTransaction: (...a: unknown[]) =>
+    mockGateOnOperatorStopTransaction(...a),
 }));
 
 vi.mock("@utils/logger.js", () => ({
@@ -65,10 +105,21 @@ function approvedSnapshot() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockCasMarkDispatching.mockResolvedValue(true);
+  mockClaimResumeContinuation.mockResolvedValue({
+    outcome: "claimed",
+    continuation: {
+      kind: "chat_session",
+      sessionId: "s1",
+      approvalId: "appr-1",
+      ownerId: "approve-appr-1",
+      leaseHandle: { release: vi.fn() },
+    },
+  });
 });
 
 describe("applyApproveSideEffects — explorer ref derivation", () => {
-  it("derives refs from the coherent capture and passes them to the append", async () => {
+  it("derives refs from the coherent capture and passes them to the commit", async () => {
     mockDispatchTool.mockResolvedValue({
       success: true,
       output: "{}",
@@ -81,11 +132,17 @@ describe("applyApproveSideEffects — explorer ref derivation", () => {
     const outcome = await applyApproveSideEffects("appr-1", approvedSnapshot());
 
     expect(outcome.kind).toBe("dispatched");
-    // 4th arg is the derived refs — coherent chain+txRef from the capture.
-    const call = mockAppendApprovedToolResult.mock.calls[0]!;
-    expect(call[0]).toBe("s1");
-    expect(call[1]).toBe("tc-1");
-    expect(call[3]).toEqual([{ chain: "hyperliquid", txRef: "0xdead" }]);
+    const call = mockCommitApprovedToolResult.mock.calls[0]![0] as {
+      sessionId: string;
+      toolCallId: string;
+      explorerRefs: unknown;
+    };
+    expect(call.sessionId).toBe("s1");
+    expect(call.toolCallId).toBe("tc-1");
+    // Coherent chain+txRef from the capture.
+    expect(call.explorerRefs).toEqual([
+      { chain: "hyperliquid", txRef: "0xdead" },
+    ]);
   });
 
   it("passes empty refs when the dispatch result carries no capture", async () => {
@@ -93,6 +150,20 @@ describe("applyApproveSideEffects — explorer ref derivation", () => {
 
     await applyApproveSideEffects("appr-1", approvedSnapshot());
 
-    expect(mockAppendApprovedToolResult.mock.calls[0]![3]).toEqual([]);
+    const call = mockCommitApprovedToolResult.mock.calls[0]![0] as {
+      explorerRefs: unknown;
+    };
+    expect(call.explorerRefs).toEqual([]);
+  });
+
+  it("a chat session now carries a continuation (the resume fix)", async () => {
+    mockDispatchTool.mockResolvedValue({ success: true, output: "{}", data: {} });
+
+    const outcome = await applyApproveSideEffects("appr-1", approvedSnapshot());
+
+    if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
+    expect(outcome.missionRunId).toBeNull();
+    expect(outcome.continuation).not.toBeNull();
+    expect(outcome.continuation?.kind).toBe("chat_session");
   });
 });

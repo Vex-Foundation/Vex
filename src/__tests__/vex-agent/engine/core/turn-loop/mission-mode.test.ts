@@ -14,6 +14,18 @@ const mockIncrementIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
 
+// The turn loop registers a compaction-apply boundary action. Stubbed inert
+// here: none of these tests exercise compaction, and the real module pulls the
+// archive/messages graph these harnesses deliberately mock. The action's own
+// behaviour lives in `turn-loop/compaction-apply-consumer.test.ts`.
+vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
+  createCompactionApplyAction: () => ({
+    name: "compaction_apply",
+    phase: "apply" as const,
+    run: async () => ({ kind: "continue" as const }),
+  }),
+}));
+
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
   addEngineMessage: (...a: unknown[]) => mockAddEngineMessage(...a),
@@ -42,6 +54,9 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   // a streaming provider used in these tests doesn't crash on `emit`.
   streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
   toStreamDeltaEvent: vi.fn(),
+  // Terminal signal for an aborted turn — these very tests drive the abort
+  // path, so `executeTurn` reaches this emit.
+  toStreamAbortedEvent: vi.fn(),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -411,6 +426,72 @@ describe("turn-loop", () => {
         expect.stringContaining("operator_interrupt"),
         expect.objectContaining({ messageType: "operator_interrupt" }),
       );
+    });
+
+    // C1: a mission run threads its abort signal into BOTH positions, so an
+    // operator Stop cancels the in-flight provider call instead of waiting for
+    // the next iteration boundary. Before the fix the mission callers passed
+    // the signal only as `abortSignal` and the stream ran to completion.
+    it("Stop during a mission turn aborts the in-flight stream and persists the partial text", async () => {
+      const controller = new AbortController();
+      const provider = makeStreamingProvider(async function* (): AsyncGenerator<StreamChunk> {
+        yield { type: "content", text: "par" };
+        yield { type: "content", text: "tial" };
+        controller.abort();
+        yield { type: "content", text: "DROPPED" };
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 5 },
+        {},
+        controller.signal, // abortSignal
+        controller.signal, // inferenceAbortSignal — the fix
+      );
+
+      expect(result.stopReason).toBe("user_stopped");
+      const stopped = mockAddMessage.mock.calls.find(
+        (c) => (c[2] as { messageType?: string } | undefined)?.messageType === "chat_stopped",
+      );
+      expect(stopped).toBeDefined();
+      expect((stopped![1] as { content: string }).content).toBe("partial");
+      // The aborted stream must NOT fall back to a fresh buffered call.
+      expect(provider.chatCompletion).not.toHaveBeenCalled();
+
+      // Same rule as the chat path: a persisted `chat_stopped` row owns the
+      // preview handoff through its `transcriptAppend`, so no terminal stream
+      // delta is emitted here. An operator Stop on a mission behaves exactly
+      // like one on a chat turn in this respect.
+      const { toStreamAbortedEvent } = await import(
+        "@vex-agent/engine/events/index.js"
+      );
+      expect(toStreamAbortedEvent).not.toHaveBeenCalled();
+    });
+
+    it("mission run does NOT stop mid-stream without the inference signal (pre-fix shape)", async () => {
+      // Characterization of the exact defect: with the signal wired only into
+      // the boundary position the stream runs to completion. Kept so a future
+      // refactor that silently drops position 11 fails loudly above.
+      const controller = new AbortController();
+      const chunks: string[] = [];
+      const provider = makeStreamingProvider(async function* (): AsyncGenerator<StreamChunk> {
+        yield { type: "content", text: "par" };
+        controller.abort();
+        chunks.push("still-generating");
+        yield { type: "content", text: "tial" };
+      });
+
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 5 },
+        {},
+        controller.signal, // abortSignal only
+      );
+
+      expect(chunks).toEqual(["still-generating"]);
+      expect(result.stopReason).toBe("user_stopped");
     });
   });
 });

@@ -30,7 +30,7 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
     actionKind: "read",
     visibility: { requiresSessionMemory: true },
     description: [
-      "Semantic recall over THIS SESSION's narrative memory chunks. Each chunk is a 4-section markdown body (what happened / what I did / what I tried / outstanding items) produced when the conversation was compacted by `compact_now`.",
+      "Semantic recall over THIS SESSION's narrative memory chunks. Each chunk is a 4-section markdown body (what happened / what I did / what I tried / outstanding items) produced automatically when the conversation was compacted.",
       "Per-session only — does NOT reach earlier sessions. For durable cross-session lessons use `long_memory_search`.",
       "Use when you forgot what you tried earlier in this mission, want to avoid repeating a failed approach, or need to check past tool outcomes that no longer fit in the live transcript.",
       "Write SEMANTIC INTENT in English, not keywords (translate the user's intent first — embedding retrieval is significantly stronger on English).",

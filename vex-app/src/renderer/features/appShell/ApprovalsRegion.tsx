@@ -3,11 +3,11 @@
  *
  * Mounted in `SessionPanel` between the transcript and the composer for an
  * active session. `useControlStateLiveSync` (F5) now pushes a pending-approval
- * refresh on `EV.engine.controlState`, so a newly-paused run surfaces
- * near-instantly. The REFETCH_INTERVAL_MS poll is retained as a fast fallback:
- * the control-state emit is post-commit (on lease release), not part of the
- * approval transaction, and an event can be dropped at the preload Zod gate or
- * fire before the renderer subscribes.
+ * refresh on `EV.engine.controlState`, and `useMissionUpdateLiveSync` pushes
+ * `approval_enqueued` straight from the enqueue transaction, so a newly-paused
+ * run surfaces near-instantly. The REFETCH_INTERVAL_MS poll is retained as a
+ * SLOW fallback (5s → 60s once the push landed): an event can be dropped at
+ * the preload Zod gate or fire before the renderer subscribes.
  *
  * Codex F3 constraints honoured:
  *  1. `Result.ok === false` is surfaced as an inline error — TanStack `isError`
@@ -27,7 +27,13 @@ import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { ApprovalCard } from "./ApprovalCard.js";
 
-const REFETCH_INTERVAL_MS = 5_000;
+/**
+ * Fallback poll only. `useMissionUpdateLiveSync` pushes `approval_enqueued`
+ * the moment the enqueue transaction commits, so a new card no longer waits
+ * on this tick — it covers a dropped event, nothing else. Never delete it:
+ * without it a dropped event hides an approval the run is blocked on.
+ */
+const REFETCH_INTERVAL_MS = 60_000;
 
 export interface ApprovalsRegionProps {
   readonly sessionId: string;

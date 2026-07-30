@@ -79,7 +79,21 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   appendMessage: (...a: unknown[]) => mockAppendMessage(...a),
   appendEngineMessage: vi.fn(),
   emitTranscriptAppend: vi.fn(),
+  TRANSCRIPT_APPEND_EVENT_TYPE: "transcript.append",
 }));
+
+// In-process backoff retries (A5 attempt 2) — stubbed so the suite never arms
+// real timers. The retry ladder has its own coverage in deferred-resume tests.
+const mockScheduleDeferredResumeRetries = vi.fn();
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/deferred-resume.js",
+  () => ({
+    scheduleDeferredResumeRetries: (...a: unknown[]) =>
+      mockScheduleDeferredResumeRetries(...a),
+    dispatchPendingApprovalResumes: vi.fn(),
+    resumePendingApprovalsForSession: vi.fn(),
+  }),
+);
 
 vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
   hydrateEngineSession: vi.fn(),
@@ -88,7 +102,7 @@ vi.mock("@vex-agent/engine/core/hydrate.js", () => ({
 // mission-runs repo: getRunBySession (used inside snapshot tx with client)
 // reaches client.query via queryOneWith. updateStatus called outside tx for
 // paused_error transition — mocked directly.
-const mockMissionRunsUpdateStatus = vi.fn().mockResolvedValue(undefined);
+const mockMissionRunsUpdateStatus = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/mission-runs.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/db/repos/mission-runs.js")>(
     "@vex-agent/db/repos/mission-runs.js",
@@ -96,14 +110,24 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", async () => {
   return {
     ...actual,
     updateStatus: (...a: unknown[]) => mockMissionRunsUpdateStatus(...a),
+    // ATROPOS-2 made the paused_error flip terminal-safe; `flipRunToPausedError`
+    // now goes through the CAS variant. Same spy, same assertions.
+    updateStatusIfNotTerminal: (...a: unknown[]) =>
+      mockMissionRunsUpdateStatus(...a),
   };
 });
 
 // Lease + status helpers (lazy-imported inside continuation.ts)
 const mockClaimRunLeaseAndFlipToRunning = vi.fn();
+const mockClaimSessionLease = vi.fn();
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  gateOnOperatorStopWithClient: async () => ({ kind: "clear" }),
+  acquireSessionControlLock: vi.fn(),
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) =>
     mockClaimRunLeaseAndFlipToRunning(...a),
+  // CHAT arm — a chat-session decision now claims a plain session lease so the
+  // agent is actually resumed instead of being left asleep.
+  claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
 }));
 
 const mockCreateLeaseHandle = vi.fn();
@@ -137,6 +161,14 @@ vi.mock("@utils/logger.js", () => ({
 // the non-tx audit calls. getExpired is mocked per-test for sweep cases.
 const mockMarkExecutionStatus = vi.fn().mockResolvedValue(undefined);
 const mockGetExpired = vi.fn().mockResolvedValue([]);
+// Lifecycle CAS helpers (migration 056).
+const mockCasMarkDispatching = vi.fn().mockResolvedValue(true);
+const mockCasMarkResumeConsumed = vi.fn().mockResolvedValue(true);
+const mockMarkResumeAttempted = vi.fn().mockResolvedValue(undefined);
+// `true` = this writer still owned the `dispatching` slot when the result
+// landed. The repo write is CAS-fenced on that status.
+const mockCommitExecutionResultWith = vi.fn().mockResolvedValue(true);
+const mockAttachResultMessageWith = vi.fn().mockResolvedValue(undefined);
 vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/db/repos/approval-intents.js")>(
     "@vex-agent/db/repos/approval-intents.js",
@@ -145,6 +177,13 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
     ...actual,
     markExecutionStatus: (...a: unknown[]) => mockMarkExecutionStatus(...a),
     getExpired: (...a: unknown[]) => mockGetExpired(...a),
+    casMarkDispatchingWith: (...a: unknown[]) => mockCasMarkDispatching(...a),
+    casMarkResumeConsumed: (...a: unknown[]) => mockCasMarkResumeConsumed(...a),
+    markResumeAttempted: (...a: unknown[]) => mockMarkResumeAttempted(...a),
+    commitExecutionResultWith: (...a: unknown[]) =>
+      mockCommitExecutionResultWith(...a),
+    attachResultMessageWith: (...a: unknown[]) =>
+      mockAttachResultMessageWith(...a),
   };
 });
 
@@ -286,9 +325,41 @@ beforeEach(() => {
   mockMarkExecutionStatus.mockReset();
   mockGetExpired.mockReset();
   mockClaimRunLeaseAndFlipToRunning.mockReset();
+  mockClaimSessionLease.mockReset();
   mockCreateLeaseHandle.mockReset();
   mockResumeMissionRun.mockReset();
   mockReleaseLeaseAndEmit.mockReset();
+  mockCasMarkDispatching.mockReset();
+  mockCasMarkResumeConsumed.mockReset();
+  mockMarkResumeAttempted.mockReset();
+  mockCommitExecutionResultWith.mockReset();
+  mockAttachResultMessageWith.mockReset();
+  mockScheduleDeferredResumeRetries.mockReset();
+
+  // Transcript writes return the inserted row — the atomic commit needs its id
+  // to stamp `result_message_id` in the SAME transaction.
+  mockAppendMessage.mockResolvedValue({
+    id: 4242,
+    role: "tool",
+    content: "",
+    timestamp: "2026-05-23T20:00:00.000Z",
+  });
+  mockCasMarkDispatching.mockResolvedValue(true);
+  mockCasMarkResumeConsumed.mockResolvedValue(true);
+  mockMarkResumeAttempted.mockResolvedValue(undefined);
+  // `true` = this writer still owned the `dispatching` slot (CAS-fenced write).
+  mockCommitExecutionResultWith.mockResolvedValue(true);
+  mockAttachResultMessageWith.mockResolvedValue(undefined);
+  mockReleaseLeaseAndEmit.mockResolvedValue(undefined);
+  mockClaimSessionLease.mockResolvedValue({
+    outcome: "claimed",
+    lease: {
+      sessionId: SESSION_ID,
+      missionRunId: null,
+      ownerId: "decide-x",
+      processKind: "electron_main",
+    },
+  });
 
   // Default lease claim path — happy: claim succeeds, handle returned.
   mockClaimRunLeaseAndFlipToRunning.mockResolvedValue({

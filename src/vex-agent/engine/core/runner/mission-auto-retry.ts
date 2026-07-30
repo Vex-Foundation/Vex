@@ -20,10 +20,13 @@
 
 import { withTransaction, queryOneWith } from "../../../db/client.js";
 import type { PoolClient } from "pg";
+import { TERMINAL_RUN_STATUSES, type MissionRunStatus } from "../../types.js";
 import * as missionRunsRepo from "../../../db/repos/mission-runs.js";
 import * as loopWakeRepo from "../../../db/repos/loop-wake.js";
 import { classifyMissionRunError } from "./mission-error-classifier.js";
 import { readMissionErrorSignal } from "./mission-error-signal.js";
+import { gateOnOperatorStopWithClient } from "../../runtime/lease-and-status/operator-stop-boundary.js";
+import { acquireSessionControlLock } from "../../runtime/lease-and-status/session-control-lock.js";
 import {
   AUTO_RETRY_WAKE_TRIGGER,
   MAX_AUTO_RETRIES,
@@ -45,6 +48,8 @@ interface LockedRunRow {
 
 export interface ErrorPausePersistInput {
   readonly runId: string;
+  /** Required for the durable-Stop consumer below — the boundary is session-keyed. */
+  readonly sessionId: string;
   readonly err: unknown;
   readonly summary: string;
   readonly evidenceBase: Record<string, unknown>;
@@ -53,6 +58,14 @@ export interface ErrorPausePersistInput {
 export interface ErrorPauseDecision {
   /** Non-null when an auto-retry wake should be enqueued after commit. */
   readonly scheduled: { readonly attempt: number; readonly dueAt: string } | null;
+  /**
+   * `false` when nothing was written, for either of two reasons: the run was
+   * ALREADY TERMINAL under the row lock (immutable audit history — most often
+   * an operator Stop that landed while the loop was unwinding), or a queued
+   * operator Stop was CONSUMED by the boundary gate and applied instead of the
+   * park. The caller must not then report the run as `paused_error`.
+   */
+  readonly persisted: boolean;
 }
 
 /**
@@ -67,6 +80,45 @@ export async function persistErrorPauseWithMaybeAutoRetry(
   const classified = classifyMissionRunError(input.err);
   const signal = readMissionErrorSignal(input.err);
   return withTransaction(async (client: PoolClient) => {
+    // ── DURABLE CONSUMER for a queued operator Stop ──────────────────────
+    //
+    // A `stop_terminal` request is only ever READ by `observeAndApplyControl`,
+    // which runs at a turn-loop iteration boundary. Parking the run in
+    // `paused_error` is precisely the moment the run stops reaching those
+    // boundaries: unless the operator manually resumes THIS run, a Stop queued
+    // a moment earlier would sit `pending` forever and the user's Stop would
+    // be silently lost. Worse, an auto-retry wake (2–32 s backoff) could then
+    // resume a run the operator had already stopped.
+    //
+    // So the consumer lives HERE, in the parking transaction, rather than in a
+    // periodic sweep: it is exactly-timed (no window at all instead of a
+    // patched one), needs no new timer or polling loop, and stays in the
+    // engine, which owns the stop invariant everywhere else.
+    //
+    // FAIL-CLOSED: the gate only COMPLETES the stop through the one shared
+    // stop body; it never resumes, dispatches, or schedules anything. When it
+    // reports `stopped`, nothing is written here and no wake is scheduled.
+    // IDEMPOTENT: an already-applied Stop leaves the run terminal, so the gate
+    // returns `stopped` without re-writing anything.
+    //
+    // Lock order is the canonical SESSION CONTROL LOCK → OPEN CONTROL REQUESTS
+    // → RUN (`session-control-lock.ts`); the gate takes steps 1–2 itself, and
+    // the joined read below re-locks the already-held run row.
+    await acquireSessionControlLock(client, input.sessionId);
+    const stopGate = await gateOnOperatorStopWithClient(client, {
+      sessionId: input.sessionId,
+      missionRunId: input.runId,
+    });
+    if (stopGate.kind === "stopped") {
+      logger.info("engine.mission.error_pause_consumed_operator_stop", {
+        runId: input.runId,
+        sessionId: input.sessionId,
+        runStatus: stopGate.runStatus,
+        classified,
+      });
+      return { scheduled: null, persisted: false };
+    }
+
     const row = await queryOneWith<LockedRunRow>(
       client,
       `SELECT mr.status, mr.stop_reason, mr.error_retry_count, mr.auto_retry_unsafe,
@@ -77,6 +129,22 @@ export async function persistErrorPauseWithMaybeAutoRetry(
         FOR UPDATE OF mr`,
       [input.runId],
     );
+
+    // A terminal run row is immutable audit history. The commonest way to get
+    // here on a terminal run is an operator Stop that landed while the loop
+    // was unwinding and something threw on the way out: persisting
+    // `paused_error` would overwrite the user's stop with a recoverable-looking
+    // pause. Checked under the SAME row lock the write uses, so it is a real
+    // gate and not a TOCTOU read. A missing row still persists (the write is a
+    // harmless no-op) — that behavior is pinned by an existing test.
+    if (row !== null && TERMINAL_RUN_STATUSES.has(row.status as MissionRunStatus)) {
+      logger.info("engine.mission.error_pause_skipped_terminal_run", {
+        runId: input.runId,
+        runStatus: row.status,
+        classified,
+      });
+      return { scheduled: null, persisted: false };
+    }
 
     const eligible =
       row !== null &&
@@ -125,7 +193,7 @@ export async function persistErrorPauseWithMaybeAutoRetry(
       client,
     );
 
-    return { scheduled };
+    return { scheduled, persisted: true };
   });
 }
 

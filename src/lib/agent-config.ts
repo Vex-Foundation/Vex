@@ -44,7 +44,7 @@ export const AGENT_CONTEXT_LIMIT: FieldWithDefault = {
   kind: "int",
   min: 1000,
   max: 2_000_000,
-  default: 128_000,
+  default: 256_000,
 };
 
 export const AGENT_MAX_OUTPUT_TOKENS: FieldWithDefault = {

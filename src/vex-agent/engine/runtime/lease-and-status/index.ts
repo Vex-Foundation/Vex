@@ -32,3 +32,44 @@ export {
   type ClaimAutoRetryOutcome,
   type AutoRetryIneligibleReason,
 } from "./claim-auto-retry.js";
+export {
+  applyUserStopTransaction,
+  applyUserStopWithClient,
+  type ApplyUserStopInput,
+  type ApplyUserStopOutcome,
+  type UserStopPayload,
+} from "./apply-user-stop.js";
+export {
+  applyStopForEditTransaction,
+  STOP_FOR_EDIT_SUMMARY,
+  type ApplyStopForEditInput,
+  type ApplyStopForEditOutcome,
+} from "./apply-stop-for-edit.js";
+export {
+  lockOpenControlRequests,
+  STALE_CONTROL_REQUEST_REASON,
+} from "./control-request-locks.js";
+export {
+  acquireSessionControlLock,
+  sessionControlLockKey,
+  SESSION_CONTROL_LOCK_NAMESPACE,
+  withSessionControlLock,
+} from "./session-control-lock.js";
+export {
+  applySessionStopTransaction,
+  applySessionStopWithClient,
+  type ApplySessionStopInput,
+  type ApplySessionStopOutcome,
+} from "./apply-session-stop.js";
+export {
+  enqueueOperatorStopRequest,
+  enqueueSessionStopRequest,
+  type EnqueueSessionStopInput,
+  type EnqueueSessionStopOutcome,
+  gateOnOperatorStopTransaction,
+  gateOnOperatorStopWithClient,
+  type EnqueueOperatorStopInput,
+  type EnqueueOperatorStopOutcome,
+  type OperatorStopGate,
+  type OperatorStopGateInput,
+} from "./operator-stop-boundary.js";

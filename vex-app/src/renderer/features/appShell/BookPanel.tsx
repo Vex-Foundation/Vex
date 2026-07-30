@@ -38,6 +38,7 @@ import {
   VexIcon,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
+import { useSession } from "../../lib/api/sessions.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { SessionBlock } from "./book/SessionBlock.js";
@@ -64,6 +65,15 @@ export function BookPanel({
   // if the OS preference changes while the rail is open (SidebarProfile
   // pattern, shared with WelcomePortfolioPanel).
   const [reduced] = useState(prefersReducedMotion);
+
+  // The rail owns the session read that the Runtime & Cost card's apply
+  // control needs: permission is a session-STATIC axis, so a prop cannot go
+  // stale, and the query is already cached by the mission rail under the same
+  // key. Called before the welcome-stage early return so hook order is stable.
+  const sessionQuery = useSession(activeSessionId);
+  const permission = sessionQuery.data?.ok
+    ? (sessionQuery.data.data?.permission ?? null)
+    : null;
 
   // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
   if (activeSessionId === null) {
@@ -120,7 +130,7 @@ export function BookPanel({
           <SessionWalletsCard sessionId={activeSessionId} />
           <BalancesCard sessionId={activeSessionId} />
           <SessionActivityCard sessionId={activeSessionId} />
-          <SessionRuntimeCard sessionId={activeSessionId} />
+          <SessionRuntimeCard sessionId={activeSessionId} permission={permission} />
           <SessionBlock sessionId={activeSessionId} />
         </motion.div>
       ) : null}

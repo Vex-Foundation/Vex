@@ -1,0 +1,292 @@
+/**
+ * The operator-Stop serialization boundary — both sides of it.
+ *
+ * One responsibility, two directions:
+ *
+ *   - `enqueueOperatorStopRequest` is the ONLY way a `stop_terminal` request
+ *     enters the system. It writes the row under the session control lock, so
+ *     the insert is an ordering event every other holder of that lock can
+ *     reason about, and refuses to park a stop on a run that is already
+ *     terminal.
+ *
+ *   - `gateOnOperatorStop*` is what a caller runs, under the same lock, right
+ *     before it does something irreversible. It answers one question — "has
+ *     the operator stopped this run?" — and, when the answer is yes but the
+ *     stop has not landed yet, APPLIES it through the shared stop body rather
+ *     than leaving a queued request nobody will observe. Two entry points, the
+ *     same `WithClient` / `Transaction` split `apply-user-stop.ts` uses: a
+ *     caller that already owns a transaction joins it, a caller that does not
+ *     gets one.
+ *
+ * Applying (not merely detecting) is deliberate. A caller that refuses to act
+ * usually also gives up the session lease, and a queued stop with no live
+ * runner is stranded until the operator clicks Stop a second time — the
+ * failure mode `runtime-stop-dispatch.ts` already documents (issue #12).
+ * Applying it here reuses `applyUserStopWithClient`, so there is exactly one
+ * implementation of what a user stop means; this module only decides WHEN to
+ * invoke it.
+ *
+ * SESSION SCOPE (`missionRunId === null`). This used to short-circuit to
+ * `clear` on the reasoning that `stop_terminal` was run-scoped and nothing ever
+ * minted one without a run. That stopped being true when a Full-Autonomous
+ * agent SESSION gained its own wake-driven continuation: such a slice spends
+ * money and can act on-chain with no run row anywhere, so a stop had to be able
+ * to name the SESSION. It does now — a `stop_terminal` row with a NULL
+ * `mission_run_id` (see `apply-session-stop.ts` for why that shape, and why it
+ * needed no migration) — and this gate CONSUMES it, exactly as the run-scoped
+ * branch consumes its own. An interactive chat turn is unaffected: no such row
+ * is minted for it, so it still gates `clear`.
+ *
+ * Lock order: this module takes SESSION CONTROL LOCK → OPEN CONTROL REQUESTS →
+ * RUN, the canonical prefix documented in `session-control-lock.ts`.
+ */
+
+import type { PoolClient } from "pg";
+import { executeWith, queryOneWith, withTransaction } from "../../../db/client.js";
+import * as controlRequestsRepo from "../../../db/repos/runtime-control-requests.js";
+import { TERMINAL_RUN_STATUSES, type MissionRunStatus } from "../../types.js";
+import { applySessionStopWithClient } from "./apply-session-stop.js";
+import { applyUserStopWithClient } from "./apply-user-stop.js";
+import { lockOpenControlRequests } from "./control-request-locks.js";
+import {
+  acquireSessionControlLock,
+  withSessionControlLock,
+} from "./session-control-lock.js";
+
+interface RunStatusRow {
+  readonly status: MissionRunStatus;
+}
+
+/**
+ * Verdict for a caller about to take an irreversible step.
+ *
+ * `stopped` always means the run row is TERMINAL by the time this returns —
+ * either it already was, or this call applied the operator's queued stop. The
+ * status is reported so the caller can surface the real one rather than a
+ * literal.
+ */
+export type OperatorStopGate =
+  | { readonly kind: "clear" }
+  | {
+    readonly kind: "stopped";
+    readonly runStatus: MissionRunStatus;
+    /**
+     * Which thing was stopped. `"run"` reports the real `mission_runs` status;
+     * `"session"` has no run row and reports the `cancelled` terminal by
+     * convention. Callers that surface a status to a human should check this
+     * before claiming anything about a run.
+     */
+    readonly scope: "run" | "session";
+  };
+
+export interface OperatorStopGateInput {
+  readonly sessionId: string;
+  /** `null` for a chat session — see the module header. */
+  readonly missionRunId: string | null;
+}
+
+/**
+ * Has the operator stopped this run? Caller MUST already be inside a
+ * transaction that holds the session control lock (`withSessionControlLock`,
+ * or `acquireSessionControlLock` on its own client) — without it the answer is
+ * a read of the past, which is the whole defect this module exists to close.
+ */
+export async function gateOnOperatorStopWithClient(
+  client: PoolClient,
+  input: OperatorStopGateInput,
+): Promise<OperatorStopGate> {
+  const { missionRunId } = input;
+
+  // Lock order step 1 — the canonical open-request set, before the run row.
+  const openRequests = await lockOpenControlRequests(client, input.sessionId);
+
+  if (missionRunId === null) {
+    // Session scope: the only requests that can stop this work are the ones
+    // naming NO run. A run-scoped request belongs to a run and is not ours.
+    const sessionStop = openRequests.find(
+      (row) => row.kind === "stop_terminal" && row.mission_run_id === null,
+    );
+    if (sessionStop === undefined) return { kind: "clear" };
+    await applySessionStopWithClient(client, {
+      sessionId: input.sessionId,
+      lockedRequests: openRequests,
+    });
+    // There is no run row, so no run status exists to report. `cancelled` is
+    // the taxonomy's terminal for "this work is not going to continue" — the
+    // same convention this file already uses for a run row that vanished — and
+    // `scope` is what a caller reads when it needs to know which it got.
+    return { kind: "stopped", runStatus: "cancelled", scope: "session" };
+  }
+
+  // Lock order step 2 — the run row.
+  const run = await queryOneWith<RunStatusRow>(
+    client,
+    "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
+    [missionRunId],
+  );
+  // A run row that vanished is as dead as a terminal one; `cancelled` is the
+  // taxonomy's terminal for "this run is not going to continue" and keeps the
+  // caller on the status SETS instead of a bespoke literal.
+  if (run === null) {
+    return { kind: "stopped", runStatus: "cancelled", scope: "run" };
+  }
+  if (TERMINAL_RUN_STATUSES.has(run.status)) {
+    return { kind: "stopped", runStatus: run.status, scope: "run" };
+  }
+
+  const queuedStop = openRequests.find(
+    (row) => row.kind === "stop_terminal" && row.mission_run_id === missionRunId,
+  );
+  if (queuedStop === undefined) return { kind: "clear" };
+
+  // The operator stopped, but no runner has observed the request yet. Land it
+  // now through the ONE shared stop body — hand over the already-locked rows
+  // so the request lock is not re-acquired after the run lock.
+  await applyUserStopWithClient(client, {
+    sessionId: input.sessionId,
+    missionRunId,
+    lockedRequests: openRequests,
+  });
+  return { kind: "stopped", runStatus: "stopped", scope: "run" };
+}
+
+/**
+ * Own-transaction variant, for a caller standing between two commits rather
+ * than inside one (the approved-dispatch gate).
+ *
+ * A session with no run no longer short-circuits: a session-scoped
+ * `stop_terminal` is a real row now, so skipping the transaction would skip the
+ * only place it can be observed.
+ */
+export async function gateOnOperatorStopTransaction(
+  input: OperatorStopGateInput,
+): Promise<OperatorStopGate> {
+  return withSessionControlLock(input.sessionId, (client) =>
+    gateOnOperatorStopWithClient(client, input),
+  );
+}
+
+export type EnqueueOperatorStopOutcome =
+  | { readonly outcome: "queued"; readonly requestId: string }
+  | {
+    readonly outcome: "already_terminal";
+    readonly runStatus: MissionRunStatus;
+  }
+  | { readonly outcome: "run_not_found" };
+
+export interface EnqueueOperatorStopInput {
+  readonly sessionId: string;
+  readonly missionRunId: string;
+  readonly correlationId?: string | null;
+}
+
+/**
+ * Queue a run-scoped `stop_terminal` request for a live runner to observe.
+ *
+ * Runs as one transaction under the session control lock, so the insert is
+ * strictly ordered against every `gateOnOperatorStop` for the same session: a
+ * gate that commits first is guaranteed to have already committed the
+ * irreversible step it was guarding (and the stop applies after it), and a
+ * gate that commits second is guaranteed to SEE this row.
+ *
+ * The run row is checked under its lock in the same transaction, so a stop is
+ * never parked on a run that is already terminal.
+ */
+export async function enqueueOperatorStopRequest(
+  input: EnqueueOperatorStopInput,
+): Promise<EnqueueOperatorStopOutcome> {
+  return withTransaction(async (client): Promise<EnqueueOperatorStopOutcome> => {
+    await acquireSessionControlLock(client, input.sessionId);
+    await lockOpenControlRequests(client, input.sessionId);
+
+    const run = await queryOneWith<RunStatusRow>(
+      client,
+      "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
+      [input.missionRunId],
+    );
+    if (run === null) return { outcome: "run_not_found" };
+    if (TERMINAL_RUN_STATUSES.has(run.status)) {
+      return { outcome: "already_terminal", runStatus: run.status };
+    }
+
+    const request = await controlRequestsRepo.enqueueRequest(
+      {
+        sessionId: input.sessionId,
+        missionRunId: input.missionRunId,
+        kind: "stop_terminal",
+        requestedBy: "user",
+        correlationId: input.correlationId ?? null,
+      },
+      client,
+    );
+    return { outcome: "queued", requestId: request.id };
+  });
+}
+
+export type EnqueueSessionStopOutcome =
+  | { readonly outcome: "queued"; readonly requestId: string }
+  /** A session-scoped stop was already open — this call added nothing. */
+  | { readonly outcome: "already_queued"; readonly requestId: string };
+
+export interface EnqueueSessionStopInput {
+  readonly sessionId: string;
+  readonly correlationId?: string | null;
+}
+
+/**
+ * Queue a SESSION-scoped `stop_terminal` — the operator stopping autonomous
+ * work that has no mission run (a Full-Autonomous agent chat slice).
+ *
+ * One transaction under the session control lock, so the insert is strictly
+ * ordered against every `gateOnOperatorStop` for the same session: a gate that
+ * commits first already committed the step it was guarding (and this stop
+ * applies after it), and a gate that commits second is guaranteed to SEE this
+ * row. That includes the continuation scheduler — which is how a Stop cannot
+ * race a wake into existence.
+ *
+ * The pending wake is cancelled in THIS transaction too, not in a follow-up:
+ * a stop that clears the request but leaves a due wake behind would be undone
+ * by the executor moments later.
+ *
+ * Idempotent. A second press finds the open row and returns it rather than
+ * stacking duplicates the gate would have to consume one by one.
+ */
+export async function enqueueSessionStopRequest(
+  input: EnqueueSessionStopInput,
+): Promise<EnqueueSessionStopOutcome> {
+  return withTransaction(async (client): Promise<EnqueueSessionStopOutcome> => {
+    await acquireSessionControlLock(client, input.sessionId);
+    const openRequests = await lockOpenControlRequests(client, input.sessionId);
+
+    const existing = openRequests.find(
+      (row) => row.kind === "stop_terminal" && row.mission_run_id === null,
+    );
+    if (existing !== undefined) {
+      return { outcome: "already_queued", requestId: existing.id };
+    }
+
+    const request = await controlRequestsRepo.enqueueRequest(
+      {
+        sessionId: input.sessionId,
+        missionRunId: null,
+        kind: "stop_terminal",
+        requestedBy: "user",
+        correlationId: input.correlationId ?? null,
+      },
+      client,
+    );
+
+    // Same-transaction wake cancellation — see the doc comment above.
+    await executeWith(
+      client,
+      `UPDATE loop_wake_requests
+          SET status           = 'cancelled',
+              cancelled_at     = NOW(),
+              cancelled_reason = 'consumed_by_session_stop'
+        WHERE session_id = $1 AND status = 'pending'`,
+      [input.sessionId],
+    );
+
+    return { outcome: "queued", requestId: request.id };
+  });
+}

@@ -25,6 +25,25 @@
  * nothing to reap; if this sweep wins first, the signer's later CAS misses
  * and its own submit path is never reached (submission aborts before it can
  * broadcast).
+ *
+ * NOT A SESSION-CONTROL-LOCK PARTICIPANT, deliberately — the one `agent_
+ * activity` writer that is not. Every OTHER `pending` transition takes the lock
+ * (see `./session-lock.ts`) so it is strictly ordered against the compaction
+ * safe-moment gate. This one cannot, and does not need to:
+ *
+ *  - it is a GLOBAL sweep with no session scope. Its candidate set spans
+ *    arbitrary sessions, so there is no single key to take. Making it
+ *    participate would mean grouping candidates by session and issuing one
+ *    locked transaction per session — turning one atomic statement into N, on a
+ *    live money-path sweep, to buy nothing below.
+ *  - it is REMOVAL-ONLY (`pending -> definitively_failed`). Only a writer that
+ *    ADDS to the gate's set can make the gate wrongly answer `clear`; a writer
+ *    that removes can at worst make it defer a cutover it could have taken,
+ *    which is the safe direction. The gate's soundness therefore does not
+ *    depend on this writer.
+ *
+ * If this sweep ever gains a transition INTO `pending`, that reasoning dies
+ * with it and the per-session grouping becomes mandatory.
  */
 
 import { query } from "../../client.js";

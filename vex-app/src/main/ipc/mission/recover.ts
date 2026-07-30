@@ -54,6 +54,7 @@ export function registerMissionRecoverHandler(): () => void {
             missionRunId: newRunId,
             correlationId: ctx.requestId,
             channelLabel: "vex:mission:recover",
+            scope: "mission",
           },
         );
         await emitControlStateAfterChange(sessionId, ctx.requestId);

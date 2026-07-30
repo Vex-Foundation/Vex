@@ -95,6 +95,9 @@ export const compactionKeys = {
   all: ["compaction"] as const,
   status: (sessionId: string) => ["compaction", "status", sessionId] as const,
   history: (sessionId: string) => ["compaction", "history", sessionId] as const,
+  /** Compaction v2 — the session's `compaction_preparations` progress row. */
+  preparation: (sessionId: string) =>
+    ["compaction", "preparation", sessionId] as const,
 };
 
 /** Long-term memory inspection (S9 rewire) — global store list, keyed by status filter. */

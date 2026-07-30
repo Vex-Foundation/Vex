@@ -11,6 +11,20 @@ const incrementErrorRetryCount = vi.fn();
 const updateStatus = vi.fn().mockResolvedValue(undefined);
 const enqueue = vi.fn();
 
+// The paused_error park now runs the DURABLE OPERATOR-STOP CONSUMER inside its
+// own transaction (see `mission-auto-retry.ts`): it takes the session control
+// lock and gates on a queued `stop_terminal` request before writing. Both
+// collaborators are stubbed to "no stop queued" here so these tests keep
+// asserting the park itself.
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/operator-stop-boundary.js",
+  () => ({ gateOnOperatorStopWithClient: async () => ({ kind: "clear" }) }),
+);
+vi.mock(
+  "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js",
+  () => ({ acquireSessionControlLock: async () => undefined }),
+);
+
 vi.mock("@vex-agent/db/client.js", () => ({
   withTransaction: async <T>(cb: (client: unknown) => Promise<T>): Promise<T> =>
     cb({}),
@@ -56,7 +70,13 @@ const transientErr = (() => {
 
 function call(err: unknown) {
   return persistErrorPauseWithMaybeAutoRetry(
-    { runId: "run-1", err, summary: "boom", evidenceBase: { errorMessage: "boom" } },
+    {
+      runId: "run-1",
+      sessionId: "sess-1",
+      err,
+      summary: "boom",
+      evidenceBase: { errorMessage: "boom" },
+    },
     0,
   );
 }
@@ -117,6 +137,23 @@ describe("persistErrorPauseWithMaybeAutoRetry", () => {
     expect((await call(transientErr)).scheduled).toBeNull();
     expect(updateStatus).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["stopped", "cancelled", "completed", "failed"])(
+    "run already TERMINAL (%s) under the row lock → writes NOTHING",
+    async (status) => {
+      // Codex Wave-1 defect 8: a terminal run row is immutable audit history.
+      // The commonest way to land here is an operator Stop that already
+      // committed while the loop was unwinding — persisting `paused_error`
+      // would overwrite the user's stop with a recoverable-looking pause and
+      // re-open a run whose approvals were already rejected. Checked under the
+      // SAME row lock the write uses, so it is a gate and not a TOCTOU read.
+      queryOneWith.mockResolvedValueOnce(lockedRow({ status }));
+      const decision = await call(transientErr);
+      expect(decision).toEqual({ scheduled: null, persisted: false });
+      expect(updateStatus).not.toHaveBeenCalled();
+      expect(incrementErrorRetryCount).not.toHaveBeenCalled();
+    },
+  );
 
   it("3rd retry → backoff 8s (attempt 3)", async () => {
     queryOneWith.mockResolvedValueOnce(lockedRow({ error_retry_count: 2 }));

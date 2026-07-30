@@ -174,6 +174,14 @@ export interface ProtocolExecutionContext {
    * passes it.
    */
   contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
+  /**
+   * True iff a live compaction preparation suppresses the `barrier` mutating
+   * block for this turn (contract C8). The protocol runtime is the THIRD gate
+   * layer (after the catalog filter and the dispatcher hard-deny) and must
+   * agree with both, or a mutating protocol call is offered and then refused.
+   * Absent ⇒ false ⇒ today's barrier.
+   */
+  preparationBypassesBarrier?: boolean;
 }
 
 // ── Discovery request/result ─────────────────────────────────────
@@ -198,6 +206,14 @@ export interface ProtocolDiscoveryRequest {
    * then hard-reject. Omitted/undefined fails closed (hidden).
    */
   sessionId?: string;
+  /**
+   * True iff a live compaction preparation suppresses the `barrier` mutating
+   * block for this turn (contract C8). While true, discovery must NOT tag
+   * mutating rows `unavailable_at_pressure` at `barrier` — the dispatcher will
+   * in fact allow them, and an advisory that contradicts the gate is worse than
+   * no advisory. `critical` still tags. Absent ⇒ false ⇒ today's tagging.
+   */
+  preparationBypassesBarrier?: boolean;
 }
 
 export interface ProtocolDiscoveryItem {
@@ -215,11 +231,12 @@ export interface ProtocolDiscoveryItem {
   whyMatched: string[];
   /**
    * Only present and `true` when the current context-usage band is `barrier`
-   * or `critical` AND this tool is `mutating: true`. Tells the LLM the
-   * dispatcher will hard-deny `execute_tool` for this row right now — either
-   * call `compact_now` first, or stick to read-only / preview variants in
-   * the same namespace. Omitted on read-only tools and at normal/warning bands
-   * to keep payloads minimal.
+   * or `critical` AND this tool is `mutating: true` AND no live compaction
+   * preparation is suppressing the barrier. Tells the LLM the dispatcher will
+   * hard-deny `execute_tool` for this row right now — stick to read-only /
+   * preview variants in the same namespace while the runtime compacts. Omitted
+   * on read-only tools, at normal/warning bands, and while the barrier is
+   * bypassed, to keep payloads minimal.
    */
   unavailable_at_pressure?: boolean;
 }

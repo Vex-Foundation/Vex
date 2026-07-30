@@ -23,6 +23,21 @@ const mockCancelForSession = vi.fn();
 const mockGetPendingApprovals = vi.fn();
 const mockRejectApproval = vi.fn();
 const mockReconcileDraftReadiness = vi.fn();
+const mockApplyUserStopTransaction = vi.fn();
+const mockApplyStopForEditTransaction = vi.fn();
+
+// The direct-finalise branch now runs the SHARED idempotent stop transaction
+// (`applyUserStopTransaction`) instead of hand-rolling its own writes, so the
+// observer path, the finalize-after-local-abort path and this path can never
+// disagree on the terminal state (run `stopped` / `user_stopped`, mission
+// `cancelled`). The transaction body itself is covered by
+// `runtime/apply-user-stop.test.ts`.
+vi.mock("../../../vex-agent/engine/runtime/lease-and-status.js", () => ({
+  applyUserStopTransaction: (...a: unknown[]) =>
+    mockApplyUserStopTransaction(...a),
+  applyStopForEditTransaction: (...a: unknown[]) =>
+    mockApplyStopForEditTransaction(...a),
+}));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   getRun: (...a: unknown[]) => mockGetRun(...a),
@@ -61,7 +76,30 @@ const {
   registerMissionRunAbortController,
   unregisterMissionRunAbortController,
   hasMissionRunAbortController,
+  signalMissionRunAbortLocal,
 } = await import("../../../vex-agent/engine/core/runner/abort.js");
+
+/** Default: the shared stop transaction lands the canonical terminal state. */
+function stopApplied(previousStatus: string) {
+  return {
+    outcome: "stopped",
+    previousStatus,
+    missionId: "mission-x",
+    rejectedApprovals: 0,
+    wakeCancelledCount: 0,
+    consumedRequests: 0,
+  };
+}
+
+/** Default for the stop-for-edit path: this call won the run transition. */
+function editApplied(previousStatus: string, rejectedApprovals = 0) {
+  return {
+    outcome: "stopped_for_edit",
+    previousStatus,
+    missionId: "mission-edit",
+    rejectedApprovals,
+  };
+}
 
 describe("abortMissionRun", () => {
   beforeEach(() => {
@@ -75,6 +113,9 @@ describe("abortMissionRun", () => {
     mockRejectApproval.mockReset();
     mockCancelForSession.mockResolvedValue(0);
     mockGetPendingApprovals.mockResolvedValue([]);
+    mockApplyUserStopTransaction.mockReset();
+    mockApplyUserStopTransaction.mockResolvedValue(stopApplied("paused_approval"));
+    mockApplyStopForEditTransaction.mockReset();
     // Drop any controllers leaked between tests.
     if (hasMissionRunAbortController("run-1")) unregisterMissionRunAbortController("run-1");
     if (hasMissionRunAbortController("run-running")) unregisterMissionRunAbortController("run-running");
@@ -104,8 +145,15 @@ describe("abortMissionRun", () => {
     expect(mockRejectApproval).toHaveBeenCalledWith("ap-1");
     expect(mockRejectApproval).toHaveBeenCalledWith("ap-2");
     expect(mockRejectApproval).not.toHaveBeenCalledWith("ap-3");
-    expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-1", "cancelled", "user_stopped");
-    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-1", "cancelled");
+    // Terminal state is written by the SHARED stop transaction, not by
+    // hand-rolled writes here — that is what keeps this path and the loop's
+    // own finalize byte-identical.
+    expect(mockApplyUserStopTransaction).toHaveBeenCalledWith({
+      sessionId: "sess-1",
+      missionRunId: "run-1",
+    });
+    expect(mockUpdateRunStatus).not.toHaveBeenCalled();
+    expect(mockSetMissionStatus).not.toHaveBeenCalled();
   });
 
   it("running with registered controller → fires AbortSignal, status stays running", async () => {
@@ -140,8 +188,29 @@ describe("abortMissionRun", () => {
 
     expect(result.aborted).toBe(true);
     expect(result.finalStatus).toBe("cancelled");
-    expect(mockUpdateRunStatus).toHaveBeenCalledWith("run-orphan", "cancelled", "user_stopped");
-    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-3", "cancelled");
+    expect(mockApplyUserStopTransaction).toHaveBeenCalledWith({
+      sessionId: "sess-3",
+      missionRunId: "run-orphan",
+    });
+  });
+
+  it("raced to terminal between read and lock → aborted:false, no double write", async () => {
+    mockGetRun.mockResolvedValue({
+      id: "run-race",
+      missionId: "mission-race",
+      sessionId: "sess-race",
+      status: "paused_wake",
+    });
+    mockApplyUserStopTransaction.mockResolvedValue({
+      outcome: "already_terminal",
+      currentStatus: "stopped",
+      consumedRequests: 0,
+    });
+
+    const result = await abortMissionRun("run-race");
+
+    expect(result.aborted).toBe(false);
+    expect(mockUpdateRunStatus).not.toHaveBeenCalled();
   });
 
   it("paused_wake → cancels wakes + finalises directly", async () => {
@@ -201,6 +270,8 @@ describe("stopActiveMissionForEdit", () => {
     // Default: not promoted. Individual tests override to cover both
     // branches of the WP3 reconciliation outcome.
     mockReconcileDraftReadiness.mockResolvedValue({ promoted: false });
+    mockApplyStopForEditTransaction.mockReset();
+    mockApplyStopForEditTransaction.mockResolvedValue(editApplied("paused_wake"));
     if (hasMissionRunAbortController("run-edit")) unregisterMissionRunAbortController("run-edit");
   });
 
@@ -224,17 +295,16 @@ describe("stopActiveMissionForEdit", () => {
     expect(result?.stopped).toBe(true);
     expect(result?.finalStatus).toBe("ready");
     expect(mockCancelForSession).toHaveBeenCalledWith("sess-edit", "user_edit");
-    expect(mockUpdateRunStatus).toHaveBeenCalledWith(
-      "run-edit",
-      "stopped",
-      "user_stopped",
-      { summary: "Mission stopped for operator edit" },
-    );
-    expect(mockClearMissionApprovedAt).toHaveBeenCalledWith("mission-edit");
-    // setStatus('draft') always fires first — reconcile decides the
-    // reported finalStatus, not whether this write happens.
-    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-edit", "draft");
-    expect(mockSetMissionStatus).not.toHaveBeenCalledWith("mission-edit", "cancelled");
+    // The run row + mission demotion are now ONE atomic, lock-aware
+    // transition; this module no longer hand-rolls either write, which is what
+    // made the unlocked read-then-write race possible.
+    expect(mockApplyStopForEditTransaction).toHaveBeenCalledWith({
+      sessionId: "sess-edit",
+      missionRunId: "run-edit",
+    });
+    expect(mockUpdateRunStatus).not.toHaveBeenCalled();
+    expect(mockClearMissionApprovedAt).not.toHaveBeenCalled();
+    expect(mockSetMissionStatus).not.toHaveBeenCalled();
     expect(mockReconcileDraftReadiness).toHaveBeenCalledWith("mission-edit");
   });
 
@@ -252,8 +322,6 @@ describe("stopActiveMissionForEdit", () => {
 
     expect(result?.stopped).toBe(true);
     expect(result?.finalStatus).toBe("draft");
-    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-edit", "draft");
-    expect(mockSetMissionStatus).not.toHaveBeenCalledWith("mission-edit", "cancelled");
     expect(mockReconcileDraftReadiness).toHaveBeenCalledWith("mission-edit");
   });
 
@@ -265,13 +333,70 @@ describe("stopActiveMissionForEdit", () => {
       sessionId: "sess-edit",
       status: "running",
     });
+    mockApplyStopForEditTransaction.mockResolvedValue(editApplied("running"));
     const controller = registerMissionRunAbortController("run-edit");
 
     const result = await stopActiveMissionForEdit("sess-edit");
 
     expect(result?.stopped).toBe(true);
+    expect(result?.finalStatus).toBe("draft");
     expect(controller.signal.aborted).toBe(true);
-    expect(mockSetMissionStatus).toHaveBeenCalledWith("mission-edit", "draft");
+  });
+
+  // OWNER DECISION: a committed user Stop is FINAL. These two cases are the
+  // whole point of routing through the atomic transition — before it, the
+  // module read the run outside a transaction and then wrote unconditionally,
+  // so an ordinary Stop committing in that gap was overwritten and its
+  // `cancelled` mission was resurrected as `draft`.
+  it("does NOT report a successful edit when an ordinary Stop won the transition", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-edit" });
+    mockGetRun.mockResolvedValue({
+      id: "run-edit",
+      missionId: "mission-edit",
+      sessionId: "sess-edit",
+      status: "running",
+    });
+    mockApplyStopForEditTransaction.mockResolvedValue({
+      outcome: "lost_to_terminal",
+      missionId: "mission-edit",
+      currentRunStatus: "stopped",
+      missionStatus: "cancelled",
+    });
+
+    const result = await stopActiveMissionForEdit("sess-edit");
+
+    // The caller learns it lost, so `mission.edit` IPC reports
+    // `already_terminal` instead of a successful edit.
+    expect(result?.stopped).toBe(false);
+    // The mission stays cancelled — NOT demoted to draft.
+    expect(result?.finalStatus).toBe("cancelled");
+    expect(mockUpdateRunStatus).not.toHaveBeenCalled();
+    expect(mockSetMissionStatus).not.toHaveBeenCalled();
+    expect(mockClearMissionApprovedAt).not.toHaveBeenCalled();
+    // A lost edit must not reconcile draft readiness either — that would
+    // promote a mission the user never put back into drafting.
+    expect(mockReconcileDraftReadiness).not.toHaveBeenCalled();
+  });
+
+  it("reports a successful edit when the sibling finalize path landed it first", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-edit" });
+    mockGetRun.mockResolvedValue({
+      id: "run-edit",
+      missionId: "mission-edit",
+      sessionId: "sess-edit",
+      status: "running",
+    });
+    mockApplyStopForEditTransaction.mockResolvedValue({
+      outcome: "already_edited",
+      missionId: "mission-edit",
+      missionStatus: "draft",
+    });
+
+    const result = await stopActiveMissionForEdit("sess-edit");
+
+    expect(result?.stopped).toBe(true);
+    expect(result?.finalStatus).toBe("draft");
+    expect(mockUpdateRunStatus).not.toHaveBeenCalled();
   });
 });
 
@@ -287,6 +412,8 @@ describe("abortActiveMissionForSession", () => {
     mockRejectApproval.mockReset();
     mockCancelForSession.mockResolvedValue(0);
     mockGetPendingApprovals.mockResolvedValue([]);
+    mockApplyUserStopTransaction.mockReset();
+    mockApplyUserStopTransaction.mockResolvedValue(stopApplied("paused_approval"));
   });
 
   it("returns null when session has no active run", async () => {
@@ -307,6 +434,37 @@ describe("abortActiveMissionForSession", () => {
     const result = await abortActiveMissionForSession("sess");
     expect(result?.aborted).toBe(true);
     expect(result?.finalStatus).toBe("cancelled");
+  });
+});
+
+// ── Local abort signal (IPC stop fast path) ─────────────────────
+
+describe("signalMissionRunAbortLocal", () => {
+  beforeEach(() => {
+    mockUpdateRunStatus.mockReset();
+    mockSetMissionStatus.mockReset();
+    mockApplyUserStopTransaction.mockReset();
+  });
+
+  it("fires the registered controller and writes nothing", async () => {
+    const controller = registerMissionRunAbortController("run-local");
+    try {
+      const fired = signalMissionRunAbortLocal("run-local");
+      expect(fired).toBe(true);
+      expect(controller.signal.aborted).toBe(true);
+      // Write-free by contract: the durable control request is the caller's
+      // responsibility and is persisted BEFORE this is called.
+      expect(mockUpdateRunStatus).not.toHaveBeenCalled();
+      expect(mockSetMissionStatus).not.toHaveBeenCalled();
+      expect(mockApplyUserStopTransaction).not.toHaveBeenCalled();
+    } finally {
+      unregisterMissionRunAbortController("run-local");
+    }
+  });
+
+  it("returns false when no controller is registered in this process", () => {
+    expect(hasMissionRunAbortController("run-elsewhere")).toBe(false);
+    expect(signalMissionRunAbortLocal("run-elsewhere")).toBe(false);
   });
 });
 

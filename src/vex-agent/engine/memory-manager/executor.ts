@@ -45,6 +45,9 @@ import {
   listJobsByStatus,
   type MemoryJob,
 } from "@vex-agent/db/repos/memory-jobs/index.js";
+import { emitMemoryWorkerPermanentlyFailedBug } from "./bug-emit.js";
+import { emitEngineError } from "../runtime/error-bus.js";
+import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
 import {
   reserveCandidatesForJob,
   listItemsByJob,
@@ -205,6 +208,38 @@ export function startMemoryManagerExecutor(
 
 // ── Per-job processing ───────────────────────────────────────────────
 
+/**
+ * Bounded, SESSION-LESS engine-error emit for a memory job that permanently
+ * gave up.
+ *
+ * `sessionId: null` is a positive statement, not a missing value: `memory_jobs`
+ * has no `session_id` column because consolidation and reconcile are global
+ * maintenance over `knowledge_entries`, not work done for one conversation. The
+ * global error surface is the only consumer that reads these; every
+ * session-scoped consumer ignores them by contract.
+ *
+ * Bounded codes only — the raw message goes to the bug report, server-side.
+ * `readMissionErrorSignal` reads own-properties and never walks `.cause`.
+ * `null` is a legitimate input (the items-failed path has no throwable), and
+ * yields an all-null signal rather than a guess.
+ */
+function emitMemoryJobFailure(job: MemoryJob, err: unknown): void {
+  const signal = readMissionErrorSignal(err);
+  emitEngineError({
+    sessionId: null,
+    scope: "memory",
+    errorType: signal.errorType,
+    errorClass: signal.errorClass,
+    statusCode: signal.status,
+    causeCode: signal.causeCode,
+    retryAfterSeconds: signal.retryAfterSeconds,
+  });
+  memLog.warn("manager", "permanently_failed", {
+    jobId: job.id,
+    jobKind: job.jobKind,
+  });
+}
+
 async function processConsolidateJob(
   job: MemoryJob,
   workerId: string,
@@ -240,7 +275,20 @@ async function processConsolidateJob(
 
     if (anyTransientFailure || anyUnclosed) {
       const backoff = MEMORY_RETRY_BACKOFF_BASE_MS * Math.max(1, job.attemptCount);
-      await markFailed(job.id, workerId, "items_failed_retry", backoff);
+      const result = await markFailed(job.id, workerId, "items_failed_retry", backoff);
+      // `ok` is not redundant with `terminal`: markFailed decides `terminal`
+      // from a SELECT and re-checks ownership in the UPDATE's WHERE clause, so
+      // a row reclaimed in between returns `{ ok: false, terminal: true }` —
+      // nothing written, job alive under its new owner. Reporting on
+      // `terminal` alone files a bug report for a failure that did not happen.
+      if (result.ok && result.terminal) {
+        emitMemoryJobFailure(job, null);
+        await emitMemoryWorkerPermanentlyFailedBug({
+          jobId: job.id,
+          jobKind: job.jobKind,
+          errorMsg: "items_failed_retry",
+        });
+      }
     } else {
       const ok = await markCompleted(job.id, workerId);
       if (ok) memLog("manager", "completed", { jobId: job.id });
@@ -248,13 +296,24 @@ async function processConsolidateJob(
     }
   } catch (err) {
     const backoff = MEMORY_RETRY_BACKOFF_BASE_MS * Math.max(1, job.attemptCount);
-    await markFailed(
+    const result = await markFailed(
       job.id,
       workerId,
       err instanceof Error ? "job_error" : "job_unknown",
       backoff,
     );
     memLog.warn("manager", "job_failed", { jobId: job.id, errorCode: "job_error" });
+    // Terminal give-up settled BY THIS WORKER — see the ownership note above.
+    // The raw message reaches the internal diagnostics channel only; the job
+    // row itself still stores just the coded `job_error`.
+    if (result.ok && result.terminal) {
+      emitMemoryJobFailure(job, err);
+      await emitMemoryWorkerPermanentlyFailedBug({
+        jobId: job.id,
+        jobKind: job.jobKind,
+        errorMsg: err instanceof Error ? err.message : String(err),
+      });
+    }
   } finally {
     clearInterval(heartbeatTimer);
   }

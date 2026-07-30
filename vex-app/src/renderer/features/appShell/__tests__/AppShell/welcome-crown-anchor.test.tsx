@@ -90,6 +90,8 @@ vi.mock("../../../../lib/api/streams.js", () => ({
 vi.mock("../../../../lib/api/runtime.js", () => ({
   useControlStateLiveSync: () => undefined,
   useRuntimeState: () => ({ data: { ok: true, data: { status: null } } }),
+  // The composer now also routes Stop through the durable control plane.
+  useRequestStop: () => ({ mutateAsync: async () => undefined }),
 }));
 vi.mock("../../../../lib/api/sessions.js", async (importActual) => {
   const actual = await importActual<

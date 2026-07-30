@@ -1,6 +1,6 @@
 /**
  * Forced compact fallback — runs when the band is `critical` AND the agent
- * did not call `compact_now` in the current turn. Synthesizes the
+ * has no applicable prepared compaction. Synthesizes the
  * `executeCompactNow` arguments deterministically (NO LLM calls — must be
  * fast and offline-safe) and invokes the service directly. The service
  * never invokes the tool handler, per codex's guardrail.
@@ -77,7 +77,7 @@ async function synthesizeAgentSummary(sessionId: string): Promise<string> {
   const composed = [
     previousSummary ? `[Previous rolling summary]\n${previousSummary}` : "",
     recent ? `[Recent assistant tail]\n${recent}` : "",
-    "[Note] Forced fallback synthesis — agent did not call compact_now at critical band.",
+    "[Note] Deterministic fallback synthesis — no prepared summary was applicable at critical context pressure.",
   ]
     .filter(Boolean)
     .join("\n\n");

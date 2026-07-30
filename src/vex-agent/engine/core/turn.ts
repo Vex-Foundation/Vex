@@ -5,29 +5,28 @@
  * chatCompletion fallback) and accumulates the response, logs usage +
  * updates tokenCount. The assistant message save is deferred to turn-loop.
  *
- * Provider-message layout (D-LAYOUT) — four cache segments, marked with
- * `cacheHint` so the inference layer can place cache breakpoints without
- * positional heuristics:
- *
- *   [0]  system  static prefix (joined staticLayers)   "static_prefix"
- *   [1]  system  compaction summary (when present)     "summary"
- *   […]  history (DB tape; LAST non-empty message      "history_tail"
- *        marked AFTER repairOrphanedToolCalls)
- *   [N]  system  turn state (joined turnLayers)        "turn_state"
+ * The provider message array (D-LAYOUT cache segments, orphan repair,
+ * history-tail marking) is assembled by `turn-envelope.ts`.
  */
 
 import { randomUUID } from "node:crypto";
 import type { EngineContext, TurnResult, MessageMetadata } from "../types.js";
-import type { InferenceProvider, InferenceConfig, ProviderMessage, ParsedToolCall, ToolDefinition } from "@vex-agent/inference/types.js";
+import type { InferenceProvider, InferenceConfig, ParsedToolCall, ToolDefinition } from "@vex-agent/inference/types.js";
 import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
+import {
+  endpointFailoverDepsFrom,
+  resolveSessionInferenceConfig,
+} from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
-import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
-import { sanitizeForSystemPrompt } from "../prompts/sanitize.js";
-import { repairOrphanedToolCalls } from "./transcript-integrity.js";
-import { appendMessage, streamDeltaBus, toStreamDeltaEvent } from "@vex-agent/engine/events/index.js";
+import type { PromptStackOptions } from "../prompts/index.js";
+import { buildTurnEnvelope, type TurnEnvelope } from "./turn-envelope.js";
+import {
+  appendMessage,
+  streamDeltaBus,
+  toStreamDeltaEvent,
+} from "@vex-agent/engine/events/index.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
-import logger from "@utils/logger.js";
 
 export interface SingleTurnResult {
   /** Text content from model — null when only tool calls. */
@@ -51,16 +50,33 @@ export interface SingleTurnResult {
   inferenceAborted: boolean;
   /** True iff a provider usage chunk was observed before the stream exited. */
   usageObserved: boolean;
+  /**
+   * Identity of the stream this turn previewed, so the CALLER can emit the
+   * terminal `aborted` delta correlated to it.
+   *
+   * The emit deliberately does not live here. Whether an aborted stream ends
+   * with a persisted `chat_stopped` assistant row is decided by the turn loop
+   * AFTER this function returns, and that decision is exactly what determines
+   * whether a terminal delta is wanted: a persisted row brings its own
+   * `transcriptAppend`, which has always owned the preview handoff. Emitting
+   * at stream exit cleared the preview before that row arrived and reopened
+   * the swap gap on the stop-with-partial-content path.
+   *
+   * `nextStreamSequence` continues the stream's monotonic counter, so a
+   * terminal delta orders after every delta the turn emitted.
+   */
+  streamId: string;
+  nextStreamSequence: number;
 }
 
 /**
  * Execute a single inference turn.
  *
- * 1. Build prompt stack (static + turn-state segments)
- * 2. Convert messages to provider format (4 cache segments, hints set here)
- * 3. Consume provider.chatCompletionStream() → accumulate InferenceResponse
+ * 1. Build the request envelope (`buildTurnEnvelope`: prompt stack, provider
+ *    message conversion, orphan repair, cache hints)
+ * 2. Consume provider.chatCompletionStream() → accumulate InferenceResponse
  *    (chatCompletion fallback), emitting ephemeral stream deltas on streamDeltaBus
- * 4. Log usage + update tokenCount
+ * 3. Log usage + update tokenCount
  *
  * `promptOptions` arrives FULLY BUILT from the caller — `buildTurnPromptStack`
  * owns the single pre-inference memory read (`memory.getTurnContext`) and the
@@ -80,35 +96,20 @@ export async function executeTurn(
   tools: ToolDefinition[],
   promptOptions: PromptStackOptions = {},
   signal?: AbortSignal,
+  prebuiltEnvelope?: TurnEnvelope,
 ): Promise<SingleTurnResult> {
-  // Build prompt — split into the stable static prefix and the volatile
-  // turn-state segment (D-LAYOUT). Each segment is joined separately.
-  const promptStack = buildPromptStack(context, promptOptions);
-  const staticPrompt = promptStack.staticLayers.join("\n\n---\n\n");
-  const turnStatePrompt = promptStack.turnLayers.join("\n\n---\n\n");
-
-  // Convert to provider format
-  const providerMessages = buildProviderMessages(
-    staticPrompt,
-    summary,
-    existingMessages,
-    turnStatePrompt,
-  );
-
-  // In-flight repair only; DB tape remains unchanged.
-  const repair = repairOrphanedToolCalls(providerMessages);
-  if (repair.insertedPlaceholders > 0) {
-    logger.info("turn.transcript.repaired", {
-      sessionId: context.sessionId,
-      inserted: repair.insertedPlaceholders,
-    });
-  }
-
-  // Mark the history tail AFTER repair so breakpoint B sits on the FINAL
-  // tape — repair may append placeholder tool rows behind an assistant with
-  // unanswered tool calls, and B must not land before them. `hasSummary`
-  // mirrors buildProviderMessages' truthiness check (empty string = none).
-  markHistoryTail(repair.messages, summary !== null && summary.length > 0);
+  // Provider message array (D-LAYOUT segments + orphan repair + history-tail
+  // marking) — see `turn-envelope.ts`.
+  //
+  // `prebuiltEnvelope` is not an optimisation. `buildTurnEnvelope` is NOT
+  // reproducible: the turn-state segment embeds `Current time UTC`, so two
+  // builds of identical inputs differ. The C8 byte ceiling therefore measures
+  // an envelope OBJECT and hands THAT OBJECT here, so the bytes it bounded are
+  // the bytes we send. Rebuilding would make the ceiling a statement about a
+  // request that was never issued.
+  const envelope =
+    prebuiltEnvelope ??
+    buildTurnEnvelope(context, existingMessages, summary, promptOptions);
 
   // Inference — consume the streaming path and accumulate a
   // `chatCompletion`-equivalent response, emitting one ephemeral stream delta
@@ -118,9 +119,12 @@ export async function executeTurn(
   // the deferred save in turn-loop. Emission is best-effort and never throws
   // into the turn (the bus + onDelta both isolate listener errors).
   const streamId = randomUUID();
+  // Highest sequence emitted for this stream, so the terminal `aborted` delta
+  // continues the same monotonic counter rather than restarting it.
+  let lastSequence = -1;
   const { response, aborted, usageObserved } = await runStreamingInference(
     provider,
-    repair.messages,
+    envelope.providerMessages,
     tools,
     config,
     {
@@ -133,6 +137,7 @@ export async function executeTurn(
         missionRunId: context.missionRunId,
       },
       onDelta: (chunk, sequence) => {
+        lastSequence = sequence;
         streamDeltaBus.emit(
           toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
         );
@@ -155,7 +160,20 @@ export async function executeTurn(
   // sent to provider including system prompt + messages). Used by checkpoint to
   // evaluate context window pressure: shouldCheckpoint(tokenCount, contextLimit).
   if (!(aborted && !usageObserved)) {
-    const cost = provider.calculateCost(response.usage, config);
+    // Cost is priced against the endpoint that ACTUALLY served this turn, not
+    // the one we set out to use. The failover can switch endpoints mid-send, and
+    // sibling endpoints of one model differ in price, so pricing the response
+    // against the pre-send config would record a knowingly wrong number
+    // (owner decision 7; `rules/90` forbids shipping a false money figure).
+    // Only the LOCAL price table is affected — the provider's own `usage.cost`
+    // stays authoritative wherever it reported one. In-memory after the first
+    // read, so this costs nothing on the common path.
+    const pricingConfig = await resolveSessionInferenceConfig(
+      config,
+      context.sessionId,
+      endpointFailoverDepsFrom(provider),
+    );
+    const cost = provider.calculateCost(response.usage, pricingConfig);
     await usageRepo.logUsage(context.sessionId, {
       promptTokens,
       completionTokens,
@@ -169,6 +187,19 @@ export async function executeTurn(
       // cache-write tokens — persisted at log time (D-SAVINGS).
       cachedSavings: cost.breakdown.cachedSavings,
       cacheWriteTokens: response.usage.cacheWriteTokens ?? 0,
+      // Provider provenance (migration 055). `generationId` is the only key
+      // that reconciles this row against OpenRouter's own activity log;
+      // `finishReason` makes a truncated completion (`length`) distinguishable
+      // from a complete one after the fact. Both already bounded at the
+      // inference boundary; `?? null` covers a provider that reported neither
+      // and an abort that ended the turn before they arrived.
+      generationId: response.generationId ?? null,
+      finishReason: response.finishReason ?? null,
+      // Endpoint-level provenance (migration 059). `provider` above is the
+      // AGGREGATOR ('openrouter'); this is the upstream that actually ran the
+      // model, so "which request went where" — unanswerable during the
+      // 2026-07-29 endpoint-level 429 — is now a query.
+      servingProvider: response.servingProvider ?? null,
     });
     await sessionsRepo.updateTokenCount(context.sessionId, promptTokens);
   }
@@ -180,82 +211,9 @@ export async function executeTurn(
     promptTokens,
     inferenceAborted: aborted,
     usageObserved,
+    streamId,
+    nextStreamSequence: lastSequence + 1,
   };
-}
-
-// ── Helpers ─────────────────────────────────────────────────────
-
-function buildProviderMessages(
-  staticPrompt: string,
-  summary: string | null,
-  messages: Message[],
-  turnStatePrompt: string,
-): ProviderMessage[] {
-  const result: ProviderMessage[] = [];
-
-  // Static system prefix — breakpoint A candidate.
-  result.push({ role: "system", content: staticPrompt, cacheHint: "static_prefix" });
-
-  // Compaction summary (if checkpoint happened). The summary is the agent's
-  // own `compact_now.conversation_summary` argument — LLM-emitted prose that
-  // reaches the next provider call as a system message. Sanitize before
-  // injection so a crafted summary can't carry fence escapes or pseudo role
-  // tags into the durable rolling context.
-  if (summary) {
-    result.push({
-      role: "system",
-      content: `[Previous conversation summary]\n${sanitizeForSystemPrompt(summary)}`,
-      cacheHint: "summary",
-    });
-  }
-
-  // Message history
-  for (const msg of messages) {
-    const providerMsg: ProviderMessage = {
-      role: msg.role as ProviderMessage["role"],
-      content: msg.content,
-    };
-
-    if (msg.toolCallId) {
-      providerMsg.toolCallId = msg.toolCallId;
-    }
-
-    if (msg.toolCalls) {
-      providerMsg.toolCalls = msg.toolCalls.map(tc => ({
-        id: tc.id,
-        command: tc.command,
-        args: tc.args,
-      }));
-    }
-
-    result.push(providerMsg);
-  }
-
-  // Trailing turn-state system message — NEVER cache-marked for a breakpoint.
-  result.push({ role: "system", content: turnStatePrompt, cacheHint: "turn_state" });
-
-  return result;
-}
-
-/**
- * Mark the LAST history message with non-empty content as `history_tail`
- * (breakpoint B carrier). Empty-content rows are skipped backwards; an empty
- * history leaves no marker (no B). Role-agnostic — production tapes
- * legitimately end with system rows (continue-cue / operator-cue) or with
- * repair-inserted placeholder tool rows, which carry non-empty content.
- *
- * Operates on the POST-repair tape: history spans the indices between the
- * leading static/summary system messages and the trailing turn-state message.
- */
-function markHistoryTail(messages: ProviderMessage[], hasSummary: boolean): void {
-  const historyStart = hasSummary ? 2 : 1;
-  // Last index before the trailing turn-state message.
-  for (let i = messages.length - 2; i >= historyStart; i--) {
-    if (messages[i].content.length > 0) {
-      messages[i].cacheHint = "history_tail";
-      return;
-    }
-  }
 }
 
 /**

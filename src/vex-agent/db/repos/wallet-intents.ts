@@ -16,9 +16,25 @@
  * **`rowCount` discipline** (Codex final review constraint): every CAS
  * helper returns the mapped row (or `null`) — `rowCount=0` is NEVER a
  * silent success. Callers gate on the null return to detect races.
+ *
+ * **Client-bound writers** (compaction v2, contract C7): every function that
+ * moves an intent into or out of a live status takes an explicit `PoolClient`
+ * and has NO pool-level variant. A wallet intent is money state that the
+ * compaction safe-moment gate reads
+ * (`./approval-intents/money-state.ts`), and that gate is only sound if the
+ * writers serialize with it on the session control lock. Requiring the client
+ * is what makes "this write happened inside a session-control-locked
+ * transaction" a compile-time obligation rather than a convention. Callers use
+ * `withSessionControlLock(sessionId, …)`; that transaction must stay DB-only
+ * and COMMIT before any signing or provider call.
+ *
+ * Read paths (`getById`, `getPendingForSession`) stay pool-level: reads do not
+ * change the gate's answer.
  */
 
-import { execute, query, queryOne } from "../client.js";
+import type { PoolClient } from "pg";
+
+import { query, queryOne } from "../client.js";
 import { jsonb } from "../params.js";
 
 export type WalletIntentNetwork = "eip155" | "solana";
@@ -112,6 +128,21 @@ function mapRow(r: Record<string, unknown>): WalletIntent {
   };
 }
 
+/**
+ * Run one CAS `UPDATE … RETURNING` on the caller's transaction and map the row.
+ * `null` means the predicate missed — a hard "race lost" signal, never a silent
+ * success (see the `rowCount` discipline in the header).
+ */
+async function casRow(
+  client: PoolClient,
+  sql: string,
+  params: readonly unknown[],
+): Promise<WalletIntent | null> {
+  const res = await client.query<Record<string, unknown>>(sql, [...params]);
+  const row = res.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 // ── create ──────────────────────────────────────────────────────────────
 
 const INSERT_SQL = `INSERT INTO wallet_intents (
@@ -119,8 +150,15 @@ const INSERT_SQL = `INSERT INTO wallet_intents (
   to_address, amount, token, preview_json, expires_at, idempotency_key
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)`;
 
-export async function create(input: CreateInput): Promise<void> {
-  await execute(INSERT_SQL, [
+/**
+ * Insert a fresh `pending` intent — the moment a session gains live money
+ * state. Client-bound: creation is precisely the transition a row lock cannot
+ * exclude (the row has no identity to lock until it exists), so it MUST happen
+ * under the session control lock or the compaction gate can read `clear` a
+ * microsecond before an intent appears.
+ */
+export async function createWith(client: PoolClient, input: CreateInput): Promise<void> {
+  await client.query(INSERT_SQL, [
     input.intentId,
     input.sessionId,
     input.walletAddress,
@@ -156,11 +194,13 @@ export async function getById(
  * (already consumed/executed/cancelled, OR expires_at past, OR a different
  * session). `null` is a hard "race lost" signal — callers MUST gate on it.
  */
-export async function consumeIfPending(
+export async function consumeIfPendingWith(
+  client: PoolClient,
   intentId: string,
   sessionId: string,
 ): Promise<WalletIntent | null> {
-  const row = await queryOne<Record<string, unknown>>(
+  return casRow(
+    client,
     `UPDATE wallet_intents
         SET status = 'consuming', consumed_at = NOW()
       WHERE intent_id = $1
@@ -170,17 +210,18 @@ export async function consumeIfPending(
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId],
   );
-  return row ? mapRow(row) : null;
 }
 
 // ── markExecuted (session-scoped) ───────────────────────────────────────
 
-export async function markExecuted(
+export async function markExecutedWith(
+  client: PoolClient,
   intentId: string,
   sessionId: string,
   txHash: string,
 ): Promise<WalletIntent | null> {
-  const row = await queryOne<Record<string, unknown>>(
+  return casRow(
+    client,
     `UPDATE wallet_intents
         SET status = 'executed', tx_hash = $3
       WHERE intent_id = $1
@@ -189,7 +230,6 @@ export async function markExecuted(
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId, txHash],
   );
-  return row ? mapRow(row) : null;
 }
 
 // ── markFailed (session-scoped; txHash optional) ────────────────────────
@@ -205,13 +245,15 @@ export async function markExecuted(
  * the label via `summarizeWalletError`; the DB CHECK does not enforce the
  * format but the test suite pins it.
  */
-export async function markFailed(
+export async function markFailedWith(
+  client: PoolClient,
   intentId: string,
   sessionId: string,
   reason: string,
   txHash: string | null = null,
 ): Promise<WalletIntent | null> {
-  const row = await queryOne<Record<string, unknown>>(
+  return casRow(
+    client,
     `UPDATE wallet_intents
         SET status = 'failed', failure_reason = $3, tx_hash = $4
       WHERE intent_id = $1
@@ -220,7 +262,6 @@ export async function markFailed(
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId, reason, txHash],
   );
-  return row ? mapRow(row) : null;
 }
 
 // ── markAuditFailed (session-scoped; tx is real on-chain) ───────────────
@@ -231,13 +272,15 @@ export async function markFailed(
  * `markFailed` so phase 7 reconcile tooling can find these rows
  * specifically (Codex puzzle-5 phase-4 review point 2).
  */
-export async function markAuditFailed(
+export async function markAuditFailedWith(
+  client: PoolClient,
   intentId: string,
   sessionId: string,
   txHash: string,
   reason: string,
 ): Promise<WalletIntent | null> {
-  const row = await queryOne<Record<string, unknown>>(
+  return casRow(
+    client,
     `UPDATE wallet_intents
         SET status = 'audit_failed', tx_hash = $3, failure_reason = $4
       WHERE intent_id = $1
@@ -246,16 +289,17 @@ export async function markAuditFailed(
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId, txHash, reason],
   );
-  return row ? mapRow(row) : null;
 }
 
 // ── cancelIfPending (CAS, session-scoped) ───────────────────────────────
 
-export async function cancelIfPending(
+export async function cancelIfPendingWith(
+  client: PoolClient,
   intentId: string,
   sessionId: string,
 ): Promise<WalletIntent | null> {
-  const row = await queryOne<Record<string, unknown>>(
+  return casRow(
+    client,
     `UPDATE wallet_intents
         SET status = 'cancelled', cancelled_at = NOW()
       WHERE intent_id = $1
@@ -264,7 +308,6 @@ export async function cancelIfPending(
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId],
   );
-  return row ? mapRow(row) : null;
 }
 
 // ── getPendingForSession ────────────────────────────────────────────────

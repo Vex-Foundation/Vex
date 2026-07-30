@@ -106,6 +106,79 @@ async function captureWireBody(
   return captured;
 }
 
+/**
+ * Same interception, but returns the request HEADERS alongside the body and
+ * lets the caller supply the full envelope (not just `chatRequest`).
+ *
+ * `xOpenRouterMetadata` is an ENVELOPE field, a sibling of `chatRequest` — the
+ * SDK serialises it to the `X-OpenRouter-Metadata` HEADER, not into the JSON
+ * body (verified against the installed 1.1.13:
+ * `esm/models/operations/sendchatcompletionrequest.d.ts` `$Outbound`). So a
+ * body-only assertion could not tell whether we opted in at all.
+ */
+async function captureWireEnvelope(
+  request: Parameters<OpenRouter["chat"]["send"]>[0],
+): Promise<{ body: Record<string, unknown>; headers: Headers }> {
+  let capturedBody: Record<string, unknown> | null = null;
+  let capturedHeaders: Headers | null = null;
+
+  const httpClient = new HTTPClient({
+    fetcher: async (input) => {
+      const req = input as Request;
+      capturedHeaders = req.headers;
+      capturedBody = JSON.parse(await req.text()) as Record<string, unknown>;
+      return new Response(CHAT_RESULT_BODY, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const client = new OpenRouter({ apiKey: "sk-or-test", httpClient });
+  await client.chat.send(request);
+
+  if (capturedBody === null || capturedHeaders === null) {
+    throw new Error("fetcher was never invoked");
+  }
+  return { body: capturedBody, headers: capturedHeaders };
+}
+
+describe("OpenRouter wire request — routing-metadata opt-in", () => {
+  it("emits the X-OpenRouter-Metadata header when the envelope opts in", async () => {
+    const params = buildOpenRouterParams(MESSAGES, TOOLS, CONFIG, false);
+    const { headers } = await captureWireEnvelope({
+      xOpenRouterMetadata: "enabled",
+      chatRequest: { ...params, stream: false },
+    });
+
+    expect(headers.get("x-openrouter-metadata")).toBe("enabled");
+  });
+
+  it("emits NO such header when the envelope does not opt in", async () => {
+    const params = buildOpenRouterParams(MESSAGES, TOOLS, CONFIG, false);
+    const { headers } = await captureWireEnvelope({
+      chatRequest: { ...params, stream: false },
+    });
+
+    expect(headers.has("x-openrouter-metadata")).toBe(false);
+  });
+
+  it("leaves the request BODY byte-identical whether or not it opts in", async () => {
+    // The envelope field must not leak into `ChatRequest`. If it ever did, it
+    // would change the prompt-cache key for every conversational turn.
+    const params = buildOpenRouterParams(MESSAGES, TOOLS, CONFIG, false);
+    const withMetadata = await captureWireEnvelope({
+      xOpenRouterMetadata: "enabled",
+      chatRequest: { ...params, stream: false },
+    });
+    const without = await captureWireEnvelope({
+      chatRequest: { ...params, stream: false },
+    });
+
+    expect(JSON.stringify(withMetadata.body)).toBe(JSON.stringify(without.body));
+  });
+});
+
 describe("OpenRouter wire request — provider preferences", () => {
   it("emits provider.require_parameters for a TOOL-bearing request", async () => {
     const params = buildOpenRouterParams(MESSAGES, TOOLS, CONFIG, false);

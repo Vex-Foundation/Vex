@@ -116,7 +116,7 @@ describe("runResumeDispatch — running status + lease liveness", () => {
       expect.objectContaining({ fromStatuses: ["running"], missionRunId: "run-1" }),
     );
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1"),
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1", "owner-x"),
     );
   });
 

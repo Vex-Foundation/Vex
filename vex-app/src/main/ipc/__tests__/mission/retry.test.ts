@@ -167,7 +167,7 @@ describe("mission.retry", () => {
     // paused_error-only wake cancellation must not fire here.
     expect(mockCancelForSession).not.toHaveBeenCalled();
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead"),
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead", "owner-y"),
     );
   });
 
@@ -227,7 +227,7 @@ describe("mission.retry", () => {
     );
     // Fire-and-forget continuation (dynamic-imports the engine) — poll for it.
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err"),
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", "owner-x"),
     );
   });
 

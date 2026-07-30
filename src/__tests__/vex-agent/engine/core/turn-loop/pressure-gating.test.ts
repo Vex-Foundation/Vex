@@ -11,8 +11,22 @@ const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
 const mockIncrementIterations = vi.fn().mockResolvedValue(1);
-const mockUpdateStatus = vi.fn();
+// Resolves `true` so the terminal-safe CAS (`updateStatusIfNotTerminal`) reads
+// as "the write landed"; `updateStatus` ignores the value.
+const mockUpdateStatus = vi.fn().mockResolvedValue(true);
 const mockSetLastCheckpoint = vi.fn();
+
+// The turn loop registers a compaction-apply boundary action. Stubbed inert
+// here: none of these tests exercise compaction, and the real module pulls the
+// archive/messages graph these harnesses deliberately mock. The action's own
+// behaviour lives in `turn-loop/compaction-apply-consumer.test.ts`.
+vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({
+  createCompactionApplyAction: () => ({
+    name: "compaction_apply",
+    phase: "apply" as const,
+    run: async () => ({ kind: "continue" as const }),
+  }),
+}));
 
 vi.mock("@vex-agent/db/repos/messages.js", () => ({
   addMessage: (...a: unknown[]) => mockAddMessage(...a),
@@ -47,6 +61,10 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   incrementIterations: (...a: unknown[]) => mockIncrementIterations(...a),
   updateStatus: (...a: unknown[]) => mockUpdateStatus(...a),
+  // The critical-band escalation writes `paused_error` through the terminal-safe
+  // CAS so an operator Stop that landed during the forced compaction is not
+  // overwritten. Same spy, same assertions — the guard is what changed.
+  updateStatusIfNotTerminal: (...a: unknown[]) => mockUpdateStatus(...a),
   setLastCheckpoint: (...a: unknown[]) => mockSetLastCheckpoint(...a),
 }));
 
@@ -117,6 +135,13 @@ vi.mock("@vex-agent/db/client.js", () => ({
     if (typeof sql === "string" && sql.includes("INSERT INTO messages") && sql.includes("RETURNING id, created_at")) {
       return { id: 1, created_at: new Date().toISOString() };
     }
+    // The park sites now run the REAL operator-stop gate, which locks the run
+    // row and treats a MISSING row as dead (fail-closed) — so a `null` here
+    // would silently suppress every park these tests assert on. The runs in
+    // this file are live, so say so.
+    if (typeof sql === "string" && sql.includes("FROM mission_runs")) {
+      return { status: "running" };
+    }
     return null;
   }),
   executeWith: vi.fn().mockResolvedValue(1),
@@ -132,7 +157,14 @@ vi.mock("@vex-agent/db/client.js", () => ({
 // Puzzle 3 atomic lease helpers — production calls these via dynamic imports
 // from runner/turn-loop/wake paths. Default outcomes: claimed lease + no
 // pending control request. Per-test overrides via `mockImplementationOnce`.
-vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", async (importOriginal) => ({
+  // `importOriginal` on purpose: the operator-stop gate the approval
+  // enqueue now runs must stay the REAL implementation, driven by the SQL
+  // stubs above. Stubbing it out would turn the terminal-run assertions
+  // below into a test of the mock.
+  ...(await importOriginal<
+    typeof import("@vex-agent/engine/runtime/lease-and-status.js")
+  >()),
   claimRunLeaseAndFlipToRunning: vi.fn().mockResolvedValue({
     outcome: "claimed",
     previousStatus: "paused_wake",
@@ -418,8 +450,8 @@ describe("turn-loop", () => {
       // commits, the handlePostCompactBookkeeping reset currentTokenCount=0
       // and the loop recomputes turnBand to normal. Without that recompute,
       // buildTurnPromptStack would project the tools array at the "critical"
-      // band and the model would see the restricted (compact_only + read_only +
-      // safe_at_barrier) catalog AND the directive critical-pressure banner on
+      // band and the model would see the restricted (read_only +
+      // safe_at_barrier) catalog AND the critical-pressure banner on
       // the very first post-compact turn, wasting a turn.
       mockGetOpenAITools.mockClear();
       const provider = makeProvider([{ content: "post-compact reply" }]);

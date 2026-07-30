@@ -21,7 +21,7 @@ import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-
 /**
  * Session-aware context for tool surface projection. Built by engine runners
  * before every provider call so `getOpenAITools` can gate session-scoped
- * tools (loop_defer, compact_now).
+ * tools (loop_defer, compact_apply).
  *
  * `permission` and `sessionKind` are immutable per session; the former
  * controls approval bypass on mutating tools, the latter controls
@@ -59,18 +59,47 @@ export interface ToolVisibilityContext {
    * chunks first appear after a compact, possibly mid-session.
    */
   hasSessionMemory: boolean;
+  /**
+   * True iff a compaction preparation is live enough to relieve the pressure
+   * on its own (contract C8) — a validated summary is ready, or branch A still
+   * holds its lease with attempts remaining. While true, the `barrier` band
+   * stops stripping `mutating` tools, because the thing the barrier exists to
+   * force is already under way.
+   *
+   * SECURITY-RELEVANT. This lets fund-moving tools run at ≥88% context, so it
+   * must be a POSITIVE observation, never a default. It is derived by
+   * `barrierBypassAllowed` from the per-turn preparation read, which fails
+   * closed on an unreadable state; absent here ⇒ false ⇒ today's barrier.
+   *
+   * Scope is `barrier` only. `critical` keeps stripping — forced apply owns
+   * that band, and a session that deep needs the runtime to act, not the agent.
+   */
+  preparationBypassesBarrier: boolean;
+  /**
+   * True iff a VALIDATED prepared summary exists for this session. Gates
+   * `compact_apply` via `ToolVisibility.requiresSummaryReady`.
+   *
+   * Comes from the SAME per-turn preparation read as
+   * `preparationBypassesBarrier` (`hasCompactionSummaryReady` on the resolved
+   * state), so the tool cannot be offered on one axis while the other believes
+   * nothing is prepared.
+   */
+  hasCompactionSummaryReady: boolean;
 }
 
 /**
  * The static visibility axes a runner knows up-front. The per-turn layer
- * (`buildTurnPromptStack`) augments this with `contextUsageBand` +
- * `hasSessionMemory` to form the single `ToolVisibilityContext` used for BOTH
- * the OpenAI tools array AND the system-prompt Tool Map — so the two can never
- * drift.
+ * (`buildTurnPromptStack`) augments this with `contextUsageBand`,
+ * `hasSessionMemory` and the two compaction-preparation axes to form the single
+ * `ToolVisibilityContext` used for BOTH the OpenAI tools array AND the
+ * system-prompt Tool Map — so the two can never drift.
  */
 export type ToolVisibilityBase = Omit<
   ToolVisibilityContext,
-  "contextUsageBand" | "hasSessionMemory"
+  | "contextUsageBand"
+  | "hasSessionMemory"
+  | "preparationBypassesBarrier"
+  | "hasCompactionSummaryReady"
 >;
 
 /**
@@ -88,6 +117,10 @@ export function defaultVisibilityContext(
     planMode: false,
     contextUsageBand: "normal",
     hasSessionMemory: false,
+    // Both compaction axes default to the SAFE answer: no bypass, nothing
+    // ready. A caller that forgets them gets today's barrier, not a hole in it.
+    preparationBypassesBarrier: false,
+    hasCompactionSummaryReady: false,
     ...overrides,
   };
 }
@@ -105,7 +138,7 @@ export function defaultVisibilityContext(
  *   3. `passesVisibility` — band gate + mission-setup/run / agent-hidden /
  *      mission-setup-hidden / requiresMissionActiveRun gates.
  *   4. `passesPressureSafety` — PR2 cutover catalog-level filter
- *      (drops `mutating` at barrier+, drops `compact_only` below barrier).
+ *      (drops `mutating` at barrier+, unless a live preparation bypasses it).
  */
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
   return TOOLS
@@ -119,7 +152,7 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
     // flag so the reveal subsystem owns its own surface list end-to-end.
     .filter(t => !RELAY_REVEAL_GATED_ALIAS_NAMES.has(t.name) || hasAnyRelayRouteReveal(ctx.sessionId))
     .filter(t => passesVisibility(t.visibility, ctx))
-    .filter(t => passesPressureSafety(t, ctx.contextUsageBand));
+    .filter(t => passesPressureSafety(t, ctx.contextUsageBand, ctx.preparationBypassesBarrier));
 }
 
 /**
@@ -127,22 +160,38 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
  * LLM-visible tool catalog consistent with the dispatcher's hard-deny.
  *
  * At pressure barrier+ (`barrier` or `critical`), the agent's full mutating
- * surface is restricted — only `read_only`, `safe_at_barrier`, and
- * `compact_only` tools are usable. Showing `mutating` tools in the catalog
- * at those bands would invite the model to emit calls the dispatcher then
- * rejects with the deny error, wasting a turn and confusing the model. The
- * inverse also holds: `compact_only` tools (currently only `compact_now`)
- * are NOT useful below barrier, where there is no compactable pressure.
+ * surface is restricted — only `read_only` and `safe_at_barrier` tools are
+ * usable. Showing `mutating` tools in the catalog at those bands would invite
+ * the model to emit calls the dispatcher then rejects with the deny error,
+ * wasting a turn and confusing the model.
+ *
+ * THE BYPASS (contract C8). The barrier exists to force compaction. When a
+ * compaction is already being prepared in the background, forcing it a second
+ * time by amputating the agent's tools buys nothing and costs the session its
+ * ability to finish what it started. So while `bypass` is true the `mutating`
+ * drop is suppressed — but ONLY at `barrier`, and ONLY for that drop:
+ *
+ *   - `critical` still strips. That band belongs to the runtime's forced apply,
+ *     and an agent at 92% should not be starting new fund-moving work.
+ *
+ * `bypass` mirrors `checkPressureDeny`'s parameter exactly. The two are a
+ * matched pair: if the catalog offers a tool the dispatcher denies, the model
+ * wastes turns; if the dispatcher allows one the catalog hid, the barrier is
+ * hollow. They must change together, in one edit, forever.
  *
  * Tools without `pressureSafety` declared default to "mutating" via the
  * required-field invariant in `ToolDef`, so undefined cases cannot reach
  * here — the compiler enforced classification at registration time.
  */
-function passesPressureSafety(tool: ToolDef, band: ContextUsageBand): boolean {
+function passesPressureSafety(
+  tool: ToolDef,
+  band: ContextUsageBand,
+  bypass: boolean,
+): boolean {
   const safety = tool.pressureSafety;
   const atBarrier = band === "barrier" || band === "critical";
-  if (atBarrier && safety === "mutating") return false;
-  if (!atBarrier && safety === "compact_only") return false;
+  const mutatingDropSuppressed = bypass && band === "barrier";
+  if (atBarrier && safety === "mutating" && !mutatingDropSuppressed) return false;
   return true;
 }
 
@@ -200,6 +249,12 @@ function passesVisibility(
   // swap_execute_uniswap pair joins the catalog only for a session with an
   // active, fresh reveal. Absent sessionId fails closed to hidden.
   if (v.requiresUniswapReveal && !isUniswapPairRevealed(ctx.sessionId)) return false;
+
+  // Prepared-compaction readiness gate — `compact_apply` exists only while
+  // there is something prepared to apply. Fails closed: an unreadable
+  // preparation state resolves to "not ready" upstream, so the tool simply is
+  // not offered rather than being offered and then refusing.
+  if (v.requiresSummaryReady && !ctx.hasCompactionSummaryReady) return false;
 
   return true;
 }

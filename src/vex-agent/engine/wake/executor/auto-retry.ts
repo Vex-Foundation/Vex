@@ -1,6 +1,7 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
+import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 
 import type { WakeDeps } from "./deps.js";
 import type { ClaimedWakeOutcome } from "./tick.js";
@@ -66,12 +67,9 @@ export async function handleAutoRetryClaimed(
   });
   try {
     await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
-    await deps.resumeMissionRun(run.id);
+    await deps.resumeMissionRun(run.id, ownerId);
     return { kind: "resumed", runId: run.id };
   } finally {
-    const { releaseLeaseAndEmitControlState } = await import(
-      "../../runtime/release-and-emit.js"
-    );
     await releaseLeaseAndEmitControlState(handle, wake.sessionId, {
       missionRunId: run.id,
     });

@@ -60,6 +60,9 @@ vi.mock("@vex-agent/db/client.js", () => ({
 resetMocks();
 
 const intents = await import("@vex-agent/db/repos/approval-intents.js");
+const { APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES } = await import(
+  "@vex-agent/engine/types.js"
+);
 
 beforeEach(() => {
   resetMocks();
@@ -481,5 +484,166 @@ describe("getPendingForSession", () => {
     expect(result).toHaveLength(2);
     expect(result[0]!.approvalId).toBe("a-1");
     expect(result[1]!.actionKind).toBe("user_wallet_broadcast");
+  });
+});
+
+// ── Lifecycle state machine (migration 056) ────────────────────────────
+
+describe("commitExecutionResultWith — late-completion fence", () => {
+  /**
+   * The write is CAS'd on `execution_status = 'dispatching'` so a dispatcher
+   * that woke up after the reconciler already declared its outcome
+   * `indeterminate` cannot overwrite that terminal verdict — and, because the
+   * caller aborts its transaction on `false`, cannot append a second tool
+   * result for a tool call that already has one.
+   */
+  it("CASes on `dispatching` and reports ownership via the row count", async () => {
+    const mockClient = {
+      query: vi
+        .fn()
+        .mockResolvedValue({ rowCount: 1, rows: [{ approval_id: APPROVAL_ID }] }),
+    };
+
+    const owned = await intents.commitExecutionResultWith(mockClient as never, {
+      approvalId: APPROVAL_ID,
+      status: "succeeded",
+      resultHash: "abc123",
+      resultMessageId: 4242,
+    });
+
+    expect(owned).toBe(true);
+    const [sql, params] = mockClient.query.mock.calls[0];
+    expect(sql).toContain("AND execution_status = 'dispatching'");
+    expect(sql).toContain("result_message_id     = $4");
+    expect(sql).toContain("RETURNING approval_id");
+    expect(params).toEqual([APPROVAL_ID, "succeeded", "abc123", 4242]);
+  });
+
+  it("returns false when the row already left `dispatching`", async () => {
+    const mockClient = {
+      query: vi.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+    };
+
+    const owned = await intents.commitExecutionResultWith(mockClient as never, {
+      approvalId: APPROVAL_ID,
+      status: "succeeded",
+      resultHash: "abc123",
+      resultMessageId: 4242,
+    });
+
+    expect(owned).toBe(false);
+  });
+});
+
+describe("getPendingLifecycleForSession", () => {
+  /**
+   * Both outstanding shapes, or the fast paths stay blind to the ordinary
+   * "approved while a turn was running" case: on a busy lease the tool never
+   * dispatched, so there is no `result_message_id` to match.
+   */
+  it("matches decided-but-undispatched AND dispatched-but-unresumed", async () => {
+    await intents.getPendingLifecycleForSession(SESSION_ID);
+
+    const [sql, params] = mockPoolQuery.mock.calls[0]!;
+    expect(sql).toContain("session_id    = $1");
+    expect(sql).toContain(
+      "(decision = 'approved' AND execution_status = 'not_started')",
+    );
+    expect(sql).toContain(
+      "(result_message_id IS NOT NULL AND resume_consumed_at IS NULL)",
+    );
+    // `resumed_at` records attempts; an attempt is not a consumption, so it
+    // must never narrow eligibility.
+    expect(sql).not.toContain("resumed_at");
+    expect(params).toEqual([
+      SESSION_ID,
+      10,
+      [...APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES],
+    ]);
+  });
+
+  it("shares its predicate with the reconciler scan, which also sees `dispatching`", async () => {
+    await intents.getIncompleteLifecycle();
+
+    const [sql] = mockPoolQuery.mock.calls[0]!;
+    expect(sql).toContain(
+      "(decision = 'approved' AND execution_status = 'dispatching')",
+    );
+    expect(sql).toContain(
+      "(decision = 'approved' AND execution_status = 'not_started')",
+    );
+    expect(sql).toContain(
+      "(result_message_id IS NOT NULL AND resume_consumed_at IS NULL)",
+    );
+  });
+});
+
+/**
+ * Finding 3, the starvation half. Both scans take a bounded batch in age order,
+ * so a row that can NEVER be claimed on this pass — its mission run has left
+ * `APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES` — sits at the head of every batch for
+ * as long as it exists. Enough of them and a newly-decided approval never
+ * appears in the window at all. The ordering demotes them instead of the
+ * predicate dropping them, because most such runs are recoverable.
+ */
+describe("lifecycle scan fairness ordering", () => {
+  for (const [name, run] of [
+    [
+      "reconciler scan",
+      () => intents.getIncompleteLifecycle(),
+    ],
+    [
+      "per-session scan",
+      () => intents.getPendingLifecycleForSession(SESSION_ID),
+    ],
+  ] as const) {
+    it(`${name}: sorts rows whose run is not claimable last, then by age`, async () => {
+      await run();
+
+      const [sql, params] = mockPoolQuery.mock.calls[0]!;
+      const orderBy = (sql as string).slice((sql as string).indexOf("ORDER BY"));
+
+      // Blocked-last is the PRIMARY key; age is still the tiebreaker within
+      // each group, so the ordinary case is unchanged.
+      expect(orderBy).toContain("mission_run_id   IS NOT NULL");
+      expect(orderBy).toContain("FROM mission_runs mr");
+      expect(orderBy).toContain("mr.id     = approval_intents.mission_run_id");
+      expect(orderBy).toContain("decided_at ASC NULLS FIRST");
+      expect(orderBy.indexOf("mission_run_id   IS NOT NULL")).toBeLessThan(
+        orderBy.indexOf("decided_at ASC"),
+      );
+
+      // The claim gate's own status list, never a re-listed copy.
+      expect(params as unknown[]).toContainEqual([
+        ...APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES,
+      ]);
+    });
+
+    it(`${name}: keeps \`dispatching\` rows at full priority`, async () => {
+      // Their only pending action is the reconciler's `indeterminate` verdict,
+      // which is decided from the row lock and the live lease and never looks at
+      // the run status. Deferring an unprovable money-path outcome for fairness
+      // would be the wrong trade.
+      await run();
+
+      const [sql] = mockPoolQuery.mock.calls[0]!;
+      const orderBy = (sql as string).slice((sql as string).indexOf("ORDER BY"));
+      expect(orderBy).toContain("execution_status <> 'dispatching'");
+    });
+  }
+
+  it("never drops a blocked row from the result set", async () => {
+    // Deprioritised, not filtered: `paused_error` and friends are
+    // operator-recoverable, so a predicate that excluded them would throw the
+    // recovery away. Declaring one permanently exhausted is a product decision
+    // the owner has not made — see the seam in `lifecycle-actions.ts`.
+    await intents.getIncompleteLifecycle();
+
+    const [sql] = mockPoolQuery.mock.calls[0]!;
+    const where = (sql as string).slice(
+      (sql as string).indexOf("WHERE"),
+      (sql as string).indexOf("ORDER BY"),
+    );
+    expect(where).not.toContain("mission_runs");
   });
 });

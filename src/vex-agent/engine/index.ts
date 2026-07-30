@@ -62,3 +62,17 @@ export type { AbortMissionRunResult, StopMissionRunForEditResult } from "./core/
 export { retryActiveMissionRun } from "./core/runner/retry.js";
 
 export * from "./types.js";
+
+/**
+ * Host-only, write-free local abort signal. `vex-app`'s stop IPC persists the
+ * run-scoped control request FIRST, then calls this so a live in-flight
+ * provider call is cancelled immediately instead of at the next iteration
+ * boundary. See `core/runner/abort.ts`.
+ */
+export { signalMissionRunAbortLocal } from "./core/runner/abort.js";
+/**
+ * Session-scoped sibling of `signalMissionRunAbortLocal`, for autonomous work
+ * that has no mission run (a Full-Autonomous agent chat slice). Same contract:
+ * per-process, writes nothing, best-effort on top of the durable stop request.
+ */
+export { abortSessionSliceLocal } from "./runtime/session-slice-abort.js";

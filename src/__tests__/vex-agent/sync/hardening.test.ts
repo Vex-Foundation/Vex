@@ -14,11 +14,12 @@ vi.mock("@vex-agent/db/repos/executions.js", () => ({
   recordExecution: (...args: unknown[]) => mockRecordExecution(...args),
   getById: vi.fn().mockResolvedValue(null),
   // Durable-intent lifecycle (general infra: Kyber/Uniswap staged swaps,
-  // Khalani/Relay staged bridges via runtime/capture.ts's `completeExecutionIntent`
-  // call) — inert for the fake tool under test, but the mocked module must
+  // Khalani/Relay staged bridges via runtime/capture.ts's
+  // `completeExecutionIntentWith` call, which runs under the session control
+  // lock) — inert for the fake tool under test, but the mocked module must
   // still export them -- Vitest throws on access to an undefined mock export.
   createExecutionIntent: vi.fn().mockResolvedValue(1),
-  completeExecutionIntent: vi.fn().mockResolvedValue(undefined),
+  completeExecutionIntentWith: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@vex-agent/db/repos/sync.js", () => ({

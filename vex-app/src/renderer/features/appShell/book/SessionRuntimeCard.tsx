@@ -41,6 +41,7 @@ import type {
   TurnUsageDto,
 } from "@shared/schemas/usage.js";
 import type { CompactionStatusDto } from "@shared/schemas/compaction.js";
+import type { SessionPermission } from "@shared/schemas/sessions.js";
 import {
   useContextWindow,
   useLastTurnUsage,
@@ -50,28 +51,46 @@ import {
   useCompactionLiveSync,
   useCompactionStatus,
 } from "../../../lib/api/compaction.js";
+import {
+  usePreparation,
+  usePreparationLiveSync,
+} from "../../../lib/api/compaction-preparation.js";
 import { useSessionModel } from "../../../lib/api/sessions.js";
+import { CompactionApplyButton } from "../CompactionApplyButton.js";
 import { ModelBrandIcon } from "../../wizard/steps/provider/ModelBrandIcon.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 
 export function SessionRuntimeCard({
   sessionId,
+  permission = null,
 }: {
   readonly sessionId: string;
+  /**
+   * Session permission, supplied by the shell that owns the session query
+   * (BookPanel). Session-STATIC (locked at creation), so a prop cannot go
+   * stale — and the card does not gain another query for one enum. `null`
+   * while the parent's session read is in flight or absent.
+   */
+  readonly permission?: SessionPermission | null;
 }): JSX.Element {
   useCompactionLiveSync(sessionId);
+  usePreparationLiveSync(sessionId);
 
   const modelQuery = useSessionModel(sessionId);
   const lastTurnQuery = useLastTurnUsage(sessionId);
   const totalsQuery = useSessionUsageTotals(sessionId);
   const contextQuery = useContextWindow(sessionId);
   const compactionQuery = useCompactionStatus(sessionId);
+  const preparationQuery = usePreparation(sessionId);
 
   const model = modelQuery.data?.ok ? modelQuery.data.data : null;
   const lastTurn = lastTurnQuery.data?.ok ? lastTurnQuery.data.data : null;
   const totals = totalsQuery.data?.ok ? totalsQuery.data.data : null;
   const context = contextQuery.data?.ok ? contextQuery.data.data : null;
   const compaction = compactionQuery.data?.ok ? compactionQuery.data.data : null;
+  const preparation = preparationQuery.data?.ok
+    ? preparationQuery.data.data
+    : null;
 
   return (
     <PortfolioCard eyebrow="Runtime & Cost">
@@ -84,6 +103,12 @@ export function SessionRuntimeCard({
         <ModelLine model={model} />
         <UsageLine lastTurn={lastTurn} totals={totals} />
         <ContextMeter context={context} />
+        <CompactionApplyButton
+          sessionId={sessionId}
+          preparation={preparation}
+          permission={permission}
+          stack
+        />
         <CompactionNote status={compaction} />
       </div>
     </PortfolioCard>

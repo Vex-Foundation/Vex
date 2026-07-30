@@ -34,7 +34,6 @@ export type CheckpointPlan =
       mode: "giant_tool";
       bloatedMessageId: number;
       bloatedContent: string;
-      virtualPrefix: MessageWithId[];
     }
   | {
       mode: "noop";
@@ -47,8 +46,8 @@ export type CheckpointPlan =
  * Order of preference:
  *   1. If `selectArchivePrefix` returns a non-empty prefix, archive it.
  *   2. Otherwise scan the tail for the largest `role:'tool'` row. If it
- *      exceeds `giantThreshold`, build a virtual prefix of `[parent
- *      assistant, bloated tool]` so summarize/extract still have context.
+ *      exceeds `giantThreshold`, fork that single row to the archive —
+ *      the job's source range is exactly that row.
  *   3. Otherwise bail out with `noop`.
  */
 export function selectPrefixWithGiantFallback(
@@ -76,16 +75,10 @@ export function selectPrefixWithGiantFallback(
     return { mode: "noop", reason: "no_compactable" };
   }
 
-  const parent = findParentAssistant(messages, giant.index, giant.message.toolCallId);
-  const virtualPrefix: MessageWithId[] = parent
-    ? [parent, giant.message]
-    : [giant.message];
-
   return {
     mode: "giant_tool",
     bloatedMessageId: giant.message.id,
     bloatedContent: giant.message.content,
-    virtualPrefix,
   };
 }
 
@@ -108,23 +101,4 @@ function findLargestToolMessage(
     }
   }
   return best;
-}
-
-function findParentAssistant(
-  messages: readonly MessageWithId[],
-  toolIndex: number,
-  toolCallId: string | undefined,
-): MessageWithId | null {
-  if (!toolCallId) return null;
-  for (let i = toolIndex - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role !== "assistant") continue;
-    if (!m.toolCalls || m.toolCalls.length === 0) continue;
-    const matches = m.toolCalls.some((tc) => tc.id === toolCallId);
-    if (matches) return m;
-    // An earlier assistant without this call-id means our tool is orphaned
-    // (shouldn't happen given the save ordering, but bail out cleanly).
-    return null;
-  }
-  return null;
 }

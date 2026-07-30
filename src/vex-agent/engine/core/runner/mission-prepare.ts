@@ -187,61 +187,62 @@ export async function prepareMissionStart(
     ttlMs: LEASE_TTL_MS,
   });
 
-  // 5. Session-level active/paused run gate (2nd, post-claim race window).
-  const active2 = await missionRunsRepo.getActiveRunBySession(sessionId);
-  if (active2 !== null) {
-    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
-      missionRunId: null,
-    }).catch(() => undefined);
-    return {
-      outcome: "session_has_active_run",
-      missionRunId: active2.id,
-      runStatus: active2.status,
-    };
-  }
-
-  // 6. Session permission read (fallible — must run BEFORE commit).
-  const session = await sessionsRepo.getSession(sessionId);
-  if (!session) {
-    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
-      missionRunId: null,
-    }).catch(() => undefined);
-    return { outcome: "session_not_found" };
-  }
-  const permission = session.permission;
-
-  // 7. Atomic commitMissionStart. After this step, NO fallible IO
-  //    before the prepared return.
-  const runId = `run-${Date.now()}-${randomUUID().slice(0, 8)}`;
-  let commit: CommitMissionStartOutcome;
+  // ── LEASE OWNERSHIP BOUNDARY ─────────────────────────────────────
+  //
+  // `createLeaseHandle` above armed a RENEWING heartbeat. From here on the
+  // handle has exactly one owner at every instant, and the `finally` below is
+  // what guarantees it: unless ownership is explicitly transferred to the
+  // prepared continuation, the lease is released on the way out — return AND
+  // throw alike.
+  //
+  // Before this guard the refusal paths released but a THROW did not, and a
+  // leaked heartbeat is worse than a leaked lease: the interval keeps renewing
+  // `expires_at`, so the row never lapses, no TTL sweep can reclaim it, and the
+  // session stays blocked for the life of the process. Two fallible reads and
+  // the commit sat in that window. Same defect class as the operator-stop
+  // continuation leak.
+  //
+  // Do NOT add fallible IO after the transfer flag is set.
+  let leaseOwnershipTransferred = false;
   try {
-    commit = await commitMissionStart({
+    // 5. Session-level active/paused run gate (2nd, post-claim race window).
+    const active2 = await missionRunsRepo.getActiveRunBySession(sessionId);
+    if (active2 !== null) {
+      return {
+        outcome: "session_has_active_run",
+        missionRunId: active2.id,
+        runStatus: active2.status,
+      };
+    }
+
+    // 6. Session permission read (fallible — must run BEFORE commit).
+    const session = await sessionsRepo.getSession(sessionId);
+    if (!session) {
+      return { outcome: "session_not_found" };
+    }
+    const permission = session.permission;
+
+    // 7. Atomic commitMissionStart. After this step, NO fallible IO
+    //    before the prepared return.
+    const runId = `run-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const commit: CommitMissionStartOutcome = await commitMissionStart({
       missionId: input.missionId,
       runId,
     });
-  } catch (err) {
-    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
-      missionRunId: null,
-    }).catch(() => undefined);
-    throw err;
-  }
-  if (commit.outcome !== "committed") {
-    await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
-      missionRunId: null,
-    }).catch(() => undefined);
-    return mapCommitOutcomeToPrepareOutcome(commit);
-  }
+    if (commit.outcome !== "committed") {
+      return mapCommitOutcomeToPrepareOutcome(commit);
+    }
 
-  logger.info("engine.mission.prepare_start.committed", {
-    missionId: input.missionId,
-    sessionId,
-    runId: commit.runId,
-  });
+    logger.info("engine.mission.prepare_start.committed", {
+      missionId: input.missionId,
+      sessionId,
+      runId: commit.runId,
+    });
 
-  // 8. Pure construction.
-  return {
-    outcome: "prepared",
-    prepared: {
+    // 8. Pure construction. The transfer flag is set LAST, immediately before
+    //    the return, so nothing between here and the caller can throw with
+    //    ownership already surrendered.
+    const prepared: PreparedMissionStart = {
       runId: commit.runId,
       missionId: input.missionId,
       sessionId,
@@ -251,8 +252,19 @@ export async function prepareMissionStart(
       sessionLease,
       provider,
       config,
-    },
-  };
+    };
+    leaseOwnershipTransferred = true;
+    return { outcome: "prepared", prepared };
+  } finally {
+    if (!leaseOwnershipTransferred) {
+      // Best-effort: a failing release must not mask the original throw, and
+      // the handle's own `release()` is idempotent and already swallows its
+      // DB errors — the heartbeat is stopped either way.
+      await releaseLeaseAndEmitControlState(sessionLease, sessionId, {
+        missionRunId: null,
+      }).catch(() => undefined);
+    }
+  }
 }
 
 function mapCommitOutcomeToPrepareOutcome(

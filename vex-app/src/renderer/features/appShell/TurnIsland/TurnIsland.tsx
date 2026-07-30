@@ -183,6 +183,12 @@ export function TurnIsland({
           <IslandBody view={view} preview={preview} />
         </DynamicIsland>
       </DynamicIslandProvider>
+      {view.state === "error" && view.errorBody !== undefined ? (
+        // Category copy, NOT provider text — the second line explains what the
+        // classified failure means, from the same shared copy table as the
+        // error banner.
+        <span className="mt-1 text-xs text-destructive">{view.errorBody}</span>
+      ) : null}
       {view.state === "error" && preview.reasoningText.length > 0 ? (
         // The trace itself is deliberately NOT rendered on the error path.
         <span className="mt-1 text-[11px] text-[var(--vex-text-3)]">
