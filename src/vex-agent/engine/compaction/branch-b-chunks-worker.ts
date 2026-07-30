@@ -54,8 +54,7 @@ import { emitPreparationCommitted } from "./preparation-event-emit.js";
 import { hasBranchProviderConfig, type BranchProviderFactory } from "./branch-provider-call.js";
 import type { EndpointFailoverDeps } from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import { startBranchHeartbeat, type BranchLeaseHeartbeat } from "./branch-heartbeat.js";
-import { buildChunksSnapshot } from "./chunks-snapshot.js";
-import { callChunksLLM } from "./chunks-call.js";
+import { buildBudgetValidChunksSnapshot } from "./chunks-budget-guard.js";
 import {
   buildCorpusProviderMessages,
   readPreparationCorpus,
@@ -115,22 +114,19 @@ async function runLlmPhase(
       throw new Error(`compaction_corpus_pair_closure_broken: ${closure.reason}`);
     }
 
-    const call = await callChunksLLM(
+    // Every chunk in `built.snapshot` is embeddable by construction — the guard
+    // owns that invariant (see `chunks-budget-guard.ts`) and fails the attempt
+    // rather than freezing anything the embeddings provider would refuse.
+    const built = await buildBudgetValidChunksSnapshot(
       {
         preparationId: preparation.id,
         sessionId: preparation.sessionId,
         frozenSummary: preparation.frozenSessionSummary,
         prefix,
+        targetGeneration: preparation.targetCheckpointGeneration,
       },
-      deps.makeProvider,
-      deps.failoverDeps,
+      deps,
     );
-
-    const built = buildChunksSnapshot({
-      preparationId: preparation.id,
-      chunks: call.chunks,
-      targetGeneration: preparation.targetCheckpointGeneration,
-    });
 
     if (heartbeat.isClaimLost()) {
       logger.warn("compaction-prep.chunks_exit_after_claim_lost", {
@@ -148,8 +144,8 @@ async function runLlmPhase(
       rejectedByExclusion: built.rejectedByExclusion,
       rejectedByRedaction: built.rejectedByRedaction,
       provider: "openrouter",
-      model: call.model ?? process.env.AGENT_MODEL ?? "unknown",
-      costUsd: call.costUsd,
+      model: built.model ?? process.env.AGENT_MODEL ?? "unknown",
+      costUsd: built.costUsd,
     });
     if (!froze) {
       // Either the claim was lost or a snapshot already exists. Both mean the
@@ -172,7 +168,7 @@ async function runLlmPhase(
       sessionId: preparation.sessionId,
       chunks: built.snapshot.chunks.length,
       rejectedByExclusion: built.rejectedByExclusion,
-      costUsd: call.costUsd,
+      costUsd: built.costUsd,
     });
 
     // The freeze keeps this worker's lease (status `frozen`, same owner), so
@@ -182,7 +178,7 @@ async function runLlmPhase(
       built.snapshot,
       workerId,
       heartbeat,
-      call.model,
+      built.model,
     );
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);

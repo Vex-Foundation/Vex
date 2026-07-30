@@ -20,6 +20,7 @@ import { z } from "zod";
 import type { CompactJob } from "../../db/repos/compact-jobs/index.js";
 import type { JudgeProvider } from "@vex-agent/memory/manager/judge.js";
 import { CHUNKER_CALL_TIMEOUT_MS } from "./policy.js";
+import { MEMORY_CHUNK_MODEL_BUDGET_CHARS } from "@vex-agent/embeddings/document-size-budget.js";
 import logger from "@utils/logger.js";
 import {
   renderRedactedArchivedTranscript,
@@ -115,6 +116,11 @@ export async function callChunkerLLM(
     "INCLUDE: decisions and rationale, observed patterns, lessons learned, user signals, mission state.",
     "Output strict JSON: { chunks: [ { theme, entities[], protocols[], error_classes[], chains[], tasks[], happened_md, did_md, tried_md, outstanding_items[] } ] }",
     "Theme: 3-8 lowercase underscore-separated tokens, specific (e.g. 'kyber_quote_timeout_pattern' NOT 'debug').",
+    // Same size budget the preparation chunker states, from the same owner
+    // (`embeddings/document-size-budget.ts`): a chunk that does not fit the
+    // embeddings server's physical batch cannot be stored at all, and this path
+    // fails the job rather than inserting it.
+    `SIZE BUDGET, per chunk: the theme plus all narrative text (happened_md + did_md + tried_md + every outstanding_items entry) must total at most ${MEMORY_CHUNK_MODEL_BUDGET_CHARS} characters. If a theme needs more, SPLIT it into several smaller chunks instead of exceeding the budget. Never truncate mid-sentence.`,
     "If nothing worth chunking, return { chunks: [] }.",
   ].join(" ");
   const userPrompt = [

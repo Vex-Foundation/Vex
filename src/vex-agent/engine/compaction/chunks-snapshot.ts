@@ -33,6 +33,7 @@ import {
   BODY_MD_SCHEMA_VERSION,
   prepareMemoryRender,
 } from "@vex-agent/db/repos/session-memories/index.js";
+import { exceedsEmbeddingDocumentBudget } from "@vex-agent/embeddings/document-size-budget.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import { scanLiveState } from "@vex-agent/memory/exclusion-rules.js";
 import {
@@ -164,18 +165,56 @@ export function buildChunksSnapshot(
     });
   }
 
+  return {
+    ...sealFrozenChunks(frozen),
+    rejectedByExclusion,
+    rejectedByRedaction: 0,
+  };
+}
+
+/**
+ * Wrap frozen chunks into the persisted snapshot and fingerprint it.
+ *
+ * Exported because the size guard merges the chunks of two builds (the first
+ * model answer plus the re-emitted oversized ones) into ONE snapshot, and the
+ * fingerprint must be computed the same way for both paths — a second
+ * `createHash` call site is exactly how the two drift.
+ */
+export function sealFrozenChunks(chunks: readonly FrozenChunk[]): {
+  readonly snapshot: FrozenChunksOutput;
+  readonly snapshotSha256: string;
+} {
   const snapshot: FrozenChunksOutput = {
     snapshotVersion: FROZEN_CHUNKS_SNAPSHOT_VERSION,
-    chunks: frozen,
+    chunks: [...chunks],
   };
   return {
     snapshot,
     snapshotSha256: createHash("sha256")
       .update(JSON.stringify(snapshot), "utf8")
       .digest("hex"),
-    rejectedByExclusion,
-    rejectedByRedaction: 0,
   };
+}
+
+/**
+ * Split frozen chunks by whether their embedding input fits the provider's
+ * usable batch. Measured on the EXACT bytes `embedDocument` would send, which
+ * only exist once the body has been rendered — so this is the first point where
+ * the answer is knowable, and it is strictly before the freeze.
+ */
+export function partitionFrozenChunksByEmbeddingBudget(
+  chunks: readonly FrozenChunk[],
+): { readonly withinBudget: FrozenChunk[]; readonly oversized: FrozenChunk[] } {
+  const withinBudget: FrozenChunk[] = [];
+  const oversized: FrozenChunk[] = [];
+  for (const chunk of chunks) {
+    if (exceedsEmbeddingDocumentBudget(chunk.theme, chunk.bodyMd)) {
+      oversized.push(chunk);
+    } else {
+      withinBudget.push(chunk);
+    }
+  }
+  return { withinBudget, oversized };
 }
 
 function redactAll(values: readonly string[]): string[] {

@@ -41,6 +41,24 @@ const CHUNKS = JSON.stringify({
   ],
 });
 
+/**
+ * A chunk in the size class that broke the live run (~747 tokens). The stub
+ * returns it for BOTH the chunking call and the repair round, standing in for a
+ * model that will not comply.
+ */
+const OVERSIZED_CHUNKS = JSON.stringify({
+  chunks: [
+    {
+      theme: "kyber_quote_timeout_pattern",
+      happened_md: "the kyberswap quote timed out again. ".repeat(81),
+      did_md: "retried with a longer deadline",
+      outstanding_items: [],
+      protocols: ["kyberswap"],
+      chains: ["solana"],
+    },
+  ],
+});
+
 function corpusText(): string {
   return serializePreparationCorpus(
     buildPreparationCorpus({
@@ -292,6 +310,31 @@ describe("branch-B freeze-then-insert (integration)", () => {
     const outcome = await runChunksBranchTick(OTHER_WORKER);
     expect(outcome).toMatchObject({ kind: "landed" });
     expect((await memoryRows(sessionId))).toHaveLength(1);
+  });
+
+  it("never freezes a chunk the embeddings provider could not accept", async () => {
+    // The live acceptance run's defect, end to end: an oversized chunk reached
+    // the freeze, every insert failed with the provider's 500, and the row sat
+    // in `chunks_status = 'frozen'` retrying forever — the session silently
+    // never got its narrative memory. The size budget has to make that state
+    // unreachable, so a model that will not comply produces a FAILED ATTEMPT
+    // with nothing frozen and nothing in `session_memories`.
+    const { sessionId, preparation } = await forkWithCorpus();
+    const provider = countingProvider(OVERSIZED_CHUNKS);
+
+    const outcome = await runChunksBranchTick(WORKER, {
+      makeProvider: provider.factory,
+    });
+
+    expect(outcome).toMatchObject({ kind: "llm_failed" });
+    // One chunking call plus exactly ONE repair round — never a per-chunk loop.
+    expect(provider.calls()).toBe(2);
+
+    const row = await getPreparationById(preparation.id);
+    expect(row?.chunksStatus).not.toBe("frozen");
+    expect(row?.chunksFrozenOutput).toBeNull();
+    expect(row?.chunksLastError).toMatch(/oversized_after_repair/);
+    expect(await memoryRows(sessionId)).toHaveLength(0);
   });
 
   it("does not claim an LLM attempt while the vault is locked", async () => {

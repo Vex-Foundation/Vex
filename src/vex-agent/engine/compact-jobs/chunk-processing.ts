@@ -33,6 +33,11 @@
 import type { CompactJob } from "../../db/repos/compact-jobs/index.js";
 import { embedDocument } from "@vex-agent/embeddings/client.js";
 import {
+  EMBEDDING_DOCUMENT_MAX_CHARS,
+  embeddingDocumentInputChars,
+  exceedsEmbeddingDocumentBudget,
+} from "@vex-agent/embeddings/document-size-budget.js";
+import {
   insertPreparedMemory,
   prepareMemoryRender,
 } from "@vex-agent/db/repos/session-memories/index.js";
@@ -148,6 +153,25 @@ export async function processChunkerOutput(args: {
       triedMd: r3.text,
       outstandingTexts: rOuts.map((r) => r.text),
     });
+    // NEVER embed a body the provider cannot take. The shipped embeddings
+    // server answers HTTP 500 for anything over its physical batch, and this
+    // worker's retry/backoff would re-send the same oversized body on every
+    // attempt. Throwing here makes it a FAILED ATTEMPT, so the job reaches
+    // `permanently_failed` after `WORKER_MAX_ATTEMPTS` instead of retrying
+    // forever, and nothing oversized is ever inserted. The legacy path gets no
+    // repair round — the preparation pipeline owns that; here the named failure
+    // plus the prompt budget in `chunker-call.ts` is the whole fix.
+    if (exceedsEmbeddingDocumentBudget(theme, prep.bodyMd)) {
+      logger.warn("compact-worker.chunk_exceeds_embedding_budget", {
+        jobId: args.job.id,
+        theme,
+        inputChars: embeddingDocumentInputChars(theme, prep.bodyMd),
+        maxChars: EMBEDDING_DOCUMENT_MAX_CHARS,
+      });
+      throw new Error(
+        `chunker_chunk_exceeds_embedding_budget: theme=${theme} chars=${embeddingDocumentInputChars(theme, prep.bodyMd)} max=${EMBEDDING_DOCUMENT_MAX_CHARS}`,
+      );
+    }
     const embedded = await embedDocument(theme, prep.bodyMd);
 
     // Post-embed guard — mid-loop silent exit (matches the original
