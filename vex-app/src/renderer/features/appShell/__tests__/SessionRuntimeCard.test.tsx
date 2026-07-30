@@ -48,6 +48,18 @@ vi.mock("../../../lib/api/compaction.js", () => ({
 vi.mock("../../wizard/steps/provider/ModelBrandIcon.js", () => ({
   ModelBrandIcon: () => null,
 }));
+// Compaction v2 (merged from main): the preparation read + live-sync need a
+// QueryClient and the apply button owns its own behavior suite
+// (CompactionApplyButton.test.tsx) — this card's tests cover the card, so the
+// button is inert here, same posture as ModelBrandIcon above.
+vi.mock("../../../lib/api/compaction-preparation.js", () => ({
+  usePreparation: vi.fn(() => ({ data: undefined })),
+  usePreparationLiveSync: vi.fn(),
+  useRequestCompactionApply: vi.fn(),
+}));
+vi.mock("../CompactionApplyButton.js", () => ({
+  CompactionApplyButton: () => null,
+}));
 
 const { SessionRuntimeCard } = await import("../book/SessionRuntimeCard.js");
 
