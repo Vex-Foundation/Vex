@@ -303,3 +303,128 @@ describe("preparation corpus round-trip", () => {
     );
   });
 });
+
+describe("buildPreparationCorpus — tool-call id normalization", () => {
+  it("freezes the NORMALIZED ids into the corpus, paired on both sides", () => {
+    // The entry — not the provider message — is what serializes, so an id
+    // repair that only touched the provider view would freeze the bad ids
+    // straight back into the artefact the branch workers replay.
+    const rows: MessageWithId[] = [
+      message(1, "assistant", "calling twice", {
+        toolCalls: [
+          { id: "fc_2", command: "quote", args: { leg: 1 } },
+          { id: "fc_2", command: "quote", args: { leg: 2 } },
+        ],
+      }),
+      message(2, "tool", "result A", { toolCallId: "fc_2" }),
+      message(3, "tool", "result B", { toolCallId: "fc_2" }),
+    ];
+
+    const corpus = buildPreparationCorpus({
+      frozenSummary: null,
+      rows,
+      watermarkMessageId: 3,
+    });
+
+    const [assistantEntry, first, second] = corpus.entries;
+    const ids = (assistantEntry.toolCalls ?? []).map((c) => c.id);
+    expect(new Set(ids).size).toBe(2);
+    expect(first.toolCallId).toBe(ids[0]);
+    expect(second.toolCallId).toBe(ids[1]);
+
+    // Everything the ids travel with is retained verbatim.
+    expect(assistantEntry.sourceMessageId).toBe(1);
+    expect(first.sourceMessageId).toBe(2);
+    expect(second.sourceMessageId).toBe(3);
+    expect(assistantEntry.content).toBe("calling twice");
+    expect(first.content).toBe("result A");
+    expect(second.content).toBe("result B");
+    expect(corpus.entries.map((e) => e.role)).toEqual([
+      "assistant",
+      "tool",
+      "tool",
+    ]);
+    expect((assistantEntry.toolCalls ?? []).map((c) => c.command)).toEqual([
+      "quote",
+      "quote",
+    ]);
+    // The canonical arguments are the corpus's own; the provider view carries
+    // `args: {}` by design and must never overwrite them.
+    expect((assistantEntry.toolCalls ?? []).map((c) => c.argsJson)).toEqual([
+      '{"leg":1}',
+      '{"leg":2}',
+    ]);
+    expect(serializePreparationCorpus(corpus)).not.toContain('"fc_2","fc_2"');
+    expect(corpus.version).toBe(CORPUS_FORMAT_VERSION);
+  });
+
+  it("assigns a blank tool-call id on both sides and keeps the source ids", () => {
+    const rows: MessageWithId[] = [
+      message(1, "assistant", "calling", {
+        toolCalls: [{ id: "", command: "quote", args: { leg: 1 } }],
+      }),
+      message(2, "tool", "result", { toolCallId: "" }),
+    ];
+
+    const corpus = buildPreparationCorpus({
+      frozenSummary: null,
+      rows,
+      watermarkMessageId: 2,
+    });
+
+    const assigned = corpus.entries[0].toolCalls?.[0].id ?? "";
+    expect(assigned).toMatch(/^call_vex_b\d+_c\d+$/);
+    expect(corpus.entries[1].toolCallId).toBe(assigned);
+    expect(corpus.entries.map((e) => e.sourceMessageId)).toEqual([1, 2]);
+    expect(corpus.repairedPlaceholders).toBe(0);
+  });
+
+  it("still marks repair placeholders as source-less entries", () => {
+    const corpus = buildPreparationCorpus({
+      frozenSummary: null,
+      rows: [
+        message(1, "assistant", "calling", {
+          toolCalls: [{ id: "c9", command: "quote", args: {} }],
+        }),
+      ],
+      watermarkMessageId: 1,
+    });
+
+    expect(corpus.repairedPlaceholders).toBe(1);
+    expect(corpus.entries[1]).toEqual({
+      sourceMessageId: null,
+      role: "tool",
+      content: TOOL_RESULT_PLACEHOLDER_CONTENT,
+      toolCallId: "c9",
+      toolCalls: null,
+    });
+  });
+});
+
+describe("buildPreparationCorpus — clean-tape byte preservation", () => {
+  /**
+   * Captured from the build that PRE-DATES tool-call id normalization. A clean
+   * tape must serialize to exactly these bytes: the corpus is content-addressed
+   * by sha256, so any drift silently invalidates every stored preparation.
+   */
+  const FROZEN_CLEAN_CORPUS =
+    '{"entries":[{"content":"buy some SOL","role":"user","sourceMessageId":1,"toolCallId":null,"toolCalls":null},{"content":"calling a tool","role":"assistant","sourceMessageId":2,"toolCallId":null,"toolCalls":[{"argsJson":"{\\"amount\\":3,\\"chain\\":\\"sol\\"}","command":"swap","id":"call_1"}]},{"content":"done","role":"tool","sourceMessageId":3,"toolCallId":"call_1","toolCalls":null}],"frozenSummary":"earlier history","redactionCounts":{"hard":0,"mask":0},"repairedPlaceholders":0,"version":1,"watermarkMessageId":3}';
+
+  it("reproduces the pre-normalization bytes exactly", () => {
+    const corpus = buildPreparationCorpus({
+      frozenSummary: "earlier history",
+      rows: [
+        message(1, "user", "buy some SOL"),
+        message(2, "assistant", "calling a tool", {
+          toolCalls: [
+            { id: "call_1", command: "swap", args: { amount: 3, chain: "sol" } },
+          ],
+        }),
+        message(3, "tool", "done", { toolCallId: "call_1" }),
+      ],
+      watermarkMessageId: 3,
+    });
+
+    expect(serializePreparationCorpus(corpus)).toBe(FROZEN_CLEAN_CORPUS);
+  });
+});
