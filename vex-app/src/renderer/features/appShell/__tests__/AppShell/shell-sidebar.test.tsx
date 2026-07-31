@@ -533,7 +533,7 @@ describe("AppShell", () => {
     expect(backdrop?.getAttribute("data-vex-backdrop-dimmed")).toBe("false");
     expect(
       backdrop?.querySelector("img")?.getAttribute("src"),
-    ).toBe("/backdrops/eclipse-meadow.webp");
+    ).toBe("/backdrops/midnight-lake.webp");
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {
