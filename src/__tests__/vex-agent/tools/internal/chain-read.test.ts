@@ -17,21 +17,27 @@ const MOCK_CHAIN = {
   rpcUrls: { default: { http: ["https://polygon-rpc.example.com"] } },
 };
 
-vi.mock("@tools/khalani/client.js", () => ({
-  getKhalaniClient: () => ({
-    getChains: vi.fn().mockResolvedValue([MOCK_CHAIN]),
-  }),
-}));
-
+// Only the Khalani registry seam is mocked: the INCLUSIVE resolver and the local
+// EVM registry run for real, so the local-chain branch below is genuine evidence
+// that Robinhood Chain (4663) resolves without any Khalani coverage.
 vi.mock("@tools/khalani/chains.js", () => ({
-  resolveChainId: vi.fn().mockReturnValue(137),
-  getChain: vi.fn().mockReturnValue(MOCK_CHAIN),
+  getCachedKhalaniChains: vi.fn().mockResolvedValue([MOCK_CHAIN]),
+  resolveChainId: vi.fn().mockImplementation((input: string) => {
+    if (input === "137" || input === "polygon") return 137;
+    throw new VexError(ErrorCodes.KHALANI_UNSUPPORTED_CHAIN, `Chain "${input}" is not supported.`);
+  }),
 }));
 
 const mockGetTransactionReceipt = vi.fn();
 
 vi.mock("@tools/khalani/evm-client.js", () => ({
   createDynamicPublicClient: () => ({
+    getTransactionReceipt: mockGetTransactionReceipt,
+  }),
+}));
+
+vi.mock("@tools/evm-chains/evm-client.js", () => ({
+  getLocalPublicClient: () => ({
     getTransactionReceipt: mockGetTransactionReceipt,
   }),
 }));
@@ -84,6 +90,26 @@ describe("chain_read — tx_receipt", () => {
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required: txHash");
   });
+
+  // Robinhood Chain (4663) is not in the Khalani registry — it lives only in the
+  // local EVM registry. Forensics must still read it, by alias and by numeric id.
+  it.each(["robinhood", "4663"])(
+    "reads a receipt on a local-registry chain (%s)",
+    async (chainId) => {
+      mockGetTransactionReceipt.mockResolvedValue({
+        status: "success", blockNumber: 42n, gasUsed: 21000n,
+        logs: [], from: "0xabc", to: "0xdef", contractAddress: null,
+      });
+      const result = await handleChainRead(
+        { action: "tx_receipt", chainId, txHash: "0xabc123" }, ctx,
+      );
+      expect(result.success).toBe(true);
+      const data = JSON.parse(result.output);
+      expect(data.chainId).toBe(4663);
+      expect(data.chain).toBe("Robinhood Chain");
+      expect(data.status).toBe("success");
+    },
+  );
 });
 
 describe("chain_read — erc721_mint", () => {

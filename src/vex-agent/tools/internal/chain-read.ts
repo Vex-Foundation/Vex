@@ -1,5 +1,5 @@
 /**
- * Chain read tool — on-chain EVM forensics via khalani chain discovery + viem
+ * Chain read tool — on-chain EVM forensics via inclusive chain discovery + viem
  * public client.
  *
  * Read-only, scoped actions:
@@ -9,14 +9,19 @@
  * Native balances are owned by `wallet_balances`; token metadata
  * (decimals/symbol/name) by `token_find` (khalani.tokens.search).
  *
- * Chain resolution: khalani.getChains() → resolveChainId → createDynamicPublicClient.
+ * Chain resolution is INCLUSIVE (`resolveInclusiveEvmChain`, same seam
+ * `wallet_balances` uses): Khalani-registry chains keep the dynamic Khalani
+ * client; chains only the local EVM registry knows (e.g. Robinhood Chain 4663)
+ * read direct-RPC through `getLocalPublicClient`. This widens READ-ONLY
+ * forensics only — quote/bridge paths must keep the STRICT Khalani resolver so
+ * a local-only chain can never look Khalani-supported.
  */
 
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { missingOrWrongTypeMessage } from "./types.js";
-import { getKhalaniClient } from "@tools/khalani/client.js";
-import { resolveChainId, getChain } from "@tools/khalani/chains.js";
+import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
+import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { createDynamicPublicClient } from "@tools/khalani/evm-client.js";
 import { extractMintedNftId } from "@tools/kyberswap/evm-utils.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -51,18 +56,24 @@ export async function handleChainRead(
     };
   }
 
-  // Resolve chain via khalani. Any throw here (unsupported chain, RPC discovery,
-  // provider/SDK error) is reduced to a redacted, bounded summary so raw viem/RPC
-  // text — which can carry URLs, request/response bodies, or key material — never
-  // reaches the model output (B-003).
+  // Resolve chain (Khalani first, local registry as fallback). Any throw here
+  // (unsupported chain, RPC discovery, provider/SDK error) is reduced to a
+  // redacted, bounded summary so raw viem/RPC text — which can carry URLs,
+  // request/response bodies, or key material — never reaches the model output
+  // (B-003).
   let chainId: number;
-  let chain: ReturnType<typeof getChain>;
+  let chainName: string;
   let client: DynamicPublicClient;
   try {
-    const chains = await getKhalaniClient().getChains();
-    chainId = resolveChainId(chainIdRaw, chains);
-    chain = getChain(chainId, chains);
-    client = createDynamicPublicClient(chain, chains);
+    const resolved = await resolveInclusiveEvmChain(chainIdRaw);
+    chainId = resolved.chainId;
+    if (resolved.source === "khalani") {
+      chainName = resolved.khalaniChain.name;
+      client = createDynamicPublicClient(resolved.khalaniChain, resolved.khalaniChains);
+    } else {
+      chainName = resolved.config.name;
+      client = getLocalPublicClient(resolved.config);
+    }
   } catch (err) {
     return { success: false, output: summarizeProtocolError(err).message };
   }
@@ -81,7 +92,7 @@ export async function handleChainRead(
       return {
         success: true,
         output: JSON.stringify({
-          chain: chain.name,
+          chain: chainName,
           chainId,
           txHash,
           status: receipt.status,
@@ -139,7 +150,7 @@ export async function handleChainRead(
       return {
         success: true,
         output: JSON.stringify({
-          chain: chain.name,
+          chain: chainName,
           chainId,
           txHash,
           mintsFound: mints.length,

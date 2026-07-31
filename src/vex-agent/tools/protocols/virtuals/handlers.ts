@@ -102,7 +102,8 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
     if (!chain) return fail(`Invalid chain "${chainRaw}". Must be one of ${CHAIN_LIST}.`);
 
     const statusFilter = resolveStatusFilter(str(p, "status"));
-    const sortKeyword = str(p, "sort");
+    // `sortBy` is the documented param; `sort` stays accepted as its alias.
+    const sortKeyword = str(p, "sortBy") || str(p, "sort");
     const sort = SORT_MAP[sortKeyword] ?? SORT_MAP.mcap;
     const limit = clampLimit(num(p, "limit"));
 
@@ -126,15 +127,19 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "virtuals.get": async (p) => {
-    const id = str(p, "id");
-    if (!id) return fail("Missing required: id (numeric Virtuals agent id).");
+    // Declared `type: "number"`, so the sanctioned lossless string->number
+    // coercion admits both `96200` and `"96200"` before this runs. The API path
+    // itself is stringly-typed, hence the String() at the client seam.
+    const idNumber = num(p, "id");
+    if (idNumber === undefined) return fail("Missing required: id (numeric Virtuals agent id).");
+    const id = String(idNumber);
     try {
       const client = getVirtualsClient();
       const agent = await client.getVirtual(id);
-      if (!agent) return fail(`No Virtuals agent found for id ${id.slice(0, 32)}.`);
+      if (!agent) return fail(`No Virtuals agent found for id ${id}.`);
       return ok({ agent: projectVirtualsDetail(agent) });
     } catch (err) {
-      return fail(`Virtuals detail unavailable for id ${id.slice(0, 32)} (${failureDetail("virtuals.get", err)})`);
+      return fail(`Virtuals detail unavailable for id ${id} (${failureDetail("virtuals.get", err)})`);
     }
   },
 

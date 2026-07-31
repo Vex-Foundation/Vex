@@ -262,11 +262,12 @@ async function decodeSettlement(
  * The raw receipt is passed through UNDECODED on success — see the module
  * doc's settlement-decoder contract (C2).
  *
- * TWO CHAIN SOURCES, ONE POSTURE: the Khalani registry answers first (it is
- * the bridge venue's own live chain list), and when it does not carry the
- * chain the PENDLE registry answers instead. Pendle executes on 11 chains,
- * some of which Khalani has never heard of (Monad, chain 143) — with a single
- * source those rows could never be repaired at all, because the resolver threw
+ * THREE CHAIN SOURCES, ONE POSTURE: the Khalani registry answers first (it is
+ * the bridge venue's own live chain list), then the PENDLE registry, then the
+ * LOCAL EVM registry. Pendle executes on 11 chains, some of which Khalani has
+ * never heard of (Monad, chain 143), and Robinhood Chain (4663) is in neither
+ * of those two — with a narrower source set those rows could never be repaired
+ * at all, because the resolver threw
  * and the bare catch reported it as "no answer yet" forever. Only the chain
  * SOURCE widens here: an actual RPC failure still returns `null` and still
  * leaves the row pending, exactly as before.
@@ -291,7 +292,7 @@ interface ReceiptLookupClient {
   getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{ status: string }>;
 }
 
-/** Khalani registry first, Pendle registry as the fallback chain source. `null` when neither knows the chain. */
+/** Khalani registry first, then Pendle, then the local EVM registry. `null` when none knows the chain. */
 async function resolveReadOnlyReceiptClient(chainId: number): Promise<ReceiptLookupClient | null> {
   try {
     const { getKhalaniClient } = await import("@tools/khalani/client.js");
@@ -306,9 +307,22 @@ async function resolveReadOnlyReceiptClient(chainId: number): Promise<ReceiptLoo
   }
   try {
     const { getPendleChain } = await import("@tools/pendle/chains.js");
-    if (!getPendleChain(chainId)) return null;
-    const { getPendlePublicClient } = await import("@tools/pendle/evm-client.js");
-    return getPendlePublicClient(chainId);
+    if (getPendleChain(chainId)) {
+      const { getPendlePublicClient } = await import("@tools/pendle/evm-client.js");
+      return getPendlePublicClient(chainId);
+    }
+  } catch {
+    // Pendle cannot answer either — the local registry is the last source.
+  }
+  try {
+    // Local EVM registry (e.g. Robinhood Chain 4663): Vex executes there, so a
+    // pending row on that chain must be repairable even though neither the
+    // Khalani nor the Pendle registry has ever heard of it.
+    const { getLocalChain } = await import("@tools/evm-chains/registry.js");
+    const config = getLocalChain(chainId);
+    if (!config) return null;
+    const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
+    return getLocalPublicClient(config);
   } catch {
     return null;
   }

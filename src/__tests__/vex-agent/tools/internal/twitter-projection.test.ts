@@ -247,3 +247,38 @@ describe("projectTwitterResult — nested + meta preservation", () => {
     expect(out.next).toBe("");
   });
 });
+
+// ── Empty liker / reply lists are UNKNOWN, not zero ──────────────────
+//
+// X's private API frequently auth-walls liker and reply lists, and an
+// auth-walled list reaches this projection byte-identical to a genuinely empty
+// one. Reporting "0 likes" from that payload would be a claim the evidence does
+// not support, so the empty payload carries a Vex-authored note instead.
+
+describe("projectTwitterResult — empty-list honesty", () => {
+  it.each(["tweet_likers", "tweet_replies"] as const)(
+    "%s with zero rows carries the unknown-not-zero note",
+    (action) => {
+      const out = projectedRecord(projectTwitterResult({ action, data: { items: [], next: "" } }));
+      const note = out.emptyResultNote as string;
+      expect(note).toContain("UNKNOWN, not zero");
+      expect(note).toContain("tweet_details");
+      // Static, Vex-authored text — no provider content interpolated.
+      expect(note).not.toContain("undefined");
+    },
+  );
+
+  it("a non-empty liker list carries no note", () => {
+    const out = projectedRecord(
+      projectTwitterResult({ action: "tweet_likers", data: { items: [fullUser()], next: "" } }),
+    );
+    expect(out).not.toHaveProperty("emptyResultNote");
+  });
+
+  it("other empty list actions are left alone — the note is not a generic 'no results' banner", () => {
+    for (const action of ["tweet_search", "user_followers", "tweet_retweeters"] as const) {
+      const out = projectedRecord(projectTwitterResult({ action, data: { items: [], next: "" } }));
+      expect(out).not.toHaveProperty("emptyResultNote");
+    }
+  });
+});
