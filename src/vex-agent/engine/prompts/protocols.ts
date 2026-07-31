@@ -200,7 +200,7 @@ export function buildProtocolsPrompt(): string {
   lines.push("");
   lines.push("- Between two Khalani-supported chains, bridge with `bridge_quote` then `bridge` (they auto-route to `khalani.*`). The live chain list is in the turn state.");
   lines.push("- Quote and execute on the SAME bridge provider (`khalani` or `relay`). The runtime enforces this.");
-  lines.push("- Balance reads on Robinhood Chain: `wallet_balances` scans it direct-RPC (alias `robinhood` / id 4663). `khalani.tokens.balances` does NOT cover it.");
+  lines.push("- Reads on Robinhood Chain go direct-RPC: `wallet_balances` for balances, `chain_read` for tx receipts / ERC-721 mints (alias `robinhood` / id 4663). `khalani.tokens.balances` does NOT cover it.");
   lines.push("");
 
   cached = { fingerprint, text: lines.join("\n") };

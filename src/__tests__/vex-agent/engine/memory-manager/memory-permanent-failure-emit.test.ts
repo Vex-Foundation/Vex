@@ -114,15 +114,16 @@ describe("memory job failure -> global engine.error", () => {
     expect(Object.keys(seen[0] ?? {})).not.toContain("message");
   });
 
-  it("emits an all-null signal when there is no throwable (items-failed path)", async () => {
+  it("emits an all-null signal when there is no throwable at all", async () => {
     const { emitEngineError } = await import(
       "../../../../vex-agent/engine/runtime/error-bus.js"
     );
     const { readMissionErrorSignal } = await import(
       "../../../../vex-agent/engine/core/runner/mission-error-signal.js"
     );
-    // The items-failed settlement has no exception — a guess would be worse
-    // than an honest "nothing classifiable".
+    // A settlement that captured no throwable at all (e.g. every item failed
+    // before an error existed) reports nothing classifiable rather than a
+    // guess. The items-failed path itself now carries the first item error.
     const signal = readMissionErrorSignal(null);
     emitEngineError({
       sessionId: null,

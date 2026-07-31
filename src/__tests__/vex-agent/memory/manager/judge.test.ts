@@ -6,14 +6,12 @@
 import { describe, it, expect } from "vitest";
 
 import { callJudge, type JudgeProvider } from "@vex-agent/memory/manager/judge.js";
-import {
-  judgeVerdictJsonSchema,
-  judgeVerdictSchema,
-} from "@vex-agent/memory/manager/judge-schema.js";
+import { judgeVerdictSchema } from "@vex-agent/memory/manager/judge-schema.js";
 import type { JudgeContext } from "@vex-agent/memory/manager/context-builder.js";
 
 function ctx(): JudgeContext {
   return {
+    sessionId: "session-judge-unit",
     candidate: {
       kind: "strategy_lesson",
       title: "t",
@@ -192,23 +190,5 @@ describe("judge verdict schema", () => {
       rejectReason: "made_up_reason",
     });
     expect(r.success).toBe(false);
-  });
-});
-
-describe("judgeVerdictJsonSchema export (F31 Layer B)", () => {
-  it("closes the object (additionalProperties:false)", () => {
-    expect(judgeVerdictJsonSchema.additionalProperties).toBe(false);
-  });
-
-  it("requires ONLY the non-optional fields (excludes the .nullish() ones)", () => {
-    const required = new Set(judgeVerdictJsonSchema.required ?? []);
-    expect(required.has("verdict")).toBe(true);
-    expect(required.has("rubric")).toBe(true);
-    expect(required.has("sourceTier")).toBe(true);
-    // The three null-tolerant optionals must NOT be in `required` — that is the
-    // SEND shape smaller models are held to.
-    expect(required.has("previousKnowledgeId")).toBe(false);
-    expect(required.has("rejectReason")).toBe(false);
-    expect(required.has("regimeTags")).toBe(false);
   });
 });

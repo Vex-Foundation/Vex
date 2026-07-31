@@ -1,16 +1,22 @@
 /**
- * F31 Layer B — API-level output-format enforcement wiring.
+ * API-level output-format wiring on the OpenRouter provider.
  *
  * Two layers under pin:
  *   1. `buildOpenRouterParams` spreads a `responseFormat` ONLY when one is
- *      passed; with no arg the request has NO `responseFormat` key, so the four
- *      non-judge `chatCompletionSimple` callers (chunker, regime-worker,
- *      entity-extraction, reconcile-judge) stay byte-identical on the wire.
+ *      passed; with no arg the request has NO `responseFormat` key, so every
+ *      `chatCompletionSimple` caller in the tree stays byte-identical on the
+ *      wire.
  *   2. `OpenRouterProvider.chatCompletionSimple` composes `provider.requireParameters`
  *      AROUND `buildOpenRouterParams` (the param unit test can't see that — it
  *      lives at the send call), so a mocked `chat.send` proves that a request WITH
  *      a responseFormat carries BOTH the format AND `provider.requireParameters:true`,
  *      and a request WITHOUT one carries NEITHER.
+ *
+ * That pairing is exactly why NO caller passes a format today: an endpoint that
+ * does not advertise `structured_outputs` is refused before inference, which is
+ * what broke the memory judge on 2026-07-31. The mechanism stays pinned because
+ * it is the provider's public contract — but its cost is documented here, and a
+ * future caller must verify endpoint capability before using it.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -42,13 +48,7 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { buildOpenRouterParams } = await import("../../../vex-agent/inference/openrouter/params.js");
-const { buildJudgeResponseFormat } = await import(
-  "../../../vex-agent/inference/openrouter/judge-format.js"
-);
 const { OpenRouterProvider } = await import("../../../vex-agent/inference/openrouter.js");
-const { judgeVerdictJsonSchema } = await import(
-  "../../../vex-agent/memory/manager/judge-schema.js"
-);
 
 import type {
   InferenceConfig,
@@ -77,10 +77,22 @@ const MESSAGES: ProviderMessage[] = [
   { role: "user", content: "candidate" },
 ];
 
-const RESPONSE_FORMAT = buildJudgeResponseFormat(judgeVerdictJsonSchema);
+/**
+ * A minimal strict `json_schema` format — the shape a caller would pass. Built
+ * inline rather than imported: the judge's builder was DELETED with its last
+ * consumer, and the mechanism under test is the provider's, not any caller's.
+ */
+const RESPONSE_FORMAT = {
+  type: "json_schema" as const,
+  jsonSchema: {
+    name: "probe",
+    strict: true,
+    schema: { type: "object", additionalProperties: false, properties: {} },
+  },
+};
 
-describe("buildOpenRouterParams — responseFormat spread (F31 Layer B)", () => {
-  it("omits the responseFormat key entirely when none is passed (4 callers byte-identical)", () => {
+describe("buildOpenRouterParams — responseFormat spread", () => {
+  it("omits the responseFormat key entirely when none is passed (every caller byte-identical)", () => {
     const params = buildOpenRouterParams(MESSAGES, [], makeConfig(), false);
     expect("responseFormat" in params).toBe(false);
     // W2 moved `provider` composition INTO this layer, so the key is absent
@@ -95,21 +107,7 @@ describe("buildOpenRouterParams — responseFormat spread (F31 Layer B)", () => 
   });
 });
 
-describe("buildJudgeResponseFormat — shape", () => {
-  it("wraps the JSON schema as a strict json_schema format named judge_verdict", () => {
-    expect(RESPONSE_FORMAT).toEqual({
-      type: "json_schema",
-      jsonSchema: {
-        name: "judge_verdict",
-        strict: true,
-        description: "Memory-promotion judge verdict",
-        schema: judgeVerdictJsonSchema,
-      },
-    });
-  });
-});
-
-describe("OpenRouterProvider.chatCompletionSimple — provider routing composition (F31 Layer B)", () => {
+describe("OpenRouterProvider.chatCompletionSimple — provider routing composition", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {

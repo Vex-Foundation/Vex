@@ -233,6 +233,15 @@ export type MemoryLogMeta = {
   readonly queueDepth?: string | number;
   readonly errorCode?: string | number;
   readonly errorKind?: string | number;
+  /**
+   * HTTP status of a failed provider call, read from the own-property
+   * `normalizeOpenRouterError` attaches. A number cannot carry free text, which
+   * is why this is the ONLY part of a provider rejection that reaches a log
+   * line verbatim — the message itself stays out by allowlist design.
+   */
+  readonly statusCode?: string | number;
+  /** errno-shaped transport cause (`ECONNRESET`, …) — bounded token, no text. */
+  readonly causeCode?: string | number;
 };
 
 /**
@@ -306,6 +315,8 @@ const META_KEY_CATEGORY: Record<keyof MemoryLogMeta, MetaCategory> = {
   queueDepth: "num",
   errorCode: "enum",
   errorKind: "enum",
+  statusCode: "num",
+  causeCode: "enum",
 };
 
 /**

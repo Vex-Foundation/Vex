@@ -58,7 +58,7 @@ Balances, prices, gas, open positions, quotes, transaction hashes are LIVE state
 
 - Your own wallet across all families in one call: \`wallet_balances\` — covers Khalani chains AND local chains (Robinhood 4663, direct-RPC).
 - SOMEONE ELSE's address, or one wallet family alone: \`execute_tool\` with \`khalani.tokens.balances\` — Khalani-covered chains only, so Robinhood balances still need \`wallet_balances\`.
-- On-chain EVM forensics (tx receipts, ERC-721 mint detection): \`chain_read\`. (Native balances → \`wallet_balances\`; token metadata/decimals → \`token_find\`.)
+- On-chain EVM forensics (tx receipts, ERC-721 mint detection): \`chain_read\` — covers Khalani chains AND local chains (\`chainId: "robinhood"\` / \`"4663"\`). (Native balances → \`wallet_balances\`; token metadata/decimals → \`token_find\`.)
 - Your recorded session-wallet history (recent transactions, activity, balances, snapshots): \`agent_scan\` — reads from your own DB projections (\`agent_scan(view="transactions")\` is the primary feed — pending/confirmed/failed swaps with chain + tx hash; also \`summary\`, \`balances\`, \`snapshots\`, \`activity\`, \`executions\`). No stored PnL — compute it yourself from the recorded amounts if you need it.
 
 If a fact is queryable live, querying is cheaper than remembering — and the memorized version is stale by definition.

@@ -5,6 +5,8 @@ import { getVirtualsClient } from "@tools/virtuals/client.js";
 import type { VirtualsAgent } from "@tools/virtuals/types.js";
 import type { ProtocolExecutionContext } from "../../../vex-agent/tools/protocols/types.js";
 import { VexError, ErrorCodes } from "../../../errors.js";
+import { coerceNumericStringParams } from "@vex-agent/tools/protocols/runtime/numeric-string-coercion.js";
+import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
 
 vi.mock("@tools/virtuals/client.js", () => ({
   getVirtualsClient: vi.fn(),
@@ -197,7 +199,7 @@ describe("failure messages never contain upstream error text", () => {
 
   it("plain Error with hostile message → generic 'unexpected error' only", async () => {
     mockClient({ getVirtual: vi.fn().mockRejectedValue(new Error(HOSTILE_MESSAGE)) });
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: "96200" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("unexpected error");
     expect(res.output).not.toContain("INJECTED UPSTREAM");
@@ -213,7 +215,7 @@ describe("failure messages never contain upstream error text", () => {
     });
     const results = [
       await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ROBINHOOD" }, CTX),
-      await VIRTUALS_HANDLERS["virtuals.get"]!({ id: "1" }, CTX),
+      await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 1 }, CTX),
       await VIRTUALS_HANDLERS["virtuals.graduations"]!({ chain: "BASE" }, CTX),
       await VIRTUALS_HANDLERS["virtuals.geneses"]!({}, CTX),
     ];
@@ -235,7 +237,7 @@ describe("virtuals.get", () => {
   });
 
   it("returns the detail projection with tradingRoute + antiSniper", async () => {
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: "96200" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
     expect(res.success).toBe(true);
     const agent = (res.data as { agent: Record<string, unknown> }).agent;
     expect(agent.tradingRoute).toMatchObject({ venue: "uniswap", quoteSymbol: "VIRTUAL" });
@@ -244,14 +246,14 @@ describe("virtuals.get", () => {
 
   it("fails cleanly when the agent does not exist (null detail)", async () => {
     mockClient({ getVirtual: vi.fn().mockResolvedValue(null) });
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: "999999" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 999999 }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("No Virtuals agent found");
   });
 
   it("degrades to a clean failure when the client throws", async () => {
     mockClient({ getVirtual: vi.fn().mockRejectedValue(new Error("timeout")) });
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: "96200" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("unavailable");
   });
@@ -318,5 +320,64 @@ describe("virtuals.geneses", () => {
     const res = await VIRTUALS_HANDLERS["virtuals.geneses"]!({}, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("unavailable");
+  });
+});
+
+// ── Param DX: id spelling round-trip + sortBy/sort ──────────────────
+//
+// A live session burnt calls twice on this surface: `virtuals.list` returns a
+// NUMERIC `id`, and feeding it straight back to `virtuals.get` hit the strict
+// gate because the manifest declared the param `string`; and the model reached
+// for `sortBy` (the spelling dexscreener uses) where only `sort` was declared.
+// `id` is now a declared NUMBER, so the sanctioned lossless string->number
+// coercion admits both spellings — and no number->string coercion is added
+// anywhere, because that would put a declared-string amount at float risk.
+
+describe("virtuals param DX", () => {
+  const getManifest = VIRTUALS_TOOLS.find((t) => t.toolId === "virtuals.get")!;
+
+  it.each([
+    ["the numeric id virtuals.list returns", 96200],
+    ["its string spelling", "96200"],
+  ])("virtuals.get accepts %s", async (_label, rawId) => {
+    const { params } = coerceNumericStringParams(getManifest, { id: rawId });
+    expect(validateProtocolParams(getManifest, params)).toEqual({ ok: true });
+
+    const client = mockClient();
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]!(params, CTX);
+
+    expect(res.success).toBe(true);
+    expect(client.getVirtual).toHaveBeenCalledWith("96200");
+  });
+
+  it("a lossy id spelling is still refused by the gate, not guessed at", () => {
+    const { params } = coerceNumericStringParams(getManifest, { id: "96,200" });
+    expect(params.id).toBe("96,200");
+    expect(validateProtocolParams(getManifest, params)).toMatchObject({ ok: false });
+  });
+
+  it("virtuals.list orders by sortBy, and keeps accepting sort", async () => {
+    const listManifest = VIRTUALS_TOOLS.find((t) => t.toolId === "virtuals.list")!;
+    for (const key of ["sortBy", "sort"]) {
+      const params = { chain: "ROBINHOOD", [key]: "volume" };
+      expect(validateProtocolParams(listManifest, params)).toEqual({ ok: true });
+
+      const client = mockClient();
+      await VIRTUALS_HANDLERS["virtuals.list"]!(params, CTX);
+      expect(client.listVirtuals).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: "volume24h" }),
+      );
+    }
+  });
+
+  it("sortBy wins when both spellings are sent", async () => {
+    const client = mockClient();
+    await VIRTUALS_HANDLERS["virtuals.list"]!(
+      { chain: "ROBINHOOD", sortBy: "newest", sort: "volume" },
+      CTX,
+    );
+    expect(client.listVirtuals).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: "createdAt" }),
+    );
   });
 });
