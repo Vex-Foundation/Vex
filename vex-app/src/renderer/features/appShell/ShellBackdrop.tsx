@@ -1,6 +1,6 @@
 /**
- * CHRONOS BACKDROP — the shell's back wall: the eclipse-meadow artwork
- * (`public/backdrops/eclipse-meadow.webp`) as a full-window photo layer
+ * CHRONOS BACKDROP — the shell's back wall: the midnight-lake artwork
+ * (`public/backdrops/midnight-lake.webp`) as a full-window photo layer
  * at z-0.
  *
  * This deliberately supersedes the retired "zero photography" law (the
@@ -35,20 +35,19 @@ import type { JSX } from "react";
 import { cn } from "../../lib/utils.js";
 
 /**
- * Owner-supplied artwork (2026-07-21): the eclipse-moon night meadow —
- * daisies, mist, the luminous figure. Source of record:
- * `backdrops/eclipse-meadow.src.png` (as-delivered, 1774×887). Served
- * derivative: 4K lanczos upscale + light unsharp (owner follow-up: the
- * native size blurred on large displays), regenerate with:
- *   ffmpeg -i eclipse-meadow.src.png \
+ * Owner-supplied artwork (2026-07-31): the midnight lake — dark mountain
+ * silhouettes mirrored in still water, a cold glow on the horizon. Source
+ * of record: `backdrops/midnight-lake.src.png` (as-delivered, 5120×2560).
+ * Served derivative: 4K lanczos downscale + light unsharp, regenerate with:
+ *   ffmpeg -i midnight-lake.src.png \
  *     -vf "scale=4320:2160:flags=lanczos,unsharp=5:5:0.35:5:5:0.0" \
- *     -quality 95 eclipse-meadow.webp
+ *     -quality 95 midnight-lake.webp
  * A fine static grain overlay (.vex-noise--backdrop) + a whisper of
  * saturate/contrast on the img mask residual interpolation softness as
- * film texture. (The prior eclipse.webp revert copy was deleted on owner
- * approval, Phase 3 sweep 2026-07-22.)
+ * film texture. (The prior eclipse-meadow artwork was replaced and deleted
+ * on owner instruction, 2026-07-31; git history is the archive.)
  */
-const BACKDROP_SRC = "/backdrops/eclipse-meadow.webp";
+const BACKDROP_SRC = "/backdrops/midnight-lake.webp";
 
 export function ShellBackdrop({
   dimmed,
