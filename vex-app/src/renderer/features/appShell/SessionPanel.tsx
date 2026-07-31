@@ -58,6 +58,7 @@ import { useMissionUpdateLiveSync } from "../../lib/api/mission.js";
 import { useStreamPreviewSync } from "../../lib/api/streams.js";
 import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
 import { SessionErrorBanner } from "./SessionErrorBanner.js";
+import { SessionSleepBanner } from "./SessionSleepBanner.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { cn } from "../../lib/utils.js";
@@ -244,6 +245,9 @@ export function SessionPanel({
                   reachable. The transcript now owns the full column height. */}
               {/* Above the transcript and OUTSIDE the mission-mode gate —
                   every session gets an error surface. */}
+              {activeSession !== null ? (
+                <SessionSleepBanner sessionId={activeSession.id} />
+              ) : null}
               {activeSession !== null ? (
                 <SessionErrorBanner sessionId={activeSession.id} />
               ) : null}
