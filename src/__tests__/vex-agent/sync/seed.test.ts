@@ -115,7 +115,7 @@ describe("seedSyncJobs", () => {
     expect((bridgeCall![1] as unknown[])[4]).toBe(120);
   });
 
-  it("seeds agent_activity_repair periodic job with 120s interval (Agent Scan)", async () => {
+  it("seeds agent_activity_repair periodic job with 30s interval (status-only sweep, migration 061)", async () => {
     await seedSyncJobs();
     const repairCall = mockExecute.mock.calls.find(
       (call: unknown[]) => (call[1] as unknown[])[1] === "agent_activity_repair",
@@ -124,10 +124,10 @@ describe("seedSyncJobs", () => {
     expect((repairCall![1] as unknown[])[0]).toBe("_global");
     expect((repairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
     expect((repairCall![1] as unknown[])[3]).toBe("periodic");
-    expect((repairCall![1] as unknown[])[4]).toBe(120);
+    expect((repairCall![1] as unknown[])[4]).toBe(30);
   });
 
-  it("seeds solana_activity_repair periodic job with 60s interval (W5, migration 049)", async () => {
+  it("seeds solana_activity_repair periodic job with 30s interval (status-only sweep, migration 061)", async () => {
     await seedSyncJobs();
     const solanaRepairCall = mockExecute.mock.calls.find(
       (call: unknown[]) => (call[1] as unknown[])[1] === "solana_activity_repair",
@@ -136,7 +136,7 @@ describe("seedSyncJobs", () => {
     expect((solanaRepairCall![1] as unknown[])[0]).toBe("_global");
     expect((solanaRepairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
     expect((solanaRepairCall![1] as unknown[])[3]).toBe("periodic");
-    expect((solanaRepairCall![1] as unknown[])[4]).toBe(60);
+    expect((solanaRepairCall![1] as unknown[])[4]).toBe(30);
   });
 
   it("no longer seeds a polymarket/balances job (Agent Scan removed Polymarket)", async () => {

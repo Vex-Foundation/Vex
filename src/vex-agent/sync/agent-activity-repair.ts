@@ -1,58 +1,67 @@
 /**
- * `agent_activity` repair sweep (plan §4.1 / §11.1; FIX-SPINE round 1
- * hardened the ambiguity/settlement contract per Codex findings 4/7/12).
+ * `agent_activity` EVM repair sweep — a STATUS-ONLY pending-transaction
+ * resolver (owner decree 2026-07-30).
  *
- * LOOKUP-ONLY, by construction: `repairPendingActivity`'s dependency surface
- * is exactly ONE function, a receipt lookup by hash. This module holds no
- * signer, never imports a send/broadcast/sign capability, and never falls
- * back to re-quoting or re-executing a swap — it exists so a `pending` row
- * whose confirmation could not be determined at broadcast time (the
- * `receipt-guard.ts:29` "could not be determined" case) still gets finalized
- * once the chain actually settles it, without turning the background worker
- * into a second transaction-issuing surface.
+ * ONE QUESTION PER ROW: take the pending row's tx hash, resolve a read-only RPC
+ * for the chain the transaction was made on, and ask the chain whether it
+ * succeeded or reverted. Success → `confirmed`. Mined revert →
+ * `definitively_failed`. Nothing else. The sweep is PROTOCOL-AGNOSTIC: it holds
+ * no venue knowledge, decodes nothing, and reads no amounts.
  *
- * AMBIGUITY NEVER TERMINALIZES (FIX-SPINE C1 — finding 7): a missing receipt
- * (not yet mined) or a lookup error (transient RPC failure) NEVER finalizes
- * the row — it stays `pending` forever, re-checked on the next sweep, only
- * `last_checked_at` moves. There is NO time-based escalation to
+ * WHY THE DECODERS WENT AWAY. This sweep used to confirm only when a registered
+ * per-protocol settlement decoder could turn the receipt into executed amounts.
+ * A decoder that declined left the row `pending` FOREVER — which is exactly what
+ * happened to a KyberSwap CAT→native-ETH swap on Robinhood Chain (4663) that was
+ * mined `success` on-chain: the native-out leg arrives as a wrapped-native burn
+ * with no Withdrawal event to the router, so the decoder could not prove it. A
+ * lifecycle sweep that cannot report a settled transaction as settled is worse
+ * than one that reports the status without the amounts.
+ *
+ * AMOUNTS ARE DEFERRED, NOT FAKED (owner decree; rule `90-vex-project.md`). A
+ * status-only confirm writes NO `executed_*` column — see
+ * `confirmActivityEventStatusOnly`. Agent Scan then shows the QUOTED amount
+ * explicitly labelled "estimated". Copying the quote into the executed columns
+ * would record a quote as a settlement, which is the one thing that seam exists
+ * to prevent.
+ *
+ * LOOKUP-ONLY, by construction: the dependency surface is exactly ONE function,
+ * a receipt lookup by hash. This module holds no signer, never imports a
+ * send/broadcast/sign capability, and never re-quotes or re-executes.
+ *
+ * AMBIGUITY NEVER TERMINALIZES (FIX-SPINE C1): a missing receipt (not yet
+ * mined), an unreadable receipt status, or a lookup error (transient RPC
+ * failure) NEVER finalizes the row — it stays `pending`, re-checked on the next
+ * sweep, only `last_checked_at` moves. There is NO time-based escalation to
  * `confirmation_timeout` (that failure_code stays in the closed enum but is
- * reserved — never auto-set here or anywhere in this repo).
+ * reserved — never auto-set here or anywhere).
  *
- * SETTLEMENT DECODING (FIX-SPINE C2 — finding 4): a "success" receipt is
- * NEVER enough on its own to confirm — this sweep has no venue-specific
- * knowledge of how to turn a raw receipt into executed amounts. It looks up
- * a registered decoder (`settlement-decoders.ts`) by the row's own
- * `protocol` and confirms ONLY when that decoder returns amounts; a missing
- * decoder or a decoder that declines to decode this receipt leaves the row
- * `pending` (warn-logged), same as an ambiguous receipt.
+ * EVERY DEAD END TOUCHES `last_checked_at`: the candidate query orders by it
+ * under a LIMIT, so a row that cannot be resolved this tick must rotate to the
+ * BACK of the queue. Otherwise a handful of permanently-unresolvable rows pin
+ * the window and starve every newer pending row behind them.
  *
  * A MINED REVERT is the sweep's ONE definitive-failure path
- * (`failure_code = 'mined_revert'`, distinct from `simulation_reverted`,
- * which is a PRE-broadcast/simulate-time revert recorded by the handler
- * itself, never by this sweep).
+ * (`failure_code = 'mined_revert'`, distinct from `simulation_reverted`, which
+ * is a PRE-broadcast revert recorded by the handler itself).
  *
- * DUPLICATE-CAS AWARENESS (C7): `confirmActivityEvent`/`failActivityEvent`
- * return `{applied, row}` — an `applied:false` here means a concurrent
- * process (another sweep instance, or the handler's own late finalize)
- * already settled this row; the sweep logs it and moves on without
- * double-counting.
+ * DUPLICATE-CAS AWARENESS (C7): the finalizers return `{applied, row}` — an
+ * `applied:false` here means a concurrent process (another sweep instance, or
+ * the handler's own late finalize) already settled this row; the sweep logs it
+ * and moves on without double-counting.
  *
- * ERROR LOGGING (FIX5-SPINE — Codex final-review round 4 finding 2): both
- * catch blocks (RPC lookup failure, decoder throw) route their `error` field
- * through `summarizeProtocolError(err).message` (`runtime/errors.ts`'s
- * canonical scrub boundary), never a bare `redact()` call — a provider/RPC
- * error can carry URLs, request/response bodies, and auth headers that
- * `redact()` alone (secret-SHAPE detection only) does not strip.
+ * ERROR LOGGING (FIX5-SPINE): the lookup catch routes its `error` field through
+ * `summarizeProtocolError(err).message` (`runtime/errors.ts`'s canonical scrub
+ * boundary), never a bare `redact()` call — a provider/RPC error can carry URLs,
+ * request/response bodies, and auth headers that `redact()` alone (secret-SHAPE
+ * detection only) does not strip.
  */
 
 import {
-  confirmActivityEvent,
+  confirmActivityEventStatusOnly,
   failActivityEvent,
   listPendingOlderThan,
   touchLastChecked,
-  type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
-import { getSettlementDecoder, type DecodedSettlement } from "./settlement-decoders.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import {
   MINED_REVERT_ROLE_NEUTRAL_REASON,
@@ -60,14 +69,26 @@ import {
 } from "@vex-agent/tools/protocols/runtime/mined-revert-reason.js";
 import logger from "@utils/logger.js";
 
-/** Repair-sweep candidacy: re-check a pending row once its signed submit is at least this old. */
+/**
+ * Repair-sweep candidacy: re-check a pending row once its signed submit is at
+ * least this old.
+ *
+ * DELIBERATELY NOT SHORTENED with the 30s cadence. This margin protects the
+ * HAPPY path: a broadcast handler is still decoding its own receipt for the
+ * first ~seconds after submit, and a status-only sweep that won the CAS against
+ * that in-flight strict confirm would permanently forfeit the executed amounts
+ * the handler was about to write. 90s + a 30s tick still resolves a genuinely
+ * stuck row within ~90-120s of broadcast.
+ */
 export const REPAIR_CANDIDATE_AGE_MS = 90_000;
 
 /**
  * Bounded batch per sweep run (FIX-SPINE C11 — finding 12): the sweep does
- * serial RPC calls per run inside the shared sync worker — an unbounded
- * backlog would starve balance/Jupiter sync sharing the same drain. Any
- * remainder is picked up on the NEXT periodic tick.
+ * serial RPC calls per run inside the shared sync worker — an unbounded backlog
+ * would starve balance/Jupiter sync sharing the same drain. Any remainder is
+ * picked up on the NEXT periodic tick; `listPendingOlderThan` orders by
+ * least-recently-checked so the window rotates instead of re-serving the same
+ * rows.
  */
 export const REPAIR_BATCH_LIMIT = 25;
 
@@ -78,12 +99,11 @@ export interface ReceiptCheckInput {
 
 /**
  * `null` means "no answer yet" (not yet mined, or a transient lookup error) —
- * the row stays pending. A "success" receipt is opaque here (`unknown`) —
- * this sweep does NOT decode it; the raw value is handed verbatim to the
- * registered settlement decoder for the row's `protocol` (C2).
+ * the row stays pending. The receipt itself is NOT carried: a status-only sweep
+ * has no consumer for it.
  */
 export type ReceiptCheckResult =
-  | { readonly status: "success"; readonly receipt: unknown }
+  | { readonly status: "success" }
   | { readonly status: "reverted" };
 
 export interface RepairDeps {
@@ -100,9 +120,8 @@ export interface RepairSweepResult {
 
 export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSweepResult> {
   // W5 design REVISION 1 R3: this sweep owns ONLY EVM ('eip155') rows — the
-  // NEW Solana activity sweep (`solana-activity-repair.ts`, K3) owns every
-  // chain_family='solana' staged row via its own disjoint candidate query
-  // (`listSolanaStagedPending`), closing the non-disjointness Codex found here.
+  // Solana activity sweep (`solana-activity-repair.ts`) owns every
+  // chain_family='solana' staged row via its own disjoint candidate query.
   const candidates = await listPendingOlderThan(REPAIR_CANDIDATE_AGE_MS, REPAIR_BATCH_LIMIT, "eip155");
   let confirmed = 0;
   let failed = 0;
@@ -123,12 +142,15 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
       logger.warn("agent_activity.repair.lookup_failed", {
         id: event.id,
         chainId: event.chainId,
-        // FIX5-SPINE (Codex final-review round 4 finding 2): route through the
-        // canonical scrub boundary, not a bare redact() — a provider/RPC error
-        // can carry URLs, request/response bodies, and auth headers that
-        // redact() alone (secret-SHAPE detection only) does not strip.
         error: summarizeProtocolError(err).message,
       });
+      // Rotate even though nothing was learned — same fairness contract as the
+      // Solana sweep. `listPendingOlderThan` orders by `last_checked_at` under a
+      // LIMIT, so a row whose lookup keeps throwing must move to the back of the
+      // queue instead of pinning the window against newer pending rows. The
+      // production dep swallows its own errors today, but an injected or future
+      // one may throw, and the fairness contract must not depend on that.
+      await touchLastChecked(event.id);
       stillPending++;
       continue;
     }
@@ -162,33 +184,8 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
       continue;
     }
 
-    const decoded = await decodeSettlement(event, receipt.receipt);
-    if (!decoded) {
-      logger.warn("agent_activity.repair.no_settlement_decoder", {
-        id: event.id,
-        protocol: event.protocol,
-        hint: "no registered decoder (or it declined to decode this receipt) — leaving row pending",
-      });
-      await touchLastChecked(event.id);
-      stillPending++;
-      continue;
-    }
-
-    // The Option-C second legs (migration 053) travel with the first ones or
-    // the confirm is REFUSED: `assertYieldConfirmLegs` requires
-    // `executedAmount{In,Out}2Raw` whenever the row itself populated
-    // `token_{in2,out2}_address`. Dropping them here left every PY mint/redeem
-    // and every dual LP row pending forever.
-    const outcome = await confirmActivityEvent(event.id, {
-      executedAmountInHuman: decoded.executedAmountInHuman,
-      executedAmountInRaw: decoded.executedAmountInRaw,
-      executedAmountOutHuman: decoded.executedAmountOutHuman,
-      executedAmountOutRaw: decoded.executedAmountOutRaw,
-      executedAmountIn2Human: decoded.executedAmountIn2Human,
-      executedAmountIn2Raw: decoded.executedAmountIn2Raw,
-      executedAmountOut2Human: decoded.executedAmountOut2Human,
-      executedAmountOut2Raw: decoded.executedAmountOut2Raw,
-    });
+    // Mined success. The chain has answered the only question this sweep asks.
+    const outcome = await confirmActivityEventStatusOnly(event.id);
     if (outcome.applied) {
       confirmed++;
     } else {
@@ -206,79 +203,45 @@ function logDuplicateCas(id: number, attempted: "confirm" | "fail"): void {
   logger.info("agent_activity.repair.duplicate_cas_miss", { id, attempted });
 }
 
-/** Look up the registered decoder for this row's protocol and ask it to turn the raw receipt into executed amounts. `null` on no decoder / decoder decline / decoder throw. */
-async function decodeSettlement(
-  event: AgentActivityEvent,
-  receipt: unknown,
-): Promise<DecodedSettlement | null> {
-  const decoder = getSettlementDecoder(event.protocol);
-  if (!decoder) return null;
-  try {
-    const decoded = await decoder({
-      receipt,
-      protocolExecutionId: event.protocolExecutionId,
-      chainId: event.chainId,
-      walletAddress: event.walletAddress,
-      tokenInAddress: event.tokenInAddress,
-      tokenOutAddress: event.tokenOutAddress,
-      // The recorded input amount, NOT an executed truth — see the field's
-      // contract in `settlement-decoders.ts`. It is what lets a NATIVE
-      // tokenIn leg be decoded at all: that amount is the signed
-      // transaction's own value, and no log in the receipt carries it.
-      amountInRaw: event.amountInRaw,
-      // Option-C second-leg tokens (migration 053). A decoder can only prove a
-      // second leg it is told the token of — without these a two-instrument
-      // row would decode as one-in-one-out and then fail the confirm guard.
-      tokenIn2Address: event.tokenIn2Address,
-      tokenOut2Address: event.tokenOut2Address,
-      // Role + provenance are what a MULTI-ROLE venue needs to pick its decode
-      // rule (Pendle decodes a claim, a PT swap and a PT+YT mint differently,
-      // and its router-fallback redeem pays SY rather than the underlying).
-      // Single-role venues ignore both.
-      eventRole: event.eventRole,
-      routeProvenance: event.routeProvenance,
-    });
-    if (!decoded || (!decoded.executedAmountInRaw && !decoded.executedAmountOutRaw)) {
-      return null;
-    }
-    return decoded;
-  } catch (err) {
-    logger.warn("agent_activity.repair.decoder_threw", {
-      id: event.id,
-      protocol: event.protocol,
-      // FIX5-SPINE (finding 2): same canonical-boundary fix as the lookup
-      // catch above — a decoder can rethrow a raw provider/RPC error too.
-      error: summarizeProtocolError(err).message,
-    });
-    return null;
-  }
-}
-
 /**
  * Production `checkReceiptByHash` — a read-only viem client per chain,
  * `getTransactionReceipt` only. Never holds a signer/wallet client.
- * `null` on "not yet mined" (`TransactionReceiptNotFoundError`) AND on any
- * transient lookup error — both leave the row `pending` for the next sweep.
- * The raw receipt is passed through UNDECODED on success — see the module
- * doc's settlement-decoder contract (C2).
+ * `null` on "not yet mined" (`TransactionReceiptNotFoundError`), on any
+ * transient lookup error, AND on a receipt whose `status` is not one of the two
+ * literals we can read — all leave the row `pending` for the next sweep.
  *
- * TWO CHAIN SOURCES, ONE POSTURE: the Khalani registry answers first (it is
- * the bridge venue's own live chain list), and when it does not carry the
- * chain the PENDLE registry answers instead. Pendle executes on 11 chains,
- * some of which Khalani has never heard of (Monad, chain 143) — with a single
- * source those rows could never be repaired at all, because the resolver threw
- * and the bare catch reported it as "no answer yet" forever. Only the chain
- * SOURCE widens here: an actual RPC failure still returns `null` and still
- * leaves the row pending, exactly as before.
+ * PER-RUN CLIENT MEMO: the resolved client is cached per `chainId` for the
+ * lifetime of ONE sweep run (this closure), so Khalani chain discovery costs at
+ * most one round trip per distinct chain per run rather than one per candidate
+ * row. A new run builds new deps and re-resolves, so a chain-list change is
+ * picked up on the next tick.
  */
 export function buildProductionRepairDeps(): RepairDeps {
+  const clientsByChainId = new Map<number, Promise<ReceiptLookupClient | null>>();
+  const resolveClient = (chainId: number): Promise<ReceiptLookupClient | null> => {
+    let cached = clientsByChainId.get(chainId);
+    if (!cached) {
+      cached = resolveReadOnlyReceiptClient(chainId);
+      clientsByChainId.set(chainId, cached);
+    }
+    return cached;
+  };
+
   return {
     checkReceiptByHash: async ({ chainId, txHash }): Promise<ReceiptCheckResult | null> => {
       try {
-        const client = await resolveReadOnlyReceiptClient(chainId);
+        const client = await resolveClient(chainId);
         if (!client) return null;
         const receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
-        return receipt.status === "success" ? { status: "success", receipt } : { status: "reverted" };
+        // ONLY the two literal statuses are proof. viem's receipt formatter
+        // yields `null` for a status value it does not recognize, and an RPC can
+        // return a shape we did not anticipate — mapping "not success" to
+        // "reverted" would turn an unreadable receipt into an IRREVERSIBLE
+        // `definitively_failed` write. Anything else is ambiguity: `null`, and
+        // the row stays pending for the next sweep.
+        if (receipt.status === "success") return { status: "success" };
+        if (receipt.status === "reverted") return { status: "reverted" };
+        return null;
       } catch {
         return null;
       }
@@ -288,10 +251,29 @@ export function buildProductionRepairDeps(): RepairDeps {
 
 /** Just enough of a viem public client for a receipt lookup — this sweep must never reach a broadcast/sign capability. */
 interface ReceiptLookupClient {
-  getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{ status: string }>;
+  // `status` is deliberately widened to `unknown`: viem types it as a
+  // "success" | "reverted" union, but its formatter genuinely emits `null` for
+  // an unrecognized on-chain value, so the narrow type would let an unreadable
+  // receipt through a `!== "success"` check unexamined.
+  getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{ status?: unknown }>;
 }
 
-/** Khalani registry first, Pendle registry as the fallback chain source. `null` when neither knows the chain. */
+/**
+ * THREE CHAIN SOURCES, ONE POSTURE. Each is a CHAIN SOURCE — a way to obtain a
+ * read-only RPC for a chain id — never per-protocol verification; the sweep's
+ * behavior is identical whichever one answers.
+ *
+ *   1. Khalani's live chain list (the bridge venue's own registry) answers first.
+ *   2. The LOCAL `evm-chains` registry — chains Vex operates on directly without
+ *      Khalani. Robinhood Chain (4663) lives ONLY here, which is why the stuck
+ *      row that motivated this change could not even get a client before.
+ *   3. The Pendle registry, for the chains neither of the above carries. Pendle
+ *      executes on 11 chains, some of which Khalani has never heard of (Monad,
+ *      143) — without this source those rows could never be repaired at all.
+ *
+ * `null` when no source knows the chain. Only the chain SOURCE widens here: an
+ * actual RPC failure still returns `null` and still leaves the row pending.
+ */
 async function resolveReadOnlyReceiptClient(chainId: number): Promise<ReceiptLookupClient | null> {
   try {
     const { getKhalaniClient } = await import("@tools/khalani/client.js");
@@ -302,7 +284,17 @@ async function resolveReadOnlyReceiptClient(chainId: number): Promise<ReceiptLoo
     return createDynamicPublicClient(chain, chains);
   } catch {
     // Khalani does not carry this chain (or its chain list is unavailable) —
-    // fall through to the Pendle registry rather than reporting "no answer".
+    // fall through to the next chain source rather than reporting "no answer".
+  }
+  try {
+    const { getLocalChain } = await import("@tools/evm-chains/registry.js");
+    const local = getLocalChain(chainId);
+    if (local) {
+      const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
+      return getLocalPublicClient(local);
+    }
+  } catch {
+    // Same posture — try the last source.
   }
   try {
     const { getPendleChain } = await import("@tools/pendle/chains.js");

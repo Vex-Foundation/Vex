@@ -419,9 +419,10 @@ export const executePredictSell: ProtocolHandler = async (p, ctx) => {
       managed,
       eventPatch: {
         // The position THIS row closes, persisted before anything is signed.
-        // A payout arrives in a keeper's later transaction, so the settlement
-        // sweep has nothing but the row to tell it which position to ask
-        // about — see `db/repos/agent-activity/prediction-payout-settlement.ts`.
+        // A payout arrives in a keeper's later transaction, so the row itself
+        // is the only durable record of which position it belongs to. Write-only
+        // audit metadata today — see the provenance module's own doc
+        // (`@tools/.../jupiter-prediction/prediction-order-provenance.ts`).
         routeProvenance: buildPredictionOrderProvenance(pk),
         // Payout ASSET only — no token amount. `newPayoutUsd` is a
         // USD-denominated estimate from the order preview; writing it into

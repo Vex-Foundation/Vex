@@ -30,7 +30,10 @@ export interface SyncStartOptions {
   deps?: SyncExecutorDeps;
 }
 
-const DEFAULT_SYNC_INTERVAL_MS = 60_000;
+// 30s: the tick is a hard FLOOR for every periodic job's cadence, and the
+// status-only activity repair sweeps run at 30s (migration 061). A 60s tick
+// would silently halve them.
+const DEFAULT_SYNC_INTERVAL_MS = 30_000;
 
 function buildProductionDeps(): SyncExecutorDeps {
   return { initSync, syncTick };
