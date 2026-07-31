@@ -4,20 +4,20 @@
  * numbering is GONE (parallel starters, not an ordered sequence), and picking a
  * chip seeds the draft with its full prompt.
  *
- * HugeiconsIcon is stubbed to a span that surfaces the icon reference as a
+ * VexIcon is stubbed to a span that surfaces the icon reference as a
  * `data-icon` attribute so the per-chip glyph is assertable in jsdom.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: ({ icon }: { icon: unknown }) => (
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: ({ icon }: { icon: unknown }) => (
     <span data-icon={String(icon)} />
   ),
 }));
 
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../components/icons/icon-glyphs.js", () => ({
   FireIcon: "FireIcon",
   PercentSquareIcon: "PercentSquareIcon",
 }));
@@ -47,16 +47,18 @@ describe("ComposerQuickActions", () => {
     expect(container.textContent).not.toMatch(/\b0[123]\b/);
   });
 
-  it("wears the Chronos glass legibility assist on its root", () => {
+  it("wears a SOLID ink band on its root — no glass (composer rebuild)", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // The row's own root (not a new wrapper) carries the glass surface so
-    // the chips stay readable over the bright regions of the Eclipse photo
-    // backdrop: ink tint + backdrop-blur + hairline border.
+    // The row's own root (not a new wrapper) carries the surface. It is now
+    // OPAQUE ink + a hairline border, matching the rebuilt console above it.
+    // The translucent-glass legibility assist is retired, and this file's
+    // shell-design-guard exemption was deleted with it — so the ABSENCE of a
+    // backdrop filter here is a contract, not an omission.
     const root = container.firstElementChild;
     expect(root).not.toBeNull();
-    expect(root?.className).toContain("bg-[var(--vex-rail)]");
-    expect(root?.className).toMatch(/backdrop-blur/);
+    expect(root?.className).toContain("bg-[var(--vex-surface-1)]");
+    expect(root?.className).not.toMatch(/backdrop-blur/);
     expect(root?.className).toContain("border-[var(--vex-line)]");
   });
 

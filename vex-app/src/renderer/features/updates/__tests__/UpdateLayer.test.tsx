@@ -15,10 +15,10 @@ import type { ReactNode } from "react";
 import { createElement } from "react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 
-// Isolate from the @hugeicons ESM icon lib (toast glyphs render nothing) —
+// Isolate from the icon layer (toast glyphs render nothing) —
 // same convention as the appShell modal tests.
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 const { UpdateLayer } = await import("../UpdateLayer.js");

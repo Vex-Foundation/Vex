@@ -27,7 +27,8 @@ import {
 } from "@tools/bridge-fee/index.js";
 import { estimateUsd, humanizeAmount, resolveKhalaniTokenInfo } from "./bridge-usd.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
-import type { ChainFamily } from "@tools/khalani/types.js";
+import type { ChainFamily, KhalaniChain } from "@tools/khalani/types.js";
+import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
@@ -39,12 +40,46 @@ import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/error
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
+/**
+ * A chain filter for the Khalani READ tools, resolved STRICTLY against the
+ * Khalani registry — the capability boundary in `tools/evm-chains/resolver.ts`
+ * is deliberate and stays closed here: a Khalani read must never treat a
+ * local-only chain as Khalani-supported.
+ *
+ * What DOES change is the answer the agent gets when it names one. `token_find
+ * chainIds:"robinhood"` used to die on the strict resolver's bare "Unsupported
+ * chain: robinhood" — indistinguishable from a typo, and it sent the agent
+ * looking for a better spelling of a chain no spelling can reach through this
+ * tool. Robinhood Chain is a chain Vex fully supports; it is only Khalani's
+ * token registry that does not cover it. So a LOCAL chain is named as such,
+ * with the tools that DO answer the question. The lookup is local-registry-only
+ * (no network) and runs after the Khalani registry has already been consulted,
+ * so a chain Khalani later adds still resolves as Khalani.
+ */
+function assertNotLocalOnlyChain(part: string, chains: KhalaniChain[]): void {
+  const localId = resolveLocalChainId(part);
+  if (localId === undefined) return;
+  if (chains.some((chain) => chain.id === localId)) return;
+  const config = getLocalChain(localId);
+  const name = config?.name ?? part;
+  throw new VexError(
+    ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
+    `${name} (${localId}) is not in Khalani's registry — this tool cannot resolve tokens there.`,
+    `Use dexscreener.search (chain slug ${part.trim().toLowerCase()}) for a symbol → address lookup, `
+    + 'wallet_track_token action:"list" for the tracked/seed token set, or '
+    + `wallet_balances chainIds:"${part.trim().toLowerCase()}" for the tokens you actually hold.`,
+  );
+}
+
 export async function parseChainIds(raw: string | undefined): Promise<number[] | undefined> {
   if (!raw) return undefined;
   const chains = await getCachedKhalaniChains();
   const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
   if (parts.length === 0) return undefined;
-  return parts.map(s => resolveChainId(s, chains));
+  return parts.map(s => {
+    assertNotLocalOnlyChain(s, chains);
+    return resolveChainId(s, chains);
+  });
 }
 
 export function resolveWalletFamily(params: Record<string, unknown>): ChainFamily {
@@ -158,7 +193,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         output: `No ${walletFamily} chains matched chainIds="${str(params, "chainIds")}".`,
       };
     }
-    // Live read tool (khalani_tokens_balances): opt into the EVM native-coin
+    // Live read tool (khalani.tokens.balances): opt into the EVM native-coin
     // top-up, like wallet_balances. Only the sync/projection path stays
     // native-free (it full-replaces proj_balances).
     const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });

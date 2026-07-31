@@ -2,9 +2,10 @@
  * `activityKind` / `eventRole` on the EXISTING feed DTOs — the re-skin seam.
  *
  * The Agent Scan work retires the SPOT taxonomy from the UI. Before the
- * renderer can stop reading `productType`/`tradeSide`, the two feeds that
- * predate the canonical vocabulary must CARRY it: `MoveItem` and the
- * `token-history` swap/bridge entries gain `activityKind` + `eventRole`.
+ * renderer can stop reading `productType`/`tradeSide`, the feeds that
+ * predate the canonical vocabulary must CARRY it: the `token-history`
+ * swap/bridge entries gain `activityKind` + `eventRole`. (The twin `MoveItem`
+ * half retired with the `listMoves` pipeline.)
  *
  * Two properties are pinned here.
  *
@@ -31,7 +32,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { moveItemSchema } from "../portfolio-moves.js";
 import { tokenHistoryEntrySchema } from "../token-history.js";
 import {
   ACTIVITY_KIND_MAX_LENGTH,
@@ -39,34 +39,9 @@ import {
   NEUTRAL_ACTIVITY_KIND,
 } from "../../agent-activity-vocabulary.js";
 
+
 const ISO = "2026-05-21T10:00:00.000Z";
 const EVM_ADDR = "0xbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef";
-
-function moveFixture(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "success:42",
-    source: "success",
-    status: null,
-    failureCode: null,
-    tradeSide: "buy",
-    productType: "spot",
-    venue: "kyberswap",
-    inputToken: "USDC",
-    inputTokenSymbol: "USDC",
-    inputAmount: "100",
-    outputToken: "ETH",
-    outputTokenSymbol: "ETH",
-    outputAmount: "0.03",
-    valueUsd: 100,
-    captureStatus: "executed",
-    instrumentKey: "eth-usdc",
-    chain: "ethereum",
-    txRef: "0xabc123",
-    walletAddress: EVM_ADDR,
-    createdAt: ISO,
-    ...overrides,
-  };
-}
 
 function tokenHistorySwapFixture(overrides: Record<string, unknown> = {}) {
   const leg = {
@@ -117,74 +92,6 @@ function tokenHistoryBridgeFixture(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-
-// ── MoveItem ──────────────────────────────────────────────────────────────
-
-describe("MoveItem.activityKind / eventRole", () => {
-  it("parses a payload minted before these fields existed", () => {
-    const parsed = moveItemSchema.safeParse(moveFixture());
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.activityKind ?? null).toBeNull();
-    expect(parsed.data.eventRole ?? null).toBeNull();
-  });
-
-  it("carries a derived canonical kind on a legacy row, with eventRole still null", () => {
-    for (const kind of ["bridge", "transfer", "swap", NEUTRAL_ACTIVITY_KIND]) {
-      const parsed = moveItemSchema.safeParse(
-        moveFixture({ activityKind: kind, eventRole: null }),
-      );
-      expect(parsed.success).toBe(true);
-      if (!parsed.success) return;
-      expect(parsed.data.activityKind).toBe(kind);
-      expect(parsed.data.eventRole ?? null).toBeNull();
-    }
-  });
-
-  it("carries the real vocabulary on an agent_activity row", () => {
-    const parsed = moveItemSchema.safeParse(
-      moveFixture({
-        source: "agent_activity",
-        activityKind: "bridge",
-        eventRole: "bridge_fill_expected",
-      }),
-    );
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.activityKind).toBe("bridge");
-    expect(parsed.data.eventRole).toBe("bridge_fill_expected");
-  });
-
-  it("stays TOLERANT — an unknown kind/role the engine mints still parses", () => {
-    const parsed = moveItemSchema.safeParse(
-      moveFixture({ activityKind: "perp_futures", eventRole: "perp_open" }),
-    );
-    expect(parsed.success).toBe(true);
-  });
-
-  it("is still BOUNDED — tolerant is not unbounded", () => {
-    expect(
-      moveItemSchema.safeParse(
-        moveFixture({ activityKind: "x".repeat(ACTIVITY_KIND_MAX_LENGTH + 1) }),
-      ).success,
-    ).toBe(false);
-    expect(
-      moveItemSchema.safeParse(
-        moveFixture({ eventRole: "x".repeat(EVENT_ROLE_MAX_LENGTH + 1) }),
-      ).success,
-    ).toBe(false);
-  });
-
-  it("keeps productType/tradeSide intact (their consumers retire separately)", () => {
-    const parsed = moveItemSchema.safeParse(
-      moveFixture({ activityKind: "swap", eventRole: null }),
-    );
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.productType).toBe("spot");
-    expect(parsed.data.tradeSide).toBe("buy");
-  });
-});
 
 // ── token-history swap + bridge entries ───────────────────────────────────
 

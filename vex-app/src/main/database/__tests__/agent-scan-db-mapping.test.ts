@@ -169,15 +169,68 @@ describe("mapAgentScanRow amount honesty", () => {
     expect(entry.output.displayAmount).toBe("0.0004");
     // The quote-time echo is still carried, but only as audit data.
     expect(entry.input.amountHuman).toBe("1.5");
-    expect(entry.amountBasis).toBeNull();
+    expect(entry.amountBasis).toBe("executed");
   });
 
-  it("shows a pending SWAP the requested echo (nothing has settled yet)", () => {
+  it("labels a confirmed SWAP with NO executed legs as an ESTIMATE rather than blanking", () => {
+    // Reachable since the owner's 2026-07-30 decree: the status-only repair
+    // sweep confirms from the chain's success/revert answer alone and writes no
+    // executed amounts (migration 061 dropped the CHECKs that forbade it). The
+    // quote is shown, explicitly labelled — never as settlement truth.
+    const entry = mapValid(
+      row({ executed_amount_in_raw: null, executed_amount_out_raw: null }),
+    );
+    expect(entry.input.displayAmount).toBe("1.5");
+    expect(entry.output.displayAmount).toBe("0.0005");
+    expect(entry.amountBasis).toBe("estimated");
+  });
+
+  it("shows a pending SWAP the requested echo (nothing has settled yet), labelled as an estimate", () => {
     const entry = mapValid(
       row({ status: "pending", executed_amount_in_raw: null, executed_amount_out_raw: null }),
     );
     expect(entry.input.displayAmount).toBe("1.5");
+    expect(entry.amountBasis).toBe("estimated");
+  });
+
+  it("shows a failed SWAP NOTHING even when residual executed_* raws survive on the row", () => {
+    // A row can carry executed legs AND still end `definitively_failed` (a
+    // partially-decoded attempt, a later re-classification). Formatting the raw
+    // before consulting the status rendered that as settled truth.
+    const entry = mapValid(
+      row({
+        status: "failed",
+        failure_code: "slippage",
+        executed_amount_in_raw: "1400000",
+        executed_amount_out_raw: "400000000000000",
+      }),
+    );
+    expect(entry.input.displayAmount).toBeNull();
+    expect(entry.output.displayAmount).toBeNull();
     expect(entry.amountBasis).toBeNull();
+  });
+
+  it("shows NOTHING for an UNRECOGNIZED status — the fail-closed case, not a quote", () => {
+    const entry = mapValid(
+      row({
+        status: "some_future_status",
+        executed_amount_in_raw: null,
+        executed_amount_out_raw: null,
+      }),
+    );
+    expect(entry.input.displayAmount).toBeNull();
+    expect(entry.output.displayAmount).toBeNull();
+    expect(entry.amountBasis).toBeNull();
+  });
+
+  it("labels MIXED-provenance legs conservatively: one quoted leg makes the row 'estimated'", () => {
+    // The renderer applies ONE row-level basis to BOTH legs, so taking the
+    // output leg's optimistic "executed" would silently present the quoted
+    // INPUT leg as settled truth.
+    const entry = mapValid(row({ executed_amount_in_raw: null }));
+    expect(entry.input.displayAmount).toBe("1.5");
+    expect(entry.output.displayAmount).toBe("0.0004");
+    expect(entry.amountBasis).toBe("estimated");
   });
 
   it("shows a failed SWAP NOTHING rather than a near-miss amount", () => {

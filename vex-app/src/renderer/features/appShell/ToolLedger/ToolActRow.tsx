@@ -1,37 +1,70 @@
 /**
  * THE ACT LEDGER — one registered act (S5): a tool call plus its merged
- * output. The transcript shows REGISTERED FACTS: most rows stay quiet — name
- * + Args (+ Output when a result paired in the same run). Two deterministic
- * stamps are supported: "Awaiting signature" from the approval queue, and
- * "Confirmed" when a `wallet_send_confirm` result carries the tool's strict
- * `{ status: "confirmed", txHash }` output contract.
+ * output, presented as a FRIENDLY CARD.
+ *
+ * The card's header reads as a fact about the world rather than a symbol dump:
+ * the protocol mark (contract C5 — venue logo when provenance is proven, the
+ * category glyph otherwise), a human title ("Swap · KyberSwap", "Memory
+ * recall"), the swap/bridge leg line when one can be parsed fail-closed, and
+ * the measured duration chip when — and ONLY when — a duration was actually
+ * measured (`null` is not zero; a call that never ran must never read "0 s").
+ * The raw tool name stays available as the header's `title` tooltip so nothing
+ * the ledger knew is lost.
+ *
+ * Two deterministic stamps survive unchanged: "Awaiting signature" from the
+ * approval queue, and "Confirmed" when the engine persisted `success: true`
+ * for a `wallet_send_confirm` act AND its (bounded) output carries the tool's
+ * strict `{ status: "confirmed", txHash }` contract.
  *
  * Collapsed by default (today's disclosure contract). The expanded body is a
- * recessed well; args/output are sanitized strings rendered as TEXT (`<pre>`
- * pre-wrap) — never HTML. CSP-safe: the one-shot reveal uses the stylesheet
+ * recessed well; args/output are sanitized strings rendered as INERT TEXT
+ * (`<pre>` pre-wrap) — never HTML, and the friendly header never replaces the
+ * ability to read them. CSP-safe: the one-shot reveal uses the stylesheet
  * `.vex-entry-settle` keyframes (180ms, collapsed to its final frame under
  * prefers-reduced-motion by the global rule).
  */
 
-import { useId, useState, type JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { useId, useMemo, useState, type JSX } from "react";
 import {
   ArrowRight01Icon,
   CheckmarkCircle01Icon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
+import { ProtocolMark } from "./ProtocolMark.js";
+import { ToolLegLine } from "./ToolLegLine.js";
+import { formatToolDuration } from "./toolDuration.js";
+import { resolveToolIdentity } from "./toolIdentity.js";
+import { resolveToolLegs } from "./toolLegs.js";
+import { resolveToolOperation } from "./toolOperation.js";
 import { toolGlyph } from "./toolGlyph.js";
 
 /**
- * Recognise only the successful wallet-confirm output contract. Tool output
- * is still treated as untrusted text: malformed JSON, lookalike tools, a
- * missing hash, or any non-confirmed status all fail closed to no stamp.
+ * Hard bound on the untrusted output text this module hands to `JSON.parse` —
+ * the same 20k gate `toolLegs.ts` applies, for the same reason: tool output is
+ * an UNBOUNDED DTO string and a multi-megabyte payload must never cost the
+ * renderer a synchronous parse per visible card. Far above any legitimate
+ * `{ status, txHash }` receipt, so the gate costs no real stamp.
+ */
+const MAX_PARSE_CHARS = 20_000;
+
+/**
+ * Recognise only the successful wallet-confirm output contract. Two proofs are
+ * required, and the persisted one comes FIRST: the engine must have recorded
+ * `success === true` for this act (rules/90 — a "Confirmed" stamp is a claim
+ * that funds moved, and untrusted output text may confirm that claim but may
+ * never make it on its own). Then the output must carry the tool's strict
+ * `{ status: "confirmed", txHash }` contract. Malformed JSON, an oversized
+ * payload, lookalike tools, a missing hash, or any non-confirmed status all
+ * fail closed to no stamp.
  */
 function isConfirmedWalletTransfer(act: ToolCallActView): boolean {
+  if (act.success !== true) return false;
   if (act.toolName !== "wallet_send_confirm" || act.output === null) return false;
+  if (act.output.length > MAX_PARSE_CHARS) return false;
   try {
     const parsed: unknown = JSON.parse(act.output);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -56,8 +89,30 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
     >
-      <HugeiconsIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
+      <VexIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
       Confirmed
+    </span>
+  );
+}
+
+/**
+ * Measured-duration chip. Rendered ONLY for a real measurement — the caller
+ * passes `null` through for every never-executed / synthetic / legacy act and
+ * this returns nothing at all.
+ */
+function DurationChip({
+  durationMs,
+}: {
+  readonly durationMs: number | null | undefined;
+}): JSX.Element | null {
+  const text = formatToolDuration(durationMs ?? null);
+  if (text === null) return null;
+  return (
+    <span
+      data-vex-tool-duration=""
+      className="shrink-0 tabular-nums text-[11px] text-[var(--vex-text-3)]"
+    >
+      {text}
     </span>
   );
 }
@@ -115,10 +170,39 @@ export function ToolActRow({
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const confirmed = isConfirmedWalletTransfer(act);
+  const identity = useMemo(
+    () => resolveToolIdentity(act.toolName, act.toolArgs),
+    [act.toolName, act.toolArgs],
+  );
+  // Legs are a money-operation affordance only — parsing every act's payload
+  // for token-shaped keys would let an unrelated tool's args draw a trade
+  // line. `resolveToolOperation` (not the coarse category) decides both
+  // eligibility and what the line may CLAIM: a proven mutating op that
+  // succeeded renders the bare executed summary, a proven quote renders a
+  // labelled preview, an unproven money-shaped op renders labelled, and
+  // anything else gets no legs at all.
+  const operation = useMemo(
+    () => resolveToolOperation(act.toolName, identity.protocol, act.toolArgs),
+    [act.toolName, identity.protocol, act.toolArgs],
+  );
+  const legs = useMemo(
+    () =>
+      operation === null
+        ? null
+        : resolveToolLegs(
+            act.toolArgs,
+            act.output,
+            act.success,
+            operation,
+            act.displayStatus,
+          ),
+    [operation, act.toolArgs, act.output, act.success, act.displayStatus],
+  );
   return (
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
+      data-vex-tool-category={identity.category}
       className="overflow-hidden rounded-[6px] border border-[var(--vex-line)] bg-white/[0.02]"
     >
       <div className="flex items-center gap-2 pr-2">
@@ -127,24 +211,29 @@ export function ToolActRow({
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          // The raw symbol stays reachable even though the card shows prose.
+          title={act.toolName}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <HugeiconsIcon
-            icon={toolGlyph(act.toolName)}
-            size={14}
-            aria-hidden
-            className="shrink-0 text-[var(--vex-text-3)]"
+          <ProtocolMark
+            protocol={identity.protocol}
+            fallbackGlyph={toolGlyph(act.toolName)}
+            size={16}
           />
-          <span className="min-w-0 truncate font-mono text-[12px] text-[var(--vex-text-2)]">
-            {act.toolName}
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="min-w-0 truncate text-[12.5px] text-foreground">
+              {identity.title}
+            </span>
+            {legs !== null ? <ToolLegLine legs={legs} /> : null}
           </span>
+          <DurationChip durationMs={act.durationMs} />
           {/* Chevron stays even when stamped — it is the expand affordance. */}
-          <HugeiconsIcon
+          <VexIcon
             icon={ArrowRight01Icon}
             size={12}
             aria-hidden
             className={cn(
-              "ml-auto shrink-0 text-[var(--vex-text-3)] transition-transform",
+              "shrink-0 text-[var(--vex-text-3)] transition-transform",
               open && "rotate-90",
             )}
           />

@@ -88,8 +88,8 @@ vi.mock("../SessionDeleteDialog.js", () => ({
   SessionDeleteDialog: () => null,
 }));
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 const { SessionsLibrary } = await import("../SessionsLibrary.js");

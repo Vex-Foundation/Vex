@@ -29,8 +29,8 @@ All top-level packages: stable releases, no prereleases, no deprecated, license 
 | `tailwindcss` | ~4.2.0 | 4.2.4 | `~4.2.4` | 2026-05-06 | MIT | |
 | `@tailwindcss/vite` | ~4.2.0 | 4.2.4 | `~4.2.4` | 2026-05-06 | MIT | Lightning CSS pipeline |
 | `motion` | ~12.38 | 12.38.0 | `~12.38.0` | 2026-03-17 | MIT | Migrated from `framer-motion`; uses `motion/react` |
-| `@hugeicons/react` | ~1.1.6 | 1.1.6 | `~1.1.6` | 2026-03-10 | MIT | peerDep React ≥16 (satisfied) |
-| `@hugeicons/core-free-icons` | ~1.0.0 | **4.1.1** | `~4.1.1` | 2026-03-30 | MIT | **Major bump 1→4** is data-versioning (icon SVG bundle); no API surface, compatible with `@hugeicons/react` 1.x |
+| `@hugeicons/react` | ~1.1.6 | 1.1.6 | *(removed)* | 2026-03-10 | MIT | **REMOVED 2026-07** — icons migrated to `lucide-react` behind the `renderer/components/icons/` adapter; no longer a dependency |
+| `@hugeicons/core-free-icons` | ~1.0.0 | **4.1.1** | *(removed)* | 2026-03-30 | MIT | **REMOVED 2026-07** — see the row above |
 | `@tanstack/react-query` | ~5.100 | 5.100.9 | `~5.100.9` | 2026-05-03 | MIT | |
 | `zustand` | ~5.0 | 5.0.13 | `~5.0.13` | 2026-05-05 | MIT | |
 | `zod` | ~4.4.3 | 4.4.3 | `~4.4.3` | 2026-05-04 | MIT | |
@@ -52,7 +52,7 @@ Three direct deps received major bumps vs planned targets. Each verified safe:
 - **Impact**: pattern w `build/afterPack.mjs` unchanged; we only use `FuseV1Options.*` flags listed in plan §B
 - **Action**: adopt 2.1.1, no migration needed
 
-### 2. `@hugeicons/core-free-icons` 1.0 → 4.1.1
+### 2. `@hugeicons/core-free-icons` 1.0 → 4.1.1 *(package removed 2026-07 — historical)*
 - **Why bumped**: package was renumbered (icon library version, not API version)
 - **API surface**: bare exports of icon objects (e.g. `SearchIcon`, `Send02Icon`) — consumed by `@hugeicons/react`'s `<HugeiconsIcon icon={X} />` component, no API breaks
 - **No peerDeps** declared, no transitive deps (data-only package)

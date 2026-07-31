@@ -44,6 +44,43 @@ describe("redactForExport — recall", () => {
     expect(out).toBe("[redacted]");
   });
 
+  it("redacts a real mnemonic even when ordinary prose runs into it", () => {
+    const out = redactForExport(
+      "here the seed abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    );
+    expect(out).not.toContain("abandon");
+    expect(out).toContain("[redacted]");
+  });
+
+  it("redacts a slash-containing base64 secret in a URL query string", () => {
+    // The path exemption must NOT extend into a query or fragment: a token
+    // smuggled into a URL is a real exposure, even when it is path-shaped.
+    const secret = "Qk9YL3NlY3JldC90b2tlbi92YWx1ZS9oZXJlL29r";
+    const query = redactForExport(`https://api.example.com/v1/s?${secret}`);
+    expect(query).toBe("https://api.example.com/v1/s?[redacted]");
+    const fragment = redactForExport(`https://api.example.com/v1/s#${secret}`);
+    expect(fragment).toBe("https://api.example.com/v1/s#[redacted]");
+  });
+
+  it("redacts a padded base64 secret even when it has short slash segments", () => {
+    const secret = "Qk9YL3NlY3JldC92YWx1ZS9oZXJlL29rYQ==";
+    const out = redactForExport(`key: ${secret} end`);
+    expect(out).toBe("key: [redacted] end");
+  });
+
+  it("redacts a `+`-containing base64 secret with short slash segments", () => {
+    const secret = "Qk9YL3Nl+3JldC92YWx1ZS9oZXJlL29r";
+    const out = redactForExport(`key: ${secret} end`);
+    expect(out).toBe("key: [redacted] end");
+  });
+
+  it("redacts a base64 secret in a URL query string (only the path is exempt)", () => {
+    const secret = base64Secret(32);
+    const out = redactForExport(`https://api.example.com/v1/session?${secret}`);
+    expect(out).not.toContain(secret);
+    expect(out).toBe("https://api.example.com/v1/session?[redacted]");
+  });
+
   for (const byteLength of [16, 24, 32, 40, 48, 56, 64, 72]) {
     it(`redacts a base64-encoded ${byteLength}-byte secret`, () => {
       const secret = base64Secret(byteLength);
@@ -83,6 +120,54 @@ describe("redactForExport — precision", () => {
   it("leaves normal prose untouched", () => {
     const prose =
       "I want to buy some tokens on the exchange today for my portfolio, please help me decide.";
+    expect(redactForExport(prose)).toBe(prose);
+  });
+
+  it("leaves an Arbiscan tx URL inside a markdown link untouched", () => {
+    const link =
+      "[Arbiscan](https://arbiscan.io/tx/0x3f2a1b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708)";
+    expect(redactForExport(`See ${link} for details`)).toBe(
+      `See ${link} for details`,
+    );
+  });
+
+  it("leaves a Solscan tx URL untouched", () => {
+    const url =
+      "https://solscan.io/tx/5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW";
+    expect(redactForExport(`tx ${url} done`)).toBe(`tx ${url} done`);
+  });
+
+  it("leaves a DexScreener pair URL untouched", () => {
+    const url =
+      "https://dexscreener.com/solana/8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj";
+    expect(redactForExport(`pair ${url} looks liquid`)).toBe(
+      `pair ${url} looks liquid`,
+    );
+  });
+
+  it("leaves a bare repo path untouched", () => {
+    const path = "vex-app/src/main/sessions/export";
+    expect(redactForExport(path)).toBe(path);
+  });
+
+  it("leaves a deep source path untouched", () => {
+    const path = "src/vex-agent/tools/protocols/kyberswap/handlers/swap.ts";
+    expect(redactForExport(path)).toBe(path);
+  });
+
+  it("leaves a camelCase component path untouched", () => {
+    const path = "ToolLedger/ToolActRow.tsx";
+    expect(redactForExport(path)).toBe(path);
+  });
+
+  it("leaves a path inside a sentence untouched", () => {
+    const sentence = "open vex-app/src/main/sessions/export-redaction.ts and read it";
+    expect(redactForExport(sentence)).toBe(sentence);
+  });
+
+  it("leaves a long unpunctuated ordinary English sentence untouched", () => {
+    const prose =
+      "I want stable quotes here before agent tries again since kyber gave that pre-sign gas estimate error";
     expect(redactForExport(prose)).toBe(prose);
   });
 });

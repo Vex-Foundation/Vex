@@ -19,6 +19,7 @@ import { resolveSelectedAddressForRead } from "./resolve.js";
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { fail, ok } from "../types.js";
+import { formatZodIssueForModel } from "../arg-validation.js";
 
 const TrackArgs = z.object({
   action: z.enum(["pin", "unpin", "list"]),
@@ -33,8 +34,7 @@ export async function handleWalletTrackToken(
 ): Promise<ToolResult> {
   const parsed = TrackArgs.safeParse(params);
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    return fail(`wallet_track_token: ${firstIssue?.message ?? "invalid arguments"}`);
+    return fail(`wallet_track_token: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
   const { action, chain, token } = parsed.data;
 

@@ -15,8 +15,11 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AiChat01Icon, Target02Icon } from "@hugeicons/core-free-icons";
+import {
+  AiChat01Icon,
+  Target02Icon,
+  VexIcon,
+} from "../../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { cn } from "../../../lib/utils.js";
 import {
@@ -117,7 +120,7 @@ export function SessionRow({
                 : "text-[var(--vex-text-3)]",
             )}
           >
-            <HugeiconsIcon icon={Icon} size={15} aria-hidden />
+            <VexIcon icon={Icon} size={15} aria-hidden />
             {!sidebarOpen && activity !== null ? (
               <span
                 aria-hidden

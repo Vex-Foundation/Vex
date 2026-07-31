@@ -65,6 +65,10 @@ describe("RelayClient", () => {
     const requestedUrl = String(http.fetchWithTimeout.mock.calls[0]![0]);
     expect(requestedUrl).toContain("/quote/v2");
     expect(http.fetchWithTimeout.mock.calls[0]![1]).toMatchObject({ method: "POST" });
+    // Relay attribution: every quote body carries the constant `referrer`,
+    // injected by the client — no caller supplies or overrides it.
+    const sentBody = JSON.parse(String((http.fetchWithTimeout.mock.calls[0]![1] as RequestInit).body));
+    expect(sentBody.referrer).toBe("vex");
     expect(q.steps[0]!.kind).toBe("transaction");
     expect(q.steps[0]!.items[0]!.data?.chainId).toBe(8453);
     expect(q.steps[0]!.requestId).toBe("0xreq");

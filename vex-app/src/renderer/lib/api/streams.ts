@@ -6,10 +6,29 @@
  *  - `onStreamDelta` → accumulate the preview (text/tool/reasoning/usage/
  *    phase/status — reasoning is batched inside the store, see `applyDelta`);
  *  - `onTranscriptAppend` (assistant role) → the streamed text is now
- *    persisted, so clear the preview. We AWAIT the transcript query refetch
- *    first (TanStack v5 `invalidateQueries` resolves after active refetches)
- *    so the canonical row is in cache before the preview disappears — no
- *    swap gap.
+ *    persisted, so retire the preview's copy of it. We AWAIT the transcript
+ *    query refetch first (TanStack v5 `invalidateQueries` resolves after
+ *    active refetches) so the canonical row is in cache before the preview
+ *    changes — no swap gap.
+ *
+ * ROUND vs TURN (owner report 2026-07-30 — the mid-turn scroll jump). A turn
+ * is one or MANY provider rounds: the engine loops round → tool batch → round
+ * until a round answers without calling a tool, and EVERY round persists its
+ * own assistant row. Treating each of those appends as the end of the turn was
+ * wrong in three visible ways: the reasoning segments of the turn's first half
+ * were destroyed, the elapsed clock restarted, and the transcript's anchor
+ * run-out spacer was retired mid-turn — which collapses the scroll range under
+ * an anchored user message and makes the browser clamp scrollTop, throwing the
+ * reader up the conversation.
+ *
+ * So the append is classified instead of blindly clearing:
+ *  - the round emitted a `tool_call` (`toolName !== null`) → it is a MID-TURN
+ *    round: `settleRound` drops the now-persisted prose and closes the active
+ *    reasoning segment, and the preview lives on into the next round;
+ *  - no tool call → this round IS the answer, the turn is over, clear as before.
+ *
+ * The classifier is the stream's own history, which is exactly the engine's
+ * loop condition, so the two cannot disagree.
  *
  * Orphan safety, in order of how fast each path reacts:
  *  - an ERROR delta clears immediately (an errored stream never persists a
@@ -36,9 +55,10 @@
  * (`SessionPanel`).
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getLiveStreamId, useStreamStore } from "../../stores/streamStore.js";
+import { useIsChatSubmitting } from "./chat.js";
 import { messagesKeys } from "./queryKeys.js";
 
 /** Clear an in-flight preview this long after the last delta (orphan net). */
@@ -47,7 +67,28 @@ export const STREAM_PREVIEW_IDLE_MS = 60_000;
 export function useStreamPreviewSync(sessionId: string | null): void {
   const queryClient = useQueryClient();
   const applyDelta = useStreamStore((s) => s.applyDelta);
+  const settleRound = useStreamStore((s) => s.settleRound);
   const clear = useStreamStore((s) => s.clear);
+  const submitting = useIsChatSubmitting(sessionId);
+
+  // TURN-SETTLED BACKSTOP. Keeping a mid-turn preview alive (above) means a
+  // turn that ends right after a tool call — approval rejected or expired, the
+  // iteration cap, an engine stop — emits no final assistant append, so
+  // nothing short of the 60 s idle net would retire it. `chat.submit`'s
+  // mutation is pending for the WHOLE turn (every round AND tool execution),
+  // so its settle IS the end of the turn.
+  //
+  // Only the true→false TRANSITION clears. A steady `false` must never touch a
+  // preview: mission and wake turns never open a chat mutation at all, and
+  // blanking them on their first delta is precisely the regression that killed
+  // the earlier `leaseActive` attempt documented above.
+  const wasSubmitting = useRef(false);
+  useEffect(() => {
+    const settled = wasSubmitting.current && !submitting;
+    wasSubmitting.current = submitting;
+    if (!settled || sessionId === null) return;
+    clear(sessionId);
+  }, [submitting, sessionId, clear]);
 
   useEffect(() => {
     if (sessionId === null || sessionId.length === 0) return;
@@ -120,20 +161,30 @@ export function useStreamPreviewSync(sessionId: string | null): void {
       // then clear ONLY if that SAME stream is still showing: a newer stream
       // that started during the await must be preserved (it clears on its own
       // append).
-      const targetStreamId =
-        useStreamStore.getState().bySessionId[sessionId]?.streamId;
-      if (targetStreamId === undefined) return;
+      const target = useStreamStore.getState().bySessionId[sessionId];
+      if (target === undefined) return;
+      const targetStreamId = target.streamId;
+      // Classified BEFORE the await, off the round this append belongs to: a
+      // round that called a tool is mid-turn, and the turn continues.
+      const midTurn = target.toolName !== null;
       void (async () => {
         await queryClient.invalidateQueries({
           queryKey: messagesKeys.forSession(sessionId),
         });
         if (!alive) return;
         if (
-          useStreamStore.getState().bySessionId[sessionId]?.streamId ===
+          useStreamStore.getState().bySessionId[sessionId]?.streamId !==
           targetStreamId
         ) {
-          clearAll();
+          return;
         }
+        if (midTurn) {
+          // The round's prose is canonical now; the TURN's state (segments,
+          // clock) and the transcript's anchor run-out survive with it.
+          settleRound(sessionId);
+          return;
+        }
+        clearAll();
       })();
     });
 
@@ -143,5 +194,5 @@ export function useStreamPreviewSync(sessionId: string | null): void {
       offAppend();
       clearAll();
     };
-  }, [sessionId, queryClient, applyDelta, clear]);
+  }, [sessionId, queryClient, applyDelta, settleRound, clear]);
 }

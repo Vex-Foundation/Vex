@@ -7,6 +7,10 @@
  * stamp-link jump (scroll + focus to `[data-approval-id]`); ToolGroupRow
  * header grammar ("{N} tool calls", distinct-glyph overflow "+{k}") and the
  * group-level stamp when any member matches a pending approval.
+ *
+ * The friendly-card presentation pins (human titles, venue marks, duration
+ * chips, outcome-honest leg lines) live in `./ToolLedger/friendly-card.test.tsx`
+ * — split by responsibility under the rules/04 550-line decree.
  */
 
 import { describe, expect, it } from "vitest";
@@ -20,7 +24,7 @@ import {
   Search01Icon,
   TerminalIcon,
   Wrench01Icon,
-} from "@hugeicons/core-free-icons";
+} from "../../../components/icons/index.js";
 import { ToolActRow } from "../ToolLedger/ToolActRow.js";
 import { ToolGroupRow } from "../ToolLedger/ToolGroupRow.js";
 import { toolGlyph } from "../ToolLedger/toolGlyph.js";
@@ -34,7 +38,7 @@ const ISO = "2026-05-26T10:00:00.000Z";
 function act(over: Partial<ToolCallActView> = {}): ToolCallActView {
   return {
     toolCallId: "c1",
-    toolName: "wallet:read",
+    toolName: "wallet_balances",
     toolArgs: '{"chain":"base"}',
     output: null,
     ...over,
@@ -76,7 +80,7 @@ describe("ToolActRow", () => {
     expect(
       container.querySelector('[data-vex-message-role="tool"]'),
     ).not.toBeNull();
-    const btn = screen.getByRole("button", { name: /wallet:read/ });
+    const btn = screen.getByRole("button", { name: /Wallet balances/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText('{"chain":"base"}')).toBeNull();
     fireEvent.click(btn);
@@ -94,7 +98,7 @@ describe("ToolActRow", () => {
         act: act({ toolArgs: injected, output: injected }),
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet balances/ }));
     expect(container.querySelector("img")).toBeNull();
     expect(screen.getAllByText(injected)).toHaveLength(2);
   });
@@ -102,13 +106,13 @@ describe("ToolActRow", () => {
   it("shows the Output section only when a result merged; hints cover empties", () => {
     // No merge → quiet: Args only.
     const first = render(createElement(ToolActRow, { act: act({ toolArgs: null }) }));
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet balances/ }));
     expect(screen.getByText("(no parameters)")).not.toBeNull();
     expect(screen.queryByText("Output")).toBeNull();
     first.unmount();
     // Merged-but-empty output → Output section with the empty hint.
     render(createElement(ToolActRow, { act: act({ output: "" }) }));
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet balances/ }));
     expect(screen.getByText("Output")).not.toBeNull();
     expect(screen.getByText("(no output)")).not.toBeNull();
   });
@@ -124,6 +128,9 @@ describe("ToolActRow", () => {
       createElement(ToolActRow, {
         act: act({
           toolName: "wallet_send_confirm",
+          // BOTH proofs are required: the engine's persisted success AND the
+          // tool's strict output contract.
+          success: true,
           output: JSON.stringify({
             txHash: "solana-signature",
             chain: "solana",
@@ -143,19 +150,45 @@ describe("ToolActRow", () => {
   });
 
   it("does not infer confirmation from malformed, failed, or unrelated output", () => {
+    const confirmedOutput = JSON.stringify({
+      txHash: "hash",
+      status: "confirmed",
+    });
     const cases = [
-      act({ toolName: "wallet_send_confirm", output: "not json" }),
+      act({ toolName: "wallet_send_confirm", success: true, output: "not json" }),
       act({
         toolName: "wallet_send_confirm",
+        success: true,
         output: JSON.stringify({ txHash: "hash", status: "failed" }),
       }),
       act({
         toolName: "wallet_send_confirm",
+        success: true,
         output: JSON.stringify({ status: "confirmed" }),
       }),
       act({
         toolName: "wallet_balances",
-        output: JSON.stringify({ txHash: "hash", status: "confirmed" }),
+        success: true,
+        output: confirmedOutput,
+      }),
+      // A "Confirmed" stamp claims funds moved. The persisted outcome must
+      // prove it: output text alone — however well-formed — never can.
+      act({
+        toolName: "wallet_send_confirm",
+        success: false,
+        output: confirmedOutput,
+      }),
+      act({
+        toolName: "wallet_send_confirm",
+        success: null,
+        output: confirmedOutput,
+      }),
+      act({ toolName: "wallet_send_confirm", output: confirmedOutput }),
+      // Oversized output is never handed to JSON.parse at all (20k bound).
+      act({
+        toolName: "wallet_send_confirm",
+        success: true,
+        output: `{"status":"confirmed","txHash":"hash","pad":"${"x".repeat(21_000)}"}`,
       }),
     ];
 
@@ -287,10 +320,10 @@ describe("ToolGroupRow", () => {
     );
     const header = screen.getByRole("button", { name: /3 tool calls/ });
     expect(header.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("file:read")).toBeNull();
+    expect(screen.queryByText("File read")).toBeNull();
     fireEvent.click(header);
     expect(header.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("file:read")).not.toBeNull();
+    expect(screen.getByText("File read")).not.toBeNull();
     // Group container + 3 member act rows all carry the tool role attr.
     expect(
       container.querySelectorAll('[data-vex-message-role="tool"]').length,
@@ -347,3 +380,4 @@ describe("ToolGroupRow", () => {
     expect(screen.queryByText(/awaiting signature/i)).toBeNull();
   });
 });
+

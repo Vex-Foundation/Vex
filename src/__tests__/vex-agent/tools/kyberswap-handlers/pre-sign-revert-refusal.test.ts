@@ -32,7 +32,7 @@ type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resol
 
 const SESSION_EVM = {
   family: "eip155" as const,
-  address: "0x1234567890AbcdEF1234567890aBcdef12345678",
+  address: "0x1234567890AbcdEF1234567890aBcdef12345678" as `0x${string}`,
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
 
@@ -116,6 +116,7 @@ vi.mock("@utils/logger.js", () => {
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import { isUniswapPairRevealed, clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
@@ -283,6 +284,117 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
     expect(result.success).toBe(false);
     expect(result.data?.status).not.toBe("not_attempted");
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Live session on Robinhood Chain (4663), 2026-07-30: `swap_execute` failed
+ * TWICE at the pre-sign gas estimate with the router revert `"Call failed"`.
+ * Nothing was broadcast, the refusal itself told the agent to "try another
+ * pair or venue" — and the only other venue stayed locked, because the reveal
+ * fired for a MINED revert (gas burned) but not for the strictly safer
+ * pre-sign refusal of the same calldata.
+ */
+describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks the fallback venue", () => {
+  const FALLBACK_SENTENCE = "Uniswap (swap_quote_uniswap / swap_execute_uniswap) is now available for this session as a fallback venue.";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearUniswapPairReveal("session-1");
+    mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
+    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
+      address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
+    }));
+    mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: {
+          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+          route: compliantRoutePaths({
+            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+          }),
+        },
+        routerAddress: ROUTER,
+      },
+    });
+    mockBuildRoute.mockResolvedValue({
+      data: {
+        routerAddress: ROUTER,
+        data: COMPLIANT_CALLDATA,
+        transactionValue: "0",
+        amountIn: "1000000", amountOut: "999000",
+        amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
+      },
+    });
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 216, events: [{ id: 100 }] });
+    mockSignStageBroadcast.mockReset();
+    mockMarkActivityBroadcast.mockReset();
+    mockMarkActivityBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });
+    mockFailActivityEvent.mockReset();
+    mockFailActivityEvent.mockResolvedValue({ applied: true, row: {} });
+  });
+
+  it("the EXACT live shape — `Call failed`, nothing broadcast — reveals the pair and says so", async () => {
+    mockSignStageBroadcast.mockRejectedValueOnce(revertedWith("Call failed"));
+
+    const result = await execute();
+
+    expect(isUniswapPairRevealed("session-1")).toBe(true);
+    expect(result.output).toContain(FALLBACK_SENTENCE);
+    // The refusal itself is unchanged — the sentence is appended, never a
+    // replacement for the evidence and remedy the agent already relied on.
+    expect(result.data?.status).toBe("not_attempted");
+    expect(result.data?.retryable).toBe(true);
+    expect(result.data?.failureCode).toBe("simulation_reverted");
+    expect(result.output).toMatch(/nothing was signed or broadcast/i);
+    expect(result.output).toContain("Call failed");
+  });
+
+  it("a PRICE-guard refusal does NOT reveal — a fresh quote at a higher tolerance can clear it", async () => {
+    mockSignStageBroadcast.mockRejectedValueOnce(revertedWith(KYBER_SLIPPAGE_REVERT));
+
+    const result = await execute({ slippageBps: 50 });
+
+    expect(isUniswapPairRevealed("session-1")).toBe(false);
+    expect(result.output).not.toContain(FALLBACK_SENTENCE);
+    // ...and the price remedy it does give is untouched.
+    expect(result.output).toContain("slippageBps");
+  });
+
+  it("an ALLOWANCE-leg refusal does NOT reveal — an approve failing is not venue evidence", async () => {
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 217, events: [{ id: 10 }, { id: 11 }] });
+    // The FIRST leg (the approve) is the one the chain refuses.
+    mockSignStageBroadcast.mockRejectedValueOnce(revertedWith("Call failed"));
+
+    const result = await execute();
+
+    expect(isUniswapPairRevealed("session-1")).toBe(false);
+    expect(result.output).not.toContain(FALLBACK_SENTENCE);
+    expect(result.output).toMatch(/the allowance step was refused before signing/i);
+  });
+
+  it("a leg whose hash was already STAGED never reveals — that is not a pre-sign refusal", async () => {
+    mockSignStageBroadcast.mockImplementationOnce(async (_pub, _wallet, _params, hooks) => {
+      await hooks.onHashStaged({ txHash: "0xswap", fromAddress: SESSION_EVM.address, nonce: 0 });
+      throw revertedWith("Call failed");
+    });
+
+    const result = await execute();
+
+    expect(isUniswapPairRevealed("session-1")).toBe(false);
+    expect(result.output).not.toContain(FALLBACK_SENTENCE);
+  });
+
+  it("an error with no decoded revert reason never reveals — an unplaceable failure is not evidence", async () => {
+    mockSignStageBroadcast.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
+
+    const result = await execute();
+
+    expect(isUniswapPairRevealed("session-1")).toBe(false);
+    expect(result.output).not.toContain(FALLBACK_SENTENCE);
   });
 });
 

@@ -24,6 +24,8 @@
 
 import { z } from "zod";
 
+import { dropEmptyModelValues, formatZodIssueForModel } from "../arg-validation.js";
+
 export const WEB_SEARCH_DEFAULT_MAX_RESULTS = 6;
 export const WEB_SEARCH_MAX_RESULTS_CAP = 10;
 export const WEB_SEARCH_DEFAULT_FETCH_TOP = 3;
@@ -139,9 +141,18 @@ export type WebResearchParseResult =
 
 /** Validate raw LLM params and resolve them into one explicit request. */
 export function parseWebResearchRequest(params: Record<string, unknown>): WebResearchParseResult {
-  const parsed = WebResearchParams.safeParse(params);
+  // Empty means ABSENT before the exactly-one-of refine runs. `{query: "",
+  // url: "https://…"}` — the model filling both advertised fields and meaning
+  // only the second — used to die on a pathless "Too small: expected string to
+  // have >=1 characters" instead of simply fetching the page; and `{query:
+  // ""}` alone now gets the refine's actual instruction rather than a size
+  // complaint about a field it thought it had left blank.
+  const parsed = WebResearchParams.safeParse(dropEmptyModelValues(params));
   if (!parsed.success) {
-    return { success: false, message: parsed.error.issues[0]?.message ?? "invalid arguments" };
+    return {
+      success: false,
+      message: formatZodIssueForModel(parsed.error.issues[0], params),
+    };
   }
 
   const { query, url, maxResults, fetchTop, topic, searchDepth, chunksPerSource, timeRange } =

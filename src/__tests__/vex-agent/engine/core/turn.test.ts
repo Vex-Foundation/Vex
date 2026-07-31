@@ -69,11 +69,13 @@ describe("turn", () => {
   function makeProvider(response: {
     content?: string | null;
     toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }> | null;
+    reasoning?: string | null;
   }) {
     return {
       chatCompletion: vi.fn().mockResolvedValue({
         content: response.content ?? null,
         toolCalls: response.toolCalls ?? null,
+        reasoning: response.reasoning ?? null,
         usage: { promptTokens: 1000, completionTokens: 200, cachedTokens: 0, reasoningTokens: 0 },
       }),
       // chatCompletionSimple stays on the contract (used by checkpoint extract/merge)
@@ -119,6 +121,16 @@ describe("turn", () => {
     expect(result.content).toBe("Your balance is 2.5 SOL");
     expect(result.toolCalls).toBeNull();
     expect(result.promptTokens).toBe(1000);
+    expect(result.reasoning).toBeNull();
+  });
+
+  it("surfaces the provider reasoning trace on the buffered fallback path", async () => {
+    const provider = makeProvider({ content: "answer", reasoning: "I checked the balance" });
+    const result = await executeTurn(
+      makeContext(), [], null, provider as any, makeConfig() as any, [],
+    );
+
+    expect(result.reasoning).toBe("I checked the balance");
   });
 
   it("returns tool calls", async () => {

@@ -9,7 +9,9 @@
  * the caller's output SHAPE differs (a plain string for `MoveItem`, an
  * `AmountField`-wrapped value for `TokenHistoryEntry`).
  *
- * THE PLAIN-SWAP RULE (`resolveAgentActivityAmount`): a `confirmed` row shows
+ * THE PLAIN-SWAP RULE (`resolveAgentActivityAmount`): TOKEN HISTORY ONLY as of
+ * 2026-07-30 — Agent Scan moved its swap legs onto the estimate-basis rule
+ * below (its DTO can say "estimated"; Token History's cannot). A `confirmed` row shows
  * the raw-computed EXECUTED amount ONLY (receipt Transfer-delta truth) —
  * NEVER the quote-time REQUESTED echo, closing the "quote masquerading as
  * settlement" bug the repair-sweep decoders exposed (they intentionally
@@ -19,17 +21,22 @@
  * the REQUESTED echo instead — nothing has settled yet, so the quote is the
  * only honest value available. Anything else (`failed`, or an unrecognized
  * status) shows NOTHING — a failed attempt's legs are moot; showing a
- * near-miss amount would misrepresent it. This rule relies on an invariant
- * that holds ONLY for plain swaps: the repair sweep never marks a swap
- * `confirmed` without both legs decoder-proven (design R3), so the
- * confirmed-without-decode case is unreachable and never needs a fallback.
+ * near-miss amount would misrepresent it.
+ *
+ * ITS CONFIRMED-WITHOUT-DECODE CASE IS NOW REACHABLE (owner decree
+ * 2026-07-30): the repair sweeps became status-only and migration 061 dropped
+ * `agent_activity_confirmed_swap_has_executed_legs`, so a repaired swap row can
+ * be `confirmed` with NULL executed legs. This rule then blanks. That is a
+ * deliberate, accepted Token-History behavior — its `TokenHistoryEntry` DTO has
+ * no provenance field, so it has no way to label a value "estimated", and
+ * showing an unlabelled quote as settlement is the one thing this rule exists
+ * to prevent.
  *
  * THE ESTIMATE-BASIS RULE (`resolveAmountWithEstimateBasis`): bridges and W5
- * lend/prediction rows do NOT carry that invariant (a bridge fill is
- * solver-signed/externally observed; a lend/prediction confirmation is not
- * guaranteed decoder-proven), so a confirmed-without-decode row falls back to
- * the quoted amount EXPLICITLY labelled `"estimated"` rather than going
- * blank — see that function's own doc for the full rule.
+ * lend/prediction rows — and, since 2026-07-30, EVERY Agent Scan kind
+ * including plain swaps — do NOT carry that invariant, so a
+ * confirmed-without-decode row falls back to the quoted amount EXPLICITLY
+ * labelled `"estimated"` rather than going blank — see that function's own doc for the full rule.
  *
  * Human formatting from raw is BigInt-safe (`viem`'s `formatUnits` — already
  * a `vex-app` dependency, the same audited base-unit-shift primitive wallet
@@ -125,9 +132,15 @@ export function resolveAmountWithEstimateBasis(
   executedRaw: string | null,
   decimals: number | null,
 ): AmountEstimateResolution {
+  // STATUS FIRST, ALWAYS. A row can carry residual `executed_*` raws and still
+  // be `failed` (a partially-decoded attempt, a later re-classification), and an
+  // UNRECOGNIZED status is precisely the case `toAmountStatus` returns `null`
+  // for so that we fail CLOSED. Formatting the raw before consulting the status
+  // rendered both as settled truth. Only the two states we understand may
+  // display anything at all.
+  if (status !== "pending" && status !== "confirmed") return { value: null, basis: null };
   const executed = formatExecutedAmountHuman(executedRaw, decimals);
   if (executed !== null) return { value: executed, basis: "executed" };
-  if (status === "failed") return { value: null, basis: null };
   return {
     value: requestedHuman,
     basis: requestedHuman !== null ? "estimated" : null,

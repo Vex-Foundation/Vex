@@ -245,6 +245,13 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     expect(result.success).toBe(false);
     expect((result.data as { txHash?: string } | undefined)?.txHash).toBeDefined();
     expect((result.data as { status?: string } | undefined)?.status).toBe("pending");
+    // Characterization of the FULL agent-facing sentence: the safety-critical
+    // "Do not retry" AND the self-serve verification path that replaces it.
+    const txHash = (result.data as { txHash: string }).txHash;
+    expect(result.output).toContain(
+      `Do not retry; this attempt is recorded as pending and will resolve automatically. `
+      + `You can verify it now yourself with chain_read (action tx_receipt, chainId=1, txHash=${txHash}).`,
+    );
   });
 
   it("(c) C16 — confirmActivityEvent throwing on a confirmed swap preserves txHash, never a raw/generic failure", async () => {

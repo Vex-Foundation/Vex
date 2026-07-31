@@ -23,8 +23,10 @@
  */
 
 import type { JSX, ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowUpRight01Icon,
+  VexIcon,
+} from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 
 export type ProviderCardSlug = "jupiter" | "tavily" | "rettiwt";
@@ -97,7 +99,7 @@ function GetKeyLink({ getKey }: { getKey: ProviderCardGetKey }): JSX.Element {
       )}
     >
       {getKey.label}
-      <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} aria-hidden />
+      <VexIcon icon={ArrowUpRight01Icon} size={12} aria-hidden />
     </a>
   );
 }

@@ -1,45 +1,21 @@
 /**
- * SessionContext header tests (slice C — a11y labels + canonical selectors).
+ * SessionContext tests (slice C — a11y labels + canonical selectors).
  *
  * Pins the `session-header` data selector + the labeled group for the active
- * session strip. Stage 4 moved the runtime bar OUT of this header into the
- * BOOK panel; the header now renders no runtime-status group (pinned below).
+ * session row. Stage 4 moved the runtime bar OUT into the BOOK panel; the
+ * session-UI redesign (2026-07-29) then removed the register line itself — the
+ * TITLE moved to the left rail and the Markdown EXPORT key to the status
+ * strip, so this file no longer covers either. The export flow's
+ * privacy-confirmation gate did not lose coverage: it moved WITH the control
+ * to `SessionExportControl.test.tsx`.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { SessionContext, type SessionContextProps } from "../SessionContext.js";
-
-// JSDOM does not implement `HTMLDialogElement.showModal()` — the dialog
-// stays without the `open` attribute and Testing Library's a11y tree hides
-// every descendant from `getByRole`. Same polyfill as ReportIssueDialog's
-// tests; SessionExportDialog shares the same native-`<dialog>` primitive.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-});
 
 const SESSION: SessionListItem = {
   id: "00000000-0000-4000-8000-0000000000e1",
@@ -83,13 +59,19 @@ beforeEach(() => {
 });
 
 describe("SessionContext header (slice C)", () => {
-  it("marks the active-session strip with the session-header selector + labeled group", () => {
+  it("marks the active-session row with the session-header selector + labeled group", () => {
     const { container } = renderCtx();
     const header = container.querySelector('[data-vex-area="session-header"]');
     expect(header).not.toBeNull();
     expect(header?.getAttribute("role")).toBe("group");
+    // The title still NAMES the group for screen readers even though it is no
+    // longer printed here — it is stated once, in the left rail.
     expect(header?.getAttribute("aria-label")).toBe("Session: Research session");
-    expect(screen.getByText("Research session")).not.toBeNull();
+    expect(screen.queryByText("Research session")).toBeNull();
+    // The export key moved to the status strip (SessionExportControl).
+    expect(
+      screen.queryByRole("button", { name: "Export session as Markdown" }),
+    ).toBeNull();
     // S3 exception stamps: the default agent mode earns silence; only the
     // deviating `restricted` permission is stamped. (The `mission` mode stamp
     // was removed — mission identity now reads from the MISSION RAIL badge.)
@@ -130,7 +112,7 @@ describe("SessionContext header (slice C)", () => {
     expect(
       container.querySelector('[data-testid="trailing-slot"]'),
     ).toBeNull();
-    // Header still renders normally with just title + stamp.
+    // Row still renders normally with just the exception stamp.
     expect(
       container.querySelector('[data-vex-area="session-header"]'),
     ).not.toBeNull();
@@ -149,51 +131,4 @@ describe("SessionContext header (slice C)", () => {
     ).toBeNull();
   });
 
-  it("requires confirmation before exporting and announces a successful save", async () => {
-    exportMarkdown.mockResolvedValue({ ok: true, data: { outcome: "saved" } });
-    renderCtx();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Export session as Markdown" }),
-    );
-    // Privacy-contract confirmation gate: nothing exported yet.
-    expect(exportMarkdown).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText("Export session as Markdown?"),
-    ).not.toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
-
-    await waitFor(() => expect(exportMarkdown).toHaveBeenCalledWith({ id: SESSION.id }));
-    expect(await screen.findByText("Exported")).not.toBeNull();
-  });
-
-  it("keeps native-dialog cancellation silent after confirming", async () => {
-    exportMarkdown.mockResolvedValue({ ok: true, data: { outcome: "cancelled" } });
-    renderCtx();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Export session as Markdown" }),
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "Export" }));
-
-    await waitFor(() => expect(exportMarkdown).toHaveBeenCalledOnce());
-    expect(screen.queryByText("Exported")).toBeNull();
-    expect(screen.queryByText("Export failed")).toBeNull();
-  });
-
-  it("lets the user cancel the confirmation dialog without exporting", () => {
-    renderCtx();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Export session as Markdown" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    expect(exportMarkdown).not.toHaveBeenCalled();
-    // The shared Dialog keeps children mounted and closes via the native
-    // <dialog> `open` attribute (see ReportIssueDialog.test.tsx) — assert
-    // closure through the attribute, not text presence.
-    expect(document.querySelector("dialog[open]")).toBeNull();
-  });
 });

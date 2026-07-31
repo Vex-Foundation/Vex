@@ -110,7 +110,8 @@ export function pendleInvalidResponse(endpoint: string, detail: string): VexErro
   return new VexError(
     ErrorCodes.PENDLE_INVALID_RESPONSE,
     `Pendle returned an unreadable ${endpoint} response (${detail}).`,
-    "Pendle changed a response shape Vex depends on. Retrying with different parameters will not help — report this.",
+    "Pendle changed a response shape Vex depends on. This is a provider-side fault; "
+    + "retrying with different parameters will not help. Use another source for this data.",
   );
 }
 

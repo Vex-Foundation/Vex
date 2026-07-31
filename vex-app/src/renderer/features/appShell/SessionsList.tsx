@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
   Cancel01Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   Search01Icon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../components/icons/index.js";
 import type {
   SessionDeleteOutcome,
   SessionListItem,
@@ -229,13 +229,13 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
             label={searchOpen ? "Close session search" : "Search sessions"}
             onClick={toggleSearch}
           >
-            <HugeiconsIcon icon={Search01Icon} size={16} aria-hidden />
+            <VexIcon icon={Search01Icon} size={16} aria-hidden />
           </SidebarIconButton>
           <SidebarIconButton
             label={sidebarOpen ? "Collapse sessions sidebar" : "Expand sessions sidebar"}
             onClick={toggleSidebar}
           >
-            <HugeiconsIcon
+            <VexIcon
               icon={sidebarOpen ? PanelLeftCloseIcon : PanelLeftOpenIcon}
               size={17}
               aria-hidden
@@ -250,7 +250,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         // the rail live via filterSessionsByTitle.
         <div className="px-3 pt-3">
           <div className="flex h-9 items-center gap-2 rounded-lg border border-[var(--vex-line-strong)] bg-white/[0.04] px-2.5 transition-colors focus-within:border-[var(--vex-accent-border)]">
-            <HugeiconsIcon
+            <VexIcon
               icon={Search01Icon}
               size={14}
               aria-hidden
@@ -277,7 +277,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
               onClick={closeSearch}
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
             >
-              <HugeiconsIcon icon={Cancel01Icon} size={12} aria-hidden />
+              <VexIcon icon={Cancel01Icon} size={12} aria-hidden />
             </button>
           </div>
         </div>
@@ -305,7 +305,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
               sidebarOpen ? "w-full px-4" : "mx-auto w-10",
             )}
           >
-            <HugeiconsIcon icon={Add01Icon} size={15} aria-hidden />
+            <VexIcon icon={Add01Icon} size={15} aria-hidden />
             {sidebarOpen ? <span>New session</span> : null}
             <span
               aria-hidden

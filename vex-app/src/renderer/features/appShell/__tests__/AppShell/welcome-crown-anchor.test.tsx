@@ -41,14 +41,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 // The proven icon set for a real-SessionComposer mount (copied from
 // composer-console.test.tsx — the quick-action chips consume FireIcon/
 // ChartLineData01Icon/PercentSquareIcon, the send/stop key the arrows).
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Add01Icon: "Add01Icon",
   CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
   Download01Icon: "Download01Icon",
@@ -282,8 +282,13 @@ describe("composer growth glide — globals.css contract (raw scan)", () => {
     expect(grow).not.toContain("animation");
   });
 
-  it("height and radius share one clock: .vex-console still relaxes border-radius on the same 220ms curve", () => {
+  it("the console holds a CONSTANT radius — no border-radius relax left to sync with", () => {
+    // The height glide above used to share its 220ms clock with the pill's
+    // rounded-full ⇄ rounded-[28px] relax, so the two moved as one gesture.
+    // The rebuilt console (owner decree 2026-07-29) is a constant rounded-2xl
+    // surface, so that second moving part is gone. Assert its ABSENCE: a
+    // reintroduced relax would otherwise silently drift off this clock.
     const host = blockFor(".vex-console");
-    expect(host).toContain("border-radius 220ms cubic-bezier(0.25, 1, 0.5, 1)");
+    expect(host).not.toContain("border-radius");
   });
 });

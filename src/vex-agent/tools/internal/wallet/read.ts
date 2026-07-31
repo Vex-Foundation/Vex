@@ -33,6 +33,7 @@ import {
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { fail, ok } from "../types.js";
+import { formatZodIssueForModel } from "../arg-validation.js";
 
 const WalletReadArgs = z.object({
   wallet: z.enum(["eip155", "solana", "all"]).optional().default("all"),
@@ -45,7 +46,12 @@ const WalletReadArgs = z.object({
   // Optional cap on the number of tokens returned per wallet snapshot. Only
   // applied when response_format is 'concise' (see below); ignored in the
   // compatibility-first 'detailed' default so existing callers keep every row.
-  limit: z.number().int().positive().optional(),
+  limit: z.number().int().positive({
+    message:
+      "limit must be a positive whole number of tokens, and it only applies with "
+      + "response_format:\"concise\" — the default 'detailed' format returns every row. "
+      + "Omit limit to keep them all",
+  }).optional(),
   // 'detailed' (DEFAULT, compatibility-first) returns every projected token.
   // 'concise' enables the `limit` trim to the top-N tokens by held USD value.
   response_format: z.enum(["concise", "detailed"]).optional().default("detailed"),
@@ -180,8 +186,7 @@ export async function handleWalletBalances(
 ): Promise<ToolResult> {
   const parsed = WalletReadArgs.safeParse(params);
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    return fail(`wallet_balances: ${firstIssue?.message ?? "invalid arguments"}`);
+    return fail(`wallet_balances: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
 
   let scope: BalanceChainScope;

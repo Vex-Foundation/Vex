@@ -13,8 +13,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AlertCircleIcon, Search01Icon } from "@hugeicons/core-free-icons";
+import {
+  AlertCircleIcon,
+  Search01Icon,
+  VexIcon,
+} from "../../components/icons/index.js";
 import type {
   SessionDeleteOutcome,
   SessionListItem,
@@ -183,7 +186,7 @@ export function SessionsLibrary(): JSX.Element {
         </div>
 
         <div className="relative ml-auto min-w-[220px] flex-1 sm:max-w-[320px]">
-          <HugeiconsIcon
+          <VexIcon
             icon={Search01Icon}
             size={14}
             aria-hidden
@@ -219,7 +222,7 @@ export function SessionsLibrary(): JSX.Element {
         </p>
       ) : query.data && query.data.ok === false ? (
         <div className="flex items-center gap-2 rounded-[6px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <HugeiconsIcon icon={AlertCircleIcon} size={15} aria-hidden />
+          <VexIcon icon={AlertCircleIcon} size={15} aria-hidden />
           <span>{query.data.error.message}</span>
         </div>
       ) : totalRows === 0 ? (

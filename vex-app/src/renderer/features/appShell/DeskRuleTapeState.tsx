@@ -1,8 +1,14 @@
 /**
- * DESK RULE tape-head — the header's live readout of the active session's tape
- * state. With the reading column left-anchored (SessionPanel), the spine, the
- * DESK RULE accent tick, and this word share one left axis: the header becomes
- * the head of the tape.
+ * The status strip's live readout of the active session's tape state — the
+ * ONE word centered in the thin strip above the chat column.
+ *
+ * Presentation change (session-UI redesign, owner decree 2026-07-29): the word
+ * moved out of the header's LEFT zone into its CENTER zone, and the still
+ * color dot beside it was dropped. The dot was a second encoding of what the
+ * word and its color already said, and at the strip's centre it read as
+ * debris. State is now carried by the word plus its color alone. The state
+ * machine and its data sources below are UNCHANGED — this was a presentation
+ * edit only, so the precedence rules keep matching the streaming strip's.
  *
  * State precedence mirrors the streaming strip's circuit-break: a pending
  * approval FREEZES the run, so AWAITING wins over LIVE; otherwise LIVE while a
@@ -10,10 +16,9 @@
  * then a mission run reads PAUSED (paused_*) or RUNNING; IDLE at rest. Blue is
  * rationed to the non-idle states.
  *
- * Owner decree — no pulsing dots anywhere: the dot is a STILL color mark.
- * State is carried by color + the label text alone, never motion; PAUSED
- * holds a warning dot, IDLE a muted one, everything else in flight the
- * accent dot.
+ * Owner decree — no pulsing anything: state is carried by color + the label
+ * text alone, never motion. PAUSED reads warning, IDLE muted, everything else
+ * in flight reads accent.
  *
  * Renders nothing with no active session (the center panel is always the
  * session panel since the Chronos screens redesign). All data hooks accept a
@@ -69,12 +74,15 @@ export function DeskRuleTapeState(): JSX.Element | null {
             : "Idle";
   const lit = state !== "idle";
 
+  // `.vex-micro` is the register's small-caps stamp (Instrument Sans); the
+  // wider tracking override is local to this one word because it stands alone
+  // at the centre of the strip with nothing beside it to set its rhythm.
   return (
     <span
       data-vex-tape-state={state}
       role="status"
       className={cn(
-        "inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.28em]",
+        "vex-micro tracking-[0.24em]",
         state === "paused"
           ? "text-warning"
           : lit
@@ -82,17 +90,6 @@ export function DeskRuleTapeState(): JSX.Element | null {
             : "text-[var(--vex-text-3)]",
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          state === "paused"
-            ? "bg-warning"
-            : lit
-              ? "bg-[var(--vex-accent)]"
-              : "bg-[var(--vex-text-3)]",
-        )}
-      />
       {label}
     </span>
   );

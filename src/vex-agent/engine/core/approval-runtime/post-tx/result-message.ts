@@ -38,6 +38,7 @@ import {
 import type { MessageMetadata } from "../../../../db/repos/messages.js";
 import type { MessageWithId } from "../../../../db/repos/messages.js";
 import type { ExplorerRef } from "../../explorer-refs.js";
+import type { ToolDisplayStatus } from "../../tool-display-status.js";
 import { shortSha256, toIsoNow } from "../helpers.js";
 import { ApprovalResultSupersededError } from "../types.js";
 
@@ -165,6 +166,12 @@ async function settleExecutionOrThrow(
  * `payload` (the only part of `MessageMetadata` persisted into the
  * `messages.metadata` JSONB column), surfacing as `metadata -> 'explorerRefs'`
  * for the desktop app. Omitted entirely when empty.
+ *
+ * `displayStatus` (optional, additive) rides the same payload and surfaces as
+ * `metadata -> 'displayStatus'`. It is a DISPLAY axis only: an ambiguous
+ * broadcast is persisted `success: false` here and settles the approval as
+ * `failed` exactly as before — the key merely lets the desktop app render
+ * "Pending" on the row instead of contradicting its own prose with "Failed".
  */
 export async function commitApprovedToolResult(input: {
   readonly approvalId: string;
@@ -172,6 +179,18 @@ export async function commitApprovedToolResult(input: {
   readonly toolCallId: string;
   readonly dispatchResult: { success: boolean; output: string };
   readonly explorerRefs?: readonly ExplorerRef[];
+  /**
+   * Renderer-facing display status derived by the caller from the dispatch
+   * result's `data` (`deriveToolDisplayStatus`). Omitted for everything but an
+   * ambiguous broadcast. Never affects the settled approval status.
+   */
+  readonly displayStatus?: ToolDisplayStatus;
+  /**
+   * POST-approval dispatch wall clock from `ToolResult.durationMs`. Omitted
+   * when unknown — notably the dispatch-throw row, which never received a
+   * result to measure (C1: absent, never 0, for a call that did not run).
+   */
+  readonly durationMs?: number;
 }): Promise<MessageWithId> {
   const { dispatchResult } = input;
   const refs = input.explorerRefs ?? [];
@@ -193,6 +212,10 @@ export async function commitApprovedToolResult(input: {
       payload: {
         success: dispatchResult.success,
         ...(refs.length > 0 ? { explorerRefs: refs } : {}),
+        ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+        ...(input.displayStatus !== undefined
+          ? { displayStatus: input.displayStatus }
+          : {}),
       },
     },
     (client, resultMessageId) =>

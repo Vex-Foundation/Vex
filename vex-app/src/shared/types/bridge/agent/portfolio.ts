@@ -4,10 +4,6 @@ import type {
   PortfolioReadInput,
 } from "../../../schemas/portfolio.js";
 import type {
-  MovesDto,
-  MovesReadInput,
-} from "../../../schemas/portfolio-moves.js";
-import type {
   TokenHistoryDto,
   TokenHistoryReadInput,
 } from "../../../schemas/token-history.js";
@@ -24,10 +20,6 @@ import type {
  * `{ scope: "session", sessionId }`) and aggregates `proj_balances` +
  * `proj_portfolio_snapshots` into a renderer-safe DTO. An empty allow-list
  * resolves to the empty portfolio DTO, never an error.
- *
- * `listMoves` resolves the session's wallet scope and reads its executed-trade
- * activity from `proj_activity` (the MOVES feed — real swaps, success-only by
- * construction). An empty scope resolves to the empty array, never an error.
  *
  * `listTokenHistory` resolves the GLOBAL configured wallet inventory (same
  * allow-list as `read`'s `scope: "global"`) and reads one token's full
@@ -46,7 +38,6 @@ import type {
  */
 export interface PortfolioBridge {
   readonly read: (input: PortfolioReadInput) => Promise<Result<PortfolioDto>>;
-  readonly listMoves: (input: MovesReadInput) => Promise<Result<MovesDto>>;
   readonly listTokenHistory: (
     input: TokenHistoryReadInput,
   ) => Promise<Result<TokenHistoryDto>>;

@@ -10,17 +10,17 @@ import {
   BitcoinWalletIcon,
   Brain01Icon,
   File01Icon,
+  type IconGlyph,
   Search01Icon,
   TerminalIcon,
   Wrench01Icon,
-} from "@hugeicons/core-free-icons";
-import type { IconSvgElement } from "@hugeicons/react";
+} from "../../../components/icons/index.js";
 
 /**
  * Ordered rules — first match wins, so the more specific intent keywords sit
  * above the broader ones (e.g. "search" beats "web" for `web_search`).
  */
-const GLYPH_RULES: readonly (readonly [RegExp, IconSvgElement])[] = [
+const GLYPH_RULES: readonly (readonly [RegExp, IconGlyph])[] = [
   [/search/, Search01Icon],
   [/web|browse/, AiWebBrowsingIcon],
   [/terminal|exec|shell/, TerminalIcon],
@@ -30,7 +30,7 @@ const GLYPH_RULES: readonly (readonly [RegExp, IconSvgElement])[] = [
 ];
 
 /** Resolve the glyph for a sanitized tool name; wrench is the fallback act. */
-export function toolGlyph(toolName: string): IconSvgElement {
+export function toolGlyph(toolName: string): IconGlyph {
   const name = toolName.toLowerCase();
   for (const [pattern, icon] of GLYPH_RULES) {
     if (pattern.test(name)) return icon;

@@ -180,6 +180,10 @@ function msg(id: number): SessionMessageDto {
     toolName: null,
     toolCalls: null,
     explorerRefs: null,
+    reasoning: null,
+    durationMs: null,
+    success: null,
+    displayStatus: null,
   };
 }
 

@@ -3,12 +3,19 @@
  * public/fonts/ so publicDir copies them verbatim into dist/renderer/fonts/
  * (license text ships alongside under fonts/licenses/, OFL 1.1).
  *
- * The Chronos brand stack: Instrument Sans for body/UI/display numerals,
- * Instrument Serif for the editorial display voice (the whitehouse.gov 2026
- * pair), JetBrains Mono for micro-labels, stamps and numerals. Instrument
- * Sans + JetBrains Mono ship as single variable files (wght axis) in latin +
- * latin-ext subsets (latin-ext covers Polish diacritics). `font-display:
- * swap` avoids invisible text on first paint (matches the splash budget). */
+ * THE REGISTER (owner decree 2026-07-29 — the whitehouse.gov 2026 pair):
+ *   - Instrument Serif = the VOICE. Prose (assistant/user/composer body copy)
+ *     and display statements. See `.vex-reasoning-prose` in landing-motifs.css; body copy is sans (`.vex-chat-prose`).
+ *   - Instrument Sans  = the SUPPORT. UI chrome, controls, small-caps micro
+ *     labels (`.vex-eyebrow` / `.vex-micro`), and every scanned numeric column
+ *     (with `tabular-nums`).
+ *   - JetBrains Mono   = DEMOTED to strictly technical artifacts ONLY: code
+ *     blocks, raw JSON args/output, addresses, tx hashes. It is no longer the
+ *     micro-label face, and no new mono uppercase label may be introduced.
+ * Instrument Sans + JetBrains Mono ship as single variable files (wght axis)
+ * in latin + latin-ext subsets (latin-ext covers Polish diacritics).
+ * `font-display: swap` avoids invisible text on first paint (matches the
+ * splash budget). */
 @font-face {
   font-family: "Instrument Sans";
   src: url("/fonts/instrument-sans-latin-wght.woff2") format("woff2");
@@ -73,12 +80,18 @@
 /* Instrument Serif — the editorial display serif accent (© 2022 The
  * Instrument Serif Project Authors, OFL 1.1; license text ships in
  * fonts/licenses/).
- * Unlike the three brand families above, Instrument Serif has NO weight axis:
+ * Unlike the two brand families above, Instrument Serif has NO weight axis:
  * it ships as static 400 Regular + 400 Italic, so four subset WOFF2 files
- * (latin / latin-ext × normal / italic). Same subset unicode-ranges as Inter
- * Tight (latin-ext covers Polish diacritics), same `font-display: swap`.
- * Used sparingly as punctuation (wordmark, protocol accents), never for a
- * scanned numeric column — those stay JetBrains Mono. */
+ * (latin / latin-ext × normal / italic). Same subset unicode-ranges as the
+ * others (latin-ext covers Polish diacritics), same `font-display: swap`.
+ *
+ * NO WEIGHT AXIS IS A HARD CONSTRAINT, not a footnote: any `font-weight`
+ * above 400 on serif text is SYNTHESIZED (faked) by the browser. Every serif
+ * subtree therefore sets `font-synthesis-weight: none` and expresses emphasis
+ * with the ITALIC (see `.vex-reasoning-prose`, landing-motifs.css).
+ *
+ * This is the voice face of the register: prose and display statements. Never
+ * a scanned numeric column — those are Instrument Sans + `tabular-nums`. */
 @font-face {
   font-family: "Instrument Serif";
   src: url("/fonts/instrument-serif-latin.woff2") format("woff2");

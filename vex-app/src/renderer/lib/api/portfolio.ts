@@ -23,7 +23,6 @@ import type {
   PortfolioDto,
   PortfolioReadInput,
 } from "@shared/schemas/portfolio.js";
-import type { MovesDto } from "@shared/schemas/portfolio-moves.js";
 import type {
   AgentScanCursor,
   AgentScanDto,
@@ -90,29 +89,6 @@ export function useWalletPortfolio(
 }
 
 /**
- * MOVES (move 0.3) — the session's executed-trade activity from
- * `proj_activity`, scoped server-side to the session's wallets. Drives the
- * BOOK Moves block. Read-only; an empty scope resolves to `[]`, never an
- * error. The session id is required (MOVES are session-scoped — there is no
- * global feed).
- */
-function movesOptions(sessionId: string) {
-  return queryOptions({
-    queryKey: portfolioKeys.moves(sessionId),
-    queryFn: () => window.vex.portfolio.listMoves({ sessionId }),
-    staleTime: STALE_MS,
-    refetchInterval: REFETCH_MS,
-    enabled: sessionId.length > 0,
-  });
-}
-
-export function useMoves(
-  sessionId: string,
-): UseQueryResult<Result<MovesDto>> {
-  return useQuery(movesOptions(sessionId));
-}
-
-/**
  * Token history (chronos-shell) — the click-through per-token history
  * screen. Global scope, exact `(chainId, tokenAddress)` identity only (no
  * symbol-only lookup — name/symbol are display metadata, never a query
@@ -174,6 +150,7 @@ export function useAgentScanInfinite(
     initialPageParam: null as AgentScanCursor | null,
     getNextPageParam: (lastPage) => getAgentScanNextPageParam(lastPage),
     staleTime: STALE_MS,
+    refetchInterval: REFETCH_MS,
   });
 }
 

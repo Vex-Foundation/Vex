@@ -25,7 +25,7 @@
  *
  * CSP: brand icons come from `@thesvg/react` (typed React components,
  * no `dangerouslySetInnerHTML`); generic UI glyphs from
- * `@hugeicons/react`. All animation is stylesheet @keyframes.
+ * `VexIcon`. All animation is stylesheet @keyframes.
  */
 
 import { useMemo } from "react";

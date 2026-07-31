@@ -34,6 +34,7 @@ import {
   activeFilterCount,
   AgentScanFilterBar,
   EMPTY_FILTER_STATE,
+  isFeedNarrowed,
   toAgentScanFilters,
   type AgentScanFilterState,
 } from "./agent-scan/AgentScanFilterBar.js";
@@ -41,6 +42,13 @@ import { AgentScanRow } from "./agent-scan/AgentScanRow.js";
 import { dayKey, dayLabel } from "./agent-scan/agent-scan-display.js";
 
 const SCREEN_TITLE = "Agent Scan";
+
+/** Header subtitle — it must say when the feed is narrowed to one session. */
+function screenSubtitle(sessionId: string | null): string {
+  return sessionId === null
+    ? "Every action Vex executed on-chain, newest first — each row links to its transaction."
+    : "Everything Vex executed on-chain in THIS session, newest first — each row links to its transaction.";
+}
 
 /** Starting height guess per row; real heights are measured after mount. */
 const ESTIMATED_ROW_PX = 56;
@@ -82,13 +90,23 @@ function buildFeedRows(entries: readonly AgentScanEntry[]): readonly FeedRow[] {
 
 export function AgentScanScreen({
   origin,
+  sessionId,
   onClose,
 }: {
   readonly origin: ShellScreenOrigin | null;
+  /**
+   * Session PRESET — `null` opens the full global feed, a uuid narrows the
+   * read to that session. It seeds the filter state once and is preserved
+   * across every filter change and across Clear (`AgentScanFilterBar`), so
+   * the scope the caller asked for cannot be lost mid-session.
+   */
+  readonly sessionId: string | null;
   readonly onClose: () => void;
 }): JSX.Element {
-  const [filterState, setFilterState] =
-    useState<AgentScanFilterState>(EMPTY_FILTER_STATE);
+  const [filterState, setFilterState] = useState<AgentScanFilterState>(() => ({
+    ...EMPTY_FILTER_STATE,
+    sessionId,
+  }));
 
   // Memoized on the selection: the filters object is part of the query key, so
   // a fresh object per render would refetch the whole feed every render.
@@ -136,7 +154,9 @@ export function AgentScanScreen({
     if (scroller !== null) scroller.scrollTop = 0;
   }, []);
 
-  const filtersActive = activeFilterCount(filterState) > 0;
+  // Includes the session preset: an empty SESSION feed must read as "nothing
+  // in this session", never as "the agent has never done anything".
+  const filtersActive = isFeedNarrowed(filterState);
 
   let body: JSX.Element;
   if (query.isLoading) {
@@ -159,7 +179,11 @@ export function AgentScanScreen({
   } else if (rows.length === 0) {
     body = filtersActive ? (
       // A narrowed feed must never read as an empty history.
-      <FeedNote tone="quiet">No activity matches these filters.</FeedNote>
+      <FeedNote tone="quiet">
+        {sessionId !== null && activeFilterCount(filterState) === 0
+          ? "Vex hasn't executed anything on-chain in this session yet."
+          : "No activity matches these filters."}
+      </FeedNote>
     ) : (
       <FeedNote tone="quiet">
         No activity recorded yet — everything Vex executes appears here.
@@ -211,8 +235,7 @@ export function AgentScanScreen({
             {SCREEN_TITLE}
           </h1>
           <p className="text-[11.5px] leading-snug text-[var(--vex-text-3)]">
-            Every action Vex executed on-chain, newest first — each row links to
-            its transaction.
+            {screenSubtitle(sessionId)}
           </p>
         </div>
       }

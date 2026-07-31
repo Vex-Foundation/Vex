@@ -25,6 +25,8 @@
  * whole-string scalar value.
  */
 
+import { BIP39_ENGLISH_WORDS } from "./bip39-english-wordlist.js";
+
 // ── Hard-secret shapes ──────────────────────────────────────────────────
 
 /**
@@ -47,12 +49,58 @@ export const JWT_RE =
   /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
 
 /**
- * BIP39 mnemonic heuristic — 12-24 lowercase 3-8 char words. No wordlist
- * check; callers should skip a match that carries sentence punctuation
- * (real mnemonics are self-contained), the way `text-redaction.ts` does,
- * to avoid mistaking ordinary lowercase prose for a phrase.
+ * BIP39 mnemonic SHAPE pre-filter — 12-24 lowercase 3-8 char words.
+ *
+ * Shape alone is not evidence of a mnemonic: ordinary English prose hits it
+ * routinely (reproduced 2026-07-30: "I want stable quotes here before agent
+ * tries again since kyber gave that pre-sign gas estimate error" matched a
+ * 12-word run and was hard-redacted). Callers MUST confirm a match with
+ * `findBip39MnemonicRun` before redacting, and redact only the range it
+ * returns.
  */
 export const BIP39_HEURISTIC_RE = /\b(?:[a-z]{3,8}\s){11,23}[a-z]{3,8}\b/g;
+
+/** Shortest phrase BIP39 defines (128-bit entropy). */
+const MIN_MNEMONIC_WORDS = 12;
+
+/**
+ * Locate the mnemonic inside a `BIP39_HEURISTIC_RE` match, or return `null`
+ * when the match carries no mnemonic evidence at all.
+ *
+ * Evidence is wordlist membership: every word of a real phrase comes from
+ * the standard 2048-word English BIP39 list, which ordinary prose does not
+ * satisfy for 12 words in a row. The returned range is the longest run of
+ * >= 12 consecutive wordlist words — a range rather than a boolean because
+ * the shape regex is greedy and routinely swallows leading prose words
+ * ("here the seed <12 words>"); redacting the whole match would destroy that
+ * prose, and requiring the WHOLE match to be wordlist words would let a real
+ * phrase escape whenever a non-wordlist word abutted it.
+ *
+ * Offsets are relative to `match`.
+ */
+export function findBip39MnemonicRun(
+  match: string,
+): { start: number; end: number } | null {
+  let best: { start: number; end: number; words: number } | null = null;
+  let run: { start: number; end: number; words: number } | null = null;
+
+  for (const word of match.matchAll(/[a-z]+/g)) {
+    if (!BIP39_ENGLISH_WORDS.has(word[0])) {
+      run = null;
+      continue;
+    }
+    const end = word.index + word[0].length;
+    run =
+      run === null
+        ? { start: word.index, end, words: 1 }
+        : { start: run.start, end, words: run.words + 1 };
+    if (run.words >= MIN_MNEMONIC_WORDS && (best === null || run.words > best.words)) {
+      best = run;
+    }
+  }
+
+  return best === null ? null : { start: best.start, end: best.end };
+}
 
 // ── Public-identifier shapes (mask, don't hard-redact) ──────────────────
 

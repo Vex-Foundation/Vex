@@ -107,11 +107,8 @@ describe("ActionKind — pinned critical classifications", () => {
     ["discover_tools", "read"],
     ["execute_tool", "read"],
 
-    // Khalani read-only aliases
-    ["khalani_chains_list", "read"],
-    ["khalani_tokens_top", "read"],
+    // Khalani read-only alias
     ["token_find", "read"],
-    ["khalani_tokens_balances", "read"],
   ];
 
   it.each(CRITICAL_MAPPINGS)("%s → %s", (toolName, expectedKind) => {

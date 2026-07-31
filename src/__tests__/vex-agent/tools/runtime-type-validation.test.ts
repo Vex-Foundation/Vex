@@ -15,9 +15,20 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 import type {
+  ProtocolExecutionContext,
   ProtocolHandler,
   ProtocolToolManifest,
 } from "@vex-agent/tools/protocols/types.js";
+
+// Approved full-permission session with the runtime's own neutral wallet
+// defaults: every case here asserts the param-validation gate, so no wallet
+// scope may influence whether the handler is reached.
+const APPROVED_CONTEXT: ProtocolExecutionContext = {
+  sessionPermission: "full",
+  approved: true,
+  walletResolution: { source: "default" },
+  walletPolicy: { kind: "none" },
+};
 
 // We patch the catalog lookups used by runtime.ts so we can inject a
 // synthetic manifest without polluting the real registry. This keeps the
@@ -59,6 +70,9 @@ beforeAll(() => {
       lifecycle: "active",
       description: "Test tool for runtime type validation",
       mutating: false,
+      // Non-mutating synthetic tool: "read" is the classification that keeps
+      // the approval gate out of the way of these param-validation assertions.
+      actionKind: "read",
       exampleParams: {},
       params: [
         { key: "sort", type: "string", required: false, description: "A string enum" },
@@ -81,7 +95,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", sort: 123 } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected string.*got number/i);
@@ -92,7 +106,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", limit: "ten" } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected number.*got string/i);
@@ -103,7 +117,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", active: "yes" } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected boolean.*got string/i);
@@ -117,7 +131,7 @@ describe("runtime type validation (execute_tool)", () => {
         toolId: "test.type_validation.strict",
         params: { required_str: "ok", sort: "hot", limit: 10, active: true },
       },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);
@@ -127,7 +141,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok" } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);
@@ -137,7 +151,7 @@ describe("runtime type validation (execute_tool)", () => {
     handlerCalls = 0;
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: {} },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/missing required parameter/i);
@@ -151,7 +165,7 @@ describe("runtime type validation (execute_tool)", () => {
     // as missing required. This mirrors pre-PR1 behaviour.
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "", sort: "" } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/missing required parameter "required_str"/i);
@@ -175,7 +189,7 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
         // runtime control key — it must be rejected, not silently forwarded.
         params: { required_str: "ok", injected: "smuggled" },
       },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/unknown parameter "injected"/i);
@@ -193,7 +207,7 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
         toolId: "test.type_validation.strict",
         params: { required_str: "ok", undeclared_opt: undefined },
       },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);
@@ -202,7 +216,7 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
   it("names the allowed parameters in the rejection so the agent can self-correct", async () => {
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", nope: 1 } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/allowed parameters: sort, limit, active, required_str/i);
@@ -215,7 +229,7 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
     // silently passes' invariant for today's primitive-only manifests.
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", sort: { deep: true } } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/invalid type.*expected string.*got object/i);
@@ -230,7 +244,7 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
     // the handler normally — we only assert dryRun is not rejected at the gate.)
     const result = await executeProtocolTool(
       { toolId: "test.type_validation.strict", params: { required_str: "ok", dryRun: true } },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);
@@ -243,7 +257,7 @@ describe("runtime strict param boundary (B-002 — unknown keys)", () => {
         toolId: "test.type_validation.strict",
         params: { required_str: "ok", sort: "hot", limit: 5, active: false },
       },
-      { sessionPermission: "full", approved: true },
+      APPROVED_CONTEXT,
     );
     expect(result.success).toBe(true);
     expect(handlerCalls).toBe(1);

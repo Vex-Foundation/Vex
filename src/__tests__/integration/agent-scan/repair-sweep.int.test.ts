@@ -70,15 +70,9 @@ describe("agent_activity repair sweep — lookup-only", () => {
   it("finalizes a pending row to 'confirmed' purely from a receipt lookup, no re-quote/re-execute call", async () => {
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
     const { repairPendingActivity } = await import("../../../vex-agent/sync/agent-activity-repair.js");
-    // C2 (Coordinator addendum 1): repair confirms ONLY through a registered
-    // settlement decoder; the swap-role CHECK requires BOTH executed legs.
-    const { registerSettlementDecoder, clearSettlementDecoders } = await import(
-      "../../../vex-agent/sync/settlement-decoders.js"
-    );
-    registerSettlementDecoder("kyberswap", () => ({
-      executedAmountInRaw: "1",
-      executedAmountOutRaw: "1000",
-    }));
+    // Owner decree 2026-07-30: repair is STATUS-ONLY. A mined-success receipt
+    // confirms the row on its own, with NO executed amounts written — migration
+    // 061 dropped the CHECKs that used to forbid exactly that.
     const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
     const event = await repo.createPendingActivityEvent({
       protocolExecutionId, eventIndex: 0, eventRole: "swap", kind: "swap",
@@ -89,18 +83,40 @@ describe("agent_activity repair sweep — lookup-only", () => {
 
     const requote = vi.fn();
     await repairPendingActivity({
-      checkReceiptByHash: vi.fn().mockResolvedValue({
-        status: "success",
-        executedLegs: { executedAmountOutRaw: "1000" },
-      }),
+      checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success" }),
     });
 
     expect(requote).not.toHaveBeenCalled();
     const finalRow = await repo.getActivityEventById(event.id);
     expect(finalRow?.status).toBe("confirmed");
-    expect(finalRow?.executedAmountOutRaw).toBe("1000");
-    clearSettlementDecoders();
+    expect(finalRow?.confirmedAt).not.toBeNull();
+    // The amounts are DEFERRED, never faked from the quote (owner decree).
+    expect(finalRow?.executedAmountInRaw).toBeNull();
+    expect(finalRow?.executedAmountOutRaw).toBeNull();
   });
+
+  it.each(["wrap", "yield_pt"] as const)(
+    "migration 061: a status-only confirm is accepted for a '%s' row too (the legacy leg CHECKs are gone)",
+    async (eventRole) => {
+      const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+      const { repairPendingActivity } = await import("../../../vex-agent/sync/agent-activity-repair.js");
+      const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
+      const event = await repo.createPendingActivityEvent({
+        protocolExecutionId, eventIndex: 0, eventRole, kind: eventRole === "wrap" ? "wrap" : "yield",
+        protocol: "pendle", chainId: 8453, walletAddress, sessionId,
+      });
+      await repo.markActivityBroadcast(event.id, { txHash: "0xHASH", fromAddress: walletAddress, nonce: 1 });
+      await backdateSubmitAttempt(event.id, REPAIR_CANDIDATE_AGE_MS + 1_000);
+
+      await repairPendingActivity({
+        checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success" }),
+      });
+
+      const finalRow = await repo.getActivityEventById(event.id);
+      expect(finalRow?.status).toBe("confirmed");
+      expect(finalRow?.executedAmountOutRaw).toBeNull();
+    },
+  );
 
   it("finalizes a mined-revert pending row to 'definitively_failed' with failure_code 'mined_revert' (C1)", async () => {
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");

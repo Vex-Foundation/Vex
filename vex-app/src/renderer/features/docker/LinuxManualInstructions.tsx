@@ -15,8 +15,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Copy01Icon } from "@hugeicons/core-free-icons";
+import { Copy01Icon, VexIcon } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface LinuxManualInstructionsProps {
@@ -83,7 +82,7 @@ export function LinuxManualInstructions({
                 : "",
           )}
         >
-          <HugeiconsIcon icon={Copy01Icon} size={12} aria-hidden />
+          <VexIcon icon={Copy01Icon} size={12} aria-hidden />
           <span aria-live="polite">{copyLabel}</span>
         </button>
       </div>

@@ -1,6 +1,6 @@
 /**
  * Token history DB helper — read-only, global-scope per-token TX history
- * (chronos-shell). Mirrors `portfolio-db.ts` / `moves-db.ts`: own `pg.Client`
+ * (chronos-shell). Mirrors `portfolio-db.ts` / `agent-scan-db.ts`: own `pg.Client`
  * per call, no `@vex-agent/db/repos/*` import. Reads the same local `vex`
  * Postgres the engine writes to.
  *
@@ -21,8 +21,8 @@
  *      shares the row's own `chain`. Bridge legs are recorded SYMBOL-first
  *      (`activity-populator.ts`'s `preferSymbolLegs`), so the AUTHORITATIVE
  *      address for matching/display is resolved via a `protocol_capture_items
- *      .trade_capture->>'{input,output}TokenAddress'` join (the same join key
- *      `moves-db.ts` already uses), falling back to the projected column when
+ *      .trade_capture->>'{input,output}TokenAddress'` join (the join key the
+ *      retired MOVES feed used too), falling back to the projected column when
  *      the JSONB field is absent.
  *  (b) `wallet_intents` — EXECUTED (`status='executed' AND tx_hash IS NOT
  *      NULL`) outbound sends, matched by ADDRESS ONLY: `token` is free-text,
@@ -73,7 +73,7 @@
  * AMOUNT HONESTY (Codex final-review round 1 finding 5 / contract C20): a
  * `confirmed` agent_activity swap entry NEVER displays the quote-time
  * REQUESTED amount as if it were settlement. `resolveAgentActivityAmount`
- * (`./agent-activity-amount.js`, shared with `moves-db.ts`) picks the one
+ * (`./agent-activity-amount.js`, shared with `agent-scan-db.ts`) picks the one
  * honest value per status: `confirmed` → computed from
  * `executed_amount_*_raw` + `token_*_decimals` (BigInt-safe, via `viem`'s
  * `formatUnits` — never `Number` on a wei-scale string, and never the

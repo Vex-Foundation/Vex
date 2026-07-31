@@ -115,6 +115,35 @@ describe("commitApprovedToolResult — explorerRefs", () => {
     expect(meta.payload).toEqual({ success: false });
     expect(meta.payload).not.toHaveProperty("explorerRefs");
   });
+
+  it("attaches durationMs (post-approval dispatch only) when the caller measured one", async () => {
+    await commitApprovedToolResult({
+      approvalId: "appr-1",
+      sessionId: "s1",
+      toolCallId: "tc-1",
+      dispatchResult: { success: true, output: "{}" },
+      durationMs: 4200,
+    });
+
+    const meta = mockAppendMessage.mock.calls[0]![2] as {
+      payload?: Record<string, unknown>;
+    };
+    expect(meta.payload).toEqual({ success: true, durationMs: 4200 });
+  });
+
+  it("omits durationMs when the dispatch reported none", async () => {
+    await commitApprovedToolResult({
+      approvalId: "appr-1",
+      sessionId: "s1",
+      toolCallId: "tc-1",
+      dispatchResult: { success: true, output: "{}" },
+    });
+
+    const meta = mockAppendMessage.mock.calls[0]![2] as {
+      payload?: Record<string, unknown>;
+    };
+    expect(meta.payload).not.toHaveProperty("durationMs");
+  });
 });
 
 describe("commitApprovedToolResult — atomicity", () => {

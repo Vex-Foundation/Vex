@@ -10,7 +10,7 @@
  * this mapping implements.
  */
 
-import { formatUnits } from "viem";
+import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 
 import { FAILURE_TOOL_PRODUCTS } from "./transactions-failure-tools.js";
 import type { BridgeLegRow, TransactionRow } from "./transactions-types.js";
@@ -28,15 +28,11 @@ function str(value: unknown): string | null {
  * agent_activity half's display amount is computed; the SQL never does this
  * arithmetic (see module doc). Returns `null` when either input is
  * missing/malformed — a missing display amount is safer than a wrong one.
+ *
+ * The conversion itself lives in `protocols/amount-display.ts` (its single
+ * owner across the repo); this name stays as the local reading of it.
  */
-function rawToHuman(raw: string | null, decimals: number | null): string | null {
-  if (raw === null || decimals === null) return null;
-  try {
-    return formatUnits(BigInt(raw), decimals);
-  } catch {
-    return null;
-  }
-}
+const rawToHuman = formatRawAmount;
 
 /**
  * Derive the agent_activity half's convenience amount fields from raw +

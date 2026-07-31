@@ -28,6 +28,7 @@ import { embedDocument } from "@vex-agent/embeddings/client.js";
 import { OUTSTANDING_ITEM_TEXT_MAX } from "@vex-agent/memory/session-memory-policy.js";
 import { redact } from "@vex-agent/memory/redaction.js";
 import logger from "@utils/logger.js";
+import { formatZodIssueForModel } from "../arg-validation.js";
 
 const ResolveItemSchema = z.object({
   memory_id: z.number().int().positive(),
@@ -43,7 +44,7 @@ export async function handleSessionMemoryResolveItem(
   if (!parsed.success) {
     return {
       success: false,
-      output: `session_memory_resolve_item: invalid arguments: ${parsed.error.message}`,
+      output: `session_memory_resolve_item: ${formatZodIssueForModel(parsed.error.issues[0], args)}`,
     };
   }
   const { memory_id, outstanding_item_id, resolution_note } = parsed.data;

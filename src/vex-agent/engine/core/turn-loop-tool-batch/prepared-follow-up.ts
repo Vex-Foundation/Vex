@@ -11,6 +11,7 @@ import {
 } from "@vex-agent/tools/registry/prepared-action-follow-ups.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 import { deriveExplorerRefs, type ExplorerRef } from "../explorer-refs.js";
+import { displayStatusPayload } from "../tool-display-status.js";
 import type { EngineContext } from "../../types.js";
 import {
   assertApprovalActionKind,
@@ -64,13 +65,21 @@ export async function dispatchPreparedActionFollowUp(args: {
   readonly context: EngineContext;
   readonly toolContext: InternalToolContext;
   readonly content: string | null;
+  /** Provider reasoning trace of the model turn that emitted the prepare call. */
+  readonly reasoning: string | null;
   readonly executedCalls: ParsedToolCall[];
+  /**
+   * Structurally the orchestrator's `ExecutedResult`, re-declared inline here.
+   * `durationMs` is optional for the same reason as there: absent when the
+   * entry never executed, never `0`.
+   */
   readonly executedResults: Array<{
     readonly toolCallId: string;
     readonly toolName: string;
     readonly output: string;
     readonly success: boolean;
     readonly explorerRefs: readonly ExplorerRef[];
+    readonly durationMs?: number;
   }>;
   readonly liveMessages: Message[];
   readonly followUp: ValidatedPreparedActionFollowUp;
@@ -89,6 +98,7 @@ export async function dispatchPreparedActionFollowUp(args: {
     executedCalls: args.executedCalls,
     executedResults: args.executedResults,
     liveMessages: args.liveMessages,
+    reasoning: args.reasoning,
   });
 
   // ── Stop check immediately BEFORE the signing dispatch ──
@@ -245,6 +255,11 @@ export async function dispatchPreparedActionFollowUp(args: {
         output: result.output,
         success: result.success,
         explorerRefs: deriveExplorerRefs(result.data),
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+        // DISPLAY-only axis: a prepared-action confirm IS a money move, so an
+        // ambiguous broadcast here is exactly the case the pending chip exists
+        // for. `success` is untouched.
+        ...displayStatusPayload(result.data),
       },
     ],
     liveMessages: args.liveMessages,

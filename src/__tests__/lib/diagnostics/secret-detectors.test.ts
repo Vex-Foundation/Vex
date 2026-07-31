@@ -15,6 +15,8 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  BIP39_HEURISTIC_RE,
+  findBip39MnemonicRun,
   looksLikeBase64Secret,
   OPEN_ENDED_BASE64_CANDIDATE_RE,
 } from "../../../lib/diagnostics/secret-detectors.js";
@@ -78,5 +80,47 @@ describe("secret-detectors — precision (false positives must not fire)", () =>
     const prose =
       "I want to buy some tokens on the exchange today for my portfolio, please help me decide.";
     expect(candidatesIn(prose)).toEqual([]);
+  });
+});
+
+describe("secret-detectors — BIP39 wordlist validation", () => {
+  const TWELVE_WORDS =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+  function firstHeuristicMatch(text: string): string {
+    const match = text.match(new RegExp(BIP39_HEURISTIC_RE.source));
+    return match?.[0] ?? "";
+  }
+
+  it("locates a mnemonic that spans the whole match", () => {
+    expect(findBip39MnemonicRun(TWELVE_WORDS)).toEqual({
+      start: 0,
+      end: TWELVE_WORDS.length,
+    });
+  });
+
+  it("locates only the mnemonic when prose words run into the match", () => {
+    const text = `here the seed ${TWELVE_WORDS}`;
+    const match = firstHeuristicMatch(text);
+    expect(match).toContain("abandon");
+
+    const run = findBip39MnemonicRun(match);
+    expect(run).not.toBeNull();
+    // `seed` IS a wordlist member, so the run legitimately starts there.
+    expect(match.slice(run!.start, run!.end)).toBe(`seed ${TWELVE_WORDS}`);
+  });
+
+  it("rejects an ordinary unpunctuated English sentence the heuristic matches", () => {
+    const prose =
+      "I want stable quotes here before agent tries again since kyber gave that pre-sign gas estimate error";
+    const match = firstHeuristicMatch(prose);
+    expect(match.length).toBeGreaterThan(0);
+    expect(findBip39MnemonicRun(match)).toBeNull();
+  });
+
+  it("rejects a run of fewer than 12 wordlist words", () => {
+    expect(
+      findBip39MnemonicRun("abandon ability able about above absent absorb"),
+    ).toBeNull();
   });
 });

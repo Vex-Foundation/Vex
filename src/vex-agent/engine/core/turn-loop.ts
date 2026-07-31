@@ -321,6 +321,7 @@ export async function runTurnLoop(
         // avoid. So: persist, and stay quiet on the stream channel.
         await saveAssistantMessage(context.sessionId, turnResult.content, null, {
           stopped: true,
+          reasoning: turnResult.reasoning,
         });
       } else {
         // Nothing was persisted and nothing ever will be for this stream, so
@@ -359,7 +360,11 @@ export async function runTurnLoop(
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
       const batchOutcome = await processTurnToolBatch({
         context,
-        turnResult: { content: turnResult.content, toolCalls: turnResult.toolCalls },
+        turnResult: {
+          content: turnResult.content,
+          toolCalls: turnResult.toolCalls,
+          reasoning: turnResult.reasoning,
+        },
         liveMessages,
         currentTokenCount,
         contextLimit: active.contextLimit,
@@ -409,6 +414,7 @@ export async function runTurnLoop(
         context,
         liveMessages,
         content: turnResult.content,
+        reasoning: turnResult.reasoning,
         mergeOperatorInstructions,
       });
       if (textOutcome.kind === "mission_run_continue") {

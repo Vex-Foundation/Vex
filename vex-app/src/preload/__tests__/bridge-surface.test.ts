@@ -155,10 +155,13 @@ describe("preload bridge surface", () => {
       "CH.memory.getStats",
       // Stage 3 — read-only dual-scope POSITION portfolio.
       "CH.portfolio.read",
-      // Move 0.3 — read-only per-session executed-trade activity (MOVES).
-      "CH.portfolio.listMoves",
       // Chronos-shell — read-only, global-scope per-token TX history.
       "CH.portfolio.listTokenHistory",
+      // Agent Scan — read-only executed-activity feed (the surviving feed
+      // after the `listMoves` pipeline was retired). It was missing from this
+      // curated list, which is exactly the gap a manually maintained surface
+      // list develops: a live bridge method nobody was pinning.
+      "CH.portfolio.listAgentScan",
       "CH.sessions.getModel",
       "CH.sessions.exportMarkdown",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".

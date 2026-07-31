@@ -5,20 +5,26 @@
  * reduced to the allow-listed `SessionMessageDto`, and is the single mapper
  * shared by all three query paths (`getMessageTail`, `listMessages`,
  * `getMessageAround`). Raw `metadata` JSONB is deliberately never selected in
- * full; the ONLY narrow projection off that column is the validated
- * `metadata -> 'explorerRefs'` sub-key (see `MESSAGE_ROW_COLUMNS` +
- * `extractExplorerRefs`). The `message_type` top-level column remains the
+ * full; every read off that column is a NARROW, individually validated sub-key
+ * projection (see `MESSAGE_ROW_COLUMNS`): `explorerRefs`, `success`,
+ * `reasoning`, `durationMs`, and `displayStatus` — five of them today, each
+ * with its own fail-to-null schema. The `message_type` top-level column remains the
  * discriminator for row kind.
  */
 
 import {
   explorerRefsSchema,
+  reasoningProjectionSchema,
+  toolDurationMsProjectionSchema,
+  toolDisplayStatusProjectionSchema,
+  toolSuccessProjectionSchema,
   type ExplorerRef,
   type MessageCursor,
   type MessageKind,
   type MessageRole,
   type SessionMessageDto,
   type ToolCallDisplay,
+  type ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
 import { sanitizeToolArgs } from "./redaction.js";
 
@@ -34,17 +40,25 @@ export interface MessageRow {
   readonly message_type: string | null;
   /** ONLY the `explorerRefs` sub-key of `messages.metadata` (never raw metadata). */
   readonly explorer_refs: unknown;
+  /** ONLY the `reasoning` sub-key of `messages.metadata` (assistant rows). */
+  readonly reasoning: unknown;
+  /** ONLY the `durationMs` sub-key of `messages.metadata` (tool-result rows). */
+  readonly duration_ms: unknown;
+  /** ONLY the `success` sub-key of `messages.metadata` (tool-result rows). */
+  readonly success: unknown;
+  /** ONLY the `displayStatus` sub-key of `messages.metadata` (tool-result rows). */
+  readonly display_status: unknown;
 }
 
 // Raw `metadata` JSONB is still deliberately NOT selected in full — the strict
-// "metadata completely omitted" posture stands. `explorerRefs` is the FIRST
-// narrowly allow-listed projection off that column: the SELECT reaches ONLY the
-// `metadata -> 'explorerRefs'` sub-key (nothing else in `metadata` is exposed),
-// and the mapper zod-validates it before it reaches the DTO (JSONB is untrusted
-// at this boundary). The `message_type` column (migration 002) remains the
-// engine's authoritative marker discriminator.
+// "metadata completely omitted" posture stands. Exactly FOUR narrowly
+// allow-listed sub-key projections exist (`explorerRefs`, `reasoning`,
+// `durationMs`, `success`); the SELECT reaches only those sub-keys and the mapper
+// zod-validates each before it reaches the DTO (JSONB is untrusted at this
+// boundary). The `message_type` column (migration 002) remains the engine's
+// authoritative marker discriminator.
 export const MESSAGE_ROW_COLUMNS =
-  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs";
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success, metadata -> 'displayStatus' AS display_status";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -184,6 +198,53 @@ function extractExplorerRefs(row: MessageRow): ExplorerRef[] | null {
   return parsed.data;
 }
 
+/**
+ * Validate the `metadata -> 'reasoning'` projection. ONLY assistant rows carry
+ * reasoning; malformed/oversize/empty JSONB → `null` (never throws), same
+ * fail-to-null posture as `extractExplorerRefs`.
+ */
+function extractReasoning(row: MessageRow): string | null {
+  if (row.role !== "assistant") return null;
+  const parsed = reasoningProjectionSchema.safeParse(row.reasoning);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Validate the `metadata -> 'durationMs'` projection. ONLY tool-result rows
+ * carry a duration; anything malformed (negative, fractional, > 24h,
+ * non-number) → `null`. A synthetic never-executed result persists no
+ * duration, so `null` here also means "did not run" — the renderer must not
+ * render it as `0`.
+ */
+function extractDurationMs(row: MessageRow): number | null {
+  if (row.role !== "tool") return null;
+  const parsed = toolDurationMsProjectionSchema.safeParse(row.duration_ms);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Validate the `metadata -> 'success'` projection. ONLY tool-result rows carry
+ * an outcome; anything non-boolean → `null` = UNKNOWN. Callers must never
+ * treat null as success.
+ */
+function extractSuccess(row: MessageRow): boolean | null {
+  if (row.role !== "tool") return null;
+  const parsed = toolSuccessProjectionSchema.safeParse(row.success);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Validate the `metadata -> 'displayStatus'` projection. ONLY tool-result rows
+ * carry one; anything that is not the exact `"pending"` literal → `null` =
+ * no display status, and the row then renders off `success` exactly as before.
+ * This never overrides `success`; it only splits the `false` case in the UI.
+ */
+function extractDisplayStatus(row: MessageRow): ToolDisplayStatus | null {
+  if (row.role !== "tool") return null;
+  const parsed = toolDisplayStatusProjectionSchema.safeParse(row.display_status);
+  return parsed.success ? parsed.data : null;
+}
+
 export function toDto(row: MessageRow): SessionMessageDto {
   // Extract the tool name once: it drives BOTH the recall-kind decision
   // and the DTO's `toolName` field.
@@ -202,6 +263,10 @@ export function toDto(row: MessageRow): SessionMessageDto {
     // null/empty `tool_calls`).
     toolCalls: extractToolCalls(row.tool_calls),
     explorerRefs: extractExplorerRefs(row),
+    reasoning: extractReasoning(row),
+    durationMs: extractDurationMs(row),
+    success: extractSuccess(row),
+    displayStatus: extractDisplayStatus(row),
   };
 }
 

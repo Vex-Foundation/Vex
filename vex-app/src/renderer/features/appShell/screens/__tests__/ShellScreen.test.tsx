@@ -24,11 +24,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ShellScreen } from "../ShellScreen.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Cancel01Icon: "Cancel01Icon",
 }));
 

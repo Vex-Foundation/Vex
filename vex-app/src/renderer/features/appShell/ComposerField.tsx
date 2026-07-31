@@ -7,8 +7,9 @@
  * with transform/opacity only (MOTION-POLICY safe). The overlay shows
  * exactly when a native placeholder would (empty draft), is
  * click-transparent, and the field keeps its aria-label accessible name.
- * The overlay's pl-5/py-[9px]/16px metrics MIRROR the textarea's so the faux
- * prompt sits exactly on the caret line. The slot wears `.vex-composer-grow`
+ * The overlay's pl-4/py-[9px]/15px SERIF metrics MIRROR the textarea's so
+ * the faux prompt sits exactly on the caret line (change one, change both).
+ * The prompt is italic, the draft upright. The slot wears `.vex-composer-grow`
  * (globals.css): `useComposerFieldGrow`'s layout effect mirrors the
  * textarea's measured height onto it as a TRANSITIONED px value, so the
  * pill glides through grow/shrink on the same curve as its radius relax
@@ -53,12 +54,16 @@ export function ComposerField({
         <span
           aria-hidden
           data-vex-composer-placeholder
-          className="pointer-events-none absolute inset-0 overflow-hidden text-[16px] leading-[1.6] text-[var(--vex-text-3)]"
+          // Serif italic prompt (typography register, owner decree
+          // 2026-07-29): the faux placeholder is the composer's VOICE at rest,
+          // set in the same Instrument Serif as the draft it stands in for,
+          // italicised so it still reads as a prompt rather than typed text.
+          className="pointer-events-none absolute inset-0 overflow-hidden font-serif text-[15px] italic leading-[1.65] text-[var(--vex-text-3)]"
         >
           <AnimatePresence initial={false}>
             <motion.span
               key={placeholder}
-              className="absolute inset-0 truncate py-[9px] pl-5 pr-1"
+              className="absolute inset-0 truncate py-[9px] pl-4 pr-1"
               initial={reducedMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={
@@ -93,15 +98,18 @@ export function ComposerField({
         rows={1}
         aria-label="Session draft"
         className={
-          "block w-full resize-none overflow-y-auto bg-transparent leading-[1.6] text-foreground caret-[var(--vex-accent)] outline-none " +
-          // Grok slim-stadium geometry (owner correction 2026-07-21 round 2):
-          // ONE 16px variant for welcome AND session; the vertical padding
-          // builds the resting single-line height (25.6px line + 2×9px ≈
-          // 44px → 56px pill with the form's p-1.5) instead of a min-height,
-          // so the caret line and the faux placeholder always share the
-          // same origin. pl-5: the pill's own breathing room now the "+" is
-          // retired, so the order text is not jammed on the rounded edge.
-          "max-h-[200px] py-[9px] pr-1 text-[16px] pl-5"
+          "block w-full resize-none overflow-y-auto bg-transparent font-sans leading-[1.65] text-foreground caret-[var(--vex-accent)] outline-none " +
+          // TYPED text is set in the READING register (Instrument Sans
+          // 15px/1.65, owner readability round 2026-07-30) — the draft is set
+          // in the same face the reply comes back in, and a long draft is
+          // read, not displayed. The RESTING PROMPT stays serif italic (see
+          // the placeholder overlay above): a prompt is display, typing is
+          // reading. Both keep the SAME 15px/1.65 line box, so the caret line
+          // and the overlay still share one origin — the two metrics MUST
+          // stay mirrored. The vertical padding builds the resting
+          // single-line height instead of a min-height. pl-4: breathing room
+          // off the rounded-2xl edge.
+          "max-h-[200px] py-[9px] pr-1 text-[15px] pl-4"
         }
       />
     </div>

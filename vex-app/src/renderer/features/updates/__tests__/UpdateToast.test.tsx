@@ -11,8 +11,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 import { UpdateToast, type ToastableUpdateStatus } from "../UpdateToast.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 function renderToast(status: ToastableUpdateStatus) {

@@ -1,8 +1,16 @@
 /**
- * All-assets screen — the full-app ShellScreen listing EVERY token line of
- * the global portfolio read (the welcome Portfolio tab's Balances card shows
- * only the top five; its "View all assets" footer morphs into this screen
- * from the pressed row's rect). Same shared `TokenHoldingRow` grammar and
+ * All-assets screen — the full-app ShellScreen listing EVERY token line of a
+ * portfolio read (each Balances card shows only the top five; its "View all
+ * assets" footer morphs into this screen from the pressed row's rect).
+ *
+ * SCOPE (C4). `sessionId === null` reads the GLOBAL inventory portfolio (the
+ * welcome Portfolio tab); a uuid reads that SESSION's wallet-scope portfolio
+ * (the session rail's Balances card) — the same discriminated `usePortfolio`
+ * scope the rest of the book uses, so the renderer never supplies a wallet
+ * address. The title and empty-state copy say which scope is on screen: a
+ * narrowed register must never read as "everything you own".
+ *
+ * Same shared `TokenHoldingRow` grammar and
  * address-verified marks as the card, sorted largest USD first with
  * unpriced lines last. No search field (deferred by plan). Escape/close
  * behavior is the ShellScreen chrome's, identical to MemoryScreen.
@@ -28,12 +36,15 @@ import { ShellScreen } from "./ShellScreen.js";
 
 export function AssetsScreen({
   origin,
+  sessionId,
   onClose,
 }: {
   readonly origin: ShellScreenOrigin | null;
+  /** `null` = the global inventory portfolio; a uuid narrows to one session. */
+  readonly sessionId: string | null;
   readonly onClose: () => void;
 }): JSX.Element {
-  const query = usePortfolio(null);
+  const query = usePortfolio(sessionId);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
   const setHideDustBalances = useUiStore((s) => s.setHideDustBalances);
   const result = query.data;
@@ -44,7 +55,11 @@ export function AssetsScreen({
   const hiddenCount = sorted.length - visible.length;
 
   return (
-    <ShellScreen title="All assets" origin={origin} onClose={onClose}>
+    <ShellScreen
+      title={sessionId === null ? "All assets" : "Session assets"}
+      origin={origin}
+      onClose={onClose}
+    >
       {/* Comfortable ledger measure — the register never spans the full 4K
        * screen width. */}
       <div className="mx-auto w-full max-w-[640px]">
@@ -71,7 +86,9 @@ export function AssetsScreen({
           </p>
         ) : portfolio === null || portfolio.tokens.length === 0 ? (
           <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
-            No balances yet — fund a wallet and every asset appears here.
+            {sessionId === null
+              ? "No balances yet — fund a wallet and every asset appears here."
+              : "No balances in this session's wallets yet — fund them and every asset appears here."}
           </p>
         ) : (
           <>
@@ -91,7 +108,7 @@ export function AssetsScreen({
                   <TokenHoldingRow
                     key={tokenLineKey(token)}
                     token={token}
-                    historyReturnTo="assets"
+                    historyReturnTo={{ kind: "assets", sessionId }}
                   />
                 ))}
               </ul>

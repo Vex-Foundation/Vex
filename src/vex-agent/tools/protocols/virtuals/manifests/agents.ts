@@ -30,7 +30,7 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "virtuals",
     lifecycle: "active",
     description:
-      "Get full detail for ONE Virtuals agent token by numeric id. Adds to the list fields: factory, category, fdvInVirtual, liquidityUsd, graduation state, launchInfo, a bounded tokenomics summary, a sanitized short description excerpt, and a tradingRoute hint {venue, namespace, quoteToken} naming the EXACT existing tool that trades it (uniswap/kyberswap/solana, quoted in VIRTUAL). ALWAYS call this before buying a graduated agent to read the anti-sniper window — never buy while windowActive. Read-only.",
+      "Get ONE Virtuals agent token's full profile by its numeric id — a protocol tool, called via execute_tool(toolId=\"virtuals.get\", params={id}), not by name. Adds to the list fields: factory, category, fdvInVirtual, liquidityUsd, graduation state, launchInfo, a bounded tokenomics summary, a sanitized short description excerpt, and a tradingRoute hint {venue, namespace, quoteToken} naming the EXACT existing tool that trades it (uniswap/kyberswap/solana, quoted in VIRTUAL). ALWAYS call this before buying a graduated agent to read the anti-sniper window — never buy while windowActive. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [

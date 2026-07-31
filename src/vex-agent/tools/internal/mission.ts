@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { str, enumField, fail } from "./types.js";
+import { dropEmptyModelValues, formatZodIssueForModel } from "./arg-validation.js";
 import type { BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
 import {
@@ -67,10 +68,17 @@ export async function handleMissionDraftUpdate(
     enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";
   const { response_format: _ignored, ...patchParams } = params;
 
-  const parsed = MissionDraftUpdateArgs.safeParse(patchParams);
+  // Empty means ABSENT here too — eleven nullable-optional fields make this the
+  // schema most exposed to the model's habit of filling every advertised field.
+  // `null` is PRESERVED: it is this contract's explicit "clear the field", and
+  // dropping it would silently turn a clear into a no-op.
+  const normalizedPatch = dropEmptyModelValues(patchParams, { preserveNull: true });
+
+  const parsed = MissionDraftUpdateArgs.safeParse(normalizedPatch);
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    return fail(`mission_draft_update: ${firstIssue?.message ?? "invalid arguments"}`);
+    return fail(
+      `mission_draft_update: ${formatZodIssueForModel(parsed.error.issues[0], patchParams)}`,
+    );
   }
 
   const result = await applyMissionPatch(context.missionId, parsed.data);

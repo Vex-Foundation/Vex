@@ -63,10 +63,16 @@ export function buildTurnEnvelope(
 
   // In-flight repair only; DB tape remains unchanged.
   const repair = repairOrphanedToolCalls(providerMessages);
-  if (repair.insertedPlaceholders > 0) {
+  if (
+    repair.insertedPlaceholders > 0 ||
+    repair.rewrittenDuplicateIds > 0 ||
+    repair.assignedBlankIds > 0
+  ) {
     logger.info("turn.transcript.repaired", {
       sessionId: context.sessionId,
       inserted: repair.insertedPlaceholders,
+      rewrittenDuplicateIds: repair.rewrittenDuplicateIds,
+      assignedBlankIds: repair.assignedBlankIds,
     });
   }
 

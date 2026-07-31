@@ -161,4 +161,65 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
       ).toBeNull();
     });
   });
+
+  // Added 2026-07-30. Live session on Robinhood Chain (4663): the swap leg's
+  // PRE-SIGN gas estimate reverted twice with `"Call failed"`, nothing was
+  // broadcast, and the fallback venue stayed locked — while the very same
+  // calldata reverting AFTER it was mined (gas burned, strictly WEAKER
+  // evidence of nothing having been spent) would have unlocked it.
+  describe("a pre-sign gas-estimate revert of the swap leg unlocks the fallback venue", () => {
+    it("`pre_sign_revert` is eligible for the codes a fresh quote cannot clear", async () => {
+      const { isRevealEligibleKyberFailure } = await import(
+        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      );
+      for (const failureCode of ["simulation_reverted", "route_not_found", "insufficient_liquidity"] as const) {
+        expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode })).toBe(true);
+      }
+    });
+
+    it("a PRICE / WALLET / STALENESS condition a fresh quote can clear is NOT eligible", async () => {
+      const { isRevealEligibleKyberFailure } = await import(
+        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      );
+      for (const failureCode of ["slippage", "allowance_or_balance", "deadline_expired"] as const) {
+        expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode })).toBe(false);
+      }
+    });
+
+    it("an unlisted failure code is NOT eligible by default (closed set, not a deny-list)", async () => {
+      const { isRevealEligibleKyberFailure } = await import(
+        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      );
+      expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode: "broadcast_error" })).toBe(false);
+      expect(isRevealEligibleKyberFailure({ kind: "pre_sign_revert", failureCode: "chain_unsupported" })).toBe(false);
+    });
+
+    it("the signal is constructed ONLY for the swap leg with nothing broadcast", async () => {
+      const { deriveKyberPreSignRevertRevealFailure } = await import(
+        "../../../vex-agent/tools/protocols/kyberswap/failure-mapping.js"
+      );
+      expect(
+        deriveKyberPreSignRevertRevealFailure({
+          eventRole: "swap", legBroadcastAttempted: false, failureCode: "simulation_reverted",
+        }),
+      ).toEqual({ kind: "pre_sign_revert", failureCode: "simulation_reverted" });
+
+      // An approve leg being refused is an ERC-20 allowance condition, not
+      // venue evidence — the same R1 rule the mined-revert path already obeys.
+      for (const eventRole of ["allowance", "allowance_reset"] as const) {
+        expect(
+          deriveKyberPreSignRevertRevealFailure({
+            eventRole, legBroadcastAttempted: false, failureCode: "simulation_reverted",
+          }),
+        ).toBeNull();
+      }
+
+      // Bytes already went to the wire: this is no longer a pre-sign refusal.
+      expect(
+        deriveKyberPreSignRevertRevealFailure({
+          eventRole: "swap", legBroadcastAttempted: true, failureCode: "simulation_reverted",
+        }),
+      ).toBeNull();
+    });
+  });
 });

@@ -1,9 +1,14 @@
 /** NOTARY exception stamp — metadata appears ONLY when it deviates from
- * the default (silence-by-default law). Tones map to the shell palette;
- * fill is reserved for danger (none here yet). On the selection beam
- * (`.vex-select-beam`) the accent/amber inks sink into the gradient, so
- * `onBeam` flips the stamp to the beam's contrast ink (white on cobalt, ink
- * on a light accent beam) via `--vex-accent-contrast`. */
+ * the default (silence-by-default law). The mark is the LEDGER TICK: the
+ * same vertical bar the selection beam wears (`.vex-select-beam::before`),
+ * shrunk to stamp scale — an entry marked in the ledger, not a generic
+ * bordered chip. Label sits in the sans small-caps register (`.vex-micro`;
+ * mono uppercase is retired shell-wide) over a whisper tint of the tone —
+ * no hairline border: the tick carries the tone, the tint carries the box.
+ * On the selection beam (`.vex-select-beam`) the accent/amber inks sink
+ * into the gradient, so `onBeam` flips tick + label to the beam's contrast
+ * ink (white on cobalt, ink on a light accent beam) via
+ * `--vex-accent-contrast`. */
 
 import type { JSX } from "react";
 import { cn } from "../../../lib/utils.js";
@@ -21,14 +26,19 @@ export function Stamp({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-[3px] border px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.14em]",
+        "vex-micro inline-flex items-center gap-1.5 rounded-[3px] py-[3px] pl-1.5 pr-2 font-medium leading-none",
         onBeam
-          ? "border-[color-mix(in_oklab,var(--vex-accent-contrast)_45%,transparent)] text-[color-mix(in_oklab,var(--vex-accent-contrast)_90%,transparent)]"
+          ? "bg-[color-mix(in_oklab,var(--vex-accent-contrast)_16%,transparent)] text-[var(--vex-accent-contrast)]"
           : tone === "accent"
-            ? "border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] text-[var(--vex-accent-text)]"
-            : "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning",
+            ? "bg-[var(--vex-accent-fill-8)] text-[var(--vex-accent-text)]"
+            : "bg-[color-mix(in_oklab,var(--color-warning)_9%,transparent)] text-warning",
       )}
     >
+      {/* The ledger tick — bg-current so it always shares the label's ink. */}
+      <span
+        aria-hidden
+        className="h-2 w-[2px] shrink-0 rounded-full bg-current"
+      />
       {children}
     </span>
   );

@@ -115,7 +115,8 @@ export function resolveChainId(input: string, chains?: KhalaniChain[]): number {
   throw new VexError(
     ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
     `Unsupported chain: ${input}`,
-    "Run `vex khalani chains --json` to inspect supported chains."
+    "Call token_find or wallet_balances without a chain filter to see the chains Khalani "
+    + "currently covers, or pass the numeric chain id token_find returned."
   );
 }
 
@@ -125,7 +126,8 @@ export function getChain(chainId: number, chains: KhalaniChain[]): KhalaniChain 
     throw new VexError(
       ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
       `Chain ${chainId} is not in the current Khalani registry.`,
-      "Refresh chains and retry."
+      "The registry is fetched per run; if the chain was expected, retry this tool later. "
+      + "Otherwise use a chain the registry covers."
     );
   }
   return chain;

@@ -108,9 +108,20 @@ vi.mock("@utils/logger.js", () => {
 });
 
 const { PREDICT_HANDLERS } = await import("@vex-agent/tools/protocols/solana-jupiter/handlers/predict.js");
-const { readPredictionOrderPositionPubkey } = await import(
+const { PREDICTION_ORDER_PROVENANCE_KEY } = await import(
   "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-order-provenance.js"
 );
+
+/**
+ * The stored position, read straight off the persisted fragment. The module's
+ * own reader died with the prediction fill-settlement lane (the repair sweeps
+ * are status-only as of 2026-07-30); the WRITE is what these tests pin, so they
+ * assert the persisted shape directly rather than through a reader.
+ */
+function storedPositionPubkey(routeProvenance: Record<string, unknown> | null): unknown {
+  const fragment = routeProvenance?.[PREDICTION_ORDER_PROVENANCE_KEY];
+  return (fragment as Record<string, unknown> | undefined)?.positionPubkey ?? null;
+}
 
 const PREPARED = {
   serialized: new Uint8Array([1, 2, 3]),
@@ -172,7 +183,7 @@ describe("solana.predict.sell — per-row prediction_order provenance", () => {
     const events = intentEvents();
     expect(events).toHaveLength(1);
     expect(events[0]!.eventRole).toBe("predict_sell");
-    expect(readPredictionOrderPositionPubkey(events[0]!.routeProvenance ?? null)).toBe(POSITION_A);
+    expect(storedPositionPubkey(events[0]!.routeProvenance ?? null)).toBe(POSITION_A);
   });
 
   it("records the provenance BEFORE the first signature (the row is queryable even if signing fails)", async () => {
@@ -198,7 +209,7 @@ describe("solana.predict.claim — per-row prediction_order provenance", () => {
 
     const events = intentEvents();
     expect(events[0]!.eventRole).toBe("predict_claim");
-    expect(readPredictionOrderPositionPubkey(events[0]!.routeProvenance ?? null)).toBe(POSITION_A);
+    expect(storedPositionPubkey(events[0]!.routeProvenance ?? null)).toBe(POSITION_A);
   });
 });
 
@@ -224,7 +235,7 @@ describe("solana.predict.closeAll — TWO distinct positions", () => {
     const events = intentEvents();
     expect(events).toHaveLength(2);
     expect(events.map((e) => e.eventRole)).toEqual(["predict_close", "predict_claim"]);
-    expect(events.map((e) => readPredictionOrderPositionPubkey(e.routeProvenance ?? null))).toEqual([
+    expect(events.map((e) => storedPositionPubkey(e.routeProvenance ?? null))).toEqual([
       POSITION_A,
       POSITION_B,
     ]);

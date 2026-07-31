@@ -61,7 +61,8 @@ import { ChainParam } from "./chain-param.js";
 import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
 import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
-import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
+import { findCallerSuppliedForbiddenParamOrDestinationKey } from "@tools/khalani/request.js";
+import { dropEmptyModelValues, formatZodIssuesForModel } from "./arg-validation.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -112,7 +113,7 @@ export async function handleSwapQuote(
 ): Promise<ToolResult> {
   const parsed = SwapQuoteArgs.safeParse(args);
   if (!parsed.success) {
-    return fail(`swap_quote: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    return fail(`swap_quote: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const a: SwapQuoteArgs = parsed.data;
 
@@ -219,7 +220,7 @@ export async function handleSwapQuoteUniswap(
 
   const parsed = SwapQuoteUniswapArgs.safeParse(args);
   if (!parsed.success) {
-    return fail(`swap_quote_uniswap: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    return fail(`swap_quote_uniswap: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const a: SwapQuoteUniswapArgs = parsed.data;
 
@@ -261,7 +262,7 @@ export async function handleTokenCheck(
 ): Promise<ToolResult> {
   const parsed = TokenCheckArgs.safeParse(args);
   if (!parsed.success) {
-    return fail(`token_check: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    return fail(`token_check: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const { chain, address } = parsed.data;
   return executeProtocolTool(
@@ -290,7 +291,7 @@ export async function handleBridgeStatus(
 ): Promise<ToolResult> {
   const parsed = BridgeStatusArgs.safeParse(args);
   if (!parsed.success) {
-    return fail(`bridge_status: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    return fail(`bridge_status: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const a = parsed.data;
 
@@ -342,16 +343,22 @@ export async function handleBridgeQuote(
   // prequote gate would later bind a matching execute against, so an attacker
   // who sets the same value on both would collide the hashes and pass the gate.
   // See the two policy blocks in `@tools/khalani/request.js`.
-  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  //
+  // ORDER IS LOAD-BEARING: this runs BEFORE the empty-value normalization
+  // below. Normalization exists to stop `recipient: ""` costing the agent a
+  // turn — but applied first it would also delete `refundTo: ""`, converting an
+  // attempted refund redirection into silence. The refusal comes first so the
+  // key is always answered BY NAME.
+  const forbiddenParam = findCallerSuppliedForbiddenParamOrDestinationKey(args);
   if (forbiddenParam !== null) {
     return fail(
       `bridge_quote: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
-  const parsed = BridgeQuoteArgs.safeParse(args);
+  const parsed = BridgeQuoteArgs.safeParse(dropEmptyModelValues(args));
   if (!parsed.success) {
-    return fail(`bridge_quote: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    return fail(`bridge_quote: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const a = parsed.data;
 
@@ -425,16 +432,17 @@ export async function handleBridgeQuoteRelay(
 
   // This schema is not `.strict()` either, so the same by-name refusal applies
   // — otherwise a redirected refund address would be dropped here in silence.
-  const forbiddenParam = findCallerSuppliedForbiddenParam(args);
+  // Same load-bearing order as `bridge_quote`: refusal BEFORE normalization.
+  const forbiddenParam = findCallerSuppliedForbiddenParamOrDestinationKey(args);
   if (forbiddenParam !== null) {
     return fail(
       `bridge_quote_relay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
 
-  const parsed = BridgeQuoteRelayArgs.safeParse(args);
+  const parsed = BridgeQuoteRelayArgs.safeParse(dropEmptyModelValues(args));
   if (!parsed.success) {
-    return fail(`bridge_quote_relay: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    return fail(`bridge_quote_relay: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const a = parsed.data;
 

@@ -3,6 +3,13 @@
 > **HISTORICAL — superseded by the projectvex.ai landing rebrand (2026-07).**
 > Token names/fonts below describe the retired Protocol Desk language —
 > see `src/renderer/styles/globals.css` for current law.
+>
+> Also retired since this spec was written, and named throughout it: the
+> `@hugeicons/*` packages (icons now come from `lucide-react` behind
+> `renderer/components/icons/`), `SessionRuntimeBar` (replaced by the Runtime &
+> Cost card), the MOVES block and its `listMoves` pipeline, and the
+> `vex-signal-resolve` / `vex-fade-top` CSS rules (deleted with their last
+> consumers). Nothing here describes current code.
 
 > **Status:** DRAFT for acceptance. Spec + foundation first; implementation follows
 > per-area after sign-off. Scope = the **post-launch main app** (`features/appShell`

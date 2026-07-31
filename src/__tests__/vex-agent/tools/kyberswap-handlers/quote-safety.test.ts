@@ -181,6 +181,11 @@ describe("kyberswap.swap.quote token safety (Stage 6b)", () => {
     );
     // The L1 fee reaches the human-readable summary too, labeled an estimate.
     expect(out.summary).toContain("L1 data fee ~$0.12 est.");
+    // The summary's amountOut is HUMAN units (2026-07-30 — a weak model copied
+    // the raw base-unit figure to the user); the raw value stays machine-side
+    // in routeSummary.amountOut, asserted above as "999000".
+    expect(out.summary).toContain(`→ ~${"0.000000000000999"} TKN`);
+    expect(out.summary).not.toContain("→ ~999000 ");
     expect(out.routerAddress).toBe("0x6131B5fae19EA4f9D964eAc0408E4408b66337b5");
   });
 

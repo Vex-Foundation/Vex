@@ -7,8 +7,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Delete02Icon } from "@hugeicons/core-free-icons";
+import { Delete02Icon, VexIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 
 export function RemoveButton({
@@ -28,7 +27,7 @@ export function RemoveButton({
         "focus-visible:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
       )}
     >
-      <HugeiconsIcon icon={Delete02Icon} size={13} aria-hidden />
+      <VexIcon icon={Delete02Icon} size={13} aria-hidden />
     </button>
   );
 }

@@ -23,6 +23,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeToolSchemaForProvider } from "@vex-agent/inference/schema-normalizer.js";
 import { paramsToJsonSchema } from "@vex-agent/tools/registry/khalani.js";
 import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
+import { coerceStringArrayParams } from "@vex-agent/tools/protocols/runtime/string-array-coercion.js";
 import type {
   ProtocolParamDef,
   ProtocolToolManifest,
@@ -96,6 +97,48 @@ describe("acceptsStringArray — runtime param boundary", () => {
     const snapshot = JSON.stringify(params);
     expect(validateProtocolParams(MANIFEST, params).ok).toBe(true);
     expect(JSON.stringify(params)).toBe(snapshot);
+  });
+});
+
+describe("acceptsStringArray — a JSON array that arrived as a string", () => {
+  // Live session 2026-07-30: a model sent `chainIds: "[\"robinhood\"]"` — the
+  // array spelling, JSON-encoded into the string branch of the union. It passes
+  // the type gate as a string and then reaches the comma-splitting reader,
+  // which reads the literal `["robinhood"]` as a chain slug: a silent wrong
+  // answer, which is the one outcome this param family exists to prevent.
+  it("parses a JSON-encoded array on an opt-in param", () => {
+    const coerced = coerceStringArrayParams(MANIFEST, {
+      query: "robinhood",
+      chainIds: '["robinhood"]',
+    });
+    expect(coerced.params).toEqual({ query: "robinhood", chainIds: ["robinhood"] });
+    expect(coerced.coercedKeys).toEqual(["chainIds"]);
+    expect(validateProtocolParams(MANIFEST, coerced.params).ok).toBe(true);
+  });
+
+  it("leaves an ordinary comma string and a real array alone", () => {
+    const params = { query: "PEPE", chainIds: "solana,base" };
+    expect(coerceStringArrayParams(MANIFEST, params).params).toEqual(params);
+    const arrayParams = { query: "PEPE", chainIds: ["solana"] };
+    expect(coerceStringArrayParams(MANIFEST, arrayParams).params).toEqual(arrayParams);
+  });
+
+  it("never widens a param that was NOT opted in", () => {
+    const params = { query: '["PEPE","WIF"]' };
+    expect(coerceStringArrayParams(MANIFEST, params).params).toEqual(params);
+  });
+
+  it("leaves anything that is not a JSON array of strings untouched", () => {
+    for (const value of ['[1,2]', "[not json", '["a", 2]', '{"a":1}', "[", "solana"]) {
+      const params = { query: "PEPE", chainIds: value };
+      expect(coerceStringArrayParams(MANIFEST, params).params, value).toEqual(params);
+    }
+  });
+
+  it("does not mutate the input params object", () => {
+    const params: Record<string, unknown> = { query: "PEPE", chainIds: '["solana"]' };
+    coerceStringArrayParams(MANIFEST, params);
+    expect(params.chainIds).toBe('["solana"]');
   });
 });
 

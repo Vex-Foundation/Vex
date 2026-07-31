@@ -60,83 +60,22 @@ export type View =
 export type WizardEntryMode = "setup";
 export type UnlockReturnView = "wizard" | "appShell";
 export type SessionModeFilter = "all" | "agent" | "mission";
-/**
- * Viewport rect of the trigger control that opened the current shell screen —
- * the expand-from-trigger anchor for the screen's enter animation. Plain
- * numbers (not a live DOMRect) so the store stays serializable. `null` = no
- * origin (the screen falls back to a centered expand). NOT persisted.
- */
-export interface ShellScreenOrigin {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
 
 /**
- * Token identity + display metadata carried by the token-history route.
- * `chainId`/`tokenAddress` are the EXACT query identity (the IPC input schema
- * re-validates them at the boundary); `symbol` is RAW provider text —
- * consumers sanitize before display — and `tokenName` is the main-sanitized
- * display name. Neither symbol nor name is ever a query/cache/auth input.
+ * The shell-screen route contract lives in the same-named sibling module
+ * (`uiStore/shell-route.ts`) and is re-exported here so this store stays the
+ * single public entry point for every consumer's import.
  */
-export interface ShellRouteToken {
-  readonly chainId: number;
-  readonly tokenAddress: string;
-  readonly symbol: string | null;
-  readonly tokenName: string | null;
-}
+export type {
+  ShellRoute,
+  ShellRouteReturnTo,
+  ShellRouteToken,
+  ShellScreenOrigin,
+  SettingsSection,
+} from "./uiStore/shell-route.js";
+export { RETURN_TO_SHELL } from "./uiStore/shell-route.js";
 
-/** Where closing the token-history screen returns: the bare shell or the All-assets screen. */
-export type ShellRouteReturnTo = "shell" | "assets";
-
-/**
- * Settings screen sections (Phase 2b — the in-shell Settings rebuild that
- * retired the reconfigure-wizard "Edit infrastructure" entry). Each section
- * hosts the matching wizard step form in back-edit mode. Carried on the
- * `settings` route so callers can deep-link a section (the welcome
- * Portfolio "Add wallet" row lands directly on `wallets`); `null` opens
- * the landing register.
- */
-export type SettingsSection =
-  | "vault"
-  | "wallets"
-  | "apiKeys"
-  | "model"
-  | "memory"
-  | "tuning";
-
-/**
- * Full-app overlay screen route (Chronos screens redesign, 2026-07-20;
- * atomised into ONE discriminated union in the token-history round so a
- * screen and its payload can never desync). The center panel is ALWAYS the
- * session panel; Memory, the sessions library, the Agent Scan full-history
- * feed, and the "How Vex works" article open as `ShellScreen` overlays
- * expanding from their profile-menu rows (the Missions screen is retired —
- * the owner ruled Sessions covers it); `assets` is the All-assets register (welcome Portfolio tab's Balances
- * footer); `tokenHistory` is the per-token history screen (the eye trigger
- * on a token row), carrying the row's token identity and the surface its
- * close returns to. `none` = no screen open. NOT persisted —
- * launch-ephemeral, like activeSessionId.
- */
-export type ShellRoute =
-  | { readonly kind: "none" }
-  | {
-      readonly kind: "memory" | "sessions" | "howItWorks" | "agentScan";
-      readonly origin: ShellScreenOrigin | null;
-    }
-  | { readonly kind: "assets"; readonly origin: ShellScreenOrigin | null }
-  | {
-      readonly kind: "settings";
-      readonly origin: ShellScreenOrigin | null;
-      readonly section: SettingsSection | null;
-    }
-  | {
-      readonly kind: "tokenHistory";
-      readonly origin: ShellScreenOrigin | null;
-      readonly token: ShellRouteToken;
-      readonly returnTo: ShellRouteReturnTo;
-    };
+import type { ShellRoute } from "./uiStore/shell-route.js";
 
 export interface UiLogEntry {
   readonly id: string;

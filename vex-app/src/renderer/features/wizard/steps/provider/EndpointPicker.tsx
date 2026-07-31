@@ -29,8 +29,7 @@
  */
 
 import { useEffect, useRef, type JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { RefreshIcon } from "@hugeicons/core-free-icons";
+import { RefreshIcon, VexIcon } from "../../../../components/icons/index.js";
 import type { ProviderEndpointOption } from "@shared/schemas/provider-endpoints.js";
 import { Label } from "../../../../components/ui/label.js";
 import { cn } from "../../../../lib/utils.js";
@@ -116,7 +115,7 @@ export function EndpointPicker({
             onClick={onRetry}
             className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
           >
-            <HugeiconsIcon icon={RefreshIcon} size={12} aria-hidden />
+            <VexIcon icon={RefreshIcon} size={12} aria-hidden />
             Retry
           </button>
         </div>
