@@ -25,16 +25,13 @@
  *   - `swap/quote-safety.ts`, `swap/slippage.ts`, `swap/route-request.ts`,
  *     `swap/error-output.ts`, `swap/chain-native.ts`, `swap/protocol-id.ts`
  *
- * A native-tokenIn swap that crashes between broadcast and the immediate
- * confirm IS repairable: the row's own `amount_in_raw` is the signed
- * transaction's value (C21), which is that leg's executed amount on an
- * exact-input venue, and the sweep hands it to the decoder
- * (`swap/settlement-decoder.ts`). No log ever carries it.
+ * A swap that crashes between broadcast and the immediate confirm is finalized
+ * by the STATUS-ONLY repair sweep (`vex-agent/sync/agent-activity-repair.ts`,
+ * owner decree 2026-07-30): the sweep asks the chain whether the hash succeeded
+ * and writes the status alone. It decodes nothing, so no per-venue settlement
+ * decoder is registered here any more — the row keeps NULL executed amounts and
+ * Agent Scan labels its quoted amounts "estimated".
  */
-
-// Registers the KyberSwap settlement decoder for the repair sweep, once at
-// module load. Imported for that side effect.
-import "./swap/settlement-decoder.js";
 
 import type { ProtocolHandler } from "../../types.js";
 import { CHAIN_TOKEN_HANDLERS } from "./swap/chain-token-handlers.js";

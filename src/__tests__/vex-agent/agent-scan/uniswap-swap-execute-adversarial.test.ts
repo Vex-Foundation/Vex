@@ -112,7 +112,6 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: (...args: unknown[]) => confirmActivityEvent(...args),
   failActivityEvent: (...args: unknown[]) => failActivityEvent(...args),
 }));
-vi.mock("@vex-agent/sync/settlement-decoders.js", () => ({ registerSettlementDecoder: vi.fn() }));
 vi.mock("@vex-agent/tools/registry/uniswap-reveal.js", () => ({ clearUniswapPairReveal: vi.fn() }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),

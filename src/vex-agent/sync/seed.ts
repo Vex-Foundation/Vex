@@ -18,7 +18,7 @@ const SYNC_JOBS = [
   // Agent Scan repair sweep (plan §4.1/§11.1) — re-checks pending
   // agent_activity rows by persisted tx_hash. Lookup-only; see
   // sync/agent-activity-repair.ts.
-  { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+  { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
   // Phase-2 bridge order-status sweep — re-checks pending bridge logical rows by
   // provider_order_id (Khalani/Relay), independently verifies fills before
@@ -33,7 +33,7 @@ const SYNC_JOBS = [
   // sync/solana-activity-repair.ts (K3). ON CONFLICT DO NOTHING makes this
   // safe to seed now even though the worker branch does not exist yet —
   // worker.ts logs "Unknown sync type" and skips until K3 lands.
-  { namespace: "_global", syncType: "solana_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+  { namespace: "_global", syncType: "solana_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },

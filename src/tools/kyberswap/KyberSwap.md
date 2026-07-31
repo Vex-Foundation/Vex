@@ -315,7 +315,8 @@ KYBER_HONEYPOT_CHECK_FAILED
 11. On a confirmed swap event: decodeKyberSwapSettlement() from the mined receipt →
     confirmActivityEvent with the REAL executed amounts (never the quoted estimate). If the
     decoder declines (native-tokenIn crash-window edge case, or an undecodable receipt), the
-    row is returned as `confirmed_pending_amounts` and left for the repair sweep to finish
+    row is returned as `confirmed_pending_amounts` and left for the repair sweep, which
+    finalizes its STATUS only — the executed amounts stay unknown for that row
 12. pinTrackedToken on the ACQUIRED (token-out) leg only, on a local chain, fail-soft
     (a rejected pin never fails the swap result)
 13. Returns a `summary` string FIRST (amounts, symbols, tx hash, USD estimates) then the
@@ -323,10 +324,20 @@ KYBER_HONEYPOT_CHECK_FAILED
     desktop app's explorer link — metadata-only, model-invisible)
 ```
 
-`kyberswap.swap.execute`'s settlement decoder is registered once at module load
-(`registerSettlementDecoder("kyberswap", …)`) so the sync-layer repair sweep
-(`src/vex-agent/sync/agent-activity-repair.ts`) can confirm a still-pending row from a later
-receipt lookup using the exact same decode logic, without ever re-broadcasting.
+`kyberswap.swap.execute` decodes its OWN mined receipt, at broadcast time, with the pure
+decoder in `src/tools/kyberswap/evm/swap-settlement.ts`. It no longer registers that decoder
+anywhere: the per-protocol settlement-decoder registry the sync-layer repair sweep used to
+look decoders up in was removed on 2026-07-30 (owner decree).
+
+The repair sweep (`src/vex-agent/sync/agent-activity-repair.ts`) is now STATUS-ONLY — it asks
+the chain whether a pending row's tx hash succeeded or reverted and writes the status alone,
+never re-broadcasting and never decoding. It exists precisely because the old decoder-gated
+sweep could not finalize a receipt shape its decoder declined: a CAT→native-ETH swap on
+Robinhood Chain (4663) was mined `success` on-chain and sat `pending` forever, because a
+native-out leg arrives as a wrapped-native burn with no `Withdrawal` event to the router.
+
+A row the sweep confirms keeps NULL `executed_*` columns, and Agent Scan renders its QUOTED
+amounts explicitly labelled "estimated" rather than presenting a quote as a settlement.
 
 ---
 

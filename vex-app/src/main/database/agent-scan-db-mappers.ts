@@ -8,15 +8,22 @@
  *    requested legs and the receipt-derived executed legs; exactly one of them
  *    may honestly be shown, and which one depends on the lifecycle status. That
  *    rule is NOT re-implemented here — it is delegated to the shared
- *    `./agent-activity-amount.js`, the same module `token-history-db` uses. A plain SWAP uses `resolveAgentActivityAmount`
- *    (blank rather than mislabelled; its confirmed-without-decode case is
- *    unreachable — migration 044's `agent_activity_confirmed_swap_has_executed_legs`
- *    CHECK enforces it). Every other kind uses
- *    `resolveAmountWithEstimateBasis`, because that CHECK is scoped
- *    `event_role <> 'swap'`: a bridge fill is solver-signed, and a
- *    lend/prediction/wrap row can confirm without decoder-proven amounts, so
- *    those fall back to the quote EXPLICITLY labelled `amountBasis:
- *    "estimated"` instead of going blank.
+ *    `./agent-activity-amount.js`, the same module `token-history-db` uses.
+ *    EVERY kind — swaps included — uses `resolveAmountWithEstimateBasis`: an
+ *    independently-proven `executed_*` amount is shown as `"executed"`, and
+ *    otherwise the quote is shown EXPLICITLY labelled `amountBasis:
+ *    "estimated"` rather than going blank.
+ *
+ *    Swaps used to take the blank-rather-than-mislabel branch
+ *    (`resolveAgentActivityAmount`) because a confirmed swap ALWAYS carried
+ *    decoder-proven legs — migration 044's
+ *    `agent_activity_confirmed_swap_has_executed_legs` CHECK enforced it. The
+ *    owner's 2026-07-30 decree made the repair sweeps status-only and migration
+ *    061 dropped that CHECK, so confirmed-without-executed is now reachable for
+ *    a swap too. Blanking it would hide a settled transaction's size entirely;
+ *    the labelled estimate is the honest alternative. Token History is
+ *    deliberately NOT changed — its DTO carries no provenance field, so it has
+ *    no way to say "estimated" and keeps blanking.
  *
  * 2. SYMBOL vs DISPLAY SYMBOL. The stored symbol goes through
  *    `sanitizeTokenSymbol` (untrusted provider metadata) and lands in `symbol`.
@@ -62,8 +69,8 @@ import {
   EVENT_ROLE_MAX_LENGTH,
 } from "@shared/agent-activity-vocabulary.js";
 import {
-  resolveAgentActivityAmount,
   resolveAmountWithEstimateBasis,
+  type AmountEstimateResolution,
   type AgentActivitySwapStatus,
 } from "./agent-activity-amount.js";
 import type { AgentScanRow } from "./agent-scan-db-types.js";
@@ -238,6 +245,24 @@ function mapExecutionLegs(raw: unknown): AgentScanBridgeLeg[] {
   return raw.map(mapExecutionLeg);
 }
 
+/**
+ * The single row-level provenance label for two independently-resolved legs.
+ *
+ * A leg that displays NOTHING carries no claim, so it cannot weaken the label —
+ * only a leg that actually shows a value votes. When both vote and disagree,
+ * the pessimistic `"estimated"` wins: the renderer paints one basis across both
+ * legs, and an over-claimed `"executed"` would misrepresent a quote as
+ * settlement, which is the failure this whole seam exists to prevent.
+ */
+function resolveRowAmountBasis(
+  inRes: AmountEstimateResolution,
+  outRes: AmountEstimateResolution,
+): AgentScanEntry["amountBasis"] {
+  const voted = [inRes.basis, outRes.basis].filter((basis): basis is "executed" | "estimated" => basis !== null);
+  if (voted.length === 0) return null;
+  return voted.includes("estimated") ? "estimated" : "executed";
+}
+
 // ── Vex fee ───────────────────────────────────────────────────────────────
 
 function mapVexFee(row: AgentScanRow): AgentScanVexFee | null {
@@ -264,44 +289,29 @@ export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
   const toChainId_ = toChainId(row.to_chain_id);
   const isBridge = activityKind === "bridge";
 
-  // A plain swap's honesty rule blanks rather than mislabels and needs no
-  // basis tag; every other kind may legitimately show a labelled estimate.
-  // See the module header, point 1.
-  let inputDisplayAmount: string | null;
-  let outputDisplayAmount: string | null;
-  let amountBasis: AgentScanEntry["amountBasis"] = null;
-  if (activityKind === "swap") {
-    inputDisplayAmount = resolveAgentActivityAmount(
-      amountStatus,
-      row.amount_in_human,
-      row.executed_amount_in_raw,
-      inDecimals,
-    );
-    outputDisplayAmount = resolveAgentActivityAmount(
-      amountStatus,
-      row.amount_out_human,
-      row.executed_amount_out_raw,
-      outDecimals,
-    );
-  } else {
-    const inRes = resolveAmountWithEstimateBasis(
-      amountStatus,
-      row.amount_in_human,
-      row.executed_amount_in_raw,
-      inDecimals,
-    );
-    const outRes = resolveAmountWithEstimateBasis(
-      amountStatus,
-      row.amount_out_human,
-      row.executed_amount_out_raw,
-      outDecimals,
-    );
-    inputDisplayAmount = inRes.value;
-    outputDisplayAmount = outRes.value;
-    // The executed columns are populated together (B4), so the two bases agree
-    // in practice; prefer the output (receive) side, as the sibling feeds do.
-    amountBasis = outRes.basis ?? inRes.basis;
-  }
+  // EVERY kind — swaps included since the owner's 2026-07-30 decree — resolves
+  // through the labelled-estimate rule. See the module header, point 1.
+  const inRes = resolveAmountWithEstimateBasis(
+    amountStatus,
+    row.amount_in_human,
+    row.executed_amount_in_raw,
+    inDecimals,
+  );
+  const outRes = resolveAmountWithEstimateBasis(
+    amountStatus,
+    row.amount_out_human,
+    row.executed_amount_out_raw,
+    outDecimals,
+  );
+  const inputDisplayAmount = inRes.value;
+  const outputDisplayAmount = outRes.value;
+  // ONE basis, applied by the renderer to BOTH legs — so when the legs disagree
+  // it must be the CONSERVATIVE label. The executed columns are usually written
+  // together (B4), but a status-only repair confirm leaves both NULL and a
+  // partial decode can leave exactly one populated; labelling that row
+  // "executed" off the output leg would present a quoted INPUT leg as settled
+  // truth. Mixed provenance ⇒ "estimated".
+  const amountBasis: AgentScanEntry["amountBasis"] = resolveRowAmountBasis(inRes, outRes);
 
   const chainSlug = boundedText(row.chain_slug, AGENT_SCAN_TEXT_BOUNDS.chainSlug);
   const txHash = boundedText(row.tx_hash, AGENT_SCAN_TEXT_BOUNDS.txRef);

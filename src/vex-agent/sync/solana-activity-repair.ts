@@ -1,93 +1,80 @@
 /**
- * `agent_activity` SOLANA activity sweep (W5 design `w5-design.md` §4,
- * REVISION 1 R3, REVISION 2 R2b/R2c — Batch 4/K3). Sole owner of every
- * `chain_family='solana'` LOCALLY-STAGED row's terminality (Vex-signed
- * Jupiter swap/lend/prediction legs AND Solana `bridge_deposit` origin legs
- * — the bridge order-status sweep, `bridge-activity-repair.ts`, owns ONLY
- * the logical `bridge_fill_expected` row, whose `submit_attempted_at` is
- * always NULL and is therefore never a candidate here). Disjoint from the
- * EVM repair sweep (`agent-activity-repair.ts`, now `chain_family='eip155'`
- * scoped) by construction — see `listSolanaStagedPending` /
- * `listPendingOlderThan`'s `chainFamily` parameter (R3, Codex's
- * non-disjointness finding).
+ * `agent_activity` SOLANA activity sweep — a STATUS-ONLY pending-transaction
+ * resolver (owner decree 2026-07-30), the Solana twin of
+ * `agent-activity-repair.ts`.
+ *
+ * Sole owner of every `chain_family='solana'` LOCALLY-STAGED row's terminality
+ * (Vex-signed Jupiter swap/lend/prediction legs AND Solana `bridge_deposit`
+ * origin legs — the bridge order-status sweep, `bridge-activity-repair.ts`,
+ * owns ONLY the logical `bridge_fill_expected` row, whose
+ * `submit_attempted_at` is always NULL and is therefore never a candidate
+ * here). Disjoint from the EVM sweep by construction — see
+ * `listSolanaStagedPending` / `listPendingOlderThan`'s `chainFamily` parameter.
+ *
+ * ONE QUESTION PER ROW: did this signature land, and did it carry an error?
+ * `err == null` at `confirmed`/`finalized` commitment → `confirmed` via
+ * `confirmActivityEventStatusOnly` (NO amounts written). `err != null` →
+ * `definitively_failed`. The sweep decodes NOTHING: no transaction-body
+ * settlement decode, no protocol-aware dispatch, no provider history lookup.
+ * Amounts are deferred by owner decree; Agent Scan shows the quoted amount
+ * labelled "estimated" rather than dressing a quote up as a settlement.
+ *
+ * PROCESSED IS NOT LANDED, IN BOTH DIRECTIONS: a `processed`-only (or unknown)
+ * commitment leaves the row `pending` whether or not it carries an `err` — a
+ * processed transaction can still be dropped with its fork, so neither its
+ * success NOR its failure is proven yet.
+ *
+ * ABSENT IS NOT NULL: `err: null` is the chain's proof of success; a status
+ * entry or transaction body with NO `err` property at all is a shape we cannot
+ * read, and is treated as ambiguity. Coercing absence to `null` would confirm a
+ * transaction whose outcome was never actually read.
+ *
+ * EVERY DEAD-END TOUCHES `last_checked_at`: the candidate query orders by it
+ * under a LIMIT, so a row that cannot be resolved this tick (RPC outage,
+ * malformed evidence, not-yet-expired) must rotate to the BACK of the queue.
+ * Otherwise a handful of permanently-unresolvable rows pin the window and
+ * starve every newer pending row behind them.
  *
  * ALSO owns the periodic call site for the stale hashless-intent recovery
- * (`recoverStaleHashlessIntents`, K2 primitive, generalized off Solana-only
- * to EVERY chain family by C7) — nothing else calls it periodically, so
- * this sweep's tick now recovers stale hashless EVM rows too, as a direct
- * consequence of sharing the one periodic caller; see that function's own
- * doc (`../db/repos/agent-activity/hashless-recovery.js`) for the
- * family-agnostic contract.
+ * (`recoverStaleHashlessIntents`, generalized off Solana-only to EVERY chain
+ * family) — nothing else calls it periodically, so this sweep's tick recovers
+ * stale hashless EVM rows too; see that function's own doc
+ * (`../db/repos/agent-activity/hashless-recovery.js`).
  *
- * NO GIVE-UP RAIL (R3 supersedes §4's original MAX_CHECKS text): ambiguous
- * evidence (RPC unavailable, signature genuinely not yet found, unhealthy
- * RPC) NEVER terminalizes a row on its own — it stays `pending` forever,
- * re-checked with EXPONENTIAL BACKOFF (`solanaSweepBackoffIntervalMs`,
- * `last_checked_at`-driven, no counter column needed) + an operator-visible
- * escalation log once a row has been pending unusually long
- * (`isSolanaSweepEscalated`). The ONE way absence-of-proof may terminalize a
- * row is the EXPIRY gate below — never a timeout on its own.
+ * NO GIVE-UP RAIL: ambiguous evidence (RPC unavailable, signature genuinely not
+ * yet found, unhealthy RPC) NEVER terminalizes a row on its own — it stays
+ * `pending`, re-checked on the next tick, with an operator-visible escalation
+ * log once a row has been pending unusually long (`isSolanaSweepEscalated`).
+ * The ONE way absence-of-proof may terminalize a row is the EXPIRY gate below.
  *
- * EXPIRY GATE (R3, literal AND): `getSignatureStatuses`
+ * EXPIRY GATE (literal AND): `getSignatureStatuses`
  * (`searchTransactionHistory:true`) MISS, AND a `finalized` `getTransaction`
- * (`maxSupportedTransactionVersion:0`) ALSO MISS, both over a
- * GENESIS-VERIFIED, SSRF-safe healthy RPC (`solana-rpc-safety.js`, extracted
- * from `bridge-activity-repair.ts` for this exact reuse), AND the row's OWN
- * persisted `last_valid_block_height` (K2's staged-seam evidence) proves the
- * current block height has passed it — only THEN is
- * `failure_code='solana_signature_expired'` written (safe: an expired
- * blockhash can never land). A row with no persisted evidence (a
- * grandfathered pre-049 row, per K1's `NOT VALID` migration decision) can
- * never be expired — it stays pending forever, matching R3's "malformed/
- * missing evidence fails closed" instruction verbatim.
+ * (`maxSupportedTransactionVersion:0`) ALSO MISS, both over a GENESIS-VERIFIED,
+ * SSRF-safe healthy RPC (`solana-rpc-safety.js`), AND the row's OWN persisted
+ * `last_valid_block_height` proves the current block height has passed it —
+ * only THEN is `failure_code='solana_signature_expired'` written (safe: an
+ * expired blockhash can never land). A row with no persisted evidence (a
+ * grandfathered pre-049 row) can never be expired — it stays pending forever.
  *
- * MINED FAILURE CARRIES THE ERROR (2026-07-25): a terminalized mined failure
- * quotes the chain's OWN `err` in `failure_reason`, serialized by
+ * MINED FAILURE CARRIES THE ERROR: a terminalized mined failure quotes the
+ * chain's OWN `err` in `failure_reason`, serialized by
  * `solana-transaction/onchain-error-summary.js` (deterministic, 200-char
- * bounded). Before this, execution 209 recorded only "getSignatureStatuses
- * reported an on-chain error." and DISCARDED
- * `{"InstructionError":[3,"ProgramFailedToComplete"]}`, leaving a row that said
- * something failed and nothing about what. `failure_code` is unchanged
- * (`mined_revert`) — the code was already right; the reason was empty.
+ * bounded). `failure_code` is `mined_revert`, matching the EVM sweep.
  *
- * SETTLEMENT DECODING (`solana-settlement-dispatch.js`): a landed transaction
- * with `meta.err===null` is decoded by the decoder the ROW selects — its
- * persisted settlement profile picks a protocol-aware decoder, everything else
- * takes the generic owner+mint balance-delta path; `event_role='swap'`
- * requires BOTH legs proven (044:134, `confirmActivityEvent`'s own DB-level
- * guard is the backstop). A decoder decline (undecodable success) NEVER
- * guesses — the row stays `pending` and an anomaly is logged, mirroring the
- * EVM sweep's own "no settlement decoder" contract. Proven magnitudes are
- * stored raw AND as exact decimals (`solana-executed-amount-human.js`, using
- * the row's own persisted decimals) so a confirmed row is readable.
- *
- * PREDICTION FILL SETTLEMENT (`solana-prediction-fill-settlement.js`): ONE
- * decoder decline is expected rather than anomalous. A Jupiter prediction
- * sell/close pays out in a KEEPER's later settle transaction, so the
- * transaction Vex broadcast genuinely has nothing to decode and the row could
- * never confirm from its own hash. Those rows — and only those — get a second,
- * keeper-side proof attempt before being logged as stuck. The lane never
- * terminalizes and never throws; an unproven row simply stays pending, exactly
- * as it did before.
- *
- * DUPLICATE-CAS AWARENESS: `confirmActivityEvent`/`failActivityEvent` return
- * `{applied, row}` — an `applied:false` means a concurrent process (another
- * sweep instance, or a handler's own late finalize) already settled this row;
- * logged and skipped, never double-counted.
+ * DUPLICATE-CAS AWARENESS: the finalizers return `{applied, row}` — an
+ * `applied:false` means a concurrent process (another sweep instance, or a
+ * handler's own late finalize) already settled this row; logged and skipped,
+ * never double-counted.
  *
  * TESTABILITY: `repairPendingSolanaActivity` is pure orchestration over an
  * injected `SolanaActivitySweepDeps` port — exactly the external reads this
- * sweep may perform (mirrors `RepairDeps`/`BridgeRepairDeps`'s "ONE
- * dependency surface" discipline); its PRODUCTION wiring lives in the sibling
- * `./solana-activity-repair-deps.js`. Every DB read/write
- * (`listSolanaStagedPending`, `confirmActivityEvent`, `failActivityEvent`,
- * `touchLastChecked`, `recoverStaleHashlessIntents`) is imported
- * directly and mocked via `vi.mock` in tests, matching
- * `agent-activity-repair-error-scrubbing.test.ts`'s established pattern.
+ * sweep may perform; its PRODUCTION wiring lives in the sibling
+ * `./solana-activity-repair-deps.js`. Every DB read/write is imported directly
+ * and mocked via `vi.mock` in tests.
  */
 
 import {
-  confirmActivityEvent,
+  confirmActivityEventStatusOnly,
   failActivityEvent,
   touchLastChecked,
   listSolanaStagedPending,
@@ -95,18 +82,6 @@ import {
   HASHLESS_INTENT_RECOVERY_LEASE_MS,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
-import { parseSolanaTransactionResult } from "./solana-settlement-decoders.js";
-import { decodeSolanaSettlement } from "./solana-settlement-dispatch.js";
-import {
-  createPredictionHistoryCache,
-  isPredictionFillSettlementCandidate,
-  settlePredictionFillIfProven,
-  type PredictionHistoryCache,
-  type PredictionHistoryLookup,
-  type PredictionHistoryQuery,
-  type SolanaSignatureEntry,
-} from "./solana-prediction-fill-settlement.js";
-import { withExactExecutedAmountHuman } from "./solana-executed-amount-human.js";
 import { summarizeSolanaOnChainError } from "@tools/solana-ecosystem/shared/solana-transaction/onchain-error-summary.js";
 import logger from "@utils/logger.js";
 
@@ -117,44 +92,32 @@ export const SOLANA_SWEEP_BATCH_LIMIT = 25;
 export const SOLANA_HASHLESS_RECOVERY_BATCH_LIMIT = 25;
 
 /**
- * Exponential-ish backoff WITHOUT a counter column: the poll cadence is a
- * pure function of elapsed age since `submit_attempted_at`, computed fresh
- * every sweep run from timestamps alone (`last_checked_at` marks when this
- * row was last actually looked at). Solana finality is typically seconds, so
- * a fresh row is re-checked every tick; a row still unresolved after longer
- * waits backs off to reduce RPC load without ever giving up.
+ * Flat re-check cadence, matching the job's own 30s interval (migration 061).
+ *
+ * This replaced an escalating 60s → 5m → 30m → 2h backoff. That backoff existed
+ * when a check meant a transaction-body fetch plus a protocol-aware decode; a
+ * status-only check is one batched `getSignatureStatuses` entry, so the cost of
+ * re-asking is negligible and a stuck row should not wait hours to be noticed.
  */
-const SOLANA_SWEEP_BACKOFF_STEPS: ReadonlyArray<{ readonly maxAgeMs: number; readonly intervalMs: number }> = [
-  { maxAgeMs: 10 * 60_000, intervalMs: 60_000 }, // < 10 min old: every tick (~60s)
-  { maxAgeMs: 60 * 60_000, intervalMs: 5 * 60_000 }, // < 1h old: every 5 min
-  { maxAgeMs: 4 * 3_600_000, intervalMs: 30 * 60_000 }, // < 4h old: every 30 min
-];
-const SOLANA_SWEEP_MAX_BACKOFF_MS = 2 * 3_600_000; // beyond 4h: every 2h
-/** Operator-visible escalation threshold (R3 "log + feed 'tracking delayed'"). */
+export const SOLANA_SWEEP_DUE_INTERVAL_MS = 30_000;
+
+/** Operator-visible escalation threshold (log only — never a failure trigger). */
 export const SOLANA_SWEEP_ESCALATION_AGE_MS = 4 * 3_600_000;
 
-export function solanaSweepBackoffIntervalMs(ageMs: number): number {
-  for (const step of SOLANA_SWEEP_BACKOFF_STEPS) {
-    if (ageMs < step.maxAgeMs) return step.intervalMs;
-  }
-  return SOLANA_SWEEP_MAX_BACKOFF_MS;
-}
-
-/** `true` iff this row has waited at least its current backoff interval since it was last checked (or first staged, if never checked). */
+/** `true` iff this row has never been checked, or was last checked at least one interval ago. */
 export function isSolanaSweepCandidateDue(
   row: Pick<AgentActivityEvent, "submitAttemptedAt" | "lastCheckedAt">,
   nowMs: number,
 ): boolean {
   if (!row.submitAttemptedAt) return false; // defensive; the candidate query already requires this.
-  const submittedAtMs = Date.parse(row.submitAttemptedAt);
-  if (Number.isNaN(submittedAtMs)) return false;
-  const basisMs = row.lastCheckedAt ? Date.parse(row.lastCheckedAt) : submittedAtMs;
-  if (Number.isNaN(basisMs)) return false;
-  const ageMs = Math.max(0, nowMs - submittedAtMs);
-  return nowMs - basisMs >= solanaSweepBackoffIntervalMs(ageMs);
+  if (Number.isNaN(Date.parse(row.submitAttemptedAt))) return false;
+  if (!row.lastCheckedAt) return true;
+  const lastCheckedMs = Date.parse(row.lastCheckedAt);
+  if (Number.isNaN(lastCheckedMs)) return true;
+  return nowMs - lastCheckedMs >= SOLANA_SWEEP_DUE_INTERVAL_MS;
 }
 
-/** `true` once a row has been pending long enough to warrant an operator-visible log (never a failure trigger — R3). */
+/** `true` once a row has been pending long enough to warrant an operator-visible log (never a failure trigger). */
 export function isSolanaSweepEscalated(
   row: Pick<AgentActivityEvent, "submitAttemptedAt">,
   nowMs: number,
@@ -184,21 +147,20 @@ export type SolanaRpcLookup<T> =
   | { readonly outcome: "unavailable" };
 
 export interface SolanaActivitySweepDeps {
-  readonly getSignatureStatus: (signature: string) => Promise<SolanaRpcLookup<SolanaSignatureStatusValue>>;
+  /**
+   * BATCHED status lookup — `getSignatureStatuses` takes an array, so one sweep
+   * run costs ONE RPC round trip for its whole due batch instead of one per
+   * row. The returned array is aligned with the input by index; a `null` entry
+   * is a genuine "no such signature" from a trusted RPC. A transport failure or
+   * a malformed response is `"unavailable"` for the WHOLE call — never silently
+   * reinterpreted as per-row absence.
+   */
+  readonly getSignatureStatuses: (
+    signatures: readonly string[],
+  ) => Promise<SolanaRpcLookup<readonly (SolanaSignatureStatusValue | null)[]>>;
   /** Raw `getTransaction` (jsonParsed, finalized, maxSupportedTransactionVersion:0) RPC result. */
   readonly getFinalizedTransaction: (signature: string) => Promise<SolanaRpcLookup<unknown>>;
   readonly getCurrentBlockHeight: () => Promise<SolanaRpcLookup<number>>;
-  /**
-   * The two reads the prediction fill-settlement lane needs. They live on this
-   * ONE port (not a second injection surface) so the sweep keeps a single
-   * dependency contract; the lane declares a structurally-compatible subset of
-   * it (`PredictionFillSettlementDeps`) and is handed this object unchanged.
-   */
-  readonly getSignaturesForAddress: (
-    address: string,
-    limit: number,
-  ) => Promise<SolanaRpcLookup<readonly SolanaSignatureEntry[]>>;
-  readonly getPredictionOrderHistory: (query: PredictionHistoryQuery) => Promise<PredictionHistoryLookup>;
 }
 
 export interface SolanaActivitySweepResult {
@@ -221,20 +183,18 @@ export async function repairPendingSolanaActivity(
 
   const candidates = await listSolanaStagedPending(SOLANA_SWEEP_BATCH_LIMIT);
   const now = Date.now();
-  // One provider-history response per (owner, position) for this RUN — see the
-  // prediction fill-settlement lane. Created here so the cache's lifetime is
-  // exactly one sweep tick and never leaks between runs.
-  const predictionHistoryCache = createPredictionHistoryCache();
-  let checked = 0;
+  const due = candidates.filter((event) => event.txHash && isSolanaSweepCandidateDue(event, now));
   let confirmed = 0;
   let failed = 0;
-  let stillPending = 0;
+  let stillPending = candidates.length - due.length;
 
-  for (const event of candidates) {
-    if (!isSolanaSweepCandidateDue(event, now)) {
-      stillPending++;
-      continue;
-    }
+  if (due.length === 0) {
+    return { recovered: recovered.length, checked: 0, confirmed, failed, stillPending };
+  }
+
+  const statuses = await deps.getSignatureStatuses(due.map((event) => event.txHash!));
+
+  for (const [index, event] of due.entries()) {
     if (isSolanaSweepEscalated(event, now)) {
       logger.warn("solana_activity_repair.long_pending_escalation", {
         id: event.id,
@@ -243,8 +203,7 @@ export async function repairPendingSolanaActivity(
         hint: "still pending past the escalation threshold — tracked automatically, never auto-failed on absence of proof",
       });
     }
-    checked++;
-    const outcome = await processSolanaCandidate(event, deps, predictionHistoryCache);
+    const outcome = await processSolanaCandidate(event, statusFor(statuses, index), deps);
     if (outcome === "confirmed") confirmed++;
     else if (outcome === "failed") failed++;
     else if (outcome === "pending") stillPending++;
@@ -252,49 +211,94 @@ export async function repairPendingSolanaActivity(
     // — logged in logDuplicateCas already; never double-counted here.
   }
 
-  return { recovered: recovered.length, checked, confirmed, failed, stillPending };
+  return { recovered: recovered.length, checked: due.length, confirmed, failed, stillPending };
+}
+
+/** Project the batched lookup onto ONE row. A short/absent entry is ambiguity, never absence. */
+function statusFor(
+  batch: SolanaRpcLookup<readonly (SolanaSignatureStatusValue | null)[]>,
+  index: number,
+): SolanaRpcLookup<SolanaSignatureStatusValue> {
+  if (batch.outcome !== "found") return batch;
+  const entry = batch.value[index];
+  if (entry === undefined) return { outcome: "unavailable" };
+  if (entry === null) return { outcome: "not_found" };
+  return { outcome: "found", value: entry };
 }
 
 type CandidateOutcome = "confirmed" | "failed" | "pending" | "duplicate";
 
 async function processSolanaCandidate(
   event: AgentActivityEvent,
+  statusLookup: SolanaRpcLookup<SolanaSignatureStatusValue>,
   deps: SolanaActivitySweepDeps,
-  predictionHistoryCache: PredictionHistoryCache,
 ): Promise<CandidateOutcome> {
-  const signature = event.txHash;
-  if (!signature) return "pending"; // defensive; the candidate query already requires tx_hash IS NOT NULL.
-
-  const statusLookup = await deps.getSignatureStatus(signature);
-
   if (statusLookup.outcome === "unavailable") {
     logUnavailable(event, "signature_status");
+    // Rotate even though nothing was learned. This is the WHOLE-BATCH failure
+    // path: the adapter declines the entire `getSignatureStatuses` call when any
+    // entry is malformed, so without touching, one bad entry (or an RPC outage)
+    // would reselect the same oldest `SOLANA_SWEEP_BATCH_LIMIT` rows every tick
+    // forever and starve every newer pending row behind them. No terminal state
+    // changes here — fail-closed is untouched.
+    await touchLastChecked(event.id);
     return "pending";
   }
 
   if (statusLookup.outcome === "found") {
+    if (!isLandedStatus(statusLookup.value.confirmationStatus)) {
+      // `processed` only (or an unknown commitment): NOT proven either way —
+      // the fork carrying it can still be dropped, taking its error with it.
+      await touchLastChecked(event.id);
+      return "pending";
+    }
+    if (!hasOwnErr(statusLookup.value)) {
+      // Landed commitment but no readable `err` field — the adapter already
+      // declines this shape; this is the sweep's own belt-and-suspenders, so a
+      // hand-built or future port can never confirm on absent evidence.
+      logger.warn("solana_activity_repair.unreadable_signature_status", { id: event.id });
+      await touchLastChecked(event.id);
+      return "pending";
+    }
     if (isOnChainError(statusLookup.value.err)) {
       return finalizeMinedFailure(
         event,
         `getSignatureStatuses reported an on-chain error: ${summarizeSolanaOnChainError(statusLookup.value.err)}`,
       );
     }
-    if (isLandedStatus(statusLookup.value.confirmationStatus)) {
-      return handleLandedTransaction(event, deps, predictionHistoryCache);
-    }
-    await touchLastChecked(event.id);
-    return "pending"; // e.g. "processed" only — not yet confirmed/finalized.
+    // Landed, no error. That is the whole question this sweep asks — no
+    // transaction body is fetched, because there is nothing left to learn.
+    return finalizeStatusOnlyConfirm(event);
   }
 
-  // statusLookup.outcome === "not_found" — cross-check getTransaction before
-  // ANY expiry reasoning (R3: BOTH must miss).
-  const txLookup = await deps.getFinalizedTransaction(signature);
+  // statusLookup.outcome === "not_found" — the status cache only retains recent
+  // signatures, so cross-check `getTransaction` before ANY expiry reasoning
+  // (BOTH must miss). Its result is read for `meta.err` PRESENCE only; it is
+  // never decoded for amounts.
+  const txLookup = await deps.getFinalizedTransaction(event.txHash!);
   if (txLookup.outcome === "unavailable") {
     logUnavailable(event, "get_transaction");
+    // Touch even though nothing was learned: the candidate query orders by
+    // `last_checked_at` under a LIMIT, so a row whose fallback keeps failing
+    // must move to the BACK of the queue or it pins the window and starves
+    // every newer pending row behind it.
+    await touchLastChecked(event.id);
     return "pending";
   }
   if (txLookup.outcome === "found") {
-    return finalizeFromParsedTransaction(event, txLookup.value, deps, predictionHistoryCache);
+    const meta = readTransactionMetaErr(txLookup.value);
+    if (!meta.present) {
+      logger.warn("solana_activity_repair.unreadable_transaction_meta", { id: event.id });
+      await touchLastChecked(event.id);
+      return "pending";
+    }
+    if (isOnChainError(meta.err)) {
+      return finalizeMinedFailure(
+        event,
+        `getTransaction reported meta.err: ${summarizeSolanaOnChainError(meta.err)}`,
+      );
+    }
+    return finalizeStatusOnlyConfirm(event);
   }
 
   // BOTH missed — the only path that may terminalize on absence-of-proof,
@@ -302,84 +306,26 @@ async function processSolanaCandidate(
   return finalizeIfExpired(event, deps);
 }
 
-async function handleLandedTransaction(
-  event: AgentActivityEvent,
-  deps: SolanaActivitySweepDeps,
-  predictionHistoryCache: PredictionHistoryCache,
-): Promise<CandidateOutcome> {
-  const txLookup = await deps.getFinalizedTransaction(event.txHash!);
-  if (txLookup.outcome === "unavailable") {
-    logUnavailable(event, "get_transaction");
-    return "pending";
-  }
-  if (txLookup.outcome === "not_found") {
-    // Status said landed but the transaction body is unavailable — genuinely
-    // undecodable; never guess a confirm without the body to decode from.
-    logger.warn("solana_activity_repair.landed_status_no_transaction_body", { id: event.id });
-    await touchLastChecked(event.id);
-    return "pending";
-  }
-  return finalizeFromParsedTransaction(event, txLookup.value, deps, predictionHistoryCache);
+/**
+ * `meta.err` out of a raw `getTransaction` result — the ONLY thing this sweep
+ * reads out of a transaction body.
+ *
+ * ABSENT IS NOT NULL. The result is `{ present: false }` unless the body
+ * actually CARRIES an `err` property; a missing `meta`, a non-object `meta`, or
+ * a `meta` without its own `err` key is malformed evidence, and reading it as
+ * `err === null` would status-confirm a transaction whose outcome we never
+ * read. Only an explicit `err: null` proves success.
+ */
+function readTransactionMetaErr(raw: unknown): { present: false } | { present: true; err: unknown } {
+  if (typeof raw !== "object" || raw === null) return { present: false };
+  const meta = (raw as Record<string, unknown>).meta;
+  if (typeof meta !== "object" || meta === null) return { present: false };
+  if (!Object.prototype.hasOwnProperty.call(meta, "err")) return { present: false };
+  return { present: true, err: (meta as Record<string, unknown>).err };
 }
 
-async function finalizeFromParsedTransaction(
-  event: AgentActivityEvent,
-  rawResult: unknown,
-  deps: SolanaActivitySweepDeps,
-  predictionHistoryCache: PredictionHistoryCache,
-): Promise<CandidateOutcome> {
-  const parsed = parseSolanaTransactionResult(rawResult);
-  if (!parsed) {
-    logger.warn("solana_activity_repair.unparseable_transaction", { id: event.id });
-    await touchLastChecked(event.id);
-    return "pending";
-  }
-  if (isOnChainError(parsed.err)) {
-    return finalizeMinedFailure(
-      event,
-      `getTransaction reported meta.err: ${summarizeSolanaOnChainError(parsed.err)}`,
-    );
-  }
-  const decoded = decodeSolanaSettlement({
-    parsedTransaction: parsed,
-    eventRole: event.eventRole,
-    walletAddress: event.walletAddress,
-    tokenInAddress: event.tokenInAddress,
-    tokenOutAddress: event.tokenOutAddress,
-    routeProvenance: event.routeProvenance,
-  });
-  if (!decoded) {
-    // A Jupiter prediction sell/close is the ONE shape whose decline is
-    // expected rather than anomalous: its payout arrives in a keeper's later
-    // settle transaction, so the transaction Vex broadcast genuinely has
-    // nothing to decode. That row gets a second, keeper-side proof attempt
-    // before it is logged as stuck — every other row's decline is final for
-    // this tick, exactly as before.
-    if (isPredictionFillSettlementCandidate(event)) {
-      const laneOutcome = await settlePredictionFillIfProven({ event, deps, historyCache: predictionHistoryCache });
-      if (laneOutcome !== "pending") return laneOutcome;
-      await touchLastChecked(event.id);
-      return "pending";
-    }
-    logger.warn("solana_activity_repair.undecodable_success", {
-      id: event.id,
-      eventRole: event.eventRole,
-      protocol: event.protocol,
-      hint: "on-chain success but the registered decoder declined — leaving row pending",
-    });
-    await touchLastChecked(event.id);
-    return "pending";
-  }
-  const outcome = await confirmActivityEvent(
-    event.id,
-    // Raw magnitudes are the decoder's proof; the exact-decimal siblings come
-    // from the row's OWN persisted decimals (no extra lookup, no provider call)
-    // so a confirmed row is readable, matching the EVM sweep's convention.
-    withExactExecutedAmountHuman(decoded, {
-      tokenInDecimals: event.tokenInDecimals,
-      tokenOutDecimals: event.tokenOutDecimals,
-    }),
-  );
+async function finalizeStatusOnlyConfirm(event: AgentActivityEvent): Promise<CandidateOutcome> {
+  const outcome = await confirmActivityEventStatusOnly(event.id);
   if (outcome.applied) return "confirmed";
   logDuplicateCas(event.id, "confirm");
   return outcome.row.status === "pending" ? "pending" : "duplicate";
@@ -391,14 +337,16 @@ async function finalizeIfExpired(
 ): Promise<CandidateOutcome> {
   if (event.lastValidBlockHeight === null) {
     // No persisted evidence to reason about expiry from (a grandfathered
-    // pre-049 row, per K1's NOT VALID migration decision) — never guess;
-    // stays pending forever, exactly like any other ambiguous row.
+    // pre-049 row) — never guess; stays pending, like any other ambiguous row.
     await touchLastChecked(event.id);
     return "pending";
   }
   const heightLookup = await deps.getCurrentBlockHeight();
   if (heightLookup.outcome !== "found") {
     logUnavailable(event, "block_height");
+    // Same fairness reason as the `getTransaction` outage above: a row that
+    // cannot be resolved must still rotate out of the LIMIT window.
+    await touchLastChecked(event.id);
     return "pending";
   }
   if (heightLookup.value <= event.lastValidBlockHeight) {
@@ -430,6 +378,11 @@ function isOnChainError(err: unknown): boolean {
   return err !== null && err !== undefined;
 }
 
+/** ABSENT IS NOT NULL — only an entry that CARRIES an `err` field is evidence either way. */
+function hasOwnErr(value: SolanaSignatureStatusValue): boolean {
+  return Object.prototype.hasOwnProperty.call(value, "err");
+}
+
 function isLandedStatus(status: string | null): boolean {
   return status === "confirmed" || status === "finalized";
 }
@@ -450,11 +403,10 @@ function logDuplicateCas(id: number, attempted: "confirm" | "fail"): void {
 // ── Production wiring ─────────────────────────────────────────────────────
 
 // `buildProductionSolanaRepairDeps` (the health-gated adapters over this
-// port's external reads) moved MOVE-ONLY to the sibling
+// port's external reads) lives in the sibling
 // `./solana-activity-repair-deps.js` — a different reason to change
-// (endpoints/transport/response shapes) from this file's terminality policy,
-// and the headroom the prediction fill-settlement lane needed under the
-// 500-line cap. RE-EXPORTED here so every existing import site keeps working,
-// including the DYNAMIC `await import("./solana-activity-repair.js")` call
-// sites in `worker.ts`/`index.ts` that no typecheck would catch.
+// (endpoints/transport/response shapes) from this file's terminality policy.
+// RE-EXPORTED here so every existing import site keeps working, including the
+// DYNAMIC `await import("./solana-activity-repair.js")` call sites in
+// `worker.ts`/`index.ts` that no typecheck would catch.
 export { buildProductionSolanaRepairDeps } from "./solana-activity-repair-deps.js";

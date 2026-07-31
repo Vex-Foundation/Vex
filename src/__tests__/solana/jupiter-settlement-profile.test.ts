@@ -14,7 +14,6 @@ import { describe, it, expect } from "vitest";
 
 import {
   buildSolanaSettlementRouteProvenance,
-  parseSolanaSettlementProfile,
   JUPITER_FEE_SWAP_SETTLEMENT_KIND,
   SOLANA_SETTLEMENT_PROFILE_VERSION,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/settlement-profile.js";
@@ -58,7 +57,7 @@ describe("buildSolanaSettlementRouteProvenance", () => {
     const provenance = buildSolanaSettlementRouteProvenance(
       source({ approvedTipLamports: 0, certifiedTip: null }),
     );
-    const profile = parseSolanaSettlementProfile(provenance);
+    const profile = provenance?.settlement as Record<string, unknown> | undefined;
 
     expect(profile?.tipRecipient).toBeNull();
     expect(profile?.tipLamports).toBe(0);
@@ -84,38 +83,5 @@ describe("buildSolanaSettlementRouteProvenance", () => {
     expect(buildSolanaSettlementRouteProvenance(source({ inputAmountRaw: "0" }))).toBeUndefined();
     expect(buildSolanaSettlementRouteProvenance(source({ inputAmountRaw: "1.5" }))).toBeUndefined();
     expect(buildSolanaSettlementRouteProvenance(source({ inputAmountRaw: "" }))).toBeUndefined();
-  });
-});
-
-describe("parseSolanaSettlementProfile", () => {
-  it("round-trips what the writer persisted", () => {
-    const provenance = buildSolanaSettlementRouteProvenance(source())!;
-    // JSONB round-trip: the sweep reads a plain object back out of Postgres.
-    const stored = JSON.parse(JSON.stringify(provenance)) as Record<string, unknown>;
-
-    expect(parseSolanaSettlementProfile(stored)?.inputAmountRaw).toBe("10000000");
-  });
-
-  it("returns null for absent provenance, foreign provenance, and an unknown version", () => {
-    expect(parseSolanaSettlementProfile(null)).toBeNull();
-    expect(parseSolanaSettlementProfile({})).toBeNull();
-    // kyberswap/uniswap-style provenance must never be mistaken for a profile.
-    expect(parseSolanaSettlementProfile({ routeID: "r-1", checksum: "c-1" })).toBeNull();
-
-    const profile = buildSolanaSettlementRouteProvenance(source())!.settlement as Record<string, unknown>;
-    expect(parseSolanaSettlementProfile({ settlement: { ...profile, v: 2 } })).toBeNull();
-  });
-
-  it("returns null for a profile with an impossible tip pairing or a foreign field", () => {
-    const profile = buildSolanaSettlementRouteProvenance(source())!.settlement as Record<string, unknown>;
-
-    expect(parseSolanaSettlementProfile({ settlement: { ...profile, tipRecipient: null } })).toBeNull();
-    expect(parseSolanaSettlementProfile({ settlement: { ...profile, tipLamports: 0 } })).toBeNull();
-    expect(parseSolanaSettlementProfile({ settlement: { ...profile, surprise: true } })).toBeNull();
-  });
-
-  it("returns null when an amount arrives as a NUMBER (u64 precision loss) instead of a string", () => {
-    const profile = buildSolanaSettlementRouteProvenance(source())!.settlement as Record<string, unknown>;
-    expect(parseSolanaSettlementProfile({ settlement: { ...profile, inputAmountRaw: 10_000_000 } })).toBeNull();
   });
 });

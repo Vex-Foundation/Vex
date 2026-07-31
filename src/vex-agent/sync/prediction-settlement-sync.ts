@@ -34,8 +34,8 @@
  * agent never closed itself. `sync/solana-activity-repair.ts` cannot do it —
  * it only resolves signatures Vex itself broadcast. That detection belongs to
  * the phase-4 provider order/position-status lane, which is also what will
- * make a prediction payout amount knowable at all
- * (`solana-prediction-payout-settlement.ts`). Retiring the
+ * make a prediction payout amount knowable at all (the in-repo payout decoder
+ * was removed when the sweeps became status-only, 2026-07-30). Retiring the
  * `prediction_settlement` sync job type is a phase-4 decision, not a
  * drive-by one.
  *

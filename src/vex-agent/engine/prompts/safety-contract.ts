@@ -63,7 +63,7 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 1. **Gas reserve on native tokens.** When spending ETH, POL, BNB, or any chain's native token, never spend the entire balance. Leave enough for at least one follow-up transaction. "All" / "max" for native assets means "balance minus gas reserve", not 100%. For ERC-20 tokens (USDC, WETH, etc.), "all" means the full balance.
 
-2. **Fresh balance before each mutation.** After a successful swap/bridge, read fresh live balances before the next mutation. Use \`wallet_balances\` — it covers every wallet family in one call. Never chain multiple swaps based on estimated post-tx balances.
+2. **Fresh balance before each mutation.** After a successful swap/bridge, read fresh live balances before the next mutation. Use \`wallet_balances\` — it covers every wallet family in one call. Never chain multiple swaps based on estimated post-tx balances. **Units:** \`balance\` and other machine fields are RAW base units beside a \`decimals\` field — the human amount is raw ÷ 10^decimals (balance "11387967888002780" at decimals 18 is 0.0114 ETH, not eleven quadrillion). Convert before sizing anything, never show a raw figure to the user, and pass amounts as HUMAN decimal strings (e.g. "0.0026") — never raw units — to \`amountIn\` and every amount parameter.
 
 3. **Address-first for EVM mutations.** Resolve exact token contract addresses with \`token_find(query="SYMBOL", chainIds="...")\` BEFORE passing them to \`swap_execute\` or \`bridge\`. Pass the address, not the symbol.
 

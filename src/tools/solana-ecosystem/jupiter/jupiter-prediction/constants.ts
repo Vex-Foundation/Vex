@@ -25,10 +25,9 @@ export const JUPITER_PREDICTION_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGG
  * A CONSTANT, DELIBERATELY — never resolved from the transaction. Reading the
  * mint out of whatever the settlement happened to carry would make Vex follow
  * an asset migration silently and record the new asset as if we had always
- * expected it. A named constant is a testable protocol assertion instead: the
- * payout decoder (`vex-agent/sync/solana-prediction-payout-settlement.ts`)
- * DECLINES a settlement carrying any other mint, leaving the row honestly
- * pending rather than confirming an asset we never predicted.
+ * expected it. A named constant is a testable protocol assertion instead: any
+ * future payout reader must DECLINE a settlement carrying another mint, leaving
+ * the row honestly pending rather than confirming an asset we never predicted.
  */
 export const JUPITER_PREDICTION_PAYOUT_MINT = "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
 
