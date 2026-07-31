@@ -103,15 +103,3 @@ export const judgeVerdictSchema = z
   );
 
 export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>;
-
-/**
- * JSON Schema for the judge verdict, computed ONCE at module load (`toJSONSchema`
- * is not free). `io:"input"` emits the SEND shape — `additionalProperties:false`
- * and `required` listing ONLY the non-optional/non-defaulted fields
- * (`verdict`/`rubric`/`sourceTier`); the three `.nullish()` fields are omitted
- * from `required`. This powers the API-level format enforcement (Layer B,
- * `judge.ts` → OpenRouter `responseFormat`). NOTE: the `.refine()` cross-field
- * rules do NOT survive `toJSONSchema`, so the Zod schema above stays the
- * authoritative semantic gate (Layer A).
- */
-export const judgeVerdictJsonSchema = z.toJSONSchema(judgeVerdictSchema, { io: "input" });

@@ -70,6 +70,14 @@ export interface JudgeContextExtras {
  * to give the judge head-status context.
  */
 export interface JudgeContext {
+  /**
+   * Session the candidate was suggested in. NEVER rendered into a prompt — it
+   * selects the session's CURRENT effective endpoint for the judge call, the
+   * same way a compaction branch does (`branch-provider-call.ts`). Judging on
+   * the operator's stale pin would route back to the endpoint the session had
+   * already switched away from.
+   */
+  sessionId: string;
   candidate: Pick<
     MemoryCandidate,
     | "kind"
@@ -172,6 +180,7 @@ export async function buildJudgeContext(
   const transcript = truncateChars(rendered, JUDGE_TRANSCRIPT_CHARS_CAP);
 
   return {
+    sessionId: candidate.sessionId,
     candidate: {
       kind: candidate.kind,
       title: candidate.title,

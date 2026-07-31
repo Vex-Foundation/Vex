@@ -81,7 +81,12 @@ const FEW_SHOT = [
 ].join("\n");
 
 const OUTPUT_CONTRACT = [
-  "Output STRICT JSON only, no prose, this exact shape:",
+  // The output contract lives ONLY here now: the API-level `response_format`
+  // was removed (it was refused by endpoints without `structured_outputs`), so
+  // the prompt has to stand alone. "Exactly ONE object" is load-bearing — the
+  // reader spans the FIRST `{` to the LAST `}`, so two objects in one reply
+  // would be extracted as one unparseable span.
+  "Output STRICT JSON only, no prose, exactly ONE JSON object, this exact shape:",
   '{ "verdict": "promote|supersede|retain|reject|expire", "rubric": { "grounding": <1-5>, "durability": <1-5>, "novelty": <1-5>, "generalizability": <1-5>, "processNotOutcome": <1-5> }, "sourceTier": "observed|user_confirmed|inferred|hypothesis", "regimeTags": [zero or more of "bull"|"bear"|"range"|"high_vol"|"low_vol"], "previousKnowledgeId": <int, supersede only>, "rejectReason": "<reject/expire only>" }',
 ].join("\n");
 
