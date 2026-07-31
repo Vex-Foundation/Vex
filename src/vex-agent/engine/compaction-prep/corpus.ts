@@ -231,7 +231,10 @@ function withNormalizedIds(
   const toolCallId = msg.toolCallId ?? null;
   const idsUnchanged =
     toolCallId === entry.toolCallId &&
-    capturedCalls.every((call, i) => call.id === repairedCalls[i].id);
+    capturedCalls.every((call, i) => {
+      const repaired = repairedCalls[i];
+      return repaired !== undefined && call.id === repaired.id;
+    });
   if (idsUnchanged) return entry;
 
   return {
@@ -240,11 +243,13 @@ function withNormalizedIds(
     toolCalls:
       entry.toolCalls === null
         ? null
-        : entry.toolCalls.map((call, i) =>
-            call.id === repairedCalls[i].id
+        : entry.toolCalls.map((call, i) => {
+            const repaired = repairedCalls[i];
+            // undefined is unreachable — the length equality above threw first.
+            return repaired === undefined || call.id === repaired.id
               ? call
-              : { ...call, id: repairedCalls[i].id },
-          ),
+              : { ...call, id: repaired.id };
+          }),
   };
 }
 
