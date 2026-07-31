@@ -20,6 +20,7 @@ vi.mock("@hugeicons/react", () => ({
 vi.mock("@hugeicons/core-free-icons", () => ({
   FireIcon: "FireIcon",
   PercentSquareIcon: "PercentSquareIcon",
+  RocketIcon: "RocketIcon",
 }));
 
 const { ComposerQuickActions } = await import("../ComposerQuickActions.js");
@@ -28,16 +29,17 @@ describe("ComposerQuickActions", () => {
   it("renders the intent chips with icons, no 01–03 numbering", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // Two starter chips (Hyperliquid deletion retired the perp-market
-    // prompt), each a real focusable button.
+    // Three starter chips (memecoins / Pendle yields / Trench launchpad),
+    // each a real focusable button.
     const chips = screen.getAllByRole("button");
-    expect(chips).toHaveLength(2);
+    expect(chips).toHaveLength(3);
 
-    // Each intent icon is present (flame / percent square).
+    // Each intent icon is present (flame / percent square / rocket).
     expect(container.querySelector('[data-icon="FireIcon"]')).not.toBeNull();
     expect(
       container.querySelector('[data-icon="PercentSquareIcon"]'),
     ).not.toBeNull();
+    expect(container.querySelector('[data-icon="RocketIcon"]')).not.toBeNull();
 
     // The numbering was dropped — no 01/02/03 marks in the chip text.
     for (const n of ["01", "02", "03"]) {

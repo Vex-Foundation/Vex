@@ -97,6 +97,10 @@ const entries: [string, MutationContract][] = [
   ["kyberswap.swap.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["uniswap.swap.execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.swap.execute",    { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Trench Express curve buy/sell — the handler writes the durable truth
+  // DIRECTLY to agent_activity (kind "swap") across the staged lifecycle, so
+  // `capture: "none"` (no proj_activity projection). No dryRun preview.
+  ["trench.trade_execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 
   // Pendle PT / YT / PY (Batch B, migration 053) — flipped capture:"full" ->
   // "none" with the same staged `agent_activity` write path the Kyber/Uniswap/

@@ -7,7 +7,7 @@
  */
 
 import type { IconSvgElement } from "@hugeicons/react";
-import { FireIcon, PercentSquareIcon } from "@hugeicons/core-free-icons";
+import { FireIcon, PercentSquareIcon, RocketIcon } from "@hugeicons/core-free-icons";
 
 export interface QuickAction {
   readonly label: string;
@@ -28,5 +28,11 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
     prompt:
       "Scout the highest-APY Pendle markets across chains, pick the best fit for my holdings, and walk me through a PT quote — ask me for the amount before quoting.",
     icon: PercentSquareIcon,
+  },
+  {
+    label: "Explore Trench launchpad",
+    prompt:
+      "Show me what's launching on the Trench Express bonding-curve launchpad on Robinhood Chain — which tokens are fresh and which are close to graduating — and preview what it would cost me to launch my own token there.",
+    icon: RocketIcon,
   },
 ];

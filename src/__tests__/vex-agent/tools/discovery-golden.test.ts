@@ -27,9 +27,18 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "solana token search", expectedAny: ["solana.tokens"] },
   { intent: "fresh solana tokens", expectedAny: ["solana.tokens.trending"] },
   { intent: "jupiter price lookup", expectedAny: ["solana.prices"] },
-  { intent: "trending meme tokens", expectedAny: ["dexscreener.trending", "dexscreener.boosts"] },
+  // trench.tokens (a Robinhood-Chain memecoin launchpad browser) legitimately
+  // co-ranks here under the LEXICAL fallback: it is genuinely meme-token
+  // relevant and its `.tokens` toolId matches the bare word "tokens". Production
+  // ranking is dense (embeddings) and disambiguates "trending" semantically;
+  // this fixture runs without an embedding server, so the launchpad is accepted
+  // as a co-valid result alongside the dexscreener trending feeds.
+  { intent: "trending meme tokens", expectedAny: ["dexscreener.trending", "dexscreener.boosts", "trench.tokens"] },
   { intent: "community takeover", expectedAny: ["dexscreener.communityTakeovers"] },
   { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pairs", "dexscreener.tokens"] },
+  { intent: "new token launches on trench", expectedAny: ["trench.tokens"] },
+  { intent: "preview a token launch cost on trench", expectedAny: ["trench.launch_preview"] },
+  { intent: "trench launchpad trade tape", expectedAny: ["trench.trades", "trench.tokens"] },
   // ── ambiguous / cross-namespace ───────────────────────────────────
   { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens"] },
   { intent: "prediction market events", expectedAny: ["solana.predict.events"] },

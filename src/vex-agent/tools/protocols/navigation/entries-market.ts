@@ -408,4 +408,50 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
       },
     ],
   },
+  {
+    namespace: "trench",
+    advertised: true,
+    groupId: "evm-trading",
+    groupLabel: "EVM Trading",
+    summary:
+      "Trade and research Trench Express bonding-curve tokens on Robinhood Chain (4663): buy a token with ETH or sell it back for ETH against the curve (quote first, then execute), browse bonding-curve and graduated tokens, search by name or symbol, read a token's recent trade tape, and dry-run a token launch to preview the predicted address, creation fee, and gas cost. A graduated token has left the bonding curve for a WETH-paired Uniswap v4 pool on Robinhood Chain — its poolId and pool currencies are surfaced on the row. ETH curve only — no token/VEX pair exists on-chain today.",
+    whenToUse:
+      "Use to trade or vet Trench Express launchpad tokens: quote and then buy or sell a bonding-curve token, list what just launched or graduated, search for a named token, inspect its trade tape, or preview what launching a new token would cost. Trades spend real ETH and are approval-gated; real token launching is not available yet.",
+    preferInstead:
+      "Use `kyberswap` or `uniswap` to trade tokens that already trade in a standard AMM pool, and `dexscreener` or `virtuals` for broader token research. A graduated Trench token trades in a WETH-paired Uniswap v4 pool on Robinhood Chain; where that pool is indexed, research it with `dexscreener`. Trench's own real token launches are not available yet.",
+    exampleQueries: [
+      'discover_tools(query="buy a trench bonding curve token with ETH", namespace="trench")',
+      'discover_tools(query="new token launches on trench", namespace="trench")',
+      'discover_tools(query="preview a token launch cost", namespace="trench")',
+    ],
+    aliases: ["trench", "trench express", "trench launchpad", "trench token launches", "trench curve trading", "buy trench token"],
+    discoveryHints: [
+      "buy a trench bonding curve token",
+      "sell a trench launchpad token for eth",
+      "new token launches on trench",
+      "trench bonding curve tokens",
+      "trench launchpad trade tape",
+      "robinhood launchpad tokens",
+    ],
+    facets: [
+      {
+        label: "Trench curve trading (buy/sell)",
+        summary: "Quote then buy a Trench bonding-curve token with ETH, or sell it back for ETH, with a Vex-derived minimum-output floor.",
+        toolPrefixes: ["trench.trade_quote", "trench.trade_execute"],
+        hints: ["buy trench token with eth", "sell trench token for eth", "quote a trench curve trade", "trench bonding curve buy", "trench bonding curve sell"],
+      },
+      {
+        label: "Trench launchpad token browsing and search",
+        summary: "List and screen Trench Express bonding-curve and graduated tokens, or look one up by name or symbol.",
+        toolPrefixes: ["trench.tokens", "trench.search"],
+        hints: ["trench launchpad tokens", "new trench launches", "trench bonding curve", "trench token lookup", "trench token by symbol"],
+      },
+      {
+        label: "Trench trade tape and launch preview",
+        summary: "Read a Trench token's recent trade tape and dry-run a Trench token launch to preview address, fee, and gas cost.",
+        toolPrefixes: ["trench.trades", "trench.launch_preview"],
+        hints: ["trench trade tape", "recent trench trades", "trench launch preview", "create trench token cost", "dry run trench launch"],
+      },
+    ],
+  },
 ] as const;

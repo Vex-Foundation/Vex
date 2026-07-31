@@ -240,10 +240,12 @@ describe("manifest bps declarations", () => {
 
     // 20 + the five R5d slippageBps declarations that reject rather than clamp
     // like the rest: the Pendle SY wrap/unwrap pair (card D3), the dual-LP pair
-    // (E3) and the three term-mobility moves (E4) — registered by card E5.
-    expect(declared.length).toBe(27);
+    // (E3) and the three term-mobility moves (E4) — registered by card E5 — plus
+    // the two Trench Express curve slippageBps params (trade_quote + execute),
+    // which reject above the 1000 bps cap rather than clamping like the rest.
+    expect(declared.length).toBe(29);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
-      new Set(["solana", "kyberswap", "uniswap", "pendle"]),
+      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench"]),
     );
   });
 

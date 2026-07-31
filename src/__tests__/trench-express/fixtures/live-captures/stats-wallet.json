@@ -1,0 +1,12 @@
+{
+  "endpoint": "https://api.trench.express/api/stats?params={\"address\":\"0xE00Fef937C09A01a3F74b2356Ce0ED16B513547f\"}",
+  "capturedAt": "2026-07-31T09:03:49.671770Z",
+  "response": {
+    "volume": 9.211331435104261,
+    "trades": 3,
+    "xp": 6003.9600000792,
+    "faction": "syndicate",
+    "factionXp": 0,
+    "factionLocked": false
+  }
+}

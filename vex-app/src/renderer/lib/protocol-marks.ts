@@ -16,8 +16,8 @@
  * network from the untrusted UI).
  *
  * The curated keys are the COMPLETE venue vocabulary the agent tools emit
- * today — `khalani`, `kyberswap`, `pendle`, `relay`, `uniswap`, `jupiter`,
- * `dexscreener`, `polymarket`. `relay` and `polymarket` are listed with no
+ * today — `khalani`, `kyberswap`, `pendle`, `relay`, `trench`, `uniswap`,
+ * `jupiter`, `dexscreener`, `polymarket`. `relay` and `polymarket` are listed with no
  * asset on purpose: they keep an honest display label while taking the
  * monogram until artwork lands, which is a one-line change here.
  */
@@ -53,6 +53,7 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
   kyberswap: { label: "KyberSwap", src: "/protocols/kyberswap.svg" },
   pendle: { label: "Pendle", src: "/protocols/pendle.jpg" },
   relay: { label: "Relay", src: "/protocols/relay.png" },
+  trench: { label: "Trench Express", src: "/protocols/trench.jpg" },
   uniswap: { label: "Uniswap", src: "/protocols/uniswap.png" },
   // Known venue, no bundled artwork — an honest label + the monogram.
   // Polymarket was removed from the product in Phase 1 and nothing writes it

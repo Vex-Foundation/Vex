@@ -1,0 +1,136 @@
+{
+  "endpoint": "https://api-testnet.trench.express/api/tokens?params={\"page\":0,\"limit\":30,\"launched\":false}",
+  "capturedAt": "2026-07-31T09:03:49.671770Z",
+  "response": [
+    {
+      "creator": "0x201184DB470579F9782D276fEb7f8bB53eE99FD7",
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "asdsad",
+      "dex": 0,
+      "imageCid": "a0ebf20eeab029fab82d2b79c14e78bf093d9a4c717ce76f02383d2fcb680d4d",
+      "links": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "name": "asdasd",
+      "price": 2.5e-09,
+      "strategy": 0,
+      "supply": 1000000000,
+      "symbol": "asdasdsd",
+      "time": 1785181965001,
+      "token": "0xbe3041F2af5193933024420eAc286139E1FD04a9",
+      "holders": 0,
+      "stats24h": {
+        "volume": 0,
+        "txns": 0,
+        "priceChangePct": 0
+      }
+    },
+    {
+      "creator": "0x201184DB470579F9782D276fEb7f8bB53eE99FD7",
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "asdasd",
+      "dex": 0,
+      "imageCid": "8a6d0d39998a1e5bb5c49da9f1d82f5cc267b6c9c95457dae50fdcb3a805237c",
+      "links": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "name": "asdasd",
+      "price": 2.5e-09,
+      "strategy": 0,
+      "supply": 1000000000,
+      "symbol": "asdasdasd",
+      "time": 1785181905001,
+      "token": "0xa26E71231f990B618E79191FE49A3710De7c035E",
+      "holders": 0,
+      "stats24h": {
+        "volume": 0,
+        "txns": 0,
+        "priceChangePct": 0
+      }
+    },
+    {
+      "creator": "0x0b7A1306DD1c96e60feb6a5169A76e706B7563e7",
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "one candle upp, liquidity locked",
+      "dex": 0,
+      "imageCid": "e3874380f518a1b2016ccce2ab8e7d5576887aabd4e4a5045265d407e043a3fa",
+      "links": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "name": "GN Moo",
+      "price": 2.505943528e-09,
+      "strategy": 0,
+      "supply": 1000000000,
+      "symbol": "GNMOO",
+      "time": 1785178121001,
+      "token": "0x7A5E909Eb8804C6Ca74709A2846c8D5349d6557F",
+      "holders": 0,
+      "stats24h": {
+        "volume": 0,
+        "txns": 0,
+        "priceChangePct": 0
+      }
+    },
+    {
+      "creator": "0x201184DB470579F9782D276fEb7f8bB53eE99FD7",
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "asdasddasdasfafs asda sdasdaadas",
+      "dex": 0,
+      "imageCid": "ed8166e521bfa2f5dd1107bbfa89fd23364431121e5ad5289ad64754358862fe",
+      "links": [
+        "www.website.com",
+        "www.x.com/asdsad",
+        "",
+        ""
+      ],
+      "name": "asdasd",
+      "price": 2.5e-09,
+      "strategy": 0,
+      "supply": 1000000000,
+      "symbol": "dasddasdasdads",
+      "time": 1784956827001,
+      "token": "0xFbD5C4A38C64FCe070a387937609d7cBEa8049F2",
+      "holders": 0,
+      "stats24h": {
+        "volume": 0,
+        "txns": 0,
+        "priceChangePct": 0
+      }
+    },
+    {
+      "creator": "0x201184DB470579F9782D276fEb7f8bB53eE99FD7",
+      "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "ccc",
+      "dex": 0,
+      "imageCid": "98a6785e72ca5a5985460d8000ac45db9c25263b9889a2576c2dd7af2116ce90",
+      "links": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "name": "ccc",
+      "price": 2.501507855e-09,
+      "strategy": 0,
+      "supply": 1000000000,
+      "symbol": "ccc",
+      "time": 1784672973001,
+      "token": "0x665623181399e364923AB0cD73cD787C9C049900",
+      "holders": 0,
+      "stats24h": {
+        "volume": 0,
+        "txns": 0,
+        "priceChangePct": 0
+      }
+    }
+  ]
+}

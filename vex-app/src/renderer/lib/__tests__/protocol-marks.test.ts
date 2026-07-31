@@ -5,9 +5,9 @@
  * Pins the same doctrine `token-marks.test.ts` pins for tokens: a bundled
  * asset is granted ONLY to a venue actually present in the curated map, every
  * other value degrades to a monogram, and nothing ever resolves to a remote
- * URL. The eight venue strings below are the complete vocabulary the tools
- * emit (`khalani`, `kyberswap`, `pendle`, `relay`, `uniswap`, `jupiter`,
- * `dexscreener`, `polymarket`); `polymarket` deliberately has no bundled asset
+ * URL. The venue strings below are the complete vocabulary the tools
+ * emit (`khalani`, `kyberswap`, `pendle`, `relay`, `trench`, `uniswap`,
+ * `jupiter`, `dexscreener`, `polymarket`); `polymarket` deliberately has no bundled asset
  * and MUST take the monogram rather than borrow another brand's mark.
  *
  * This map is a LOOK-UP of venue artwork, NOT a list of what a feed can
@@ -27,6 +27,7 @@ describe("resolveProtocolMark — curated venues", () => {
     ["kyberswap", "/protocols/kyberswap.svg", "KyberSwap"],
     ["pendle", "/protocols/pendle.jpg", "Pendle"],
     ["relay", "/protocols/relay.png", "Relay"],
+    ["trench", "/protocols/trench.jpg", "Trench Express"],
     ["uniswap", "/protocols/uniswap.png", "Uniswap"],
   ])("resolves %s to its bundled asset", (protocol, src, label) => {
     const mark = resolveProtocolMark(protocol);
@@ -79,6 +80,7 @@ describe("resolveProtocolMark — fallbacks", () => {
       "kyberswap",
       "pendle",
       "relay",
+      "trench",
       "uniswap",
     ]) {
       const mark = resolveProtocolMark(protocol);

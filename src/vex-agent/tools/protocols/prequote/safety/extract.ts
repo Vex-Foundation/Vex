@@ -670,5 +670,10 @@ export function extractQuote(
   if (toolId === "kyberswap.swap.quote") return extractEvm(params, data);
   if (toolId === "uniswap.swap.quote") return extractUniswap(params, data);
   if (toolId === "solana.swap.quote") return extractSolana(params, data);
+  // Trench Express curve quote shares the EVM quote shape ({ chainId,
+  // tokenIn.address, tokenOut.address, safety }), so it records the same
+  // swap-identity fields — one native leg, one unchecked token leg (verdict
+  // `unknown`). No new prequote kind.
+  if (toolId === "trench.trade_quote") return extractEvm(params, data);
   return null;
 }

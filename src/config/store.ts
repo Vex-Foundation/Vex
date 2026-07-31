@@ -76,6 +76,8 @@ export interface VexConfig {
     khalaniApiUrl: string;
     relayApiUrl: string;
     dexScreenerApiUrl: string;
+    trenchExpressApiUrl: string;
+    trenchExpressTestnetApiUrl: string;
     virtualsApiUrl: string;
     pendleApiUrl: string;
     kyberswapAggregatorUrl: string;
@@ -134,6 +136,8 @@ export function getDefaultConfig(): VexConfig {
       khalaniApiUrl: "https://api.hyperstream.dev",
       relayApiUrl: "https://api.relay.link",
       dexScreenerApiUrl: "https://api.dexscreener.com",
+      trenchExpressApiUrl: "https://api.trench.express",
+      trenchExpressTestnetApiUrl: "https://api-testnet.trench.express",
       virtualsApiUrl: "https://api.virtuals.io",
       pendleApiUrl: "https://api-v2.pendle.finance/core",
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",

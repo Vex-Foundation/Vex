@@ -1,0 +1,30 @@
+{
+  "endpoint": "https://api.trench.express/api/token?params={\"symbol\":\"CUC\"}",
+  "capturedAt": "2026-07-31T09:03:49.671770Z",
+  "response": {
+    "creator": "0xe341f3da256C38356bce4Afd456d7fa36E356E94",
+    "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "description": "cucurella spain",
+    "dex": 0,
+    "imageCid": "9e74a969dd8f94f885e8539f25e8a0b702d7307defbf48c730eaed937320f3b0",
+    "links": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "name": "cucurella",
+    "price": 2.5e-09,
+    "strategy": 0,
+    "supply": 1000000000,
+    "symbol": "CUC",
+    "time": 1785178093058,
+    "token": "0x1789c72D41CE95EdA7cD645fbB48b406DB1B5F80",
+    "holders": 0,
+    "stats24h": {
+      "volume": 0,
+      "txns": 0,
+      "priceChangePct": 0
+    }
+  }
+}

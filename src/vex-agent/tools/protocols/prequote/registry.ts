@@ -43,6 +43,10 @@ type PrequoteQuoteRegistration =
 export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "kyberswap.swap.quote": { kind: "swap", family: "eip155", provider: "kyberswap" },
   "uniswap.swap.quote": { kind: "swap", family: "eip155", provider: "uniswap" },
+  // Trench Express curve buy/sell — records a `swap` prequote (provider "trench")
+  // so the match-hash binds tokenIn/tokenOut/amount/chain/provider; a curve
+  // trade IS a swap, so NO new prequote kind and NO migration (Codex aha).
+  "trench.trade_quote": { kind: "swap", family: "eip155", provider: "trench" },
   "solana.swap.quote": { kind: "swap", family: "solana", provider: "jupiter" },
   "khalani.quote.get": { kind: "bridge", provider: "khalani" },
   "relay.quote.get": { kind: "bridge", provider: "relay" },
@@ -99,6 +103,10 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // authorize a uniswap execute and vice versa (identity/hash.ts unchanged).
   "kyberswap.swap.execute": { kind: "swap", family: "eip155", provider: "kyberswap" },
   "uniswap.swap.execute": { kind: "swap", family: "eip155", provider: "uniswap" },
+  // Trench Express curve execute — matches a fresh `swap` prequote from
+  // trench.trade_quote (provider "trench"); the local-chain 4663 identity is
+  // resolved in `gate.ts` (buildEvmIdentity trench branch).
+  "trench.trade_execute": { kind: "swap", family: "eip155", provider: "trench" },
   "solana.swap.execute": { kind: "swap", family: "solana", provider: "jupiter" },
   "khalani.bridge": { kind: "bridge", provider: "khalani" },
   "relay.bridge": { kind: "bridge", provider: "relay" },
