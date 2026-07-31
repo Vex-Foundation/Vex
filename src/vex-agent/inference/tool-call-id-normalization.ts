@@ -56,6 +56,7 @@ export function normalizeToolCallIds(
 
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
+    if (message === undefined) continue; // unreachable: i < length
     const calls = message.role === "assistant" ? message.toolCalls : undefined;
 
     if (!calls || calls.length === 0) {
@@ -71,8 +72,8 @@ export function normalizeToolCallIds(
     const queues = new Map<string, string[]>();
     let blockChanged = false;
 
-    for (let c = 0; c < calls.length; c++) {
-      const original = calls[c].id;
+    for (const [c, call] of calls.entries()) {
+      const original = call.id;
       const isBlank = typeof original !== "string" || original.length === 0;
       const key = isBlank ? BLANK_KEY : original;
 
@@ -100,8 +101,9 @@ export function normalizeToolCallIds(
     // Re-pair the contiguous run of tool results that answers this block.
     const cursors = new Map<string, number>();
     let j = i + 1;
-    while (j < messages.length && messages[j].role === "tool") {
+    for (;;) {
       const toolRow = messages[j];
+      if (toolRow === undefined || toolRow.role !== "tool") break;
       const key = toolRow.toolCallId ?? BLANK_KEY;
       const queue = queues.get(key);
       const cursor = cursors.get(key) ?? 0;
@@ -182,8 +184,12 @@ function withRewrittenCalls(
 ): ProviderMessage {
   return {
     ...message,
-    toolCalls: calls.map((call, index) =>
-      call.id === finalIds[index] ? call : { ...call, id: finalIds[index] },
-    ),
+    toolCalls: calls.map((call, index) => {
+      const finalId = finalIds[index];
+      // undefined is unreachable — the caller builds one finalId per call.
+      return finalId === undefined || call.id === finalId
+        ? call
+        : { ...call, id: finalId };
+    }),
   };
 }
