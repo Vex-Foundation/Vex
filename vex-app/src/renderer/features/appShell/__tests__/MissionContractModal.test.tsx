@@ -368,13 +368,17 @@ describe("MissionContractModal", () => {
     renderModal();
     // Wait for the body to render.
     await screen.findByRole("button", { name: /^Accept contract$/i });
-    // The only button in the open modal is the Accept action — the header
-    // "Mission" marker must NOT be a focusable button (it would do nothing).
-    const buttons = screen.getAllByRole("button");
-    expect(buttons).toHaveLength(1);
-    expect((buttons[0] as HTMLButtonElement).getAttribute("data-vex-action")).toBe(
-      "accept-contract",
-    );
+    // The header "Mission" marker must NOT be a focusable button (it would do
+    // nothing). Asserted on the HEADER specifically: counting every button in
+    // the modal used to stand in for this, but the body legitimately gained the
+    // host-authored launch-ceilings control, and a body button says nothing
+    // about a dead focus target in the header.
+    const header = screen.getByText("Rebalance LP").parentElement;
+    expect(header).not.toBeNull();
+    expect(header?.querySelectorAll("button")).toHaveLength(0);
+    expect(
+      document.querySelector('[data-vex-action="accept-contract"]'),
+    ).not.toBeNull();
     // The marker still shows the "Mission" label + a status caption.
     expect(screen.queryByText("Mission")).not.toBeNull();
     // No element carries the rail badge's open-dialog action in the header.

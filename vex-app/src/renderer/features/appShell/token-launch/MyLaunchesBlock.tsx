@@ -7,38 +7,27 @@
  * would compete with the preview card, which is the surface that matters here.
  *
  * ── THE STATES LADDER IS THE HONESTY CONTRACT ─────────────────────────────
- * loading → error → **unavailable** → empty → content, and `unavailable` is a
+ * unavailable → loading → error → empty → content, and `unavailable` is a
  * SEPARATE rung from `empty` on purpose (the TokenHistory precedent). "We
  * couldn't read your launches" and "you have never launched a token" are
  * different claims, and only one of them is ours to make when a read degrades.
  * Rendering the empty invitation on a failed read would tell the user, in the
  * app that holds their money, that history they actually have does not exist.
  *
- * A LATER page failing never wipes the rows already on screen — pagination
- * stops and a quiet note appears by the footer instead.
+ * ONE page, no "Load more": the IPC contract returns a bounded list and no
+ * cursor, and an affordance main cannot honour is not an affordance.
  */
 
 import type { JSX } from "react";
-import type { MyLaunchRow, MyLaunchesResult } from "../../../lib/api/token-launch.js";
-import type { Result } from "@shared/ipc/result.js";
-import { useMyLaunches } from "../../../lib/api/token-launch.js";
+import type { LaunchedTokenDto } from "../../../lib/api/token-launch.js";
+import { isTokenLaunchAvailable, useMyLaunches } from "../../../lib/api/token-launch.js";
 import { AddressDisplay } from "../../../components/common/AddressDisplay.js";
 import { formatClock } from "../../../lib/format.js";
 
-/** A page that both succeeded AND was not degraded. */
-function availablePage(page: Result<MyLaunchesResult>): MyLaunchesResult | null {
-  return page.ok && page.data.status === "available" ? page.data : null;
-}
-
 export function MyLaunchesBlock(): JSX.Element {
   const query = useMyLaunches();
-  const pages = query.data?.pages ?? [];
-  const firstPage = pages[0];
-  const rows = pages.flatMap((page) => availablePage(page)?.launches ?? []);
-
-  const lastPage = pages.length > 1 ? pages[pages.length - 1] : undefined;
-  const laterPageDegraded =
-    lastPage !== undefined && availablePage(lastPage) === null;
+  const result = query.data;
+  const rows = result !== undefined && result.ok ? result.data.launches : [];
 
   return (
     <section className="flex flex-col gap-2 border-t border-[var(--vex-line)] pt-4">
@@ -52,47 +41,34 @@ export function MyLaunchesBlock(): JSX.Element {
       </header>
 
       <Body
+        unavailable={!isTokenLaunchAvailable()}
         loading={query.isLoading}
-        errored={query.isError || (firstPage !== undefined && !firstPage.ok)}
-        unavailable={
-          firstPage !== undefined &&
-          firstPage.ok &&
-          firstPage.data.status !== "available"
-        }
+        errored={query.isError || (result !== undefined && !result.ok)}
         rows={rows}
       />
-
-      {laterPageDegraded ? (
-        <p className="mt-1 text-[11px] text-[var(--vex-text-3)]">
-          Couldn&apos;t load more launches right now.
-        </p>
-      ) : null}
-
-      {query.hasNextPage ? (
-        <button
-          type="button"
-          onClick={() => void query.fetchNextPage()}
-          disabled={query.isFetchingNextPage}
-          className="mt-2 w-full rounded-lg border border-[var(--vex-line)] py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-60"
-        >
-          {query.isFetchingNextPage ? "Loading…" : "Load more"}
-        </button>
-      ) : null}
     </section>
   );
 }
 
 function Body({
+  unavailable,
   loading,
   errored,
-  unavailable,
   rows,
 }: {
+  readonly unavailable: boolean;
   readonly loading: boolean;
   readonly errored: boolean;
-  readonly unavailable: boolean;
-  readonly rows: readonly MyLaunchRow[];
+  readonly rows: readonly LaunchedTokenDto[];
 }): JSX.Element {
+  // NOT the empty state, and NOT phrased as a failure of theirs — see header.
+  if (unavailable) {
+    return (
+      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-2)]">
+        Your launches are unavailable right now — try again shortly.
+      </p>
+    );
+  }
   if (loading) {
     return (
       <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
@@ -107,14 +83,6 @@ function Body({
       </p>
     );
   }
-  // NOT the empty state — see the file header.
-  if (unavailable) {
-    return (
-      <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-2)]">
-        Your launches are unavailable right now — try again shortly.
-      </p>
-    );
-  }
   if (rows.length === 0) {
     return (
       <p className="text-[12.5px] leading-relaxed text-[var(--vex-text-3)]">
@@ -125,13 +93,13 @@ function Body({
   return (
     <ul className="flex flex-col">
       {rows.map((row) => (
-        <LaunchRow key={row.intentId} row={row} />
+        <LaunchRow key={row.createTxHash} row={row} />
       ))}
     </ul>
   );
 }
 
-function LaunchRow({ row }: { readonly row: MyLaunchRow }): JSX.Element {
+function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
   const clock = formatClock(row.createdAt);
   return (
     <li className="flex items-center justify-between gap-3 border-b border-[var(--vex-line)] py-2 last:border-b-0">
@@ -144,24 +112,13 @@ function LaunchRow({ row }: { readonly row: MyLaunchRow }): JSX.Element {
             {row.symbol}
           </span>
         </div>
-        {/* An un-decoded address is an em-dash, never a guess: a launch whose
-         * receipt we could not read is pending, not addressless. */}
-        {row.tokenAddress !== null ? (
-          <AddressDisplay address={row.tokenAddress} />
-        ) : (
-          <span className="text-[11px] text-[var(--vex-text-3)]">—</span>
-        )}
+        <AddressDisplay address={row.tokenAddress} />
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-0.5">
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-2)]">
-          {row.status}
+      {clock !== null ? (
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+          {clock}
         </span>
-        {clock !== null ? (
-          <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
-            {clock}
-          </span>
-        ) : null}
-      </div>
+      ) : null}
     </li>
   );
 }

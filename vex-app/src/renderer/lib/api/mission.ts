@@ -47,6 +47,8 @@ import type {
   MissionRetryInput,
   MissionRetryResult,
   MissionSetAutoRetryInput,
+  MissionSetLaunchCeilingsInput,
+  MissionSetLaunchCeilingsResult,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
@@ -255,6 +257,30 @@ export function useAcceptMissionContract(): UseMutationResult<
  * resolved-outcome and thrown-error paths. The engine is the authority;
  * the card hides the toggle for non-full sessions (UX only).
  */
+/**
+ * Host-authored autonomous-launch ceilings (C6/C6b).
+ *
+ * Both the draft AND the diff queries are invalidated: the ceilings are
+ * contract-hash material, so a successful write moves the current hash and
+ * clears any prior acceptance. Leaving the diff stale would show an "accepted"
+ * contract card beside a limit the user has not accepted.
+ */
+export function useSetLaunchCeilings(): UseMutationResult<
+  Result<MissionSetLaunchCeilingsResult>,
+  Error,
+  MissionSetLaunchCeilingsInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.setLaunchCeilings(input),
+    retry: false,
+    onSettled: (_result, _error, input) => {
+      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
+      qc.invalidateQueries({ queryKey: missionKeys.diffsForSession(input.sessionId) });
+    },
+  });
+}
+
 export function useSetAutoRetry(): UseMutationResult<
   Result<MissionSetAutoRetryResult>,
   Error,

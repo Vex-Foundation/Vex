@@ -40,13 +40,38 @@
  * fields, which fee at which block, which image digest, which permission —
  * without walking the chain. That is worth a column on a real-funds path.
  *
- * It is **write-and-audit only**. NOTHING IN THE SIGNING PATH MAY READ IT BACK
- * TO MAKE A DECISION. The gate is {@link checkLaunchAuthorizationUnchanged}
- * against a binding re-derived from first principles, plus the CAS. The moment
- * someone reads the stored blob to compare against, the audit artifact has
- * quietly become the gate — and a gate that trusts its own storage is a gate an
- * attacker only has to write to once. If you are about to add such a read, you
- * are removing a security property, not adding a convenience.
+ * ON THE AGENT PATHS (`approval_card`, `full_autonomy`) it is **write-and-audit
+ * only**. NOTHING IN THOSE SIGNING PATHS MAY READ IT BACK TO MAKE A DECISION.
+ * The gate there is {@link checkLaunchAuthorizationUnchanged} against a binding
+ * re-derived from first principles, plus the CAS. Authorization and execution
+ * happen in ONE invocation, so the authorized binding is already in memory: a
+ * read of the stored blob would buy nothing and cost a security property, since
+ * a gate that trusts its own storage is a gate an attacker only has to write to
+ * once. If you are about to add such a read to the agent path, you are removing
+ * a security property, not adding a convenience.
+ *
+ * `user_submit` IS THE ONE EXCEPTION, AND IT WAS DECIDED, NOT DRIFTED
+ * (coordinator ruling, fix wave). There the stored record IS gate input, on
+ * three grounds:
+ *
+ *   1. PRODUCT. Consent happens at SUBMIT time, in the main process, minutes
+ *      before execution. A consent separated in time and process from the
+ *      signature can only be carried by a persisted record. Comparing a fresh
+ *      derivation against another freshly built plan would compare the new plan
+ *      with itself and gate NOTHING — strictly worse than reading storage.
+ *   2. PRESCRIPTION. The reviewer's C0 specification is verbatim: "compare the
+ *      fresh plan against that snapshot — not another handler-built plan."
+ *   3. PRECEDENT. `approval_queue` / `approval_intents` already store consent
+ *      and read it back to decide. `user_submit` places no weaker trust in the
+ *      database than the approvals pattern the whole system already rests on.
+ *
+ * The compensating controls live in `./execute-user-submit.ts`: the blob is
+ * treated as UNTRUSTED INPUT and validated field-by-field before any value is
+ * read, it is cross-checked against the intent row's own columns (a record that
+ * disagrees with its own row proves tampering or a writer bug), what gets
+ * SIGNED still comes from a fresh re-derivation that must match it field by
+ * field — image digest included, so bytes swapped in the locker are drift — and
+ * the CAS remains the single-use gate.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 

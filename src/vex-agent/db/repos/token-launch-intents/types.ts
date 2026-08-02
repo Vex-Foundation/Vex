@@ -80,6 +80,13 @@ export interface TokenLaunchIntent {
   txHash: string | null;
   tokenAddress: string | null;
   failureReason: string | null;
+  /**
+   * The persisted C0 consent snapshot. `unknown` on purpose: the reader
+   * (`execute-user-submit.ts` `parseStoredBinding`) schema-validates it as
+   * untrusted input before anything acts on it. Typing it as a trusted shape
+   * here would make every reader believe a stored row it never checked.
+   */
+  authorizationJson: unknown;
   expiresAt: string;
   consumedAt: string | null;
   cancelledAt: string | null;
@@ -111,6 +118,14 @@ export interface CreateTokenLaunchIntentInput {
   prebuyDecimals?: number | null;
   authorizationId?: string | null;
   authorizationKind?: LaunchAuthorizationKind | null;
+  /**
+   * The C0 consent snapshot, persisted AS-IS. `unknown` on purpose, on both
+   * sides: the writer stays dumb (it has no business deciding what a valid
+   * authorization looks like) and the READER schema-validates it as untrusted
+   * input before anything acts on it. Typing it as a trusted shape here would
+   * make every reader believe a stored row it never checked.
+   */
+  authorizationJson?: unknown;
   /**
    * REQUIRED on the `agent_requested_form` path and forbidden nowhere else —
    * the DB CHECK `token_launch_intents_form_path_has_tool_call` enforces it.
@@ -157,7 +172,7 @@ export const SELECT_COLUMNS =
   "name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals, " +
   "authorization_id, authorization_kind, authorized_at, " +
   "tool_call_id, mission_run_id, result_message_id, tx_hash, token_address, " +
-  "failure_reason, expires_at, consumed_at, cancelled_at, broadcast_at, " +
+  "failure_reason, authorization_json, expires_at, consumed_at, cancelled_at, broadcast_at, " +
   "confirmed_at, created_at";
 
 export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
@@ -184,6 +199,7 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
     txHash: (r.tx_hash as string | null) ?? null,
     tokenAddress: (r.token_address as string | null) ?? null,
     failureReason: (r.failure_reason as string | null) ?? null,
+    authorizationJson: r.authorization_json ?? null,
     expiresAt: toIso(r.expires_at as string | Date),
     consumedAt: toIsoOrNull(r.consumed_at as string | Date | null),
     cancelledAt: toIsoOrNull(r.cancelled_at as string | Date | null),

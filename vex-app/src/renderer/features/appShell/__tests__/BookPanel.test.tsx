@@ -52,6 +52,15 @@ vi.mock("../book/SessionBlock.js", () => ({
 vi.mock("../book/ImageLockerCard.js", () => ({
   ImageLockerCard: () => <div data-testid="card-images" />,
 }));
+// The launch opener owns a dialog that talks to the tokenLaunch IPC domain;
+// stubbed like every other child. Its own behavior lives in
+// TokenLaunchDialog.test.tsx — this suite owns only the fact that the rail is
+// where the user can REACH a launch at all.
+vi.mock("../token-launch/TokenLaunchButton.js", () => ({
+  TokenLaunchButton: ({ sessionId }: { readonly sessionId: string | null }) => (
+    <div data-testid="launch-opener" data-session-id={sessionId ?? ""} />
+  ),
+}));
 // The rail reads the session detail so it can hand `permission` down to the
 // RUNTIME & COST block's apply control. Stubbed here — this suite owns the
 // router and the chrome, not the session query.
@@ -141,6 +150,33 @@ describe("BookPanel chrome", () => {
     expect(
       screen.getByTestId("welcome-portfolio-panel").getAttribute("data-book-open"),
     ).toBe("false");
+  });
+});
+
+describe("the launch surface is reachable", () => {
+  it("mounts the launch opener under TRENCH PHOTOS, scoped to the active session", () => {
+    // Reachability is the point: an unmounted launch dialog is a feature the
+    // user cannot use, however complete its internals are. It sits with the
+    // image locker because a launch REQUIRES an image from it.
+    const { container } = render(
+      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
+    );
+    const opener = screen.getByTestId("launch-opener");
+    expect(opener.getAttribute("data-session-id")).toBe(SESSION);
+    const stack = Array.from(
+      container.querySelectorAll("[data-testid^='card-'],[data-testid='launch-opener']"),
+    ).map((node) => node.getAttribute("data-testid"));
+    expect(stack.indexOf("launch-opener")).toBe(stack.indexOf("card-images") + 1);
+  });
+
+  it("does not mount the launch opener on the welcome stage — a launch needs a session", () => {
+    render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
+    expect(screen.queryByTestId("launch-opener")).toBeNull();
+  });
+
+  it("does not mount the launch opener while the rail is collapsed", () => {
+    render(<BookPanel activeSessionId={SESSION} bookOpen={false} onToggle={() => {}} />);
+    expect(screen.queryByTestId("launch-opener")).toBeNull();
   });
 });
 

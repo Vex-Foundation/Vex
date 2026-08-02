@@ -155,6 +155,12 @@ function formatConstraints(draft: MissionDraftDto): string[] {
       `Max launch value: ${c.maxLaunchValueRaw} raw @ ${c.maxLaunchValueDecimals} decimals`,
     );
   }
+  // C6b — the count cap stands alone: it is authored separately from the value
+  // pair, and a mission may legitimately carry one without the other (an
+  // autonomous launch then still refuses, which is the point).
+  if (typeof c.maxLaunchCount === "number") {
+    out.push(`Max launch count: ${c.maxLaunchCount}`);
+  }
   return out;
 }
 

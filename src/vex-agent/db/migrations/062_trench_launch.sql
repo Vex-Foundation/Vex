@@ -327,6 +327,18 @@ CREATE TABLE IF NOT EXISTS token_launch_intents (
   -- after: that is what makes "resumed with no tool result" UNREPRESENTABLE. A
   -- stamp that throws rolls the transcript row back with it.
   result_message_id   INTEGER,
+  -- The create transaction's hash. NULL until the moment it is broadcast, then
+  -- NEVER rewritten: the single writer is the CAS in
+  -- `token-launch-intents/writers.ts` (`markBroadcastPendingWith`), which
+  -- stamps it together with `status = 'broadcast_pending'` and only while it is
+  -- still NULL. That is what makes a double broadcast, and a retry that
+  -- forgets the first hash, unrepresentable — and it is the only handle the
+  -- identity repair has to look a pending launch up on chain
+  -- (`reads.ts` selects `broadcast_pending AND tx_hash IS NOT NULL`).
+  -- `token_launch_intents_broadcast_has_hash` and
+  -- `token_launch_intents_unsigned_exits_have_no_hash` below hold both ends of
+  -- that contract.
+  tx_hash             TEXT,
   -- Filled from the confirmed receipt's decoded `TokenCreated`, by the launch
   -- handler or — after a crash — by the launch identity repair. NEVER guessed.
   token_address       TEXT,
@@ -343,6 +355,24 @@ CREATE TABLE IF NOT EXISTS token_launch_intents (
   cancelled_at        TIMESTAMPTZ,
   broadcast_at        TIMESTAMPTZ,
   confirmed_at        TIMESTAMPTZ,
+  -- The authorization record as authored at authorize time (the C0 snapshot).
+  --
+  -- On the AGENT paths this is audit only — the gate there is re-derivation
+  -- against an in-memory binding, and reading this back would weaken it.
+  -- On the USER_SUBMIT path it is unavoidably gate INPUT: the human consented
+  -- in the main process minutes earlier, so this row is the only record of what
+  -- they agreed to. It is validated as untrusted input before use
+  -- (`handlers/launch/execute-user-submit.ts`); see the doctrine box in
+  -- `handlers/launch/authorization.ts` for which path may read it and why.
+  authorization_json  JSONB,
+  -- Identity-sweep SCHEDULING ONLY — never money, status or identity. Stamped
+  -- by `token-launch-intents/sweep-claim.ts` on every row it serves, and the
+  -- sweep orders by `COALESCE(last_checked_at, created_at) ASC`. Without it the
+  -- candidate window is `created_at ASC LIMIT 25` over a set the sweep may
+  -- leave UNCHANGED, so 25 permanently-ambiguous launches starve row 26
+  -- forever. Same column and same ordering shape as `agent_activity`
+  -- (migration 044) — this is the repo's scheduling pattern, not a new one.
+  last_checked_at     TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -465,6 +495,16 @@ CREATE INDEX IF NOT EXISTS token_launch_intents_broadcast_pending_idx
 -- `initial_buy_token_address` for the usual reason (rule 90) — and here the
 -- token address is not redundant with `token_address`: the prebuy is denominated
 -- in what was SPENT (native ETH), not in what was received.
+--
+-- UNIT CONTRACT, stated once so no writer has to guess: `initial_buy_raw` is
+-- the NATIVE ETH prebuy in WEI, `initial_buy_decimals` is therefore 18, and
+-- `initial_buy_token_address` names the native asset — never the launched
+-- token. That is the amount the plan authorized and the wallet signed, known
+-- before the transaction is even broadcast, so it can never be a guess.
+-- The tokens RECEIVED (decoded from `Bought`, arg v2) are the executed OUTPUT
+-- leg of the `agent_activity` row for this launch; they do NOT belong here.
+-- Writing received units into these columns would report the prebuy at the
+-- token's decimals and misprice the launch by orders of magnitude.
 
 CREATE TABLE IF NOT EXISTS launched_tokens (
   id                       BIGSERIAL PRIMARY KEY,

@@ -79,4 +79,25 @@ describe("trench manifest", () => {
     expect([...ids].filter((id) => !keys.has(id))).toEqual([]);
     expect([...keys].filter((k) => !ids.has(k))).toEqual([]);
   });
+  // Codex round 4 (2026-08-02): the active manifests advertised a 64-character
+  // name while `create()` reverts `invalid name` past 18 and both validators
+  // enforce 18. A tool contract that promises a longer field than the chain
+  // accepts teaches the model to compose launches that revert on-chain.
+  it("advertises the chain's real 18-character name cap, never a looser one", () => {
+    for (const t of TRENCH_TOOLS) {
+      const nameParam = t.params?.find((p) => p.key === "name");
+      if (nameParam === undefined) continue;
+      expect(nameParam.description, `${t.toolId} name cap`).toMatch(/1-18 chars/);
+      expect(nameParam.description, `${t.toolId} name cap`).not.toMatch(/64/);
+    }
+  });
+
+  // The dry-run always simulates EMPTY image bytes, so the param must not
+  // promise to price the image's gas — the real launch costs materially more.
+  it("does not promise that the preview prices image gas", () => {
+    const preview = TRENCH_TOOLS.find((t) => t.toolId === "trench.launch_preview");
+    const imageParam = preview?.params?.find((p) => p.key === "imageByteLength");
+    expect(imageParam?.description).toMatch(/EXCLUDES image bytes/);
+    expect(imageParam?.description).not.toMatch(/preview its gas impact/);
+  });
 });

@@ -6,23 +6,39 @@
  * spend-consent, so the figure it binds has to be visible at the moment of the
  * click, in a form the user can read.
  *
- * ── THE THREE NUMBERS ARE THREE NUMBERS ───────────────────────────────────
- * They are rendered as separate rows with separate voices and are NEVER merged
- * into a single "total". Merging them is the specific defect this layout
- * refuses, because each one has a different truth status:
+ * ── EVERY NUMBER, EACH IN ITS OWN VOICE, PLUS THE TOTAL ───────────────────
+ * Each figure has a different truth status, so each keeps its own row and its
+ * own wording — and the whole cost is stated at the end, because the user is
+ * consenting to a spend and cannot consent to a number they were never shown:
  *
  *  1. **You authorize: X ETH** — `msg.value`, exactly `creationFee + prebuy`.
- *     This is the only number the click actually commits, so it gets the
- *     loudest treatment and is broken out into its two proven components. It is
- *     not an estimate and must never be shown beside one as if it were.
- *  2. **Network fee: ~Z ETH (estimated)** — the network's, not ours, and a
- *     guess. Adding it to (1) would produce a "total" that is partly authorized
- *     and partly imagined, which reads as more certain than either.
- *  3. **Vex fee** — a SEPARATE transfer leg that runs only AFTER the launch
- *     confirms (§C7), so a launch that does not happen is never charged. It is
- *     a disclosure, not an approval gate, and it is not part of `msg.value`.
- *     It renders ONLY when the DTO carries the computed figure: a fee number
- *     this component inferred from a rate would be a fabrication (rule 90).
+ *     This is the only number the click COMMITS, so it gets the loudest
+ *     treatment and is broken out into its two proven components.
+ *  2. **Network fees: ~Z ETH (estimated)** — the network's, not ours, and a
+ *     guess. It covers EVERY transaction this consent causes, so when the fee
+ *     leg is charged it is two of them; main budgets both into the one figure
+ *     and this card never derives a second (coordinator ruling 2026-08-02).
+ *  3. **Vex fee** — 25 bps of `msg.value`, taken as a SEPARATE transfer that
+ *     runs only AFTER the launch confirms (§C7), so a launch that does not
+ *     happen is never charged. It is a disclosure, not an approval gate, and it
+ *     is not part of `msg.value` — but it IS money leaving the user's wallet
+ *     because of this click, so the consent sentence names it.
+ *  4. **Estimated total** — (1) + (2) + (3), labelled an ESTIMATE because it
+ *     contains gas. Owner decision 2026-08-02: the modal submit is the spend
+ *     consent, so the surface must state the whole cost. An earlier version
+ *     showed only (1) and told the user "nothing else is authorized by this
+ *     button", which was false — the same click authorizes the fee leg. The
+ *     total never replaces (1); it sits below it, differently worded.
+ *
+ * ── NO MISSION-LIMIT CLAIM HERE (Codex round 4, 2026-08-02) ───────────────
+ * This card used to print "Checked against your mission limit" beside
+ * `msg.value + vexFee`. That was FALSE on the surface it appeared on: a
+ * user-origin preview passes no ceilings at all (`main/token-launch/index.ts`
+ * — a human click is its own authority), so nothing had been checked against
+ * anything and the number was just a sum wearing a verdict's clothes. Telling a
+ * user their spend cleared a limit that was never consulted is the worst kind of
+ * false assurance on a consent surface, so the row is gone. It comes back only
+ * with real ceiling metadata in the DTO, saying which ceiling and what it is.
  *
  * Glass: NONE of our own. This card is a FLAT surface (hairline + radius)
  * because it sits inside the dialog, whose chrome already carries the shell's
@@ -31,10 +47,10 @@
  */
 
 import type { JSX } from "react";
-import type { TokenLaunchPreview } from "../../../lib/api/token-launch.js";
+import type { TokenLaunchPreviewResult } from "../../../lib/api/token-launch.js";
 import { AddressDisplay } from "../../../components/common/AddressDisplay.js";
 import {
-  ceilingCheckedWei,
+  estimatedTotalCostWei,
   formatWeiEth,
   formatWeiEthWithUnit,
   UNKNOWN_AMOUNT,
@@ -55,7 +71,7 @@ export type PreviewState =
 
 interface LaunchPreviewCardProps {
   readonly state: PreviewState;
-  readonly preview: TokenLaunchPreview | null;
+  readonly preview: TokenLaunchPreviewResult | null;
   /** Main's own sentence for a failed preview. Rendered verbatim. */
   readonly errorMessage: string | null;
   readonly onRetry: () => void;
@@ -156,12 +172,13 @@ function RetryButton({ onRetry }: { readonly onRetry: () => void }): JSX.Element
 function PreviewAmounts({
   preview,
 }: {
-  readonly preview: TokenLaunchPreview;
+  readonly preview: TokenLaunchPreviewResult;
 }): JSX.Element {
-  const ceilingSum =
-    preview.vexFeeWei !== undefined
-      ? ceilingCheckedWei(preview.msgValueWei, preview.vexFeeWei)
-      : null;
+  const totalCost = estimatedTotalCostWei(
+    preview.msgValueWei,
+    preview.vexFeeWei,
+    preview.estimatedNetworkFeeWei,
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -192,15 +209,20 @@ function PreviewAmounts({
         />
         <AmountRow label="Prebuy" value={preview.prebuyWei} subdued />
         <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
-          This is the exact amount deploying sends. Nothing else is authorized
-          by this button.
+          This is the exact amount the launch transaction sends. Deploying also
+          authorizes Vex&apos;s 25 bps fee below, as a separate transfer once
+          the launch confirms, and the network&apos;s gas — nothing else.
         </p>
       </div>
 
-      {/* (2) THE ESTIMATE — visually and verbally separated, never added in. */}
+      {/* (2) THE ESTIMATE — visually and verbally separated, never added in.
+       * Its label counts the TRANSACTIONS this consent causes: a charged fee
+       * leg is a second one, and main budgets its gas into this same figure. */}
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-[12px] text-[var(--vex-text-2)]">
-          Network fee (estimated)
+          {preview.vexFeeCharged
+            ? "Network fees, 2 transactions (estimated)"
+            : "Network fee (estimated)"}
         </span>
         <span className="font-mono text-[12px] tabular-nums text-[var(--vex-text-2)]">
           ~{formatWeiEth(preview.estimatedNetworkFeeWei)} ETH
@@ -208,38 +230,41 @@ function PreviewAmounts({
       </div>
       <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
         Paid to the network, not to us, and only an estimate — it is not part of
-        the amount above. Gas scales with your image size.
+        the amount above. Gas scales with your image size
+        {preview.vexFeeCharged ? ", and covers the fee transfer as well" : ""}.
       </p>
 
       {/* (3) THE VEX FEE — disclosure only, and only when main authored it. */}
       <VexFeeDisclosure preview={preview} />
 
-      {ceilingSum !== null ? (
-        <div className="flex items-baseline justify-between gap-3 border-t border-[var(--vex-line)] pt-2">
-          <span className="text-[12px] text-[var(--vex-text-3)]">
-            Checked against your mission limit
-          </span>
-          <span className="font-mono text-[12px] tabular-nums text-[var(--vex-text-3)]">
-            {formatWeiEthWithUnit(ceilingSum)}
-          </span>
-        </div>
-      ) : null}
+      {/* (4) THE WHOLE COST. Below the authorized figure, never instead of it. */}
+      <div className="flex items-baseline justify-between gap-3 border-t border-[var(--vex-line)] pt-2">
+        <span className="text-[12.5px] font-medium text-[var(--vex-text)]">
+          Estimated total cost
+        </span>
+        <span className="font-mono text-[13px] tabular-nums text-[var(--vex-text)]">
+          {totalCost === null ? UNKNOWN_AMOUNT : `~${formatWeiEthWithUnit(totalCost)}`}
+        </span>
+      </div>
+      <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+        The amount you authorize, plus the Vex fee, plus the estimated gas for
+        every transaction this sends. An estimate, because the gas is one.
+      </p>
+
     </div>
   );
 }
 
 /**
- * §C7. Renders NOTHING when the DTO does not carry a computed figure — see the
- * file header: inferring an amount from a published rate would put a number on
- * a spend-consent surface that no authority produced.
+ * §C7. The figure is MAIN's, always — this component never derives a fee from
+ * the published rate, because a number no authority produced does not belong on
+ * a spend-consent surface (rule 90). An unreadable one renders the em-dash.
  */
 function VexFeeDisclosure({
   preview,
 }: {
-  readonly preview: TokenLaunchPreview;
+  readonly preview: TokenLaunchPreviewResult;
 }): JSX.Element | null {
-  if (preview.vexFeeWei === undefined) return null;
-
   if (preview.vexFeeCharged === false) {
     return (
       <p className="text-[11px] leading-relaxed text-[var(--vex-text-3)]">

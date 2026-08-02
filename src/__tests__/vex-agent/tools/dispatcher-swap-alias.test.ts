@@ -308,7 +308,14 @@ describe("swap_execute alias — path-identity with direct execute_tool", () => 
     );
     const directCtx = executeProtocolTool.mock.calls[0]?.[1];
 
-    expect(aliasCtx).toEqual(directCtx);
+    // `toolCallId` is compared separately, not ignored: it is the ONE field that
+    // must legitimately differ, because each context carries the id of the call
+    // it is actually answering (Fala B — `trench.launch_request_form` parks its
+    // turn and its result must address exactly that call). Path identity is
+    // still asserted over every other field.
+    expect(aliasCtx?.toolCallId).toBe("c12a");
+    expect(directCtx?.toolCallId).toBe("c12b");
+    expect({ ...aliasCtx, toolCallId: null }).toEqual({ ...directCtx, toolCallId: null });
   });
 });
 

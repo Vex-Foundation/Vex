@@ -352,6 +352,18 @@ export interface MissionDraft {
   maxLaunchValueRaw: string | null;
   /** Decimals for {@link maxLaunchValueRaw}. Must be 18 to be enforceable. */
   maxLaunchValueDecimals: number | null;
+  /**
+   * How many tokens the agent may create in this mission (C6b). A
+   * non-negative whole number; `null` means NO CEILING SET and FAILS CLOSED,
+   * exactly like {@link maxLaunchValueRaw} — a mission that was never set up
+   * to create tokens can never create one unattended.
+   *
+   * The value ceiling alone is not enough: a loop that stays under the
+   * per-launch cap could still mint dozens of tokens. HOST-AUTHORED ONLY
+   * (deliberately absent from `patch-parser.ts`); enforcement lives in
+   * `engine/mission/launch-ceiling.ts`.
+   */
+  maxLaunchCount: number | null;
 }
 
 /**

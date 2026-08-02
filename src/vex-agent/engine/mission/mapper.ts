@@ -41,6 +41,16 @@ export function missionToDraft(m: Mission): MissionDraft {
       typeof constraints?.maxLaunchValueDecimals === "number"
         ? constraints.maxLaunchValueDecimals
         : null,
+    // C6b count ceiling — independent of the value pair (a mission may have
+    // authored one and not the other; an autonomous launch requires BOTH, and
+    // `launch-ceiling.ts` is the place that refuses). Only a non-negative
+    // integer reads as a cap; anything else is absent, never coerced.
+    maxLaunchCount:
+      typeof constraints?.maxLaunchCount === "number" &&
+      Number.isInteger(constraints.maxLaunchCount) &&
+      constraints.maxLaunchCount >= 0
+        ? constraints.maxLaunchCount
+        : null,
   };
 }
 
@@ -89,7 +99,8 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
     draft.deadline !== undefined ||
     draft.durationMinutes !== undefined ||
     draft.maxLaunchValueRaw !== undefined ||
-    draft.maxLaunchValueDecimals !== undefined
+    draft.maxLaunchValueDecimals !== undefined ||
+    draft.maxLaunchCount !== undefined
   ) {
     row.constraints_json = {
       ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
@@ -103,6 +114,9 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
         : {}),
       ...(draft.maxLaunchValueDecimals !== undefined
         ? { maxLaunchValueDecimals: draft.maxLaunchValueDecimals }
+        : {}),
+      ...(draft.maxLaunchCount !== undefined
+        ? { maxLaunchCount: draft.maxLaunchCount }
         : {}),
     };
   }
@@ -159,6 +173,14 @@ export function draftToPromptContext(m: Mission): string {
     lines.push(
       `**Max launch value:** ${draft.maxLaunchValueRaw} raw @ ${draft.maxLaunchValueDecimals} decimals — ` +
         "hard ceiling on creation fee + prebuy for an autonomous token launch. Exceeding it is refused, not clamped.",
+    );
+  }
+  // C6b — the same read-only disclosure for the count cap. Both ceilings must
+  // be set for an autonomous launch; the model can write neither.
+  if (draft.maxLaunchCount !== null) {
+    lines.push(
+      `**Max launch count:** ${draft.maxLaunchCount} — the most tokens this mission may create. ` +
+        "Launches still settling count. Exceeding it is refused, not queued.",
     );
   }
   if (draft.allowedChains?.length) lines.push(`**Chains:** ${draft.allowedChains.join(", ")}`);

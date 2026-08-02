@@ -41,6 +41,7 @@
  */
 
 import { query, queryOne, withTransaction } from "../client.js";
+import { lockLaunchImageWith } from "./launch-image-lock.js";
 import { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents.js";
 import type { TokenLaunchIntentStatus } from "./token-launch-intents.js";
 
@@ -183,10 +184,15 @@ export async function findLiveIntentsReferencingImage(
 /**
  * Delete a locker image's metadata, REFUSING while a live intent references it.
  *
- * The check and the delete share ONE transaction, so an intent created
- * concurrently either blocks this deletion or arrives after it — never in
- * between. The refusal names the blocking intents so the caller can tell the
- * user which launch is holding the image.
+ * The transaction takes the image's advisory lock FIRST, then checks, then
+ * deletes. One shared transaction is NOT enough on its own: under READ COMMITTED
+ * a concurrently inserted intent is invisible to the check and unblocked by any
+ * constraint (there is no foreign key — see the header), so both would commit
+ * and a live launch would lose its image. Because every intent write that
+ * references an image takes the SAME lock, a concurrent intent either blocks
+ * this deletion or arrives after it — never in between. See
+ * `./launch-image-lock.ts`. The refusal names the blocking intents so the caller
+ * can tell the user which launch is holding the image.
  *
  * CALLER CONTRACT: delete the metadata row FIRST (this call) and the BYTES only
  * on `deleted: true`. Bytes removed before a refusal would orphan a live
@@ -197,6 +203,7 @@ export async function deleteLaunchImage(
   imageId: string,
 ): Promise<DeleteLaunchImageResult> {
   return withTransaction(async (client) => {
+    await lockLaunchImageWith(client, imageId);
     const blocking = await client.query<Record<string, unknown>>(LIVE_INTENTS_SQL, [
       imageId,
       LIVE_TOKEN_LAUNCH_INTENT_STATUSES,

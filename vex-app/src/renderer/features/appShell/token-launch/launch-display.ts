@@ -20,17 +20,25 @@
  *     would let two different authorized amounts print identically, which is
  *     exactly the class of error the consent line exists to prevent.
  *
- *  3. **Nothing here ever SUMS the network-fee estimate into anything.** There
- *     is deliberately no helper that could produce a gas-inclusive "total": the
- *     authorized figure is `msg.value` and gas is the network's estimate. The
- *     only sum this file offers is the ceiling sum in (4), and its name says
- *     what it is.
+ *  3. **The one sum this file offers is named for exactly what it contains.**
+ *     `estimatedTotalCostWei` is what launching costs in total, gas estimate
+ *     included; it may never be collapsed with `msg.value`, because the two
+ *     have different truth statuses and the caller must label them
+ *     differently — the total is an ESTIMATE (it contains gas), the authorized
+ *     figure is not.
  *
- *  4. **The ceiling sum is `msg.value + vexFee`, gas excluded** (coordinator
- *     ruling 2026-08-02). A ceiling that ignored a charge Vex itself imposes
- *     would be a misleading ceiling; gas is excluded because it belongs to the
- *     network and is an estimate, and a ceiling must be checked against
- *     amounts we can stand behind.
+ *     Owner decision (2026-08-02): the modal submit IS the spend consent, so
+ *     every cost surface must state the whole cost. An earlier version of this
+ *     file refused to compute any gas-inclusive total at all; that left the user
+ *     consenting while looking at a number smaller than what the launch would
+ *     actually take out of their wallet. The fix is to show the total AND keep
+ *     `msg.value` broken out as the only committed figure — not to hide the sum.
+ *
+ *  4. **There is no mission-ceiling helper here** (Codex round 4, 2026-08-02).
+ *     One existed and its result was rendered as "checked against your mission
+ *     limit" on a preview that passes NO ceilings — a verdict nobody reached.
+ *     Reintroduce a ceiling figure only alongside DTO metadata naming the
+ *     ceiling that was actually applied.
  *
  *  5. **An unreadable amount renders an em-dash, never a zero.** `"0"` is a
  *     legitimate wei value (a zero prebuy is the default), so a parse failure
@@ -84,51 +92,55 @@ export function formatWeiEthWithUnit(raw: string | null | undefined): string {
 }
 
 /**
- * The amount a mission ceiling is checked against: `msg.value + vexFee`.
- * Network gas is NOT a term and cannot be passed in — see invariant (4).
- * Returns `null` if either input is unreadable, so a partial sum can never be
- * presented as an authoritative one.
+ * The estimated total this launch costs: `msg.value + vexFee + networkFee`.
+ *
+ * It is an ESTIMATE because gas is one, and the caller must label it as such.
+ * It exists because the modal submit is the spend consent (owner decision
+ * 2026-08-02): a consent surface that shows only `msg.value` under-states what
+ * the wallet will actually pay, and the user cannot consent to a number they
+ * were never shown. `msg.value` stays broken out beside it as the one figure
+ * this click commits.
+ *
+ * Returns `null` if any term is unreadable — a partial sum presented as a total
+ * would be worse than no total at all.
  */
-export function ceilingCheckedWei(
+export function estimatedTotalCostWei(
   msgValueWei: string | null | undefined,
   vexFeeWei: string | null | undefined,
+  networkFeeWei: string | null | undefined,
 ): string | null {
   const value = parseWei(msgValueWei);
-  if (value === null) return null;
-  // No Vex fee in the DTO at all → the ceiling sum IS msg.value.
-  if (vexFeeWei === null || vexFeeWei === undefined) return value.toString();
   const fee = parseWei(vexFeeWei);
-  if (fee === null) return null;
-  return (value + fee).toString();
+  const gas = parseWei(networkFeeWei);
+  if (value === null || fee === null || gas === null) return null;
+  return (value + fee + gas).toString();
 }
 
 /**
- * The prebuy field: a user-typed ETH decimal → an exact raw wei string.
+ * The prebuy field: the user-typed ETH decimal, normalised to the plain decimal
+ * string the IPC contract accepts (`^\d+(\.\d+)?$`), or `null` when it is not
+ * an amount at all.
  *
- * This is a money-path parser, so it is string arithmetic end to end. `18.7`
- * cannot be multiplied by 1e18 as a float without the low digits drifting, and
- * a drifting prebuy is a drifting `msg.value`. Instead the fraction is padded
- * to exactly 18 places and concatenated, so the result is the digits the user
- * typed and nothing else.
+ * NOTHING IS CONVERTED HERE. The decimal → wei conversion happens exactly once,
+ * main-side, because a decimals slip in the UI is a thousandfold spend error and
+ * two implementations of the same conversion are two chances to make it. This
+ * function only decides whether the text on screen is a well-formed amount, so
+ * the user is told at the field instead of by a refusal after Deploy.
  *
- * Returns `null` for anything that is not an unsigned decimal, and for MORE
- * than 18 fractional digits: silently truncating the nineteenth would spend a
- * different amount than the one on screen. The empty string is `"0"` — an
- * unfilled prebuy field means no prebuy, which is the documented default.
+ * `""` normalises to `"0"` — an unfilled prebuy means no prebuy, the documented
+ * default. `".5"` and `"2."` are REFUSED rather than repaired: the schema main
+ * validates with does not accept them, and quietly rewriting what the user typed
+ * on a money field is not this layer's call. More than 18 fractional digits is
+ * refused too — ETH has no nineteenth decimal place to spend.
  */
-export function parseEthInputToWei(input: string): string | null {
+export function normalizeEthInput(input: string): string | null {
   const trimmed = input.trim();
   if (trimmed.length === 0) return "0";
-  const match = /^(\d*)(?:\.(\d*))?$/.exec(trimmed);
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(trimmed);
   if (match === null) return null;
-  const wholeText = match[1] ?? "";
   const fractionText = match[2] ?? "";
-  // "." alone, or a value with no digits at all, is not an amount.
-  if (wholeText.length === 0 && fractionText.length === 0) return null;
   if (fractionText.length > Number(WEI_DECIMALS)) return null;
-  const padded = fractionText.padEnd(Number(WEI_DECIMALS), "0");
-  const whole = wholeText.length === 0 ? 0n : BigInt(wholeText);
-  return (whole * WEI_PER_ETH + BigInt(padded)).toString();
+  return trimmed;
 }
 
 /**

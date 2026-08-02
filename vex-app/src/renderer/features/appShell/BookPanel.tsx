@@ -42,6 +42,7 @@ import { useSession } from "../../lib/api/sessions.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { ImageLockerCard } from "./book/ImageLockerCard.js";
+import { TokenLaunchButton } from "./token-launch/TokenLaunchButton.js";
 import { SessionBlock } from "./book/SessionBlock.js";
 import { SessionRuntimeCard } from "./book/SessionRuntimeCard.js";
 import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
@@ -134,6 +135,13 @@ export function BookPanel({
           <SessionRuntimeCard sessionId={activeSessionId} permission={permission} />
           <SessionBlock sessionId={activeSessionId} />
           <ImageLockerCard />
+          {/*
+            The ONLY way a user reaches the launch dialog. It sits directly under
+            TRENCH PHOTOS because a launch REQUIRES an image from that locker —
+            the two are one flow, and separating them would send the user hunting
+            for the reason a launch refused.
+          */}
+          <TokenLaunchButton sessionId={activeSessionId} />
         </motion.div>
       ) : null}
     </aside>

@@ -23,10 +23,15 @@
  *    args. Untrusted text may only ever DOWNGRADE a claim, never upgrade one,
  *    so a `toolId` is read for one purpose only: a `quote` segment (e.g.
  *    `kyberswap.swap.quote`, `khalani.quote.get`) proves a PREVIEW and earns
- *    the "Quote" label. Mutating identity is NEVER derived from args — every
- *    other curated `execute_tool` act is `unproven` and is labelled. There is
- *    therefore no input to this module that makes `execute_tool` render the
- *    bare executed summary.
+ *    the "Quote" label. Mutating identity is NEVER derived from a PARSED
+ *    `toolId` shape — every other curated `execute_tool` act is `unproven` and
+ *    is labelled.
+ *  - The ONE exception is the CURATED EXACT-ID map below (`TOOL_ID_OPERATIONS`,
+ *    Trench Express today). Those protocols have no top-level tool name of
+ *    their own — the engine dispatches them by that exact `toolId` string — so
+ *    the id is load-bearing ROUTING input, matched here whole against a set we
+ *    wrote, never a shape inferred from attacker-chosen text. A name outside
+ *    the set falls through to the fail-closed rules above unchanged.
  *  - An `execute_tool` whose namespace is not curated (`protocol === null`,
  *    per `toolIdentity.ts`'s provenance gate) gets NO legs at all.
  *
@@ -64,21 +69,52 @@ const MUTATING_TOOLS: ReadonlySet<string> = new Set([
   "bridge_execute_relay",
 ]);
 
-/** True when the `toolId` in the args names a quote step (`…​.quote…`). */
-function toolIdIsQuote(toolArgs: string | null): boolean {
-  if (toolArgs === null || toolArgs.length === 0) return false;
+/**
+ * Curated EXACT `toolId` → operation, for protocols the engine addresses only
+ * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`).
+ * `null` means the act carries no money legs at all: a read, or a `local_write`
+ * that drafts a row and spends nothing (`trench.launch_request_form`, which the
+ * manifest marks `mutating: true` for APPROVAL-GATE reasons — no funds move, so
+ * the card must not claim an execution).
+ *
+ * Mirrors those manifests by exact name; when one is added or renamed, this map
+ * is the renderer-side counterpart to update. An id absent here is unaffected.
+ */
+const TOOL_ID_OPERATIONS: ReadonlyMap<string, ToolOperation | null> = new Map<
+  string,
+  ToolOperation | null
+>([
+  ["trench.tokens", null],
+  ["trench.search", null],
+  ["trench.trades", null],
+  ["trench.images", null],
+  ["trench.my_launches", null],
+  ["trench.launch_request_form", null],
+  ["trench.trade_quote", "quote"],
+  ["trench.launch_preview", "quote"],
+  ["trench.trade_execute", "mutating"],
+  ["trench.launch_execute", "mutating"],
+]);
+
+/** The `toolId` string inside the sanitized args, or null at any failure. */
+function parseToolId(toolArgs: string | null): string | null {
+  if (toolArgs === null || toolArgs.length === 0) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(toolArgs);
   } catch {
-    return false;
+    return null; // truncated or malformed — never guess the tail
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return false;
+    return null;
   }
   const toolId = (parsed as Record<string, unknown>)["toolId"];
-  if (typeof toolId !== "string") return false;
-  return toolId.split(".").includes("quote");
+  return typeof toolId === "string" && toolId.length > 0 ? toolId : null;
+}
+
+/** True when the `toolId` in the args names a quote step (`…​.quote…`). */
+function toolIdIsQuote(toolId: string | null): boolean {
+  return toolId !== null && toolId.split(".").includes("quote");
 }
 
 /**
@@ -98,7 +134,11 @@ export function resolveToolOperation(
 
   if (name === "execute_tool") {
     if (curatedProtocol === null) return null; // unproven venue → no legs
-    return toolIdIsQuote(toolArgs) ? "quote" : "unproven";
+    const toolId = parseToolId(toolArgs);
+    if (toolId !== null && TOOL_ID_OPERATIONS.has(toolId)) {
+      return TOOL_ID_OPERATIONS.get(toolId) ?? null;
+    }
+    return toolIdIsQuote(toolId) ? "quote" : "unproven";
   }
 
   // A swap/bridge-family name we do not know by name: legs, always labelled.

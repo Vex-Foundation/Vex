@@ -23,6 +23,7 @@ import type { JSX } from "react";
 import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { cn } from "../../../lib/utils.js";
+import type { TokenLaunchForm } from "../../../lib/api/token-launch.js";
 import {
   LAUNCH_DESCRIPTION_MAX,
   LAUNCH_LINKS_MAX,
@@ -30,7 +31,7 @@ import {
   LAUNCH_NAME_MAX,
   LAUNCH_SYMBOL_MAX,
 } from "../../../lib/api/token-launch.js";
-import { isAcceptableLaunchLink, parseEthInputToWei } from "./launch-display.js";
+import { isAcceptableLaunchLink, normalizeEthInput } from "./launch-display.js";
 import { LaunchImagePicker } from "./LaunchImagePicker.js";
 
 export interface LaunchFormValues {
@@ -39,7 +40,10 @@ export interface LaunchFormValues {
   readonly description: string;
   readonly links: readonly string[];
   readonly imageId: string | null;
-  /** As TYPED, in ETH. Converted to wei once, in `launchFormToParameters`. */
+  /**
+   * As TYPED, in ETH. It travels to main as a plain decimal string and is
+   * converted to wei THERE, once — see `launch-display.normalizeEthInput`.
+   */
   readonly prebuyEth: string;
 }
 
@@ -61,24 +65,19 @@ export const EMPTY_LAUNCH_FORM: LaunchFormValues = {
  *  - name and symbol are required and trimmed;
  *  - an image is REQUIRED — our product rule, enforced before we even ask for
  *    a price rather than surfaced as a refusal after the user has committed;
- *  - the prebuy must parse EXACTLY (`parseEthInputToWei` refuses a 19th
- *    decimal rather than truncating it);
+ *  - the prebuy must be a well-formed plain decimal (`normalizeEthInput`
+ *    refuses a 19th decimal rather than truncating it, and converts nothing);
  *  - every non-empty link must be `https:`;
  *  - empty link rows are dropped, so an untouched row never travels as `""`.
  *
  * This is deliberately a pure function of the values on screen: the parameters
- * that get priced are the parameters the user can see.
+ * that get priced are the parameters the user can see. It produces the SHARED
+ * `TokenLaunchForm` — the exact object main validates — so there is no second,
+ * renderer-shaped description of a launch anywhere.
  */
 export function launchFormToParameters(
   values: LaunchFormValues,
-): {
-  readonly name: string;
-  readonly symbol: string;
-  readonly description: string;
-  readonly links: readonly string[];
-  readonly imageId: string;
-  readonly prebuyWei: string;
-} | null {
+): TokenLaunchForm | null {
   const name = values.name.trim();
   const symbol = values.symbol.trim();
   if (name.length === 0 || name.length > LAUNCH_NAME_MAX) return null;
@@ -86,8 +85,8 @@ export function launchFormToParameters(
   if (values.description.length > LAUNCH_DESCRIPTION_MAX) return null;
   if (values.imageId === null) return null;
 
-  const prebuyWei = parseEthInputToWei(values.prebuyEth);
-  if (prebuyWei === null) return null;
+  const prebuy = normalizeEthInput(values.prebuyEth);
+  if (prebuy === null) return null;
 
   const links = values.links.map((link) => link.trim()).filter((link) => link.length > 0);
   if (links.length > LAUNCH_LINKS_MAX) return null;
@@ -101,7 +100,7 @@ export function launchFormToParameters(
     description: values.description.trim(),
     links,
     imageId: values.imageId,
-    prebuyWei,
+    prebuy,
   };
 }
 
@@ -129,7 +128,7 @@ export function LaunchForm({
     set("links", next);
   }
 
-  const prebuyWei = parseEthInputToWei(values.prebuyEth);
+  const prebuyIsAmount = normalizeEthInput(values.prebuyEth) !== null;
 
   return (
     <>
@@ -211,7 +210,7 @@ export function LaunchForm({
           placeholder="0"
           className="font-mono tabular-nums"
         />
-        {prebuyWei === null ? (
+        {!prebuyIsAmount ? (
           <p className="text-sm text-destructive" role="alert">
             Enter a plain ETH amount, like 0.05 — up to 18 decimal places.
           </p>

@@ -7,18 +7,19 @@
  * wrongly:
  *   - full 18-decimal precision survives (no float path anywhere);
  *   - an unreadable amount is an em-dash, never a zero;
- *   - the ceiling sum is msg.value + vexFee and CANNOT include gas;
+ *   - the estimated total DOES include gas and is null unless every term reads;
+ *   - the prebuy field validates but NEVER converts — main owns decimal → wei;
  *   - a fee-drift refusal classifies as re-review, never as a generic error.
  */
 
 import { describe, expect, it } from "vitest";
 import {
-  ceilingCheckedWei,
   classifyLaunchRefusal,
   formatWeiEth,
   formatWeiEthWithUnit,
+  estimatedTotalCostWei,
   isAcceptableLaunchLink,
-  parseEthInputToWei,
+  normalizeEthInput,
   parseWei,
   UNKNOWN_AMOUNT,
 } from "../token-launch/launch-display.js";
@@ -71,55 +72,43 @@ describe("parseWei", () => {
   });
 });
 
-describe("ceilingCheckedWei", () => {
-  it("sums msg.value and the Vex fee exactly", () => {
-    // 0.001 ETH msg.value, 25 bps = 2500000000000 wei.
-    expect(ceilingCheckedWei("1000000000000000", "2500000000000")).toBe(
-      "1002500000000000",
-    );
+describe("estimatedTotalCostWei", () => {
+  it("sums msg.value + vexFee + network fee — the whole cost of launching", () => {
+    // 0.051 + 0.0001275 + 0.001634838
+    expect(
+      estimatedTotalCostWei("51000000000000000", "127500000000000", "1634838000000000"),
+    ).toBe("52762338000000000");
   });
 
-  it("is msg.value alone when the DTO carries no Vex fee", () => {
-    expect(ceilingCheckedWei("1000000000000000", undefined)).toBe(
-      "1000000000000000",
-    );
-  });
-
-  it("refuses to produce a partial sum when either term is unreadable", () => {
-    expect(ceilingCheckedWei("nope", "2500000000000")).toBeNull();
-    expect(ceilingCheckedWei("1000000000000000", "nope")).toBeNull();
+  it("returns null when any term is unreadable, never a partial total", () => {
+    expect(estimatedTotalCostWei("nope", "0", "0")).toBeNull();
+    expect(estimatedTotalCostWei("1", "nope", "0")).toBeNull();
+    expect(estimatedTotalCostWei("1", "0", null)).toBeNull();
   });
 });
 
-describe("parseEthInputToWei", () => {
-  it("converts a typed ETH amount to exact wei without a float path", () => {
-    expect(parseEthInputToWei("0.001")).toBe("1000000000000000");
-    expect(parseEthInputToWei("1")).toBe("1000000000000000000");
-    expect(parseEthInputToWei("1.234567890123456789")).toBe(
-      "1234567890123456789",
-    );
+describe("normalizeEthInput", () => {
+  it("returns the typed decimal unchanged — it validates, it does not convert", () => {
+    expect(normalizeEthInput("0.001")).toBe("0.001");
+    expect(normalizeEthInput("1")).toBe("1");
+    expect(normalizeEthInput(" 1.234567890123456789 ")).toBe("1.234567890123456789");
   });
 
   it("treats an unfilled field as the documented zero default", () => {
-    expect(parseEthInputToWei("")).toBe("0");
-    expect(parseEthInputToWei("   ")).toBe("0");
-    expect(parseEthInputToWei("0")).toBe("0");
-  });
-
-  it("accepts the leading-dot and trailing-dot forms a user types mid-edit", () => {
-    expect(parseEthInputToWei(".5")).toBe("500000000000000000");
-    expect(parseEthInputToWei("2.")).toBe("2000000000000000000");
+    expect(normalizeEthInput("")).toBe("0");
+    expect(normalizeEthInput("   ")).toBe("0");
+    expect(normalizeEthInput("0")).toBe("0");
   });
 
   it("REFUSES more than 18 fractional digits rather than truncating them", () => {
-    // Truncating the 19th digit would spend a different amount than the one
-    // rendered on the consent line.
-    expect(parseEthInputToWei("1.1234567890123456789")).toBeNull();
+    expect(normalizeEthInput("1.1234567890123456789")).toBeNull();
   });
 
-  it("refuses anything that is not an unsigned decimal", () => {
-    for (const bad of ["-1", "1e18", "1,5", "abc", ".", "0x1", "1 2"]) {
-      expect(parseEthInputToWei(bad)).toBeNull();
+  it("refuses forms the IPC contract does not accept, instead of repairing them", () => {
+    // The shared schema is `^\\d+(\\.\\d+)?$`: a leading or trailing dot is not
+    // an amount there, and quietly rewriting a money field is not ours to do.
+    for (const bad of [".5", "2.", "-1", "1e18", "1,5", "abc", ".", "0x1", "1 2"]) {
+      expect(normalizeEthInput(bad)).toBeNull();
     }
   });
 });

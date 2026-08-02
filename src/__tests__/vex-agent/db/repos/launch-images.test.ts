@@ -54,6 +54,7 @@ const repo = await import("@vex-agent/db/repos/launch-images.js");
 const { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } = await import(
   "@vex-agent/db/repos/token-launch-intents.js"
 );
+const { launchImageLockKey } = await import("@vex-agent/db/repos/launch-image-lock.js");
 
 beforeEach(() => resetMocks());
 
@@ -121,7 +122,7 @@ describe("findLiveIntentsReferencingImage", () => {
 
 describe("deleteLaunchImage — the refusal is ATOMIC with the delete", () => {
   it("refuses while a live intent references the image, and NAMES it", async () => {
-    txRows = [[liveIntentRow({ name: "Rocket Coin" })]];
+    txRows = [[], [liveIntentRow({ name: "Rocket Coin" })]];
     const result = await repo.deleteLaunchImage(IMAGE_ID);
     expect(result).toEqual({
       deleted: false,
@@ -131,33 +132,52 @@ describe("deleteLaunchImage — the refusal is ATOMIC with the delete", () => {
   });
 
   it("runs NO delete statement when it refuses", async () => {
-    txRows = [[liveIntentRow()]];
+    txRows = [[], [liveIntentRow()]];
     await repo.deleteLaunchImage(IMAGE_ID);
-    expect(txCalls).toHaveLength(1);
-    expect(txCalls[0]![0]).not.toMatch(/DELETE/i);
+    expect(txCalls).toHaveLength(2);
+    expect(txCalls.map(([sql]) => sql).join(" ")).not.toMatch(/DELETE/i);
   });
 
-  it("checks and deletes on the SAME client — no TOCTOU window", async () => {
-    // Both statements come from the single `withTransaction` client, so an
-    // intent created concurrently either blocks the delete or lands after it.
-    txRows = [[], [imageRow()]];
+  // ── the serialization pin ────────────────────────────────────────────────
+  //
+  // Sharing one client is NOT serialization. Postgres READ COMMITTED lets a
+  // concurrent transaction insert an intent that this transaction's reference
+  // check never sees, and there is no foreign key to stop it (the refusal is
+  // status-conditional, which an FK cannot express). So the delete takes the
+  // image's advisory lock FIRST — the same lock every intent write that
+  // references an image takes — and only then checks and deletes.
+  //
+  // RESIDUAL GAP: this suite mocks the pg client, so this is a SQL-SHAPE pin.
+  // It proves the lock statement is issued with the right key before the
+  // check; it cannot prove Postgres blocks the concurrent writer. That needs a
+  // real database and two connections, which this repo has no harness for.
+  it("takes the image's advisory lock BEFORE the reference check", async () => {
+    txRows = [[], [], [imageRow()]];
     const result = await repo.deleteLaunchImage(IMAGE_ID);
     expect(result).toEqual({ deleted: true, row: expect.objectContaining({ imageId: IMAGE_ID }) });
-    expect(txCalls).toHaveLength(2);
-    expect(txCalls[0]![0]).toContain("FROM token_launch_intents");
-    expect(txCalls[1]![0]).toMatch(/DELETE FROM launch_images/);
+    expect(txCalls).toHaveLength(3);
+    expect(txCalls[0]![0]).toContain("pg_advisory_xact_lock");
+    expect(txCalls[0]![1]).toEqual([launchImageLockKey(IMAGE_ID)]);
+    expect(txCalls[1]![0]).toContain("FROM token_launch_intents");
+    expect(txCalls[2]![0]).toMatch(/DELETE FROM launch_images/);
+  });
+
+  it("holds the lock even on the refusal path — the check itself must be serialized", async () => {
+    txRows = [[], [liveIntentRow()]];
+    await repo.deleteLaunchImage(IMAGE_ID);
+    expect(txCalls[0]![0]).toContain("pg_advisory_xact_lock");
   });
 
   it("a TERMINAL intent does not block deletion", async () => {
     // The status predicate is the live set, so a confirmed/cancelled/expired
     // intent returns no blocking row and the delete proceeds.
-    txRows = [[], [imageRow()]];
+    txRows = [[], [], [imageRow()]];
     const result = await repo.deleteLaunchImage(IMAGE_ID);
     expect(result.deleted).toBe(true);
   });
 
   it("reports not_found rather than pretending a delete happened", async () => {
-    txRows = [[], []];
+    txRows = [[], [], []];
     expect(await repo.deleteLaunchImage(IMAGE_ID)).toEqual({
       deleted: false,
       reason: "not_found",

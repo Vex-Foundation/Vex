@@ -5,6 +5,14 @@
  * confusing them is the one retrieval error that costs money: `request_form`
  * ASKS a human and spends nothing, `execute` SIGNS. The embedding text for each
  * says which, in those words.
+ *
+ * HONESTY GATE (Fala B, 2026-08-02): a passage states what the runtime does
+ * TODAY, in both directions. Park/resume is now wired, so `request_form` says
+ * the turn parks and is resumed with the outcome — the round-3 denial of it is
+ * stale. `execute` still names the refusal that stands while a mission contract
+ * carries no host-authored launch ceilings. The failure these sentences prevent
+ * is a model improvising a launch by another route, whether because it thinks
+ * it is stuck or because it thinks it is authorized.
  */
 
 import type { ToolDiscoveryMetadata } from "../../types.js";
@@ -14,10 +22,10 @@ import { TRENCH_CHAINS } from "../../trench/discovery-text.js";
 export const TRENCH_LAUNCH_DISCOVERY = {
   "trench.launch_request_form": {
     embeddingText: embeddingText(
-      `Ask the user to create a token on the Trench Express launchpad on Robinhood Chain by opening the launch form, pre-filled with the name, symbol, description, links and image you propose. ` +
-      `DRAFTS AND ASKS ONLY — it never signs or spends; the user reviews the details, sees the cost, and clicks Deploy. ` +
-      `Use this when a human should decide the launch, or when you are not running with full autonomy. ` +
-      `Your turn pauses while the form is open and resumes once the user deploys or dismisses it. ` +
+      `Ask the user to create a token on the Trench Express launchpad on Robinhood Chain through the launch form, pre-filled with the details you propose. ` +
+      `DRAFTS AND ASKS ONLY — it never signs or spends; the user reviews the cost and clicks Deploy. ` +
+      `Use this when a human should decide the launch. ` +
+      `Your turn parks while the form is open and resumes with the outcome once the user deploys, dismisses it, or it expires; never assume the launch happened without that outcome. ` +
       `Example queries: launch a token for me, create a coin called X, make me a memecoin, open the launch form.`,
     ),
     aliases: [
@@ -37,10 +45,11 @@ export const TRENCH_LAUNCH_DISCOVERY = {
   },
   "trench.launch_execute": {
     embeddingText: embeddingText(
-      `Create a token on the Trench Express launchpad on Robinhood Chain for real, signing and broadcasting with the user's own wallet. ` +
-      `SPENDS REAL FUNDS and is irreversible: it pays the creation fee and, with a prebuy, buys that much of the token on its curve in the same transaction. ` +
-      `An image is REQUIRED and must already be in the Trench Photos locker — it is written on-chain at creation and can never be added later. ` +
-      `Use this when authorized: full autonomy executes directly, bounded by the mission's value and count ceilings; otherwise it needs an approval first. ` +
+      `Create a token on the Trench Express launchpad on Robinhood Chain for real, signed and broadcast from the user's wallet. ` +
+      `SPENDS REAL FUNDS and is irreversible: it pays the creation fee and, with a prebuy, buys that much of the token. ` +
+      `Vex charges 25 bps of that ETH, transferred separately after the launch confirms. ` +
+      `An image is REQUIRED and must already be in the Trench Photos locker. ` +
+      `Use this when authorized by an approval, or by a mission whose host-authored launch ceilings cover it; without them it refuses by name. ` +
       `Example queries: launch it now, deploy the token, go ahead and create it.`,
     ),
     aliases: ["deploy the token", "execute the launch", "create the token now", "launch it for real"],

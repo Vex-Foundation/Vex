@@ -18,12 +18,9 @@ import { trenchImagesHandler } from "./handlers/images.js";
 import { trenchMyLaunchesHandler } from "./handlers/my-launches.js";
 import { trenchLaunchRequestFormHandler } from "./handlers/launch/request-form.js";
 import { trenchLaunchExecuteHandler } from "./handlers/launch/execute.js";
-import type {
-  LaunchExecuteDeps,
-  TrenchFeeLegPlan,
-  TrenchFeeLegPlanRequest,
-} from "./handlers/launch/fee-seam.js";
-import { planTrenchFeeLeg, runTrenchFeeLeg } from "./fee/index.js";
+import { planTrenchLaunchFeeLeg } from "./handlers/launch/fee-seam.js";
+import type { LaunchExecuteDeps } from "./handlers/launch/fee-seam.js";
+import { runTrenchFeeLeg } from "./fee/index.js";
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 // NOTE (2026-08-02): trench deliberately has NO per-protocol settlement decoder.
 // The owner decree of 2026-07-30 retired per-protocol settlement verification —
@@ -54,16 +51,7 @@ import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
  * confirmed.
  */
 const LAUNCH_FEE_DEPS: LaunchExecuteDeps = {
-  planFeeLeg: (request: TrenchFeeLegPlanRequest): TrenchFeeLegPlan | null =>
-    planTrenchFeeLeg({
-      base: { basis: "launch_msg_value", msgValueWei: request.baseWei },
-      parentKind: "launch",
-      chainId: request.chainId,
-      nativeAddress: request.nativeAddress,
-      walletAddress: request.walletAddress,
-      sessionId: request.sessionId,
-      usdVexFeeEst: request.usdVexFeeEst,
-    }) as TrenchFeeLegPlan | null,
+  planFeeLeg: planTrenchLaunchFeeLeg,
   runFeeLeg: (input) =>
     runTrenchFeeLeg({
       plan: input.plan as Parameters<typeof runTrenchFeeLeg>[0]["plan"],

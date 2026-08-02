@@ -13,7 +13,8 @@
 
 import type { PoolClient } from "pg";
 
-import { jsonb } from "../../params.js";
+import { jsonb, nullableJsonb } from "../../params.js";
+import { lockAndRequireLaunchImageWith } from "../launch-image-lock.js";
 import {
   casRow,
   mapRow,
@@ -28,13 +29,13 @@ import {
 const INSERT_SQL = `INSERT INTO token_launch_intents (
   intent_id, session_id, origin, status, chain_id, wallet_address,
   name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals,
-  authorization_id, authorization_kind, authorized_at,
+  authorization_id, authorization_kind, authorization_json, authorized_at,
   tool_call_id, mission_run_id, expires_at
 ) VALUES (
   $1, $2, $3, $4, $5, $6,
   $7, $8, $9, $10::jsonb, $11, $12, $13,
-  $14, $15, CASE WHEN $14::text IS NULL THEN NULL ELSE NOW() END,
-  $16, $17, $18
+  $14, $15, $16::jsonb, CASE WHEN $14::text IS NULL THEN NULL ELSE NOW() END,
+  $17, $18, $19
 ) RETURNING ${SELECT_COLUMNS}`;
 
 /**
@@ -51,11 +52,19 @@ const INSERT_SQL = `INSERT INTO token_launch_intents (
  * supplied, rather than by the caller. A Path-2 intent enters at `authorized`,
  * and letting the caller pass the timestamp separately is how a row ends up
  * asserting an authorization with no time — or a time with no authorization.
+ *
+ * When the intent CAPTURES an image, this takes that image's advisory lock and
+ * re-reads the row before inserting (`../launch-image-lock.js`), so the intent
+ * cannot appear inside a concurrent deletion's reference-check window NOR
+ * capture an id that deletion already removed. It THROWS
+ * `LaunchImageMissingError` in the second case — a dangling `image_id` is a
+ * launch that can reach signing with no bytes behind it.
  */
 export async function createWith(
   client: PoolClient,
   input: CreateTokenLaunchIntentInput,
 ): Promise<TokenLaunchIntent> {
+  if (input.imageId) await lockAndRequireLaunchImageWith(client, input.imageId);
   const res = await client.query<Record<string, unknown>>(INSERT_SQL, [
     input.intentId,
     input.sessionId,
@@ -72,6 +81,8 @@ export async function createWith(
     input.prebuyDecimals ?? null,
     input.authorizationId ?? null,
     input.authorizationKind ?? null,
+    // Persisted as-is; the reader validates it (see the type's comment).
+    nullableJsonb(input.authorizationJson ?? null),
     input.toolCallId ?? null,
     input.missionRunId ?? null,
     input.expiresAt,
@@ -93,6 +104,11 @@ export interface AuthorizeTokenLaunchInput {
   /** Raw wei. Travels with its decimals, always (rule 90). */
   prebuyRaw: string;
   prebuyDecimals: number;
+  /**
+   * The `user_submit` consent snapshot, persisted as-is. Same contract as the
+   * create path: dumb writer, validating reader (`./types.js`).
+   */
+  authorizationJson?: unknown;
 }
 
 /**
@@ -102,6 +118,12 @@ export interface AuthorizeTokenLaunchInput {
  *
  * `expires_at > NOW()` is part of the predicate, so a click that arrives after
  * the form window lapsed CANNOT authorize a spend. `null` on any miss.
+ *
+ * This is the other write that binds an image to a live intent, so it locks and
+ * re-reads the image before the CAS, and throws `LaunchImageMissingError` when
+ * the image lost the race, for the reasons `createWith` documents. The throw is
+ * deliberately NOT the `null` return: `null` here means "the form window
+ * lapsed", and a caller must not read a vanished image as a lapsed form.
  */
 export async function authorizeWith(
   client: PoolClient,
@@ -109,12 +131,14 @@ export async function authorizeWith(
   sessionId: string,
   input: AuthorizeTokenLaunchInput,
 ): Promise<TokenLaunchIntent | null> {
+  await lockAndRequireLaunchImageWith(client, input.imageId);
   return casRow(
     client,
     `UPDATE token_launch_intents
         SET status = 'authorized', authorization_id = $3, authorization_kind = $4,
             authorized_at = NOW(), image_id = $5,
-            prebuy_raw = $6, prebuy_decimals = $7
+            prebuy_raw = $6, prebuy_decimals = $7,
+            authorization_json = $8::jsonb
       WHERE intent_id = $1
         AND session_id = $2
         AND status = 'awaiting_user_form'
@@ -128,6 +152,7 @@ export async function authorizeWith(
       input.imageId,
       input.prebuyRaw,
       input.prebuyDecimals,
+      nullableJsonb(input.authorizationJson ?? null),
     ],
   );
 }

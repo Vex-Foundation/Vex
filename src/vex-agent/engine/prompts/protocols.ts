@@ -16,6 +16,7 @@ import {
 } from "@vex-agent/tools/protocols/descriptions.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import type { BridgeCapabilityView } from "@vex-agent/tools/protocols/khalani/capability-snapshot.js";
+import { isProtocolNamespaceAvailable } from "./capability-availability.js";
 
 // ── Auto-generation from manifests ──────────────────────────────
 
@@ -135,6 +136,19 @@ export function buildProtocolsPrompt(): string {
         if (summary.hasMutating) {
           lines.push("Contains mutating tools (may require approval).");
         }
+        // P1: the navigation entries already author `facets` (what the
+        // namespace actually DOES, in sub-capabilities) and `exampleQueries`
+        // (how to reach them through discovery). Both were authored for this
+        // layer and then never rendered, so a cold model saw a namespace
+        // one-liner and three toolIds and could not tell that e.g. launching a
+        // token exists at all. One line per facet, one `Try:` line per
+        // namespace — verbatim, deterministic, no counts.
+        for (const facet of metadata.facets) {
+          lines.push(`- ${facet.label} — ${facet.summary}`);
+        }
+        if (metadata.exampleQueries.length > 0) {
+          lines.push(`Try: ${metadata.exampleQueries.join(" · ")}`);
+        }
       }
       lines.push("");
     }
@@ -152,7 +166,35 @@ export function buildProtocolsPrompt(): string {
   lines.push("- If KyberSwap cannot route a swap (no aggregator support for the chain, a route/token-not-found class failure, or the swap execute transaction reverting on-chain), its failure output tells you a backup venue is now available for this session and how to reach it — do not try to reach it yourself. Only that specific failure output unlocks it, and only as a QUOTE candidate: request a fresh quote from the backup venue before considering execution, and never resubmit the identical failing KyberSwap route. A bad KyberSwap price quote is never a trigger by itself.");
   lines.push("- On Robinhood Chain (4663), `kyberswap.*` is primary (provisional aggregator support). $VEX and other Virtuals agent tokens trade against VIRTUAL there, so route through VIRTUAL (or WETH) as the base pair.");
   lines.push("- Robinhood caution: KyberSwap's indexed reserves can be stale on thin pairs there. A quote whose priceImpact is strongly NEGATIVE (output supposedly worth more than input), or an execute reverting with 'Return amount is not enough', means the quote overestimated the pool — do NOT retry with higher slippage; re-quote, or tell the user KyberSwap's pricing looks unreliable for this pair.");
+  lines.push("- Trench exception, Robinhood Chain (4663): a Trench Express token that is still on its bonding curve trades ONLY against ETH on that curve — quote with `trench.trade_quote`, then execute with `trench.trade_execute`. `kyberswap.*` has no route for a curve token, so a failed swap quote there is not evidence the token is untradeable. Once a Trench token GRADUATES it leaves the curve for a WETH-paired pool and the normal venue rules apply again.");
   lines.push("- Quote and execute on the SAME venue: a swap execute runs only against a fresh quote from the exact venue it will broadcast on (same rule for any revealed backup venue, not just `kyberswap`). The runtime enforces this.");
+  lines.push("");
+
+  // ── Trench Launch doctrine — the launch path was invisible to a cold model:
+  // the tools existed in the catalog but nothing told it the ORDER, that the
+  // image comes from the user, or which call spends. Static, imperative, no
+  // live data (KV-cache safe).
+  lines.push("## Trench Launch");
+  lines.push("");
+  lines.push("Launching a token on Trench Express (Robinhood Chain, 4663) spends real ETH and cannot be undone. The path is fixed:");
+  lines.push("- PLANNING starts at `trench.images`: a launch REQUIRES an image the user pre-staged in the app and you can never supply one. If the locker is empty, do not improvise around it — ask the user to upload an image to the Trench Photos card, then continue.");
+  lines.push("- `trench.launch_preview` is this path's preview under the `# Safety Contract`'s fresh-quote rule: it dry-runs the launch and reports the predicted token address, the creation fee, the 25 bps Vex fee (a separate transfer that runs only after the launch confirms), and the gas cost. Preview in the same turn you intend to execute.");
+  // HONESTY GATE (updated 2026-08-02, Fala B): the form bullet now describes
+  // WIRED behavior. `ProtocolExecutionContext.toolCallId` is threaded by the
+  // dispatcher, the handler drafts the intent and parks the run on
+  // `paused_user_form`, and `resumeAgentAfterUserForm` appends the outcome as
+  // this call's result on every terminal branch — deployed, refused, dismissed,
+  // expired (`engine/core/launch-form-resume.ts`). The parking/resume promise is
+  // therefore true, and the model must be told, or it will call the tool again
+  // while the form is open or narrate a launch that has not happened.
+  //
+  // STILL DEFERRED, and still taught as a refusal: the autonomous
+  // `launch_execute` path refuses while a contract carries no host-authored
+  // launch ceilings (the contract editor that authors them is a later wave).
+  // That refusal is SAFE (nothing created, no funds moved); the failure mode to
+  // prevent is the model improvising a launch by another route.
+  lines.push("- `trench.launch_request_form` is how you hand the launch DECISION to the human: it asks them to fill in the launch form instead of you choosing the token's details. It spends nothing and creates nothing — it drafts the launch and parks the turn. The runtime resumes you with the outcome as this call's result when the user deploys, dismisses the form, or it expires, so do not call it again while the form is open and never assume the launch happened. Never improvise a launch another way.");
+  lines.push("- `trench.launch_execute` signs and broadcasts the launch irreversibly. Call it only under explicit authority: an approval for this launch, or a mission whose host-authored launch ceilings already cover it. When the mission contract carries no such ceilings the tool refuses by name — report that refusal and tell the user to set the max launch value and max launch count on the contract card; do not look for another way to launch.");
   lines.push("");
 
   // ── Virtuals Agent Tokens (Wave 3) — static trading doctrine for Virtuals
@@ -170,6 +212,16 @@ export function buildProtocolsPrompt(): string {
   // ── Fixed Yield (Pendle) (Wave 5) — static doctrine for fixed-yield PT.
   // Imperative rules; no live numbers (KV-cache safe). `pendle.*` spans 11 chains.
   lines.push("## Fixed Yield (Pendle)");
+  lines.push("");
+  // P8 yield arbiter: "stake" / "earn yield" has no plain staking tool in this
+  // install, and the model's fallback was to substitute a swap. Name the two
+  // real families instead. The Solana half asks the same availability predicate
+  // the dispatcher enforces — recommending `solana.*` without JUPITER_API_KEY
+  // sends the model at a refusal.
+  const solanaLendingClause = isProtocolNamespaceAvailable("solana")
+    ? " and Solana lending/earn is `solana.lend.*`"
+    : "";
+  lines.push(`There is NO plain staking tool in this install. When the user asks to stake or to earn yield, route by family: term/fixed yield on EVM chains is \`pendle.*\`${solanaLendingClause}. If neither family fits what they asked for, say the capability does not exist — never substitute a swap for a yield position.`);
   lines.push("");
   lines.push("`pendle.*` is fixed-yield across 11 chains (Ethereum, Arbitrum, Base, BSC, and more). A principal token (PT) is a TERM COMMITMENT: buying a PT locks a fixed rate until the market's expiry date. Always pass the `chain` the PT lives on.");
   lines.push("- Buying a PT locks funds until maturity. Exiting EARLY (`pendle.pt.sell`) is market-priced and CAN lose money versus the locked rate — say so before recommending a buy.");
@@ -241,7 +293,10 @@ export function buildBridgeCapabilityPrompt(view: BridgeCapabilityView): string 
   if (view.kind === "available" && view.robinhoodViaRelay) {
     lines.push("Robinhood Chain (4663): bridges via Relay only.");
     lines.push(
-      "- To fund Robinhood Chain, bridge ETH, USDG, or VIRTUAL in with `relay.*`, then swap on-chain with `swap_quote`/`swap_execute`; reverse the flow to exit.",
+      // P7: this line used to send the model at `relay.*` directly, contradicting
+      // the shortcut table in `# Tool Model` (`bridge_quote`/`bridge` auto-route
+      // to Relay for 4663). One route, named once.
+      "- To fund Robinhood Chain, bridge ETH, USDG, or VIRTUAL in with `bridge_quote` then `bridge` (they auto-route to Relay for this chain), then swap on-chain with `swap_quote`/`swap_execute`; reverse the flow to exit.",
     );
   }
   return lines.join("\n");

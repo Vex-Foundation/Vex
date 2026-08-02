@@ -17,11 +17,11 @@ export const TRENCH_LAUNCH_PREVIEW_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "name", type: "string", required: true, description: "Token name (1-64 chars)." },
+      { key: "name", type: "string", required: true, description: "Token name (1-18 chars) — the chain reverts a longer one." },
       { key: "symbol", type: "string", required: true, description: "Token symbol/ticker (1-16 chars)." },
       { key: "description", type: "string", description: "Optional token description (max 512 chars)." },
       { key: "links", type: "string", required: false, acceptsStringArray: true, description: "Optional 0-4 social links, each an https URL (comma-separated or array)." },
-      { key: "imageByteLength", type: "number", description: "Optional byte length of the image you intend to upload, to preview its gas impact (0-20000; larger reverts on-chain)." },
+      { key: "imageByteLength", type: "number", description: "Optional byte length of the image you intend to upload (0-20000; larger reverts on-chain). It is VALIDATED but NOT priced: the dry-run always simulates an EMPTY image, so the gas estimate EXCLUDES image bytes and the real launch costs more, scaling with image size (measured: ~7.2M gas at 6.9 KB, ~15.3M at 17.4 KB)." },
     ],
     exampleParams: { name: "My Token", symbol: "MYT" },
     discovery: TRENCH_LAUNCH_PREVIEW_DISCOVERY["trench.launch_preview"],

@@ -41,7 +41,8 @@ const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>(["durationMinutes"]);
  * need (contract C6).
  *
  * `maxLaunchValueRaw` / `maxLaunchValueDecimals` are the hard spend ceiling on
- * an autonomous token launch. Rule 90: "fee, limit, and destination parameters
+ * an autonomous token launch, and `maxLaunchCount` is the hard cap on how many
+ * tokens it may create. Rule 90: "fee, limit, and destination parameters
  * must never originate from model input." A model that can raise its own cap
  * has no cap — the field would look like a control and enforce nothing, which
  * is worse than having none, because the UI would show the user a limit that
@@ -54,6 +55,7 @@ const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>(["durationMinutes"]);
 const MODEL_FORBIDDEN_KEYS = new Set<keyof MissionDraft>([
   "maxLaunchValueRaw",
   "maxLaunchValueDecimals",
+  "maxLaunchCount",
 ]);
 
 const ALL_ALLOWED_KEYS = new Set<string>(

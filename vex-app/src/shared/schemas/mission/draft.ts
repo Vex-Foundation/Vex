@@ -17,6 +17,16 @@ export const MISSION_DRAFT_GOAL_MAX = 4000;
 export const MISSION_DRAFT_LIST_MAX = 32;
 export const MISSION_DRAFT_LIST_ITEM_MAX = 500;
 
+/**
+ * Upper bound on the C6b launch-count ceiling.
+ *
+ * Not a policy limit — the real gate is the number the user authors — but a
+ * bound on what the field may hold at all, so a typo like a pasted wei amount
+ * cannot become a cap that means "unbounded in practice". 1000 tokens is far
+ * beyond any real mission and still comfortably an integer.
+ */
+export const MISSION_MAX_LAUNCH_COUNT = 1000;
+
 export const missionStatusSchema = z.enum([
   "draft",
   "ready",
@@ -42,13 +52,22 @@ export const missionConstraintsSchema = z
     autoRetryEnabled: z.boolean().nullable().optional(),
     /**
      * C6 — the enforceable ceiling on an autonomous token launch, as a RAW
-     * integer amount string paired with its decimals. DISPLAY-ONLY on this
-     * side: the renderer never authors or enforces it. Kept as a string
-     * because a wei ceiling exceeds `Number.MAX_SAFE_INTEGER`, and the two
-     * keys are meaningless apart — render them only when BOTH are present.
+     * integer amount string paired with its decimals. Kept as a string because
+     * a wei ceiling exceeds `Number.MAX_SAFE_INTEGER`, and the two keys are
+     * meaningless apart — render them only when BOTH are present.
+     *
+     * READ-ONLY on this DTO. The host authors both ceilings through
+     * `mission.setLaunchCeilings`, which is the only write path; the renderer
+     * never converts units and never enforces anything.
      */
     maxLaunchValueRaw: z.string().max(80).nullable().optional(),
     maxLaunchValueDecimals: z.number().int().min(0).max(36).nullable().optional(),
+    /**
+     * C6b — how many tokens the mission may create. Independent of the value
+     * pair; an autonomous launch requires BOTH, and absent means zero
+     * authority (see `engine/mission/launch-ceiling.ts`).
+     */
+    maxLaunchCount: z.number().int().min(0).max(MISSION_MAX_LAUNCH_COUNT).nullable().optional(),
   })
   .strict();
 export type MissionConstraints = z.infer<typeof missionConstraintsSchema>;

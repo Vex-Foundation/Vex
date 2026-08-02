@@ -56,14 +56,10 @@ export async function trenchLaunchRequestFormHandler(
   if (!sessionId) return fail(`${TOOL_ID} requires an active session.`);
 
   // The tool-call id comes from the HOST, never from params — a model-supplied
-  // one could park a form that answers a different call.
-  //
-  // NOT ON `ProtocolExecutionContext` YET (2026-08-02). §C3b requires the
-  // ORIGINAL tool-call id, and the dispatcher does not thread one; Lane F owns
-  // adding it beside the mission provenance it already threads. Read through a
-  // widening so this compiles today and FAILS CLOSED: with no id there is no
-  // pending call to answer, and parking the turn would hang it forever. Refusing
-  // is the honest outcome until the seam lands.
+  // one could park a form that answers a different call. Absent means this
+  // dispatch was not a model tool call at all (previews, maintenance, internal
+  // resumes), and parking a turn nothing can answer would hang it forever, so
+  // the handler refuses instead. Fail-closed, not dead code.
   const toolCallId = readHostToolCallId(context);
   if (!toolCallId) {
     return fail(
@@ -140,15 +136,11 @@ export async function trenchLaunchRequestFormHandler(
 }
 
 /**
- * Read the host-threaded tool-call id.
- *
- * DELETE THIS SHIM once `ProtocolExecutionContext.toolCallId` exists (Lane F).
- * It is a widening, not a cast to a lie: the field is genuinely absent today, so
- * the honest type is "may not be there", and the caller refuses when it is not.
+ * Read the host-threaded tool-call id, treating blank as absent — a whitespace
+ * id answers no call, and the DB CHECK on this path would take it anyway.
  */
 function readHostToolCallId(context: ProtocolExecutionContext): string | null {
-  const widened = context as ProtocolExecutionContext & { toolCallId?: string | null };
-  const value = widened.toolCallId;
+  const value = context.toolCallId;
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;

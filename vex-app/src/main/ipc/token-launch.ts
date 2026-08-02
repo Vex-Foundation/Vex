@@ -40,7 +40,16 @@ import {
   type TokenLaunchPreviewResult,
   type TokenLaunchSubmitResult,
 } from "@shared/schemas/token-launch.js";
-import type { TokenLaunchRefusal } from "../token-launch/index.js";
+import { listWallets } from "@vex-lib/wallet.js";
+import { buildSubmittedLaunchExecutor } from "../token-launch/execute-seam.js";
+import {
+  cancelLaunch,
+  listMyLaunches,
+  previewLaunch,
+  submitLaunch,
+  TRENCH_LAUNCH_CHAIN_ID,
+  type TokenLaunchRefusal,
+} from "../token-launch/index.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -60,6 +69,26 @@ function refuse(refusal: TokenLaunchRefusal, correlationId: string): Result<neve
         return "tokenLaunch.ceiling_not_set";
       case "invalid":
         return "validation.invalid_input";
+      case "no_wallet":
+        return "wallets.invalid_selection";
+      case "image_not_found":
+        return "images.not_found";
+      case "image_unavailable":
+        return "images.store_unavailable";
+      case "insufficient_funds":
+        return "wallet.insufficient_funds";
+      // No `tokenLaunch.refused` code exists on the shared surface, and minting
+      // one from a handler would grow the wire contract without the tests that
+      // pin it. The MESSAGE carries the executor's precise reason; the code says
+      // only that this was not the user's input to fix.
+      case "launch_refused":
+        return "internal.unexpected";
+      // No `tokenLaunch.*` code is minted for "the chain would not price this":
+      // the existing generic is honest (it is OUR read that failed, not the
+      // user's input), and inventing a code the shared surface tests do not pin
+      // would grow the wire contract from a handler.
+      case "unpriceable":
+        return "internal.unexpected";
     }
   })();
 
@@ -70,21 +99,40 @@ function refuse(refusal: TokenLaunchRefusal, correlationId: string): Result<neve
     message: refusal.detail,
     // A stale preview IS retryable — the user re-previews and sees the new
     // numbers. A breached ceiling is not: the amount is never clamped for them.
-    retryable: refusal.kind === "preview_stale",
-    userActionable: true,
+    // A read that failed on OUR side (chain unreachable, locker unreadable) is
+    // retryable too, and is the one class the user cannot act on by editing.
+    // A refused launch is NOT retryable from the dialog: the two live causes are
+    // a lost double-submit race (retrying is how you double-spend) and
+    // authorization drift (which needs a fresh preview, not a repeat).
+    retryable:
+      refusal.kind === "preview_stale"
+      || refusal.kind === "unpriceable"
+      || refusal.kind === "image_unavailable",
+    userActionable: refusal.kind !== "unpriceable",
     redacted: true,
     correlationId,
   });
 }
 
+/**
+ * The fail-closed refusal for the two SIGNING-adjacent operations that are not
+ * implemented yet.
+ *
+ * It says so in words the dialog renders verbatim, because the alternative — a
+ * generic "something went wrong" — invites a retry that can never succeed, and
+ * a stub that resolved `ok` on a spend path would be far worse than one that
+ * refuses. `retryable: false` is the whole point: no amount of trying makes
+ * absent machinery appear.
+ */
 function notWired(correlationId: string, what: string): Result<never, VexError> {
   log.warn(`[ipc:vex:tokenLaunch] not wired: ${what} correlationId=${correlationId}`);
   return err({
     code: "internal.unexpected",
     domain: DOMAIN,
     message:
-      "The launch could not be completed because part of the desktop wiring is not in place yet. "
-      + "Nothing was signed and no funds moved.",
+      `Vex cannot ${what} yet — that part of the launch is not built in this build. `
+      + "Nothing was signed and no funds moved. Previewing a launch and reviewing your "
+      + "past launches both work; deploying does not.",
     retryable: false,
     userActionable: false,
     redacted: true,
@@ -100,10 +148,16 @@ function registerPreviewHandler(): () => void {
     domain: DOMAIN,
     inputSchema: tokenLaunchPreviewInputSchema,
     outputSchema: tokenLaunchPreviewResultSchema,
-    handle: async (_input, ctx): Promise<Result<TokenLaunchPreviewResult>> => {
-      // REQUIRES the signing-wallet + chain-client resolution that lives in the
-      // agent runtime's main mount. Refuses rather than guessing a fee.
-      return notWired(ctx.requestId, "preview needs the main-side wallet/client mount");
+    handle: async (input, ctx): Promise<Result<TokenLaunchPreviewResult>> => {
+      // READ-ONLY. Priced by the SAME pipeline the execute leg signs from, so
+      // the figure shown and the figure charged cannot diverge.
+      const outcome = await previewLaunch({ sessionId: input.sessionId, form: input.form });
+      if (!outcome.ok) return refuse(outcome.refusal, ctx.requestId);
+      log.info(
+        `[ipc:vex:tokenLaunch:preview] ok chainId=${outcome.preview.chainId} `
+          + `correlationId=${ctx.requestId}`,
+      );
+      return ok(outcome.preview);
     },
   });
 }
@@ -116,8 +170,17 @@ function registerSubmitHandler(): () => void {
     domain: DOMAIN,
     inputSchema: tokenLaunchSubmitInputSchema,
     outputSchema: tokenLaunchSubmitResultSchema,
-    handle: async (_input, ctx): Promise<Result<TokenLaunchSubmitResult>> => {
-      return notWired(ctx.requestId, "submit needs the main-side wallet/client mount");
+    handle: async (input, ctx): Promise<Result<TokenLaunchSubmitResult>> => {
+      // THE SPEND CONSENT. Everything that becomes money is re-derived main-side
+      // from the form and the `previewId` the user was shown; the renderer named
+      // no amount, and the schema above has no field for one.
+      const outcome = await submitLaunch(input, buildSubmittedLaunchExecutor());
+      if (!outcome.ok) return refuse(outcome.refusal, ctx.requestId);
+      log.info(
+        `[ipc:vex:tokenLaunch:submit] ${outcome.result.status} `
+          + `intentId=${outcome.result.intentId} correlationId=${ctx.requestId}`,
+      );
+      return ok(outcome.result);
     },
   });
 }
@@ -130,8 +193,18 @@ function registerCancelHandler(): () => void {
     domain: DOMAIN,
     inputSchema: tokenLaunchCancelInputSchema,
     outputSchema: tokenLaunchCancelResultSchema,
-    handle: async (_input, ctx): Promise<Result<TokenLaunchCancelResult>> => {
-      return notWired(ctx.requestId, "cancel needs the §C3b resume mount");
+    handle: async (input, ctx): Promise<Result<TokenLaunchCancelResult>> => {
+      // Only reachable from `awaiting_user_form`, so a cancel can never race an
+      // in-flight signature. When an agent asked for the form, this also wakes
+      // its parked turn — `resumedAgentTurn` reports whether that actually
+      // happened, never merely that it was attempted.
+      const outcome = await cancelLaunch(input);
+      if (!outcome.ok) return refuse(outcome.refusal, ctx.requestId);
+      log.info(
+        `[ipc:vex:tokenLaunch:cancel] cancelled=${String(outcome.result.cancelled)} `
+          + `resumed=${String(outcome.result.resumedAgentTurn)} correlationId=${ctx.requestId}`,
+      );
+      return ok(outcome.result);
     },
   });
 }
@@ -144,8 +217,40 @@ function registerMyLaunchesHandler(): () => void {
     domain: DOMAIN,
     inputSchema: tokenLaunchMyLaunchesInputSchema,
     outputSchema: tokenLaunchMyLaunchesResultSchema,
-    handle: async (_input, ctx): Promise<Result<TokenLaunchMyLaunchesResult>> => {
-      return notWired(ctx.requestId, "myLaunches needs the main-side wallet scope resolver");
+    handle: async (input, ctx): Promise<Result<TokenLaunchMyLaunchesResult>> => {
+      // WALLET SCOPE IS SERVER-RESOLVED. The renderer never names an address;
+      // the scope is the user's own EVM inventory, whose addresses are public
+      // and whose keys never come near this read.
+      const walletAddresses = listWallets("evm").map((entry) => entry.address);
+      if (walletAddresses.length === 0) return ok({ launches: [] });
+      try {
+        const launches = await listMyLaunches(
+          walletAddresses,
+          TRENCH_LAUNCH_CHAIN_ID,
+          input.limit,
+        );
+        log.info(
+          `[ipc:vex:tokenLaunch:myLaunches] ok count=${launches.length} `
+            + `correlationId=${ctx.requestId}`,
+        );
+        return ok({ launches });
+      } catch (cause) {
+        // Structural only — a DB error message can carry a connection string.
+        log.warn(
+          `[ipc:vex:tokenLaunch:myLaunches] read failed correlationId=${ctx.requestId} `
+            + `type=${cause instanceof Error ? cause.name : typeof cause}`,
+        );
+        return err({
+          code: "internal.unexpected",
+          domain: DOMAIN,
+          message:
+            "Your past launches could not be read. Check that Vex services are running and retry.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: ctx.requestId,
+        });
+      }
     },
   });
 }

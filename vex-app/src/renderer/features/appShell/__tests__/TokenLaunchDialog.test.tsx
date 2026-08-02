@@ -7,8 +7,10 @@
  *
  *   - Deploy is disarmed until the preview resolves (no blank-form signature);
  *   - the authorized figure, the network estimate and the Vex fee render as
- *     THREE separate numbers and are never merged into a "total";
- *   - a Vex fee the DTO did not author is never invented from the rate;
+ *     three separate numbers, and the estimated TOTAL is stated as well — the
+ *     click is the consent, so the whole cost has to be on screen;
+ *   - the Vex fee shown is MAIN's figure, never one derived from the rate here;
+ *   - the consent sentence covers the fee leg the same click authorizes;
  *   - a stale preview drops into RE-REVIEW and takes the button away, instead
  *     of retrying or shrugging it off as a generic error;
  *   - a ceiling refusal shows main's own sentence with its numbers;
@@ -62,7 +64,9 @@ const IMAGE = {
   uploadedAt: "2026-08-02T10:00:00.000Z",
 };
 
-/** 0.001 ETH creation fee + 0.05 ETH prebuy. */
+const SESSION_ID = "11111111-2222-4333-8444-555555555555";
+
+/** 0.001 ETH creation fee + 0.05 ETH prebuy, and the 25 bps fee leg on it. */
 const PREVIEW = {
   previewId: "prev_1",
   chainId: 4663,
@@ -70,12 +74,15 @@ const PREVIEW = {
   creationFeeWei: "1000000000000000",
   prebuyWei: "50000000000000000",
   msgValueWei: "51000000000000000",
+  vexFeeWei: "127500000000000",
+  vexFeeCharged: true,
   estimatedGasLimit: "1634838",
   estimatedGasPriceWei: "1000000000",
   estimatedNetworkFeeWei: "1634838000000000",
   predictedTokenAddress: null,
   imageId: IMAGE.imageId,
   expiresAt: "2026-08-02T11:00:00.000Z",
+  note: "Read-only preview.",
 };
 
 const previewMock = vi.fn();
@@ -128,10 +135,7 @@ beforeEach(() => {
     ok: true,
     data: { imageId: IMAGE.imageId, dataUrl: "data:image/png;base64,AAAA" },
   });
-  myLaunchesMock.mockResolvedValue({
-    ok: true,
-    data: { status: "available", launches: [], nextCursor: null },
-  });
+  myLaunchesMock.mockResolvedValue({ ok: true, data: { launches: [] } });
   previewMock.mockResolvedValue({ ok: true, data: PREVIEW });
   installBridge({ tokenLaunch: true });
 });
@@ -152,7 +156,7 @@ function renderDialog(): void {
       createElement(TokenLaunchDialog, {
         open: true,
         onOpenChange: vi.fn(),
-        sessionId: null,
+        sessionId: SESSION_ID,
         origin: "user" as const,
       }),
     ),
@@ -222,40 +226,77 @@ describe("TokenLaunchDialog — the three cost numbers", () => {
     expect(screen.getByText("Prebuy")).toBeTruthy();
   });
 
-  it("shows the network fee as a clearly separate ESTIMATE", async () => {
+  it("counts BOTH transactions in the network-fee estimate when a fee leg is charged", async () => {
     renderDialog();
     await fillMinimalForm();
-    await screen.findByText("Network fee (estimated)");
+    // Main budgets the launch AND the separate fee transfer into this one
+    // figure; the card says how many transactions it covers and derives nothing.
+    await screen.findByText("Network fees, 2 transactions (estimated)");
     expect(screen.getByText("~0.001634838 ETH")).toBeTruthy();
   });
 
-  it("never renders a figure that merges the estimate into the authorized amount", async () => {
+  it("says one transaction when no fee leg is charged", async () => {
+    previewMock.mockResolvedValue({
+      ok: true,
+      data: { ...PREVIEW, vexFeeWei: "0", vexFeeCharged: false },
+    });
     renderDialog();
     await fillMinimalForm();
-    await waitFor(() => expect(deployButton().disabled).toBe(false));
-    // 0.051 + 0.001634838 = 0.052634838 — the "total" that must not exist.
-    expect(screen.queryByText(/0\.052634838/)).toBeNull();
-    expect(screen.queryByText(/^Total/i)).toBeNull();
+    await screen.findByText("Network fee (estimated)");
   });
 
-  it("does NOT invent a Vex fee when the DTO does not author one", async () => {
+  it("states the whole cost as an ESTIMATED TOTAL, without touching the authorized figure", async () => {
     renderDialog();
     await fillMinimalForm();
     await waitFor(() => expect(deployButton().disabled).toBe(false));
-    expect(screen.queryByText(/Vex fee/i)).toBeNull();
+
+    // 0.051 + 0.0001275 + 0.001634838 = 0.052762338
+    await screen.findByText("Estimated total cost");
+    expect(screen.getByText("~0.052762338 ETH")).toBeTruthy();
+    // msg.value is still shown, separately, as the only committed figure.
+    expect(screen.getAllByText("0.051 ETH").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("never claims the button authorizes nothing beyond msg.value", async () => {
+    renderDialog();
+    await fillMinimalForm();
+    await waitFor(() => expect(deployButton().disabled).toBe(false));
+    // The old sentence was false: the same click authorizes the fee leg.
+    expect(screen.queryByText(/Nothing else is authorized by this button/i)).toBeNull();
+    const consent = await screen.findByText(/separate Vex fee of/i);
+    expect(consent.textContent).toMatch(/0\.0001275 ETH/);
+  });
+
+  it("renders MAIN's fee figure verbatim, never one derived from the rate", async () => {
+    // Deliberately NOT 25 bps of msg.value: if this component computed the fee
+    // itself, this number could not appear.
+    previewMock.mockResolvedValue({
+      ok: true,
+      data: { ...PREVIEW, vexFeeWei: "999000000000000" },
+    });
+    renderDialog();
+    await fillMinimalForm();
+    await screen.findByText(/Vex fee: 0\.000999 ETH \(25 bps\)/);
   });
 
   it("discloses a computed Vex fee as a separate, after-the-fact charge", async () => {
-    previewMock.mockResolvedValue({
-      ok: true,
-      data: { ...PREVIEW, vexFeeWei: "127500000000000", vexFeeCharged: true },
-    });
     renderDialog();
     await fillMinimalForm();
     const line = await screen.findByText(/Vex fee: 0\.0001275 ETH \(25 bps\)/);
     expect(line.textContent).toMatch(/charged separately after your launch confirms/);
     // Still never folded into the authorized figure.
     expect(screen.getAllByText("0.051 ETH").length).toBeGreaterThanOrEqual(2);
+  });
+
+  // Codex round 4 (2026-08-02): the card used to claim the sum below had been
+  // "checked against your mission limit". A user-origin preview passes NO
+  // ceilings — a human click is its own authority — so nothing had been checked
+  // and the claim was false assurance on a consent surface. Pinned as absent.
+  it("never claims a mission limit was checked when no ceiling was applied", async () => {
+    renderDialog();
+    await fillMinimalForm();
+    await waitFor(() => expect(deployButton().disabled).toBe(false));
+    expect(screen.queryByText(/mission limit/i)).toBeNull();
   });
 
   it("says so plainly when the Vex fee rounds to dust", async () => {
@@ -320,14 +361,16 @@ describe("TokenLaunchDialog — refusals", () => {
     expect(alert.textContent).toMatch(/0\.051 ETH/);
   });
 
-  it("submits only the previewId — never a renderer-computed amount", async () => {
+  it("submits the form and the previewId — never a renderer-computed amount", async () => {
     submitMock.mockResolvedValue({
       ok: true,
       data: {
         intentId: "i1",
-        status: "broadcast_pending",
+        status: "pending",
         txHash: "0xabc",
         tokenAddress: null,
+        msgValueWei: "51000000000000000",
+        message: "Your launch was sent.",
       },
     });
     renderDialog();
@@ -338,7 +381,24 @@ describe("TokenLaunchDialog — refusals", () => {
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
     const arg = submitMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(arg.previewId).toBe("prev_1");
-    expect(Object.keys(arg).sort()).toEqual(["previewId", "sessionId"]);
+    expect(Object.keys(arg).sort()).toEqual([
+      "form",
+      "intentId",
+      "previewId",
+      "sessionId",
+    ]);
+    // The prebuy travels as the plain decimal the user TYPED. No wei, no fee,
+    // no value: main owns every conversion and every amount.
+    const form = arg.form as Record<string, unknown>;
+    expect(form.prebuy).toBe("0.05");
+    expect(Object.keys(form).sort()).toEqual([
+      "description",
+      "imageId",
+      "links",
+      "name",
+      "prebuy",
+      "symbol",
+    ]);
   });
 });
 
@@ -350,13 +410,28 @@ describe("TokenLaunchDialog — the honesty ladder", () => {
     expect(deployButton().disabled).toBe(true);
   });
 
-  it("NEVER renders an unavailable launch history as an empty one", async () => {
-    myLaunchesMock.mockResolvedValue({
-      ok: true,
-      data: { status: "unavailable", launches: [], nextCursor: null },
-    });
+  it("NEVER renders an unreadable launch history as an empty one", async () => {
+    installBridge({ tokenLaunch: false });
     renderDialog();
     await screen.findByText(/Your launches are unavailable right now/);
+    expect(screen.queryByText(/You haven't launched a token yet/)).toBeNull();
+  });
+
+  it("says a failed history read failed, rather than showing the empty invitation", async () => {
+    myLaunchesMock.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "internal.unexpected",
+        domain: "system",
+        message: "no",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+        correlationId: "x",
+      },
+    });
+    renderDialog();
+    await screen.findByText(/Couldn't load your launches/);
     expect(screen.queryByText(/You haven't launched a token yet/)).toBeNull();
   });
 

@@ -34,7 +34,12 @@ const weiStringSchema = z
 /** Opaque ids. The renderer never parses them; it echoes what it was given. */
 const opaqueIdSchema = z.string().min(1).max(128);
 
-export const TOKEN_LAUNCH_NAME_MAX = 64;
+// MEASURED ON-CHAIN limits (bisected via free eth_estimateGas, 2026-08-02):
+// the Diamond's create() reverts past name 18, symbol 18, description 512,
+// links 4 (hardcoded in facet bytecode — not readable from storage). The form
+// caps at the chain's real limits so the user hears it while typing, not at
+// signing time; symbol stays deliberately tighter at 16.
+export const TOKEN_LAUNCH_NAME_MAX = 18;
 export const TOKEN_LAUNCH_SYMBOL_MAX = 16;
 export const TOKEN_LAUNCH_DESCRIPTION_MAX = 512;
 export const TOKEN_LAUNCH_LINKS_MAX = 4;
@@ -86,6 +91,14 @@ export const tokenLaunchPreviewResultSchema = z
     /** ESTIMATES. Never summed into `msgValueWei` — see the header. */
     estimatedGasLimit: weiStringSchema,
     estimatedGasPriceWei: weiStringSchema,
+    /**
+     * Gas for EVERY transaction this consent causes: the launch, plus — when
+     * `vexFeeCharged` — the separate fee transfer, budgeted main-side on the
+     * same constant the pre-sign balance gate uses. Budgeting only the launch
+     * would under-state the cost of a consent that sends two transactions, so
+     * main MUST include the fee leg here; the renderer displays this figure and
+     * never derives a second one (coordinator ruling 2026-08-02).
+     */
     estimatedNetworkFeeWei: weiStringSchema,
     /** The block the fee was read at, for auditability. */
     anchorBlockNumber: weiStringSchema,

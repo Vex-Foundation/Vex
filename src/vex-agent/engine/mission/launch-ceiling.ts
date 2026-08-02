@@ -39,8 +39,8 @@
 
 import type { PoolClient } from "pg";
 
-import { getMission } from "../../db/repos/missions.js";
-import { missionToDraft } from "./mapper.js";
+import { getRun } from "../../db/repos/mission-runs.js";
+import { ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES } from "../types.js";
 
 /** Decimals the ceiling must be authored in to be comparable with wei. */
 export const REQUIRED_MAX_LAUNCH_VALUE_DECIMALS = 18;
@@ -60,13 +60,9 @@ export interface MaxLaunchValueContract {
  * artifact on a public launchpad with the user's wallet as its creator. The
  * count cap is what makes "launch a token" a bounded instruction.
  *
- * NOT YET ON THE MISSION CONTRACT (2026-08-02). `MissionDraft` carries the value
- * pair but has no `maxLaunchCount` field, and `contract-hash.ts` v4 does not
- * cover one — Lane F owns adding all three. Declared here as a local contract
- * per the plan's "define it locally and tell the coordinator" rule, so this
- * module can enforce the complete C6b rule the moment the field exists. Until
- * then it reads `null` for every mission and Path 2 refuses, which IS the
- * intended fail-closed behavior.
+ * Authored on the mission contract beside the value pair (`MissionDraft.
+ * maxLaunchCount`, canonical since contract-hash v5) and HOST-ONLY, exactly
+ * like the value ceiling — `patch-parser.ts` rejects it by name.
  */
 export interface MaxLaunchCountContract {
   readonly maxLaunchCount: number | null;
@@ -283,30 +279,137 @@ export async function countMissionRunLaunches(
   return Number(res.rows[0]?.count ?? "0");
 }
 
+/** What an autonomous ceiling read yields: the frozen numbers, or a refusal. */
+export type LaunchCeilingsRead =
+  | { readonly ok: true; readonly ceilings: AutonomousLaunchCeilings }
+  | { readonly ok: false; readonly reason: string };
+
 /**
- * Read both ceilings off the mission that authorized this run.
+ * Read both ceilings for an AUTONOMOUS launch — from the EXACT provenance run's
+ * frozen contract snapshot, and from nothing else.
  *
- * RESIDUAL RISK, accepted and recorded (coordinator, 2026-08-02): this reads the
- * CURRENT mission row, because that is the only wired path — `getMission` returns
- * the live row, and although `mission_runs.contract_snapshot_json` exists, no
- * code reads a ceiling out of it. So a mission edited mid-run can move its own
- * ceiling. Reading the frozen per-run snapshot instead is the correct long-term
- * fix and belongs with the lane that owns the mission contract, not here.
+ * `commit-start.ts` freezes the accepted draft into
+ * `mission_runs.contract_snapshot_json` at start, and the engine treats that
+ * snapshot as the contract the run executes under precisely because the mission
+ * row stays editable afterwards. So:
  *
- * `maxLaunchCount` is not on `MissionDraft` yet (see {@link MaxLaunchCountContract}),
- * so it resolves to `null` today and every autonomous launch refuses.
+ *  - **There is NO live-mission-row fallback.** A ceiling read off the mutable
+ *    row would let a mid-run edit move the spend gate the user accepted — the
+ *    money equivalent of editing a contract after signing it.
+ *  - **There is NO active-run fallback either.** "The mission's active run" is a
+ *    guess about which run is spending; a launch that cannot name the run whose
+ *    contract authorizes it has no authorization to point at. An earlier version
+ *    of this function guessed, and that is the hole this signature closes.
+ *  - **Identity is verified, not assumed.** The run must exist, belong to the
+ *    given mission, and still be live. A run id that names another mission's run
+ *    would otherwise import a different user's ceilings into this launch.
+ *  - **A terminal run cannot spend.** Its contract is settled; a launch arriving
+ *    against a stopped, failed, or completed run is a bug or a replay, and both
+ *    must refuse rather than sign against a dead run's limits.
+ *
+ * Every refusal names what failed, because the reason is handed to the agent and
+ * shown to the user; "could not be read" for four distinct faults would make a
+ * replay indistinguishable from a missing snapshot.
+ *
+ * @param missionRunId the run from the execution provenance. `null` means the
+ *   caller could not establish which run is launching — which is itself a
+ *   refusal, never an invitation to look one up.
  */
 export async function readMissionLaunchCeilings(
   missionId: string,
-): Promise<AutonomousLaunchCeilings | null> {
-  const mission = await getMission(missionId);
-  if (mission === null) return null;
+  missionRunId: string | null,
+): Promise<LaunchCeilingsRead> {
+  if (missionRunId === null || missionRunId.trim().length === 0) {
+    return {
+      ok: false,
+      reason:
+        "Refusing to launch autonomously: this execution carries no mission run id, so there is no "
+        + "frozen contract to read its spend ceilings from. The ceilings are NEVER taken from the live "
+        + "mission row — that row can be edited while the run is spending.",
+    };
+  }
 
-  const draft = missionToDraft(mission);
-  const withCount = draft as Partial<MaxLaunchCountContract>;
+  const run = await getRun(missionRunId);
+  if (run === null) {
+    return {
+      ok: false,
+      reason:
+        `Refusing to launch: mission run ${missionRunId} does not exist, so the contract that would `
+        + "authorize this launch cannot be read. Nothing was signed.",
+    };
+  }
+  if (run.missionId !== missionId) {
+    return {
+      ok: false,
+      reason:
+        `Refusing to launch: mission run ${missionRunId} belongs to a different mission than the one `
+        + "authorizing this launch. Ceilings are never read across that boundary. Nothing was signed.",
+    };
+  }
+  if (TERMINAL_RUN_STATUSES.has(run.status)) {
+    return {
+      ok: false,
+      reason:
+        `Refusing to launch: mission run ${missionRunId} is already ${run.status}. A finished run's `
+        + "contract cannot authorize new spending. Nothing was signed.",
+    };
+  }
+  // ALLOWLIST, not denylist (Codex final-arc round 5): only an ACTIVE run may
+  // authorize. A paused run must stop spending at the next safe checkpoint —
+  // this read is one — and an unknown status string is no evidence of
+  // authority. Terminal keeps its own message above; this arm covers paused
+  // and unrecognized values.
+  if (!ACTIVE_RUN_STATUSES.has(run.status)) {
+    return {
+      ok: false,
+      reason:
+        `Refusing to launch: mission run ${missionRunId} is ${run.status}, not running. Only a `
+        + "running mission run's contract can authorize new spending. Nothing was signed.",
+    };
+  }
+
+  const ceilings = readCeilingsFromSnapshot(run.contractSnapshotJson);
+  if (ceilings === null) {
+    return {
+      ok: false,
+      reason:
+        `Refusing to launch: mission run ${missionRunId} has no readable frozen contract snapshot, so `
+        + "its spend ceilings are unknown. An unattended launch with unknown limits is never signed.",
+    };
+  }
+  return { ok: true, ceilings };
+}
+
+/**
+ * Project the frozen snapshot's draft onto the ceilings.
+ *
+ * The snapshot is JSONB written by an earlier build, so it is treated as
+ * untrusted input: anything that is not the exact expected shape reads as "no
+ * ceilings frozen", and the pair/count rules below then refuse. Only the two
+ * value fields are read as a PAIR (a raw amount with no decimals is
+ * unreadable); the count stands alone.
+ */
+function readCeilingsFromSnapshot(
+  snapshot: Record<string, unknown> | null,
+): AutonomousLaunchCeilings | null {
+  if (snapshot === null) return null;
+  const frozen = snapshot["frozenMission"];
+  if (typeof frozen !== "object" || frozen === null) return null;
+  const draft = (frozen as Record<string, unknown>)["draft"];
+  if (typeof draft !== "object" || draft === null) return null;
+  const rec = draft as Record<string, unknown>;
+
+  const pairPresent =
+    typeof rec["maxLaunchValueRaw"] === "string"
+    && typeof rec["maxLaunchValueDecimals"] === "number";
   return {
-    maxLaunchValueRaw: draft.maxLaunchValueRaw,
-    maxLaunchValueDecimals: draft.maxLaunchValueDecimals,
-    maxLaunchCount: withCount.maxLaunchCount ?? null,
+    maxLaunchValueRaw: pairPresent ? (rec["maxLaunchValueRaw"] as string) : null,
+    maxLaunchValueDecimals: pairPresent ? (rec["maxLaunchValueDecimals"] as number) : null,
+    maxLaunchCount:
+      typeof rec["maxLaunchCount"] === "number"
+      && Number.isInteger(rec["maxLaunchCount"])
+      && (rec["maxLaunchCount"] as number) >= 0
+        ? (rec["maxLaunchCount"] as number)
+        : null,
   };
 }

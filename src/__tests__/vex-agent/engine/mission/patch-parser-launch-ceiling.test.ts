@@ -6,7 +6,8 @@
  * DO NOT delete it and DO NOT add the key.
  *
  * `maxLaunchValueRaw` / `maxLaunchValueDecimals` are the hard ceiling on what
- * an unattended mission may spend creating a token with real funds. Rule 90:
+ * an unattended mission may spend creating a token with real funds, and
+ * `maxLaunchCount` (C6b) is the hard cap on how many it may create. Rule 90:
  * "fee, limit, and destination parameters must never originate from model
  * input." A cap the model can raise is not a cap — and it is WORSE than no cap,
  * because the contract surface would show the user a limit that does not bind.
@@ -25,11 +26,21 @@ import { draftToPromptContext } from "@vex-agent/engine/mission/mapper.js";
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 
 describe("patch-parser — the launch ceiling is host-authored only (C6 / rule 90)", () => {
-  it("names both ceiling fields as forbidden to model input", () => {
+  it("names every ceiling field as forbidden to model input", () => {
     expect([...MODEL_FORBIDDEN_KEYS].sort()).toEqual([
+      // C6b added the count cap: a model that could raise how MANY tokens it
+      // may mint is as unbounded as one that could raise the per-launch spend.
+      "maxLaunchCount",
       "maxLaunchValueDecimals",
       "maxLaunchValueRaw",
     ]);
+  });
+
+  it("DROPS a model attempt to set its own maxLaunchCount", () => {
+    const patch = extractMissionPatch({ goal: "launch tokens", maxLaunchCount: 99 });
+
+    expect(patch).toEqual({ goal: "launch tokens" });
+    expect(patch).not.toHaveProperty("maxLaunchCount");
   });
 
   it("DROPS a model attempt to set its own maxLaunchValueRaw", () => {
@@ -50,6 +61,7 @@ describe("patch-parser — the launch ceiling is host-authored only (C6 / rule 9
     // cannot even produce an empty-but-present ceiling write.
     const patch = extractMissionPatch({ maxLaunchValueRaw: "1", maxLaunchValueDecimals: 18 });
     expect(patch).toBeNull();
+    expect(extractMissionPatch({ maxLaunchCount: 3 })).toBeNull();
   });
 
   it("still lets the model READ the ceiling it is bound by", () => {
@@ -64,7 +76,11 @@ describe("patch-parser — the launch ceiling is host-authored only (C6 / rule 9
       successCriteriaJson: [],
       stopConditionsJson: [],
       capitalSourceJson: {},
-      constraintsJson: { maxLaunchValueRaw: "2000000000000000", maxLaunchValueDecimals: 18 },
+      constraintsJson: {
+        maxLaunchValueRaw: "2000000000000000",
+        maxLaunchValueDecimals: 18,
+        maxLaunchCount: 2,
+      },
       approvedAt: null,
     } as unknown as Mission;
 
@@ -72,5 +88,9 @@ describe("patch-parser — the launch ceiling is host-authored only (C6 / rule 9
     expect(prompt).toContain("Max launch value");
     expect(prompt).toContain("2000000000000000");
     expect(prompt).toContain("refused, not clamped");
+    // C6b — the count cap is disclosed to the model for the same reason: it
+    // should pick a bounded plan, not discover the refusal at signing time.
+    expect(prompt).toContain("Max launch count");
+    expect(prompt).toContain("Launches still settling count");
   });
 });

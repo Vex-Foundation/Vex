@@ -11,89 +11,112 @@
  * reconstructs the money. The renderer sends the form the user filled and the
  * `previewId` it was shown; everything that becomes a spend (the creation fee,
  * `msg.value`, the calldata) is derived HERE, on this side of the boundary.
+ *
+ * This file is the public entry point and stays one: the shared plan assembly
+ * lives in `./plan-context.ts`, the Deploy click in `./submit.ts`. No caller's
+ * import changes.
  */
 
+import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
+import type { LaunchedTokenDto, TokenLaunchPreviewResult } from "@shared/schemas/token-launch.js";
+import type { TokenLaunchForm } from "@shared/schemas/token-launch.js";
 import {
   buildLaunchPlan,
-  type LaunchPlan,
-} from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
-import { validateLaunchRequest } from "@vex-agent/tools/protocols/trench/handlers/launch/validate.js";
-import { checkLaunchAuthorizationUnchanged } from "@vex-agent/tools/protocols/trench/handlers/launch/authorization.js";
-import type { PlanTrenchFeeLeg } from "@vex-agent/tools/protocols/trench/handlers/launch/fee-seam.js";
-import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
-import type { LaunchedTokenDto } from "@shared/schemas/token-launch.js";
+  planLaunchContext,
+  refusalFromPlanCode,
+  TRENCH_LAUNCH_CHAIN_ID,
+  type TokenLaunchRefusal,
+} from "./plan-context.js";
+
+export {
+  buildLaunchPlan,
+  checkPreviewStillValid,
+  NO_FEE_LEG,
+  planLaunchContext,
+  refusalFromPlanCode,
+  TRENCH_LAUNCH_CHAIN_ID,
+  validateLaunchRequest,
+} from "./plan-context.js";
+export type { LaunchPlan, TokenLaunchRefusal } from "./plan-context.js";
+
+export { cancelLaunch } from "./cancel.js";
+export type { TokenLaunchCancelOutcome } from "./cancel.js";
+
+export { submitLaunch } from "./submit.js";
+export type {
+  SubmittedLaunchExecutor,
+  SubmittedLaunchOutcome,
+  TokenLaunchSubmitOutcome,
+} from "./submit.js";
 
 /**
- * Reasons the main side refuses. Mapped 1:1 onto `tokenLaunch.*` error codes by
- * the handler — the handler owns the wire shape, this module owns the reason.
- */
-export type TokenLaunchRefusal =
-  | { readonly kind: "preview_stale"; readonly detail: string }
-  | { readonly kind: "value_ceiling_exceeded"; readonly detail: string }
-  | { readonly kind: "launch_count_exceeded"; readonly detail: string }
-  | { readonly kind: "ceiling_not_set"; readonly detail: string }
-  | { readonly kind: "invalid"; readonly detail: string };
-
-/**
- * The fee planner, injected the same way the agent handler takes it.
+ * How long the dialog TELLS the user a preview is good for.
  *
- * Defaults to "no fee leg" rather than inventing one: a fabricated fee on a
- * signing path is precisely the unprovable number rule 90 forbids.
+ * Advisory only, and deliberately so: the binding check is `previewId`
+ * re-derivation on submit, which catches a moved fee or a moved anchor whatever
+ * the clock says. A countdown that could ARM a submit would be a second, weaker
+ * staleness mechanism — this one only prompts a re-preview.
  */
-export const NO_FEE_LEG: PlanTrenchFeeLeg = () => null;
+const PREVIEW_ADVISORY_TTL_MS = 60_000;
+
+export type TokenLaunchPreviewOutcome =
+  | { readonly ok: true; readonly preview: TokenLaunchPreviewResult }
+  | { readonly ok: false; readonly refusal: TokenLaunchRefusal };
 
 /**
- * Re-derive a plan and confirm it still matches what the preview showed.
+ * Price a launch for the desktop dialog — READ-ONLY. Nothing here signs,
+ * broadcasts, or writes a row.
  *
- * THE STALENESS CHECK IS THE SAME MECHANISM AS THE AUTHORIZATION GATE, not a
- * second one. A stale preview is just a re-derivation whose bound fields no
- * longer match — so there is one code path, one comparison, and one refusal
- * carrying both sets of numbers. A separate "fee drift" check would be a second
- * place to get it wrong, and would miss any anchored value that is not the fee.
+ * IT IS THE SAME PIPELINE THE EXECUTE LEG USES (`buildLaunchPlan`) over the same
+ * resolved context, not a second one. That is the whole point: the figure the
+ * user consents to must be derived by the code that will later spend it.
+ *
+ * NO CEILINGS are passed. §C6 gates the AUTONOMOUS path; a human looking at the
+ * dialog is the authority for their own launch, and enforcing a mission ceiling
+ * against them would refuse a launch the mission never asked for.
  */
-export function checkPreviewStillValid(
-  previewedPlan: LaunchPlan,
-  currentPlan: LaunchPlan,
-  previewId: string,
-): TokenLaunchRefusal | null {
-  if (currentPlan.preview.previewId !== previewId) {
-    return {
-      kind: "preview_stale",
-      detail:
-        `The launch cost changed since you were shown it: the creation fee now reads `
-        + `${currentPlan.preview.creationFeeWei} wei at block ${currentPlan.preview.anchorBlockNumber} `
-        + `(you were shown ${previewedPlan.preview.creationFeeWei} wei at block `
-        + `${previewedPlan.preview.anchorBlockNumber}). Nothing was signed — review the new figures.`,
-    };
+export async function previewLaunch(input: {
+  readonly sessionId: string;
+  readonly form: TokenLaunchForm;
+}): Promise<TokenLaunchPreviewOutcome> {
+  const context = await planLaunchContext(input.sessionId, input.form);
+  if (!context.ok) return { ok: false, refusal: context.refusal };
+
+  const planned = await buildLaunchPlan({
+    request: context.request,
+    sessionId: input.sessionId,
+    walletAddress: context.walletAddress as `0x${string}`,
+    permission: context.permission,
+    publicClient: context.publicClient,
+    planFeeLeg: context.planFeeLeg,
+    nativeAddress: context.nativeAddress,
+  });
+  if (!planned.ok) {
+    return { ok: false, refusal: refusalFromPlanCode(planned.code, planned.reason) };
   }
 
-  const unchanged = checkLaunchAuthorizationUnchanged(
-    previewedPlan.binding,
-    currentPlan.binding,
-  );
-  if (!unchanged.ok) return { kind: "preview_stale", detail: unchanged.reason };
-
-  return null;
+  const { preview } = planned.plan;
+  return {
+    ok: true,
+    preview: {
+      previewId: preview.previewId,
+      creationFeeWei: preview.creationFeeWei,
+      prebuyWei: preview.prebuyWei,
+      msgValueWei: preview.msgValueWei,
+      vexFeeWei: preview.vexFeeWei,
+      vexFeeCharged: preview.vexFeeCharged,
+      estimatedGasLimit: preview.estimatedGasLimit,
+      estimatedGasPriceWei: preview.estimatedGasPriceWei,
+      estimatedNetworkFeeWei: preview.estimatedNetworkFeeWei,
+      anchorBlockNumber: preview.anchorBlockNumber,
+      predictedTokenAddress: preview.predictedTokenAddress,
+      chainId: preview.chainId,
+      imageId: preview.imageId,
+      expiresAt: new Date(Date.now() + PREVIEW_ADVISORY_TTL_MS).toISOString(),
+      note: preview.note,
+    },
+  };
 }
-
-/** Map a plan refusal code onto the main-side refusal vocabulary. */
-export function refusalFromPlanCode(
-  code: string,
-  detail: string,
-): TokenLaunchRefusal {
-  switch (code) {
-    case "ceiling_not_set":
-      return { kind: "ceiling_not_set", detail };
-    case "value_ceiling_exceeded":
-      return { kind: "value_ceiling_exceeded", detail };
-    case "launch_count_exceeded":
-      return { kind: "launch_count_exceeded", detail };
-    default:
-      return { kind: "invalid", detail };
-  }
-}
-
-export { buildLaunchPlan, validateLaunchRequest };
 
 /**
  * The user's own launches, mapped to the renderer DTO.

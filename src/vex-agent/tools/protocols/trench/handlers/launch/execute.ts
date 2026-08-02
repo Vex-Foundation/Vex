@@ -183,6 +183,13 @@ interface ResolvedVariant {
  * nothing human authorized this call, so it can only be Path 2, which must prove
  * mission provenance AND full autonomy AND both ceilings. There is deliberately
  * no third branch: a dispatch that is neither is refused.
+ *
+ * THE `user_submit` VARIANT IS NOT DECIDED HERE AND NEVER REACHES THIS
+ * FUNCTION. A launch the human deployed from the dialog is not an agent
+ * dispatch at all — no tool call, no `ProtocolExecutionContext` — so it has its
+ * own public entry, `./execute-user-submit.ts`, which authorizes against the
+ * snapshot the user consented to. Only `approval_card` and `full_autonomy` are
+ * agent-path variants.
  */
 async function resolveAuthorizationVariant(
   context: ProtocolExecutionContext,
@@ -204,20 +211,34 @@ async function resolveAuthorizationVariant(
     };
   }
 
-  const ceilings = await readMissionLaunchCeilings(provenance.provenance.missionId);
-  if (ceilings === null) {
-    return {
-      ok: false,
-      reason:
-        `${TOOL_ID} refused: the mission that would authorize this launch could not be read, so its `
-        + "spend ceilings are unknown. An unattended launch with unknown limits is never signed.",
-    };
+  // THE EXACT RUN, never "whichever run is active". The provenance already
+  // names the run the host bound to this dispatch; reading by mission alone let
+  // run A's launch be gated by run B's frozen snapshot — a different, possibly
+  // larger, ceiling than the one that authorized this call. The engine refuses
+  // by name when the run is missing, terminal, or not this mission's, and those
+  // reasons are surfaced verbatim rather than flattened into a generic error.
+  const read = await readMissionLaunchCeilings(
+    provenance.provenance.missionId,
+    provenance.provenance.missionRunId,
+  );
+  if (!read.ok) {
+    return { ok: false, reason: `${TOOL_ID} ${read.reason}` };
   }
 
   return {
     ok: true,
     isAutonomous: true,
     missionRunId: provenance.provenance.missionRunId,
-    ceilings,
+    ceilings: read.ceilings,
   };
 }
+
+/**
+ * Test seam for the authorization-variant decision.
+ *
+ * Exported so the provenance BINDING (which run's ceilings gate this launch)
+ * can be pinned without standing up a signer, a chain and a database — the
+ * decision is pure policy over trusted host evidence, and it is the one part of
+ * this file a mistake in would be silent.
+ */
+export const resolveAuthorizationVariantForTest = resolveAuthorizationVariant;

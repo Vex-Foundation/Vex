@@ -5,7 +5,9 @@ import {
   LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
   LEGACY_V3_CONTRACT_HASH_VERSION,
+  LEGACY_V4_CONTRACT_HASH_VERSION,
   buildContractMaterial,
+  isKnownContractHashVersion,
   canonicalStringify,
   computeContractHash,
 } from "../../../../vex-agent/engine/mission/contract-hash.js";
@@ -27,6 +29,7 @@ function makeDraft(overrides: Partial<MissionDraft> = {}): MissionDraft {
     durationMinutes: null,
     maxLaunchValueRaw: null,
     maxLaunchValueDecimals: null,
+    maxLaunchCount: null,
     ...overrides,
   };
 }
@@ -259,15 +262,15 @@ describe("contract-hash", () => {
     });
   });
 
-  // ── v4: the C6 launch ceiling ───────────────────────────────────
+  // ── v4/v5: the C6 + C6b launch ceilings ─────────────────────────
   //
-  // The bump exists so the ceiling is BOUND to what the user accepted. These
+  // The bumps exist so each ceiling is BOUND to what the user accepted. These
   // tests pin that (a) v1/v2/v3 material is untouched, (b) the ceiling changes
   // the hash, and (c) a half-written pair can never hash as a live limit.
-  describe("v4 launch ceiling (C6)", () => {
+  describe("v5 launch ceilings (C6 + C6b)", () => {
     it("is the version produced for a new draft", () => {
-      expect(CONTRACT_HASH_VERSION).toBe(4);
-      expect(buildContractMaterial(makeDraft()).v).toBe(4);
+      expect(CONTRACT_HASH_VERSION).toBe(5);
+      expect(buildContractMaterial(makeDraft()).v).toBe(5);
     });
 
     it("carries the ceiling pair in the canonical material", () => {
@@ -275,7 +278,7 @@ describe("contract-hash", () => {
         makeDraft({ maxLaunchValueRaw: "2000000000000000", maxLaunchValueDecimals: 18 }),
       );
       expect(material).toMatchObject({
-        v: 4,
+        v: 5,
         maxLaunchValueRaw: "2000000000000000",
         maxLaunchValueDecimals: 18,
       });
@@ -300,11 +303,80 @@ describe("contract-hash", () => {
       });
     });
 
-    it("hashes v3 and v4 of the same draft differently (the whole point of the bump)", () => {
+    it("hashes v3, v4 and v5 of the same draft differently (the whole point of each bump)", () => {
       const draft = makeDraft();
-      expect(computeContractHash(draft, CONTRACT_HASH_VERSION)).not.toBe(
+      const hashes = [
         computeContractHash(draft, LEGACY_V3_CONTRACT_HASH_VERSION),
+        computeContractHash(draft, LEGACY_V4_CONTRACT_HASH_VERSION),
+        computeContractHash(draft, CONTRACT_HASH_VERSION),
+      ];
+      expect(new Set(hashes).size).toBe(3);
+    });
+
+    // ── C6b: the count ceiling, and why v4 had to freeze ──────────
+    //
+    // v4 material was already produced on this branch. Widening v4 in place
+    // would have let a v4-accepted mission and a v5 draft carrying a count cap
+    // hash identically — the cap would then not be bound to what the user
+    // accepted. These four tests are the whole argument for the bump.
+    it("reproduces v4 material WITHOUT the count field — a v4 acceptance stays valid", () => {
+      const draft = makeDraft({
+        maxLaunchValueRaw: "1000",
+        maxLaunchValueDecimals: 18,
+        maxLaunchCount: 3,
+      });
+      const v4 = buildContractMaterial(draft, LEGACY_V4_CONTRACT_HASH_VERSION);
+      expect(v4).toMatchObject({ v: 4, maxLaunchValueRaw: "1000", maxLaunchValueDecimals: 18 });
+      expect("maxLaunchCount" in v4).toBe(false);
+      // A v4 hash cannot move when the count cap is edited — which is exactly
+      // why the count cap needed its own version to be enforceable at all.
+      expect(computeContractHash(draft, LEGACY_V4_CONTRACT_HASH_VERSION)).toBe(
+        computeContractHash(
+          makeDraft({ maxLaunchValueRaw: "1000", maxLaunchValueDecimals: 18, maxLaunchCount: 9 }),
+          LEGACY_V4_CONTRACT_HASH_VERSION,
+        ),
       );
+    });
+
+    it("carries the count ceiling in v5 material and changes the hash when it moves", () => {
+      const material = buildContractMaterial(makeDraft({ maxLaunchCount: 3 }));
+      expect(material).toMatchObject({ v: 5, maxLaunchCount: 3 });
+      expect(computeContractHash(makeDraft({ maxLaunchCount: 3 }))).not.toBe(
+        computeContractHash(makeDraft({ maxLaunchCount: 4 })),
+      );
+      expect(computeContractHash(makeDraft({ maxLaunchCount: 0 }))).not.toBe(
+        computeContractHash(makeDraft()),
+      );
+    });
+
+    it("normalizes a malformed count to absent — never to a live cap", () => {
+      for (const bad of [1.5, -1, Number.NaN, "3" as unknown as number]) {
+        expect(buildContractMaterial(makeDraft({ maxLaunchCount: bad }))).toMatchObject({
+          maxLaunchCount: null,
+        });
+      }
+    });
+
+    it("normalizes the count INDEPENDENTLY of the value pair", () => {
+      // The two ceilings are authored separately; requiring the value pair
+      // just to hash a count would make an edit to the count invisible.
+      const material = buildContractMaterial(makeDraft({ maxLaunchCount: 2 }));
+      expect(material).toMatchObject({
+        maxLaunchValueRaw: null,
+        maxLaunchValueDecimals: null,
+        maxLaunchCount: 2,
+      });
+    });
+
+    it("knows every version a stored acceptance may carry, and nothing else", () => {
+      // The single allowlist `commit-start`, `diff`, `renew` and `acceptance`
+      // all gate on — a bump that forgot one of them used to mean a mission of
+      // that vintage could never start, renew, or stop showing as dirty.
+      for (const version of [1, 2, 3, 4, 5]) {
+        expect(isKnownContractHashVersion(version)).toBe(true);
+      }
+      expect(isKnownContractHashVersion(6)).toBe(false);
+      expect(isKnownContractHashVersion(null)).toBe(false);
     });
 
     it("changing the ceiling changes the hash — it cannot drift without dirtying acceptance", () => {

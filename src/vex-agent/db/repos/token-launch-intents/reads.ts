@@ -44,25 +44,7 @@ export async function getAwaitingForSession(
   return rows.map(mapRow);
 }
 
-/**
- * The identity-repair candidate set: broadcast-but-unresolved launches, oldest
- * first, bounded by `limit` so a backlog cannot starve the rest of the sync tick.
- *
- * UNSCOPED by session — deliberately, and the ONE read here that is. This is a
- * GLOBAL crash-recovery sweep whose candidates span arbitrary sessions, so there
- * is no single session to scope it to. It grants no cross-session authority: it
- * is a read, and every WRITE the sweep then performs goes back through the
- * session-scoped CAS writers, using the session id carried on the row it just
- * read. `tx_hash IS NOT NULL` mirrors what the DB CHECK already guarantees for
- * this status, so a row with nothing to look up can never enter the batch.
- */
-export async function listBroadcastPending(limit: number): Promise<TokenLaunchIntent[]> {
-  const rows = await query<Record<string, unknown>>(
-    `SELECT ${SELECT_COLUMNS} FROM token_launch_intents
-      WHERE status = 'broadcast_pending' AND tx_hash IS NOT NULL
-      ORDER BY created_at ASC
-      LIMIT $1`,
-    [limit],
-  );
-  return rows.map(mapRow);
-}
+// The identity-sweep candidate set moved to `./sweep-claim.js` and became a
+// CLAIM (`claimBroadcastPendingForSweep`): serving a row now stamps
+// `last_checked_at` in the same statement, which is a WRITE and so does not
+// belong in this read-only module. See that file for the starvation it fixes.

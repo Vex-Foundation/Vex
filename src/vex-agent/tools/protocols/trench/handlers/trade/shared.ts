@@ -38,18 +38,19 @@ export const TRENCH_FORBIDDEN_TRADE_PARAMS = [
   "value",
 ] as const;
 
-function isSupplied(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
-  if (typeof value === "string" && value.trim() === "") return false;
-  return true;
-}
-
-/** First caller-supplied forbidden trade param, else null. */
+/**
+ * First caller-supplied forbidden trade param, else null.
+ *
+ * PRESENCE of the key is the violation, whatever it carries: an empty string,
+ * `null`, or an explicit `undefined` is still an attempted override of a
+ * fee/limit/destination parameter, and rule 90 requires surfacing it by name
+ * rather than dropping it silently.
+ */
 export function findCallerSuppliedForbiddenTradeParam(
   params: Readonly<Record<string, unknown>>,
 ): string | null {
   for (const key of TRENCH_FORBIDDEN_TRADE_PARAMS) {
-    if (isSupplied(params[key])) return key;
+    if (Object.prototype.hasOwnProperty.call(params, key)) return key;
   }
   return null;
 }

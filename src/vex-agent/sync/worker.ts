@@ -122,6 +122,16 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const solanaResult = await repairPendingSolanaActivity(buildProductionSolanaRepairDeps());
         result = { ...solanaResult };
         rowsAffected = solanaResult.confirmed + solanaResult.failed;
+      } else if (syncType === "launch_identity_repair") {
+        // Trench launch crash recovery — completes the token IDENTITY of a
+        // create that mined after the handler died, and terminalizes one that
+        // is later proven to have reverted. The generic activity sweep cannot
+        // do this: it is status-only and decodes nothing, so it would leave
+        // `launched_tokens` empty forever. See sync/launch-identity-repair.ts.
+        const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
+        const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
+        result = { ...launchResult };
+        rowsAffected = launchResult.repaired + launchResult.failed;
       } else {
         result = { skipped: true, reason: `Unknown sync type: ${syncType}` };
         logger.warn("sync.worker.unknown_type", { syncType, runCount: runs.length });
@@ -194,6 +204,10 @@ export async function processNextRun(): Promise<boolean> {
       const { repairPendingSolanaActivity, buildProductionSolanaRepairDeps } = await import("./solana-activity-repair.js");
       const solanaResult = await repairPendingSolanaActivity(buildProductionSolanaRepairDeps());
       await syncRepo.completeRun(run.id, { ...solanaResult }, solanaResult.confirmed + solanaResult.failed);
+    } else if (job.syncType === "launch_identity_repair") {
+      const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
+      const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
+      await syncRepo.completeRun(run.id, { ...launchResult }, launchResult.repaired + launchResult.failed);
     } else {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }

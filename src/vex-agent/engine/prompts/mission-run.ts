@@ -49,10 +49,14 @@ export function buildMissionRunPrompt(
   lines.push("- If the current situation is bad, unclear, or unprofitable but no accepted stop condition matches it, continue working safely or call loop_defer and wake later");
   lines.push("- Never use mission_stop to express uncertainty, fatigue, lack of confidence, or a temporary lack of market opportunity unless that exact stop condition was accepted by the user");
   lines.push("- emergency_stop is only for safety/integrity failures: unverifiable wallet state, materially conflicting tool outputs, unavailable required infrastructure, or an action that would violate allowed wallets/chains/protocols");
-  lines.push("- Runtime slice limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
+  lines.push("- A slice is one bounded stretch of work between engine yields, and its limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
-  lines.push("- Use DexScreener, Jupiter/Solana, wallet, agent scan, or web research only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
+  // The old hard-coded research-tool list here drifted from the real routing
+  // rule (and named `solana` unconditionally, in an install that may not have
+  // the key). `## Token Research Map` in `# Research` owns which surface
+  // answers which question, env-gated line by line — point at it instead.
+  lines.push("- Route research through the `## Token Research Map`: it names which surface answers which token question. Use them only to advance the current mission step; each research loop must produce a shortlist, an execution candidate, a defer decision, or a contract-valid stop");
   // Env-gated recommendation: the `solana.*` namespace needs JUPITER_API_KEY.
   // Recommending it in an install without the key sends the model at a tool the
   // dispatcher will refuse — same availability predicate the registry uses.
@@ -60,6 +64,15 @@ export function buildMissionRunPrompt(
     lines.push("- For fresh/newly-launched Solana tokens, prefer solana.tokens.trending with category=recent (or solana.tokens.search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
   }
   lines.push("- Log significant decisions with rationale for audit trail");
+  lines.push("");
+
+  lines.push("## Token launches");
+  lines.push("- Launching a token is irreversible and spends real ETH: only a mission whose contract authorizes launching, and whose host-authored launch ceilings (max launch value, max launch count) are set, may launch one.");
+  lines.push("- The path is `trench.images` (an image the user pre-staged — you can never supply one), then `trench.launch_preview`, then `trench.launch_execute`; `trench.launch_request_form` hands the launch DECISION to the user instead of spending.");
+  // Honesty gate (Codex round 2): a launch tool may refuse today because the
+  // host surface (form wiring, contract-card ceilings) is not in place. The
+  // refusal is safe; the dangerous response is improvising around it.
+  lines.push("- If no image is staged, a ceiling is missing, or a launch tool refuses because its host surface is unavailable, do not improvise a substitute launch and do not retry it in a loop: say exactly what is missing, tell the user what to set on the contract card when that is the gap, and keep working the rest of the mission.");
   lines.push("");
 
   lines.push("## Workflow");

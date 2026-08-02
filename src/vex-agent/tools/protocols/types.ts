@@ -191,6 +191,19 @@ export interface ProtocolExecutionContext {
   missionRunId?: string | null;
   approvalId?: string | null;
   /**
+   * The provider's id for THIS tool call, threaded by the dispatcher from
+   * `ToolCallRequest.toolCallId`. Host-side evidence like the provenance above:
+   * a model-supplied id could park a form whose result answers a DIFFERENT call.
+   *
+   * Only a handler that must ANSWER ITS OWN CALL LATER needs it —
+   * `trench.launch_request_form` parks the turn on §C3b and the eventual result
+   * must address exactly this call, or the turn can never close. Optional
+   * because dispatch paths that were never a model tool call (previews,
+   * maintenance, internal resumes) genuinely have none; a handler that requires
+   * it refuses by name rather than parking a turn nothing can answer.
+   */
+  toolCallId?: string | null;
+  /**
    * Context-usage band at dispatch time, threaded through from the
    * dispatcher so the protocol-runtime pressure guard can reject mutating
    * protocol calls at barrier/critical even when discovery doesn't carry

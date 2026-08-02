@@ -108,13 +108,20 @@ function dbRow(over: Record<string, unknown> = {}): Record<string, unknown> {
   };
 }
 
-/** The SQL the fake client was handed, whitespace-collapsed for matching. */
+/**
+ * The STATE-TRANSITION statement the fake client was handed, whitespace-collapsed.
+ *
+ * The LAST call, not the first: a writer that binds an image takes that image's
+ * advisory lock first (`launch-image-lock.ts`), and the lock is pinned by
+ * `launch-image-lock.test.ts` rather than here. Every writer issues exactly one
+ * transition statement, and it is always the last.
+ */
 function sqlOf(client: ReturnType<typeof fakeClient>): string {
-  return String(client.query.mock.calls[0]![0]).replace(/\s+/g, " ");
+  return String(client.query.mock.calls.at(-1)![0]).replace(/\s+/g, " ");
 }
 
 function paramsOf(client: ReturnType<typeof fakeClient>): unknown[] {
-  return client.query.mock.calls[0]![1] as unknown[];
+  return client.query.mock.calls.at(-1)![1] as unknown[];
 }
 
 // ── create ──────────────────────────────────────────────────────────────────
@@ -149,11 +156,12 @@ describe("createWith — the entry state is explicit per path", () => {
       toolCallId: "call_abc123", missionRunId: "run-1", expiresAt: EXPIRES_AT,
     });
     expect(created.toolCallId).toBe("call_abc123");
-    // SQL `$16`/`$17` are 1-indexed placeholders; the bound array is 0-indexed,
-    // so tool_call_id is [15] and mission_run_id is [16]. `authorized_at` is a
-    // CASE expression, not a parameter, so it consumes no slot.
-    expect(paramsOf(client)[15]).toBe("call_abc123");
-    expect(paramsOf(client)[16]).toBe("run-1");
+    // SQL `$17`/`$18` are 1-indexed placeholders; the bound array is 0-indexed,
+    // so tool_call_id is [16] and mission_run_id is [17]. `authorized_at` is a
+    // CASE expression, not a parameter, so it consumes no slot. Both shifted by
+    // one when `authorization_json` was added at $16 (the C0 consent snapshot).
+    expect(paramsOf(client)[16]).toBe("call_abc123");
+    expect(paramsOf(client)[17]).toBe("run-1");
   });
 
   it("Path 2 enters at authorized carrying its C0 record", async () => {
@@ -350,19 +358,13 @@ describe("reads", () => {
     expect(sql).toContain("ORDER BY created_at DESC");
   });
 
-  it("listBroadcastPending is the GLOBAL repair candidate set, oldest first and bounded", async () => {
-    mockQuery.mockResolvedValue([dbRow({ status: "broadcast_pending", tx_hash: TX_HASH })]);
-    await repo.listBroadcastPending(25);
-    const [sql, params] = mockQuery.mock.calls[0]!;
-    const flat = sql.replace(/\s+/g, " ");
-    expect(flat).toContain("WHERE status = 'broadcast_pending' AND tx_hash IS NOT NULL");
-    expect(flat).toContain("ORDER BY created_at ASC");
-    expect(flat).toContain("LIMIT $1");
-    // Deliberately unscoped — a crash-recovery sweep spans sessions. Its WRITES
-    // still go through the session-scoped CAS writers.
-    expect(flat).not.toContain("session_id = $");
-    expect(params).toEqual([25]);
-  });
+  // MOVED + RENAMED (fix wave): the identity-sweep candidate set is now
+  // `claimBroadcastPendingForSweep` in `./token-launch-intents/sweep-claim.ts`.
+  // It became a CLAIM — serving a row stamps `last_checked_at` so an ambiguous
+  // row rotates to the back — because `ORDER BY created_at ASC LIMIT 25` over a
+  // set the sweep may leave unchanged let 25 permanently-ambiguous launches
+  // starve row 26 forever. Its SQL is pinned in `launch-sweep-claim.test.ts`;
+  // the reads module no longer owns it, and nothing here should re-pin it.
 
   it("TIMESTAMPTZ Date values normalise to ISO strings", async () => {
     mockQueryOne.mockResolvedValue(dbRow());

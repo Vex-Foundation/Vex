@@ -6,6 +6,7 @@ import type { ProtocolExecutionContext } from "../../../vex-agent/tools/protocol
 import * as walletResolve from "../../../vex-agent/tools/internal/wallet/resolve.js";
 import * as curveProgress from "../../../vex-agent/tools/protocols/trench/handlers/curve-progress.js";
 import * as evmClient from "@tools/evm-chains/evm-client.js";
+import { LAUNCH_FEE_LEG_GAS_LIMIT } from "../../../vex-agent/tools/protocols/trench/handlers/launch/plan.js";
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -308,5 +309,56 @@ describe("trench.launch_preview handler", () => {
     const data = parse(res.output);
     expect(data.simulated).toBe(false);
     expect(data.creationFeeEth).toBe("0.001");
+  });
+
+  // The preview is a COST surface. A total that omits the 25 bps Vex fee leg
+  // under-states what launching costs, on the one screen the agent reads it from.
+  it("discloses the Vex fee and a fee-inclusive pre-gas cost even without a wallet", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockImplementation(() => {
+      throw new Error("WALLET_NOT_SELECTED");
+    });
+    const res = await TRENCH_HANDLERS["trench.launch_preview"]!(
+      { name: "My Token", symbol: "MYT" },
+      READ_CTX,
+    );
+    const data = parse(res.output);
+    const vexFee = data.vexFee as Record<string, unknown>;
+    expect(vexFee.charged).toBe(true);
+    expect(vexFee.bps).toBe(25);
+    expect(vexFee.basis).toBe("launch_msg_value");
+    // 25 bps of the 0.001 ETH creation fee.
+    expect(vexFee.feeAmountWei).toBe("2500000000000");
+    expect(data.costBeforeGasWei).toBe("1002500000000000");
+    expect(data.costBeforeGasEth).toBe("0.0010025");
+  });
+
+  it("sums creation fee + Vex fee + gas for BOTH transactions into the simulated total", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(
+      "0x1111111111111111111111111111111111111111",
+    );
+    vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
+      call: async () => ({
+        data: "0x0000000000000000000000002222222222222222222222222222222222222222",
+      }),
+      estimateGas: async () => 1_000_000n,
+      getGasPrice: async () => 1_000_000_000n,
+    } as unknown as ReturnType<typeof evmClient.getLocalPublicClient>);
+
+    const res = await TRENCH_HANDLERS["trench.launch_preview"]!(
+      { name: "My Token", symbol: "MYT" },
+      READ_CTX,
+    );
+    expect(res.success).toBe(true);
+    const data = parse(res.output);
+    expect(data.simulated).toBe(true);
+    const gasCost = BigInt(data.estimatedGasCostWei as string);
+    // The fee leg is a SECOND transaction; its gas is budgeted on the same
+    // constant the pre-sign balance gate uses, never omitted from the total.
+    const feeLegGas = LAUNCH_FEE_LEG_GAS_LIMIT * 1_000_000_000n;
+    expect(BigInt(data.estimatedFeeLegGasCostWei as string)).toBe(feeLegGas);
+    expect(BigInt(data.estimatedNetworkFeesWei as string)).toBe(gasCost + feeLegGas);
+    expect(BigInt(data.estimatedTotalCostWei as string)).toBe(
+      1_000_000_000_000_000n + 2_500_000_000_000n + gasCost + feeLegGas,
+    );
   });
 });

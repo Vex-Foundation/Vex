@@ -91,12 +91,13 @@ function decodeTokenCreated(
         topics: log.topics as [Hex, ...Hex[]],
         data: log.data as Hex,
       });
-      const args = decoded.args as unknown as { token: Address; creator: Address };
+      const args = tokenCreatedArgsOf(decoded.args);
+      if (args === null) continue;
       // CROSS-CHECK: the creator must be OUR wallet. A create by someone else in
       // the same block landing in this receipt is not our token, and recording
       // it would put a stranger's address in the user's launch history.
       if (!sameAddress(args.creator, wallet)) continue;
-      return { tokenAddress: getAddress(args.token), creator: getAddress(args.creator) };
+      return { tokenAddress: args.token, creator: args.creator };
     } catch {
       // A same-topic log we cannot decode proves nothing. Keep looking; if
       // nothing decodes, the caller leaves the row pending.
@@ -129,24 +130,45 @@ function decodeBoughtAmount(
         topics: log.topics as [Hex, ...Hex[]],
         data: log.data as Hex,
       });
-      const args = decoded.args as unknown as {
-        a: Address;
-        b: Address;
-        v1: bigint;
-        v2: bigint;
-        v3: bigint;
-      };
+      const args = boughtArgsOf(decoded.args);
+      if (args === null) continue;
       const identifiesBuyerAndToken =
         (sameAddress(args.a, wallet) && sameAddress(args.b, token))
         || (sameAddress(args.a, token) && sameAddress(args.b, wallet));
       if (!identifiesBuyerAndToken) continue;
-      // `v3` is the tokens-out leg proven by the probe (0.0003 ETH in →
-      // 0.000297 to the curve → tokens out). A zero here is a real answer
-      // meaning nothing was acquired, not a decode failure.
-      return args.v3;
+      // POSITIONS PROVEN BY THE FUNDED PROBE (pinned in `evm.test.ts`):
+      // v1 = ETH in, post-fee; v2 = TOKENS OUT; v3 = price. `v3` is a price,
+      // not an amount — returning it would record a number off by orders of
+      // magnitude as the user's prebuy. A zero in `v2` is a real answer meaning
+      // nothing was acquired, not a decode failure.
+      return args.v2;
     } catch {
       continue;
     }
   }
   return null;
+}
+
+// ── Boundary guards ─────────────────────────────────────────────────────────
+// `decodeEventLog`'s `args` is chain data — an external boundary, validated as
+// unknown (rule 03) instead of asserted. `getAddress` checksums and throws on a
+// malformed address; both call sites run inside a try/catch whose `continue`
+// is exactly the right response to an unprovable log.
+
+/** The `TokenCreated(token, creator)` fields, or `null` when the shape does not hold. */
+function tokenCreatedArgsOf(raw: unknown): { token: Address; creator: Address } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (!("token" in raw) || !("creator" in raw)) return null;
+  const { token, creator } = raw;
+  if (typeof token !== "string" || typeof creator !== "string") return null;
+  return { token: getAddress(token), creator: getAddress(creator) };
+}
+
+/** The `Bought(a, b, …, v2, …)` fields this decoder consumes, or `null`. */
+function boughtArgsOf(raw: unknown): { a: Address; b: Address; v2: bigint } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (!("a" in raw) || !("b" in raw) || !("v2" in raw)) return null;
+  const { a, b, v2 } = raw;
+  if (typeof a !== "string" || typeof b !== "string" || typeof v2 !== "bigint") return null;
+  return { a: getAddress(a), b: getAddress(b), v2 };
 }

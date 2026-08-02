@@ -52,10 +52,8 @@ import * as missionRunsRepo from "../../db/repos/mission-runs.js";
 import { cloneMissionAsDraft } from "./renew-internals.js";
 import { reconcileDraftReadiness } from "./draft-readiness.js";
 import {
-  CONTRACT_HASH_VERSION,
-  LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
-  LEGACY_V3_CONTRACT_HASH_VERSION,
+  isKnownContractHashVersion,
   computeContractHash,
 } from "./contract-hash.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
@@ -137,12 +135,7 @@ export async function renewMission(
     //    be renewed.
     if (
       source.acceptedContractHash === null
-      || source.contractHashVersion === null
-      || (source.contractHashVersion !== LEGACY_CONTRACT_HASH_VERSION
-        && source.contractHashVersion !== LEGACY_V2_CONTRACT_HASH_VERSION
-        // v3 = the pre-C6 shape; without it every v3 mission is refused renew.
-        && source.contractHashVersion !== LEGACY_V3_CONTRACT_HASH_VERSION
-        && source.contractHashVersion !== CONTRACT_HASH_VERSION)
+      || !isKnownContractHashVersion(source.contractHashVersion)
     ) {
       return {
         outcome: "not_accepted",

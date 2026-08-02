@@ -155,6 +155,8 @@ export const CH = {
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
     setAutoRetry: "vex:mission:setAutoRetry",
+    /** Host-only writer for the two autonomous token-launch ceilings (C6/C6b). */
+    setLaunchCeilings: "vex:mission:setLaunchCeilings",
     /**
      * Post-stop affordance: hand a stopped mission a new operator instruction
      * and restart it, instead of forcing the user to build a new mission from

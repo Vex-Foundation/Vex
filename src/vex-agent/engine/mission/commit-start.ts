@@ -47,11 +47,9 @@ import * as missionRunsRepo from "../../db/repos/mission-runs.js";
 import * as sessionPlansRepo from "../../db/repos/session-plans.js";
 
 import {
-  CONTRACT_HASH_VERSION,
-  LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
-  LEGACY_V3_CONTRACT_HASH_VERSION,
   computeContractHash,
+  isKnownContractHashVersion,
 } from "./contract-hash.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
 import {
@@ -124,12 +122,7 @@ export async function commitMissionStart(
     //    while Hyperliquid mutations were live can still start.
     if (
       mission.acceptedContractHash === null
-      || mission.contractHashVersion === null
-      || (mission.contractHashVersion !== LEGACY_CONTRACT_HASH_VERSION
-        && mission.contractHashVersion !== LEGACY_V2_CONTRACT_HASH_VERSION
-        // v3 = the pre-C6 shape; without it every v3 mission is refused start.
-        && mission.contractHashVersion !== LEGACY_V3_CONTRACT_HASH_VERSION
-        && mission.contractHashVersion !== CONTRACT_HASH_VERSION)
+      || !isKnownContractHashVersion(mission.contractHashVersion)
     ) {
       return { outcome: "not_accepted", missionId: mission.id };
     }

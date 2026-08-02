@@ -38,7 +38,15 @@ export const FORBIDDEN_LAUNCH_PARAMS = [
   "value",
 ] as const;
 
-const NAME_MAX = 64;
+// MEASURED ON-CHAIN limits (bisected via free eth_estimateGas, 2026-08-02,
+// block ~26003783; harness: agents_dm/trench-live/limit-probe.mts). The
+// Diamond hardcodes these in facet bytecode — a storage scan found no limit
+// slots, so a runtime reader is impossible and the measured constants are the
+// live data. create() reverts `invalid name/symbol/image/desc` past: name 18,
+// symbol 18, description 512, links 4. A looser local limit turned those
+// reverts into a vague "gas_unestimable"; the local caps mirror the chain's
+// (symbol deliberately tighter at 16) and refuse by name instead.
+const NAME_MAX = 18;
 const SYMBOL_MAX = 16;
 const DESCRIPTION_MAX = 512;
 const LINKS_MAX = 4;

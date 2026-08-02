@@ -22,6 +22,7 @@ import {
   missionEditInputSchema,
   missionRetryInputSchema,
   missionSetAutoRetryInputSchema,
+  missionSetLaunchCeilingsInputSchema,
   missionStartInputSchema,
   missionStopInputSchema,
   missionUpdateDraftInputSchema,
@@ -38,6 +39,7 @@ import type {
   MissionEditInput,
   MissionRetryInput,
   MissionSetAutoRetryInput,
+  MissionSetLaunchCeilingsInput,
   MissionStartInput,
   MissionStopInput,
   MissionUpdateDraftInput,
@@ -135,6 +137,13 @@ export const mission = {
       CH.mission.setAutoRetry,
       input,
       missionSetAutoRetryInputSchema,
+    );
+  },
+  setLaunchCeilings(input: MissionSetLaunchCeilingsInput) {
+    return invokeWithSchema(
+      CH.mission.setLaunchCeilings,
+      input,
+      missionSetLaunchCeilingsInputSchema,
     );
   },
   restartWithInstruction(input: MissionRestartWithInstructionInput) {

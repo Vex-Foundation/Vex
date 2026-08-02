@@ -17,7 +17,10 @@ import {
   registerLaunchImageByteResolver,
   resetLaunchImageByteResolver,
 } from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
-import { buildLaunchPlan } from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
+import {
+  buildLaunchPlan,
+  LAUNCH_FEE_LEG_GAS_LIMIT,
+} from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
 import { TRENCH_CREATION_FEE_SLOT, TRENCH_CREATION_FEE_FIXTURE } from "@tools/trench-express/evm/creation-fee.js";
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import type { PlanTrenchFeeLeg } from "@vex-agent/tools/protocols/trench/handlers/launch/fee-seam.js";
@@ -48,6 +51,10 @@ function publicClient(overrides: Record<string, unknown> = {}) {
     },
     async estimateGas() { return 2_000_000n; },
     async getGasPrice() { return 20_000_000n; },
+    // The pre-sign balance gate reads this. A funded wallet is the default here
+    // so these tests keep pinning what they are about; the gate itself is
+    // pinned in `launch-broadcast-balance-gate.test.ts`.
+    async getBalance() { return 10n ** 20n; },
     ...overrides,
   } as never;
 }
@@ -296,7 +303,13 @@ describe("the preview DTO never merges gas into the authorized figure", () => {
     expect(bound).toBeGreaterThan(2_000_000n);
     expect(p.estimatedGasLimit).toBe(bound.toString());
     expect(p.estimatedGasPriceWei).toBe("20000000");
-    expect(p.estimatedNetworkFeeWei).toBe((bound * 20_000_000n).toString());
+    // PIN UPDATED (round 3): the network fee covers EVERY transaction the
+    // launch causes — the create AND the Vex fee leg that follows it — because
+    // the shared schema promises gas for each, and the modal that renders this
+    // is the consent surface. `estimatedGasLimit` still describes the create
+    // call alone; only the fee total is the sum.
+    const feeLegGas = LAUNCH_FEE_LEG_GAS_LIMIT * 20_000_000n;
+    expect(p.estimatedNetworkFeeWei).toBe((bound * 20_000_000n + feeLegGas).toString());
     // msg.value is untouched by gas.
     expect(p.msgValueWei).toBe((FEE + REQUEST.prebuyWei).toString());
     // And there is deliberately no merged total field at all.
@@ -304,7 +317,13 @@ describe("the preview DTO never merges gas into the authorized figure", () => {
     expect(Object.keys(p)).not.toContain("estimatedTotalCostWei");
   });
 
-  it("degrades gas to zero rather than refusing the launch when estimation fails", async () => {
+  // PIN UPDATED (fix wave, defect f): this test used to assert that a failed
+  // estimate degraded to `estimatedNetworkFeeWei: "0"` and the plan continued.
+  // That was safe only while nothing consumed the number. The pre-sign balance
+  // gate now does, so a zero would make the gate compare the spend against a
+  // figure nobody proved — and rule 90 forbids rendering a provider's silence
+  // as a number on a money path. A launch that cannot be priced is refused.
+  it("refuses the launch when gas estimation fails — a failed estimate is never a zero", async () => {
     mountImage();
     const result = await buildLaunchPlan(
       baseInput({
@@ -313,10 +332,8 @@ describe("the preview DTO never merges gas into the authorized figure", () => {
         }),
       }) as never,
     );
-    // Gas is never part of the authorized figure, so an unavailable estimate
-    // degrades the DISPLAY, not the decision.
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error(result.reason);
-    expect(result.plan.preview.estimatedNetworkFeeWei).toBe("0");
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.code).toBe("gas_unestimable");
   });
 });

@@ -34,7 +34,7 @@ Two ways to call tools:
 
 2. **Protocol tools** — discovered through \`discover_tools\`, executed through \`execute_tool\` with a dotted \`toolId\` like \`khalani.bridge\` or \`kyberswap.swap.execute\`. The full multi-chain protocol surface lives here.
 
-Use the Tool Map: if a tool is not in it RIGHT NOW, it is not callable. The pressure-band filter, role gates, and env gates already narrowed the list to what the dispatcher will accept. Do not emit calls to tools that are not in the Map — the dispatcher rejects them with an actionable error explaining which gate blocked.
+Use the Tool Map for the DIRECT tools: if a direct internal tool is not in it RIGHT NOW, it is not callable. The pressure-band filter, role gates, and env gates already narrowed that list to what the dispatcher will accept. Do not emit calls to direct tools that are not in the Map — the dispatcher rejects them with an actionable error explaining which gate blocked. Protocol toolIds are NOT listed there individually: the Map carries \`discover_tools\` / \`execute_tool\`, and the protocol surface behind them is what \`# Available Protocol Namespaces\` describes — a namespace missing from the Map is not evidence its tools do not exist.
 
 Every call example in this prompt is written as \`tool_name(param="value")\`. That notation shows INTENT, not wire format — always emit a real tool call through the tools API, never the example text as a message.
 
@@ -70,6 +70,7 @@ If a fact is queryable live, querying is cheaper than remembering — and the me
 Rules:
 
 - **Discover first — for the schema, not just the name.** The toolIds printed in this prompt are real; their parameter schemas are NOT shown anywhere in it. Never build an \`execute_tool\` call without a \`discover_tools\` result from THIS session, and never execute a toolId from memory, from an old example, or from a previous transcript. During mission RUN — or in AGENT chat when the user explicitly asked for the action — discovery is a means to execution: \`execute_tool\` follows. During planning (mission SETUP / plan authoring, i.e. Capability Orientation), discovery is orientation only — see \`# Research\`.
+- **See a whole namespace at once.** \`discover_tools(namespace="x", list=true)\` returns EVERY tool of that namespace as one-line rows (toolId, mutating flag, description — no param schemas), unranked and untruncated. Use it when you need to know what a namespace can do rather than to match one intent; then run a normal query, or pass the exact toolId, to get the \`params\` schema you build the call from.
 - **Reuse your plan's tools.** During mission RUN — or in AGENT chat when the user explicitly asked for the action — when an \`# Active Plan\` is in effect (provided in the turn state), reuse the exact toolIds listed in its tool-selection section instead of re-running \`discover_tools\` for the same need every turn. Re-discover only when a required tool is absent from the plan, looks stale, or a prior call failed.
 - **Mutation safety.** Every mutating call obeys the \`# Safety Contract\`: quote / preview before mutation, the 2-step transfer rule, and the pressure-barrier mutation gate.${notice}`;
 }

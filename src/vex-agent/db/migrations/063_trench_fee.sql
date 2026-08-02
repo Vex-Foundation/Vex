@@ -127,13 +127,22 @@ END$$;
 -- authorization time, plus mission provenance for `full_autonomy` and the
 -- policy snapshot for `approval_card`. None of that has anywhere to live.
 --
--- WHAT THIS COLUMN BUYS, precisely, because the distinction is what justifies
--- it: AUDIT, not authorization integrity. Nothing on the signing path reads
--- this blob. The gate remains re-derivation-and-compare against freshly read
--- values plus the existing single-use CAS on `authorization_id`. This column
--- exists so a reviewer can reconstruct months later exactly what was authorized,
--- without walking the chain — and so a drift investigation has the authorized
--- side of the comparison in the same row as its outcome.
+-- WHAT THIS COLUMN BUYS is PATH-DEPENDENT (doctrine scoped by coordinator
+-- ruling, 2026-08-02 — see the doctrine box in
+-- `handlers/launch/authorization.ts`):
+--   - AGENT paths (approval_card / full_autonomy): AUDIT ONLY. Authorization
+--     and execution happen in one invocation, the binding is in memory, and
+--     the gate is re-derivation-and-compare against fresh reads plus the
+--     single-use CAS on `authorization_id`. Nothing on those paths reads this
+--     blob back.
+--   - USER_SUBMIT: the human consented in the MAIN process, minutes before
+--     execution — this row is the only record of what they agreed to, so it is
+--     unavoidably GATE INPUT there (the same trust the approval_queue /
+--     approval_intents pattern already places in stored consent). It is read
+--     back as UNTRUSTED input: schema-validated field by field, cross-checked
+--     against the row's own columns, compared against a fresh re-derivation,
+--     and consumed through the same single-use CAS
+--     (`handlers/launch/execute-user-submit.ts`).
 --
 -- Nullable with no backfill: nothing has launched, so every existing row is
 -- legitimately NULL, and a NOT NULL would be a lie about rows written before
@@ -142,7 +151,7 @@ END$$;
 ALTER TABLE token_launch_intents ADD COLUMN IF NOT EXISTS authorization_json JSONB;
 
 COMMENT ON COLUMN token_launch_intents.authorization_json IS
-  'The full C0 authorization record as persisted at authorization time (image digest, anchored creation fee + block, msg.value, calldata fingerprint, permission, mission/approval provenance). AUDIT ONLY: the signing path re-derives and compares against fresh reads and CAS-consumes authorization_id; nothing reads this blob to decide whether to sign.';
+  'The full C0 authorization record as persisted at authorization time (image digest, anchored creation fee + block, msg.value, calldata fingerprint, permission, mission/approval provenance). Agent paths (approval_card/full_autonomy) treat it as AUDIT ONLY. The user_submit path reads it back as UNTRUSTED, schema-validated gate input — it is the persisted human consent, compared against a fresh re-derivation and consumed via the single-use CAS (see handlers/launch/authorization.ts doctrine).';
 
 -- ── 4. `token_launch_intents` mission-run index — the launch-count ceiling ──
 --

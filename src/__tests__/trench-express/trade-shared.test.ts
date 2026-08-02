@@ -77,8 +77,28 @@ describe("forbidden trade params (rule 90 — never from model input)", () => {
     },
   );
 
-  it("findCallerSuppliedForbiddenTradeParam ignores empty/whitespace values", () => {
-    expect(findCallerSuppliedForbiddenTradeParam({ min: "", deadline: "  " })).toBeNull();
+  // Rule 90: a caller-supplied fee/limit/destination parameter is rejected BY
+  // NAME. An empty string, null, or an explicit undefined is still an attempted
+  // override — dropping it silently would hide it, so PRESENCE of the key is
+  // what gets rejected, not its value.
+  it.each([
+    { label: "empty string", value: "" },
+    { label: "whitespace", value: "  " },
+    { label: "null", value: null },
+    { label: "explicit undefined", value: undefined },
+  ])("rejects a forbidden key present with a $label value", ({ value }) => {
+    expect(findCallerSuppliedForbiddenTradeParam({ recipient: value })).toBe("recipient");
+    const r = resolveTradeInputs({ tokenIn: "ETH", tokenOut: TOKEN, amountIn: "0.01", recipient: value });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toContain('"recipient"');
+  });
+
+  it("returns null when no forbidden key is present at all", () => {
+    expect(findCallerSuppliedForbiddenTradeParam({ tokenIn: "ETH", amountIn: "1" })).toBeNull();
+  });
+
+  it("reports the first forbidden key by name", () => {
     expect(findCallerSuppliedForbiddenTradeParam({ recipient: "0xabc" })).toBe("recipient");
   });
 });

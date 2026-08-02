@@ -18,7 +18,7 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { TRENCH_LAUNCH_DISCOVERY } from "../../embeddings/trench/launch.js";
 
 const LAUNCH_FIELD_PARAMS = [
-  { key: "name", type: "string" as const, required: true, description: "Token name (1-64 chars)." },
+  { key: "name", type: "string" as const, required: true, description: "Token name (1-18 chars) — the chain reverts a longer one." },
   { key: "symbol", type: "string" as const, required: true, description: "Token symbol/ticker (1-16 chars)." },
   { key: "description", type: "string" as const, description: "Optional token description (max 512 chars)." },
   {
@@ -50,12 +50,23 @@ export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "trench.launch_request_form",
     namespace: "trench",
     lifecycle: "active",
+    // HONESTY GATE (Fala B, 2026-08-02): park/resume is WIRED — the tool-call id
+    // threads through the dispatcher, the handler drafts the intent and parks
+    // the run, and `resumeAgentAfterUserForm` answers this call with the
+    // outcome. The round-3 wording ("fails closed rather than parking") was
+    // honest then and is stale now; a manifest that denies a capability the
+    // runtime has teaches the model to work around it. The refusal sentence
+    // survives ONLY for the genuine fail-closed edge: a call arriving with no
+    // tool-call id (a non-tool-call invocation) has nothing to resume against,
+    // so the handler refuses rather than parking a turn nobody can answer.
     description:
-      "Ask the user to launch a token on Trench Express (Robinhood Chain 4663) by opening the launch form in the app, "
+      "Hand the launch DECISION to the user: asks them to create the token themselves through the app's launch form, "
       + "pre-filled with the details you propose. DRAFTS AND ASKS ONLY — it does NOT sign, does NOT spend and does NOT "
-      + "create anything; the user reviews the exact cost and clicks Deploy. Your turn pauses while the form is open and "
-      + "resumes with the outcome when the user deploys, dismisses it, or it expires. Use this whenever a human should "
-      + "decide the launch.",
+      + "create anything; the user reviews the exact cost and clicks Deploy. Your turn PARKS while the form is open and "
+      + "the runtime resumes it with the outcome when the user deploys, dismisses the form, or it expires — so do not "
+      + "call it again while the form is open, and never assume the launch happened without that resumed outcome. Use "
+      + "this whenever a human should decide the launch. If it is ever invoked outside a tool call there is nothing to "
+      + "resume, and it refuses instead of parking: report that and stop, never improvise a launch by another route.",
     // FALSE, deliberately: preparing a form is not a mutation. It writes a draft
     // intent row and parks the turn; nothing on-chain happens.
     // It drafts a durable intent row and parks the turn, so it is NOT a read —
@@ -79,8 +90,13 @@ export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       "Create a token on Trench Express (Robinhood Chain 4663) FOR REAL — signs and broadcasts the on-chain create with "
       + "the user's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it pays the launchpad's creation fee (read on-chain at "
       + "signing time) and, if you set a prebuy, buys that much of the new token on its curve in the same transaction. "
-      + "An image is REQUIRED and must already be in the locker. Under full autonomy in a mission it executes directly, "
-      + "bounded by the mission's launch value and launch count ceilings; otherwise the user must approve it first.",
+      + "Vex also charges 25 bps of that whole ETH amount (creation fee + prebuy) as a SEPARATE transfer that runs only "
+      + "after the launch confirms — price a launch with trench.launch_preview, which shows it and the fee-inclusive total. "
+      + "An image is REQUIRED and must already be in the locker. It runs ONLY under explicit authority: an approval for "
+      + "this launch, or a mission contract whose HOST-authored launch ceilings (max launch value, max launch count) "
+      + "already cover it. Those ceilings cannot be written by you, and while a contract carries none this tool REFUSES "
+      + "BY NAME — report that refusal and tell the user to set them on the contract card rather than launching some "
+      + "other way.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: LAUNCH_FIELD_PARAMS,

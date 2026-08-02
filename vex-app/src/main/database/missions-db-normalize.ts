@@ -152,6 +152,16 @@ export function normaliseConstraints(raw: unknown): MissionConstraints {
     projection.maxLaunchValueRaw = rec["maxLaunchValueRaw"];
     projection.maxLaunchValueDecimals = rec["maxLaunchValueDecimals"];
   }
+  // C6b count ceiling — independent of the value pair, so it is projected on
+  // its own. Only a non-negative whole number is a cap; anything else is
+  // omitted and the mission reads as having no count authority at all.
+  if (
+    typeof rec["maxLaunchCount"] === "number" &&
+    Number.isInteger(rec["maxLaunchCount"]) &&
+    rec["maxLaunchCount"] >= 0
+  ) {
+    projection.maxLaunchCount = rec["maxLaunchCount"];
+  }
   // Phase 4d-5 — host-only auto-retry opt-in. Boolean-only; absent/wrong
   // type leaves the key off the DTO (the renderer treats absence as off).
   if (typeof rec["autoRetryEnabled"] === "boolean") {

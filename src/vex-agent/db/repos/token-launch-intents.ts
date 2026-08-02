@@ -112,5 +112,8 @@ export {
 export {
   getAwaitingForSession,
   getById,
-  listBroadcastPending,
 } from "./token-launch-intents/reads.js";
+
+// The identity sweep's fair, self-rotating candidate claim (a read AND a
+// scheduling stamp — see the module for the starvation it fixes).
+export { claimBroadcastPendingForSweep } from "./token-launch-intents/sweep-claim.js";
