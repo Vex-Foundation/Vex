@@ -138,8 +138,24 @@ export type ImagesListResult = z.infer<typeof imagesListResultSchema>;
 export const imagesUploadInputSchema = z.object({}).strict();
 export type ImagesUploadInput = z.infer<typeof imagesUploadInputSchema>;
 
+/**
+ * What the auto-downscale did, when it did anything.
+ *
+ * OPTIONAL AND ABSENT when the file was stored untouched — its presence is the
+ * claim "we changed your image", and that claim must never be made about bytes
+ * we preserved verbatim. Both figures are raw byte counts so the UI can state
+ * the actual reduction rather than a percentage nobody can check.
+ */
+export const imageOptimizationSchema = z
+  .object({
+    originalByteLength: z.number().int().positive(),
+    storedByteLength: z.number().int().positive().max(LOCKER_IMAGE_MAX_BYTES),
+  })
+  .strict();
+export type ImageOptimization = z.infer<typeof imageOptimizationSchema>;
+
 export const imagesUploadResultSchema = z
-  .object({ image: lockerImageSchema })
+  .object({ image: lockerImageSchema, optimization: imageOptimizationSchema.optional() })
   .strict();
 export type ImagesUploadResult = z.infer<typeof imagesUploadResultSchema>;
 
