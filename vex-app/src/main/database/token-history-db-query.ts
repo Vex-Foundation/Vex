@@ -406,6 +406,10 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
           WHEN 'lend' THEN 'lend'
           WHEN 'prediction' THEN 'prediction'
           WHEN 'yield' THEN 'yield'
+          -- A launch is NOT a spot trade (migration 062). Folding it into the
+          -- ELSE would assert a route, a price and a counterparty a token
+          -- creation never had — 051's documented mistake, for wrap.
+          WHEN 'launch' THEN 'launch'
           ELSE 'spot'
         END AS product_type,
         NULL::text AS trade_side,
@@ -465,14 +469,21 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
         AND (
           aa.event_role = 'swap'
           OR aa.event_role = 'bridge_fill_expected'
-          OR aa.kind IN ('lend', 'prediction')
+          -- launch (migration 062): a token's history should OPEN with the
+          -- transaction that created it. Omitting it would leave every Trench
+          -- token's own history missing its first and most important entry.
+          OR aa.kind IN ('lend', 'prediction', 'launch')
           OR aa.event_role IN (
             'yield_pt', 'yield_yt', 'yield_py', 'yield_lp', 'yield_claim'
           )
         )
         AND (
           (
-            (aa.event_role = 'swap' OR aa.kind IN ('lend', 'prediction'))
+            -- A launch matches the ordinary single-chain, first-leg shape: the
+            -- native msg.value in, the newly created token out. No second-leg
+            -- arm is needed — migration 053's constraint 5 bars token_launch
+            -- from the Option-C columns, so they are always NULL here.
+            (aa.event_role = 'swap' OR aa.kind IN ('lend', 'prediction', 'launch'))
             AND aa.chain_id = $${chainIdParam}::bigint
             AND (
               ${addr("aa.token_in_address")} = $${addressParam}

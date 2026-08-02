@@ -56,6 +56,7 @@ vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   DatabaseLightningIcon: "DatabaseLightningIcon",
   Delete02Icon: "Delete02Icon",
   FireIcon: "FireIcon",
+  RocketIcon: "RocketIcon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
   Brain01Icon: "Brain01Icon",

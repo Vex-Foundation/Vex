@@ -1,0 +1,5 @@
+{
+  "endpoint": "https://api.trench.express/api/search?params={\"search\":\"zzzznomatchqqq\",\"limit\":10}",
+  "capturedAt": "2026-07-31T09:03:49.671770Z",
+  "response": []
+}

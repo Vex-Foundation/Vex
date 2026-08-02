@@ -204,6 +204,8 @@ export async function applyApproveSideEffects(
       sessionId,
       missionRunId,
       permissionAtEnqueue: row.queue_permission_at_enqueue,
+      // C0 provenance: the resumed dispatch names the approval that authorized it.
+      approvalId,
     });
 
     // ── 3. Operator-Stop gate + dispatch slot, ONE transaction ──────────

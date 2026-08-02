@@ -60,6 +60,7 @@ vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   AiBrain05Icon: "AiBrain05Icon",
   StopCircleIcon: "StopCircleIcon",
   FireIcon: "FireIcon",
+  RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
   PercentSquareIcon: "PercentSquareIcon",
 }));

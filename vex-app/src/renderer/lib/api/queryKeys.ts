@@ -252,3 +252,39 @@ export const marketKeys = {
   snapshot: () => ["market", "vex", "snapshot"] as const,
 };
 
+/**
+ * Image locker (C2) — the GLOBAL library of pre-staged token-launch images.
+ * No session segment anywhere, by design: the locker belongs to the user, not
+ * to a conversation, so there is nothing to scope it by.
+ *
+ * `thumb` is keyed per image and deliberately separate from `list`, mirroring
+ * the IPC split: the metadata list stays a cheap read, and each ≤20 KB `data:`
+ * URL is fetched by its own tile on mount rather than prefetched as a batch.
+ */
+export const imageKeys = {
+  all: ["images"] as const,
+  list: () => ["images", "list"] as const,
+  thumb: (imageId: string) => ["images", "thumb", imageId] as const,
+};
+
+/**
+ * Token launch (C5) — the Trench Express launch dialog.
+ *
+ * `preview` is keyed by the WHOLE form input, and that is the contract rather
+ * than an over-keying accident: a preview is a quote for one exact set of
+ * parameters, anchored to a block, and the user's Deploy click authorizes the
+ * amount it carries. Changing ANY field — a character of the name, the image,
+ * one wei of prebuy — must land on a DIFFERENT cache entry, so a quote for the
+ * previous parameters can never sit under a form the user has since edited.
+ * Callers pass a value whose identity changes only when the parameters do;
+ * `null` disables the query (there is nothing to quote yet).
+ *
+ * `myLaunches` is a single global entry: the launch history belongs to the user,
+ * and its page params are tracked internally by TanStack, not by the key.
+ */
+export const tokenLaunchKeys = {
+  all: ["tokenLaunch"] as const,
+  preview: (input: unknown) => ["tokenLaunch", "preview", input] as const,
+  myLaunches: () => ["tokenLaunch", "myLaunches"] as const,
+};
+

@@ -1,0 +1,35 @@
+{
+  "endpoint": "https://api.trench.express/api/token?params={\"token\":\"0xa7D347d85948e2A576ca8C7202B529547F48324E\"}",
+  "capturedAt": "2026-07-31T09:03:49.671770Z",
+  "response": {
+    "creator": "0xE00Fef937C09A01a3F74b2356Ce0ED16B513547f",
+    "data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "description": "Automated end-to-end mainnet wiring test. Safe to ignore.",
+    "dex": 0,
+    "imageCid": "dc365b6a5443b650ed30c48b076be29af39aae839a8884318e8bf77d5d12d976",
+    "links": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "name": "E2E Test db73",
+    "price": 2.504952364e-09,
+    "strategy": 0,
+    "supply": 1000000000,
+    "symbol": "E2EDB73",
+    "time": 1784989515062,
+    "token": "0xa7D347d85948e2A576ca8C7202B529547F48324E",
+    "holders": 0,
+    "stats24h": {
+      "volume": 0,
+      "txns": 0,
+      "priceChangePct": 0
+    },
+    "launched": 1784989640012,
+    "pair": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "currency0": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "currency1": "0xa7D347d85948e2A576ca8C7202B529547F48324E",
+    "poolId": "0x99fe65f01def719813eb3ece7a6df725ac89d505b1e296edb856dac7641e1484"
+  }
+}

@@ -35,9 +35,6 @@ import { VEX_TREASURY_EVM, VEX_TREASURY_SOLANA } from "../../lib/vex-treasury.js
 
 export const BRIDGE_FEE_BPS = 25;
 
-/** Basis-point base. Kept next to the rate so the two can never drift apart. */
-export const BRIDGE_FEE_BPS_DENOMINATOR = 10_000n;
-
 /**
  * The fee is taken from the INPUT token — the same `currency_in` semantics
  * KyberSwap and Jupiter already use, so `amount` stays the TOTAL the user is

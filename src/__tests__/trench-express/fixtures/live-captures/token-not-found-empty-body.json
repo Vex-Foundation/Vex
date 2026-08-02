@@ -1,0 +1,8 @@
+{
+  "endpoint": "https://api.trench.express/api/token?params={\"token\":\"0x0000000000000000000000000000000000000000\"}",
+  "capturedAt": "2026-07-31T09:03:49.671770Z",
+  "httpStatus": 200,
+  "contentLength": 0,
+  "bodyText": "",
+  "note": "Provider 'not found' is HTTP 200 with an EMPTY body (content-length 0), NOT null/{}/404. res.json() throws on this; the client special-cases empty body to a typed not-found (getToken->null)."
+}

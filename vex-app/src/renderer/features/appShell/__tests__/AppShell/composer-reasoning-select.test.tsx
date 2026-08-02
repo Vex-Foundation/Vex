@@ -39,6 +39,7 @@ vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   ArrowDown01Icon: "ArrowDown01Icon",
   PercentSquareIcon: "PercentSquareIcon",
   FireIcon: "FireIcon",
+  RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
   AiBrain05Icon: "AiBrain05Icon",
   ArrowRight01Icon: "ArrowRight01Icon",

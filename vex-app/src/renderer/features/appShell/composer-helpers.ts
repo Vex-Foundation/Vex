@@ -22,6 +22,10 @@ export const FREE_TEXT_DISALLOWED: ReadonlySet<MissionRunStatus> = new Set([
   "paused_wake",
   "paused_error",
   "paused_plan_acceptance",
+  // C3b: the run is waiting on a FORM the agent asked for. Free text cannot
+  // answer it — the user must submit or dismiss the form — so the composer is
+  // gated the same way every other paused state gates it.
+  "paused_user_form",
 ]);
 
 export function readRunStatus(
@@ -45,6 +49,8 @@ export function gatedReason(status: MissionRunStatus | null): string {
       return "Mission is paused after an error. Use the Recover button.";
     case "paused_plan_acceptance":
       return "Mission is paused for plan acceptance. Review and accept the action plan to resume.";
+    case "paused_user_form":
+      return "Mission is waiting on a form you opened. Submit or dismiss it to resume — dismissing tells the agent you declined.";
     default:
       return "Composer is gated until the mission run reaches a free state.";
   }

@@ -107,6 +107,7 @@ export const runtimeStatusSchema = z.enum([
   "paused_error",
   "paused_user",
   "paused_plan_acceptance",
+  "paused_user_form",
   "completed",
   "failed",
   "stopped",

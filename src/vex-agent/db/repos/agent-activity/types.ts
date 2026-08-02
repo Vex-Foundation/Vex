@@ -21,8 +21,21 @@
  * out of `swap` because `py.mint` is a 1->2 split, `lp.add` a deposit and
  * `yield_claim` an income sweep with NO input leg, none of which a swap's
  * route/price/counterparty assertions describe.
+ * `launch` is migration 062 (Trench Express token creation on Robinhood Chain
+ * 4663, protocol='trench'): ONE payable `create` transaction that mints a token
+ * and — when a prebuy was asked for — buys some of it in the SAME transaction.
+ * The prebuy is therefore a LEG of the launch, recorded in this row's ordinary
+ * first-leg columns (native in, the new token out), NEVER a second `swap` row
+ * sharing the create's tx hash.
  */
-export type AgentActivityKind = "swap" | "bridge" | "lend" | "prediction" | "wrap" | "yield";
+export type AgentActivityKind =
+  | "swap"
+  | "bridge"
+  | "lend"
+  | "prediction"
+  | "wrap"
+  | "yield"
+  | "launch";
 
 /**
  * Kinds valid through the GENERIC write path (`./swap-intent.js` +
@@ -66,6 +79,18 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * (`pendle.sy.mint`/`pendle.sy.redeem`) — a wrap, never a split, and therefore
  * barred from the second-leg family. A Pendle ERC-20 approval REUSES `allowance` /
  * `allowance_reset` rather than forking a Pendle-specific role.
+ * `token_launch` is migration 062 — ONE role for the whole Trench launch, not
+ * two. A launch has no allowance step (the creation fee and the prebuy are both
+ * paid in NATIVE ETH as `msg.value`, and native value needs no ERC-20 approval)
+ * and no separate prebuy role, because the prebuy happens in the same
+ * transaction and rides this row's first-leg columns. It is likewise barred from
+ * the Option-C second-leg family: a create-with-prebuy is one-in one-out.
+ * `trench_fee` is migration 063 — Vex's 25 bps integrator fee on Trench Express,
+ * a SEPARATE native transfer to the treasury that runs after the trade or launch
+ * confirms. `bridge_fee` could not be reused: the kind↔role binding admits it
+ * only on the `kind='bridge'` arm. It is admitted on the `swap` AND `launch`
+ * arms because a trade fee rides a `swap` execution and a launch fee rides a
+ * `launch` one, and they are the same kind of leg.
  */
 export type AgentActivityEventRole =
   | "allowance_reset"
@@ -90,7 +115,9 @@ export type AgentActivityEventRole =
   | "yield_py"
   | "yield_lp"
   | "yield_sy"
-  | "yield_claim";
+  | "yield_claim"
+  | "token_launch"
+  | "trench_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

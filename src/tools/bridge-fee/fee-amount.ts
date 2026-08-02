@@ -2,14 +2,17 @@
  * Bridge integrator-fee arithmetic — the ONE place `amountIn` is split into
  * what the venue is quoted for and what the treasury is paid.
  *
- * Exact bigint math only: no `Number`, no float, no rounding surprise at u64
- * scale. `fee = floor(amountIn × BRIDGE_FEE_BPS / 10000)`, and the venue is
- * always quoted for `amountIn − fee`, so the `amountOut` the agent is shown is
- * what the user actually receives.
+ * The arithmetic itself now lives in `tools/vex-fee/bps-split.ts`, shared with
+ * every other Vex fee venue; this module is the BRIDGE's naming of it
+ * (`bridgedRaw`) and stays the bridge's public entry point, so no caller
+ * changed. Exact bigint math only: no `Number`, no float, no rounding surprise
+ * at u64 scale. `fee = floor(amountIn × BRIDGE_FEE_BPS / 10000)`, and the venue
+ * is always quoted for `amountIn − fee`, so the `amountOut` the agent is shown
+ * is what the user actually receives.
  */
 
-import { VexError, ErrorCodes } from "../../errors.js";
-import { BRIDGE_FEE_BPS, BRIDGE_FEE_BPS_DENOMINATOR } from "./constants.js";
+import { splitAmountForFeeBps } from "../vex-fee/bps-split.js";
+import { BRIDGE_FEE_BPS } from "./constants.js";
 
 /**
  * How one bridge `amount` divides. `totalRaw` is what the user asked for and
@@ -37,32 +40,11 @@ export interface BridgeFeeSplit {
  * or unparseable is a typed rejection rather than a silent 0-fee bridge.
  */
 export function splitBridgeAmountForFee(amountRaw: string | bigint): BridgeFeeSplit {
-  const totalRaw = toPositiveBigint(amountRaw);
-  const feeRaw = (totalRaw * BigInt(BRIDGE_FEE_BPS)) / BRIDGE_FEE_BPS_DENOMINATOR;
+  const split = splitAmountForFeeBps(amountRaw, { bps: BRIDGE_FEE_BPS, amountLabel: "Bridge amount" });
   return {
-    totalRaw,
-    feeRaw,
-    bridgedRaw: totalRaw - feeRaw,
-    charged: feeRaw > 0n,
+    totalRaw: split.totalRaw,
+    feeRaw: split.feeRaw,
+    bridgedRaw: split.netRaw,
+    charged: split.charged,
   };
-}
-
-function toPositiveBigint(value: string | bigint): bigint {
-  let parsed: bigint;
-  if (typeof value === "bigint") {
-    parsed = value;
-  } else {
-    const trimmed = value.trim();
-    if (!/^(0[xX][0-9a-fA-F]+|\d+)$/.test(trimmed)) {
-      throw new VexError(
-        ErrorCodes.INVALID_AMOUNT,
-        "Bridge amount must be a positive integer in smallest units (decimal or 0x hex).",
-      );
-    }
-    parsed = BigInt(trimmed);
-  }
-  if (parsed <= 0n) {
-    throw new VexError(ErrorCodes.INVALID_AMOUNT, "Bridge amount must be a positive value in smallest units.");
-  }
-  return parsed;
 }

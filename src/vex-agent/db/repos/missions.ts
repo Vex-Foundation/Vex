@@ -379,3 +379,38 @@ export async function mergeConstraintAutoRetry(
     [id, enabled],
   );
 }
+
+/**
+ * Merge the three §C6/§C6b launch-ceiling keys into `constraints_json` without
+ * clobbering siblings, same lock contract as {@link mergeConstraintAutoRetry}.
+ *
+ * All three keys are written TOGETHER, including their `null`s: the value pair
+ * is meaningless half-written, and "clear the ceiling" must actually clear it
+ * rather than leave a stale number behind. Unlike `autoRetryEnabled`, these ARE
+ * contract-hash material (v5), so the caller must also invalidate acceptance —
+ * see `engine/mission/set-launch-ceilings.ts`, the only caller.
+ */
+export async function mergeConstraintLaunchCeilings(
+  client: PoolClient,
+  id: string,
+  ceilings: {
+    maxLaunchValueRaw: string | null;
+    maxLaunchValueDecimals: number | null;
+    maxLaunchCount: number | null;
+  },
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET constraints_json =
+              COALESCE(constraints_json, '{}'::jsonb)
+              || jsonb_build_object(
+                   'maxLaunchValueRaw', $2::text,
+                   'maxLaunchValueDecimals', $3::int,
+                   'maxLaunchCount', $4::int
+                 ),
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, ceilings.maxLaunchValueRaw, ceilings.maxLaunchValueDecimals, ceilings.maxLaunchCount],
+  );
+}

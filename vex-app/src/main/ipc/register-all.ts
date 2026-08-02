@@ -22,6 +22,8 @@ import { registerMessagesHandlers } from "./messages.js";
 import { registerMissionHandlers } from "./mission.js";
 import { registerModelsHandlers } from "./models.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
+import { registerImagesHandlers } from "./images.js";
+import { registerTokenLaunchHandlers } from "./token-launch.js";
 import { registerPortfolioHandlers } from "./portfolio.js";
 import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
 import { registerApiKeysHandler } from "./onboarding/api-keys.js";
@@ -88,6 +90,12 @@ export function registerAllIpcHandlers(): void {
   // aggregates proj_balances + proj_portfolio_snapshots into a renderer-safe
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
+  teardowns.push(...registerImagesHandlers());
+  // Token-launch IPC (plan C5). The four handlers are currently FAIL-CLOSED
+  // stubs (`notWired`) until the main-side wallet/client mount lands — they are
+  // registered anyway so the renderer gets a typed refusal instead of a dead
+  // channel, and so the channel↔registration reconciliation stays honest.
+  teardowns.push(...registerTokenLaunchHandlers());
   // T1: read-only VEX market snapshot for the welcome-screen price widget. The
   // handler serves main's in-memory cache; the external poll + EV.market.vex
   // broadcast are owned by the market service, started in index.ts.

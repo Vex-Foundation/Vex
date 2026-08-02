@@ -27,9 +27,21 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "solana token search", expectedAny: ["solana.tokens"] },
   { intent: "fresh solana tokens", expectedAny: ["solana.tokens.trending"] },
   { intent: "jupiter price lookup", expectedAny: ["solana.prices"] },
+  // Guarded regression: when the Trench launchpad shipped, the ubiquitous
+  // query token "tokens" (matched by trench.tokens' toolId + aliases) briefly
+  // displaced the trending surface here (trench.tokens 99 vs
+  // dexscreener.trending 58). Fixed by giving `dexscreener.trending` explicit
+  // lexical metadata (aliases + a "trending meme tokens" exampleIntent) in
+  // `embeddings/dexscreener/trending.ts` — measured after: trending 129,
+  // trench.tokens 99. Trench-phrased queries stay pinned by the trench
+  // fixtures below; `trench.tokens` is deliberately NOT accepted here.
   { intent: "trending meme tokens", expectedAny: ["dexscreener.trending", "dexscreener.boosts"] },
   { intent: "community takeover", expectedAny: ["dexscreener.communityTakeovers"] },
   { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pairs", "dexscreener.tokens"] },
+  { intent: "new token launches on trench", expectedAny: ["trench.tokens"] },
+  { intent: "trench bonding curve tokens", expectedAny: ["trench.tokens"] },
+  { intent: "preview a token launch cost on trench", expectedAny: ["trench.launch_preview"] },
+  { intent: "trench launchpad trade tape", expectedAny: ["trench.trades", "trench.tokens"] },
   // ── ambiguous / cross-namespace ───────────────────────────────────
   { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens"] },
   { intent: "prediction market events", expectedAny: ["solana.predict.events"] },

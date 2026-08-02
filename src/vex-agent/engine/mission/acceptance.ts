@@ -41,8 +41,8 @@ import { emitMissionUpdate } from "../runtime/mission-bus.js";
 
 import {
   CONTRACT_HASH_VERSION,
-  LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
+  isKnownContractHashVersion,
   computeContractHash,
 } from "./contract-hash.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
@@ -365,12 +365,4 @@ export async function acceptContract(
     }
     throw err;
   }
-}
-
-function isKnownContractHashVersion(
-  version: number,
-): version is typeof LEGACY_CONTRACT_HASH_VERSION | typeof LEGACY_V2_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION {
-  return version === LEGACY_CONTRACT_HASH_VERSION
-    || version === LEGACY_V2_CONTRACT_HASH_VERSION
-    || version === CONTRACT_HASH_VERSION;
 }

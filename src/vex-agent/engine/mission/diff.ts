@@ -25,8 +25,8 @@ import { getMission } from "../../db/repos/missions.js";
 
 import {
   CONTRACT_HASH_VERSION,
-  LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
+  isKnownContractHashVersion,
   computeContractHash,
 } from "./contract-hash.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
@@ -75,9 +75,7 @@ export async function getContractStatus(
   // v2 stays "known" (frozen historical shape, see contract-hash.ts) so a
   // mission accepted while Hyperliquid mutations were live doesn't show as
   // dirty just because HL was removed from the live agent.
-  const acceptedVersionKnown = acceptedVersion === LEGACY_CONTRACT_HASH_VERSION
-    || acceptedVersion === LEGACY_V2_CONTRACT_HASH_VERSION
-    || acceptedVersion === CONTRACT_HASH_VERSION;
+  const acceptedVersionKnown = isKnownContractHashVersion(acceptedVersion);
   const currentHash = computeContractHash(
     missionToDraft(mission),
     acceptedVersionKnown ? acceptedVersion : CONTRACT_HASH_VERSION,

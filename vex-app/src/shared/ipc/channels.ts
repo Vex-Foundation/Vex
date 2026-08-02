@@ -155,6 +155,8 @@ export const CH = {
     stop: "vex:mission:stop",
     getRenewableSource: "vex:mission:getRenewableSource",
     setAutoRetry: "vex:mission:setAutoRetry",
+    /** Host-only writer for the two autonomous token-launch ceilings (C6/C6b). */
+    setLaunchCeilings: "vex:mission:setLaunchCeilings",
     /**
      * Post-stop affordance: hand a stopped mission a new operator instruction
      * and restart it, instead of forcing the user to build a new mission from
@@ -328,6 +330,50 @@ export const CH = {
   support: {
     createBugReport: "vex:support:createBugReport",
     openLogsFolder: "vex:support:openLogsFolder",
+  },
+
+  /**
+   * Trench image locker — GLOBAL and persistent, NOT session-scoped, so a
+   * mission started tomorrow can use an image uploaded today.
+   *
+   * Bytes live main-side under userData keyed by an OPAQUE `imageId`; no
+   * filesystem path ever crosses to the renderer, and `upload` opens the
+   * main-owned picker itself (the renderer sends neither a path nor bytes).
+   * A launch REQUIRES an image — that is a Vex product rule, not a contract
+   * one: the Diamond accepts empty image bytes, we do not.
+   *
+   * `readThumb` returns a `data:` URL of the ALREADY-VALIDATED stored bytes
+   * (≤20 KB) so the sidebar card can render without a path — `index.html`
+   * pins `img-src 'self' data:`, so this stays CSP-clean. It is deliberately
+   * separate from `list` so the metadata read stays cheap.
+   */
+  images: {
+    list: "vex:images:list",
+    upload: "vex:images:upload",
+    delete: "vex:images:delete",
+    readThumb: "vex:images:readThumb",
+  },
+
+  /**
+   * Trench Express token launch — the host-mediated form path.
+   *
+   * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes
+   * from Diamond storage at an anchored block, and the reply carries the wei
+   * figures SEPARATELY (creation fee, prebuy, msg.value, Vex fee, and the gas
+   * estimate as its own field). There is deliberately no merged "total": the
+   * consented amount is exactly `msg.value`, gas is an estimate, and summing
+   * them would present an estimate as a commitment.
+   *
+   * `submit` is the Deploy click. MAIN — never the renderer — reconstructs and
+   * binds the authorization record, and the renderer sends parameters only.
+   * A preview whose anchored values have moved is refused by name so the UI
+   * can re-review rather than silently spend a stale figure.
+   */
+  tokenLaunch: {
+    preview: "vex:tokenLaunch:preview",
+    submit: "vex:tokenLaunch:submit",
+    cancel: "vex:tokenLaunch:cancel",
+    myLaunches: "vex:tokenLaunch:myLaunches",
   },
 
   // Cancellation

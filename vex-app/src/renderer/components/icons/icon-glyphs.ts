@@ -49,6 +49,7 @@ import {
   Plus,
   Radar,
   RefreshCw,
+  Rocket,
   Search,
   Settings2,
   Sparkles,
@@ -99,6 +100,7 @@ export const PanelRightOpenIcon = PanelRightOpen;
 export const PercentSquareIcon = Percent;
 export const Radar01Icon = Radar;
 export const RefreshIcon = RefreshCw;
+export const RocketIcon = Rocket;
 export const Search01Icon = Search;
 export const Settings02Icon = Settings2;
 export const SparklesIcon = Sparkles;

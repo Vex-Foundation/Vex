@@ -132,9 +132,9 @@ export function parseToolIdNamespace(toolArgs: string | null): string | null {
   return /^[a-z][a-z0-9_]*$/.test(namespace) ? namespace : null;
 }
 
-/** Action words of a `toolId` after its namespace, humanized ("Swap quote"). */
-function toolIdAction(toolArgs: string | null): string | null {
-  if (toolArgs === null) return null;
+/** The `toolId` string inside the sanitized args, or null at any failure. */
+function parseToolId(toolArgs: string | null): string | null {
+  if (toolArgs === null || toolArgs.length === 0) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(toolArgs);
@@ -145,10 +145,41 @@ function toolIdAction(toolArgs: string | null): string | null {
     return null;
   }
   const toolId = (parsed as Record<string, unknown>)["toolId"];
-  if (typeof toolId !== "string") return null;
+  return typeof toolId === "string" && toolId.length > 0 ? toolId : null;
+}
+
+/** Action words of a `toolId` after its namespace, humanized ("Swap quote"). */
+function toolIdAction(toolId: string | null): string | null {
+  if (toolId === null) return null;
   const rest = toolId.split(".").slice(1).join(" ");
   return rest.length === 0 ? null : humanizeToolName(rest);
 }
+
+/**
+ * Curated titles and categories for the protocols the engine addresses ONLY
+ * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`).
+ * The humanizer would spell these as "Launch request form" / "My launches";
+ * these read the way the rest of the card voice does ("Swap" vs "Swap quote",
+ * "Transfer · prepare"). Consulted only AFTER `isCuratedProtocol` has proven
+ * the namespace, so untrusted text can still never name a venue.
+ */
+interface ToolIdPresentation {
+  readonly action: string;
+  readonly category: ToolCategory;
+}
+
+const TOOL_ID_PRESENTATION: Readonly<Record<string, ToolIdPresentation>> = {
+  "trench.tokens": { action: "Token list", category: "market" },
+  "trench.search": { action: "Token search", category: "market" },
+  "trench.trades": { action: "Trade tape", category: "market" },
+  "trench.trade_quote": { action: "Trade quote", category: "swap" },
+  "trench.trade_execute": { action: "Trade", category: "swap" },
+  "trench.launch_preview": { action: "Launch preview", category: "tool" },
+  "trench.launch_request_form": { action: "Launch form", category: "tool" },
+  "trench.launch_execute": { action: "Launch", category: "tool" },
+  "trench.my_launches": { action: "My launches", category: "tool" },
+  "trench.images": { action: "Image locker", category: "tool" },
+};
 
 /**
  * Identity for the `execute_tool` / `discover_tools` generic wrappers.
@@ -167,9 +198,13 @@ function genericWrapperIdentity(
   const parsedNamespace = parseToolIdNamespace(toolArgs);
   const protocol = isCuratedProtocol(parsedNamespace) ? parsedNamespace : null;
   const label = venueLabel(protocol);
-  const action = toolIdAction(toolArgs);
-  const category: ToolCategory =
-    toolName === "discover_tools" ? "discovery" : "tool";
+  const toolId = parseToolId(toolArgs);
+  const curated = toolId === null ? undefined : TOOL_ID_PRESENTATION[toolId];
+  const action = curated?.action ?? toolIdAction(toolId);
+  const isDiscovery = toolName === "discover_tools";
+  const category: ToolCategory = isDiscovery
+    ? "discovery"
+    : (curated?.category ?? "tool");
   if (label === null) {
     // Fail-closed: no proven venue → the wrapper's own honest name.
     return {

@@ -49,6 +49,15 @@ export async function retryActiveMissionRun(sessionId: string): Promise<TurnResu
     );
   }
 
+  // C3b — same reasoning as the approval arm: a form-parked run holds an
+  // unanswered tool call. Retrying cannot answer it; submitting or dismissing
+  // the form can.
+  if (run.status === "paused_user_form") {
+    throw new Error(
+      "Mission run is waiting on a form you opened. Submit or dismiss it first.",
+    );
+  }
+
   if (TERMINAL_RUN_STATUSES.has(run.status)) {
     throw new Error(
       `Mission run is ${run.status} and cannot be retried. Start a fresh run.`,

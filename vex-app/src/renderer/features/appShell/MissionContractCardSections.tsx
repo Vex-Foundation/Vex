@@ -144,6 +144,23 @@ function formatConstraints(draft: MissionDraftDto): string[] {
   if (typeof draft.riskProfile === "string" && draft.riskProfile.length > 0) {
     out.push(`Risk profile: ${draft.riskProfile}`);
   }
+  // C6 — shown ONLY when both parts are present. The raw amount is rendered
+  // with its decimals rather than converted: a display-side rescale of a money
+  // limit is exactly the silent 10^n slip rule 90 forbids.
+  if (
+    typeof c.maxLaunchValueRaw === "string" &&
+    typeof c.maxLaunchValueDecimals === "number"
+  ) {
+    out.push(
+      `Max launch value: ${c.maxLaunchValueRaw} raw @ ${c.maxLaunchValueDecimals} decimals`,
+    );
+  }
+  // C6b — the count cap stands alone: it is authored separately from the value
+  // pair, and a mission may legitimately carry one without the other (an
+  // autonomous launch then still refuses, which is the point).
+  if (typeof c.maxLaunchCount === "number") {
+    out.push(`Max launch count: ${c.maxLaunchCount}`);
+  }
   return out;
 }
 

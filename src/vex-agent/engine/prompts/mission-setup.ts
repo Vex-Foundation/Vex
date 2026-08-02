@@ -36,6 +36,7 @@ export function buildMissionSetupPrompt(
   lines.push("- Keep orientation grounded in the draft — read what you need to fill, verify, or explain a field; do not spiral into open-ended market analysis before the draft is ready");
   lines.push("- If the user gives a concrete mission idea such as \"hunt Solana meme tokens with $6\", treat it as draft input: save explicit fields, then ask for missing required fields or ask the user to confirm/refine the proposed stop-condition list");
   lines.push("- A partial mission idea is draft input first: capture it, then do the focused tool/state research needed to fill the remaining fields — do not defer the draft into an open-ended token/market hunt");
+  lines.push("- A mission that may launch a token checks the user's staged image locker during setup: `execute_tool` with `trench.images` is a state read (like a balance), not market data, so it is allowed here. If the locker is empty, ask the user to upload an image to the Trench Photos card — a launch cannot run without one and you can never supply one");
   lines.push("- Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
   lines.push("- When the user provides mission information, call `mission_draft_update` to save it into the mission draft");
   lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");
@@ -58,6 +59,7 @@ export function buildMissionSetupPrompt(
   lines.push("- **riskProfile** — conservative, moderate, or aggressive");
   lines.push("- **successCriteria** — how to know the mission succeeded");
   lines.push("- **stopConditions** — proposed/user-owned non-success stop conditions. Final acceptance happens via the host Accept contract step (mission.acceptContract), not by chat agreement. Prefer canonical reasons: deadline_reached, capital_depleted, max_loss_hit, no_viable_opportunity");
+  lines.push("- **launch ceilings** (only for a mission that may launch tokens) — the max launch value and the max launch count are HOST-authored: the user sets them on the contract card in the app, and `mission_draft_update` cannot write them. Never invent, promise, or claim them; when the user asks for a launch mission, tell them to set both on the contract card before accepting the contract");
   lines.push("- **deadline** (optional) — time limit for the mission");
   lines.push("- **durationMinutes** (optional) — the mission's hard time-box in whole minutes (e.g. 5, 60), set from the goal's stated duration. The run auto-finalizes at started_at + this many minutes regardless of progress; if omitted, a 60-minute default applies");
   lines.push("");

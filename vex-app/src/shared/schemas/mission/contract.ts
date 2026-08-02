@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { sessionIdField, missionIdField } from "./_common.js";
+import { MISSION_MAX_LAUNCH_COUNT } from "./draft.js";
 
 // ── acceptContract ──────────────────────────────────────────────
 
@@ -161,6 +162,75 @@ export const missionUpdateDraftResultSchema = z.discriminatedUnion("outcome", [
 ]);
 export type MissionUpdateDraftResult = z.infer<
   typeof missionUpdateDraftResultSchema
+>;
+
+// ── setLaunchCeilings (C6 / C6b) ─────────────────────────────────
+
+/**
+ * The two autonomous-launch ceilings, authored by the HOST on the contract
+ * card. The model can write neither (`engine/mission/patch-parser.ts` rejects
+ * all three keys by name) — a cap the agent can raise is not a cap.
+ *
+ * UNITS. The renderer sends the spend ceiling as a PLAIN DECIMAL ETH STRING,
+ * exactly as typed, and MAIN converts it to wei — the same division of labour
+ * `shared/schemas/token-launch.ts` uses for the prebuy, and for the same
+ * reason: a decimals slip in the UI is a thousandfold spend error. There is
+ * deliberately no wei field here for the renderer to fill in.
+ *
+ * `null` on either ceiling CLEARS it, which is not "unlimited": an absent
+ * ceiling is zero authority and every autonomous launch refuses
+ * (`engine/mission/launch-ceiling.ts`).
+ */
+export const missionSetLaunchCeilingsInputSchema = z
+  .object({
+    sessionId: sessionIdField,
+    missionId: missionIdField,
+    /** Plain decimal ETH, e.g. `"0.05"`. `null` clears the ceiling. */
+    maxLaunchValueEth: z
+      .string()
+      .regex(/^\d+(\.\d+)?$/, "must be a plain decimal amount of ETH")
+      .max(40)
+      .nullable(),
+    maxLaunchCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(MISSION_MAX_LAUNCH_COUNT)
+      .nullable(),
+  })
+  .strict();
+export type MissionSetLaunchCeilingsInput = z.infer<
+  typeof missionSetLaunchCeilingsInputSchema
+>;
+
+/**
+ * Both ceilings are contract-hash material (v5), so a successful write
+ * INVALIDATES a prior acceptance — `acceptanceCleared` tells the card to send
+ * the user back through Accept rather than leaving a stale "accepted" badge
+ * beside a limit they never read.
+ */
+export const missionSetLaunchCeilingsResultSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z
+      .object({
+        outcome: z.literal("updated"),
+        maxLaunchValueRaw: z.string().nullable(),
+        maxLaunchValueDecimals: z.number().int().nullable(),
+        maxLaunchCount: z.number().int().nullable(),
+        acceptanceCleared: z.boolean(),
+      })
+      .strict(),
+    z.object({ outcome: z.literal("not_found") }).strict(),
+    z
+      .object({ outcome: z.literal("blocked_status"), status: z.string() })
+      .strict(),
+    /** The value could never bind (bad pair, wrong decimals, negative count). */
+    z.object({ outcome: z.literal("invalid"), reason: z.string() }).strict(),
+  ],
+);
+export type MissionSetLaunchCeilingsResult = z.infer<
+  typeof missionSetLaunchCeilingsResultSchema
 >;
 
 // ── setAutoRetry (phase 4d-5) ────────────────────────────────────

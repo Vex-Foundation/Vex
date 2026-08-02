@@ -157,6 +157,33 @@ describe("resolveToolIdentity — generic wrappers", () => {
     },
   );
 
+  it.each([
+    ["trench.tokens", "Trench Express · Token list", "market"],
+    ["trench.search", "Trench Express · Token search", "market"],
+    ["trench.trades", "Trench Express · Trade tape", "market"],
+    ["trench.trade_quote", "Trench Express · Trade quote", "swap"],
+    ["trench.trade_execute", "Trench Express · Trade", "swap"],
+    ["trench.launch_preview", "Trench Express · Launch preview", "tool"],
+    ["trench.launch_request_form", "Trench Express · Launch form", "tool"],
+    ["trench.launch_execute", "Trench Express · Launch", "tool"],
+    ["trench.my_launches", "Trench Express · My launches", "tool"],
+    ["trench.images", "Trench Express · Image locker", "tool"],
+  ])("titles the Trench act %s as %s", (toolId, title, category) => {
+    expect(resolveToolIdentity("execute_tool", `{"toolId":"${toolId}"}`)).toEqual({
+      protocol: "trench",
+      title,
+      category,
+    });
+  });
+
+  it("falls back to the humanizer for an unmirrored trench id — venue proven, action not curated", () => {
+    expect(resolveToolIdentity("execute_tool", '{"toolId":"trench.new_thing"}')).toEqual({
+      protocol: "trench",
+      title: "Trench Express · New thing",
+      category: "tool",
+    });
+  });
+
   it("labels discover_tools as discovery with no venue when args prove none", () => {
     expect(resolveToolIdentity("discover_tools", null)).toEqual({
       protocol: null,

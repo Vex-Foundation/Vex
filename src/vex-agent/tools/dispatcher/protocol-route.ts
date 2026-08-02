@@ -129,6 +129,13 @@ export async function routeToolCall(
         preparationBypassesBarrier: context.preparationBypassesBarrier === true,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Trusted provenance (C0) — host-side evidence, never model input.
+        missionId: context.missionId,
+        missionRunId: context.missionRunId,
+        approvalId: context.approvalId,
+        // The call this dispatch answers. `trench.launch_request_form` parks the
+        // turn and its later result must address exactly this id (§C3b).
+        toolCallId: call.toolCallId,
       },
     );
   }
@@ -170,6 +177,13 @@ export async function routeToolCall(
         preparationBypassesBarrier: context.preparationBypassesBarrier === true,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Trusted provenance (C0) — host-side evidence, never model input.
+        missionId: context.missionId,
+        missionRunId: context.missionRunId,
+        approvalId: context.approvalId,
+        // The call this dispatch answers. `trench.launch_request_form` parks the
+        // turn and its later result must address exactly this id (§C3b).
+        toolCallId: call.toolCallId,
       },
     );
   }

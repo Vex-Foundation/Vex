@@ -66,6 +66,18 @@ export const DEXSCREENER_TRENDING_DISCOVERY = {
       `Use this when the user asks what themes or narratives are hot in crypto right now, which meta is pumping, or wants the market-wide trending categories. ` +
       `Example queries: what's trending in crypto, hot narratives right now, trending metas, which theme is pumping, top crypto narratives, what meta is hot.`,
     ),
+    // Lexical-scorer metadata (aliases weight 5, exampleIntents weight 6).
+    // "trending meme tokens" is deliberately here: it is the canonical generic
+    // trending ask, and its correct first hop IS this feed (find the hot meta,
+    // then drill into its tokens with dexscreener.meta). Without it the
+    // ubiquitous token "tokens" let launchpad browsers outscore the trending
+    // surface on generic queries — the discovery-golden fixture pins this.
+    aliases: ["trending narratives", "hot metas", "trending crypto themes"],
+    exampleIntents: [
+      "trending meme tokens",
+      "what narratives are hot right now",
+      "which meta is pumping",
+    ],
     chains: DEXSCREENER_CHAINS,
   },
   "dexscreener.meta": {

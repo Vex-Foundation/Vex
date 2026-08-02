@@ -306,6 +306,13 @@ describe("recoverStaleHashlessIntents", () => {
         "yield_lp",
         "yield_sy",
         "yield_claim",
+        // Migration 062 (Trench launch) and 063 (the Trench Vex fee). Both are
+        // EVM-only, both are signed locally, and neither is owned by a sweep
+        // that could reap a hashless row — `trench_fee` for exactly the reason
+        // `bridge_fee` above is here: it is the FINAL Vex-signed leg, so one
+        // planned but never signed is definitively not-attempted.
+        "token_launch",
+        "trench_fee",
       ].sort(),
     );
   });
@@ -327,6 +334,9 @@ describe("recoverStaleHashlessIntents", () => {
     const evmOnlyRoles = [
       "allowance", "allowance_reset",
       "yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_sy", "yield_claim",
+      // Trench Express is chain 4663 only — the launch and its Vex fee leg are
+      // EVM-only by construction.
+      "token_launch", "trench_fee",
     ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee

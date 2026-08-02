@@ -200,6 +200,25 @@ export async function confirmActivityEvent(
         + "executedAmountInRaw + executedAmountOutRaw",
     );
   }
+  if (current.eventRole === "token_launch"
+    && (!input.executedAmountInRaw || !input.executedAmountOutRaw)) {
+    // Migration 062 deliberately adds NO confirmed-legs CHECK for `launch` —
+    // 061 dropped the three that existed because status-only repair makes
+    // `confirmed` + NULL `executed_*` a legitimate reachable state, and a new
+    // one would forbid exactly the rows that sweep must write. So this guard IS
+    // the strict path's enforcement point, and the relaxation reaches exactly
+    // one caller: `confirmActivityEventStatusOnly`.
+    //
+    // Both legs are required because a launch that mined successfully always has
+    // both: the native `msg.value` spent (creation fee + prebuy) and the token
+    // that `TokenCreated` proves now exists. A handler decoding its own receipt
+    // can read both; one that cannot has not proven the launch settled and must
+    // leave the row pending for the repair sweep rather than confirm it half-known.
+    throw new Error(
+      "agent_activity: confirmActivityEvent — event_role 'token_launch' requires "
+        + "executedAmountInRaw + executedAmountOutRaw",
+    );
+  }
   assertYieldConfirmLegs(current, input);
   // Under the session control lock: `pending` is money state the compaction
   // safe-moment gate reads. `current` is the pre-read this function already

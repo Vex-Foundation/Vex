@@ -38,6 +38,7 @@ import { EXECUTE_GATE_TOOLS } from "./registry.js";
 import type { ExecuteGateRegistration } from "./registry.js";
 import { resolveUniswapChainId } from "@tools/uniswap/chains.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
+import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import { computePrequoteMatchHash } from "./identity/hash.js";
 import { assertBridgeParamsBindable, buildBridgeIdentity } from "./identity/bridge.js";
 import { buildRelayBridgeIdentity } from "./identity/relay-bridge.js";
@@ -439,6 +440,16 @@ function buildEvmIdentity(
     const resolved = resolvePendleChainId(chainParam);
     if (resolved === undefined) {
       throw new VexError(ErrorCodes.PENDLE_API_ERROR, `Pendle unsupported chain: ${chainParam}`);
+    }
+    chainId = resolved;
+  } else if (provider === "trench") {
+    // Trench Express is a LOCAL chain (Robinhood 4663), not a Kyber-supported
+    // chain — resolve via the local registry (network-free). An omitted chain
+    // defaults to robinhood, matching the recorder which reads chainId from the
+    // quote output (always 4663). Throws → caught upstream → fail-closed block.
+    const resolved = resolveLocalChainId(chainParam || "robinhood");
+    if (resolved === undefined) {
+      throw new VexError(ErrorCodes.TRENCH_INVALID_REQUEST, `Trench unsupported chain: ${chainParam}`);
     }
     chainId = resolved;
   } else {

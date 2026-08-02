@@ -40,6 +40,7 @@ const ACTIVE_OR_PAUSED_STATUSES: readonly MissionRunStatus[] = [
   "paused_error",
   "paused_user",
   "paused_plan_acceptance",
+  "paused_user_form",
 ];
 
 // `correlationId` intentionally omitted; `registerHandler` stamps

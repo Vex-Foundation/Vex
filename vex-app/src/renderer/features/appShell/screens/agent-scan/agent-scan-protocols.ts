@@ -18,6 +18,7 @@
  *
  *   kyberswap · uniswap — EVM swap executors
  *   jupiter             — Solana swaps, Jupiter Lend, Jupiter predictions
+ *   trench              — Trench Express launchpad trades (Robinhood Chain)
  *   khalani · relay     — bridge executors
  *
  * DELIBERATELY ABSENT:
@@ -49,6 +50,7 @@ export const KNOWN_FEED_PROTOCOLS = [
   "kyberswap",
   "uniswap",
   "jupiter",
+  "trench",
   "khalani",
   "relay",
 ] as const;

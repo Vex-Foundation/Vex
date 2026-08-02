@@ -288,7 +288,7 @@ describe("getTokenHistory — agent_activity bridge (Agent Scan Phase 2)", () =>
     const sql = String(pageCall?.[0] ?? "");
     expect(sql).toContain("aa.event_role = 'swap'");
     expect(sql).toContain("aa.event_role = 'bridge_fill_expected'");
-    expect(sql).toContain("aa.kind IN ('lend', 'prediction')");
+    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'launch')");
     expect(sql).toContain("WHEN 'bridge' THEN 'bridge'");
     expect(sql).toContain("WHEN 'lend' THEN 'lend'");
     expect(sql).toContain("WHEN 'prediction' THEN 'prediction'");

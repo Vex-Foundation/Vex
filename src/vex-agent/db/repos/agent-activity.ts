@@ -67,6 +67,17 @@ export {
   existsForExecutionId,
 } from "./agent-activity/swap-lifecycle.js";
 
+// A launch's output token DOES NOT EXIST when its intent row is written, so
+// `token_out_*` is discovered from the receipt and written at confirm. These
+// two are the only writers of that discovered identity; both are guarded to
+// `event_role = 'token_launch'`. See `./agent-activity/launch-lifecycle.ts`.
+export type { ConfirmLaunchWithOutputIdentityInput } from "./agent-activity/launch-lifecycle.js";
+export {
+  confirmLaunchWithOutputIdentity,
+  fillLaunchOutputIdentityOnConfirmed,
+  stampLaunchOutputIdentityByTxHash,
+} from "./agent-activity/launch-lifecycle.js";
+
 // Stale hashless-intent recovery (C7 — generalized off Solana-only to EVERY
 // chain family; extracted to its own module to keep swap-lifecycle.js under
 // the repo's 500-line cap).

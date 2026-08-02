@@ -20,6 +20,7 @@ import { registerMissionRenewHandler } from "./renew.js";
 import { registerMissionRestartWithInstructionHandler } from "./restart-with-instruction.js";
 import { registerMissionRetryHandler } from "./retry.js";
 import { registerMissionSetAutoRetryHandler } from "./set-auto-retry.js";
+import { registerMissionSetLaunchCeilingsHandler } from "./set-launch-ceilings.js";
 import { registerMissionStartHandler } from "./start.js";
 import { registerMissionStopHandler } from "./stop.js";
 import { registerMissionUpdateDraftHandler } from "./update-draft.js";
@@ -39,6 +40,7 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionStopHandler(),
     registerMissionGetRenewableSourceHandler(),
     registerMissionSetAutoRetryHandler(),
+    registerMissionSetLaunchCeilingsHandler(),
     registerMissionRestartWithInstructionHandler(),
   ];
 }

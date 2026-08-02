@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 10 sync jobs (5 global + 5 per-namespace)", async () => {
+  it("inserts 11 sync jobs (6 global + 5 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -24,9 +24,12 @@ describe("seedSyncJobs", () => {
     // Phase 3 removed both Hyperliquid reconciliation rows (namespace
     // "_global" periodic + namespace "hyperliquid" post_mutation). W5 (K1,
     // migration 049) added the _global/solana_activity_repair periodic
-    // sweep seed — net 10.
+    // sweep seed — net 10. The Trench fix wave added the
+    // _global/launch_identity_repair periodic sweep seed — net 11. Its
+    // seed↔tick↔worker lockstep is pinned in
+    // `periodic-sync-registration.test.ts`; this count is only the row total.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(10);
+    expect(mockExecute).toHaveBeenCalledTimes(11);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

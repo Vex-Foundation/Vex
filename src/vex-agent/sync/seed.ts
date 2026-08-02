@@ -35,6 +35,16 @@ const SYNC_JOBS = [
   // worker.ts logs "Unknown sync type" and skips until K3 lands.
   { namespace: "_global", syncType: "solana_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // Trench launch identity sweep — completes the TOKEN IDENTITY of a create
+  // that mined after the handler died, and terminalizes one later proven to
+  // have reverted. The generic activity sweep cannot do this: it is status-only
+  // and decodes nothing, so it would confirm the activity row and still leave
+  // `launched_tokens` empty. Lookup-only, never signs; see
+  // sync/launch-identity-repair.ts. Cadence mirrors the other two per-tx repair
+  // sweeps (30s) — a user staring at a launch with no address is the wait this
+  // ends, so it is not slowed to the bridge sweep's 120s provider cadence.
+  { namespace: "_global", syncType: "launch_identity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
+
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },

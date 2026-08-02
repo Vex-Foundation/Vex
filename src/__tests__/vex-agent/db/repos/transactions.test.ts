@@ -308,10 +308,10 @@ describe("filters", () => {
     const activityHalf = sql.split("FROM proj_activity")[0]!;
     expect(activityHalf).not.toContain("FALSE");
     expect(activityHalf).toContain("kind = 'bridge'");
-    // Bridges collapse to the logical row; swaps/lend/prediction still emit
-    // every row (one role per on-chain tx — no logical/leg split, R5).
+    // Bridges collapse to the logical row; swaps/lend/prediction/launch still
+    // emit every row (one role per on-chain tx — no logical/leg split, R5).
     expect(activityHalf).toContain(
-      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR event_role = 'bridge_fill_expected')",
+      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'launch' OR event_role = 'bridge_fill_expected')",
     );
   });
 

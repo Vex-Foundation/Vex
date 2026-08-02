@@ -61,7 +61,10 @@ export function registerRuntimeRequestPauseHandler(): () => void {
           status === "paused_user" ||
           status === "paused_approval" ||
           status === "paused_wake" ||
-          status === "paused_error"
+          status === "paused_error" ||
+          // C3b — a form-parked run is already parked; enqueueing a pause
+          // request would sit pending forever, exactly like the other arms.
+          status === "paused_user_form"
         ) {
           // Already paused — return state without enqueueing a new
           // duplicate audit row. The active control plane (whoever

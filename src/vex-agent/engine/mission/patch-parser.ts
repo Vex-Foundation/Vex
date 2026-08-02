@@ -36,11 +36,37 @@ const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
  */
 const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>(["durationMinutes"]);
 
-const ALL_ALLOWED_KEYS = new Set<string>([
-  ...ALLOWED_STRING_KEYS,
-  ...ALLOWED_ARRAY_KEYS,
-  ...ALLOWED_NUMBER_KEYS,
+/**
+ * DELIBERATELY NOT ALLOWED — do not add these, whatever a later task seems to
+ * need (contract C6).
+ *
+ * `maxLaunchValueRaw` / `maxLaunchValueDecimals` are the hard spend ceiling on
+ * an autonomous token launch, and `maxLaunchCount` is the hard cap on how many
+ * tokens it may create. Rule 90: "fee, limit, and destination parameters
+ * must never originate from model input." A model that can raise its own cap
+ * has no cap — the field would look like a control and enforce nothing, which
+ * is worse than having none, because the UI would show the user a limit that
+ * does not bind.
+ *
+ * They are HOST-AUTHORED ONLY. The model READS its ceiling through
+ * `draftToPromptContext` and chooses an amount up to it. Pinned by
+ * `mission/patch-parser-launch-ceiling.test.ts`.
+ */
+const MODEL_FORBIDDEN_KEYS = new Set<keyof MissionDraft>([
+  "maxLaunchValueRaw",
+  "maxLaunchValueDecimals",
+  "maxLaunchCount",
 ]);
+
+const ALL_ALLOWED_KEYS = new Set<string>(
+  [
+    ...ALLOWED_STRING_KEYS,
+    ...ALLOWED_ARRAY_KEYS,
+    ...ALLOWED_NUMBER_KEYS,
+  ].filter((key) => !MODEL_FORBIDDEN_KEYS.has(key)),
+);
+
+export { MODEL_FORBIDDEN_KEYS };
 
 /** Max string field length (prevents unbounded model output). */
 const MAX_STRING_LENGTH = 2000;

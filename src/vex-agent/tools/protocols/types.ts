@@ -25,7 +25,8 @@ export type ProtocolNamespace =
   | "solana"
   | "dexscreener"
   | "virtuals"
-  | "pendle";
+  | "pendle"
+  | "trench";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -166,6 +167,42 @@ export interface ProtocolExecutionContext {
   walletPolicy: WalletPolicy;
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
+  /**
+   * TRUSTED PROVENANCE (C0). Threaded by the dispatcher from
+   * `InternalToolContext`; a handler can never derive these from model input,
+   * which is exactly why they are here — an authorization record that binds
+   * "which mission / which approval authorized this spend" must be built from
+   * host-side evidence.
+   *
+   * `missionId` / `missionRunId`: set for a dispatch inside a mission. The
+   * `full_autonomy` authorization variant binds them as its provenance.
+   *
+   * `approvalId`: set ONLY on the cold approval-resume path, where the user
+   * resolved an approval card. The `approval_card` variant binds it.
+   *
+   * All three are OPTIONAL because legacy dispatch paths (chat, maintenance,
+   * previews) genuinely have no mission or approval to name; `undefined` and
+   * `null` both mean absent. A path that REQUIRES provenance must not read
+   * these directly — call `requireExecutionProvenance` from
+   * `./execution-provenance.js`, which refuses by name instead of silently
+   * authorizing an unbound spend.
+   */
+  missionId?: string | null;
+  missionRunId?: string | null;
+  approvalId?: string | null;
+  /**
+   * The provider's id for THIS tool call, threaded by the dispatcher from
+   * `ToolCallRequest.toolCallId`. Host-side evidence like the provenance above:
+   * a model-supplied id could park a form whose result answers a DIFFERENT call.
+   *
+   * Only a handler that must ANSWER ITS OWN CALL LATER needs it —
+   * `trench.launch_request_form` parks the turn on §C3b and the eventual result
+   * must address exactly this call, or the turn can never close. Optional
+   * because dispatch paths that were never a model tool call (previews,
+   * maintenance, internal resumes) genuinely have none; a handler that requires
+   * it refuses by name rather than parking a turn nothing can answer.
+   */
+  toolCallId?: string | null;
   /**
    * Context-usage band at dispatch time, threaded through from the
    * dispatcher so the protocol-runtime pressure guard can reject mutating

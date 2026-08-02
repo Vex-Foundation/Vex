@@ -117,6 +117,19 @@ export async function syncTick(): Promise<void> {
           { ...solanaResult, periodic: true },
           solanaResult.confirmed + solanaResult.failed,
         );
+      } else if (job.syncType === "launch_identity_repair") {
+        // Trench launch identity sweep — seeded (seed.ts) and dispatched by
+        // worker.ts; this is its periodic driver, mirroring the branch above
+        // exactly. Omitting it is the C1 defect the bridge sweep already hit:
+        // the job's own timer fires nothing and the omission is silent.
+        const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
+        const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...launchResult, periodic: true },
+          launchResult.repaired + launchResult.failed,
+        );
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });
       }

@@ -21,6 +21,8 @@ import type {
   MissionRestartWithInstructionInput,
   MissionRestartWithInstructionResult,
   MissionSetAutoRetryInput,
+  MissionSetLaunchCeilingsInput,
+  MissionSetLaunchCeilingsResult,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
@@ -76,6 +78,14 @@ export interface MissionBridge {
   readonly setAutoRetry: (
     input: MissionSetAutoRetryInput,
   ) => Promise<Result<MissionSetAutoRetryResult>>;
+  /**
+   * Host-authored autonomous-launch ceilings. The renderer sends a plain
+   * decimal ETH string; main converts to wei and the engine clears acceptance,
+   * because both ceilings are contract-hash material.
+   */
+  readonly setLaunchCeilings: (
+    input: MissionSetLaunchCeilingsInput,
+  ) => Promise<Result<MissionSetLaunchCeilingsResult>>;
   /**
    * Post-stop restart: append the user's "do this differently" instruction and
    * start a NEW run against the SAME already-accepted contract. Refuses with

@@ -6,8 +6,8 @@
  * WHY THIS MODULE EXISTS. The app's activity surfaces grew up on a SPOT
  * taxonomy minted in SQL (`token-history-db-query.ts`'s `CASE … ELSE 'spot'`,
  * `moves-db-query.ts`'s twin) while the canonical vocabulary has always lived
- * on `agent_activity`: `kind` (migration 044 → 049 → 051) plus `event_role`
- * (17 values) plus a 3-value lifecycle `status`. Two vocabularies for one
+ * on `agent_activity`: `kind` (migration 044 → 049 → 051 → 053 → 062) plus
+ * `event_role` plus a 3-value lifecycle `status`. Two vocabularies for one
  * concept is how migration 051:129-135 could warn that a `wrap` row is written
  * correctly and is then INVISIBLE — or worse, displayed as a spot trade — on
  * all three agent-visible surfaces at once. The vocabulary now has an owner.
@@ -27,17 +27,27 @@
  * untrusted renderer, the shared IPC schemas, and the privileged main process
  * all consume ONE vocabulary and can never drift.
  *
- * SOURCE OF TRUTH: `src/vex-agent/db/migrations/051_agent_activity_wrap_vocabulary.sql`
- * (`agent_activity_kind_valid` / `agent_activity_event_role_valid`), read-only
- * reference — root `src/`, NOT imported (the trust boundary forbids it).
+ * SOURCE OF TRUTH: `src/vex-agent/db/migrations/062_trench_launch.sql`
+ * (`agent_activity_kind_valid` / `agent_activity_event_role_valid` — each
+ * migration DROPs and re-ADDs them whole, so the LATEST one is the live
+ * definition), read-only reference — root `src/`, NOT imported (the trust
+ * boundary forbids it).
  */
 
 // ── `agent_activity.kind` ─────────────────────────────────────────────────
 
 /**
- * The DB-CHECK-constrained `kind` vocabulary (migration 051). A row in
+ * The DB-CHECK-constrained `kind` vocabulary (migration 062). A row in
  * `agent_activity` carries exactly one of these; anything else is drift and
  * must be treated as an unknown-but-valid label.
+ *
+ * `yield` was MISSING here from migration 053 until 062 — a found defect, not a
+ * design choice. It is precisely the drift this module was created to prevent:
+ * the engine minted a kind the app had no name for, so `isAgentActivityKind`
+ * answered `false` for a perfectly valid Pendle row and every consumer degraded
+ * it to a neutral label. Nothing BLANKED, because the tolerant-reader rule above
+ * did its job — which is also why the gap survived unnoticed. Fixed with 062's
+ * own addition rather than left for a future session to rediscover.
  */
 export const AGENT_ACTIVITY_KINDS = [
   "swap",
@@ -45,6 +55,8 @@ export const AGENT_ACTIVITY_KINDS = [
   "lend",
   "prediction",
   "wrap",
+  "yield",
+  "launch",
 ] as const;
 export type AgentActivityKind = (typeof AGENT_ACTIVITY_KINDS)[number];
 
@@ -83,9 +95,16 @@ export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
 // ── `agent_activity.event_role` ───────────────────────────────────────────
 
 /**
- * The DB-CHECK-constrained `event_role` vocabulary (migration 051). One
+ * The DB-CHECK-constrained `event_role` vocabulary (migration 062). One
  * execution fans out into per-role rows; feeds paginate on the LOGICAL row of
  * each kind and carry the rest as legs.
+ *
+ * The six `yield_*` roles were MISSING here from migration 053 — the same found
+ * defect as the `yield` kind above, fixed in the same change. `token_launch` is
+ * migration 062: ONE role for a whole Trench launch, because the create and its
+ * prebuy are a single transaction. `trench_fee` is migration 063: Vex's 25 bps
+ * integrator fee on Trench Express, a separate treasury transfer that runs after
+ * the trade or launch confirms, admitted on the `swap` and `launch` arms.
  */
 export const AGENT_ACTIVITY_EVENT_ROLES = [
   "allowance_reset",
@@ -105,6 +124,14 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   "predict_close",
   "wrap",
   "unwrap",
+  "yield_pt",
+  "yield_yt",
+  "yield_py",
+  "yield_lp",
+  "yield_sy",
+  "yield_claim",
+  "token_launch",
+  "trench_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 
