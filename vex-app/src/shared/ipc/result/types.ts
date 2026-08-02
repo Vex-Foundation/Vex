@@ -78,6 +78,17 @@ export type VexDomain =
    */
   | "market"
   /**
+   * Trench image locker (C2) — the GLOBAL, persistent library of pre-staged
+   * token-launch images. Owns the byte store under `userData` (keyed by an
+   * opaque `imageId` that never decodes to a path) plus the metadata rows the
+   * agent reads. Its handlers are the only place in the app that touches raw
+   * image bytes; every other surface sees the metadata record alone. Store
+   * I/O failures map to `images.store_unavailable` rather than
+   * `internal.unexpected`, because "your locker is unreadable" is a
+   * different, actionable thing from "something broke".
+   */
+  | "images"
+  /**
    * Used by the read-only `sessions.getModel` handler (global runtime
    * model resolution). Existing sessions handlers
    * (`vex:sessions:create|list|get|setPinned|delete`) deliberately keep
@@ -223,6 +234,47 @@ export type VexErrorCode =
    */
   | "compaction.not_found"
   | "compaction.invalid_state"
+  /**
+   * Image locker (C2). All five are `redacted: true` and NEVER echo a
+   * filesystem path — the store's whole design is that no path exists on this
+   * side of the boundary to leak.
+   *
+   *  - `images.too_large`          — the chosen file exceeds the 20 KB cap.
+   *                                  Not cosmetic: the bytes ride inside the
+   *                                  `create` calldata of a real, irreversible
+   *                                  on-chain transaction, so their size is
+   *                                  gas the user pays.
+   *                                  `retryable: false, userActionable: true`.
+   *  - `images.unsupported_format` — the MAGIC BYTES are not jpeg/png/webp,
+   *                                  or the header's dimensions cannot be read
+   *                                  without decoding. We deliberately do not
+   *                                  decode or transcode (no runtime image
+   *                                  codec is packaged — `sharp` is
+   *                                  devDependencies-only), so an unreadable
+   *                                  header is a refusal, never a silent
+   *                                  conversion.
+   *                                  `retryable: false, userActionable: true`.
+   *  - `images.not_found`          — unknown or already-deleted opaque
+   *                                  `imageId`.
+   *  - `images.in_use`             — THE C2 LIFECYCLE GUARANTEE made machine
+   *                                  readable: explicit deletion is REFUSED
+   *                                  while a LIVE (non-terminal) launch intent
+   *                                  references the image, and the message
+   *                                  names that intent. Cancelling or expiring
+   *                                  an intent never deletes an image; this is
+   *                                  the only path that deletes, and it will
+   *                                  not pull bytes out from under an
+   *                                  authorization that may still be about to
+   *                                  be signed over their digest.
+   *                                  `retryable: false, userActionable: true`.
+   *  - `images.store_unavailable`  — the userData byte store or the metadata
+   *                                  read/write failed. `retryable: true`.
+   */
+  | "images.too_large"
+  | "images.unsupported_format"
+  | "images.not_found"
+  | "images.in_use"
+  | "images.store_unavailable"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

@@ -87,16 +87,21 @@ export function buildActivityHalf(
   // leg split — so every row of those kinds is its own feed row, including
   // closeAll's N independent `predict_close`/`predict_claim` rows (R5: each is
   // an independent user-facing outcome, never aggregated into one row's legs).
-  activityConds.push("(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR event_role = 'bridge_fill_expected')");
+  // `launch` (migration 062) joins the one-role-per-on-chain-tx group: a Trench
+  // create is a single transaction with a single `token_launch` row, so every
+  // launch row is its own feed row. Its prebuy is a LEG of that same row, not a
+  // sibling — there is deliberately no second `swap` row to fold in.
+  activityConds.push("(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'launch' OR event_role = 'bridge_fill_expected')");
   // productType now maps to `kind`: 'spot' → swap rows (derive to the same
   // "spot" product the success half stores), 'bridge' → bridge logical rows,
-  // 'lend' → lend rows, 'prediction' → prediction rows. Any OTHER productType
-  // (perps/order) has no agent_activity representation → exclude the half
-  // entirely (no param bind needed).
+  // 'lend' → lend rows, 'prediction' → prediction rows, 'launch' → launch rows.
+  // Any OTHER productType (perps/order) has no agent_activity representation →
+  // exclude the half entirely (no param bind needed).
   if (productType === "spot") activityConds.push("kind = 'swap'");
   else if (productType === "bridge") activityConds.push("kind = 'bridge'");
   else if (productType === "lend") activityConds.push("kind = 'lend'");
   else if (productType === "prediction") activityConds.push("kind = 'prediction'");
+  else if (productType === "launch") activityConds.push("kind = 'launch'");
   else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
 
@@ -110,6 +115,10 @@ export function buildActivityHalf(
         WHEN kind = 'bridge' THEN 'bridge'
         WHEN kind = 'lend' THEN 'lend'
         WHEN kind = 'prediction' THEN 'prediction'
+        -- A launch is NOT a spot trade. Folding it into the ELSE would state a
+        -- route, a price and a counterparty that a token creation never had —
+        -- migration 051 records the cost of exactly that mistake, for wrap.
+        WHEN kind = 'launch' THEN 'launch'
         ELSE 'spot'
       END AS product_type,
       NULL::text AS trade_side,

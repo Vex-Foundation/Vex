@@ -1,6 +1,6 @@
 /* THE SIGNAL DESK — main-app shell scope, CHRONOS edition. Sibling of
  * [data-vex-onboarding]: applied via `data-vex-shell="true"` on the AppShell
- * root. The room's back wall is the Eclipse photo backdrop (ShellBackdrop,
+ * root. The room's back wall is the current shell photo backdrop (ShellBackdrop,
  * owner-decreed 2026-07-20 — this deliberately supersedes the earlier
  * "zero photography" law); the columns float over it as glass (the two
  * rails + composer, guard-whitelisted backdrop-blur). Depth on solid
@@ -48,13 +48,13 @@
   --vex-warn-text: color-mix(in oklab, var(--color-danger) 70%, white);
   /* Glass instrument surface — user-sanctioned translucent ink for the
    * floating Signal Console composer (SessionComposer), paired with
-   * backdrop-blur over the Eclipse backdrop (guard-whitelisted).
+   * backdrop-blur over the current shell backdrop (guard-whitelisted).
    * --vex-glass-strong is the focus step (.vex-console:focus-within). */
   --vex-glass: rgba(11, 15, 29, 0.66);
   --vex-glass-strong: rgba(11, 15, 29, 0.82);
   /* Side-rail surface — the two rails (SessionsList / BookPanel) wear a
-   * softer, more translucent tint than the composer glass so the Eclipse
-   * backdrop shows through them and they merge into one canvas with the
+   * softer, more translucent tint than the composer glass so the current
+   * shell backdrop shows through them and they merge into one canvas with the
    * center column instead of reading as bordered panels (owner review: NO
    * separating stroke at all — pure glass, the tint step is the only edge).
    * Backdrop-blur is guard-whitelisted for legibility over the photo.

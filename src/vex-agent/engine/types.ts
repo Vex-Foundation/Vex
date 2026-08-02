@@ -68,6 +68,14 @@ export const MISSION_RUN_STATUSES = [
   // path. Never resumed by a plain user chat message (a runtime pause but NOT a
   // RESUMABLE_STOP).
   "paused_plan_acceptance",
+  // Contract C3b: the run is parked waiting for the USER to fill and submit a
+  // form the agent asked for (today: the token-launch form). Deliberately NOT
+  // `paused_approval` — approval parking always enqueues an approval and
+  // exposes an approval CARD, which is the very surface this path exists to
+  // avoid. Its resume is claimed by the form continuation, not by the approval
+  // lifecycle, so it is absent from APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES.
+  // Cancel/expiry resume the turn with an honest tool result; it never hangs.
+  "paused_user_form",
   "completed",
   "failed",
   "stopped",
@@ -89,6 +97,7 @@ export const PAUSED_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "paused_error",
   "paused_user",
   "paused_plan_acceptance",
+  "paused_user_form",
 ]);
 export const TERMINAL_RUN_STATUSES: ReadonlySet<MissionRunStatus> = new Set([
   "completed",
@@ -332,6 +341,17 @@ export interface MissionDraft {
    * default. Distinct from `deadline` (free-text, informational only).
    */
   durationMinutes: number | null;
+  /**
+   * Enforceable spend ceiling for an autonomous token launch (C6), as a RAW
+   * integer amount string paired with {@link maxLaunchValueDecimals}. `null`
+   * means NO CEILING SET, which FAILS CLOSED — it is not "unlimited".
+   * HOST-AUTHORED ONLY (deliberately absent from `patch-parser.ts`).
+   * Units, the decimals===18 requirement and the comparison itself live in
+   * `engine/mission/launch-ceiling.ts` — read it before using either field.
+   */
+  maxLaunchValueRaw: string | null;
+  /** Decimals for {@link maxLaunchValueRaw}. Must be 18 to be enforceable. */
+  maxLaunchValueDecimals: number | null;
 }
 
 /**

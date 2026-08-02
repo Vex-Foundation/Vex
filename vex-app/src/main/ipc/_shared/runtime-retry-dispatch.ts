@@ -89,7 +89,13 @@ export async function runRetryDispatch(
     ) {
       return ok({ outcome: "blocked_terminal", status });
     }
-    if (status === "paused_wake" || status === "paused_user") {
+    if (
+      status === "paused_wake" ||
+      status === "paused_user" ||
+      // C3b — not an error pause either, and Recover cannot answer the pending
+      // tool call; only the form's submit/dismiss continuation can.
+      status === "paused_user_form"
+    ) {
       // Not an error pause → Continue (runResumeDispatch) owns these.
       return ok({ outcome: "not_recoverable", status });
     }

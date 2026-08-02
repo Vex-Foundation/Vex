@@ -144,6 +144,17 @@ function formatConstraints(draft: MissionDraftDto): string[] {
   if (typeof draft.riskProfile === "string" && draft.riskProfile.length > 0) {
     out.push(`Risk profile: ${draft.riskProfile}`);
   }
+  // C6 — shown ONLY when both parts are present. The raw amount is rendered
+  // with its decimals rather than converted: a display-side rescale of a money
+  // limit is exactly the silent 10^n slip rule 90 forbids.
+  if (
+    typeof c.maxLaunchValueRaw === "string" &&
+    typeof c.maxLaunchValueDecimals === "number"
+  ) {
+    out.push(
+      `Max launch value: ${c.maxLaunchValueRaw} raw @ ${c.maxLaunchValueDecimals} decimals`,
+    );
+  }
   return out;
 }
 

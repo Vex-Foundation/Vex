@@ -116,7 +116,8 @@ const WHITELIST: readonly WhitelistEntry[] = [
     pattern: "backdrop-blur (glass)",
     reason:
       "User-sanctioned glass rail: the sessions sidebar floats as translucent " +
-      "ink (--vex-glass) with backdrop-blur over the Eclipse photo backdrop. " +
+      "ink (--vex-glass) with backdrop-blur over the current shell photo " +
+      "backdrop. " +
       "Glass is allowed ONLY on the two side rails.",
   },
   {
@@ -124,7 +125,7 @@ const WHITELIST: readonly WhitelistEntry[] = [
     pattern: "backdrop-blur (glass)",
     reason:
       "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +
-      "(--vex-glass) with backdrop-blur over the Eclipse photo backdrop. " +
+      "(--vex-glass) with backdrop-blur over the current shell photo backdrop. " +
       "Glass is allowed ONLY on the two side rails.",
   },
   // REMOVED (composer rebuild, owner decree 2026-07-29): the Signal Console
@@ -137,7 +138,8 @@ const WHITELIST: readonly WhitelistEntry[] = [
   {
     // Owner decree 2026-07-20, Chronos glass law: every full-app ShellScreen
     // overlay (Memory / Sessions / How Vex works) is a floating glass
-    // surface — ink glass + backdrop-blur for legibility over the Eclipse,
+    // surface — ink glass + backdrop-blur for legibility over the current
+    // shell backdrop,
     // a static grain overlay (.vex-noise) on top. The prior DistortedGlass
     // SVG displacement filter is retired (it warped screen content).
     file: "features/appShell/screens/ShellScreen.tsx",
@@ -145,7 +147,7 @@ const WHITELIST: readonly WhitelistEntry[] = [
     reason:
       "Owner-decreed Chronos glass surface (2026-07-20 law): the full-app " +
       "overlay screens float as translucent ink (--vex-glass-strong) with " +
-      "backdrop-blur over the Eclipse backdrop, carrying a static grain " +
+      "backdrop-blur over the current shell backdrop, carrying a static grain " +
       "overlay. One whitelisted wrapper for every screen.",
   },
   {
@@ -184,7 +186,7 @@ const WHITELIST: readonly WhitelistEntry[] = [
     reason:
       "Approved welcome Portfolio tab (plan v6, 2026-07-20): the floating " +
       "portfolio cards wear translucent ink (--vex-rail) with " +
-      "backdrop-blur + static grain over the Eclipse backdrop, via this " +
+      "backdrop-blur + static grain over the current shell backdrop, via this " +
       "one card chrome that every card composes.",
   },
 ];

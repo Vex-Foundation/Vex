@@ -46,6 +46,17 @@ export interface InternalToolContext {
   /** Mission ID when the session is in mission setup or an active mission run. */
   missionId: string | null;
   /**
+   * Approval id when this dispatch is the COLD RESUME of an approval the user
+   * resolved, and `undefined`/`null` on every live turn (there is no approval
+   * to name). Host-side evidence only — it is never derived from model input.
+   *
+   * Threaded to `ProtocolExecutionContext.approvalId` so an authorization
+   * record can bind WHICH approval authorized an irreversible spend (C0's
+   * `approval_card` variant). Optional because every non-resume context
+   * builder legitimately has none.
+   */
+  approvalId?: string | null;
+  /**
    * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
    * filter (e.g. `loop_defer` handler rejects non-mission calls even if the

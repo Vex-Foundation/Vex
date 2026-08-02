@@ -43,7 +43,9 @@ import {
   CONTRACT_HASH_VERSION,
   LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
+  LEGACY_V3_CONTRACT_HASH_VERSION,
   computeContractHash,
+  type ContractHashVersion,
 } from "./contract-hash.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
 
@@ -369,8 +371,11 @@ export async function acceptContract(
 
 function isKnownContractHashVersion(
   version: number,
-): version is typeof LEGACY_CONTRACT_HASH_VERSION | typeof LEGACY_V2_CONTRACT_HASH_VERSION | typeof CONTRACT_HASH_VERSION {
+): version is ContractHashVersion {
   return version === LEGACY_CONTRACT_HASH_VERSION
     || version === LEGACY_V2_CONTRACT_HASH_VERSION
+    // v3 (pre-C6) stays known: a mission accepted before the launch ceiling
+    // existed must keep reproducing its hash, not fall to `not_accepted`.
+    || version === LEGACY_V3_CONTRACT_HASH_VERSION
     || version === CONTRACT_HASH_VERSION;
 }

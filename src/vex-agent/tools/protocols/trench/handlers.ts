@@ -14,6 +14,8 @@ import { trenchTradesHandler } from "./handlers/trades.js";
 import { trenchLaunchPreviewHandler } from "./handlers/launch-preview.js";
 import { trenchTradeQuoteHandler } from "./handlers/trade-quote.js";
 import { trenchTradeExecuteHandler } from "./handlers/trade-execute.js";
+import { trenchImagesHandler } from "./handlers/images.js";
+import { trenchMyLaunchesHandler } from "./handlers/my-launches.js";
 // NOTE (2026-08-02): trench deliberately has NO per-protocol settlement decoder.
 // The owner decree of 2026-07-30 retired per-protocol settlement verification —
 // `sync/settlement-decoders.ts` was deleted and pending rows are now resolved by
@@ -30,4 +32,6 @@ export const TRENCH_HANDLERS: Record<string, ProtocolHandler> = {
   "trench.launch_preview": (p, context) => trenchLaunchPreviewHandler(p, context),
   "trench.trade_quote": (p, context) => trenchTradeQuoteHandler(p, context),
   "trench.trade_execute": (p, context) => trenchTradeExecuteHandler(p, context),
+  "trench.images": (p) => trenchImagesHandler(p),
+  "trench.my_launches": (p, context) => trenchMyLaunchesHandler(p, context),
 };

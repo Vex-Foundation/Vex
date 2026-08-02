@@ -168,6 +168,29 @@ export interface ProtocolExecutionContext {
   /** Session ID — passed to execution capture for audit trail */
   sessionId?: string;
   /**
+   * TRUSTED PROVENANCE (C0). Threaded by the dispatcher from
+   * `InternalToolContext`; a handler can never derive these from model input,
+   * which is exactly why they are here — an authorization record that binds
+   * "which mission / which approval authorized this spend" must be built from
+   * host-side evidence.
+   *
+   * `missionId` / `missionRunId`: set for a dispatch inside a mission. The
+   * `full_autonomy` authorization variant binds them as its provenance.
+   *
+   * `approvalId`: set ONLY on the cold approval-resume path, where the user
+   * resolved an approval card. The `approval_card` variant binds it.
+   *
+   * All three are OPTIONAL because legacy dispatch paths (chat, maintenance,
+   * previews) genuinely have no mission or approval to name; `undefined` and
+   * `null` both mean absent. A path that REQUIRES provenance must not read
+   * these directly — call `requireExecutionProvenance` from
+   * `./execution-provenance.js`, which refuses by name instead of silently
+   * authorizing an unbound spend.
+   */
+  missionId?: string | null;
+  missionRunId?: string | null;
+  approvalId?: string | null;
+  /**
    * Context-usage band at dispatch time, threaded through from the
    * dispatcher so the protocol-runtime pressure guard can reject mutating
    * protocol calls at barrier/critical even when discovery doesn't carry

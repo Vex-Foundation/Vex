@@ -41,6 +41,7 @@ import { cn } from "../../lib/utils.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
+import { ImageLockerCard } from "./book/ImageLockerCard.js";
 import { SessionBlock } from "./book/SessionBlock.js";
 import { SessionRuntimeCard } from "./book/SessionRuntimeCard.js";
 import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
@@ -132,6 +133,7 @@ export function BookPanel({
           <SessionActivityCard sessionId={activeSessionId} />
           <SessionRuntimeCard sessionId={activeSessionId} permission={permission} />
           <SessionBlock sessionId={activeSessionId} />
+          <ImageLockerCard />
         </motion.div>
       ) : null}
     </aside>

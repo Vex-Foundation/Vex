@@ -27,6 +27,7 @@ import {
   CONTRACT_HASH_VERSION,
   LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
+  LEGACY_V3_CONTRACT_HASH_VERSION,
   computeContractHash,
 } from "./contract-hash.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
@@ -77,6 +78,8 @@ export async function getContractStatus(
   // dirty just because HL was removed from the live agent.
   const acceptedVersionKnown = acceptedVersion === LEGACY_CONTRACT_HASH_VERSION
     || acceptedVersion === LEGACY_V2_CONTRACT_HASH_VERSION
+    // v3 = the pre-C6 shape; without it every v3 mission shows dirty forever.
+    || acceptedVersion === LEGACY_V3_CONTRACT_HASH_VERSION
     || acceptedVersion === CONTRACT_HASH_VERSION;
   const currentHash = computeContractHash(
     missionToDraft(mission),

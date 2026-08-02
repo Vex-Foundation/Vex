@@ -1,7 +1,7 @@
 /**
  * PortfolioCard — the ONE Chronos glass chrome for the welcome Portfolio
  * tab's floating cards (Portfolio Overview / Wallets / Balances): ink glass
- * matched to the Eclipse backdrop (`--vex-rail`) + backdrop-blur
+ * matched to the current shell backdrop (`--vex-rail`) + backdrop-blur
  * (design-guard whitelisted for exactly this file), the static
  * `.vex-noise--panel` grain, a `--vex-line` hairline border, rounded-2xl.
  * Every card in the stack composes this wrapper and NO other portfolio file

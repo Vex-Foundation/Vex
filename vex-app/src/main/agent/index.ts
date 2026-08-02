@@ -9,6 +9,7 @@
  */
 
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
+import { mountLaunchImageByteResolver } from "../images/index.js";
 import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupCompactionPreparationBridge } from "./compaction-preparation-bridge.js";
 import { setupControlBridge } from "./control-bridge.js";
@@ -46,6 +47,12 @@ export function setupAgentBridges(): () => void {
   teardowns.push(() => {
     resetBugReportSink();
   });
+
+  // Trench image locker (C2b) — register the main-owned byte resolver so a
+  // launch can read the image the user pre-staged. Without this the seam
+  // throws by name and every autonomous launch fails closed: correct, but
+  // the locker would be inert.
+  teardowns.push(mountLaunchImageByteResolver());
 
   return () => {
     for (const teardown of teardowns) {

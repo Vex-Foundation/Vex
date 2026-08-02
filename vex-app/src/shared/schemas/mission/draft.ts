@@ -40,6 +40,15 @@ export const missionConstraintsSchema = z
      * (<=5x, backoff), never after the run touched a side effect. Default off.
      */
     autoRetryEnabled: z.boolean().nullable().optional(),
+    /**
+     * C6 — the enforceable ceiling on an autonomous token launch, as a RAW
+     * integer amount string paired with its decimals. DISPLAY-ONLY on this
+     * side: the renderer never authors or enforces it. Kept as a string
+     * because a wei ceiling exceeds `Number.MAX_SAFE_INTEGER`, and the two
+     * keys are meaningless apart — render them only when BOTH are present.
+     */
+    maxLaunchValueRaw: z.string().max(80).nullable().optional(),
+    maxLaunchValueDecimals: z.number().int().min(0).max(36).nullable().optional(),
   })
   .strict();
 export type MissionConstraints = z.infer<typeof missionConstraintsSchema>;

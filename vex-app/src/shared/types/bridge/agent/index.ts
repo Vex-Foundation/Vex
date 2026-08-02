@@ -23,6 +23,7 @@ import type { MemoryInspectorBridge } from "./memory-inspector.js";
 import type { MessagesBridge } from "./messages.js";
 import type { MissionBridge } from "./mission.js";
 import type { ModelsBridge } from "./models.js";
+import type { ImagesBridge } from "./images.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { RuntimeBridge } from "./runtime.js";
 import type { SessionsBridge } from "./sessions.js";
@@ -39,6 +40,7 @@ export type { MemoryInspectorBridge } from "./memory-inspector.js";
 export type { MessagesBridge } from "./messages.js";
 export type { MissionBridge } from "./mission.js";
 export type { ModelsBridge } from "./models.js";
+export type { ImagesBridge } from "./images.js";
 export type { PortfolioBridge } from "./portfolio.js";
 export type { RuntimeBridge } from "./runtime.js";
 export type { SessionsBridge } from "./sessions.js";
@@ -64,6 +66,8 @@ export interface VexAgentBridge {
   readonly memoryInspector: MemoryInspectorBridge;
   /** Read-only dual-scope POSITION portfolio: global inventory / session scope (stage 3). */
   readonly portfolio: PortfolioBridge;
+  /** Image locker (C2) — the GLOBAL library of pre-staged token-launch images. */
+  readonly images: ImagesBridge;
   /**
    * Engine -> renderer push events (transcript spine, future runtime
    * deltas, etc.). The namespace mirrors `EV.engine.<topic>` so the

@@ -129,6 +129,10 @@ export async function routeToolCall(
         preparationBypassesBarrier: context.preparationBypassesBarrier === true,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Trusted provenance (C0) — host-side evidence, never model input.
+        missionId: context.missionId,
+        missionRunId: context.missionRunId,
+        approvalId: context.approvalId,
       },
     );
   }
@@ -170,6 +174,10 @@ export async function routeToolCall(
         preparationBypassesBarrier: context.preparationBypassesBarrier === true,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
+        // Trusted provenance (C0) — host-side evidence, never model input.
+        missionId: context.missionId,
+        missionRunId: context.missionRunId,
+        approvalId: context.approvalId,
       },
     );
   }

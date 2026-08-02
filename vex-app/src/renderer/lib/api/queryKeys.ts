@@ -252,3 +252,18 @@ export const marketKeys = {
   snapshot: () => ["market", "vex", "snapshot"] as const,
 };
 
+/**
+ * Image locker (C2) — the GLOBAL library of pre-staged token-launch images.
+ * No session segment anywhere, by design: the locker belongs to the user, not
+ * to a conversation, so there is nothing to scope it by.
+ *
+ * `thumb` is keyed per image and deliberately separate from `list`, mirroring
+ * the IPC split: the metadata list stays a cheap read, and each ≤20 KB `data:`
+ * URL is fetched by its own tile on mount rather than prefetched as a batch.
+ */
+export const imageKeys = {
+  all: ["images"] as const,
+  list: () => ["images", "list"] as const,
+  thumb: (imageId: string) => ["images", "thumb", imageId] as const,
+};
+

@@ -123,6 +123,21 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   "yield_lp",
   "yield_sy",
   "yield_claim",
+  // Migration 062 (Trench Express launch). Signed LOCALLY through the launch
+  // handler's `signStageBroadcast` choke point, exactly like the roles above,
+  // and no Trench-side sweep owns a hashless row: the EVM repair sweep's
+  // candidate query requires `submit_attempted_at IS NOT NULL`, which only
+  // `markActivityBroadcast` sets. A row created between intent and staging (a
+  // crash, a CAS-miss refusal, an image the resolver could not produce) would
+  // otherwise stay pending forever — the exact hole this allowlist closes.
+  //
+  // Safe because "never signed" is itself definitive: this CAS predicate
+  // (`status='pending' AND tx_hash IS NULL`) is the SAME one
+  // `markActivityBroadcast` needs to succeed, so if the signer wins the race
+  // this sweep finds nothing, and if the sweep wins the signer's own CAS misses
+  // and it aborts before broadcasting. A launch can never be double-created by
+  // this interaction.
+  "token_launch",
 ];
 
 /**

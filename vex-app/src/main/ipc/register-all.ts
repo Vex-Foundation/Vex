@@ -22,6 +22,7 @@ import { registerMessagesHandlers } from "./messages.js";
 import { registerMissionHandlers } from "./mission.js";
 import { registerModelsHandlers } from "./models.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
+import { registerImagesHandlers } from "./images.js";
 import { registerPortfolioHandlers } from "./portfolio.js";
 import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
 import { registerApiKeysHandler } from "./onboarding/api-keys.js";
@@ -88,6 +89,7 @@ export function registerAllIpcHandlers(): void {
   // aggregates proj_balances + proj_portfolio_snapshots into a renderer-safe
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
+  teardowns.push(...registerImagesHandlers());
   // T1: read-only VEX market snapshot for the welcome-screen price widget. The
   // handler serves main's in-memory cache; the external poll + EV.market.vex
   // broadcast are owned by the market service, started in index.ts.

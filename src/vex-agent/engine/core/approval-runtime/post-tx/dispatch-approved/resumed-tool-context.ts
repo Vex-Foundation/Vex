@@ -13,6 +13,7 @@ import type { InternalToolContext } from "../../../../../tools/internal/types.js
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 
+import logger from "@utils/logger.js";
 import {
   buildSessionWalletResolution,
   hydrateEngineSession,
@@ -22,6 +23,13 @@ export async function buildResumedApprovalToolContext(args: {
   readonly sessionId: string;
   readonly missionRunId: string | null;
   readonly permissionAtEnqueue: Permission;
+  /**
+   * The approval being resumed. Bound onto the context as trusted provenance
+   * (C0 `approval_card`) so a resumed spend can name which approval authorized
+   * it. Optional so existing callers/tests compile unchanged; the live
+   * `dispatch-approved` path always supplies it.
+   */
+  readonly approvalId?: string;
 }): Promise<InternalToolContext> {
   const walletHydrated = await hydrateEngineSession(args.sessionId);
   const walletResolution: WalletResolution = walletHydrated
@@ -36,7 +44,12 @@ export async function buildResumedApprovalToolContext(args: {
     sessionPermission: args.permissionAtEnqueue,
     approved: true,
     missionRunId: args.missionRunId,
-    missionId: null,
+    // Resolved from the run rather than left null: a resumed mission dispatch
+    // DOES have a mission, and C0 needs to bind it. Fails soft to null — a
+    // missing mission id must not break an already-approved resume; the paths
+    // that require provenance refuse by name instead (`execution-provenance.ts`).
+    missionId: await resolveMissionId(args.missionRunId),
+    approvalId: args.approvalId ?? null,
     sessionKind: "agent",
     // Resuming an action the user already approved is explicit per-action
     // authorization — the plan-acceptance gate (agent-autonomy) does not
@@ -48,4 +61,23 @@ export async function buildResumedApprovalToolContext(args: {
     walletResolution,
     walletPolicy,
   };
+}
+
+/**
+ * Mission id behind a run id. Dynamic import mirrors the repo's engine→DB
+ * access pattern. A read failure is not fatal here — see the call site.
+ */
+async function resolveMissionId(missionRunId: string | null): Promise<string | null> {
+  if (missionRunId === null) return null;
+  try {
+    const { getRun } = await import("@vex-agent/db/repos/mission-runs.js");
+    const run = await getRun(missionRunId);
+    return run?.missionId ?? null;
+  } catch (err) {
+    logger.warn("engine.approval_runtime.mission_id_lookup_failed", {
+      missionRunId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }

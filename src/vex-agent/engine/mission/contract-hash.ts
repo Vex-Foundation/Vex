@@ -41,8 +41,21 @@
  *     original hash (`buildContractMaterial`'s `legacyHyperliquidRisk` param,
  *     sourced from `mapper.extractLegacyHyperliquidRiskV2` — `MissionDraft`
  *     itself no longer carries the field).
- *   - v3 — CURRENT. Identical to v1's shape; the version bump exists only so
+ *   - v3 — FROZEN. Identical to v1's shape; the version bump existed only so
  *     a mission accepted under v2 is never silently reinterpreted as v3.
+ *   - v4 — CURRENT (Trench Express launch, contract C6). Adds the enforceable
+ *     autonomous-launch spend ceiling `maxLaunchValueRaw` +
+ *     `maxLaunchValueDecimals` to the canonical shape. The bump is MANDATORY,
+ *     not cosmetic: without it a v3-accepted mission and a v4 draft carrying a
+ *     ceiling would hash identically, so the ceiling would not be bound to
+ *     what the user accepted and could be changed without dirtying acceptance.
+ *     v4 is declared as its OWN schema rather than by extending
+ *     `CanonicalContractMaterialV1Schema`, because v3 derives from that same
+ *     V1 schema — extending it would have silently changed BOTH frozen
+ *     versions and broken every stored hash.
+ *     The ceiling is normalized as a PAIR: unless BOTH parts are well-formed
+ *     (raw digits-only string + integer decimals) both hash as `null`, so a
+ *     half-written ceiling can never hash as if a limit were in force.
  *
  * Normalization rules:
  *
@@ -73,7 +86,7 @@ import {
 } from "./contract-hash-legacy-v2.js";
 
 /** Bumped when the canonical shape or hashing rules change. Produced for every new draft. */
-export const CONTRACT_HASH_VERSION = 3;
+export const CONTRACT_HASH_VERSION = 4;
 export const LEGACY_CONTRACT_HASH_VERSION = 1;
 /**
  * Frozen historical version — see the "Version history" note above. Accepted
@@ -81,9 +94,16 @@ export const LEGACY_CONTRACT_HASH_VERSION = 1;
  * current; `buildContractMaterial` never produces it for a new draft.
  */
 export const LEGACY_V2_CONTRACT_HASH_VERSION = 2;
+/**
+ * Frozen historical version — the pre-C6 shape, structurally identical to v1.
+ * Still produced for verifying/renewing a mission accepted while it was
+ * current; never produced for a new draft.
+ */
+export const LEGACY_V3_CONTRACT_HASH_VERSION = 3;
 export type ContractHashVersion =
   | typeof LEGACY_CONTRACT_HASH_VERSION
   | typeof LEGACY_V2_CONTRACT_HASH_VERSION
+  | typeof LEGACY_V3_CONTRACT_HASH_VERSION
   | typeof CONTRACT_HASH_VERSION;
 
 const CanonicalContractMaterialV1Schema = z.object({
@@ -101,19 +121,55 @@ const CanonicalContractMaterialV1Schema = z.object({
 }).strict();
 
 const CanonicalContractMaterialV3Schema = CanonicalContractMaterialV1Schema.omit({ v: true }).extend({
+  v: z.literal(LEGACY_V3_CONTRACT_HASH_VERSION),
+}).strict();
+
+/**
+ * v4 — v3's fields plus the C6 launch ceiling. Built by `.extend()` on the V1
+ * base's FIELDS (never by mutating that schema object), so v1/v3 stay
+ * byte-reproducible.
+ */
+const CanonicalContractMaterialV4Schema = CanonicalContractMaterialV1Schema.omit({ v: true }).extend({
   v: z.literal(CONTRACT_HASH_VERSION),
+  maxLaunchValueRaw: z.string().nullable(),
+  maxLaunchValueDecimals: z.number().int().nullable(),
 }).strict();
 
 export type CanonicalContractMaterial =
   | z.infer<typeof CanonicalContractMaterialV1Schema>
   | CanonicalContractMaterialLegacyV2
-  | z.infer<typeof CanonicalContractMaterialV3Schema>;
+  | z.infer<typeof CanonicalContractMaterialV3Schema>
+  | z.infer<typeof CanonicalContractMaterialV4Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+/**
+ * Normalize the C6 ceiling as an INSEPARABLE PAIR.
+ *
+ * A raw amount without its decimals cannot be compared to anything, so a
+ * half-written pair must not hash as though a limit were in force. If either
+ * part is missing or malformed, BOTH hash as `null` — the same material a
+ * mission with no ceiling produces, which is the fail-closed state.
+ *
+ * `maxLaunchValueRaw` is kept as a STRING and never coerced through a number:
+ * a wei ceiling exceeds `Number.MAX_SAFE_INTEGER`, and the same no-float-
+ * coercion reasoning already applies to `startingCapital`.
+ */
+function normalizeLaunchCeiling(
+  raw: string | null | undefined,
+  decimals: number | null | undefined,
+): { maxLaunchValueRaw: string | null; maxLaunchValueDecimals: number | null } {
+  const absent = { maxLaunchValueRaw: null, maxLaunchValueDecimals: null };
+  const normalizedRaw = normalizeNullableString(raw);
+  if (normalizedRaw === null) return absent;
+  if (typeof decimals !== "number" || !Number.isInteger(decimals)) return absent;
+  if (!/^\d+$/.test(normalizedRaw)) return absent;
+  return { maxLaunchValueRaw: normalizedRaw, maxLaunchValueDecimals: decimals };
 }
 
 function normalizeStringArray(values: readonly string[] | null | undefined): string[] {
@@ -168,7 +224,14 @@ export function buildContractMaterial(
       hyperliquidRisk: normalizeLegacyHyperliquidRiskV2(legacyHyperliquidRisk),
     });
   }
-  return CanonicalContractMaterialV3Schema.parse({ v: CONTRACT_HASH_VERSION, ...base });
+  if (version === LEGACY_V3_CONTRACT_HASH_VERSION) {
+    return CanonicalContractMaterialV3Schema.parse({ v: LEGACY_V3_CONTRACT_HASH_VERSION, ...base });
+  }
+  return CanonicalContractMaterialV4Schema.parse({
+    v: CONTRACT_HASH_VERSION,
+    ...base,
+    ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
+  });
 }
 
 /**

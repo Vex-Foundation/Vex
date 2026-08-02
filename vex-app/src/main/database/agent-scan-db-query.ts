@@ -194,6 +194,13 @@ const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"
  * `ELSE 'spot'` or omit it, so a wrap is written correctly and is then either
  * invisible or displayed as a spot trade. This feed does neither.
  *
+ * `launch` (migration 062) joins FROM DAY ONE for the same reason. A Trench
+ * token creation is one transaction with one `token_launch` row, so it is its
+ * own logical row; its prebuy is a LEG of that row, deliberately not a second
+ * `swap` row for the same tx hash. Omitting `launch` here would make the whole
+ * launch capability invisible in Agent Scan — the one surface the owner asked
+ * every action to appear on.
+ *
  * Excluded: `allowance` / `allowance_reset` (approval plumbing) and a bridge's
  * deposit/fee/observed-fill/refund legs — all of which ride the logical row's
  * `legs` array instead of appearing as their own ledger entries.
@@ -201,7 +208,7 @@ const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"
 const LOGICAL_ROW_PREDICATE = `(
           aa.event_role = 'swap'
           OR aa.event_role = 'bridge_fill_expected'
-          OR aa.kind IN ('lend', 'prediction', 'wrap')
+          OR aa.kind IN ('lend', 'prediction', 'wrap', 'launch')
         )`;
 
 /**

@@ -4,6 +4,7 @@ import {
   CONTRACT_HASH_VERSION,
   LEGACY_CONTRACT_HASH_VERSION,
   LEGACY_V2_CONTRACT_HASH_VERSION,
+  LEGACY_V3_CONTRACT_HASH_VERSION,
   buildContractMaterial,
   canonicalStringify,
   computeContractHash,
@@ -24,6 +25,8 @@ function makeDraft(overrides: Partial<MissionDraft> = {}): MissionDraft {
     stopConditions: ["capital_depleted", "deadline_reached"],
     deadline: "2026-04-04",
     durationMinutes: null,
+    maxLaunchValueRaw: null,
+    maxLaunchValueDecimals: null,
     ...overrides,
   };
 }
@@ -253,6 +256,104 @@ describe("contract-hash", () => {
         allowedChains: ["solana", "", "  "],
       }));
       expect(material.allowedChains).toEqual(["solana"]);
+    });
+  });
+
+  // ── v4: the C6 launch ceiling ───────────────────────────────────
+  //
+  // The bump exists so the ceiling is BOUND to what the user accepted. These
+  // tests pin that (a) v1/v2/v3 material is untouched, (b) the ceiling changes
+  // the hash, and (c) a half-written pair can never hash as a live limit.
+  describe("v4 launch ceiling (C6)", () => {
+    it("is the version produced for a new draft", () => {
+      expect(CONTRACT_HASH_VERSION).toBe(4);
+      expect(buildContractMaterial(makeDraft()).v).toBe(4);
+    });
+
+    it("carries the ceiling pair in the canonical material", () => {
+      const material = buildContractMaterial(
+        makeDraft({ maxLaunchValueRaw: "2000000000000000", maxLaunchValueDecimals: 18 }),
+      );
+      expect(material).toMatchObject({
+        v: 4,
+        maxLaunchValueRaw: "2000000000000000",
+        maxLaunchValueDecimals: 18,
+      });
+    });
+
+    it("does NOT leak the ceiling into the frozen v1/v3 shapes", () => {
+      const draft = makeDraft({ maxLaunchValueRaw: "1", maxLaunchValueDecimals: 18 });
+      for (const version of [LEGACY_CONTRACT_HASH_VERSION, LEGACY_V3_CONTRACT_HASH_VERSION] as const) {
+        const material = buildContractMaterial(draft, version);
+        expect("maxLaunchValueRaw" in material).toBe(false);
+        expect("maxLaunchValueDecimals" in material).toBe(false);
+      }
+    });
+
+    it("reproduces v3 material unchanged after the bump — a v3 acceptance stays valid", () => {
+      const draft = makeDraft();
+      // v3 material is v1's material with a different version literal — pinned
+      // structurally so a later edit to the V1 base is caught here.
+      expect(buildContractMaterial(draft, LEGACY_V3_CONTRACT_HASH_VERSION)).toEqual({
+        ...buildContractMaterial(draft, LEGACY_CONTRACT_HASH_VERSION),
+        v: 3,
+      });
+    });
+
+    it("hashes v3 and v4 of the same draft differently (the whole point of the bump)", () => {
+      const draft = makeDraft();
+      expect(computeContractHash(draft, CONTRACT_HASH_VERSION)).not.toBe(
+        computeContractHash(draft, LEGACY_V3_CONTRACT_HASH_VERSION),
+      );
+    });
+
+    it("changing the ceiling changes the hash — it cannot drift without dirtying acceptance", () => {
+      const withCeiling = computeContractHash(
+        makeDraft({ maxLaunchValueRaw: "1000", maxLaunchValueDecimals: 18 }),
+      );
+      const raised = computeContractHash(
+        makeDraft({ maxLaunchValueRaw: "9000", maxLaunchValueDecimals: 18 }),
+      );
+      const none = computeContractHash(makeDraft());
+      expect(withCeiling).not.toBe(raised);
+      expect(withCeiling).not.toBe(none);
+    });
+
+    it("normalizes a HALF-written pair to absent — never to a live limit", () => {
+      const rawOnly = buildContractMaterial(makeDraft({ maxLaunchValueRaw: "1000" }));
+      const decimalsOnly = buildContractMaterial(makeDraft({ maxLaunchValueDecimals: 18 }));
+      for (const material of [rawOnly, decimalsOnly]) {
+        expect(material).toMatchObject({
+          maxLaunchValueRaw: null,
+          maxLaunchValueDecimals: null,
+        });
+      }
+      expect(computeContractHash(makeDraft({ maxLaunchValueRaw: "1000" }))).toBe(
+        computeContractHash(makeDraft()),
+      );
+    });
+
+    it("normalizes a non-integer raw amount to absent (no float coercion)", () => {
+      const material = buildContractMaterial(
+        makeDraft({ maxLaunchValueRaw: "0.001", maxLaunchValueDecimals: 18 }),
+      );
+      expect(material).toMatchObject({ maxLaunchValueRaw: null, maxLaunchValueDecimals: null });
+    });
+
+    it("keeps a wei-scale ceiling exact as a string (beyond MAX_SAFE_INTEGER)", () => {
+      const huge = "123456789012345678901234567890";
+      const material = buildContractMaterial(
+        makeDraft({ maxLaunchValueRaw: huge, maxLaunchValueDecimals: 18 }),
+      );
+      expect(material).toMatchObject({ maxLaunchValueRaw: huge });
+    });
+
+    it("treats different decimals as different contracts (no implicit rescale)", () => {
+      expect(
+        computeContractHash(makeDraft({ maxLaunchValueRaw: "1000", maxLaunchValueDecimals: 18 })),
+      ).not.toBe(
+        computeContractHash(makeDraft({ maxLaunchValueRaw: "1000", maxLaunchValueDecimals: 6 })),
+      );
     });
   });
 });

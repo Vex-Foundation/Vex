@@ -28,6 +28,19 @@ export function missionToDraft(m: Mission): MissionDraft {
     deadline: constraints?.deadline as string ?? null,
     durationMinutes:
       typeof constraints?.durationMinutes === "number" ? constraints.durationMinutes : null,
+    // C6 ceiling — read as a PAIR. A half-populated pair is unreadable (a raw
+    // amount with no decimals cannot be compared to anything), so either both
+    // are present and well-typed or the ceiling is absent and fails closed.
+    maxLaunchValueRaw:
+      typeof constraints?.maxLaunchValueRaw === "string" &&
+      typeof constraints?.maxLaunchValueDecimals === "number"
+        ? constraints.maxLaunchValueRaw
+        : null,
+    maxLaunchValueDecimals:
+      typeof constraints?.maxLaunchValueRaw === "string" &&
+      typeof constraints?.maxLaunchValueDecimals === "number"
+        ? constraints.maxLaunchValueDecimals
+        : null,
   };
 }
 
@@ -72,11 +85,24 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
   // `stopConditionsAccepted` — acceptance lives on
   // `missions.accepted_contract_hash` (mig 023) and is written by the
   // host-only acceptance path, never by the model/draft update flow.
-  if (draft.deadline !== undefined || draft.durationMinutes !== undefined) {
+  if (
+    draft.deadline !== undefined ||
+    draft.durationMinutes !== undefined ||
+    draft.maxLaunchValueRaw !== undefined ||
+    draft.maxLaunchValueDecimals !== undefined
+  ) {
     row.constraints_json = {
       ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
       ...(draft.durationMinutes !== undefined
         ? { durationMinutes: draft.durationMinutes }
+        : {}),
+      // C6 — written only by the host-side ceiling writer. `patch-parser.ts`
+      // never yields these keys, so a model draft update cannot reach here.
+      ...(draft.maxLaunchValueRaw !== undefined
+        ? { maxLaunchValueRaw: draft.maxLaunchValueRaw }
+        : {}),
+      ...(draft.maxLaunchValueDecimals !== undefined
+        ? { maxLaunchValueDecimals: draft.maxLaunchValueDecimals }
         : {}),
     };
   }
@@ -127,6 +153,14 @@ export function draftToPromptContext(m: Mission): string {
   if (draft.goal) lines.push(`**Goal:** ${draft.goal}`);
   if (draft.capitalSource) lines.push(`**Capital:** ${draft.startingCapital ?? "?"} from ${draft.capitalSource}`);
   if (draft.riskProfile) lines.push(`**Risk:** ${draft.riskProfile}`);
+  // C6 — the model READS its ceiling (it can never write it) so it chooses an
+  // amount up to the limit instead of discovering the refusal at signing time.
+  if (draft.maxLaunchValueRaw !== null && draft.maxLaunchValueDecimals !== null) {
+    lines.push(
+      `**Max launch value:** ${draft.maxLaunchValueRaw} raw @ ${draft.maxLaunchValueDecimals} decimals — ` +
+        "hard ceiling on creation fee + prebuy for an autonomous token launch. Exceeding it is refused, not clamped.",
+    );
+  }
   if (draft.allowedChains?.length) lines.push(`**Chains:** ${draft.allowedChains.join(", ")}`);
   if (draft.allowedProtocols?.length) lines.push(`**Protocols:** ${draft.allowedProtocols.join(", ")}`);
   if (draft.allowedWallets?.length) lines.push(`**Wallets:** ${draft.allowedWallets.join(", ")}`);

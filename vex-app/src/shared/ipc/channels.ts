@@ -330,6 +330,28 @@ export const CH = {
     openLogsFolder: "vex:support:openLogsFolder",
   },
 
+  /**
+   * Trench image locker — GLOBAL and persistent, NOT session-scoped, so a
+   * mission started tomorrow can use an image uploaded today.
+   *
+   * Bytes live main-side under userData keyed by an OPAQUE `imageId`; no
+   * filesystem path ever crosses to the renderer, and `upload` opens the
+   * main-owned picker itself (the renderer sends neither a path nor bytes).
+   * A launch REQUIRES an image — that is a Vex product rule, not a contract
+   * one: the Diamond accepts empty image bytes, we do not.
+   *
+   * `readThumb` returns a `data:` URL of the ALREADY-VALIDATED stored bytes
+   * (≤20 KB) so the sidebar card can render without a path — `index.html`
+   * pins `img-src 'self' data:`, so this stays CSP-clean. It is deliberately
+   * separate from `list` so the metadata read stays cheap.
+   */
+  images: {
+    list: "vex:images:list",
+    upload: "vex:images:upload",
+    delete: "vex:images:delete",
+    readThumb: "vex:images:readThumb",
+  },
+
   // Cancellation
   cancel: "vex:cancel",
 } as const;

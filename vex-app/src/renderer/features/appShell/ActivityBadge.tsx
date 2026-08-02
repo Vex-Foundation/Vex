@@ -161,6 +161,8 @@ const KIND_LABEL: Record<FeedActivityKind, string> = {
   lend: "LEND",
   prediction: "PREDICT",
   wrap: "WRAP",
+  yield: "YIELD",
+  launch: "LAUNCH",
   transfer: "TRANSFER",
   activity: "ACTIVITY",
 };
@@ -193,6 +195,14 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   predict_close: "CLOSE",
   wrap: null,
   unwrap: "UNWRAP",
+  yield_pt: "PT",
+  yield_yt: "YT",
+  yield_py: "PY",
+  yield_sy: "SY",
+  yield_lp: "LP",
+  yield_claim: "CLAIM",
+  // A launch is its own kind, so the role segment would only repeat it.
+  token_launch: null,
 };
 
 /**

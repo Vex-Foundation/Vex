@@ -523,7 +523,7 @@ describe("AppShell", () => {
     expect(screen.queryByText("Portfolio Check")).toBeNull();
   });
 
-  it("mounts the Eclipse photo backdrop layer behind the columns", () => {
+  it("mounts the shell photo backdrop layer behind the columns", () => {
     const view = renderShell();
 
     const backdrop = view.container.querySelector(
@@ -534,7 +534,7 @@ describe("AppShell", () => {
     expect(backdrop?.getAttribute("data-vex-backdrop-dimmed")).toBe("false");
     expect(
       backdrop?.querySelector("img")?.getAttribute("src"),
-    ).toBe("/backdrops/eclipse-meadow.webp");
+    ).toBe("/backdrops/shell-backdrop.webp");
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {

@@ -95,6 +95,15 @@ export async function runResumeDispatch(
         reason: state.data.stopReason ?? "paused_error",
       });
     }
+    // C3b — a form-parked run must NOT be lifted by a generic Resume. The turn
+    // is holding a pending tool call that only the form's submit/dismiss
+    // continuation can answer; flipping the run to `running` here would leave
+    // that call unanswered forever. Reuses the existing `blocked_error` arm so
+    // no DTO shape changes.
+    if (status === "paused_user_form") {
+      return ok({ outcome: "blocked_error", reason: "user_form_pending" });
+    }
+
     if (
       status === "completed"
       || status === "failed"

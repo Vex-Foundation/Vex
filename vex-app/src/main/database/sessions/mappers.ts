@@ -26,6 +26,7 @@ export const ACTIVE_OR_PAUSED_MISSION_RUN_STATUSES: readonly MissionRunStatus[] 
   "paused_user",
   "paused_error",
   "paused_plan_acceptance",
+  "paused_user_form",
 ];
 
 export interface SessionRow {

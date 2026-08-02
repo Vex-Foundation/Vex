@@ -12,6 +12,8 @@ import { TRENCH_SEARCH_TOOLS } from "./manifests/search.js";
 import { TRENCH_TRADES_TOOLS } from "./manifests/trades.js";
 import { TRENCH_LAUNCH_PREVIEW_TOOLS } from "./manifests/launch-preview.js";
 import { TRENCH_TRADE_TOOLS } from "./manifests/trade.js";
+import { TRENCH_IMAGES_TOOLS } from "./manifests/images.js";
+import { TRENCH_MY_LAUNCHES_TOOLS } from "./manifests/my-launches.js";
 
 export const TRENCH_TOOLS: readonly ProtocolToolManifest[] = [
   ...TRENCH_TOKENS_TOOLS,
@@ -19,4 +21,6 @@ export const TRENCH_TOOLS: readonly ProtocolToolManifest[] = [
   ...TRENCH_TRADES_TOOLS,
   ...TRENCH_LAUNCH_PREVIEW_TOOLS,
   ...TRENCH_TRADE_TOOLS,
+  ...TRENCH_IMAGES_TOOLS,
+  ...TRENCH_MY_LAUNCHES_TOOLS,
 ];

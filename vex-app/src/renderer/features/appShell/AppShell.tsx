@@ -9,7 +9,7 @@
  * scope in globals.css, separated by hairlines. The one sanctioned gradient
  * is the selection beam (.vex-select-beam).
  *
- * The room's back wall is the Eclipse photo backdrop (ShellBackdrop, z-0 —
+ * The room's back wall is the current shell photo backdrop (ShellBackdrop, z-0 —
  * owner-decreed 2026-07-20, superseding the retired procedural SignalSky
  * and its "zero photography" law), running LIGHT-veiled on the welcome/idle
  * stage and DEEP-veiled behind an active session transcript. The columns
@@ -84,7 +84,7 @@ export function AppShell(): JSX.Element {
   const backdropDimmed = activeSessionId !== null;
 
   return (
-    // `relative isolate`: anchors the absolutely-positioned Eclipse backdrop
+    // `relative isolate`: anchors the absolutely-positioned shell backdrop
     // and traps the shell's z-layering in one stacking context.
     <main
       className="relative isolate flex h-screen w-screen overflow-hidden bg-[var(--vex-surface-0)] text-foreground"

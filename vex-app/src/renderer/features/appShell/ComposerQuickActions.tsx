@@ -18,7 +18,7 @@
  * opaque --vex-surface-1 + a --vex-line hairline, rounded-2xl to match the
  * console surface directly above it. The band was previously translucent
  * glass with a backdrop filter (a legibility assist over the bright regions of
- * the Eclipse photo backdrop); solid ink solves the same legibility problem
+ * the current shell backdrop photo); solid ink solves the same legibility problem
  * outright, so the row left the glass family and its shell-design-guard
  * whitelist entry was deleted with it.
  */

@@ -134,7 +134,14 @@ describe("AgentScanScreen — filters drive the query input", () => {
     mountScreen();
 
     // The executors that write `agent_activity` today.
-    for (const label of ["KyberSwap", "Uniswap", "Jupiter", "Khalani", "Relay"]) {
+    for (const label of [
+      "KyberSwap",
+      "Uniswap",
+      "Jupiter",
+      "Trench Express",
+      "Khalani",
+      "Relay",
+    ]) {
       expect(screen.getByRole("button", { name: label })).not.toBeNull();
     }
     // Polymarket is deleted from the product, DexScreener only reads market
