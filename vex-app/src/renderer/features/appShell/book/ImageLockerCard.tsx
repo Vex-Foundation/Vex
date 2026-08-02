@@ -142,13 +142,18 @@ function uploadNotice(error: VexError): string | null {
  * Absent optimization means the file was stored EXACTLY as picked, and that
  * deserves no message at all — an upload that changed nothing is just an
  * upload. Sizes are shown as measured, so the user can see what was traded.
+ *
+ * THE CROP IS NAMED. Optimizing always squares the image (Trench renders 1:1
+ * tiles), and that is a visible change to the user's picture. Reporting only
+ * the byte reduction would let them find the missing edges in the thumbnail
+ * and wonder what else happened silently.
  */
 function optimizationNotice(optimization: ImageOptimization | undefined): string | null {
   if (optimization === undefined) return null;
   return (
     `Optimized: ${formatKb(optimization.originalByteLength)} → ` +
-    `${formatKb(optimization.storedByteLength)}. The image is stored inside the launch ` +
-    `transaction, so its size is gas you pay.`
+    `${formatKb(optimization.storedByteLength)}, cropped to square. The image is stored ` +
+    `inside the launch transaction, so its size is gas you pay.`
   );
 }
 

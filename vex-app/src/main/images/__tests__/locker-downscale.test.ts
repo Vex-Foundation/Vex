@@ -75,18 +75,20 @@ const digestOfStored = createHash("sha256").update(OPTIMIZED_BYTES).digest("hex"
 beforeEach(() => {
   statSize = 3_000_000;
   fileBytes = new Uint8Array(3_000_000);
+  // SQUARE: the re-encode path center-crops to 1:1 because Trench renders
+  // token tiles at 1:1 exclusively (owner observation, screenshot evidence).
   downscaleLockerImage.mockReturnValue({
     kind: "optimized",
     bytes: OPTIMIZED_BYTES,
     originalByteLength: 3_000_000,
     width: 512,
-    height: 384,
+    height: 512,
   });
   validateLockerImageBytes.mockImplementation((bytes: Uint8Array) => ({
     ok: true,
     mime: "image/jpeg",
     width: 512,
-    height: 384,
+    height: 512,
     byteLength: bytes.byteLength,
   }));
   insertLaunchImage.mockImplementation(async (input: Record<string, unknown>) => ({
@@ -100,12 +102,14 @@ afterEach(() => {
 });
 
 describe("an oversized image is optimized, not refused", () => {
-  it("stores bytes under the cap and reports the reduction", async () => {
+  it("stores bytes under the cap, square, and reports the reduction", async () => {
     const outcome = await storeLockerImageFromFile("/picked/holiday.jpg");
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) throw new Error("unreachable");
     expect(outcome.image.byteLength).toBeLessThanOrEqual(LOCKER_IMAGE_MAX_BYTES);
+    // The stored metadata records the SQUARE the venue's tile will show.
+    expect(outcome.image.width).toBe(outcome.image.height);
     expect(outcome.optimization).toEqual({
       originalByteLength: 3_000_000,
       storedByteLength: OPTIMIZED_BYTES.byteLength,
@@ -136,8 +140,18 @@ describe("an oversized image is optimized, not refused", () => {
 });
 
 describe("an image that already fits", () => {
-  it("is stored byte-identical with NO optimization report", async () => {
+  it("is stored byte-identical with NO optimization report, even when NOT square", async () => {
+    // Byte-identity outranks tile aesthetics for a file the user deliberately
+    // kept under the cap: it is never re-encoded and never cropped. The venue
+    // crops it on display, which is its call to make.
     downscaleLockerImage.mockReturnValue({ kind: "unchanged", bytes: FITTING_BYTES });
+    validateLockerImageBytes.mockReturnValue({
+      ok: true,
+      mime: "image/png",
+      width: 800,
+      height: 300,
+      byteLength: FITTING_BYTES.byteLength,
+    });
 
     const outcome = await storeLockerImageFromFile("/picked/small.png");
 
@@ -145,6 +159,8 @@ describe("an image that already fits", () => {
     if (!outcome.ok) throw new Error("unreachable");
     // Absence is the claim "we did not touch your file".
     expect(outcome.optimization).toBeUndefined();
+    expect(outcome.image.width).toBe(800);
+    expect(outcome.image.height).toBe(300);
     expect(writeImageBytes).toHaveBeenCalledWith(expect.any(String), FITTING_BYTES);
     expect(outcome.image.digest).toBe(
       createHash("sha256").update(FITTING_BYTES).digest("hex"),

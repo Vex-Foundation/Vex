@@ -16,11 +16,21 @@
  * units, and that separation is the reason this is its own file rather than
  * more logic inside the locker.
  *
+ * SQUARE, ON THE RE-ENCODE PATH. Trench renders token images in 1:1 tiles
+ * exclusively (owner observation, screenshot evidence). Since an oversized image
+ * is being re-encoded anyway, it is center-cropped to a square first — so the
+ * thumbnail in the locker is exactly what the venue's tile will show. Storing a
+ * 16:9 photo that the venue silently crops at launch time would hand the user a
+ * surprise on an irreversible transaction: the edges they were shown, and may
+ * have composed around, would simply be gone.
+ *
  * WHAT IT WILL NOT DO:
  *  - it never touches an image that already fits. A file within the cap and
- *    within the dimension bounds is stored BYTE-IDENTICAL, because re-encoding
- *    it would degrade it for no gain and would change the digest a launch
- *    authorization may already have been shown;
+ *    within the dimension bounds is stored BYTE-IDENTICAL — even a non-square
+ *    one. Byte-identity outranks tile aesthetics for a file the user
+ *    deliberately kept under the cap: re-encoding it would degrade it for no
+ *    gain and would change the digest a launch authorization may already have
+ *    been shown. The venue crops those on display, which is its call to make;
  *  - it never rasterizes a vector. `nativeImage` will not decode SVG, and that
  *    refusal is kept: silently turning a logo into a blurry JPEG is not an
  *    outcome the user asked for;
@@ -61,7 +71,7 @@ export const DOWNSCALE_TARGET_BYTES = LOCKER_IMAGE_MAX_BYTES - SAFETY_MARGIN_BYT
 export const DOWNSCALE_MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
 /**
- * The ladder, widest first.
+ * The ladder, widest first. `maxDimension` is the SIDE of the output square.
  *
  * Ordered so the FIRST rung that fits is also the best-looking one that fits —
  * the search stops immediately, so a mildly oversized photo pays one re-encode,
@@ -122,20 +132,28 @@ export function downscaleLockerImage(bytes: Uint8Array): DownscaleOutcome {
 
   let smallest = Number.POSITIVE_INFINITY;
   for (const rung of LADDER) {
-    const target = fitWithin(size, rung.maxDimension);
-    // Below the locker's own floor there is nothing legal left to try — a rung
-    // that produced a 20x20 image would be refused by validation anyway.
-    if (target.width < LOCKER_IMAGE_MIN_DIMENSION || target.height < LOCKER_IMAGE_MIN_DIMENSION) {
-      continue;
-    }
+    const side = squareSideFor(size, rung.maxDimension);
+    // Below the locker's own floor there is nothing legal left to try.
+    if (side < LOCKER_IMAGE_MIN_DIMENSION) continue;
 
-    const resized = decoded.resize({ ...target, quality: "good" });
-    const encoded = new Uint8Array(resized.toJPEG(rung.quality));
+    // RESIZE THEN CROP. Scaling first means the crop is taken from pixels that
+    // already carry the final detail, so the encoder is not asked to preserve
+    // resolution that is about to be discarded.
+    const scaled = scaleShorterSideTo(size, side);
+    const resized = decoded.resize({ ...scaled, quality: "good" });
+    const square = resized.crop({
+      x: Math.max(0, Math.round((scaled.width - side) / 2)),
+      y: Math.max(0, Math.round((scaled.height - side) / 2)),
+      width: side,
+      height: side,
+    });
+
+    const encoded = new Uint8Array(square.toJPEG(rung.quality));
     if (encoded.byteLength < smallest) smallest = encoded.byteLength;
     if (encoded.byteLength === 0) continue;
 
     if (encoded.byteLength <= DOWNSCALE_TARGET_BYTES) {
-      const finalSize = resized.getSize();
+      const finalSize = square.getSize();
       return {
         kind: "optimized",
         bytes: encoded,
@@ -152,16 +170,33 @@ export function downscaleLockerImage(bytes: Uint8Array): DownscaleOutcome {
   };
 }
 
-/** Scale a size down to fit a square bound, preserving aspect ratio. Never scales UP. */
-function fitWithin(
+/**
+ * The side of the square this rung will produce.
+ *
+ * Bounded by the source's SHORTER side, because a square larger than that could
+ * only be reached by scaling UP — inventing pixels to fill a tile is worse than
+ * a smaller, honest image.
+ */
+function squareSideFor(
   size: { readonly width: number; readonly height: number },
   bound: number,
+): number {
+  return Math.min(bound, Math.min(size.width, size.height));
+}
+
+/**
+ * Scale so the SHORTER side lands exactly on `side`, preserving aspect ratio —
+ * the standard "cover" fit. The longer side overflows and is what the center
+ * crop then removes, equally from both ends.
+ */
+function scaleShorterSideTo(
+  size: { readonly width: number; readonly height: number },
+  side: number,
 ): { readonly width: number; readonly height: number } {
-  const longest = Math.max(size.width, size.height);
-  if (longest <= bound) return { width: size.width, height: size.height };
-  const scale = bound / longest;
+  const shorter = Math.min(size.width, size.height);
+  const scale = side / shorter;
   return {
-    width: Math.max(1, Math.round(size.width * scale)),
-    height: Math.max(1, Math.round(size.height * scale)),
+    width: Math.max(side, Math.round(size.width * scale)),
+    height: Math.max(side, Math.round(size.height * scale)),
   };
 }
