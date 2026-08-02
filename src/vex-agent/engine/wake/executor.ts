@@ -44,11 +44,28 @@ import logger from "@utils/logger.js";
 
 import { tick } from "./executor/tick.js";
 import { buildProductionDeps, type WakeDeps } from "./executor/deps.js";
+import {
+  sweepMissionDeadlines,
+  type DeadlineWatchdogDeps,
+} from "./deadline-watchdog.js";
+import { buildProductionDeadlineWatchdogDeps } from "./deadline-watchdog-deps.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
 export type { WakeDeps } from "./executor/deps.js";
 export { isWakeProviderConfigured } from "./executor/provider.js";
+// NOTE: `sweepMissionDeadlines` is deliberately NOT re-exported here. This
+// façade's runtime export set is pinned by `executor-surface.test.ts`; the
+// sweep is a peer module, imported directly by its own tests and by the
+// lifecycle owner below.
+
+/**
+ * Default gap between deadline sweeps. Deliberately coarser than the 2s wake
+ * interval: the sweep reads every active-or-parked run, and a mission box is
+ * measured in minutes, so 30s of enforcement latency is immaterial next to the
+ * 1h20m overrun this closes.
+ */
+const DEFAULT_DEADLINE_SWEEP_INTERVAL_MS = 30_000;
 
 // ── Scheduler ──────────────────────────────────────────────────────
 
@@ -62,6 +79,10 @@ export interface StartOptions {
   batchSize?: number;
   deps?: WakeDeps;
   now?: () => Date;
+  /** Injected fakes for the deadline sweep (tests). */
+  deadlineDeps?: DeadlineWatchdogDeps;
+  /** Gap between deadline sweeps. Default 30s. */
+  deadlineSweepIntervalMs?: number;
 }
 
 /**
@@ -78,14 +99,51 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const limit = options.batchSize ?? 10;
   const now = options.now ?? (() => new Date());
   const deps = options.deps ?? buildProductionDeps();
+  const deadlineDeps = options.deadlineDeps ?? buildProductionDeadlineWatchdogDeps();
+  const deadlineSweepInterval =
+    options.deadlineSweepIntervalMs ?? DEFAULT_DEADLINE_SWEEP_INTERVAL_MS;
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
+  let lastDeadlineSweepMs: number | null = null;
+
+  /**
+   * The hard-deadline sweep, throttled onto this executor's existing timer
+   * rather than a second subsystem. Two properties matter here:
+   *
+   *   1. It runs BEFORE `tick`, so an overdue parked run is stopped rather
+   *      than resumed by a wake claimed in the same pass.
+   *   2. It is NOT gated on `isProviderReady`. `tick` is, because resuming a
+   *      run needs inference — but STOPPING one does not, and a missing
+   *      provider key is precisely the condition that parks runs in
+   *      `paused_error`. Gating the sweep would disable enforcement exactly
+   *      when it is needed most.
+   */
+  const runDeadlineSweep = async (at: Date): Promise<void> => {
+    if (
+      lastDeadlineSweepMs !== null &&
+      at.getTime() - lastDeadlineSweepMs < deadlineSweepInterval
+    ) {
+      return;
+    }
+    lastDeadlineSweepMs = at.getTime();
+    try {
+      await sweepMissionDeadlines(at, deadlineDeps);
+    } catch (err) {
+      logger.error("wake.executor.deadline_sweep_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
 
   const runOne = async (): Promise<void> => {
+    const at = now();
+    // Isolated from the wake tick — a sweep failure must not skip wake work,
+    // and vice versa.
+    await runDeadlineSweep(at);
     try {
-      await tick(now(), limit, deps);
+      await tick(at, limit, deps);
     } catch (err) {
       logger.error("wake.executor.tick_failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -104,7 +162,11 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   };
 
   timer = setTimeout(schedule, interval);
-  logger.info("wake.executor.started", { intervalMs: interval, batchSize: limit });
+  logger.info("wake.executor.started", {
+    intervalMs: interval,
+    batchSize: limit,
+    deadlineSweepIntervalMs: deadlineSweepInterval,
+  });
 
   return {
     async stop(): Promise<void> {

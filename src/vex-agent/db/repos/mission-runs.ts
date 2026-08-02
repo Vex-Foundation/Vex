@@ -14,7 +14,7 @@ import {
 } from "../../engine/types.js";
 import type { PoolClient } from "pg";
 
-import { queryOne, queryOneWith, execute, getPool } from "../client.js";
+import { query, queryOne, queryOneWith, execute, getPool } from "../client.js";
 import { nullableJsonb } from "../params.js";
 import logger from "@utils/logger.js";
 
@@ -420,6 +420,96 @@ export async function casFlipToRunning(
            ended_at = NULL
        WHERE id = $1`,
       [runId],
+    );
+    await client.query("COMMIT");
+    return prev;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {
+      // ROLLBACK failures are non-actionable; the original error is what matters.
+    });
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Every run that is still `running` or parked in a `paused_*` state — the
+ * candidate set for the agent-independent deadline sweep
+ * (`engine/wake/deadline-watchdog.ts`). Unbounded on purpose: the active set is
+ * a handful of rows (one active run per mission), and a LIMIT could starve an
+ * overdue run behind newer ones. Ordered oldest-first so the most overdue rows
+ * are enforced first.
+ */
+export async function listActiveOrPausedRuns(): Promise<MissionRun[]> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT * FROM mission_runs
+     WHERE status IN (${ACTIVE_OR_PAUSED_SQL_IN})
+     ORDER BY started_at ASC`,
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Atomic compare-and-set from any of `fromStatuses` to the terminal
+ * `failed` / `deadline_reached` pair — the deadline watchdog's claim.
+ *
+ * The mirror image of `casFlipToRunning`: SELECT … FOR UPDATE locks the row,
+ * the UPDATE only fires when the LOCKED status is still in the allowed set, and
+ * the previous status is returned on success or `null` when someone else
+ * already moved the row. That `null` is what makes the sweep idempotent and
+ * safe against a concurrent resume or the loop-boundary enforcer — only one
+ * caller can ever win the flip, so the terminal side-effects (mission row,
+ * ledger close, approvals cleanup) run exactly once.
+ *
+ * Unlike `updateStatus`, stop fields are written unconditionally (no COALESCE):
+ * a parked run carries stale `paused_error` evidence that must NOT survive into
+ * the deadline record.
+ */
+export async function casStopPastDeadline(
+  runId: string,
+  fromStatuses: readonly MissionRunStatus[],
+  payload: {
+    stopReason: "deadline_reached";
+    summary?: string;
+    evidence?: Record<string, unknown>;
+  },
+): Promise<MissionRunStatus | null> {
+  if (fromStatuses.length === 0) return null;
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const lockRow = await client.query<{ status: string }>(
+      "SELECT status FROM mission_runs WHERE id = $1 FOR UPDATE",
+      [runId],
+    );
+    // Destructure rather than index — `rows[0]` is `T | undefined` under the
+    // app's stricter `noUncheckedIndexedAccess` tsconfig.
+    const locked = lockRow.rows[0];
+    if (locked === undefined) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const prev = coerceStatus(locked.status, runId);
+    if (!fromStatuses.includes(prev)) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      `UPDATE mission_runs
+       SET status = 'failed',
+           stop_reason = $2,
+           stop_summary = $3,
+           stop_evidence_json = $4::jsonb,
+           ended_at = NOW()
+       WHERE id = $1`,
+      [
+        runId,
+        payload.stopReason,
+        payload.summary ?? null,
+        nullableJsonb(payload.evidence ?? null),
+      ],
     );
     await client.query("COMMIT");
     return prev;
