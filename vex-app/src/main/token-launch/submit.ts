@@ -150,6 +150,18 @@ type CreateIntentWithConsent = CreateTokenLaunchIntentInput & {
   readonly authorizationJson?: unknown;
 };
 
+/**
+ * The outcome of getting an intent to `authorized`, whichever path got it there.
+ *
+ * It CARRIES THE ID rather than letting the caller keep its own copy: the two
+ * paths mint it differently (one generates, one was given it by the agent), and
+ * a caller that re-derived it would be free to execute against a different row
+ * from the one it just authorized.
+ */
+type PersistedAuthorization =
+  | { readonly ok: true; readonly intentId: string }
+  | { readonly ok: false; readonly refusal: TokenLaunchRefusal };
+
 export async function submitLaunch(
   input: {
     readonly sessionId: string;
@@ -205,33 +217,64 @@ export async function submitLaunch(
     };
   }
 
-  const intentId = input.intentId ?? randomUUID();
-  const createInput: CreateIntentWithConsent = {
-    intentId,
-    sessionId: input.sessionId,
-    origin: "user",
-    // Entry state IS `authorized`: a human clicking Deploy on figures they can
-    // see is the authorization. There is no form still to fill, so entering at
-    // `awaiting_user_form` would model a wait that already happened.
-    status: "authorized",
-    chainId: planned.plan.preview.chainId,
-    walletAddress: context.walletAddress,
-    name: context.request.name,
-    symbol: context.request.symbol,
-    description: context.request.description,
-    links: { urls: context.request.links },
-    imageId: context.request.imageId,
-    // Raw amount + its decimals, together and always (rule 90).
-    prebuyRaw: context.request.prebuyWei.toString(),
-    prebuyDecimals: 18,
-    authorizationId: randomUUID(),
-    authorizationKind: "user_submit",
-    authorizationJson: buildConsentSnapshot(planned.plan, input.form, input.previewId),
-    expiresAt: new Date(Date.now() + AUTHORIZED_WINDOW_MS).toISOString(),
-  };
+  const consent = buildConsentSnapshot(planned.plan, input.form, input.previewId);
 
-  const created = await persistAuthorizedIntent(createInput);
-  if (!created.ok) return { ok: false, refusal: created.refusal };
+  // TWO PATHS INTO `authorized`, AND THEY ARE NOT INTERCHANGEABLE.
+  //
+  // When the AGENT asked for this form (§C3b), a row ALREADY EXISTS at
+  // `awaiting_user_form` carrying `origin = 'agent_requested_form'`, the parked
+  // `tool_call_id` and the mission run. `createWith` here would insert a SECOND,
+  // `user`-origin row: the agent's turn would stay parked against the original
+  // intent id forever, the wake would answer nothing, and the DB would hold two
+  // live intents for one launch. So the existing row is AUTHORIZED IN PLACE —
+  // `authorizeWith` sets status, authorization id/kind and the consent snapshot
+  // while leaving `origin` and `tool_call_id` untouched, which is exactly what
+  // lets `resumeAgentAfterUserForm` find the parked call afterwards.
+  //
+  // A user-origin launch has no row yet and creates one, entering directly at
+  // `authorized`: a human clicking Deploy on figures they can see IS the
+  // authorization, and there is no form still to fill.
+  const authorized =
+    input.intentId === null
+      ? await persistAuthorizedIntent({
+          intentId: randomUUID(),
+          sessionId: input.sessionId,
+          origin: "user",
+          status: "authorized",
+          chainId: planned.plan.preview.chainId,
+          walletAddress: context.walletAddress,
+          name: context.request.name,
+          symbol: context.request.symbol,
+          description: context.request.description,
+          links: { urls: context.request.links },
+          imageId: context.request.imageId,
+          // Raw amount + its decimals, together and always (rule 90).
+          prebuyRaw: context.request.prebuyWei.toString(),
+          prebuyDecimals: 18,
+          authorizationId: randomUUID(),
+          authorizationKind: "user_submit",
+          authorizationJson: consent,
+          expiresAt: new Date(Date.now() + AUTHORIZED_WINDOW_MS).toISOString(),
+        })
+      : await authorizeDraftedIntent({
+          intentId: input.intentId,
+          sessionId: input.sessionId,
+          // THE USER'S FINAL VALUES, not the agent's draft. Every field in the
+          // dialog is editable, and these are the ones the consent snapshot
+          // above was built from — they must be the ones the row ends up
+          // carrying, or the pre-sign cross-check sees the record and the row
+          // describing two different tokens.
+          name: context.request.name,
+          symbol: context.request.symbol,
+          description: context.request.description,
+          links: { urls: context.request.links },
+          imageId: context.request.imageId,
+          prebuyRaw: context.request.prebuyWei.toString(),
+          authorizationJson: consent,
+        });
+
+  if (!authorized.ok) return { ok: false, refusal: authorized.refusal };
+  const intentId = authorized.intentId;
 
   log.info(`[token-launch:submit] authorized intentId=${intentId}`);
 
@@ -279,7 +322,7 @@ export async function submitLaunch(
  */
 async function persistAuthorizedIntent(
   createInput: CreateIntentWithConsent,
-): Promise<{ readonly ok: true } | { readonly ok: false; readonly refusal: TokenLaunchRefusal }> {
+): Promise<PersistedAuthorization> {
   try {
     const { createWith } = await import("@vex-agent/db/repos/token-launch-intents.js");
     const { withSessionControlLock } = await import(
@@ -288,39 +331,129 @@ async function persistAuthorizedIntent(
     await withSessionControlLock(createInput.sessionId, (client) =>
       createWith(client, createInput),
     );
-    return { ok: true };
+    return { ok: true, intentId: createInput.intentId };
   } catch (cause) {
-    // A vanished image is the one failure here the user can act on, and it must
-    // NOT read as a generic outage: it means the picture behind this launch was
-    // deleted between preview and Deploy, and a launch cannot proceed without
-    // bytes to write on-chain.
-    if (cause instanceof Error && cause.name === "LaunchImageMissingError") {
+    return refusalFromWriteFailure(cause);
+  }
+}
+
+/**
+ * `awaiting_user_form → authorized` on the row an AGENT already drafted (§C3b).
+ *
+ * THE ROW IS UPDATED, NEVER REPLACED. `authorizeWith` touches status, the
+ * authorization id/kind, every editable token field (name, symbol, description,
+ * links, image, prebuy) and the consent snapshot, and leaves `origin`,
+ * `tool_call_id` and `mission_run_id` exactly as the agent wrote them. That is the whole reason this path exists: those three columns are
+ * how `resumeAgentAfterUserForm` later finds the parked call to answer, and a
+ * fresh `user`-origin row would carry none of them.
+ *
+ * The consent snapshot is the SAME one the create path persists, built by the
+ * same function from the same plan. A human clicked Deploy on figures they could
+ * see either way, so the C0 record is `user_submit` on both paths — the agent
+ * proposed the token, it did not authorize the spend.
+ *
+ * SAME LOCK, for the same reason: this moves an intent INTO the live money set
+ * the compaction safe-moment gate reads, so it serializes with that gate.
+ *
+ * A `null` return is a CAS MISS, not an outage: the predicate requires
+ * `status = 'awaiting_user_form' AND expires_at > NOW()`, so `null` means the
+ * form window lapsed, the user already answered it, or it was cancelled. Nothing
+ * was signed, and a retry cannot change any of those — so it refuses as
+ * `launch_refused` rather than inviting one.
+ */
+async function authorizeDraftedIntent(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly name: string;
+  readonly symbol: string;
+  readonly description: string | null;
+  readonly links: Record<string, unknown>;
+  readonly imageId: string;
+  readonly prebuyRaw: string;
+  readonly authorizationJson: unknown;
+}): Promise<PersistedAuthorization> {
+  try {
+    const { authorizeWith } = await import("@vex-agent/db/repos/token-launch-intents.js");
+    const { withSessionControlLock } = await import(
+      "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js"
+    );
+    const row = await withSessionControlLock(input.sessionId, (client) =>
+      authorizeWith(client, input.intentId, input.sessionId, {
+        authorizationId: randomUUID(),
+        authorizationKind: "user_submit",
+        // The whole editable token, moved in ONE CAS with the consent record
+        // that describes it.
+        name: input.name,
+        symbol: input.symbol,
+        description: input.description,
+        links: input.links,
+        imageId: input.imageId,
+        // Raw amount + its decimals, together and always (rule 90).
+        prebuyRaw: input.prebuyRaw,
+        prebuyDecimals: 18,
+        authorizationJson: input.authorizationJson,
+      }),
+    );
+
+    if (row === null) {
+      log.info(`[token-launch:submit] authorize CAS miss intentId=${input.intentId}`);
       return {
         ok: false,
         refusal: {
-          kind: "image_not_found",
+          kind: "launch_refused",
           detail:
-            "The image for this launch was removed from the Trench Photos locker while you were "
-            + "reviewing. Nothing was signed — pick another image and preview again.",
+            "This launch request is no longer open — it expired, was already answered, or was "
+            + "cancelled. Nothing was signed and no funds moved. Ask Vex to draft the launch "
+            + "again, or start one yourself from the Book panel.",
         },
       };
     }
-    // Server-side structured log only — the public refusal below stays
-    // redacted. The message is load-bearing for diagnosing schema/constraint
-    // failures (a bare error NAME proved undiagnosable in the live probe).
-    log.warn(
-      `[token-launch:submit] intent write failed type=${
-        cause instanceof Error ? cause.name : typeof cause
-      } message=${cause instanceof Error ? cause.message.slice(0, 200) : String(cause).slice(0, 200)}`,
-    );
+    return { ok: true, intentId: input.intentId };
+  } catch (cause) {
+    return refusalFromWriteFailure(cause);
+  }
+}
+
+/**
+ * Map a throw from either authorization writer onto its public refusal.
+ *
+ * Shared by both paths deliberately: they raise the SAME two failures (a
+ * vanished image, or anything else), and two copies of this mapping would be
+ * free to disagree about whether a missing image is the user's to fix.
+ */
+function refusalFromWriteFailure(
+  cause: unknown,
+): { readonly ok: false; readonly refusal: TokenLaunchRefusal } {
+  // A vanished image is the one failure here the user can act on, and it must
+  // NOT read as a generic outage: it means the picture behind this launch was
+  // deleted between preview and Deploy, and a launch cannot proceed without
+  // bytes to write on-chain.
+  if (cause instanceof Error && cause.name === "LaunchImageMissingError") {
     return {
       ok: false,
       refusal: {
-        kind: "unpriceable",
+        kind: "image_not_found",
         detail:
-          "Vex could not record the authorization for this launch, so it did not sign anything. "
-          + "Check that Vex services are running and try again.",
+          "The image for this launch was removed from the Trench Photos locker while you were "
+          + "reviewing. Nothing was signed — pick another image and preview again.",
       },
     };
   }
+  // Server-side structured log only — the public refusal below stays
+  // redacted. The message is load-bearing for diagnosing schema/constraint
+  // failures (a bare error NAME proved undiagnosable in the live probe).
+  log.warn(
+    `[token-launch:submit] intent write failed type=${
+      cause instanceof Error ? cause.name : typeof cause
+    } message=${cause instanceof Error ? cause.message.slice(0, 200) : String(cause).slice(0, 200)}`,
+  );
+  return {
+    ok: false,
+    refusal: {
+      kind: "unpriceable",
+      detail:
+        "Vex could not record the authorization for this launch, so it did not sign anything. "
+        + "Check that Vex services are running and try again.",
+    },
+  };
 }

@@ -221,6 +221,18 @@ export interface ToolResult {
   data?: Record<string, unknown>;
   /** If true, tool queued for approval instead of executing */
   pendingApproval?: boolean;
+  /**
+   * Set by a handler that PARKED the turn on a human form instead of producing
+   * an answer (§C3b — `trench.launch_request_form`). Sibling of
+   * `pendingApproval` and handled the same way by the tool batch: the call is
+   * recorded WITHOUT a result, the rest of the batch is not dispatched, and the
+   * ONE result is appended later by the resume that observes the human's answer.
+   *
+   * A handler that sets this MUST have made the wait durable first (the
+   * `awaiting_user_form` intent row), because the transcript deliberately does
+   * not carry "waiting" as a state. `intentId` names the row the resume answers.
+   */
+  pendingUserForm?: { readonly intentId: string };
   /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
   /**

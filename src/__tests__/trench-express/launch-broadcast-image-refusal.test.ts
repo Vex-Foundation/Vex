@@ -49,8 +49,9 @@ function input() {
     sessionId: "sess-1",
     walletAddress: WALLET,
     missionRunId: null,
-    isAutonomous: false,
+    authorizationKind: "session_full",
     ceilings: null,
+    authorization: null,
     request: {
       name: "Vex",
       symbol: "VEX",
@@ -101,7 +102,7 @@ describe("a deleted locker image refuses BY NAME", () => {
 describe("a mission run that went terminal mid-call cannot authorize a signature", () => {
   const autonomous = () => ({
     ...(input() as Record<string, unknown>),
-    isAutonomous: true,
+    authorizationKind: "full_autonomy",
     missionRunId: "run-7",
     ceilings: { maxLaunchValueRaw: "1000", maxLaunchValueDecimals: 18, maxLaunchCount: 3 },
   }) as never;
@@ -148,9 +149,10 @@ describe("a mission run that went terminal mid-call cannot authorize a signature
     expect(result.reason).toContain("Nothing was signed");
   });
 
-  it("does not gate the human-approved path — no run, no liveness question", async () => {
+  it("does not gate a full-permission CHAT launch — no run, no liveness question", async () => {
     runStatus = "stopped";
-    // `isAutonomous: false` with no run id: a person authorized this.
+    // `session_full` with no run id: the session's own permission authorized
+    // this, and there is no mission run whose liveness could be asked about.
     expect((await authorizeAndConsumeLaunch(input())).ok).toBe(true);
   });
 

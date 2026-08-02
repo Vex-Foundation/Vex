@@ -35,6 +35,24 @@ let claimOutcome: Record<string, unknown>;
 let committed: Record<string, unknown>[];
 let stampReturns: unknown;
 let stampCalls: unknown[][];
+let missionResumes: unknown[][];
+let chatResumes: unknown[][];
+
+vi.mock("@vex-agent/engine/core/runner/mission.js", () => ({
+  resumeMissionRun: async (...args: unknown[]) => {
+    missionResumes.push(args);
+  },
+}));
+
+vi.mock("@vex-agent/engine/core/runner/agent.js", () => ({
+  runAgentTurnUnderLease: async (...args: unknown[]) => {
+    chatResumes.push(args);
+  },
+}));
+
+vi.mock("@vex-agent/inference/registry.js", () => ({
+  resolveProvider: async () => ({ loadConfig: async () => ({ model: "test" }) }),
+}));
 
 vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
   getById: async (intentId: string, sessionId: string) =>
@@ -80,6 +98,8 @@ beforeEach(() => {
   committed = [];
   stampReturns = { intentId: INTENT_ID };
   stampCalls = [];
+  missionResumes = [];
+  chatResumes = [];
 });
 
 function launched() {
@@ -117,6 +137,39 @@ describe("a successful launch wakes the agent with the outcome", () => {
     await resumeAgentAfterUserForm(launched());
     expect(stampCalls).toHaveLength(1);
     expect(stampCalls[0]![3]).toBe(4242);
+  });
+});
+
+/**
+ * Appending the result is only half a resume.
+ *
+ * The approval path learned this the hard way: a result written with nobody
+ * dispatched leaves the turn holding its answer and the agent asleep. The wake
+ * is therefore part of THIS function, and it mirrors the approval continuation —
+ * `resumeMissionRun` for a run, `runAgentTurnUnderLease` for a chat session.
+ */
+describe("the agent is actually WOKEN, not just answered", () => {
+  it("a mission run resumes through resumeMissionRun, after the result exists", async () => {
+    await resumeAgentAfterUserForm(launched());
+    expect(committed).toHaveLength(1);
+    expect(missionResumes).toHaveLength(1);
+    expect(missionResumes[0]![0]).toBe("run-1");
+    expect(chatResumes).toHaveLength(0);
+  });
+
+  it("a chat session resumes through the agent turn runner instead", async () => {
+    intent = { ...intent, missionRunId: null };
+    await resumeAgentAfterUserForm(launched());
+    expect(chatResumes).toHaveLength(1);
+    expect(chatResumes[0]![0]).toBe(SESSION_ID);
+    expect(missionResumes).toHaveLength(0);
+  });
+
+  it("dispatches nothing when the result was refused", async () => {
+    claimOutcome = { outcome: "already_resolved", currentStatus: "running" };
+    await resumeAgentAfterUserForm(launched());
+    expect(missionResumes).toHaveLength(0);
+    expect(chatResumes).toHaveLength(0);
   });
 });
 
@@ -160,10 +213,19 @@ describe("exactly once — a second submit can never append a second result", ()
   });
 
   it("a busy lease is reported as RETRYABLE, distinct from already_resolved", async () => {
-    claimOutcome = { outcome: "busy" };
-    const result = await resumeAgentAfterUserForm(launched());
-    expect(result).toEqual({ resumed: false, reason: "busy" });
-    expect(committed).toHaveLength(0);
+    // Fake timers because a `busy` also ARMS the retry ladder; letting it run on
+    // real timers would leak a live ladder into the next test (it is idempotent
+    // per intent, so a leaked one suppresses the next test's ladder entirely).
+    vi.useFakeTimers();
+    try {
+      claimOutcome = { outcome: "busy" };
+      const result = await resumeAgentAfterUserForm(launched());
+      expect(result).toEqual({ resumed: false, reason: "busy" });
+      expect(committed).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(60_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a chat session with an already-stamped intent refuses at the stamp", async () => {
@@ -173,6 +235,55 @@ describe("exactly once — a second submit can never append a second result", ()
     stampReturns = null;
     const result = await resumeAgentAfterUserForm(launched());
     expect(result).toEqual({ resumed: false, reason: "already_resolved" });
+  });
+});
+
+/**
+ * A busy lease must not lose the wake.
+ *
+ * `busy` is the ordinary case, not an edge: the user deploys while a turn is
+ * still running. Returning `busy` and forgetting would leave the turn parked
+ * with a launched token nobody told the agent about. The ladder mirrors
+ * `approval-runtime/deferred-resume.ts` — short, finite, in-process — over the
+ * durable floor of `listOutstandingUserFormResumes`.
+ */
+describe("a busy lease gets a durable retry, not a shrug", () => {
+  it("retries after the lease frees, and resumes exactly once", async () => {
+    vi.useFakeTimers();
+    try {
+      claimOutcome = { outcome: "busy" };
+      const first = await resumeAgentAfterUserForm(launched());
+      expect(first).toEqual({ resumed: false, reason: "busy" });
+      expect(committed).toHaveLength(0);
+
+      // The other runner lets go; the first rung of the ladder now wins.
+      claimOutcome = { outcome: "claimed" };
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(committed).toHaveLength(1);
+      expect(missionResumes).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops laddering once the form is answered by someone else", async () => {
+    vi.useFakeTimers();
+    try {
+      claimOutcome = { outcome: "busy" };
+      await resumeAgentAfterUserForm(launched());
+
+      claimOutcome = { outcome: "already_resolved", currentStatus: "running" };
+      await vi.advanceTimersByTimeAsync(2_000);
+      const attemptsAfterFirstRung = committed.length;
+      // Later rungs must not keep firing at a settled form.
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(committed).toHaveLength(attemptsAfterFirstRung);
+      expect(committed).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

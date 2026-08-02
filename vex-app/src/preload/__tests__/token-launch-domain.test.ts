@@ -48,11 +48,15 @@ afterEach(() => {
 });
 
 describe("the launch domain is exposed on the agent bridge", () => {
-  it("appears as `tokenLaunch` with exactly the four contract methods", () => {
+  it("appears as `tokenLaunch` with exactly the contract surface", () => {
     expect(agentBridge.tokenLaunch).toBe(tokenLaunch);
     expect(Object.keys(tokenLaunch).sort()).toEqual([
       "cancel",
+      // §C3b: the read that prefills an agent-drafted form, and the push that
+      // says one is waiting. Both are read/signal only — neither can authorize.
+      "getAwaiting",
       "myLaunches",
+      "onFormRequested",
       "preview",
       "submit",
     ]);

@@ -130,6 +130,11 @@ export async function syncTick(): Promise<void> {
           { ...launchResult, periodic: true },
           launchResult.repaired + launchResult.failed,
         );
+      } else if (job.syncType === "launch_form_expiry") {
+        const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
+        const expiryResult = await expireOverdueLaunchForms();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...expiryResult, periodic: true }, expiryResult.expired);
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });
       }

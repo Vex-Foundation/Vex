@@ -28,6 +28,8 @@
 
 import type { PoolClient } from "pg";
 
+import logger from "@utils/logger.js";
+
 import { getById, stampResultMessageWith } from "../../db/repos/token-launch-intents.js";
 import {
   claimUserFormResume,
@@ -61,6 +63,21 @@ export type LaunchFormResumeResult =
       readonly reason: "intent_not_found" | "no_parked_call" | "already_resolved" | "busy";
     };
 
+/**
+ * Backoff ladder for a resume that lost the lease race, copied in shape and
+ * intent from `approval-runtime/deferred-resume.ts`.
+ *
+ * `busy` means another runner holds the session RIGHT NOW — the ordinary case
+ * being a user who deploys while a turn is still in flight. Short and finite on
+ * purpose: this covers "the other runner finishes in a moment". Anything longer
+ * is the durable floor's job (`listOutstandingUserFormResumes`, which finds any
+ * parked form whose result was never appended), not a polling loop's.
+ */
+const BUSY_RETRY_DELAYS_MS = [2_000, 5_000, 15_000] as const;
+
+/** Intents with a retry ladder already armed in this process. */
+const retryingIntents = new Set<string>();
+
 /** Thrown by the stamp to roll the transcript row back. Never escapes this module. */
 class ResultAlreadyStampedError extends Error {
   constructor() {
@@ -93,7 +110,10 @@ export async function resumeAgentAfterUserForm(input: {
   };
 
   const claim = await claimUserFormResume(ref, `launch-form-${input.intentId}`);
-  if (claim.outcome === "busy") return { resumed: false, reason: "busy" };
+  if (claim.outcome === "busy") {
+    armBusyRetry(input);
+    return { resumed: false, reason: "busy" };
+  }
   if (claim.outcome === "already_resolved") {
     return { resumed: false, reason: "already_resolved" };
   }
@@ -120,7 +140,86 @@ export async function resumeAgentAfterUserForm(input: {
     throw err;
   }
 
+  // The result exists; now WAKE THE AGENT. Appending without dispatching is the
+  // half-fix the approval path already learned to avoid — the turn would sit
+  // with its answer written and nobody reading it. Failure to dispatch does not
+  // undo the result: the outstanding scan below finds this row again, and a
+  // second dispatch is safe because the result is already stamped.
+  await dispatchContinuation(ref, `launch-form-${input.intentId}`);
   return { resumed: true };
+}
+
+/**
+ * Arm a bounded retry ladder for a resume that lost the lease race.
+ *
+ * Idempotent per intent: a second `busy` for the same form does not stack a
+ * second ladder. Each rung simply calls back in, so the first rung that wins the
+ * lease resumes and every later rung short-circuits on `already_resolved` — the
+ * exactly-once guarantee is unchanged, since it lives in the claim and the
+ * stamp, not here.
+ *
+ * Not awaited by the caller by design. Main-side IPC must answer the user's
+ * click immediately; the wake is allowed to land a moment later.
+ */
+function armBusyRetry(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly outcome: LaunchFormOutcome;
+}): void {
+  if (retryingIntents.has(input.intentId)) return;
+  retryingIntents.add(input.intentId);
+
+  void (async () => {
+    try {
+      for (const delayMs of BUSY_RETRY_DELAYS_MS) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const retry = await resumeAgentAfterUserForm(input).catch((err: unknown) => {
+          logger.warn("engine.user_form.retry_failed", {
+            intentId: input.intentId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return { resumed: false, reason: "busy" } as const;
+        });
+        // Anything other than a still-busy lease is settled: resumed, already
+        // answered, or a form that no longer exists. Stop either way.
+        if (retry.resumed || retry.reason !== "busy") return;
+      }
+      logger.warn("engine.user_form.retry_exhausted", {
+        intentId: input.intentId,
+        sessionId: input.sessionId,
+      });
+    } finally {
+      retryingIntents.delete(input.intentId);
+    }
+  })();
+}
+
+/**
+ * Run the agent's next turn now that the form's result is in the transcript.
+ *
+ * Mirrors `approval-runtime/continuation.ts`: a mission run resumes through
+ * `resumeMissionRun`, a chat session through `runAgentTurnUnderLease`. Dynamic
+ * imports for the same reason that module uses them — the runner imports the
+ * engine core back, and a static edge here is a cycle.
+ */
+async function dispatchContinuation(
+  ref: UserFormContinuationRef,
+  ownerId: string,
+): Promise<void> {
+  if (ref.missionRunId !== null) {
+    const { resumeMissionRun } = await import("./runner/mission.js");
+    await resumeMissionRun(ref.missionRunId, ownerId);
+    return;
+  }
+
+  const { resolveProvider } = await import("@vex-agent/inference/registry.js");
+  const provider = await resolveProvider();
+  if (!provider) throw new Error("No inference provider available");
+  const config = await provider.loadConfig();
+  if (!config) throw new Error("No inference config available");
+
+  const { runAgentTurnUnderLease } = await import("./runner/agent.js");
+  await runAgentTurnUnderLease(ref.sessionId, provider, config);
 }
 
 /**

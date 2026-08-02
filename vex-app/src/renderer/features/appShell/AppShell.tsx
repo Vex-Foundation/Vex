@@ -52,6 +52,7 @@ import { SessionExportControl } from "./SessionExportControl.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
+import { AgentLaunchFormHost } from "./token-launch/AgentLaunchFormHost.js";
 import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
@@ -185,6 +186,13 @@ function NormalShell({
         bookOpen={bookOpen}
         onToggle={toggleBook}
       />
+
+      {/* §C3b — when the AGENT asks the user to launch a token, the consent
+        * dialog opens ITSELF, centered, over the whole shell. Mounted at shell
+        * level rather than inside the Book panel because the agent can ask
+        * while the Book is collapsed, and a modal parented to a hidden panel is
+        * a question nobody is shown. Renders null whenever nothing is waiting. */}
+      <AgentLaunchFormHost sessionId={activeSessionId} />
     </>
   );
 }

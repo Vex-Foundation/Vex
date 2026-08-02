@@ -105,11 +105,74 @@ describe("the autonomous path binds ceilings to the EXACT provenance run", () =>
     expect(ceilingsCalls).toEqual([]);
   });
 
-  it("does not gate the human-approved path on mission ceilings at all", async () => {
+  it("stays on the mission path even when an approvalId rides along", async () => {
+    // The `approval_card` BRANCH IS GONE (owner ruling 2026-08-02: the launch
+    // form replaces the approval card, so no launch dispatch can arrive here
+    // from a resolved card). What used to be pinned here — an approvalId
+    // short-circuiting the ceilings read — would now be a hole: a mission
+    // dispatch carrying a stray approval id must still be bounded by its run's
+    // frozen ceilings, not excused from them.
+    const result = await resolveAuthorizationVariantForTest(context({ approvalId: "appr-1" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected the mission path");
+    expect(result.kind).toBe("full_autonomy");
+    expect(result.ceilings).not.toBeNull();
+    expect(ceilingsCalls).toEqual([["mission-A", "run-7"]]);
+  });
+});
+
+/**
+ * The authorization MATRIX outside the mission path (owner decrees 2026-08-02).
+ *
+ * A live session proved the old shape wrong: an AGENT in full permission asked
+ * to launch and was refused for lacking "trusted mission provenance", while
+ * `swap_execute` spends on exactly that basis in the same session. The form is
+ * an OPTIONAL path in full mode and the MANDATORY one under restricted, where
+ * it replaces the approval card entirely.
+ */
+describe("the chat matrix: full executes, restricted is sent to the form", () => {
+  const chat = { sessionId: "sess-1", missionId: null, missionRunId: null } as const;
+
+  it("authorizes a FULL-permission chat launch directly, with no mission and no ceilings", async () => {
     const result = await resolveAuthorizationVariantForTest(
-      context({ approvalId: "appr-1", _approvalId: "appr-1" }),
+      context({ ...chat, sessionPermission: "full" }),
     );
-    // A person decided; §C6 explicitly does not gate that path.
-    if (result.ok) expect(result.ceilings).toBeNull();
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected an authorization");
+    expect(result.kind).toBe("session_full");
+    // Ceilings are MISSION-scoped; there is no contract here to read one from,
+    // and inventing a bound would be a number we cannot prove.
+    expect(result.ceilings).toBeNull();
+    expect(result.missionRunId).toBeNull();
+    // Nothing about a mission is consulted on this path.
+    expect(ceilingsCalls).toEqual([]);
+  });
+
+  it("refuses a RESTRICTED chat launch BY NAME and names the form as the remedy", async () => {
+    const result = await resolveAuthorizationVariantForTest(
+      context({ ...chat, sessionPermission: "restricted" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.reason).toContain("trench.launch_execute");
+    expect(result.reason).toContain("restricted permission");
+    // The remedy is the FORM — the tool's consent surface — not an approval card.
+    expect(result.reason).toContain("trench.launch_request_form");
+    expect(result.reason).toContain("Deploy");
+    expect(result.reason).toContain("Nothing was signed");
+    expect(ceilingsCalls).toEqual([]);
+  });
+
+  it("never lets a PARTIAL mission dispatch borrow the chat basis", async () => {
+    // A missionId with no run is a broken dispatch, not a chat session. Falling
+    // through to `session_full` would drop the ceilings mission spending exists
+    // to be bounded by — so it refuses by name even in full permission.
+    const result = await resolveAuthorizationVariantForTest(
+      context({ missionRunId: null, sessionPermission: "full" }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.reason).toContain("missionRunId");
+    expect(ceilingsCalls).toEqual([]);
   });
 });

@@ -85,6 +85,13 @@ function fakeClientAfterImageDeleted() {
 const AUTHORIZE_INPUT = {
   authorizationId: "auth-1",
   authorizationKind: "user_submit" as const,
+  // The token as the USER finally confirmed it — every field in the dialog is
+  // editable, so authorize moves all of them in the same CAS as the consent
+  // record built from them.
+  name: "Moon",
+  symbol: "MOON",
+  description: "to the moon",
+  links: { urls: ["https://moon.example"] },
   imageId: IMAGE_ID,
   prebuyRaw: "1000000000000000",
   prebuyDecimals: 18,
@@ -221,6 +228,34 @@ describe("authorization_json is persisted as-is on both write paths", () => {
     const client = fakeClient();
     await writers.authorizeWith(client as never, INTENT_ID, SESSION_ID, AUTHORIZE_INPUT);
     expect(calls(client).at(-1)![1]![7]).toBeNull();
+  });
+
+  /**
+   * NO JSONB PARAM MAY EVER BE `undefined`.
+   *
+   * `assertJsonSerializable` throws on `undefined` by design, and a throw inside
+   * `authorizeWith` refuses an HONEST launch at the write — it reads to the user
+   * as an outage on a spend path. Both JSONB params are pinned as a pair:
+   * `authorization_json` coalesces to SQL NULL, `links` to an empty object.
+   */
+  it("never hands a JSONB param `undefined`, even from a sparse caller", async () => {
+    const client = fakeClient();
+    const sparse = { ...AUTHORIZE_INPUT } as Record<string, unknown>;
+    // A caller that forgot both blobs. TypeScript forbids it; this pins the
+    // runtime behaviour anyway, because that is the shape that reached us.
+    delete sparse.links;
+    delete sparse.authorizationJson;
+
+    await expect(
+      writers.authorizeWith(client as never, INTENT_ID, SESSION_ID, sparse as never),
+    ).resolves.not.toThrow();
+
+    const params = calls(client).at(-1)![1]!;
+    expect(params[7]).toBeNull();
+    expect(params[11]).toBe("{}");
+    for (const [index, value] of params.entries()) {
+      expect(value, `param $${index + 1} must never be undefined`).not.toBeUndefined();
+    }
   });
 });
 

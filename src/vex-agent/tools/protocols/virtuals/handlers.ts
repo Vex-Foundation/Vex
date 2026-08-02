@@ -17,6 +17,7 @@ import { getVirtualsClient } from "@tools/virtuals/client.js";
 import { VIRTUALS_CHAINS, type VirtualsChain, type VirtualsSortField } from "@tools/virtuals/types.js";
 import { VexError } from "../../../../errors.js";
 import logger from "@utils/logger.js";
+import { describeFailureForAgent, describeFailureForLog } from "../runtime/errors.js";
 import type { ProtocolHandler } from "../types.js";
 import { str, num, ok, fail } from "../handler-helpers.js";
 import {
@@ -73,23 +74,33 @@ function matchesStatus(status: string | null, filter: StatusFilter): boolean {
 }
 
 /**
- * Model-facing failure detail — code-keyed and BOUNDED, never upstream text.
+ * Model-facing failure detail — the REAL cause, scrubbed and BOUNDED.
  *
- * Error `message` fields can carry upstream-influenced strings (the Virtuals
- * API is hostile input), so the model-facing failure is built ONLY from our
- * own static vocabulary: the VexError code + its static hint. The real error
- * goes to the logger as metadata (bounded) for debugging.
+ * Owner decree (2026-08-02, rules/04): a tool error surfaced to the agent
+ * carries the ACTUAL cause, never a bare "unexpected error". The old posture
+ * here was static vocabulary only — VexError code + authored hint, and three
+ * characterless words for everything else — because the Virtuals API is
+ * undocumented and its error text is upstream-influenced. That risk is
+ * answered by SANITIZING what sanitization can actually address, not by
+ * hiding: the canonical summarizer removes secrets, HTML and JSON bodies,
+ * URLs, auth headers and long hex blobs, and hard-caps the result. It does NOT
+ * neutralise instruction-shaped prose — a pseudo-role tag or an imperative
+ * sentence survives scrubbing unchanged, and the mitigation for THAT is the
+ * Safety Contract, which teaches the model that tool output is data, never
+ * instruction. A 500 and a rate-limit are different answers and the agent
+ * could not tell them apart.
+ *
+ * The VexError fast path stays ahead of it: our own code + authored hint is
+ * more actionable than the sentence behind it. The full error still goes to
+ * the logger as bounded metadata.
  */
 function failureDetail(toolId: string, err: unknown): string {
   logger.warn("virtuals.handler.error", {
     toolId,
     code: err instanceof VexError ? err.code : "UNEXPECTED",
-    error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+    error: describeFailureForLog(err),
   });
-  if (err instanceof VexError) {
-    return err.hint ? `${err.code}: ${err.hint}` : err.code;
-  }
-  return "unexpected error";
+  return describeFailureForAgent(err);
 }
 
 // ── Handler map ─────────────────────────────────────────────────────

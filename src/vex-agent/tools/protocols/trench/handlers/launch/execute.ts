@@ -11,12 +11,12 @@
  *   2. Resolve the ADDRESS only, so a failure before signing still records the
  *      real wallet. The key is decrypted (`./execute/clients.ts`) only once the
  *      call may genuinely broadcast.
- *   3. Establish the C0 authorization VARIANT from HOST evidence, never params.
- *      A RESTRICTED session never reaches here with a spend: the protocol
- *      runtime's approval gate turns the call into a `pendingApproval` card
- *      first, and the resumed dispatch arrives carrying `approvalId`. So an
- *      absent approval id means this must be Path 2, which then has to PROVE
- *      mission provenance and full autonomy or be refused.
+ *   3. Establish the C0 authorization VARIANT from HOST evidence, never params:
+ *      a mission run proves provenance and ceilings (`full_autonomy`), a
+ *      full-permission chat session executes directly (`session_full`), and a
+ *      restricted session is refused by name and sent to the launch FORM, which
+ *      is this tool's consent surface instead of an approval card. The matrix
+ *      and the rulings behind it live on `resolveAuthorizationVariant` below.
  *   4. Build the plan — anchored fee, image bytes + digest, `msg.value`, the Vex
  *      fee, BOTH mission ceilings, the native-value gate (`./plan.ts`).
  *   5. Create the intent already `authorized` and CAS-CONSUME it — the
@@ -38,10 +38,7 @@ import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { readMissionLaunchCeilings } from "@vex-agent/engine/mission/launch-ceiling.js";
 import type { AutonomousLaunchCeilings } from "@vex-agent/engine/mission/launch-ceiling.js";
-import {
-  requireExecutionProvenance,
-  readApprovalProvenance,
-} from "../../../execution-provenance.js";
+import { requireExecutionProvenance } from "../../../execution-provenance.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../../internal/wallet/resolve.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
@@ -133,8 +130,22 @@ export async function trenchLaunchExecuteHandler(
     walletAddress,
     missionRunId: variant.missionRunId,
     request: validated.value,
-    isAutonomous: variant.isAutonomous,
+    authorizationKind: variant.kind,
     ceilings: variant.ceilings,
+    // The C0 record, snapshotted at AUTHORIZE time, for the `session_full` path
+    // only. On that path nothing else records what authorized the spend: there
+    // is no approval row and no mission contract to reconstruct it from, so
+    // without this blob an audit of a chat launch has an id and a kind and no
+    // answer to "authorized to spend WHAT?". It is AUDIT ONLY, exactly like the
+    // other agent paths — the gate stays the re-derive-and-compare below plus
+    // the CAS (see ./authorization.ts). The other two agent variants are left
+    // as they are deliberately: their honest records need evidence this call
+    // does not hold (when the human resolved the card; the launch count in
+    // force inside the authorize transaction).
+    authorization:
+      variant.kind === "session_full"
+        ? { kind: "session_full", binding: planned.plan.binding, authorizedAt: new Date().toISOString() }
+        : null,
   });
   if (!consumed.ok) return fail(consumed.reason);
 
@@ -169,7 +180,7 @@ export async function trenchLaunchExecuteHandler(
 
 interface ResolvedVariant {
   readonly ok: true;
-  readonly isAutonomous: boolean;
+  readonly kind: "full_autonomy" | "session_full";
   readonly missionRunId: string | null;
   /** Non-null ONLY for the autonomous path, where §C6/§C6b apply. */
   readonly ceilings: AutonomousLaunchCeilings | null;
@@ -178,25 +189,62 @@ interface ResolvedVariant {
 /**
  * Decide WHICH C0 variant authorizes this dispatch, from trusted host evidence.
  *
- * An `approvalId` means a human resolved an approval card — the `approval_card`
- * variant, and §C6 does not gate it (a person decided). Its absence means
- * nothing human authorized this call, so it can only be Path 2, which must prove
- * mission provenance AND full autonomy AND both ceilings. There is deliberately
- * no third branch: a dispatch that is neither is refused.
+ * TWO agent-path branches, and the whole matrix (owner decrees 2026-08-02):
+ *
+ *   MISSION RUN → `full_autonomy`. Mission evidence (a `missionId` or a
+ *   `missionRunId` on the dispatch) puts the call on this path, which must
+ *   prove COMPLETE provenance and both frozen ceilings or be refused. Partial
+ *   provenance never falls through to the chat branch: a mission dispatch
+ *   missing a field is a broken dispatch, and letting it borrow the chat basis
+ *   would drop the ceilings mission spending exists to be bounded by.
+ *
+ *   FULL-PERMISSION CHAT → `session_full`. No mission, session permission
+ *   `full`: the user set that permission and asked for the launch, which is the
+ *   same consent basis every other mutating tool spends on in chat
+ *   (`swap_execute`). This branch corrects a real refusal — a full-mode user
+ *   got "requires trusted mission provenance" because the handler read an
+ *   absent approval id as proof the call HAD to be a mission dispatch. The
+ *   launch form is an OPTIONAL path here, not a gate. No ceilings apply:
+ *   §C6/§C6b bound UNATTENDED spending against a host-authored contract.
+ *
+ *   RESTRICTED → refused BY NAME, pointing at `trench.launch_request_form`.
+ *   THE FORM REPLACES THE APPROVAL CARD; a launch must never produce both, so
+ *   `evaluateApprovalGate` exempts this tool by name
+ *   (`protocols/runtime/gates.ts`) and the refusal is produced HERE, where the
+ *   remedy can be named, instead of a card that shows tool arguments where the
+ *   form would show the fee, the image and the total.
+ *
+ * THERE IS DELIBERATELY NO `approval_card` BRANCH. It was removed with that
+ * ruling: with the card exempted, no dispatch can arrive here carrying an
+ * `approvalId` for this tool, and a branch no path reaches is dead code that
+ * reads like a live authorization route. `approval_card` REMAINS in the DB kind
+ * vocabulary — historical rows carry it, and an audit vocabulary is not dead
+ * because no new row will use it.
  *
  * THE `user_submit` VARIANT IS NOT DECIDED HERE AND NEVER REACHES THIS
- * FUNCTION. A launch the human deployed from the dialog is not an agent
- * dispatch at all — no tool call, no `ProtocolExecutionContext` — so it has its
- * own public entry, `./execute-user-submit.ts`, which authorizes against the
- * snapshot the user consented to. Only `approval_card` and `full_autonomy` are
- * agent-path variants.
+ * FUNCTION. A launch the human deployed from the form is not an agent dispatch
+ * at all — no tool call, no `ProtocolExecutionContext` — so it has its own
+ * public entry, `./execute-user-submit.ts`, which authorizes against the
+ * snapshot the user consented to. That is what the restricted refusal routes
+ * the user to.
  */
 async function resolveAuthorizationVariant(
   context: ProtocolExecutionContext,
 ): Promise<ResolvedVariant | { ok: false; reason: string }> {
-  const approvalId = readApprovalProvenance(context);
-  if (approvalId !== null) {
-    return { ok: true, isAutonomous: false, missionRunId: context.missionRunId ?? null, ceilings: null };
+  const hasMissionEvidence =
+    (context.missionId ?? "").trim().length > 0 || (context.missionRunId ?? "").trim().length > 0;
+
+  if (!hasMissionEvidence) {
+    if (context.sessionPermission !== "full") {
+      return {
+        ok: false,
+        reason:
+          `${TOOL_ID} refused: this session is in restricted permission. The launch form is this `
+          + "tool's consent surface — open it for the user by calling trench.launch_request_form, and "
+          + "their Deploy click authorizes the launch. Nothing was signed.",
+      };
+    }
+    return { ok: true, kind: "session_full", missionRunId: null, ceilings: null };
   }
 
   const provenance = requireExecutionProvenance(context);
@@ -227,7 +275,7 @@ async function resolveAuthorizationVariant(
 
   return {
     ok: true,
-    isAutonomous: true,
+    kind: "full_autonomy",
     missionRunId: provenance.provenance.missionRunId,
     ceilings: read.ceilings,
   };

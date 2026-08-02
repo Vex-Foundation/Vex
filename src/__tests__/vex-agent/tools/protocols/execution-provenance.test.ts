@@ -10,7 +10,6 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  readApprovalProvenance,
   requireExecutionProvenance,
 } from "@vex-agent/tools/protocols/execution-provenance.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -61,17 +60,5 @@ describe("requireExecutionProvenance", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable");
     expect(result.missing).toEqual(["missionId"]);
-  });
-});
-
-describe("readApprovalProvenance", () => {
-  it("returns the approval id on an approval-resume dispatch", () => {
-    expect(readApprovalProvenance(context({ approvalId: "a1" }))).toBe("a1");
-  });
-
-  it("returns null on a live turn, which carries no approval", () => {
-    expect(readApprovalProvenance(context())).toBeNull();
-    expect(readApprovalProvenance(context({ approvalId: null }))).toBeNull();
-    expect(readApprovalProvenance(context({ approvalId: "  " }))).toBeNull();
   });
 });

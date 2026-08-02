@@ -27,6 +27,7 @@ import {
   createWith,
   failWith,
 } from "@vex-agent/db/repos/token-launch-intents.js";
+import type { LaunchAuthorization } from "../authorization.js";
 import { LaunchImageMissingError } from "@vex-agent/db/repos/launch-image-lock.js";
 import {
   countMissionRunLaunches,
@@ -46,8 +47,21 @@ export interface AuthorizeAndConsumeInput {
   readonly walletAddress: Address;
   readonly missionRunId: string | null;
   readonly request: ValidatedLaunchRequest;
-  readonly isAutonomous: boolean;
+  /**
+   * Which C0 variant authorized this dispatch (`../execute.ts` decides it from
+   * host evidence). `full_autonomy` is the ONLY one the mission liveness gate
+   * and the launch-count ceiling apply to — both are mission-scoped.
+   *
+   * SPELLED OUT, not `Exclude<LaunchAuthorizationKind, "user_submit">`. The
+   * excluding form would silently re-admit `approval_card` as a live internal
+   * route the moment anyone stopped reading it as historical-only, and it would
+   * also swallow any future kind added to the DB vocabulary. Adding an
+   * execution path here should be a deliberate edit to this line.
+   */
+  readonly authorizationKind: "full_autonomy" | "session_full";
   readonly ceilings: AutonomousLaunchCeilings | null;
+  /** The C0 record to persist for audit, or `null` when this path has none. */
+  readonly authorization: LaunchAuthorization | null;
 }
 
 export type AuthorizeAndConsumeResult =
@@ -85,7 +99,9 @@ async function authorizeAndConsumeInTransaction(
   return withTransaction(async (client) => {
     await acquireSessionControlLock(client, input.sessionId);
 
-    if (input.isAutonomous && input.missionRunId !== null) {
+    const isAutonomous = input.authorizationKind === "full_autonomy";
+
+    if (isAutonomous && input.missionRunId !== null) {
       // LIVENESS, NOT CEILINGS. The frozen contract read at plan time cannot
       // drift, so this is deliberately NOT a second ceilings read — it asks the
       // one question that IS time-sensitive: may this run still authorize new
@@ -108,7 +124,7 @@ async function authorizeAndConsumeInTransaction(
       }
     }
 
-    if (input.isAutonomous && input.missionRunId !== null && input.ceilings !== null) {
+    if (isAutonomous && input.missionRunId !== null && input.ceilings !== null) {
       const cap = input.ceilings.maxLaunchCount;
       const used = await countMissionRunLaunches(client, input.missionRunId);
       if (cap === null || used >= cap) {
@@ -127,9 +143,9 @@ async function authorizeAndConsumeInTransaction(
     await createWith(client, {
       intentId: input.intentId,
       sessionId: input.sessionId,
-      // `agent` for BOTH execute paths, deliberately. Neither Path 2 nor the
-      // restricted approval path has a FORM step — C1 puts both of them at
-      // `authorized` as their entry state, and the DB CHECK
+      // `agent` for BOTH execute paths, deliberately. Neither the mission path
+      // nor a full-permission chat launch has a FORM step — C1 puts both of
+      // them at `authorized` as their entry state, and the DB CHECK
       // `token_launch_intents_form_path_has_tool_call` REQUIRES a `tool_call_id`
       // on `agent_requested_form`, which an execute-time row does not have.
       // (The `agent_requested_form` row is written earlier, by
@@ -146,7 +162,13 @@ async function authorizeAndConsumeInTransaction(
       prebuyRaw: input.request.prebuyWei.toString(),
       prebuyDecimals: PREBUY_DECIMALS,
       authorizationId: input.authorizationId,
-      authorizationKind: input.isAutonomous ? "full_autonomy" : "approval_card",
+      authorizationKind: input.authorizationKind,
+      // AUDIT ONLY on every agent path — nothing here or downstream reads it
+      // back to decide (the gate is re-derive-and-compare plus the CAS; see
+      // `../authorization.ts`). `null` when the path has no honest record to
+      // write, which is never a silent omission: the row still carries the
+      // authorization id and kind.
+      authorizationJson: input.authorization,
       missionRunId: input.missionRunId,
       expiresAt: new Date(Date.now() + AUTHORIZATION_WINDOW_MS).toISOString(),
     });

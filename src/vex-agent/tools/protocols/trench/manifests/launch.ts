@@ -92,11 +92,13 @@ export const TRENCH_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "signing time) and, if you set a prebuy, buys that much of the new token on its curve in the same transaction. "
       + "Vex also charges 25 bps of that whole ETH amount (creation fee + prebuy) as a SEPARATE transfer that runs only "
       + "after the launch confirms — price a launch with trench.launch_preview, which shows it and the fee-inclusive total. "
-      + "An image is REQUIRED and must already be in the locker. It runs ONLY under explicit authority: an approval for "
-      + "this launch, or a mission contract whose HOST-authored launch ceilings (max launch value, max launch count) "
-      + "already cover it. Those ceilings cannot be written by you, and while a contract carries none this tool REFUSES "
-      + "BY NAME — report that refusal and tell the user to set them on the contract card rather than launching some "
-      + "other way.",
+      + "An image is REQUIRED and must already be in the locker. It runs ONLY under explicit authority, and which one "
+      + "depends on where you are: in a FULL-permission chat session the user's permission is the authority and this "
+      + "executes directly; in a RESTRICTED session it refuses BY NAME and you must call trench.launch_request_form "
+      + "instead — that form is this tool's consent surface, and the user's Deploy click is what launches; in a MISSION "
+      + "run the authority is the contract's HOST-authored launch ceilings (max launch value, max launch count), which "
+      + "you cannot write, and while a contract carries none this tool REFUSES BY NAME — report that refusal and tell "
+      + "the user to set them on the contract card rather than launching some other way.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: LAUNCH_FIELD_PARAMS,

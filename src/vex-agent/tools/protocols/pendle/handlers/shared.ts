@@ -6,7 +6,7 @@
  * slippage normalization), so they live in ONE place: duplicating
  * `resolveInputToken` in particular would risk a divergent decimals read feeding
  * `parseUnits` on one surface but not the other. Model-facing failures stay
- * bounded + code-keyed — upstream error text NEVER reaches the model.
+ * bounded and SCRUBBED, and carry the real cause (see `failureDetail`).
  */
 
 import { getAddress, type Address } from "viem";
@@ -20,6 +20,7 @@ import type { AgentActivityLegInput } from "@vex-agent/db/repos/agent-activity.j
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
+import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import { formatRawAmount } from "../../amount-display.js";
 import { checkSlippageBps } from "../../slippage-policy.js";
 import { priceUsdFor } from "../market-lookup.js";
@@ -86,15 +87,32 @@ export function resolvePendleSlippage(toolId: string, bps: number | undefined): 
   return { bps: value, fraction: value / 10_000 };
 }
 
-/** Model-facing failure detail — code-keyed + bounded, never upstream text. */
+/**
+ * Model-facing failure detail — the REAL cause, scrubbed and bounded.
+ *
+ * Owner decree (2026-08-02): a tool error surfaced to the agent carries the
+ * ACTUAL cause, never a bare "unexpected error". This helper feeds ~40 Pendle
+ * WRITE call sites; until now every non-VexError throw on those paths — an RPC
+ * refusal, a reverted broadcast, a wallet that could not pay — reached the
+ * model as the same three characterless words, so the agent could only retry
+ * blind. The provider's own text is untrusted, which is why it is SCRUBBED
+ * (`summarizeProtocolError`: secret redaction, HTML/JSON body removal, URL and
+ * auth stripping, hard length cap) rather than hidden.
+ *
+ * A VexError still LEADS with our own vocabulary (code + authored hint), but no
+ * longer stops there: the approval/broadcast throw sites wrap the node's real
+ * words inside `message` (see `tools/pendle/erc20.ts` — "Failed to reset
+ * allowance: …"), so `APPROVAL_FAILED` alone hid an unpayable wallet behind a
+ * code the agent could only retry. `describeFailureForAgent` appends the
+ * scrubbed real cause.
+ */
 export function failureDetail(toolId: string, err: unknown): string {
   logger.warn("pendle.handler.error", {
     toolId,
     code: err instanceof VexError ? err.code : "UNEXPECTED",
-    error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+    error: describeFailureForLog(err),
   });
-  if (err instanceof VexError) return err.hint ? `${err.code}: ${err.hint}` : err.code;
-  return "unexpected error";
+  return describeFailureForAgent(err);
 }
 
 /**

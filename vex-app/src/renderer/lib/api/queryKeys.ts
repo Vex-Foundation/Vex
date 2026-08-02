@@ -286,5 +286,13 @@ export const tokenLaunchKeys = {
   all: ["tokenLaunch"] as const,
   preview: (input: unknown) => ["tokenLaunch", "preview", input] as const,
   myLaunches: () => ["tokenLaunch", "myLaunches"] as const,
+  /**
+   * The agent-drafted form waiting on a session (§C3b). SESSION-SCOPED, unlike
+   * `myLaunches`: the dialog it drives belongs to the session the user is
+   * looking at, and a global key would pop another session's launch form over
+   * the conversation they are actually reading.
+   */
+  awaiting: (sessionId: string | null) =>
+    ["tokenLaunch", "awaiting", sessionId] as const,
 };
 

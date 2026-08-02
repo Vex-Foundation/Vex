@@ -241,6 +241,10 @@ describe("authorizeWith — a lapsed form window cannot authorize a spend", () =
     await repo.authorizeWith(client as never, INTENT_ID, SESSION_ID, {
       authorizationId: "auth-1",
       authorizationKind: "user_submit",
+      name: "Moon",
+      symbol: "MOON",
+      description: "to the moon",
+      links: { urls: ["https://moon.example"] },
       imageId: "img_abc",
       prebuyRaw: "1000000000000000",
       prebuyDecimals: 18,
@@ -255,11 +259,64 @@ describe("authorizeWith — a lapsed form window cannot authorize a spend", () =
     const client = fakeClient([dbRow()]);
     await repo.authorizeWith(client as never, INTENT_ID, SESSION_ID, {
       authorizationId: "auth-1", authorizationKind: "user_submit",
+      name: "Moon", symbol: "MOON", description: "to the moon",
+      links: { urls: ["https://moon.example"] },
       imageId: "img_abc", prebuyRaw: "1000000000000000", prebuyDecimals: 18,
     });
     const params = paramsOf(client);
     expect(params[5]).toBe("1000000000000000");
     expect(params[6]).toBe(18);
+  });
+
+  /**
+   * THE EDITED-FORM DEFECT.
+   *
+   * The dialog opens on the agent's draft with every field EDITABLE. The consent
+   * snapshot is built from the values the user finally submitted, and
+   * `execute-user-submit.ts` cross-checks that snapshot against the intent row's
+   * own columns before signing. So a writer that updated only image/prebuy left
+   * an edited name or symbol disagreeing with the record — which REFUSES the
+   * launch at the gate — while an edited description or links executed against
+   * stale row metadata. Every editable field moves in the same CAS.
+   */
+  it("writes ALL editable token fields, so an edited form cannot drift from its consent record", async () => {
+    const client = fakeClient([dbRow()]);
+    await repo.authorizeWith(client as never, INTENT_ID, SESSION_ID, {
+      authorizationId: "auth-1", authorizationKind: "user_submit",
+      name: "Rocket", symbol: "RKT", description: "renamed by the user",
+      links: { urls: ["https://rocket.example"] },
+      imageId: "img_edited", prebuyRaw: "2000000000000000", prebuyDecimals: 18,
+    });
+    const sql = sqlOf(client);
+    expect(sql).toContain("name = $9");
+    expect(sql).toContain("symbol = $10");
+    expect(sql).toContain("description = $11");
+    expect(sql).toContain("links = $12::jsonb");
+
+    const params = paramsOf(client);
+    expect(params[8]).toBe("Rocket");
+    expect(params[9]).toBe("RKT");
+    expect(params[10]).toBe("renamed by the user");
+    expect(params[11]).toBe(JSON.stringify({ urls: ["https://rocket.example"] }));
+  });
+
+  it("NEVER writes origin, tool_call_id or mission_run_id — the parked call must survive", async () => {
+    const client = fakeClient([dbRow()]);
+    await repo.authorizeWith(client as never, INTENT_ID, SESSION_ID, {
+      authorizationId: "auth-1", authorizationKind: "user_submit",
+      name: "Rocket", symbol: "RKT", description: null, links: {},
+      imageId: "img_abc", prebuyRaw: "1000000000000000", prebuyDecimals: 18,
+    });
+    const sql = sqlOf(client);
+    // Those three columns are how `resumeAgentAfterUserForm` finds the turn to
+    // answer. Rewriting any of them orphans the agent's parked call.
+    expect(sql).not.toContain("origin =");
+    expect(sql).not.toContain("tool_call_id =");
+    expect(sql).not.toContain("mission_run_id =");
+    // And the CAS predicate is untouched by the widened SET list.
+    expect(sql).toContain("AND status = 'awaiting_user_form'");
+    expect(sql).toContain("AND expires_at > NOW()");
+    expect(sql).toContain("AND session_id = $2");
   });
 });
 

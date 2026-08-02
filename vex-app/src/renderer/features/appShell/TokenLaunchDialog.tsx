@@ -93,6 +93,20 @@ export interface TokenLaunchDialogProps {
   readonly origin: LaunchOrigin;
   /** Present when an agent drafted the intent (Path 1). Cancel targets it. */
   readonly intentId?: string | null;
+  /**
+   * The draft to open with, for an agent-requested form: the token the agent
+   * PROPOSED, read back from its intent row.
+   *
+   * It prefills the form and nothing else. Every field here is editable, Deploy
+   * is still armed only by a resolved preview, and main still re-derives the
+   * money from whatever the user finally confirms — so a prefill can shorten the
+   * typing but can never shorten the authorization.
+   *
+   * Must be referentially STABLE (memoize it): it re-seeds the form when its
+   * identity changes, and a fresh object every render would overwrite the user's
+   * edits on each keystroke.
+   */
+  readonly initialValues?: LaunchFormValues | null;
 }
 
 /** What the user is currently being asked to look at. */
@@ -109,8 +123,11 @@ export function TokenLaunchDialog({
   sessionId,
   origin,
   intentId = null,
+  initialValues = null,
 }: TokenLaunchDialogProps): JSX.Element {
-  const [values, setValues] = useState<LaunchFormValues>(EMPTY_LAUNCH_FORM);
+  const [values, setValues] = useState<LaunchFormValues>(
+    initialValues ?? EMPTY_LAUNCH_FORM,
+  );
   const [phase, setPhase] = useState<DialogPhase>({ kind: "editing" });
 
   const submit = useSubmitLaunch();
@@ -119,11 +136,15 @@ export function TokenLaunchDialog({
   // A fresh open is a fresh consent. Carrying a previous session's values (or,
   // worse, a previous refusal) into a new spend decision would let the user
   // authorize something they last looked at minutes ago.
+  //
+  // An agent-requested open seeds the AGENT'S DRAFT instead of a blank form —
+  // still a fresh consent, because the phase resets with it and the preview has
+  // to resolve again before Deploy arms.
   useEffect(() => {
     if (!open) return;
-    setValues(EMPTY_LAUNCH_FORM);
+    setValues(initialValues ?? EMPTY_LAUNCH_FORM);
     setPhase({ kind: "editing" });
-  }, [open]);
+  }, [open, initialValues]);
 
   const parameters = launchFormToParameters(values);
 

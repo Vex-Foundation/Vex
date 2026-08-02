@@ -272,7 +272,13 @@ export type RuntimeStopReason =
   | "user_paused"
   /** Plan-mode: agent wrote/changed a plan that needs user acceptance before
    *  execution can resume. Resumed only by the `plan.accept` IPC. */
-  | "plan_acceptance_required";
+  | "plan_acceptance_required"
+  /**
+   * §C3b: the agent opened a launch form and the turn is parked until the human
+   * answers it. Sibling of `approval_required` — the call it stopped on has no
+   * transcript result yet, and `resumeAgentAfterUserForm` appends the only one.
+   */
+  | "user_form_required";
 
 export type StopReason = BusinessStopReason | RuntimeStopReason;
 

@@ -374,6 +374,7 @@ export const CH = {
     submit: "vex:tokenLaunch:submit",
     cancel: "vex:tokenLaunch:cancel",
     myLaunches: "vex:tokenLaunch:myLaunches",
+    getAwaiting: "vex:tokenLaunch:getAwaiting",
   },
 
   // Cancellation
@@ -447,6 +448,21 @@ export const EV = {
    * DB remains source of truth for all six — events are refresh/preview
    * signals, never canonical state.
    */
+  /**
+   * The agent asked the user to launch a token (§C3b).
+   *
+   * `formRequested` fires after `trench.launch_request_form` has COMMITTED an
+   * `awaiting_user_form` intent and parked the turn. Payload is IDS ONLY — the
+   * renderer opens the modal by re-reading `tokenLaunch.getAwaiting`, so no
+   * token name, symbol or amount rides this channel.
+   *
+   * It is a SEPARATE channel from `EV.engine.controlState` on purpose: a chat
+   * session has no run to park, so the control-state event never fires for a
+   * chat-mode launch request and the dialog would open for missions only.
+   */
+  launch: {
+    formRequested: "vex:event:launch:formRequested",
+  },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
     controlState: "vex:event:engine:controlState",

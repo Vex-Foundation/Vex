@@ -34,7 +34,8 @@
  * Structural split: the outcome contract lives in
  * `./turn-loop-tool-batch/outcome.ts`, the per-call tool-context builder in
  * `./turn-loop-tool-batch/execute.ts`, the approval-enqueue helpers in
- * `./turn-loop-tool-batch/approval-stop.ts`, the deferred-save +
+ * `./turn-loop-tool-batch/approval-stop.ts`, the §C3b user-form park in
+ * `./turn-loop-tool-batch/user-form-stop.ts`, the deferred-save +
  * outcome-mapping helpers in `./turn-loop-tool-batch/results.ts`, and the
  * trusted prepare→execute handoff in
  * `./turn-loop-tool-batch/prepared-follow-up.ts`.
@@ -58,6 +59,7 @@ import {
 } from "./turn-loop-tool-batch/approval-stop.js";
 import {
   APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
+  USER_FORM_ABANDONED_RUN_TERMINAL_OUTPUT,
   APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
   BATCH_ABORTED_BY_COMPACT_OUTPUT,
   BATCH_ABORTED_BY_DEADLINE_OUTPUT,
@@ -66,6 +68,7 @@ import {
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
+import { parkTurnOnUserForm } from "./turn-loop-tool-batch/user-form-stop.js";
 import {
   evaluateBatchDeadlines,
   type BatchDeadlines,
@@ -125,6 +128,7 @@ export async function processTurnToolBatch(args: {
   let batchStopPayload: StopPayload | undefined;
   let compactCommittedThisBatch = false;
   let approvalId: string | null = null;
+  let userFormIntentId: string | null = null;
 
   const dispatchBand = computeBand(args.currentTokenCount, args.contextLimit);
 
@@ -292,6 +296,37 @@ export async function processTurnToolBatch(args: {
       break; // remaining calls are NOT dispatched
     }
 
+    // ── User-form break: same shape as the approval break above ──
+    // The call was dispatched and DRAFTED a durable form, but its answer comes
+    // from a human later. "Awaiting the human" lives in `token_launch_intents`,
+    // not in the transcript, so this call gets NO result here — appending one
+    // would leave the resume unable to answer without writing a SECOND result
+    // for the same tool_call_id.
+    if (resultForTranscript.pendingUserForm) {
+      const { intentId } = resultForTranscript.pendingUserForm;
+      executedCalls.push(toolCall);
+
+      const parkOutcome = await parkTurnOnUserForm({ context, intentId });
+      if (parkOutcome.kind === "abandoned") {
+        // The run went terminal while the handler was drafting. Nothing is
+        // parked and no dialog was pushed, so this call must carry a truthful
+        // result — an unanswered call would break the provider's pairing.
+        executedResults.push({
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: USER_FORM_ABANDONED_RUN_TERMINAL_OUTPUT,
+          success: false,
+          explorerRefs: [],
+        });
+        drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
+        batchStopReason = "user_stopped";
+        break;
+      }
+      userFormIntentId = intentId;
+      batchStopReason = "user_form_required";
+      break; // remaining calls are NOT dispatched
+    }
+
     // Track executed call + result
     executedCalls.push(toolCall);
     executedResults.push({
@@ -404,6 +439,7 @@ export async function processTurnToolBatch(args: {
     batchStopPayload,
     compactCommittedThisBatch,
     approvalId,
+    userFormIntentId,
     toolCallsExecuted,
     lastText,
   });

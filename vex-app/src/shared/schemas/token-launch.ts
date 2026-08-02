@@ -206,3 +206,101 @@ export const tokenLaunchMyLaunchesResultSchema = z
   .object({ launches: z.array(launchedTokenDtoSchema) })
   .strict();
 export type TokenLaunchMyLaunchesResult = z.infer<typeof tokenLaunchMyLaunchesResultSchema>;
+
+// ── getAwaiting (§C3b — the form the AGENT asked for) ───────────────────────
+
+/**
+ * "Is a launch form waiting for this session?"
+ *
+ * READ-ONLY and session-scoped. This is how the desktop learns WHAT to prefill
+ * after the push event tells it THAT something is waiting: the event carries
+ * ids only, and the row is the source of truth for the draft.
+ *
+ * Session scope is not cosmetic. `sessionId` is not ambient in main, and the
+ * repo's read is session-predicated, so another session's awaiting form MISSES
+ * even when its id is known.
+ */
+export const tokenLaunchGetAwaitingInputSchema = z
+  .object({ sessionId: z.string().uuid() })
+  .strict();
+export type TokenLaunchGetAwaitingInput = z.infer<typeof tokenLaunchGetAwaitingInputSchema>;
+
+/**
+ * The agent's DRAFT, as the dialog should show it.
+ *
+ * WHAT IS NOT HERE IS THE POINT. No fee, no `msg.value`, no gas, no wallet
+ * address, no consent record — this describes the TOKEN the agent proposed and
+ * nothing that becomes a spend. The money is still derived main-side by
+ * `preview` and re-derived on `submit`; this DTO cannot short-circuit either.
+ *
+ * `prebuy` is a plain decimal ETH string in the SAME shape the form field takes,
+ * converted main-side from the row's raw wei + decimals. The renderer never does
+ * that conversion (rule 90: a decimals slip in the UI is a thousandfold error),
+ * and it never sees the raw amount it might be tempted to.
+ */
+export const awaitingLaunchFormDtoSchema = z
+  .object({
+    intentId: opaqueIdSchema,
+    /**
+     * Always `agent_requested_form` today — a user-origin launch never sits in
+     * `awaiting_user_form`. Carried so the dialog can state WHO asked, and so a
+     * future origin cannot silently render as an agent request.
+     */
+    origin: z.literal("agent_requested_form"),
+    name: z.string(),
+    symbol: z.string(),
+    description: z.string(),
+    links: z.array(z.string()),
+    imageId: opaqueIdSchema,
+    prebuy: z.string().regex(/^\d+(\.\d+)?$/, "must be a plain decimal amount of ETH"),
+    /** When the form window lapses. After this the agent is resumed as expired. */
+    expiresAt: z.string(),
+    createdAt: z.string(),
+  })
+  .strict();
+export type AwaitingLaunchFormDto = z.infer<typeof awaitingLaunchFormDtoSchema>;
+
+/**
+ * `null` — not an error — when nothing is waiting. "No form is open" is the
+ * ORDINARY state of a session, and dressing it as a failure would make the
+ * renderer's own idle poll/refetch look like an outage.
+ *
+ * Exactly ONE form is returned even though the repo read can hand back several:
+ * the dialog is a single modal, and the newest request is the one the user was
+ * just asked about. The older rows stay live and surface as the newest in turn.
+ */
+export const tokenLaunchGetAwaitingResultSchema = z
+  .object({ awaiting: awaitingLaunchFormDtoSchema.nullable() })
+  .strict();
+export type TokenLaunchGetAwaitingResult = z.infer<typeof tokenLaunchGetAwaitingResultSchema>;
+
+// ── the push event (main → renderer) ────────────────────────────────────────
+
+/** Literal kept in sync with the engine `LAUNCH_FORM_EVENT_TYPE`. */
+export const LAUNCH_FORM_EVENT_TYPE = "engine.launch.form" as const;
+
+export const launchFormEventKindSchema = z.enum(["requested"]);
+export type LaunchFormEventKind = z.infer<typeof launchFormEventKindSchema>;
+
+/**
+ * Renderer-facing launch-form event.
+ *
+ * Mirrors the engine's `LaunchFormEvent`
+ * (`src/vex-agent/engine/runtime/launch-form-bus.ts`), emitted only AFTER the
+ * `awaiting_user_form` insert has COMMITTED. The renderer treats it purely as an
+ * invalidation signal — it reconstructs no draft from the payload and instead
+ * re-reads `tokenLaunch.getAwaiting`, with the DB as source of truth.
+ *
+ * Bounded to ids, an enum and a timestamp: no token name, symbol, description or
+ * amount rides this event.
+ */
+export const launchFormEventSchema = z
+  .object({
+    type: z.literal(LAUNCH_FORM_EVENT_TYPE),
+    sessionId: z.string().uuid(),
+    intentId: opaqueIdSchema,
+    kind: launchFormEventKindSchema,
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type LaunchFormEvent = z.infer<typeof launchFormEventSchema>;

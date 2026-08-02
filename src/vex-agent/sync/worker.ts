@@ -132,6 +132,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
         result = { ...launchResult };
         rowsAffected = launchResult.repaired + launchResult.failed;
+      } else if (syncType === "launch_form_expiry") {
+        const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
+        const expiryResult = await expireOverdueLaunchForms();
+        result = { ...expiryResult };
+        rowsAffected = expiryResult.expired;
       } else {
         result = { skipped: true, reason: `Unknown sync type: ${syncType}` };
         logger.warn("sync.worker.unknown_type", { syncType, runCount: runs.length });
@@ -208,6 +213,10 @@ export async function processNextRun(): Promise<boolean> {
       const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
       const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
       await syncRepo.completeRun(run.id, { ...launchResult }, launchResult.repaired + launchResult.failed);
+    } else if (job.syncType === "launch_form_expiry") {
+      const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
+      const expiryResult = await expireOverdueLaunchForms();
+      await syncRepo.completeRun(run.id, { ...expiryResult }, expiryResult.expired);
     } else {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }

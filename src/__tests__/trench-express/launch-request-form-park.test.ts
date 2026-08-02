@@ -92,7 +92,7 @@ beforeEach(() => {
   order = [];
 });
 
-describe("with a host tool-call id, the form path DRAFTS and PARKS", () => {
+describe("with a host tool-call id, the form path DRAFTS and goes PENDING", () => {
   it("drafts the intent at awaiting_user_form carrying the tool-call id", async () => {
     const result = await trenchLaunchRequestFormHandler(PARAMS, context());
     expect(result.success).toBe(true);
@@ -108,33 +108,45 @@ describe("with a host tool-call id, the form path DRAFTS and PARKS", () => {
     });
   });
 
-  it("parks the run AFTER the row exists, on the same tool call", async () => {
-    await trenchLaunchRequestFormHandler(PARAMS, context());
-    expect(order).toEqual(["create", "park"]);
-    expect(parked[0]).toEqual({
-      sessionId: "sess-1",
-      missionRunId: "run-1",
-      toolCallId: TOOL_CALL_ID,
-    });
+  it("returns pendingUserForm naming the drafted row — the batch stop's signal", async () => {
+    const result = await trenchLaunchRequestFormHandler(PARAMS, context());
+    // The turn loop reads THIS to stop the batch without recording a result.
+    // A different id here would park the turn on a row the resume never answers.
+    expect(result.pendingUserForm).toEqual({ intentId: created[0]?.intentId });
   });
 
-  it("a chat session parks nothing but still drafts and answers", async () => {
+  /**
+   * The handler makes the wait DURABLE and stops there.
+   *
+   * Parking here would park a run the turn loop is still driving, and emitting
+   * here would push a dialog before the operator-stop gate has decided whether
+   * this form may be shown at all. Both now belong to the batch's single
+   * transaction (`turn-loop-tool-batch/user-form-stop.ts`), pinned by
+   * `engine/core/turn-loop/user-form-stop.test.ts`.
+   */
+  it("does NOT park the run and does NOT push the dialog itself", async () => {
+    const { launchFormBus } = await import(
+      "@vex-agent/engine/runtime/launch-form-bus.js"
+    );
+    launchFormBus.clear();
+    const events: unknown[] = [];
+    const off = launchFormBus.subscribe((event) => events.push(event));
+
+    await trenchLaunchRequestFormHandler(PARAMS, context());
+    off();
+
+    expect(order).toEqual(["create"]);
+    expect(parked).toHaveLength(0);
+    expect(events).toHaveLength(0);
+  });
+
+  it("a chat session drafts the same way — the loop decides what parking means", async () => {
     const result = await trenchLaunchRequestFormHandler(
       PARAMS,
       context({ missionRunId: null }),
     );
-    expect(result.success).toBe(true);
-    expect(parked[0]).toMatchObject({ missionRunId: null });
-  });
-
-  it("tells the model the form is open and that NOTHING happened yet", async () => {
-    const result = await trenchLaunchRequestFormHandler(PARAMS, context());
-    const output = String(result.output);
-    expect(output).toContain("NOTHING has been created");
-    expect(output).toContain("You will receive the outcome as the result of this call");
-    expect(output).toContain("awaiting_user_form");
-    // The renderer signal that opens the dialog rides on the tool result.
-    expect(output).toContain("_openLaunchDialog");
+    expect(result.pendingUserForm).toBeDefined();
+    expect(created[0]).toMatchObject({ missionRunId: null });
   });
 });
 
@@ -145,9 +157,9 @@ describe("without a host tool-call id it still REFUSES", () => {
       context({ toolCallId: undefined }),
     );
     expect(result.success).toBe(false);
+    expect(result.pendingUserForm).toBeUndefined();
     expect(String(result.output)).toContain("could not identify the tool call");
     expect(created).toHaveLength(0);
-    expect(parked).toHaveLength(0);
   });
 
   it("treats a blank id as absent — a whitespace call id answers nothing", async () => {

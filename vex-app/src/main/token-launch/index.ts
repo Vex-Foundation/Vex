@@ -17,8 +17,14 @@
  * import changes.
  */
 
+import { formatEther } from "viem";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
-import type { LaunchedTokenDto, TokenLaunchPreviewResult } from "@shared/schemas/token-launch.js";
+import { getAwaitingForSession } from "@vex-agent/db/repos/token-launch-intents.js";
+import type {
+  AwaitingLaunchFormDto,
+  LaunchedTokenDto,
+  TokenLaunchPreviewResult,
+} from "@shared/schemas/token-launch.js";
 import type { TokenLaunchForm } from "@shared/schemas/token-launch.js";
 import {
   buildLaunchPlan,
@@ -141,4 +147,65 @@ export async function listMyLaunches(
     initialBuyRaw: row.initialBuyRaw,
     initialBuyDecimals: row.initialBuyRaw === null ? null : row.initialBuyDecimals,
   }));
+}
+
+/**
+ * The launch form an AGENT drafted and is now parked waiting on (§C3b).
+ *
+ * `null` — never a throw — when nothing is waiting. "No form is open" is the
+ * ordinary state of a session; the renderer asks this on every push signal and
+ * on every session switch, and an exception for the common case would turn an
+ * idle session into a visible error.
+ *
+ * THE NEWEST ROW WINS. The repo read orders by `created_at DESC` and the dialog
+ * is a single modal, so the form the user was most recently asked about is the
+ * one shown. Older rows stay live in `awaiting_user_form` and surface in turn as
+ * each newer one is answered — nothing is silently dropped.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT RETURN: the wallet address, the consent
+ * record, any fee, `msg.value` or gas. This is the TOKEN the agent proposed and
+ * nothing more. The money is still derived by `previewLaunch` and re-derived by
+ * `submitLaunch`, so no field here can shorten the path to a signature.
+ */
+export async function getAwaitingLaunchForm(
+  sessionId: string,
+): Promise<AwaitingLaunchFormDto | null> {
+  const rows = await getAwaitingForSession(sessionId);
+  for (const row of rows) {
+    // Two defensive skips, both of which would produce an unusable dialog:
+    // a non-agent origin has no parked turn to answer, and a launch without an
+    // image cannot be deployed at all (product rule, enforced at the writer).
+    if (row.origin !== "agent_requested_form") continue;
+    if (row.imageId === null) continue;
+    return {
+      intentId: row.intentId,
+      origin: "agent_requested_form",
+      name: row.name,
+      symbol: row.symbol,
+      description: row.description ?? "",
+      links: readLinkUrls(row.links),
+      imageId: row.imageId,
+      // Raw wei + its decimals → the plain decimal ETH string the form field
+      // takes. Converted HERE, once, by the same library that parsed it: the
+      // renderer never does a decimals conversion (rule 90), and it never sees
+      // the raw amount it might be tempted to convert itself.
+      prebuy: formatEther(BigInt(row.prebuyRaw ?? "0")),
+      expiresAt: row.expiresAt,
+      createdAt: row.createdAt,
+    };
+  }
+  return null;
+}
+
+/**
+ * Read the link list out of the row's JSONB blob.
+ *
+ * The column is `Record<string, unknown>` by type and `{ urls: [...] }` by
+ * convention, so every element is checked rather than asserted — a malformed
+ * blob yields no links instead of putting a non-string into an `href`.
+ */
+function readLinkUrls(links: Record<string, unknown>): string[] {
+  const urls = links.urls;
+  if (!Array.isArray(urls)) return [];
+  return urls.filter((url): url is string => typeof url === "string");
 }
