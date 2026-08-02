@@ -9,9 +9,9 @@ import { TRENCH_CHAINS } from "../../trench/discovery-text.js";
 export const TRENCH_MY_LAUNCHES_DISCOVERY = {
   "trench.my_launches": {
     embeddingText: embeddingText(
-      `List the tokens you launched yourself on the Trench Express launchpad on Robinhood Chain — Vex's own durable record of every token it created for you. ` +
+      `List the tokens you launched on the Trench Express launchpad on Robinhood Chain — Vex's own durable record of what it created for you. ` +
       `Use when the user asks what they have launched, wants to revisit a coin they created earlier, or needs the contract address or creation transaction of one of their own launches. ` +
-      `Each entry carries the token address, its name and symbol, the transaction that created it, when it launched, and the size of any initial buy made in the same transaction. ` +
+      `Each entry carries the token address, name and symbol, the creating transaction, the launch time, and any initial buy made in the same transaction. ` +
       `Example queries: what tokens have I launched, show my trench launches, my created coins, the address of the token I made, my launch history.`,
     ),
     aliases: ["my launches", "tokens I launched", "my created tokens", "launch history", "coins I made"],

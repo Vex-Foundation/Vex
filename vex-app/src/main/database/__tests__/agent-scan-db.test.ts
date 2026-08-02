@@ -209,7 +209,7 @@ describe("getAgentScan row selection", () => {
     const { sql } = pageCall();
     expect(sql).toContain("aa.event_role = 'swap'");
     expect(sql).toContain("aa.event_role = 'bridge_fill_expected'");
-    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap')");
+    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch')");
   });
 
   it("reads agent_activity ONLY — no legacy union arm", async () => {

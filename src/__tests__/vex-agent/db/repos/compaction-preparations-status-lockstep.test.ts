@@ -36,7 +36,13 @@ import {
 
 const MIGRATIONS_DIR = join(getPackageRoot(), "src", "vex-agent", "db", "migrations");
 
-/** Every migration in application order, comments stripped. */
+/**
+ * Every migration in application order, comments stripped, scoped to
+ * statements that mention `compaction_preparations`. The scope matters:
+ * other tables also constrain columns named `status` (migration 062's
+ * `token_launch_intents` was the first to land after 058 in file order), and
+ * an unscoped last-CHECK-wins scan would read a different table's vocabulary.
+ */
 const MIGRATION_SQL = readdirSync(MIGRATIONS_DIR)
   .filter((name) => name.endsWith(".sql"))
   .sort()
@@ -44,7 +50,10 @@ const MIGRATION_SQL = readdirSync(MIGRATIONS_DIR)
   .join("\n")
   .split("\n")
   .filter((line) => !line.trimStart().startsWith("--"))
-  .join("\n");
+  .join("\n")
+  .split(";")
+  .filter((statement) => statement.includes("compaction_preparations"))
+  .join(";");
 
 const CREATE_SQL = readFileSync(
   join(MIGRATIONS_DIR, "058_compaction_preparations.sql"),

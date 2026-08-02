@@ -17,7 +17,7 @@ export const TRENCH_IMAGES_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "trench",
     lifecycle: "active",
     description:
-      "List the images the user has pre-uploaded to their Trench image locker, and pick one for a token launch. A Trench launch REQUIRES an image, and you cannot create or upload one — only the user can, from the TRENCH PHOTOS card on the right side of the app. CHECK THIS WHILE PLANNING a launch, never at the moment of launching: if the locker is empty, stop and tell the user to upload an image on the right side before the mission can proceed. Returns metadata only (image id, the user's label, byte size, format, dimensions) — never the picture itself. Pass the chosen imageId to the launch tool.",
+      "List the images the user has pre-uploaded to their Trench image locker, and pick one for a token launch. A Trench launch REQUIRES an image, and you cannot create or upload one — only the user can, from the TRENCH PHOTOS card on the right side of the app. CHECK THIS WHILE PLANNING a launch, never at the moment of launching: if the locker is empty, stop and tell the user to upload an image on the right side before the mission can proceed. Returns metadata only (image id, the user's label, byte size, format, dimensions) — never the picture itself. Pass the chosen imageId to the launch tool. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [

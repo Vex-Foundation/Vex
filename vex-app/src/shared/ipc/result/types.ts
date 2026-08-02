@@ -89,6 +89,18 @@ export type VexDomain =
    */
   | "images"
   /**
+   * Trench Express TOKEN LAUNCH (contracts C0/C5). Covers the preview, submit
+   * and cancel handlers behind the launch dialog.
+   *
+   * It is its own domain rather than a `trench.*` grab-bag because everything
+   * under it is SPEND-CONSENT machinery: what the user is authorizing, whether
+   * that authorization is still valid, and the mission ceilings that bound an
+   * unattended launch. Those refusals are user-actionable and mean something
+   * specific; collapsing them into `internal.*` would tell a user "something
+   * broke" when the truth is "the price moved, look again".
+   */
+  | "tokenLaunch"
+  /**
    * Used by the read-only `sessions.getModel` handler (global runtime
    * model resolution). Existing sessions handlers
    * (`vex:sessions:create|list|get|setPinned|delete`) deliberately keep
@@ -275,6 +287,35 @@ export type VexErrorCode =
   | "images.not_found"
   | "images.in_use"
   | "images.store_unavailable"
+  /**
+   * TOKEN LAUNCH refusals (C0/C5/C6b). Every one of these carries its NUMBERS
+   * in the message — a money refusal that does not say by how much is not
+   * actionable.
+   *
+   *  - `tokenLaunch.preview_stale`         — something the `previewId` anchored
+   *    has moved (the creation fee re-read at a fresh block, or any other bound
+   *    field). Deliberately BROADER than "fee drift": a fee-specific name would
+   *    let a different anchored value slip through under it. Retryable — the
+   *    user re-previews and sees the new figures. Carries both fee readings and
+   *    both anchor block numbers so the app can render a re-review state.
+   *
+   *  - `tokenLaunch.value_ceiling_exceeded` — an autonomous launch would cost
+   *    more than the mission's `maxLaunchValue`. Carries attempted vs allowed.
+   *    NOT retryable as-is: the amount is never clamped for the user.
+   *
+   *  - `tokenLaunch.launch_count_exceeded`  — the mission has already created as
+   *    many tokens as it was authorized to. Carries used vs allowed, and counts
+   *    launches still settling.
+   *
+   *  - `tokenLaunch.ceiling_not_set`        — the mission carries no launch
+   *    ceilings, so it may not launch unattended. This is an EXPLANATION, not a
+   *    bug: a mission that was never set up to create tokens cannot accidentally
+   *    create one. Absent is zero authority, not unlimited.
+   */
+  | "tokenLaunch.preview_stale"
+  | "tokenLaunch.value_ceiling_exceeded"
+  | "tokenLaunch.launch_count_exceeded"
+  | "tokenLaunch.ceiling_not_set"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

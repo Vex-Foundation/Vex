@@ -12,13 +12,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const updateStatus = vi.fn();
+const updateStatusIfNotTerminal = vi.fn();
 const claimRunLeaseAndFlipToRunning = vi.fn();
 const acquireSessionControlLock = vi.fn();
 const appendMessage = vi.fn();
 const emitToolResultAppended = vi.fn();
 const withTransaction = vi.fn();
 
-vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({ updateStatus }));
+vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({ updateStatus, updateStatusIfNotTerminal }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimRunLeaseAndFlipToRunning,
   acquireSessionControlLock,
@@ -50,12 +51,16 @@ beforeEach(() => {
 describe("parking", () => {
   it("parks the run on paused_user_form — never on paused_approval", async () => {
     await parkRunForUserForm(REF);
-    expect(updateStatus).toHaveBeenCalledWith("r1", "paused_user_form", "user_form_required");
-    expect(updateStatus).not.toHaveBeenCalledWith("r1", "paused_approval", expect.anything());
+    expect(updateStatusIfNotTerminal).toHaveBeenCalledWith("r1", "paused_user_form", "user_form_required");
+    expect(updateStatusIfNotTerminal).not.toHaveBeenCalledWith("r1", "paused_approval", expect.anything());
+    // Guarded write only: a terminal user Stop must never be resurrected by a
+    // park (see mission-runs-unconditional-status-write.test.ts).
+    expect(updateStatus).not.toHaveBeenCalled();
   });
 
   it("parks nothing for a chat session — there is no run to park", async () => {
     await parkRunForUserForm({ ...REF, missionRunId: null });
+    expect(updateStatusIfNotTerminal).not.toHaveBeenCalled();
     expect(updateStatus).not.toHaveBeenCalled();
   });
 });

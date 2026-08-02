@@ -15,7 +15,7 @@ export const TRENCH_TOKENS_DISCOVERY = {
   "trench.tokens": {
     embeddingText: embeddingText(
       `Browse the Trench Express launchpad on Robinhood Chain — the coins minted on its bonding curve and the ones that have graduated into a pool. ` +
-      `Use this to explore or screen launches: what just launched, which are still on the curve versus graduated, or every launch from one creator wallet. ` +
+      `Use this when exploring or screening launches: what just launched, which are still on the curve versus graduated, or every launch from one creator wallet. ` +
       `Each row carries name, symbol, creator, curve stage, a display-grade price, links, and an image. ` +
       `Filter by stage, creator, the rug flag, or how close a coin is to graduating, and sort by newest or price. ` +
       `Example queries: new launches on trench, trench coins still on the bonding curve, trench coins close to graduating, launches by this creator.`,

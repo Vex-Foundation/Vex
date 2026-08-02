@@ -85,6 +85,12 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * and no separate prebuy role, because the prebuy happens in the same
  * transaction and rides this row's first-leg columns. It is likewise barred from
  * the Option-C second-leg family: a create-with-prebuy is one-in one-out.
+ * `trench_fee` is migration 063 — Vex's 25 bps integrator fee on Trench Express,
+ * a SEPARATE native transfer to the treasury that runs after the trade or launch
+ * confirms. `bridge_fee` could not be reused: the kind↔role binding admits it
+ * only on the `kind='bridge'` arm. It is admitted on the `swap` AND `launch`
+ * arms because a trade fee rides a `swap` execution and a launch fee rides a
+ * `launch` one, and they are the same kind of leg.
  */
 export type AgentActivityEventRole =
   | "allowance_reset"
@@ -110,7 +116,8 @@ export type AgentActivityEventRole =
   | "yield_lp"
   | "yield_sy"
   | "yield_claim"
-  | "token_launch";
+  | "token_launch"
+  | "trench_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

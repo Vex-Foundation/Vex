@@ -46,6 +46,12 @@ vi.mock("../book/SessionRuntimeCard.js", () => ({
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="card-session" />,
 }));
+// The Trench Photos locker card talks to react-query (`useLockerImages`);
+// stubbed like every other card — this suite owns the router and the chrome,
+// not the locker's data. Its own behavior lives in ImageLockerCard.test.tsx.
+vi.mock("../book/ImageLockerCard.js", () => ({
+  ImageLockerCard: () => <div data-testid="card-images" />,
+}));
 // The rail reads the session detail so it can hand `permission` down to the
 // RUNTIME & COST block's apply control. Stubbed here — this suite owns the
 // router and the chrome, not the session query.
@@ -76,6 +82,7 @@ const CARD_ORDER = [
   "card-activity",
   "card-runtime",
   "card-session",
+  "card-images",
 ] as const;
 
 beforeEach(() => {

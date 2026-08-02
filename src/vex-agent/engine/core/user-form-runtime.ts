@@ -79,11 +79,17 @@ export type UserFormClaimOutcome =
  * Deliberately NOT `paused_approval`, and deliberately no approval row: nothing
  * about this path may produce an approval card. A chat session (no run) parks
  * nothing — the turn simply ends holding the pending call, and the resume below
- * appends its result.
+ * appends its result. Guarded so a user Stop that landed while the tool was
+ * drafting the intent is never overwritten — a terminal run stays terminal and
+ * the park is silently moot (the drafted intent row simply never gets claimed).
  */
 export async function parkRunForUserForm(ref: UserFormContinuationRef): Promise<void> {
   if (ref.missionRunId === null) return;
-  await missionRunsRepo.updateStatus(ref.missionRunId, "paused_user_form", "user_form_required");
+  await missionRunsRepo.updateStatusIfNotTerminal(
+    ref.missionRunId,
+    "paused_user_form",
+    "user_form_required",
+  );
 }
 
 /**

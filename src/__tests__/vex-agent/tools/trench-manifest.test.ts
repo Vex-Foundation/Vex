@@ -3,17 +3,29 @@ import { TRENCH_TOOLS } from "../../../vex-agent/tools/protocols/trench/manifest
 import { TRENCH_HANDLERS } from "../../../vex-agent/tools/protocols/trench/handlers.js";
 
 describe("trench manifest", () => {
-  const READ_ONLY_IDS = ["trench.launch_preview", "trench.search", "trench.tokens", "trench.trade_quote", "trench.trades"];
+  /** Pure reads — no writes of any kind. */
+  const READ_ONLY_IDS = [
+    "trench.images",
+    "trench.launch_preview",
+    "trench.my_launches",
+    "trench.search",
+    "trench.tokens",
+    "trench.trade_quote",
+    "trench.trades",
+  ];
 
-  it("registers the P1 read tools plus the P2 money-path tools", () => {
-    expect(TRENCH_TOOLS.map((t) => t.toolId).sort()).toEqual([
-      "trench.launch_preview",
-      "trench.search",
-      "trench.tokens",
-      "trench.trade_execute",
-      "trench.trade_quote",
-      "trench.trades",
-    ]);
+  /** The only two tools that SIGN. */
+  const BROADCAST_IDS = ["trench.launch_execute", "trench.trade_execute"];
+
+  /** Writes local state but never spends: drafts the launch intent and parks
+   *  the turn. Mutating so the taxonomy stays honest, `local_write` so the
+   *  approval gate correctly does NOT raise a card for opening a form. */
+  const LOCAL_WRITE_IDS = ["trench.launch_request_form"];
+
+  it("registers the whole namespace: reads, the money path, and the launch flow", () => {
+    expect(TRENCH_TOOLS.map((t) => t.toolId).sort()).toEqual(
+      [...READ_ONLY_IDS, ...LOCAL_WRITE_IDS, ...BROADCAST_IDS].sort(),
+    );
   });
 
   it("every tool is on the trench namespace and active", () => {
@@ -23,13 +35,17 @@ describe("trench manifest", () => {
     }
   });
 
-  it("read tools are read-only; trade_execute is a user-wallet broadcast", () => {
+  it("read tools are read-only; only the two execute tools broadcast", () => {
     for (const t of TRENCH_TOOLS) {
-      if (t.toolId === "trench.trade_execute") {
+      if (BROADCAST_IDS.includes(t.toolId)) {
         expect(t.mutating, `${t.toolId} mutating`).toBe(true);
         expect(t.actionKind, `${t.toolId} actionKind`).toBe("user_wallet_broadcast");
+      } else if (LOCAL_WRITE_IDS.includes(t.toolId)) {
+        // Writes local state, never spends — and must NOT be a broadcast kind.
+        expect(t.actionKind, `${t.toolId} actionKind`).toBe("local_write");
       } else {
         expect(READ_ONLY_IDS).toContain(t.toolId);
+        // NOTHING outside BROADCAST_IDS may spend. That is the invariant.
         expect(t.mutating, `${t.toolId} mutating`).toBe(false);
         expect(t.actionKind, `${t.toolId} actionKind`).toBe("read");
       }

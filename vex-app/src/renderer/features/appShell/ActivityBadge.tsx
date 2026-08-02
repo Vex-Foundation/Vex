@@ -203,6 +203,9 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   yield_claim: "CLAIM",
   // A launch is its own kind, so the role segment would only repeat it.
   token_launch: null,
+  // Reads the same as the bridge fee leg — it IS the same kind of leg, on a
+  // different venue.
+  trench_fee: "FEE",
 };
 
 /**

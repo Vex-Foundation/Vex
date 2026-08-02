@@ -149,8 +149,11 @@ describe("createWith — the entry state is explicit per path", () => {
       toolCallId: "call_abc123", missionRunId: "run-1", expiresAt: EXPIRES_AT,
     });
     expect(created.toolCallId).toBe("call_abc123");
-    expect(paramsOf(client)[16]).toBe("call_abc123");
-    expect(paramsOf(client)[17]).toBe("run-1");
+    // SQL `$16`/`$17` are 1-indexed placeholders; the bound array is 0-indexed,
+    // so tool_call_id is [15] and mission_run_id is [16]. `authorized_at` is a
+    // CASE expression, not a parameter, so it consumes no slot.
+    expect(paramsOf(client)[15]).toBe("call_abc123");
+    expect(paramsOf(client)[16]).toBe("run-1");
   });
 
   it("Path 2 enters at authorized carrying its C0 record", async () => {

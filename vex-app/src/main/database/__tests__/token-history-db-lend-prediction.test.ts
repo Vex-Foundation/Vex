@@ -153,11 +153,11 @@ describe("getTokenHistory — agent_activity lend/prediction (W5, migration 049)
     };
   }
 
-  it("matches lend/prediction rows via kind IN ('lend','prediction') sharing the swap arm's chain_id+token identity match", async () => {
+  it("matches lend/prediction/launch rows via kind IN ('lend','prediction','launch') sharing the swap arm's chain_id+token identity match", async () => {
     scriptTransaction({ page: [] });
     await getTokenHistory({ chainId: SOLANA_CHAIN_ID, tokenAddress: SOL_TOKEN, cursor: null });
     const { sql } = pageQueryCall();
-    expect(sql).toContain("aa.kind IN ('lend', 'prediction')");
+    expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'launch')");
   });
 
   it("maps a confirmed lend row to a kind:'swap' entry with productType 'lend'", async () => {

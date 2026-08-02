@@ -101,6 +101,12 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // exactly "definitely not attempted", and leaving it pending would also pin
   // the session's bridge in-flight slot open.
   "bridge_fee",
+  // `trench_fee` (migration 063) is the SAME kind of leg on Trench Express —
+  // the final Vex-signed leg, run only after the trade or launch confirmed. A
+  // fee leg planned but never signed (the trade reverted, or the process died
+  // between intent creation and staging) is definitively not-attempted, so it
+  // must stay reapable here rather than sit pending forever.
+  "trench_fee",
   "allowance",
   "allowance_reset",
   "lend_deposit",

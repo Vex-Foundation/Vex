@@ -414,11 +414,11 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     groupId: "evm-trading",
     groupLabel: "EVM Trading",
     summary:
-      "Trade and research Trench Express bonding-curve tokens on Robinhood Chain (4663): buy a token with ETH or sell it back for ETH against the curve (quote first, then execute), browse bonding-curve and graduated tokens, search by name or symbol, read a token's recent trade tape, and dry-run a token launch to preview the predicted address, creation fee, and gas cost. A graduated token has left the bonding curve for a WETH-paired Uniswap v4 pool on Robinhood Chain — its poolId and pool currencies are surfaced on the row. ETH curve only — no token/VEX pair exists on-chain today.",
+      "Trade, research, and launch Trench Express bonding-curve tokens on Robinhood Chain (4663): buy a token with ETH or sell it back for ETH against the curve (quote first, then execute), browse bonding-curve and graduated tokens, search by name or symbol, read a token's recent trade tape, dry-run a launch to preview the predicted address, creation fee, and gas cost — or launch a real token (user-filled form, or direct execution under mission autonomy) and review your own past launches. A graduated token has left the bonding curve for a WETH-paired DEX pool on Robinhood Chain — its poolId and pool currencies are surfaced on the row. ETH curve only — no token/VEX pair exists on-chain today.",
     whenToUse:
-      "Use to trade or vet Trench Express launchpad tokens: quote and then buy or sell a bonding-curve token, list what just launched or graduated, search for a named token, inspect its trade tape, or preview what launching a new token would cost. Trades spend real ETH and are approval-gated; real token launching is not available yet.",
+      "Use to trade, vet, or launch Trench Express launchpad tokens: quote and then buy or sell a bonding-curve token, list what just launched or graduated, search for a named token, inspect its trade tape, preview what launching a new token would cost, or actually launch one and review your past launches. Trades and launches spend real ETH and are approval- or autonomy-gated; a launch requires an image the user pre-staged in the app.",
     preferInstead:
-      "Use `kyberswap` or `uniswap` to trade tokens that already trade in a standard AMM pool, and `dexscreener` or `virtuals` for broader token research. A graduated Trench token trades in a WETH-paired Uniswap v4 pool on Robinhood Chain; where that pool is indexed, research it with `dexscreener`. Trench's own real token launches are not available yet.",
+      "Use `kyberswap` to trade tokens that already trade in a standard AMM pool, and `dexscreener` for broader pair research. A graduated Trench token trades in a WETH-paired DEX pool on Robinhood Chain; where that pool is indexed, research it with `dexscreener`. `virtuals` is a different launchpad (VIRTUAL-paired agent tokens) — Trench tokens never appear there.",
     exampleQueries: [
       'discover_tools(query="buy a trench bonding curve token with ETH", namespace="trench")',
       'discover_tools(query="new token launches on trench", namespace="trench")',
@@ -451,6 +451,20 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
         summary: "Read a Trench token's recent trade tape and dry-run a Trench token launch to preview address, fee, and gas cost.",
         toolPrefixes: ["trench.trades", "trench.launch_preview"],
         hints: ["trench trade tape", "recent trench trades", "trench launch preview", "create trench token cost", "dry run trench launch"],
+      },
+      {
+        label: "Launching a token on Trench",
+        summary:
+          "Create a token on the Trench bonding curve, and review the ones already launched. A launch REQUIRES an image the user pre-staged in the app; the agent cannot supply one.",
+        toolPrefixes: ["trench.launch_request_form", "trench.launch_execute", "trench.my_launches", "trench.images"],
+        hints: [
+          "launch a token on trench",
+          "create a memecoin",
+          "deploy a token",
+          "my launched tokens",
+          "trench launch images",
+          "pick a launch image",
+        ],
       },
     ],
   },

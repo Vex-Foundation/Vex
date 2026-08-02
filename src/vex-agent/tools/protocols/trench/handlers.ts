@@ -16,6 +16,15 @@ import { trenchTradeQuoteHandler } from "./handlers/trade-quote.js";
 import { trenchTradeExecuteHandler } from "./handlers/trade-execute.js";
 import { trenchImagesHandler } from "./handlers/images.js";
 import { trenchMyLaunchesHandler } from "./handlers/my-launches.js";
+import { trenchLaunchRequestFormHandler } from "./handlers/launch/request-form.js";
+import { trenchLaunchExecuteHandler } from "./handlers/launch/execute.js";
+import type {
+  LaunchExecuteDeps,
+  TrenchFeeLegPlan,
+  TrenchFeeLegPlanRequest,
+} from "./handlers/launch/fee-seam.js";
+import { planTrenchFeeLeg, runTrenchFeeLeg } from "./fee/index.js";
+import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 // NOTE (2026-08-02): trench deliberately has NO per-protocol settlement decoder.
 // The owner decree of 2026-07-30 retired per-protocol settlement verification —
 // `sync/settlement-decoders.ts` was deleted and pending rows are now resolved by
@@ -24,6 +33,47 @@ import { trenchMyLaunchesHandler } from "./handlers/my-launches.js";
 // from the local evm-chains registry. An ambiguous trench row IS repairable
 // today; a repaired row keeps `executed_*` NULL and Agent Scan labels the quoted
 // amount "estimated". Do not reintroduce a decoder here.
+
+/**
+ * The Vex fee wiring for the launch path (plan §C7), injected here rather than
+ * imported inside the handler so the money path stays testable with a no-op.
+ *
+ * The two lanes converged on the same contract with different spellings — the
+ * launch handler asks in `{ basis, baseWei, kind }` terms, the fee module speaks
+ * `{ base: <discriminated>, parentKind }` — so this adapter is a RENAME plus one
+ * supplied constant, and nothing else: no arithmetic, no defaulting of a money
+ * value, no reinterpretation. The one thing it adds is `TRENCH_CHAIN_ID`, which
+ * the fee runner needs and the launch seam does not carry — that is the venue's
+ * fixed identity (Trench is single-chain), not a value inferred from the
+ * request. If this adapter ever has to compute an AMOUNT, that is the signal the
+ * two contracts have genuinely diverged and one of them must move.
+ *
+ * The ORDER matters and is the handler's job, not this file's: the fee is
+ * PLANNED before the mission spend ceiling is checked (the ceiling must see
+ * `msg.value + feeWei`), and the leg is RUN only after the launch receipt is
+ * confirmed.
+ */
+const LAUNCH_FEE_DEPS: LaunchExecuteDeps = {
+  planFeeLeg: (request: TrenchFeeLegPlanRequest): TrenchFeeLegPlan | null =>
+    planTrenchFeeLeg({
+      base: { basis: "launch_msg_value", msgValueWei: request.baseWei },
+      parentKind: "launch",
+      chainId: request.chainId,
+      nativeAddress: request.nativeAddress,
+      walletAddress: request.walletAddress,
+      sessionId: request.sessionId,
+      usdVexFeeEst: request.usdVexFeeEst,
+    }) as TrenchFeeLegPlan | null,
+  runFeeLeg: (input) =>
+    runTrenchFeeLeg({
+      plan: input.plan as Parameters<typeof runTrenchFeeLeg>[0]["plan"],
+      feeRowId: input.feeRowId,
+      chainId: TRENCH_CHAIN_ID,
+      publicClient: input.publicClient as Parameters<typeof runTrenchFeeLeg>[0]["publicClient"],
+      walletClient: input.walletClient as Parameters<typeof runTrenchFeeLeg>[0]["walletClient"],
+      priorLeg: input.priorLeg as Parameters<typeof runTrenchFeeLeg>[0]["priorLeg"],
+    }),
+} satisfies LaunchExecuteDeps;
 
 export const TRENCH_HANDLERS: Record<string, ProtocolHandler> = {
   "trench.tokens": (p) => trenchTokensHandler(p),
@@ -34,4 +84,6 @@ export const TRENCH_HANDLERS: Record<string, ProtocolHandler> = {
   "trench.trade_execute": (p, context) => trenchTradeExecuteHandler(p, context),
   "trench.images": (p) => trenchImagesHandler(p),
   "trench.my_launches": (p, context) => trenchMyLaunchesHandler(p, context),
+  "trench.launch_request_form": (p, context) => trenchLaunchRequestFormHandler(p, context),
+  "trench.launch_execute": (p, context) => trenchLaunchExecuteHandler(p, context, LAUNCH_FEE_DEPS),
 };

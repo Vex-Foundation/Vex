@@ -102,7 +102,9 @@ export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
  * The six `yield_*` roles were MISSING here from migration 053 — the same found
  * defect as the `yield` kind above, fixed in the same change. `token_launch` is
  * migration 062: ONE role for a whole Trench launch, because the create and its
- * prebuy are a single transaction.
+ * prebuy are a single transaction. `trench_fee` is migration 063: Vex's 25 bps
+ * integrator fee on Trench Express, a separate treasury transfer that runs after
+ * the trade or launch confirms, admitted on the `swap` and `launch` arms.
  */
 export const AGENT_ACTIVITY_EVENT_ROLES = [
   "allowance_reset",
@@ -129,6 +131,7 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   "yield_sy",
   "yield_claim",
   "token_launch",
+  "trench_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 
