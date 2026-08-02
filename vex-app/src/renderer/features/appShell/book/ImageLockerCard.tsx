@@ -25,6 +25,7 @@
 
 import { useState, type JSX } from "react";
 import type { VexError } from "@shared/ipc/result.js";
+import type { ImageOptimization } from "@shared/schemas/images.js";
 import { Add01Icon, VexIcon } from "../../../components/icons/index.js";
 import {
   useDeleteLockerImage,
@@ -38,9 +39,9 @@ export function ImageLockerCard(): JSX.Element {
   const query = useLockerImages();
   const upload = useUploadLockerImage();
   const remove = useDeleteLockerImage();
-  // The last refusal the user should still be looking at. Cleared whenever a
-  // new attempt starts, so a stale "that file was too large" never sits under
-  // a successful upload.
+  // The last thing the user should still be looking at: a refusal, or the
+  // report that their picture was optimized. Cleared whenever a new attempt
+  // starts, so a stale message never sits under a fresh upload.
   const [notice, setNotice] = useState<string | null>(null);
 
   const result = query.data;
@@ -51,7 +52,15 @@ export function ImageLockerCard(): JSX.Element {
     setNotice(null);
     upload.mutate(undefined, {
       onSuccess: (outcome) => {
-        if (!outcome.ok) setNotice(uploadNotice(outcome.error));
+        if (!outcome.ok) {
+          setNotice(uploadNotice(outcome.error));
+          return;
+        }
+        // An oversized picture is now OPTIMIZED rather than refused. Say so —
+        // silently altering a user's image and showing nothing would leave them
+        // to discover the change from a thumbnail that looks softer than the
+        // file they picked.
+        setNotice(optimizationNotice(outcome.data.optimization));
       },
     });
   }
@@ -125,4 +134,24 @@ export function ImageLockerCard(): JSX.Element {
  */
 function uploadNotice(error: VexError): string | null {
   return error.code === "internal.cancelled" ? null : error.message;
+}
+
+/**
+ * The optimization report, in the same place a refusal would appear.
+ *
+ * Absent optimization means the file was stored EXACTLY as picked, and that
+ * deserves no message at all — an upload that changed nothing is just an
+ * upload. Sizes are shown as measured, so the user can see what was traded.
+ */
+function optimizationNotice(optimization: ImageOptimization | undefined): string | null {
+  if (optimization === undefined) return null;
+  return (
+    `Optimized: ${formatKb(optimization.originalByteLength)} → ` +
+    `${formatKb(optimization.storedByteLength)}. The image is stored inside the launch ` +
+    `transaction, so its size is gas you pay.`
+  );
+}
+
+function formatKb(bytes: number): string {
+  return `${(bytes / 1000).toFixed(1)} KB`;
 }

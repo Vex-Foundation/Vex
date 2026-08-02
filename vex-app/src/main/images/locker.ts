@@ -15,6 +15,11 @@
  * fact drift, and the one that drifts here would be the digest an on-chain
  * authorization was signed against.
  *
+ * OVERSIZED IMAGES ARE OPTIMIZED, NOT REFUSED (`./downscale.ts`). The 20 KB cap
+ * stays — it is gas on an irreversible transaction, not a storage limit — so an
+ * over-budget pick is re-encoded down to fit before anything else looks at it.
+ * An image that already fits is stored byte-identical.
+ *
  * DELETION ORDER IS LOAD-BEARING (Lane A's correction): the repo owns the
  * whole rule in ONE transaction, because a check-then-delete in main has a
  * TOCTOU window in which a launch intent could be created between the check
@@ -52,9 +57,26 @@ import {
   validateLockerImageBytes,
   type LockerImageRejection,
 } from "./image-validation.js";
+import {
+  downscaleLockerImage,
+  DOWNSCALE_MAX_SOURCE_BYTES,
+} from "./downscale.js";
+
+/**
+ * What the ladder did, when it did something. ABSENT on an untouched image, so
+ * "we changed your file" is never implied about bytes we stored verbatim.
+ */
+export interface LockerImageOptimization {
+  readonly originalByteLength: number;
+  readonly storedByteLength: number;
+}
 
 export type StoreImageOutcome =
-  | { readonly ok: true; readonly image: LockerImage }
+  | {
+      readonly ok: true;
+      readonly image: LockerImage;
+      readonly optimization?: LockerImageOptimization;
+    }
   | { readonly ok: false; readonly rejection: LockerImageRejection };
 
 /**
@@ -71,14 +93,43 @@ export type StoreImageOutcome =
  */
 export async function storeLockerImageFromFile(sourcePath: string): Promise<StoreImageOutcome> {
   const size = (await stat(sourcePath)).size;
-  if (size > LOCKER_IMAGE_MAX_BYTES) {
+  // The cap no longer bounds what we READ — an oversized file is now a
+  // candidate for optimization, not an immediate refusal — so a separate,
+  // much larger ceiling stops a multi-gigabyte pick from being pulled into
+  // memory. Refused from `stat`, before a single byte is read.
+  if (size > DOWNSCALE_MAX_SOURCE_BYTES) {
     return {
       ok: false,
       rejection: { kind: "too_large", byteLength: size, maxBytes: LOCKER_IMAGE_MAX_BYTES },
     };
   }
 
-  const bytes = new Uint8Array(await readFile(sourcePath));
+  const original = new Uint8Array(await readFile(sourcePath));
+
+  // NORMALIZE FIRST. Everything downstream — validation, the digest, the stored
+  // metadata — must describe the bytes that actually land on disk.
+  const downscaled = downscaleLockerImage(original);
+  if (downscaled.kind === "undecodable") {
+    return {
+      ok: false,
+      rejection: {
+        kind: "unsupported_format",
+        reason: "the file could not be decoded as an image",
+      },
+    };
+  }
+  if (downscaled.kind === "exhausted") {
+    return {
+      ok: false,
+      rejection: {
+        kind: "too_large",
+        byteLength: downscaled.smallestByteLength,
+        maxBytes: LOCKER_IMAGE_MAX_BYTES,
+      },
+    };
+  }
+
+  const bytes = downscaled.bytes;
   const validation = validateLockerImageBytes(bytes);
   if (!validation.ok) return { ok: false, rejection: validation.rejection };
 
@@ -92,9 +143,26 @@ export async function storeLockerImageFromFile(sourcePath: string): Promise<Stor
       mime: validation.mime,
       width: validation.width,
       height: validation.height,
+      // The digest of what is STORED, never of the original: this hash travels
+      // into a launch authorization and is compared on the signing path, so it
+      // has to describe the bytes that will be written on-chain.
       digest: digestOf(bytes),
     });
-    return { ok: true, image: lockerImageSchema.parse(row) };
+    const image = lockerImageSchema.parse(row);
+    if (downscaled.kind === "optimized") {
+      log.info(
+        `[images:store] optimized ${downscaled.originalByteLength}B -> ${bytes.byteLength}B`,
+      );
+      return {
+        ok: true,
+        image,
+        optimization: {
+          originalByteLength: downscaled.originalByteLength,
+          storedByteLength: bytes.byteLength,
+        },
+      };
+    }
+    return { ok: true, image };
   } catch (cause) {
     await removeImageBytes(imageId).catch(() => undefined);
     throw cause;

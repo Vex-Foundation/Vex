@@ -97,9 +97,10 @@ function rejectionError(
       code: "images.too_large",
       domain: "images",
       message:
-        `That image is ${formatKb(rejection.byteLength)} — the limit is ` +
-        `${formatKb(rejection.maxBytes)}. The image is stored inside the launch ` +
-        `transaction itself, so its size is gas you pay. Shrink it and try again.`,
+        `Vex tried to optimize that image and could not get it under ` +
+        `${formatKb(rejection.maxBytes)} (best attempt: ${formatKb(rejection.byteLength)}). ` +
+        `The image is stored inside the launch transaction itself, so its size is gas you ` +
+        `pay. Try a smaller or simpler picture.`,
       retryable: false,
       userActionable: true,
       redacted: true,
@@ -208,9 +209,16 @@ function registerImagesUploadHandler(): () => void {
       }
       log.info(
         `[ipc:vex:images:upload] ok mime=${outcome.image.mime} ` +
-          `bytes=${outcome.image.byteLength} correlationId=${ctx.requestId}`,
+          `bytes=${outcome.image.byteLength} ` +
+          `optimized=${String(outcome.optimization !== undefined)} ` +
+          `correlationId=${ctx.requestId}`,
       );
-      return ok({ image: outcome.image });
+      // The optimization report rides along only when the ladder actually ran.
+      return ok(
+        outcome.optimization === undefined
+          ? { image: outcome.image }
+          : { image: outcome.image, optimization: outcome.optimization },
+      );
     },
   });
 }

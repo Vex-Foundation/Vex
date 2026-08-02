@@ -299,3 +299,34 @@ describe("list", () => {
     expect(result.error.message).not.toContain("connection refused");
   });
 });
+
+// ── auto-downscale reporting ─────────────────────────────────────────────
+
+describe("an optimized upload reports what changed", () => {
+  it("passes the optimization report through to the renderer", async () => {
+    showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/picked/holiday.jpg"] });
+    storeLockerImageFromFile.mockResolvedValue({
+      ok: true,
+      image: IMAGE,
+      optimization: { originalByteLength: 3_000_000, storedByteLength: 14_000 },
+    });
+
+    const result = await call(CH.images.upload, {});
+
+    expect(result).toEqual({
+      ok: true,
+      data: { image: IMAGE, optimization: { originalByteLength: 3_000_000, storedByteLength: 14_000 } },
+    });
+  });
+
+  it("OMITS the field entirely when the file was stored untouched", async () => {
+    showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/picked/small.png"] });
+    storeLockerImageFromFile.mockResolvedValue({ ok: true, image: IMAGE });
+
+    const result = await call(CH.images.upload, {});
+
+    // Presence is the claim "we changed your image" — it must not be made
+    // about bytes stored verbatim.
+    expect(result).toEqual({ ok: true, data: { image: IMAGE } });
+  });
+});
