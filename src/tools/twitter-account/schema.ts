@@ -1,14 +1,20 @@
 import { z } from "zod";
 
+import { dropEmptyModelValues } from "@vex-agent/tools/internal/arg-validation.js";
+
 const TWENTY_MAX = 20;
 const HUNDRED_MAX = 100;
 
-const NonEmptyString = z.string().trim().min(1);
+const NonEmptyString = z.string().trim().min(1, "must be a non-empty string");
 const NumericId = NonEmptyString.regex(/^\d+$/, "must be a numeric Twitter/X id");
 const Cursor = NonEmptyString.optional();
 const Count20 = z.number().int().min(1).max(TWENTY_MAX).optional();
 const Count100 = z.number().int().min(1).max(HUNDRED_MAX).optional();
-const StringList = z.array(NonEmptyString).min(1).max(20).optional();
+const StringList = z
+  .array(NonEmptyString)
+  .min(1, "needs at least one entry — omit the field instead of sending an empty list")
+  .max(20)
+  .optional();
 const IsoDate = z.string().datetime().optional();
 
 const Username = NonEmptyString.transform((value) => (
@@ -115,6 +121,11 @@ const TweetFilter = z
     top: z.boolean().optional(),
   })
   .strict()
+  // Defence in depth. `dropEmptyModelValues` already removes a filter that
+  // reduced to nothing, so this guard is no longer the message an agent sees —
+  // it stays because an EMPTY filter must never be readable as "no filter", i.e.
+  // as a search over everything, if this schema is ever composed without that
+  // preprocessing step.
   .refine((filter) => Object.keys(filter).length > 0, {
     message: "Provide at least one tweet search filter field",
   })
@@ -199,16 +210,36 @@ const TwitterAccountParamsBaseSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("user_following") }).merge(UserTarget).merge(WithCursor100),
 ]);
 
-export const TwitterAccountParamsSchema = TwitterAccountParamsBaseSchema.superRefine((params, ctx) => {
+const TwitterAccountParamsCheckedSchema = TwitterAccountParamsBaseSchema.superRefine((params, ctx) => {
   if (params.action !== "tweet_search") return;
   if (params.query !== undefined || params.filter !== undefined) return;
 
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
-    message: "tweet_search requires query or filter",
+    message:
+      "tweet_search needs ONE of two things: `query` with search text, or `filter` with at least "
+      + "one criterion (e.g. cashtags, fromUsers, includeWords). Empty strings and empty lists "
+      + "count as absent, so a call whose fields are all blank carries no search at all.",
     path: ["query"],
   });
 });
+
+/**
+ * The model-facing contract. `dropEmptyModelValues` runs FIRST: at this boundary
+ * an empty optional value means absent (see
+ * `@vex-agent/tools/internal/arg-validation.ts`), so the model's habit of
+ * filling every advertised field with `""` / `[]` costs neither the call nor
+ * the criteria it did supply. Validation itself is unchanged — nothing is
+ * invented, and a required field that arrived empty still fails.
+ *
+ * `action` is preserved even when empty: it selects the union branch, so an
+ * empty one must fail as an unrecognised action (which lists the legal ones),
+ * never as a missing key.
+ */
+export const TwitterAccountParamsSchema = z.preprocess(
+  (input) => dropEmptyModelValues(input, { preserveKeys: ["action"] }),
+  TwitterAccountParamsCheckedSchema,
+);
 
 export type TwitterAccountParams = z.infer<typeof TwitterAccountParamsSchema>;
 

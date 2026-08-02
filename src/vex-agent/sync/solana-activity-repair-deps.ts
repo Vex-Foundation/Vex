@@ -2,13 +2,12 @@
  * Production wiring for the Solana activity sweep's `SolanaActivitySweepDeps`
  * port — MOVE-ONLY extraction out of `solana-activity-repair.ts` (which owns
  * the sweep's POLICY: candidate eligibility, the no-give-up rail, the expiry
- * gate, settlement dispatch). No policy lives here; every function below is a
+ * gate). No policy lives here; every function below is a
  * thin, health-gated adapter over one external read.
  *
  * The two files have different reasons to change: this one changes when an
  * endpoint, transport, or response shape changes; the sweep changes when the
- * terminality rules change. Splitting them also restored the headroom the
- * prediction fill-settlement lane needed under the repo's 500-line cap.
+ * terminality rules change.
  *
  * `buildProductionSolanaRepairDeps` is RE-EXPORTED from
  * `solana-activity-repair.ts` so every existing import site — including the
@@ -32,7 +31,6 @@ import logger from "@utils/logger.js";
 
 import { confirmSolanaMainnetGenesis, solanaRpcCall } from "./solana-rpc-safety.js";
 import type { SolanaActivitySweepDeps } from "./solana-activity-repair.js";
-import { fetchPredictionOrderHistory } from "./solana-prediction-fill-settlement.js";
 
 export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
   let healthyRpcUrl: Promise<string | null> | null = null;
@@ -47,20 +45,43 @@ export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
   };
 
   return {
-    getSignatureStatus: async (signature) => {
+    /**
+     * BATCHED: `getSignatureStatuses` takes an array, so one sweep run costs one
+     * round trip for its whole due batch (bounded by
+     * `SOLANA_SWEEP_BATCH_LIMIT`, far under the RPC's own array cap). A
+     * malformed envelope, or an array shorter than the request, declines the
+     * WHOLE call as `"unavailable"` rather than silently reporting rows as
+     * not-found — absence must only ever come from a trusted, complete answer.
+     */
+    getSignatureStatuses: async (signatures) => {
       const rpcUrl = await resolveHealthyRpcUrl();
       if (!rpcUrl) return { outcome: "unavailable" };
       try {
         const result = await solanaRpcCall(rpcUrl, "getSignatureStatuses", [
-          [signature],
+          [...signatures],
           { searchTransactionHistory: true },
         ]);
         const value = isRecord(result) ? result.value : undefined;
-        const entry = Array.isArray(value) ? value[0] : undefined;
-        if (entry === null || entry === undefined) return { outcome: "not_found" };
-        if (!isRecord(entry)) return { outcome: "unavailable" };
-        const confirmationStatus = typeof entry.confirmationStatus === "string" ? entry.confirmationStatus : null;
-        return { outcome: "found", value: { err: entry.err ?? null, confirmationStatus } };
+        if (!Array.isArray(value) || value.length < signatures.length) return { outcome: "unavailable" };
+        const entries: Array<{ err: unknown; confirmationStatus: string | null } | null> = [];
+        for (const entry of value.slice(0, signatures.length)) {
+          if (entry === null || entry === undefined) {
+            entries.push(null); // a trusted "no such signature"
+            continue;
+          }
+          // A present-but-unreadable entry is AMBIGUITY, not absence: reporting
+          // it as not-found would feed the expiry gate, the one path that can
+          // terminalize a row without proof.
+          if (!isRecord(entry)) return { outcome: "unavailable" };
+          // ABSENT IS NOT NULL. `err: null` is the RPC's proof of success;
+          // an entry with no `err` key at all is a shape we do not recognize,
+          // and coercing it to `null` would confirm a transaction whose outcome
+          // we never read. Decline the whole call instead.
+          if (!Object.prototype.hasOwnProperty.call(entry, "err")) return { outcome: "unavailable" };
+          const confirmationStatus = typeof entry.confirmationStatus === "string" ? entry.confirmationStatus : null;
+          entries.push({ err: entry.err, confirmationStatus });
+        }
+        return { outcome: "found", value: entries };
       } catch (err) {
         logger.debug("solana_activity_repair.signature_status_rpc_failed", {
           error: summarizeProtocolError(err).message,
@@ -106,44 +127,6 @@ export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
         return { outcome: "unavailable" };
       }
     },
-
-    /**
-     * Signatures that touched ONE address, newest first — the prediction
-     * fill-settlement lane's discovery read, because a keeper's settle
-     * transaction appears in no provider history and is reachable only through
-     * the escrow ATA it drained. A malformed entry declines the WHOLE lookup
-     * rather than silently shortening the candidate set.
-     */
-    getSignaturesForAddress: async (address, limit) => {
-      const rpcUrl = await resolveHealthyRpcUrl();
-      if (!rpcUrl) return { outcome: "unavailable" };
-      try {
-        const result = await solanaRpcCall(rpcUrl, "getSignaturesForAddress", [
-          address,
-          { limit, commitment: "finalized" },
-        ]);
-        if (!Array.isArray(result)) return { outcome: "unavailable" };
-        const entries: Array<{ signature: string; err: unknown }> = [];
-        for (const entry of result) {
-          if (!isRecord(entry) || typeof entry.signature !== "string") return { outcome: "unavailable" };
-          entries.push({ signature: entry.signature, err: entry.err ?? null });
-        }
-        return { outcome: "found", value: entries };
-      } catch (err) {
-        logger.debug("solana_activity_repair.signatures_for_address_rpc_failed", {
-          error: summarizeProtocolError(err).message,
-        });
-        return { outcome: "unavailable" };
-      }
-    },
-
-    /**
-     * The Jupiter Prediction `/history` read. NOT an RPC call and deliberately
-     * NOT genesis-gated — it is a provider HTTP read, and its own adapter
-     * degrades every failure (429, 5xx, transport, schema) to `"unavailable"`
-     * so the lane leaves the row pending instead of erroring the sweep.
-     */
-    getPredictionOrderHistory: fetchPredictionOrderHistory,
   };
 }
 

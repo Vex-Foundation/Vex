@@ -117,7 +117,10 @@ describe("repairOrphanedToolCalls", () => {
     expect(out.messages[1].toolCallId).toBe("c1");
   });
 
-  it("skips tool_calls with empty id and counts them in skippedBlankIds", () => {
+  it("assigns a synthetic id to a blank tool_call and still answers it", () => {
+    // Previously a blank id was skipped, which left the provider with an
+    // unanswerable call. Normalization now gives it a real id, so the orphan
+    // walk can synthesize its placeholder.
     const input: ProviderMessage[] = [
       {
         role: "assistant",
@@ -130,9 +133,12 @@ describe("repairOrphanedToolCalls", () => {
       user("after"),
     ];
     const out = repairOrphanedToolCalls(input);
-    expect(out.skippedBlankIds).toBe(1);
-    expect(out.insertedPlaceholders).toBe(1);
-    expect(out.messages[1].toolCallId).toBe("real");
+    expect(out.assignedBlankIds).toBe(1);
+    expect(out.insertedPlaceholders).toBe(2);
+    const assigned = out.messages[0].toolCalls?.[0].id ?? "";
+    expect(assigned).toMatch(/^call_vex_b\d+_c\d+$/);
+    expect(out.messages[1].toolCallId).toBe(assigned);
+    expect(out.messages[2].toolCallId).toBe("real");
   });
 
   it("returns a fresh array; input is not mutated", () => {
@@ -140,5 +146,70 @@ describe("repairOrphanedToolCalls", () => {
     const original = JSON.parse(JSON.stringify(input));
     repairOrphanedToolCalls(input);
     expect(input).toEqual(original);
+  });
+});
+
+describe("repairOrphanedToolCalls — tool-call id normalization", () => {
+  it("composes an id rewrite with placeholder synthesis", () => {
+    const input: ProviderMessage[] = [
+      assistantWithCalls(["fc_2"]),
+      toolResult("fc_2"),
+      user("again"),
+      // Duplicate id AND no result at all: both repairs must fire together.
+      assistantWithCalls(["fc_2"]),
+      user("end"),
+    ];
+    const out = repairOrphanedToolCalls(input);
+
+    expect(out.rewrittenDuplicateIds).toBe(1);
+    expect(out.insertedPlaceholders).toBe(1);
+    const rewritten = out.messages[3].toolCalls?.[0].id ?? "";
+    expect(rewritten).not.toBe("fc_2");
+    expect(out.messages[4]).toMatchObject({
+      role: "tool",
+      toolCallId: rewritten,
+      content: TOOL_RESULT_PLACEHOLDER_CONTENT,
+    });
+    expect(out.messages[5]).toMatchObject({ role: "user", content: "end" });
+  });
+
+  it("reports sourceMessageIndexes: original index per row, null per placeholder", () => {
+    const input: ProviderMessage[] = [
+      user("go"),
+      assistantWithCalls(["c1"]),
+      user("next"),
+    ];
+    const out = repairOrphanedToolCalls(input);
+
+    expect(out.sourceMessageIndexes).toHaveLength(out.messages.length);
+    expect(out.sourceMessageIndexes).toEqual([0, 1, null, 2]);
+  });
+
+  it("maps a rewritten row back to its ORIGINAL input index", () => {
+    const input: ProviderMessage[] = [
+      assistantWithCalls(["dup", "dup"]),
+      toolResult("dup", "A"),
+      toolResult("dup", "B"),
+    ];
+    const out = repairOrphanedToolCalls(input);
+
+    expect(out.rewrittenDuplicateIds).toBe(1);
+    expect(out.insertedPlaceholders).toBe(0);
+    expect(out.sourceMessageIndexes).toEqual([0, 1, 2]);
+  });
+
+  it("is a no-op on a clean tape (zero counts, identical bytes)", () => {
+    const input: ProviderMessage[] = [
+      user("go"),
+      assistantWithCalls(["c1", "c2"]),
+      toolResult("c1"),
+      toolResult("c2"),
+    ];
+    const out = repairOrphanedToolCalls(input);
+
+    expect(out.rewrittenDuplicateIds).toBe(0);
+    expect(out.assignedBlankIds).toBe(0);
+    expect(out.insertedPlaceholders).toBe(0);
+    expect(JSON.stringify(out.messages)).toBe(JSON.stringify(input));
   });
 });

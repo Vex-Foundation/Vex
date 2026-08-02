@@ -1,8 +1,6 @@
 import { CH } from "../../shared/ipc/channels.js";
 import { portfolioReadInputSchema } from "../../shared/schemas/portfolio.js";
 import type { PortfolioReadInput } from "../../shared/schemas/portfolio.js";
-import { movesReadInputSchema } from "../../shared/schemas/portfolio-moves.js";
-import type { MovesReadInput } from "../../shared/schemas/portfolio-moves.js";
 import { tokenHistoryReadInputSchema } from "../../shared/schemas/token-history.js";
 import type { TokenHistoryReadInput } from "../../shared/schemas/token-history.js";
 import { agentScanReadInputSchema } from "../../shared/schemas/agent-scan-feed.js";
@@ -13,9 +11,6 @@ import { invokeWithSchema } from "../_dispatch.js";
 export const portfolio = {
   read(input: PortfolioReadInput) {
     return invokeWithSchema(CH.portfolio.read, input, portfolioReadInputSchema);
-  },
-  listMoves(input: MovesReadInput) {
-    return invokeWithSchema(CH.portfolio.listMoves, input, movesReadInputSchema);
   },
   listTokenHistory(input: TokenHistoryReadInput) {
     return invokeWithSchema(

@@ -22,12 +22,11 @@ import {
   localIsoDaysAgo,
 } from "./_appshell-render.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
-vi.mock("@hugeicons/core-free-icons", () => ({
-  RocketIcon: "RocketIcon",
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   Add01Icon: "Add01Icon",
   AnalyticsUpIcon: "AnalyticsUpIcon",
   Download01Icon: "Download01Icon",
@@ -57,6 +56,7 @@ vi.mock("@hugeicons/core-free-icons", () => ({
   DatabaseLightningIcon: "DatabaseLightningIcon",
   Delete02Icon: "Delete02Icon",
   FireIcon: "FireIcon",
+  RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Brain01Icon: "Brain01Icon",

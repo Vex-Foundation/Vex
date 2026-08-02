@@ -18,8 +18,10 @@ import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { decodePendleSettlement } from "@vex-agent/sync/pendle-settlement-decoder.js";
-import type { SettlementDecoderInput } from "@vex-agent/sync/settlement-decoders.js";
+import {
+  decodePendleSettlement,
+  type SettlementDecoderInput,
+} from "@vex-agent/sync/pendle-settlement-decoder.js";
 
 function receiptFixture(name: string): { from: string; logs: unknown[] } {
   const path = fileURLToPath(new URL(`./fixtures/pendle-settlement/${name}.json`, import.meta.url));

@@ -38,10 +38,10 @@ describe("waitForSuccessfulReceipt", () => {
       waitForTransactionReceipt: vi.fn().mockRejectedValue(new VexError(ErrorCodes.RPC_ERROR, "rpc token=secret")),
     };
 
-    await expect(waitForSuccessfulReceipt(client as never, HASH, context)).rejects.toMatchObject({
+    await expect(waitForSuccessfulReceipt(client as never, HASH, context, { delayMs: 0 })).rejects.toMatchObject({
       code: "CONFIRMATION_UNKNOWN",
       message: expect.stringContaining(HASH),
     });
-    await expect(waitForSuccessfulReceipt(client as never, HASH, context)).rejects.not.toThrow("rpc token=secret");
+    await expect(waitForSuccessfulReceipt(client as never, HASH, context, { delayMs: 0 })).rejects.not.toThrow("rpc token=secret");
   });
 });

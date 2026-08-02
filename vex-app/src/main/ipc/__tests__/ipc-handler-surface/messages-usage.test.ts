@@ -331,6 +331,37 @@ describe("usage handlers", () => {
     expect(result.data).toBeNull();
   });
 
+  it("getContextWindow stamps the ENGINE's pressure bands onto the window", async () => {
+    // Single source of truth: the fractions come from the engine policy
+    // module, never from a renderer-side constant. Imported here so a change
+    // to the policy moves this expectation with it.
+    const policy = await import(
+      "@vex-agent/engine/core/context-pressure-policy.js"
+    );
+    process.env.AGENT_CONTEXT_LIMIT = "200000";
+    mocks.getContextWindow.mockResolvedValueOnce({
+      ok: true,
+      data: { sessionId: SESSION, tokensUsed: 1234, contextLimit: 200000 },
+    });
+    const result = await call(CH.usage.getContextWindow, { sessionId: SESSION });
+    expect(result.ok).toBe(true);
+    expect(result.data).toEqual({
+      sessionId: SESSION,
+      tokensUsed: 1234,
+      contextLimit: 200000,
+      pressureWarningFraction: policy.PRESSURE_WARNING_FRACTION,
+      pressureBarrierFraction: policy.PRESSURE_BARRIER_FRACTION,
+      pressureCriticalFraction: policy.PRESSURE_CRITICAL_FRACTION,
+    });
+  });
+
+  it("getContextWindow leaves a NULL window null — no bands on a session that does not exist", async () => {
+    mocks.getContextWindow.mockResolvedValueOnce({ ok: true, data: null });
+    const result = await call(CH.usage.getContextWindow, { sessionId: SESSION });
+    expect(result.ok).toBe(true);
+    expect(result.data).toBeNull();
+  });
+
   it("getContextWindow rejects a non-uuid sessionId", async () => {
     const result = await call(CH.usage.getContextWindow, { sessionId: "nope" });
     expect(result.ok).toBe(false);

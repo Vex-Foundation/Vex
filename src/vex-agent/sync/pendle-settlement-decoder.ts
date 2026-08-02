@@ -7,12 +7,15 @@
  * executed amounts come ONLY from NET wallet-delta accounting over the
  * receipt's own logs — `sum(Transfer.to = wallet) - sum(Transfer.from = wallet)`
  * per token — never from a quote, never from the intent. A leg that cannot be
- * proven declines the WHOLE decode (`null`), which the repair sweep treats
- * exactly like "no registered decoder": the row stays `pending`. This module
- * NEVER guesses.
+ * proven declines the WHOLE decode (`null`) and the caller records no amounts.
+ * This module NEVER guesses.
  *
- * It lives in `sync/` (next to the Solana decoders) rather than inside a
- * handler because the Pendle handlers are split per instrument (pt/yt/py/lp/
+ * CONSUMER: the Pendle BROADCAST path
+ * (`tools/protocols/pendle/handlers/signed-broadcast.ts`), which decodes its own
+ * receipt immediately after mining. The repair sweep is status-only as of
+ * 2026-07-30 and no longer decodes anything.
+ *
+ * It lives in `sync/` rather than inside a handler because the Pendle handlers are split per instrument (pt/yt/py/lp/
  * claim) and the decode rule is per ROLE, not per handler — one owner for the
  * whole role table beats five copies. The small ERC-20 net-delta primitive
  * below is deliberately NOT imported from the kyberswap venue module: that
@@ -45,7 +48,65 @@
  * up an unrelated token movement.
  */
 
-import { registerSettlementDecoder, type DecodedSettlement, type SettlementDecoderInput } from "./settlement-decoders.js";
+/**
+ * The decoder's input and output shapes. They used to live in a shared
+ * per-protocol decoder registry the repair sweep looked decoders up in; that
+ * registry is gone (the sweeps are status-only as of 2026-07-30) and this
+ * decoder — still used on the PENDLE BROADCAST path by
+ * `tools/protocols/pendle/handlers/signed-broadcast.ts` — is now their sole
+ * owner. Kept as a named contract rather than inlined: `signed-broadcast.ts`
+ * builds the input and consumes the output.
+ */
+export interface DecodedSettlement {
+  readonly executedAmountInHuman?: string;
+  readonly executedAmountInRaw?: string;
+  readonly executedAmountOutHuman?: string;
+  readonly executedAmountOutRaw?: string;
+  /**
+   * Option-C SECOND-LEG executed amounts (migration 053's
+   * `executed_amount_{in2,out2}_{raw,human}` family) — a decode of a venue whose
+   * single row legitimately has two inputs or two outputs (Pendle's PT+YT
+   * mint/redeem, a dual-sided LP leg, a two-token claim). A decoder that returns
+   * one MUST have proven it from the receipt exactly like the first leg.
+   */
+  readonly executedAmountIn2Human?: string;
+  readonly executedAmountIn2Raw?: string;
+  readonly executedAmountOut2Human?: string;
+  readonly executedAmountOut2Raw?: string;
+}
+
+export interface SettlementDecoderInput {
+  /** The raw mined transaction receipt. */
+  readonly receipt: unknown;
+  readonly protocolExecutionId: number;
+  readonly chainId: number;
+  readonly walletAddress: string;
+  readonly tokenInAddress: string | null;
+  readonly tokenOutAddress: string | null;
+  /**
+   * The row's persisted `amount_in_raw` — what the handler RECORDED as this
+   * leg's input before broadcasting, NOT an executed truth. For an ERC-20 leg it
+   * is the REQUESTED amount and can legitimately differ from what executed
+   * (fee-on-transfer, dust, a partial fill upstream); echoing it back would
+   * record a quote as a settlement. Decode those from the receipt.
+   */
+  readonly amountInRaw?: string | null;
+  /**
+   * The row's `event_role` VERBATIM. Deliberately a plain string, not the
+   * `AgentActivityEventRole` union: the decoder switches on the roles ITS venue
+   * writes, and DECLINES a role it does not own rather than guessing.
+   */
+  readonly eventRole: string;
+  /** Option-C second-leg token addresses (migration 053), when the row populates them. */
+  readonly tokenIn2Address?: string | null;
+  readonly tokenOut2Address?: string | null;
+  /**
+   * The row's persisted `route_provenance` JSONB — UNTRUSTED; anything read out
+   * of it must be validated. Carries the venue discriminants a receipt alone
+   * cannot supply, e.g. Pendle's `deliveredPath`.
+   */
+  readonly routeProvenance?: Record<string, unknown> | null;
+}
 
 export const PENDLE_SETTLEMENT_PROTOCOL = "pendle";
 
@@ -247,5 +308,3 @@ function decodeLegs(
     ...(amountOut2 !== null ? { executedAmountOut2Raw: amountOut2.toString() } : {}),
   };
 }
-
-registerSettlementDecoder(PENDLE_SETTLEMENT_PROTOCOL, decodePendleSettlement);

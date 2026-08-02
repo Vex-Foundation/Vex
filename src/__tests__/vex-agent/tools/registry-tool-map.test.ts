@@ -107,14 +107,14 @@ describe("Research category visibility in MISSION SETUP", () => {
       process.env.TAVILY_API_KEY = "test-tavily-key";
       process.env.RETTIWT_API_KEY = "test-rettiwt-key";
 
-      const ctx: ToolVisibilityContext = {
+      const ctx: ToolVisibilityContext = defaultVisibilityContext({
         permission: "restricted",
         sessionKind: "mission",
         missionRunActive: false,
         planMode: false,
         contextUsageBand: "normal",
         hasSessionMemory: false,
-      };
+      });
 
       const categories = getVisibleToolsByCategory(ctx);
       const research = categories.find(c => c.label === "Research");

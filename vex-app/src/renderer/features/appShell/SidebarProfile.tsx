@@ -46,17 +46,17 @@ import {
   type MouseEvent,
 } from "react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AiChat01Icon,
   ArrowUp01Icon,
   BookOpen01Icon,
   Brain01Icon,
+  type IconGlyph,
   Radar01Icon,
   Settings02Icon,
   UserEdit01Icon,
-} from "@hugeicons/core-free-icons";
-import type { IconSvgElement } from "@hugeicons/react";
+  VexIcon,
+} from "../../components/icons/index.js";
 import { Docker, Postgresql } from "@thesvg/react";
 import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
@@ -181,10 +181,15 @@ export function SidebarProfile({
     (screen: ProfileMenuScreen, event: MouseEvent<HTMLButtonElement>): void => {
       const rect = event.currentTarget.getBoundingClientRect();
       setOpen(false);
-      setShellRoute({
-        kind: screen,
-        origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      });
+      const origin = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      // Agent Scan carries a session scope (C4). Opened from the PROFILE menu
+      // it is always the FULL global feed — the session-narrowed preset comes
+      // only from the session rail's Activity card.
+      setShellRoute(
+        screen === "agentScan"
+          ? { kind: "agentScan", origin, sessionId: null }
+          : { kind: screen, origin },
+      );
     },
     [setShellRoute],
   );
@@ -267,7 +272,7 @@ export function SidebarProfile({
             </span>
             {/* Chevron affordance — the menu opens upward, so the closed state
              * points up and rotates when open. */}
-            <HugeiconsIcon
+            <VexIcon
               icon={ArrowUp01Icon}
               size={15}
               aria-hidden
@@ -386,7 +391,7 @@ function ProfileMenuItem({
   attention = false,
   onSelect,
 }: {
-  readonly icon: IconSvgElement;
+  readonly icon: IconGlyph;
   readonly label: string;
   readonly hint: string;
   /** Static cobalt attention dot on the row edge — color only, never motion. */
@@ -402,7 +407,7 @@ function ProfileMenuItem({
       className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--vex-line)] text-[var(--vex-text-2)]">
-        <HugeiconsIcon icon={icon} size={15} aria-hidden />
+        <VexIcon icon={icon} size={15} aria-hidden />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-[13px] leading-tight text-foreground">

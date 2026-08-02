@@ -111,6 +111,49 @@ export type ExplorerRef = z.infer<typeof explorerRefSchema>;
 export const explorerRefsSchema = z.array(explorerRefSchema).max(8);
 
 /**
+ * Bounded projection of `messages.metadata -> 'reasoning'` (assistant rows).
+ * The engine tail-truncates at 16 384 chars before persisting (mirror of the
+ * renderer's live REASONING_TEXT_CAP, keeping the NEWEST chars); the schema
+ * bound carries slack so a cap change on one side cannot silently drop pages.
+ */
+export const reasoningProjectionSchema = z.string().min(1).max(20_000);
+
+/**
+ * Bounded projection of `messages.metadata -> 'durationMs'` (tool-result
+ * rows): wall-clock execution time stamped inside the engine's `dispatchTool`.
+ * Upper bound is 24h — anything larger is a corrupt row, not a slow tool.
+ */
+export const toolDurationMsProjectionSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(86_400_000);
+
+/**
+ * Bounded projection of `messages.metadata -> 'success'` (tool-result rows):
+ * the engine's persisted execution outcome. `null` on legacy rows persisted
+ * before the projection existed — the renderer must treat null as UNKNOWN
+ * outcome (never as success) when gating outcome-dependent display such as
+ * swap/bridge leg lines.
+ */
+export const toolSuccessProjectionSchema = z.boolean();
+
+/**
+ * Bounded projection of `messages.metadata -> 'displayStatus'` (tool-result
+ * rows): the engine's DISPLAY-only status for a result whose outcome is
+ * genuinely ambiguous. Today the sole variant is `"pending"` — a transaction
+ * that WAS broadcast but whose receipt never came back. Such a result is
+ * persisted `success: false` on purpose (the model must not read ambiguity as
+ * success), so this second axis is what lets the renderer say "Pending"
+ * instead of contradicting the row's own "…recorded as pending" prose with a
+ * red "Failed". It NEVER upgrades a claim: pending is only ever read when
+ * `success === false`, and a pending act still reads its ARGS only, never its
+ * untrusted output. `null` on legacy rows and on every unambiguous result.
+ */
+export const toolDisplayStatusProjectionSchema = z.literal("pending");
+export type ToolDisplayStatus = z.infer<typeof toolDisplayStatusProjectionSchema>;
+
+/**
  * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
  * shipped wholesale; `explorerRefs` is the FIRST narrowly allow-listed,
  * mapper-validated projection off that column (tool-result rows only). Other
@@ -150,6 +193,35 @@ export const sessionMessageDtoSchema = z
      * mapper never throws on malformed JSONB — it collapses to `null`.
      */
     explorerRefs: explorerRefsSchema.nullable(),
+    /**
+     * Model reasoning persisted for an assistant row (validated projection of
+     * `messages.metadata -> 'reasoning'`). Required and `null` on non-assistant
+     * rows, on rows persisted before the projection existed, and when the
+     * provider emitted no reasoning. Renderer displays it ONLY through
+     * `MarkdownContent` (never raw HTML).
+     */
+    reasoning: reasoningProjectionSchema.nullable(),
+    /**
+     * Tool execution wall-clock in ms for a `tool_result` row (validated
+     * projection of `messages.metadata -> 'durationMs'`). Required and `null`
+     * on non-tool rows, legacy rows, and synthetic never-executed results —
+     * a call that did not run must carry `null`, never `0`.
+     */
+    durationMs: toolDurationMsProjectionSchema.nullable(),
+    /**
+     * Execution outcome for a `tool_result` row (validated projection of
+     * `messages.metadata -> 'success'`). Required and `null` on non-tool rows
+     * and legacy rows; null means UNKNOWN, never success.
+     */
+    success: toolSuccessProjectionSchema.nullable(),
+    /**
+     * DISPLAY-only status for a `tool_result` row (validated projection of
+     * `messages.metadata -> 'displayStatus'`). Required and `null` on non-tool
+     * rows, legacy rows, and every unambiguous result. Read ONLY together with
+     * `success === false`; it splits "failed" from "broadcast, not yet
+     * confirmed" and never makes a claim `success` does not support.
+     */
+    displayStatus: toolDisplayStatusProjectionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

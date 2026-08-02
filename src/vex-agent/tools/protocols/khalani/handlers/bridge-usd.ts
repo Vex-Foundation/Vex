@@ -16,7 +16,7 @@
 import { getKhalaniClient } from "@tools/khalani/client.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
-import { formatUnits } from "viem";
+import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 import type { KhalaniToken } from "@tools/khalani/types.js";
 
 export const KHALANI_TOKEN_PRICE_USD_SOURCE = "khalani_token_price";
@@ -91,12 +91,10 @@ export function estimateUsd(humanAmount: string | undefined, priceUsd: string | 
 /**
  * Human-format a smallest-unit amount when decimals are known; otherwise
  * `undefined` (the raw amount is still recorded, the human amount stays NULL).
+ * The conversion is owned by `protocols/amount-display.ts`; this keeps
+ * Khalani's `undefined` degradation, which its optional-column writes need.
  */
 export function humanizeAmount(rawAmount: string | undefined, decimals: number | undefined): string | undefined {
   if (!rawAmount || decimals === undefined) return undefined;
-  try {
-    return formatUnits(BigInt(rawAmount), decimals);
-  } catch {
-    return undefined;
-  }
+  return formatRawAmount(rawAmount, decimals) ?? undefined;
 }

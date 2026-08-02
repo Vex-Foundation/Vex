@@ -47,7 +47,10 @@ import {
 } from "@vex-agent/db/repos/memory-jobs/index.js";
 import { emitMemoryWorkerPermanentlyFailedBug } from "./bug-emit.js";
 import { emitEngineError } from "../runtime/error-bus.js";
-import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
+import {
+  readMissionErrorSignal,
+  type MissionErrorSignal,
+} from "../core/runner/mission-error-signal.js";
 import {
   reserveCandidatesForJob,
   listItemsByJob,
@@ -220,8 +223,10 @@ export function startMemoryManagerExecutor(
  *
  * Bounded codes only — the raw message goes to the bug report, server-side.
  * `readMissionErrorSignal` reads own-properties and never walks `.cause`.
- * `null` is a legitimate input (the items-failed path has no throwable), and
- * yields an all-null signal rather than a guess.
+ * `null` is a legitimate input (nothing throwable was captured) and yields an
+ * all-null signal rather than a guess — but the items-failed path now hands
+ * over the FIRST item error it caught, because an all-null signal is exactly
+ * what left the UI saying the cause was not reported.
  */
 function emitMemoryJobFailure(job: MemoryJob, err: unknown): void {
   const signal = readMissionErrorSignal(err);
@@ -260,6 +265,10 @@ async function processConsolidateJob(
 
   let anyTransientFailure = false;
   let anyUnclosed = false;
+  // The FIRST item error, carried out of the loop so a permanent give-up can
+  // report a cause. First rather than last: a batch usually fails for one
+  // reason, and the earliest one is the one that was not itself a consequence.
+  let firstItemError: Error | null = null;
 
   try {
     await reserveCandidatesForJob(job.id, workerId, CONSOLIDATE_BATCH_LIMIT);
@@ -267,10 +276,11 @@ async function processConsolidateJob(
 
     for (const item of items) {
       if (claimLost) return;
-      const outcome = await processItem(job, workerId, item, deps);
-      if (outcome === "transient_failure") anyTransientFailure = true;
-      else if (outcome === "unclosed") anyUnclosed = true;
-      else if (outcome === "claim_lost") return;
+      const result = await processItem(job, workerId, item, deps);
+      if (result.error && firstItemError === null) firstItemError = result.error;
+      if (result.outcome === "transient_failure") anyTransientFailure = true;
+      else if (result.outcome === "unclosed") anyUnclosed = true;
+      else if (result.outcome === "claim_lost") return;
     }
 
     if (anyTransientFailure || anyUnclosed) {
@@ -282,11 +292,17 @@ async function processConsolidateJob(
       // nothing written, job alive under its new owner. Reporting on
       // `terminal` alone files a bug report for a failure that did not happen.
       if (result.ok && result.terminal) {
-        emitMemoryJobFailure(job, null);
+        emitMemoryJobFailure(job, firstItemError);
         await emitMemoryWorkerPermanentlyFailedBug({
           jobId: job.id,
           jobKind: job.jobKind,
-          errorMsg: "items_failed_retry",
+          // The item error's message is already scrubbed by
+          // `normalizeOpenRouterError`; this channel is server-side diagnostics,
+          // and "items_failed_retry" alone told nobody anything.
+          errorMsg:
+            firstItemError === null
+              ? "items_failed_retry"
+              : `items_failed_retry: ${firstItemError.message}`,
         });
       }
     } else {
@@ -322,6 +338,17 @@ async function processConsolidateJob(
 type ItemOutcome = "done" | "transient_failure" | "unclosed" | "claim_lost" | "skipped";
 
 /**
+ * The outcome plus, on a caught throw, the error itself. The error travels so
+ * the job finalizer can report WHY a permanent give-up happened; it is the
+ * already-normalized (scrubbed, own-properties-only) error, never a raw SDK
+ * object.
+ */
+interface ItemResult {
+  readonly outcome: ItemOutcome;
+  readonly error?: Error;
+}
+
+/**
  * Process ONE reserved item: idempotent-close OR consolidate→apply→close. Returns
  * the outcome the job finalizer aggregates. Never throws — every error is mapped
  * to `transient_failure` (markItemFailed) so one bad item cannot fail the job.
@@ -331,17 +358,17 @@ async function processItem(
   workerId: string,
   item: MemoryJobItem,
   deps: ConsolidateDeps,
-): Promise<ItemOutcome> {
+): Promise<ItemResult> {
   const transitioned = await markItemProcessing(item.id, job.id, workerId);
   if (!transitioned) {
     // Race / claim-lost — skip this item (another worker / state change).
-    return "skipped";
+    return { outcome: "skipped" };
   }
 
   const candidate = await getCandidateById(item.candidateId);
   if (!candidate) {
     await markItemFailed(item.id, job.id, workerId, "candidate_missing");
-    return "transient_failure";
+    return { outcome: "transient_failure" };
   }
 
   // Idempotent-close (R2#2): a non-pending candidate already has a committed
@@ -351,16 +378,16 @@ async function processItem(
     const dec = await getLatestDecision(candidate.id);
     if (!dec) {
       await markItemFailed(item.id, job.id, workerId, "decided_without_decision");
-      return "transient_failure";
+      return { outcome: "transient_failure" };
     }
     const closed = await markItemDone(item.id, job.id, workerId, dec.id);
-    return closed ? "done" : "unclosed";
+    return { outcome: closed ? "done" : "unclosed" };
   }
 
   const embedding = await getCandidateEmbedding(candidate.id);
   if (!embedding) {
     await markItemFailed(item.id, job.id, workerId, "embedding_missing");
-    return "transient_failure";
+    return { outcome: "transient_failure" };
   }
 
   try {
@@ -399,21 +426,77 @@ async function processItem(
     const closed = await markItemDone(item.id, job.id, workerId, applied.decisionId);
     // Owner-loss between commit and close: the decision IS durable but the item
     // is not closed → unclosed (retry's idempotent-close path will close it).
-    return closed ? "done" : "unclosed";
+    return { outcome: closed ? "done" : "unclosed" };
   } catch (err) {
     // Transient: LLM timeout / malformed JSON / DB hiccup / owner-loss throw.
-    const errorCode = err instanceof Error ? mapErrorCode(err) : "item_unknown";
+    // ONE read of the error's own-properties feeds both the stored code and the
+    // log line, so the two can never disagree about what happened.
+    const signal = readMissionErrorSignal(err);
+    const errorCode = err instanceof Error ? mapErrorCode(err, signal) : "item_unknown";
     await markItemFailed(item.id, job.id, workerId, errorCode);
-    return "transient_failure";
+    // Say WHY, at the only place that still knows. Bounded fields only: the
+    // scrubbed message never enters a memory log line by allowlist design, so
+    // the diagnosis rides on the own-properties `normalizeOpenRouterError`
+    // attaches. Silence here is what left the UI with nothing to report.
+    memLog.warn("manager", "item_failed", {
+      jobId: job.id,
+      candidateId: item.candidateId,
+      errorCode,
+      ...(signal.status !== null ? { statusCode: signal.status } : {}),
+      ...(signal.errorClass !== null ? { errorKind: signal.errorClass } : {}),
+      ...(signal.causeCode !== null ? { causeCode: signal.causeCode } : {}),
+    });
+    return {
+      outcome: "transient_failure",
+      ...(err instanceof Error ? { error: err } : {}),
+    };
   }
 }
 
-function mapErrorCode(err: Error): string {
+/** The two status-less SDK classes that mean "answered, but unreadable". */
+const VALIDATION_ERROR_CLASSES: ReadonlySet<string> = new Set([
+  "ResponseValidationError",
+  "SDKValidationError",
+]);
+
+/**
+ * Map a caught item failure to the bounded code stored on the item row.
+ *
+ * TYPED SIGNALS FIRST. A real provider rejection carries `statusCode` /
+ * `errorClass` own-properties and a scrubbed message that matches none of the
+ * substrings below — so message matching alone bucketed every OpenRouter
+ * refusal as the opaque `item_error`, which is precisely what the user saw. The
+ * substring map stays as the fallback for this module's OWN named throws
+ * (`memory_judge_timeout`, …), which carry no status.
+ */
+function mapErrorCode(err: Error, signal: MissionErrorSignal): string {
+  if (signal.status !== null) return providerCodeForStatus(signal.status);
+  // Status-less but class-identified: either "the provider answered and we
+  // could not read it" or "we never reached the provider". Keeping those apart
+  // is the whole reason the class name is captured before normalization.
+  if (signal.errorClass !== null) {
+    return VALIDATION_ERROR_CLASSES.has(signal.errorClass)
+      ? "provider_unreadable_response"
+      : "provider_unreachable";
+  }
+
   const msg = err.message;
   if (msg.includes("claim lost")) return "claim_lost";
   if (msg.includes("timeout")) return "judge_timeout";
   if (msg.includes("malformed")) return "judge_malformed";
   if (msg.includes("schema_invalid")) return "judge_schema_invalid";
   if (msg.includes("config")) return "provider_config";
+  return "item_error";
+}
+
+/** Bounded enum tokens (memLog `enum` category: letters/underscores only). */
+function providerCodeForStatus(status: number): string {
+  if (status === 401 || status === 403) return "provider_auth";
+  if (status === 402) return "provider_payment_required";
+  if (status === 404) return "provider_not_found";
+  if (status === 408) return "provider_timeout";
+  if (status === 429) return "provider_rate_limited";
+  if (status >= 500) return "provider_server_error";
+  if (status >= 400) return "provider_bad_request";
   return "item_error";
 }

@@ -125,7 +125,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
     expect(
       container.querySelector('[data-vex-message-role="tool"]'),
     ).not.toBeNull();
-    const btn = screen.getByRole("button", { name: /wallet:read/ });
+    const btn = screen.getByRole("button", { name: /Wallet read/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false"); // collapsed by default
     expect(screen.queryByText('{"chain":"base"}')).toBeNull();
     fireEvent.click(btn);
@@ -158,7 +158,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
         },
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /wallet:read/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet read/ }));
     expect(screen.getByText("Output")).not.toBeNull();
     expect(screen.getByText("0.5 ETH")).not.toBeNull();
   });
@@ -204,12 +204,12 @@ describe("TranscriptMessage tool acts (S5)", () => {
     const header = screen.getByRole("button", { name: /3 tool calls/ });
     expect(header.getAttribute("aria-expanded")).toBe("false");
     // Members hidden while collapsed.
-    expect(screen.queryByText("search:web")).toBeNull();
+    expect(screen.queryByText("Search web")).toBeNull();
     fireEvent.click(header);
     expect(header.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("search:web")).not.toBeNull();
-    expect(screen.getByText("file:read")).not.toBeNull();
-    expect(screen.getByText("wallet:read")).not.toBeNull();
+    expect(screen.getByText("Search web")).not.toBeNull();
+    expect(screen.getByText("File read")).not.toBeNull();
+    expect(screen.getByText("Wallet read")).not.toBeNull();
     // Semantic contract: group container AND every member act row keep the
     // tool role attr (tests and tooling query it).
     expect(
@@ -293,5 +293,217 @@ describe("TranscriptMessage agent activity avatar", () => {
       container.querySelector('[data-vex-agent-avatar-state="settled"]'),
     ).not.toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
+  });
+});
+
+// ── Persisted reasoning on transcript rows (contract C1) ────────────────────
+
+describe("TranscriptMessage persisted reasoning", () => {
+  it("renders NOTHING when an assistant row carries no reasoning (null = today)", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
+  });
+
+  it("mounts the collapsible Reasoned block above the assistant body", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "assistant", content: "Done." }),
+          reasoning: "I checked the balances first.",
+        },
+      }),
+    );
+    const block = container.querySelector('[data-vex-reasoning="persisted"]');
+    expect(block).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    // Collapsed: the answer stays the first thing read.
+    expect(container.textContent).not.toContain("I checked the balances first.");
+  });
+
+  it("renders the block on a stopped assistant row too", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "assistant_stopped", content: "Partial." }),
+          reasoning: "trace",
+        },
+      }),
+    );
+    expect(container.querySelector('[data-vex-reasoning="persisted"]')).not.toBeNull();
+  });
+
+  it("renders exactly ONE block on a prose-less tool row carrying reasoning", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "tool", content: "" }),
+          toolKind: "call" as const,
+          reasoning: "trace",
+          toolActs: [
+            { toolCallId: "c1", toolName: "wallet_balances", toolArgs: null, output: null },
+          ],
+        },
+      }),
+    );
+    expect(
+      container.querySelectorAll('[data-vex-reasoning="persisted"]'),
+    ).toHaveLength(1);
+  });
+
+  it("renders the folded trace above a tool_group ledger line", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 10,
+          createdAt: ISO,
+          distinctToolNames: ["search:web"],
+          calls: [
+            { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: "r1" },
+          ],
+          reasonings: ["why I ran the whole chain"],
+        },
+      }),
+    );
+    expect(
+      container.querySelectorAll('[data-vex-reasoning="persisted"]'),
+    ).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+  });
+
+  it("renders EVERY folded trace, in turn order, above the ledger line", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 10,
+          createdAt: ISO,
+          distinctToolNames: ["search:web"],
+          calls: [
+            { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: "r1" },
+          ],
+          reasonings: ["first trace", "second trace"],
+        },
+      }),
+    );
+    const blocks = container.querySelectorAll('[data-vex-reasoning="persisted"]');
+    expect(blocks).toHaveLength(2);
+    // Collapsed by default — expand both to read the traces themselves.
+    for (const block of blocks) {
+      fireEvent.click(block.querySelector("button")!);
+    }
+    expect(blocks[0]?.textContent).toContain("first trace");
+    expect(blocks[1]?.textContent).toContain("second trace");
+  });
+
+  it("renders no block on a tool_group that folded no trace", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 10,
+          createdAt: ISO,
+          distinctToolNames: ["search:web"],
+          calls: [
+            { toolCallId: "a", toolName: "search:web", toolArgs: "{}", output: null },
+          ],
+          reasonings: [],
+        },
+      }),
+    );
+    expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
+  });
+});
+
+// ── C2 typographic register: human captions are NOT mono ────────────────────
+
+describe("TranscriptMessage caption register (contract C2)", () => {
+  it("stamps both speaker captions with the sans small-caps class, never font-mono", () => {
+    const { container: assistant } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    const { container: user } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "user", content: "hi" }),
+      }),
+    );
+    for (const [name, container] of [
+      // The assistant caption is literally "VEX": the shimmer overlay
+      // duplicates the text through `data-shimmer-text`, and CSS
+      // `text-transform` does not change the DOM string, so the DOM has to
+      // carry the cased form or the two layers would sweep different glyphs.
+      ["VEX", assistant],
+      ["You", user],
+    ] as const) {
+      const caption = container.querySelector(".vex-micro");
+      expect(caption, `${name} caption`).not.toBeNull();
+      expect(caption?.className).not.toContain("font-mono");
+      expect(caption?.textContent).toContain(name);
+    }
+  });
+
+  /**
+   * THE NAME SHIMMERS (owner visual round 2026-07-30). It must be the SAME
+   * sanctioned class family the reasoning-effort selector uses, and the
+   * overlay's `data-shimmer-text` must equal the rendered string exactly — a
+   * mismatch sweeps a band across glyphs that are not there.
+   */
+  it("wears the sanctioned shimmer on the VEX speaker name, with a matching overlay string", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "Done." }),
+      }),
+    );
+    const name = container.querySelector(".vex-preview-shimmer");
+    expect(name).not.toBeNull();
+    expect(name?.textContent).toBe("VEX");
+    expect(name?.getAttribute("data-shimmer-text")).toBe(name?.textContent);
+  });
+});
+
+// ── Friendly tool cards: the duration chip's null-vs-measured law ───────────
+
+describe("TranscriptMessage tool card duration", () => {
+  function toolRowWith(durationMs: number | null | undefined) {
+    return {
+      ...row({ variant: "tool", content: "" }),
+      toolKind: "call" as const,
+      toolActs: [
+        {
+          toolCallId: "c1",
+          toolName: "wallet_balances",
+          toolArgs: null,
+          output: "ok",
+          durationMs,
+        },
+      ],
+    };
+  }
+
+  it("shows a measured duration as a chip", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, { row: toolRowWith(2340) }),
+    );
+    expect(
+      container.querySelector("[data-vex-tool-duration]")?.textContent,
+    ).toBe("2.3 s");
+  });
+
+  it("shows NO chip for a call that never ran — null must not read as 0 s", () => {
+    for (const value of [null, undefined]) {
+      const view = render(
+        createElement(TranscriptMessage, { row: toolRowWith(value) }),
+      );
+      expect(
+        view.container.querySelector("[data-vex-tool-duration]"),
+      ).toBeNull();
+      view.unmount();
+    }
   });
 });

@@ -26,6 +26,7 @@ import { z } from "zod";
 import type { ToolResult } from "../types.js";
 import type { InternalToolContext } from "./types.js";
 import { fail } from "./types.js";
+import { formatZodIssueForModel } from "./arg-validation.js";
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import { currentDate } from "@vex-agent/engine/runtime-clock.js";
 import { validateWakeWatchConditions } from "@vex-agent/engine/wake/watch-registry.js";
@@ -74,8 +75,7 @@ export async function handleLoopDefer(
   // Layer 1 — Zod argument shape.
   const parsed = LoopDeferArgs.safeParse(params);
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    return fail(`loop_defer: ${firstIssue?.message ?? "invalid arguments"}`);
+    return fail(`loop_defer: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
   const { after_ms, wake_at, reason, watch } = parsed.data;
 

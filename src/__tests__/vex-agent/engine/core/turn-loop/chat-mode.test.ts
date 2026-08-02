@@ -445,4 +445,88 @@ describe("turn-loop", () => {
       expect(toStreamAbortedEvent).not.toHaveBeenCalled();
     });
   });
+
+  // ── Reasoning forwarding (CALLER level) ─────────────────────
+  //
+  // `saveAssistantMessage`'s own payload rules (cap, tail semantics,
+  // omit-on-empty) are pinned in `assistant-reasoning-persistence.test.ts`.
+  // What is pinned HERE is the wiring the production loop owns: the reasoning
+  // the provider returned must actually reach that sink on both durable
+  // assistant-row paths. A dropped hand-off is invisible to the sink's own
+  // tests and would silently ship empty "Reasoned" blocks (contract C1).
+
+  describe("reasoning forwarding", () => {
+    /** The metadata a persisted assistant row of `messageType` would carry. */
+    function persistedMetadata(messageType: string): Record<string, unknown> | undefined {
+      const call = mockAddMessage.mock.calls.find(
+        (c) => (c[2] as { messageType?: string } | undefined)?.messageType === messageType,
+      );
+      return call?.[2] as Record<string, unknown> | undefined;
+    }
+
+    it("TEXT-ONLY turn: the provider's reasoning reaches the persisted assistant row", async () => {
+      const provider = {
+        chatCompletion: vi.fn().mockResolvedValue({
+          content: "Hello!",
+          toolCalls: null,
+          reasoning: "I checked the balance first",
+          usage: {
+            promptTokens: 1000,
+            completionTokens: 200,
+            cachedTokens: 0,
+            reasoningTokens: 64,
+          },
+        }),
+        calculateCost: vi.fn().mockReturnValue({
+          totalCost: 0.001,
+          currency: "USD",
+          breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
+        }),
+      };
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(result.text).toBe("Hello!");
+      expect(persistedMetadata("chat")).toMatchObject({
+        payload: { reasoning: "I checked the balance first" },
+      });
+    });
+
+    it("STOPPED turn: the reasoning streamed before the abort is persisted with the partial text", async () => {
+      const controller = new AbortController();
+      const provider = makeStreamingProvider(async function* (): AsyncGenerator<StreamChunk> {
+        yield { type: "reasoning", reasoningText: "weighing the two routes" };
+        yield { type: "content", text: "par" };
+        yield { type: "content", text: "tial" };
+        controller.abort();
+        yield { type: "content", text: "DROPPED" };
+      });
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+        {}, undefined, controller.signal,
+      );
+
+      expect(result.stopReason).toBe("user_stopped");
+      // The user stopped MID-THOUGHT: the trace that explains the partial
+      // answer is exactly the one worth keeping.
+      expect(persistedMetadata("chat_stopped")).toMatchObject({
+        payload: { reasoning: "weighing the two routes" },
+      });
+    });
+
+    it("a turn with NO reasoning persists no payload at all — never an empty block", async () => {
+      const provider = makeProvider([{ content: "Hello!" }]);
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(persistedMetadata("chat")).not.toHaveProperty("payload");
+    });
+  });
 });

@@ -16,6 +16,7 @@ import type {
   MessageRole,
   SessionMessageDto,
   ToolCallDisplay,
+  ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
 
 /** How a row is laid out + styled. */
@@ -73,6 +74,36 @@ export interface TranscriptRowModel {
    * `toolCalls` with no output.
    */
   readonly toolActs?: readonly ToolCallActView[];
+  /**
+   * Assistant rows: the PERSISTED model reasoning for this turn (contract C1,
+   * `SessionMessageDto.reasoning`). `null` on every non-assistant row, on
+   * legacy rows written before the engine persisted it, and whenever the
+   * provider emitted none — the renderer shows NOTHING in that case rather
+   * than an empty "Reasoned" affordance. When a `tool_call` DTO splits into a
+   * prose row + a tool row (`splitToolCallProse`), the reasoning rides the
+   * PROSE row when there is one and the tool row otherwise — never both, even
+   * though the two rows share `dto.id`.
+   */
+  readonly reasoning?: string | null;
+  /**
+   * Tool RESULT rows: measured execution wall clock (contract C1). `null` for
+   * never-executed / auto-rejected / synthetic / legacy rows — and `null` is
+   * NOT zero: the renderer must print no chip at all rather than "0 s".
+   */
+  readonly durationMs?: number | null;
+  /**
+   * Tool RESULT rows: engine-persisted execution outcome (contract C1
+   * `success` projection). `null` = UNKNOWN (legacy row) — callers must never
+   * treat it as success.
+   */
+  readonly success?: boolean | null;
+  /**
+   * Tool RESULT rows: engine-persisted DISPLAY status. `"pending"` marks an
+   * ambiguous broadcast (persisted `success: false` on purpose); `null` on
+   * every unambiguous result and on legacy rows. Read only together with
+   * `success === false`.
+   */
+  readonly displayStatus?: ToolDisplayStatus | null;
 }
 
 function assertNever(value: never): never {
@@ -158,6 +189,11 @@ export function toTranscriptRows(
  * tool row, so the text and tools render in chronological order. Every other
  * DTO — including a `tool_call` with empty/whitespace-only content — maps to a
  * single row exactly as before.
+ *
+ * The persisted `reasoning` follows the PROSE row when a split happens (that
+ * is where the turn's words live, and it is the row the reader associates with
+ * the thinking); the tool row is then emitted reasoning-free so the collapsible
+ * block can never render twice for one `dto.id`.
  */
 function splitToolCallProse(
   dto: SessionMessageDto,
@@ -171,8 +207,9 @@ function splitToolCallProse(
         label: null,
         content: dto.content,
         createdAt: dto.createdAt,
+        reasoning: dto.reasoning,
       },
-      toTranscriptRow({ ...dto, content: "" }, nameByCallId),
+      toTranscriptRow({ ...dto, content: "", reasoning: null }, nameByCallId),
     ];
   }
   return [toTranscriptRow(dto, nameByCallId)];
@@ -199,6 +236,10 @@ export function toTranscriptRow(
         // pair this output with its call inside the same tool run.
         toolCallId: dto.toolCallId,
         explorerRefs: dto.explorerRefs,
+        // Measured wall clock; merges onto the paired act in the S5 post-pass.
+        durationMs: dto.durationMs,
+        success: dto.success,
+        displayStatus: dto.displayStatus,
       };
     }
     // tool_call row: prose (content) + one disclosure per executed tool.
@@ -210,6 +251,7 @@ export function toTranscriptRow(
       content: dto.content,
       createdAt: dto.createdAt,
       toolCalls: dto.toolCalls ?? [],
+      reasoning: dto.reasoning,
     };
   }
   if (variant === "notice") {
@@ -228,6 +270,7 @@ export function toTranscriptRow(
     label: resolveLabel(variant, dto.toolName),
     content: dto.content,
     createdAt: dto.createdAt,
+    reasoning: dto.reasoning,
   };
 }
 
@@ -253,8 +296,15 @@ function resolveLabel(
 // post-pass over `toTranscriptRows` output — every existing variant passes
 // through untouched; only `variant === "tool"` rows are restructured.
 
-/** A run only aggregates when it registers at least this many CALLS. */
-export const TOOL_GROUP_MIN_CALLS = 3;
+/**
+ * A run only aggregates when it registers at least this many CALLS.
+ *
+ * Owner decree (session-UI redesign): collapse only ABOVE five calls. At 3 the
+ * ledger was hiding ordinary two-and-three-step work behind a disclosure the
+ * reader had to open to see what Vex did — the collapse is for long chains,
+ * not for a normal turn.
+ */
+export const TOOL_GROUP_MIN_CALLS = 6;
 
 /**
  * One registered act: the sanitized call display plus its merged output.
@@ -272,6 +322,27 @@ export interface ToolCallActView {
    * the act renderer then shows no link.
    */
   readonly explorerRefs?: readonly ExplorerRef[] | null;
+  /**
+   * Measured execution wall clock merged from this act's paired `tool_result`
+   * row (contract C1). Absent/`null` until a result pairs, or when the call
+   * never actually executed — the card then shows NO duration chip. `null` is
+   * not zero; a not-run call must never read as "0 s".
+   */
+  readonly durationMs?: number | null;
+  /**
+   * Execution outcome merged from this act's paired `tool_result` row.
+   * Absent/`null` until a result pairs or on legacy rows = UNKNOWN — display
+   * gated on outcome (e.g. swap/bridge leg lines) must require `true`, never
+   * treat null as success.
+   */
+  readonly success?: boolean | null;
+  /**
+   * DISPLAY status merged from this act's paired `tool_result` row.
+   * `"pending"` ONLY for an ambiguous broadcast; absent/`null` otherwise. Read
+   * only alongside `success === false` — it splits "failed" from "broadcast,
+   * not yet confirmed" and never claims more than `success` supports.
+   */
+  readonly displayStatus?: ToolDisplayStatus | null;
 }
 
 /** Aggregation entry replacing a run of ≥TOOL_GROUP_MIN_CALLS calls. */
@@ -284,6 +355,19 @@ export interface ToolGroupRowModel {
   readonly distinctToolNames: readonly string[];
   /** First contributing call row's timestamp. */
   readonly createdAt: string;
+  /**
+   * The persisted reasoning of EVERY PROSE-LESS call row folded into this
+   * group, in turn order (contract C1). Aggregation may drop the call/result
+   * interleaving, it must never drop the turn's thinking: a prose-less call
+   * row has no other row to carry its reasoning once it is folded in, so the
+   * group carries them ALL and renders one collapsible block per trace, in
+   * order, above the ledger line — keeping only the first silently discarded
+   * every later trace in the same group. Call rows that DO have prose keep
+   * their own document row (emitted above the group) and their own reasoning
+   * with it, which is why only prose-less rows are harvested here and no trace
+   * can render twice for one turn. Empty when no folded row carried a trace.
+   */
+  readonly reasonings?: readonly string[];
 }
 
 /** What the transcript actually renders: plain rows plus group entries. */
@@ -327,6 +411,9 @@ interface MutableAct {
   readonly toolArgs: string | null;
   output: string | null;
   explorerRefs?: readonly ExplorerRef[] | null;
+  durationMs?: number | null;
+  success?: boolean | null;
+  displayStatus?: ToolDisplayStatus | null;
 }
 
 function transformToolRun(
@@ -365,6 +452,17 @@ function transformToolRun(
         if (row.explorerRefs !== null && row.explorerRefs !== undefined) {
           act.explorerRefs = row.explorerRefs;
         }
+        // Only a MEASURED duration merges: a null on the result row means the
+        // call never executed, and must stay absent rather than become 0.
+        if (row.durationMs !== null && row.durationMs !== undefined) {
+          act.durationMs = row.durationMs;
+        }
+        if (row.success !== null && row.success !== undefined) {
+          act.success = row.success;
+        }
+        if (row.displayStatus !== null && row.displayStatus !== undefined) {
+          act.displayStatus = row.displayStatus;
+        }
         consumedResultIds.add(row.id);
       }
     }
@@ -377,6 +475,7 @@ function transformToolRun(
   const grouped = allActs.length >= TOOL_GROUP_MIN_CALLS;
   const entries: TranscriptEntry[] = [];
   let groupEmitted = false;
+  const foldedReasonings = grouped ? proselessReasonings(run) : [];
   for (const row of run) {
     if (row.toolKind === "call") {
       const acts = actsByRowId.get(row.id) ?? [];
@@ -395,6 +494,7 @@ function transformToolRun(
           calls: allActs,
           distinctToolNames: dedupeToolNames(allActs),
           createdAt: row.createdAt,
+          reasonings: foldedReasonings,
         });
         groupEmitted = true;
       }
@@ -406,6 +506,24 @@ function transformToolRun(
     entries.push(row);
   }
   return entries;
+}
+
+/**
+ * The reasoning a grouped run would otherwise LOSE: EVERY call row that
+ * carries a trace but no prose of its own, in turn order. Prose-bearing rows
+ * survive the fold as their own document row (which renders their reasoning),
+ * so harvesting them here would double-render one turn's thinking.
+ */
+function proselessReasonings(run: readonly TranscriptRowModel[]): string[] {
+  const traces: string[] = [];
+  for (const row of run) {
+    if (row.toolKind !== "call" || row.content.length > 0) continue;
+    const reasoning = row.reasoning;
+    if (reasoning !== null && reasoning !== undefined && reasoning.length > 0) {
+      traces.push(reasoning);
+    }
+  }
+  return traces;
 }
 
 function dedupeToolNames(acts: readonly MutableAct[]): string[] {

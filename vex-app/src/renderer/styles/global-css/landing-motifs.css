@@ -2,31 +2,57 @@
  *  LANDING MOTIF UTILITIES — the projectvex.ai signature set    *
  * ============================================================ */
 
-/* Eyebrow — the landing .eyebrow: mono micro-label. Formerly carried a
- * leading ::before rule (28px currentColor hairline); removed app-wide by
- * owner decree (2026-07-20: no dash rules) — the mark read as visual noise
- * next to group headers, the welcome tagline, and block titles. The dash
- * sweep (2026-07-20) also retired the last multi-child call site
- * (UnlockScreen's mirrored trailing dash on "Master Vault · Sealed"), so
- * `gap` is dropped too — every call site is single-child text now. Color
- * comes from the accent-text family (readable cobalt on ink). */
+/* ─────────────────────────────────────────────────────────────────────────
+ * THE TYPOGRAPHY REGISTER (White House pass, owner decree 2026-07-29)
+ *
+ * The app-wide voice is the whitehouse.gov pair: Instrument Serif (voice) +
+ * Instrument Sans (support). JetBrains Mono is DEMOTED to strictly technical
+ * artifacts only — code blocks, raw JSON args/output, addresses, tx hashes.
+ * The mono-uppercase micro-label language is retired shell-wide, which is why
+ * the two classes below flip family at the CLASS level: every one of their
+ * ~40 call sites changes register in one edit, and no new mono uppercase
+ * label may be added anywhere.
+ *
+ * SUPPORT-SIDE (sans small caps), NOT serif — the sanctioned fallback:
+ * Instrument Serif is a high-contrast display face whose hairline strokes
+ * disappear at the 10px these two classes render at, and it has NO weight
+ * axis, so the ~6 call sites that pair `.vex-micro` with `font-semibold` /
+ * `font-medium` would have forced the browser to SYNTHESIZE a bold the
+ * register explicitly forbids. Instrument Sans is the support half of the
+ * same whitehouse.gov pair, carries a real 400–700 axis, and stays crisp at
+ * micro sizes — so the small-caps stamp is sans and the serif is reserved
+ * for headings, display and the reasoning aside. See `.vex-chat-prose`
+ * below for the reading side, and `.vex-reasoning-prose` for the aside.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Eyebrow — the section/group label. Formerly carried a leading ::before rule
+ * (28px currentColor hairline); removed app-wide by owner decree (2026-07-20:
+ * no dash rules) — the mark read as visual noise next to group headers, the
+ * welcome tagline, and block titles. The dash sweep (2026-07-20) also retired
+ * the last multi-child call site (UnlockScreen's mirrored trailing dash on
+ * "Master Vault · Sealed"), so `gap` is dropped too — every call site is
+ * single-child text now. Color comes from the accent-text family (readable
+ * cobalt on ink). */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 10px;
-  letter-spacing: 0.26em;
+  /* Tightened from the mono 0.26em: a proportional face needs less optical
+   * separation than a monospaced one at the same size. */
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(
     --vex-accent-text,
     color-mix(in oklab, var(--color-accent-primary) 55%, white)
   );
 }
-/* Micro-label — the mono stamp the app repeats everywhere a value needs a
- * caption: stepper lines, trailing meta rows, status words, version stamps,
+
+/* Micro-label — the small-caps stamp the app repeats everywhere a value needs
+ * a caption: stepper lines, trailing meta rows, status words, version stamps,
  * inline tags. Extracted (INK REDESIGN, 2026-07-27) from ~25 duplicated
  * `font-mono text-[10px] uppercase tracking-[0.18em]` call sites so the two
- * worlds can size the stamp independently: the shell keeps the 10px/0.18em
+ * worlds can size the stamp independently: the shell keeps the 10px/0.14em
  * default below, the pre-shell re-pins both vars in the
  * `[data-vex-gate="true"]` scope (global-css/setup-gate.css) to 12px/0.14em.
  * That split matters because most of those call sites live in wizard step
@@ -36,18 +62,86 @@
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
  * site that needs a different size must not use this class. */
 .vex-micro {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--vex-micro-size, 0.625rem);
-  letter-spacing: var(--vex-micro-tracking, 0.18em);
+  letter-spacing: var(--vex-micro-tracking, 0.14em);
   text-transform: uppercase;
 }
 
-/* Welcome-stage modifier ONLY (White House/Instrument typography pass): swaps
- * the eyebrow's hardcoded mono face for the sans display face without
- * touching every other `.vex-eyebrow` call site (memory/session dialogs
- * etc. stay mono). */
-.vex-eyebrow--sans {
+/* Chat prose — the READING register for message bodies.
+ *
+ * TYPOGRAPHY LAW, CORRECTED (owner readability round, 2026-07-30). The
+ * previous pass set assistant/user body copy in Instrument Serif at 16.5px.
+ * That was a misreading of the source: whitehouse.gov uses Instrument Serif
+ * for HEADINGS only. It is a condensed, high-contrast DISPLAY face — at
+ * paragraph length and screen resolution its hairlines thin out and the
+ * narrow counters close up, and the owner's first live session reported the
+ * body as plainly hard to read.
+ *
+ * So the register splits, exactly as the source does:
+ *   BODY      → Instrument Sans, 15px/1.65 (the pre-redesign reading metric).
+ *   HEADINGS  → Instrument Serif, set per-node in `MarkdownContent`.
+ *   DISPLAY   → Instrument Serif, set per-node (position totals, hero figures).
+ *   REASONING → Instrument Serif ITALIC (`.vex-reasoning-prose` below) — a
+ *               deliberately different voice for a different kind of speech.
+ *   TECHNICAL → mono (code, raw JSON, addresses, tx hashes) / sans+tabular
+ *               (numeric columns). Unchanged.
+ *
+ * Consequence of leaving the serif: Instrument Sans HAS a real 400–700 weight
+ * axis, so `strong` is a genuine semibold again instead of the italic
+ * substitution the weightless serif forced. `font-synthesis-weight` is
+ * therefore no longer needed here — it survives on the serif subtrees below,
+ * which still cannot be synthesized. */
+.vex-chat-prose {
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.vex-chat-prose strong,
+.vex-chat-prose b {
+  font-weight: 600;
+}
+.vex-chat-prose code,
+.vex-chat-prose pre {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-weight: 400;
+}
+.vex-chat-prose table {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+/* The serif survivors inside chat prose are display-only (headings), and
+ * Instrument Serif still ships static 400 + 400 italic with NO weight axis —
+ * a `font-weight: 600` reaching them would be FAKED by the browser. */
+.vex-chat-prose :is(h1, h2, h3, h4, .font-serif) {
+  font-synthesis-weight: none;
+}
+
+/* Reasoning prose — the SECOND voice (owner decree 2026-07-30: "inna
+ * czcionka"). Vex thinking aloud is not Vex speaking, so it is not set in the
+ * speaking register: Instrument Serif ITALIC at a muted tone, the editorial
+ * convention for an aside. Worn by all three reasoning surfaces so they read
+ * as one object — the live segment streaming in the island, the settled
+ * segment stamps, and the persisted `ReasonedBlock`.
+ *
+ * The same technical opt-outs apply: a tool name, a JSON fragment or an
+ * address quoted inside a trace must not be italicised into illegibility. */
+.vex-reasoning-prose {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-synthesis-weight: none;
+  color: var(--vex-text-2);
+}
+.vex-reasoning-prose strong,
+.vex-reasoning-prose b {
+  font-weight: 400;
+}
+.vex-reasoning-prose :is(code, pre) {
+  font-family: var(--font-mono);
+  font-style: normal;
 }
 
 /* Grain — the landing .noise SVG turbulence, near-invisible. CSP-safe:

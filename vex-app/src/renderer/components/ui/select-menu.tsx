@@ -27,8 +27,7 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon, VexIcon } from "../icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 export interface SelectMenuOption {
@@ -214,7 +213,7 @@ export function SelectMenu({
         >
           {selectedLabel}
         </span>
-        <HugeiconsIcon
+        <VexIcon
           icon={ArrowDown01Icon}
           size={15}
           aria-hidden

@@ -106,8 +106,7 @@ describe("prompt unambiguity (A1)", () => {
     it("every shortcut named in the table is a registered tool", () => {
       const toolModel = buildToolModelPrompt();
       for (const alias of [
-        "token_find", "token_check", "khalani_chains_list", "khalani_tokens_top",
-        "khalani_tokens_balances", "swap_quote", "swap_execute", "bridge_quote",
+        "token_find", "token_check", "swap_quote", "swap_execute", "bridge_quote",
         "bridge", "bridge_status",
       ]) {
         expect(toolModel, `alias missing from the table: ${alias}`).toContain(`\`${alias}\``);

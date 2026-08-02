@@ -18,7 +18,7 @@ import * as knowledgeRepo from "@vex-agent/db/repos/knowledge.js";
 
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
-import { num, enumField, ok, fail } from "../types.js";
+import { num, enumField, ok, fail, missingOrWrongTypeMessage } from "../types.js";
 
 const RESPONSE_FORMATS = ["concise", "detailed"] as const;
 type ResponseFormat = (typeof RESPONSE_FORMATS)[number];
@@ -28,7 +28,9 @@ export async function handleLongMemoryGet(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   const id = num(params, "id");
-  if (id === undefined) return fail("Missing required parameter: id");
+  if (id === undefined) {
+    return fail(missingOrWrongTypeMessage(params, "id", "a number (the entry id from long_memory_search)"));
+  }
 
   const responseFormat: ResponseFormat =
     enumField<ResponseFormat>(params, "response_format", RESPONSE_FORMATS) ?? "concise";

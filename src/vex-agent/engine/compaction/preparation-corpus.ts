@@ -39,6 +39,7 @@ import type {
   ProviderMessage,
   ProviderToolCallRef,
 } from "@vex-agent/inference/types.js";
+import { normalizeToolCallIds } from "@vex-agent/inference/tool-call-id-normalization.js";
 
 /**
  * Read the corpus off a claimed preparation row.
@@ -72,11 +73,20 @@ export function readPreparationCorpus(
  * Pure and deterministic: the entries are replayed in stored order and each
  * tool call's arguments come back from the canonical sorted-key JSON STRING the
  * corpus froze, so two builds of one corpus are identical.
+ *
+ * The rendered prefix is normalized before it is returned. A v1 corpus frozen
+ * before tool-call ids were validated can carry duplicates or blanks, and
+ * `verifyToolPairClosure` below is `Set`-based — two same-block calls sharing
+ * one id collapse to a single expected occurrence and the second result is
+ * rejected, so compaction would fail locally on that session forever, before
+ * any provider or mapper guard is reached. Both branch workers go through this
+ * one function, so the repair belongs here. Deterministic and idempotent, so
+ * the C2 same-bytes contract is unaffected.
  */
 export function buildCorpusProviderMessages(
   corpus: PreparationCorpus,
 ): ProviderMessage[] {
-  return corpus.entries.map(toProviderMessage);
+  return normalizeToolCallIds(corpus.entries.map(toProviderMessage)).messages;
 }
 
 function toProviderMessage(entry: PreparationCorpusEntry): ProviderMessage {

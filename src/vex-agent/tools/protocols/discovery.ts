@@ -6,12 +6,15 @@ import {
 } from "./catalog.js";
 import { buildDiscoverNamespaceDescription } from "./descriptions.js";
 import { denseScore } from "./dense-score.js";
+import { pinExactToolIdMatch } from "./toolid-pin.js";
 import type {
   ProtocolDiscoveryItem,
+  ProtocolDiscoveryListItem,
   ProtocolDiscoveryRequest,
   ProtocolDiscoveryResult,
   ProtocolDiscoveryRetrievalMeta,
 } from "./types.js";
+import type { ProtocolToolManifest } from "./types.js";
 import type { ScoredManifest } from "./lexical-score.js";
 import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 
@@ -58,6 +61,46 @@ function toDiscoveryItem(
     item.unavailable_at_pressure = true;
   }
   return item;
+}
+
+/**
+ * Discriminator for `ProtocolDiscoveryResult.tools`: ranked/catalog rows carry
+ * `params`, `score`, and `whyMatched`; list-mode rows do not.
+ */
+export function isRankedDiscoveryItem(
+  item: ProtocolDiscoveryItem | ProtocolDiscoveryListItem,
+): item is ProtocolDiscoveryItem {
+  return "params" in item;
+}
+
+function toDiscoveryListItem(manifest: ProtocolToolManifest): ProtocolDiscoveryListItem {
+  return {
+    toolId: manifest.toolId,
+    mutating: manifest.mutating,
+    description: manifest.description,
+  };
+}
+
+/**
+ * Namespace list mode: the COMPLETE advertised, available surface of one
+ * protocol as lean rows. No ranking (a list has no query to rank against) and
+ * no `limit` truncation — a partial list would defeat its only purpose, which
+ * is letting the model see everything a namespace offers in one cheap read.
+ */
+function buildNamespaceListing(
+  namespace: string,
+  manifests: readonly ProtocolToolManifest[],
+): ProtocolDiscoveryResult {
+  const tools = manifests.map(toDiscoveryListItem);
+  return {
+    success: true,
+    count: tools.length,
+    totalCount: tools.length,
+    hasMore: false,
+    tools,
+    warnings: tools.length === 0 ? [`Namespace "${namespace}" has no available tools right now.`] : [],
+    retrieval: { method: "list", denseFailed: false, candidateCount: tools.length },
+  };
 }
 
 function buildDiscoveryFailure(message: string): ProtocolDiscoveryResult {
@@ -109,6 +152,15 @@ export async function discoverProtocolCapabilities(
     // swap manifests from discovery until this session revealed them.
     .filter((manifest) => uniswapRevealed || !REVEAL_GATED_UNISWAP_TOOL_IDS.has(manifest.toolId));
 
+  if (request.list === true) {
+    if (typeof resolvedNamespace !== "string") {
+      return buildDiscoveryFailure(
+        `list mode requires a namespace — listing every protocol at once is not available. ${buildDiscoverNamespaceDescription()}`,
+      );
+    }
+    return buildNamespaceListing(resolvedNamespace, filteredTools);
+  }
+
   let scoredTools: ScoredManifest[];
   let retrievalMeta: ProtocolDiscoveryRetrievalMeta;
 
@@ -123,6 +175,10 @@ export async function discoverProtocolCapabilities(
     const outcome = await denseScore(query, filteredTools);
     scoredTools = outcome.scored;
     retrievalMeta = outcome.meta;
+    // A query that IS a toolId (or uniquely prefixes one) names its answer;
+    // dense similarity is the wrong instrument for that. Everything after the
+    // pinned row keeps the ranking retrieval produced.
+    scoredTools = pinExactToolIdMatch(query, filteredTools, scoredTools);
   }
 
   const tools = scoredTools.slice(0, limit).map((entry) => toDiscoveryItem(

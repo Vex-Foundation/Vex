@@ -14,8 +14,8 @@ import { describe, it, expect } from "vitest";
 import {
   decodePendleSettlement,
   PENDLE_ROUTER_FALLBACK_DELIVERED_PATH,
+  type SettlementDecoderInput,
 } from "@vex-agent/sync/pendle-settlement-decoder.js";
-import type { SettlementDecoderInput } from "@vex-agent/sync/settlement-decoders.js";
 
 const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const WALLET = "0x1111111111111111111111111111111111111111";

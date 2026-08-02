@@ -5,26 +5,26 @@
  * wizard step is one edit in `@shared/schemas/wizard.ts`
  * (`WIZARD_STEP_IDS`) plus one entry here.
  *
- * Icons come from `@hugeicons/core-free-icons` — generic UI vocabulary
+ * Icons come from the shared icon layer — generic UI vocabulary
  * matching the rest of the onboarding flow. Brand icons (`@thesvg/react`)
  * are reserved for actual brand surfaces (Provider step model lookup,
  * Wallets EVM/Solana tabs).
  */
 
-import type { IconSvgElement } from "@hugeicons/react";
 import {
   AiBrain05Icon,
   CheckmarkBadge02Icon,
   ConnectIcon,
   CpuIcon,
+  type IconGlyph,
   Key02Icon,
   SquareLock02Icon,
   Wallet01Icon,
-} from "@hugeicons/core-free-icons";
+} from "../../components/icons/index.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 
 export interface WizardStepMeta {
-  readonly icon: IconSvgElement;
+  readonly icon: IconGlyph;
   readonly label: string;
   readonly description: string;
 }

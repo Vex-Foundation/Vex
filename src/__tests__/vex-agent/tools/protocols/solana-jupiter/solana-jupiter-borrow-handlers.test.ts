@@ -472,6 +472,21 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
     expect(mockCreateAgentActivityPreBroadcastFailure).not.toHaveBeenCalled();
   });
 
+  // rules/90: a raw amount must travel with the decimals needed to read it.
+  // WSOL's decimals are known on this path (canonical mint), so BOTH figures
+  // are spelled in WSOL — with the raw base units kept alongside, not replaced.
+  it("spells both the required and the found WSOL amounts in human units, keeping the raws", async () => {
+    mockGetAccount.mockResolvedValue({ amount: 1_000n });
+
+    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
+      { vaultId: 2, depositAmount: "30000000" },
+      ctx(),
+    );
+
+    expect(result.output).toContain("0.03 WRAPPED SOL (WSOL) (30000000 raw units)");
+    expect(result.output).toContain("found 0.000001 WSOL (1000 raw units)");
+  });
+
   it("fails CLEARLY when no WSOL token account exists at all (getAccount throws)", async () => {
     mockGetAccount.mockRejectedValue(new Error("TokenAccountNotFoundError"));
 

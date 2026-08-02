@@ -12,16 +12,17 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   BookOpen01Icon,
   Brain01Icon,
+  type IconGlyph,
   SparklesIcon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../components/icons/index.js";
 
 interface RecallCopy {
   readonly label: string;
-  readonly icon: IconSvgElement;
+  readonly icon: IconGlyph;
 }
 
 function recallCopy(toolName: string | null): RecallCopy {
@@ -57,7 +58,7 @@ export function MemoryMarker({
       <div className="flex items-center gap-3">
         <span aria-hidden className="h-px flex-1 bg-[var(--vex-line)]" />
         <span className="flex min-w-0 items-center gap-1.5 text-[var(--vex-text-3)]">
-          <HugeiconsIcon icon={icon} size={12} aria-hidden />
+          <VexIcon icon={icon} size={12} aria-hidden />
           <span className="break-words font-mono text-[10px] uppercase tracking-[0.3em]">
             {label}
           </span>

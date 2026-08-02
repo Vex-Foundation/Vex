@@ -682,6 +682,57 @@ describe("solana.swap.quote", () => {
     expect(mockPrepareVersionedTx).not.toHaveBeenCalled();
   });
 
+  // Summary parity with `kyberswap.swap.quote` (2026-07-30). A live session
+  // showed a weaker model lifting a raw base-unit figure out of a quote into
+  // its user-facing reply, so the human layer spells token units — while the
+  // machine fields keep the provider's raw strings byte-for-byte.
+  it("adds a HUMAN summary while leaving every raw machine field untouched", async () => {
+    const result = await CORE_HANDLERS["solana.swap.quote"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+      SWAP_SESSION_CTX,
+    );
+
+    // 6 decimals on both legs (the resolver mock above).
+    expect(result.data?.summary).toBe("Quote: 1000 BonkMint → ~100 SolMint on Solana.");
+    expect(result.data?.inputAmountRaw).toBe("1000000000");
+    expect(result.data?.outputAmountRaw).toBe("100000000");
+    expect(result.data?.otherAmountThreshold).toBe("99000000");
+  });
+
+  it("renders price impact as a PERCENT from the provider's decimal fraction", async () => {
+    mockPrepareFeeBearingJupiterSwap.mockResolvedValue(
+      preparedFeeBearingSwap({
+        raw: {
+          inAmount: "1000000000", outAmount: "100000000", otherAmountThreshold: "99000000",
+          swapMode: "ExactIn", slippageBps: 50,
+          swapInstruction: { programId: BUILD_SWAP_PROGRAM_ID },
+          // FRACTION, not a percent — the unit trap named in swap-route-projector.ts.
+          priceImpactPct: "-0.00015864212550172836",
+        },
+      }),
+    );
+
+    const result = await CORE_HANDLERS["solana.swap.quote"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+      SWAP_SESSION_CTX,
+    );
+
+    expect(result.data?.summary).toContain("Price impact -0.02%.");
+    // The fraction itself stays on the machine field, verbatim.
+    expect(result.data?.priceImpactFraction).toBe("-0.00015864212550172836");
+  });
+
+  // Unknown is not zero: a missing price impact is omitted, never rendered
+  // as a reassuring "0.00%".
+  it("omits price impact entirely when the provider gave none", async () => {
+    const result = await CORE_HANDLERS["solana.swap.quote"]!(
+      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+      SWAP_SESSION_CTX,
+    );
+
+    expect(result.data?.summary).not.toContain("Price impact");
+  });
+
   it("rejects an explicit address that differs from the session's selected Solana wallet (wallet-scoped, no quote built)", async () => {
     const result = await CORE_HANDLERS["solana.swap.quote"]!(
       { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, address: "SpoofedWallet" },

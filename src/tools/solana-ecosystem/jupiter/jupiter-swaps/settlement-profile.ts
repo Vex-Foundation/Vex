@@ -1,38 +1,26 @@
 /**
- * The SETTLEMENT PROFILE a fee-bearing Jupiter swap persists at intent time so
- * the K3 Solana sweep can later decode what actually settled (design
- * `solana-settlement-profile-design.md` D1).
+ * The SETTLEMENT PROFILE a fee-bearing Jupiter swap persists at intent time — a
+ * bounded, versioned record of the economics Vex itself approved and
+ * `assertBuildResponseSafeToSign` already PROVED about the exact bytes that
+ * were signed.
  *
- * WHY THIS EXISTS: a landed `/build` swap always contains wallet-sourced
- * `system` transfers — the landing tip, and (for a native-SOL input) the wrap
- * funding transfer into the wallet's own WSOL account. Structure alone cannot
- * tell those apart from an unrelated payment, so the generic balance decoder
- * (`vex-agent/sync/solana-settlement-decoders.ts`) correctly DECLINES and every
- * native-SOL swap stayed `pending` forever. This profile is the missing
- * protocol contract: a bounded, versioned record of the economics Vex itself
- * approved and `assertBuildResponseSafeToSign` already PROVED about the exact
- * bytes that were signed.
- *
- * ONE OWNER, BOTH DIRECTIONS. The swap handler writes it
- * (`buildSolanaSettlementRouteProvenance`) and the sweep reads it
- * (`parseSolanaSettlementProfile`); the `route_provenance` envelope key lives
- * here once so neither side can drift. It is deliberately a plain, scalar-only
- * JSONB shape: no provider text, no instruction bytes, nothing secret.
+ * WRITE-ONLY TODAY (owner decree 2026-07-30). It was written for the Solana
+ * repair sweep's protocol-aware settlement decoder, which distinguished a
+ * landed swap's wallet-sourced `system` transfers (the landing tip, and the
+ * wrap funding transfer for a native-SOL input) from an unrelated payment. That
+ * sweep is now STATUS-ONLY and decodes nothing, so the in-repo READER is gone.
+ * The WRITE stays: it is audit metadata for a self-custodial money app and the
+ * only durable record of the economics behind a signed swap.
  *
  * NEVER A GUESS. The profile is written ONLY when every field can be stated
  * honestly. An approved tip whose recipient was not certified yields NO profile
- * at all rather than a profile claiming there was no tip — the sweep then falls
- * back to the generic decoder and the row stays `pending`, which is always the
- * safe answer (migration 044's "never confirm with inaccurate `executed_*`"
- * doctrine).
+ * at all rather than a profile claiming there was no tip. It is deliberately a
+ * plain, scalar-only JSONB shape: no provider text, no instruction bytes,
+ * nothing secret.
  *
- * ADDING A KIND: add a schema, add it to `parseSolanaSettlementProfile`'s
- * result union, and add a dispatch arm in
- * `vex-agent/sync/solana-settlement-dispatch.ts`. Bump `v` only when an
- * EXISTING kind's field meanings change — a reader that cannot validate a
- * profile declines to use it, which is why the version is checked strictly.
+ * VERSIONED: bump `v` only when an EXISTING field's meaning changes, so a later
+ * reader can tell a shape it understands from one it does not.
  */
-
 import { z } from "zod";
 
 import type { CertifiedJupiterTip } from "./submit-tip-proof.js";
@@ -125,21 +113,4 @@ export function buildSolanaSettlementRouteProvenance(
   if (!parsed.success) return undefined;
 
   return { [ROUTE_PROVENANCE_SETTLEMENT_KEY]: parsed.data };
-}
-
-/**
- * Read a persisted profile out of an `agent_activity` row's `route_provenance`.
- * The stored JSONB is UNTRUSTED input (it round-tripped through the database
- * and may predate the current contract), so it is validated in full; anything
- * absent, foreign, or invalid yields `null` and the caller must fall back to
- * the generic decoder rather than assume a shape.
- */
-export function parseSolanaSettlementProfile(
-  routeProvenance: Record<string, unknown> | null | undefined,
-): JupiterFeeSwapSettlementProfile | null {
-  if (!routeProvenance) return null;
-  const candidate = routeProvenance[ROUTE_PROVENANCE_SETTLEMENT_KEY];
-  if (candidate === undefined) return null;
-  const parsed = jupiterFeeSwapSettlementProfileSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
 }

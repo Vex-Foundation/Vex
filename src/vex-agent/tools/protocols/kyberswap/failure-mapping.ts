@@ -2,8 +2,9 @@
  * KyberSwap failure → Agent Scan mapping (plan §4.1/§11.2; REVISION 1 —
  * reveal-on-execute-revert design).
  *
- * Three classifications, the first two of the SAME caught (pre-broadcast)
- * error, the third of a MINED on-chain outcome (never a caught error):
+ * Four classifications: the first two of the SAME caught (pre-broadcast)
+ * error, the third of a MINED on-chain outcome (never a caught error), the
+ * fourth of an ALREADY-CLASSIFIED pre-sign estimate revert:
  *   - `mapKyberFailureToActivityCode` — the closed 11-member `agent_activity`
  *     `failure_code` enum (`db/repos/agent-activity.ts`), for recording.
  *   - `deriveKyberRevealFailure` — the coordinator-fixed reveal-eligible input
@@ -15,6 +16,10 @@
  *     shape, but derived from the staged broadcast loop's `outcome.kind ===
  *     "reverted"` (a MINED revert has no caught error to read). Role-scoped
  *     (REVISION 1 R1): produces the signal ONLY for the `swap` leg role.
+ *   - `deriveKyberPreSignRevertRevealFailure` — the same reveal-eligible input
+ *     shape for a PRE-SIGN `eth_estimateGas` revert already classified by
+ *     `evm-chains/pre-sign-revert-refusal.ts`. Role-scoped like the mined
+ *     revert, and additionally gated on nothing having been broadcast.
  *
  * Neither of the first two re-derives `mapAggregatorError`'s VexError mapping
  * (`tools/kyberswap/aggregator/errors.ts`) — both read the ALREADY-MAPPED
@@ -24,6 +29,7 @@
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import type { AgentActivityFailureCode, AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
+import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
 import type { KyberRevealFailure } from "../../registry/uniswap-reveal-eligibility.js";
 
 /** The raw numeric Kyber error code, when the caught error carries one (`mapAggregatorError`'s `externalName`). */
@@ -122,4 +128,31 @@ export function deriveKyberMinedRevertRevealFailure(
   eventRole: AgentActivityEventRole,
 ): KyberRevealFailure | null {
   return eventRole === "swap" ? { kind: "swap_mined_revert" } : null;
+}
+
+/**
+ * Derive the `pre_sign_revert` reveal signal for a leg the chain refused at
+ * the PRE-SIGN `eth_estimateGas` — the third structurally distinct source, and
+ * the only one where nothing of ours ever reached the network.
+ *
+ * Both gates are encoded here (coordinator-fixed), not left to an informal
+ * call-site check, and both mirror the mined-revert path's own rules:
+ *   - `eventRole` must be `swap` (R1). An `allowance`/`allowance_reset` leg
+ *     refused is an ERC-20 approve condition, categorically unrelated to
+ *     route/venue selection.
+ *   - `legBroadcastAttempted` must be false. Once this leg's hash was staged,
+ *     bytes went to the wire and the refusal is no longer a pre-sign one — the
+ *     same discriminator the refusal wording itself turns on.
+ * Which failure codes such a refusal may reveal on is the classifier's own
+ * closed set (`uniswap-reveal-eligibility.ts`); this function does not filter
+ * it, so the two decisions cannot drift apart in only one of them.
+ */
+export function deriveKyberPreSignRevertRevealFailure(input: {
+  readonly eventRole: AgentActivityEventRole;
+  readonly legBroadcastAttempted: boolean;
+  readonly failureCode: EvmRouterRevertFailureCode;
+}): KyberRevealFailure | null {
+  if (input.eventRole !== "swap") return null;
+  if (input.legBroadcastAttempted) return null;
+  return { kind: "pre_sign_revert", failureCode: input.failureCode };
 }

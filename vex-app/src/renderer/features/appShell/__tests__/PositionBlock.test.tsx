@@ -266,29 +266,7 @@ function chain(
   return { chainId, family, totalUsd, tokens };
 }
 
-describe("PositionBlock session view (addresses + chains)", () => {
-  it("renders copy-ready deposit addresses for both families", () => {
-    mockSessionWallets(EVM_ADDR, SOL_ADDR);
-    mockPortfolio(portfolio({ scope: "session" }));
-    render(<PositionBlock activeSessionId={SESSION} />);
-
-    // Truncated 6+4 forms with copy buttons (AddressDisplay).
-    expect(screen.getByText("0xAAAA…aaaa")).not.toBeNull();
-    expect(screen.getByText("So1111…1112")).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: "Copy address" })).toHaveLength(2);
-  });
-
-  it("hides a family whose session wallet is absent", () => {
-    mockSessionWallets(EVM_ADDR, null);
-    mockPortfolio(portfolio({ scope: "session" }));
-    render(<PositionBlock activeSessionId={SESSION} />);
-
-    expect(screen.getByText("0xAAAA…aaaa")).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: "Copy address" })).toHaveLength(1);
-    // No Solana group either — the session simply has no Solana wallet.
-    expect(screen.queryByText("Solana")).toBeNull();
-  });
-
+describe("PositionBlock session view (unified chain switcher)", () => {
   it("defaults the EVM group to Ethereum with a quiet empty state at zero balance", () => {
     mockSessionWallets(EVM_ADDR, SOL_ADDR);
     // Funds on Base only — Ethereum still leads as the standing default.
@@ -374,15 +352,16 @@ describe("PositionBlock session view (addresses + chains)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "more" }));
     expect(screen.getByText("Networks")).not.toBeNull();
-    expect(screen.getByText("No funded EVM networks yet.")).not.toBeNull();
+    expect(screen.getByText("No funded networks yet.")).not.toBeNull();
   });
 
-  it("heads the Solana group with its mark (sr-only name) and its top tokens", () => {
-    mockSessionWallets(null, SOL_ADDR);
+  it("keeps Solana COLLAPSED by default and opens it from its chip (no always-open second group)", () => {
+    mockSessionWallets(EVM_ADDR, SOL_ADDR);
     mockPortfolio(
       portfolio({
         scope: "session",
         chains: [
+          chain(1, "evm", 40, [{ symbol: "ETH", balanceUsd: 40, amount: null }]),
           chain(20011000000, "solana", 60, [
             { symbol: "SOL", balanceUsd: 50, amount: null },
             { symbol: "BONK", balanceUsd: 10, amount: null },
@@ -391,18 +370,64 @@ describe("PositionBlock session view (addresses + chains)", () => {
       }),
     );
     const { container } = render(<PositionBlock activeSessionId={SESSION} />);
-
-    // Scope to the chains area — the deposit row above also captions "SOL".
     const chainsArea = container.querySelector(
       '[data-vex-area="position-chains"]',
+    ) as HTMLElement;
+    const chains = within(chainsArea);
+
+    // Default = the EVM standing default; Solana's holdings are NOT on screen.
+    expect(chains.getByText("Ethereum")).not.toBeNull();
+    expect(chains.queryByText("BONK")).toBeNull();
+
+    // Solana is a peer chip in the ONE chip row, labelled for assistive tech.
+    fireEvent.click(
+      chains.getByRole("button", { name: "Show Solana assets" }),
     );
-    expect(chainsArea).not.toBeNull();
-    const chains = within(chainsArea as HTMLElement);
-    // The visible label is the mark; the NAME survives for AT via sr-only.
-    expect(chains.getByText("Solana")).not.toBeNull();
     expect(chains.getByText("SOL")).not.toBeNull();
     expect(chains.getByText("BONK")).not.toBeNull();
-    // No EVM group at all — the session has no EVM wallet.
-    expect(chains.queryByText("Ethereum")).toBeNull();
+    // One selection at a time — the EVM chain's holdings are gone now.
+    expect(chains.queryByText("ETH")).toBeNull();
+  });
+
+  it("opens on Solana when the session has NO EVM wallet (never an empty EVM default)", () => {
+    mockSessionWallets(null, SOL_ADDR);
+    mockPortfolio(
+      portfolio({
+        scope: "session",
+        chains: [
+          chain(20011000000, "solana", 60, [
+            { symbol: "SOL", balanceUsd: 60, amount: null },
+          ]),
+        ],
+      }),
+    );
+    const { container } = render(<PositionBlock activeSessionId={SESSION} />);
+    const chains = within(
+      container.querySelector('[data-vex-area="position-chains"]') as HTMLElement,
+    );
+    expect(chains.getByText("SOL")).not.toBeNull();
+    // No EVM chips at all — the session has no EVM wallet.
+    expect(
+      chains.queryByRole("button", { name: "Show Ethereum assets" }),
+    ).toBeNull();
+  });
+
+  it("the 'more' dialog lists Solana too, not just EVM networks", () => {
+    mockSessionWallets(EVM_ADDR, SOL_ADDR);
+    mockPortfolio(
+      portfolio({
+        scope: "session",
+        chains: [
+          chain(137, "evm", 5, [{ symbol: "POL", balanceUsd: 5, amount: null }]),
+          chain(20011000000, "solana", 60, [
+            { symbol: "SOL", balanceUsd: 60, amount: null },
+          ]),
+        ],
+      }),
+    );
+    render(<PositionBlock activeSessionId={SESSION} />);
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+    expect(screen.getAllByText("Polygon").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Solana").length).toBeGreaterThan(0);
   });
 });

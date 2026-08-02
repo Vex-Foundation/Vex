@@ -99,16 +99,47 @@ export interface InternalToolContext {
 
 // ── Param accessors ─────────────────────────────────────────────
 
-/** Safe string accessor for tool params */
+/**
+ * Safe string accessor for tool params.
+ *
+ * A wrong TYPE collapses to `""`, the same value an ABSENT key gives — so a
+ * caller that reports `!value` as "Missing required: x" tells the model a
+ * supplied field was never sent, and the model resends it identically. Use
+ * {@link missingOrWrongTypeMessage} to phrase the rejection.
+ */
 export function str(params: Record<string, unknown>, key: string): string {
   const v = params[key];
   return typeof v === "string" ? v : "";
 }
 
-/** Safe number accessor for tool params */
+/** Safe number accessor for tool params. Same false-missing caveat as {@link str}. */
 export function num(params: Record<string, unknown>, key: string): number | undefined {
   const v = params[key];
   return typeof v === "number" ? v : undefined;
+}
+
+/**
+ * Why a `str()`/`num()` read came back empty — absent, or present with the
+ * wrong type — phrased for the model.
+ *
+ * The distinction is the whole point. `chain_read {chainId: 8453}` is a NUMBER
+ * where the tool wants the string spelling; answering "Missing required:
+ * chainId" is factually false (`token_find` returns `chainId` as a number, so
+ * this is the form the agent normally holds) and the only repair it suggests is
+ * the one that cannot work. Values are never echoed — only the shape.
+ */
+export function missingOrWrongTypeMessage(
+  params: Record<string, unknown>,
+  key: string,
+  expected: string,
+): string {
+  const value = params[key];
+  if (value === undefined || value === null) return `Missing required: ${key} (${expected})`;
+  if (typeof value === "string" && value.trim() === "") {
+    return `${key} arrived empty — supply ${expected}, or omit the field entirely`;
+  }
+  const received = Array.isArray(value) ? "array" : typeof value;
+  return `${key} must be ${expected} — it arrived as a ${received}. Resend it with that type.`;
 }
 
 /** Safe boolean accessor for tool params */

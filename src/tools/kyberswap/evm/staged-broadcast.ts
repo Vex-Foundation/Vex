@@ -1,14 +1,16 @@
 /**
- * Stable re-export of the staged-broadcast primitive, which now lives in its
- * responsibility owner `@tools/evm-chains/staged-broadcast.ts` (alongside the
- * gas-headroom + dependent-leg guards it composes). Relay and pendle import it
- * by THIS path; keeping the path exporting preserves those imports and the test
- * mocks that target `@tools/kyberswap/evm/staged-broadcast.js`.
+ * Stable re-export — the staged EVM broadcast primitive now lives in
+ * `@tools/evm-chains/staged-broadcast.js`, alongside the guards it composes.
+ *
+ * It was never kyberswap-specific: relay, pendle, uniswap (twin) and
+ * trench-express all sign through it. This path is preserved so no consumer
+ * import changes.
  */
+
 export {
   signStageBroadcast,
   type StagedTxParams,
   type StagedSendHandles,
-  type StagedBroadcastOutcome,
   type StagedBroadcastHooks,
+  type StagedBroadcastOutcome,
 } from "@tools/evm-chains/staged-broadcast.js";

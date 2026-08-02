@@ -13,16 +13,17 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "virtuals",
     lifecycle: "active",
     description:
-      "List Virtuals Protocol agent tokens on ONE chain (BASE, SOLANA, ROBINHOOD, or ETH). Concise rows: name, symbol, status (UNDERGRAD bonding-curve vs graduated AVAILABLE, with a warning flag on UNDERGRAD), token/preToken/LP addresses, holderCount, top10HolderPercentage, mcapInVirtual, volume24h, priceChangePercent24h, isVerified (anti-impersonation badge only), the anti-sniper buy-tax window, ageDays, and verified socials. Filter status client-side (undergrad|graduated|all) and sort by mcap, volume, newest, or recentGraduation. Read-only.",
+      "List Virtuals Protocol agent tokens on ONE chain (BASE, SOLANA, ROBINHOOD, or ETH). Concise rows: name, symbol, status (UNDERGRAD bonding-curve vs graduated AVAILABLE, with a warning flag on UNDERGRAD), token/preToken/LP addresses, holderCount, top10HolderPercentage, mcapInVirtual, volume24h, priceChangePercent24h, isVerified (anti-impersonation badge only), the anti-sniper buy-tax window, ageDays, and verified socials. Filter status client-side (undergrad|graduated|all) and order with sortBy: mcap, volume, newest, or recentGraduation (sort is accepted as an alias). Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain filter (REQUIRED): BASE, SOLANA, ROBINHOOD, or ETH." },
       { key: "status", type: "string", description: "Client-side status filter: undergrad (bonding curve), graduated (AVAILABLE), or all (default)." },
-      { key: "sort", type: "string", description: "Sort order: mcap (default), volume, newest, or recentGraduation." },
+      { key: "sortBy", type: "string", description: "Sort order: mcap (default), volume, newest, or recentGraduation." },
+      { key: "sort", type: "string", description: "Alias of sortBy, accepted for compatibility. Same values; sortBy wins when both are sent." },
       { key: "limit", type: "number", description: "Max agents to return after filtering (default 20, max 50)." },
     ],
-    exampleParams: { chain: "ROBINHOOD", status: "graduated", sort: "mcap", limit: 20 },
+    exampleParams: { chain: "ROBINHOOD", status: "graduated", sortBy: "mcap", limit: 20 },
     discovery: VIRTUALS_AGENTS_DISCOVERY["virtuals.list"],
   },
   {
@@ -30,13 +31,13 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "virtuals",
     lifecycle: "active",
     description:
-      "Get full detail for ONE Virtuals agent token by numeric id. Adds to the list fields: factory, category, fdvInVirtual, liquidityUsd, graduation state, launchInfo, a bounded tokenomics summary, a sanitized short description excerpt, and a tradingRoute hint {venue, namespace, quoteToken} naming the EXACT existing tool that trades it (uniswap/kyberswap/solana, quoted in VIRTUAL). ALWAYS call this before buying a graduated agent to read the anti-sniper window — never buy while windowActive. Read-only.",
+      "Get ONE Virtuals agent token's full profile by its numeric id — a protocol tool, called via execute_tool(toolId=\"virtuals.get\", params={id}), not by name. Adds to the list fields: factory, category, fdvInVirtual, liquidityUsd, graduation state, launchInfo, a bounded tokenomics summary, a sanitized short description excerpt, and a tradingRoute hint {venue, namespace, quoteToken} naming the EXACT existing tool that trades it (uniswap/kyberswap/solana, quoted in VIRTUAL). ALWAYS call this before buying a graduated agent to read the anti-sniper window — never buy while windowActive. Read-only.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "id", type: "string", required: true, description: "Numeric Virtuals agent id (e.g. 96200 for VEX)." },
+      { key: "id", type: "number", required: true, description: "Numeric Virtuals agent id, exactly as virtuals.list returns it (e.g. 96200 for VEX). The string spelling \"96200\" is accepted too." },
     ],
-    exampleParams: { id: "96200" },
+    exampleParams: { id: 96200 },
     discovery: VIRTUALS_AGENTS_DISCOVERY["virtuals.get"],
   },
   {

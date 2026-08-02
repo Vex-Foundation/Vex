@@ -239,14 +239,17 @@ describe("capture-safety — projected token handlers are non-mutating reads", (
     }
   });
 
-  it("core.ts wires the projector into the read handlers", () => {
-    const corePath = fileURLToPath(
+  // The read handlers moved from `handlers/core.ts` into its sibling
+  // `handlers/core/` folder when core.ts became a façade (550-line decree);
+  // `core/token-handlers.ts` is the file that owns the projector wiring now.
+  it("the token read handlers wire the projector in", () => {
+    const tokenHandlersPath = fileURLToPath(
       new URL(
-        "../../../vex-agent/tools/protocols/solana-jupiter/handlers/core.ts",
+        "../../../vex-agent/tools/protocols/solana-jupiter/handlers/core/token-handlers.ts",
         import.meta.url,
       ),
     );
-    const source = readFileSync(corePath, "utf8");
+    const source = readFileSync(tokenHandlersPath, "utf8");
     expect(source).toContain("projectJupiterTokens");
   });
 });

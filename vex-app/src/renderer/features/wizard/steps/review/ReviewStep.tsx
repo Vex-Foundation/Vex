@@ -21,8 +21,10 @@
 
 import { useCallback, useState, type JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft01Icon,
+  VexIcon,
+} from "../../../../components/icons/index.js";
 import type { Result } from "@shared/ipc/result.js";
 import type { Capabilities } from "@shared/schemas/capabilities.js";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
@@ -161,7 +163,7 @@ export function ReviewStep({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
             )}
           >
-            <HugeiconsIcon icon={ArrowLeft01Icon} size={11} aria-hidden />
+            <VexIcon icon={ArrowLeft01Icon} size={11} aria-hidden />
             Return to review
           </button>
         </div>

@@ -17,8 +17,8 @@
 import { describe, it, expect, vi } from "vitest";
 import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 vi.mock("@thesvg/react", () => ({

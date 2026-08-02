@@ -249,6 +249,8 @@ interface ConciseBase {
   action: string;
   filtersApplied?: TweetSearchFiltersApplied;
   rateLimit?: TwitterAccountResult["rateLimit"];
+  /** Present only when an empty list cannot honestly be read as "zero". */
+  emptyResultNote?: string;
 }
 
 type ConciseTwitterResult =
@@ -290,6 +292,30 @@ const USER_LIST_ACTIONS: ReadonlySet<string> = new Set([
 
 function nextCursor(data: Record<string, unknown>): string {
   return optString(data.next) ?? "";
+}
+
+/**
+ * Actions whose EMPTY list is unknown rather than zero. X's private API
+ * routinely auth-walls liker and reply lists, and an auth-walled list arrives
+ * at this seam byte-identical to a genuinely empty one — we cannot tell them
+ * apart here, so the note is unconditional on empty rather than guessed at.
+ */
+const UNKNOWN_WHEN_EMPTY_ACTIONS: ReadonlySet<string> = new Set([
+  "tweet_likers",
+  "tweet_replies",
+]);
+
+/** Vex-authored and STATIC — never interpolates provider text. */
+const EMPTY_LIST_UNKNOWN_NOTE =
+  "0 rows here means UNKNOWN, not zero: X frequently auth-walls liker and reply "
+  + "lists, and that is indistinguishable from a genuinely empty list at this seam. "
+  + "Do not report 'no likes' or 'no replies' from this payload — cross-check "
+  + "likeCount / replyCount via tweet_details before saying anything about the count.";
+
+function emptyListNote(action: string, rowCount: number): { emptyResultNote?: string } {
+  return rowCount === 0 && UNKNOWN_WHEN_EMPTY_ACTIONS.has(action)
+    ? { emptyResultNote: EMPTY_LIST_UNKNOWN_NOTE }
+    : {};
 }
 
 export interface ProjectTwitterOptions {
@@ -351,6 +377,7 @@ export function projectTwitterResult(
     return envelope(result, collectExternalContentPatterns(tweets, "tweets", TWEET_EXTERNAL_PATHS), options, {
       tweets,
       next: nextCursor(data),
+      ...emptyListNote(result.action, tweets.length),
     });
   }
   if (USER_LIST_ACTIONS.has(result.action)) {
@@ -358,6 +385,7 @@ export function projectTwitterResult(
     return envelope(result, collectExternalContentPatterns(users, "users", USER_EXTERNAL_PATHS), options, {
       users,
       next: nextCursor(data),
+      ...emptyListNote(result.action, users.length),
     });
   }
 

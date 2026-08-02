@@ -1,7 +1,8 @@
 /**
  * Starter chips — one horizontal row of compact hairline chips DETACHED
- * below the Signal Console. Each chip pairs a small intent icon with a mono
- * label; picking a chip seeds the draft via the parent's `onPick`. The 01–03
+ * below the Signal Console. Each chip pairs a small intent icon with a
+ * `.vex-micro` small-caps label (the register's support face — the mono
+ * stamp is retired); picking a chip seeds the draft via `onPick`. The 01–03
  * numbering was dropped in the redesign — these are parallel starters, not an
  * ordered sequence, so a number would encode order that isn't there. Real
  * buttons → keyboard focusable.
@@ -13,15 +14,17 @@
  * choreography at the d3 stagger (logo row → console → chips), which also
  * replays on each return.
  *
- * Owner-decreed glass legibility assist (2026-07-21): the row now joins the
- * Chronos glass family as a slim pill-band (design-guard whitelisted) —
- * translucent ink (--vex-rail) + backdrop-blur + a --vex-line hairline,
- * rounded-2xl to harmonize with the console pill above it — so the chips stay
- * readable over the bright regions of the Eclipse photo backdrop.
+ * Surface (composer rebuild, owner decree 2026-07-29): a SOLID ink band —
+ * opaque --vex-surface-1 + a --vex-line hairline, rounded-2xl to match the
+ * console surface directly above it. The band was previously translucent
+ * glass with a backdrop filter (a legibility assist over the bright regions of
+ * the Eclipse photo backdrop); solid ink solves the same legibility problem
+ * outright, so the row left the glass family and its shell-design-guard
+ * whitelist entry was deleted with it.
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { VexIcon } from "../../components/icons/index.js";
 import { QUICK_ACTIONS } from "./composer-quick-actions.js";
 
 export function ComposerQuickActions({
@@ -34,7 +37,7 @@ export function ComposerQuickActions({
     // spanning the composer's full width (owner report 2026-07-21 — the
     // empty glass margins read as a stray bar); max-w-full keeps the
     // wrap behavior on narrow windows.
-    <div className="vex-rise vex-rise-d3 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-[var(--vex-line)] bg-[var(--vex-rail)] p-1.5 backdrop-blur-xl">
+    <div className="vex-rise vex-rise-d3 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-[var(--vex-line)] bg-[var(--vex-surface-1)] p-1.5">
       {QUICK_ACTIONS.map((action) => (
         <button
           key={action.label}
@@ -43,10 +46,10 @@ export function ComposerQuickActions({
           // macOS-grade micro-interaction (motion pass, 2026-07-20): a 1.02
           // hover lift + press settle on the Tailwind transition — transform
           // only, stilled by the global reduced-motion rule.
-          className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-[var(--vex-line)] px-3 py-1.5 font-sans text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-2)] transition duration-150 hover:scale-[1.02] hover:border-[var(--vex-accent-border)] hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="vex-micro inline-flex min-w-0 items-center gap-2 rounded-lg border border-[var(--vex-line)] px-3 py-1.5 text-[var(--vex-text-2)] transition duration-150 hover:scale-[1.02] hover:border-[var(--vex-accent-border)] hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {/* Intent glyph — decorative accent mark, not part of the label. */}
-          <HugeiconsIcon
+          <VexIcon
             icon={action.icon}
             size={13}
             className="shrink-0 text-[var(--vex-accent-text)]"

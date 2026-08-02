@@ -139,14 +139,6 @@ describe("staged broadcast durability", () => {
   it("(4) a duplicate finalize attempt against an already-repaired row returns applied:false EXACTLY", async () => {
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
     const repairModule = await import("../../../vex-agent/sync/agent-activity-repair.js");
-    // C2: repair confirms only through a registered settlement decoder.
-    const { registerSettlementDecoder, clearSettlementDecoders } = await import(
-      "../../../vex-agent/sync/settlement-decoders.js"
-    );
-    registerSettlementDecoder("kyberswap", () => ({
-      executedAmountInRaw: "1",
-      executedAmountOutRaw: "1",
-    }));
     const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
     const event = await repo.createPendingActivityEvent({
       protocolExecutionId, eventIndex: 0, eventRole: "swap", kind: "swap",
@@ -156,9 +148,8 @@ describe("staged broadcast durability", () => {
     await backdateSubmitAttempt(event.id, REPAIR_CANDIDATE_AGE_MS + 1_000);
 
     const sweepResult = await repairModule.repairPendingActivity({
-      checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success", executedLegs: { amountOutRaw: "1" } }),
+      checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success" }),
     });
-    clearSettlementDecoders();
     expect(sweepResult.confirmed).toBe(1);
     const afterFirstSweep = await repo.getActivityEventById(event.id);
     expect(afterFirstSweep?.status).toBe("confirmed");

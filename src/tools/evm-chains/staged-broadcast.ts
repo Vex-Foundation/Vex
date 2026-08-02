@@ -19,9 +19,10 @@
  *
  * `ambiguous` covers BOTH a send-time failure (the RPC response never
  * confirms whether the raw transaction reached the mempool) and a
- * receipt-wait failure (not yet mined, or the wait itself could not
- * complete) — in BOTH cases the caller must NOT treat this as a definitive
- * failure: leave the durable row `pending` for the repair sweep, never
+ * receipt-wait failure (not yet mined, or the wait itself could not complete
+ * after a BOUNDED retry of that read — see `evm-chains/receipt-guard.ts`;
+ * the send is NEVER repeated) — in BOTH cases the caller must NOT treat this
+ * as a definitive failure: leave the durable row `pending` for the sweep, never
  * re-broadcast (ambiguity never terminalizes — plan §11.1 / FIX-SPINE C1).
  */
 
@@ -37,6 +38,10 @@ import type {
 import { keccak256 } from "viem";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
+import {
+  waitForReceiptWithRetry,
+  type ReceiptWaitRetryOptions,
+} from "@tools/evm-chains/receipt-guard.js";
 import {
   estimateGasForPlanLeg,
   type ConfirmedPriorLeg,
@@ -94,6 +99,7 @@ export async function signStageBroadcast(
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
+  receiptWaitRetry?: ReceiptWaitRetryOptions,
 ): Promise<StagedBroadcastOutcome> {
   const account = walletClient.account!;
   const value = txParams.value ?? 0n;
@@ -153,8 +159,11 @@ export async function signStageBroadcast(
     // Intentionally swallowed — see comment above.
   }
 
+  // Bounded RETRY of the receipt READ before declaring ambiguity: a single
+  // transient wait failure left an already-mined swap recorded `pending`.
+  // The broadcast above is never re-sent — only this read repeats.
   try {
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await waitForReceiptWithRetry(publicClient, txHash, receiptWaitRetry);
     return receipt.status === "success"
       ? { kind: "confirmed", txHash, receipt }
       : { kind: "reverted", txHash, receipt };

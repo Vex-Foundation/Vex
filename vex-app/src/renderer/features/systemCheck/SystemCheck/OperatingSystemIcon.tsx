@@ -8,8 +8,7 @@
  * `dangerouslySetInnerHTML`).
  */
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Settings02Icon } from "@hugeicons/core-free-icons";
+import { Settings02Icon, VexIcon } from "../../../components/icons/index.js";
 import { Apple, Linux, Windows } from "@thesvg/react";
 
 export type Platform = "win32" | "darwin" | "linux" | "other";
@@ -40,7 +39,7 @@ export function OperatingSystemIcon({
       return <Linux {...commonProps} />;
     default:
       return (
-        <HugeiconsIcon icon={Settings02Icon} size={22} aria-hidden />
+        <VexIcon icon={Settings02Icon} size={22} aria-hidden />
       );
   }
 }

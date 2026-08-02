@@ -1,53 +1,54 @@
 /**
- * BOOK — the right-edge stage router (welcome redesign, 2026-07-20). Mode is
- * a pure derivation of `activeSessionId`:
+ * BOOK — the right-edge stage router, and since the card redesign the ONE
+ * card-stack host for BOTH stages. Mode is a pure derivation of
+ * `activeSessionId`:
  *
- *  - WELCOME stage (`null`): the rail presentation is REPLACED by the
- *    floating collapsible Portfolio tab (`book/portfolio/
- *    WelcomePortfolioPanel` — a round handle button that expands upward
- *    into the Overview/Wallets/Balances card stack). Same persisted
- *    `bookOpen` flag, same `onToggle`.
- *  - SESSION stage: the on-demand instrument rail below, byte-for-byte the
- *    prior behavior — an <aside> sibling in the AppShell <main> flex row
- *    carrying the per-session register: POSITION (scoped wallet portfolio),
- *    MOVES (what the agent did), RUNTIME & COST (model/context/usage/
- *    compaction), SESSION (metadata). The MISSION contract/setup lives in
- *    the centre column (SessionPanel), not here — this rail is instruments
- *    only.
+ *  - WELCOME stage (`null`): the floating collapsible Portfolio tab
+ *    (`book/portfolio/WelcomePortfolioPanel` — a round handle button that
+ *    expands upward into the Overview/Wallets/Balances card stack). Same
+ *    persisted `bookOpen` flag, same `onToggle`.
+ *  - SESSION stage: the rail below, now carrying the SAME `PortfolioCard`
+ *    stack rather than the retired hairline/mono-ledger `BookBlock` grammar
+ *    (owner decree: one card system app-wide). Card order — Position,
+ *    Wallets, Balances, Activity, Runtime & Cost, Session.
  *
- * The rail is ONE continuous editorial column of soft translucent ink
- * (--vex-rail + backdrop-blur, guard-whitelisted for exactly this file and
- * SessionsList) floating over the Eclipse backdrop behind the shell,
- * delimited only by the edge-fading .vex-rail-seam-l hairline (seamless-shell
- * owner review — no full-height border wall). Inside, the landing
- * right-workspace-column grammar (.ws-col) holds: eyebrow section heads +
- * border-t hairlines between sections (BookBlock owns that chrome), no boxed
- * tiles, so the column reads as one pane, not a card stack. Slides in via a
- * CSP-safe one-shot keyframe (`vex-book-enter`) — it replays on the
- * welcome→session remount, which is exactly when the rail materializes;
- * reduced motion collapses it to the final frame.
+ * The rail floats over the Eclipse backdrop as soft translucent ink
+ * (`--vex-rail` + backdrop-blur, guard-whitelisted for exactly this file and
+ * SessionsList), with no separating stroke. Inside, the stack scrolls in the
+ * `vex-scroll` column and the cards cascade on the shared
+ * `portfolio-motion.ts` stagger — the same gesture the welcome tab uses, so
+ * both stages read as one object. Slides in via a CSP-safe one-shot keyframe
+ * (`vex-book-enter`), which replays on the welcome→session remount, exactly
+ * when the rail materializes; reduced motion collapses it to the final frame.
  *
  * The panel owns its own collapse header bar (first child): the version stamp
  * (relocated from the DESK RULE) + a chevron that calls the same `toggleBook`
  * the DESK RULE toggle uses. When collapsed the panel keeps the header bar
- * mounted (chevron-only spine) and hides the instrument blocks via CSS (no
- * remount), so the BOOK slide-in keyframe never replays on expand. The version
- * stamp is shown only when expanded and drops away when collapsed.
+ * mounted (chevron-only spine) and hides the stack via CSS (no remount), so
+ * the BOOK slide-in keyframe never replays on expand. The version stamp is
+ * shown only when expanded. `useAutoCollapseBook` (mounted in `AppShell`)
+ * still owns the stage/viewport collapse edges — unchanged by this redesign.
  */
 
-import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { useState, type JSX } from "react";
+import { motion } from "motion/react";
 import {
   PanelRightCloseIcon,
   PanelRightOpenIcon,
-} from "@hugeicons/core-free-icons";
+  VexIcon,
+} from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { useSession } from "../../lib/api/sessions.js";
-import { SessionRuntimeBar } from "./SessionRuntimeBar.js";
-import { BookBlock } from "./book/BookBlock.js";
-import { MovesBlock } from "./book/MovesBlock.js";
 import { PositionBlock } from "./book/PositionBlock.js";
+import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { SessionBlock } from "./book/SessionBlock.js";
+import { SessionRuntimeCard } from "./book/SessionRuntimeCard.js";
+import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
+import { BalancesCard } from "./book/portfolio/BalancesCard.js";
+import {
+  prefersReducedMotion,
+  stackVariants,
+} from "./book/portfolio/portfolio-motion.js";
 import { SidebarIconButton } from "./SessionRows.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
 
@@ -60,7 +61,12 @@ export function BookPanel({
   readonly bookOpen: boolean;
   readonly onToggle: () => void;
 }): JSX.Element {
-  // The rail owns the session read that the RUNTIME & COST block's apply
+  // Sampled once per mount — the enter declaration must not flip mid-animation
+  // if the OS preference changes while the rail is open (SidebarProfile
+  // pattern, shared with WelcomePortfolioPanel).
+  const [reduced] = useState(prefersReducedMotion);
+
+  // The rail owns the session read that the Runtime & Cost card's apply
   // control needs: permission is a session-STATIC axis, so a prop cannot go
   // stale, and the query is already cached by the mission rail under the same
   // key. Called before the welcome-stage early return so hook order is stable.
@@ -69,8 +75,7 @@ export function BookPanel({
     ? (sessionQuery.data.data?.permission ?? null)
     : null;
 
-  // WELCOME stage: the floating Portfolio tab replaces the rail entirely
-  // (it is an absolute overlay, so the welcome canvas keeps its full width).
+  // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
   if (activeSessionId === null) {
     return <WelcomePortfolioPanel bookOpen={bookOpen} onToggle={onToggle} />;
   }
@@ -80,25 +85,17 @@ export function BookPanel({
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label="Session instrument"
       className={cn(
-        // Rail over the Eclipse backdrop: softer translucent ink (--vex-rail) in
-        // BOTH states — the collapsed spine is the same tint, thinner. Pure
+        // Rail over the Eclipse backdrop: softer translucent ink (--vex-rail)
+        // in BOTH states — the collapsed spine is the same tint, thinner. Pure
         // glass, NO separating stroke (owner review round 2: even the
-        // edge-fading hairline still read as a dividing line). Backdrop-blur
-        // stays guard-whitelisted for this rail. macOS-clean ink glass (owner
-        // decree, 2026-07-20): the rail carries ONLY the ink tint + blur, no
-        // grain overlay — a prior grain layer greyed the glass out and is
-        // retired.
+        // edge-fading hairline still read as a dividing line). macOS-clean ink
+        // glass: the rail carries ONLY the ink tint + blur, no grain overlay.
         "vex-book-enter relative flex h-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl transition-[width] duration-300 ease-[var(--vex-ease-out)]",
-        // Collapsed: a thin spine carrying only the header bar (version +
-        // chevron). Expanded: the full instrument rail. The width change
-        // animates (mirrors SessionsList's left rail) but the panel never
-        // remounts, so the blocks keep their state.
-        bookOpen ? "w-[320px] gap-3 p-3" : "w-12 p-0",
+        bookOpen ? "w-[340px] gap-3 p-3" : "w-12 p-0",
       )}
     >
-      {/* Collapse header bar — version stamp (relocated from the DESK RULE)
-       * + the chevron. When collapsed the bar centres the chevron in the
-       * narrow spine and the version stamp drops away. */}
+      {/* Collapse header bar — version stamp + chevron. When collapsed the bar
+       * centres the chevron in the narrow spine and the stamp drops away. */}
       <div
         className={cn(
           "flex shrink-0 items-center",
@@ -106,7 +103,7 @@ export function BookPanel({
         )}
       >
         {bookOpen ? (
-          <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
+          <span className="vex-micro text-[var(--vex-text-3)]">
             v{__VEX_APP_VERSION__}
           </span>
         ) : null}
@@ -114,7 +111,7 @@ export function BookPanel({
           label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
           onClick={onToggle}
         >
-          <HugeiconsIcon
+          <VexIcon
             icon={bookOpen ? PanelRightCloseIcon : PanelRightOpenIcon}
             size={17}
             aria-hidden
@@ -123,20 +120,19 @@ export function BookPanel({
       </div>
 
       {bookOpen ? (
-        // Sections separate themselves (BookBlock border-t hairlines + py
-        // rhythm) — no gap here, so the rules run edge to edge as one column.
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <PositionBlock activeSessionId={activeSessionId} hero />
-          <MovesBlock sessionId={activeSessionId} />
-          <BookBlock title="Runtime & Cost">
-            <SessionRuntimeBar
-              sessionId={activeSessionId}
-              layout="stack"
-              permission={permission}
-            />
-          </BookBlock>
+        <motion.div
+          variants={stackVariants}
+          initial={reduced ? false : "hidden"}
+          animate="show"
+          className="vex-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+        >
+          <PositionBlock activeSessionId={activeSessionId} />
+          <SessionWalletsCard sessionId={activeSessionId} />
+          <BalancesCard sessionId={activeSessionId} />
+          <SessionActivityCard sessionId={activeSessionId} />
+          <SessionRuntimeCard sessionId={activeSessionId} permission={permission} />
           <SessionBlock sessionId={activeSessionId} />
-        </div>
+        </motion.div>
       ) : null}
     </aside>
   );

@@ -17,9 +17,11 @@
  *
  * The curated keys are the COMPLETE venue vocabulary the agent tools emit
  * today — `khalani`, `kyberswap`, `pendle`, `relay`, `trench`, `uniswap`,
- * `jupiter`, `dexscreener`, `polymarket`. `relay` and `polymarket` are listed with no
- * asset on purpose: they keep an honest display label while taking the
- * monogram until artwork lands, which is a one-line change here.
+ * `jupiter`, `dexscreener`, `polymarket`, `solana`, `virtuals` (the last two
+ * are protocol `toolId` namespaces surfaced by the transcript's tool cards).
+ * `polymarket` and `solana` are listed with no asset on purpose: they keep an
+ * honest display label while taking the monogram until artwork lands, which is
+ * a one-line change here.
  */
 
 /** Hard bound on a venue string reaching a label or a monogram. */
@@ -43,8 +45,9 @@ interface CuratedProtocol {
 
 /**
  * Curated venue matrix, keyed on the lower-cased venue string the DTOs carry.
- * Every `src` points at a file physically present in
- * `renderer/public/protocols/`.
+ * Every `src` points at a file physically present under `renderer/public/`
+ * (`/protocols/*` for venue artwork, `/logo/*` for the marks the landing
+ * surfaces already ship).
  */
 const CURATED: Readonly<Record<string, CuratedProtocol>> = {
   dexscreener: { label: "DexScreener", src: "/protocols/dexscreener.jpg" },
@@ -61,6 +64,14 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
   // its real name instead of a bare monogram. It is deliberately NOT a feed
   // filter option (see `agent-scan/agent-scan-protocols.ts`).
   polymarket: { label: "Polymarket", src: null },
+  // `solana` is a protocol toolId NAMESPACE (solana.swap.quote …), not a venue
+  // with bundled artwork. `/protocols/jupiter.jpg` is Jupiter's mark, NOT
+  // Solana's — lending it here would be exactly the provenance lie this file
+  // exists to prevent, so Solana keeps its honest label and the monogram.
+  solana: { label: "Solana", src: null },
+  // Virtuals ships a real mark with the landing assets (`/logo/virtuals.svg`,
+  // already rendered by the welcome surfaces) — provenance is our own bundle.
+  virtuals: { label: "Virtuals", src: "/logo/virtuals.svg" },
 };
 
 /**
@@ -74,6 +85,20 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
  * the list of things that WRITE that feed — see
  * `features/appShell/screens/agent-scan/agent-scan-protocols.ts`.
  */
+
+/**
+ * Is this venue string one we actually KNOW? The fallback branch of
+ * `resolveProtocolMark` deliberately keeps an unrecognised venue's own text
+ * (a feed row's protocol comes from our own main-process capture, so naming it
+ * is honest). A caller whose venue string comes from UNTRUSTED payload text —
+ * the transcript's `execute_tool` `toolId` namespace — must gate on this
+ * FIRST: an arbitrary syntactically-valid namespace must never be handed a
+ * venue-looking monogram and title. See `ToolLedger/toolIdentity.ts`.
+ */
+export function isCuratedProtocol(protocol: string | null): boolean {
+  if (protocol === null) return false;
+  return CURATED[protocol.trim().toLowerCase()] !== undefined;
+}
 
 /** First character of a label, uppercased, for the monogram ring. */
 function monogramInitial(label: string): string {

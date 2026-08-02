@@ -28,12 +28,9 @@ const mockFailActivityEvent = vi.fn();
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   listPendingOlderThan: (...args: unknown[]) => mockListPendingOlderThan(...args),
   confirmActivityEvent: vi.fn(),
+  confirmActivityEventStatusOnly: vi.fn(),
   failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
   touchLastChecked: vi.fn(),
-}));
-
-vi.mock("@vex-agent/sync/settlement-decoders.js", () => ({
-  getSettlementDecoder: vi.fn(),
 }));
 
 vi.mock("@utils/logger.js", () => {

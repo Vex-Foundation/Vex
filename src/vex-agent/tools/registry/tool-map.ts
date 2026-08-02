@@ -30,15 +30,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Protocol discovery/execution", toolNames: ["discover_tools", "execute_tool"] },
   { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
-  {
-    label: "Khalani read shortcuts",
-    toolNames: [
-      "khalani_chains_list",
-      "khalani_tokens_top",
-      "token_find",
-      "khalani_tokens_balances",
-    ],
-  },
+  { label: "Token resolution", toolNames: ["token_find"] },
   {
     label: "Swap & bridge previews (read-only)",
     // `bridge_quote_relay` mirrors `swap_quote_uniswap`: a hidden, route-bound

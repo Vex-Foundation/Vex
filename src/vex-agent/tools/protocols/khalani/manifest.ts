@@ -40,7 +40,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.tokens.search",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Search Khalani tokens by symbol, name, or address. This is the canonical cross-chain token resolver — use before any EVM mutation to get exact contract addresses.",
+    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `token_find`, the canonical token resolver — prefer that shortcut (one call, its schema already in front of you); reach for this toolId only when you are already in an execute_tool flow. Use either before any EVM mutation to get exact contract addresses.",
     mutating: false,
     actionKind: "read",
     params: [

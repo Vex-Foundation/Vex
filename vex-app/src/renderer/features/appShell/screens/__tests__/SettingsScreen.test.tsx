@@ -28,10 +28,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
-vi.mock("@hugeicons/core-free-icons", () => ({
+vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   ArrowLeft01Icon: "ArrowLeft01Icon",
   ArrowRight01Icon: "ArrowRight01Icon",
   Cancel01Icon: "Cancel01Icon",

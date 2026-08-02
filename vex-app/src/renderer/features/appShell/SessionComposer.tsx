@@ -1,12 +1,15 @@
 /**
- * Session composer — THE SIGNAL CONSOLE, a single floating pill bar,
- * rebuilt Grok-style (owner decree 2026-07-21).
+ * Session composer — THE SIGNAL CONSOLE, rebuilt CLEAN (owner decree
+ * 2026-07-29).
  *
- * ONE translucent glass pill — truly `rounded-full` at rest (a slim ~56px
- * stadium; QUIET: the ring is a flat hairline until focus/approval wake it,
- * owner correction 2026-07-21 round 2), relaxing to rounded-[28px] once the
- * field grows multiline — floating over the Eclipse backdrop. Left→right
- * inside the pill:
+ * ONE SOLID rounded-2xl surface (--vex-surface-1, opaque) with a flat 1px
+ * --vex-line border. The previous build was a translucent glass pill whose
+ * border was painted by a masked pseudo-element carrying a TRAVELING conic
+ * shimmer; the owner's verdict was that the shimmer looked wrong, so the
+ * entire mechanism is deleted (see console.css). Focus now steps the border
+ * to --vex-accent-border and deepens a DIRECTIONAL drop shadow — no glow, no
+ * animation. Dropping the glass also retired this file's shell-design-guard
+ * glass whitelist entry. Left→right inside the surface:
  *   - the transparent-bg textarea (auto-grow, 16px type, one geometry for
  *     welcome AND session — the Grok pill is the same instrument on both
  *     stages, so the old `stage` presence prop is retired) opens the pill
@@ -37,12 +40,11 @@
  * composer notice (success / error / inline Retry on a retryable error)
  * live in `composer-submit.ts` — this file never parses commands itself.
  *
- * The pill's glass surface + backdrop-blur are the owner-sanctioned third
- * glass surface (see shell-design-guard whitelist). The 1px border, the
- * TRAVELING accent shimmer that circles the ring, the focus step to
- * `--vex-glass-strong`, the soft drop shadow and the amber approval recolor
- * all live in `.vex-console` (globals.css) — token-only, so both themes
- * recolor from `--vex-accent`. The context strip is gone, so the two
+ * The flat border, the focus step to the accent hairline, the directional
+ * drop shadow and the amber approval recolor all live in `.vex-console`
+ * (globals.css) — token-only, so both themes recolor from `--vex-accent`.
+ * Keeping them in the stylesheet is deliberate: the design guard scans .tsx
+ * sources for box-shadow chrome. The context strip is gone, so the two
  * transient states it carried survive as a tiny tag FLOATING above the pill:
  * amber "AWAITING SIGNATURE" while a run is parked for approval or muted
  * "Stopping…" while a stop settles. Active work is shown on the agent avatar
@@ -139,7 +141,10 @@ export function SessionComposer({
   // Sampled once per mount (the WelcomePortfolioPanel idiom) — the chips'
   // enter/exit declaration must not flip mid-animation.
   const [reducedMotion] = useState(prefersReducedMotion);
-  const { textareaRef, fieldSlotRef, multiline, armCaretSeed } =
+  // `multiline` is deliberately NOT consumed any more: the surface holds ONE
+  // constant rounded-2xl radius, so there is no rounded-full ⇄ rounded-[28px]
+  // relax left to drive. The height glide (`.vex-composer-grow`) is unchanged.
+  const { textareaRef, fieldSlotRef, armCaretSeed } =
     useComposerFieldGrow(draft);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -219,7 +224,7 @@ export function SessionComposer({
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-pin-border)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--vex-pin)]"
+            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-pin-border)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-sans text-[9px] uppercase tracking-[0.16em] text-[var(--vex-pin)]"
           >
             AWAITING SIGNATURE
           </span>
@@ -228,7 +233,7 @@ export function SessionComposer({
           // the composer stop test (source casing stays).
           <span
             data-vex-console-status="stopping"
-            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--vex-text-2)]"
+            className="absolute -top-2.5 right-6 z-20 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-2 py-0.5 font-sans text-[9px] uppercase tracking-[0.16em] text-[var(--vex-text-2)]"
           >
             Stopping…
           </span>
@@ -250,22 +255,17 @@ export function SessionComposer({
           data-vex-area="chat-composer"
           data-vex-console-state={awaitingApproval ? "approval" : "input"}
           className={cn(
-            // THE SIGNAL CONSOLE PILL — one translucent glass row floating over
-            // the Eclipse backdrop, Grok geometry (owner decree 2026-07-21):
-            // truly rounded-full at the resting single-line height, relaxing
-            // to rounded-[28px] once the field grows multiline so the stadium
-            // curve never cuts into the draft (.vex-console eases the swap).
-            // The glass surface + backdrop-blur are the owner-sanctioned THIRD
-            // glass surface (shell-design-guard whitelist). The ring is QUIET
-            // AT REST — one flat --vex-line hairline; the traveling accent
-            // arc wakes ONLY on focus-within (with the --vex-glass-strong
-            // step) and in the amber approval state — all owned by
-            // `.vex-console` (globals.css) so no resting-glow shadow lands in
-            // a className. `items-center`: the round send shares the field's
+            // THE SIGNAL CONSOLE — one SOLID ink row (owner decree
+            // 2026-07-29). `--vex-surface-1` is opaque, so no backdrop filter
+            // and no glass whitelist entry; the radius is a CONSTANT
+            // rounded-2xl (the rounded-full ⇄ rounded-[28px] relax is retired
+            // with the pill). The flat 1px border, the focus step to the
+            // accent hairline and the directional drop shadow are owned by
+            // `.vex-console` (globals.css), so no shadow chrome lands in a
+            // className. `items-center`: the round send shares the field's
             // height, so the resting single-line row reads perfectly level (a
             // tall multiline field centers it — the deliberate trade-off).
-            "vex-console relative flex items-center gap-1.5 overflow-visible bg-[var(--vex-glass)] p-1.5 backdrop-blur-xl",
-            multiline ? "rounded-[28px]" : "rounded-full",
+            "vex-console relative flex items-center gap-1.5 overflow-visible rounded-2xl bg-[var(--vex-surface-1)] p-1.5",
           )}
         >
           <ComposerField
@@ -318,7 +318,7 @@ export function SessionComposer({
               onClick={onRetry}
               disabled={submitPending}
               aria-label="Retry sending the message"
-              className="inline-flex shrink-0 items-center rounded-[3px] border border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)]"
+              className="vex-micro inline-flex shrink-0 items-center rounded-[3px] border border-[color-mix(in_oklab,var(--vex-accent)_40%,transparent)] px-2 py-0.5 text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:border-[var(--vex-line-strong)] disabled:text-[var(--vex-text-3)]"
             >
               Retry
             </button>

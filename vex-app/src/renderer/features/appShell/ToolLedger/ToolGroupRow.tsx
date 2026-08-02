@@ -13,9 +13,11 @@
  */
 
 import { useId, useState, type JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import type { IconSvgElement } from "@hugeicons/react";
+import {
+  ArrowRight01Icon,
+  type IconGlyph,
+  VexIcon,
+} from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import type { ToolGroupRowModel } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
@@ -29,8 +31,8 @@ const MAX_HEADER_GLYPHS = 4;
  * Distinct glyphs (by icon identity, not tool name) — two tools sharing a
  * category must not print the same glyph twice in the header strip.
  */
-function distinctGlyphs(toolNames: readonly string[]): IconSvgElement[] {
-  const glyphs: IconSvgElement[] = [];
+function distinctGlyphs(toolNames: readonly string[]): IconGlyph[] {
+  const glyphs: IconGlyph[] = [];
   for (const name of toolNames) {
     const glyph = toolGlyph(name);
     if (!glyphs.includes(glyph)) glyphs.push(glyph);
@@ -71,7 +73,7 @@ export function ToolGroupRow({
           onClick={() => setOpen((v) => !v)}
           className="flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <HugeiconsIcon
+          <VexIcon
             icon={ArrowRight01Icon}
             size={12}
             aria-hidden
@@ -85,7 +87,7 @@ export function ToolGroupRow({
           </span>
           <span aria-hidden className="flex min-w-0 items-center gap-1.5">
             {glyphs.slice(0, MAX_HEADER_GLYPHS).map((glyph, index) => (
-              <HugeiconsIcon
+              <VexIcon
                 // Icon identity is the dedupe key; index keeps React stable.
                 key={index}
                 icon={glyph}

@@ -20,8 +20,10 @@
  */
 
 import { useState, type JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowUpRight01Icon,
+  VexIcon,
+} from "../../../../components/icons/index.js";
 import type { AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
@@ -169,7 +171,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
             className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
           >
             TX
-            <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} aria-hidden />
+            <VexIcon icon={ArrowUpRight01Icon} size={11} aria-hidden />
           </a>
         ) : null}
         {hasDetail ? (
@@ -244,7 +246,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
                         className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
                       >
                         TX
-                        <HugeiconsIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
+                        <VexIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
                       </a>
                     ) : null}
                   </li>

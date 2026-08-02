@@ -51,7 +51,10 @@ import {
   repairOrphanedToolCalls,
 } from "../core/transcript-integrity.js";
 
-/** Bumped whenever the canonical bytes or the entry shape change. Stored on the row. */
+/** Bumped when the ENTRY SHAPE changes. Stored on the row. Deliberately NOT
+ * bumped by the tool-call id normalization (2026-07-30): the schema is
+ * unchanged — only id VALUES differ when a repair fired — and existing v1
+ * artefacts must stay readable without dual-version parsing. */
 export const CORPUS_FORMAT_VERSION = 1;
 
 export type PreparationCorpusRole = "system" | "user" | "assistant" | "tool";
@@ -104,13 +107,11 @@ export function buildPreparationCorpus(
 
   const inScope = input.rows.filter((r) => r.id <= input.watermarkMessageId);
 
-  // Provider-shaped view used ONLY to run the shared repair walk. Object
-  // identity links each provider message back to its corpus entry, which is
-  // how the source ids survive a step that knows nothing about DB rows.
-  const entryByProviderMessage = new Map<
-    ProviderMessage,
-    PreparationCorpusEntry
-  >();
+  // Provider-shaped view used ONLY to run the shared repair walk. The two
+  // arrays are index-aligned, and the repair reports which input index each
+  // output row came from — object identity cannot be used, because the repair
+  // rewrites duplicate/blank tool-call ids and returns clones when it does.
+  const capturedEntries: PreparationCorpusEntry[] = [];
   const providerMessages: ProviderMessage[] = [];
 
   for (const row of inScope) {
@@ -158,22 +159,32 @@ export function buildPreparationCorpus(
           }),
     };
 
-    entryByProviderMessage.set(providerMessage, entry);
+    capturedEntries.push(entry);
     providerMessages.push(providerMessage);
   }
 
   const repaired = repairOrphanedToolCalls(providerMessages);
 
-  const entries: PreparationCorpusEntry[] = repaired.messages.map((msg) => {
-    const known = entryByProviderMessage.get(msg);
-    if (known) return known;
-    return {
-      sourceMessageId: null,
-      role: "tool",
-      content: TOOL_RESULT_PLACEHOLDER_CONTENT,
-      toolCallId: msg.toolCallId ?? null,
-      toolCalls: null,
-    };
+  const entries: PreparationCorpusEntry[] = repaired.messages.map((msg, i) => {
+    const sourceIndex = repaired.sourceMessageIndexes[i];
+    if (sourceIndex === undefined) {
+      // The repair contract guarantees one index per output row; a hole is a
+      // contract bug, not a placeholder — absorbing it would fabricate an
+      // entry with no source.
+      throw new Error(
+        "compaction corpus: repair returned no source index for an output row",
+      );
+    }
+    if (sourceIndex === null) {
+      return {
+        sourceMessageId: null,
+        role: "tool",
+        content: TOOL_RESULT_PLACEHOLDER_CONTENT,
+        toolCallId: msg.toolCallId ?? null,
+        toolCalls: null,
+      };
+    }
+    return withNormalizedIds(capturedEntries[sourceIndex], msg);
   });
 
   return {
@@ -183,6 +194,57 @@ export function buildPreparationCorpus(
     entries,
     redactionCounts: { hard, mask },
     repairedPlaceholders: repaired.insertedPlaceholders,
+  };
+}
+
+/**
+ * Overlay the repaired tool-call ids onto the captured entry.
+ *
+ * The ENTRY is what serializes, so resolving provenance alone would freeze the
+ * original duplicate/blank ids straight back into the artefact. Only the ids
+ * move: `argsJson`, `command`, `content`, `role` and `sourceMessageId` are the
+ * entry's own — the provider view deliberately carries `args: {}` and must
+ * never become the source for them. Returns the entry unchanged when nothing
+ * was rewritten, so a clean tape serializes to byte-identical output.
+ *
+ * A tool-call count mismatch is a bug in the repair contract, not something to
+ * absorb: silently taking one side would discard canonical arguments.
+ */
+function withNormalizedIds(
+  entry: PreparationCorpusEntry | undefined,
+  msg: ProviderMessage,
+): PreparationCorpusEntry {
+  if (entry === undefined) {
+    throw new Error(
+      "compaction corpus: repaired message resolved to no captured entry",
+    );
+  }
+
+  const repairedCalls = msg.toolCalls ?? [];
+  const capturedCalls = entry.toolCalls ?? [];
+  if (repairedCalls.length !== capturedCalls.length) {
+    throw new Error(
+      `compaction corpus: tool-call count changed during repair (captured ${capturedCalls.length}, repaired ${repairedCalls.length})`,
+    );
+  }
+
+  const toolCallId = msg.toolCallId ?? null;
+  const idsUnchanged =
+    toolCallId === entry.toolCallId &&
+    capturedCalls.every((call, i) => call.id === repairedCalls[i].id);
+  if (idsUnchanged) return entry;
+
+  return {
+    ...entry,
+    toolCallId,
+    toolCalls:
+      entry.toolCalls === null
+        ? null
+        : entry.toolCalls.map((call, i) =>
+            call.id === repairedCalls[i].id
+              ? call
+              : { ...call, id: repairedCalls[i].id },
+          ),
   };
 }
 

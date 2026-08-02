@@ -1,135 +1,56 @@
 /* ============================================================ *
- *  SIGNAL CONSOLE — composer pill (see SessionComposer)         *
+ *  SIGNAL CONSOLE — composer surface (see SessionComposer)      *
  * ------------------------------------------------------------ *
- *  ONE translucent glass pill floating over the Signal Sky.     *
- *  The glass bg + backdrop-blur live in the className (the      *
- *  owner-sanctioned THIRD glass surface after the two rails);   *
- *  EVERYTHING ELSE lives here so no resting-glow / ring         *
- *  box-shadow lands in a .tsx className the design guard scans. *
- *  QUIET AT REST (owner correction 2026-07-21 round 2 — the     *
- *  always-on conic shimmer made the Grok pill read as the old   *
- *  console): the resting frame is ONE flat --vex-line hairline, *
- *  no gradient, no motion. The traveling accent arc returns     *
- *  ONLY on :focus-within (subtle) and in the approval state     *
- *  (amber). Token-only, so both themes recolor automatically.   *
- *  Reduced motion stills those two states to static hairlines.  *
+ *  REBUILT CLEAN (owner decree 2026-07-29). The previous pill   *
+ *  painted its 1px border with a masked pseudo-element carrying *
+ *  a TRAVELING conic-gradient arc (an @property-registered      *
+ *  angle animated by @keyframes) on focus and while awaiting a  *
+ *  signature. The owner's verdict: the traveling shimmer looked *
+ *  wrong. The whole mechanism — the registered angle property,  *
+ *  the keyframes, both conic gradients, the ::before ring and   *
+ *  its reduced-motion stills — is DELETED, not disabled.        *
+ *                                                              *
+ *  What replaces it: a SOLID rounded surface with a real flat   *
+ *  1px --vex-line border. Focus steps the border to             *
+ *  --vex-accent-border and deepens the DIRECTIONAL drop shadow  *
+ *  (never a 0 0 resting glow, never an animation). The approval *
+ *  state recolors the same border amber (--vex-pin-border),     *
+ *  matching the floating "AWAITING SIGNATURE" tag the composer  *
+ *  renders above the surface. Token-only, so both themes        *
+ *  recolor automatically.                                       *
+ *                                                              *
+ *  These rules live here rather than in a className because the *
+ *  design guard scans .tsx sources for box-shadow chrome; the   *
+ *  border/shadow contract belongs to the stylesheet.            *
+ *  NOTHING here animates, so the global reduced-motion          *
+ *  catch-all has nothing to still.                              *
  * ============================================================ */
-
-/* Registered so the conic ring's angle can be animated by @keyframes (a
- * bare custom property does not interpolate). CSP-safe: the whole rule
- * ships in this stylesheet (style-src 'self'). */
-@property --vex-console-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
 
 .vex-console {
   position: relative;
+  border: 1px solid var(--vex-line);
   /* Soft DIRECTIONAL drop — depth without a 0 0 glow. */
   box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.55);
-  /* border-radius rides along since the Grok pill (owner decree 2026-07-21):
-   * the composer rests rounded-full and relaxes to rounded-[28px] once the
-   * field grows multiline — the class swap eases instead of hard-cutting. */
   transition:
-    background-color 220ms cubic-bezier(0.25, 1, 0.5, 1),
-    border-radius 220ms cubic-bezier(0.25, 1, 0.5, 1);
+    border-color 160ms cubic-bezier(0.25, 1, 0.5, 1),
+    box-shadow 160ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-/* THE RING — a masked pseudo painting ONLY the 1px border band. AT REST it
- * is ONE flat --vex-line hairline: no conic gradient, no animation (owner
- * correction 2026-07-21 round 2 — a resting pill must be still). The
- * padding-box/border-box mask keeps every repaint confined to that 1px
- * band, never the pill's content; border-radius: inherit follows the
- * pill's rounded-full ⇄ rounded-[28px] relax. */
-.vex-console::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(var(--vex-line), var(--vex-line));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  /* NO local border-radius transition here (owner bug report 2026-07-21,
-   * Screenshots 4/5): `border-radius: inherit` already tracks the host's
-   * OWN transitioned radius frame-by-frame; a second transition on top made
-   * the ring animate on a delayed curve and detach from the glass edge at
-   * the corners during the rounded-full ⇄ rounded-[28px] relax — reading
-   * as the border "losing texture" on click/typing. */
-  pointer-events: none;
-}
-
-@keyframes vex-console-travel {
-  to {
-    --vex-console-angle: 360deg;
-  }
-}
-
-/* Focus: the glass thickens to --vex-glass-strong and the ring wakes —
- * a SUBTLE traveling accent arc (the old resting intensity: 45% mid, soft
- * tip) over an accent-border hairline. The only place the arc animates
- * besides the approval state below. */
+/* Focus: the border steps to the accent hairline and the drop gains a second
+ * DOWNWARD-cast accent layer. Both offsets are vertical (0 Ypx) — a lit
+ * instrument on the desk, not a halo around it. */
 .vex-console:focus-within {
-  background-color: var(--vex-glass-strong);
-}
-.vex-console:focus-within::before {
-  /* THREE layers (owner bug report 2026-07-21, Screenshot_4): the traveling
-   * arc, the accent tint, and — at the bottom — the SAME resting hairline,
-   * so the rim can never read dimmer than at rest ("textures vanishing"):
-   * the low-alpha accent-border tint alone dipped below --vex-line and the
-   * border seemed to disappear outside the arc. */
-  background:
-    conic-gradient(
-      from var(--vex-console-angle),
-      transparent 0deg,
-      transparent 205deg,
-      color-mix(in oklab, var(--vex-accent) 45%, transparent) 300deg,
-      color-mix(in oklab, var(--vex-accent) 85%, transparent) 342deg,
-      transparent 360deg
-    ),
-    linear-gradient(var(--vex-accent-border), var(--vex-accent-border)),
-    linear-gradient(var(--vex-line), var(--vex-line));
-  animation: vex-console-travel 7s linear infinite;
+  border-color: var(--vex-accent-border);
+  box-shadow:
+    0 18px 40px -22px rgba(0, 0, 0, 0.55),
+    0 8px 20px -12px color-mix(in oklab, var(--vex-accent) 55%, transparent);
 }
 
 /* APPROVAL ECHO — a run parked for approval (data-vex-console-state=
- * "approval") recolors the whole ring amber (--vex-pin), matching the
- * floating "AWAITING SIGNATURE" tag the composer renders above the pill.
- * The traveling arc runs here as today. */
-.vex-console[data-vex-console-state="approval"]::before {
-  background:
-    conic-gradient(
-      from var(--vex-console-angle),
-      transparent 0deg,
-      transparent 205deg,
-      color-mix(in oklab, var(--vex-pin) 50%, transparent) 300deg,
-      var(--vex-pin) 342deg,
-      transparent 360deg
-    ),
-    linear-gradient(var(--vex-pin-border), var(--vex-pin-border));
-  animation: vex-console-travel 7s linear infinite;
+ * "approval") recolors the border amber, matching the floating "AWAITING
+ * SIGNATURE" tag above the surface. It wins over the focus step below by
+ * source order, so focusing the field while parked does not hide the pause. */
+.vex-console[data-vex-console-state="approval"],
+.vex-console[data-vex-console-state="approval"]:focus-within {
+  border-color: var(--vex-pin-border);
 }
-
-/* Reduced motion: the two waking states still — static hairlines, no arc
- * (the resting frame is already static). */
-@media (prefers-reduced-motion: reduce) {
-  .vex-console:focus-within::before {
-    animation: none;
-    background: linear-gradient(
-      color-mix(in oklab, var(--vex-accent) 26%, transparent),
-      color-mix(in oklab, var(--vex-accent) 26%, transparent)
-    );
-  }
-  .vex-console[data-vex-console-state="approval"]::before {
-    animation: none;
-    background: linear-gradient(var(--vex-pin-border), var(--vex-pin-border));
-  }
-}
-

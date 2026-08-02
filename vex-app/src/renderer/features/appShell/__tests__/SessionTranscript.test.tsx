@@ -1,92 +1,40 @@
 /**
- * SessionTranscript render tests (stage 8-1 + 8-2b).
+ * SessionTranscript render + paging tests (stage 8-1 + 8-2b).
  *
  * Drives the real `useTranscriptInfinite` path through a mocked
  * `window.vex.messages.list` (cursor-based) + a live QueryClient. Verifies:
  * newest-page render with role selectors; content stays literal (never HTML);
  * empty + initial-error states; load-older on scroll-to-top; and an
  * older-page failure that keeps loaded messages and shows a top banner.
+ *
+ * This suite crossed the 550-line hard limit and was split by responsibility;
+ * the file KEEPS its name while the scroll model moved to the sibling
+ * `SessionTranscript/` folder:
+ *   - `scroll-model.test.tsx` — the pill, the top-anchor, the open-at-newest jump.
+ *   - `transcript-harness.ts` — the shared mocks, DTO builder and DOM probes.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
-import type {
-  MessageKind,
-  MessageRole,
-  SessionMessageDto,
-} from "@shared/schemas/messages.js";
 
 import { SessionTranscript } from "../SessionTranscript.js";
 import { findWorkingAgentEntryKey } from "../agentActivity.js";
 import type { TranscriptEntry } from "../transcriptRowModel.js";
 import { useStreamStore } from "../../../stores/streamStore.js";
-
-const SESSION = "00000000-0000-4000-8000-0000000000aa";
-const ISO = "2026-05-26T10:00:00.000Z";
-const listMock = vi.fn();
-// S5: SessionTranscript now observes pending approvals (act-ledger stamps +
-// the working strip's circuit-break). Default: none pending.
-const listPendingMock = vi.fn();
-
-function ok<T>(data: T) {
-  return { ok: true as const, data };
-}
-
-function msg(p: {
-  readonly id: number;
-  readonly role: MessageRole;
-  readonly kind: MessageKind;
-  readonly content: string;
-  readonly toolName?: string | null;
-}): SessionMessageDto {
-  return {
-    id: p.id,
-    sessionId: SESSION,
-    role: p.role,
-    kind: p.kind,
-    content: p.content,
-    createdAt: ISO,
-    toolCallId: null,
-    toolName: p.toolName ?? null,
-    toolCalls: null,
-    explorerRefs: null,
-  };
-}
-
-function page(items: SessionMessageDto[], nextCursorId: number | null) {
-  return ok({
-    items,
-    nextCursor: nextCursorId === null ? null : { createdAt: ISO, id: nextCursorId },
-    hasMore: nextCursorId !== null,
-  });
-}
-
-const failure = {
-  ok: false as const,
-  error: {
-    code: "internal.unexpected",
-    domain: "data",
-    message: "DB is down",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId: "c",
-  },
-};
-
-function setVex(): void {
-  listPendingMock.mockResolvedValue(ok([]));
-  Object.defineProperty(window, "vex", {
-    configurable: true,
-    writable: true,
-    value: {
-      messages: { list: listMock },
-      approvals: { listPending: listPendingMock },
-    },
-  });
-}
+import {
+  ISO,
+  SESSION,
+  failure,
+  freshClient,
+  getScroller,
+  listMock,
+  msg,
+  page,
+  resetTranscriptEnv,
+  setVex,
+} from "./SessionTranscript/transcript-harness.js";
 
 function makeWrapper(client: QueryClient) {
   return function Wrapper({ children }: { readonly children: ReactNode }) {
@@ -94,22 +42,7 @@ function makeWrapper(client: QueryClient) {
   };
 }
 
-function freshClient(): QueryClient {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
-}
-
-function getScroller(container: HTMLElement): HTMLElement {
-  const el = container.querySelector('[data-vex-area="chat-transcript"]');
-  if (el === null) throw new Error("transcript scroller not found");
-  return el as HTMLElement;
-}
-
-afterEach(() => {
-  vi.clearAllMocks();
-  useStreamStore.setState({ bySessionId: {} });
-  // @ts-expect-error — test cleanup
-  delete window.vex;
-});
+afterEach(resetTranscriptEnv);
 
 describe("SessionTranscript", () => {
   it("renders the newest page rows and never parses content as HTML", async () => {
@@ -231,7 +164,8 @@ describe("SessionTranscript", () => {
           toolName: null,
           errorType: null,
           reasoningText: "",
-          reasoningTokens: null,
+          reasoningSegments: [],
+            reasoningTokens: null,
           startedAtMs: Date.now(),
           status: "writing",
         },
@@ -309,122 +243,4 @@ describe("SessionTranscript", () => {
     expect(screen.getByText("newest")).not.toBeNull();
   });
 
-  it("does not wedge after an older-page failure: a later new message still bottom-follows", async () => {
-    let withExtra = false;
-    listMock.mockImplementation((input: { readonly cursor: unknown }) => {
-      if (input.cursor !== null) return Promise.resolve(failure); // older fails
-      // The live arrival is an ASSISTANT row — bottom-follow semantics. (A
-      // live USER row now top-anchors instead; covered by its own test.)
-      const items = withExtra
-        ? [
-            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
-            msg({ id: 4, role: "assistant", kind: "text", content: "newer" }),
-          ]
-        : [msg({ id: 3, role: "user", kind: "text", content: "newest" })];
-      return Promise.resolve(page(items, 3)); // hasMore → load-older is offered
-    });
-    setVex();
-    const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
-
-    const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
-
-    // Scroll to the top → older fetch fails → banner; the anchor must clear.
-    scroller.scrollTop = 0;
-    fireEvent.scroll(scroller);
-    await waitFor(() => {
-      expect(screen.getByText(/Couldn't load older messages/i)).not.toBeNull();
-    });
-
-    // User scrolls back to the bottom → re-pinned (500 - 300 - 200 = 0 < 48).
-    scroller.scrollTop = 300;
-    fireEvent.scroll(scroller);
-
-    // A new newest message arrives via a live refetch; the list grows taller.
-    withExtra = true;
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 700 });
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("newer")).not.toBeNull();
-    });
-
-    // Bottom-follow ran (a stale anchor would have blocked it) → scrolled to 700.
-    expect(scroller.scrollTop).toBe(700);
-  });
-
-  it("anchors a just-sent user message at the viewport top with a run-out spacer", async () => {
-    let withExtra = false;
-    listMock.mockImplementation(() => {
-      const items = withExtra
-        ? [
-            msg({ id: 3, role: "user", kind: "text", content: "newest" }),
-            msg({ id: 4, role: "user", kind: "text", content: "just sent" }),
-          ]
-        : [msg({ id: 3, role: "user", kind: "text", content: "newest" })];
-      return Promise.resolve(page(items, null));
-    });
-    setVex();
-    const client = freshClient();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(client) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("newest")).not.toBeNull();
-    });
-
-    const scroller = getScroller(container);
-    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 500 });
-    scroller.scrollTop = 300; // pinned to the bottom (500 − 300 − 200 = 0)
-    fireEvent.scroll(scroller);
-
-    // The user sends a message — a LIVE user append lands via refetch.
-    withExtra = true;
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ["messages", SESSION] });
-    });
-    await waitFor(() => {
-      expect(screen.getByText("just sent")).not.toBeNull();
-    });
-
-    // NOT bottom-followed: anchored so the sent message reads at the top.
-    // jsdom rects are all 0, so the math resolves to scrollTop − gap:
-    // 0 − 0 + 300 − 12 = 288 (definitely not scrollHeight = 500).
-    expect(scroller.scrollTop).toBe(288);
-    // The run-out spacer opened beneath the turn (clientHeight − 96 = 104).
-    const spacer = scroller.querySelector('div[aria-hidden][style*="height"]');
-    expect(spacer).not.toBeNull();
-    expect((spacer as HTMLElement).style.height).toBe("104px");
-  });
-
-  it("does NOT anchor a historical trailing user message on session open", async () => {
-    listMock.mockResolvedValue(
-      page([msg({ id: 3, role: "user", kind: "text", content: "old send" })], null),
-    );
-    setVex();
-    const { container } = render(
-      createElement(SessionTranscript, { sessionId: SESSION }),
-      { wrapper: makeWrapper(freshClient()) },
-    );
-    await waitFor(() => {
-      expect(screen.getByText("old send")).not.toBeNull();
-    });
-    const scroller = getScroller(container);
-    // Initial-load rows are settled history → the spacer stays collapsed
-    // (no dead scroll region when browsing an old session).
-    const spacer = scroller.querySelector("div[aria-hidden]:last-child");
-    expect(spacer).not.toBeNull();
-    expect((spacer as HTMLElement).style.height).not.toBe("104px");
-  });
 });

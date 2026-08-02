@@ -72,10 +72,7 @@ describe("registry", () => {
     "wallet_balances",
     "wallet_send_prepare",
     "wallet_send_confirm",
-    "khalani_chains_list",
-    "khalani_tokens_top",
     "token_find",
-    "khalani_tokens_balances",
     "mission_draft_update",
   ];
 

@@ -3,11 +3,20 @@
  * SAME env-driven OpenRouter provider the in-turn agent uses, on-demand so a
  * settings change after restart picks up the new model.
  *
- * Sequence: `new OpenRouterProvider()` → `loadConfig()` → race(chatCompletion-
- * Simple, timeout) → `indexOf('{')…lastIndexOf('}')` → `JSON.parse` →
- * `judgeVerdictSchema.safeParse`. On ANY malformed step it THROWS (never returns
- * an empty/promoting verdict) so `consolidate.ts`'s catch fails the item ->
- * the job retries. There is NO promoting fallback on LLM failure (§949).
+ * Sequence: `new OpenRouterProvider()` → `loadConfig()` → resolve the session's
+ * current endpoint → `chatCompletionSimple` under a real deadline →
+ * `indexOf('{')…lastIndexOf('}')` → `JSON.parse` → `judgeVerdictSchema.safeParse`.
+ * On ANY malformed step it THROWS (never returns an empty/promoting verdict) so
+ * `consolidate.ts`'s catch fails the item -> the job retries. There is NO
+ * promoting fallback on LLM failure (§949).
+ *
+ * NO API-level `response_format`. The judge used to send a strict `json_schema`
+ * format, which `OpenRouterProvider` pairs with `provider.requireParameters:true`
+ * — and an endpoint that does not advertise `structured_outputs` is then refused
+ * BEFORE inference. On 2026-07-31 that rejected every consolidate item in ~50 ms
+ * on the user's own model. The output contract now lives where every other
+ * JSON-returning call in this tree puts it: the prompt, brace extraction, and
+ * the authoritative Zod parse.
  *
  * The provider is INJECTABLE (`JudgeProvider`) so tests use a deterministic stub
  * — the real OpenRouter is never called in tests.
@@ -17,19 +26,14 @@ import { z } from "zod";
 
 import { JUDGE_TIMEOUT_MS } from "@vex-agent/engine/memory-manager/policy.js";
 import { memLog } from "@vex-agent/memory/observability/logger.js";
-import { buildJudgeResponseFormat } from "@vex-agent/inference/openrouter/judge-format.js";
+import {
+  endpointFailoverDepsFrom,
+  resolveSessionInferenceConfig,
+} from "@vex-agent/inference/openrouter/endpoint-failover.js";
+import type { InferenceConfig } from "@vex-agent/inference/types.js";
 import { buildJudgeSystemPrompt, buildJudgeUserPrompt } from "./judge-prompt.js";
-import { judgeVerdictJsonSchema, judgeVerdictSchema, type JudgeVerdict } from "./judge-schema.js";
+import { judgeVerdictSchema, type JudgeVerdict } from "./judge-schema.js";
 import type { JudgeContext } from "./context-builder.js";
-
-/**
- * API-level output-format enforcement (F31, Layer B), built ONCE. Threaded into
- * `chatCompletionSimple` so OpenRouter constrains the judge to the verdict shape
- * AND (via `provider.requireParameters`) routes only to honoring endpoints. The
- * authoritative semantic gate is still the Zod `judgeVerdictSchema` parse below
- * (Layer A) — `.refine()` cross-field rules do not survive `toJSONSchema`.
- */
-const judgeResponseFormat = buildJudgeResponseFormat(judgeVerdictJsonSchema);
 
 /**
  * The provider surface the judge needs — a structural supertype of
@@ -42,11 +46,10 @@ export interface JudgeProvider {
   chatCompletionSimple(
     messages: ReadonlyArray<{ role: string; content: string }>,
     config: unknown,
-    // Optional API-level response format (F31 Layer B). Typed `unknown` to keep
-    // this structural interface provider-agnostic — the judge passes a concrete
-    // OpenRouter format object; test stubs ignore it. The concrete
-    // `OpenRouterProvider.chatCompletionSimple` accepts a typed optional 3rd arg
-    // and remains assignable.
+    // Optional API-level response format. The judge always passes `undefined`
+    // (see the module header); the parameter stays declared because the
+    // concrete `OpenRouterProvider.chatCompletionSimple` has it and this
+    // interface must remain a structural supertype.
     responseFormat?: unknown,
     /**
      * Per-call deadline. Every background caller passes an
@@ -80,6 +83,23 @@ async function defaultProvider(): Promise<JudgeProvider> {
 const costShape = z.object({ usage: z.object({ cost: z.number().nullable().optional() }).optional() });
 
 /**
+ * `loadConfig()` is typed `unknown` on the structural provider interface, so the
+ * config is untrusted here (rules/03). Narrow it before handing it to a typed
+ * domain function; a stub config that is not an inference config (every test
+ * double) simply skips the endpoint resolution instead of being cast into one.
+ * Mirrors the same guard in `compaction/branch-provider-call.ts`.
+ */
+function isInferenceConfig(value: unknown): value is InferenceConfig {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<InferenceConfig>;
+  return (
+    typeof candidate.model === "string" &&
+    typeof candidate.provider === "string" &&
+    typeof candidate.contextLimit === "number"
+  );
+}
+
+/**
  * Call the judge for ONE escalated candidate. THROWS on missing config, timeout,
  * malformed JSON, or schema failure — the caller fails the item and the job
  * retries. Never returns a promoting verdict on failure.
@@ -89,11 +109,21 @@ export async function callJudge(
   makeProvider: () => Promise<JudgeProvider> = defaultProvider,
 ): Promise<JudgeCallResult> {
   const provider = await makeProvider();
-  const config = await provider.loadConfig();
-  if (!config) {
+  const loaded = await provider.loadConfig();
+  if (!loaded) {
     memLog.warn("judge", "config_load_failed");
     throw new Error("memory_judge_provider_config_load_failed");
   }
+
+  // Run against the candidate's session CURRENT effective endpoint, not the
+  // operator's pin. A no-op until that session has actually switched.
+  const config = isInferenceConfig(loaded)
+    ? await resolveSessionInferenceConfig(
+        loaded,
+        ctx.sessionId,
+        endpointFailoverDepsFrom(provider),
+      )
+    : loaded;
 
   const systemPrompt = buildJudgeSystemPrompt();
   const userPrompt = buildJudgeUserPrompt(ctx);
@@ -110,7 +140,7 @@ export async function callJudge(
         { role: "user", content: userPrompt },
       ],
       config,
-      judgeResponseFormat,
+      undefined,
       timeoutSignal,
     );
   } catch (err) {

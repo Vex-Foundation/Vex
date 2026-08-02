@@ -26,7 +26,7 @@ export const VIRTUALS_AGENTS_DISCOVERY = {
 
   "virtuals.get": {
     embeddingText: embeddingText(
-      `Get the full profile for one Virtuals agent token by its numeric id — market cap and fully-diluted value in VIRTUAL, holders, concentration, graduation state, launch details, a bounded tokenomics summary, and the exact venue that trades it. ` +
+      `Get the full profile for one Virtuals agent token by the numeric id that virtuals.list returns — market cap and fully-diluted value in VIRTUAL, holders, concentration, graduation state, launch details, a bounded tokenomics summary, and the exact venue that trades it. ` +
       `Use this when the user names a specific Virtuals agent or id and wants deep detail before acting, or to check the anti-sniper buy-tax window before a buy. ` +
       `Example queries: get virtuals agent 96200, details for the VEX agent token, is the anti-sniper window still active, which venue trades this agent, tokenomics for this virtuals agent.`,
     ),

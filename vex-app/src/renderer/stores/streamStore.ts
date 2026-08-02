@@ -48,7 +48,21 @@ export interface StreamPreview {
   readonly phase: StreamPhase;
   /** Last tool name seen on this stream (shown only while text is empty). */
   readonly toolName: string | null;
-  /** Live reasoning trace — ephemeral, capped at `REASONING_TEXT_CAP`. */
+  /**
+   * SETTLED reasoning segments for this TURN, oldest first (owner decree
+   * 2026-07-30). A turn thinks, calls a tool, then thinks again — and the
+   * second burst is a new thought, not a continuation. A `tool_call` delta
+   * (or a round boundary) closes the active segment into this list, where the
+   * UI renders it as a collapsed expandable stamp. Each entry is already
+   * capped at `REASONING_TEXT_CAP`; the list is bounded by the engine's
+   * per-turn tool-iteration limit.
+   */
+  readonly reasoningSegments: readonly string[];
+  /**
+   * The ACTIVE reasoning segment — the one still streaming, rendered inline.
+   * `""` means no segment is open; the next `reasoning` delta opens a new one.
+   * Ephemeral, capped at `REASONING_TEXT_CAP`.
+   */
   readonly reasoningText: string;
   /** Reasoning token count from the latest usage delta (null until seen). */
   readonly reasoningTokens: number | null;
@@ -69,16 +83,26 @@ export interface StreamPreview {
 interface StreamStoreState {
   readonly bySessionId: Readonly<Record<string, StreamPreview | undefined>>;
   readonly applyDelta: (sessionId: string, event: StreamDeltaEvent) => void;
+  /**
+   * A ROUND ended but the TURN did not: the prose and tool calls this round
+   * produced have just been persisted as a canonical transcript row, so the
+   * preview must stop rendering its own copy — while staying alive, because
+   * the turn continues into the next provider round. Settles the active
+   * reasoning segment and keeps everything turn-scoped (segments, the turn
+   * clock). No-op when the session has no preview.
+   */
+  readonly settleRound: (sessionId: string) => void;
   readonly clear: (sessionId: string) => void;
 }
 
-/** Fresh preview for a newly-seen streamId. */
+/** Fresh preview for a newly-seen turn. */
 function startPreview(streamId: string): StreamPreview {
   return {
     streamId,
     text: "",
     phase: "streaming",
     toolName: null,
+    reasoningSegments: [],
     reasoningText: "",
     reasoningTokens: null,
     startedAtMs: Date.now(),
@@ -87,14 +111,56 @@ function startPreview(streamId: string): StreamPreview {
   };
 }
 
-/** Existing preview for this stream, or a fresh one (a new stream supersedes). */
+/**
+ * Close the ACTIVE reasoning segment into the settled list. An empty active
+ * buffer settles nothing — an expandable stamp that opens onto no text is a
+ * worse lie than an absent one.
+ */
+function settleActiveSegment(base: StreamPreview): StreamPreview {
+  if (base.reasoningText.length === 0) return base;
+  return {
+    ...base,
+    reasoningSegments: [...base.reasoningSegments, base.reasoningText],
+    reasoningText: "",
+  };
+}
+
+/**
+ * Begin the next ROUND of the SAME turn: the answer buffer, the tool name and
+ * the error slot are round-scoped and reset; the reasoning segments and the
+ * turn clock are TURN-scoped and survive.
+ */
+function startRound(prev: StreamPreview, streamId: string): StreamPreview {
+  const settled = settleActiveSegment(prev);
+  return {
+    ...settled,
+    streamId,
+    text: "",
+    phase: "streaming",
+    toolName: null,
+    status: "working",
+    errorType: null,
+  };
+}
+
+/**
+ * The preview a delta applies to.
+ *
+ * DELIBERATE CHANGE (owner decree 2026-07-30, segmented reasoning): a new
+ * streamId no longer SUPERSEDES the preview with a blank one. The engine
+ * opens a fresh provider stream for every round of a multi-round turn, so
+ * "new streamId" means "next round", not "next turn" — wiping here is what
+ * made the second half of a turn's thinking vanish the moment a tool ran, and
+ * what restarted the elapsed counter mid-turn. Turn boundaries are marked by
+ * `clear`, which the live-sync hook owns; anything still standing when a new
+ * streamId arrives therefore belongs to the same turn.
+ */
 function resolveBase(
   prev: StreamPreview | undefined,
   streamId: string,
 ): StreamPreview {
-  return prev !== undefined && prev.streamId === streamId
-    ? prev
-    : startPreview(streamId);
+  if (prev === undefined) return startPreview(streamId);
+  return prev.streamId === streamId ? prev : startRound(prev, streamId);
 }
 
 /**
@@ -146,12 +212,17 @@ export function reducePreview(
         status: deriveStatus(base.status, text.length, "text"),
       };
     }
-    case "tool_call":
+    case "tool_call": {
+      // The tool call CLOSES the thought that led to it: whatever the model
+      // reasoned up to this point is a finished segment, and any reasoning
+      // that follows the tool's result is a new one.
+      const settled = settleActiveSegment(base);
       return {
-        ...base,
+        ...settled,
         toolName: event.delta.toolCallName ?? base.toolName ?? "tool",
-        status: deriveStatus(base.status, base.text.length, "tool_call"),
+        status: deriveStatus(settled.status, settled.text.length, "tool_call"),
       };
+    }
     case "reasoning":
       // Pure per-delta append keeps the reducer total + unit-testable; the
       // store path batches reasoning instead (see `applyDelta`).
@@ -269,6 +340,23 @@ export const useStreamStore = create<StreamStoreState>((set) => ({
         [sessionId]: reducePreview(state.bySessionId[sessionId], event),
       },
     }));
+  },
+  settleRound: (sessionId) => {
+    // Buffered reasoning belongs to the round that is closing — flush it so it
+    // lands in THAT round's segment rather than leaking into the next one.
+    flushPendingReasoning(sessionId);
+    set((state) => {
+      const prev = state.bySessionId[sessionId];
+      if (prev === undefined) return state;
+      return {
+        bySessionId: {
+          ...state.bySessionId,
+          // Same streamId: the round is closing in place, and the next round's
+          // first delta will carry the new id through `resolveBase` anyway.
+          [sessionId]: startRound(prev, prev.streamId),
+        },
+      };
+    });
   },
   clear: (sessionId) => {
     // The pending buffer + timer die with the preview — no orphan timers.

@@ -101,7 +101,9 @@ export async function dispatchTool(
       durationMs,
     });
 
-    return withActionKindFallback(result, call.name);
+    // `durationMs` is stamped only on the paths that actually executed —
+    // the two early-deny gates above return without it (see ToolResult).
+    return { ...withActionKindFallback(result, call.name), durationMs };
   } catch (err) {
     const durationMs = Date.now() - startTime;
     const message = err instanceof Error ? err.message : String(err);
@@ -112,9 +114,12 @@ export async function dispatchTool(
       durationMs,
     });
 
-    return withActionKindFallback(
-      { success: false, output: `Tool ${call.name} failed: ${message}` },
-      call.name,
-    );
+    return {
+      ...withActionKindFallback(
+        { success: false, output: `Tool ${call.name} failed: ${message}` },
+        call.name,
+      ),
+      durationMs,
+    };
   }
 }

@@ -19,6 +19,7 @@ import type {
 
 import logger from "@utils/logger.js";
 
+import { normalizeToolCallIds } from "../tool-call-id-normalization.js";
 import { boundedFinishReason, boundedGenerationId } from "./provider-signals.js";
 
 // ── Message mapping ──────────────────────────────────────────────
@@ -69,7 +70,14 @@ export function mapMessages(
 ): ChatRequest["messages"] {
   const applyBreakpoints = cache?.applyBreakpoints === true;
 
-  const mapped: ChatRequest["messages"] = messages.map(m => {
+  // Ids BEFORE roles. A blank `toolCallId` fails the truthy check below and
+  // the row silently degrades to `role:"user"`, destroying the pairing the
+  // provider validates — so the repair has to happen while it is still a tool
+  // row. Idempotent: an engine-normalized tape passes through untouched.
+  // Everything downstream reads `normalized`, so indexes stay aligned.
+  const normalized = normalizeToolCallIds(messages).messages;
+
+  const mapped: ChatRequest["messages"] = normalized.map(m => {
     // Breakpoint B carrier — role-agnostic. The engine marks the LAST
     // non-empty history message; mid-tape system rows (continue-cue,
     // operator-cue) are legitimate carriers.
@@ -92,7 +100,7 @@ export function mapMessages(
             ? itemPartsWithCache(m.content)
             : m.content || undefined,
         toolCalls: m.toolCalls.map(tc => ({
-          id: tc.id ?? "",
+          id: tc.id,
           type: "function" as const,
           function: { name: tc.command, arguments: JSON.stringify(tc.args) },
         })),
@@ -126,7 +134,7 @@ export function mapMessages(
   });
 
   if (applyBreakpoints && cache?.mergeTurnStateIntoStaticPrefix === true) {
-    mergeTurnStateIntoStatic(messages, mapped);
+    mergeTurnStateIntoStatic(normalized, mapped);
   }
 
   return synthesizeMissingToolResults(mapped);

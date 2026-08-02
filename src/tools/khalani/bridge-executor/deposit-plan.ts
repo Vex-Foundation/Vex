@@ -114,7 +114,7 @@ function planTransferLeg(plan: TransferDepositPlan, chain: KhalaniChain): Khalan
     throw new VexError(
       ErrorCodes.KHALANI_DEPOSIT_FAILED,
       "Solana TRANSFER deposits are not implemented.",
-      "Retry with --deposit-method CONTRACT_CALL.",
+      "Retry with depositMethod set to CONTRACT_CALL.",
     );
   }
   const isNative = isNativeTransferToken(plan.token);
@@ -225,7 +225,7 @@ export function planKhalaniDepositLegs(
     throw new VexError(
       ErrorCodes.KHALANI_PERMIT2_BLOCKED,
       "PERMIT2 live execution is intentionally blocked.",
-      "Use dryRun to inspect the permit payload or retry with --deposit-method CONTRACT_CALL.",
+      "Use dryRun to inspect the permit payload, or retry with depositMethod set to CONTRACT_CALL.",
     );
   }
   const legs = plan.kind === "TRANSFER"

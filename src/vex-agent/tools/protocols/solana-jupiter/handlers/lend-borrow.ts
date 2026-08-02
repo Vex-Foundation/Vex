@@ -31,7 +31,8 @@ import {
   deriveAssociatedTokenAccount,
   resolveMintTokenProgramId,
 } from "@tools/solana-ecosystem/shared/solana-token-program.js";
-import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
+import { SOL_MINT, SOL_DECIMALS } from "@tools/solana-ecosystem/shared/solana-constants.js";
+import { formatRawAmount } from "../../amount-display.js";
 import { solanaExplorerUrl } from "@tools/solana-ecosystem/shared/solana-validation.js";
 import {
   createAgentActivityIntent,
@@ -161,9 +162,17 @@ async function checkWsolFunding(
   const sufficient = leg.amountRaw !== null ? balanceRaw >= BigInt(leg.amountRaw) : balanceRaw > 0n;
   if (sufficient) return null;
 
-  const need = leg.amountRaw ?? "some";
-  return `this operation needs ${need} raw units of WRAPPED SOL (WSOL) already in your wallet's WSOL token `
-    + `account (found ${balanceRaw.toString()}) — Jupiter Lend Borrow's /operate endpoint never wraps native SOL `
+  // Both figures are spelled in WSOL first, raw base units second (rules/90:
+  // a raw amount must travel with the decimals needed to read it — "1000000000"
+  // reads as a thousandfold error to an agent that guesses). WSOL's decimals
+  // are KNOWN here: this branch only runs for the canonical SOL/WSOL mint.
+  // The raws stay in parentheses — additive, never replaced.
+  const needHuman = formatRawAmount(leg.amountRaw, SOL_DECIMALS);
+  const need = needHuman !== null ? `${needHuman} WRAPPED SOL (WSOL) (${leg.amountRaw} raw units)` : "some WRAPPED SOL (WSOL)";
+  const foundHuman = formatRawAmount(balanceRaw, SOL_DECIMALS) ?? "an unreadable amount";
+  const found = `${foundHuman} WSOL (${balanceRaw.toString()} raw units)`;
+  return `this operation needs ${need} already in your wallet's WSOL token `
+    + `account (found ${found}) — Jupiter Lend Borrow's /operate endpoint never wraps native SOL `
     + "for you. Wrap SOL into WSOL first, then retry.";
 }
 

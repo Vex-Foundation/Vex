@@ -65,6 +65,9 @@ describe("twitter_account", () => {
     });
   });
 
+  // An EMPTY filter object is now read as an absent filter (the model boundary's
+  // "empty means absent" rule), so this call is rejected as a search carrying no
+  // criterion at all — same refusal, and the message now names both search modes.
   it("rejects tweet_search without a filter field", async () => {
     const result = await handleTwitterAccount(
       { action: "tweet_search", filter: {} },
@@ -72,7 +75,8 @@ describe("twitter_account", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("at least one tweet search filter field");
+    expect(result.output).toContain("tweet_search needs ONE of two things");
+    expect(result.output).toContain("filter");
     expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 
@@ -83,7 +87,8 @@ describe("twitter_account", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("tweet_search requires query or filter");
+    expect(result.output).toContain("tweet_search needs ONE of two things");
+    expect(result.output).toContain("`query`");
     expect(mockExecuteTwitterAccountRequest).not.toHaveBeenCalled();
   });
 

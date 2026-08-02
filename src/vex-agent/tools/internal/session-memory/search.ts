@@ -28,6 +28,7 @@ import {
   MEMORY_RECALL_MIN_SIMILARITY,
 } from "@vex-agent/memory/session-memory-policy.js";
 import logger from "@utils/logger.js";
+import { formatZodIssueForModel } from "../arg-validation.js";
 
 const SessionMemorySearchSchema = z.object({
   query: z
@@ -50,7 +51,7 @@ export async function handleSessionMemorySearch(
   if (!parsed.success) {
     return {
       success: false,
-      output: `session_memory_search: invalid arguments: ${parsed.error.message}`,
+      output: `session_memory_search: ${formatZodIssueForModel(parsed.error.issues[0], args)}`,
     };
   }
   const { query, k } = parsed.data;

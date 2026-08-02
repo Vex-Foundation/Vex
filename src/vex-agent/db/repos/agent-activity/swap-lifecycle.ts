@@ -34,11 +34,12 @@
  *
  * The stale hashless-intent WALL-CLOCK recovery sweep (`recoverStale-
  * HashlessIntents`) lives in the sibling `./hashless-recovery.js` (C7
- * extraction, keeps this file under the 500-line cap) — see that module's
- * doc for the family-agnostic recovery contract.
+ * extraction) — see that module's doc for the family-agnostic recovery
+ * contract. The READ queries live in `./swap-lifecycle/reads.js` and are
+ * re-exported from here unchanged.
  */
 
-import { execute, queryOne, query, queryOneWith, queryWith } from "../../client.js";
+import { execute, queryOne, queryOneWith, queryWith } from "../../client.js";
 import {
   resolveActivitySessionByExecutionId,
   resolveActivitySessionByRowId,
@@ -47,7 +48,7 @@ import {
 
 import { assertFailureCode, sanitizeFailureReason } from "./validation.js";
 import { mapRow } from "./mappers.js";
-import type { AgentActivityEvent, AgentActivityFailureCode, BridgeChainFamily, CasResult } from "./types.js";
+import type { AgentActivityEvent, AgentActivityFailureCode, CasResult } from "./types.js";
 
 // ── Types (swap-only inputs) ─────────────────────────────────────────
 
@@ -187,6 +188,18 @@ export async function confirmActivityEvent(
         + "executedAmountInRaw + executedAmountOutRaw",
     );
   }
+  if ((current.eventRole === "wrap" || current.eventRole === "unwrap")
+    && (!input.executedAmountInRaw || !input.executedAmountOutRaw)) {
+    // Migration 061 drops `agent_activity_confirmed_wrap_has_executed_legs`
+    // (confirmed-without-executed-amounts is now a legitimate state for the
+    // status-only repair path). That CHECK was wrap/unwrap's ONLY strict
+    // invariant — this guard replaces it as the enforcement point, so the
+    // relaxation reaches exactly one caller: `confirmActivityEventStatusOnly`.
+    throw new Error(
+      "agent_activity: confirmActivityEvent — event_role 'wrap'/'unwrap' requires "
+        + "executedAmountInRaw + executedAmountOutRaw",
+    );
+  }
   assertYieldConfirmLegs(current, input);
   // Under the session control lock: `pending` is money state the compaction
   // safe-moment gate reads. `current` is the pre-read this function already
@@ -217,6 +230,42 @@ export async function confirmActivityEvent(
   ));
   if (row) return { applied: true, row: mapRow(row) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEvent") };
+}
+
+/**
+ * `pending -> confirmed` WITHOUT any amount (owner decree 2026-07-30) — the
+ * repair sweeps' own finalizer, and the ONE deliberate bypass of the strict
+ * per-role amount guards above.
+ *
+ * The sweeps are status-only: they ask the chain whether a tx hash succeeded or
+ * reverted and nothing else. So they can prove a transaction SETTLED without
+ * being able to prove WHAT it moved. Writing the quoted amounts into
+ * `executed_*` would record a quote as a settlement — the single thing the
+ * money-path rules forbid — so this function writes NO amount column at all and
+ * leaves `executed_*` NULL. Agent Scan renders such a row's quoted amount
+ * explicitly labelled "estimated" (`agent-activity-amount.ts`).
+ *
+ * Everything else matches `confirmActivityEvent`: the same
+ * `WHERE status = 'pending'` CAS, the same `withActivitySessionLock` (this is
+ * money state the compaction safe-moment gate reads), the same `{applied, row}`
+ * contract so a caller can tell "I confirmed this" from "someone already did".
+ *
+ * NOT for venue handlers. A broadcast handler decodes its own receipt and MUST
+ * use `confirmActivityEvent`, whose guards are unchanged.
+ */
+export async function confirmActivityEventStatusOnly(id: number): Promise<CasResult> {
+  const sessionId = await resolveActivitySessionByRowId(id);
+  const row = await withActivitySessionLock(sessionId, (client) =>
+    queryOneWith<Record<string, unknown>>(
+      client,
+      `UPDATE agent_activity
+        SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND status = 'pending'
+      RETURNING *`,
+      [id],
+    ));
+  if (row) return { applied: true, row: mapRow(row) };
+  return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEventStatusOnly") };
 }
 
 /**
@@ -382,115 +431,22 @@ export async function touchLastChecked(id: number): Promise<void> {
 
 // ── Reads ─────────────────────────────────────────────────────────
 
-export async function getActivityEventById(id: number): Promise<AgentActivityEvent | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM agent_activity WHERE id = $1",
-    [id],
-  );
-  return row ? mapRow(row) : null;
-}
+// The read queries (`getActivityEventById`, the two repair-sweep candidate
+// sets, the Agent Scan feed page, `existsForExecutionId`) live in the sibling
+// `./swap-lifecycle/reads.js` — a different reason to change (candidate
+// ordering, filters, pagination) from this file's CAS state transitions, and
+// the headroom this file needed under the repo's 550-line hard limit.
+// RE-EXPORTED here so every existing import site is byte-unaffected.
+export type { ListActivityFeedOptions } from "./swap-lifecycle/reads.js";
+export {
+  getActivityEventById,
+  listPendingOlderThan,
+  listSolanaStagedPending,
+  listActivityFeed,
+  existsForExecutionId,
+} from "./swap-lifecycle/reads.js";
 
-/**
- * Repair-sweep candidate set: `pending` rows whose signed submit was
- * attempted more than `olderThanMs` ago, oldest first, capped at `limit`
- * rows (FIX-SPINE C11 — finding 12: the repair sweep must never starve
- * balance/Jupiter sync by loading an unbounded backlog). A row with no
- * `submit_attempted_at` yet (crash before step 2) is not a candidate — there
- * is no hash to check.
- *
- * `chainFamily` is REQUIRED (W5 design REVISION 1 R3 — Codex's
- * non-disjointness finding at this file's prior state): the caller must name
- * which sweep it is, so the EVM repair sweep (`'eip155'`) and the Solana
- * activity sweep (`solana-activity-repair.ts`'s own
- * `listSolanaStagedPending`, a disjoint candidate shape — see below) can
- * never both claim the same row.
- */
-export async function listPendingOlderThan(
-  olderThanMs: number,
-  limit: number,
-  chainFamily: BridgeChainFamily,
-): Promise<AgentActivityEvent[]> {
-  const rows = await query<Record<string, unknown>>(
-    `SELECT * FROM agent_activity
-      WHERE status = 'pending'
-        AND submit_attempted_at IS NOT NULL
-        AND submit_attempted_at < NOW() - make_interval(secs => $1::float8)
-        AND chain_family = $3
-      ORDER BY submit_attempted_at ASC
-      LIMIT $2`,
-    [olderThanMs / 1000, limit, chainFamily],
-  );
-  return rows.map(mapRow);
-}
-
-/**
- * Solana activity-sweep candidate set (design `w5-design.md` §4/R3): every
- * LOCALLY-STAGED (`tx_hash IS NOT NULL`) `pending` Solana row, oldest-checked
- * first — `COALESCE(last_checked_at, submit_attempted_at)` so a
- * never-yet-checked row is served before a recently re-checked one (mirrors
- * the bridge sweep's fairness clock). Deliberately UNFILTERED by `kind`: R3
- * corrects §4 to include Solana `bridge_deposit` legs too (the bridge sweep
- * owns ONLY the logical `bridge_fill_expected` row, whose
- * `submit_attempted_at` is always NULL and is therefore never a candidate
- * here) — swap/lend/prediction/bridge-deposit rows share ONE disjoint
- * candidate set by `chain_family` alone. The caller
- * (`solana-activity-repair.ts`) applies its own exponential-backoff
- * eligibility check per row; this query only bounds + orders the batch.
- */
-export async function listSolanaStagedPending(limit: number): Promise<AgentActivityEvent[]> {
-  const rows = await query<Record<string, unknown>>(
-    `SELECT * FROM agent_activity
-      WHERE status = 'pending'
-        AND chain_family = 'solana'
-        AND tx_hash IS NOT NULL
-        AND submit_attempted_at IS NOT NULL
-      ORDER BY COALESCE(last_checked_at, submit_attempted_at) ASC
-      LIMIT $1`,
-    [limit],
-  );
-  return rows.map(mapRow);
-}
-
-export interface ListActivityFeedOptions {
-  walletAddresses: string[];
-  before?: { createdAt: string; id: number };
-  limit: number;
-}
-
-/** Keyset-paginated (created_at DESC, id DESC) feed for a wallet set — the Agent Scan read surface. */
-export async function listActivityFeed(
-  options: ListActivityFeedOptions,
-): Promise<AgentActivityEvent[]> {
-  if (options.walletAddresses.length === 0) return [];
-  const params: unknown[] = [options.walletAddresses, options.limit];
-  let cursorClause = "";
-  if (options.before) {
-    params.push(options.before.createdAt, options.before.id);
-    cursorClause = `AND (created_at < $3::timestamptz OR (created_at = $3::timestamptz AND id < $4::bigint))`;
-  }
-  const rows = await query<Record<string, unknown>>(
-    `SELECT * FROM agent_activity
-      WHERE wallet_address = ANY($1::text[]) ${cursorClause}
-      ORDER BY created_at DESC, id DESC
-      LIMIT $2`,
-    params,
-  );
-  return rows.map(mapRow);
-}
-
-/**
- * True iff at least one `agent_activity` row exists for this
- * `protocol_execution_id` — used by the compatibility feed (transactions.ts)
- * to exclude a legacy-failure-half row already represented here (FIX-SPINE
- * C9 — findings 1/2).
- */
-export async function existsForExecutionId(protocolExecutionId: number): Promise<boolean> {
-  const row = await queryOne<{ exists: boolean }>(
-    "SELECT EXISTS(SELECT 1 FROM agent_activity WHERE protocol_execution_id = $1) AS exists",
-    [protocolExecutionId],
-  );
-  return row?.exists === true;
-}
+import { getActivityEventById } from "./swap-lifecycle/reads.js";
 
 // ── Internal helpers ─────────────────────────────────────────────────
 

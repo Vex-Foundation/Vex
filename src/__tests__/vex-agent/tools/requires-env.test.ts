@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+
 const { getOpenAITools, getAllTools, defaultVisibilityContext } = await import(
   "../../../vex-agent/tools/registry.js"
 );
@@ -126,10 +128,19 @@ describe("requiresEnv filtering", () => {
   // ── Protocol execute guard ─────────────────────────────────────
 
   describe("protocol execute guard", () => {
+    // Unapproved restricted session with the runtime's own neutral wallet
+    // defaults — the env gate must refuse before any wallet path matters.
+    const unapprovedContext: ProtocolExecutionContext = {
+      sessionPermission: "restricted",
+      approved: false,
+      walletResolution: { source: "default" },
+      walletPolicy: { kind: "none" },
+    };
+
     it("blocks solana.swap.quote without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.swap.quote", params: { inputToken: "SOL", outputToken: "USDC", amount: 1 } },
-        { sessionPermission: "restricted", approved: false },
+        unapprovedContext,
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
@@ -138,7 +149,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.tokens.search without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.tokens.search", params: { query: "SOL" } },
-        { sessionPermission: "restricted", approved: false },
+        unapprovedContext,
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
@@ -147,7 +158,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.predict.events without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.predict.events", params: {} },
-        { sessionPermission: "restricted", approved: false },
+        unapprovedContext,
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");
@@ -156,7 +167,7 @@ describe("requiresEnv filtering", () => {
     it("blocks solana.lend.rates without JUPITER_API_KEY", async () => {
       const result = await executeProtocolTool(
         { toolId: "solana.lend.rates", params: {} },
-        { sessionPermission: "restricted", approved: false },
+        unapprovedContext,
       );
       expect(result.success).toBe(false);
       expect(result.output).toContain("JUPITER_API_KEY");

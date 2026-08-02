@@ -34,9 +34,11 @@
 
 import type { FormEvent, JSX, ReactNode } from "react";
 
-import { HugeiconsIcon } from "@hugeicons/react";
-import type { HugeiconsIconProps } from "@hugeicons/react";
-import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowUpRight01Icon,
+  type IconGlyph,
+  VexIcon,
+} from "../../components/icons/index.js";
 import {
   WIZARD_STEP_IDS,
   type WizardStepId,
@@ -45,7 +47,7 @@ import {
 import type { WizardFlowMode } from "../../lib/api/wizard.js";
 import { cn } from "../../lib/utils.js";
 
-type IconDescriptor = HugeiconsIconProps["icon"];
+type IconDescriptor = IconGlyph;
 
 export type WizardPanelDataAttr =
   | { readonly kind: "keystore"; readonly value: "form" | "skip" }
@@ -149,7 +151,7 @@ function TrailingMeta({
         )}
       >
         Your data stays yours
-        <HugeiconsIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
+        <VexIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
       </a>
     </div>
   );
@@ -180,7 +182,7 @@ export function WizardStepPanel({
   const headerNode = (
     <header className="vex-step-header flex items-start gap-4">
       <span aria-hidden className={ICON_CIRCLE_CHROME}>
-        <HugeiconsIcon icon={icon} size={20} aria-hidden />
+        <VexIcon icon={icon} size={20} aria-hidden />
       </span>
       <div className="flex flex-col gap-1.5 pt-0.5">
         <h1 className="font-serif text-2xl font-normal leading-tight text-[var(--color-text-primary)]">

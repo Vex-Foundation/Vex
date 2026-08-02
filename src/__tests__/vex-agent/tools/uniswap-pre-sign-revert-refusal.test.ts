@@ -101,7 +101,6 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   failActivityEvent: (...args: unknown[]) => failActivityEvent(...args),
   abortPlannedEvents: (...args: unknown[]) => abortPlannedEvents(...args),
 }));
-vi.mock("@vex-agent/sync/settlement-decoders.js", () => ({ registerSettlementDecoder: vi.fn() }));
 vi.mock("@vex-agent/tools/registry/uniswap-reveal.js", () => ({
   clearUniswapPairReveal: (...args: unknown[]) => clearUniswapPairReveal(...args),
 }));

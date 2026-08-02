@@ -46,9 +46,6 @@ The curated shortcuts below run the SAME protocol code as the dotted toolIds the
 | --- | --- |
 | \`token_find\` | \`khalani.tokens.search\` (canonical token resolver) |
 | \`token_check\` | \`kyberswap.tokens.check\` (EVM honeypot / fee-on-transfer) |
-| \`khalani_chains_list\` | \`khalani.chains.list\` |
-| \`khalani_tokens_top\` | \`khalani.tokens.top\` |
-| \`khalani_tokens_balances\` | \`khalani.tokens.balances\` |
 | \`swap_quote\` / \`swap_execute\` | the chain's swap venue (EVM → \`kyberswap.swap.*\`, \`chain="solana"\` → \`solana.swap.*\`) |
 | \`bridge_quote\` / \`bridge\` | the route's bridge provider, auto-selected (\`khalani.*\`, or \`relay.*\` to/from Robinhood Chain) |
 | \`bridge_status\` | \`khalani.orders.get\` (with \`orderId\`) / \`khalani.orders.list\` |
@@ -60,8 +57,8 @@ Reach for \`discover_tools\` for everything these shortcuts do not cover.
 Balances, prices, gas, open positions, quotes, transaction hashes are LIVE state. Re-query each turn — do not save them into knowledge or memory.
 
 - Your own wallet across all families in one call: \`wallet_balances\` — covers Khalani chains AND local chains (Robinhood 4663, direct-RPC).
-- One family / different address: \`khalani_tokens_balances\` — Khalani-covered chains only; for Robinhood balances use \`wallet_balances\`.
-- On-chain EVM forensics (tx receipts, ERC-721 mint detection): \`chain_read\`. (Native balances → \`wallet_balances\`; token metadata/decimals → \`token_find\`.)
+- SOMEONE ELSE's address, or one wallet family alone: \`execute_tool\` with \`khalani.tokens.balances\` — Khalani-covered chains only, so Robinhood balances still need \`wallet_balances\`.
+- On-chain EVM forensics (tx receipts, ERC-721 mint detection): \`chain_read\` — covers Khalani chains AND local chains (\`chainId: "robinhood"\` / \`"4663"\`). (Native balances → \`wallet_balances\`; token metadata/decimals → \`token_find\`.)
 - Your recorded session-wallet history (recent transactions, activity, balances, snapshots): \`agent_scan\` — reads from your own DB projections (\`agent_scan(view="transactions")\` is the primary feed — pending/confirmed/failed swaps with chain + tx hash; also \`summary\`, \`balances\`, \`snapshots\`, \`activity\`, \`executions\`). No stored PnL — compute it yourself from the recorded amounts if you need it.
 
 If a fact is queryable live, querying is cheaper than remembering — and the memorized version is stale by definition.

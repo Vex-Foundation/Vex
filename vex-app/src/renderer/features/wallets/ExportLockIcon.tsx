@@ -1,8 +1,9 @@
 /**
  * Inline lock glyph for the export modal (extracted from
  * `ExportPrivateKeyModal.tsx` to keep that file under the size budget).
- * Same rationale as UnlockScreen.LockIcon: lucide-react is not a vex-app
- * dependency, and pulling a 200KB icon set for one glyph is not justified.
+ * Same as UnlockScreen.LockIcon, this is a hand-inlined path rather than a
+ * glyph from `components/icons` — kept as-is so the vendor swap stayed a
+ * mechanical change. Routing it through `VexIcon` is a separate step.
  */
 
 import type { JSX } from "react";

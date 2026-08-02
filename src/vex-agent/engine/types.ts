@@ -486,6 +486,13 @@ export interface MessageMetadata {
   messageType?: MessageType;
   visibility?: MessageVisibility;
   originSessionId?: string;
+  /**
+   * Free-form envelope persisted into the `messages.metadata` JSONB column —
+   * the ONLY part of this type that reaches it (db/repos/messages/write.ts).
+   * Mirrors the repo-level `MessageMetadata.payload`; every producer defines
+   * its own shape in code and every reader treats it as untrusted.
+   */
+  payload?: Record<string, unknown>;
 }
 
 // ── Resumed-turn consumption claim ──────────────────────────────

@@ -2,13 +2,13 @@
  * Agent Scan DB helper — read-only, GLOBAL-scope, full-history agent activity.
  * Backs `vex:portfolio:listAgentScan`.
  *
- * Mirrors `portfolio-db.ts` / `moves-db.ts` / `token-history-db.ts`: its own
+ * Mirrors `portfolio-db.ts` / `token-history-db.ts`: its own
  * `pg.Client` per call, no `@vex-agent/db/repos/*` import, reading the same
  * local `vex` Postgres the engine writes to.
  *
- * SOURCE — `agent_activity` ONLY (single arm, deliberately). The two existing
- * feeds UNION the legacy `proj_activity` / `wallet_intents` projections; this
- * one does not. Those arms keep serving the feeds that already depend on them,
+ * SOURCE — `agent_activity` ONLY (single arm, deliberately). The token-history
+ * feed UNIONs the legacy `proj_activity` / `wallet_intents` projections; this
+ * one does not. Those arms keep serving the feed that already depends on them,
  * and Agent Scan gets to be built purely on the canonical vocabulary
  * (`@shared/agent-activity-vocabulary.js`) instead of inheriting the SPOT
  * taxonomy the legacy arms were minted with. One arm also means one cursor and

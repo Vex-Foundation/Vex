@@ -14,8 +14,11 @@
  */
 
 import type { JSX } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUp01Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowUp01Icon,
+  StopCircleIcon,
+  VexIcon,
+} from "../../components/icons/index.js";
 import type { ReasoningCapability, ReasoningEffort } from "@shared/schemas/reasoning.js";
 import { cn } from "../../lib/utils.js";
 import {
@@ -25,16 +28,16 @@ import {
 import { ModelBrandIcon } from "../wizard/steps/provider/ModelBrandIcon.js";
 
 /**
- * Shared geometry for the round send control's three states (send / stop /
- * stopping) — one fixed circle so every hard-cut swap holds its slot in the
- * input row. h-10 = Grok's 40px round key inside the ~56px resting pill
- * (owner decree 2026-07-21). Send fills the accent with the accent-contrast
- * glyph; the disabled (empty) send is a ghost hairline circle; stop keeps
- * the accent rim; stopping goes inert while the floating tag above the pill
- * carries the "Stopping…" label.
+ * Shared geometry for the send control's three states (send / stop /
+ * stopping) — one fixed 40px key so every hard-cut swap holds its slot in the
+ * input row. `rounded-xl` echoes the surface's rounded-2xl instead of the
+ * retired pill's circle (composer rebuild, owner decree 2026-07-29). Send
+ * fills the accent with the accent-contrast glyph; the disabled (empty) send
+ * is a ghost hairline key; stop keeps the accent rim; stopping goes inert
+ * while the floating tag above the surface carries the "Stopping…" label.
  */
 const SEND_KEY_BASE =
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export interface ComposerSendControlProps {
   readonly reasoningCapability: ReasoningCapability | null;
@@ -109,7 +112,7 @@ export function ComposerSendControl({
               "border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[var(--vex-text-3)]",
             )}
           >
-            <HugeiconsIcon icon={StopCircleIcon} size={16} aria-hidden />
+            <VexIcon icon={StopCircleIcon} size={16} aria-hidden />
           </button>
         ) : (
           <button
@@ -121,7 +124,7 @@ export function ComposerSendControl({
               "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]",
             )}
           >
-            <HugeiconsIcon icon={StopCircleIcon} size={16} aria-hidden />
+            <VexIcon icon={StopCircleIcon} size={16} aria-hidden />
           </button>
         )
       ) : (
@@ -139,7 +142,7 @@ export function ComposerSendControl({
               : "border-transparent bg-[var(--vex-accent)] text-[var(--vex-accent-contrast)] hover:bg-[var(--vex-accent-hover)] active:scale-[0.96]",
           )}
         >
-          <HugeiconsIcon icon={ArrowUp01Icon} size={16} aria-hidden />
+          <VexIcon icon={ArrowUp01Icon} size={16} aria-hidden />
         </button>
       )}
     </div>

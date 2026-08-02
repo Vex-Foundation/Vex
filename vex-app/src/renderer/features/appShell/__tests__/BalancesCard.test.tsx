@@ -16,7 +16,7 @@
  *     slot a real (or unpriced) holding should fill instead,
  *   - THE EYE: rows with exact `(chainId, tokenAddress)` identity carry the
  *     token-history eye; clicking routes to `tokenHistory` with the row's
- *     identity + `returnTo: "shell"`; identity-less rows carry NO eye and
+ *     identity + `returnTo: { kind: "shell" }`; identity-less rows carry NO eye and
  *     the token name itself stays non-interactive.
  */
 
@@ -25,8 +25,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
-vi.mock("@hugeicons/react", () => ({
-  HugeiconsIcon: () => null,
+vi.mock("../../../components/icons/VexIcon.js", () => ({
+  VexIcon: () => null,
 }));
 
 vi.mock("@thesvg/react", () => ({
@@ -76,13 +76,16 @@ function portfolio(tokens: readonly PositionTokenDto[]): PortfolioDto {
   };
 }
 
-function mountWith(tokens: readonly PositionTokenDto[]) {
+function mountWith(
+  tokens: readonly PositionTokenDto[],
+  sessionId: string | null = null,
+) {
   mockUsePortfolio.mockReturnValue({
     isLoading: false,
     isError: false,
     data: { ok: true, data: portfolio(tokens) },
   });
-  return render(<BalancesCard />);
+  return render(<BalancesCard sessionId={sessionId} />);
 }
 
 beforeEach(() => {
@@ -175,6 +178,8 @@ describe("BalancesCard — View all assets", () => {
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "assets",
       origin: { x: 0, y: 0, width: 0, height: 0 },
+      // The welcome card is the GLOBAL scope — the screen it opens must be too.
+      sessionId: null,
     });
   });
 
@@ -213,7 +218,7 @@ describe("BalancesCard — token-history eye", () => {
       symbol: "USDC",
       tokenName: "USD Coin",
     });
-    expect(route.returnTo).toBe("shell");
+    expect(route.returnTo).toEqual({ kind: "shell" });
     // jsdom rects are all-zero — the pin is that the measured rect object
     // (not null) rode along as the expand origin.
     expect(route.origin).toEqual({ x: 0, y: 0, width: 0, height: 0 });
@@ -284,5 +289,56 @@ describe("BalancesCard — hide dust", () => {
     // (always last) is pushed out of the top-5 window.
     expect(rows[4]).toContain("Dust Two");
     expect(rows.some((row) => row.includes("Unpriced Real"))).toBe(false);
+  });
+});
+
+describe("BalancesCard — session scope (C4)", () => {
+  const SESSION = "00000000-0000-4000-8000-0000000000ad";
+
+  it("reads the SESSION portfolio, never the global one", () => {
+    mountWith([token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 10 })], SESSION);
+    expect(mockUsePortfolio).toHaveBeenCalledWith(SESSION);
+  });
+
+  it("carries the session scope into the All-assets route it opens", () => {
+    mountWith([token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 10 })], SESSION);
+    fireEvent.click(screen.getByRole("button", { name: /View all assets/i }));
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "assets",
+      origin: { x: 0, y: 0, width: 0, height: 0 },
+      sessionId: SESSION,
+    });
+  });
+
+  it("filters dust BEFORE the top-5 cut — a dust row never takes a real holding's slot", () => {
+    // 5 dust rows sort ahead of nothing, but 6 real rows exist: with the
+    // filter applied AFTER the cut, the dust would eat visible slots.
+    mountWith(
+      [
+        token({ tokenName: "Dust 1", symbol: "D1", balanceUsd: 0.001 }),
+        token({ tokenName: "Dust 2", symbol: "D2", balanceUsd: 0.002 }),
+        token({ tokenName: "Real A", symbol: "AAA", balanceUsd: 600 }),
+        token({ tokenName: "Real B", symbol: "BBB", balanceUsd: 500 }),
+        token({ tokenName: "Real C", symbol: "CCC", balanceUsd: 400 }),
+        token({ tokenName: "Real D", symbol: "DDD", balanceUsd: 300 }),
+        token({ tokenName: "Real E", symbol: "EEE", balanceUsd: 200 }),
+        token({ tokenName: "Real F", symbol: "FFF", balanceUsd: 100 }),
+      ],
+      SESSION,
+    );
+    const names = [...document.querySelectorAll("li")].map(
+      (row) => row.textContent ?? "",
+    );
+    expect(names).toHaveLength(5);
+    expect(names.some((n) => n.includes("Dust"))).toBe(false);
+    expect(names[0]).toContain("Real A");
+    expect(names[4]).toContain("Real E");
+  });
+
+  it("states the SESSION empty invitation, never the global one", () => {
+    mountWith([], SESSION);
+    expect(
+      screen.getByText(/No balances in this session's wallets yet/i),
+    ).not.toBeNull();
   });
 });

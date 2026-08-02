@@ -27,8 +27,7 @@
 import { lexer, type Token } from "marked";
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Copy01Icon } from "@hugeicons/core-free-icons";
+import { Copy01Icon, VexIcon } from "../../components/icons/index.js";
 
 /** ASCII control chars (U+0000–U+001F) and DEL (U+007F) are never valid in a URL. */
 function hasControlChars(value: string): boolean {
@@ -250,13 +249,16 @@ function renderBlock(token: Token, key: number, opts: RenderOptions): ReactNode 
           </h3>
         );
       }
+      // Chat headings keep their original semantic decision (no h-tags in
+      // chat prose) and now scale within the SERIF voice: Instrument Serif has
+      // no weight axis, so hierarchy is size, never a (synthesized) bold.
       return (
         <p
           key={key}
           className={
             token.depth <= 2
-              ? "mt-5 text-[17px] font-semibold text-foreground"
-              : "text-[15px] font-semibold text-foreground"
+              ? "mt-5 text-[21px] leading-tight text-foreground"
+              : "text-[18px] leading-snug text-foreground"
           }
         >
           {renderInline(token.tokens, opts)}
@@ -473,7 +475,7 @@ function CodeBlock({
           className="flex items-center text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           {copyState === "idle" ? (
-            <HugeiconsIcon icon={Copy01Icon} size={12} aria-hidden />
+            <VexIcon icon={Copy01Icon} size={12} aria-hidden />
           ) : (
             <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
               {copyState === "copied" ? "Copied" : "Copy failed"}
@@ -509,7 +511,21 @@ export function MarkdownContent({
     return <p className="whitespace-pre-wrap break-words">{text}</p>;
   }
   return (
-    <div className="flex flex-col gap-2 break-words">
+    // THE READING REGISTER (typography law, owner readability round
+    // 2026-07-30): chat BODY copy is Instrument Sans 15px/1.65 via
+    // `.vex-chat-prose` (landing-motifs.css). Instrument Serif is a condensed
+    // DISPLAY face — it stays on the HEADINGS rendered per-node below, never
+    // on paragraph-length body text, which is what made the previous serif
+    // body hard to read. The class also pins the technical opt-outs (code/pre
+    // stay mono, tables stay sans + tabular-nums) and the no-synthesis guard
+    // on the serif survivors, which is why it is ONE class here rather than
+    // per-node utilities. The `article` variant is long-form static repo
+    // markdown with its own heading scale and stays on the support face.
+    <div
+      className={`flex flex-col gap-2 break-words${
+        opts.variant === "chat" ? " vex-chat-prose" : ""
+      }`}
+    >
       {renderBlocks(tokens, opts)}
     </div>
   );

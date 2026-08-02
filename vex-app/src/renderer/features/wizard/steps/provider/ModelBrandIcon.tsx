@@ -14,8 +14,7 @@
  */
 
 import { useMemo, type ComponentType, type SVGProps } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AiBrain05Icon } from "@hugeicons/core-free-icons";
+import { AiBrain05Icon, VexIcon } from "../../../../components/icons/index.js";
 import {
   Anthropic,
   Claude,
@@ -104,7 +103,7 @@ export function ModelBrandIcon({
     );
   }
   return (
-    <HugeiconsIcon
+    <VexIcon
       icon={AiBrain05Icon}
       size={size}
       aria-hidden

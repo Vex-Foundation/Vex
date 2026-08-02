@@ -25,32 +25,23 @@
  * happened yet.
  */
 
-import { z } from "zod";
-
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { requestApply } from "@vex-agent/engine/compaction/apply/index.js";
 import logger from "@utils/logger.js";
 
 /**
- * The tool declares no parameters. Models nonetheless emit `{}` — and
- * occasionally a stray key — so the schema is permissive about extras rather
- * than failing a call that is unambiguous in intent.
+ * The tool declares NO parameters, and nothing here reads one — the whole call
+ * is `{ sessionId, source }` from the context. There used to be a
+ * `z.object({}).passthrough()` guard with a rejection branch; passthrough
+ * accepts every object, models only ever emit an object, and the branch's data
+ * was never used, so it could not fail and could not inform anything. Deleted
+ * rather than kept as decoration (dead-code decree).
  */
-const CompactApplySchema = z.object({}).passthrough();
-
 export async function handleCompactApply(
-  args: unknown,
+  _args: unknown,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  const parsed = CompactApplySchema.safeParse(args ?? {});
-  if (!parsed.success) {
-    return {
-      success: false,
-      output: `compact_apply: invalid arguments: ${parsed.error.message}`,
-    };
-  }
-
   const outcome = await requestApply({
     sessionId: context.sessionId,
     source: "agent_tool",

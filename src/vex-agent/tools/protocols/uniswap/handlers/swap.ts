@@ -76,7 +76,6 @@ import {
   type AgentActivityEvent,
   type AgentActivityFailureCode,
 } from "@vex-agent/db/repos/agent-activity.js";
-import { registerSettlementDecoder, type SettlementDecoderInput, type DecodedSettlement } from "@vex-agent/sync/settlement-decoders.js";
 import { clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import {
@@ -728,7 +727,11 @@ async function executeUniswapSwap(
         logger.info("uniswap.swap.execute.ambiguous", { id: event.id, txHash: outcome.txHash });
         return {
           success: false,
-          output: `${toolId}: broadcast of the ${event.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically.`,
+          // "Do not retry" is the safety-critical half and never moves. The
+          // second half gives the agent a READ it can perform itself instead
+          // of waiting on the sweep — the alternative to waiting must never
+          // be a re-broadcast.
+          output: `${toolId}: broadcast of the ${event.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with chain_read (action tx_receipt, chainId=${deployment.chainId}, txHash=${outcome.txHash}).`,
           data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
         };
       }
@@ -954,33 +957,6 @@ async function executeUniswapSwap(
     };
   }
 }
-
-// ── Settlement decoder registration (repair-sweep seam, FIX-SPINE C2) ───────
-
-function isDecodableReceipt(value: unknown): value is UniswapDecodableReceipt {
-  return typeof value === "object" && value !== null && Array.isArray((value as { logs?: unknown }).logs);
-}
-
-function decodeUniswapSettlement(input: SettlementDecoderInput): DecodedSettlement | null {
-  if (!isDecodableReceipt(input.receipt)) return null;
-  const decoded = decodeUniswapExecutedLegs({
-    receipt: input.receipt,
-    chainId: input.chainId,
-    walletAddress: input.walletAddress,
-    tokenInAddress: input.tokenInAddress,
-    tokenOutAddress: input.tokenOutAddress,
-  });
-  if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) return null;
-  // Repair-sweep confirms have no token decimals in this input shape — raw
-  // amounts are the CHECK-enforced minimum; human amounts are left unset
-  // rather than guessed.
-  return {
-    executedAmountInRaw: decoded.executedAmountInRaw.toString(),
-    executedAmountOutRaw: decoded.executedAmountOutRaw.toString(),
-  };
-}
-
-registerSettlementDecoder("uniswap", decodeUniswapSettlement);
 
 // ── Handler map ──────────────────────────────────────────────────────────────
 

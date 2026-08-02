@@ -31,6 +31,7 @@ import { makeCandidate } from "./_fixtures.js";
 
 function makeCtx(overrides: Partial<JudgeContext> = {}): JudgeContext {
   return {
+    sessionId: "session-judge-prompt",
     candidate: {
       kind: "strategy_lesson",
       title: "Back off on repeated 429s",

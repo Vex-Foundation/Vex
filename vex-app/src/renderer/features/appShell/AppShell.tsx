@@ -23,12 +23,16 @@
  * center panel is ALWAYS the session panel (Chronos screens redesign,
  * 2026-07-20): Memory, the sessions library, and "How Vex works" open as
  * full-app ShellScreen overlays (screens/), not center sub-views.
- * The DESK RULE (h-12 header) is a 3-zone grid: the live tape-state word
- * (left), the MISSION/PLAN badge cluster (`MissionRail`, center), and the
- * right flank hosting the approvals inbox (the BOOK toggle + version stamp
- * both live in BookPanel's collapse header — single-toggle owner review).
- * The rule carries no decorative accent tick (owner decree, 2026-07-20: the
- * stray dash read as visual noise, not a landmark).
+ * The STATUS STRIP (the thin h-11 header over the chat column) is a 3-zone
+ * grid, re-dealt in the session-UI redesign (owner decree 2026-07-29): the
+ * MISSION/PLAN badge cluster (`MissionRail`) moved to the LEFT flank so the
+ * live tape-state word (`DeskRuleTapeState`) can own the true CENTRE, and the
+ * right flank hosts the approvals inbox plus the Markdown export key
+ * (`SessionExportControl`, relocated from the retired session register line —
+ * the session title now reads only from the left rail). The BOOK toggle +
+ * version stamp both stay in BookPanel's collapse header (single-toggle owner
+ * review). The strip carries no decorative accent tick (owner decree,
+ * 2026-07-20: the stray dash read as visual noise, not a landmark).
  *
  * `data-vex-shell="true"` scopes the Protocol Desk tokens (sibling of
  * data-vex-onboarding); `data-vex-screen="appShell"` stays the e2e/test
@@ -44,6 +48,7 @@ import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
 import { MissionRail } from "./MissionRail.js";
 import { useAutoCollapseBook } from "./useAutoCollapseBook.js";
 import { SessionCreator } from "./SessionCreator.js";
+import { SessionExportControl } from "./SessionExportControl.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
@@ -132,30 +137,30 @@ function NormalShell({
       <SessionsList onCreate={onCreate} />
 
       <section className="relative z-10 flex min-w-0 flex-1 flex-col">
-        {/* DESK RULE — the working header datum and the head of the tape. The
-         * full-width bottom hairline was removed so the header and main content
-         * read as one seamless surface (owner review); no decorative accent
-         * tick remains either (owner decree, 2026-07-20: the dash read as
-         * visual noise). Three zones on a 1fr/auto/1fr grid (equal flanks keep
-         * the center truly centered): live tape state (left), MISSION/PLAN
-         * badge cluster (center), and the right flank hosting the app-wide
-         * pending-approvals inbox (`GlobalApprovals`, owner-approved global
-         * visibility). The badge renders null at count 0, so the flank stays
-         * empty when idle — the center stays truly centered. The BOOK toggle
-         * still lives ONLY in BookPanel's collapse header (single-toggle owner
-         * review). The rule itself never moves; only the tape-state word, the
+        {/* THE STATUS STRIP — the thin datum over the chat column. No bottom
+         * hairline (header and content read as one seamless surface) and no
+         * decorative accent tick. Three zones on a 1fr/auto/1fr grid, equal
+         * flanks so the centre is TRULY centred: MISSION/PLAN badge cluster
+         * (left), the one live status word (centre), and the right flank
+         * carrying the app-wide pending-approvals inbox (`GlobalApprovals`,
+         * owner-approved global visibility) plus the export key. Both flank
+         * children render null when they have nothing to say, so an idle strip
+         * is just the word. The strip itself never moves; only the word, the
          * cluster's badge states, and the approvals badge change. */}
-        <header className="relative grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6">
+        <header className="relative grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6">
+          {/* Left flank — the MISSION/PLAN badge cluster, moved out of the
+           * center so the status word can own the true centre. It gates itself
+           * away entirely for a plain agent session with plan-mode off. */}
           <div className="flex min-w-0 items-center justify-start">
-            <DeskRuleTapeState />
-          </div>
-          {/* Center cell is a stable grid child so the BOOK toggle stays in
-           * column 3 even when the cluster gates itself away (MissionRail
-           * renders nothing for a plain agent session with plan-mode off). */}
-          <div className="flex min-w-0 items-center justify-center">
             <MissionRail activeSessionId={activeSessionId} />
           </div>
-          <div className="flex items-center justify-end gap-3">
+          {/* THE CENTRE — one status word, nothing else. It is a stable grid
+           * child so the flanks keep their columns even while it renders null
+           * (no active session). */}
+          <div className="flex min-w-0 items-center justify-center">
+            <DeskRuleTapeState />
+          </div>
+          <div className="flex items-center justify-end gap-2">
             {/* Session-LESS failures (memory maintenance) surface here: they
              * belong to no conversation, so `SessionErrorBanner` could only
              * show them by pretending they happened inside whichever session
@@ -163,6 +168,7 @@ function NormalShell({
              * like the approvals badge, so the flank stays empty when idle. */}
             <GlobalErrorBanner />
             <GlobalApprovals />
+            <SessionExportControl activeSessionId={activeSessionId} />
           </div>
         </header>
 
