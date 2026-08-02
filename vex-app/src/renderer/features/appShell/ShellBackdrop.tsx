@@ -1,8 +1,7 @@
 /**
- * CHRONOS BACKDROP — the shell's back wall: the owner-supplied shell
- * artwork (`public/backdrops/shell-backdrop.webp`) as a full-window photo
- * layer at z-0. The asset is named for its RESPONSIBILITY, not for the
- * artwork it currently carries, so a future swap changes bytes only.
+ * CHRONOS BACKDROP — the shell's back wall: the midnight-lake artwork
+ * (`public/backdrops/midnight-lake.webp`) as a full-window photo layer
+ * at z-0.
  *
  * This deliberately supersedes the retired "zero photography" law (the
  * procedural SignalSky WebGL canvas it replaces): the Chronos theme is
@@ -36,27 +35,19 @@ import type { JSX } from "react";
 import { cn } from "../../lib/utils.js";
 
 /**
- * Owner-supplied artwork (2026-08-02). Source of record:
- * `backdrops/shell-backdrop.src.png` (as-delivered, 5120×2560 — exactly
- * 2:1, the same aspect as the artwork it replaced, so the `object-cover`
- * framing and the 90s drift loop are unchanged). Served derivative
- * (4320×2160, ~123 KB), regenerate with the EXACT command used:
- *   ffmpeg -i shell-backdrop.src.png \
- *     -vf "scale=4320:2160:flags=lanczos" \
- *     -quality 95 shell-backdrop.webp
- * The recorded recipe's `unsharp=5:5:0.35:5:5:0.0` term is DELIBERATELY
- * DROPPED: it existed to mask interpolation softness when the source was
- * UPSCALED from 1774px. This source is larger than the derivative, so the
- * step is a DOWNSCALE — there is no interpolation softness to hide, and
- * sharpening it would over-crisp the artwork.
- * For the same reason the img no longer carries the `saturate-[1.05]
- * contrast-[1.03]` whisper, whose only recorded justification was masking
- * that upscale softness as film texture. The static grain overlay
- * (.vex-noise--backdrop) stays — it is Chronos identity, not a masking
- * workaround. (The retired eclipse-meadow pair was deleted in this same
- * change, rule 04: git history is the archive.)
+ * Owner-supplied artwork (2026-07-31): the midnight lake — dark mountain
+ * silhouettes mirrored in still water, a cold glow on the horizon. Source
+ * of record: `backdrops/midnight-lake.src.png` (as-delivered, 5120×2560).
+ * Served derivative: 4K lanczos downscale + light unsharp, regenerate with:
+ *   ffmpeg -i midnight-lake.src.png \
+ *     -vf "scale=4320:2160:flags=lanczos,unsharp=5:5:0.35:5:5:0.0" \
+ *     -quality 95 midnight-lake.webp
+ * A fine static grain overlay (.vex-noise--backdrop) + a whisper of
+ * saturate/contrast on the img mask residual interpolation softness as
+ * film texture. (The prior eclipse-meadow artwork was replaced and deleted
+ * on owner instruction, 2026-07-31; git history is the archive.)
  */
-const BACKDROP_SRC = "/backdrops/shell-backdrop.webp";
+const BACKDROP_SRC = "/backdrops/midnight-lake.webp";
 
 export function ShellBackdrop({
   dimmed,
@@ -74,7 +65,7 @@ export function ShellBackdrop({
         src={BACKDROP_SRC}
         alt=""
         draggable={false}
-        className="vex-backdrop-drift h-full w-full select-none object-cover"
+        className="vex-backdrop-drift h-full w-full select-none object-cover saturate-[1.05] contrast-[1.03]"
       />
       {/* Film grain over the artwork ONLY (below the veils) — see the
         * BACKDROP_SRC note; rails/panels keep their own grain rules. */}

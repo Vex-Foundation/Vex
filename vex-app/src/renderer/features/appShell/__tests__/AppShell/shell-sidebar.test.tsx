@@ -56,7 +56,6 @@ vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
   DatabaseLightningIcon: "DatabaseLightningIcon",
   Delete02Icon: "Delete02Icon",
   FireIcon: "FireIcon",
-  RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
   FilterHorizontalIcon: "FilterHorizontalIcon",
   Brain01Icon: "Brain01Icon",
@@ -523,7 +522,7 @@ describe("AppShell", () => {
     expect(screen.queryByText("Portfolio Check")).toBeNull();
   });
 
-  it("mounts the shell photo backdrop layer behind the columns", () => {
+  it("mounts the Eclipse photo backdrop layer behind the columns", () => {
     const view = renderShell();
 
     const backdrop = view.container.querySelector(
@@ -534,7 +533,7 @@ describe("AppShell", () => {
     expect(backdrop?.getAttribute("data-vex-backdrop-dimmed")).toBe("false");
     expect(
       backdrop?.querySelector("img")?.getAttribute("src"),
-    ).toBe("/backdrops/shell-backdrop.webp");
+    ).toBe("/backdrops/midnight-lake.webp");
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {

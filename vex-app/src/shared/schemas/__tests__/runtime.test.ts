@@ -8,6 +8,8 @@ import {
   runtimeCancelWakeResultSchema,
   controlStateEventSchema,
   CONTROL_STATE_EVENT_TYPE,
+  PAUSED_WAKE_REASON_MAX_CHARS,
+  PAUSED_WAKE_WATCH_SUMMARY_MAX_CHARS,
 } from "../runtime.js";
 
 const SESSION = "00000000-0000-4000-8000-000000000002";
@@ -63,6 +65,161 @@ describe("runtime schemas", () => {
       pendingControlKind: null,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("omits pausedWake entirely for a non-paused_wake state (characterization)", () => {
+    const parsed = runtimeStateDtoSchema.safeParse({
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "running",
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: ISO,
+      iterationCount: 1,
+      leaseActive: true,
+      leaseExpiresAt: ISO,
+      pendingControlKind: null,
+    });
+    expect(parsed.success).toBe(true);
+    // OPTIONAL, not nullable: a state that is not sleeping carries no key at
+    // all, so `"pausedWake" in dto` is the renderer's whole gate.
+    expect(parsed.success && "pausedWake" in parsed.data).toBe(false);
+  });
+
+  it("accepts a paused_wake state carrying pausedWake", () => {
+    const parsed = runtimeStateDtoSchema.safeParse({
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "paused_wake",
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: ISO,
+      iterationCount: 4,
+      leaseActive: false,
+      leaseExpiresAt: null,
+      pendingControlKind: null,
+      pausedWake: {
+        dueAt: ISO,
+        reason: "waiting for the ETH funding window",
+        watchSummary: "price, balance",
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects pausedWake on a status other than paused_wake", () => {
+    // The field is the renderer's whole "is it sleeping" gate, so a running
+    // run carrying sleep details is a contract violation, not a display quirk.
+    const parsed = runtimeStateDtoSchema.safeParse({
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "running",
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: ISO,
+      iterationCount: 4,
+      leaseActive: true,
+      leaseExpiresAt: ISO,
+      pendingControlKind: null,
+      pausedWake: { dueAt: ISO, reason: null, watchSummary: null },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("keeps a paused_wake state WITHOUT pausedWake valid (claimed/cancelled race)", () => {
+    const parsed = runtimeStateDtoSchema.safeParse({
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "paused_wake",
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: ISO,
+      iterationCount: 4,
+      leaseActive: false,
+      leaseExpiresAt: null,
+      pendingControlKind: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("pausedWake allows null reason/watchSummary and rejects extra keys", () => {
+    const base = {
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "paused_wake" as const,
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: ISO,
+      iterationCount: 0,
+      leaseActive: false,
+      leaseExpiresAt: null,
+      pendingControlKind: null,
+    };
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...base,
+        pausedWake: { dueAt: ISO, reason: null, watchSummary: null },
+      }).success,
+    ).toBe(true);
+    // Strict: the raw watch payload must never ride along.
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...base,
+        pausedWake: {
+          dueAt: ISO,
+          reason: null,
+          watchSummary: null,
+          payload: { secret: 1 },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("pausedWake bounds display text and requires an ISO dueAt", () => {
+    const base = {
+      sessionId: SESSION,
+      hasActiveRun: true,
+      missionRunId: "run-1",
+      status: "paused_wake" as const,
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: ISO,
+      iterationCount: 0,
+      leaseActive: false,
+      leaseExpiresAt: null,
+      pendingControlKind: null,
+    };
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...base,
+        pausedWake: {
+          dueAt: ISO,
+          reason: "x".repeat(PAUSED_WAKE_REASON_MAX_CHARS + 1),
+          watchSummary: null,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...base,
+        pausedWake: {
+          dueAt: ISO,
+          reason: null,
+          watchSummary: "x".repeat(PAUSED_WAKE_WATCH_SUMMARY_MAX_CHARS + 1),
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...base,
+        pausedWake: { dueAt: "soon", reason: null, watchSummary: null },
+      }).success,
+    ).toBe(false);
   });
 
   it("runtimeRequestInputSchema requires uuid sessionId", () => {

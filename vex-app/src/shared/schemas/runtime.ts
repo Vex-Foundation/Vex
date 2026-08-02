@@ -29,6 +29,48 @@ import {
 } from "./engine-error.js";
 import { missionRunStatusSchema } from "./sessions.js";
 
+// ── Sleeping (paused_wake) detail ───────────────────────────────────
+
+/**
+ * Bound on the agent-authored defer reason. Matches `loop_defer`'s own
+ * `REASON_MAX_CHARS` (`src/vex-agent/tools/internal/loop-defer.ts`) so a
+ * reason the engine accepted can always cross this boundary — a tighter bound
+ * here would silently drop legitimate rows instead of showing them.
+ */
+export const PAUSED_WAKE_REASON_MAX_CHARS = 500;
+
+/**
+ * Bound on the watch summary. This is NOT free text from the row: main derives
+ * it from the watch condition TYPE names in `loop_wake_requests.payload`, so
+ * the bound only has to fit a handful of joined identifiers.
+ */
+export const PAUSED_WAKE_WATCH_SUMMARY_MAX_CHARS = 200;
+
+/**
+ * Why the run is asleep and until when, read from the session's pending
+ * `loop_wake_requests` row.
+ *
+ * DISPLAY TEXT, NOT A CONTROL SIGNAL. `reason` is written by the model
+ * (`loop_defer`'s `reason` argument) and `watchSummary` is derived from the
+ * watch condition types — neither may ever be parsed to drive renderer
+ * behavior, exactly as `claimed.ts` refuses to route on `wake.reason`. The
+ * only machine-readable field is `dueAt`.
+ *
+ * The raw `payload` JSONB deliberately does NOT cross: it holds protocol-owned
+ * condition variants (thresholds, token ids) that no UI needs and that would
+ * become an accidental contract the moment a renderer read them.
+ */
+export const runtimePausedWakeSchema = z
+  .object({
+    /** `loop_wake_requests.due_at` — the scheduled resume time. */
+    dueAt: z.string().datetime({ offset: true }),
+    reason: z.string().max(PAUSED_WAKE_REASON_MAX_CHARS).nullable(),
+    /** Joined watch condition types, or `null` for a plain timed defer. */
+    watchSummary: z.string().max(PAUSED_WAKE_WATCH_SUMMARY_MAX_CHARS).nullable(),
+  })
+  .strict();
+export type RuntimePausedWake = z.infer<typeof runtimePausedWakeSchema>;
+
 // ── DTO returned by runtime.getState ────────────────────────────────
 
 export const runtimeStateDtoSchema = z
@@ -92,8 +134,39 @@ export const runtimeStateDtoSchema = z
       })
       .strict()
       .optional(),
+    /**
+     * Present ONLY while `status === "paused_wake"` and a pending wake row
+     * still exists for the session. Absent otherwise — including for a
+     * `paused_wake` run whose row was already claimed or cancelled, which is a
+     * real transient the renderer must read as "not sleeping" rather than as
+     * "sleeping, details missing".
+     *
+     * OPTIONAL rather than nullable so the additive extension is invisible to
+     * every existing consumer: a DTO built before this field existed still
+     * parses, and `exactOptionalPropertyTypes` keeps "absent" and "null" from
+     * being conflated at the call site.
+     */
+    pausedWake: runtimePausedWakeSchema.optional(),
   })
-  .strict();
+  .strict()
+  /**
+   * One-way invariant. `pausedWake` present ⇒ `status === "paused_wake"`,
+   * because the renderer treats its presence alone as "this run is sleeping";
+   * sleep details on a running run would render a countdown over live work.
+   *
+   * The converse is deliberately NOT enforced: a `paused_wake` run whose
+   * pending row was just claimed or cancelled legitimately arrives without the
+   * field, and that race must stay parseable.
+   */
+  .superRefine((state, ctx) => {
+    if (state.pausedWake !== undefined && state.status !== "paused_wake") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pausedWake"],
+        message: 'pausedWake is only valid when status is "paused_wake"',
+      });
+    }
+  });
 export type RuntimeStateDto = z.infer<typeof runtimeStateDtoSchema>;
 
 // ── Inputs ──────────────────────────────────────────────────────────
