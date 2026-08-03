@@ -76,6 +76,7 @@ function fullEnvState(): unknown {
       jupiterConfigured: true,
       tavilyConfigured: false,
       rettiwtConfigured: false,
+      relayConfigured: false,
     },
     embeddings: {
       configured: true,
@@ -146,6 +147,7 @@ describe("completeSetup", () => {
         jupiterConfigured: false,
         tavilyConfigured: false,
         rettiwtConfigured: false,
+        relayConfigured: false,
       },
       embeddings: {
         configured: false,

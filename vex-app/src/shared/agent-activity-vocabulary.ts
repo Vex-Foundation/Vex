@@ -105,6 +105,9 @@ export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
  * prebuy are a single transaction. `trench_fee` is migration 063: Vex's 25 bps
  * integrator fee on Trench Express, a separate treasury transfer that runs after
  * the trade or launch confirms, admitted on the `swap` and `launch` arms.
+ * `swap_fee` is migration 066: the same fee leg on a swap venue whose router
+ * takes no fee parameter (Uniswap), a separate transfer of the INPUT token that
+ * runs after the swap confirms, admitted on the `swap` arm only.
  */
 export const AGENT_ACTIVITY_EVENT_ROLES = [
   "allowance_reset",
@@ -132,6 +135,7 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   "yield_claim",
   "token_launch",
   "trench_fee",
+  "swap_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 

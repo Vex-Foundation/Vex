@@ -10,7 +10,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mapAgentScanRow } from "../agent-scan-db-mappers.js";
+import {
+  mapAgentScanRow,
+  STALLED_VERIFICATION_ATTEMPTS,
+} from "../agent-scan-db-mappers.js";
 import { agentScanEntrySchema } from "@shared/schemas/agent-scan-feed.js";
 import type { AgentScanRow } from "../agent-scan-db-types.js";
 
@@ -60,6 +63,8 @@ function row(overrides: Partial<AgentScanRow> = {}): AgentScanRow {
     tx_hash: "0xdeadbeef",
     provider_order_id: null,
     last_checked_at: null,
+    verification_attempts: 0,
+    last_verification_reason: null,
     legs: null,
     ...overrides,
   };
@@ -495,5 +500,59 @@ describe("mapAgentScanRow fees, failures and bounds", () => {
       row({ last_checked_at: new Date("2026-05-21T11:00:00.000Z") }),
     );
     expect(entry.lastCheckedAt).toBe("2026-05-21T11:00:00.000Z");
+  });
+
+  // ── Wave P: stalled verification is DERIVED, never a stored status ──
+  //
+  // The row stays `pending` throughout. What changes is only what the UI is
+  // TOLD, so a chain whose RPC can never answer stops being an invisible
+  // forever-pending row.
+
+  it("derives stalledVerification once the attempt counter crosses the threshold", () => {
+    const entry = mapValid(
+      row({
+        status: "pending",
+        verification_attempts: STALLED_VERIFICATION_ATTEMPTS,
+        last_verification_reason: "no_safe_rpc",
+      }),
+    );
+    expect(entry.stalledVerification).toBe(true);
+    expect(entry.stalledReason).toBe("no_safe_rpc");
+    // The status itself is UNTOUCHED — never auto-failed, never rewritten.
+    expect(entry.status).toBe("pending");
+  });
+
+  it("is NOT stalled one attempt below the threshold", () => {
+    const entry = mapValid(
+      row({
+        status: "pending",
+        verification_attempts: STALLED_VERIFICATION_ATTEMPTS - 1,
+        last_verification_reason: "receipt_unavailable",
+      }),
+    );
+    expect(entry.stalledVerification).toBe(false);
+    // The reason still rides along — it describes the last attempt either way.
+    expect(entry.stalledReason).toBe("receipt_unavailable");
+  });
+
+  it("never marks a TERMINAL row stalled, however high the counter", () => {
+    // A confirmed row is settled; a stale counter on it is history, not a
+    // current inability to check, and rendering it as "stalled" would be a lie.
+    const entry = mapValid(
+      row({
+        status: "confirmed",
+        verification_attempts: STALLED_VERIFICATION_ATTEMPTS + 50,
+        last_verification_reason: "no_safe_rpc",
+      }),
+    );
+    expect(entry.stalledVerification).toBe(false);
+  });
+
+  it("treats a pre-065 row (no counter) as not stalled", () => {
+    const entry = mapValid(
+      row({ status: "pending", verification_attempts: null, last_verification_reason: null }),
+    );
+    expect(entry.stalledVerification).toBe(false);
+    expect(entry.stalledReason).toBeNull();
   });
 });

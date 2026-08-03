@@ -68,6 +68,10 @@ export function entry(
     providerOrderId: null,
     legs: [],
     lastCheckedAt: null,
+    // Wave P — DERIVED, never a stored status. Default is a row we have had no
+    // trouble verifying.
+    stalledVerification: false,
+    stalledReason: null,
     ...overrides,
   };
 }

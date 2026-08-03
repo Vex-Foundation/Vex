@@ -34,6 +34,11 @@ const mockUseAvailableWallets = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/api/portfolio.js", () => ({
   usePortfolio: mockUsePortfolio,
+  // Wave P — the card subscribes to the terminalization push and hosts the
+  // refresh button. Both are query-cache concerns owned by the api module, so
+  // stubbing them here keeps these cases about the card's DISPLAY logic.
+  useActivityResolvedInvalidation: () => undefined,
+  usePortfolioRefresh: () => ({ refresh: async () => ({ status: "refreshed" }) }),
 }));
 
 vi.mock("../../../lib/api/session-wallets.js", () => ({

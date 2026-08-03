@@ -29,7 +29,7 @@ import {
 } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 
-export type ProviderCardSlug = "jupiter" | "tavily" | "rettiwt";
+export type ProviderCardSlug = "jupiter" | "tavily" | "rettiwt" | "relay";
 
 export type ProviderCardStatusTone = "set" | "partial" | "unset";
 

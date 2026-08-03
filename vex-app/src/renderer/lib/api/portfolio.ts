@@ -14,6 +14,7 @@ import {
   queryOptions,
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
   type InfiniteData,
   type UseInfiniteQueryResult,
   type UseQueryResult,
@@ -28,14 +29,23 @@ import type {
   AgentScanDto,
   AgentScanFilters,
 } from "@shared/schemas/agent-scan-feed.js";
+import type { PortfolioRefreshOutput } from "@shared/schemas/agent-scan-feed.js";
 import type {
   TokenHistoryCursor,
   TokenHistoryDto,
 } from "@shared/schemas/token-history.js";
+import { useCallback, useEffect } from "react";
 import { portfolioKeys } from "./queryKeys.js";
 
 const STALE_MS = 15_000;
-const REFETCH_MS = 45_000;
+/**
+ * Fallback poll only (Wave P). `EV.portfolio.activityResolved` is now the
+ * PRIMARY freshness signal — the engine pushes the moment a pending row
+ * terminalizes — so this interval exists for the states a push cannot cover
+ * (a missed event, a row that changed while no window was open). Raised from
+ * 45s once the push landed.
+ */
+const REFETCH_MS = 60_000;
 
 function portfolioInput(activeSessionId: string | null): PortfolioReadInput {
   return activeSessionId === null
@@ -152,6 +162,62 @@ export function useAgentScanInfinite(
     staleTime: STALE_MS,
     refetchInterval: REFETCH_MS,
   });
+}
+
+/**
+ * Invalidate every portfolio query when a pending transaction terminalizes.
+ *
+ * The event carries IDS ONLY by design, so the correct reaction is to re-read
+ * rather than to patch the cache: the DB stays the single source of truth and
+ * the renderer never reconstructs money state from a push payload.
+ *
+ * Invalidating `portfolioKeys.all` covers the Agent Scan feed, the position
+ * read, and the per-wallet read together — a terminalization moves all three,
+ * and a narrower key would leave the balances stale next to a freshly
+ * confirmed row.
+ */
+/**
+ * The user-initiated refresh, as a hook.
+ *
+ * Lives here rather than in the button so that EVERY query-cache concern for
+ * this domain sits in one module: the component stays presentational and
+ * testable without a QueryClientProvider, and the invalidation key cannot drift
+ * from the one `useActivityResolvedInvalidation` uses.
+ *
+ * `throttled` and `unavailable` are returned to the caller rather than thrown —
+ * both are honest OUTCOMES the button renders as feedback.
+ */
+export function usePortfolioRefresh(): {
+  readonly refresh: () => Promise<PortfolioRefreshOutput>;
+} {
+  const queryClient = useQueryClient();
+  const refresh = useCallback(async (): Promise<PortfolioRefreshOutput> => {
+    const result = await window.vex.portfolio.refresh();
+    if (!result.ok) return { status: "unavailable" };
+    if (result.data.status === "refreshed") {
+      // Re-read rather than patch: main just rewrote the projection, and the DB
+      // is the source of truth for every figure the card shows.
+      await queryClient.invalidateQueries({ queryKey: portfolioKeys.all });
+    }
+    return result.data;
+  }, [queryClient]);
+  return { refresh };
+}
+
+export function useActivityResolvedInvalidation(): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    // Degrade to poll-only rather than throw when the push bridge is absent.
+    // This is an OPTIMISATION channel, not a security or correctness boundary:
+    // `REFETCH_MS` above is the documented fallback and keeps the feed correct
+    // on its own, so an older preload (or a harness that stubs only part of the
+    // bridge) must render a working screen, not a blank one.
+    const subscribe = window.vex?.portfolio?.onActivityResolved;
+    if (typeof subscribe !== "function") return;
+    return subscribe(() => {
+      void queryClient.invalidateQueries({ queryKey: portfolioKeys.all });
+    });
+  }, [queryClient]);
 }
 
 export function useTokenHistoryInfinite(

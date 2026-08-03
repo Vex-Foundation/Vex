@@ -15,6 +15,7 @@ import { setupCompactionPreparationBridge } from "./compaction-preparation-bridg
 import { setupControlBridge } from "./control-bridge.js";
 import { setupErrorBridge } from "./error-bridge.js";
 import { setupLaunchFormBridge } from "./launch-form-bridge.js";
+import { setupActivityResolvedBridge } from "./activity-resolved-bridge.js";
 import { setupMissionUpdateBridge } from "./mission-update-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
@@ -44,6 +45,9 @@ export function setupAgentBridges(): () => void {
   // Trench Express §C3b — the agent asked the user to launch a token. Without
   // this push the drafted form is visible only as text in the transcript.
   teardowns.push(setupLaunchFormBridge());
+  // Wave P — a pending transaction terminalized. Without this push the Agent
+  // Scan feed and the portfolio only notice on their next poll.
+  teardowns.push(setupActivityResolvedBridge());
 
   // Puzzle 03 — install the production BugReportSink for engine emit
   // points (turn-loop / wake / compact). Teardown resets to noop.

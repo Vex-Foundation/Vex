@@ -372,5 +372,35 @@ export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
     ),
     legs: mapExecutionLegs(row.legs),
     lastCheckedAt: row.last_checked_at != null ? toIso(row.last_checked_at) : null,
+    // DERIVED (Wave P), never read from a status column: a pending row we have
+    // repeatedly failed to VERIFY. This is not a failure, and the renderer copy
+    // must say "we could not check", never "this failed".
+    stalledVerification: isStalledVerification({
+      status: String(row.status ?? ""),
+      verificationAttempts: Number(row.verification_attempts ?? 0),
+    }),
+    stalledReason: boundedText(
+      row.last_verification_reason,
+      AGENT_SCAN_TEXT_BOUNDS.failureReason,
+    ),
   };
+}
+
+/**
+ * The DERIVED stalled-verification predicate, mirroring the engine's
+ * `isStalledVerification` (`db/repos/agent-activity/types.ts`).
+ *
+ * Re-implemented rather than imported because `vex-app` main reaches engine code
+ * only through the `@vex-lib` alias, and this DB layer deliberately owns its own
+ * read model. The THRESHOLD is the thing that must not drift, so it is named
+ * here and pinned by a test rather than left as a bare literal.
+ */
+export const STALLED_VERIFICATION_ATTEMPTS = 20;
+
+function isStalledVerification(row: {
+  readonly status: string;
+  readonly verificationAttempts: number;
+}): boolean {
+  return row.status === "pending"
+    && row.verificationAttempts >= STALLED_VERIFICATION_ATTEMPTS;
 }

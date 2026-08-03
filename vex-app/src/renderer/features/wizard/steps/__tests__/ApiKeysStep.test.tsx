@@ -9,7 +9,7 @@
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
- *  - 3 provider cards render in canonical order (jupiter → tavily →
+ *  - 4 provider cards render in canonical order (jupiter → tavily →
  *    rettiwt) and each carries the correct external link.
  *  - Every external "Get key" link opens with target="_blank" +
  *    rel="noopener noreferrer".
@@ -83,6 +83,7 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       jupiterConfigured: false,
       tavilyConfigured: false,
       rettiwtConfigured: false,
+      relayConfigured: false,
       ...overrides,
     },
     secrets: {
@@ -288,16 +289,16 @@ describe("ApiKeysStep", () => {
 
   // ── PR8 redesign — per-provider cards ────────────────────────────────
 
-  it("renders 3 provider cards in canonical order (PR8)", () => {
+  it("renders 4 provider cards in canonical order (PR8 + Relay)", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(4);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
-    ).toEqual(["jupiter", "tavily", "rettiwt"]);
+    ).toEqual(["jupiter", "tavily", "rettiwt", "relay"]);
   });
 
   it("renders canonical external links for each provider card (PR8)", () => {
@@ -324,6 +325,14 @@ describe("ApiKeysStep", () => {
     expect(rettiwtHrefs).toContain(
       "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper",
     );
+
+    // Relay is OPTIONAL by design — the card links the dashboard and its copy
+    // must never imply bridging needs the key.
+    const relayCard = container.querySelector('[data-vex-apikeys-card="relay"]');
+    expect(relayCard?.querySelector("a[href]")?.getAttribute("href")).toBe(
+      "https://dashboard.relay.link",
+    );
+    expect(relayCard?.textContent ?? "").toContain("Bridging works without it");
   });
 
   it("every external link on a card uses target='_blank' + rel='noopener noreferrer' (PR8)", () => {

@@ -34,6 +34,7 @@ import { getTokenHistory } from "../database/token-history-db.js";
 import { getAgentScan } from "../database/agent-scan-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
+import { registerPortfolioRefreshHandler } from "./portfolio-refresh.js";
 
 function registerPortfolioReadHandler(): () => void {
   return registerHandler({
@@ -168,5 +169,10 @@ export function registerPortfolioHandlers(): ReadonlyArray<() => void> {
     registerPortfolioReadHandler(),
     registerPortfolioTokenHistoryReadHandler(),
     registerPortfolioAgentScanReadHandler(),
+    // Wave P — the user-initiated refresh COMMAND. It lives in its own module
+    // (`./portfolio-refresh.ts`) because it spends provider quota and writes a
+    // snapshot, unlike the read-only feeds above, but it registers here so the
+    // domain has exactly one registration list.
+    registerPortfolioRefreshHandler(),
   ];
 }

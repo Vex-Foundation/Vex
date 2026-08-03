@@ -77,6 +77,31 @@ export interface ComposerSubmit {
 const STOP_FAILED_NOTICE =
   "Couldn't stop the run. It's still going — try Stop again.";
 
+/**
+ * How long the disabled "Stopping…" acknowledgment may stand before the
+ * control re-arms itself.
+ *
+ * Comfortably above the ~1 s stop target plus an IPC round-trip, and well below
+ * the 60 s runtime-state fallback poll — so a dropped `controlState` event
+ * cannot pin the badge on "Stopping…" while work is visibly continuing. That
+ * indefinite pin is the same class of lie the `ok:false` recovery below was
+ * added to kill.
+ *
+ * Deliberately NOT paired with a shorter `RUNTIME_STATE_FALLBACK_POLL_MS`: that
+ * value's 8 s → 60 s change is documented push-first design, and shortening it
+ * would trade a real regression for a symptom.
+ */
+const STOP_ACK_MAX_MS = 8_000;
+
+/**
+ * Shown when the acknowledgment times out. It must not claim the stop failed —
+ * it may well land a moment later — and it must not claim it succeeded. The
+ * honest statement is that the request is in and something uninterruptible is
+ * still finishing, which is exactly the sign→broadcast→persist exemption.
+ */
+const STOP_ACK_TIMEOUT_NOTICE =
+  "Stop was requested but the agent is still finishing a step it cannot safely interrupt.";
+
 export function useComposerSubmit(
   sessionId: string | null,
   activeSession: SessionListItem | null,
@@ -138,6 +163,23 @@ export function useComposerSubmit(
   useEffect(() => {
     if (!submitPending && !sliceLive) setStopRequested(false);
   }, [submitPending, sliceLive]);
+
+  // Escape hatch for the acknowledgment that never settles.
+  //
+  // `sliceLive` derives from the engine's lease, and a slice stuck in an
+  // uninterruptible leg keeps heart-beating that lease — so the settle effect
+  // above can wait indefinitely and the key stays disabled on "Stopping…"
+  // while the run visibly continues. Time-box it: re-arm the control, say what
+  // is actually happening, and let a second press re-fire the request (the
+  // durable `stop_terminal` enqueue is idempotent, so it costs nothing).
+  useEffect(() => {
+    if (!stopRequested) return undefined;
+    const timer = setTimeout(() => {
+      setStopRequested(false);
+      setNotice({ tone: "info", text: STOP_ACK_TIMEOUT_NOTICE });
+    }, STOP_ACK_MAX_MS);
+    return () => { clearTimeout(timer); };
+  }, [stopRequested]);
 
   // Single owner of a chat-turn submit + its failure/success notice. A
   // retryable provider error in a KNOWN agent session arms an inline Retry

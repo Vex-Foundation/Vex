@@ -201,6 +201,13 @@ const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"
  * launch capability invisible in Agent Scan — the one surface the owner asked
  * every action to appear on.
  *
+ * `yield` (migration 053) joins for the third time on the same evidence: every
+ * Pendle mutation writes a receipt-truth `kind = 'yield'` row and every one of
+ * them was invisible here. Each yield role is one on-chain tx, so each is its
+ * own logical row — spelled as the kind MINUS the two approval roles rather
+ * than as a role list, so a seventh yield role added by a later migration is
+ * visible on the day it is written.
+ *
  * Excluded: `allowance` / `allowance_reset` (approval plumbing) and a bridge's
  * deposit/fee/observed-fill/refund legs — all of which ride the logical row's
  * `legs` array instead of appearing as their own ledger entries.
@@ -209,6 +216,7 @@ const LOGICAL_ROW_PREDICATE = `(
           aa.event_role = 'swap'
           OR aa.event_role = 'bridge_fill_expected'
           OR aa.kind IN ('lend', 'prediction', 'wrap', 'launch')
+          OR (aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))
         )`;
 
 /**
@@ -316,6 +324,8 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
         LEFT(aa.tx_hash, ${AGENT_SCAN_TEXT_BOUNDS.txRef}) AS tx_hash,
         LEFT(aa.provider_order_id, ${AGENT_SCAN_TEXT_BOUNDS.providerOrderId}) AS provider_order_id,
         aa.last_checked_at,
+        aa.verification_attempts,
+        LEFT(aa.last_verification_reason, ${AGENT_SCAN_TEXT_BOUNDS.failureReason}) AS last_verification_reason,
         ${LEGS_EXPR} AS legs
       FROM agent_activity aa
       WHERE aa.wallet_address = ANY($${walletsParam}::text[])

@@ -30,18 +30,26 @@
 
 import type { JSX } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
-import { usePortfolio } from "../../../lib/api/portfolio.js";
+import {
+  usePortfolio,
+  useActivityResolvedInvalidation,
+} from "../../../lib/api/portfolio.js";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
 import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
 import { PositionChains } from "./PositionChains.js";
+import { PortfolioRefreshButton } from "./PortfolioRefreshButton.js";
 
 export function PositionBlock({
   activeSessionId,
 }: {
   readonly activeSessionId: string | null;
 }): JSX.Element {
+  // Wave P — subscribe the portfolio queries to the terminalization push. This
+  // card is mounted for the whole app shell, so one subscription here covers
+  // every portfolio surface without a second listener per screen.
+  useActivityResolvedInvalidation();
   const isSession = activeSessionId !== null;
   const title = isSession ? "Position" : "Portfolio";
 
@@ -151,7 +159,10 @@ function TotalFigure({
   const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev } = portfolio;
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10.5px] text-[var(--vex-text-3)]">Total value</span>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10.5px] text-[var(--vex-text-3)]">Total value</span>
+        <PortfolioRefreshButton />
+      </div>
       {/* Serif is rationed to this ONE display figure (typography law, C2). */}
       <span className="font-serif text-[34px] leading-none tracking-[-0.01em] tabular-nums text-foreground">
         {formatUsd(liveTotalUsd)}

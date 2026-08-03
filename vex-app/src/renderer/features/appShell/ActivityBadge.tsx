@@ -206,6 +206,9 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   // Reads the same as the bridge fee leg — it IS the same kind of leg, on a
   // different venue.
   trench_fee: "FEE",
+  // Migration 066 — the same fee leg again, on a swap venue whose router takes
+  // no fee parameter.
+  swap_fee: "FEE",
 };
 
 /**

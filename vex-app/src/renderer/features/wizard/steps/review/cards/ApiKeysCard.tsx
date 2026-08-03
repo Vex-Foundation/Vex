@@ -23,6 +23,7 @@ export function ApiKeysCard({
   );
   items.push(`Tavily: ${k.tavilyConfigured ? "set" : "—"}`);
   items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "—"}`);
+  items.push(`Relay: ${k.relayConfigured ? "set" : "—"}`);
   return (
     <SummaryCard
       title="API keys"

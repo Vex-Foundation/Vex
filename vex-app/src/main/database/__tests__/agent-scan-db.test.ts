@@ -212,6 +212,17 @@ describe("getAgentScan row selection", () => {
     expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch')");
   });
 
+  it("INCLUDES yield (migration 053) — a Pendle trade is a logical row, its approval legs are not", async () => {
+    // The regression this pins: every Pendle mutation writes a receipt-truth
+    // `kind = 'yield'` row and none of them reached this feed. Spelled as the
+    // kind minus the approval roles so a SEVENTH yield role added later is
+    // visible the day it is written — a role allow-list would silently omit it.
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(pageCall().sql).toContain(
+      "(aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))",
+    );
+  });
+
   it("reads agent_activity ONLY — no legacy union arm", async () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql } = pageCall();

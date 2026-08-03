@@ -8,6 +8,9 @@
  *     to show the form at all).
  *   - TAVILY_API_KEY (optional)
  *   - RETTIWT_API_KEY (optional)
+ *   - RELAY_API_KEY (optional) — bridging works fully WITHOUT it; a key only
+ *     raises Relay's rate limits. It is deliberately not a tool prerequisite,
+ *     so no relay manifest declares it as a required env.
  */
 
 import { z } from "zod";
@@ -19,6 +22,7 @@ export const apiKeysSetInputSchema = z
     jupiterApiKey: optionalSecret,
     tavilyApiKey: optionalSecret,
     rettiwtApiKey: optionalSecret,
+    relayApiKey: optionalSecret,
   })
   .strict();
 
@@ -32,6 +36,7 @@ export const API_KEYS_CANONICAL_ORDER = [
   "JUPITER_API_KEY",
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",
+  "RELAY_API_KEY",
 ] as const;
 
 export const apiKeysFieldNameSchema = z.enum(API_KEYS_CANONICAL_ORDER);

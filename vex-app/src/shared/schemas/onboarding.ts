@@ -37,6 +37,7 @@ export const apiKeysStateSchema = z
     jupiterConfigured: z.boolean(),
     tavilyConfigured: z.boolean(),
     rettiwtConfigured: z.boolean(),
+    relayConfigured: z.boolean(),
   })
   .strict();
 

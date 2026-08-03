@@ -371,9 +371,68 @@ export const agentScanEntrySchema = z
      * "tracking delayed" (see `../bridge-tracking.ts`).
      */
     lastCheckedAt: z.string().datetime({ offset: true }).nullable(),
+    /**
+     * DERIVED (Wave P), never a stored status: `status === 'pending'` AND the
+     * verification attempt counter has crossed `STALLED_VERIFICATION_ATTEMPTS`.
+     *
+     * This is NOT a failure and the row is NOT auto-failed — it means "we have
+     * repeatedly been unable to check", which is a different fact from "this
+     * transaction failed" and must never be rendered as one.
+     */
+    stalledVerification: z.boolean(),
+    /**
+     * Why the last verification attempt could not conclude, e.g. `no_safe_rpc`.
+     * A BOUNDED OPEN STRING per the tolerant-reader law above: the verifier
+     * mints these names and a build that has never heard of one must render it
+     * neutrally rather than blank the page.
+     */
+    stalledReason: z.string().max(FAILURE_REASON_MAX_LENGTH).nullable(),
   })
   .strict();
 export type AgentScanEntry = z.infer<typeof agentScanEntrySchema>;
+
+// ── Push: a pending row terminalized (Wave P) ─────────────────────────────
+
+/**
+ * `EV.portfolio.activityResolved` payload — IDS ONLY.
+ *
+ * The renderer's only reaction is to invalidate and re-read, so nothing that
+ * could carry model output, money, or a token identity rides this channel.
+ * `status` is a bounded open string for the same reason the DTO's is.
+ */
+export const activityResolvedEventSchema = z
+  .object({
+    type: z.literal("sync.activity.pending"),
+    kind: z.literal("resolved"),
+    activityId: z.number().int().nonnegative(),
+    chainFamily: z.string().max(32),
+    chainId: z.number().int().nullable(),
+    status: z.string().max(64),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type ActivityResolvedEvent = z.infer<typeof activityResolvedEventSchema>;
+
+// ── Manual portfolio refresh (Wave P) ─────────────────────────────────────
+
+/** No parameters: the refresh always covers the server-resolved wallet inventory. */
+export const portfolioRefreshInputSchema = z.object({}).strict();
+
+/**
+ * `throttled` is a first-class OUTCOME, not an error: a user holding the button
+ * gets honest feedback and a retry hint, and the provider quota this sync spends
+ * is protected. `unavailable` covers a sync the engine could not complete.
+ */
+export const portfolioRefreshOutputSchema = z
+  .object({
+    status: z.enum(["refreshed", "throttled", "unavailable"]),
+    /** Present on `refreshed`. Decimal string — never a float across IPC. */
+    totalUsd: z.string().max(40).optional(),
+    walletCount: z.number().int().nonnegative().optional(),
+    retryAfterMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type PortfolioRefreshOutput = z.infer<typeof portfolioRefreshOutputSchema>;
 
 // ── Output: page ──────────────────────────────────────────────────────────
 

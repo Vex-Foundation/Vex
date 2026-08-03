@@ -70,6 +70,13 @@ export interface AgentScanRow {
   readonly tx_hash: string | null;
   readonly provider_order_id: string | null;
   readonly last_checked_at: string | Date | null;
+  /**
+   * Migration 065. Consecutive INCONCLUSIVE verification attempts; the DTO's
+   * `stalledVerification` is DERIVED from this and is never a stored status.
+   */
+  readonly verification_attempts: number | string | null;
+  /** Why the last attempt could not conclude, e.g. `no_safe_rpc`. Bounded open string. */
+  readonly last_verification_reason: string | null;
 
   /**
    * BRIDGE rows only — `jsonb_agg(...)` of every sibling leg of the execution
