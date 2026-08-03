@@ -1,4 +1,9 @@
+import assert from "node:assert/strict";
+
 import { describe, expect, it, vi, beforeEach } from "vitest";
+
+/** Every `getVirtualsClient()` method the handlers call, as a bare spy. */
+type MockedClientMethod = ReturnType<typeof vi.fn>;
 import { VIRTUALS_HANDLERS } from "../../../vex-agent/tools/protocols/virtuals/handlers.js";
 import { VIRTUALS_TOOLS } from "../../../vex-agent/tools/protocols/virtuals/manifest.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
@@ -58,8 +63,14 @@ function makeAgent(overrides: Partial<VirtualsAgent> = {}): VirtualsAgent {
   };
 }
 
-function mockClient(overrides: Partial<Record<"getVirtual" | "listVirtuals" | "listGeneses", unknown>> = {}) {
-  const client = {
+type VirtualsClientMocks = {
+  getVirtual: MockedClientMethod;
+  listVirtuals: MockedClientMethod;
+  listGeneses: MockedClientMethod;
+};
+
+function mockClient(overrides: Partial<VirtualsClientMocks> = {}): VirtualsClientMocks {
+  const client: VirtualsClientMocks = {
     getVirtual: vi.fn().mockResolvedValue(makeAgent()),
     listVirtuals: vi.fn().mockResolvedValue({ agents: [], pagination: null }),
     listGeneses: vi.fn().mockResolvedValue({ geneses: [], pagination: null }),
@@ -97,13 +108,13 @@ describe("virtuals handlers registry", () => {
 
 describe("virtuals.list", () => {
   it("fails without chain", async () => {
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({}, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({}, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("chain");
   });
 
   it("rejects an unknown chain with the enum in the message", async () => {
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "DOGECHAIN" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "DOGECHAIN" }, CTX);
     expect(res.success).toBe(false);
     // The refusal names the vocabulary the MANIFEST gave the agent (canonical
     // lowercase slugs), not the provider's internal UPPERCASE spelling.
@@ -112,7 +123,7 @@ describe("virtuals.list", () => {
 
   it("normalizes chain case and maps sort keywords to API fields", async () => {
     const client = mockClient();
-    await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "robinhood", sort: "recentGraduation" }, CTX);
+    await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "robinhood", sort: "recentGraduation" }, CTX);
     expect(client.listVirtuals).toHaveBeenCalledWith(
       expect.objectContaining({ chain: "ROBINHOOD", sort: "lpCreatedAt" }),
     );
@@ -130,13 +141,15 @@ describe("virtuals.list", () => {
       }),
     });
 
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ROBINHOOD", status: "graduated" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "ROBINHOOD", status: "graduated" }, CTX);
     expect(res.success).toBe(true);
     const data = res.data as { agents: Array<{ id: number }>; matched: number };
     expect(data.agents.map((a) => a.id)).toEqual([1, 3]);
     expect(data.matched).toBe(2);
     // The client call carries NO status param — filtering is ours.
-    const callArg = client.listVirtuals.mock.calls[0][0];
+    const [firstListCall] = client.listVirtuals.mock.calls;
+    assert.ok(firstListCall, "listVirtuals was never called");
+    const callArg = firstListCall[0];
     expect(JSON.stringify(callArg)).not.toContain("status");
   });
 
@@ -150,28 +163,42 @@ describe("virtuals.list", () => {
         pagination: null,
       }),
     });
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ROBINHOOD", status: "undergrad" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "ROBINHOOD", status: "undergrad" }, CTX);
     const data = res.data as { agents: Array<{ id: number; warning: string | null }> };
     expect(data.agents).toHaveLength(1);
-    expect(data.agents[0]!.id).toBe(2);
-    expect(data.agents[0]!.warning).toContain("UNDERGRAD");
+    const [onlyAgent] = data.agents;
+    assert.ok(onlyAgent);
+    expect(onlyAgent.id).toBe(2);
+    expect(onlyAgent.warning).toContain("UNDERGRAD");
   });
 
-  it("clamps limit to 50", async () => {
+  // W9a: `limit: 500` used to be CLAMPED to 50 — an out-of-range value silently
+  // answered by a different one. It is now refused by name (the full
+  // reject-not-clamp matrix lives in `virtuals-list-window.test.ts`).
+  it("rejects an out-of-range limit instead of clamping it", async () => {
+    const listVirtuals = vi.fn();
+    mockClient({ listVirtuals });
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "BASE", limit: 500 }, CTX);
+    expect(res.success).toBe(false);
+    expect(res.output).toContain('"limit" must be at most 100');
+    expect(listVirtuals).not.toHaveBeenCalled();
+  });
+
+  it("honours a limit inside the raised 100 ceiling", async () => {
     mockClient({
       listVirtuals: vi.fn().mockResolvedValue({
         agents: Array.from({ length: 60 }, (_, i) => makeAgent({ id: i })),
         pagination: null,
       }),
     });
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "BASE", limit: 500 }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "BASE", limit: 100 }, CTX);
     const data = res.data as { agents: unknown[] };
-    expect(data.agents).toHaveLength(50);
+    expect(data.agents).toHaveLength(60);
   });
 
   it("degrades to a clean failure when the client throws", async () => {
     mockClient({ listVirtuals: vi.fn().mockRejectedValue(new Error("HTTP 500")) });
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ROBINHOOD" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "ROBINHOOD" }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("Virtuals list unavailable");
   });
@@ -201,7 +228,7 @@ describe("failure messages carry the real cause with every internal stripped", (
       "Retry shortly.",
     );
     mockClient({ listVirtuals: vi.fn().mockRejectedValue(hostile) });
-    const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ROBINHOOD" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "ROBINHOOD" }, CTX);
     expect(res.success).toBe(false);
     // Our own vocabulary first…
     expect(res.output).toContain("VIRTUALS_API_ERROR");
@@ -225,7 +252,7 @@ describe("failure messages carry the real cause with every internal stripped", (
       + `authorization: Bearer LEAKED_CANARY {"secretBody":"do not emit"}`,
     );
     mockClient({ getVirtual: vi.fn().mockRejectedValue(hostile) });
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]({ id: 96200 }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).not.toContain("unexpected error");
     // Real cause reached the model.
@@ -247,10 +274,10 @@ describe("failure messages carry the real cause with every internal stripped", (
       listGeneses: vi.fn().mockRejectedValue(hostile),
     });
     const results = [
-      await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ROBINHOOD" }, CTX),
-      await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 1 }, CTX),
-      await VIRTUALS_HANDLERS["virtuals.graduations"]!({ chain: "BASE" }, CTX),
-      await VIRTUALS_HANDLERS["virtuals.geneses"]!({}, CTX),
+      await VIRTUALS_HANDLERS["virtuals.list"]({ chain: "ROBINHOOD" }, CTX),
+      await VIRTUALS_HANDLERS["virtuals.get"]({ id: 1 }, CTX),
+      await VIRTUALS_HANDLERS["virtuals.graduations"]({ chain: "BASE" }, CTX),
+      await VIRTUALS_HANDLERS["virtuals.geneses"]({}, CTX),
     ];
     for (const res of results) {
       expect(res.success).toBe(false);
@@ -269,7 +296,7 @@ describe("failure messages carry the real cause with every internal stripped", (
     mockClient({
       getVirtual: vi.fn().mockRejectedValue(new Error(`upstream 500 ${SECRET_BEARING}`)),
     });
-    await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
+    await VIRTUALS_HANDLERS["virtuals.get"]({ id: 96200 }, CTX);
 
     const entries = logged.mock.calls.filter(([event]) => event === "virtuals.handler.error");
     expect(entries).toHaveLength(1);
@@ -284,13 +311,13 @@ describe("failure messages carry the real cause with every internal stripped", (
 
 describe("virtuals.get", () => {
   it("fails without id", async () => {
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({}, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]({}, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("id");
   });
 
   it("returns the detail projection with tradingRoute + antiSniper", async () => {
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]({ id: 96200 }, CTX);
     expect(res.success).toBe(true);
     const agent = (res.data as { agent: Record<string, unknown> }).agent;
     expect(agent.tradingRoute).toMatchObject({ venue: "uniswap", quoteSymbol: "VIRTUAL" });
@@ -299,14 +326,14 @@ describe("virtuals.get", () => {
 
   it("fails cleanly when the agent does not exist (null detail)", async () => {
     mockClient({ getVirtual: vi.fn().mockResolvedValue(null) });
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 999999 }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]({ id: 999999 }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("No Virtuals agent found");
   });
 
   it("degrades to a clean failure when the client throws", async () => {
     mockClient({ getVirtual: vi.fn().mockRejectedValue(new Error("timeout")) });
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!({ id: 96200 }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"]({ id: 96200 }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("unavailable");
   });
@@ -326,20 +353,20 @@ describe("virtuals.graduations", () => {
         pagination: null,
       }),
     });
-    const res = await VIRTUALS_HANDLERS["virtuals.graduations"]!({ chain: "ROBINHOOD" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.graduations"]({ chain: "ROBINHOOD" }, CTX);
     expect(client.listVirtuals).toHaveBeenCalledWith(expect.objectContaining({ sort: "lpCreatedAt" }));
     const data = res.data as { agents: Array<{ id: number }> };
     expect(data.agents.map((a) => a.id)).toEqual([1]);
   });
 
   it("fails without chain", async () => {
-    const res = await VIRTUALS_HANDLERS["virtuals.graduations"]!({}, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.graduations"]({}, CTX);
     expect(res.success).toBe(false);
   });
 
   it("degrades cleanly on client error", async () => {
     mockClient({ listVirtuals: vi.fn().mockRejectedValue(new Error("boom")) });
-    const res = await VIRTUALS_HANDLERS["virtuals.graduations"]!({ chain: "BASE" }, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.graduations"]({ chain: "BASE" }, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("unavailable");
   });
@@ -361,7 +388,7 @@ describe("virtuals.geneses", () => {
         pagination: { page: 1, pageSize: 20, pageCount: 19, total: 363 },
       }),
     });
-    const res = await VIRTUALS_HANDLERS["virtuals.geneses"]!({}, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.geneses"]({}, CTX);
     expect(res.success).toBe(true);
     const data = res.data as { geneses: Array<{ status: string }>; total: number };
     expect(data.geneses[0]!.status).toBe("FINALIZED");
@@ -370,7 +397,7 @@ describe("virtuals.geneses", () => {
 
   it("degrades cleanly on client error", async () => {
     mockClient({ listGeneses: vi.fn().mockRejectedValue(new Error("boom")) });
-    const res = await VIRTUALS_HANDLERS["virtuals.geneses"]!({}, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.geneses"]({}, CTX);
     expect(res.success).toBe(false);
     expect(res.output).toContain("unavailable");
   });
@@ -397,7 +424,7 @@ describe("virtuals param DX", () => {
     expect(validateProtocolParams(getManifest, params)).toEqual({ ok: true });
 
     const client = mockClient();
-    const res = await VIRTUALS_HANDLERS["virtuals.get"]!(params, CTX);
+    const res = await VIRTUALS_HANDLERS["virtuals.get"](params, CTX);
 
     expect(res.success).toBe(true);
     expect(client.getVirtual).toHaveBeenCalledWith("96200");
@@ -416,7 +443,7 @@ describe("virtuals param DX", () => {
       expect(validateProtocolParams(listManifest, params)).toEqual({ ok: true });
 
       const client = mockClient();
-      await VIRTUALS_HANDLERS["virtuals.list"]!(params, CTX);
+      await VIRTUALS_HANDLERS["virtuals.list"](params, CTX);
       expect(client.listVirtuals).toHaveBeenCalledWith(
         expect.objectContaining({ sort: "volume24h" }),
       );
@@ -425,7 +452,7 @@ describe("virtuals param DX", () => {
 
   it("sortBy wins when both spellings are sent", async () => {
     const client = mockClient();
-    await VIRTUALS_HANDLERS["virtuals.list"]!(
+    await VIRTUALS_HANDLERS["virtuals.list"](
       { chain: "ROBINHOOD", sortBy: "newest", sort: "volume" },
       CTX,
     );

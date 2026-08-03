@@ -41,13 +41,19 @@ import {
   KHALANI_SLIPPAGE_UNSUPPORTED_REASON,
   khalaniSlippageRejection,
 } from "@vex-agent/tools/protocols/khalani/slippage-unsupported.js";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "../_test-context.js";
 
 const BRIDGE_TOOL_IDS = ["relay.quote.get", "relay.bridge", "khalani.quote.get", "khalani.bridge"] as const;
 
 function manifest(toolId: string) {
   const found = PROTOCOL_TOOLS.find((m) => m.toolId === toolId);
   if (!found) throw new Error(`manifest missing: ${toolId}`);
+  return found;
+}
+
+function param(toolId: string, key: string) {
+  const found = manifest(toolId).params.find((p) => p.key === key);
+  if (!found) throw new Error(`param missing: ${toolId}.${key}`);
   return found;
 }
 
@@ -82,10 +88,10 @@ describe("W5b — the retired `amount` key is rejected by name on every bridge t
   });
 
   it.each(BRIDGE_TOOL_IDS)("%s names token_find as the decimals source on amountRaw", (toolId) => {
-    const param = manifest(toolId).params.find((p) => p.key === "amountRaw")!;
-    expect(param.type).toBe("string");
-    expect(param.required).toBe(true);
-    expect(param.description).toContain("token_find");
+    const amountRaw = param(toolId, "amountRaw");
+    expect(amountRaw.type).toBe("string");
+    expect(amountRaw.required).toBe(true);
+    expect(amountRaw.description).toContain("token_find");
   });
 });
 
@@ -93,10 +99,10 @@ describe("W3 — Relay slippage ingress is number + unit bps, and the gate runs"
   const RELAY_TOOL_IDS = ["relay.quote.get", "relay.bridge"] as const;
 
   it.each(RELAY_TOOL_IDS)("%s declares slippageBps number + unit bps", (toolId) => {
-    const param = manifest(toolId).params.find((p) => p.key === "slippageBps")!;
-    expect(param.type).toBe("number");
-    expect(param.unit).toBe("bps");
-    expect(param.description).toContain("1 bps = 0.01%");
+    const slippageBps = param(toolId, "slippageBps");
+    expect(slippageBps.type).toBe("number");
+    expect(slippageBps.unit).toBe("bps");
+    expect(slippageBps.description).toContain("1 bps = 0.01%");
   });
 
   it.each(RELAY_TOOL_IDS)("%s accepts a whole-number tolerance", (toolId) => {
@@ -121,7 +127,7 @@ describe("W3 — Relay slippage ingress is number + unit bps, and the gate runs"
 });
 
 describe("W4a — the Relay default is materialized, and quote↔execute still collide", () => {
-  const ctx = {} as unknown as ProtocolExecutionContext;
+  const ctx = makeProtocolContext();
 
   it("an omitted slippage resolves to the Vex default rather than the provider's", () => {
     const resolved = resolveRelaySlippageBps("Relay slippageBps", undefined);

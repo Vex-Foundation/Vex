@@ -103,7 +103,9 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimSessionLease: vi.fn(),
 }));
 
-const mockCreateLeaseHandle = vi.fn(() => recordingLeaseHandle("test-owner"));
+const mockCreateLeaseHandle = vi.fn((..._args: unknown[]) =>
+  recordingLeaseHandle("test-owner"),
+);
 vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
   createLeaseHandle: (...a: unknown[]) => mockCreateLeaseHandle(...a),
 }));

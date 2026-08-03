@@ -187,7 +187,7 @@ describe("resumeMissionRun safety", () => {
       status: "completed",
       iterationCount: 5,
     });
-    await expect(resumeMissionRun("run-1")).rejects.toThrow(/terminal/);
+    await expect(resumeMissionRun("run-1", "owner-test")).rejects.toThrow(/terminal/);
     expect(mockUpdateRunStatus).not.toHaveBeenCalledWith(
       "run-1",
       "paused_error",
@@ -210,7 +210,7 @@ describe("resumeMissionRun safety", () => {
     });
     mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
 
-    await expect(resumeMissionRun("run-1")).rejects.toBeInstanceOf(
+    await expect(resumeMissionRun("run-1", "owner-test")).rejects.toBeInstanceOf(
       MissionRunPausedError,
     );
 

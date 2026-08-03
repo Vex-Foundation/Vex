@@ -48,7 +48,6 @@ import { broadcastUnconfirmedFailure } from "./broadcast-unconfirmed.js";
 import { recordPendleRefusal, sendPendleRouterTx } from "./signed-broadcast.js";
 import { gatePendleSyExecute, recordPendleSyPrequote } from "./sy-prequote.js";
 import {
-  DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
   legInput,
@@ -59,6 +58,7 @@ import {
   resolvePendleSlippage,
   unsettledResult,
 } from "./shared.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 /** The activity role every SY row carries (migration 053) — one in, one out. */
 const SY_EVENT_ROLE = "yield_sy" as const;
@@ -217,7 +217,7 @@ async function executePendleSyWrap(
         priceImpact: route.data.priceImpact,
         feeUsdEstimate: route.data.feeUsd,
         aggregator: route.data.aggregatorType,
-        slippageBps: num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS,
+        slippageBps: num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS,
         note: "Nothing was broadcast. Call the same tool again with the EXACT same params (dryRun omitted or false) to execute.",
       });
     }

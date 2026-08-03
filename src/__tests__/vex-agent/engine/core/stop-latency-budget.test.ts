@@ -25,6 +25,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { delay } from "@utils/cancellation.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import type { EngineContext } from "@vex-agent/engine/types.js";
+import { makeEngineContext } from "../_engine-context.js";
 
 const persistBatchTranscript = vi.fn().mockResolvedValue(undefined);
 
@@ -60,19 +62,8 @@ const { buildToolContext } = await import(
   "@vex-agent/engine/core/turn-loop-tool-batch/execute.js"
 );
 
-function engineContext() {
-  return {
-    sessionId: "session-1",
-    sessionKind: "chat",
-    sessionPermission: "full",
-    missionId: null,
-    missionRunId: null,
-    loadedDocuments: new Map(),
-    walletPolicy: { kind: "none" },
-    selectedEvmWallet: null,
-    selectedSolanaWallet: null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+function engineContext(): EngineContext {
+  return makeEngineContext({ sessionId: "session-1", sessionPermission: "full" });
 }
 
 /** The executed (not drained) results the batch persisted, in order. */
@@ -113,6 +104,7 @@ describe("operator Stop while a tool is running", () => {
       context: engineContext(),
       turnResult: {
         content: null,
+        reasoning: null,
         toolCalls: [{ id: "call-0", name: "slow_read", arguments: {} }],
       },
       liveMessages: [],
@@ -145,6 +137,7 @@ describe("operator Stop while a tool is running", () => {
       context: engineContext(),
       turnResult: {
         content: null,
+        reasoning: null,
         toolCalls: [{ id: "call-0", name: "fast_read", arguments: {} }],
       },
       liveMessages: [],

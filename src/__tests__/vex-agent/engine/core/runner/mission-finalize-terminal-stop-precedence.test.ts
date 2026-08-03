@@ -144,7 +144,7 @@ describe("finalizeMissionRunStatus — terminal-stop precedence, business outcom
       "mission-1",
       "run-1",
       "session-1",
-      "deadline_exceeded",
+      "deadline_reached",
     );
 
     expect(mockUpdateStatus).not.toHaveBeenCalled();

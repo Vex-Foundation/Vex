@@ -45,11 +45,11 @@ const ADDRS = ["0xEVM", "SOL"];
 const SESSION = "00000000-0000-4000-8000-000000000001";
 
 function lastSql(): string {
-  return mockQuery.mock.calls[mockQuery.mock.calls.length - 1]![0];
+  return mockQuery.mock.calls[mockQuery.mock.calls.length - 1][0];
 }
 
 function activityHalf(): string {
-  return lastSql().split("FROM agent_activity\n")[0]!;
+  return lastSql().split("FROM agent_activity\n")[0];
 }
 
 /** A confirmed `pendle.pt.buy` row, exactly as the handler writes it. */
@@ -129,7 +129,7 @@ describe("yield rows reach the agent-facing feed (migration 053)", () => {
     mockQuery.mockResolvedValueOnce([CONFIRMED_PT_ROW]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
     expect(res.items).toHaveLength(1);
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.source).toBe("agent_activity");
     expect(row.productType).toBe("yield");
     expect(row.productType).not.toBe("spot");
@@ -176,8 +176,8 @@ describe("D26 — the success half's agent_activity dedup", () => {
     mockQuery.mockResolvedValueOnce([CONFIRMED_PT_ROW]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
     expect(res.items).toHaveLength(1);
-    expect(res.items[0]!.source).toBe("agent_activity");
-    expect(res.items[0]!.protocolExecutionId).toBe(9001);
+    expect(res.items[0].source).toBe("agent_activity");
+    expect(res.items[0].protocolExecutionId).toBe(9001);
   });
 
   it("a HISTORICAL proj_activity row with no agent_activity twin still renders", async () => {
@@ -213,7 +213,7 @@ describe("D26 — the success half's agent_activity dedup", () => {
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
     expect(res.items).toHaveLength(1);
-    expect(res.items[0]!.source).toBe("success");
-    expect(res.items[0]!.txHash).toBe("0xhistoricpendle");
+    expect(res.items[0].source).toBe("success");
+    expect(res.items[0].txHash).toBe("0xhistoricpendle");
   });
 });

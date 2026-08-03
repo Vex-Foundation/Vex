@@ -27,7 +27,12 @@ export interface ToolMapCategory {
 }
 
 export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
-  { label: "Protocol discovery/execution", toolNames: ["discover_tools", "execute_tool"] },
+  // Discovery ONLY. A discovered protocol tool is injected as a real function
+  // schema (`registry/injected-protocol-tools.ts`) and called by its own dot
+  // name, so there is no model-facing execution wrapper left to list here;
+  // `execute_tool` is withheld from the model surface (`registry/visibility.ts`)
+  // and its dispatch route survives solely for approval resume.
+  { label: "Protocol discovery", toolNames: ["discover_tools"] },
   { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
   { label: "Token resolution", toolNames: ["token_find"] },
@@ -67,7 +72,11 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Wallet transfers", toolNames: ["wallet_send_prepare", "wallet_send_confirm"] },
   { label: "Mission setup draft", toolNames: ["mission_draft_update"] },
   { label: "Mission run stop", toolNames: ["mission_stop"] },
-  { label: "Mission run scheduling", toolNames: ["loop_defer"] },
+  // NOT mission-only: owner decree 2026-08-03 made waiting available to full
+  // agent sessions too (`requiresAutonomousLoop`), so the label names the
+  // PATTERN — the same one `engine/prompts/execution-policy.ts` teaches — and
+  // no longer implies a mission-run-scheduling niche.
+  { label: "Waiting — park the loop until an event you cannot make happen sooner", toolNames: ["loop_defer"] },
   { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["plan_write"] },
 ];
 

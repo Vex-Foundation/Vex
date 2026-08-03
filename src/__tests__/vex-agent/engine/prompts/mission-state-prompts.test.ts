@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EngineContext } from "../../../../vex-agent/engine/types.js";
+import { makeEngineContext } from "../_engine-context.js";
 import {
   buildPromptStack,
   buildMissionRunPrompt,
@@ -11,15 +12,12 @@ import {
 import { buildContextPressureBanner } from "../../../../vex-agent/engine/prompts/context-pressure.js";
 
 function makeMissionContext(overrides: Partial<EngineContext> = {}): EngineContext {
-  return {
+  return makeEngineContext({
     sessionId: "session-1",
     sessionKind: "mission",
-    sessionPermission: "restricted",
     missionId: "mission-1",
-    missionRunId: null,
-    loadedDocuments: new Map(),
     ...overrides,
-  };
+  });
 }
 
 describe("mission state prompts", () => {

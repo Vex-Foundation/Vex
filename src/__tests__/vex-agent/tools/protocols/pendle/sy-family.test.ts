@@ -222,6 +222,7 @@ const { computePrequoteMatchHash } = await import(
   "../../../../../vex-agent/tools/protocols/prequote/identity/hash.js"
 );
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CTX = {} as unknown as ProtocolExecutionContext;
 // `tokenIn` (mint) and `tokenOut` (redeem) name the SAME plain-token leg for
@@ -260,11 +261,11 @@ describe("SY prequote identity — dry run ↔ execute agreement", () => {
     expect(mintHash()).not.toBe(mintHash({ sy: USDC }));
     expect(mintHash()).not.toBe(mintHash({ tokenIn: USDC }));
     expect(mintHash()).not.toBe(mintHash({ amountIn: "1.0001" }));
-    expect(mintHash()).not.toBe(mintHash({ slippageBps: 100 }));
+    expect(mintHash()).not.toBe(mintHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS + 50 }));
   });
 
-  it("an omitted slippage normalizes to the handler default (50) on both sides", () => {
-    expect(mintHash({ slippageBps: undefined })).toBe(mintHash({ slippageBps: 50 }));
+  it("an omitted slippage normalizes to the ONE Vex default on both sides", () => {
+    expect(mintHash({ slippageBps: undefined })).toBe(mintHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
   });
 
   it("the venue label is NOT plain 'pendle', so a PT quote can never authorize a wrap", () => {
@@ -328,7 +329,7 @@ describe("the SY manifests meet the context-free agent bar", () => {
   it("slippage is documented as whole basis points with the policy maximum", () => {
     const slippage = manifestFor("pendle.sy.mint").params.find((param) => param.key === "slippageBps");
     expect(slippage?.unit).toBe("bps");
-    expect(slippage?.description).toMatch(/0\.50%/);
+    expect(slippage?.description).toMatch(new RegExp(`default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%`));
     expect(slippage?.description).toMatch(/1000 = 10%/);
   });
 

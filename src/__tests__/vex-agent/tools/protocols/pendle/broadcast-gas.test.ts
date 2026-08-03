@@ -62,11 +62,13 @@ const PLAN = {
 } as const;
 
 function clients(estimate: bigint | Error) {
-  const estimateGas = vi.fn(async () => {
+  const estimateGas = vi.fn(async (_request: Record<string, unknown>) => {
     if (estimate instanceof Error) throw estimate;
     return estimate;
   });
-  const signTransaction = vi.fn(async () => SERIALIZED);
+  const signTransaction = vi.fn(
+    async (_request: { gas: bigint; value?: bigint }) => SERIALIZED,
+  );
   const sendRawTransaction = vi.fn(async () => TX_HASH);
   return {
     publicClient: {
@@ -89,7 +91,9 @@ function clients(estimate: bigint | Error) {
 
 /** The gas limit that actually went into the SIGNED transaction. */
 function signedGas(c: ReturnType<typeof clients>): bigint {
-  return (c.signTransaction.mock.calls[0]![0] as { gas: bigint }).gas;
+  const call = c.signTransaction.mock.calls[0];
+  if (call === undefined) throw new Error("signTransaction was never called");
+  return call[0].gas;
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -102,7 +106,7 @@ describe("sendPendleRouterTx signs the headroomed limit, not the bare estimate",
     expect(result.txHash).toBe(TX_HASH);
     expect(c.estimateGas).toHaveBeenCalledTimes(1);
     // Estimated for the EXACT call that will run — same to/data/value.
-    expect(c.estimateGas.mock.calls[0]![0]).toMatchObject({ to: TO, data: DATA, value: 0n });
+    expect(c.estimateGas.mock.calls[0]?.[0]).toMatchObject({ to: TO, data: DATA, value: 0n });
     expect(signedGas(c)).toBe(gasLimitWithHeadroom(1_000_000n));
     expect(signedGas(c)).toBe(2_000_000n);
   });
@@ -118,8 +122,8 @@ describe("sendPendleRouterTx signs the headroomed limit, not the bare estimate",
   it("carries the native value through for a value-bearing call", async () => {
     const c = clients(500_000n);
     await sendPendleRouterTx(c.publicClient, c.walletClient, { to: TO, data: DATA, value: 7n }, PLAN);
-    expect(c.estimateGas.mock.calls[0]![0]).toMatchObject({ value: 7n });
-    expect(c.signTransaction.mock.calls[0]![0]).toMatchObject({ value: 7n });
+    expect(c.estimateGas.mock.calls[0]?.[0]).toMatchObject({ value: 7n });
+    expect(c.signTransaction.mock.calls[0]?.[0]).toMatchObject({ value: 7n });
   });
 
   it("BROADCASTS NOTHING when the estimate fails — a would-revert call is not signed", async () => {

@@ -44,6 +44,19 @@ import {
 import { validateMetaDetailResponse, validateMetasTrendingResponse } from "./validation/metas.js";
 import { validateProfilesRecentResponse } from "./validation/profiles.js";
 
+/**
+ * Descriptive UA + explicit Accept, sent on every request.
+ *
+ * Not cosmetic: DexScreener sits behind Cloudflare, and KyberSwap proved
+ * live (2026-08-03) that a missing `User-Agent` is answered with a 403
+ * `cf-mitigated: challenge` HTML page rather than data. The sibling Virtuals
+ * client already sets both.
+ */
+const REQUEST_HEADERS = {
+  "User-Agent": "Vex-Agent/1.0 (+https://vexlabs.ai)",
+  Accept: "application/json",
+} as const;
+
 export class DexScreenerClient {
   private readonly throttle: DexScreenerThrottle;
 
@@ -75,7 +88,7 @@ export class DexScreenerClient {
     // The normalized request URL (path + ordered query) is the cache/dedupe key.
     try {
       return await this.throttle.run(url, rateClass, ttlMs, async () => {
-        const response = await fetchWithTimeout(url);
+        const response = await fetchWithTimeout(url, { headers: REQUEST_HEADERS });
 
         if (!response.ok) {
           if (response.status === 429) {
@@ -83,11 +96,10 @@ export class DexScreenerClient {
             const retryMs = parseRetryAfterMs(response.headers?.get?.("retry-after"));
             this.throttle.penalize(rateClass, retryMs);
           }
-          const raw = await readJson(response);
-          const message = typeof raw === "object" && raw !== null && "error" in raw
-            ? String((raw as Record<string, unknown>).error)
-            : undefined;
-          throw mapDexScreenerError(response.status, message);
+          // The body goes to the mapper in WHATEVER shape it arrived: the live
+          // 400 is a JSON *string* (an HTML page), and the old object-with-
+          // `error` test discarded it, leaving the agent a bare status.
+          throw mapDexScreenerError(response.status, await readJson(response));
         }
 
         const raw = await readJson(response);

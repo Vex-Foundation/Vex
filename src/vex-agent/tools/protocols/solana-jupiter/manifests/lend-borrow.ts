@@ -60,6 +60,30 @@ export const LEND_BORROW_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "repayAll", type: "boolean", description: "Repay ALL debt on this position, including accrued-interest dust. Mutually exclusive with borrowAmountRaw/repayAmountRaw." },
     ],
     exampleParams: { vaultId: 1, depositAmountRaw: "30000000" },
+    // Four at-most-one groups say what six prose sentences and two handler
+    // checks said: one collateral param, one debt param, and — the two
+    // DIRECTION groups — never two legs moving the same way, which is the
+    // ledger constraint `resolveBorrowOperateRequest` refuses on and which no
+    // param description documented. Money in: deposit collateral, repay debt.
+    // Money out: withdraw collateral, borrow debt.
+    atMostOne: [
+      ["depositAmountRaw", "withdrawAmountRaw", "withdrawAll"],
+      ["borrowAmountRaw", "repayAmountRaw", "repayAll"],
+      ["depositAmountRaw", "repayAmountRaw", "repayAll"],
+      ["withdrawAmountRaw", "withdrawAll", "borrowAmountRaw"],
+    ],
+    // The empty call: legal against every individual param (only vaultId is
+    // required), and nothing but a wasted round trip.
+    atLeastOneOf: [
+      [
+        "depositAmountRaw",
+        "withdrawAmountRaw",
+        "withdrawAll",
+        "borrowAmountRaw",
+        "repayAmountRaw",
+        "repayAll",
+      ],
+    ],
     requiresEnv: "JUPITER_API_KEY",
     discovery: SOLANA_LEND_BORROW_DISCOVERY["solana.lend.borrowOperate"],
   },

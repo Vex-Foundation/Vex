@@ -51,6 +51,7 @@ import {
   humanizeRouteType,
   inFlightResult,
   khalaniFailureMessage,
+  khalaniFailureOutput,
   type RecordedLeg,
 } from "./bridge-support.js";
 import { interpretPoll } from "./bridge-poll.js";
@@ -104,7 +105,7 @@ export async function executeKhalaniBridge(
     prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
   } catch (err) {
     // Registry-fetch failure — transport, not a venue decision. Fail-closed.
-    return { success: false, output: `${toolId} failed: ${khalaniFailureMessage(err)}` };
+    return { success: false, output: khalaniFailureOutput(toolId, err) };
   }
   if (prequote.outcome === "static_relay") {
     return {

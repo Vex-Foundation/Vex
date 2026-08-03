@@ -17,7 +17,9 @@
  *   swap_quote (Solana) → solana.swap.quote (SAME keys — W5a unified them: tokenIn/tokenOut/amountIn)
  *   swap_quote_uniswap  → uniswap.swap.quote (SAME keys) — HIDDEN, dispatch-gated on
  *                         `isUniswapPairRevealed(sessionId)` (plan §11.2)
- *   token_check         { chain, address }      → kyberswap.tokens.check (same keys)
+ *   token_check         { chain, tokenAddress } → kyberswap.tokens.check (same keys; the
+ *                       retired `address` spelling is rejected by name on BOTH lanes, and
+ *                       supplying both spellings is rejected too)
  *   bridge_status (id)  { orderId }              → khalani.orders.get { orderId }
  *   bridge_status (list)→ khalani.orders.list (pass through list filters)
  *   bridge_quote        → khalani.quote.get (same keys)
@@ -65,6 +67,7 @@ import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParamOrDestinationKey } from "@tools/khalani/request.js";
 import { khalaniSlippageRejection } from "../protocols/khalani/slippage-unsupported.js";
+import { rejectBridgeStatusModeConflict } from "../protocols/khalani/bridge-status-mode.js";
 import { dropEmptyModelValues, formatZodIssuesForModel } from "./arg-validation.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
@@ -253,22 +256,55 @@ export async function handleSwapQuoteUniswap(
 
 // ── token_check — EVM honeypot / fee-on-transfer ─────────────────────
 
+/**
+ * `.strict()` is the point, not decoration.
+ *
+ * A plain `z.object()` IGNORES an undeclared key, so a call that still spelled
+ * the token `address` parsed "successfully" and dispatched with the field
+ * missing — the alias lane silently dropping what the protocol lane rejects by
+ * name. Strict parsing closes that hole for every unknown key; the retired key
+ * gets the explicit message below because "unrecognized key" does not tell an
+ * agent what to send instead.
+ */
 const TokenCheckArgs = z.object({
   chain: ChainParam,
-  address: z.string().min(1, { message: "address is required" }),
-});
+  tokenAddress: z.string().min(1, { message: "tokenAddress is required" }),
+}).strict();
+
+/**
+ * The retired `address` key, refused BY NAME and BEFORE parsing.
+ *
+ * Before parsing, because supplying BOTH spellings must also refuse: a call
+ * carrying `address` and `tokenAddress` is ambiguous about which one the caller
+ * believes is being checked, and quietly preferring one would run a honeypot
+ * check against an address the agent may not have meant. There is no precedence
+ * rule here on purpose — the caller re-sends one key.
+ */
+function refuseRetiredTokenCheckAddress(args: Record<string, unknown>): string | null {
+  if (!Object.hasOwn(args, "address")) return null;
+  const both = Object.hasOwn(args, "tokenAddress");
+  return (
+    'token_check: the parameter "address" was retired and renamed to "tokenAddress"'
+    + (both
+      ? ' — you supplied BOTH "address" and "tokenAddress", and Vex will not guess which token you meant. Re-send the call with "tokenAddress" only.'
+      : '. Re-send the call with the token contract address under "tokenAddress".')
+  );
+}
 
 export async function handleTokenCheck(
   args: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
+  const retired = refuseRetiredTokenCheckAddress(args);
+  if (retired) return fail(retired);
+
   const parsed = TokenCheckArgs.safeParse(args);
   if (!parsed.success) {
     return fail(`token_check: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
-  const { chain, address } = parsed.data;
+  const { chain, tokenAddress } = parsed.data;
   return executeProtocolTool(
-    { toolId: "kyberswap.tokens.check", params: { chain, address } },
+    { toolId: "kyberswap.tokens.check", params: { chain, tokenAddress } },
     protocolContext(context),
   );
 }
@@ -296,6 +332,11 @@ export async function handleBridgeStatus(
     return fail(`bridge_status: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
   }
   const a = parsed.data;
+
+  // Mode conflict is REJECTED BY NAME, never resolved silently — see
+  // `../protocols/khalani/bridge-status-mode.ts`.
+  const conflict = rejectBridgeStatusModeConflict(a);
+  if (conflict !== null) return fail(conflict);
 
   if (a.orderId !== undefined) {
     return executeProtocolTool(

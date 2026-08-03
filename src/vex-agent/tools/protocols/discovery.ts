@@ -8,7 +8,7 @@ import {
 import { buildDiscoverNamespaceDescription } from "./descriptions.js";
 import { denseScore } from "./dense-score.js";
 import { pinExactToolIdMatch } from "./toolid-pin.js";
-import { describeExclusiveParamGroups } from "./runtime/params.js";
+import { describeParamGroupConstraints } from "./runtime/params.js";
 import type {
   ProtocolDiscoveryItem,
   ProtocolDiscoveryListItem,
@@ -84,9 +84,9 @@ function toDiscoveryItem(
     score: entry.score,
     whyMatched: entry.whyMatched,
   };
-  // Absent unless the manifest declares XOR groups — a tool without them pays
-  // nothing for the field.
-  const constraints = describeExclusiveParamGroups(entry.manifest);
+  // Absent unless the manifest declares a cross-param group (exactly-one,
+  // at-most-one, or at-least-one) — a tool without them pays nothing.
+  const constraints = describeParamGroupConstraints(entry.manifest);
   if (constraints.length > 0) item.constraints = constraints;
   // Only emit the advisory flag when it would be true — keeps payloads
   // minimal and gives the model a clear "absent = available" rule.

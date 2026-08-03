@@ -14,7 +14,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const http = vi.hoisted(() => ({ fetchWithTimeout: vi.fn(), readJson: vi.fn() }));
+const http = vi.hoisted(() => ({
+  fetchWithTimeout: vi.fn<(url: string, options?: { headers?: Record<string, string> }) => Promise<Response>>(),
+  readJson: vi.fn<(response: Response) => Promise<unknown>>(),
+}));
 vi.mock("@utils/http.js", () => http);
 
 import { RelayClient } from "@tools/relay/client.js";
@@ -24,11 +27,7 @@ import { VexError, ErrorCodes } from "../../../errors.js";
 const client = new RelayClient("https://relay.test");
 
 function errorResponse(status: number, body: string): void {
-  http.fetchWithTimeout.mockResolvedValueOnce({
-    ok: false,
-    status,
-    text: async () => body,
-  } as unknown as Response);
+  http.fetchWithTimeout.mockResolvedValueOnce(new Response(body, { status }));
 }
 
 function quote(): Promise<unknown> {
@@ -109,13 +108,14 @@ describe("RelayClient — provider error body", () => {
   });
 
   it("never fails the request because the body could not be read", async () => {
-    http.fetchWithTimeout.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      text: async () => {
-        throw new Error("body already consumed");
+    // A real errored body stream: `text()` rejects exactly as it does when the
+    // body was already consumed.
+    const unreadable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("body already consumed"));
       },
-    } as unknown as Response);
+    });
+    http.fetchWithTimeout.mockResolvedValueOnce(new Response(unreadable, { status: 400 }));
     const err = await caught(quote);
     expect(err.code).toBe(ErrorCodes.RELAY_API_ERROR);
     expect(err.httpStatus).toBe(400);
@@ -136,12 +136,18 @@ describe("RelayClient — optional RELAY_API_KEY", () => {
   });
 
   function okOnce(): void {
-    http.fetchWithTimeout.mockResolvedValueOnce({ ok: true } as Response);
+    http.fetchWithTimeout.mockResolvedValueOnce(new Response(null, { status: 200 }));
     http.readJson.mockResolvedValueOnce({ chains: [] });
   }
 
+  function firstCall(): [string, { headers?: Record<string, string> }?] {
+    const call = http.fetchWithTimeout.mock.calls[0];
+    if (!call) throw new Error("fetchWithTimeout was never called");
+    return call;
+  }
+
   function sentHeaders(): Record<string, string> | undefined {
-    return (http.fetchWithTimeout.mock.calls[0]![1] as { headers?: Record<string, string> }).headers;
+    return firstCall()[1]?.headers;
   }
 
   it("sends no key header at all when the env var is absent or blank", async () => {
@@ -169,7 +175,7 @@ describe("RelayClient — optional RELAY_API_KEY", () => {
     await client.getChains();
     expect(sentHeaders()?.["x-api-key"]).toBe("k-secret");
     // Never in the URL.
-    expect(String(http.fetchWithTimeout.mock.calls[0]![0])).not.toContain("k-secret");
+    expect(firstCall()[0]).not.toContain("k-secret");
   });
 
   it("names the key on a 401/403 WITHOUT echoing it, and stays silent about it when keyless", async () => {

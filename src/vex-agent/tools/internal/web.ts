@@ -54,6 +54,7 @@ import {
   classifyProviderFailure,
   providerFailureLogFields,
   providerFailureMessage,
+  providerFailureReason,
 } from "./web-research/provider-error.js";
 
 const SEARCH_TIMEOUT_S = 30;
@@ -354,7 +355,7 @@ async function readTopPages(
         ...providerFailureLogFields(failure),
       });
       if (fetched.has(f.url)) continue; // success (or first report) wins
-      fetched.set(f.url, { state: "failed", pageError: failure.code });
+      fetched.set(f.url, { state: "failed", pageError: providerFailureReason(failure) });
     }
     // One outcome per requested URL: anything Tavily left unmentioned is an
     // honest failure (no raw-HTTP fallback exists — owner decision).
@@ -374,7 +375,7 @@ async function readTopPages(
       ...providerFailureLogFields(failure),
       count: uncachedUrls.length,
     });
-    for (const url of requested) outcomes.set(url, { state: "failed", pageError: failure.code });
+    for (const url of requested) outcomes.set(url, { state: "failed", pageError: providerFailureReason(failure) });
   }
 
   return outcomes;

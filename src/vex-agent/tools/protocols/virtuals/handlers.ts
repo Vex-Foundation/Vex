@@ -10,60 +10,33 @@
  * The Virtuals API is undocumented, so every handler degrades cleanly on error
  * (returns a readable failure) rather than throwing through the namespace.
  * `filters[status]` is ignored server-side, so status filtering is applied
- * CLIENT-SIDE here after the fetch.
+ * CLIENT-SIDE here after the fetch — over a BOUNDED, DISCLOSED window of pages
+ * (`./list-window.ts`), never over one silent page.
+ *
+ * Param reading and every refusal live in `./list-params.ts`; the window scan
+ * and its disclosure sentence in `./list-window.ts`.
  */
 
 import { getVirtualsClient } from "@tools/virtuals/client.js";
-import type { VirtualsSortField } from "@tools/virtuals/types.js";
+import type { VirtualsAgent } from "@tools/virtuals/types.js";
 import { VexError } from "../../../../errors.js";
 import logger from "@utils/logger.js";
 import { describeFailureForAgent, describeFailureForLog } from "../runtime/errors.js";
 import type { ProtocolHandler } from "../types.js";
-import { str, num, ok, fail } from "../handler-helpers.js";
-import { VIRTUALS_CHAIN_SLUGS, resolveVirtualsChain, virtualsChainSlug } from "./chain-param.js";
+import { num, ok, fail } from "../handler-helpers.js";
+import { virtualsChainSlug } from "./chain-param.js";
+import {
+  readChain,
+  readVirtualsListParams,
+  readVirtualsWindow,
+  type StatusFilter,
+} from "./list-params.js";
+import { describeWindow, scanVirtualsPages } from "./list-window.js";
 import {
   projectGenesis,
   projectVirtualsDetail,
   projectVirtualsList,
 } from "./projectors.js";
-
-// ── Tuning ──────────────────────────────────────────────────────────
-
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
-/** One full page fetched, then filtered client-side + sliced to `limit`. */
-const FETCH_PAGE_SIZE = 50;
-
-/** Agent-facing sort keyword → API sort field. */
-const SORT_MAP: Record<string, VirtualsSortField> = {
-  mcap: "mcapInVirtual",
-  volume: "volume24h",
-  newest: "createdAt",
-  recentGraduation: "lpCreatedAt",
-};
-
-type StatusFilter = "undergrad" | "graduated" | "all";
-
-// ── Param helpers ───────────────────────────────────────────────────
-
-function clampLimit(requested: number | undefined): number {
-  if (requested !== undefined && requested > 0) {
-    return Math.min(Math.floor(requested), MAX_LIMIT);
-  }
-  return DEFAULT_LIMIT;
-}
-
-/**
- * The legal chain values, as the MANIFEST spells them — a refusal must name the
- * vocabulary the agent was given, not the provider's internal one.
- */
-const CHAIN_LIST = VIRTUALS_CHAIN_SLUGS.join(", ");
-
-function resolveStatusFilter(raw: string): StatusFilter {
-  const v = raw.trim().toLowerCase();
-  if (v === "undergrad" || v === "graduated" || v === "all") return v;
-  return "all";
-}
 
 /** Client-side status filter (the server ignores `filters[status]`). */
 function matchesStatus(status: string | null, filter: StatusFilter): boolean {
@@ -72,26 +45,26 @@ function matchesStatus(status: string | null, filter: StatusFilter): boolean {
   return status === "AVAILABLE"; // graduated
 }
 
+/** A graduated agent with a real LP creation time — the graduations feed's row. */
+function isGraduation(agent: VirtualsAgent): boolean {
+  return agent.status === "AVAILABLE" && agent.lpCreatedAt !== null;
+}
+
 /**
  * Model-facing failure detail — the REAL cause, scrubbed and BOUNDED.
  *
  * Owner decree (2026-08-02, rules/04): a tool error surfaced to the agent
- * carries the ACTUAL cause, never a bare "unexpected error". The old posture
- * here was static vocabulary only — VexError code + authored hint, and three
- * characterless words for everything else — because the Virtuals API is
- * undocumented and its error text is upstream-influenced. That risk is
- * answered by SANITIZING what sanitization can actually address, not by
- * hiding: the canonical summarizer removes secrets, HTML and JSON bodies,
- * URLs, auth headers and long hex blobs, and hard-caps the result. It does NOT
- * neutralise instruction-shaped prose — a pseudo-role tag or an imperative
- * sentence survives scrubbing unchanged, and the mitigation for THAT is the
- * Safety Contract, which teaches the model that tool output is data, never
- * instruction. A 500 and a rate-limit are different answers and the agent
- * could not tell them apart.
+ * carries the ACTUAL cause, never a bare "unexpected error". The canonical
+ * summarizer removes secrets, HTML and JSON bodies, URLs, auth headers and long
+ * hex blobs, and hard-caps the result. It does NOT neutralise instruction-shaped
+ * prose — a pseudo-role tag or an imperative sentence survives scrubbing
+ * unchanged, and the mitigation for THAT is the Safety Contract, which teaches
+ * the model that tool output is data, never instruction.
  *
- * The VexError fast path stays ahead of it: our own code + authored hint is
- * more actionable than the sentence behind it. The full error still goes to
- * the logger as bounded metadata.
+ * The VexError fast path stays ahead of it: our own code + authored hint is more
+ * actionable than the sentence behind it. As of W2f the client no longer throws
+ * the upstream body away, so there is now a real provider sentence behind it to
+ * describe. The full error still goes to the logger as bounded metadata.
  */
 function failureDetail(toolId: string, err: unknown): string {
   logger.warn("virtuals.handler.error", {
@@ -106,32 +79,39 @@ function failureDetail(toolId: string, err: unknown): string {
 
 export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   "virtuals.list": async (p) => {
-    const chainRaw = str(p, "chain");
-    if (!chainRaw) return fail(`Missing required: chain (one of ${CHAIN_LIST})`);
-    const chain = resolveVirtualsChain(chainRaw);
-    if (!chain) return fail(`Invalid chain "${chainRaw}". Must be one of ${CHAIN_LIST}.`);
-
-    const statusFilter = resolveStatusFilter(str(p, "status"));
-    // `sortBy` is the documented param; `sort` stays accepted as its alias.
-    const sortKeyword = str(p, "sortBy") || str(p, "sort");
-    const sort = SORT_MAP[sortKeyword] ?? SORT_MAP.mcap;
-    const limit = clampLimit(num(p, "limit"));
+    const read = readVirtualsListParams(p);
+    if (!read.ok) return fail(read.reason);
+    const { chain, statusFilter, sortKeyword, sort, limit, page, pageSize } = read.value;
+    const chainSlug = virtualsChainSlug(chain);
 
     try {
       const client = getVirtualsClient();
-      const result = await client.listVirtuals({ chain, sort, pageSize: FETCH_PAGE_SIZE });
-      const filtered = result.agents.filter((a) => matchesStatus(a.status, statusFilter));
-      const projected = projectVirtualsList(filtered).slice(0, limit);
+      const { matched, scan } = await scanVirtualsPages({
+        startPage: page,
+        pageSize,
+        limit,
+        fetchPage: (pageNumber) => client.listVirtuals({ chain, sort, page: pageNumber, pageSize }),
+        matches: (agent) => matchesStatus(agent.status, statusFilter),
+      });
+      const projected = projectVirtualsList(matched).slice(0, limit);
       return ok({
         // Echoed as the canonical slug the manifest advertises, not the
         // provider's UPPERCASE value — the reply must spell the chain the way
         // the next call has to spell it.
-        chain: virtualsChainSlug(chain),
+        chain: chainSlug,
         status: statusFilter,
-        sort: sortKeyword && SORT_MAP[sortKeyword] ? sortKeyword : "mcap",
-        matched: filtered.length,
-        totalOnChain: result.pagination?.total ?? null,
+        sort: sortKeyword,
+        matched: matched.length,
+        totalOnChain: scan.total,
         count: projected.length,
+        window: scan,
+        windowNote: describeWindow({
+          scan,
+          chainSlug,
+          sortKeyword,
+          matchedCount: matched.length,
+          filterLabel: statusFilter,
+        }),
         agents: projected,
       });
     } catch (err) {
@@ -157,35 +137,60 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "virtuals.graduations": async (p) => {
-    const chainRaw = str(p, "chain");
-    if (!chainRaw) return fail(`Missing required: chain (one of ${CHAIN_LIST})`);
-    const chain = resolveVirtualsChain(chainRaw);
-    if (!chain) return fail(`Invalid chain "${chainRaw}". Must be one of ${CHAIN_LIST}.`);
-    const limit = clampLimit(num(p, "limit"));
+    const chainRead = readChain(p);
+    if (!chainRead.ok) return fail(chainRead.reason);
+    const windowRead = readVirtualsWindow(p);
+    if (!windowRead.ok) return fail(windowRead.reason);
+    const chain = chainRead.value;
+    const chainSlug = virtualsChainSlug(chain);
+    const { limit, page, pageSize } = windowRead.value;
 
     try {
       const client = getVirtualsClient();
       // Newest graduations first: sort by lpCreatedAt desc, keep AVAILABLE only
       // (UNDERGRAD rows have null lpCreatedAt and sort in behind graduated ones).
-      const result = await client.listVirtuals({ chain, sort: "lpCreatedAt", pageSize: FETCH_PAGE_SIZE });
-      const graduated = result.agents.filter((a) => a.status === "AVAILABLE" && a.lpCreatedAt !== null);
-      const projected = projectVirtualsList(graduated).slice(0, limit);
-      return ok({ chain: virtualsChainSlug(chain), count: projected.length, agents: projected });
+      const { matched, scan } = await scanVirtualsPages({
+        startPage: page,
+        pageSize,
+        limit,
+        fetchPage: (pageNumber) =>
+          client.listVirtuals({ chain, sort: "lpCreatedAt", page: pageNumber, pageSize }),
+        matches: isGraduation,
+      });
+      const projected = projectVirtualsList(matched).slice(0, limit);
+      return ok({
+        chain: chainSlug,
+        matched: matched.length,
+        totalOnChain: scan.total,
+        count: projected.length,
+        window: scan,
+        windowNote: describeWindow({
+          scan,
+          chainSlug,
+          sortKeyword: "recentGraduation",
+          matchedCount: matched.length,
+          filterLabel: "graduated",
+        }),
+        agents: projected,
+      });
     } catch (err) {
       return fail(`Virtuals graduations unavailable (${failureDetail("virtuals.graduations", err)})`);
     }
   },
 
   "virtuals.geneses": async (p) => {
-    const limit = clampLimit(num(p, "limit"));
-    const page = num(p, "page");
+    const windowRead = readVirtualsWindow(p);
+    if (!windowRead.ok) return fail(windowRead.reason);
+    const { limit, page, pageSize } = windowRead.value;
     try {
       const client = getVirtualsClient();
-      const result = await client.listGeneses({ page, pageSize: FETCH_PAGE_SIZE });
+      const result = await client.listGeneses({ page, pageSize });
       const projected = result.geneses.map(projectGenesis).slice(0, limit);
       return ok({
         count: projected.length,
         total: result.pagination?.total ?? null,
+        page,
+        pageSize,
         geneses: projected,
       });
     } catch (err) {

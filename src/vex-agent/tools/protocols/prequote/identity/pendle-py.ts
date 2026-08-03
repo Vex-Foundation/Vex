@@ -24,14 +24,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { MintMatchInput, RedeemPyMatchInput } from "./hash.js";
-
-/**
- * Default slippage (bps) when the caller omits it — MUST match the handler's
- * default (`handlers/shared.ts` DEFAULT_SLIPPAGE_BPS) so a quote-without-slippage
- * authorizes an execute-without-slippage. Both sides go through THESE builders,
- * so the default is applied identically by construction.
- */
-const DEFAULT_SLIPPAGE_BPS = 50;
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 
 function pStr(params: Record<string, unknown>, key: string): string {
   const v = params[key];
@@ -103,7 +96,7 @@ export async function buildPendleMintIdentity(
     ptAddress: leg.ptAddress,
     ytAddress: leg.ytAddress,
     market: leg.marketAddress,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   };
 }
 
@@ -140,6 +133,6 @@ export async function buildPendleRedeemPyIdentity(
     ytAddress: leg.ytAddress,
     amount: leg.amount,
     outputToken,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   };
 }

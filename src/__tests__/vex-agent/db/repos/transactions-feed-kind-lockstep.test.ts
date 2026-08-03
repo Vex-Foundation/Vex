@@ -59,7 +59,7 @@ function liveKinds(): string[] {
   let last: RegExpExecArray | null = null;
   while ((match = re.exec(MIGRATION_SQL)) !== null) last = match;
   if (!last) throw new Error("lockstep: agent_activity_kind_valid CHECK not found");
-  return last[1]!
+  return last[1]
     .split(",")
     .map((token) => token.trim().replace(/^'(.*)'$/, "$1"))
     .filter((token) => token.length > 0);
@@ -84,21 +84,21 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
 function activityRowPredicate(): string {
   const match = /activityConds\.push\(\s*"(\(kind = 'swap'[^"]*)"/.exec(QUERY_BUILDER_SRC);
   if (!match) throw new Error("lockstep: the activity-half row predicate was not found");
-  return match[1]!;
+  return match[1];
 }
 
 /** The `product_type` CASE expression of the activity half's SELECT. */
 function productTypeProjection(): string {
   const match = /CASE\n([\s\S]*?)END AS product_type/.exec(QUERY_BUILDER_SRC);
   if (!match) throw new Error("lockstep: the product_type projection was not found");
-  return match[1]!;
+  return match[1];
 }
 
 /** The app feed's LOGICAL_ROW_PREDICATE literal. */
 function logicalRowPredicate(): string {
   const match = /const LOGICAL_ROW_PREDICATE = `([\s\S]*?)`;/.exec(AGENT_SCAN_SRC);
   if (!match) throw new Error("lockstep: LOGICAL_ROW_PREDICATE was not found");
-  return match[1]!;
+  return match[1];
 }
 
 describe("agent_activity kind <-> agent-facing feed lockstep", () => {
@@ -123,7 +123,7 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
 
   it("every kind has a productType filter arm", () => {
     for (const kind of liveKinds()) {
-      const product = KIND_PRODUCT[kind]!;
+      const product = KIND_PRODUCT[kind];
       expect(
         QUERY_BUILDER_SRC,
         `productType='${product}' has no arm — the filter would exclude the whole activity half`,
@@ -139,7 +139,7 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
       expect(
         projection,
         `kind '${kind}' falls through to ELSE 'spot' — it would render as a spot trade`,
-      ).toContain(`WHEN kind = '${kind}' THEN '${KIND_PRODUCT[kind]!}'`);
+      ).toContain(`WHEN kind = '${kind}' THEN '${KIND_PRODUCT[kind]}'`);
     }
   });
 

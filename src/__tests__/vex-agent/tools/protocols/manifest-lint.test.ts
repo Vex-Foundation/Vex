@@ -26,6 +26,8 @@ import {
   lintGenericErrorLiterals,
   lintSlippageDefaultHome,
   lintToolSubject,
+  MANIFEST_LINT_ALLOWLIST,
+  SLIPPAGE_DEFAULT_OWNER,
   staleAllowlistKeys,
   toLintSubject,
   toSchemaLintSubject,
@@ -98,6 +100,22 @@ describe("W0 — manifest convention linter", () => {
   it("no source-level violation (generic errors, second slippage default) outside the allowlist", () => {
     const live = withoutAllowlisted(sourceIssues);
     expect(live, `unallowlisted source violations:\n${format(live)}`).toEqual([]);
+  });
+
+  // W4b: the slippage default now has EXACTLY ONE home. This is stronger than
+  // "no unallowlisted violation" above — it proves the debt is gone rather than
+  // merely recorded, so a future copy cannot be re-admitted by adding a line to
+  // the allowlist.
+  it("exactly one module declares a slippage default, and no entry allowlists a second", () => {
+    const slippageIssues = lintSlippageDefaultHome([
+      ...protocolSources,
+      ...readSources("src/tools"),
+    ]);
+    expect(
+      slippageIssues,
+      `a second slippage default exists — move it onto ${SLIPPAGE_DEFAULT_OWNER}:\n${format(slippageIssues)}`,
+    ).toEqual([]);
+    expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "slippage-default-home")).toEqual([]);
   });
 
   it("the allowlist carries no stale entry (a fixed violation must be deleted, not kept)", () => {

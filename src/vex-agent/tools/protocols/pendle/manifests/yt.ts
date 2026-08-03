@@ -1,12 +1,13 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_YT_DISCOVERY } from "../../embeddings/pendle/yt.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const YT_SWAP_PARAMS = [
   { key: "chain", type: "string" as const, required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS (ERC-20; use WETH for ETH). Buy: the payment token. Sell: the YT address." },
   { key: "tokenOut", type: "string" as const, required: true, description: "Output token CONTRACT ADDRESS. Buy: the YT address. Sell: the payment token." },
   { key: "amountIn", type: "string" as const, required: true, description: "Amount of tokenIn in human-readable units." },
-  { key: "slippageBps", type: "number" as const, unit: "bps" as const, description: "Slippage tolerance in basis points (default 50 = 0.5%)." },
+  { key: "slippageBps", type: "number" as const, unit: "bps" as const, description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
   { key: "dryRun", type: "boolean" as const, description: "Preview without executing." },
 ];
 
@@ -24,7 +25,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenIn", type: "string", required: true, description: "Input token address (payment token for a buy; YT address for a sell)." },
       { key: "tokenOut", type: "string", required: true, description: "Output token address (YT for a buy; payment token for a sell)." },
       { key: "amountIn", type: "string", required: true, description: "Amount of tokenIn in human-readable units." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
     ],
     exampleParams: { chain: "ethereum", tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", tokenOut: "0x45a699a11a4a17fe0931ef3cea4bfc3235e659f2", amountIn: "100" },
     discovery: PENDLE_YT_DISCOVERY["pendle.yt.quote"],
@@ -38,7 +39,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: YT_SWAP_PARAMS,
-    exampleParams: { chain: "ethereum", tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", tokenOut: "0x45a699a11a4a17fe0931ef3cea4bfc3235e659f2", amountIn: "100", slippageBps: 50 },
+    exampleParams: { chain: "ethereum", tokenIn: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", tokenOut: "0x45a699a11a4a17fe0931ef3cea4bfc3235e659f2", amountIn: "100", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: PENDLE_YT_DISCOVERY["pendle.yt.buy"],
   },
   {
@@ -50,7 +51,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: YT_SWAP_PARAMS,
-    exampleParams: { chain: "ethereum", tokenIn: "0x45a699a11a4a17fe0931ef3cea4bfc3235e659f2", tokenOut: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", amountIn: "50", slippageBps: 50 },
+    exampleParams: { chain: "ethereum", tokenIn: "0x45a699a11a4a17fe0931ef3cea4bfc3235e659f2", tokenOut: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", amountIn: "50", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: PENDLE_YT_DISCOVERY["pendle.yt.sell"],
   },
   {

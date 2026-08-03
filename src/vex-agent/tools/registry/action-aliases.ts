@@ -11,7 +11,7 @@
  *                          (renamed from `swap` in place — Agent Scan plan §11.2)
  *   swap_quote_uniswap   → uniswap.swap.quote (HIDDEN — session-scoped reveal)
  *   swap_execute_uniswap → uniswap.swap.execute (HIDDEN — session-scoped reveal)
- *   token_check          → kyberswap.tokens.check   (EVM honeypot / fee-on-transfer)
+ *   token_check          → kyberswap.tokens.check   (EVM honeypot / fee-on-transfer; { chain, tokenAddress })
  *   bridge_status        → khalani.orders.get (with id) / khalani.orders.list (without)
  *   bridge_quote         → khalani.quote.get        (read-only bridge preview)
  *   bridge               → MUTATING router (Stage 8c): → khalani.bridge (cross-chain)
@@ -58,6 +58,7 @@
  */
 
 import type { ToolDef } from "../types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 /** Shared JSON-schema properties for the Kyber/Jupiter-routed pair (swap_quote/swap_execute — unified §11.2 contract). */
 const SWAP_SCHEMA_PROPERTIES = {
@@ -79,7 +80,7 @@ const SWAP_SCHEMA_PROPERTIES = {
   },
   slippageBps: {
     type: "number" as const,
-    description: "Slippage tolerance in basis points (1 bps = 0.01%); default 50 = 0.5%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 50 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 50 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+    description: `Slippage tolerance in basis points (1 bps = 0.01%); default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) ${VEX_DEFAULT_SLIPPAGE_BPS} bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as "this pair is untradeable" and do not switch venue for it — another venue at ${VEX_DEFAULT_SLIPPAGE_BPS} bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.`,
   },
 };
 const SWAP_SCHEMA_REQUIRED = ["chain", "tokenIn", "tokenOut", "amountIn"];
@@ -110,7 +111,7 @@ const UNISWAP_SWAP_SCHEMA_PROPERTIES = {
   },
   slippageBps: {
     type: "number" as const,
-    description: "Slippage tolerance in basis points (1 bps = 0.01%); default 50 = 0.5%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 50 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 50 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+    description: `Slippage tolerance in basis points (1 bps = 0.01%); default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) ${VEX_DEFAULT_SLIPPAGE_BPS} bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as "this pair is untradeable" and do not switch venue for it — another venue at ${VEX_DEFAULT_SLIPPAGE_BPS} bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.`,
   },
 };
 
@@ -240,14 +241,14 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      "Safety-check an EVM token before trading it: detects honeypots and fee-on-transfer (tax) tokens via KyberSwap. Pass the chain and the token contract `address` (resolve it with token_find first). Read-only.",
+      "Safety-check an EVM token before trading it: detects honeypots and fee-on-transfer (tax) tokens via KyberSwap. Pass the chain and the token contract `tokenAddress` (resolve it with token_find first). The former key `address` is retired and is rejected by name. Read-only.",
     parameters: {
       type: "object",
       properties: {
         chain: { type: "string", description: "EVM chain slug or alias (ethereum, base, arbitrum, …). Accepts a chain slug/alias or the numeric chain id token_find returns (e.g. base or 8453)." },
-        address: { type: "string", description: "Token contract address to inspect." },
+        tokenAddress: { type: "string", description: "Token contract address to inspect (0x… on the named chain). Resolve it with token_find first — a symbol is not accepted. The former key `address` is retired and is rejected by name." },
       },
-      required: ["chain", "address"],
+      required: ["chain", "tokenAddress"],
     },
   },
   {

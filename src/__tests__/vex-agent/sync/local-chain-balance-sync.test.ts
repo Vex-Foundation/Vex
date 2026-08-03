@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createPublicClient, http, type Chain, type PublicClient, type Transport } from "viem";
+import { mainnet } from "viem/chains";
 
 type EvmClientModule = typeof import("@tools/evm-chains/evm-client.js");
 
@@ -12,10 +14,17 @@ vi.mock("@tools/dexscreener/client.js", () => ({
   getDexScreenerClient: () => ({ getTokens: (...a: unknown[]) => mockGetTokens(...a) }),
 }));
 
-const fakeClient = {
+// A real viem public client with the two RPC-backed actions this suite drives
+// replaced. `Object.assign` keeps the full `PublicClient` type, so the mock
+// factory below satisfies `getLocalPublicClient`'s contract without a cast.
+const baseClient: PublicClient<Transport, Chain> = createPublicClient({
+  chain: mainnet,
+  transport: http("http://127.0.0.1:1"),
+});
+const fakeClient = Object.assign(baseClient, {
   multicall: vi.fn(),
   getBalance: vi.fn(),
-};
+});
 const mockGetLocalPublicClient = vi.fn<EvmClientModule["getLocalPublicClient"]>(() => fakeClient);
 vi.mock("@tools/evm-chains/evm-client.js", () => ({
   getLocalPublicClient: (...args: Parameters<EvmClientModule["getLocalPublicClient"]>) => mockGetLocalPublicClient(...args),

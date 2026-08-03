@@ -50,6 +50,7 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
     casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
+    continueAgentSession: vi.fn().mockResolvedValue(undefined),
     isProviderReady: vi.fn(() => true),
     ...overrides,
   };

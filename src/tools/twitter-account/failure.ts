@@ -191,7 +191,21 @@ export function classifyTwitterFailure(error: unknown): TwitterAccountFailure {
   return failureOf("provider_rejected", httpStatus);
 }
 
-/** What the agent reads: the code it can branch on, then the static sentence. */
+/**
+ * The code the agent branches on, plus X's own status WHENEVER one was
+ * recovered — `provider_rejected, HTTP 404`.
+ *
+ * The status is already a bounded integer in 100-599 (`validStatus`), so this
+ * carries no provider prose. It is the difference between a 403 the agent
+ * should stop retrying and a 503 it may retry once — a distinction the code
+ * alone flattens, since `provider_rejected` covers both. Same `, HTTP <n>`
+ * clause as the protocol lane's W1 rendering (`renderProtocolFailureOutput`).
+ */
+export function twitterFailureReason(failure: TwitterAccountFailure): string {
+  return failure.httpStatus === null ? failure.code : `${failure.code}, HTTP ${failure.httpStatus}`;
+}
+
+/** What the agent reads: the reason it can branch on, then the static sentence. */
 export function twitterFailureMessage(failure: TwitterAccountFailure): string {
-  return `${failure.code} — ${failure.message}`;
+  return `${twitterFailureReason(failure)} — ${failure.message}`;
 }

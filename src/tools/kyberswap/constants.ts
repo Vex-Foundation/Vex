@@ -59,13 +59,11 @@ export const KYBERSWAP_FEE_RECEIVER: Address = VEX_TREASURY_EVM;
 // the two). `src/tools` must not import `src/vex-agent`, which is why the
 // venue fact and the product policy are stated in different places.
 
-/**
- * Slippage applied when the caller omits `slippageBps`. Read by BOTH the
- * execute handler and the quote-time approved-floor computation, so an
- * omitted-slippage quote persists the SAME floor the omitted-slippage execute
- * will be held to.
- */
-export const KYBERSWAP_DEFAULT_SLIPPAGE_BPS = 50;
+// NOTE: there is no KyberSwap default slippage here anymore. What an omitted
+// `slippageBps` MEANS is Vex product policy with exactly one home
+// (`@vex-agent/tools/protocols/slippage-policy.ts` `VEX_DEFAULT_SLIPPAGE_BPS`),
+// resolved by `protocols/kyberswap/handlers/swap/slippage.ts` before anything in
+// this layer is called. A venue-local copy split the prequote match hash.
 
 /**
  * The largest `slippageTolerance` KyberSwap's `/route/build` accepts.

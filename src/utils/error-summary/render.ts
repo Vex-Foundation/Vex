@@ -71,7 +71,10 @@ export function summarizeProtocolError(err: unknown): SafeErrorSummary {
   // sanitized provider cause" for the many callers that persist it as a reason,
   // a log line or an activity row. The money remedy stays inline because its
   // callers have depended on that since the 2026-08-02 decree.
-  const remediation = remediationFor(category);
+  const remediation = remediationFor(
+    category,
+    err instanceof VexError ? err.retryAfterSeconds : undefined,
+  );
   const withRemedy = category === "insufficient_funds" && remediation
     ? `${bounded} — ${remediation}`
     : bounded;

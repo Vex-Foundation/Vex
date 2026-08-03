@@ -62,6 +62,12 @@ const RETURNS_ANCHOR = /returns|answers with/i;
 const SPENDS_ANCHOR = /spend|broadcast|real funds|on-chain transaction|signs/i;
 
 const XOR_PROSE = /mutually exclusive|exactly one of|either .{0,60}\bor\b.{0,60}not both|not both|only one of/i;
+// Deliberately narrower than XOR_PROSE: the bare phrases "at most one" / "at
+// least one" are ordinary English about DATA ("rows with at least one social
+// link"), and only the "… of" form names a param set. A rule that cannot tell
+// those apart is a rule that gets allowlisted.
+const AT_MOST_ONE_PROSE = /\bat most one of\b/i;
+const AT_LEAST_ONE_PROSE = /\bat least one of\b/i;
 const VALUE_LIST_PROSE = /\bone of\b/i;
 
 function isChainValueKey(key: string): boolean {
@@ -245,17 +251,49 @@ export function lintChainDocParity(subject: string, param: LintParam): ManifestL
 export function lintExclusiveParamGroups(
   subject: string,
   params: readonly LintParam[],
-  declaredGroups: readonly (readonly string[])[] | undefined,
+  declared: DeclaredParamGroups | undefined,
 ): ManifestLintIssue[] {
-  return params
-    .filter((param) => XOR_PROSE.test(param.description))
-    .filter((param) => !(declaredGroups ?? []).some((group) => group.includes(param.key)))
-    .map((param) => ({
-      subject, rule: "exclusive-param-groups" as const, detail: param.key,
-      message:
-        `param \`${param.key}\` states a mutual exclusion in prose only — declare it in `
-        + "`exclusiveParamGroups` so discovery can show it and the runtime can enforce it.",
-    }));
+  const issues: ManifestLintIssue[] = [];
+  for (const param of params) {
+    const text = param.description;
+    // An exactly-one prose claim is satisfied by ANY declared group carrying the
+    // key: "mutually exclusive" is true of an at-most-one group too, and the
+    // manifest — not the sentence — decides which of the two it is.
+    if (XOR_PROSE.test(text) && !isInAnyGroup(param.key, declared)) {
+      issues.push(groupIssue(subject, param.key, "a mutual exclusion", "exclusiveParamGroups"));
+    }
+    if (AT_MOST_ONE_PROSE.test(text) && !isInGroups(param.key, declared?.atMostOne)) {
+      issues.push(groupIssue(subject, param.key, "an at-most-one rule", "atMostOne"));
+    }
+    if (AT_LEAST_ONE_PROSE.test(text) && !isInGroups(param.key, declared?.atLeastOneOf)) {
+      issues.push(groupIssue(subject, param.key, "an at-least-one rule", "atLeastOneOf"));
+    }
+  }
+  return issues;
+}
+
+function groupIssue(
+  subject: string,
+  key: string,
+  claim: string,
+  field: string,
+): ManifestLintIssue {
+  return {
+    subject, rule: "exclusive-param-groups", detail: key,
+    message:
+      `param \`${key}\` states ${claim} in prose only — declare it in \`${field}\` so discovery `
+      + "can show it and the runtime can enforce it.",
+  };
+}
+
+function isInGroups(key: string, groups: readonly (readonly string[])[] | undefined): boolean {
+  return (groups ?? []).some((group) => group.includes(key));
+}
+
+function isInAnyGroup(key: string, declared: DeclaredParamGroups | undefined): boolean {
+  return isInGroups(key, declared?.exclusiveParamGroups)
+    || isInGroups(key, declared?.atMostOne)
+    || isInGroups(key, declared?.atLeastOneOf);
 }
 
 // ── 10. enum-declaration ─────────────────────────────────────────
@@ -274,17 +312,41 @@ export function lintEnumDeclaration(subject: string, param: LintParam): Manifest
 
 // ── Structural readers for not-yet-existing schema fields ────────
 
+/** The three cross-param group fields, as the rules read them. */
+export interface DeclaredParamGroups {
+  readonly exclusiveParamGroups?: readonly (readonly string[])[];
+  readonly atMostOne?: readonly (readonly string[])[];
+  readonly atLeastOneOf?: readonly (readonly string[])[];
+}
+
+/** Read all three group fields off a manifest, structurally. */
+export function readDeclaredParamGroups(manifest: object): DeclaredParamGroups | undefined {
+  const groups: DeclaredParamGroups = {
+    ...optionalGroups("exclusiveParamGroups", readDeclaredGroups(manifest, "exclusiveParamGroups")),
+    ...optionalGroups("atMostOne", readDeclaredGroups(manifest, "atMostOne")),
+    ...optionalGroups("atLeastOneOf", readDeclaredGroups(manifest, "atLeastOneOf")),
+  };
+  return Object.keys(groups).length > 0 ? groups : undefined;
+}
+
+function optionalGroups(
+  field: keyof DeclaredParamGroups,
+  value: readonly (readonly string[])[] | undefined,
+): DeclaredParamGroups {
+  return value ? { [field]: value } : {};
+}
+
 /**
- * Read `exclusiveParamGroups` off a manifest WITHOUT asserting it exists.
+ * Read one group field off a manifest WITHOUT asserting it exists.
  *
- * The field is added by the discovery-contract wave. Reading it structurally
- * (validate, never cast) means this rule starts enforcing the moment the field
- * ships, and nothing here has to be revisited.
+ * Reading it structurally (validate, never cast) means a rule starts enforcing
+ * the moment a field ships, and nothing here has to be revisited.
  */
-export function readDeclaredExclusiveGroups(
+export function readDeclaredGroups(
   manifest: object,
+  field: string,
 ): readonly (readonly string[])[] | undefined {
-  const raw = (manifest as Record<string, unknown>)["exclusiveParamGroups"];
+  const raw = (manifest as Record<string, unknown>)[field];
   if (!Array.isArray(raw)) return undefined;
   const groups: string[][] = [];
   for (const group of raw) {

@@ -37,7 +37,10 @@ const jupiterRefusal = (slippage: { appliedBps: number | null; maxBps: number })
   jupiterPreBroadcastRefusalGuidance({
     rejectionReason: "custom program error 0x1771",
     rejection: { kind: "slippage", anchorErrorNumber: 6001 },
-    slippage,
+    // Jupiter's `priceImpactPct` sign is inverted relative to the shared
+    // remedy's cost-positive convention, so this venue reports no impact —
+    // the field is required precisely so that is said out loud.
+    slippage: { ...slippage, observedPriceImpactFraction: null },
   });
 
 describe("slippageRemediation — the numbers an autonomous agent has to act on", () => {

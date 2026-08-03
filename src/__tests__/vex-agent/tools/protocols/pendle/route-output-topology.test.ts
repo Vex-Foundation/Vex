@@ -93,7 +93,7 @@ vi.mock("@tools/pendle/evm-client.js", () => ({
   }),
 }));
 
-const mockEnsureAllowance = vi.fn(async () => undefined);
+const mockEnsureAllowance = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("@tools/pendle/erc20.js", () => ({
   ensurePendleAllowanceExact: (...a: unknown[]) => mockEnsureAllowance(...a),
 }));
@@ -121,7 +121,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
  * `recordPendle*Prequote` runs and this suite proves the authorization is never
  * written, rather than proving a stub was not called.
  */
-const mockPrequoteCreate = vi.fn(async () => undefined);
+const mockPrequoteCreate = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("@vex-agent/db/repos/swap-prequotes.js", () => ({
   create: (...a: unknown[]) => mockPrequoteCreate(...a),
   existsFreshFailByMatch: vi.fn(async () => false),

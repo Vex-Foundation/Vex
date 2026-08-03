@@ -218,8 +218,18 @@ describe("khalani validation", () => {
       expect(parseKhalaniErrorBody("nope")).toBeNull();
     });
 
-    it("returns null for missing message", () => {
-      expect(parseKhalaniErrorBody({ name: "SomeException" })).toBeNull();
+    it("returns null only when NOTHING usable is present", () => {
+      expect(parseKhalaniErrorBody({})).toBeNull();
+      expect(parseKhalaniErrorBody({ status: 400 })).toBeNull();
+    });
+
+    // W2d: `name` is a classifier, not a precondition. Requiring it collapsed
+    // a `{"message":"…"}` gateway body into a bare status line.
+    it("keeps a name-less body's message", () => {
+      expect(parseKhalaniErrorBody({ name: "SomeException" })).toEqual({
+        message: undefined, name: "SomeException", details: undefined,
+      });
+      expect(parseKhalaniErrorBody({ message: "gateway said no" })?.message).toBe("gateway said no");
     });
 
     it("parses valid error body", () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { join, resolve } from "node:path";
 
 // ── 1. Pure unit: createBandObserver ─────────────────────────────
@@ -112,7 +113,7 @@ function listRuntimeFiles(): string[] {
   while (stack.length > 0) {
     const dir = stack.pop();
     if (dir === undefined) continue;
-    let entries: ReturnType<typeof readdirSync>;
+    let entries: Dirent<string>[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -214,7 +215,7 @@ describe("session_memory_search.called + session_memory_search.empty_store", () 
       recentThemes: [],
     });
     await handleSessionMemorySearch({ query: "WIF", k: 1 }, makeContext());
-    const calls = infoSpy.mock.calls.filter((c) => c[0] === "session_memory_search.empty_store");
+    const calls = infoSpy.mock.calls.filter((c: unknown[]) => c[0] === "session_memory_search.empty_store");
     expect(calls).toHaveLength(0);
   });
 });

@@ -14,6 +14,7 @@
  * isolated (the helpers have their own suites).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import assert from "node:assert/strict";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { RelayQuoteResponse } from "@tools/relay/types.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
@@ -24,6 +25,13 @@ const ERC20 = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
 
 // ── Relay client (getQuote + getIntentStatus) + cached chains ──
 const mockGetQuote = vi.fn();
+
+/** The first `/quote` request body — no quote requested is the test failure. */
+function firstQuoteRequest(): { slippageTolerance?: string } {
+  const [call] = mockGetQuote.mock.calls;
+  assert.ok(call, "no quote was requested");
+  return call[0] as { slippageTolerance?: string };
+}
 const mockGetIntentStatus = vi.fn();
 const mockGetCachedRelayChains = vi.fn();
 vi.mock("@tools/relay/client.js", () => ({
@@ -152,7 +160,7 @@ const depositStep = { stepId: "deposit", role: "bridge_deposit", chainId: 8453, 
 const approveStep = { stepId: "approve", role: "allowance", chainId: 8453, step: txStep("approve") };
 
 async function runBridge(params: Record<string, unknown> = PARAMS) {
-  return RELAY_BRIDGE_HANDLERS["relay.bridge"]!(params, CTX);
+  return RELAY_BRIDGE_HANDLERS["relay.bridge"](params, CTX);
 }
 function outputOf(result: { output: string }): Record<string, unknown> {
   return JSON.parse(result.output) as Record<string, unknown>;
@@ -566,25 +574,25 @@ describe("W4a — the slippage tolerance is sent EXPLICITLY on both lanes", () =
   // the execute send the resolved value — the same one the prequote identity
   // binds — even when the caller supplied none.
   it("relay.quote.get sends the Vex default when the caller omits slippageBps", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(PARAMS, CTX);
-    const request = mockGetQuote.mock.calls[0]![0] as { slippageTolerance?: string };
+    await RELAY_BRIDGE_HANDLERS["relay.quote.get"](PARAMS, CTX);
+    const request = firstQuoteRequest();
     expect(request.slippageTolerance).toBe(String(VEX_DEFAULT_SLIPPAGE_BPS));
   });
 
   it("relay.bridge sends the SAME default on the execute lane", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.bridge"]!({ ...PARAMS, dryRun: true }, CTX);
-    const request = mockGetQuote.mock.calls[0]![0] as { slippageTolerance?: string };
+    await RELAY_BRIDGE_HANDLERS["relay.bridge"]({ ...PARAMS, dryRun: true }, CTX);
+    const request = firstQuoteRequest();
     expect(request.slippageTolerance).toBe(String(VEX_DEFAULT_SLIPPAGE_BPS));
   });
 
   it("an explicit tolerance is forwarded verbatim, never the default", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!({ ...PARAMS, slippageBps: 200 }, CTX);
-    const request = mockGetQuote.mock.calls[0]![0] as { slippageTolerance?: string };
+    await RELAY_BRIDGE_HANDLERS["relay.quote.get"]({ ...PARAMS, slippageBps: 200 }, CTX);
+    const request = firstQuoteRequest();
     expect(request.slippageTolerance).toBe("200");
   });
 
   it("an over-ceiling tolerance is refused before any quote is requested", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!({ ...PARAMS, slippageBps: 5000 }, CTX);
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]({ ...PARAMS, slippageBps: 5000 }, CTX);
     expect(result.success).toBe(false);
     expect(mockGetQuote).not.toHaveBeenCalled();
   });
@@ -592,7 +600,7 @@ describe("W4a — the slippage tolerance is sent EXPLICITLY on both lanes", () =
 
 describe("relay.quote.get — read preview keeps the prequote structural shape + records nothing", () => {
   it("returns provider/origin/destination/steps + agent-grade amounts, no recording", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(PARAMS, CTX);
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"](PARAMS, CTX);
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.provider).toBe("relay");
@@ -619,7 +627,7 @@ describe("relay.quote.get — read preview keeps the prequote structural shape +
       destinationSlippagePercent: "0.99",
       currencyOut: { symbol: "ETH", decimals: 18, currencyAddress: ZERO, amountRaw: "88466568981856", amountFormatted: "0.0000884", amountUsd: "0.162859", minimumAmountRaw: "87581903292038" },
     }));
-    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(PARAMS, CTX);
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"](PARAMS, CTX);
     const data = result.data as Record<string, unknown>;
     expect(data.totalImpactPercent).toBe("-11.53");
     expect(data.minimumAmountOutRaw).toBe("87581903292038");
@@ -630,7 +638,7 @@ describe("relay.quote.get — read preview keeps the prequote structural shape +
 
   it("warns when Relay reports the destination chain's block production lagging", async () => {
     mockHealth.mockReturnValue({ serviceable: true, origin: CHAINS[0], destination: CHAINS[1], blockProductionLagging: ["destination"] });
-    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(PARAMS, CTX);
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"](PARAMS, CTX);
     const data = result.data as Record<string, unknown>;
     expect(String(data.summary)).toContain("block production lagging");
     expect(data.serviceable).toBe(true);
@@ -650,7 +658,7 @@ describe("relay leg resolution — model-supplied params reach output only throu
   const INJECTED_URL = "https://evil.example.com/x?key=LEAKEDKEY123";
 
   it("relay.quote.get redacts a URL injected through fromChain", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"](
       { ...PARAMS, fromChain: INJECTED_URL },
       CTX,
     );
@@ -663,7 +671,7 @@ describe("relay leg resolution — model-supplied params reach output only throu
   });
 
   it("relay.bridge redacts a URL injected through toChain — before any quote or signing", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(
+    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"](
       { ...PARAMS, toChain: INJECTED_URL },
       CTX,
     );
@@ -677,7 +685,7 @@ describe("relay leg resolution — model-supplied params reach output only throu
   });
 
   it("redacts a key-shaped string injected through a chain param", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"]!(
+    const result = await RELAY_BRIDGE_HANDLERS["relay.quote.get"](
       { ...PARAMS, fromChain: "apiKey=sk-or-v1-abcdef0123456789" },
       CTX,
     );

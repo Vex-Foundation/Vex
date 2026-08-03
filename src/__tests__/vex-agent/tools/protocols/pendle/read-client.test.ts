@@ -377,12 +377,49 @@ describe("PendleReadClient error contract", () => {
     });
   });
 
-  it("NEVER copies the upstream body into the thrown message", async () => {
+  /**
+   * DOCTRINE CHANGE (W2e, owner decree 2026-08-02). The pin here used to be the
+   * opposite — "NEVER copies the upstream body into the thrown message" — and
+   * that is precisely what left the agent with a generic sentence while the
+   * provider was naming the offending field. The body is now CARRIED and
+   * sanitized by the single redaction owner downstream.
+   */
+  it("carries the provider's own words into the thrown message", async () => {
     serveStatus(400);
 
     await expect(client().getMarketPage()).rejects.toSatisfy(
-      (err: unknown) => err instanceof VexError && !err.message.includes("hostile upstream text"),
+      (err: unknown) => err instanceof VexError && err.message.includes("hostile upstream text"),
     );
+  });
+
+  it("classifies a NestJS ARRAY-shaped message by JOINING it into the cause", async () => {
+    mockReadJson.mockImplementation(() =>
+      Promise.resolve({
+        message: ["timeFrame must be either hour, day or week", "chainId must be a number"],
+        error: "Bad Request",
+        statusCode: 400,
+      }),
+    );
+    mockFetch.mockImplementation(() =>
+      Promise.resolve({ ok: false, status: 400, headers: { get: () => null }, __json: null }),
+    );
+
+    const err = await client().getMarketPage().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(VexError);
+    expect((err as VexError).message).toContain("timeFrame must be either hour, day or week");
+    expect((err as VexError).message).toContain("chainId must be a number");
+    expect((err as VexError).httpStatus).toBe(400);
+  });
+
+  it.each([401, 402, 403, 409, 422])("gives HTTP %i a named hint instead of a bare status", async (status) => {
+    serveStatus(status);
+
+    const err = await client().getMarketPage().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(VexError);
+    expect((err as VexError).httpStatus).toBe(status);
+    expect((err as VexError).retryable).toBe(false);
+    expect((err as VexError).hint ?? "").not.toBe("");
+    expect((err as VexError).message).toContain(String(status));
   });
 
   it("leaves httpStatus ABSENT on a transport failure, and marks it retryable", async () => {

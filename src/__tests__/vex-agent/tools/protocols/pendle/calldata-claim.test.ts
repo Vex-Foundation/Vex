@@ -39,7 +39,7 @@ function claimIntent(over: Partial<PendleClaimIntent> = {}): PendleClaimIntent {
 /** Re-encode a claim call with mutated decoded args (still ABI-valid). */
 function tamperClaim(data: string, mutate: (args: unknown[]) => void): string {
   const decoded = decodeFunctionData({ abi: PENDLE_CLAIM_ABI, data: data as Hex });
-  const args = structuredClone(decoded.args) as unknown[];
+  const args: unknown[] = [...structuredClone(decoded.args)];
   mutate(args);
   return encodeFunctionData({ abi: PENDLE_CLAIM_ABI, functionName: decoded.functionName, args: args as never });
 }

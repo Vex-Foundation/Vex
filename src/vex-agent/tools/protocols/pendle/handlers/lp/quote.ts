@@ -24,7 +24,6 @@ import { resolveMarketByAddress, buildAssetMap } from "../../market-lookup.js";
 import { resolveExitMarketByAddress } from "../../matured-market-lookup.js";
 import { explainUnresolvedPendleMarket } from "../../matured-refusal.js";
 import {
-  DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
   requirePendleChain,
@@ -32,12 +31,45 @@ import {
   resolveInputToken,
   resolvePendleSlippage,
 } from "../shared.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import {
+  inapplicableTokenParamRefusal,
+  missingDirectionTokenRefusal,
+  type PendleDirectionTokens,
+} from "../direction-params.js";
+
+const LP_DIRECTION_TOKENS: Record<"add" | "remove", PendleDirectionTokens> = {
+  add: {
+    direction: "add",
+    applicable: "tokenIn",
+    flow: "token → LP",
+    fixedSide: "the market's LP token",
+    otherDirection: "remove",
+  },
+  remove: {
+    direction: "remove",
+    applicable: "tokenOut",
+    flow: "LP → token",
+    fixedSide: "the market's LP token",
+    otherDirection: "add",
+  },
+};
 
 export async function pendleLpQuote(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), direction = str(p, "direction"), marketRaw = str(p, "market"), amountInRaw = str(p, "amountIn");
   if (!chain || !marketRaw || !amountInRaw) return fail("Missing required: chain, market, amountIn");
   if (direction !== "add" && direction !== "remove") {
     return fail("direction must be 'add' (token → LP) or 'remove' (LP → token).");
+  }
+  // Direction-conditional token params: refused BY NAME rather than ignored
+  // (W9d). `tokenOut` stays optional on a remove — it defaults to the market's
+  // underlying — so only the add leg's `tokenIn` is required here.
+  const directionTokens = LP_DIRECTION_TOKENS[direction];
+  const inapplicable = inapplicableTokenParamRefusal(p, directionTokens);
+  if (inapplicable !== null) return fail(inapplicable);
+  if (direction === "add") {
+    const missing = missingDirectionTokenRefusal(p, directionTokens, "payment token to deposit");
+    if (missing !== null) return fail(missing);
   }
   try {
     const chainEntry = requirePendleChain(chain);
@@ -66,7 +98,7 @@ export async function pendleLpQuote(p: Record<string, unknown>, context: Protoco
     const slippage = resolvePendleSlippage("pendle.lp.quote", num(p, "slippageBps"));
     const client = getPendleClient();
     const assetMap = await buildAssetMap(chainId);
-    const slippageBpsEcho = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
+    const slippageBpsEcho = num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS;
 
     if (direction === "add") {
       const tokenIn = await resolveInputToken(chainEntry, str(p, "tokenIn"));

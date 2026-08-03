@@ -629,12 +629,20 @@ describe("khalani validation equivalence (Zod conversion)", () => {
   // Error body (lenient: null, never throws)
   // -----------------------------------------------------------------------
   describe("parseKhalaniErrorBody", () => {
-    it("returns null for non-record / missing fields (never throws)", () => {
+    it("returns null for non-record / signal-free bodies (never throws)", () => {
       expect(parseKhalaniErrorBody("nope")).toBeNull();
       expect(parseKhalaniErrorBody(null)).toBeNull();
-      expect(parseKhalaniErrorBody({ name: "X" })).toBeNull();
-      expect(parseKhalaniErrorBody({ message: "m" })).toBeNull();
-      expect(parseKhalaniErrorBody({ message: 5, name: "X" })).toBeNull();
+      expect(parseKhalaniErrorBody({})).toBeNull();
+      // A non-string `message` carries no sentence and no classifier.
+      expect(parseKhalaniErrorBody({ message: 5 })).toBeNull();
+    });
+
+    // W2d — the `name` requirement is GONE. Both half-bodies survive; only the
+    // wrong-typed field is dropped.
+    it("keeps a body that carries only one of message/name", () => {
+      expect(parseKhalaniErrorBody({ name: "X" })).toEqual({ message: undefined, name: "X", details: undefined });
+      expect(parseKhalaniErrorBody({ message: "m" })).toEqual({ message: "m", name: undefined, details: undefined });
+      expect(parseKhalaniErrorBody({ message: 5, name: "X" })).toEqual({ message: undefined, name: "X", details: undefined });
     });
 
     it("parses; details kept when array or record, else undefined", () => {

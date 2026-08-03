@@ -18,6 +18,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Client, type PoolClient } from "pg";
 
 vi.mock("@vex-agent/db/client.js", () => ({
   query: vi.fn(),
@@ -30,6 +31,15 @@ vi.mock("@vex-agent/db/client.js", () => ({
 
 const repo = await import("@vex-agent/db/repos/mission-results.js");
 const client = await import("@vex-agent/db/client.js");
+
+/** A promise plus its resolver, so the resolver keeps a callable type. */
+function deferred(): { promise: Promise<void>; release: () => void } {
+  let release: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
 
 interface FakeRow {
   walletAddress: string;
@@ -47,28 +57,32 @@ describe("openMissionResult concurrency", () => {
     lockChains = new Map();
 
     vi.mocked(client.withTransaction).mockImplementation(
-      async (fn: (c: unknown) => Promise<unknown>) => {
-        let release: (() => void) | null = null;
-        const fakeClient = {
+      async (fn) => {
+        /** Every lock this transaction is holding, released together at COMMIT. */
+        const releases: Array<() => void> = [];
+        // A real `pg.Client` (never connected) with `query` replaced:
+        // `Object.assign` keeps the `PoolClient` type the callback demands
+        // without a cast, while this suite owns every statement it sees.
+        const fakeClient: PoolClient = Object.assign(new Client(), {
+          release: () => {},
           query: async (sql: string, params?: unknown[]) => {
             if (/pg_advisory_xact_lock/.test(sql)) {
               const key = params![0] as string;
               const prior = lockChains.get(key) ?? Promise.resolve();
-              const mine = new Promise<void>((res) => {
-                release = res;
-              });
-              lockChains.set(key, prior.then(() => mine));
+              const mine = deferred();
+              releases.push(mine.release);
+              lockChains.set(key, prior.then(() => mine.promise));
               await prior; // block until the previous holder of THIS key releases
             }
             return { rows: [] };
           },
-        };
+        });
         try {
           return await fn(fakeClient);
         } finally {
           // Lock releases at COMMIT — i.e. once fn (the transaction body)
           // has resolved, matching pg_advisory_xact_lock's transaction scope.
-          release?.();
+          for (const release of releases) release();
         }
       },
     );

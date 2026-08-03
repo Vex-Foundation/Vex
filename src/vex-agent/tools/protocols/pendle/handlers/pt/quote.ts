@@ -23,7 +23,6 @@ import { resolveMarketByPt, buildAssetMap } from "../../market-lookup.js";
 import { resolveExitMarketByPt } from "../../matured-market-lookup.js";
 import { explainUnresolvedPendleMarket } from "../../matured-refusal.js";
 import {
-  DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
   requirePendleChain,
@@ -31,6 +30,7 @@ import {
   resolveInputToken,
   resolvePendleSlippage,
 } from "../shared.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 export async function pendlePtQuote(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
@@ -105,7 +105,7 @@ export async function pendlePtQuote(p: Record<string, unknown>, context: Protoco
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDecimals).toString(),
       aggregator: best.data.aggregatorType,
-      slippageBps: num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS,
+      slippageBps: num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS,
     });
   } catch (err) {
     return fail(`Pendle quote unavailable (${failureDetail("pendle.pt.quote", err)})`);

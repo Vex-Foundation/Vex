@@ -1,11 +1,13 @@
 import { loadConfig } from "../../config/store.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
+import { assertAutocompleteLimit, assertOrdersQueryBounds } from "./bounds.js";
 import type {
   AutocompleteResponse,
   DepositBuildRequest,
   DepositPlan,
   KhalaniChain,
+  KhalaniErrorBody,
   KhalaniOrder,
   KhalaniToken,
   OrdersResponse,
@@ -18,7 +20,7 @@ import type {
 } from "./types.js";
 import { mapKhalaniError } from "./errors.js";
 import {
-  parseKhalaniErrorBody,
+  parseKhalaniErrorPayload,
   validateAutocompleteResponse,
   validateChainsResponse,
   validateDepositPlan,
@@ -35,6 +37,45 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PUT";
   query?: Record<string, string | undefined>;
   body?: unknown;
+}
+
+/**
+ * The header set EVERY Khalani request sends (W2d).
+ *
+ * The API is Cloudflare-fronted, and until this landed we sent NO `User-Agent`
+ * and NO `Accept` — running on the accident that Node's `fetch` supplies
+ * `user-agent: node`, which the edge happens to accept. KyberSwap proved what
+ * the other side of that accident looks like: an identical header shape got
+ * HTTP 403 with `cf-mitigated: challenge` and an HTML body where JSON was
+ * expected (SPEC §2.1, W2a). Making both headers explicit removes the runtime
+ * dependency; it also stops this client from being the counter-example to the
+ * fleet-wide client rule.
+ *
+ * Same literal as `KYBERSWAP_REQUEST_HEADERS` — deliberately copied rather than
+ * imported, because a venue adapter must not depend on another venue's module.
+ */
+const KHALANI_REQUEST_HEADERS: Readonly<Record<string, string>> = {
+  "User-Agent": "Vex/1.0.0 (+https://projectvex.ai)",
+  Accept: "application/json",
+};
+
+/**
+ * Read a non-ok response's payload as TEXT, then decide what it is.
+ *
+ * Khalani does not always answer JSON on an error: live 2026-08-03, `GET
+ * /v1/nope` returns `content-type: text/plain` with the body `404 Not Found`.
+ * `readJson` swallows the parse failure and returns `null`, which erased the
+ * provider's own words. Reading text ONCE (the body may only be consumed once)
+ * and parsing it ourselves keeps both spellings.
+ */
+async function readKhalaniErrorBody(response: Response): Promise<KhalaniErrorBody | null> {
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    return null;
+  }
+  return parseKhalaniErrorPayload(text);
 }
 
 function mapTransportError(err: unknown): never {
@@ -73,14 +114,14 @@ export class KhalaniClient {
     try {
       const response = await fetchWithTimeout(this.buildUrl(path, options.query), {
         method: options.method ?? "GET",
-        headers: options.body === undefined ? undefined : { "Content-Type": "application/json" },
+        headers: options.body === undefined
+          ? KHALANI_REQUEST_HEADERS
+          : { ...KHALANI_REQUEST_HEADERS, "Content-Type": "application/json" },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
       });
 
       if (!response.ok) {
-        const rawError = await readJson(response);
-        const errorBody = parseKhalaniErrorBody(rawError);
-        throw mapKhalaniError(response.status, errorBody);
+        throw mapKhalaniError(response.status, await readKhalaniErrorBody(response));
       }
 
       const raw = await readJson(response);
@@ -115,7 +156,10 @@ export class KhalaniClient {
     );
   }
 
-  autocompleteToken(keyword: string, opts?: { chainIds?: number[]; limit?: number }): Promise<AutocompleteResponse> {
+  // `async` so a bound violation REJECTS the returned promise instead of
+  // throwing synchronously out of a method whose signature promises a promise.
+  async autocompleteToken(keyword: string, opts?: { chainIds?: number[]; limit?: number }): Promise<AutocompleteResponse> {
+    assertAutocompleteLimit(opts?.limit);
     return this.request(
       `/v1/tokens/autocomplete/${encodeURIComponent(keyword)}`,
       validateAutocompleteResponse,
@@ -158,7 +202,9 @@ export class KhalaniClient {
         {
           method: "POST",
           headers: {
+            ...KHALANI_REQUEST_HEADERS,
             "Content-Type": "application/json",
+            // Overrides the shared `Accept`: this endpoint streams NDJSON.
             Accept: "application/x-ndjson",
           },
           body: JSON.stringify(request),
@@ -166,9 +212,7 @@ export class KhalaniClient {
       );
 
       if (!response.ok) {
-        const rawError = await readJson(response);
-        const errorBody = parseKhalaniErrorBody(rawError);
-        throw mapKhalaniError(response.status, errorBody);
+        throw mapKhalaniError(response.status, await readKhalaniErrorBody(response));
       }
 
       if (!response.body) {
@@ -240,7 +284,8 @@ export class KhalaniClient {
     );
   }
 
-  getOrders(
+  // `async` for the same reason as `autocompleteToken` — see its note.
+  async getOrders(
     address: string,
     opts?: {
       limit?: number;
@@ -251,6 +296,7 @@ export class KhalaniClient {
       txHashSearch?: string;
     },
   ): Promise<OrdersResponse> {
+    assertOrdersQueryBounds({ limit: opts?.limit, txHashSearch: opts?.txHashSearch });
     return this.request(
       `/v1/orders/${encodeURIComponent(address)}`,
       validateOrdersResponse,

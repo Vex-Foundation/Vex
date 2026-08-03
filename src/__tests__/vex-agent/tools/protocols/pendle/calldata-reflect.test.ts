@@ -65,7 +65,7 @@ function expectUnsafe(fn: () => unknown, match?: RegExp): void {
 
 function tamper(data: string, mutate: (args: unknown[]) => void): Hex {
   const d = decodeFunctionData({ abi: PENDLE_ROUTER_ABI, data: data as Hex });
-  const args = structuredClone(d.args) as unknown[];
+  const args: unknown[] = [...structuredClone(d.args)];
   mutate(args);
   return encodeFunctionData({ abi: PENDLE_ROUTER_ABI, functionName: d.functionName, args: args as never });
 }

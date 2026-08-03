@@ -14,6 +14,7 @@
 
 import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_SY_DISCOVERY } from "../../embeddings/pendle/sy.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CHAIN_PARAM = {
   key: "chain",
@@ -35,7 +36,7 @@ const SLIPPAGE_PARAM = {
   type: "number" as const,
   unit: "bps" as const,
   description:
-    "Slippage tolerance in whole basis points (default 50 = 0.50%; maximum 1000 = 10%). A fractional, negative or larger value is REJECTED, never clamped. The dry run and the execute must pass the SAME value (or omit it on both).",
+    `Slippage tolerance in whole basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%; maximum 1000 = 10%). A fractional, negative or larger value is REJECTED, never clamped. The dry run and the execute must pass the SAME value (or omit it on both).`,
 };
 
 const DRY_RUN_PARAM = {
@@ -72,7 +73,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
       sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
       tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
-      slippageBps: 50,
+      slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       dryRun: true,
     },
     discovery: PENDLE_SY_DISCOVERY["pendle.sy.mint"],
@@ -103,7 +104,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
       sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
       tokenOut: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
-      slippageBps: 50,
+      slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       dryRun: true,
     },
     discovery: PENDLE_SY_DISCOVERY["pendle.sy.redeem"],

@@ -10,9 +10,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import assert from "node:assert/strict";
 
 import { PROTOCOL_TOOLS } from "@vex-agent/tools/protocols/catalog.js";
 import { paramsToJsonSchema } from "@vex-agent/tools/registry/khalani.js";
+import { describeParamGroupConstraints } from "@vex-agent/tools/protocols/runtime/params.js";
 import { TOOLS } from "@vex-agent/tools/registry/lookup.js";
 import {
   OPENAI_TOOL_NAME_PATTERN,
@@ -80,7 +82,8 @@ describe("injected tool names — bijective over the whole catalog", () => {
   });
 
   it("resolves an injected name back to its manifest and rejects a non-injected one", () => {
-    const first = PROTOCOL_TOOLS[0]!;
+    const [first] = PROTOCOL_TOOLS;
+    assert.ok(first);
     expect(resolveInjectedProtocolTool(toInjectedToolName(first.toolId))?.toolId).toBe(first.toolId);
     expect(resolveInjectedProtocolTool("execute_tool")).toBeUndefined();
     expect(resolveInjectedProtocolTool("nope__not__a__tool")).toBeUndefined();
@@ -91,11 +94,13 @@ describe("injected schemas", () => {
   it("are the manifest's own projection, required flags included", () => {
     const manifest = PROTOCOL_TOOLS.find(
       (m) => m.namespace === "dexscreener" && m.params.some((p) => p.required),
-    )!;
+    );
+    assert.ok(manifest, "no dexscreener manifest with a required param");
     recordDiscoveredTools(SESSION, [manifest.toolId]);
 
     const injected = buildInjectedProtocolTools(ctx());
-    const fn = injected.find((t) => t.function.name === toInjectedToolName(manifest.toolId))!;
+    const fn = injected.find((t) => t.function.name === toInjectedToolName(manifest.toolId));
+    assert.ok(fn, `${manifest.toolId} was not injected`);
 
     expect(fn.function.description).toBe(manifest.description);
     expect(fn.function.parameters).toEqual(paramsToJsonSchema(manifest.params));
@@ -104,14 +109,52 @@ describe("injected schemas", () => {
     );
   });
 
+  it("append the manifest's cross-param group rules to the description", () => {
+    // Every manifest declaring a group today is Jupiter's, and Jupiter is
+    // env-gated out of injection — so the env this assertion needs is set for
+    // the assertion, and restored after it.
+    const previousKey = process.env.JUPITER_API_KEY;
+    process.env.JUPITER_API_KEY = "test-key";
+    try {
+      assertInjectedDescriptionCarriesConstraints();
+    } finally {
+      if (previousKey === undefined) delete process.env.JUPITER_API_KEY;
+      else process.env.JUPITER_API_KEY = previousKey;
+    }
+  });
+
+  function assertInjectedDescriptionCarriesConstraints(): void {
+    const manifest = PROTOCOL_TOOLS.find(
+      (m) => describeParamGroupConstraints(m).length > 0,
+    );
+    assert.ok(manifest, "no manifest declares a param-group constraint");
+    recordDiscoveredTools(SESSION, [manifest.toolId]);
+
+    const injected = buildInjectedProtocolTools(ctx());
+    const fn = injected.find((t) => t.function.name === toInjectedToolName(manifest.toolId));
+    assert.ok(fn, `${manifest.toolId} was not injected`);
+
+    expect(fn.function.description).toBe(
+      `${manifest.description} ${describeParamGroupConstraints(manifest).join(" ")}`,
+    );
+    // The rule the model reads and the rule the runtime rejects with are one
+    // sentence, produced by one function.
+    for (const sentence of describeParamGroupConstraints(manifest)) {
+      expect(fn.function.description).toContain(sentence);
+    }
+  }
+
   it("are appended POSITIONALLY LAST, after the internal tools", () => {
     const before = getOpenAITools(ctx());
-    const manifest = PROTOCOL_TOOLS.find((m) => m.namespace === "dexscreener")!;
+    const manifest = PROTOCOL_TOOLS.find((m) => m.namespace === "dexscreener");
+    assert.ok(manifest);
     recordDiscoveredTools(SESSION, [manifest.toolId]);
 
     const after = getOpenAITools(ctx());
     expect(after.slice(0, before.length)).toEqual(before);
-    expect(after[after.length - 1]!.function.name).toBe(toInjectedToolName(manifest.toolId));
+    const last = after.at(-1);
+    assert.ok(last);
+    expect(last.function.name).toBe(toInjectedToolName(manifest.toolId));
   });
 
   it("leave the tools array untouched when nothing was discovered", () => {
@@ -145,7 +188,8 @@ describe("injection gates", () => {
   it("never injects a tool hidden by a missing env var", () => {
     const envGated = PROTOCOL_TOOLS.find((m) => m.requiresEnv !== undefined);
     if (!envGated) return; // no env-gated manifest in the catalog right now
-    const envVar = envGated.requiresEnv!;
+    const envVar = envGated.requiresEnv;
+    assert.ok(envVar);
     const previous = process.env[envVar];
     delete process.env[envVar];
     try {
@@ -163,7 +207,8 @@ describe("injection gates", () => {
   });
 
   it("drops mutating manifests at the pressure barrier, and restores them under the C8 bypass", () => {
-    const mutating = PROTOCOL_TOOLS.find((m) => m.mutating && m.namespace === "khalani")!;
+    const mutating = PROTOCOL_TOOLS.find((m) => m.mutating && m.namespace === "khalani");
+    assert.ok(mutating);
     recordDiscoveredTools(SESSION, [mutating.toolId]);
 
     expect(buildInjectedProtocolTools(ctx({ contextUsageBand: "barrier" }))).toEqual([]);
@@ -214,10 +259,11 @@ describe("session-scoped discovered set", () => {
 
   it("re-discovering a tool refreshes its position instead of duplicating it", () => {
     const [first, second, third] = ids(3);
-    recordDiscoveredTools(SESSION, [first!, second!, third!]);
-    recordDiscoveredTools(SESSION, [first!]);
+    assert.ok(first !== undefined && second !== undefined && third !== undefined);
+    recordDiscoveredTools(SESSION, [first, second, third]);
+    recordDiscoveredTools(SESSION, [first]);
 
-    expect([...getDiscoveredToolIds(SESSION)]).toEqual([second!, third!, first!]);
+    expect([...getDiscoveredToolIds(SESSION)]).toEqual([second, third, first]);
   });
 
   it("keeps sessions independent", () => {

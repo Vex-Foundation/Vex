@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { makeProtocolContext } from "../tools/_test-context.js";
+
 /**
  * Pre-engine hardening tests — real runtime gate verification.
  *
@@ -88,7 +90,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { sessionPermission: "full", approved: true, sessionId: "test-fail" },
+      makeProtocolContext({ sessionPermission: "full", approved: true, sessionId: "test-fail" }),
     );
 
     expect(result.success).toBe(false);
@@ -121,7 +123,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { sessionPermission: "full", approved: true, sessionId: "test-success" },
+      makeProtocolContext({ sessionPermission: "full", approved: true, sessionId: "test-success" }),
     );
 
     expect(result.success).toBe(true);
@@ -162,7 +164,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: { dryRun: false, optionalParam: undefined } },
-      { sessionPermission: "full", approved: true, sessionId: "test-sanitize" },
+      makeProtocolContext({ sessionPermission: "full", approved: true, sessionId: "test-sanitize" }),
     );
 
     expect(result.success).toBe(true);
@@ -201,7 +203,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { sessionPermission: "full", approved: true, sessionId: "session-xyz-789" },
+      makeProtocolContext({ sessionPermission: "full", approved: true, sessionId: "session-xyz-789" }),
     );
 
     expect(mockRecordExecution).toHaveBeenCalledTimes(1);
@@ -215,7 +217,7 @@ describe("pre-engine hardening — runtime gate", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.fake.mutate", params: {} },
-      { sessionPermission: "full", approved: true, sessionId: "test-throw" },
+      makeProtocolContext({ sessionPermission: "full", approved: true, sessionId: "test-throw" }),
     );
 
     expect(result.success).toBe(false);

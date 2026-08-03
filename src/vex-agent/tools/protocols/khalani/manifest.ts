@@ -20,6 +20,24 @@ const AMOUNT_RAW_DESCRIPTION =
   "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). "
   + CANONICAL_RAW_AMOUNT_SENTENCE;
 
+/**
+ * Both list spellings are equivalent (W2d). `["1","8453"]` is what an LLM
+ * emitting JSON reaches for first, and every Khalani list param rejected it
+ * until `acceptsStringArray` was declared — a silent-looking failure on a param
+ * whose comma spelling worked.
+ */
+const STRING_OR_ARRAY_CLAUSE =
+  'Accepts either a comma-separated string ("1,8453") or an array of strings (["1","8453"]) — the two '
+  + "are equivalent.";
+
+/**
+ * The provider's own documented ceiling, stated where the agent reads it
+ * instead of being learnt from an HTTP 400 (live 2026-08-03: `limit=100` →
+ * `Validation failed (limit: Too big: expected number to be <=20)`). Vex
+ * rejects an out-of-range value before the wire — see `@tools/khalani/bounds.ts`.
+ */
+const LIMIT_1_TO_20_CLAUSE = "Range 1-20 (provider maximum, default 10); anything else is rejected before the call.";
+
 export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "khalani.chains.list",
@@ -42,7 +60,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases (e.g. '1,solana')." },
+      { key: "chainIds", type: "string", acceptsStringArray: true, description: `Comma-separated chain IDs or aliases (e.g. '1,solana'). ${STRING_OR_ARRAY_CLAUSE}` },
     ],
     exampleParams: { chainIds: "1,solana" },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.tokens.top"],
@@ -56,7 +74,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Search phrase or token address." },
-      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
+      { key: "chainIds", type: "string", acceptsStringArray: true, description: `Comma-separated chain IDs or aliases. ${STRING_OR_ARRAY_CLAUSE}` },
     ],
     exampleParams: { query: "USDC", chainIds: "1,8453" },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.tokens.search"],
@@ -70,8 +88,8 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "keyword", type: "string", required: true, description: "Autocomplete keyword." },
-      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases." },
-      { key: "limit", type: "number", description: "Max results." },
+      { key: "chainIds", type: "string", acceptsStringArray: true, description: `Comma-separated chain IDs or aliases. ${STRING_OR_ARRAY_CLAUSE}` },
+      { key: "limit", type: "number", description: `Max results. ${LIMIT_1_TO_20_CLAUSE}` },
     ],
     exampleParams: { keyword: "eth", limit: 5 },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.tokens.autocomplete"],
@@ -86,7 +104,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "walletAddress", type: "string", description: "Optional. The ACCOUNT address whose balances to read; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet, or the call fails with WALLET_SCOPE_MISMATCH." },
       { key: "wallet", type: "string", description: "Wallet family: eip155 or solana (default: eip155)." },
-      { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases. Omit to scan all chains in the family." },
+      { key: "chainIds", type: "string", acceptsStringArray: true, description: `Comma-separated chain IDs or aliases. Omit to scan all chains in the family. ${STRING_OR_ARRAY_CLAUSE}` },
     ],
     exampleParams: { wallet: "eip155", chainIds: "1,8453" },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.tokens.balances"],
@@ -120,7 +138,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: {
       fromChain: "ethereum",
-      fromToken: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      fromToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
       toChain: "solana",
       toToken: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       amountRaw: "1000000",
@@ -137,12 +155,12 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "walletAddress", type: "string", description: "Optional. The ACCOUNT address whose orders to list; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet." },
       { key: "wallet", type: "string", description: "Wallet family: eip155 or solana." },
-      { key: "limit", type: "number", description: "Max results." },
+      { key: "limit", type: "number", description: `Max results. ${LIMIT_1_TO_20_CLAUSE}` },
       { key: "cursor", type: "number", description: "Pagination cursor for next page." },
       { key: "fromChain", type: "string", description: "Source chain filter (ID or alias)." },
       { key: "toChain", type: "string", description: "Destination chain filter (ID or alias)." },
-      { key: "orderIds", type: "string", description: "Comma-separated order IDs to filter." },
-      { key: "txHashSearch", type: "string", description: "Search by transaction hash." },
+      { key: "orderIds", type: "string", acceptsStringArray: true, description: `Comma-separated order IDs to filter. ${STRING_OR_ARRAY_CLAUSE}` },
+      { key: "txHashSearch", type: "string", description: "Search by transaction hash. At most 66 characters (0x + 64 hex, the provider maximum); a longer value is rejected before the call." },
     ],
     exampleParams: { wallet: "solana", limit: 20 },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.orders.list"],
@@ -151,7 +169,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.orders.get",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Get a single Khalani bridge order by ID with full lifecycle details.",
+    description: "Get a single Khalani bridge order by ID with full lifecycle details, MERGED with Vex's own record of it: `order` is the provider's view, `vex` carries the execution id, Vex's logical status, every Vex leg (deposit, fee, expected fill) and the Vex fee collection outcome, and `vexNote` says why there is no Vex record when there is none. The two views can legitimately disagree — Khalani may report a fill before Vex has verified it on-chain — so read `vex.note` before concluding anything about the funds.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -190,7 +208,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: {
       fromChain: "ethereum",
-      fromToken: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      fromToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
       toChain: "base",
       toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       amountRaw: "100000000",

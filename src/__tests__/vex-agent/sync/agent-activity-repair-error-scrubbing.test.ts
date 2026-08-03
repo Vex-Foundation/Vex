@@ -35,7 +35,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 const { repairPendingActivity } = await import("@vex-agent/sync/agent-activity-repair.js");
 
 function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActivityEvent {
-  return {
+  const base: AgentActivityEvent = {
     id: 1,
     protocolExecutionId: 42,
     eventIndex: 0,
@@ -78,8 +78,49 @@ function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActiv
     lastCheckedAt: null,
     createdAt: "2026-07-23T09:00:00.000Z",
     updatedAt: "2026-07-23T09:00:01.000Z",
-    ...overrides,
+    // Columns the live contract requires that this fixture never exercises.
+    tokenIn2Address: null,
+    tokenIn2Symbol: null,
+    tokenIn2Decimals: null,
+    amountIn2Human: null,
+    amountIn2Raw: null,
+    executedAmountIn2Human: null,
+    executedAmountIn2Raw: null,
+    tokenOut2Address: null,
+    tokenOut2Symbol: null,
+    tokenOut2Decimals: null,
+    amountOut2Human: null,
+    amountOut2Raw: null,
+    executedAmountOut2Human: null,
+    executedAmountOut2Raw: null,
+    usdNetworkGasEst: null,
+    usdVenueFeeEst: null,
+    usdDestinationPrepayEst: null,
+    usdVexFeeEst: null,
+    vexFeeTokenAddress: null,
+    vexFeeTokenSymbol: null,
+    vexFeeTokenDecimals: null,
+    vexFeeAmountRaw: null,
+    vexFeeAmountHuman: null,
+    fromChainId: null,
+    fromChainSlug: null,
+    toChainId: null,
+    toChainSlug: null,
+    chainFamily: "eip155",
+    providerOrderId: null,
+    normalizedRoute: null,
+    providerStatus: null,
+    evidenceSource: null,
+    observedAt: null,
+    lastAttemptedAt: null,
+    recentBlockhash: null,
+    lastValidBlockHeight: null,
+    verificationAttempts: 0,
+    lastVerificationReason: null,
   };
+  // `Object.assign`, not a spread: spreading a `Partial<…>` into an
+  // index-free literal widens every required field to `| undefined`.
+  return Object.assign(base, overrides);
 }
 
 // Canary text carrying every shape summarizeProtocolError must strip: a

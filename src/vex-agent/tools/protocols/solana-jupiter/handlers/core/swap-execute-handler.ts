@@ -21,6 +21,7 @@ import {
   appliedSlippageBps,
   classifyJupiterPreBroadcastRejection,
   jupiterPreBroadcastRefusalGuidance,
+  observedPriceImpactFraction,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/pre-broadcast-rejection-refusal.js";
 import { buildSolanaSettlementRouteProvenance } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/settlement-profile.js";
 import {
@@ -303,6 +304,9 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
               requestedBps: knobs.slippageBps,
             }),
             maxBps: effectiveMaxSlippageBps(),
+            // From the `/build` response this exact attempt signed, so the
+            // impact quoted is the one the refused transaction carried.
+            observedPriceImpactFraction: observedPriceImpactFraction(prepared.raw.priceImpactPct),
           },
         })} Recorded (execution ${executionId}).`
         : `${toolId}: this swap was rejected before broadcast — nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,

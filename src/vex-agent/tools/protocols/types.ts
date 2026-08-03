@@ -119,6 +119,14 @@ export interface ProtocolParamDef {
    * are matched EXACTLY (case-sensitive) — a provider that wants a different
    * casing converts inside its own adapter (see `conventions.ts`).
    *
+   * ONE deliberate exception: a param whose key is in `CHAIN_VALUE_PARAM_KEYS`
+   * matches CASE-INSENSITIVELY and is rewritten to the declared spelling,
+   * for the same reason the chain number→string normalization exists — every
+   * other chain param in the tree advertises a lowercase slug, so
+   * `virtuals.list`'s UPPERCASE list burnt calls from models that had read
+   * forty manifests spelling it the other way. Case is not a distinction a
+   * chain value carries; on any other param it can be, so nothing else folds.
+   *
    * Only meaningful on `type: "string"`. On a param that also declares
    * {@link ProtocolParamDef.acceptsStringArray}, EVERY member must be on the list.
    */
@@ -172,6 +180,50 @@ export interface ProtocolToolManifest {
    * (`_manifest-lint.ts` territory).
    */
   exclusiveParamGroups?: readonly (readonly string[])[];
+  /**
+   * AT MOST ONE member of each group may be present — zero is legal.
+   *
+   * The weaker sibling of {@link ProtocolToolManifest.exclusiveParamGroups},
+   * and the shape most real multi-leg tools actually have.
+   * `solana.lend.borrowOperate` is the case that forced it: its collateral leg
+   * (`depositAmountRaw|withdrawAmountRaw|withdrawAll`) and its debt leg
+   * (`borrowAmountRaw|repayAmountRaw|repayAll`) each accept at most one member,
+   * but a call that adjusts only collateral legitimately sets NONE of the debt
+   * params. Declaring those as exactly-one groups would reject every legal
+   * single-leg call, which is why six prose-only "mutually exclusive" sentences
+   * sat unenforced in the allowlist until this field existed.
+   *
+   * Combine with {@link ProtocolToolManifest.atLeastOneOf} to express
+   * "at most one per leg, and at least one leg overall" — the two fields
+   * together are what `exclusiveParamGroups` cannot say.
+   *
+   * A group may also encode a CROSS-leg ban: borrowOperate's two direction
+   * groups (`depositAmountRaw|repayAmountRaw|repayAll` = money in,
+   * `withdrawAmountRaw|withdrawAll|borrowAmountRaw` = money out) are exactly
+   * the handler's same-direction refusal, expressed as a schema fact the model
+   * reads BEFORE the call instead of an error after it.
+   *
+   * Enforced by `runtime/params.ts`, rendered into the discovery `constraints`
+   * row and the injected function description, and required as the backing for
+   * any "at most one of …" prose by `_manifest-lint`. Members must be declared
+   * params of this manifest.
+   */
+  atMostOne?: readonly (readonly string[])[];
+  /**
+   * AT LEAST ONE member of each group must be present — two or more is legal.
+   *
+   * The complement of {@link ProtocolToolManifest.atMostOne}: it forbids the
+   * EMPTY call for a tool whose params are individually optional. Without it
+   * "nothing to do" is a handler-side refusal discovered after the model has
+   * already spent a call; with it, the rule is a schema fact and a boundary
+   * rejection that names every acceptable key.
+   *
+   * `required: true` on any single param cannot express this — the point is
+   * that any ONE of several alternatives suffices.
+   *
+   * Same six surfaces as {@link ProtocolToolManifest.atMostOne}.
+   */
+  atLeastOneOf?: readonly (readonly string[])[];
   /** Optional discovery metadata for improved retrieval — filled incrementally per tool. */
   discovery?: ToolDiscoveryMetadata;
 }
@@ -331,9 +383,12 @@ export interface ProtocolDiscoveryItem {
    */
   exampleParams: Record<string, unknown>;
   /**
-   * Rendered {@link ProtocolToolManifest.exclusiveParamGroups} — one sentence
-   * per group. Only present when the manifest declares groups, so a tool
-   * without XORs pays nothing.
+   * Rendered cross-param group rules — one sentence per declared group, across
+   * {@link ProtocolToolManifest.exclusiveParamGroups},
+   * {@link ProtocolToolManifest.atMostOne}, and
+   * {@link ProtocolToolManifest.atLeastOneOf}, in that order. Only present when
+   * the manifest declares at least one group, so a tool without them pays
+   * nothing. Word-for-word the sentence the runtime rejects with.
    */
   constraints?: string[];
   /** Retrieval score for this match (0 when no query, >0 for ranked matches). */

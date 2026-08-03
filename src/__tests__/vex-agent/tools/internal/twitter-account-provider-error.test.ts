@@ -43,9 +43,12 @@ vi.mock("@utils/logger.js", () => ({
 const { handleTwitterAccount } = await import(
   "../../../../vex-agent/tools/internal/twitter-account.js"
 );
-const { classifyTwitterFailure, TwitterAccountRequestError } = await import(
-  "@tools/twitter-account/failure.js"
-);
+const {
+  classifyTwitterFailure,
+  twitterFailureMessage,
+  twitterFailureReason,
+  TwitterAccountRequestError,
+} = await import("@tools/twitter-account/failure.js");
 
 const baseContext = makeTestContext();
 
@@ -309,6 +312,43 @@ describe("twitter_account — provider error text never reaches the model or the
       for (const fragment of POISON_FRAGMENTS) {
         expect(first.message).not.toContain(fragment);
         expect(second.message).not.toContain(fragment);
+      }
+    });
+  });
+
+  // ── W2i: the status the classifier already recovered reaches the AGENT ──
+
+  describe("the recovered HTTP status reaches the agent", () => {
+    it("names the status in the failure the agent reads", async () => {
+      mockExecuteTwitterAccountRequest.mockRejectedValueOnce(
+        twitterError({ message: `boom ${SECRET_POISON}`, status: 429 }),
+      );
+
+      const result = await handleTwitterAccount(
+        { action: "tweet_search", query: "vex" },
+        baseContext,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("rate_limited");
+      expect(result.output).toContain("HTTP 429");
+      expectNoPoison(result);
+    });
+
+    it("omits the status clause entirely when no status was recovered", () => {
+      const failure = classifyTwitterFailure(new TwitterAccountRequestError("user_not_found"));
+      expect(failure.httpStatus).toBeNull();
+      expect(twitterFailureReason(failure)).toBe("user_not_found");
+      expect(twitterFailureMessage(failure)).not.toContain("HTTP");
+    });
+
+    it("surfaces only the bounded integer — never a byte of provider prose", () => {
+      const failure = classifyTwitterFailure(
+        twitterError({ message: INSTRUCTION_POISON, status: 503, detailMessage: SECRET_POISON }),
+      );
+      expect(twitterFailureReason(failure)).toBe("provider_rejected, HTTP 503");
+      for (const fragment of POISON_FRAGMENTS) {
+        expect(twitterFailureMessage(failure)).not.toContain(fragment);
       }
     });
   });

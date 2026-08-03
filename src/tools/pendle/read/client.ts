@@ -27,9 +27,10 @@
  * `getPendleClient()` and `getPendleReadClient()` share one — and the split
  * below should be deleted, not re-tuned.
  *
- * The upstream error body is HOSTILE input: it is never read for text and never
- * reaches a thrown message (see `./errors.ts`). Singleton via
- * `getPendleReadClient()`.
+ * The upstream error body is untrusted, and it is CARRIED rather than dropped:
+ * it is passed to `mapPendleReadError`, which quotes it bounded, and the single
+ * redaction owner (`utils/error-summary.ts`) sanitizes it downstream. Singleton
+ * via `getPendleReadClient()`.
  */
 
 import { loadConfig } from "../../../config/store.js";
@@ -168,7 +169,10 @@ export class PendleReadClient {
             endpoint,
             detail: raw === null ? null : JSON.stringify(raw).slice(0, 200),
           });
-          throw mapPendleReadError(response.status, endpoint);
+          // The BODY travels with the status (W2e). It used to be read, logged
+          // and thrown away, so a NestJS validation 400 naming the offending
+          // field never reached the agent.
+          throw mapPendleReadError(response.status, endpoint, raw);
         }
         return validator(await readJson(response));
       });

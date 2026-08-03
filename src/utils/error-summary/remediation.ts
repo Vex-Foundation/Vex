@@ -35,7 +35,24 @@ const REMEDIATION_BY_CATEGORY: Readonly<Record<ErrorCategory, string | undefined
   unknown: undefined,
 };
 
-export function remediationFor(category: ErrorCategory): string | undefined {
+/**
+ * The rate-limit remedy with the provider's OWN interval spliced in, when a
+ * response advertised one (`VexError.retryAfterSeconds`).
+ *
+ * "wait before retrying" is true and unactionable: it leaves the agent to
+ * invent an interval, and the two failure modes of an invented one are a retry
+ * straight back into the wall or a defer far longer than the venue asked for.
+ * The number is a validated integer bounded at parse time, so this stays an
+ * authored literal with one integer in it — no provider bytes.
+ */
+export function remediationFor(
+  category: ErrorCategory,
+  retryAfterSeconds?: number,
+): string | undefined {
+  if (category === "rate_limit" && retryAfterSeconds !== undefined) {
+    return `the provider is rate-limiting; wait ~${retryAfterSeconds}s before retrying this venue, `
+      + "or use another venue";
+  }
   return REMEDIATION_BY_CATEGORY[category];
 }
 
@@ -50,10 +67,13 @@ export interface SlippageRemediationInput {
    * given up), where a NEGATIVE value is the anomaly, not the ordinary case.
    *
    * A venue whose provider reports the OPPOSITE sign must not pass its raw
-   * number here. Jupiter is exactly that venue — its captured healthy quote is
-   * `priceImpactPct: "-0.00015…"`, so an ordinary swap is negative — and it
-   * therefore passes none until that convention is settled rather than showing
-   * the agent a figure whose sign we cannot vouch for.
+   * number here. Jupiter was believed to be exactly that venue, off a single
+   * negative capture; a fresh read-only `GET /swap/v2/build` capture on
+   * 2026-08-03 settled it the other way — Jupiter's `priceImpactPct` is
+   * positive and grows monotonically with size, i.e. cost-positive like
+   * KyberSwap's — so Jupiter now passes its figure here. See
+   * `tools/solana-ecosystem/jupiter/jupiter-swaps/pre-broadcast-rejection-refusal.ts`
+   * for the captured numbers.
    *
    * Omitted/`null` when the venue gave none; the sentence is dropped rather
    * than printed empty.
@@ -63,9 +83,10 @@ export interface SlippageRemediationInput {
    * Whether the venue's shipped stale-reserve caution applies — "a strongly
    * NEGATIVE priceImpact means the quote is wrong, so more tolerance buys a
    * worse fill". `engine/prompts/protocols.ts` teaches it for the EVM venues,
-   * whose impact is cost-positive. It is FALSE for Jupiter for the sign reason
-   * above: copying the clause there would flag every ordinary Jupiter swap as
-   * broken.
+   * whose indexed reserves are the thing that goes stale. It stays FALSE for
+   * Jupiter even now that the sign matches: the caution is KyberSwap's shipped
+   * instruction about stale indexed reserves, and no capture in this repo
+   * evidences that failure mode on Jupiter's live on-chain routing.
    *
    * Required, never defaulted: which caution a money-path message carries is a
    * decision each venue must make out loud.

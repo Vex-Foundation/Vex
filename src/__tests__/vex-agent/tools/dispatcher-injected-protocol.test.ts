@@ -20,6 +20,8 @@
  * manifest state.
  */
 
+import assert from "node:assert/strict";
+
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import { makeTestContext } from "./_test-context.js";
@@ -110,7 +112,9 @@ describe("dispatcher — injected discovered-tool lane", () => {
 
     expect(result.success).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0]![0]).toEqual({ query: "VEX" });
+    const [firstHandlerCall] = handler.mock.calls;
+    assert.ok(firstHandlerCall);
+    expect(firstHandlerCall[0]).toEqual({ query: "VEX" });
     expect(result.actionKind).toBe("read");
   });
 

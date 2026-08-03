@@ -78,7 +78,9 @@ describe("khalani.quote.get — route-guard failures pass the scrub boundary", (
     const result = await quoteGet();
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("khalani.quote.get failed:");
+    // W2d: the failure now renders under the W1 contract
+    // `<toolId> failed [<CODE>/<category>{, HTTP <status>}]: <cause>`.
+    expect(result.output).toContain("khalani.quote.get failed [KHALANI_API_ERROR/");
     expect(result.output).toContain("registry unavailable");
     expect(result.output).not.toContain("PROVIDERSECRET1");
     expect(result.output).not.toContain("khalani.internal");
@@ -103,7 +105,9 @@ describe("khalani.quote.get — route-guard failures pass the scrub boundary", (
 
     const result = await quoteGet();
 
-    expect(result.output).toBe("khalani.quote.get failed: Unsupported chain: narnia");
+    expect(result.output).toBe(
+      "khalani.quote.get failed [KHALANI_UNSUPPORTED_CHAIN/provider_error]: Unsupported chain: narnia",
+    );
   });
 });
 

@@ -131,7 +131,11 @@ async function runBatch(args: {
 }) {
   return processTurnToolBatch({
     context: context(),
-    turnResult: { content: null, toolCalls: toolCalls(args.calls ?? 3) },
+    turnResult: {
+      content: null,
+      reasoning: null,
+      toolCalls: toolCalls(args.calls ?? 3),
+    },
     liveMessages: [],
     currentTokenCount: 0,
     contextLimit: 100_000,

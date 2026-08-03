@@ -371,7 +371,7 @@ describe("capture:'none' means the handler emits no capture at all (A0.2)", () =
     .map(([id]) => id)) {
     it(`${toolId} returns no _tradeCapture / _tradeCaptureItems on success`, async () => {
       harnessAction = CONVERT_ACTION_FOR.get(toolId) ?? "swap";
-      const res = await PENDLE_HANDLERS[toolId]!(HARNESS_PARAMS[toolId]!, HARNESS_CTX);
+      const res = await PENDLE_HANDLERS[toolId](HARNESS_PARAMS[toolId], HARNESS_CTX);
 
       expect(res.success, `${toolId}: ${res.output}`).toBe(true);
       const data = (res as { data?: Record<string, unknown> }).data ?? {};

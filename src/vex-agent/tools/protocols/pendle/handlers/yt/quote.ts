@@ -28,6 +28,7 @@ import {
   resolvePendleSlippage,
 } from "../shared.js";
 import { YT_DECAY_WARNING } from "./decay-warning.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 export async function pendleYtQuote(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
@@ -101,7 +102,7 @@ export async function pendleYtQuote(p: Record<string, unknown>, context: Protoco
       amountIn: amountInRaw,
       amountOut: humanAmount(outAmount, outDecimals).toString(),
       aggregator: best.data.aggregatorType,
-      slippageBps: num(p, "slippageBps") ?? 50,
+      slippageBps: num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS,
       decayWarning: YT_DECAY_WARNING,
     });
   } catch (err) {

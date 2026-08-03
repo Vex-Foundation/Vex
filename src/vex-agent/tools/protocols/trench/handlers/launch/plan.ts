@@ -45,11 +45,25 @@ import {
   launchChargeableWei,
   type AutonomousLaunchCeilings,
 } from "@vex-agent/engine/mission/launch-ceiling.js";
+import { trenchErrorCategory, trenchFailureDetail } from "../failure.js";
 import { composeLaunchMsgValue, type LaunchAuthorizationBinding } from "./authorization.js";
 import type { PlanTrenchFeeLeg, TrenchFeeLegPlan } from "./fee-seam.js";
 import type { ValidatedLaunchRequest } from "./validate.js";
 
 const DIAMOND = TRENCH_DIAMOND_ADDRESS as Address;
+
+/**
+ * The subject of this pipeline's failure logs.
+ *
+ * Both `trench.launch_preview` and `trench.launch_execute` run this exact
+ * assembly, so the log names the assembly rather than pretending to know which
+ * of the two called it.
+ */
+const PLAN_TOOL_ID = "trench.launch_plan";
+
+/** The one remediation sentence every launch balance refusal ends with. */
+const TOP_UP_REMEDY =
+  "Top up the wallet on Robinhood Chain or lower the prebuy, then try again.";
 
 export interface BuildLaunchPlanInput {
   readonly request: ValidatedLaunchRequest;
@@ -176,7 +190,7 @@ export async function buildLaunchPlan(
     return refuse(
       "fee_unreadable",
       "Refusing to launch: the launchpad's creation fee could not be proven on-chain right now, "
-        + `so the amount to send is unknown (${err instanceof Error ? err.name : "read failed"}). Nothing was signed.`,
+        + `so the amount to send is unknown — ${trenchFailureDetail(PLAN_TOOL_ID, err)}. Nothing was signed.`,
     );
   }
 
@@ -258,16 +272,38 @@ export async function buildLaunchPlan(
     );
   }
 
-  // 8. GAS, then the PRE-SIGN BALANCE GATE. Gas never enters the authorized
-  //    figure, but a node that will not estimate cannot price this call, and
-  //    continuing with a zero would let the balance gate below compare against
-  //    a number nobody proved.
+  // 8. THE PRE-SIGN BALANCE GATE — READ AND GATED BEFORE GAS.
+  //
+  //    Order matters, and getting it wrong is the 2026-08-02 incident: an
+  //    under-funded wallet makes `eth_estimateGas` REJECT ("the total cost …
+  //    exceeds the balance of the account"), so estimating first turned a
+  //    funding problem into "this chain would not estimate gas" — a refusal
+  //    that blames the chain and gives the user nothing to act on.
+  //
+  //    So the balance is read first and gated against everything already
+  //    PROVEN (`msg.value` + the Vex fee). That floor alone catches the plainly
+  //    under-funded wallet without needing gas at all. Gas is then estimated to
+  //    tighten the gate, and a rejection that itself reads as "cannot pay" is
+  //    reported as the balance failure it is, never as an unestimable chain.
+  const balanceRead = await readNativeBalance(publicClient, input.walletAddress);
+  if (!balanceRead.ok) return balanceRead.refusal;
+  const { balanceWei } = balanceRead;
+
+  const provenFloorWei = msgValueWei + vexFeeWei;
+  if (balanceWei < provenFloorWei) {
+    return insufficientBalanceRefusal({ balanceWei, msgValueWei, vexFeeWei, launchGasWei: null });
+  }
+
   const gas = await estimateLaunchGas(publicClient, input.walletAddress, calldata, msgValueWei);
-  if (gas === null) {
+  if (!gas.ok) {
+    if (trenchErrorCategory(gas.error) === "insufficient_funds") {
+      return insufficientBalanceRefusal({ balanceWei, msgValueWei, vexFeeWei, launchGasWei: null });
+    }
     return refuse(
       "gas_unestimable",
-      "Refusing to launch: this chain would not estimate gas for the create call, so the transaction "
-        + "cannot be priced and the wallet's balance cannot be checked against it. Nothing was signed.",
+      "Refusing to launch: the create call could not be gas-estimated, so the transaction cannot be "
+        + `priced and the wallet's balance cannot be checked against it — ${trenchFailureDetail(PLAN_TOOL_ID, gas.error)}. `
+        + "Nothing was signed.",
     );
   }
 
@@ -275,15 +311,10 @@ export async function buildLaunchPlan(
   // gas for, and budgeting one would overstate the cost.
   const feeLegGasWei = vexFeeWei > 0n ? LAUNCH_FEE_LEG_GAS_LIMIT * gas.gasPriceWei : 0n;
 
-  const balanceVerdict = await checkNativeBalanceCovers({
-    publicClient,
-    walletAddress: input.walletAddress,
-    msgValueWei,
-    launchGasWei: gas.gasLimit * gas.gasPriceWei,
-    vexFeeWei,
-    feeLegGasWei,
-  });
-  if (!balanceVerdict.ok) return balanceVerdict.refusal;
+  const launchGasWei = gas.gasLimit * gas.gasPriceWei;
+  if (balanceWei < msgValueWei + launchGasWei + vexFeeWei + feeLegGasWei) {
+    return insufficientBalanceRefusal({ balanceWei, msgValueWei, vexFeeWei, launchGasWei, feeLegGasWei });
+  }
 
   const binding: LaunchAuthorizationBinding = {
     name: request.name,
@@ -348,77 +379,93 @@ function ceilingRefusalCode(contract: AutonomousLaunchCeilings): LaunchPlanRefus
 }
 
 /**
- * Gas, as an ESTIMATE and only ever that — `null` when it cannot be produced.
+ * Gas, as an ESTIMATE and only ever that.
  *
  * It is never part of the AUTHORIZED figure, and the preview still says so. But
- * it IS consumed by the balance gate below, and it used to be reported as `0n`
- * on failure: a provider's silence rendered as a number, which is exactly the
- * shape of error rule 90 forbids. A launch that cannot be priced is refused
- * before anything is signed instead.
+ * it IS consumed by the balance gate, and it used to be reported as `0n` on
+ * failure: a provider's silence rendered as a number. It then became a bare
+ * `null`, which threw the REAL cause away — and the real cause is most often
+ * "the account cannot pay", not "the chain will not estimate". The rejection is
+ * returned intact so the caller can classify it.
  */
+type LaunchGasEstimate =
+  | { readonly ok: true; readonly gasLimit: bigint; readonly gasPriceWei: bigint; readonly networkFeeWei: bigint }
+  | { readonly ok: false; readonly error: unknown };
+
 async function estimateLaunchGas(
   publicClient: PublicClient<Transport, Chain>,
   account: Address,
   data: Hex,
   value: bigint,
-): Promise<{ gasLimit: bigint; gasPriceWei: bigint; networkFeeWei: bigint } | null> {
+): Promise<LaunchGasEstimate> {
   try {
     const estimate = await publicClient.estimateGas({ account, to: DIAMOND, data, value });
     const gasLimit = gasLimitWithHeadroom(estimate);
     const gasPriceWei = await publicClient.getGasPrice();
-    return { gasLimit, gasPriceWei, networkFeeWei: gasLimit * gasPriceWei };
-  } catch {
-    return null;
+    return { ok: true, gasLimit, gasPriceWei, networkFeeWei: gasLimit * gasPriceWei };
+  } catch (error) {
+    return { ok: false, error };
   }
 }
 
-/**
- * The PRE-SIGN GATE: can this wallet actually pay for everything this launch
- * sets in motion?
- *
- * The requirement is the WHOLE sequence, not just the call being signed —
- * `msg.value`, the create's own gas, the Vex fee leg that follows it, and that
- * leg's gas. A wallet that covers only the create would still confirm the
- * launch and then fail the fee transfer, which is the one ordering §C7 accepts;
- * refusing here instead means the user is told BY NAME, before a signature,
- * rather than discovering it from a bare node rejection afterwards.
- *
- * There is no tolerance and no percentage: the comparison is exact wei.
- */
-async function checkNativeBalanceCovers(input: {
-  readonly publicClient: PublicClient<Transport, Chain>;
-  readonly walletAddress: Address;
-  readonly msgValueWei: bigint;
-  readonly launchGasWei: bigint;
-  readonly vexFeeWei: bigint;
-  readonly feeLegGasWei: bigint;
-}): Promise<{ ok: true } | { ok: false; refusal: BuildLaunchPlanResult }> {
-  let balanceWei: bigint;
+/** The wallet's native balance, or the named refusal for not being able to read it. */
+async function readNativeBalance(
+  publicClient: PublicClient<Transport, Chain>,
+  walletAddress: Address,
+): Promise<{ ok: true; balanceWei: bigint } | { ok: false; refusal: BuildLaunchPlanResult }> {
   try {
-    balanceWei = await input.publicClient.getBalance({ address: input.walletAddress });
+    return { ok: true, balanceWei: await publicClient.getBalance({ address: walletAddress }) };
   } catch (err) {
     return {
       ok: false,
       refusal: refuse(
         "balance_unreadable",
-        "Refusing to launch: your wallet's ETH balance on Robinhood Chain could not be read right now "
-          + `(${err instanceof Error ? err.name : "read failed"}), so there is no proof the launch can be `
-          + "paid for. Nothing was signed.",
+        "Refusing to launch: your wallet's ETH balance on Robinhood Chain could not be read right now — "
+          + `${trenchFailureDetail(PLAN_TOOL_ID, err)}, so there is no proof the launch can be paid for. `
+          + "Nothing was signed.",
       ),
     };
   }
+}
 
-  const requiredWei = input.msgValueWei + input.launchGasWei + input.vexFeeWei + input.feeLegGasWei;
-  if (balanceWei >= requiredWei) return { ok: true };
-
-  return {
-    ok: false,
-    refusal: refuse(
+/**
+ * THE BALANCE REFUSAL — one message, two states of knowledge.
+ *
+ * The requirement is the WHOLE sequence, not just the call being signed:
+ * `msg.value`, the create's own gas, the Vex fee leg that follows it, and that
+ * leg's gas. A wallet that covers only the create would still confirm the
+ * launch and then fail the fee transfer, which is the one ordering §C7 accepts.
+ *
+ * `launchGasWei: null` means gas is not known yet — the gate ran before the
+ * estimate, or the estimate itself was rejected FOR being under-funded. The
+ * text then says "at least … before network gas" rather than inventing a total,
+ * because a required figure the code cannot prove is exactly the kind of number
+ * rule 90 forbids. There is no tolerance and no percentage: the comparison is
+ * exact wei.
+ */
+function insufficientBalanceRefusal(x: {
+  readonly balanceWei: bigint;
+  readonly msgValueWei: bigint;
+  readonly vexFeeWei: bigint;
+  readonly launchGasWei: bigint | null;
+  readonly feeLegGasWei?: bigint;
+}): BuildLaunchPlanResult {
+  const holds = `and the wallet holds ${formatEther(x.balanceWei)} ETH. ${TOP_UP_REMEDY} Nothing was signed.`;
+  if (x.launchGasWei === null) {
+    return refuse(
       "insufficient_native_balance",
-      `Refusing to launch: this launch needs about ${formatEther(requiredWei)} ETH in total `
-        + `(${formatEther(input.msgValueWei)} creation fee + prebuy, ~${formatEther(input.launchGasWei)} network gas`
-        + (input.vexFeeWei > 0n ? `, ${formatEther(input.vexFeeWei)} Vex fee and its gas` : "")
-        + `), and the wallet holds ${formatEther(balanceWei)} ETH. Nothing was signed.`,
-    ),
-  };
+      `Refusing to launch: this launch needs at least ${formatEther(x.msgValueWei + x.vexFeeWei)} ETH `
+        + `before network gas (${formatEther(x.msgValueWei)} creation fee + prebuy`
+        + (x.vexFeeWei > 0n ? `, ${formatEther(x.vexFeeWei)} Vex fee` : "")
+        + `), ${holds}`,
+    );
+  }
+  const requiredWei = x.msgValueWei + x.launchGasWei + x.vexFeeWei + (x.feeLegGasWei ?? 0n);
+  return refuse(
+    "insufficient_native_balance",
+    `Refusing to launch: this launch needs about ${formatEther(requiredWei)} ETH in total `
+      + `(${formatEther(x.msgValueWei)} creation fee + prebuy, ~${formatEther(x.launchGasWei)} network gas`
+      + (x.vexFeeWei > 0n ? `, ${formatEther(x.vexFeeWei)} Vex fee and its gas` : "")
+      + `), ${holds}`,
+  );
 }

@@ -20,7 +20,6 @@ import { str, num, ok, fail } from "../../../handler-helpers.js";
 import { resolveMarketByPt, buildAssetMap } from "../../market-lookup.js";
 import { explainUnresolvedPendleMarket } from "../../matured-refusal.js";
 import {
-  DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
   requirePendleChain,
@@ -29,12 +28,45 @@ import {
   resolvePendleSlippage,
 } from "../shared.js";
 import { outputAmountFor } from "./route-outputs.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import {
+  inapplicableTokenParamRefusal,
+  missingDirectionTokenRefusal,
+  type PendleDirectionTokens,
+} from "../direction-params.js";
+
+const PY_DIRECTION_TOKENS: Record<"mint" | "redeem", PendleDirectionTokens> = {
+  mint: {
+    direction: "mint",
+    applicable: "tokenIn",
+    flow: "token → PT+YT",
+    fixedSide: "the market's PT and YT",
+    otherDirection: "redeem",
+  },
+  redeem: {
+    direction: "redeem",
+    applicable: "tokenOut",
+    flow: "pre-expiry PT+YT → token",
+    fixedSide: "the market's PT and YT",
+    otherDirection: "mint",
+  },
+};
 
 export async function pendlePyQuote(p: Record<string, unknown>, context: ProtocolExecutionContext): Promise<ToolResult> {
   const chain = str(p, "chain"), direction = str(p, "direction"), ptRaw = str(p, "pt"), amountInRaw = str(p, "amountIn");
   if (!chain || !ptRaw || !amountInRaw) return fail("Missing required: chain, pt, amountIn");
   if (direction !== "mint" && direction !== "redeem") {
     return fail("direction must be 'mint' (token → PT+YT) or 'redeem' (pre-expiry PT+YT → token).");
+  }
+  // Direction-conditional token params: refused BY NAME rather than ignored
+  // (W9d). `tokenOut` stays optional on a redeem — it defaults to the market's
+  // underlying — so only the mint leg's `tokenIn` is required here.
+  const directionTokens = PY_DIRECTION_TOKENS[direction];
+  const inapplicable = inapplicableTokenParamRefusal(p, directionTokens);
+  if (inapplicable !== null) return fail(inapplicable);
+  if (direction === "mint") {
+    const missing = missingDirectionTokenRefusal(p, directionTokens, "payment token to spend");
+    if (missing !== null) return fail(missing);
   }
   try {
     const chainEntry = requirePendleChain(chain);
@@ -55,7 +87,7 @@ export async function pendlePyQuote(p: Record<string, unknown>, context: Protoco
     const slippage = resolvePendleSlippage("pendle.py.quote", num(p, "slippageBps"));
     const client = getPendleClient();
     const assetMap = await buildAssetMap(chainId);
-    const slippageBpsEcho = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
+    const slippageBpsEcho = num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS;
 
     if (direction === "mint") {
       const tokenIn = await resolveInputToken(chainEntry, str(p, "tokenIn"));

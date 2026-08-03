@@ -5,6 +5,7 @@
 import type { ZodType } from "zod";
 import { VexError, ErrorCodes } from "../errors.js";
 import { composeDeadline } from "./cancellation.js";
+import { readRetryAfterSeconds } from "./http/retry-after.js";
 import { isRecord } from "./validation-helpers.js";
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -157,6 +158,11 @@ export async function parseJsonResponse<T>(
     // It is also the ONLY reliable way to branch on a status — never re-parse
     // it out of the message, which the provider's own text now replaces.
     error.httpStatus = response.status;
+    // The interval the provider itself advertised, when it did. A bounded
+    // integer, never the header text — see `http/retry-after.ts` for why the
+    // `x-ratelimit-*` family is only trusted on a 429.
+    const retryAfterSeconds = readRetryAfterSeconds(response.headers, response.status);
+    if (retryAfterSeconds !== undefined) error.retryAfterSeconds = retryAfterSeconds;
     if (externalName) error.externalName = externalName;
     throw error;
   }

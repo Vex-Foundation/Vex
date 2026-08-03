@@ -31,12 +31,15 @@ import type { ChainFamily, KhalaniChain } from "@tools/khalani/types.js";
 import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
+import type { ToolResult } from "../../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
 import { projectChain, projectChains, projectQuoteRoutes, projectToken, projectTokens } from "../projectors.js";
 import { revealOnEligibleKhalaniFailure } from "./reveal.js";
 import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
-import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { readStringOrArrayParam } from "../../runtime/list-params.js";
+import { describeKhalaniOrderCorrelation } from "../order-correlation.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
@@ -69,6 +72,22 @@ function assertNotLocalOnlyChain(part: string, chains: KhalaniChain[]): void {
     + 'wallet_track_token action:"list" for the tracked/seed token set, or '
     + `wallet_balances chainIds:"${part.trim().toLowerCase()}" for the tokens you actually hold.`,
   );
+}
+
+/**
+ * A list param the model may spell as a comma-string OR as a JSON array — the
+ * manifest declares `acceptsStringArray` on both `chainIds` and `orderIds`, and
+ * this is the reader that honours it. Rejections carry the reader's own
+ * by-position message rather than degrading to "no filter".
+ */
+function readListParam(
+  toolId: string,
+  params: Record<string, unknown>,
+  key: string,
+): { ok: true; value: string | undefined } | { ok: false; result: ToolResult } {
+  const read = readStringOrArrayParam(params, key);
+  if (!read.ok) return { ok: false, result: { success: false, output: `${toolId}: ${read.reason}` } };
+  return { ok: true, value: read.value === null || read.value === "" ? undefined : read.value };
 }
 
 export async function parseChainIds(raw: string | undefined): Promise<number[] | undefined> {
@@ -129,7 +148,9 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "khalani.tokens.top": async (params) => {
-    const chainIds = await parseChainIds(str(params, "chainIds"));
+    const chainIdsRead = readListParam("khalani.tokens.top", params, "chainIds");
+    if (!chainIdsRead.ok) return chainIdsRead.result;
+    const chainIds = await parseChainIds(chainIdsRead.value);
     const tokens = await getKhalaniClient().getTopTokens(chainIds);
     // Project to concise token rows (P0-4): keep identity + lifted
     // priceUsd/balance/isRiskToken, drop logoURI + open extensions bag.
@@ -144,7 +165,9 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     const query = str(params, "query");
     if (!query) return { success: false, output: "Missing required parameter: query" };
 
-    const chainIds = await parseChainIds(str(params, "chainIds"));
+    const chainIdsRead = readListParam("khalani.tokens.search", params, "chainIds");
+    if (!chainIdsRead.ok) return chainIdsRead.result;
+    const chainIds = await parseChainIds(chainIdsRead.value);
     const result = await getKhalaniClient().searchTokens(query, chainIds);
     // Project to concise token rows (P0-4) — this is the hot pre-mutation
     // contract-resolver path, so the surfaced address + price signal matters.
@@ -159,7 +182,9 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     const keyword = str(params, "keyword");
     if (!keyword) return { success: false, output: "Missing required parameter: keyword" };
 
-    const chainIds = await parseChainIds(str(params, "chainIds"));
+    const chainIdsRead = readListParam("khalani.tokens.autocomplete", params, "chainIds");
+    if (!chainIdsRead.ok) return chainIdsRead.result;
+    const chainIds = await parseChainIds(chainIdsRead.value);
     const limit = typeof params.limit === "number" ? params.limit : undefined;
     const result = await getKhalaniClient().autocompleteToken(keyword, { chainIds, limit });
     // Project to concise rows (P0-4): each entry nests a FULL chain AND token —
@@ -185,12 +210,14 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
   "khalani.tokens.balances": async (params, context) => {
     const walletFamily = resolveWalletFamily(params);
     const address = resolveWalletAddress(params, context, walletFamily);
-    const selection = await parseBalanceChainSelection(str(params, "chainIds"));
+    const chainIdsRead = readListParam("khalani.tokens.balances", params, "chainIds");
+    if (!chainIdsRead.ok) return chainIdsRead.result;
+    const selection = await parseBalanceChainSelection(chainIdsRead.value);
     const chainIds = getSelectedChainIdsForFamily(selection, walletFamily);
     if (selection.rawProvided && chainIds?.length === 0) {
       return {
         success: false,
-        output: `No ${walletFamily} chains matched chainIds="${str(params, "chainIds")}".`,
+        output: `No ${walletFamily} chains matched chainIds="${chainIdsRead.value ?? ""}".`,
       };
     }
     // Live read tool (khalani.tokens.balances): opt into the EVM native-coin
@@ -259,7 +286,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       // Route resolution reads Khalani's live registry, so this catch can hold
       // PROVIDER-controlled text (`mapKhalaniError` builds its message from the
       // response body). Raw `err.message` bypassed the scrub boundary entirely.
-      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}` };
+      return { success: false, output: renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err)) };
     }
     if (prequote.outcome === "static_relay") {
       return {
@@ -289,7 +316,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       // Locally authored, but it echoes the MODEL-SUPPLIED fromChain/toChain
       // verbatim — untrusted input reaching an output sink, so it goes through
       // the same boundary as provider text.
-      return { success: false, output: summarizeProtocolError(err).message };
+      return { success: false, output: renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err)) };
     }
     const explicitFrom = str(params, "fromAddress") || undefined;
     let fromAddress: string;
@@ -335,7 +362,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     try {
       feeSplit = splitBridgeAmountForFee(prepared.request.amount);
     } catch (err) {
-      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}` };
+      return { success: false, output: renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err)) };
     }
     let feeSkipReason: string | null = feeSplit.charged
       ? null
@@ -359,7 +386,10 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       const externalName = err instanceof VexError ? err.externalName : undefined;
       const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "exception", externalName }, context.sessionId, params);
-      return { success: false, output: `khalani.quote.get failed: ${summarizeProtocolError(err).message}.${revealSuffix}` };
+      return {
+        success: false,
+        output: `${renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err))}${revealSuffix}`,
+      };
     }
     if (outcome.outcome === "no_route") {
       const revealSuffix = revealOnEligibleKhalaniFailure({ kind: "empty_routes" }, context.sessionId, params);
@@ -409,7 +439,9 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     const cursor = typeof params.cursor === "number" ? params.cursor : undefined;
     const fromChainId = str(params, "fromChain") ? resolveChainId(str(params, "fromChain"), chains) : undefined;
     const toChainId = str(params, "toChain") ? resolveChainId(str(params, "toChain"), chains) : undefined;
-    const orderIds = str(params, "orderIds") || undefined;
+    const orderIdsRead = readListParam("khalani.orders.list", params, "orderIds");
+    if (!orderIdsRead.ok) return orderIdsRead.result;
+    const orderIds = orderIdsRead.value;
     const txHashSearch = str(params, "txHashSearch") || undefined;
 
     const result = await getKhalaniClient().getOrders(address, {
@@ -427,10 +459,24 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!orderId) return { success: false, output: "Missing required parameter: orderId" };
 
     const order = await getKhalaniClient().getOrderById(orderId);
+    // W9b — merge Vex's OWN record with the provider's. A status check that
+    // shows only Khalani's view can contradict the `filled_unverified` the
+    // bridge tool returned a turn earlier, with nothing reconciling the two.
+    // Fail-soft: the provider order is always the answer, the correlation is
+    // additive (see `../order-correlation.ts`).
+    const { correlation, correlationNote } = await describeKhalaniOrderCorrelation(orderId);
+    const merged = {
+      order,
+      vex: correlation,
+      ...(correlationNote === undefined ? {} : { vexNote: correlationNote }),
+      // Mirrored at the top level under the same key every mutating bridge
+      // result already uses, so one lookup works across both surfaces.
+      _executionId: correlation?._executionId ?? null,
+    };
     return {
       success: true,
-      output: JSON.stringify(order, null, 2),
-      data: toResultData(order),
+      output: JSON.stringify(merged, null, 2),
+      data: toResultData(merged),
     };
   },
 };

@@ -51,6 +51,14 @@ function pendingRow(eventRole: AgentActivityEvent["eventRole"]): AgentActivityEv
     amountOutHuman: null, amountOutRaw: null,
     executedAmountInHuman: null, executedAmountInRaw: null,
     executedAmountOutHuman: null, executedAmountOutRaw: null,
+    // Second-leg columns (migration 053): absent on a single-leg swap, but
+    // required by the live contract, so they are stated rather than omitted.
+    tokenIn2Address: null, tokenIn2Symbol: null, tokenIn2Decimals: null,
+    amountIn2Human: null, amountIn2Raw: null,
+    executedAmountIn2Human: null, executedAmountIn2Raw: null,
+    tokenOut2Address: null, tokenOut2Symbol: null, tokenOut2Decimals: null,
+    amountOut2Human: null, amountOut2Raw: null,
+    executedAmountOut2Human: null, executedAmountOut2Raw: null,
     usdInEst: null, usdOutEst: null, usdFeeEst: null, usdSource: null,
     usdNetworkGasEst: null, usdVenueFeeEst: null, usdDestinationPrepayEst: null, usdVexFeeEst: null,
     vexFeeTokenAddress: null, vexFeeTokenSymbol: null, vexFeeTokenDecimals: null,
@@ -66,6 +74,9 @@ function pendingRow(eventRole: AgentActivityEvent["eventRole"]): AgentActivityEv
     broadcastAt: "2026-07-23T09:00:01.000Z",
     confirmedAt: null, lastCheckedAt: null,
     createdAt: "2026-07-23T09:00:00.000Z", updatedAt: "2026-07-23T09:00:01.000Z",
+    // Columns the live contract requires that this fixture never exercises.
+    verificationAttempts: 0,
+    lastVerificationReason: null,
   };
 }
 

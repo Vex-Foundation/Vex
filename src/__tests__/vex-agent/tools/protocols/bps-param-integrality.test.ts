@@ -23,6 +23,7 @@ import type {
   ProtocolHandler,
   ProtocolToolManifest,
 } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "../_test-context.js";
 
 vi.mock("@vex-agent/tools/protocols/catalog.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/tools/protocols/catalog.js")>(
@@ -77,7 +78,7 @@ async function callWithSlippage(slippageBps: unknown) {
   observedSlippage = [];
   return executeProtocolTool(
     { toolId: TOOL_ID, params: { amount: 1.5, slippageBps } },
-    { sessionPermission: "full", approved: true },
+    makeProtocolContext({ sessionPermission: "full", approved: true }),
   );
 }
 
@@ -146,7 +147,7 @@ describe("valid basis-point values are unchanged", () => {
     observedSlippage = [];
     const result = await executeProtocolTool(
       { toolId: TOOL_ID, params: { amount: 1.5 } },
-      { sessionPermission: "full", approved: true },
+      makeProtocolContext({ sessionPermission: "full", approved: true }),
     );
     expect(result.success).toBe(true);
     expect(observedSlippage).toEqual([undefined]);
@@ -194,7 +195,7 @@ describe("reachability regression — real solana.swap manifests", () => {
           toolId,
           params: { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1", slippageBps: 50.5 },
         },
-        { sessionPermission: "full", approved: true },
+        makeProtocolContext({ sessionPermission: "full", approved: true }),
       );
 
       expect(result.success).toBe(false);
@@ -209,7 +210,7 @@ describe("reachability regression — real solana.swap manifests", () => {
         toolId: "solana.swap.quote",
         params: { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1", slippageBps: 0.5 },
       },
-      { sessionPermission: "full", approved: true },
+      makeProtocolContext({ sessionPermission: "full", approved: true }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/whole number of basis points/i);

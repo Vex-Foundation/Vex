@@ -137,7 +137,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   // ── orderbook ────────────────────────────────────────────────────
 
   it("orderbook fails without marketId", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderbook"]!({}, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderbook"]({}, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("marketId");
     expect(getJupiterPredictionOrderbook).not.toHaveBeenCalled();
@@ -148,7 +148,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
       yes: [[10, 5]], no: [[20, 3]],
       yes_dollars: [["0.0010", 5]], no_dollars: [["0.0020", 3]],
     });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderbook"]!({ marketId: "mkt-1" }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderbook"]({ marketId: "mkt-1" }, ctx());
     expect(result.success).toBe(true);
     expect(getJupiterPredictionOrderbook).toHaveBeenCalledWith("mkt-1");
     expect(result.data).toEqual({
@@ -159,7 +159,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("orderbook returns a clear failure (not a silent empty object) when upstream data-fetch fails (documented null body)", async () => {
     getJupiterPredictionOrderbook.mockResolvedValue(null);
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderbook"]!({ marketId: "mkt-1" }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderbook"]({ marketId: "mkt-1" }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("mkt-1");
     expect(result.output.toLowerCase()).toContain("unavailable");
@@ -169,7 +169,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("tradingStatus passes the flag through verbatim", async () => {
     getJupiterPredictionTradingStatus.mockResolvedValue({ trading_active: true });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.tradingStatus"]!({}, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.tradingStatus"]({}, ctx());
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ trading_active: true });
   });
@@ -181,7 +181,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
       data: [structuredClone(FULL_ORDER)],
       pagination: { start: 0, end: 20, total: 1, hasNext: false },
     });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ walletAddress: ADDRESS }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]({ walletAddress: ADDRESS }, ctx());
     expect(result.success).toBe(true);
     expect(getJupiterPredictionOrders).toHaveBeenCalledWith(
       expect.objectContaining({ ownerPubkey: ADDRESS, start: 0, end: 20 }),
@@ -194,7 +194,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   });
 
   it("orders: rejects a limit outside 1-100 instead of clamping, without calling the SDK", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"](
       { walletAddress: ADDRESS, limit: 500 },
       ctx(),
     );
@@ -204,7 +204,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   });
 
   it("orders: rejects a negative offset instead of clamping, without calling the SDK", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"](
       { walletAddress: ADDRESS, offset: -1 },
       ctx(),
     );
@@ -217,24 +217,24 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   // every W1-D read; `.orders` stands in for the group, same convention
   // W1-C used to prove the shared wrapper on one representative handler) ──
 
-  it("orders: maps an HTTP 403 (geo-block) into a clear regional message", async () => {
+  it("orders: appends the region hint to an HTTP 403 without replacing the provider words", async () => {
     getJupiterPredictionOrders.mockRejectedValue(providerHttpError(403, "HTTP 403: Forbidden"));
     await expect(
-      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ walletAddress: ADDRESS }, ctx()),
-    ).rejects.toThrow(/not available from your current region/);
+      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]({ walletAddress: ADDRESS }, ctx()),
+    ).rejects.toThrow(/United States and South Korea/);
   });
 
   it("orders: a non-403 error is NOT rewritten", async () => {
     getJupiterPredictionOrders.mockRejectedValue(providerHttpError(500, "HTTP 500: Internal Server Error"));
     await expect(
-      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ walletAddress: ADDRESS }, ctx()),
+      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]({ walletAddress: ADDRESS }, ctx()),
     ).rejects.toThrow("HTTP 500");
   });
 
   // ── order (single) ───────────────────────────────────────────────
 
   it("order fails without orderPubkey", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.order"]!({}, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.order"]({}, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("orderPubkey");
     expect(getJupiterPredictionOrder).not.toHaveBeenCalled();
@@ -242,7 +242,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("order: projects the single order the same way the list does", async () => {
     getJupiterPredictionOrder.mockResolvedValue(structuredClone(FULL_ORDER));
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.order"]!({ orderPubkey: "order-1" }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.order"]({ orderPubkey: "order-1" }, ctx());
     expect(result.success).toBe(true);
     expect(getJupiterPredictionOrder).toHaveBeenCalledWith("order-1");
     expect(result.data).toEqual(EXPECTED_PROJECTED_ORDER);
@@ -251,7 +251,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   // ── orderStatus ──────────────────────────────────────────────────
 
   it("orderStatus fails without orderPubkey", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderStatus"]!({}, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderStatus"]({}, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("orderPubkey");
     expect(getJupiterPredictionOrderStatus).not.toHaveBeenCalled();
@@ -264,7 +264,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
       history: [{ eventType: "order_filled", status: "filled", rawStatus: "FILLED", timestamp: 1, signature: "sig-1", externalOrderId: "ext-1", orderId: "ord-1" }],
     };
     getJupiterPredictionOrderStatus.mockResolvedValue(STATUS);
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderStatus"]!({ orderPubkey: "order-1" }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orderStatus"]({ orderPubkey: "order-1" }, ctx());
     expect(result.success).toBe(true);
     expect(getJupiterPredictionOrderStatus).toHaveBeenCalledWith("order-1");
     expect(result.data).toEqual(STATUS);
@@ -280,7 +280,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("trades: converts amountUsd/priceUsd and windows the always-full upstream feed client-side", async () => {
     getJupiterPredictionTrades.mockResolvedValue({ data: TRADES.map(t => ({ ...t })) });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]!({ limit: 2 }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]({ limit: 2 }, ctx());
     expect(result.success).toBe(true);
     // The upstream endpoint has zero params — always fetches everything.
     expect(getJupiterPredictionTrades).toHaveBeenCalledWith();
@@ -294,7 +294,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("trades: reports hasNext:false when the requested window covers the full feed", async () => {
     getJupiterPredictionTrades.mockResolvedValue({ data: TRADES.map(t => ({ ...t })) });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]!({ limit: 20 }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]({ limit: 20 }, ctx());
     expect(result.success).toBe(true);
     const data = result.data as { data: Record<string, unknown>[]; pagination: unknown };
     expect(data.data).toHaveLength(3);
@@ -307,14 +307,14 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   // `.orders`/`.events`/`.positions`/`.history`, which stay naturally scoped
   // and keep their default-20 window).
   it("trades: rejects a missing limit instead of silently defaulting to 20, without calling the SDK", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]!({}, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]({}, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("limit");
     expect(getJupiterPredictionTrades).not.toHaveBeenCalled();
   });
 
   it("trades: rejects an out-of-range limit before ever calling the SDK (no silent clamp, no wasted fetch)", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]!({ limit: 0 }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.trades"]({ limit: 0 }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("limit");
     expect(getJupiterPredictionTrades).not.toHaveBeenCalled();

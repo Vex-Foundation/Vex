@@ -1,4 +1,7 @@
+import assert from "node:assert/strict";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
@@ -9,7 +12,7 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
 // requireEvmWallet primary). Spy on the resolvers to assert the session wallet
 // is used.
 
-const SESSION_EVM = {
+const SESSION_EVM: EvmWallet = {
   family: "eip155" as const,
   address: "0x1234567890abcdef1234567890abcdef12345678",
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
@@ -92,6 +95,13 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
 }));
 
 const mockCreateAgentActivityIntent = vi.fn();
+
+/** The first recorded activity-intent payload — absence is the test failure. */
+function firstIntentCall(): unknown {
+  const [call] = mockCreateAgentActivityIntent.mock.calls;
+  assert.ok(call, "no activity intent was recorded");
+  return call[0];
+}
 const mockCreateAgentActivityPreBroadcastFailure = vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } });
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
@@ -283,15 +293,17 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     expect(result.output).toMatch(/honeypot\/fee-on-transfer check could not run/i);
     expect(result.output).toMatch(/WITHOUT that protection/i);
     const data = result.data as { safetyCheckUnavailable?: ReadonlyArray<Record<string, unknown>> };
-    expect(data.safetyCheckUnavailable).toHaveLength(1);
-    expect(data.safetyCheckUnavailable![0]!.tokenAddress).toBe(TOKEN_A);
-    expect(typeof data.safetyCheckUnavailable![0]!.cause).toBe("string");
+    const unavailable = data.safetyCheckUnavailable;
+    assert.ok(unavailable);
+    expect(unavailable).toHaveLength(1);
+    const [firstUnavailable] = unavailable;
+    assert.ok(firstUnavailable);
+    expect(firstUnavailable.tokenAddress).toBe(TOKEN_A);
+    expect(typeof firstUnavailable.cause).toBe("string");
 
     // …and the ACTIVITY ROW records it, so the persisted history says this swap
     // ran without honeypot protection.
-    const intent = mockCreateAgentActivityIntent.mock.calls[0]![0] as {
-      intentParams: Record<string, unknown>;
-    };
+    const intent = firstIntentCall() as { intentParams: Record<string, unknown> };
     expect(intent.intentParams._safetyCheckUnavailable).toHaveLength(1);
     // The model's own params are untouched beside it.
     expect(intent.intentParams.chain).toBe("ethereum");
@@ -301,9 +313,7 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     const result = await executeCall();
     expect(result.success).toBe(true);
     expect((result.data as Record<string, unknown>).safetyCheckUnavailable).toBeUndefined();
-    const intent = mockCreateAgentActivityIntent.mock.calls[0]![0] as {
-      intentParams: Record<string, unknown>;
-    };
+    const intent = firstIntentCall() as { intentParams: Record<string, unknown> };
     expect(intent.intentParams._safetyCheckUnavailable).toBeUndefined();
   });
 

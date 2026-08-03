@@ -48,8 +48,12 @@ const SECOND_LEG_OUT_AMOUNT = extractCheckBody(
   "agent_activity_second_leg_out_amount_has_token",
 );
 
-/** Every column the three predicates read, NULL by default. */
-const EMPTY_ROW: SqlRow = {
+/**
+ * Every column the three predicates read, NULL by default. Deliberately NOT
+ * annotated `SqlRow`: the literal keys are what lets `row()` reject a typo'd
+ * column name.
+ */
+const EMPTY_ROW = {
   status: "confirmed",
   tx_hash: null,
   kind: "yield",
@@ -73,7 +77,11 @@ const EMPTY_ROW: SqlRow = {
 };
 
 function row(overrides: Partial<Record<keyof typeof EMPTY_ROW, string | null>>): SqlRow {
-  return { ...EMPTY_ROW, ...overrides };
+  const merged: Record<string, string | null> = { ...EMPTY_ROW };
+  for (const [column, value] of Object.entries(overrides)) {
+    if (value !== undefined) merged[column] = value;
+  }
+  return merged;
 }
 
 describe("053 — agent_activity_yield_confirmed_legs, per role", () => {

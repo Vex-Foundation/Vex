@@ -24,8 +24,21 @@ function argumentValue(flag) {
   return index === -1 ? null : process.argv[index + 1] ?? null;
 }
 
+/**
+ * `execFileSync` defaults to a 1 MiB stdout buffer and THROWS `ENOBUFS` past
+ * it. A branch-wide `git diff` of the test tree exceeds that easily, and the
+ * failure looks like a broken script rather than "the diff got big" — which is
+ * exactly when this check matters most. 64 MiB is far beyond any diff this
+ * repository produces while still being a bound.
+ */
+const GIT_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
+
 function runGit(args) {
-  return execFileSync("git", args, { cwd: repositoryRoot, encoding: "utf8" });
+  return execFileSync("git", args, {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: GIT_OUTPUT_MAX_BYTES,
+  });
 }
 
 function changedTestFiles(base) {

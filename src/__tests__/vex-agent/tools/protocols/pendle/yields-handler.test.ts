@@ -84,7 +84,7 @@ interface YieldsOutput {
   nextStep: string;
 }
 
-async function run(params: Record<string, unknown> = {}): Promise<{ success: boolean; output: string; data?: YieldsOutput }> {
+async function run(params: Record<string, unknown> = {}): Promise<{ success: boolean; output: string; data: YieldsOutput }> {
   const result = await pendleYields(params);
   return { ...result, data: result.data as unknown as YieldsOutput };
 }
@@ -253,7 +253,7 @@ describe("pendle.yields — filters", () => {
   it("scopes by chain and returns nothing for a chain with no rows", async () => {
     const { data } = await run({ chainIds: "base" });
     expect(data!.matched).toBe(0);
-    expect(data!.filtersApplied).toMatchObject({ chainIds: ["base"] });
+    expect(data.filtersApplied).toMatchObject({ chainIds: ["base"] });
   });
 
   it("keeps only the requested field groups", async () => {

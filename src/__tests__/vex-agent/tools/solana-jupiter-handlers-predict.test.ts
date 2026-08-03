@@ -82,7 +82,7 @@ describe("solana-jupiter handlers — predict", () => {
   // ── Required param validation (handlers should fail on missing) ──
 
   it("solana.predict.market fails without marketId", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.market"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.market"](
       {},
       ctx(),
     );
@@ -91,7 +91,7 @@ describe("solana-jupiter handlers — predict", () => {
   });
 
   it("solana.predict.buy fails without required params", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"](
       { marketId: "abc" },
       ctx(),
     );
@@ -100,7 +100,7 @@ describe("solana-jupiter handlers — predict", () => {
   });
 
   it("solana.predict.buy rejects invalid side", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"](
       { marketId: "abc", side: "maybe", amountUsdc: 10 },
       ctx(),
     );
@@ -110,7 +110,7 @@ describe("solana-jupiter handlers — predict", () => {
   });
 
   it("solana.predict.buy rejects typo side silently treated as NO before fix", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.buy"](
       { marketId: "abc", side: "Yes!", amountUsdc: 10 },
       ctx(),
     );
@@ -119,7 +119,7 @@ describe("solana-jupiter handlers — predict", () => {
   });
 
   it("solana.predict.event fails without eventId", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.event"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.event"](
       {},
       ctx(),
     );
@@ -128,7 +128,7 @@ describe("solana-jupiter handlers — predict", () => {
   });
 
   it("solana.predict.search fails without query", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"]!(
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.search"](
       {},
       ctx(),
     );
@@ -197,7 +197,7 @@ describe("solana-jupiter handlers — predict", () => {
           },
         ],
       });
-      const market = (event.markets as Record<string, unknown>[])[0]!;
+      const market = (event.markets as Record<string, unknown>[])[0];
       expect(market).not.toHaveProperty("imageUrl");
       expect(market).not.toHaveProperty("marketResultPubkey");
       expect(market).not.toHaveProperty("metadata");
@@ -208,7 +208,7 @@ describe("solana-jupiter handlers — predict", () => {
         data: [structuredClone(FULL_EVENT)],
         pagination: { start: 0, end: 20, total: 1, hasNext: false },
       });
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({}, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({}, ctx());
       expect(result.success).toBe(true);
       // P1: the provider genuinely honors includeMarkets (see
       // predict-projector.ts's PredictViewOptions doc comment, F2/P1
@@ -227,7 +227,7 @@ describe("solana-jupiter handlers — predict", () => {
         data: [structuredClone(FULL_EVENT)],
         pagination: { start: 5, end: 8, total: 50, hasNext: true },
       });
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!(
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"](
         { category: "crypto", filter: "trending", limit: 3, offset: 5, includeMarkets: true },
         ctx(),
       );
@@ -242,7 +242,7 @@ describe("solana-jupiter handlers — predict", () => {
 
     it("events: passes provider/subcategory/tags/sortBy/sortDirection through to the SDK", async () => {
       getJupiterPredictionEvents.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
-      await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!(
+      await SOLANA_JUPITER_HANDLERS["solana.predict.events"](
         { provider: "bisonfi", subcategory: "nfl,nba", tags: "soccer", sortBy: "volume", sortDirection: "asc", filter: "upcoming" },
         ctx(),
       );
@@ -260,7 +260,7 @@ describe("solana-jupiter handlers — predict", () => {
 
     it("events: defaults to start=0,end=20 when limit/offset absent (default limit raised 10→20, W1-C)", async () => {
       getJupiterPredictionEvents.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
-      await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({}, ctx());
+      await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({}, ctx());
       expect(getJupiterPredictionEvents).toHaveBeenCalledWith(
         expect.objectContaining({ start: 0, end: 20 }),
       );
@@ -270,21 +270,21 @@ describe("solana-jupiter handlers — predict", () => {
     // offset or an out-of-[1,100] limit must fail closed, not silently clamp
     // to a valid value (the pre-W1-C behavior).
     it("events: rejects a negative offset instead of clamping", async () => {
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({ offset: -3 }, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({ offset: -3 }, ctx());
       expect(result.success).toBe(false);
       expect(result.output).toContain("offset");
       expect(getJupiterPredictionEvents).not.toHaveBeenCalled();
     });
 
     it("events: rejects a limit above 100 instead of clamping", async () => {
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({ limit: 101 }, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({ limit: 101 }, ctx());
       expect(result.success).toBe(false);
       expect(result.output).toContain("limit");
       expect(getJupiterPredictionEvents).not.toHaveBeenCalled();
     });
 
     it("events: rejects a limit below 1 instead of clamping", async () => {
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({ limit: 0 }, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({ limit: 0 }, ctx());
       expect(result.success).toBe(false);
       expect(result.output).toContain("limit");
       expect(getJupiterPredictionEvents).not.toHaveBeenCalled();
@@ -292,7 +292,7 @@ describe("solana-jupiter handlers — predict", () => {
 
     it("events: accepts the owner-max limit of exactly 100", async () => {
       getJupiterPredictionEvents.mockResolvedValue({ data: [], pagination: { start: 0, end: 100, total: 0, hasNext: false } });
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({ limit: 100 }, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({ limit: 100 }, ctx());
       expect(result.success).toBe(true);
       expect(getJupiterPredictionEvents).toHaveBeenCalledWith(expect.objectContaining({ start: 0, end: 100 }));
     });
@@ -309,7 +309,7 @@ describe("solana-jupiter handlers — predict", () => {
       ["sortBy", "price"],
       ["sortDirection", "sideways"],
     ])("events: rejects an invalid %s value instead of silently dropping it", async (key, value) => {
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({ [key]: value }, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({ [key]: value }, ctx());
       expect(result.success).toBe(false);
       expect(result.output).toContain(key);
       expect(result.output).toContain(String(value));
@@ -318,7 +318,7 @@ describe("solana-jupiter handlers — predict", () => {
 
     it("events: omitted enum params still resolve to undefined (no filter), not rejected", async () => {
       getJupiterPredictionEvents.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
-      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({}, ctx());
+      const result = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({}, ctx());
       expect(result.success).toBe(true);
       const call = getJupiterPredictionEvents.mock.calls[0]![0] as Record<string, unknown>;
       expect(call.provider).toBeUndefined();
@@ -334,16 +334,29 @@ describe("solana-jupiter handlers — predict", () => {
     // ToolResult itself. In production `executeProtocolTool`'s outer
     // try/catch converts this into a failed ToolResult; called directly here
     // (matching the rest of this file), the handler promise rejects.
-    it("events: maps an HTTP 403 (geo-block) into a clear regional message", async () => {
+    it("events: appends the region hint to an HTTP 403 without replacing the provider words", async () => {
       getJupiterPredictionEvents.mockRejectedValue(providerHttpError(403, "HTTP 403: Forbidden"));
-      await expect(SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({}, ctx())).rejects.toThrow(
-        /not available from your current region/,
+      await expect(SOLANA_JUPITER_HANDLERS["solana.predict.events"]({}, ctx())).rejects.toThrow(
+        /United States and South Korea/,
       );
+    });
+
+    // W2g, through a real handler route: a NON-geo 403 (entitlement, quota,
+    // WAF) must keep the provider's own words and its status. Rewriting every
+    // 403 into the geo sentence told the agent a cause nothing evidenced.
+    it("events: a non-geo 403 keeps the provider's own words AND its status", async () => {
+      getJupiterPredictionEvents.mockRejectedValue(
+        providerHttpError(403, "API key quota exceeded for prediction markets"),
+      );
+      const thrown: unknown = await SOLANA_JUPITER_HANDLERS["solana.predict.events"]({}, ctx())
+        .catch((err: unknown) => err);
+      expect((thrown as Error).message).toContain("API key quota exceeded for prediction markets");
+      expect((thrown as { httpStatus?: number }).httpStatus).toBe(403);
     });
 
     it("events: a non-403 error is NOT rewritten", async () => {
       getJupiterPredictionEvents.mockRejectedValue(providerHttpError(500, "HTTP 500: Internal Server Error"));
-      await expect(SOLANA_JUPITER_HANDLERS["solana.predict.events"]!({}, ctx())).rejects.toThrow("HTTP 500");
+      await expect(SOLANA_JUPITER_HANDLERS["solana.predict.events"]({}, ctx())).rejects.toThrow("HTTP 500");
     });
   });
 });

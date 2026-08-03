@@ -175,7 +175,7 @@ describe("compaction branches honour the session's switched endpoint", () => {
     expect(used?.contextLimit).toBe(120_000);
     expect(used?.inputPricePerM).toBe(0.4);
 
-    expect(await listEndpointSwitches(sessionId, 10)).toHaveLength(1);
+    expect(await listEndpointSwitches(sessionId)).toHaveLength(1);
   });
 
   it("branch B uses the switched endpoint too", async () => {

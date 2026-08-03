@@ -17,7 +17,7 @@ import { ErrorCodes, VexError } from "../../errors.js";
 
 /** A fetch that never answers; it only rejects when its signal aborts. */
 function hangingFetch(): typeof fetch {
-  return ((_url: string, init?: RequestInit): Promise<Response> =>
+  return (_input, init) =>
     new Promise<Response>((_resolve, reject) => {
       const signal = init?.signal;
       if (!signal) return;
@@ -26,7 +26,7 @@ function hangingFetch(): typeof fetch {
         return;
       }
       signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
-    })) as unknown as typeof fetch;
+    });
 }
 
 afterEach(() => {

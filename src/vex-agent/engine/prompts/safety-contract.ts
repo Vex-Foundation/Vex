@@ -67,7 +67,7 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 3. **Address-first for EVM mutations.** Resolve exact token contract addresses with \`token_find(query="SYMBOL", chainIds="...")\` BEFORE passing them to \`swap_execute\` or \`bridge\`. Pass the address, not the symbol.
 
-4. **Check before swap.** Before any EVM \`swap_execute\`, run \`token_check(chain="...", address="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
+4. **Check before swap.** Before any EVM \`swap_execute\`, run \`token_check(chain="...", tokenAddress="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
 
    What the runtime does and does not do here: it independently blocks a CONFIRMED honeypot at quote time, so that one class cannot slip past you. It does NOT verify that you ran \`token_check\`, and it cannot see fee-on-transfer tax before you commit. Catching the tax — and everything \`token_check\` reports short of a confirmed honeypot — is yours.`;
 }

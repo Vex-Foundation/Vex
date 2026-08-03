@@ -47,7 +47,7 @@ function expectFloorRefusal(fn: () => unknown, field: string): void {
 /** Decode live calldata, mutate the decoded args, re-encode (still ABI-valid). */
 function tamper(data: string, mutate: (args: unknown[]) => void): Hex {
   const d = decodeFunctionData({ abi: PENDLE_ROUTER_ABI, data: data as Hex });
-  const args = structuredClone(d.args) as unknown[];
+  const args: unknown[] = [...structuredClone(d.args)];
   mutate(args);
   return encodeFunctionData({ abi: PENDLE_ROUTER_ABI, functionName: d.functionName, args: args as never });
 }

@@ -14,6 +14,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "queries", type: "string", description: "Comma-separated token symbols, names, or mint addresses to resolve and price (e.g. \"SOL,BONK\"). Provide this OR mints, not both." },
     ],
     exampleParams: { mints: "So11111111111111111111111111111111111111112" },
+    // Exactly one, per the handler: both is refused, neither is refused. The
+    // boundary now says it before the call instead of after it.
+    exclusiveParamGroups: [["mints", "queries"]],
     requiresEnv: "JUPITER_API_KEY",
     discovery: SOLANA_CORE_DISCOVERY["solana.prices"],
   },

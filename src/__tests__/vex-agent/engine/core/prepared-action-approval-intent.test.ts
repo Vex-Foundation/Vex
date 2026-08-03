@@ -65,7 +65,7 @@ function baseArgs(overrides: Record<string, unknown> = {}) {
       success: false,
       output: "approval required",
       pendingApproval: true,
-      actionKind: "user_wallet_broadcast",
+      actionKind: "user_wallet_broadcast" as const,
     },
     toolContext: {
       sessionPermission: "restricted",

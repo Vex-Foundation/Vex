@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { KYBERSWAP_TOOLS } from "../../../vex-agent/tools/protocols/kyberswap/manifest.js";
 import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 describe("kyberswap manifest", () => {
   // ── Completeness ─────────────────────────────────────────────────
@@ -119,11 +120,14 @@ describe("kyberswap manifest", () => {
     expect(required).toHaveLength(0);
   });
 
-  it("kyberswap.tokens.check requires chain and address", () => {
+  // `address` was renamed to `tokenAddress` by the W6a param-convention wave;
+  // the alias lane keeps the old spelling callable, but the MANIFEST names the
+  // canonical key.
+  it("kyberswap.tokens.check requires chain and tokenAddress", () => {
     const tool = KYBERSWAP_TOOLS.find(t => t.toolId === "kyberswap.tokens.check")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
     expect(required).toContain("chain");
-    expect(required).toContain("address");
+    expect(required).toContain("tokenAddress");
   });
 
   // ── No requiresEnv (KyberSwap is free) ──────────────────────────
@@ -217,7 +221,7 @@ describe("kyberswap manifest", () => {
   it("quote/execute exampleParams both carry a consistent slippageBps", () => {
     for (const toolId of ["kyberswap.swap.quote", "kyberswap.swap.execute"]) {
       const tool = KYBERSWAP_TOOLS.find(t => t.toolId === toolId)!;
-      expect(tool.exampleParams.slippageBps).toBe(50);
+      expect(tool.exampleParams.slippageBps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
     }
   });
 

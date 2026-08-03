@@ -16,6 +16,8 @@
  *     same wallet would render differently run to run.
  */
 
+import assert from "node:assert/strict";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ChainFamily } from "@tools/khalani/types.js";
@@ -90,7 +92,9 @@ interface Snapshot {
 }
 
 function snapshotOf(res: { data?: unknown }): Snapshot {
-  return (res.data as { wallets: Snapshot[] }).wallets[0]!;
+  const [snapshot] = (res.data as { wallets: Snapshot[] }).wallets;
+  assert.ok(snapshot, "handler returned no wallet snapshot");
+  return snapshot;
 }
 
 /** Each chain holds exactly 1 native unit priced at $1 — so totals are countable. */
@@ -138,9 +142,11 @@ describe("wallet_balances — local chain scan", () => {
     expect(res.success).toBe(true);
     expect(snap.scannedChainIds).toEqual([4663, 4664, 4666, 4667]);
     expect(snap.chainErrors).toHaveLength(1);
-    expect(snap.chainErrors[0]!.chainId).toBe(4665);
+    const [chainError] = snap.chainErrors;
+    assert.ok(chainError);
+    expect(chainError.chainId).toBe(4665);
     // Sanitized: the RPC endpoint (and its key) never reaches the model.
-    expect(snap.chainErrors[0]!.message).not.toContain("rpc.secret");
+    expect(chainError.message).not.toContain("rpc.secret");
 
     // Computed off the FULL scan — four surviving chains at $1 each.
     expect(snap.totalUsd).toBeCloseTo(4);

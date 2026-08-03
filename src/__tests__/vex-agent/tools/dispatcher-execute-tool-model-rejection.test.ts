@@ -14,6 +14,8 @@
  * durably mark a run auto-retry-unsafe or be recorded as a plan-gate denial.
  */
 
+import assert from "node:assert/strict";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const markAutoRetryUnsafe = vi.fn().mockResolvedValue(undefined);
@@ -99,7 +101,9 @@ describe("dispatcher — non-model execute_tool (the approval resume)", () => {
 
     expect(result.success).toBe(true);
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
-    expect(executeProtocolTool.mock.calls[0]![0]).toEqual({
+    const [firstCall] = executeProtocolTool.mock.calls;
+    assert.ok(firstCall);
+    expect(firstCall[0]).toEqual({
       toolId: "dexscreener.search",
       params: { query: "VEX" },
     });

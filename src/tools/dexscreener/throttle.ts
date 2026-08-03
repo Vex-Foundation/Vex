@@ -31,9 +31,16 @@ const RATE_PER_MINUTE: Record<DexRateClass, number> = {
   slow: 60,
 };
 
-/** How long a cached response for each class stays fresh. */
+/**
+ * How long a cached response for each class stays fresh.
+ *
+ * `fast` matches the provider's OWN edge policy — it answers
+ * `cache-control: public, max-age=30` — rather than guessing under it. An 8 s
+ * local TTL could never be fresher than 30 s-stale edge data; it only bought
+ * ~4x the calls against the 300 rpm budget for identical bytes (SPEC §2.5 W2f).
+ */
 const TTL_MS: Record<DexRateClass, number> = {
-  fast: 8_000, // prices/liquidity move — short window
+  fast: 30_000, // provider edge cache is 30 s — a shorter local TTL buys nothing
   slow: 60_000, // profiles/boosts/metas/CTO/ads/orders — slow-moving feeds
 };
 

@@ -22,7 +22,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
+import type {
+  ProtocolHandler,
+  ProtocolToolManifest,
+} from "@vex-agent/tools/protocols/types.js";
 
 vi.mock("@vex-agent/tools/protocols/capture-validator.js", () => ({
   isPreviewExecution: vi.fn(() => false),
@@ -143,7 +146,10 @@ describe("cold resume after a process restart", () => {
   it("executes the target handler with IDENTICAL params once the discovered set is empty", async () => {
     const manifest = makeManifest();
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(manifest);
-    const handler = vi.fn(async () => ({ success: true, output: "swapped" }));
+    const handler = vi.fn<ProtocolHandler>(async () => ({
+      success: true,
+      output: "swapped",
+    }));
     vi.mocked(catalog.getProtocolHandler).mockReturnValue(handler);
 
     // ── live turn: the model discovers the tool and calls it by name ──
@@ -164,12 +170,15 @@ describe("cold resume after a process restart", () => {
 
     expect(result.success).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0]![0]).toEqual(SWAP_PARAMS);
+    expect(handler.mock.calls[0]?.[0]).toEqual(SWAP_PARAMS);
   });
 
   it("REGRESSION: the raw injected name is what used to fail in a fresh process", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(makeManifest());
-    const handler = vi.fn(async () => ({ success: true, output: "swapped" }));
+    const handler = vi.fn<ProtocolHandler>(async () => ({
+      success: true,
+      output: "swapped",
+    }));
     vi.mocked(catalog.getProtocolHandler).mockReturnValue(handler);
 
     const result = await dispatchTool(

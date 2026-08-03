@@ -15,17 +15,15 @@
  * execute so the pair cannot disagree about what was authorised.
  */
 
-import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { checkSlippageBps, VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 import { num } from "../../../handler-helpers.js";
-
-const DEFAULT_SLIPPAGE_BPS = 50;
 
 export function resolveUniswapSlippageBps(
   handlerToolId: string,
   p: Record<string, unknown>,
 ): { readonly ok: true; readonly bps: number } | { readonly ok: false; readonly reason: string } {
-  const bps = num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS;
+  const bps = num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS;
   const violation = checkSlippageBps(`Parameter "slippageBps" for ${handlerToolId}`, bps);
   return violation ? { ok: false, reason: violation } : { ok: true, bps };
 }

@@ -20,11 +20,17 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { createPublicClient, createWalletClient, http } from "viem";
+import { mainnet } from "viem/chains";
+
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
 
 const TO = "0x2222222222222222222222222222222222222222" as const;
-const ACCOUNT = { address: "0x1111111111111111111111111111111111111111" } as const;
+/** A JSON-RPC account: an address is all the window under test reads. */
+const ACCOUNT = { address: "0x1111111111111111111111111111111111111111", type: "json-rpc" } as const;
 const SERIALIZED = "0xdeadbeef" as const;
+/** Never reached: every RPC-backed action is overridden below. */
+const DEAD_TRANSPORT = http("http://127.0.0.1:1");
 
 describe("signStageBroadcast — the never-interrupt window", () => {
   it("completes sign → stage → broadcast → accept → receipt even when the operator stops mid-window", async () => {
@@ -40,28 +46,32 @@ describe("signStageBroadcast — the never-interrupt window", () => {
       return { status: "success", transactionHash: "0xr" };
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const publicClient = {
-      estimateGas: async () => 21_000n,
-      sendRawTransaction,
-      waitForTransactionReceipt,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const walletClient = {
-      account: ACCOUNT,
-      chain: { id: 8453 },
-      prepareTransactionRequest: async () => ({ nonce: 7, to: TO }),
-      signTransaction: async () => {
-        trace.push("sign");
-        // THE WORST INSTANT: the signature exists and nothing is on the wire.
-        // Everything below this line must still happen.
-        controller.abort();
-        return SERIALIZED;
+    // Real viem clients with the RPC-backed actions replaced: `Object.assign`
+    // keeps the full client type (so no cast is needed to satisfy
+    // `PublicClient` / `WalletClient`) while this suite owns every call the
+    // never-interrupt window makes.
+    const publicClient = Object.assign(
+      createPublicClient({ chain: mainnet, transport: DEAD_TRANSPORT }),
+      {
+        estimateGas: async () => 21_000n,
+        sendRawTransaction,
+        waitForTransactionReceipt,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
+    );
+
+    const walletClient = Object.assign(
+      createWalletClient({ account: ACCOUNT, chain: mainnet, transport: DEAD_TRANSPORT }),
+      {
+        prepareTransactionRequest: async () => ({ nonce: 7, to: TO }),
+        signTransaction: async () => {
+          trace.push("sign");
+          // THE WORST INSTANT: the signature exists and nothing is on the wire.
+          // Everything below this line must still happen.
+          controller.abort();
+          return SERIALIZED;
+        },
+      },
+    );
 
     const outcome = await signStageBroadcast(
       publicClient,

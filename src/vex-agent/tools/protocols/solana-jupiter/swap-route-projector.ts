@@ -21,6 +21,20 @@
  * `priceImpactFraction` — the SAME fraction convention KyberSwap's
  * `routeSummary.priceImpact` already uses (0.0015 = 0.15%).
  *
+ * SIGN CONVENTION, settled 2026-08-03 (W2g). The magnitude note above was
+ * right; the SIGN was read off one capture that happened to be negative, and
+ * three files went on to state that "Jupiter's impact is negative in the
+ * ordinary case" and carries "the OPPOSITE sign" to KyberSwap's. A fresh
+ * read-only capture disproves that: `GET /swap/v2/build` SOL→USDC across three
+ * runs returns `"0"` for small sizes and then POSITIVE, monotonically growing
+ * values as the size moves the pool — 100 SOL `"0.00011185…"`, 2 000 SOL
+ * `"0.00038529…"`, 50 000 SOL `"0.00366076…"`
+ * (`agents_dm/verify/capture-jupiter-price-impact-sign.ts`, fixture
+ * `fixture-jupiter-price-impact-sign-2026-08-03.jsonl`; pinned by this
+ * module's test). Jupiter is COST-POSITIVE, identically to KyberSwap: a
+ * positive fraction is value given up, and a NEGATIVE value is the anomaly
+ * (output supposedly worth more than input), not the ordinary case.
+ *
  * The value is passed through as the provider's exact STRING, never parsed:
  * a fabricated or rounded price impact is worse than the raw one, and the
  * agent can compare fractions lexically-safely against its own thresholds

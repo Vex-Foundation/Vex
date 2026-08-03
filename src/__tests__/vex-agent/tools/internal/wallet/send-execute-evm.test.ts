@@ -11,14 +11,62 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseUnits, getAddress } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  getAddress,
+  http,
+  parseUnits,
+  type Account,
+  type Chain,
+  type PublicClient,
+  type Transport,
+  type WalletClient,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { mainnet } from "viem/chains";
 
+import { getLocalChain, type LocalChainConfig } from "@tools/evm-chains/registry.js";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { WalletIntent } from "@vex-agent/db/repos/wallet-intents.js";
 
 type EvmChainResolverModule = typeof import("@tools/evm-chains/resolver.js");
 type EvmClientModule = typeof import("@tools/evm-chains/evm-client.js");
 type KhalaniEvmClientModule = typeof import("@tools/khalani/evm-client.js");
+
+/**
+ * REAL viem clients with only the four actions under test replaced by spies.
+ *
+ * The factories these stand in for return `PublicClient`/`WalletClient`; a
+ * four-key object literal does not, so typing the factory mocks used to be
+ * impossible without an escape. Building the genuine client and overriding the
+ * actions keeps the mock's type exactly the contract's.
+ */
+const STUB_TRANSPORT = http("http://127.0.0.1:1");
+const STUB_ACCOUNT = privateKeyToAccount(`0x${"1".repeat(64)}`);
+
+function stubPublicClient() {
+  const client = createPublicClient({ chain: mainnet, transport: STUB_TRANSPORT }) as PublicClient<
+    Transport,
+    Chain
+  >;
+  return Object.assign(client, {
+    waitForTransactionReceipt: vi.fn(),
+    readContract: vi.fn(),
+  });
+}
+
+function stubWalletClient() {
+  const client = createWalletClient({
+    account: STUB_ACCOUNT,
+    chain: mainnet,
+    transport: STUB_TRANSPORT,
+  }) as WalletClient<Transport, Chain, Account>;
+  return Object.assign(client, {
+    sendTransaction: vi.fn(),
+    writeContract: vi.fn(),
+  });
+}
 
 // ── Mocks ───────────────────────────────────────────────────────
 
@@ -27,14 +75,8 @@ vi.mock("@tools/evm-chains/resolver.js", () => ({
   resolveInclusiveEvmChain: (...args: Parameters<EvmChainResolverModule["resolveInclusiveEvmChain"]>) => mockResolve(...args),
 }));
 
-const localPublicClient = {
-  waitForTransactionReceipt: vi.fn(),
-  readContract: vi.fn(),
-};
-const localWalletClient = {
-  sendTransaction: vi.fn(),
-  writeContract: vi.fn(),
-};
+const localPublicClient = stubPublicClient();
+const localWalletClient = stubWalletClient();
 const mockGetLocalEvmClients = vi.fn<EvmClientModule["getLocalEvmClients"]>(() => ({
   publicClient: localPublicClient,
   walletClient: localWalletClient,
@@ -43,14 +85,8 @@ vi.mock("@tools/evm-chains/evm-client.js", () => ({
   getLocalEvmClients: (...args: Parameters<EvmClientModule["getLocalEvmClients"]>) => mockGetLocalEvmClients(...args),
 }));
 
-const khalaniPublicClient = {
-  waitForTransactionReceipt: vi.fn(),
-  readContract: vi.fn(),
-};
-const khalaniWalletClient = {
-  sendTransaction: vi.fn(),
-  writeContract: vi.fn(),
-};
+const khalaniPublicClient = stubPublicClient();
+const khalaniWalletClient = stubWalletClient();
 const mockCreateDynamicPublicClient = vi.fn<KhalaniEvmClientModule["createDynamicPublicClient"]>(() => khalaniPublicClient);
 const mockCreateDynamicWalletClient = vi.fn<KhalaniEvmClientModule["createDynamicWalletClient"]>(() => khalaniWalletClient);
 vi.mock("@tools/khalani/evm-client.js", () => ({
@@ -74,12 +110,16 @@ const TO = "0xffcf8fdee72ac11b5c542428b35eef5769c409f0";
 const ERC20 = "0x5fc5360d0400a0fd4f2af552add042d716f1d168";
 const TX_HASH = "0x" + "ab".repeat(32);
 
-const LOCAL_CONFIG = {
-  id: 4663,
-  name: "Robinhood Chain",
-  family: "eip155" as const,
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-};
+/**
+ * The REAL registry entry for Robinhood Chain (4663), not a hand-rolled stub:
+ * `LocalChainConfig` is what the resolver hands the factory, and a stub of it
+ * drifts silently every time the registry gains a field.
+ */
+const LOCAL_CONFIG: LocalChainConfig = (() => {
+  const config = getLocalChain(4663);
+  if (config === undefined) throw new Error("local chain 4663 missing from the registry");
+  return config;
+})();
 
 const KHALANI_CHAIN = {
   type: "eip155" as const,

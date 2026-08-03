@@ -117,7 +117,7 @@ describe("prompt unambiguity (A1)", () => {
     it("the Safety Contract routes through the shortcuts, not past them", () => {
       const prompt = fullPrompt();
       expect(prompt).toContain('token_find(query="SYMBOL"');
-      expect(prompt).toContain('token_check(chain="..."');
+      expect(prompt).toContain('token_check(chain="...", tokenAddress="...")');
       expect(prompt).not.toContain("khalani.tokens.search(query, chainIds)");
     });
   });
@@ -165,7 +165,7 @@ describe("prompt unambiguity (A1)", () => {
       // Agent sessions have no mission contract to re-accept.
       const agent = buildWalletStateBanner(makeContext({
         sessionKind: "agent",
-        walletPolicy: { kind: "explicit", walletIds: ["wallet-not-in-session"] },
+        walletPolicy: { kind: "mission_allowed", allowedWallets: ["wallet-not-in-session"] },
         selectedEvmWallet: null,
         selectedSolanaWallet: null,
       }));

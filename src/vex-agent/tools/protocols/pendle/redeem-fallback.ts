@@ -93,8 +93,16 @@ export async function buildRedeemPyToSyPlan(input: {
   /** The market's SY — the share token the redemption actually pays. */
   sy: string;
   netPyIn: bigint;
-  /** Slippage tolerance 0-1 for the minSyOut floor (default 0.5%). */
-  slippage?: number;
+  /**
+   * Slippage tolerance as a fraction in [0, 1) for the minSyOut floor.
+   * REQUIRED, and REJECTED rather than replaced when out of range: this layer
+   * holds no default of its own, because what an omitted tolerance means is
+   * product policy with one home (`slippage-policy.ts`
+   * `VEX_DEFAULT_SLIPPAGE_BPS`), already resolved by the calling handler. A
+   * local fallback here silently redeemed at a tolerance the caller never
+   * authorized.
+   */
+  slippage: number;
 }): Promise<RedeemPyToSyPlan> {
   if (input.netPyIn <= 0n) {
     throw new VexError(ErrorCodes.INVALID_AMOUNT, "Redeem amount must be positive.");
@@ -135,7 +143,13 @@ export async function buildRedeemPyToSyPlan(input: {
     );
   }
 
-  const slippage = input.slippage !== undefined && input.slippage >= 0 && input.slippage < 1 ? input.slippage : 0.005;
+  const slippage = input.slippage;
+  if (!Number.isFinite(slippage) || slippage < 0 || slippage >= 1) {
+    throw new VexError(
+      ErrorCodes.INVALID_AMOUNT,
+      `Redeem fallback slippage must be a fraction in [0, 1); received ${slippage}.`,
+    );
+  }
   // SY is share-based: the Router pays netPyIn * 1e18 / exchangeRate.
   const expectedSyOut = (input.netPyIn * WAD) / syExchangeRate;
   // Tolerance protects ONLY against rate accrual between this read and the mine.

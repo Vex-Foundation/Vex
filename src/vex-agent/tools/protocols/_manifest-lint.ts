@@ -18,7 +18,8 @@
  *   generic-error-literal   no "unexpected error"-class literal in handler/manifest source
  *   slippage-default-home   only slippage-policy.ts declares a slippage default
  *   chain-doc-parity        every chain-valued param carries the canonical sentence
- *   exclusive-param-groups  a prose XOR is backed by a declared exclusiveParamGroups
+ *   exclusive-param-groups  a prose XOR / "at most one of" / "at least one of" is
+ *                           backed by a declared exclusiveParamGroups | atMostOne | atLeastOneOf
  *   enum-declaration        a prose "one of X, Y, Z" is backed by a declared enum
  *
  * TODAY'S VIOLATIONS ARE ALLOWLISTED, not fixed (see `_manifest-lint/allowlist.ts`).
@@ -26,10 +27,9 @@
  * entries it fixes. The allowlist's size is the fleet's convention debt, and it
  * is only allowed to shrink.
  *
- * `exclusiveParamGroups` and `ProtocolParamDef.enum` do not exist yet (they
- * arrive with the discovery-contract wave). Their rules are written to read the
- * field structurally and activate the moment it appears; until then every prose
- * XOR / value list is simply an allowlisted violation.
+ * The group and enum rules read their manifest fields STRUCTURALLY, so a field
+ * added later (as `atMostOne`/`atLeastOneOf` were) starts being enforced the
+ * moment it ships, with nothing here to revisit.
  */
 
 import type { ProtocolToolManifest } from "./types.js";
@@ -44,8 +44,9 @@ import {
   lintToolDescription,
   lintExampleParamsRequired,
   readDeclaredEnum,
-  readDeclaredExclusiveGroups,
+  readDeclaredParamGroups,
 } from "./_manifest-lint/rules.js";
+import type { DeclaredParamGroups } from "./_manifest-lint/rules.js";
 import { MANIFEST_LINT_ALLOWLIST, allowlistKey } from "./_manifest-lint/allowlist.js";
 
 export type { ManifestLintIssue, ManifestLintRule, LintParam } from "./_manifest-lint/rules.js";
@@ -55,6 +56,7 @@ export {
   isLinterOwnSource,
   lintGenericErrorLiterals,
   lintSlippageDefaultHome,
+  SLIPPAGE_DEFAULT_OWNER,
 } from "./_manifest-lint/source-rules.js";
 export type { SourceFile } from "./_manifest-lint/source-rules.js";
 
@@ -66,8 +68,8 @@ export interface LintSubject {
   readonly params: readonly LintParam[];
   /** Present for protocol manifests; the JSON-schema lane declares no example. */
   readonly exampleParams?: Record<string, unknown>;
-  /** Declared mutually-exclusive param groups, once the schema field exists. */
-  readonly exclusiveParamGroups?: readonly (readonly string[])[];
+  /** Declared cross-param group rules (exactly-one / at-most-one / at-least-one). */
+  readonly paramGroups?: DeclaredParamGroups;
 }
 
 /** JSON-schema-shaped tool (`ToolDef`) as the linter reads it. */
@@ -80,13 +82,13 @@ export interface SchemaLintInput {
 
 /** Project a protocol manifest onto the shared lint subject. */
 export function toLintSubject(manifest: ProtocolToolManifest): LintSubject {
-  const groups = readDeclaredExclusiveGroups(manifest);
+  const groups = readDeclaredParamGroups(manifest);
   return {
     subject: manifest.toolId,
     description: manifest.description,
     mutating: manifest.mutating,
     exampleParams: manifest.exampleParams,
-    ...(groups ? { exclusiveParamGroups: groups } : {}),
+    ...(groups ? { paramGroups: groups } : {}),
     params: manifest.params.map((param) => {
       const declaredEnum = readDeclaredEnum(param);
       return {
@@ -165,7 +167,7 @@ export function lintToolSubject(subject: LintSubject): ManifestLintIssue[] {
   if (subject.exampleParams) {
     issues.push(
       ...lintExampleParamsRequired(subject.subject, subject.params, subject.exampleParams),
-      ...lintExclusiveParamGroups(subject.subject, subject.params, subject.exclusiveParamGroups),
+      ...lintExclusiveParamGroups(subject.subject, subject.params, subject.paramGroups),
     );
   }
   return issues;

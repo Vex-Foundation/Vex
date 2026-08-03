@@ -146,7 +146,8 @@ process.exit(0);
         timeout: 20_000,
       },
     );
-    const line = stdout.trim().split(/\r?\n/).findLast((candidate) => candidate.startsWith("{"));
+    const lines = stdout.trim().split(/\r?\n/);
+    const line = lines.reverse().find((candidate) => candidate.startsWith("{"));
     if (!line) throw new Error(`child compact produced no JSON stdout: ${stdout}`);
     return JSON.parse(line);
   } finally {

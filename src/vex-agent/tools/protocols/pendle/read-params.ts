@@ -100,16 +100,31 @@ function readOptionalInstant(raw: unknown, param: string): PendleReadParams<numb
   return { ok: true, value: ms };
 }
 
-/** Comma-separated free-text tokens, bounded and lowercased. */
-function readCsv(raw: unknown, max: number): string[] | undefined {
+/**
+ * Comma-separated free-text tokens, lowercased, REJECTED BY NAME when the
+ * caller supplies more than `max` (W9d).
+ *
+ * This used to `.slice(0, max)`. That is the silent-truncation defect in its
+ * most damaging form: pass 20 `excludeCategories` and four were dropped with no
+ * echo, so markets the agent explicitly asked to EXCLUDE came back in the
+ * result and it had no way to know. The bound is now stated by name and the
+ * caller decides what to drop.
+ */
+function readCsv(raw: unknown, param: string, max: number): PendleReadParams<string[] | undefined> {
   const value = readOptionalString(raw);
-  if (value === undefined) return undefined;
+  if (value === undefined) return { ok: true, value: undefined };
   const items = value
     .split(",")
     .map((s) => s.trim().toLowerCase())
-    .filter((s) => s.length > 0)
-    .slice(0, max);
-  return items.length > 0 ? items : undefined;
+    .filter((s) => s.length > 0);
+  if (items.length > max) {
+    return reject(
+      param,
+      `\`${param}\` accepts at most ${max} comma-separated values; ${items.length} were supplied. `
+      + "Narrow the list and retry — Vex will not silently drop the extras.",
+    );
+  }
+  return { ok: true, value: items.length > 0 ? items : undefined };
 }
 
 /**
@@ -200,6 +215,14 @@ export interface PendleYieldsQuery {
 /** Default page size. There is NO hard ceiling — the caller sets its own. */
 export const PENDLE_YIELDS_DEFAULT_LIMIT = 20;
 
+/**
+ * How many category filters one call may carry. NAMED and exported because the
+ * bound is now enforced by a rejection instead of a silent `.slice` — a limit
+ * an agent can be told about is a contract; one that quietly drops values is a
+ * bug that reports success.
+ */
+export const MAX_CATEGORY_FILTERS = 16;
+
 export function parsePendleYieldsParams(p: Record<string, unknown>): PendleReadParams<PendleYieldsQuery> {
   const chains = readChains(p.chainIds, "chainIds");
   if (!chains.ok) return chains;
@@ -244,6 +267,11 @@ export function parsePendleYieldsParams(p: Record<string, unknown>): PendleReadP
   const fields = parseFieldList(p.fields, "fields", PENDLE_YIELD_FIELDS);
   if (!fields.ok) return fields;
 
+  const categories = readCsv(p.categories, "categories", MAX_CATEGORY_FILTERS);
+  if (!categories.ok) return categories;
+  const excludeCategories = readCsv(p.excludeCategories, "excludeCategories", MAX_CATEGORY_FILTERS);
+  if (!excludeCategories.ok) return excludeCategories;
+
   const minLiquidity = numbers.minLiquidityUsd;
   const maxLiquidity = numbers.maxLiquidityUsd;
   if (minLiquidity !== undefined && maxLiquidity !== undefined && minLiquidity > maxLiquidity) {
@@ -273,8 +301,8 @@ export function parsePendleYieldsParams(p: Record<string, unknown>): PendleReadP
       minDaysToExpiry: minDays,
       maxDaysToExpiry: maxDays,
       underlyingSymbol: readOptionalString(p.underlyingSymbol)?.toLowerCase(),
-      categories: readCsv(p.categories, 16),
-      excludeCategories: readCsv(p.excludeCategories, 16),
+      categories: categories.value,
+      excludeCategories: excludeCategories.value,
       isNew: isNew.value,
       isPrime: isPrime.value,
       includeMatured: includeMatured.value ?? false,

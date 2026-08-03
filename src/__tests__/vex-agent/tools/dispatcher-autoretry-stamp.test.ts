@@ -11,6 +11,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import type { ToolCallRequest } from "@vex-agent/tools/types.js";
+import { makeTestContext } from "./_test-context.js";
+
 const markAutoRetryUnsafe = vi.fn().mockResolvedValue(undefined);
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   markAutoRetryUnsafe: (...a: unknown[]) => markAutoRetryUnsafe(...a),
@@ -56,17 +60,19 @@ const { dispatchTool, dispatchTargetIsMutating } = await import(
   "../../../vex-agent/tools/dispatcher.js"
 );
 
-function ctx(missionRunId: string | null) {
-  return {
+function ctx(missionRunId: string | null): InternalToolContext {
+  return makeTestContext({
     sessionId: "s1",
-    loadedDocuments: new Map(),
     sessionPermission: "full",
-    approved: false,
     missionRunId,
     missionId: "m1",
     sessionKind: "mission",
-    contextUsageBand: "normal",
-  } as unknown as Parameters<typeof dispatchTool>[1];
+  });
+}
+
+/** `toolCallId` is required on `ToolCallRequest`; the stamp never reads it. */
+function call(name: string, args: Record<string, unknown> = {}): ToolCallRequest {
+  return { name, args, toolCallId: `call-${name}` };
 }
 
 beforeEach(() => {
@@ -78,49 +84,49 @@ afterEach(() => vi.clearAllMocks());
 
 describe("dispatchTargetIsMutating", () => {
   it("internal mutating tool → true; read-only → false", () => {
-    expect(dispatchTargetIsMutating({ name: "wallet_send_confirm", args: {} })).toBe(true);
-    expect(dispatchTargetIsMutating({ name: "wallet_balances", args: {} })).toBe(false);
-    expect(dispatchTargetIsMutating({ name: "agent_scan", args: {} })).toBe(false);
+    expect(dispatchTargetIsMutating(call("wallet_send_confirm"))).toBe(true);
+    expect(dispatchTargetIsMutating(call("wallet_balances"))).toBe(false);
+    expect(dispatchTargetIsMutating(call("agent_scan"))).toBe(false);
     // The execute_tool WRAPPER itself is mutating:false — never stamp on the name.
-    expect(dispatchTargetIsMutating({ name: "execute_tool", args: {} })).toBe(false);
+    expect(dispatchTargetIsMutating(call("execute_tool"))).toBe(false);
   });
 
   it("execute_tool stamps based on the TARGET manifest", () => {
     getProtocolManifest.mockReturnValue({ mutating: true });
     expect(
-      dispatchTargetIsMutating({ name: "execute_tool", args: { toolId: "user_wallet_broadcast" } }),
+      dispatchTargetIsMutating(call("execute_tool", { toolId: "user_wallet_broadcast" })),
     ).toBe(true);
     expect(getProtocolManifest).toHaveBeenCalledWith("user_wallet_broadcast");
 
     getProtocolManifest.mockReturnValue({ mutating: false });
     expect(
-      dispatchTargetIsMutating({ name: "execute_tool", args: { toolId: "external_post" } }),
+      dispatchTargetIsMutating(call("execute_tool", { toolId: "external_post" })),
     ).toBe(false);
 
     // Unknown / missing target → not mutating (no stamp).
     getProtocolManifest.mockReturnValue(undefined);
     expect(
-      dispatchTargetIsMutating({ name: "execute_tool", args: { toolId: "ghost" } }),
+      dispatchTargetIsMutating(call("execute_tool", { toolId: "ghost" })),
     ).toBe(false);
-    expect(dispatchTargetIsMutating({ name: "execute_tool", args: {} })).toBe(false);
+    expect(dispatchTargetIsMutating(call("execute_tool"))).toBe(false);
   });
 });
 
 describe("stamp on dispatch", () => {
   it("stamps before a mutating tool runs (mission run present)", async () => {
-    await dispatchTool({ name: "wallet_send_confirm", args: { intentId: "i1" } }, ctx("run-1"));
+    await dispatchTool(call("wallet_send_confirm", { intentId: "i1" }), ctx("run-1"));
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
     expect(handleWalletSendConfirm).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT stamp a read-only tool", async () => {
-    await dispatchTool({ name: "wallet_balances", args: {} }, ctx("run-1"));
+    await dispatchTool(call("wallet_balances"), ctx("run-1"));
     expect(markAutoRetryUnsafe).not.toHaveBeenCalled();
     expect(handleWalletBalances).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT stamp when there is no mission run (missionRunId null)", async () => {
-    await dispatchTool({ name: "wallet_send_confirm", args: { intentId: "i1" } }, ctx(null));
+    await dispatchTool(call("wallet_send_confirm", { intentId: "i1" }), ctx(null));
     expect(markAutoRetryUnsafe).not.toHaveBeenCalled();
     expect(handleWalletSendConfirm).toHaveBeenCalledTimes(1);
   });
@@ -128,7 +134,7 @@ describe("stamp on dispatch", () => {
   it("FAIL-CLOSED: a stamp write failure prevents the mutating handler from running", async () => {
     markAutoRetryUnsafe.mockRejectedValueOnce(new Error("db down"));
     const result = await dispatchTool(
-      { name: "wallet_send_confirm", args: { intentId: "i1" } },
+      call("wallet_send_confirm", { intentId: "i1" }),
       ctx("run-1"),
     );
     expect(result.success).toBe(false);
@@ -140,7 +146,7 @@ describe("stamp on execute_tool (protocol target)", () => {
   it("mutating target user_wallet_broadcast → stamps before executeProtocolTool", async () => {
     getProtocolManifest.mockReturnValue({ mutating: true });
     await dispatchTool(
-      { name: "execute_tool", args: { toolId: "user_wallet_broadcast", params: {} } },
+      call("execute_tool", { toolId: "user_wallet_broadcast", params: {} }),
       ctx("run-1"),
     );
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
@@ -150,7 +156,7 @@ describe("stamp on execute_tool (protocol target)", () => {
   it("mutating target external_post → stamps before executeProtocolTool", async () => {
     getProtocolManifest.mockReturnValue({ mutating: true });
     await dispatchTool(
-      { name: "execute_tool", args: { toolId: "external_post", params: {} } },
+      call("execute_tool", { toolId: "external_post", params: {} }),
       ctx("run-1"),
     );
     expect(markAutoRetryUnsafe).toHaveBeenCalledWith("run-1");
@@ -160,7 +166,7 @@ describe("stamp on execute_tool (protocol target)", () => {
   it("read-only protocol target → no stamp, still executes", async () => {
     getProtocolManifest.mockReturnValue({ mutating: false });
     await dispatchTool(
-      { name: "execute_tool", args: { toolId: "dexscreener.token_lookup", params: {} } },
+      call("execute_tool", { toolId: "dexscreener.token_lookup", params: {} }),
       ctx("run-1"),
     );
     expect(markAutoRetryUnsafe).not.toHaveBeenCalled();
@@ -171,7 +177,7 @@ describe("stamp on execute_tool (protocol target)", () => {
     getProtocolManifest.mockReturnValue({ mutating: true });
     markAutoRetryUnsafe.mockRejectedValueOnce(new Error("db down"));
     const result = await dispatchTool(
-      { name: "execute_tool", args: { toolId: "user_wallet_broadcast", params: {} } },
+      call("execute_tool", { toolId: "user_wallet_broadcast", params: {} }),
       ctx("run-1"),
     );
     expect(result.success).toBe(false);

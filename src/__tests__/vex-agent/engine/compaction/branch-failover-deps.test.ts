@@ -64,7 +64,10 @@ function loadedConfig(): InferenceConfig {
 function providerWithCatalogue(seenConfigs: InferenceConfig[]): JudgeProvider {
   return {
     loadConfig: async () => loadedConfig(),
-    chatCompletionSimple: async (_messages, config) => {
+    chatCompletionSimple: async (
+      _messages: ReadonlyArray<{ role: string; content: string }>,
+      config: unknown,
+    ) => {
       seenConfigs.push(config as InferenceConfig);
       return { content: JSON.stringify({ ok: true }), usage: { cost: 0.001 } };
     },
@@ -138,7 +141,10 @@ describe("branch provider call — failover deps come from the provider", () => 
 
     await runBranch({
       loadConfig: async () => loadedConfig(),
-      chatCompletionSimple: async (_messages, config) => {
+      chatCompletionSimple: async (
+        _messages: ReadonlyArray<{ role: string; content: string }>,
+        config: unknown,
+      ) => {
         seen.push(config as InferenceConfig);
         return { content: JSON.stringify({ ok: true }) };
       },

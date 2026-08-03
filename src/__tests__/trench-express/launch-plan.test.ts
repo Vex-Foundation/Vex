@@ -22,6 +22,7 @@ import {
   LAUNCH_FEE_LEG_GAS_LIMIT,
 } from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
 import { TRENCH_CREATION_FEE_SLOT, TRENCH_CREATION_FEE_FIXTURE } from "@tools/trench-express/evm/creation-fee.js";
+import { buildTrenchFeeDisclosure } from "@tools/trench-express/fee/index.js";
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import type { PlanTrenchFeeLeg } from "@vex-agent/tools/protocols/trench/handlers/launch/fee-seam.js";
 import type { ValidatedLaunchRequest } from "@vex-agent/tools/protocols/trench/handlers/launch/validate.js";
@@ -66,9 +67,9 @@ const realisticFeePlanner: PlanTrenchFeeLeg = (req) => {
   return {
     feeWei,
     netWei: req.baseWei - feeWei,
-    txParams: { to: "0x00000000000000000000000000000000000feee5" as Address, value: feeWei },
+    txParams: { to: "0x00000000000000000000000000000000000feee5" as Address, data: "0x", value: feeWei },
     event: {} as never,
-    disclosure: {},
+    disclosure: buildTrenchFeeDisclosure({ basis: "launch_msg_value", baseWei: req.baseWei, feeWei }),
   };
 };
 

@@ -110,6 +110,7 @@ async function run(permission: "restricted" | "full", abortSignal?: AbortSignal)
     context: context(permission),
     turnResult: {
       content: "Preparing transfer.",
+      reasoning: null,
       toolCalls: [
         {
           id: "prepare-call",

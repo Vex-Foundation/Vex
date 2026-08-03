@@ -68,7 +68,9 @@ interface SourceLine {
 /** Every CODE line naming a slippage/tolerance binding — comments excluded, they are prose. */
 function slippageLines(venue: string): SourceLine[] {
   const found: SourceLine[] = [];
-  for (const entry of VENUE_SOURCES[venue]!) {
+  const entries = VENUE_SOURCES[venue];
+  if (entries === undefined) throw new Error(`no sources registered for venue ${venue}`);
+  for (const entry of entries) {
     for (const file of sourceFiles(entry)) {
       readFileSync(file, "utf8").split("\n").forEach((text, index) => {
         const code = text.trim();

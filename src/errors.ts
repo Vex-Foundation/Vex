@@ -14,6 +14,18 @@ export class VexError extends Error {
    * transport failure. Never assume its absence means success.
    */
   httpStatus?: number;
+  /**
+   * How long the provider said to wait before retrying, in WHOLE SECONDS, when
+   * a rate-limited response advertised it (`Retry-After`, or the
+   * `x-ratelimit-*` family on a 429). Set by `utils/http.ts`; always a
+   * validated integer within `utils/http/retry-after.ts`'s bounds — never raw
+   * header text, and absent whenever the provider named no interval.
+   *
+   * Flat and optional like `httpStatus` above, for the same reason: it is one
+   * bounded number recovered from one response, and the agent-facing remedy
+   * ("wait ~12s before retrying") reads it exactly once.
+   */
+  retryAfterSeconds?: number;
 
   constructor(
     public readonly code: string,

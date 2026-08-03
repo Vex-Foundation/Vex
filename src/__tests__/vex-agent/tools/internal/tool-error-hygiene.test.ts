@@ -122,7 +122,7 @@ describe("action aliases — every rejection locates its field", () => {
 
   it("token_check names the field", async () => {
     const result = await aliases.handleTokenCheck({ chain: "base" }, ctx);
-    expect(result.output).toContain("address:");
+    expect(result.output).toContain("tokenAddress:");
   });
 
   it("bridge_status names the field", async () => {

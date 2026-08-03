@@ -83,6 +83,8 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
     "solana.predict.closeAll's distinct tolerance — a separate knob by necessity, documented in slippage-policy.ts",
   ],
   ["limit", "result cap; description states the default and the maximum"],
+  ["page", "1-based FIRST provider page of a windowed read; the reply names the next page to continue from"],
+  ["pageSize", "rows fetched per provider page; distinct from `limit`, which caps what is RETURNED after filtering"],
   ["dryRun", "preview switch, reserved by runtime/params.ts"],
 ]);
 
@@ -102,7 +104,14 @@ export const BANNED_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["wallet", "use `walletFamily`"],
 ]);
 
-/** Param keys that carry a chain VALUE and therefore need the chain sentence. */
+/**
+ * Param keys that carry a chain VALUE and therefore need the chain sentence.
+ *
+ * Also the allowlist for the two normalizations `runtime/params.ts` performs —
+ * a JSON number becomes its decimal string, and a declared `enum` matches
+ * case-insensitively — because a chain value is the one thing in this
+ * vocabulary whose spelling carries no meaning of its own.
+ */
 export const CHAIN_VALUE_PARAM_KEYS: readonly string[] = ["chain", "fromChain", "toChain"];
 
 // ── Shared description text ──────────────────────────────────────

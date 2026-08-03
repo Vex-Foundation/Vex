@@ -29,13 +29,13 @@ import type {
   ProtocolHandler,
   ProtocolToolManifest,
 } from "@vex-agent/tools/protocols/types.js";
-import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { makeTestContext } from "../_test-context.js";
 
 const TEST_TOOL_ID = "dexscreener.__abort_probe";
 
 /** Swapped per test — the manifest `getProtocolManifest` returns for the probe. */
 let manifest: ProtocolToolManifest;
-const handler = vi.fn<Parameters<ProtocolHandler>, ReturnType<ProtocolHandler>>();
+const handler = vi.fn<ProtocolHandler>();
 const captureExecution = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@vex-agent/tools/protocols/catalog.js", async (importOriginal) => {
@@ -194,7 +194,7 @@ describe("dispatchTool → executeProtocolTool — the REAL route, no route mock
 
     const result = await dispatchTool(
       { id: "call-0", name: "execute_tool", args: { toolId: TEST_TOOL_ID, params: {} } } as never,
-      {
+      makeTestContext({
         sessionId: "session-abort-probe",
         sessionPermission: "full",
         // No mission run and no plan-mode: the route's two DB-touching
@@ -205,7 +205,7 @@ describe("dispatchTool → executeProtocolTool — the REAL route, no route mock
         walletResolution: { source: "default" },
         walletPolicy: { kind: "none" },
         abortSignal: controller.signal,
-      } as unknown as InternalToolContext,
+      }),
     );
 
     clearTimeout(stopPress);

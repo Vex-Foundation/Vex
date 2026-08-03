@@ -27,14 +27,16 @@ vi.mock("@tools/khalani/chains.js", async (importOriginal) => ({
 const MANIFEST: ProtocolToolManifest = {
   toolId: "dexscreener.search",
   namespace: "dexscreener",
+  lifecycle: "active",
   description: "search",
+  mutating: false,
   actionKind: "read",
   params: [
     { key: "query", type: "string", required: true, description: "search text" },
     { key: "limit", type: "number", description: "max rows" },
   ],
   exampleParams: { query: "PEPE", limit: 5 },
-} as unknown as ProtocolToolManifest;
+};
 
 describe("missing-required rejection text", () => {
   it("names the key, the required/optional sets, a working example and what we received", () => {

@@ -46,7 +46,13 @@ export function buildMissionRunPrompt(
   lines.push("  Valid reasons: goal_reached, deadline_reached, capital_depleted, max_loss_hit, no_viable_opportunity, emergency_stop");
   lines.push("- goal_reached is the only successful terminal reason. Use it only after verifying the success criteria with live state");
   lines.push("- For any non-success reason, the reason must match an accepted stop condition in the Mission Contract. Example: no_viable_opportunity is allowed only if the contract explicitly includes no_viable_opportunity or equivalent wording");
-  lines.push("- If the current situation is bad, unclear, or unprofitable but no accepted stop condition matches it, continue working safely or call loop_defer and wake later");
+  // `loop_defer` is the WAITING PRIMITIVE (`# Execution Policy`'s waiting
+  // pattern), not a fallback for a bad situation. Framing it as the thing you
+  // reach for when nothing else fits taught the model to treat waiting as
+  // failure — and to poll instead, which is what the waiting pattern exists to
+  // stop. Same wording direction as `execution-policy.ts`'s WAITING_PATTERN.
+  lines.push("- Waiting is a normal mission step, not a failure: when the next useful step depends on an on-chain or time-based event you cannot make happen sooner, call `loop_defer` with a wait sized to that event rather than polling it. See `# Execution Policy`");
+  lines.push("- If the current situation is unclear or unprofitable but no accepted stop condition matches it, keep working safely or wait with `loop_defer` — never stop");
   lines.push("- Never use mission_stop to express uncertainty, fatigue, lack of confidence, or a temporary lack of market opportunity unless that exact stop condition was accepted by the user");
   lines.push("- emergency_stop is only for safety/integrity failures: unverifiable wallet state, materially conflicting tool outputs, unavailable required infrastructure, or an action that would violate allowed wallets/chains/protocols");
   lines.push("- A slice is one bounded stretch of work between engine yields, and its limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");

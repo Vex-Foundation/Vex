@@ -12,6 +12,7 @@ import type {
   ProviderMessage,
   ToolDefinition,
 } from "../../../../vex-agent/inference/types.js";
+import type { PreInferenceGateInput } from "../../../../vex-agent/engine/core/turn-loop/pre-inference-ceiling.js";
 
 const mockTryCriticalBandFallback = vi.fn();
 vi.mock("../../../../vex-agent/engine/core/turn-loop-critical-fallback.js", () => ({
@@ -54,11 +55,11 @@ const TOOLS: ToolDefinition[] = [
   },
 ];
 
-function input(over: Record<string, unknown> = {}) {
+function input(over: Partial<PreInferenceGateInput> = {}): PreInferenceGateInput {
   return {
     sessionId: "s-1",
     missionRunId: null,
-    sessionPermission: "restricted" as const,
+    sessionPermission: "restricted",
     preparationBypassesBarrier: true,
     providerMessages: SMALL_MESSAGES,
     tools: TOOLS,
@@ -66,6 +67,9 @@ function input(over: Record<string, unknown> = {}) {
     contextLimit: 200_000,
     currentTokenCount: 180_000,
     criticalNoopCounter: 0,
+    // The gate's ladder needs a lease owner to force a prepared apply; these
+    // tests drive the deterministic path, so the explicit fail-closed answer.
+    runnerOwnerId: undefined,
     ...over,
   };
 }

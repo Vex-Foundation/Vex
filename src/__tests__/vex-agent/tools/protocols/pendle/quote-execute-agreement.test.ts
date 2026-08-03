@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 // Redeem identity resolves YT from the PT via market-lookup, and the receiver
 // from the wallet resolver — stub both so the builder is deterministic offline.
@@ -143,7 +144,7 @@ describe("pendle redeem quote↔execute agreement (arbitrum)", () => {
     );
     const executeId = await buildPendleRedeemIdentity(
       "s1",
-      { chain: "arb", tokenIn: PT, amountIn: "100", slippageBps: 50 },
+      { chain: "arb", tokenIn: PT, amountIn: "100", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
       ctx,
     );
     expect(quoteId.chainId).toBe(42161);

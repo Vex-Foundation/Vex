@@ -40,7 +40,7 @@ import { ErrorCodes, VexError } from "../../../errors.js";
 
 const SESSION_EVM = {
   family: "eip155" as const,
-  address: "0x1234567890abcdef1234567890abcdef12345678",
+  address: "0x1234567890abcdef1234567890abcdef12345678" as const,
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
 const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);

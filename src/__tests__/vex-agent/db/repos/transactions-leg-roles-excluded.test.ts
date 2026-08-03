@@ -58,7 +58,7 @@ const LEG_ROLES = ["allowance", "allowance_reset", "trench_fee", "swap_fee"] as 
 describe("transactions feed — leg-role exclusion", () => {
   it("the activity half excludes every leg role by name", async () => {
     resetMocks();
-    await repo.getTransactions({ addresses: ADDRS, limit: 10 });
+    await repo.getTransactions({ addresses: ADDRS, sessionId: null, limit: 10 });
     const half = activityWhere();
     expect(half).toContain("event_role NOT IN (");
     for (const role of LEG_ROLES) {
@@ -68,7 +68,7 @@ describe("transactions feed — leg-role exclusion", () => {
 
   it("the logical rows stay admitted alongside the exclusion", async () => {
     resetMocks();
-    await repo.getTransactions({ addresses: ADDRS, limit: 10 });
+    await repo.getTransactions({ addresses: ADDRS, sessionId: null, limit: 10 });
     const half = activityWhere();
     // The exclusion must narrow, not replace, the kind admission — both
     // conditions are separate ANDed members of the same predicate list.
@@ -78,13 +78,13 @@ describe("transactions feed — leg-role exclusion", () => {
     expect(half).toContain("event_role = 'bridge_fill_expected'");
     // `bridge_fill_expected` is not a leg role and must not appear in the
     // NOT IN list (the whole bridge arm is admitted only through it).
-    const notInList = half.split("event_role NOT IN (")[1]!.split(")")[0]!;
+    const notInList = half.split("event_role NOT IN (")[1].split(")")[0];
     expect(notInList).not.toContain("bridge_fill_expected");
   });
 
   it("a productType filter composes with the exclusion (spot still excludes fee legs)", async () => {
     resetMocks();
-    await repo.getTransactions({ addresses: ADDRS, limit: 10, productType: "spot" });
+    await repo.getTransactions({ addresses: ADDRS, sessionId: null, limit: 10, productType: "spot" });
     const half = activityWhere();
     expect(half).toContain("kind = 'swap'");
     expect(half).toContain("'swap_fee'");

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
@@ -8,7 +9,7 @@ type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resol
 // requireEvmWallet primary). Spy on the resolvers to assert the session wallet
 // is used and that preview/dryRun never decrypts a signing key.
 
-const SESSION_EVM = {
+const SESSION_EVM: EvmWallet = {
   family: "eip155" as const,
   address: "0x1234567890abcdef1234567890abcdef12345678",
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,

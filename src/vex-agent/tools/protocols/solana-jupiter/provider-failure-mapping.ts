@@ -128,10 +128,19 @@ function classifyUnrecognized(err: unknown, category: string): { scenario: strin
   if (status !== undefined && status >= 500) {
     return { scenario: "provider_unavailable", failureCode: "unknown" };
   }
-  // Our OWN validation refused the parameters — saying "the provider
-  // rejected this" would send the agent chasing the wrong cause.
+  // W1 gave `invalid_request` TWO producers: our own validation
+  // (`isLocallyAuthoredValidationFailure`) and any provider 4xx
+  // (`categoryFromHttpStatus`). The category name alone therefore no longer
+  // says WHO refused, and this persisted `failureReason` must — so the status
+  // branch above claims the provider-answered half FIRST, and only the
+  // statusless remainder reaches here. That remainder is Vex's own validation
+  // by construction: `carriesProviderVerdict` disqualifies anything bearing
+  // `httpStatus` or `externalName` from the local set, and no keyword scan can
+  // produce this category. The scenario is named for the ACTOR, like every
+  // other scenario in this function, instead of echoing a category whose
+  // meaning has since widened.
   if (category === "invalid_request") {
-    return { scenario: "invalid_request", failureCode: "unknown" };
+    return { scenario: "vex_validation_rejected", failureCode: "unknown" };
   }
   return { scenario: "unclassified_failure", failureCode: "unknown" };
 }

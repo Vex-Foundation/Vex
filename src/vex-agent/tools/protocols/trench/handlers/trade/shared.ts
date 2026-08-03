@@ -14,8 +14,8 @@ import { isNativeTokenInput } from "@tools/kyberswap/helpers.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
-import { TRENCH_DEFAULT_SLIPPAGE_BPS, TRENCH_MAX_SLIPPAGE_BPS } from "@tools/trench-express/evm/min-out.js";
-import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { TRENCH_MAX_SLIPPAGE_BPS } from "@tools/trench-express/evm/min-out.js";
+import { checkSlippageBps, VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { TrenchTradeSide } from "@tools/trench-express/evm/curve-reader.js";
 
 /**
@@ -145,7 +145,7 @@ function resolveSlippageBps(
   params: Record<string, unknown>,
 ): { readonly ok: true; readonly bps: number } | { readonly ok: false; readonly reason: string } {
   const raw = params.slippageBps;
-  if (raw === undefined || raw === null) return { ok: true, bps: TRENCH_DEFAULT_SLIPPAGE_BPS };
+  if (raw === undefined || raw === null) return { ok: true, bps: VEX_DEFAULT_SLIPPAGE_BPS };
   if (typeof raw !== "number") {
     return { ok: false, reason: 'Parameter "slippageBps" must be a whole number of basis points (1 bps = 0.01%).' };
   }

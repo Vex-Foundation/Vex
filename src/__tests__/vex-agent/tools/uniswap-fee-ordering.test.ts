@@ -13,16 +13,19 @@
  * exists to catch.
  */
 
+import assert from "node:assert/strict";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeFunctionData, getAddress, parseAbi, type Hex } from "viem";
+import { decodeFunctionData, getAddress, parseAbi, type Address, type Hex, type TransactionReceipt } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "./_test-context.js";
 import type { StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
 import { UNISWAP_FEE_RECEIVER_EVM } from "@tools/uniswap/fee/index.js";
 
 const TOKEN_IN = getAddress("0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b");
 const TOKEN_OUT = getAddress("0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31");
-const WALLET = "0x1111111111111111111111111111111111111111";
+const WALLET: Address = "0x1111111111111111111111111111111111111111";
 const WETH = getAddress("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73");
 const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
@@ -52,6 +55,37 @@ const signStageBroadcast = vi.fn();
 let plannedEvents: Array<{ eventRole: string; eventIndex: number; amountRaw?: string; tokenAddress?: string }> = [];
 /** The transactions handed to the shared staged broadcaster (the FEE legs). */
 let feeTxs: Array<{ to: string; data: Hex; value: bigint }> = [];
+
+const FEE_TX_HASH: Hex = `0x${"fe".repeat(32)}`;
+
+/** The last planned event — an empty plan is the test failure, not `undefined`. */
+function lastPlannedEvent(): { eventRole: string; eventIndex: number; amountRaw?: string; tokenAddress?: string } {
+  const event = plannedEvents.at(-1);
+  assert.ok(event, "no events were planned");
+  return event;
+}
+
+/** The `amountRaw` of the single planned event with `eventRole`. */
+function plannedAmountRaw(eventRole: string): string {
+  const event = plannedEvents.find((e) => e.eventRole === eventRole);
+  assert.ok(event, `no planned event with role ${eventRole}`);
+  assert.ok(event.amountRaw, `${eventRole} carries no amountRaw`);
+  return event.amountRaw;
+}
+
+/** The one fee transaction handed to the staged broadcaster. */
+function onlyFeeTx(): { to: string; data: Hex; value: bigint } {
+  const [feeTx] = feeTxs;
+  assert.ok(feeTx, "no fee transaction was staged");
+  return feeTx;
+}
+
+/** The route-quote request of the most recent `quoteBestRoute` call. */
+function lastRouteQuoteRequest(): { amountIn: bigint } {
+  const call = quoteBestRoute.mock.calls.at(-1);
+  assert.ok(call, "no route was quoted");
+  return call[1] as { amountIn: bigint };
+}
 
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
@@ -130,13 +164,14 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap.js");
-const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"]!;
-const quote = UNISWAP_SWAP_HANDLERS["uniswap.swap.quote"]!;
+const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
+const quote = UNISWAP_SWAP_HANDLERS["uniswap.swap.quote"];
 
-const context = {
-  sessionPermission: "full", approved: true, sessionId: "session-1",
-  walletResolution: { source: "default" }, walletPolicy: { kind: "none" },
-} as unknown as ProtocolExecutionContext;
+const context: ProtocolExecutionContext = makeProtocolContext({
+  sessionPermission: "full",
+  approved: true,
+  sessionId: "session-1",
+});
 
 const ERC20_PARAMS = { chain: "robinhood", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amountIn: "1" };
 const NATIVE_PARAMS = { chain: "robinhood", tokenIn: "ETH", tokenOut: TOKEN_OUT, amountIn: "1" };
@@ -149,10 +184,30 @@ function feeOf(result: { data?: unknown }): {
   return (result.data as { vexFee: { collection: string; collectionNote: string; disclosure: Record<string, unknown> } }).vexFee;
 }
 
+/** A complete `TransactionReceipt`; only `blockNumber` is read downstream. */
+function feeReceipt(status: "success" | "reverted"): TransactionReceipt {
+  return {
+    blockHash: `0x${"11".repeat(32)}`,
+    blockNumber: 2n,
+    contractAddress: null,
+    cumulativeGasUsed: 21_000n,
+    effectiveGasPrice: 1n,
+    from: WALLET,
+    gasUsed: 21_000n,
+    logs: [],
+    logsBloom: `0x${"00".repeat(256)}`,
+    status,
+    to: UNISWAP_FEE_RECEIVER_EVM,
+    transactionHash: FEE_TX_HASH,
+    transactionIndex: 0,
+    type: "eip1559",
+  };
+}
+
 function feeOutcome(kind: StagedBroadcastOutcome["kind"]): StagedBroadcastOutcome {
-  if (kind === "confirmed") return { kind: "confirmed", txHash: "0xfee", receipt: { blockNumber: 2n } } as unknown as StagedBroadcastOutcome;
-  if (kind === "reverted") return { kind: "reverted", txHash: "0xfee", receipt: { blockNumber: 2n } } as unknown as StagedBroadcastOutcome;
-  return { kind: "ambiguous", txHash: "0xfee", stage: "confirm", reason: "rpc timeout" };
+  if (kind === "confirmed") return { kind: "confirmed", txHash: FEE_TX_HASH, receipt: feeReceipt("success") };
+  if (kind === "reverted") return { kind: "reverted", txHash: FEE_TX_HASH, receipt: feeReceipt("reverted") };
+  return { kind: "ambiguous", txHash: FEE_TX_HASH, stage: "confirm", reason: "rpc timeout" };
 }
 
 beforeEach(() => {
@@ -198,7 +253,7 @@ describe("the fee leg is planned LAST and signed LAST", () => {
     await execute(ERC20_PARAMS, context);
 
     expect(plannedEvents.map((e) => e.eventRole)).toEqual(["swap", "swap_fee"]);
-    expect(plannedEvents.at(-1)!.eventIndex).toBe(plannedEvents.length - 1);
+    expect(lastPlannedEvent().eventIndex).toBe(plannedEvents.length - 1);
     // The intent exists before any signing happens.
     expect(createAgentActivityIntent).toHaveBeenCalledBefore(signUniswapTransaction);
   });
@@ -206,11 +261,11 @@ describe("the fee leg is planned LAST and signed LAST", () => {
   it("splits the amount exactly: the swap row carries the NET, the fee row the fee, and they sum to the total", async () => {
     await execute(ERC20_PARAMS, context);
 
-    const swapRow = plannedEvents.find((e) => e.eventRole === "swap")!;
-    const feeRow = plannedEvents.find((e) => e.eventRole === "swap_fee")!;
-    expect(BigInt(swapRow.amountRaw!)).toBe(NET);
-    expect(BigInt(feeRow.amountRaw!)).toBe(FEE);
-    expect(BigInt(swapRow.amountRaw!) + BigInt(feeRow.amountRaw!)).toBe(TOTAL);
+    const swapAmountRaw = plannedAmountRaw("swap");
+    const feeAmountRaw = plannedAmountRaw("swap_fee");
+    expect(BigInt(swapAmountRaw)).toBe(NET);
+    expect(BigInt(feeAmountRaw)).toBe(FEE);
+    expect(BigInt(swapAmountRaw) + BigInt(feeAmountRaw)).toBe(TOTAL);
   });
 
   it("quotes and swaps on `amountIn − fee`, while the balance guard demands the FULL amount", async () => {
@@ -227,9 +282,10 @@ describe("the fee leg is planned LAST and signed LAST", () => {
     expect(broadcastUniswapTransaction).toHaveBeenCalledBefore(signStageBroadcast);
     expect(feeTxs).toHaveLength(1);
     // An ERC-20 fee is a `transfer` call on the INPUT token, never a value transfer.
-    expect(getAddress(feeTxs[0]!.to)).toBe(TOKEN_IN);
-    expect(feeTxs[0]!.value).toBe(0n);
-    const decoded = decodeFunctionData({ abi: parseAbi(["function transfer(address,uint256)"]), data: feeTxs[0]!.data });
+    const feeTx = onlyFeeTx();
+    expect(getAddress(feeTx.to)).toBe(TOKEN_IN);
+    expect(feeTx.value).toBe(0n);
+    const decoded = decodeFunctionData({ abi: parseAbi(["function transfer(address,uint256)"]), data: feeTx.data });
     expect(decoded.args).toEqual([UNISWAP_FEE_RECEIVER_EVM, FEE]);
     expect(result.success).toBe(true);
     expect(feeOf(result).collection).toBe("confirmed");
@@ -239,12 +295,13 @@ describe("the fee leg is planned LAST and signed LAST", () => {
     await execute(NATIVE_PARAMS, context);
 
     expect(feeTxs).toHaveLength(1);
-    expect(feeTxs[0]!.to).toBe(UNISWAP_FEE_RECEIVER_EVM);
-    expect(feeTxs[0]!.value).toBe(FEE);
-    expect(feeTxs[0]!.data).toBe("0x");
+    const feeTx = onlyFeeTx();
+    expect(feeTx.to).toBe(UNISWAP_FEE_RECEIVER_EVM);
+    expect(feeTx.value).toBe(FEE);
+    expect(feeTx.data).toBe("0x");
     // The fee row's identity token is the shared native sentinel, never WETH:
     // the leg moves ETH the user never wrapped.
-    expect(plannedEvents.at(-1)!.tokenAddress).toBe(NATIVE_SENTINEL);
+    expect(lastPlannedEvent().tokenAddress).toBe(NATIVE_SENTINEL);
   });
 });
 
@@ -361,7 +418,7 @@ describe("when Vex declines the fee", () => {
 describe("quote / execute parity", () => {
   it("the quote prices the SAME net input and discloses the SAME fee the execute charges", async () => {
     const quoted = await quote(ERC20_PARAMS, context);
-    const quotedFor = quoteBestRoute.mock.calls.at(-1)![1] as { amountIn: bigint };
+    const quotedFor = lastRouteQuoteRequest();
     const payload = JSON.parse(quoted.output) as {
       amountInRaw: string; swapAmountRaw: string;
       vexFee: { charged: boolean; feeAmountRaw: string; swappedAmountRaw: string; totalDebitedRaw: string; receiver: string };
@@ -381,7 +438,7 @@ describe("quote / execute parity", () => {
     vi.clearAllMocks();
     beforeEachDefaults();
     const executed = await execute(ERC20_PARAMS, context);
-    const executedFor = quoteBestRoute.mock.calls.at(-1)![1] as { amountIn: bigint };
+    const executedFor = lastRouteQuoteRequest();
 
     expect(executedFor.amountIn).toBe(quotedFor.amountIn);
     expect(feeOf(executed).disclosure).toEqual(payload.vexFee);

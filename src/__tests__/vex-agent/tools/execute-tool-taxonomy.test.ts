@@ -20,6 +20,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { makeProtocolContext } from "./_test-context.js";
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 
 // ── Mock surface ──────────────────────────────────────────────────────
@@ -110,11 +111,7 @@ beforeEach(() => {
 
 // ── executeProtocolTool — stamp propagation per return path ──────────
 
-const ctx = {
-  sessionPermission: "restricted" as const,
-  approved: false,
-  sessionId: "test-session",
-};
+const ctx = makeProtocolContext({ sessionId: "test-session" });
 
 describe("executeProtocolTool — actionKind propagation", () => {
   it("omits actionKind when manifest is unknown (conservative undefined)", async () => {

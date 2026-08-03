@@ -74,6 +74,7 @@ describe("applyWaitingForWakePostBatch — terminal-stop precedence", () => {
       missionRunId: "run-1",
       currentTokenCount: 10,
       contextLimit: 1000,
+      sessionPermission: "restricted" as const,
       handlePostCompactBookkeeping: vi.fn(),
     });
 
@@ -94,6 +95,7 @@ describe("applyWaitingForWakePostBatch — terminal-stop precedence", () => {
       missionRunId: "run-1",
       currentTokenCount: 10,
       contextLimit: 1000,
+      sessionPermission: "restricted" as const,
       handlePostCompactBookkeeping: vi.fn(),
     });
 

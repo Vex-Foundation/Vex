@@ -62,7 +62,10 @@ describe("validatePendleDashboardPositions — the fields the money path drops",
     const { chains } = validatePendleDashboardPositions(PENDLE_DASHBOARD_ACTIVE_YT);
     const withSplit = chains
       .flatMap((c) => c.open.map((p) => p.lp))
-      .filter((leg) => leg !== null && leg.activeBalanceRaw !== null && leg.activeBalanceRaw !== leg.balanceRaw);
+      .filter(
+        (leg): leg is NonNullable<typeof leg> =>
+          leg !== null && leg.activeBalanceRaw !== null && leg.activeBalanceRaw !== leg.balanceRaw,
+      );
 
     expect(withSplit.length).toBeGreaterThan(0);
     for (const leg of withSplit) {

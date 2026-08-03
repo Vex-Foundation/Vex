@@ -51,9 +51,12 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { handleWebResearch } = await import("../../../../vex-agent/tools/internal/web.js");
-const { classifyProviderFailure, UNREADABLE_CONTENT_FAILURE } = await import(
-  "../../../../vex-agent/tools/internal/web-research/provider-error.js"
-);
+const {
+  classifyProviderFailure,
+  providerFailureMessage,
+  providerFailureReason,
+  UNREADABLE_CONTENT_FAILURE,
+} = await import("../../../../vex-agent/tools/internal/web-research/provider-error.js");
 import { makeTestContext } from "../_test-context.js";
 
 const ctx = makeTestContext();
@@ -362,6 +365,62 @@ describe("web_research — provider error text never reaches the model or the lo
       expect(first.code).toBe(second.code);
       expect(first.message).toBe(second.message);
       expect(UNREADABLE_CONTENT_FAILURE.code).toBe("unreadable_content");
+    });
+  });
+
+  // ── W2i: the status the classifier already recovered reaches the AGENT ──
+
+  describe("the recovered HTTP status reaches the agent, not only the log", () => {
+    it("names the status in the failure the agent reads", async () => {
+      mockTavilyExtract.mockResolvedValueOnce({
+        results: [],
+        failedResults: [{ url: "https://hostile.example.com", error: `429 Too Many Requests — ${SECRET_POISON}` }],
+      });
+
+      const result = await handleWebResearch({ url: "https://hostile.example.com" }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("provider_rejected");
+      expect(result.output).toContain("HTTP 429");
+      expectNoPoison(result);
+    });
+
+    it("omits the status clause entirely when no status was recovered", async () => {
+      mockTavilyExtract.mockRejectedValueOnce(new Error("Request timed out after 25 seconds."));
+
+      const result = await handleWebResearch({ url: "https://slow.example.com" }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("provider_timeout");
+      expect(result.output).not.toContain("HTTP");
+    });
+
+    it("names the status on a per-row page-read failure too", async () => {
+      mockTavilySearch.mockResolvedValueOnce({
+        results: [{ title: "B", url: "https://hostile.example.com", content: "b snippet" }],
+      });
+      mockTavilyExtract.mockResolvedValueOnce({
+        results: [],
+        failedResults: [
+          { url: "https://hostile.example.com", error: `403 Forbidden — ${INSTRUCTION_POISON}` },
+        ],
+      });
+
+      const result = await handleWebResearch({ query: "foo", fetchTop: 1 }, ctx);
+
+      expect(result.success).toBe(true);
+      expect(rowFor(result.output, "https://hostile.example.com").pageError)
+        .toBe("provider_rejected, HTTP 403");
+      expectNoPoison(result);
+    });
+
+    it("surfaces only the bounded integer — never a byte of provider prose", () => {
+      const failure = classifyProviderFailure(`503 Service Unavailable — ${SECRET_POISON}`);
+      expect(providerFailureMessage(failure)).toContain("HTTP 503");
+      for (const fragment of POISON_FRAGMENTS) {
+        expect(providerFailureMessage(failure)).not.toContain(fragment);
+        expect(providerFailureReason(failure)).not.toContain(fragment);
+      }
     });
   });
 });

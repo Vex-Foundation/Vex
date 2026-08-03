@@ -429,7 +429,7 @@ describe("web_research", () => {
       expect(failRow.pageRead).toBe("failed");
       // `pageRead: "failed"` is preserved; the reason is a Vex code, never the
       // provider's sentence.
-      expect(failRow.pageError).toBe("provider_rejected");
+      expect(failRow.pageError).toBe("provider_rejected, HTTP 403");
       expect(result.output).not.toContain("403 Forbidden");
       // A row that could not be read keeps the snippet it does have.
       expect(failRow.snippet).toBe("b snippet");

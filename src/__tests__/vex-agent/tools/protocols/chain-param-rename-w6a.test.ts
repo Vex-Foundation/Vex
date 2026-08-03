@@ -39,14 +39,19 @@ import { handleChainRead } from "@vex-agent/tools/internal/chain-read.js";
 import { EVM_TOOLS } from "@vex-agent/tools/registry/evm.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext, makeTestContext } from "../_test-context.js";
 
-const CTX: ProtocolExecutionContext = {
-  sessionPermission: "restricted",
-  approved: false,
-  walletResolution: { source: "default" },
-  walletPolicy: { kind: "none" },
-};
+const CTX = makeProtocolContext();
+
+/** A handler-map lookup that fails loudly instead of asserting non-null. */
+function handlerFor<THandler>(
+  handlers: Record<string, THandler>,
+  toolId: string,
+): THandler {
+  const handler = handlers[toolId];
+  if (handler === undefined) throw new Error(`no handler for ${toolId}`);
+  return handler;
+}
 
 /** The four single-chain tools W6a renamed. */
 const RENAMED_TOOL_IDS = [
@@ -109,7 +114,7 @@ describe("W6a — dexscreener `chainId` → `chain`", () => {
     const client = getDexScreenerClient();
     const getTokenPairs = vi.spyOn(client, "getTokenPairs").mockResolvedValue([]);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
+    const result = await handlerFor(DEXSCREENER_HANDLERS, "dexscreener.tokenPairs")(
       { chain: "8453", tokenAddress: "0xdead" },
       CTX,
     );
@@ -124,7 +129,7 @@ describe("W6a — dexscreener `chainId` → `chain`", () => {
     const client = getDexScreenerClient();
     const getTokenPairs = vi.spyOn(client, "getTokenPairs").mockResolvedValue([]);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
+    const result = await handlerFor(DEXSCREENER_HANDLERS, "dexscreener.tokenPairs")(
       { chain: "999999999", tokenAddress: "0xdead" },
       CTX,
     );
@@ -141,14 +146,16 @@ describe("W6a — dexscreener `chainId` → `chain`", () => {
       .spyOn(client, "getOrders")
       .mockResolvedValue({ orders: [], boostPayments: [], skippedOrders: 0, skippedBoostPayments: 0 });
 
-    await DEXSCREENER_HANDLERS["dexscreener.orders"]!({ chain: "Solana", tokenAddress: "T" }, CTX);
+    await handlerFor(DEXSCREENER_HANDLERS, "dexscreener.orders")({ chain: "Solana", tokenAddress: "T" }, CTX);
 
     expect(getOrders).toHaveBeenCalledWith("Solana", "T");
   });
 });
 
 describe("W6a — chain_read `chainId` → `chain`", () => {
-  const schema = EVM_TOOLS.find((tool) => tool.name === "chain_read")!.parameters as {
+  const chainRead = EVM_TOOLS.find((tool) => tool.name === "chain_read");
+  if (chainRead === undefined) throw new Error("no chain_read tool in EVM_TOOLS");
+  const schema = chainRead.parameters as {
     properties: Record<string, unknown>;
     required: readonly string[];
   };
@@ -163,7 +170,7 @@ describe("W6a — chain_read `chainId` → `chain`", () => {
   it("refuses the old `chainId` key by name rather than claiming the chain is missing", async () => {
     const result = await handleChainRead(
       { action: "tx_receipt", chainId: "base", txHash: "0xabc" },
-      {} as never,
+      makeTestContext(),
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain('no longer takes "chainId"');
@@ -172,7 +179,7 @@ describe("W6a — chain_read `chainId` → `chain`", () => {
   });
 
   it("still says MISSING when no chain was sent under either spelling", async () => {
-    const result = await handleChainRead({ action: "tx_receipt", txHash: "0xabc" }, {} as never);
+    const result = await handleChainRead({ action: "tx_receipt", txHash: "0xabc" }, makeTestContext());
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required: chain");
   });
@@ -213,7 +220,7 @@ describe("W7 — virtuals.chain enum", () => {
       .spyOn(client, "listVirtuals")
       .mockResolvedValue({ agents: [], pagination: { total: 0 } } as never);
 
-    const result = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "ethereum" }, CTX);
+    const result = await handlerFor(VIRTUALS_HANDLERS, "virtuals.list")({ chain: "ethereum" }, CTX);
 
     expect(listVirtuals).toHaveBeenCalledWith(expect.objectContaining({ chain: "ETH" }));
     expect(JSON.parse(result.output).chain).toBe("ethereum");
@@ -225,8 +232,8 @@ describe("W7 — virtuals.chain enum", () => {
       .spyOn(client, "listVirtuals")
       .mockResolvedValue({ agents: [], pagination: { total: 0 } } as never);
 
-    await VIRTUALS_HANDLERS["virtuals.graduations"]!({ chain: "4663" }, CTX);
-    await VIRTUALS_HANDLERS["virtuals.graduations"]!({ chain: "ETH" }, CTX);
+    await handlerFor(VIRTUALS_HANDLERS, "virtuals.graduations")({ chain: "4663" }, CTX);
+    await handlerFor(VIRTUALS_HANDLERS, "virtuals.graduations")({ chain: "ETH" }, CTX);
 
     expect(listVirtuals.mock.calls[0]?.[0]).toMatchObject({ chain: "ROBINHOOD" });
     expect(listVirtuals.mock.calls[1]?.[0]).toMatchObject({ chain: "ETH" });
@@ -234,7 +241,8 @@ describe("W7 — virtuals.chain enum", () => {
 });
 
 describe("virtuals.get.id stays a NUMBER", () => {
-  const getManifest = VIRTUALS_TOOLS.find((tool) => tool.toolId === "virtuals.get")!;
+  const getManifest = VIRTUALS_TOOLS.find((tool) => tool.toolId === "virtuals.get");
+  if (getManifest === undefined) throw new Error("no virtuals.get manifest");
 
   it("is declared type number and required", () => {
     const id = getManifest.params.find((param) => param.key === "id");

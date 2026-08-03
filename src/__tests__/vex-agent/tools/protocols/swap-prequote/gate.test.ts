@@ -411,11 +411,11 @@ describe("evaluateSwapPrequoteGate", () => {
       { inputToken: SOLANA_MINT_A, outputToken: SOL_MINT, amount: 1 },
       ctx(),
     );
-    const staleHash = mockFindLatest.mock.calls[0]![1];
+    const staleHash = mockFindLatest.mock.calls[0]?.[1];
 
     mockFindLatest.mockClear();
     await mod.evaluateSwapPrequoteGate("solana.swap.execute", SOL_PARAMS, ctx());
-    expect(mockFindLatest.mock.calls[0]![1]).not.toBe(staleHash);
+    expect(mockFindLatest.mock.calls[0]?.[1]).not.toBe(staleHash);
   });
 });
 

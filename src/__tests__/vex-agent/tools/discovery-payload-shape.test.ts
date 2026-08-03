@@ -8,10 +8,20 @@
  * says WHY it is empty.
  */
 
+import assert from "node:assert/strict";
+
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { discoverProtocolCapabilities } from "@vex-agent/tools/protocols/runtime.js";
 import { DEFAULT_DISCOVERY_LIMIT, isRankedDiscoveryItem } from "@vex-agent/tools/protocols/discovery.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
+import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
+
+/** Every discovered row must have a manifest — a missing one is the failure. */
+function manifestFor(toolId: string): ProtocolToolManifest {
+  const manifest = getProtocolManifest(toolId);
+  assert.ok(manifest, `no manifest for ${toolId}`);
+  return manifest;
+}
 
 describe("discover_tools ranked payload", () => {
   it("carries actionKind, required, and the manifest's exampleParams on every row", async () => {
@@ -19,12 +29,11 @@ describe("discover_tools ranked payload", () => {
     expect(result.tools.length).toBeGreaterThan(0);
     for (const tool of result.tools) {
       if (!isRankedDiscoveryItem(tool)) throw new Error("expected ranked rows");
-      const manifest = getProtocolManifest(tool.toolId);
-      expect(manifest).toBeDefined();
-      expect(tool.actionKind).toBe(manifest!.actionKind);
-      expect(tool.exampleParams).toEqual(manifest!.exampleParams);
+      const manifest = manifestFor(tool.toolId);
+      expect(tool.actionKind).toBe(manifest.actionKind);
+      expect(tool.exampleParams).toEqual(manifest.exampleParams);
       expect(tool.required).toEqual(
-        manifest!.params.filter((p) => p.required === true).map((p) => p.key),
+        manifest.params.filter((p) => p.required === true).map((p) => p.key),
       );
     }
   });
@@ -32,15 +41,16 @@ describe("discover_tools ranked payload", () => {
   it("ships the worked call the missing-required failure was about", async () => {
     const result = await discoverProtocolCapabilities({ query: "dexscreener.search", limit: 3 });
     const row = result.tools.find((t) => t.toolId === "dexscreener.search");
-    expect(row).toBeDefined();
-    expect(row!.exampleParams).toMatchObject({ query: expect.any(String) });
-    expect(row!.required).toContain("query");
+    assert.ok(row, "dexscreener.search was not discovered");
+    assert.ok(isRankedDiscoveryItem(row), "expected a ranked row");
+    expect(row.exampleParams).toMatchObject({ query: expect.any(String) });
+    expect(row.required).toContain("query");
   });
 
   it("omits constraints on a manifest that declares no exclusive groups", async () => {
     const result = await discoverProtocolCapabilities({ namespace: "dexscreener", limit: 50 });
     for (const tool of result.tools) {
-      const manifest = getProtocolManifest(tool.toolId)!;
+      const manifest = manifestFor(tool.toolId);
       if ((manifest.exclusiveParamGroups ?? []).length > 0) continue;
       expect(tool).not.toHaveProperty("constraints");
     }
@@ -51,12 +61,14 @@ describe("discover_tools ranked payload", () => {
     let checked = 0;
     for (const tool of result.tools) {
       if (!isRankedDiscoveryItem(tool)) continue;
-      const groups = getProtocolManifest(tool.toolId)!.exclusiveParamGroups ?? [];
+      const groups = manifestFor(tool.toolId).exclusiveParamGroups ?? [];
       if (groups.length === 0) continue;
       checked += 1;
-      expect(tool.constraints).toHaveLength(groups.length);
+      const constraints = tool.constraints;
+      assert.ok(constraints, `${tool.toolId} declares groups but rendered no constraints`);
+      expect(constraints).toHaveLength(groups.length);
       for (const [index, group] of groups.entries()) {
-        expect(tool.constraints![index]).toBe(`Provide exactly one of: ${group.join(", ")}.`);
+        expect(constraints[index]).toBe(`Provide exactly one of: ${group.join(", ")}.`);
       }
     }
     // Manifest population lands per namespace in the same wave; this assertion
@@ -81,7 +93,7 @@ describe("discover_tools list payload", () => {
     expect(result.tools.length).toBeGreaterThan(0);
     for (const tool of result.tools) {
       expect(isRankedDiscoveryItem(tool)).toBe(false);
-      const manifest = getProtocolManifest(tool.toolId)!;
+      const manifest = manifestFor(tool.toolId);
       expect(tool.actionKind).toBe(manifest.actionKind);
       expect(tool.requiredParams).toEqual(
         manifest.params.filter((p) => p.required === true).map((p) => p.key),

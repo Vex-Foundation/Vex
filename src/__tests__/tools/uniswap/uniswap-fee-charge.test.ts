@@ -42,7 +42,8 @@ describe("resolveUniswapFeeCharge", () => {
     expect(UNISWAP_FEE_BPS).toBe(25);
     expect(charge.feeRaw).toBe(2_500n);
     expect(charge.swapAmountRaw).toBe(997_500n);
-    expect(charge.feeRaw! + charge.swapAmountRaw).toBe(charge.totalRaw);
+    if (charge.feeRaw === null) throw new Error("expected a fee to be charged");
+    expect(charge.feeRaw + charge.swapAmountRaw).toBe(charge.totalRaw);
   });
 
   it("TRUNCATES — a remainder is never rounded up, so the user is never charged a unit Vex did not earn", async () => {
@@ -51,7 +52,8 @@ describe("resolveUniswapFeeCharge", () => {
 
     expect(charge.feeRaw).toBe(2n);
     expect(charge.swapAmountRaw).toBe(997n);
-    expect(charge.feeRaw! + charge.swapAmountRaw).toBe(999n);
+    if (charge.feeRaw === null) throw new Error("expected a fee to be charged");
+    expect(charge.feeRaw + charge.swapAmountRaw).toBe(999n);
   });
 
   it("DUST: a fee that floors to zero means NO leg at all — never a zero-value transfer", async () => {

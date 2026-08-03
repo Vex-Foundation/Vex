@@ -333,19 +333,42 @@ export function assertRouteSafe(
  * Pick the SAFEST usable route from a Convert response for the intent: the first
  * route (best-ranked by Pendle) that passes every fund-safety check. Throws
  * `PENDLE_UNSAFE_TX` when none is safe (never falls back to an unchecked route).
+ *
+ * EVERY route's rejection reason is reported (W2e). Keeping only `lastErr` told
+ * the agent why route 8 failed to bind and stayed silent about route 1 — the
+ * BEST-PRICED one, and the only refusal that explains why the trade did not
+ * happen. The reasons are ordered as Pendle ranked the routes, so the first one
+ * named is the best-priced one; the code and remedy carried are that route's,
+ * for the same reason.
  */
 export function selectSafeRoute(
   intent: PendleTxIntent,
   response: PendleConvertResponse,
 ): PendleConvertRoute {
-  let lastErr: unknown;
-  for (const route of response.routes) {
+  const reasons: string[] = [];
+  let firstVexFailure: VexError | undefined;
+  for (const [index, route] of response.routes.entries()) {
     try {
       return assertRouteSafe(intent, response, route);
     } catch (err) {
-      lastErr = err;
+      // A non-VexError here is an unexpected binding fault rather than a
+      // verdict. It does NOT abandon the remaining routes (a later route may
+      // still be safe), but it is named rather than swallowed.
+      if (err instanceof VexError && firstVexFailure === undefined) firstVexFailure = err;
+      reasons.push(`route ${index + 1}: ${refusalReason(err)}`);
     }
   }
-  if (lastErr instanceof VexError) throw lastErr;
-  return unsafe("no route passed the fund-safety checks");
+  if (reasons.length === 0) return unsafe("Pendle returned no route to check");
+  const summary =
+    `no route passed the fund-safety checks (${reasons.length} tried) — ${reasons.join("; ")}`;
+  if (firstVexFailure === undefined) return unsafe(summary);
+  throw new VexError(firstVexFailure.code, `Pendle refused to sign: ${summary}.`, firstVexFailure.hint);
+}
+
+/** The bare reason inside a `unsafe()`-shaped refusal, without its wrapper. */
+function refusalReason(err: unknown): string {
+  if (!(err instanceof VexError)) return "unexpected binding failure";
+  const prefix = "Pendle refused to sign: ";
+  const body = err.message.startsWith(prefix) ? err.message.slice(prefix.length) : err.message;
+  return body.endsWith(".") ? body.slice(0, -1) : body;
 }

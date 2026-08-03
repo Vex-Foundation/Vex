@@ -32,27 +32,41 @@
 /**
  * Owner-pinned maximum slippage for any Vex-executed trade: 1000 bps (10%).
  *
- * Well above a normal tolerance (50 bps) and well below the total-loss range
+ * Well above a normal tolerance ({@link VEX_DEFAULT_SLIPPAGE_BPS} bps) and well below the total-loss range
  * providers actually accept — KyberSwap's live builds take 5000 bps (50%) and
  * do not clamp; Jupiter's range check permits 10000 (100%).
  */
 export const VEX_MAX_SLIPPAGE_BPS = 1000;
 
 /**
- * The ONE default slippage tolerance for a call that declares none.
+ * The ONE default slippage tolerance for a call that declares none: 100 bps (1%).
  *
  * A default folded into a prequote match-hash (`prequote/slippage.ts`
- * `canonSlippageBpsWithDefault`) must have exactly one value across the
- * handler lane and the identity lane, or a quote taken without slippage stops
- * authorizing an execute taken without slippage. Today nine modules declare
- * their own copy of this number; this constant is the home they move to, one
- * module at a time.
+ * `canonSlippageBpsWithDefault`) must have exactly one value across the handler
+ * lane and the identity lane, or a quote taken without slippage stops
+ * authorizing an execute taken without slippage. This constant is the ONLY
+ * module allowed to decide the number — enforced by the `slippage-default-home`
+ * source rule (`_manifest-lint/source-rules.ts`), whose allowlist is now empty.
  *
- * VALUE: still 50, deliberately. Moving it to 100 changes hash material and is
- * its own atomic change (audit wave W4b) — landing a new value here while nine
- * copies still read 50 would split the hash instead of unifying it.
+ * Lower layers do not mirror it: functions under `src/tools/**` take an
+ * EXPLICIT bps parameter and hold no default of their own (they cannot import
+ * `src/vex-agent` anyway), and the vex-agent handler that owns the call
+ * resolves the omitted value from here before calling down.
+ *
+ * VALUE (owner decree 2026-08-03, audit wave W4b): 50 → 100. 50 bps was the
+ * inherited aggregator convention and was measurably too tight on the venues
+ * Vex actually trades — the tolerance is a WORST-CASE bound, not an expected
+ * cost, and a quote that reverts costs gas and a whole mission slice while
+ * paying nothing for the unused headroom. 100 is what the trench curve path had
+ * already converged on independently. The ceiling
+ * ({@link VEX_MAX_SLIPPAGE_BPS}) is unchanged.
+ *
+ * HASH CONSEQUENCE: the default is hash material, so any prequote recorded at
+ * 50 before this change fails its gate CLOSED for the remainder of its window
+ * (≤15 minutes) — a re-quote resolves it. That is the safe direction: an
+ * execute is refused, never silently admitted under a different tolerance.
  */
-export const VEX_DEFAULT_SLIPPAGE_BPS = 50;
+export const VEX_DEFAULT_SLIPPAGE_BPS = 100;
 
 /**
  * The binding bound for a venue: Vex's ceiling or the venue's, whichever is
@@ -155,7 +169,7 @@ export function resolveRelaySlippageBps(subject: string, raw: unknown): { ok: tr
       ok: false,
       reason:
         `${subject} must be a NUMBER of basis points (e.g. ${VEX_DEFAULT_SLIPPAGE_BPS}), not a ${typeof raw}; `
-        + "1 bps = 0.01%, so 0.5% is 50.",
+        + `1 bps = 0.01%, so ${VEX_DEFAULT_SLIPPAGE_BPS / 100}% is ${VEX_DEFAULT_SLIPPAGE_BPS}.`,
     };
   }
   const violation = checkSlippageBps(subject, raw, RELAY_MAX_SLIPPAGE_BPS);

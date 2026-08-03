@@ -56,6 +56,7 @@ import {
   type PtRolloverMatchInput,
 } from "../../prequote/identity/hash.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../prequote/registry.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 /**
  * The venue label bound into every term-mobility digest.
@@ -68,15 +69,6 @@ import { PREQUOTE_MAX_AGE_MS } from "../../prequote/registry.js";
  * each other.
  */
 export const PENDLE_TERM_PREQUOTE_PROVIDER = "pendle-term";
-
-/**
- * Default slippage (bps) when the caller omits it — MUST match the handler's
- * `DEFAULT_SLIPPAGE_BPS` (`./shared.ts`) so a dry run without slippage
- * authorizes an execute without slippage. A PRESENT but invalid value is refused
- * by `canonSlippageBpsWithDefault`, never replaced by this default: a silent
- * fallback would let an out-of-contract slippage hash like an omitted one.
- */
-const DEFAULT_SLIPPAGE_BPS = 50;
 
 /** Which term-mobility action a prequote belongs to — also its DB `kind`. */
 export type PendleTermAction = "pt_rollover" | "lp_transfer" | "lp_to_pt";
@@ -147,7 +139,7 @@ export function buildPendleTermMatchInput(
     // asserts receiver == wallet before signing, so the receiver IS the wallet.
     receiver: wallet,
     amount: legs.amount,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   } as const;
   switch (action) {
     case "pt_rollover":

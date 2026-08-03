@@ -100,6 +100,8 @@ function makeRun(overrides: Partial<MissionRun> = {}): MissionRun {
     iterationCount: 3,
     contractSnapshotJson: null,
     recoveredFromRunId: null,
+    errorRetryCount: 0,
+    autoRetryUnsafe: false,
     ...overrides,
   };
 }

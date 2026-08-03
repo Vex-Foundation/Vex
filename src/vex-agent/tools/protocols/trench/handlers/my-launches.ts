@@ -27,6 +27,7 @@ import type { LaunchedToken } from "@vex-agent/db/repos/launched-tokens.js";
 import { resolveSelectedAddressForRead } from "../../../internal/wallet/resolve.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import { ok, fail } from "../../handler-helpers.js";
+import { trenchFailureDetail } from "./failure.js";
 import { readNumber } from "../../runtime/list-params.js";
 import type { NumericParamSpecs } from "../../runtime/list-params.js";
 
@@ -99,11 +100,24 @@ export async function trenchMyLaunchesHandler(
     return fail(`trench.my_launches: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  const rows = await launchedTokens.listForWallets({
-    walletAddresses: [walletAddress],
-    chainId: TRENCH_CHAIN_ID,
-    limit: limitRead.value ?? DEFAULT_LIMIT,
-  });
+  // The local index read is guarded like every sibling read handler: an
+  // unavailable database is a REAL, named failure. Unguarded, it threw past the
+  // handler and the agent saw a generic runtime error instead of "the launch
+  // index could not be read" — and could not tell that from "you have no
+  // launches", which is a materially different fact.
+  let rows: readonly LaunchedToken[];
+  try {
+    rows = await launchedTokens.listForWallets({
+      walletAddresses: [walletAddress],
+      chainId: TRENCH_CHAIN_ID,
+      limit: limitRead.value ?? DEFAULT_LIMIT,
+    });
+  } catch (err) {
+    return fail(
+      `trench.my_launches: Vex's local launch index could not be read — ${trenchFailureDetail("trench.my_launches", err)}. `
+        + "This is NOT an empty launch history; nothing about your launches was proven either way.",
+    );
+  }
 
   return ok({
     wallet: walletAddress,

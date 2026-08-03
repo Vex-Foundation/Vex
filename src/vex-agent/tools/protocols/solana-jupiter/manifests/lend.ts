@@ -26,9 +26,9 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", required: true, description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key)." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
     ],
-    exampleParams: { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+    exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
     discovery: SOLANA_LEND_DISCOVERY["solana.lend.positions"],
   },

@@ -15,7 +15,8 @@
  *   - swap_quote EVM token guard: a bare symbol is rejected (no dispatch) — EVM
  *     tokens must be a contract address or native; symbols resolve via token_find.
  *   - token_check / bridge_quote pass-through translation.
- *   - bridge_status: orders.get with an id, orders.list without.
+ *   - bridge_status: orders.get with an id, orders.list without, and a by-name
+ *     rejection when the two modes are mixed (W2d).
  *
  * `resolveChainSlug` is NOT mocked — the router's real EVM/Solana decision is
  * under test.
@@ -226,14 +227,14 @@ describe("swap_quote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 
 });
 
 describe("token_check — pass-through to kyberswap.tokens.check", () => {
-  it("forwards chain + address verbatim", async () => {
-    await handleTokenCheck({ chain: "ethereum", address: "0xabc" }, CTX);
+  it("forwards chain + tokenAddress verbatim", async () => {
+    await handleTokenCheck({ chain: "ethereum", tokenAddress: "0xabc" }, CTX);
     const { toolId, params } = lastCall();
     expect(toolId).toBe("kyberswap.tokens.check");
-    expect(params).toEqual({ chain: "ethereum", address: "0xabc" });
+    expect(params).toEqual({ chain: "ethereum", tokenAddress: "0xabc" });
   });
 
-  it("rejects missing address (no dispatch)", async () => {
+  it("rejects missing tokenAddress (no dispatch)", async () => {
     const result = await handleTokenCheck({ chain: "ethereum" }, CTX);
     expect(result.success).toBe(false);
     expect(executeProtocolTool).not.toHaveBeenCalled();
@@ -255,11 +256,16 @@ describe("bridge_status — orders.get (id) vs orders.list (no id)", () => {
     expect(params).toEqual({ wallet: "solana", limit: 20 });
   });
 
-  it("orderId takes precedence — list filters are ignored when an id is present", async () => {
-    await handleBridgeStatus({ orderId: "order_x", wallet: "solana", limit: 5 }, CTX);
-    const { toolId, params } = lastCall();
-    expect(toolId).toBe("khalani.orders.get");
-    expect(params).toEqual({ orderId: "order_x" });
+  // W2d: orderId no longer "takes precedence" — the combination is REJECTED BY
+  // NAME. Silently forwarding orderId discarded every list filter the agent
+  // also supplied, and the agent had no way to learn they were never applied
+  // (SPEC §2.4 item 22).
+  it("rejects orderId combined with list filters, naming what would be discarded", async () => {
+    const result = await handleBridgeStatus({ orderId: "order_x", wallet: "solana", limit: 5 }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("bridge_status takes EITHER orderId (one order) OR the list filters");
+    expect(result.output).toContain("wallet, limit");
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 });
 

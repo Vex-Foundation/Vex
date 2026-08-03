@@ -22,12 +22,9 @@ import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import { formatRawAmount } from "../../amount-display.js";
-import { checkSlippageBps } from "../../slippage-policy.js";
+import { checkSlippageBps, VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 import { priceUsdFor } from "../market-lookup.js";
 import type { PendleBroadcastResult } from "./signed-broadcast.js";
-
-/** Default slippage (bps) when the caller omits it — matches the redeem identity builder. */
-export const DEFAULT_SLIPPAGE_BPS = 50;
 
 export function isNativeInput(input: string): boolean {
   const lower = input.trim().toLowerCase();
@@ -47,13 +44,13 @@ export interface PendleSlippage {
 
 /**
  * Resolve a caller-supplied basis-point tolerance for a Pendle trade. An
- * OMITTED value takes {@link DEFAULT_SLIPPAGE_BPS}; an INVALID or
+ * OMITTED value takes {@link VEX_DEFAULT_SLIPPAGE_BPS}; an INVALID or
  * OUT-OF-POLICY one is REJECTED.
  *
  * Two defects closed here, both at a price-protection boundary:
  *
- * 1. This used to read `bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS`,
- *    silently substituting 50 bps for a negative input. A caller that passes
+ * 1. This used to read `bps !== undefined && bps >= 0 ? bps : <the default>`,
+ *    silently substituting the default for a negative input. A caller that passes
  *    `-1` has made an error, and quietly trading with a tolerance they never
  *    asked for hides it. A fractional value is rejected for the same reason it
  *    is at the manifest gate: `0.5` could mean 0.5 bps or 0.5%, and rounding a
@@ -79,7 +76,7 @@ export interface PendleSlippage {
  * `try/catch` that returns `fail(...)`.
  */
 export function resolvePendleSlippage(toolId: string, bps: number | undefined): PendleSlippage {
-  const value = bps ?? DEFAULT_SLIPPAGE_BPS;
+  const value = bps ?? VEX_DEFAULT_SLIPPAGE_BPS;
   const violation = checkSlippageBps(`Parameter "slippageBps" for ${toolId}`, value);
   if (violation !== null) {
     throw new VexError(ErrorCodes.INVALID_AMOUNT, `Invalid slippageBps: ${value}`, violation);

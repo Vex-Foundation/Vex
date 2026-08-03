@@ -31,6 +31,7 @@ import {
   isProtocolToolAvailable,
 } from "../protocols/catalog.js";
 import { paramsToJsonSchema } from "./khalani.js";
+import { describeParamGroupConstraints } from "../protocols/runtime/params.js";
 import { getDiscoveredToolIds } from "./discovered-tools.js";
 import { isUniswapPairRevealed } from "./uniswap-reveal.js";
 import type { ToolVisibilityContext } from "./visibility.js";
@@ -106,13 +107,32 @@ export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITo
       type: "function",
       function: {
         name: toInjectedToolName(toolId),
-        description: manifest.description,
+        description: injectedDescription(manifest),
         parameters: paramsToJsonSchema(manifest.params),
       },
     });
   }
 
   return injected;
+}
+
+/**
+ * The manifest description plus its cross-param group rules.
+ *
+ * A group rule is a fact about the CALL, not about one property, and JSON
+ * Schema's ways of saying it (`oneOf`, `anyOf` over required sets) are exactly
+ * the constructs provider function-schema validators narrow or reject. The
+ * description is the channel every provider carries verbatim — and it is the
+ * same sentence `discover_tools` puts on the `constraints` row and the runtime
+ * rejects with, so the model never sees the rule stated two ways.
+ *
+ * Appended, never substituted: a manifest with no groups keeps a byte-identical
+ * description.
+ */
+function injectedDescription(manifest: ProtocolToolManifest): string {
+  const constraints = describeParamGroupConstraints(manifest);
+  if (constraints.length === 0) return manifest.description;
+  return `${manifest.description} ${constraints.join(" ")}`;
 }
 
 /**

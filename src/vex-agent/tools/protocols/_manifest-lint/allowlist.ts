@@ -140,17 +140,9 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "uniswap.swap.execute", rule: "enum-declaration", detail: "slippageBps", reason: "ProtocolParamDef.enum does not exist yet; deleted by W7" },
   { subject: "uniswap.swap.quote", rule: "enum-declaration", detail: "slippageBps", reason: "ProtocolParamDef.enum does not exist yet; deleted by W7" },
 
-  // ── exclusive-param-groups (15) ──
+  // ── exclusive-param-groups (7) ──
   // XOR declaration — the exclusion is prose only; ProtocolToolManifest.exclusiveParamGroups does not exist yet.
   { subject: "pendle.market.get", rule: "exclusive-param-groups", detail: "market", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
-  { subject: "solana.lend.borrowOperate", rule: "exclusive-param-groups", detail: "borrowAmountRaw", reason: "at-most-one, not exactly-one — exclusiveParamGroups is EXACTLY-one, so declaring it would reject every legal single-leg call; needs an atLeastOneOf/atMostOne field" },
-  { subject: "solana.lend.borrowOperate", rule: "exclusive-param-groups", detail: "depositAmountRaw", reason: "at-most-one, not exactly-one — exclusiveParamGroups is EXACTLY-one, so declaring it would reject every legal single-leg call; needs an atLeastOneOf/atMostOne field" },
-  { subject: "solana.lend.borrowOperate", rule: "exclusive-param-groups", detail: "repayAll", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
-  { subject: "solana.lend.borrowOperate", rule: "exclusive-param-groups", detail: "repayAmountRaw", reason: "at-most-one, not exactly-one — exclusiveParamGroups is EXACTLY-one, so declaring it would reject every legal single-leg call; needs an atLeastOneOf/atMostOne field" },
-  { subject: "solana.lend.borrowOperate", rule: "exclusive-param-groups", detail: "withdrawAll", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
-  { subject: "solana.lend.borrowOperate", rule: "exclusive-param-groups", detail: "withdrawAmountRaw", reason: "at-most-one, not exactly-one — exclusiveParamGroups is EXACTLY-one, so declaring it would reject every legal single-leg call; needs an atLeastOneOf/atMostOne field" },
-  { subject: "solana.prices", rule: "exclusive-param-groups", detail: "mints", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
-  { subject: "solana.prices", rule: "exclusive-param-groups", detail: "queries", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
   { subject: "solana.swap.execute", rule: "exclusive-param-groups", detail: "dexes", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
   { subject: "solana.swap.execute", rule: "exclusive-param-groups", detail: "excludeDexes", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
   { subject: "solana.swap.quote", rule: "exclusive-param-groups", detail: "dexes", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
@@ -175,14 +167,11 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "khalani.bridge", rule: "param-description", detail: "fromToken", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.orders.get", rule: "param-description", detail: "orderId", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.orders.list", rule: "param-description", detail: "fromChain", reason: "param description predates the description template; deleted by W8" },
-  { subject: "khalani.orders.list", rule: "param-description", detail: "limit", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.orders.list", rule: "param-description", detail: "toChain", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.quote.get", rule: "param-description", detail: "fromToken", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.tokens.autocomplete", rule: "param-description", detail: "keyword", reason: "param description predates the description template; deleted by W8" },
-  { subject: "khalani.tokens.autocomplete", rule: "param-description", detail: "limit", reason: "param description predates the description template; deleted by W8" },
   { subject: "kyberswap.swap.execute", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
   { subject: "kyberswap.swap.quote", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
-  { subject: "kyberswap.tokens.check", rule: "param-description", detail: "address", reason: "param description predates the description template; deleted by W8" },
   { subject: "kyberswap.tokens.check", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
   { subject: "solana.predict.buy", rule: "param-description", detail: "side", reason: "param description predates the description template; deleted by W8" },
   { subject: "solana.predict.leaderboards", rule: "param-description", detail: "limit", reason: "param description predates the description template; deleted by W8" },
@@ -428,7 +417,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "khalani.tokens.autocomplete", rule: "param-key", detail: "keyword", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "khalani.tokens.balances", rule: "param-key", detail: "wallet", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "khalani.tokens.search", rule: "param-key", detail: "query", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "kyberswap.tokens.check", rule: "param-key", detail: "address", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "pendle.claim", rule: "param-key", detail: "market", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "pendle.lp.add", rule: "param-key", detail: "market", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "pendle.lp.addKeepYt", rule: "param-key", detail: "market", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
@@ -572,7 +560,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "solana.tokens.trending", rule: "param-key", detail: "minOrganicScore", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.tokens.trending", rule: "param-key", detail: "statsInterval", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "solana.tokens.trending", rule: "param-key", detail: "verifiedOnly", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "token_check", rule: "param-key", detail: "address", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_execute", rule: "param-key", detail: "description", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_execute", rule: "param-key", detail: "imageId", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_execute", rule: "param-key", detail: "links", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
@@ -597,11 +584,8 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "trench.tokens", rule: "param-key", detail: "includeCurveProgress", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.tokens", rule: "param-key", detail: "maxCurveProgressPct", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.tokens", rule: "param-key", detail: "minCurveProgressPct", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "trench.tokens", rule: "param-key", detail: "page", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.tokens", rule: "param-key", detail: "sort", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.tokens", rule: "param-key", detail: "status", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "trench.trades", rule: "param-key", detail: "page", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
-  { subject: "virtuals.geneses", rule: "param-key", detail: "page", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "virtuals.get", rule: "param-key", detail: "id", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "virtuals.list", rule: "param-key", detail: "sort", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "virtuals.list", rule: "param-key", detail: "sortBy", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
@@ -611,18 +595,10 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "wallet_send_prepare", rule: "param-key", detail: "to", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "wallet_track_token", rule: "param-key", detail: "action", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
 
-  // ── slippage-default-home (10) ──
-  // slippage defaults declared outside slippage-policy.ts (audit D4: nine copies at 50, six of them inside prequote hash material, plus Trench at 100).
-  { subject: "src/tools/kyberswap/constants.ts", rule: "slippage-default-home", detail: "export const KYBERSWAP_DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/tools/trench-express/evm/min-out.ts", rule: "slippage-default-home", detail: "export const TRENCH_DEFAULT_SLIPPAGE_BPS = 100;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/pendle/handlers/reflect-prequote.ts", rule: "slippage-default-home", detail: "const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/pendle/handlers/shared.ts", rule: "slippage-default-home", detail: "export const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/pendle/handlers/yt/quote.ts", rule: "slippage-default-home", detail: "slippageBps: num(p, \"slippageBps\") ?? 50,", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/prequote/identity/pendle-lp.ts", rule: "slippage-default-home", detail: "const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/prequote/identity/pendle-py.ts", rule: "slippage-default-home", detail: "const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/prequote/identity/pendle-redeem.ts", rule: "slippage-default-home", detail: "const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/prequote/identity/pendle-sy.ts", rule: "slippage-default-home", detail: "const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; deleted by W4b" },
-  { subject: "src/vex-agent/tools/protocols/uniswap/handlers/swap/slippage.ts", rule: "slippage-default-home", detail: "const DEFAULT_SLIPPAGE_BPS = 50;", reason: "one of the nine pre-existing slippage defaults; moved by the 0R.3 facade split, unchanged; deleted by W4b" },
+  // ── slippage-default-home (0) ──
+  // EMPTY, and it must stay that way: W4b moved every per-venue copy onto
+  // `slippage-policy.ts` (`VEX_DEFAULT_SLIPPAGE_BPS`) and flipped it 50 → 100.
+  // `src/tools/**` functions take an explicit bps parameter and hold no default.
 
   // ── tool-description (188) ──
   // tool descriptions — under the 120-char minimum, or missing a when-to-use / returns / spends anchor.
@@ -657,9 +633,7 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "khalani.chains.list", rule: "tool-description", detail: "length", reason: "tool description predates the description template; deleted by W8" },
   { subject: "khalani.chains.list", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
   { subject: "khalani.chains.list", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
-  { subject: "khalani.orders.get", rule: "tool-description", detail: "length", reason: "tool description predates the description template; deleted by W8" },
   { subject: "khalani.orders.get", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
-  { subject: "khalani.orders.get", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "khalani.orders.list", rule: "tool-description", detail: "length", reason: "tool description predates the description template; deleted by W8" },
   { subject: "khalani.orders.list", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
   { subject: "khalani.orders.list", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
@@ -805,7 +779,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "virtuals.graduations", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
   { subject: "virtuals.graduations", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "virtuals.list", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
-  { subject: "virtuals.list", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "wallet_balances", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
   { subject: "wallet_balances", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "wallet_send_confirm", rule: "tool-description", detail: "length", reason: "tool description predates the description template; deleted by W8" },

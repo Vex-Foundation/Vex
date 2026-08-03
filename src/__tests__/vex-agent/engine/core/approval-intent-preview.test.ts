@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { makeTestContext } from "../../tools/_test-context.js";
 import {
   buildIntentPreview,
   buildPolicySnapshot,
@@ -393,16 +394,13 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
 });
 
 describe("buildPolicySnapshot", () => {
-  const baseContext: InternalToolContext = {
+  const baseContext: InternalToolContext = makeTestContext({
     sessionId: "00000000-0000-4000-8000-000000000001",
-    loadedDocuments: new Map(),
-    sessionPermission: "restricted",
-    approved: false,
     missionRunId: "run-1",
     missionId: "mission-1",
     sessionKind: "mission",
     contextUsageBand: "warning",
-  };
+  });
 
   it("snapshots the documented policy fields verbatim", () => {
     const snap = buildPolicySnapshot(baseContext);

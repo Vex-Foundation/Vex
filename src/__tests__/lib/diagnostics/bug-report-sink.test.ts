@@ -1,12 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import {
   noopBugReportSink,
   emitBugReportSafe,
   type BugReportSink,
 } from "../../../lib/diagnostics/bug-report-sink.js";
 
-function makeLogger(): { warn: ReturnType<typeof vi.fn>; calls: () => unknown[][] } {
-  const warn = vi.fn();
+type WarnLogger = (message: string, meta?: Record<string, unknown>) => void;
+
+function makeLogger(): { warn: Mock<WarnLogger>; calls: () => Parameters<WarnLogger>[] } {
+  const warn = vi.fn<WarnLogger>();
   return {
     warn,
     calls: () => warn.mock.calls,
@@ -47,10 +49,8 @@ describe("emitBugReportSafe", () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
     const [msg, meta] = logger.calls()[0] ?? [];
     expect(msg).toBe("bug-report.sink.emit_failed");
-    expect((meta as Record<string, unknown>).category).toBe(
-      "mission_paused_error",
-    );
-    expect((meta as Record<string, unknown>).error).toBe("rate limited");
+    expect(meta?.category).toBe("mission_paused_error");
+    expect(meta?.error).toBe("rate limited");
   });
 
   it("never propagates non-Error throws either", async () => {

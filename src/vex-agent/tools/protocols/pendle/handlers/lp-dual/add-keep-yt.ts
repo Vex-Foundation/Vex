@@ -31,7 +31,6 @@ import { broadcastUnconfirmedFailure } from "../broadcast-unconfirmed.js";
 import { recordPendleRefusal, sendPendleRouterTx } from "../signed-broadcast.js";
 import { gatePendleLpDualExecute, recordPendleLpDualPrequote } from "../lp-dual-prequote.js";
 import {
-  DEFAULT_SLIPPAGE_BPS,
   failureDetail,
   humanAmount,
   legInput,
@@ -43,6 +42,7 @@ import {
   unsettledResult,
 } from "../shared.js";
 import { LP_EVENT_ROLE, ADD_KEEP_YT_TOOL_ID, approveRequired, quotedLeg } from "./dual-legs.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 export async function executePendleLpAddKeepYt(
   p: Record<string, unknown>,
@@ -187,7 +187,7 @@ export async function executePendleLpAddKeepYt(
         priceImpact: route.data.priceImpact,
         feeUsdEstimate: route.data.feeUsd,
         aggregator: route.data.aggregatorType,
-        slippageBps: num(p, "slippageBps") ?? DEFAULT_SLIPPAGE_BPS,
+        slippageBps: num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS,
         note: "Nothing was broadcast. Call the same tool again with the EXACT same params (dryRun omitted or false) to execute.",
       });
     }

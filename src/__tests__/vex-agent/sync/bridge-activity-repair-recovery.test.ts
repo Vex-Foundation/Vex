@@ -240,10 +240,10 @@ describe("repairPendingBridges — orchestration", () => {
 });
 
 describe("repairPendingBridges — error text scrubbing", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof captureWarn>;
   beforeEach(() => {
     vi.clearAllMocks();
-    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
+    warnSpy = captureWarn();
   });
   afterEach(() => warnSpy.mockRestore());
 
@@ -266,6 +266,11 @@ describe("repairPendingBridges — error text scrubbing", () => {
     if (isRecord(metadata)) expect(String(metadata.error)).not.toContain("LEAK_TOKEN_123");
   });
 });
+
+/** Inferred so `mock.calls` keeps the spied method's argument tuple. */
+function captureWarn() {
+  return vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
