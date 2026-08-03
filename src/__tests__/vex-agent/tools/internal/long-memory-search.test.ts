@@ -332,6 +332,37 @@ describe("long_memory_search — expand_graph (S8, default ON)", () => {
     );
     expect(warned).toHaveLength(1);
   });
+
+  it("tells the model the result set is degraded when expansion fails (0R.15)", async () => {
+    mockRecallCandidatesTopK.mockResolvedValue([]);
+    mockListEntityIdsForEntries.mockRejectedValue(new Error("graph db down"));
+    const res = await handleLongMemorySearch({ query: "x" }, ctx());
+    expect(res.success).toBe(true);
+    const data = JSON.parse(res.output);
+    // The fail-open is unchanged (direct hits still serve) — but it is no
+    // longer SILENT: the narrower set is marked as a degradation.
+    expect(data.results).toHaveLength(1);
+    expect(data.expansionDegraded).toBe(true);
+    expect(typeof data.expansionNote).toBe("string");
+    expect(data.expansionNote).toContain("graph expansion");
+  });
+
+  it("does not mark a healthy expansion as degraded", async () => {
+    mockRecallCandidatesTopK.mockResolvedValue([]);
+    const res = await handleLongMemorySearch({ query: "x" }, ctx());
+    const data = JSON.parse(res.output);
+    expect(data.expansionDegraded).toBeUndefined();
+    expect(data.expansionNote).toBeUndefined();
+  });
+
+  it("does not mark a search that never attempted expansion", async () => {
+    mockRecallCandidatesTopK.mockResolvedValue([]);
+    mockListEntityIdsForEntries.mockRejectedValue(new Error("graph db down"));
+    const res = await handleLongMemorySearch({ query: "x", expand_graph: false }, ctx());
+    const data = JSON.parse(res.output);
+    expect(mockListEntityIdsForEntries).not.toHaveBeenCalled();
+    expect(data.expansionDegraded).toBeUndefined();
+  });
 });
 
 describe("long_memory_search — truncation with steering (no silent drop)", () => {
