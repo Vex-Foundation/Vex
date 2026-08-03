@@ -126,6 +126,58 @@ describe("W0 — manifest convention linter", () => {
     ).toEqual([]);
   });
 
+  // An enum whose members differ only by case is a MANIFEST DEFECT, not a
+  // style question: `runtime/params.ts` resolves a case-insensitive match to the
+  // FIRST declared member, so `["base","BASE"]` silently discards the second
+  // spelling and makes the handler-visible value depend on declaration order.
+  // The approval fingerprint hashes that order for the same reason; the linter
+  // is what stops an ambiguous enum reaching the fleet in the first place.
+  it("no enum declares two members that differ only by case", () => {
+    const ambiguous = allIssues.filter((issue) => issue.rule === "enum-case-uniqueness");
+    expect(
+      ambiguous,
+      `an ambiguous enum can never yield its later spelling:\n${format(ambiguous)}`,
+    ).toEqual([]);
+    expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "enum-case-uniqueness")).toEqual([]);
+  });
+
+  it("flags an enum whose members collide case-insensitively", () => {
+    const issues = lintToolSubject({
+      subject: "test.enum",
+      description: "fixture",
+      mutating: false,
+      params: [{
+        key: "chain",
+        type: "string",
+        description: "fixture",
+        required: true,
+        enum: ["base", "BASE"],
+      }],
+    });
+
+    const flagged = issues.filter((issue) => issue.rule === "enum-case-uniqueness");
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0]?.detail).toBe("chain");
+    expect(flagged[0]?.message).toContain("base");
+  });
+
+  it("accepts an enum whose members are distinct case-insensitively", () => {
+    const issues = lintToolSubject({
+      subject: "test.enum",
+      description: "fixture",
+      mutating: false,
+      params: [{
+        key: "chain",
+        type: "string",
+        description: "fixture",
+        required: true,
+        enum: ["base", "Arbitrum", "solana"],
+      }],
+    });
+
+    expect(issues.filter((issue) => issue.rule === "enum-case-uniqueness")).toEqual([]);
+  });
+
   it("CANONICAL_CHAIN_SLUGS covers every locally-registered chain", () => {
     const uncovered = listLocalChains().filter(
       (chain) => !chain.aliases.some((alias) => CANONICAL_CHAIN_SLUGS.has(alias)),

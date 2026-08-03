@@ -173,6 +173,74 @@ describe("repairPendingBridges — orchestration", () => {
     warnSpy.mockRestore();
   });
 
+  // ── Recovery must ADVANCE the stall, not spin silently ──────────────────────
+  //
+  // A crash-after-deposit row has no order id, so the ordinary sweep can never
+  // see it: this queue is its ONLY verifier. Counting `stillPending` and nothing
+  // else meant an unrecoverable row could be retried forever while the UI kept
+  // rendering an ordinary healthy pending — the stall state exists precisely so
+  // "we have repeatedly been unable to check" is visible, and it is never an
+  // auto-fail.
+
+  const recoveryCandidate = {
+    logicalRowId: 7,
+    executionId: 200,
+    protocol: "khalani",
+    walletAddress: "0xw",
+    depositTxHash: "0xdep",
+    fromChainId: 8453,
+    toChainId: 42161,
+  };
+
+  it("records a bounded reason when the recovery lookup THROWS", async () => {
+    const deps = makeDeps({
+      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([recoveryCandidate]),
+      recoverKhalaniOrderId: vi.fn().mockRejectedValue(new Error("boom")),
+    });
+    await repairPendingBridges(deps);
+    expect(deps.noteVerificationInconclusive).toHaveBeenCalledWith(7, "recovery_throw");
+  });
+
+  it("records a bounded reason when the recovery finds NO order id", async () => {
+    const deps = makeDeps({
+      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([recoveryCandidate]),
+      recoverKhalaniOrderId: vi.fn().mockResolvedValue(null),
+    });
+    await repairPendingBridges(deps);
+    expect(deps.noteVerificationInconclusive).toHaveBeenCalledWith(7, "recovery_null");
+  });
+
+  it("records a bounded reason when the attach CONFLICTS with a different id", async () => {
+    const deps = makeDeps({
+      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([recoveryCandidate]),
+      recoverKhalaniOrderId: vi.fn().mockResolvedValue("order-x"),
+      attachOrderId: vi.fn().mockResolvedValue(attach("conflict_different_id")),
+    });
+    await repairPendingBridges(deps);
+    expect(deps.noteVerificationInconclusive).toHaveBeenCalledWith(7, "attach_conflict");
+  });
+
+  it("CLEARS the stall counter on a successful recovery — the row is verifiable again", async () => {
+    const deps = makeDeps({
+      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([recoveryCandidate]),
+      recoverKhalaniOrderId: vi.fn().mockResolvedValue("order-recovered"),
+      attachOrderId: vi.fn().mockResolvedValue(attach("attached")),
+    });
+    await repairPendingBridges(deps);
+    expect(deps.noteVerificationConclusive).toHaveBeenCalledWith(7);
+    expect(deps.noteVerificationInconclusive).not.toHaveBeenCalled();
+  });
+
+  it("CLEARS the stall counter when the id was already attached to the same order", async () => {
+    const deps = makeDeps({
+      listOrderIdRecoveryCandidates: vi.fn().mockResolvedValue([recoveryCandidate]),
+      recoverKhalaniOrderId: vi.fn().mockResolvedValue("order-existing"),
+      attachOrderId: vi.fn().mockResolvedValue(attach("already_attached_same")),
+    });
+    await repairPendingBridges(deps);
+    expect(deps.noteVerificationConclusive).toHaveBeenCalledWith(7);
+  });
+
   // ── C3 confirm+enqueue recovery path (CHOICE = explicit recovery, not one tx) ─
 
   it("reconciles confirmed-but-unenqueued rows by idempotently enqueuing the balance job, re-clearing a relay reveal (C3 recovery)", async () => {

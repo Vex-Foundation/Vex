@@ -406,25 +406,39 @@ function isUniqueViolation(err: unknown): boolean {
  *
  * The 90 s gate still applies at on-chain resolution time, so re-arming a row
  * younger than the gate is safe.
+ *
+ * THE RETURN IS LANES ACCEPTED, NOT CANDIDATES EMITTED. Arming goes through the
+ * bus, so the registry may decline a candidate under its cap or its per-row
+ * dedup — both normal, neither an error. Counting emissions overstated the
+ * recovery: a restart that armed nothing because the cap was already full would
+ * still report "12 re-armed", which is the wrong signal at exactly the moment
+ * the cap is under pressure. `activeLaneCount` is the running registry's own
+ * `size()`, injected by the caller that owns the handle; without it the count
+ * falls back to candidates emitted, which is all a caller with no registry can
+ * honestly know.
  */
-export async function rearmPendingFastLanes(): Promise<number> {
-  let armed = 0;
+export async function rearmPendingFastLanes(
+  activeLaneCount?: () => number,
+): Promise<number> {
+  const before = activeLaneCount?.() ?? 0;
+  let emitted = 0;
   for (const family of ["eip155", "solana"] as const) {
     const rows = await listPendingOlderThan(0, FAST_LANE_MAX_ACTIVE, family);
     for (const row of rows) {
       if (!isWithinFastLaneAge(row.submitAttemptedAt)) continue;
       emitRearm(row, "onchain");
-      armed++;
+      emitted++;
     }
   }
 
   for (const row of await listPendingProviderLogical(FAST_LANE_MAX_ACTIVE)) {
     if (!isWithinFastLaneAge(row.createdAt)) continue;
     emitRearm(row, "provider");
-    armed++;
+    emitted++;
   }
 
-  if (armed > 0) logger.info("sync.fast_lane.rearmed", { rows: armed });
+  const armed = activeLaneCount ? activeLaneCount() - before : emitted;
+  if (emitted > 0) logger.info("sync.fast_lane.rearmed", { rows: armed, candidates: emitted });
   return armed;
 }
 

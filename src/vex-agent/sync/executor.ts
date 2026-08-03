@@ -10,7 +10,7 @@
  * agent host. Short-lived bootstrap checks must not start it.
  */
 
-import { initSync, syncTick } from "./index.js";
+import { initSync, syncTick, type InitSyncOptions } from "./index.js";
 import { startFastLane, type FastLaneHandle } from "./fast-lane.js";
 import logger from "@utils/logger.js";
 
@@ -20,7 +20,7 @@ export interface SyncExecutorHandle {
 }
 
 export interface SyncExecutorDeps {
-  initSync(): Promise<void>;
+  initSync(options?: InitSyncOptions): Promise<void>;
   syncTick(): Promise<void>;
 }
 
@@ -63,7 +63,10 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
   const runOne = async (): Promise<void> => {
     try {
       if (!initialized) {
-        await deps.initSync();
+        // The fast lane is already subscribed, so hand `initSync` the registry's
+        // own size: its crash-recovery re-arm can then report lanes ACCEPTED
+        // rather than candidates emitted.
+        await deps.initSync({ activeLaneCount: () => fastLane?.size() ?? 0 });
         initialized = true;
         return;
       }

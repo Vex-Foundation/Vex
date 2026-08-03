@@ -317,7 +317,14 @@ describe("manifest identity at resume", () => {
     });
   });
 
-  it("treats a reordered enum as the SAME contract — order carries no admission rule", () => {
+  // CORRECTED (Codex final review, 2026-08-03). This previously asserted that a
+  // reordered enum was the same contract. It is not: `runtime/params.ts`
+  // normalizes a chain-valued enum to the FIRST case-insensitive match, so
+  // declaration order decides which spelling the handler receives. Treating the
+  // reorder as identical let a queued approval resume against a contract that
+  // hands the handler a different value than the one the human saw — the exact
+  // silent substitution the fingerprint exists to prevent.
+  it("FAILS CLOSED when an enum is reordered — declaration order decides the handler-visible value", () => {
     const enumManifest = (values: readonly string[]) => makeManifest({
       params: makeManifest().params.map((p) => (p.key === "chain" ? { ...p, enum: values } : p)),
     });
@@ -325,6 +332,14 @@ describe("manifest identity at resume", () => {
     const stored = buildApprovalToolCall(INJECTED_NAME, SWAP_PARAMS);
 
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(enumManifest(["arbitrum", "base"]));
+    expect(checkApprovalManifestIdentity(stored)).toMatchObject({
+      ok: false,
+      reason: "manifest_fingerprint_mismatch",
+    });
+
+    // The identical declaration still resumes — the rule is "order as declared",
+    // not "any enum invalidates".
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(enumManifest(["base", "arbitrum"]));
     expect(checkApprovalManifestIdentity(stored)).toEqual({ ok: true });
   });
 

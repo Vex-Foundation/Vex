@@ -366,6 +366,35 @@ describe("crash recovery", () => {
     handle.stop();
   });
 
+  // The count is a REPORT of how many rows the fast lane actually took over.
+  // Counting emitted candidates instead overstated it whenever the registry
+  // declined one — a restart that armed nothing could still log "12 re-armed",
+  // which is exactly the wrong signal when the cap is the thing under pressure.
+  it("counts lanes ACCEPTED, not candidates emitted, when a row is already armed", async () => {
+    const handle = startFastLane({ deps: stubDeps(), random: noJitter });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 8453, lane: "onchain" });
+    mockListPendingOlderThan.mockImplementation(async (_a: number, _l: number, family: string) =>
+      family === "eip155" ? [pendingRow({ id: 1 }), pendingRow({ id: 2 })] : [],
+    );
+
+    // Two candidates, one already armed → exactly one new lane.
+    expect(await rearmPendingFastLanes(() => handle.size())).toBe(1);
+    expect(handle.size()).toBe(2);
+    handle.stop();
+  });
+
+  it("counts lanes ACCEPTED, not candidates emitted, when the cap is reached", async () => {
+    const handle = startFastLane({ deps: stubDeps(), random: noJitter });
+    const overCap = Array.from({ length: FAST_LANE_MAX_ACTIVE + 5 }, (_, i) => pendingRow({ id: i + 1 }));
+    mockListPendingOlderThan.mockImplementation(async (_a: number, _l: number, family: string) =>
+      family === "eip155" ? overCap : [],
+    );
+
+    expect(await rearmPendingFastLanes(() => handle.size())).toBe(FAST_LANE_MAX_ACTIVE);
+    expect(handle.size()).toBe(FAST_LANE_MAX_ACTIVE);
+    handle.stop();
+  });
+
   it("does not re-arm a row already older than the fast lane's max age", async () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
     mockListPendingOlderThan.mockImplementation(async (_a: number, _l: number, family: string) =>

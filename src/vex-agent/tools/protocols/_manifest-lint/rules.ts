@@ -23,7 +23,8 @@ export type ManifestLintRule =
   | "slippage-default-home"
   | "chain-doc-parity"
   | "exclusive-param-groups"
-  | "enum-declaration";
+  | "enum-declaration"
+  | "enum-case-uniqueness";
 
 export interface ManifestLintIssue {
   /** Tool id, tool name, or source path — whatever owns the violation. */
@@ -308,6 +309,41 @@ export function lintEnumDeclaration(subject: string, param: LintParam): Manifest
       `param \`${param.key}\` lists its accepted values in prose ("one of …") with no declared \`enum\` — `
       + "an unenforced, uncompiled value list is a burnt call waiting to happen.",
   }];
+}
+
+// ── 11. enum-case-uniqueness ─────────────────────────────────────
+
+/**
+ * An enum may not declare two members that differ only by case.
+ *
+ * `runtime/params.ts` normalizes a chain-valued enum by returning the FIRST
+ * case-insensitive match, so `["base","BASE"]` can never yield `"BASE"`: the
+ * second spelling is unreachable, and which spelling the handler receives
+ * depends on declaration order rather than on anything the caller wrote. That
+ * makes an ambiguous enum a defect at the SOURCE, and it is why the approval
+ * fingerprint hashes enum order as declared instead of sorting it.
+ */
+export function lintEnumCaseUniqueness(subject: string, param: LintParam): ManifestLintIssue[] {
+  const members = param.enum;
+  if (!members || members.length < 2) return [];
+
+  const firstByFold = new Map<string, string>();
+  for (const member of members) {
+    const folded = member.toLowerCase();
+    const first = firstByFold.get(folded);
+    if (first === undefined) {
+      firstByFold.set(folded, member);
+      continue;
+    }
+    return [{
+      subject, rule: "enum-case-uniqueness", detail: param.key,
+      message:
+        `param \`${param.key}\` declares \`${first}\` and \`${member}\`, which differ only by case — `
+        + "case-insensitive normalization resolves to the FIRST match, so the later spelling is "
+        + "unreachable and the handler-visible value depends on declaration order.",
+    }];
+  }
+  return [];
 }
 
 // ── Structural readers for not-yet-existing schema fields ────────

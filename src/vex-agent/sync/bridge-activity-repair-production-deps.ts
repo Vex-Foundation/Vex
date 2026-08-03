@@ -121,7 +121,7 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
       // Pending Khalani logical rows with NO order id yet, whose sibling
       // `bridge_deposit` leg has a staged hash (the crash-after-broadcast window).
       const rows = await query<Record<string, unknown>>(
-        `SELECT lg.protocol_execution_id AS execution_id, lg.protocol AS protocol,
+        `SELECT lg.id AS logical_row_id, lg.protocol_execution_id AS execution_id, lg.protocol AS protocol,
                 lg.wallet_address AS wallet_address, dep.tx_hash AS deposit_tx_hash,
                 lg.from_chain_id AS from_chain_id, lg.to_chain_id AS to_chain_id
            FROM agent_activity lg
@@ -138,6 +138,7 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
         [limit],
       );
       return rows.map((r) => ({
+        logicalRowId: Number(r.logical_row_id),
         executionId: Number(r.execution_id),
         protocol: String(r.protocol),
         walletAddress: String(r.wallet_address),

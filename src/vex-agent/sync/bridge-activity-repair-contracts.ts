@@ -56,6 +56,13 @@ export const VERIFICATION_STALL_REASONS = [
   "correlation_mismatch",
   "missing_route",
   "refund_evidence_write_failed",
+  // The order-id recovery queue's own inconclusive exits. A crash-after-deposit
+  // row has NO order id, so this queue is the only verifier it has: without a
+  // reasoned stall it could be retried forever while the UI kept rendering an
+  // ordinary healthy pending.
+  "recovery_throw",
+  "recovery_null",
+  "attach_conflict",
 ] as const;
 
 export type VerificationStallReason = (typeof VERIFICATION_STALL_REASONS)[number];
@@ -162,6 +169,13 @@ export interface RelayStatusView {
 
 /** A pending logical row awaiting recovery of its provider order id (crash after deposit broadcast, before attach — R5). */
 export interface BridgeOrderIdRecoveryCandidate {
+  /**
+   * The LOGICAL row's own `agent_activity.id` — what the stall counter is keyed
+   * on. Carried because `executionId` addresses the whole execution (deposit leg
+   * included), while `noteVerificationInconclusive`/`Conclusive` move the
+   * verification state of the single `bridge_fill_expected` row.
+   */
+  readonly logicalRowId: number;
   readonly executionId: number;
   readonly protocol: string;
   readonly walletAddress: string;

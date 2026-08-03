@@ -154,11 +154,29 @@ export function checkApprovalManifestIdentity(
  * Structural identity of a manifest: what it does, what it takes, and every
  * rule that decides whether a given call is admitted.
  *
- * Ordering is canonicalized — params by key, enum values, group members, and
- * the groups themselves — so a pure reordering (which no caller can observe)
- * does not invalidate a queued approval, while an added, removed, retyped,
- * newly required, re-united, re-enumerated, newly array-accepting or newly
- * grouped param does.
+ * Ordering is canonicalized only where it is genuinely UNOBSERVABLE — params by
+ * key, group members, and the groups themselves — so a cosmetic reshuffle does
+ * not invalidate a queued approval, while an added, removed, retyped, newly
+ * required, re-united, re-enumerated, newly array-accepting or newly grouped
+ * param does.
+ *
+ * ENUM MEMBERS ARE THE EXCEPTION: their DECLARATION ORDER is hashed as declared,
+ * because it is behaviourally meaningful. `runtime/params.ts` normalizes a
+ * chain-valued enum by returning the FIRST case-insensitive match, so
+ * `["base","BASE"]` and `["BASE","base"]` hand the handler different strings for
+ * the identical user input. Sorting them would have made those two contracts
+ * indistinguishable — a silent substitution under an approval a human already
+ * granted. (An enum that is ambiguous in the first place is a manifest defect;
+ * `_manifest-lint`'s `enum-case-uniqueness` rule refuses it at the source.)
+ *
+ * NOT hashed, deliberately: `namespace` and `requiresEnv`. Runtime admission
+ * does read both, but they describe the tool's IDENTITY and AVAILABILITY, not
+ * the SHAPE of the call the human approved — the same call, with the same
+ * params, means the same thing under either. Their failure mode is also the safe
+ * one: a tool moved to another namespace or newly gated on a missing env var
+ * fails admission outright and nothing executes, whereas a changed call shape
+ * would execute silently against a different contract. That asymmetry is why the
+ * v2 field list covers call shape only.
  */
 export function computeManifestFingerprint(manifest: ProtocolToolManifest): string {
   const params = manifest.params
@@ -167,7 +185,9 @@ export function computeManifestFingerprint(manifest: ProtocolToolManifest): stri
       type: param.type,
       required: param.required === true,
       unit: param.unit ?? null,
-      enum: param.enum ? sortStrings(param.enum) : null,
+      // AS DECLARED — see the enum note above; sorting here erased a real
+      // difference in what the handler receives.
+      enum: param.enum ? [...param.enum] : null,
       acceptsStringArray: param.acceptsStringArray === true,
     }))
     .sort((a, b) => compareStrings(a.key, b.key));
@@ -203,7 +223,7 @@ function canonicalizeGroups(
   if (!groups) return [];
   return groups
     .map(sortStrings)
-    .sort((a, b) => compareStrings(a.join(" "), b.join(" ")));
+    .sort((a, b) => compareStrings(a.join("\u0000"), b.join("\u0000")));
 }
 
 /** A readable metadata block from an older envelope version. */

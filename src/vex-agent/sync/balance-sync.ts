@@ -19,6 +19,7 @@ import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import { enrichPendleBalances, seedPendleChainBalances } from "./pendle-enrichment.js";
 import { PENDLE_SUPPORTED_CHAIN_IDS } from "@tools/pendle/chains.js";
 import { runSingleFlightBalanceSync } from "./balance-sync/single-flight.js";
+import { describeFailureForLog } from "@utils/error-summary.js";
 import logger from "@utils/logger.js";
 
 /** ChainFamily ("eip155"|"solana") → inventory family ("evm"|"solana"). */
@@ -415,9 +416,11 @@ async function isSnapshotAllowed(
     }
     return !pending;
   } catch (err) {
-    logger.warn("sync.balance.pending_probe_failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    // The probe talks to Postgres, and a driver/connection failure carries the
+    // connection string — password included — in its message. The canonical
+    // bounded summary is the ONLY thing that may reach the log file (rule 06;
+    // the logger itself redacts nothing).
+    logger.warn("sync.balance.pending_probe_failed", { error: describeFailureForLog(err) });
     return false;
   }
 }

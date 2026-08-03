@@ -19,7 +19,17 @@ import logger from "@utils/logger.js";
  * 2. Drain pending runs from previous process (selective, no snapshot)
  * 3. Full balance sync + authoritative startup snapshot
  */
-export async function initSync(): Promise<void> {
+export interface InitSyncOptions {
+  /**
+   * The RUNNING fast-lane registry's active-lane count, injected by the caller
+   * that owns the handle (`startSyncExecutor`). It is what makes the re-arm
+   * report lanes ACCEPTED rather than candidates emitted — the registry may
+   * decline a candidate under its cap or its per-row dedup.
+   */
+  readonly activeLaneCount?: () => number;
+}
+
+export async function initSync(options: InitSyncOptions = {}): Promise<void> {
   logger.info("sync.init.starting");
 
   // 1. Seed default sync jobs
@@ -36,7 +46,7 @@ export async function initSync(): Promise<void> {
   //    snapshot guard must see as still pending.
   try {
     const { rearmPendingFastLanes } = await import("./fast-lane.js");
-    await rearmPendingFastLanes();
+    await rearmPendingFastLanes(options.activeLaneCount);
   } catch (err) {
     logger.warn("sync.init.fast_lane_rearm_failed", {
       error: err instanceof Error ? err.message : String(err),

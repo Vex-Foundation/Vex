@@ -7,7 +7,7 @@
  * schemas so the alias lane cannot drift away from the protocol lane again).
  *
  * The convention itself lives in `conventions.ts`; this module only measures
- * distance from it. Ten rules, each with a stable id so a violation can be
+ * distance from it. Eleven rules, each with a stable id so a violation can be
  * pointed at, allowlisted, and later deleted:
  *
  *   param-key               every key is canonical; a banned key names its replacement
@@ -21,6 +21,8 @@
  *   exclusive-param-groups  a prose XOR / "at most one of" / "at least one of" is
  *                           backed by a declared exclusiveParamGroups | atMostOne | atLeastOneOf
  *   enum-declaration        a prose "one of X, Y, Z" is backed by a declared enum
+ *   enum-case-uniqueness    no two enum members differ only by case (the later one is
+ *                           unreachable under case-insensitive normalization)
  *
  * TODAY'S VIOLATIONS ARE ALLOWLISTED, not fixed (see `_manifest-lint/allowlist.ts`).
  * The suite is green on the current tree; every migration wave DELETES the
@@ -40,6 +42,7 @@ import {
   lintParamDescription,
   lintChainDocParity,
   lintEnumDeclaration,
+  lintEnumCaseUniqueness,
   lintExclusiveParamGroups,
   lintToolDescription,
   lintExampleParamsRequired,
@@ -162,6 +165,7 @@ export function lintToolSubject(subject: LintSubject): ManifestLintIssue[] {
       ...lintParamDescription(subject.subject, param),
       ...lintChainDocParity(subject.subject, param),
       ...lintEnumDeclaration(subject.subject, param),
+      ...lintEnumCaseUniqueness(subject.subject, param),
     );
   }
   if (subject.exampleParams) {
