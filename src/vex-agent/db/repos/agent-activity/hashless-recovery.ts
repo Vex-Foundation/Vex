@@ -107,6 +107,12 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // between intent creation and staging) is definitively not-attempted, so it
   // must stay reapable here rather than sit pending forever.
   "trench_fee",
+  // `swap_fee` (migration 066) is the same leg again, on a swap venue whose
+  // router takes no fee parameter (Uniswap): the final Vex-signed transfer, run
+  // only after the swap confirmed. Planned-but-never-signed — the swap reverted,
+  // was ambiguous, or the process died between intent creation and staging — is
+  // definitively not-attempted, so it stays reapable here.
+  "swap_fee",
   "allowance",
   "allowance_reset",
   "lend_deposit",

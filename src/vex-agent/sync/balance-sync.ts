@@ -13,6 +13,7 @@ import type { KhalaniToken, ChainFamily } from "@tools/khalani/types.js";
 import { listLocalChains } from "@tools/evm-chains/registry.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
+import { hasPendingActivityForWallets } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveChainHint } from "./chains.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import { enrichPendleBalances, seedPendleChainBalances } from "./pendle-enrichment.js";
@@ -284,9 +285,43 @@ async function syncKhalaniWalletBalances(
 }
 
 /**
- * Full balance sync — both wallet families + portfolio snapshot.
+ * Snapshot policy for one `fullBalanceSync` cycle.
+ *
+ * - `"always"` — take the snapshot regardless of in-flight transactions. Used by
+ *   `initSync`, whose startup snapshot is authoritative by design, and by the
+ *   user-initiated refresh, which is an explicit "show me now".
+ * - `"when-settled"` — take the snapshot ONLY if no pending activity exists.
+ *   Used by the periodic job and the `balances_snapshot` job.
  */
-export async function fullBalanceSync(): Promise<FullSyncResult> {
+export type SnapshotPolicy = "always" | "when-settled";
+
+export interface FullBalanceSyncOptions {
+  readonly snapshot?: SnapshotPolicy;
+}
+
+/**
+ * Full balance sync — both wallet families + portfolio snapshot.
+ *
+ * ## THE SNAPSHOT GUARD IS GROUP-WIDE, DELIBERATELY
+ *
+ * `hasPendingActivityForWallets` is computed ONCE, over EVERY wallet, BEFORE the
+ * loop. Deciding per wallet inside the loop would emit a HALF-POPULATED
+ * `snapshotGroupId` group, and the group id exists precisely so a cycle can be
+ * stitched back together from rows with distinct `created_at`. A half group also
+ * breaks `pnlVsPrev`, which compares against the previous snapshot per wallet: a
+ * portfolio whose wallets snapshot on different cycles produces a P&L delta that
+ * spans a gap on some wallets and not others.
+ *
+ * ## BALANCES ARE STILL WRITTEN
+ *
+ * Only the SNAPSHOT is suppressed. `syncWalletBalances` →
+ * `replaceBalancesForChain` runs unconditionally, so the live balance display
+ * stays fresh while a transaction is in flight. Suppressing both would freeze
+ * the user's portfolio for the whole duration of a pending swap.
+ */
+export async function fullBalanceSync(
+  options: FullBalanceSyncOptions = {},
+): Promise<FullSyncResult> {
   // One group id ties every per-wallet snapshot row from this cycle together,
   // so an aggregate view can stitch a cycle back despite distinct created_at.
   const snapshotGroupId = randomUUID();
@@ -294,44 +329,86 @@ export async function fullBalanceSync(): Promise<FullSyncResult> {
   const snapshots: WalletSnapshotResult[] = [];
   let aggregateTotalUsd = 0;
 
+  const walletEntries = (["eip155", "solana"] as const).flatMap((family) =>
+    listWallets(toInventoryFamily(family)).map((entry) => ({ family, address: entry.address })),
+  );
+
+  const snapshotAllowed = await isSnapshotAllowed(
+    options.snapshot ?? "when-settled",
+    walletEntries.map((entry) => entry.address),
+  );
+
   // Project EVERY inventory wallet (≤3 EVM + ≤3 Solana), one snapshot each.
-  for (const family of ["eip155", "solana"] as const) {
-    for (const entry of listWallets(toInventoryFamily(family))) {
-      const sync = await syncWalletBalances(family, entry.address);
-      wallets.push(sync);
-      aggregateTotalUsd += sync.totalUsd;
+  for (const { family, address } of walletEntries) {
+    const sync = await syncWalletBalances(family, address);
+    wallets.push(sync);
+    aggregateTotalUsd += sync.totalUsd;
 
-      const positions = await buildPositionsBreakdown(family, entry.address);
-      const positionData = positions as { chains?: Array<{ chainId: number }> };
-      const chainSet = new Set<string>();
-      for (const c of positionData.chains ?? []) chainSet.add(String(c.chainId));
+    if (!snapshotAllowed) continue;
 
-      const { snapshotId, pnlVsPrev } = await balancesRepo.insertSnapshot({
-        walletFamily: family,
-        walletAddress: entry.address,
-        snapshotGroupId,
-        totalUsd: sync.totalUsd,
-        positions,
-        activeChains: [...chainSet],
-      });
-      snapshots.push({
-        walletFamily: family,
-        walletAddress: entry.address,
-        snapshotId,
-        totalUsd: sync.totalUsd,
-        pnlVsPrev,
-      });
-    }
+    const positions = await buildPositionsBreakdown(family, address);
+    const positionData = positions as { chains?: Array<{ chainId: number }> };
+    const chainSet = new Set<string>();
+    for (const c of positionData.chains ?? []) chainSet.add(String(c.chainId));
+
+    const { snapshotId, pnlVsPrev } = await balancesRepo.insertSnapshot({
+      walletFamily: family,
+      walletAddress: address,
+      snapshotGroupId,
+      totalUsd: sync.totalUsd,
+      positions,
+      activeChains: [...chainSet],
+    });
+    snapshots.push({
+      walletFamily: family,
+      walletAddress: address,
+      snapshotId,
+      totalUsd: sync.totalUsd,
+      pnlVsPrev,
+    });
   }
 
   logger.info("sync.balance.full_completed", {
     wallets: wallets.length,
     snapshots: snapshots.length,
+    snapshotSkipped: !snapshotAllowed,
     totalUsd: aggregateTotalUsd.toFixed(2),
     snapshotGroupId,
   });
 
   return { wallets, snapshots, totalUsd: aggregateTotalUsd, snapshotGroupId };
+}
+
+/**
+ * The group-wide gate. `"always"` short-circuits without a query; otherwise ONE
+ * existence check covers every pending kind (swap, launch, Solana leg, logical
+ * bridge fill) across every wallet in this cycle.
+ *
+ * A failed check is treated as "pending" — the conservative direction. Guessing
+ * "settled" because the DB hiccuped is how a mid-settlement snapshot gets
+ * written, and a missing snapshot is recoverable while a wrong one poisons
+ * `pnlVsPrev` for every later cycle.
+ */
+async function isSnapshotAllowed(
+  policy: SnapshotPolicy,
+  walletAddresses: readonly string[],
+): Promise<boolean> {
+  if (policy === "always") return true;
+  try {
+    const pending = await hasPendingActivityForWallets(walletAddresses);
+    if (pending) {
+      logger.info("sync.balance.snapshot_deferred", {
+        reason: "pending_activity",
+        hint: "balances still refreshed; the snapshot resumes once every transaction terminalizes",
+      });
+    }
+    return !pending;
+  } catch (err) {
+    logger.warn("sync.balance.pending_probe_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
 }
 
 /**

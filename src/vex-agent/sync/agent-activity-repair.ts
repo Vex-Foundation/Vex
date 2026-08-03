@@ -61,6 +61,7 @@ import {
   failActivityEvent,
   listPendingOlderThan,
   touchLastChecked,
+  type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import {
@@ -128,74 +129,102 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
   let stillPending = 0;
 
   for (const event of candidates) {
-    if (!event.txHash) {
-      // No signed hash was ever persisted (crash before step 2) — nothing to
-      // look up yet; leave it for a later sweep once/if a hash lands.
-      stillPending++;
-      continue;
-    }
-
-    let receipt: ReceiptCheckResult | null;
-    try {
-      receipt = await deps.checkReceiptByHash({ chainId: event.chainId, txHash: event.txHash });
-    } catch (err) {
-      logger.warn("agent_activity.repair.lookup_failed", {
-        id: event.id,
-        chainId: event.chainId,
-        error: summarizeProtocolError(err).message,
-      });
-      // Rotate even though nothing was learned — same fairness contract as the
-      // Solana sweep. `listPendingOlderThan` orders by `last_checked_at` under a
-      // LIMIT, so a row whose lookup keeps throwing must move to the back of the
-      // queue instead of pinning the window against newer pending rows. The
-      // production dep swallows its own errors today, but an injected or future
-      // one may throw, and the fairness contract must not depend on that.
-      await touchLastChecked(event.id);
-      stillPending++;
-      continue;
-    }
-
-    if (receipt === null) {
-      // Ambiguity NEVER terminalizes (FIX-SPINE C1) — no time-based escalation.
-      await touchLastChecked(event.id);
-      stillPending++;
-      continue;
-    }
-
-    if (receipt.status === "reverted") {
-      const outcome = await failActivityEvent(event.id, {
-        failureCode: "mined_revert",
-        // A `swap` row gets the swap remedy — the same event deserves the same
-        // explanation however Vex noticed it. Every other role stays NEUTRAL:
-        // this sweep holds only a row (it sees approvals, bridge deposits and
-        // fee transfers alike) and has no venue knowledge to spend, so it
-        // states only what is certainly true. Owner:
-        // `tools/protocols/runtime/mined-revert-reason.ts`.
-        failureReason: event.eventRole === "swap"
-          ? MINED_REVERT_SWAP_LEG_REASON
-          : MINED_REVERT_ROLE_NEUTRAL_REASON,
-      });
-      if (outcome.applied) {
-        failed++;
-      } else {
-        logDuplicateCas(event.id, "fail");
-        if (outcome.row.status === "pending") stillPending++;
-      }
-      continue;
-    }
-
-    // Mined success. The chain has answered the only question this sweep asks.
-    const outcome = await confirmActivityEventStatusOnly(event.id);
-    if (outcome.applied) {
-      confirmed++;
-    } else {
-      logDuplicateCas(event.id, "confirm");
-      if (outcome.row.status === "pending") stillPending++;
-    }
+    const outcome = await resolveEvmPendingRow(event, deps);
+    if (outcome === "confirmed") confirmed++;
+    else if (outcome === "failed") failed++;
+    else if (outcome === "pending") stillPending++;
+    // "duplicate": a concurrent process already settled this row — logged in
+    // `logDuplicateCas`; never double-counted here.
   }
 
   return { checked: candidates.length, confirmed, failed, stillPending };
 }
+
+/** What one candidate's resolution attempt concluded. Mirrors the Solana sweep's own outcome union. */
+export type EvmRepairOutcome = "confirmed" | "failed" | "pending" | "duplicate";
+
+/**
+ * Resolve ONE pending EVM row — the sweep's entire per-row policy, extracted so
+ * the Wave P fast lane asks the chain exactly the same question, through exactly
+ * the same deps, and terminalizes under exactly the same rules.
+ *
+ * EXTRACTION IS THE POINT: a second implementation of "when may a status-only
+ * observation terminalize a row" is precisely the kind of duplicated money logic
+ * that drifts. The fast lane owns *when* to call this; this function owns *what
+ * it means*.
+ *
+ * The caller is responsible for the 90 s candidate-age gate
+ * (`REPAIR_CANDIDATE_AGE_MS`). The sweep enforces it in its candidate query; the
+ * fast lane enforces it explicitly before calling here — see `fast-lane.ts`.
+ */
+export async function resolveEvmPendingRow(
+  event: PendingEvmRow,
+  deps: RepairDeps,
+): Promise<EvmRepairOutcome> {
+  if (!event.txHash) {
+    // No signed hash was ever persisted (crash before step 2) — nothing to
+    // look up yet; leave it for a later sweep once/if a hash lands.
+    return "pending";
+  }
+
+  let receipt: ReceiptCheckResult | null;
+  try {
+    receipt = await deps.checkReceiptByHash({ chainId: event.chainId, txHash: event.txHash });
+  } catch (err) {
+    logger.warn("agent_activity.repair.lookup_failed", {
+      id: event.id,
+      chainId: event.chainId,
+      error: summarizeProtocolError(err).message,
+    });
+    // Rotate even though nothing was learned — same fairness contract as the
+    // Solana sweep. `listPendingOlderThan` orders by `last_checked_at` under a
+    // LIMIT, so a row whose lookup keeps throwing must move to the back of the
+    // queue instead of pinning the window against newer pending rows. The
+    // production dep swallows its own errors today, but an injected or future
+    // one may throw, and the fairness contract must not depend on that.
+    await touchLastChecked(event.id, "lookup_error");
+    return "pending";
+  }
+
+  if (receipt === null) {
+    // Ambiguity NEVER terminalizes (FIX-SPINE C1) — no time-based escalation.
+    // The reason is what makes a permanently unverifiable row SAYABLE (migration
+    // 065): "not yet mined" and "no RPC could answer" both leave the row
+    // pending, and only one of them is worth telling the user about.
+    await touchLastChecked(event.id, "receipt_not_found");
+    return "pending";
+  }
+
+  if (receipt.status === "reverted") {
+    const outcome = await failActivityEvent(event.id, {
+      failureCode: "mined_revert",
+      // A `swap` row gets the swap remedy — the same event deserves the same
+      // explanation however Vex noticed it. Every other role stays NEUTRAL:
+      // this sweep holds only a row (it sees approvals, bridge deposits and
+      // fee transfers alike) and has no venue knowledge to spend, so it
+      // states only what is certainly true. Owner:
+      // `tools/protocols/runtime/mined-revert-reason.ts`.
+      failureReason: event.eventRole === "swap"
+        ? MINED_REVERT_SWAP_LEG_REASON
+        : MINED_REVERT_ROLE_NEUTRAL_REASON,
+    });
+    if (outcome.applied) return "failed";
+    logDuplicateCas(event.id, "fail");
+    return outcome.row.status === "pending" ? "pending" : "duplicate";
+  }
+
+  // Mined success. The chain has answered the only question this sweep asks.
+  const outcome = await confirmActivityEventStatusOnly(event.id);
+  if (outcome.applied) return "confirmed";
+  logDuplicateCas(event.id, "confirm");
+  return outcome.row.status === "pending" ? "pending" : "duplicate";
+}
+
+/** The fields `resolveEvmPendingRow` actually reads — narrower than the full row on purpose. */
+export type PendingEvmRow = Pick<
+  AgentActivityEvent,
+  "id" | "chainId" | "txHash" | "eventRole"
+>;
 
 function logDuplicateCas(id: number, attempted: "confirm" | "fail"): void {
   // Not a failure — a concurrent process (another sweep run, or the handler's

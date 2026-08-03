@@ -91,16 +91,37 @@ export function buildActivityHalf(
   // create is a single transaction with a single `token_launch` row, so every
   // launch row is its own feed row. Its prebuy is a LEG of that same row, not a
   // sibling — there is deliberately no second `swap` row to fold in.
-  activityConds.push("(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'launch' OR event_role = 'bridge_fill_expected')");
+  // `wrap` (migration 051) and `yield` (migration 053) were written correctly
+  // and then read by nobody: a successful Pendle trade recorded a receipt-truth
+  // `kind = 'yield'` row that this predicate excluded, while a FAILED one still
+  // reached the feed through the failure half — the agent saw only its own
+  // losses. The vocabulary-lockstep test beside this file now fails the build
+  // when a migration adds a kind these feeds do not know.
+  activityConds.push(
+    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR event_role = 'bridge_fill_expected')",
+  );
+  // LEG roles are not feed rows. The kind↔role CHECK (migrations 050/063/066)
+  // admits approval legs on the swap/yield/launch arms and Vex fee legs
+  // (`trench_fee`, `swap_fee`) on swap/launch — all of them children of the
+  // logical row above, not sibling trades. Admitting by `kind` alone rendered
+  // a Trench/Uniswap fee transfer as a standalone "spot" trade. `bridge_fee`
+  // needs no entry here: its whole `kind = 'bridge'` arm is already admitted
+  // only through `event_role = 'bridge_fill_expected'`.
+  activityConds.push(
+    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee')",
+  );
   // productType now maps to `kind`: 'spot' → swap rows (derive to the same
   // "spot" product the success half stores), 'bridge' → bridge logical rows,
-  // 'lend' → lend rows, 'prediction' → prediction rows, 'launch' → launch rows.
-  // Any OTHER productType (perps/order) has no agent_activity representation →
-  // exclude the half entirely (no param bind needed).
+  // 'lend' → lend rows, 'prediction' → prediction rows, 'wrap' → wrap rows,
+  // 'yield' → yield rows, 'launch' → launch rows. Any OTHER productType
+  // (perps/order) has no agent_activity representation → exclude the half
+  // entirely (no param bind needed).
   if (productType === "spot") activityConds.push("kind = 'swap'");
   else if (productType === "bridge") activityConds.push("kind = 'bridge'");
   else if (productType === "lend") activityConds.push("kind = 'lend'");
   else if (productType === "prediction") activityConds.push("kind = 'prediction'");
+  else if (productType === "wrap") activityConds.push("kind = 'wrap'");
+  else if (productType === "yield") activityConds.push("kind = 'yield'");
   else if (productType === "launch") activityConds.push("kind = 'launch'");
   else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
@@ -119,6 +140,11 @@ export function buildActivityHalf(
         -- route, a price and a counterparty that a token creation never had —
         -- migration 051 records the cost of exactly that mistake, for wrap.
         WHEN kind = 'launch' THEN 'launch'
+        WHEN kind = 'wrap' THEN 'wrap'
+        -- Pendle (migration 053) is its OWN product. The ELSE arm would state
+        -- a route, a price and a counterparty that a py.mint (1 -> 2) or a
+        -- claim (no input leg) never had — the same falsehood 051 records.
+        WHEN kind = 'yield' THEN 'yield'
         ELSE 'spot'
       END AS product_type,
       NULL::text AS trade_side,
@@ -182,6 +208,12 @@ export function buildActivityHalf(
       chain_family,
       provider_order_id,
       provider_status,
+      -- Wave P (migration 065): the DERIVED stalled-verification signal. The
+      -- agent otherwise sees a bare pending status and cannot tell "still
+      -- mining" from "we have been unable to check for forty minutes" — the
+      -- blind-retry failure mode the agent-facing-errors decree names.
+      verification_attempts,
+      last_verification_reason,
       -- Bridge legs (B8): every leg of the execution, the canonical expected
       -- fill INCLUDED (REVISION 4), aggregated with NO LIMIT (OWNER RULE — never
       -- truncated). NULL on swap rows.
@@ -217,7 +249,18 @@ export function buildSuccessHalf(
   const { addresses, productType, namespace, txHash, cursor, tsParam, rankParam, idParam, push } = params;
 
   // ── SUCCESS half (proj_activity) ──────────────────────────────────────
-  const successConds: string[] = [`wallet_address = ANY($${push(addresses)}::text[])`];
+  const successConds: string[] = [
+    `wallet_address = ANY($${push(addresses)}::text[])`,
+    // D26 — the mirror of the failure half's guard (see buildFailureHalf): once
+    // an agent_activity row exists for this execution, IT is the source of
+    // truth. Four Pendle families still ALSO project a legacy, quote-derived
+    // `proj_activity` capture row, so without this the same trade would render
+    // TWICE the moment the activity half learned `kind = 'yield'` above.
+    // `execution_id` is nullable in proj_activity; a NULL never matches, so a
+    // historical row with no agent_activity twin (everything written before
+    // migration 053, which is deliberately NOT backfilled) still renders.
+    "NOT EXISTS (SELECT 1 FROM agent_activity aa WHERE aa.protocol_execution_id = proj_activity.execution_id)",
+  ];
   if (productType !== undefined) successConds.push(`product_type = $${push(productType)}`);
   if (namespace !== undefined) successConds.push(`namespace = $${push(namespace)}`);
   if (txHash !== undefined) successConds.push(`external_refs->>'txHash' = $${push(txHash)}`);
@@ -282,6 +325,8 @@ export function buildSuccessHalf(
       NULL::text AS chain_family,
       NULL::text AS provider_order_id,
       NULL::text AS provider_status,
+      0 AS verification_attempts,
+      NULL::text AS last_verification_reason,
       NULL::jsonb AS legs,
       external_refs->>'txHash' AS tx_hash,
       created_at,
@@ -382,6 +427,8 @@ export function buildFailureHalf(
       NULL::text AS chain_family,
       NULL::text AS provider_order_id,
       NULL::text AS provider_status,
+      0 AS verification_attempts,
+      NULL::text AS last_verification_reason,
       NULL::jsonb AS legs,
       external_refs->>'txHash' AS tx_hash,
       created_at,

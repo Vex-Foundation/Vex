@@ -19,6 +19,7 @@ import {
 import { insertBridgeRow, findPendingLogicalRow, buildNormalizedBridgeRoute } from "./bridge-intent.js";
 import type { BridgeRouteEndpoints } from "./bridge-intent.js";
 import { mapRow } from "./mappers.js";
+import { armFastLane, resolveFastLane } from "./fast-lane-signal.js";
 import type { AgentActivityEvent, AgentActivityLegInput, BridgeChainFamily, CasResult } from "./types.js";
 
 /** Outcome of an attach-order-id attempt (B2/C4). */
@@ -60,7 +61,10 @@ export async function attachProviderOrderId(input: {
       RETURNING *`,
     [input.executionId, input.providerOrderId],
   );
-  if (row) return { outcome: "attached", row: mapRow(row) };
+  // The logical bridge row becomes POLLABLE the moment it carries a provider
+  // order id — that is this row's equivalent of "the RPC accepted it", so the
+  // fast lane is armed here rather than at deposit-broadcast time.
+  if (row) return { outcome: "attached", row: armFastLane(mapRow(row)) };
 
   const current = await findLogicalRowByExecution(input.executionId);
   if (!current) return { outcome: "not_pending", row: null };
@@ -138,7 +142,7 @@ export async function confirmBridgeExpectedFill(input: {
       input.executedAmountOutRaw ?? null,
     ],
   ));
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   const current = await findLogicalRowByExecution(input.executionId);
   if (!current) {
     throw new Error(

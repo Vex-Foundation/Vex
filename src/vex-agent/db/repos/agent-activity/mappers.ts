@@ -102,6 +102,9 @@ export function mapRow(r: Record<string, unknown>): AgentActivityEvent {
     broadcastAt: toIsoOrNull(r.broadcast_at),
     confirmedAt: toIsoOrNull(r.confirmed_at),
     lastCheckedAt: toIsoOrNull(r.last_checked_at),
+    verificationAttempts: Number(r.verification_attempts ?? 0),
+    lastVerificationReason:
+      typeof r.last_verification_reason === "string" ? r.last_verification_reason : null,
     createdAt: toIso(r.created_at),
     updatedAt: toIso(r.updated_at),
   };

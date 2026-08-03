@@ -6,7 +6,7 @@
  */
 
 import { seedSyncJobs } from "./seed.js";
-import { fullBalanceSync } from "./balance-sync.js";
+import { fullBalanceSync, type FullSyncResult } from "./balance-sync.js";
 import { drainPendingRuns } from "./worker.js";
 import * as syncRepo from "@vex-agent/db/repos/sync.js";
 import logger from "@utils/logger.js";
@@ -31,9 +31,21 @@ export async function initSync(): Promise<void> {
     logger.info("sync.init.backlog_drained", { processed: backlog.processed });
   }
 
-  // 3. Authoritative startup full sync + snapshot
+  // 3. Re-arm fast lanes for rows that were in flight when the process died.
+  //    Before the snapshot: a crash-recovered row is exactly the kind the
+  //    snapshot guard must see as still pending.
   try {
-    const result = await fullBalanceSync();
+    const { rearmPendingFastLanes } = await import("./fast-lane.js");
+    await rearmPendingFastLanes();
+  } catch (err) {
+    logger.warn("sync.init.fast_lane_rearm_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // 4. Authoritative startup full sync + snapshot
+  try {
+    const result = await fullBalanceSync({ snapshot: "always" });
     logger.info("sync.init.completed", {
       totalUsd: result.totalUsd.toFixed(2),
       wallets: result.wallets.length,
@@ -75,7 +87,7 @@ export async function syncTick(): Promise<void> {
 
     try {
       if (job.syncType === "balances") {
-        const result = await fullBalanceSync();
+        const result = await fullBalanceSync({ snapshot: "when-settled" });
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(runId, { periodic: true, totalUsd: result.totalUsd }, result.wallets.reduce((s, w) => s + w.tokensUpdated, 0));
       } else if (job.syncType === "prediction_settlement") {
@@ -147,6 +159,37 @@ export async function syncTick(): Promise<void> {
   }
 }
 
+/**
+ * SINGLE-FLIGHT user-initiated refresh (Wave P).
+ *
+ * `fullBalanceSync` is NOT concurrency-safe: each call mints its own
+ * `snapshotGroupId` and inserts a full set of snapshot rows, so two overlapping
+ * calls produce two groups for one moment in time and corrupt the `pnlVsPrev`
+ * chain for every wallet. A second caller therefore JOINS the in-flight promise
+ * instead of starting a second sync — the same shape as `executor.ts`'s
+ * `inFlight` and `sync-worker.ts`'s `inFlightTick`.
+ *
+ * The mutex lives HERE, in the engine, rather than in the IPC handler, because
+ * main is only one of several possible callers — the periodic tick is another,
+ * and a handler-side lock would not see it.
+ *
+ * `snapshot: "always"`: a user pressing refresh means "record what is true right
+ * now", the same authoritative intent as the startup snapshot.
+ */
+let refreshInFlight: Promise<FullSyncResult> | null = null;
+
+export async function refreshPortfolioNow(): Promise<FullSyncResult> {
+  if (refreshInFlight) {
+    logger.info("sync.refresh.joined_in_flight");
+    return refreshInFlight;
+  }
+  refreshInFlight = fullBalanceSync({ snapshot: "always" }).finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+export type { FullSyncResult } from "./balance-sync.js";
 export { fullBalanceSync, selectiveBalanceSync } from "./balance-sync.js";
 export { drainPendingRuns } from "./worker.js";
 export { seedSyncJobs } from "./seed.js";

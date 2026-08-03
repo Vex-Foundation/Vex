@@ -253,6 +253,8 @@ export function mapRow(r: Record<string, unknown>): TransactionRow {
       status,
       failureCode: str(r.failure_code),
       failureReason: str(r.failure_reason),
+      verificationAttempts: num(r.verification_attempts),
+      lastVerificationReason: str(r.last_verification_reason),
       chainId: num(r.chain_id),
       protocol: str(r.protocol),
       protocolExecutionId: num(r.protocol_execution_id),

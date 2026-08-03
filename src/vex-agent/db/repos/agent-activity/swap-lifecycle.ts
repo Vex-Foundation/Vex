@@ -49,6 +49,7 @@ import {
 import { assertFailureCode, sanitizeFailureReason } from "./validation.js";
 import { mapRow } from "./mappers.js";
 import type { AgentActivityEvent, AgentActivityFailureCode, CasResult } from "./types.js";
+import { armFastLane, resolveFastLane } from "./fast-lane-signal.js";
 
 // ── Types (swap-only inputs) ─────────────────────────────────────────
 
@@ -137,7 +138,7 @@ export async function markActivitySolanaBroadcast(
       RETURNING *`,
     [id, input.txHash, input.fromAddress, input.recentBlockhash, input.lastValidBlockHeight],
   );
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: armFastLane(mapRow(row)) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "markActivitySolanaBroadcast") };
 }
 
@@ -155,7 +156,7 @@ export async function markBroadcastAccepted(id: number): Promise<CasResult> {
       RETURNING *`,
     [id],
   );
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: armFastLane(mapRow(row)) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "markBroadcastAccepted") };
 }
 
@@ -247,7 +248,7 @@ export async function confirmActivityEvent(
       input.executedAmountOut2Raw ?? null,
     ],
   ));
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEvent") };
 }
 
@@ -283,7 +284,7 @@ export async function confirmActivityEventStatusOnly(id: number): Promise<CasRes
       RETURNING *`,
       [id],
     ));
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEventStatusOnly") };
 }
 
@@ -359,7 +360,7 @@ export async function failActivityEvent(
       RETURNING *`,
       [id, input.failureCode, sanitizeFailureReason(input.failureReason)],
     ));
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   return { applied: false, row: await getCurrentRowOrThrow(id, "failActivityEvent") };
 }
 
@@ -440,13 +441,60 @@ export async function abortPlannedEvents(
 // the in-execution CAS transitions above. Re-exported unchanged from the
 // top-level `agent-activity.ts` facade.
 
-/** Repair-sweep bookkeeping — a receipt lookup found nothing new to report yet. */
-export async function touchLastChecked(id: number): Promise<void> {
+/**
+ * Repair-sweep bookkeeping — a lookup found nothing new to report yet.
+ *
+ * Two jobs in one statement (migration 065):
+ *
+ * 1. FAIRNESS. `last_checked_at` moves, so the candidate queries — which order
+ *    by it under a LIMIT — rotate this row to the back and stop it pinning the
+ *    window against newer pending rows.
+ * 2. STALL VISIBILITY. `verification_attempts` increments and
+ *    `last_verification_reason` records WHY this attempt could not conclude, so
+ *    a row that has been unverifiable for forty minutes can say so to the user
+ *    and to the agent instead of dying in a debug log.
+ *
+ * `reason` is OPTIONAL for callers that genuinely have nothing to name; passing
+ * one is strongly preferred, because "pending" with no reason is exactly the
+ * uninformative state this migration exists to end.
+ *
+ * THIS NEVER TERMINALIZES ANYTHING. The counter feeds a DERIVED read-side flag;
+ * no threshold on it may ever write `status`.
+ */
+export async function touchLastChecked(id: number, reason?: string): Promise<void> {
   await execute(
-    `UPDATE agent_activity SET last_checked_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
+    `UPDATE agent_activity
+        SET last_checked_at = NOW(), updated_at = NOW(),
+            verification_attempts = verification_attempts + 1,
+            last_verification_reason = COALESCE($2, last_verification_reason)
+      WHERE id = $1 AND status = 'pending'`,
+    [id, reason ?? null],
+  );
+}
+
+/**
+ * A verification attempt CONCLUDED — clear the stall counter.
+ *
+ * Called when an observation genuinely answered the question but the row is
+ * legitimately still in flight (e.g. a Solana signature seen at `processed`
+ * commitment). The counter must measure a STALL, not age: without this reset an
+ * ordinary slow-but-healthy transaction would eventually render as
+ * "verification stalled", which is a lie about the system's own knowledge.
+ */
+export async function clearVerificationStall(id: number): Promise<void> {
+  await execute(
+    `UPDATE agent_activity
+        SET last_checked_at = NOW(), updated_at = NOW(),
+            verification_attempts = 0, last_verification_reason = NULL
+      WHERE id = $1 AND status = 'pending'`,
     [id],
   );
 }
+
+// Fast-lane arm/resolve emits live in the sibling `./fast-lane-signal.js` — the
+// same helpers are needed by `./bridge-lifecycle.ts` and `./launch-lifecycle.ts`,
+// and the signalling contract is a different reason to change than this file's
+// CAS state transitions.
 
 // ── Reads ─────────────────────────────────────────────────────────
 
@@ -460,6 +508,8 @@ export type { ListActivityFeedOptions } from "./swap-lifecycle/reads.js";
 export {
   getActivityEventById,
   listPendingOlderThan,
+  listPendingByIds,
+  hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,
   existsForExecutionId,

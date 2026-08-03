@@ -52,6 +52,15 @@ const SYNC_JOBS = [
   // long, so a sub-minute cadence would only add lock traffic.
   { namespace: "_global", syncType: "launch_form_expiry", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
 
+  // Wave P — post-terminalization portfolio snapshot. ENQUEUED, never timed
+  // (`intervalSeconds: null`, `post_mutation`): the fast lane and the repair
+  // sweeps enqueue it the moment a transaction terminalizes, so the portfolio
+  // takes a fresh, settled snapshot immediately instead of waiting up to 300s
+  // for the periodic `balances` job. It re-checks the group-wide no-pending
+  // guard when it runs and re-defers if another transaction is still in flight —
+  // a partial snapshot group is never emitted. See sync/balance-sync.ts.
+  { namespace: "_global", syncType: "balances_snapshot", readToolId: null, strategy: "post_mutation", intervalSeconds: null },
+
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },

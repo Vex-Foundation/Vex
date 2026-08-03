@@ -29,6 +29,13 @@ export type {
   CasResult,
 } from "./agent-activity/types.js";
 
+// Wave P — the DERIVED stalled-verification state. A value and a predicate, not
+// a type, so they are re-exported separately from the type block above.
+export {
+  STALLED_VERIFICATION_ATTEMPTS,
+  isStalledVerification,
+} from "./agent-activity/types.js";
+
 export type {
   CreatePendingActivityEventInput,
   RecordPreBroadcastFailureInput,
@@ -60,8 +67,13 @@ export {
   failActivityEvent,
   abortPlannedEvents,
   touchLastChecked,
+  clearVerificationStall,
   getActivityEventById,
   listPendingOlderThan,
+  // Wave P: the fast lane's by-id candidate read, and the group-wide pending
+  // predicate `fullBalanceSync` consults before it may take a snapshot.
+  listPendingByIds,
+  hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,
   existsForExecutionId,

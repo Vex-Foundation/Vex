@@ -137,6 +137,16 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const expiryResult = await expireOverdueLaunchForms();
         result = { ...expiryResult };
         rowsAffected = expiryResult.expired;
+      } else if (syncType === "balances_snapshot") {
+        // Wave P — a transaction terminalized, so take a fresh portfolio
+        // snapshot now rather than at the next 300s periodic cycle.
+        // `"when-settled"` re-checks the group-wide guard AT RUN TIME: if
+        // another transaction is still in flight the snapshot re-defers and only
+        // balances are refreshed, so a partial snapshot group is never emitted.
+        const { fullBalanceSync } = await import("./balance-sync.js");
+        const snapshotResult = await fullBalanceSync({ snapshot: "when-settled" });
+        result = { snapshots: snapshotResult.snapshots.length, totalUsd: snapshotResult.totalUsd };
+        rowsAffected = snapshotResult.snapshots.length;
       } else {
         result = { skipped: true, reason: `Unknown sync type: ${syncType}` };
         logger.warn("sync.worker.unknown_type", { syncType, runCount: runs.length });
@@ -217,6 +227,17 @@ export async function processNextRun(): Promise<boolean> {
       const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
       const expiryResult = await expireOverdueLaunchForms();
       await syncRepo.completeRun(run.id, { ...expiryResult }, expiryResult.expired);
+    } else if (job.syncType === "balances_snapshot") {
+      // Wave P — see the same branch in `drainPendingRuns` above. BOTH
+      // dispatchers need it: the bridge job shipped with a branch missing from
+      // one of them and its own timer silently fired nothing for weeks.
+      const { fullBalanceSync } = await import("./balance-sync.js");
+      const snapshotResult = await fullBalanceSync({ snapshot: "when-settled" });
+      await syncRepo.completeRun(
+        run.id,
+        { snapshots: snapshotResult.snapshots.length, totalUsd: snapshotResult.totalUsd },
+        snapshotResult.snapshots.length,
+      );
     } else {
       await syncRepo.completeRun(run.id, { skipped: true, reason: `Unknown: ${job.syncType}` }, 0);
     }

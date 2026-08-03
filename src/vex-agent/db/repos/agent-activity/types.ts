@@ -91,6 +91,13 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * only on the `kind='bridge'` arm. It is admitted on the `swap` AND `launch`
  * arms because a trade fee rides a `swap` execution and a launch fee rides a
  * `launch` one, and they are the same kind of leg.
+ * `swap_fee` is migration 066 — Vex's 25 bps integrator fee on a SWAP venue whose
+ * router takes no fee parameter (Uniswap V2 Router02 / V3 SwapRouter02), charged
+ * as a separate transfer of the INPUT token that runs after the swap confirms.
+ * Admitted on the `swap` arm only. Neither `bridge_fee` (barred by the binding
+ * to `kind='bridge'`) nor `trench_fee` (which names another venue, and whose
+ * rows answer "what did Trench Express earn") could carry it. The name is
+ * venue-neutral so a later fee-parameterless swap venue reuses it.
  */
 export type AgentActivityEventRole =
   | "allowance_reset"
@@ -117,10 +124,36 @@ export type AgentActivityEventRole =
   | "yield_sy"
   | "yield_claim"
   | "token_launch"
-  | "trench_fee";
+  | "trench_fee"
+  | "swap_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";
+
+/**
+ * How many CONSECUTIVE inconclusive verification attempts make a pending row
+ * `stalled_verification` (migration 065).
+ *
+ * 20 ≈ 10 minutes of fast-lane checks or ≈ 20 minutes of global sweeps — long
+ * enough that a slow-but-healthy transaction never trips it, short enough that a
+ * permanently unverifiable chain (`no_safe_rpc`) is named while the user still
+ * remembers the transaction.
+ *
+ * DERIVED, NEVER STORED. Crossing this threshold changes what the UI and the
+ * agent are TOLD; it never changes `status`, and it can never fail a row.
+ */
+export const STALLED_VERIFICATION_ATTEMPTS = 20;
+
+/**
+ * `true` iff this row is pending AND we have repeatedly been unable to verify
+ * it. NOT a failure — it means "we could not look", which the copy must say.
+ */
+export function isStalledVerification(
+  row: Pick<AgentActivityEvent, "status" | "verificationAttempts">,
+): boolean {
+  return row.status === "pending"
+    && row.verificationAttempts >= STALLED_VERIFICATION_ATTEMPTS;
+}
 
 export type AgentActivityStatus = "pending" | "confirmed" | "definitively_failed";
 
@@ -332,6 +365,15 @@ export interface AgentActivityEvent {
   broadcastAt: string | null;
   confirmedAt: string | null;
   lastCheckedAt: string | null;
+  /**
+   * Consecutive INCONCLUSIVE verification attempts (migration 065). Resets to 0
+   * on any successful observation, so it measures a STALL rather than age.
+   * Feeds the DERIVED `stalled_verification` read-side flag and NOTHING else —
+   * no threshold on it may ever write `status`.
+   */
+  verificationAttempts: number;
+  /** Why the last attempt could not conclude, e.g. `no_safe_rpc`. NULL when nothing has failed yet. */
+  lastVerificationReason: string | null;
   createdAt: string;
   updatedAt: string;
 }

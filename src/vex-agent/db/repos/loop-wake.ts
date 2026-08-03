@@ -247,14 +247,39 @@ export async function getPendingWithWatch(): Promise<LoopWakeRequest[]> {
 }
 
 /**
- * Move a matching wake deadline to now, never later. The mission-run predicate
- * prevents a stale tick from promoting a run that was resumed or preempted.
+ * Move a matching wake deadline to now, NEVER later — `LEAST(due_at, NOW())`,
+ * so a promotion can only ever make the session wake sooner. A watch is an
+ * optimization over the timer; it must not be able to extend a wait.
+ *
+ * TWO SHAPES, matching the two shapes of wake row (module header):
+ *
+ *   - MISSION RUN (`missionRunId` set) joins `mission_runs` and requires the run
+ *     to still be `paused_wake`. That predicate is what stops a stale trigger
+ *     from promoting a run that a user message or a terminal transition already
+ *     resumed.
+ *   - AGENT SESSION (`missionRunId === null`) has no run row to join, so the
+ *     pending wake row IS the park — exactly the invariant
+ *     `scheduleAgentSessionContinuation` already relies on. `mission_run_id IS
+ *     NULL` is asserted explicitly rather than left to a parameter compare,
+ *     because `= NULL` is never true in SQL and would silently promote nothing.
  */
-export async function promotePendingWake(
-  sessionId: string,
-  missionRunId: string,
-  watchId: string,
-): Promise<boolean> {
+export async function promotePendingWake(input: {
+  readonly sessionId: string;
+  readonly missionRunId: string | null;
+  readonly watchId: string;
+}): Promise<boolean> {
+  if (input.missionRunId === null) {
+    const affected = await execute(
+      `UPDATE loop_wake_requests AS wake
+       SET due_at = LEAST(wake.due_at, NOW())
+       WHERE wake.session_id = $1
+         AND wake.mission_run_id IS NULL
+         AND wake.status = 'pending'
+         AND wake.payload->>'watchId' = $2`,
+      [input.sessionId, input.watchId],
+    );
+    return affected > 0;
+  }
   const affected = await execute(
     `UPDATE loop_wake_requests AS wake
      SET due_at = LEAST(wake.due_at, NOW())
@@ -265,30 +290,7 @@ export async function promotePendingWake(
        AND wake.payload->>'watchId' = $3
        AND run.id = wake.mission_run_id
        AND run.status = 'paused_wake'`,
-    [sessionId, missionRunId, watchId],
-  );
-  return affected > 0;
-}
-
-/**
- * Safety escalation equivalent of watch promotion. Unlike a price trigger it
- * deliberately does not inspect a watch payload: a detected protection fault
- * must advance the one existing pending wake regardless of why it was waiting.
- */
-export async function promotePendingWakeForSafety(
-  sessionId: string,
-  missionRunId: string,
-): Promise<boolean> {
-  const affected = await execute(
-    `UPDATE loop_wake_requests AS wake
-     SET due_at = LEAST(wake.due_at, NOW())
-     FROM mission_runs AS run
-     WHERE wake.session_id = $1
-       AND wake.mission_run_id = $2
-       AND wake.status = 'pending'
-       AND run.id = wake.mission_run_id
-       AND run.status = 'paused_wake'`,
-    [sessionId, missionRunId],
+    [input.sessionId, input.missionRunId, input.watchId],
   );
   return affected > 0;
 }

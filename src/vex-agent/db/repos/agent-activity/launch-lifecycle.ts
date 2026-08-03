@@ -21,6 +21,7 @@
 
 import { queryOne, queryOneWith } from "../../client.js";
 import { mapRow } from "./mappers.js";
+import { resolveFastLane } from "./fast-lane-signal.js";
 import { getActivityEventById } from "./swap-lifecycle/reads.js";
 import { withActivitySessionLock } from "./session-lock.js";
 import type { CasResult } from "./types.js";
@@ -99,7 +100,7 @@ export async function confirmLaunchWithOutputIdentity(
       ],
     ));
 
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   const currentRow = await getActivityEventById(id);
   if (!currentRow) {
     throw new Error(`agent_activity: confirmLaunchWithOutputIdentity — row ${id} vanished`);

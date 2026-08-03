@@ -11,6 +11,7 @@
  */
 
 import { initSync, syncTick } from "./index.js";
+import { startFastLane, type FastLaneHandle } from "./fast-lane.js";
 import logger from "@utils/logger.js";
 
 export interface SyncExecutorHandle {
@@ -28,11 +29,22 @@ export interface SyncStartOptions {
   intervalMs?: number;
   /** Dependency injection for tests. */
   deps?: SyncExecutorDeps;
+  /**
+   * Start the per-row fast lane alongside the tick. Defaults to `true`; tests
+   * that only exercise tick scheduling turn it off so no wheel timer or bus
+   * subscription leaks between cases.
+   */
+  fastLane?: boolean;
 }
 
 // 30s: the tick is a hard FLOOR for every periodic job's cadence, and the
 // status-only activity repair sweeps run at 30s (migration 061). A 60s tick
 // would silently halve them.
+//
+// This is NO LONGER the pending-resolution SLA (Wave P). Real-time resolution
+// belongs to the fast lane below, which watches a specific freshly-broadcast row
+// at 12s; the tick remains the cadence of the GLOBAL sweeps, which are the
+// safety net for every row the fast lane never saw or aged out.
 const DEFAULT_SYNC_INTERVAL_MS = 30_000;
 
 function buildProductionDeps(): SyncExecutorDeps {
@@ -74,12 +86,18 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
     }, delayMs);
   };
 
+  // Subscribed BEFORE the first `schedule(0)`: `initSync` re-arms crash-recovery
+  // lanes through the bus, and a subscription taken afterwards would miss them.
+  const fastLane: FastLaneHandle | null =
+    (options.fastLane ?? true) ? startFastLane() : null;
+
   schedule(0);
-  logger.info("sync.executor.started", { intervalMs });
+  logger.info("sync.executor.started", { intervalMs, fastLane: fastLane !== null });
 
   return {
     async stop(): Promise<void> {
       stopped = true;
+      fastLane?.stop();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {
