@@ -39,10 +39,30 @@
 export const VEX_MAX_SLIPPAGE_BPS = 1000;
 
 /**
+ * The ONE default slippage tolerance for a call that declares none.
+ *
+ * A default folded into a prequote match-hash (`prequote/slippage.ts`
+ * `canonSlippageBpsWithDefault`) must have exactly one value across the
+ * handler lane and the identity lane, or a quote taken without slippage stops
+ * authorizing an execute taken without slippage. Today nine modules declare
+ * their own copy of this number; this constant is the home they move to, one
+ * module at a time.
+ *
+ * VALUE: still 50, deliberately. Moving it to 100 changes hash material and is
+ * its own atomic change (audit wave W4b) — landing a new value here while nine
+ * copies still read 50 would split the hash instead of unifying it.
+ */
+export const VEX_DEFAULT_SLIPPAGE_BPS = 50;
+
+/**
  * The binding bound for a venue: Vex's ceiling or the venue's, whichever is
- * lower. Omit `venueMaxBps` when the venue publishes no maximum below Vex's
- * (Relay documents none and none has been measured) — the ceiling then binds
- * on its own, which is the fail-safe reading.
+ * lower. Omit `venueMaxBps` when the venue publishes no maximum below Vex's —
+ * the ceiling then binds on its own, which is the fail-safe reading.
+ *
+ * Measured venue maxima (audit 2026-08): Jupiter 0–10000, Relay 0–10000
+ * ({@link RELAY_MAX_SLIPPAGE_BPS}). Both are far above Vex's 1000, so Vex's
+ * ceiling is what actually binds; they are passed anyway so a later change to
+ * either number cannot silently send a venue a value it would reject.
  */
 export function effectiveMaxSlippageBps(venueMaxBps?: number): number {
   return venueMaxBps === undefined ? VEX_MAX_SLIPPAGE_BPS : Math.min(VEX_MAX_SLIPPAGE_BPS, venueMaxBps);
@@ -101,40 +121,45 @@ export function checkSlippageBps(
   return null;
 }
 
-/** A slippage value parsed from an untrusted STRING param (Relay types it as a string). */
-export type SlippageBpsStringParse =
-  | { readonly ok: true; readonly bps: number }
-  | { readonly ok: false; readonly reason: string };
+/** Relay's own documented tolerance range is 0–10000 bps; Vex's ceiling binds first. */
+export const RELAY_MAX_SLIPPAGE_BPS = 10000;
 
 /**
- * Parse + policy-check a slippage value supplied as a STRING.
+ * Resolve the EFFECTIVE Relay slippage tolerance from untrusted params.
  *
- * Relay's `slippageBps` is a manifest `type: "string"` param, so the numeric
- * `unit: "bps"` gate at the manifest boundary never reaches it — this is the
- * only integrality/range check that path gets. Only a plain non-negative
- * decimal integer literal is accepted: no signs, no decimal point, no
- * exponent, no whitespace. Anything else is rejected rather than coerced,
- * because `"0.5"` is exactly as ambiguous as `0.5`.
+ * ONE function for both Relay lanes — the bridge handler
+ * (`relay/handlers/bridge/legs.ts`) and the prequote identity
+ * (`prequote/identity/relay-bridge.ts`) — so the value the gate bound and the
+ * value the provider receives can never disagree.
  *
- * The caller decides what an ABSENT value means — this function is only for a
- * value that is actually present.
+ * Two policy decisions live here (audit waves W3 + W4a):
+ *
+ *  - The param is a manifest `type: "number"` with `unit: "bps"`, so the
+ *    boundary gate (`runtime/bps-param.ts`) already ran on the declared path.
+ *    A non-number still reaches this function on the identity lane (which reads
+ *    raw params) and is REJECTED by name rather than coerced.
+ *  - An OMITTED value resolves to {@link VEX_DEFAULT_SLIPPAGE_BPS} and is sent
+ *    EXPLICITLY. Relay auto-computes a tolerance when none is sent, and the
+ *    provider must not own Vex's price protection.
+ *
+ * @returns the effective bps value, or an agent-actionable rejection reason the
+ * caller raises in its own error type (both lanes surface it before any quote,
+ * recording, or signing).
  */
-export function parseSlippageBpsString(
-  subject: string,
-  raw: string,
-  venueMaxBps?: number,
-): SlippageBpsStringParse {
-  if (!/^\d+$/.test(raw)) {
+export function resolveRelaySlippageBps(subject: string, raw: unknown): { ok: true; bps: number } | { ok: false; reason: string } {
+  if (raw === undefined || raw === null || raw === "") {
+    return { ok: true, bps: VEX_DEFAULT_SLIPPAGE_BPS };
+  }
+  if (typeof raw !== "number") {
     return {
       ok: false,
       reason:
-        `${subject} must be a whole number of basis points written as digits only (got "${raw}"); `
-        + "1 bps = 0.01%, so 0.5% is \"50\".",
+        `${subject} must be a NUMBER of basis points (e.g. ${VEX_DEFAULT_SLIPPAGE_BPS}), not a ${typeof raw}; `
+        + "1 bps = 0.01%, so 0.5% is 50.",
     };
   }
-  const bps = Number(raw);
-  const violation = checkSlippageBps(subject, bps, venueMaxBps);
-  return violation ? { ok: false, reason: violation } : { ok: true, bps };
+  const violation = checkSlippageBps(subject, raw, RELAY_MAX_SLIPPAGE_BPS);
+  return violation ? { ok: false, reason: violation } : { ok: true, bps: raw };
 }
 
 /**

@@ -108,7 +108,7 @@ function describeYieldFilters(q: PendleYieldsQuery): Record<string, unknown> {
     order: q.order,
   };
   const optional: Array<[string, unknown]> = [
-    ["chains", q.chainIds?.map((id) => pendleChainSlug(id) ?? String(id))],
+    ["chainIds", q.chainIds?.map((id) => pendleChainSlug(id) ?? String(id))],
     ["minLiquidityUsd", q.minLiquidityUsd],
     ["maxLiquidityUsd", q.maxLiquidityUsd],
     ["minImpliedApyPercent", q.minImpliedApyPercent],

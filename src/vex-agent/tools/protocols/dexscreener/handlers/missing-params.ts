@@ -3,11 +3,11 @@
  *
  * THE DEFECT THIS CLOSES, measured in the persona gate
  *
- * `dexscreener.tokens` with a valid `chainId` and an empty `tokenAddresses`
- * answered `"Missing required: chainId, tokenAddresses"`. The message was a
+ * `dexscreener.tokens` with a valid `chain` and an empty `tokenAddresses`
+ * answered `"Missing required: chain, tokenAddresses"`. The message was a
  * hard-coded list of the tool's required params rather than a list of the gaps,
  * so it accused a parameter the caller had supplied correctly. A context-free
- * agent reads that as "my chainId is wrong too" and re-sends both — spending a
+ * agent reads that as "my chain is wrong too" and re-sends both — spending a
  * call to re-learn what it already had right.
  *
  * A shared module rather than a helper inside one handler file: `orders` is

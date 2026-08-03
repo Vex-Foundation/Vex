@@ -7,6 +7,7 @@
 
 import type { ToolDef, JsonSchema } from "../types.js";
 import { buildDiscoverNamespaceDescription } from "../protocols/descriptions.js";
+import { DEFAULT_DISCOVERY_LIMIT, MAX_DISCOVERY_LIMIT } from "../protocols/discovery.js";
 
 const EXECUTE_TOOL_PARAMS: JsonSchema = {
   type: "object",
@@ -38,14 +39,15 @@ export const PROTOCOL_TOOLS: readonly ToolDef[] = [
       "list:true with namespace returns EVERY tool of that protocol as one-line rows (no param schemas) — follow up with a query or the toolId to get params.",
       "Examples: 'estimate moving 250 USDC from Ethereum to Solana', 'use KyberSwap to preview a USDC to ETH swap on Base', 'use Jupiter to see USDC earn rates', 'show trending meme coins on Solana'.",
       "Optional namespace narrows search to one advertised namespace — the `namespace` parameter's own description lists them. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
-      "Results include toolId, mutating, score, whyMatched, params, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Every advertised tool is active and executable; build the call from the `params` schema and use the returned toolId with execute_tool in the same session.",
-      "Pressure advisory: when context usage is at barrier or critical (≥ 88%), mutating result rows are tagged `unavailable_at_pressure: true`. The dispatcher will hard-deny `execute_tool` on those rows — stay on read-only / preview variants in the same namespace while the runtime compacts. Absent flag means available at the current band.",
+      "Results include toolId, mutating, actionKind, score, whyMatched, params, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Every advertised tool is active and executable; build the call from the `params` schema and call the tool DIRECTLY by its function name in the same session — the returned toolId with every dot replaced by a double underscore, e.g. `kyberswap.swap.quote` becomes the tool `kyberswap__swap__quote`, whose parameters are exactly this row's `params`.",
+      "Reading the `params` schema: each entry is {key, type, description} plus, when they apply, `required: true`, `unit`, and `enum`. A param is REQUIRED only when it carries `required: true` — a param with no `required` key at all is OPTIONAL, and so is an explicit `required: false`. `unit` names the domain unit of a numeric param when the bare type is too weak (\"bps\" means basis points, where 100 = 1%); when a param has no `unit`, its description states the unit and you must follow it exactly — an amount is either raw base units or human decimals and the two differ by orders of magnitude. Defaults, value formats, and anything else the schema cannot express are stated in the param's own `description`: read every description of every param you intend to send, and of every param you intend to omit. Each row also carries `required` (the required keys as a list), `exampleParams` (a working call), and `constraints` when params are mutually exclusive. Types and units are literal: a `type: \"number\"` param must be a JSON number, not a string, and an amount param is raw base units or human decimals exactly as its name and description say. Do not convert, round, or guess a unit — resolve decimals with token_find first. Never invent a param the schema does not list; an unknown param is rejected by name, not ignored.",
+      "Pressure advisory: when context usage is at barrier or critical (≥ 88%), mutating result rows are tagged `unavailable_at_pressure: true`. The dispatcher will hard-deny a direct call to those tools — stay on read-only / preview variants in the same namespace while the runtime compacts. Absent flag means available at the current band.",
     ].join(" "),
     parameters: { type: "object", properties: {
       query: { type: "string", description: "Short English intent/capability phrase. Include protocol/product names when useful (Khalani, KyberSwap, Jupiter, DexScreener). An exact toolId you already saw is also accepted and is returned first; do not invent dotted tool IDs or internal implementation names." },
       namespace: { type: "string", description: buildDiscoverNamespaceDescription() },
-      limit: { type: "number", description: "Max tools to return (default: 5). Ignored in list mode." },
-      list: { type: "boolean", description: "List mode: with `namespace`, return EVERY tool of that protocol as one-line rows (toolId, mutating, description — no param schemas), unranked and untruncated. Requires `namespace`." },
+      limit: { type: "number", description: `Max tools to return (default: ${DEFAULT_DISCOVERY_LIMIT}, max ${MAX_DISCOVERY_LIMIT}). Ask for as many as the job needs, up to the max; a higher value is rejected, not clamped. Ignored in list mode.` },
+      list: { type: "boolean", description: "List mode: with `namespace`, return EVERY tool of that protocol as one-line rows (toolId, mutating, actionKind, description, requiredParams — no param schemas), unranked and untruncated. Follow up with a query or the toolId to get the full schema before calling. Requires `namespace`." },
     } },
   },
   {

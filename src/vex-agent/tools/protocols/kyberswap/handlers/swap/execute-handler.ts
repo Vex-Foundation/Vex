@@ -32,7 +32,7 @@ import { failPreBroadcast, legInput } from "./activity-recording.js";
 import { kyberFailureMessage } from "./error-output.js";
 import { runStagedSwapBroadcast } from "./execute-broadcast.js";
 import { prepareSwapExecution } from "./execute-plan.js";
-import { classifySafetyCheckFailure } from "./quote-safety.js";
+import { describeUnavailableSafetyCheck, type SafetyCheckUnavailable } from "./safety-disclosure.js";
 import { revealOnEligibleFailure } from "./reveal-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
@@ -109,8 +109,12 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
 
   // Token safety gate — the ONLY hard block here is a CONFIRMED honeypot
-  // (owner doctrine). FoT/high-tax is warn-only. A THROW from the check
-  // itself means the safety check is UNAVAILABLE (fail-soft — proceed).
+  // (owner doctrine, UNCHANGED). FoT/high-tax is warn-only. A THROW from the
+  // check itself means the safety check is UNAVAILABLE: still fail-soft, but
+  // NO LONGER SILENT (W2b) — every unavailable leg is disclosed in the result
+  // and persisted on the activity row, because a swap that ran without
+  // honeypot protection and never said so is the failure mode this fixes.
+  const safetyCheckUnavailable: SafetyCheckUnavailable[] = [];
   for (const leg of [tokenIn, tokenOut]) {
     if (leg.isNative) continue;
     try {
@@ -125,7 +129,13 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
       }
       if (check.isFOT && check.tax > 0) logger.warn("kyberswap.swap.fot_warning", { token: leg.symbol, address: leg.address, tax: check.tax });
     } catch (err) {
-      logger.warn("kyberswap.swap.safety_check_failed", { address: leg.address, reason: classifySafetyCheckFailure(err) });
+      const unavailable = describeUnavailableSafetyCheck(leg, err);
+      safetyCheckUnavailable.push(unavailable);
+      logger.warn("kyberswap.swap.safety_check_failed", {
+        address: leg.address,
+        reason: unavailable.reason,
+        cause: unavailable.cause,
+      });
     }
   }
 
@@ -167,6 +177,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
     prepared = await prepareSwapExecution({
       toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
       tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress, routeSummaryRaw,
+      safetyCheckUnavailable,
     });
   } catch (err) {
     return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, legInput(tokenIn), legInput(tokenOut), err, true);
@@ -176,5 +187,6 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   return runStagedSwapBroadcast({
     toolId, prepared, publicClient, walletClient, walletAddress, sessionId,
     chainId, slug, tokenIn, tokenOut, tokenInLabel, tokenOutLabel, slippage,
+    safetyCheckUnavailable,
   });
 };

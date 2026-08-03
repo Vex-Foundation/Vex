@@ -106,6 +106,31 @@ export interface InternalToolContext {
   walletResolution: WalletResolution;
   /** Mission wallet policy — enforced alongside the resolution by the resolvers. */
   walletPolicy: WalletPolicy;
+  /**
+   * Operator Stop for the turn that owns this dispatch.
+   *
+   * PUSH cancellation for everything a handler does that is a READ, a POLL, a
+   * SLEEP, or a QUOTA WAIT. Handlers pass it to `delay`, `pollUntil`,
+   * `composeDeadline` (`@utils/cancellation.js`) and `fetchWithTimeout`, and
+   * MUST NOT construct their own.
+   *
+   * MUST NOT be observed inside a sign→broadcast→persist window. See
+   * `@tools/evm-chains/staged-broadcast.ts` and
+   * `turn-loop-tool-batch.ts:165-170`: a leg that may already have moved funds
+   * runs to completion, always. That exemption is enforced structurally — the
+   * never-interrupt modules take no signal parameter at all, and
+   * `src/__tests__/vex-agent/tools/never-interrupt-no-abort-signal.test.ts`
+   * fails the build if the identifier appears in any of them.
+   *
+   * OPTIONAL because non-turn producers have no turn signal to hand over.
+   * ABSENT means "no cancellation", never "cancelled". The producers that
+   * deliberately leave it unset, so a future reader knows each omission is a
+   * decision and not an oversight:
+   *  - `engine/core/run-tool.ts` — operator direct invoke; there is no turn.
+   *  - `approval-runtime/post-tx/dispatch-approved` — cold approval resume;
+   *    the turn that requested the approval is long gone.
+   */
+  abortSignal?: AbortSignal;
 }
 
 // ── Param accessors ─────────────────────────────────────────────
@@ -133,9 +158,9 @@ export function num(params: Record<string, unknown>, key: string): number | unde
  * Why a `str()`/`num()` read came back empty — absent, or present with the
  * wrong type — phrased for the model.
  *
- * The distinction is the whole point. `chain_read {chainId: 8453}` is a NUMBER
+ * The distinction is the whole point. `chain_read {chain: 8453}` is a NUMBER
  * where the tool wants the string spelling; answering "Missing required:
- * chainId" is factually false (`token_find` returns `chainId` as a number, so
+ * chain" is factually false (`token_find` returns the chain id as a number, so
  * this is the form the agent normally holds) and the only repair it suggests is
  * the one that cannot work. Values are never echoed — only the shape.
  */

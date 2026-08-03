@@ -70,7 +70,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
     });
 
     const outcome = await evaluateLendBorrowRiskPreview(
-      { vaultId: 1, depositAmount: "1000000000" }, // 1 SOL
+      { vaultId: 1, depositAmountRaw: "1000000000" }, // 1 SOL
       ctx(),
     );
 
@@ -91,7 +91,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
   it("mirrors BOTH legs' symbol and decimals so the raw amounts in the disclosure are readable", async () => {
     mockGetPricesByMint.mockResolvedValue(null);
 
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmount: "1000000000" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmountRaw: "1000000000" }, ctx());
 
     expect(outcome.kind).toBe("confirmed");
     if (outcome.kind !== "confirmed") throw new Error("unreachable");
@@ -113,7 +113,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
     });
 
     const outcome = await evaluateLendBorrowRiskPreview(
-      { vaultId: 1, positionId: 5, borrowAmount: "20000000" },
+      { vaultId: 1, positionId: 5, borrowAmountRaw: "20000000" },
       ctx(),
     );
 
@@ -132,7 +132,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
   it("degrades to a null estimate (CONFIRMED, never blocked) when price data is unavailable — identity/balances/thresholds still show", async () => {
     mockGetPricesByMint.mockRejectedValue(new Error("network down"));
 
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmount: "1" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmountRaw: "1" }, ctx());
 
     expect(outcome.kind).toBe("confirmed");
     if (outcome.kind !== "confirmed") throw new Error("unreachable");
@@ -154,7 +154,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
       [USDC]: { usdPrice: 1, decimals: 6, createdAt: "", liquidity: 0, blockId: null, priceChange24h: null },
     });
 
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmount: "1000000000" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmountRaw: "1000000000" }, ctx());
 
     expect(outcome.kind).toBe("confirmed");
     if (outcome.kind !== "confirmed") throw new Error("unreachable");
@@ -171,7 +171,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
       [USDC]: { usdPrice: 1, decimals: 6, createdAt: "", liquidity: 0, blockId: null, priceChange24h: null },
     });
 
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmount: "1000000000" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmountRaw: "1000000000" }, ctx());
 
     expect(outcome.kind).toBe("confirmed");
     if (outcome.kind !== "confirmed") throw new Error("unreachable");
@@ -187,19 +187,19 @@ describe("evaluateLendBorrowRiskPreview", () => {
 
   it("returns UNVERIFIABLE (never a fabricated preview) when the vault cannot be found", async () => {
     mockGetVaults.mockResolvedValue([]);
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 999, depositAmount: "1" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 999, depositAmountRaw: "1" }, ctx());
     expect(outcome.kind).toBe("unverifiable");
   });
 
   it("returns UNVERIFIABLE when the vault fetch itself throws", async () => {
     mockGetVaults.mockRejectedValue(new Error("rpc down"));
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmount: "1" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmountRaw: "1" }, ctx());
     expect(outcome.kind).toBe("unverifiable");
   });
 
   it("returns UNVERIFIABLE when wallet resolution throws (session scope mismatch) — never surfaces a partial preview", async () => {
     mockWalletAddress.mockImplementation(() => { throw new Error("scope mismatch"); });
-    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmount: "1" }, ctx());
+    const outcome = await evaluateLendBorrowRiskPreview({ vaultId: 1, depositAmountRaw: "1" }, ctx());
     expect(outcome.kind).toBe("unverifiable");
   });
 
@@ -209,7 +209,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
     mockGetPositions.mockRejectedValue(new Error("rpc timeout"));
 
     const outcome = await evaluateLendBorrowRiskPreview(
-      { vaultId: 1, positionId: 5, borrowAmount: "20000000" },
+      { vaultId: 1, positionId: 5, borrowAmountRaw: "20000000" },
       ctx(),
     );
 
@@ -222,7 +222,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
     mockGetPositions.mockResolvedValue([]);
 
     const outcome = await evaluateLendBorrowRiskPreview(
-      { vaultId: 1, positionId: 5, borrowAmount: "1" },
+      { vaultId: 1, positionId: 5, borrowAmountRaw: "1" },
       ctx(),
     );
 
@@ -235,7 +235,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
     ]);
 
     const outcome = await evaluateLendBorrowRiskPreview(
-      { vaultId: 1, positionId: 5, borrowAmount: "1" },
+      { vaultId: 1, positionId: 5, borrowAmountRaw: "1" },
       ctx(),
     );
 
@@ -248,7 +248,7 @@ describe("evaluateLendBorrowRiskPreview", () => {
     ]);
 
     const outcome = await evaluateLendBorrowRiskPreview(
-      { vaultId: 1, positionId: 5, borrowAmount: "1" },
+      { vaultId: 1, positionId: 5, borrowAmountRaw: "1" },
       ctx(),
     );
 

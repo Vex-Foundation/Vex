@@ -183,7 +183,7 @@ const POISONED_DRY_RUNS: Array<{
   {
     toolId: "pendle.sy.mint",
     run: (p) => PENDLE_SY_HANDLERS["pendle.sy.mint"]!(p, ctx),
-    params: { chain: "ethereum", sy: SY, token: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
+    params: { chain: "ethereum", sy: SY, tokenIn: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
     stage: () => mockConvert.mockResolvedValue(poisoned("mintSy")),
   },
   {
@@ -233,7 +233,7 @@ describe("the same responses UNPOISONED still authorize — the guard is not a b
   it("pendle.sy.mint records its prequote on the provider's own capture", async () => {
     mockConvert.mockResolvedValue(mutableConvertFixture(F.mintSy));
     const res = (await PENDLE_SY_HANDLERS["pendle.sy.mint"]!(
-      { chain: "ethereum", sy: SY, token: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
+      { chain: "ethereum", sy: SY, tokenIn: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
       ctx,
     )) as Res;
     expect(res.success).toBe(true);

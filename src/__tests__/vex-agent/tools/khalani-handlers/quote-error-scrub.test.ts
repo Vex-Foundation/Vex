@@ -49,7 +49,7 @@ const PARAMS = {
   toChain: "8453",
   fromToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  amount: "1000000",
+  amountRaw: "1000000",
 };
 
 async function quoteGet(params: Record<string, unknown> = PARAMS) {
@@ -92,7 +92,7 @@ describe("khalani.quote.get — route-guard failures pass the scrub boundary", (
 
     const result = await quoteGet();
 
-    expect(result.output.length).toBeLessThan(300);
+    expect(result.output.length).toBeLessThan(420);
     expect(result.output).toContain("…");
   });
 

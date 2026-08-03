@@ -7,8 +7,12 @@
  * scrub boundary rather than each keeping its own copy.
  */
 
+import {
+  resolveJupiterFeeSwapKnobs,
+  type JupiterFeeSwapKnobs,
+} from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
-import { checkSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { checkSlippageBps, VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 import { num } from "../../../handler-helpers.js";
 
@@ -44,4 +48,29 @@ export function jupiterSlippageViolation(toolId: string, p: Record<string, unkno
   const raw = num(p, "slippageBps");
   if (raw === undefined) return null;
   return checkSlippageBps(`Parameter "slippageBps" for ${toolId}`, raw);
+}
+
+/**
+ * Resolve the `/build` knobs for BOTH swap handlers, with Vex's slippage
+ * default MATERIALIZED (W4a).
+ *
+ * Omitting `slippageBps` used to ship whatever Jupiter's own default happened
+ * to be — live-proven to be 50 bps today. That makes the provider the owner of
+ * the ONLY price protection on the trade: a provider-side default change would
+ * silently move it, with no diff in this repository. Sending Vex's own value
+ * explicitly makes the protection ours; the VALUE still has exactly one home
+ * (`slippage-policy.ts`), never a literal here.
+ *
+ * This is the SINGLE point of adoption, called identically by quote and
+ * execute, because a default materialized on one side only would diverge the
+ * economics the prequote gate binds. The gate/recorder call
+ * `resolveJupiterFeeSwapKnobs` directly for the fee tail
+ * (`canonicalizeJupiterFeeTail`), which does not carry slippage — so this
+ * materialization cannot move a prequote digest.
+ */
+export function resolveJupiterSwapKnobs(p: Record<string, unknown>): JupiterFeeSwapKnobs {
+  return resolveJupiterFeeSwapKnobs({
+    ...p,
+    slippageBps: num(p, "slippageBps") ?? VEX_DEFAULT_SLIPPAGE_BPS,
+  });
 }

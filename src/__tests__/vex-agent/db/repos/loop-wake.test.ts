@@ -203,7 +203,11 @@ describe("loop-wake repo — monotonic promotion", () => {
 
   it("promotes only a matching pending watch for a paused mission run", async () => {
     mockPoolExecute.mockResolvedValueOnce(1);
-    expect(await loopWake.promotePendingWake(SESSION, RUN, "watch-1")).toBe(true);
+    expect(await loopWake.promotePendingWake({
+      sessionId: SESSION,
+      missionRunId: RUN,
+      watchId: "watch-1",
+    })).toBe(true);
     const [sql, params] = mockPoolExecute.mock.calls[0];
     expect(sql).toContain("SET due_at = LEAST(wake.due_at, NOW())");
     expect(sql).toContain("wake.status = 'pending'");
@@ -216,17 +220,31 @@ describe("loop-wake repo — monotonic promotion", () => {
     "drops a %s race when the conditional update affects no row",
     async () => {
       mockPoolExecute.mockResolvedValueOnce(0);
-      await expect(loopWake.promotePendingWake(SESSION, RUN, "watch-1")).resolves.toBe(false);
+      await expect(loopWake.promotePendingWake({
+        sessionId: SESSION,
+        missionRunId: RUN,
+        watchId: "watch-1",
+      })).resolves.toBe(false);
     },
   );
 
-  it("uses the same monotonic predicate for a non-watch safety escalation", async () => {
+  // A Full-Autonomous agent session has no run row, so the mission-run join
+  // would match nothing and the promotion would silently do nothing. The
+  // session-scoped branch must assert `IS NULL` explicitly — `= NULL` is never
+  // true in SQL, which is exactly how this class of bug hides.
+  it("promotes a session-scoped agent wake without joining mission_runs", async () => {
     mockPoolExecute.mockResolvedValueOnce(1);
-    expect(await loopWake.promotePendingWakeForSafety(SESSION, RUN)).toBe(true);
-    const [sql] = mockPoolExecute.mock.calls[0];
+    expect(await loopWake.promotePendingWake({
+      sessionId: SESSION,
+      missionRunId: null,
+      watchId: "watch-1",
+    })).toBe(true);
+    const [sql, params] = mockPoolExecute.mock.calls[0];
     expect(sql).toContain("SET due_at = LEAST(wake.due_at, NOW())");
-    expect(sql).not.toContain("watchId");
-    expect(sql).toContain("run.status = 'paused_wake'");
+    expect(sql).toContain("wake.mission_run_id IS NULL");
+    expect(sql).not.toContain("mission_runs");
+    expect(sql).toContain("wake.payload->>'watchId' = $2");
+    expect(params).toEqual([SESSION, "watch-1"]);
   });
 });
 

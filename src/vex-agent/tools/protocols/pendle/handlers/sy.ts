@@ -40,7 +40,7 @@ import logger from "@utils/logger.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import { str, num, ok, fail } from "../../handler-helpers.js";
-import type { PendleSyDirection } from "../../prequote/identity/pendle-sy.js";
+import { pendleSyTokenParamKey, type PendleSyDirection } from "../../prequote/identity/pendle-sy.js";
 
 import { buildAssetMap } from "../market-lookup.js";
 import { selectSafeRoute, type PendleTxIntent } from "../calldata.js";
@@ -73,9 +73,13 @@ async function executePendleSyWrap(
   context: ProtocolExecutionContext,
 ): Promise<ToolResult> {
   const toolId = toolIdFor(direction);
-  const chain = str(p, "chain"), syRaw = str(p, "sy"), tokenRaw = str(p, "token"), amountInRaw = str(p, "amountIn");
+  // The plain-token leg is named for the DIRECTION it travels (SPEC §1.2 / W6e):
+  // it is the INPUT on a mint (token → SY) and the OUTPUT on a redeem (SY →
+  // token). One key for both would have named opposite legs on two money tools.
+  const tokenKey = pendleSyTokenParamKey(direction);
+  const chain = str(p, "chain"), syRaw = str(p, "sy"), tokenRaw = str(p, tokenKey), amountInRaw = str(p, "amountIn");
   if (!chain || !syRaw || !tokenRaw || !amountInRaw) {
-    return fail(`Missing required: chain, sy, token, amountIn (${toolId})`);
+    return fail(`Missing required: chain, sy, ${tokenKey}, amountIn (${toolId})`);
   }
   // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`):
   // everything after the broadcast is a read-back that can throw, and the catch
@@ -96,7 +100,7 @@ async function executePendleSyWrap(
     const inputRaw = direction === "mint" ? tokenRaw : syRaw;
     const outputRaw = direction === "mint" ? syRaw : tokenRaw;
     if (requireTokenAddress(syRaw) === requireTokenAddress(tokenRaw)) {
-      return fail(`${toolId}: sy and token must be different addresses.`);
+      return fail(`${toolId}: sy and ${tokenKey} must be different addresses.`);
     }
     const tokenIn = await resolveInputToken(chainEntry, inputRaw);
     const tokenOut = requireTokenAddress(outputRaw);

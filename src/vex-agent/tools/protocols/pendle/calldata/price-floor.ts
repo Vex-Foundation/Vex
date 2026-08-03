@@ -28,7 +28,48 @@ import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 import type { PendleRouterMethod } from "@tools/pendle/constants.js";
 import type { PendleConvertRoute, PendleTokenAmount } from "@tools/pendle/types.js";
 
-import { unsafe, type DecodedReflectCall, type DecodedRouterCall } from "./decode.js";
+import { VexError, ErrorCodes } from "../../../../../errors.js";
+
+import { type DecodedReflectCall, type DecodedRouterCall } from "./decode.js";
+
+/**
+ * The remedy a PRICE-FLOOR refusal carries, in the agent's own vocabulary.
+ *
+ * `decode.ts`'s shared `unsafe()` hint ("the quoted transaction did not match
+ * the requested trade") is right for a tampered receiver or a wrong market, and
+ * says almost nothing here — this was the weakest of the five money-refusal
+ * surfaces. It states the SAME shape the slippage remedy does (what refused it,
+ * what to change, whether a retry can succeed) with the one instruction
+ * inverted, because the inversion is the whole point:
+ *
+ * THIS IS NOT MARKET SLIPPAGE. The floor is DERIVED FROM the caller's own
+ * `slippageBps` and Pendle's own quoted outputs — so calldata below it means the
+ * built transaction is worse than the tolerance already granted. Raising
+ * `slippageBps` would LOWER the floor and let exactly that calldata through: the
+ * one instruction that is correct for a `slippage` revert is the dangerous one
+ * here. Kept textually distinguishable from the slippage remedy for the same
+ * reason `KYBER_PRICE_FLOOR_VIOLATED` is (both stay `policy_refusal`, never a
+ * market failure).
+ */
+export const PENDLE_PRICE_FLOOR_REMEDY =
+  "Vex refused this before signing, so nothing was sent and re-running cannot duplicate it. "
+  + "The transaction Pendle built protects less output than the route it quoted implies at the slippageBps this call already passed. "
+  + "Get a FRESH quote and try once more — a stale route is the benign cause. "
+  + "Do NOT raise slippageBps to get past it: that lowers this floor and accepts the very calldata that was refused. "
+  + "If a fresh quote is refused the same way, treat this route as unusable and take another action or venue.";
+
+/**
+ * A price-floor refusal — the same `PENDLE_UNSAFE_TX` code and message shape
+ * `decode.ts`'s `unsafe()` produces, carrying the floor-specific remedy above
+ * instead of the generic one.
+ */
+function unsafeFloor(reason: string): never {
+  throw new VexError(
+    ErrorCodes.PENDLE_UNSAFE_TX,
+    `Pendle refused to sign: ${reason}.`,
+    PENDLE_PRICE_FLOOR_REMEDY,
+  );
+}
 
 /**
  * Vex's slack when comparing our floor against the provider's embedded one, in
@@ -256,7 +297,7 @@ export function computePendleFloorRaw(outputRaw: string, slippageBps: number): b
   try {
     return computeApprovedMinOut(outputRaw, slippageBps);
   } catch (err) {
-    return unsafe(
+    return unsafeFloor(
       `price_floor: the route's floor cannot be computed (${err instanceof Error ? err.message : "invalid input"})`,
     );
   }
@@ -268,15 +309,15 @@ function readMinOutField(args: readonly unknown[], binding: PendleMinOutBinding)
   const { location, field } = binding;
   if (location.kind === "arg") {
     const value = args[location.index];
-    if (typeof value !== "bigint") return unsafe(`price_floor: ${field} is not present in the calldata`);
+    if (typeof value !== "bigint") return unsafeFloor(`price_floor: ${field} is not present in the calldata`);
     return value;
   }
   const tuple = args[location.index];
   if (typeof tuple !== "object" || tuple === null) {
-    return unsafe(`price_floor: ${field} is not present in the calldata`);
+    return unsafeFloor(`price_floor: ${field} is not present in the calldata`);
   }
   const value = (tuple as Record<string, unknown>).minTokenOut;
-  if (typeof value !== "bigint") return unsafe(`price_floor: ${field} is not present in the calldata`);
+  if (typeof value !== "bigint") return unsafeFloor(`price_floor: ${field} is not present in the calldata`);
   return value;
 }
 
@@ -297,16 +338,16 @@ function calldataOutputToken(args: readonly unknown[], binding: PendleMinOutBind
 function coverageToken(args: readonly unknown[], source: PendleMinOutTokenSource, field: string): string {
   if (source.kind === "marketArg") {
     const market = args[source.index];
-    if (typeof market !== "string") return unsafe(`price_floor: ${field} cannot read the market from the calldata`);
+    if (typeof market !== "string") return unsafeFloor(`price_floor: ${field} cannot read the market from the calldata`);
     return market.toLowerCase();
   }
   const tuple = args[source.index];
   if (typeof tuple !== "object" || tuple === null) {
-    return unsafe(`price_floor: ${field} cannot read the output token from the calldata`);
+    return unsafeFloor(`price_floor: ${field} cannot read the output token from the calldata`);
   }
   const token = (tuple as Record<string, unknown>).tokenOut;
   if (typeof token !== "string") {
-    return unsafe(`price_floor: ${field} cannot read the output token from the calldata`);
+    return unsafeFloor(`price_floor: ${field} cannot read the output token from the calldata`);
   }
   return token.toLowerCase();
 }
@@ -326,7 +367,7 @@ function soleOutput(
 ): readonly PendleTokenAmount[] {
   const matched = outputs.filter((o) => keep(o.token.toLowerCase()));
   if (matched.length !== 1) {
-    return unsafe(`price_floor: ${field} does not resolve to exactly one ${describe} the route declares`);
+    return unsafeFloor(`price_floor: ${field} does not resolve to exactly one ${describe} the route declares`);
   }
   return matched;
 }
@@ -341,7 +382,7 @@ function coveredOutputs(
   if (Array.isArray(coverage)) {
     return coverage.map((i) => {
       const output = outputs[i];
-      if (output === undefined) return unsafe(`price_floor: ${field} covers an output the route does not declare`);
+      if (output === undefined) return unsafeFloor(`price_floor: ${field} covers an output the route does not declare`);
       return output;
     });
   }
@@ -379,13 +420,13 @@ export function assertRouteOutputTopology(
   expectedOutputTokens: readonly Address[],
 ): void {
   if (route.outputs.length !== expectedOutputTokens.length) {
-    return unsafe("price_floor: the route declares outputs this action does not deliver");
+    return unsafeFloor("price_floor: the route declares outputs this action does not deliver");
   }
   const remaining = expectedOutputTokens.map((token) => token.toLowerCase());
   for (const output of route.outputs) {
     const at = remaining.indexOf(output.token.toLowerCase());
     if (at === -1) {
-      return unsafe("price_floor: the route declares outputs this action does not deliver");
+      return unsafeFloor("price_floor: the route declares outputs this action does not deliver");
     }
     remaining.splice(at, 1);
   }
@@ -411,22 +452,22 @@ export function assertRouteFloorBound(
 ): void {
   const bindings = PENDLE_MIN_OUT_BINDINGS[call.method];
   if (bindings === undefined || bindings.length === 0) {
-    return unsafe(`price_floor: ${call.method} has no minimum-output binding`);
+    return unsafeFloor(`price_floor: ${call.method} has no minimum-output binding`);
   }
   for (const binding of bindings) {
     const declared = readMinOutField(call.args, binding);
     const outputs = coveredOutputs(route.outputs, binding.coversOutputs, binding.field, call.args);
     if (outputs.length === 0) {
-      return unsafe(`price_floor: ${binding.field} cannot be checked — the route declares no output`);
+      return unsafeFloor(`price_floor: ${binding.field} cannot be checked — the route declares no output`);
     }
     const calldataToken = calldataOutputToken(call.args, binding);
     for (const output of outputs) {
       if (calldataToken !== null && calldataToken !== output.token.toLowerCase()) {
-        return unsafe(`price_floor: ${binding.field} protects a token the route does not deliver`);
+        return unsafeFloor(`price_floor: ${binding.field} protects a token the route does not deliver`);
       }
       const floor = computePendleFloorRaw(output.amount, slippageBps);
       if (declared + PENDLE_FLOOR_ALLOWANCE_RAW < floor) {
-        return unsafe(
+        return unsafeFloor(
           `price_floor: ${binding.field} would accept less than the floor this route's own quote implies at the requested slippage`,
         );
       }
@@ -488,7 +529,7 @@ export function assertReflectFloorBound(
     }
     for (const binding of PENDLE_MIN_OUT_BINDINGS[leg.method] ?? []) {
       if (readMinOutField(leg.args, binding) <= 0n) {
-        return unsafe(
+        return unsafeFloor(
           `price_floor: intermediate leg ${index + 1} carries no minimum for ${binding.field}`,
         );
       }

@@ -24,6 +24,7 @@ import {
 } from "../pair-list/index.js";
 import { reconcileTokenBatchAddresses } from "../token-batch-addresses.js";
 import { missingRequired } from "./missing-params.js";
+import { resolveDexScreenerChain } from "../chain-param.js";
 
 export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.search": async (p) => {
@@ -63,27 +64,31 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     });
   },
 
-  // `chainId` is echoed lowercase on the three single-chain tools so the echo
-  // agrees with the rows (every provider row carries a lowercase slug). The value
-  // sent UPSTREAM is left exactly as the caller wrote it — normalising the request
-  // would change what we ask DexScreener, which is not this card's call to make.
+  // `chain` (W6a: was `chainId`, a key that said Id over a slug value) is echoed
+  // lowercase on the three single-chain tools so the echo agrees with the rows
+  // (every provider row carries a lowercase slug). The value sent UPSTREAM is a
+  // slug exactly as the caller wrote it — only the numeric spelling is
+  // translated, by `../chain-param.ts`; normalising a slug would change what we
+  // ask DexScreener, which is not this card's call to make.
   // Token and pair addresses are never case-folded: Solana base58 is
   // case-sensitive and folding one would corrupt an identifier.
   "dexscreener.pairs": async (p) => {
-    const chainId = str(p, "chainId");
+    const chainRaw = str(p, "chain");
     // A comma string OR an array of addresses — one canonical comma-string
     // downstream, so the upstream request and the `requestedPairAddresses` echo
     // cannot disagree about what was asked for.
     const pairAddressRead = readStringOrArrayParam(p, "pairAddress");
     if (!pairAddressRead.ok) return fail(`dexscreener.pairs: ${pairAddressRead.reason}`);
     const pairAddress = pairAddressRead.value ?? "";
-    const missing = missingRequired("dexscreener.pairs", { chainId, pairAddress });
+    const missing = missingRequired("dexscreener.pairs", { chain: chainRaw, pairAddress });
     if (missing) return fail(missing);
+    const chain = resolveDexScreenerChain(chainRaw);
+    if (!chain.ok) return fail(`dexscreener.pairs: ${chain.reason}`);
     const parsed = parsePairListQuery(p, { sortBy: "relevance" });
     if (!parsed.ok) return fail(`dexscreener.pairs: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
-    const result = await client.getPairs(chainId, pairAddress);
+    const result = await client.getPairs(chain.slug, pairAddress);
     const providerPairs = Array.isArray(result.pairs) ? result.pairs : [];
     const list = buildPairList({
       endpoint: "/latest/dex/pairs",
@@ -94,7 +99,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     });
 
     return ok({
-      chainId: chainId.toLowerCase(),
+      chain: chain.slug.toLowerCase(),
       requestedPairAddresses: pairAddress.split(",").map((a) => a.trim()).filter(Boolean),
       // `pairs: []` with `success: true` used to cover both "bad address" and
       // "not indexed". `found` separates the answer from the absence of one.
@@ -104,7 +109,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "dexscreener.tokens": async (p) => {
-    const chainId = str(p, "chainId");
+    const chainRaw = str(p, "chain");
     // ONE canonical address list feeds BOTH the upstream call and the
     // requested/resolved/unresolved reconciliation, so the echo can never
     // describe a different list from the one we sent. Casing is preserved:
@@ -112,13 +117,15 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     const tokenAddressesRead = readStringOrArrayParam(p, "tokenAddresses");
     if (!tokenAddressesRead.ok) return fail(`dexscreener.tokens: ${tokenAddressesRead.reason}`);
     const tokenAddresses = tokenAddressesRead.value ?? "";
-    const missing = missingRequired("dexscreener.tokens", { chainId, tokenAddresses });
+    const missing = missingRequired("dexscreener.tokens", { chain: chainRaw, tokenAddresses });
     if (missing) return fail(missing);
+    const chain = resolveDexScreenerChain(chainRaw);
+    if (!chain.ok) return fail(`dexscreener.tokens: ${chain.reason}`);
     const parsed = parsePairListQuery(p, { sortBy: "relevance" });
     if (!parsed.ok) return fail(`dexscreener.tokens: ${parsed.reason}`);
 
     const client = getDexScreenerClient();
-    const result = await client.getTokens(chainId, tokenAddresses);
+    const result = await client.getTokens(chain.slug, tokenAddresses);
     // Reconciled against the PROVIDER's rows, before any Vex filter — otherwise
     // our own filtering would be indistinguishable from the provider dropping
     // addresses (40 requested → 30 returned, measured).
@@ -131,19 +138,21 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
       asOfMs: Date.now(),
     });
 
-    return ok({ chainId: chainId.toLowerCase(), ...addresses, ...list });
+    return ok({ chain: chain.slug.toLowerCase(), ...addresses, ...list });
   },
 
   "dexscreener.tokenPairs": async (p) => {
-    const chainId = str(p, "chainId"), tokenAddress = str(p, "tokenAddress");
-    const missing = missingRequired("dexscreener.tokenPairs", { chainId, tokenAddress });
+    const chainRaw = str(p, "chain"), tokenAddress = str(p, "tokenAddress");
+    const missing = missingRequired("dexscreener.tokenPairs", { chain: chainRaw, tokenAddress });
     if (missing) return fail(missing);
+    const chain = resolveDexScreenerChain(chainRaw);
+    if (!chain.ok) return fail(`dexscreener.tokenPairs: ${chain.reason}`);
     const parsed = parsePairListQuery(p, { sortBy: "liquidityUsd" });
     if (!parsed.ok) return fail(`dexscreener.tokenPairs: ${parsed.reason}`);
 
     const asOfMs = Date.now();
     const client = getDexScreenerClient();
-    const result = await client.getTokenPairs(chainId, tokenAddress);
+    const result = await client.getTokenPairs(chain.slug, tokenAddress);
 
     // Cross-pool sanity over the FULL provider window: this is the one tool
     // whose rows are all pools of the same token, so a median price is
@@ -161,7 +170,7 @@ export const DEXSCREENER_CORE_HANDLERS: Record<string, ProtocolHandler> = {
     });
 
     return ok({
-      chainId: chainId.toLowerCase(),
+      chain: chain.slug.toLowerCase(),
       tokenAddress,
       priceUsdMedianAcrossPools: priceSanity.priceUsdMedianAcrossPools,
       pricePoolOutliers: priceSanity.pricePoolOutliers,

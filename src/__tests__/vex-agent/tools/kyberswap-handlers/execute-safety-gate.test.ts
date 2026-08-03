@@ -247,7 +247,7 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     expect((fotWarn![1] as Record<string, unknown>).tax).toBe(60);
   });
 
-  it("a THROWN safety check does NOT abort — proceeds + logs ONE bounded reason class (no raw text)", async () => {
+  it("a THROWN safety check does NOT abort — and is DISCLOSED, never silent (W2b)", async () => {
     const RAW =
       "Honeypot check failed: 503 https://token-api.kyberswap.com/x?apiKey=sk_live_ABC <!DOCTYPE html><html>boom</html>";
     mockGetHoneypotFotInfo.mockImplementation(async (_chainId: number, address: string) => {
@@ -260,19 +260,51 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     expect(result.success).toBe(true);
     expect(mockGetRoute).toHaveBeenCalledTimes(1);
 
-    // ONE bounded structural warn — reason class only, never raw provider/HTTP text.
+    // ONE bounded structural warn, now carrying the SANITIZED cause as well as
+    // the reason class (owner decree 2026-08-02 — a generic label on a
+    // diagnosable failure makes the agent retry blind). The scrubber's
+    // guarantees are what is asserted: no URL, no credential, no raw markup.
+    // A bounded status integer and the `(html)` placeholder are the sanitizer's
+    // own OUTPUT and are deliberately allowed.
     const failWarn = mockLoggerWarn.mock.calls.find((c) => c[0] === "kyberswap.swap.safety_check_failed");
     expect(failWarn).toBeDefined();
     const payload = failWarn![1] as Record<string, unknown>;
     expect(["timeout", "rate_limited", "kyber_error", "unavailable"]).toContain(payload.reason);
+    expect(typeof payload.cause).toBe("string");
     const serialized = JSON.stringify(payload).toLowerCase();
     expect(serialized).not.toContain("https://");
     expect(serialized).not.toContain("kyberswap.com");
     expect(serialized).not.toContain("<!doctype");
-    expect(serialized).not.toContain("html");
+    expect(serialized).not.toContain("<html");
     expect(serialized).not.toContain("apikey=");
     expect(serialized).not.toContain("sk_live");
-    expect(serialized).not.toContain("503");
+
+    // The AGENT is told, in the result output and in the machine field.
+    expect(result.output).toMatch(/honeypot\/fee-on-transfer check could not run/i);
+    expect(result.output).toMatch(/WITHOUT that protection/i);
+    const data = result.data as { safetyCheckUnavailable?: ReadonlyArray<Record<string, unknown>> };
+    expect(data.safetyCheckUnavailable).toHaveLength(1);
+    expect(data.safetyCheckUnavailable![0]!.tokenAddress).toBe(TOKEN_A);
+    expect(typeof data.safetyCheckUnavailable![0]!.cause).toBe("string");
+
+    // …and the ACTIVITY ROW records it, so the persisted history says this swap
+    // ran without honeypot protection.
+    const intent = mockCreateAgentActivityIntent.mock.calls[0]![0] as {
+      intentParams: Record<string, unknown>;
+    };
+    expect(intent.intentParams._safetyCheckUnavailable).toHaveLength(1);
+    // The model's own params are untouched beside it.
+    expect(intent.intentParams.chain).toBe("ethereum");
+  });
+
+  it("records NOTHING extra when every safety check succeeded", async () => {
+    const result = await executeCall();
+    expect(result.success).toBe(true);
+    expect((result.data as Record<string, unknown>).safetyCheckUnavailable).toBeUndefined();
+    const intent = mockCreateAgentActivityIntent.mock.calls[0]![0] as {
+      intentParams: Record<string, unknown>;
+    };
+    expect(intent.intentParams._safetyCheckUnavailable).toBeUndefined();
   });
 
   it("a confirmed honeypot caught at execute STILL aborts even when the OTHER leg's check threw", async () => {

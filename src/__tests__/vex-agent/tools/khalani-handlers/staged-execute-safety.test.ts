@@ -218,7 +218,7 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
 
 function execute(over: Record<string, unknown> = {}, context = ctx()) {
   return BRIDGE_HANDLERS["khalani.bridge"]!(
-    { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amount: "1500000", ...over },
+    { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amountRaw: "1500000", ...over },
     context,
   );
 }
@@ -401,7 +401,7 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     await execute();
     expect(mockLoggerWarn).toHaveBeenCalledWith("khalani.bridge.order_id_conflict", expect.any(Object));
     // FIXED CONTRACT (m4): poll the persisted id, never the newly-returned "o1".
-    expect(mockPollKhalaniOrderToTerminal).toHaveBeenCalledWith("persisted-order");
+    expect(mockPollKhalaniOrderToTerminal.mock.calls[0]?.[0]).toBe("persisted-order");
     expect(mockPollKhalaniOrderToTerminal).not.toHaveBeenCalledWith("o1");
   });
 
@@ -417,7 +417,7 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
   it("attach not_pending (terminal row) → logged, polls the persisted id", async () => {
     mockAttachProviderOrderId.mockResolvedValueOnce({ outcome: "not_pending", row: { id: 200, status: "confirmed", providerOrderId: "o1" } });
     await execute();
-    expect(mockPollKhalaniOrderToTerminal).toHaveBeenCalledWith("o1");
+    expect(mockPollKhalaniOrderToTerminal.mock.calls[0]?.[0]).toBe("o1");
   });
 
   it("poll filled → filled_unverified, NEVER a fabricated confirmed fill", async () => {

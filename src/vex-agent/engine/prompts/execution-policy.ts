@@ -19,6 +19,29 @@
 import type { Permission, SessionKind } from "../types.js";
 
 /**
+ * The owner-decreed waiting pattern (2026-08-03), rendered verbatim in every
+ * mode whose session can actually park: both mission-run modes and
+ * AGENT / FULL. It replaced a one-line "use loop_defer when waiting for
+ * external conditions" bullet that named no anti-pattern, so the model had no
+ * reason to prefer deferring over polling.
+ *
+ * Kept as ONE constant rather than three copies so the three modes cannot drift.
+ * Must stay in lockstep with `loop_defer`'s tool description
+ * (`tools/registry/autonomy.ts`) and with the turn-state call forms in
+ * `runtime-clock.ts`.
+ */
+const WAITING_PATTERN = `- Waiting is an action: call \`loop_defer\`. When the next useful step depends on an
+  on-chain or time-based event you cannot make happen sooner — a bridge fill, a
+  transaction confirmation or finality window, a cooldown, a scheduled market event, a
+  price level you have decided to re-check later — call \`loop_defer\` with a wait sized to
+  that event and a \`reason\` that tells your future self what to check first. Do NOT
+  "watch" an event by re-calling \`wallet_balances\`, \`bridge_status\`, \`agent_scan\` or a
+  quote tool in a thought loop: polling does not make the event arrive, it spends the
+  user's money on inference and burns the iteration budget. A bridge is minutes, not
+  seconds — defer minutes. One pending wake exists at a time; a user message wakes you
+  early.`;
+
+/**
  * Which PHASE the session is in. `mission` splits in two: setup (no run yet —
  * draft-first planning, execution locked) and run (the proactive loop). The old
  * `SessionKind`-only selection handed a mission-SETUP session the run loop's
@@ -78,8 +101,10 @@ permission. Rules:
 - Full permission does NOT waive the \`# Safety Contract\` — every mutating
   action still obeys gas reserve, fresh balances, quote/preview, and token
   verification.
-- Do NOT loop indefinitely — agent mode is one-shot. When the user's
-  request is satisfied, return a final text reply.`;
+- Do NOT loop indefinitely. When the user's request is satisfied, return a
+  final text reply — WAITING for an event is the one exception, and it is a
+  \`loop_defer\` call, not a polling loop.
+${WAITING_PATTERN}`;
 
 const MISSION_SETUP_RESTRICTED = `# Execution Policy: MISSION SETUP / RESTRICTED
 
@@ -124,8 +149,7 @@ Rules:
 - After approval, execute the tool and report the result.
 - If multiple mutating actions are needed, request approval for each one.
 - Continue working toward your mission objective between approval gates.
-- Use \`loop_defer\` to schedule the next wake-up when waiting for
-  external conditions (price movement, on-chain state, time delays).
+${WAITING_PATTERN}
 - Stop only when the frozen mission contract allows it.`;
 
 const MISSION_FULL = `# Execution Policy: MISSION RUN / FULL
@@ -140,5 +164,4 @@ You are in mission mode (goal-driven loop) with full permission. Rules:
 - Full permission does NOT waive the \`# Safety Contract\` — every mutating
   action still obeys gas reserve, fresh balances, quote/preview, and token
   verification.
-- Use \`loop_defer\` to schedule the next wake-up when waiting for
-  external conditions (price movement, on-chain state, time delays).`;
+${WAITING_PATTERN}`;

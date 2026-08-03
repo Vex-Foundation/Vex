@@ -44,6 +44,10 @@ import logger from "@utils/logger.js";
 
 import { tick } from "./executor/tick.js";
 import { buildProductionDeps, type WakeDeps } from "./executor/deps.js";
+import {
+  startWakeWatchPromoter,
+  type WakeWatchPromoterHandle,
+} from "./watch-promoter.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
@@ -62,6 +66,13 @@ export interface StartOptions {
   batchSize?: number;
   deps?: WakeDeps;
   now?: () => Date;
+  /**
+   * Watch-promoter override for tests. The promoter is the PUSH half of the
+   * same mechanism this executor polls for, so its lifetime is bound to the
+   * executor's rather than started separately by the host — a live promoter
+   * with no executor would advance deadlines nothing would ever claim.
+   */
+  startWatchPromoter?: () => WakeWatchPromoterHandle;
 }
 
 /**
@@ -78,6 +89,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const limit = options.batchSize ?? 10;
   const now = options.now ?? (() => new Date());
   const deps = options.deps ?? buildProductionDeps();
+  const promoter = (options.startWatchPromoter ?? startWakeWatchPromoter)();
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
@@ -109,6 +121,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   return {
     async stop(): Promise<void> {
       stopped = true;
+      promoter.stop();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

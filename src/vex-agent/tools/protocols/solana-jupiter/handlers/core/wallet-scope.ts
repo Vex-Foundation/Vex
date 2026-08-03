@@ -15,7 +15,7 @@ import type { ProtocolExecutionContext } from "../../../types.js";
 import { str } from "../../../handler-helpers.js";
 
 export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecutionContext): string {
-  const explicit = str(p, "address");
+  const explicit = str(p, "walletAddress");
   if (ctx.walletResolution.source === "session") {
     // Session authority: the selected Solana wallet is the only valid owner.
     // An explicit (renderer/LLM-supplied) address that differs is rejected — it
@@ -24,7 +24,7 @@ export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecution
     if (explicit && !walletAddressesEqual("solana", explicit, selected)) {
       throw new VexError(
         ErrorCodes.WALLET_SCOPE_MISMATCH,
-        "The provided address does not match the session's selected Solana wallet.",
+        "The provided walletAddress does not match the session's selected Solana wallet.",
       );
     }
     return selected;

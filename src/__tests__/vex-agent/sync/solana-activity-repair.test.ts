@@ -34,6 +34,7 @@ const mockListSolanaStagedPending = vi.fn();
 const mockConfirmActivityEventStatusOnly = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockTouchLastChecked = vi.fn();
+const mockClearVerificationStall = vi.fn();
 const mockRecoverStaleHashlessIntents = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
@@ -42,6 +43,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEventStatusOnly: (...args: unknown[]) => mockConfirmActivityEventStatusOnly(...args),
   failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
   touchLastChecked: (...args: unknown[]) => mockTouchLastChecked(...args),
+  clearVerificationStall: (...args: unknown[]) => mockClearVerificationStall(...args),
   recoverStaleHashlessIntents: (...args: unknown[]) => mockRecoverStaleHashlessIntents(...args),
   HASHLESS_INTENT_RECOVERY_LEASE_MS: 15 * 60 * 1000,
 }));
@@ -216,7 +218,12 @@ describe("repairPendingSolanaActivity — landed status terminality", () => {
 
       expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
       expect(mockFailActivityEvent).not.toHaveBeenCalled();
-      expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+      // The RPC ANSWERED — we know exactly where this row stands, so the stall
+      // counter is CLEARED rather than incremented. Counting a healthy,
+      // successfully-observed transaction toward "verification stalled" would
+      // make the flag a lie about our own knowledge.
+      expect(mockClearVerificationStall).toHaveBeenCalledWith(1);
+      expect(mockTouchLastChecked).not.toHaveBeenCalled();
       expect(result).toMatchObject({ checked: 1, stillPending: 1 });
     },
   );
@@ -235,8 +242,8 @@ describe("repairPendingSolanaActivity — landed status terminality", () => {
 
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
     expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(2);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "signature_status_unavailable");
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(2, "signature_status_unavailable");
     expect(result).toMatchObject({ stillPending: 2 });
   });
 });
@@ -311,7 +318,7 @@ describe("repairPendingSolanaActivity — not-found signature fallback", () => {
       deps({ getSignatureStatuses: vi.fn(async () => statusesFound(null)) }),
     );
 
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "get_transaction_unavailable");
     expect(result).toMatchObject({ stillPending: 1 });
   });
 });
@@ -360,7 +367,7 @@ describe("repairPendingSolanaActivity — expiry gate (the only absence-of-proof
     );
 
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "block_height_unavailable");
   });
 });
 

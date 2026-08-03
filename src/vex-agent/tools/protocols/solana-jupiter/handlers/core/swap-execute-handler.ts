@@ -9,10 +9,9 @@
 
 import { Keypair } from "@solana/web3.js";
 import { requireJupiterResolvedTokenWithSafety } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
-import { uiToTokenAmount, solanaExplorerUrl } from "@tools/solana-ecosystem/shared/solana-validation.js";
+import { solanaExplorerUrl } from "@tools/solana-ecosystem/shared/solana-validation.js";
 import {
   prepareFeeBearingJupiterSwap,
-  resolveJupiterFeeSwapKnobs,
   buildJupiterFeePreview,
   jupiterFeePreviewSchema,
   type JupiterFeeSwapKnobs,
@@ -44,17 +43,24 @@ import logger from "@utils/logger.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../../constants/solana-chain.js";
 import type { ProtocolHandler } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
-import { str, num, fail } from "../../../handler-helpers.js";
+import { str, fail } from "../../../handler-helpers.js";
 import { buildActivityTokenLeg } from "../../activity-token-leg.js";
 import { broadcastStagedSolanaTx } from "../../staged-broadcast.js";
-import { SWAP_NAMESPACE, SWAP_PROTOCOL, jupiterSlippageViolation, swapFailureMessage } from "./swap-policy.js";
+import { humanAmountToAtomic } from "./swap-amount.js";
+import {
+  SWAP_NAMESPACE,
+  SWAP_PROTOCOL,
+  jupiterSlippageViolation,
+  resolveJupiterSwapKnobs,
+  swapFailureMessage,
+} from "./swap-policy.js";
 import { walletAddress, walletSecret } from "./wallet-scope.js";
 
 export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolResult> => {
   const toolId = "solana.swap.execute";
-  const inputRaw = str(p, "inputToken"), outputRaw = str(p, "outputToken");
-  const amount = num(p, "amount");
-  if (!inputRaw || !outputRaw || amount == null) return fail("Missing required: inputToken, outputToken, amount");
+  const inputRaw = str(p, "tokenIn"), outputRaw = str(p, "tokenOut");
+  const amountInRaw = str(p, "amountIn");
+  if (!inputRaw || !outputRaw || !amountInRaw) return fail("Missing required: tokenIn, tokenOut, amountIn");
 
   const slippageViolation = jupiterSlippageViolation(toolId, p);
   if (slippageViolation) return fail(slippageViolation);
@@ -74,7 +80,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
 
   let knobs: JupiterFeeSwapKnobs;
   try {
-    knobs = resolveJupiterFeeSwapKnobs(p);
+    knobs = resolveJupiterSwapKnobs(p);
   } catch (err) {
     return fail(`${toolId} failed: ${swapFailureMessage(err)}`);
   }
@@ -83,7 +89,9 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     requireJupiterResolvedTokenWithSafety(inputRaw),
     requireJupiterResolvedTokenWithSafety(outputRaw),
   ]);
-  const amountRaw = uiToTokenAmount(amount, inputToken.decimals).toString();
+  const converted = humanAmountToAtomic("amountIn", amountInRaw, inputToken.decimals, inputToken.symbol);
+  if (!converted.ok) return fail(`${toolId} failed: ${converted.reason}`);
+  const amountRaw = converted.amountRaw;
 
   // R4: re-fetch the SAME fresh matched quote the prequote gate
   // (executeProtocolTool, BEFORE this handler runs) already proved exists.
@@ -320,3 +328,4 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     },
   };
 };
+

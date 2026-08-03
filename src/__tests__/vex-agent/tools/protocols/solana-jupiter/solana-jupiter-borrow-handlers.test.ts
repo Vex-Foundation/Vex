@@ -220,7 +220,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 
   it("deposit-only (create position): fetches the vault, records intent with tokenIn=supplyToken.address, signs/persists/submits, surfaces nftId", async () => {
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -279,7 +279,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 
   it("deposit + borrow (documented combo): tokenIn=supply leg AND tokenOut=debt leg on the SAME row", async () => {
     await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000", borrowAmount: "5000000" },
+      { vaultId: 1, depositAmountRaw: "30000000", borrowAmountRaw: "5000000" },
       ctx(),
     );
 
@@ -320,7 +320,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 
   it("an invalid param combination (both legs same direction) never calls the vault or provider", async () => {
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, positionId: 5, depositAmount: "1", repayAmount: "1" },
+      { vaultId: 1, positionId: 5, depositAmountRaw: "1", repayAmountRaw: "1" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -331,7 +331,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   it("an unknown vaultId is a plain client-side failure — no activity row, no provider call", async () => {
     mockGetVaults.mockResolvedValue([VAULT]);
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 999, depositAmount: "1" },
+      { vaultId: 999, depositAmountRaw: "1" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -345,7 +345,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
     mockRequestOperate.mockRejectedValue(new Error("insufficient collateral"));
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -378,7 +378,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
     mockPrepareVersionedTx.mockRejectedValue(new Error("Refusing to sign: transaction requires 2 signers, expected exactly 1."));
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -393,7 +393,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: false, row: {} });
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -408,7 +408,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
     });
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -419,7 +419,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 
   it("fails closed without an active session — no vault fetch, no provider call, no recording", async () => {
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx({ sessionId: undefined }),
     );
 
@@ -447,7 +447,7 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
     mockGetAccount.mockResolvedValue({ amount: 50_000_000n });
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -460,7 +460,7 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
     mockGetAccount.mockResolvedValue({ amount: 1_000n });
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -479,7 +479,7 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
     mockGetAccount.mockResolvedValue({ amount: 1_000n });
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -491,7 +491,7 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
     mockGetAccount.mockRejectedValue(new Error("TokenAccountNotFoundError"));
 
     const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 

@@ -115,7 +115,7 @@ describe("swap_quote — family router", () => {
     expect(params.tokenOut).toBe("native");
   });
 
-  it('chain "solana" dispatches solana.swap.quote with tokenIn→inputToken and numeric amount', async () => {
+  it('chain "solana" dispatches solana.swap.quote with the SAME keys (W5a — no translation left)', async () => {
     await handleSwapQuote(
       { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "2.0", slippageBps: 30 },
       CTX,
@@ -123,13 +123,14 @@ describe("swap_quote — family router", () => {
     const { toolId, params } = lastCall();
     expect(toolId).toBe("solana.swap.quote");
     expect(params).toEqual({
-      inputToken: "SOL",
-      outputToken: "USDC",
-      amount: 2,
+      tokenIn: "SOL",
+      tokenOut: "USDC",
+      amountIn: "2.0",
       slippageBps: 30,
     });
-    // Solana manifest types amount as number — the alias must coerce.
-    expect(typeof params.amount).toBe("number");
+    // The decimal string travels VERBATIM — the alias no longer round-trips a
+    // trade amount through `Number()` on its way to the Jupiter lane.
+    expect(typeof params.amountIn).toBe("string");
   });
 
   it("ambiguous/unknown chain fails clearly and does NOT dispatch", async () => {
@@ -148,14 +149,16 @@ describe("swap_quote — family router", () => {
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-numeric Solana amount (no dispatch)", async () => {
-    const result = await handleSwapQuote(
+  // W5a moved the amount check to ONE owner. The alias no longer parses the
+  // amount at all (it would have to guess the mint's decimals to do it
+  // faithfully); `solana.swap.quote`'s own conversion rejects a non-decimal
+  // spelling by name, with the mint's decimals in hand.
+  it("passes a malformed Solana amount through to the tool that owns the rejection", async () => {
+    await handleSwapQuote(
       { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "abc" },
       CTX,
     );
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("positive number");
-    expect(executeProtocolTool).not.toHaveBeenCalled();
+    expect(lastCall().params).toMatchObject({ amountIn: "abc" });
   });
 
   it("REJECTS the legacy 'amount' field — .strict() schema, no silent fallback to amountIn (FIX-SPINE finding 14/C4)", async () => {
@@ -268,7 +271,7 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
         fromToken: "0xfrom",
         toChain: "solana",
         toToken: "mintTo",
-        amount: "1000000",
+        amountRaw: "1000000",
         tradeType: "EXACT_INPUT",
       },
       CTX,
@@ -280,14 +283,14 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
       fromToken: "0xfrom",
       toChain: "solana",
       toToken: "mintTo",
-      amount: "1000000",
+      amountRaw: "1000000",
       tradeType: "EXACT_INPUT",
     });
   });
 
   it("omits optional params that were not supplied", async () => {
     await handleBridgeQuote(
-      { fromChain: "1", fromToken: "0xa", toChain: "8453", toToken: "0xb", amount: "5" },
+      { fromChain: "1", fromToken: "0xa", toChain: "8453", toToken: "0xb", amountRaw: "5" },
       CTX,
     );
     const { params } = lastCall();
@@ -296,9 +299,22 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
       fromToken: "0xa",
       toChain: "8453",
       toToken: "0xb",
-      amount: "5",
+      amountRaw: "5",
     });
     expect(params).not.toHaveProperty("tradeType");
+  });
+
+  it("REJECTS slippageBps BY NAME on a Khalani route (never silently dropped)", async () => {
+    // Khalani exposes no slippage tolerance; accepting the param told the agent
+    // it had bought price protection it did not have.
+    const result = await handleBridgeQuote(
+      { fromChain: "1", fromToken: "0xa", toChain: "8453", toToken: "0xb", amountRaw: "5", slippageBps: 100 },
+      CTX,
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("slippageBps");
+    expect(result.output).toMatch(/NO slippage protection applies/);
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   it("rejects missing required params (no dispatch)", async () => {
@@ -318,9 +334,9 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
         fromToken: BASE_USDC,
         toChain: "robinhood",
         toToken: VIRTUAL,
-        amount: "1000000",
+        amountRaw: "1000000",
         filler: "native-filler", // Khalani-only — must be dropped
-        slippageBps: "50", // Relay-only — must pass through
+        slippageBps: 50, // Relay-only — must pass through
       },
       CTX,
     );
@@ -332,8 +348,8 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
       fromToken: BASE_USDC,
       toChain: "robinhood",
       toToken: VIRTUAL,
-      amount: "1000000",
-      slippageBps: "50",
+      amountRaw: "1000000",
+      slippageBps: 50,
     });
     expect(params).not.toHaveProperty("filler");
   });
@@ -354,7 +370,7 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
           fromToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
           toChain: "base",
           toToken: BASE_USDC,
-          amount: "1000000",
+          amountRaw: "1000000",
           ...bad,
         },
         CTX,
@@ -369,7 +385,7 @@ describe("bridge_quote — pass-through to khalani.quote.get", () => {
 
   it("fromChain '4663' → relay.quote.get (either side local routes to Relay)", async () => {
     await handleBridgeQuote(
-      { fromChain: "4663", fromToken: VIRTUAL, toChain: "base", toToken: BASE_USDC, amount: "1000000" },
+      { fromChain: "4663", fromToken: VIRTUAL, toChain: "base", toToken: BASE_USDC, amountRaw: "1000000" },
       CTX,
     );
     expect(lastCall().toolId).toBe("relay.quote.get");

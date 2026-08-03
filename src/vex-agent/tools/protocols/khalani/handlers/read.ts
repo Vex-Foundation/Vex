@@ -97,7 +97,7 @@ export function resolveWalletAddress(
   walletFamily = resolveWalletFamily(params),
 ): string {
   const selected = resolveSelectedAddress(context.walletResolution, context.walletPolicy, walletFamily);
-  const explicit = str(params, "address");
+  const explicit = str(params, "walletAddress");
   if (!explicit) return selected;
   // Default resolution may query an arbitrary explicit address. A session scope
   // is locked to its selected wallet — an explicit address must match it
@@ -226,10 +226,10 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     const toChain = str(params, "toChain");
     const fromToken = str(params, "fromToken");
     const toToken = str(params, "toToken");
-    const amount = str(params, "amount");
+    const amount = str(params, "amountRaw");
 
     if (!fromChain || !toChain || !fromToken || !toToken || !amount) {
-      return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
+      return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amountRaw" };
     }
 
     // Fee params AND the refund destination are never accepted from tool input

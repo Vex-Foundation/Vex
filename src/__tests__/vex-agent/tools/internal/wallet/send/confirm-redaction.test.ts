@@ -178,7 +178,7 @@ describe("handleWalletSendConfirm — secret redaction", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 

@@ -289,6 +289,26 @@ describe("buildIntentPreview — Stage 9 swap money/safety leg visibility", () =
   });
 });
 
+describe("buildIntentPreview — injected discovered-tool name", () => {
+  it("shows the human the DOTTED toolId, never the wire-safe mapped name", () => {
+    // Owner decision 2026-08-03: a discovered manifest is called directly under
+    // `<toolId with . → __>` and its arguments ARE the params (no envelope).
+    // The approval preview is the human's last look before a fund-moving
+    // action, so it must resolve back to the real tool.
+    const preview = buildIntentPreview("kyberswap__swap__execute", {
+      chain: "base",
+      tokenIn: "ETH",
+      tokenOut: "USDC",
+      amountIn: "1.0",
+    });
+
+    expect(preview.toolName).toBe("kyberswap.swap.execute");
+    expect(preview.namespace).toBe("kyberswap");
+    expect(preview.criticalArgs.chain).toBe("base");
+    expect(preview.criticalArgs.amountIn).toBe("1.0");
+  });
+});
+
 describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
   it("unwraps execute_tool({toolId, params}) → target tool preview", () => {
     const preview = buildIntentPreview("execute_tool", {

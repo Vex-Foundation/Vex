@@ -149,7 +149,7 @@ function bridgeParams(overrides: Record<string, unknown> = {}): Record<string, u
     fromToken: EVM_TOKEN,
     toChain: "solana",
     toToken: SOL_MINT_TOKEN,
-    amount: "1000000",
+    amountRaw: "1000000",
     ...overrides,
   };
 }
@@ -211,7 +211,7 @@ describe("buildBridgeIdentity — defaults", () => {
 
   it("throws on a missing required field", async () => {
     await expect(
-      mod.buildBridgeIdentity(SESSION_ID, bridgeParams({ amount: "" }), ctx()),
+      mod.buildBridgeIdentity(SESSION_ID, bridgeParams({ amountRaw: "" }), ctx()),
     ).rejects.toBeInstanceOf(VexError);
   });
 

@@ -35,9 +35,25 @@ export interface ToolVisibility {
   band?: "warning" | "barrier" | "critical";
   /**
    * True → require an active mission run (`missionRunActive === true`).
-   * Used by autonomy primitives like `loop_defer` — agent mode never loops.
+   * Used by autonomy primitives that only a mission run can act on.
    */
   requiresMissionActiveRun?: boolean;
+  /**
+   * True → require a session that can act on its own between user messages:
+   * an active mission run, OR an agent session with `permission: "full"`.
+   *
+   * Owner decree 2026-08-03, from the live "unlimited thoughts" incident. The
+   * only tool wearing this gate is `loop_defer`, and the incident was exactly
+   * its absence: a Full-Autonomous agent session waiting for a bridge to fill
+   * had no way to sleep, so it burned iterations re-reading state that could
+   * not have changed yet. The substrate always supported the shape — the wake
+   * row's `mission_run_id` is nullable and the executor has an agent-session
+   * branch — only the agent-facing tool was withheld.
+   *
+   * RESTRICTED agent sessions stay excluded on purpose: a human is in the loop
+   * there, so parking removes the user's turn and buys no autonomy.
+   */
+  requiresAutonomousLoop?: boolean;
   /** True → require an active mission run specifically (same as above today). */
   requiresMissionRun?: boolean;
   /** True → require mission setup/edit (`sessionKind === "mission"` and no active run). */

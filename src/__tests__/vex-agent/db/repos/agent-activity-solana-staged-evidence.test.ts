@@ -313,6 +313,10 @@ describe("recoverStaleHashlessIntents", () => {
         // planned but never signed is definitively not-attempted.
         "token_launch",
         "trench_fee",
+        // Migration 066 (the Uniswap Vex fee). Same leg again on a swap venue
+        // whose router takes no fee parameter: EVM-only, locally signed, owned
+        // by no sweep, and definitively not-attempted when it is never signed.
+        "swap_fee",
       ].sort(),
     );
   });
@@ -337,6 +341,8 @@ describe("recoverStaleHashlessIntents", () => {
       // Trench Express is chain 4663 only — the launch and its Vex fee leg are
       // EVM-only by construction.
       "token_launch", "trench_fee",
+      // Uniswap has no Solana deployment — its fee leg is EVM-only too.
+      "swap_fee",
     ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee

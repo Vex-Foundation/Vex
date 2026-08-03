@@ -25,6 +25,7 @@
 
 import { dropEmptyModelValues } from "../internal/arg-validation.js";
 import { parseLosslessNumber } from "../protocols/runtime/numeric-string-coercion.js";
+import { DEFAULT_DISCOVERY_LIMIT, MAX_DISCOVERY_LIMIT } from "../protocols/discovery.js";
 
 /** The validated arguments `discoverProtocolCapabilities` consumes. */
 export interface DiscoverToolsArgs {
@@ -80,6 +81,18 @@ export function parseDiscoverToolsArgs(rawArgs: Record<string, unknown>): Discov
       limit = parsed;
     } else {
       return reject("limit", "a number (max tools to return)", args.limit);
+    }
+    // An over-max limit is answered BY NAME, not silently clamped: the agent
+    // asked for a working set of a given size and must learn it will not get
+    // it, rather than discover the shortfall by missing a tool later.
+    if (limit > MAX_DISCOVERY_LIMIT) {
+      return {
+        ok: false,
+        message:
+          `discover_tools: limit ${limit} exceeds the maximum of ${MAX_DISCOVERY_LIMIT}. `
+          + `Send limit ${MAX_DISCOVERY_LIMIT} or lower (default ${DEFAULT_DISCOVERY_LIMIT}), `
+          + "or narrow the search with `namespace` / a sharper query; this search was NOT run.",
+      };
     }
   }
 

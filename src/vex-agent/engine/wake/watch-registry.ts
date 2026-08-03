@@ -34,24 +34,78 @@ export function registerWakeWatchEvaluator(evaluator: WakeWatchEvaluator): void 
   evaluators.set(evaluator.type, evaluator);
 }
 
+/**
+ * The watch types a caller may actually use, in registration order.
+ *
+ * Exists so a refusal can NAME the supported set instead of telling the model
+ * only what it may not do. A model that reads `No watch evaluator is registered
+ * for "x"` has learned nothing it can act on — the agent-facing-errors decree
+ * applies to a schema refusal exactly as it applies to a provider failure.
+ */
+export function listWakeWatchTypes(): readonly string[] {
+  return [...evaluators.keys()];
+}
+
+/**
+ * Per-condition validation outcome.
+ *
+ * Validation NEVER throws for the caller as a whole: one unusable condition
+ * must not take the surrounding `loop_defer` with it. The live incident this
+ * design answers is the reverse — a rejected watch failed the whole call, the
+ * run therefore did NOT park, and the agent kept thinking. A watch is an
+ * OPTIMIZATION over the timer; losing it must degrade to the timer, never to
+ * "still awake".
+ */
+export type WakeWatchValidation =
+  | { readonly kind: "accepted"; readonly condition: WakeWatchCondition }
+  | { readonly kind: "rejected"; readonly reason: string };
+
+export interface WakeWatchValidationResult {
+  readonly accepted: readonly WakeWatchCondition[];
+  readonly rejected: readonly string[];
+}
+
 /** Dispatch generic envelopes to their owning validators. */
 export async function validateWakeWatchConditions(
   conditions: readonly WakeWatchCondition[],
   context: InternalToolContext,
-): Promise<readonly WakeWatchCondition[]> {
-  const normalized: WakeWatchCondition[] = [];
+): Promise<WakeWatchValidationResult> {
+  const accepted: WakeWatchCondition[] = [];
+  const rejected: string[] = [];
   for (const condition of conditions) {
-    const type = condition.type;
-    if (typeof type !== "string" || type.length === 0) {
-      throw new Error("Watch condition type is required.");
-    }
-    const evaluator = evaluators.get(type);
-    if (evaluator === undefined) {
-      throw new Error(`No watch evaluator is registered for "${type}".`);
-    }
-    normalized.push(await evaluator.validate(condition, context));
+    const outcome = await validateOne(condition, context);
+    if (outcome.kind === "accepted") accepted.push(outcome.condition);
+    else rejected.push(outcome.reason);
   }
-  return normalized;
+  return { accepted, rejected };
+}
+
+async function validateOne(
+  condition: WakeWatchCondition,
+  context: InternalToolContext,
+): Promise<WakeWatchValidation> {
+  const type = condition.type;
+  const supported = listWakeWatchTypes();
+  const supportedList = supported.length > 0 ? supported.join(", ") : "(none)";
+  if (typeof type !== "string" || type.length === 0) {
+    return {
+      kind: "rejected",
+      reason: `a watch condition needs a "type" string. Supported watch types: ${supportedList}.`,
+    };
+  }
+  const evaluator = evaluators.get(type);
+  if (evaluator === undefined) {
+    return {
+      kind: "rejected",
+      reason: `watch type "${type}" is not supported. Supported watch types: ${supportedList}.`,
+    };
+  }
+  try {
+    return { kind: "accepted", condition: await evaluator.validate(condition, context) };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "condition validation failed";
+    return { kind: "rejected", reason: `watch "${type}": ${detail}` };
+  }
 }
 
 /** A malformed persisted condition or unknown variant must never fire. */

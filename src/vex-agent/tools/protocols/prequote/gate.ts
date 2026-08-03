@@ -468,7 +468,7 @@ function buildEvmIdentity(
 }
 
 /**
- * Build the Solana trade identity. `inputToken`/`outputToken` are symbol-OR-mint
+ * Build the Solana trade identity. `tokenIn`/`tokenOut` are symbol-OR-mint
  * at execute; resolve BOTH to their mint with the SAME resolver
  * `solana.swap.execute` (`handlers/core.ts`) uses (`requireJupiterResolvedToken`,
  * which returns `.address` = mint) so the gate mint matches the recorded mint.
@@ -483,8 +483,8 @@ async function buildSolanaIdentity(
   params: Record<string, unknown>,
   selectedWallet: string,
 ): Promise<GateIdentity> {
-  const inputParam = typeof params.inputToken === "string" ? params.inputToken : "";
-  const outputParam = typeof params.outputToken === "string" ? params.outputToken : "";
+  const inputParam = typeof params.tokenIn === "string" ? params.tokenIn : "";
+  const outputParam = typeof params.tokenOut === "string" ? params.tokenOut : "";
   const [inToken, outToken] = await Promise.all([
     requireJupiterResolvedToken(inputParam),
     requireJupiterResolvedToken(outputParam),
@@ -494,7 +494,10 @@ async function buildSolanaIdentity(
     chainId: null,
     tokenIn: inToken.address,
     tokenOut: outToken.address,
-    amount: String(params.amount),
+    // Same typeof guard as the EVM identity: a missing/wrong-typed `amountIn`
+    // yields "" here, which cannot match the recorder's canonicalized value →
+    // fail-closed BLOCK rather than a hash over "undefined".
+    amount: typeof params.amountIn === "string" ? params.amountIn : "",
     recipient: selectedWallet,
     approveExact: false,
   };

@@ -24,6 +24,7 @@ export function buildToolContext(
   context: EngineContext,
   dispatchBand: ReturnType<typeof computeBand>,
   preparationBypassesBarrier: boolean,
+  abortSignal: AbortSignal | undefined,
 ): InternalToolContext {
   const toolContext: InternalToolContext = {
     sessionId: context.sessionId,
@@ -42,6 +43,10 @@ export function buildToolContext(
     sourceSession: context.sessionId,
     walletResolution: buildSessionWalletResolution(context),
     walletPolicy: context.walletPolicy,
+    // The SAME signal the batch's two boundary checks read — one signal, one
+    // meaning, no new controller. Conditionally spread so a batch without one
+    // omits the key rather than setting it to `undefined`.
+    ...(abortSignal ? { abortSignal } : {}),
   };
 
   return toolContext;

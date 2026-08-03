@@ -35,8 +35,8 @@
  * the bridge prequote match-hash).
  *
  * Units: `amountIn` is the HUMAN decimal of `tokenIn` (e.g. "1.5"), matching
- * the kyber/uniswap `amountIn` string and the Jupiter `amount` number —
- * translation preserves the value, it does not convert units.
+ * the kyber/uniswap/jupiter `amountIn` string — translation preserves the
+ * value, it does not convert units.
  */
 
 import { z } from "zod";
@@ -46,6 +46,7 @@ import { classifySwapFamily, isEvmSwapTokenInput } from "./internal/swap-family.
 import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
+import { khalaniSlippageRejection } from "./protocols/khalani/slippage-unsupported.js";
 import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "./registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -165,15 +166,13 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   }
 
   if (family.kind === "solana") {
-    // Jupiter execute manifest types `amount` as a NUMBER (human decimal).
-    const amount = Number(a.amountIn);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new MutatingAliasRouteError(`swap_execute: amountIn "${a.amountIn}" is not a positive number.`);
-    }
+    // W5a: the Jupiter execute manifest now uses the SAME keys as the alias
+    // (tokenIn/tokenOut/amountIn, human decimal STRING) — pass them through
+    // rather than round-tripping the amount through a float.
     const params: Record<string, unknown> = {
-      inputToken: a.tokenIn,
-      outputToken: a.tokenOut,
-      amount,
+      tokenIn: a.tokenIn,
+      tokenOut: a.tokenOut,
+      amountIn: a.amountIn,
       ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
     };
     return { toolId: "solana.swap.execute", params };
@@ -283,7 +282,7 @@ function routeSwapExecuteUniswap(
  * the agent presents ONE bridge surface: preview with `bridge_quote`, execute
  * with `bridge`. Translation is a pass-through to `khalani.bridge`'s EXACT param
  * keys (verified against the khalani manifest:
- * fromChain/fromToken/toChain/toToken/amount + the optional overrides). `dryRun`
+ * fromChain/fromToken/toChain/toToken/amountRaw + the optional overrides). `dryRun`
  * is intentionally NOT accepted — the alias is the real broadcast; a dry run is
  * reached via `execute_tool({ toolId:"khalani.bridge", params:{ dryRun:true }})`.
  * The EXECUTE-ONLY `routeId`/`depositMethod` knobs are ALSO not accepted (8c
@@ -295,7 +294,7 @@ function routeSwapExecuteUniswap(
  * never derives a fee from model params. `routeBridge` rejects them by name
  * before parsing. See the policy in `@tools/khalani/request.js`.
  *
- * Units: `amount` is in SMALLEST units (wei/lamports), matching the khalani
+ * Units: `amountRaw` is in RAW base units (wei/lamports), matching the khalani
  * bridge manifest — translation preserves the value, it does not convert.
  */
 // `routeId` / `depositMethod` are deliberately ABSENT (8c security fix). They are
@@ -310,13 +309,14 @@ const BridgeArgs = z
     fromToken: z.string().min(1, { message: "fromToken is required" }),
     toChain: z.string().min(1, { message: "toChain is required" }),
     toToken: z.string().min(1, { message: "toToken is required" }),
-    amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+    amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
     tradeType: z.string().min(1).optional(),
     fromAddress: z.string().min(1).optional(),
     recipient: z.string().min(1).optional(),
     filler: z.string().min(1).optional(),
-    // Relay-only slippage (bps string). Ignored on the Khalani path.
-    slippageBps: z.string().min(1).optional(),
+    // Relay-only price protection, in basis points (1 bps = 0.01%). REJECTED by
+    // name on the Khalani branch — Khalani exposes no slippage tolerance.
+    slippageBps: z.number().int().nonnegative().optional(),
   })
   .strict();
 
@@ -343,6 +343,12 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
     );
   }
 
+  // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
+  // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
+  // it had bought price protection Khalani never offered.
+  const khalaniSlippage = khalaniSlippageRejection("bridge", args);
+  if (khalaniSlippage !== null) throw new MutatingAliasRouteError(khalaniSlippage);
+
   const parsed = BridgeArgs.safeParse(args);
   if (!parsed.success) {
     throw new MutatingAliasRouteError(
@@ -360,7 +366,7 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
       fromToken: a.fromToken,
       toChain: a.toChain,
       toToken: a.toToken,
-      amount: a.amount,
+      amountRaw: a.amountRaw,
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
     if (a.recipient !== undefined) params.recipient = a.recipient;
@@ -373,7 +379,7 @@ function routeBridge(args: Record<string, unknown>): ResolvedAliasTarget {
     fromToken: a.fromToken,
     toChain: a.toChain,
     toToken: a.toToken,
-    amount: a.amount,
+    amountRaw: a.amountRaw,
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
@@ -398,13 +404,13 @@ const BridgeExecuteRelayArgs = z
     fromToken: z.string().min(1, { message: "fromToken is required" }),
     toChain: z.string().min(1, { message: "toChain is required" }),
     toToken: z.string().min(1, { message: "toToken is required" }),
-    amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+    amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
     tradeType: z.string().min(1).optional(),
     recipient: z.string().min(1).optional(),
     // No `refundTo` — the refund destination is derived from the selected
     // source wallet on both venues (refund-destination policy in
     // `@tools/khalani/request.js`).
-    slippageBps: z.string().min(1).optional(),
+    slippageBps: z.number().int().nonnegative().optional(),
   })
   .strict();
 
@@ -459,7 +465,7 @@ function routeBridgeExecuteRelay(
     fromToken: a.fromToken,
     toChain: a.toChain,
     toToken: a.toToken,
-    amount: a.amount,
+    amountRaw: a.amountRaw,
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.recipient !== undefined) params.recipient = a.recipient;

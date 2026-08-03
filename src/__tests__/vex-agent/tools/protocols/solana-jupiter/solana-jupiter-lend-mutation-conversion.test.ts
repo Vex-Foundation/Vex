@@ -136,7 +136,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
 
   it("deposit: records the intent BEFORE signing (kind='lend', chainFamily='solana', tokenIn=asset), then signs/persists/submits in order", async () => {
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -184,7 +184,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
 
   it("withdraw: records tokenOut (not tokenIn) with role lend_withdraw", async () => {
     await LEND_HANDLERS["solana.lend.withdraw"]!(
-      { asset: "USDC_MINT", amount: "500000" },
+      { asset: "USDC_MINT", amountRaw: "500000" },
       ctx(),
     );
 
@@ -205,7 +205,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     const hugeRaw = "18446744073709551615";
     expect(Number(hugeRaw)).toBeGreaterThan(Number.MAX_SAFE_INTEGER);
 
-    await LEND_HANDLERS["solana.lend.deposit"]!({ asset: "USDC_MINT", amount: hugeRaw }, ctx());
+    await LEND_HANDLERS["solana.lend.deposit"]!({ asset: "USDC_MINT", amountRaw: hugeRaw }, ctx());
 
     const intentArg = mockCreateAgentActivityIntent.mock.calls[0][0];
     expect(intentArg.events[0].tokenIn).toEqual({
@@ -218,7 +218,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     mockResolveJupiterToken.mockRejectedValue(new Error("Jupiter Tokens API V2 key is not configured"));
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "500000" },
+      { asset: "USDC_MINT", amountRaw: "500000" },
       ctx(),
     );
 
@@ -236,7 +236,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("a pre-broadcast provider rejection still records the resolved leg metadata", async () => {
     mockRequestDeposit.mockRejectedValue(new Error("insufficient balance for deposit"));
 
-    await LEND_HANDLERS["solana.lend.deposit"]!({ asset: "USDC_MINT", amount: "500000" }, ctx());
+    await LEND_HANDLERS["solana.lend.deposit"]!({ asset: "USDC_MINT", amountRaw: "500000" }, ctx());
 
     const failArg = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0][0];
     expect(failArg.event.tokenIn).toEqual({
@@ -249,7 +249,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     mockRequestDeposit.mockRejectedValue(new Error("insufficient balance for deposit"));
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -271,7 +271,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     mockPrepareVersionedTx.mockRejectedValue(new Error("Refusing to sign: transaction requires 2 signers, expected exactly 1."));
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -287,7 +287,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: false, row: {} });
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -303,7 +303,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     });
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -318,7 +318,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     mockSubmitOverRpc.mockResolvedValue({ kind: "transport_uncertain", cause: new Error("fetch failed") });
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -335,7 +335,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     });
 
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -354,7 +354,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
 
   it("fails closed without an active session — no provider call, no recording", async () => {
     const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx({ sessionId: undefined }),
     );
 

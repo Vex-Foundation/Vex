@@ -103,10 +103,10 @@ describe("pendle.yields — one cross-chain read", () => {
     expect(mockListMarkets.mock.calls[0]![0]).toEqual({ isActive: true });
   });
 
-  it("keeps chainId out of the request even when `chains` scopes the view", async () => {
+  it("keeps chainId out of the request even when `chainIds` scopes the view", async () => {
     // The endpoint takes a SINGLE chain id (a csv is a documented 400), so a
     // multi-chain subset must be one cross-chain read filtered locally.
-    await run({ chains: "ethereum,base" });
+    await run({ chainIds: "ethereum,base" });
 
     expect(mockListMarkets).toHaveBeenCalledTimes(1);
     expect(mockListMarkets.mock.calls[0]![0]).not.toHaveProperty("chainId");
@@ -251,9 +251,9 @@ describe("pendle.yields — filters", () => {
   });
 
   it("scopes by chain and returns nothing for a chain with no rows", async () => {
-    const { data } = await run({ chains: "base" });
+    const { data } = await run({ chainIds: "base" });
     expect(data!.matched).toBe(0);
-    expect(data!.filtersApplied).toMatchObject({ chains: ["base"] });
+    expect(data!.filtersApplied).toMatchObject({ chainIds: ["base"] });
   });
 
   it("keeps only the requested field groups", async () => {
@@ -287,9 +287,9 @@ describe("pendle.yields — refusals", () => {
   });
 
   it("REFUSES an unsupported chain rather than returning a narrower view", async () => {
-    const result = await run({ chains: "solana" });
+    const result = await run({ chainIds: "solana" });
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chains");
+    expect(result.output).toContain("chainIds");
   });
 
   it("reports a catalogue outage as a failure, never as zero markets", async () => {

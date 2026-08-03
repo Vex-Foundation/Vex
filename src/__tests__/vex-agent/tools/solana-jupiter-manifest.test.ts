@@ -136,12 +136,33 @@ describe("solana-jupiter manifest", () => {
 
   // ── Required params ──────────────────────────────────────────────
 
-  it("solana.swap.execute requires inputToken, outputToken, amount", () => {
+  it("solana.swap.execute requires tokenIn, tokenOut, amountIn", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.execute")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("inputToken");
-    expect(required).toContain("outputToken");
-    expect(required).toContain("amount");
+    expect(required).toContain("tokenIn");
+    expect(required).toContain("tokenOut");
+    expect(required).toContain("amountIn");
+  });
+
+  // W5a: the retired spellings must be gone from BOTH swap tools — a manifest
+  // that still declares one would keep the runtime accepting it silently.
+  it("neither swap tool declares the retired inputToken/outputToken/amount keys", () => {
+    for (const toolId of ["solana.swap.quote", "solana.swap.execute"]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const keys = tool.params.map(p => p.key);
+      expect(keys).not.toContain("inputToken");
+      expect(keys).not.toContain("outputToken");
+      expect(keys).not.toContain("amount");
+    }
+  });
+
+  // The amount must be a STRING: a declared-number amount is exactly the
+  // invariant violation `runtime/numeric-string-coercion.ts` documents.
+  it("solana.swap.* amountIn is a string param", () => {
+    for (const toolId of ["solana.swap.quote", "solana.swap.execute"]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      expect(tool.params.find(p => p.key === "amountIn")?.type).toBe("string");
+    }
   });
 
   it("solana.predict.buy requires marketId, side, amountUsdc", () => {
@@ -279,10 +300,10 @@ describe("solana-jupiter manifest", () => {
     expect(tool.params).toHaveLength(0);
   });
 
-  it("solana.predict.orders requires address and declares optional limit/offset", () => {
+  it("solana.predict.orders requires walletAddress and declares optional limit/offset", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.orders")!;
     const byKey = new Map(tool.params.map(p => [p.key, p]));
-    expect(byKey.get("address")?.required).toBe(true);
+    expect(byKey.get("walletAddress")?.required).toBe(true);
     expect(byKey.get("limit")?.type).toBe("number");
     expect(byKey.get("offset")?.type).toBe("number");
     expect(byKey.get("limit")?.required).toBeFalsy();
@@ -320,16 +341,16 @@ describe("solana-jupiter manifest", () => {
 
   // ── Discovery & social tools (W1-F, Packet F) ────────────────────
 
-  it("solana.predict.profile requires address", () => {
+  it("solana.predict.profile requires walletAddress", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.profile")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toEqual(["address"]);
+    expect(required).toEqual(["walletAddress"]);
   });
 
-  it("solana.predict.pnlHistory requires address and interval, declares optional count capped at 100 (F2 owner-wide limit)", () => {
+  it("solana.predict.pnlHistory requires walletAddress and interval, declares optional count capped at 100 (F2 owner-wide limit)", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.pnlHistory")!;
     const byKey = new Map(tool.params.map(p => [p.key, p]));
-    expect(byKey.get("address")?.required).toBe(true);
+    expect(byKey.get("walletAddress")?.required).toBe(true);
     expect(byKey.get("interval")?.required).toBe(true);
     expect(byKey.get("count")?.type).toBe("number");
     expect(byKey.get("count")?.required).toBeFalsy();
@@ -357,10 +378,10 @@ describe("solana-jupiter manifest", () => {
     expect(tool.params).toHaveLength(0);
   });
 
-  it("solana.predict.suggestedEvents requires pubkey and declares optional provider/includeMarkets", () => {
+  it("solana.predict.suggestedEvents requires walletAddress and declares optional provider/includeMarkets", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.suggestedEvents")!;
     const byKey = new Map(tool.params.map(p => [p.key, p]));
-    expect(byKey.get("pubkey")?.required).toBe(true);
+    expect(byKey.get("walletAddress")?.required).toBe(true);
     expect(byKey.get("provider")?.type).toBe("string");
     expect(byKey.get("includeMarkets")?.type).toBe("boolean");
     expect(byKey.get("provider")?.required).toBeFalsy();
@@ -482,7 +503,7 @@ describe("solana-jupiter manifest", () => {
     const byKey = new Map(tool.params.map(p => [p.key, p]));
     expect(byKey.get("vaultId")?.required).toBe(true);
     expect(byKey.get("vaultId")?.type).toBe("number");
-    for (const key of ["depositAmount", "withdrawAmount", "borrowAmount", "repayAmount"]) {
+    for (const key of ["depositAmountRaw", "withdrawAmountRaw", "borrowAmountRaw", "repayAmountRaw"]) {
       expect(byKey.get(key)?.type, key).toBe("string");
       expect(byKey.get(key)?.required, key).toBeFalsy();
     }

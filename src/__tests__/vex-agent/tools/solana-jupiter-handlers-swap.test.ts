@@ -7,7 +7,7 @@ import { SOLANA_JUPITER_HANDLERS } from "../../../vex-agent/tools/protocols/sola
 describe("solana-jupiter handlers — swap", () => {
   it("solana.swap.quote fails without required params", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "SOL" },
+      { tokenIn: "SOL" },
       ctx(),
     );
     expect(result.success).toBe(false);

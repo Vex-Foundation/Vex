@@ -311,6 +311,9 @@ export class OpenRouterProvider implements InferenceProvider {
       config,
       context,
       this.failoverDeps(),
+      // The caller's Stop reaches the capacity backoff too: sitting out an
+      // honoured `Retry-After` is a wait like any other.
+      signal,
     );
 
     const routing = response.openrouterMetadata
@@ -377,6 +380,7 @@ export class OpenRouterProvider implements InferenceProvider {
       config,
       undefined,
       this.failoverDeps(),
+      signal,
     );
 
     const msg = response.choices?.[0]?.message;
@@ -405,6 +409,9 @@ export class OpenRouterProvider implements InferenceProvider {
       config,
       context,
       this.failoverDeps(),
+      // The caller's Stop reaches the capacity backoff too: sitting out an
+      // honoured `Retry-After` is a wait like any other.
+      signal,
     );
 
     try {

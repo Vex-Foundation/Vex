@@ -136,9 +136,9 @@ export async function executeKhalaniBridge(
   const toChain = str(params, "toChain");
   const fromToken = str(params, "fromToken");
   const toToken = str(params, "toToken");
-  const amount = str(params, "amount");
+  const amount = str(params, "amountRaw");
   if (!fromChain || !toChain || !fromToken || !toToken || !amount) {
-    return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
+    return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amountRaw" };
   }
 
   // Fee params AND the refund destination are never accepted from tool input
@@ -253,7 +253,7 @@ export async function executeKhalaniBridge(
 
   // 3b. Vex integrator fee (`@tools/bridge-fee`) — split BEFORE the quote so
   // the venue prices the amount it will actually receive and the `amountOut`
-  // the agent is shown is what the user actually gets. `params.amount` stays
+  // the agent is shown is what the user actually gets. `params.amountRaw` stays
   // the TOTAL debited (Kyber/Jupiter `currency_in` parity); the fee leaves as
   // Vex's own transfer AFTER the deposit confirms.
   let feeSplit: BridgeFeeSplit;
@@ -868,7 +868,7 @@ export async function executeKhalaniBridge(
   const feeOutcome = await runVexFeeLeg();
 
   // 16. In-turn order poll — truthful, never fabricated (R6/B4/Q2).
-  const poll = await pollKhalaniOrderToTerminal(pollOrderId);
+  const poll = await pollKhalaniOrderToTerminal(pollOrderId, context.abortSignal);
   return interpretPoll({
     poll, orderId: pollOrderId, depositTxHash, recordedLegs, toChainName,
     pendingBase: { ...pendingBase, vexFee: { disclosure: vexFee, ...feeOutcome } },

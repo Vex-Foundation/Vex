@@ -201,7 +201,7 @@ export interface PendleYieldsQuery {
 export const PENDLE_YIELDS_DEFAULT_LIMIT = 20;
 
 export function parsePendleYieldsParams(p: Record<string, unknown>): PendleReadParams<PendleYieldsQuery> {
-  const chains = readChains(p.chains, "chains");
+  const chains = readChains(p.chainIds, "chainIds");
   if (!chains.ok) return chains;
 
   const numeric: Array<[keyof PendleYieldsQuery, string, { min?: number; max?: number; integer?: boolean }]> = [
@@ -311,7 +311,7 @@ export interface PendlePositionsQuery {
 export function parsePendlePositionParams(
   p: Record<string, unknown>,
 ): PendleReadParams<PendlePositionsQuery> {
-  const chains = readChains(p.chains, "chains");
+  const chains = readChains(p.chainIds, "chainIds");
   if (!chains.ok) return chains;
 
   const kinds = parseFieldList(p.kinds, "kinds", PENDLE_POSITION_KINDS);

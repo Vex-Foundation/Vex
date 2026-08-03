@@ -68,6 +68,7 @@ describe("adaptRelayQuote — happy path", () => {
       amountRaw: "1000000000000000",
       amountFormatted: "0.001",
       amountUsd: "2.50",
+      minimumAmountRaw: null,
     });
     expect(adapted.currencyOut.amountUsd).toBe("2.49");
     expect(adapted.currencyOut.currencyAddress).toBeNull();
@@ -90,6 +91,7 @@ describe("adaptRelayQuote — adversarial / tolerant", () => {
     expect(adapted.timeEstimateSeconds).toBeNull();
     expect(adapted.currencyIn).toEqual({
       symbol: null, decimals: null, currencyAddress: null, amountRaw: null, amountFormatted: null, amountUsd: null,
+      minimumAmountRaw: null,
     });
     expect(adapted.currencyOut.amountUsd).toBeNull();
     expect(adapted.feeUsdByBucket).toEqual({});

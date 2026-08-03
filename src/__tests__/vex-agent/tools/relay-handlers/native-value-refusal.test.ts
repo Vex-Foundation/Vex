@@ -111,7 +111,7 @@ const CHAINS = [
   { id: 4663, name: "robinhood", displayName: "Robinhood Chain", currency: { symbol: "ETH", decimals: 18 }, vmType: "evm", depositEnabled: true, disabled: false },
 ];
 
-const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: "native", amount: "1000000000000000" };
+const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: "native", amountRaw: "1000000000000000" };
 
 function txStep(id: string, chainId = 8453) {
   return { id, kind: "transaction", requestId: "0xreq", items: [{ data: { to: "0x2222222222222222222222222222222222222222", value: "1000000000000000", data: "0x", chainId } }] };
@@ -150,7 +150,7 @@ beforeEach(() => {
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue(quote());
   mockAdapt.mockReturnValue(adaptedOk());
-  mockHealth.mockReturnValue({ serviceable: true, origin: CHAINS[0], destination: CHAINS[1] });
+  mockHealth.mockReturnValue({ serviceable: true, origin: CHAINS[0], destination: CHAINS[1], blockProductionLagging: [] });
   mockCorrelation.mockReturnValue({ ok: true, requestId: "0xreq" });
   mockStepPolicy.mockReturnValue({ ok: true, steps: [depositStep] });
   mockCheckInFlight.mockResolvedValue({ inFlight: false, existing: null });

@@ -181,7 +181,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
       data: [structuredClone(FULL_ORDER)],
       pagination: { start: 0, end: 20, total: 1, hasNext: false },
     });
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ address: ADDRESS }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ walletAddress: ADDRESS }, ctx());
     expect(result.success).toBe(true);
     expect(getJupiterPredictionOrders).toHaveBeenCalledWith(
       expect.objectContaining({ ownerPubkey: ADDRESS, start: 0, end: 20 }),
@@ -195,7 +195,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("orders: rejects a limit outside 1-100 instead of clamping, without calling the SDK", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!(
-      { address: ADDRESS, limit: 500 },
+      { walletAddress: ADDRESS, limit: 500 },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -205,7 +205,7 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
 
   it("orders: rejects a negative offset instead of clamping, without calling the SDK", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!(
-      { address: ADDRESS, offset: -1 },
+      { walletAddress: ADDRESS, offset: -1 },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -220,14 +220,14 @@ describe("solana-jupiter handlers — predict pre-trade visibility & orders (W1-
   it("orders: maps an HTTP 403 (geo-block) into a clear regional message", async () => {
     getJupiterPredictionOrders.mockRejectedValue(providerHttpError(403, "HTTP 403: Forbidden"));
     await expect(
-      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ address: ADDRESS }, ctx()),
+      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ walletAddress: ADDRESS }, ctx()),
     ).rejects.toThrow(/not available from your current region/);
   });
 
   it("orders: a non-403 error is NOT rewritten", async () => {
     getJupiterPredictionOrders.mockRejectedValue(providerHttpError(500, "HTTP 500: Internal Server Error"));
     await expect(
-      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ address: ADDRESS }, ctx()),
+      SOLANA_JUPITER_HANDLERS["solana.predict.orders"]!({ walletAddress: ADDRESS }, ctx()),
     ).rejects.toThrow("HTTP 500");
   });
 

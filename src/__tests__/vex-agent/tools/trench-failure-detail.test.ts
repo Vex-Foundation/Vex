@@ -39,6 +39,6 @@ describe("trenchFailureDetail — real cause, agent-friendly", () => {
     const err = Object.assign(new Error("x".repeat(2000)), { shortMessage: "nonce too low" });
     const detail = trenchFailureDetail("trench.trade_execute", err);
     expect(detail).toBe("provider error: nonce too low");
-    expect(trenchFailureDetail("t", new Error("y".repeat(2000))).length).toBeLessThan(320);
+    expect(trenchFailureDetail("t", new Error("y".repeat(2000))).length).toBeLessThan(440);
   });
 });

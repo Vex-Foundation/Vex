@@ -42,11 +42,13 @@ describe("summarizeProtocolError — VexError hint surfacing (P0-1)", () => {
     expect(s.message).toMatch(/\[(url|body|auth)\]/);
   });
 
-  it("caps the COMBINED message+hint (never raw-appends past the 200-char cap)", () => {
-    const err = new VexError("X", "m".repeat(180), "h".repeat(180));
+  it("caps the COMBINED message+hint (never raw-appends past the cap)", () => {
+    const err = new VexError("X", "m".repeat(300), "h".repeat(300));
     const s = summarizeProtocolError(err);
-    // 200 chars + the single ellipsis marker.
-    expect(s.message.length).toBeLessThanOrEqual(201);
+    // W1 (SPEC §1.5) raised `MAX_SAFE_ERROR_MESSAGE` 200 → 320: a stable code,
+    // a status, a provider sentence and a field-level reason must coexist.
+    // 320 chars + the single ellipsis marker.
+    expect(s.message.length).toBeLessThanOrEqual(321);
     expect(s.message.endsWith("…")).toBe(true);
   });
 
@@ -276,12 +278,15 @@ describe("summarizeProtocolError — who actually rejected the call", () => {
     }
   });
 
-  it("keeps provider_error when a PROVIDER answered — httpStatus proves the verdict was theirs", () => {
+  it("reads the STATUS when a provider answered — the verdict is theirs, and 400 means fix the input", () => {
     // Same code, but `parseJsonResponse` stamped a status: the provider parsed
-    // our request and refused it, so the label must stay theirs.
+    // our request and refused it, so the label must come from the provider's
+    // own verdict rather than from our local code set. W1 (SPEC §1.5) makes
+    // that verdict the STATUS: a 4xx is "fix the named parameter", not "the
+    // provider malfunctioned, retry".
     const err = new VexError(ErrorCodes.KYBER_TOKEN_NOT_FOUND, "token not found");
     err.httpStatus = 400;
-    expect(summarizeProtocolError(err).category).toBe("provider_error");
+    expect(summarizeProtocolError(err).category).toBe("invalid_request");
   });
 
   it("keeps provider_error when externalName proves a provider error mapper produced it", () => {
@@ -452,10 +457,17 @@ describe("summarizeProtocolError — Vex-authored safety refusals", () => {
   });
 
   it("yields to a provider's verdict when httpStatus proves one answered", () => {
+    // The refusal was NOT ours: a status means the venue answered. W1 reads the
+    // status itself, so a 400 lands on `invalid_request` and a 5xx on
+    // `provider_error` — either way, never `policy_refusal`.
     for (const code of POLICY_REFUSAL_CODES) {
-      const err = new VexError(code, "refused");
-      err.httpStatus = 400;
-      expect(summarizeProtocolError(err).category).toBe("provider_error");
+      const badRequest = new VexError(code, "refused");
+      badRequest.httpStatus = 400;
+      expect(summarizeProtocolError(badRequest).category).toBe("invalid_request");
+
+      const serverError = new VexError(code, "refused");
+      serverError.httpStatus = 502;
+      expect(summarizeProtocolError(serverError).category).toBe("provider_error");
     }
   });
 

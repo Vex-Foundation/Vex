@@ -60,6 +60,14 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
 }));
 
+// Wave P: `fullBalanceSync` consults the group-wide pending predicate before it
+// may snapshot. Default is "nothing pending" so every pre-existing case keeps
+// exercising the snapshot path unchanged.
+const mockHasPendingActivity = vi.fn();
+vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+  hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
+}));
+
 const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync } = await import(
   "../../../vex-agent/sync/balance-sync.js"
 );
@@ -88,6 +96,7 @@ beforeEach(() => {
   mockGetBalancesByChain.mockResolvedValue([]);
   mockGetLatestSnapshot.mockResolvedValue(null);
   mockInsertSnapshot.mockResolvedValue({ snapshotId: 1, pnlVsPrev: null });
+  mockHasPendingActivity.mockResolvedValue(false);
   // Default inventory: one EVM + one Solana wallet.
   mockListWallets.mockImplementation((family: string) =>
     family === "solana"
@@ -200,6 +209,102 @@ describe("fullBalanceSync", () => {
     const result = await fullBalanceSync();
     // 1 EVM + 1 Solana, each totalUsd 100 → aggregate 200.
     expect(result.totalUsd).toBe(200);
+  });
+});
+
+// ── Wave P: the group-wide no-pending snapshot guard ────────────
+//
+// A snapshot taken while a transaction is in flight records a balance the user
+// never actually held, and every later `pnlVsPrev` is computed against it. The
+// guard therefore suppresses the snapshot for the WHOLE cycle, never per wallet.
+
+describe("fullBalanceSync — snapshot guard", () => {
+  const threeWallets = (family: string) =>
+    family === "solana"
+      ? [{ id: "sol_1", address: SOL_A, label: "S1", createdAt: "" }]
+      : [
+          { id: "evm_1", address: EVM_A, label: "E1", createdAt: "" },
+          { id: "evm_2", address: EVM_B, label: "E2", createdAt: "" },
+        ];
+
+  it("skips the snapshot GROUP-WIDE while any pending activity exists", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockHasPendingActivity.mockResolvedValue(true);
+
+    const result = await fullBalanceSync();
+
+    // Not one partial group — ZERO snapshot rows. A half-populated
+    // snapshotGroupId is the failure this guard exists to prevent.
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    expect(result.snapshots).toEqual([]);
+  });
+
+  it("still refreshes balances for every wallet while pending", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockHasPendingActivity.mockResolvedValue(true);
+
+    const result = await fullBalanceSync();
+
+    // Suppressing balances too would freeze the portfolio display for the whole
+    // duration of a pending swap. Only the SNAPSHOT is deferred.
+    expect(result.wallets).toHaveLength(3);
+    expect(mockScan).toHaveBeenCalled();
+  });
+
+  it("asks the predicate ONCE, before the wallet loop, for every wallet at once", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+
+    await fullBalanceSync();
+
+    expect(mockHasPendingActivity).toHaveBeenCalledTimes(1);
+    expect(mockHasPendingActivity.mock.calls[0]?.[0]).toEqual(
+      expect.arrayContaining([EVM_A, EVM_B, SOL_A]),
+    );
+  });
+
+  it("resumes the full snapshot group once everything has terminalized", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockHasPendingActivity.mockResolvedValue(true);
+    await fullBalanceSync();
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+
+    mockHasPendingActivity.mockResolvedValue(false);
+    let n = 0;
+    mockInsertSnapshot.mockImplementation(async () => ({ snapshotId: ++n, pnlVsPrev: null }));
+
+    const resumed = await fullBalanceSync();
+
+    // The whole group lands in ONE cycle, so `pnlVsPrev` is never computed from
+    // a snapshot set that covers only some of the wallets.
+    expect(resumed.snapshots).toHaveLength(3);
+    const groupIds = new Set(
+      mockInsertSnapshot.mock.calls.map((c) => (c[0] as { snapshotGroupId: string }).snapshotGroupId),
+    );
+    expect(groupIds.size).toBe(1);
+  });
+
+  it("snapshot:'always' bypasses the guard without even asking", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockHasPendingActivity.mockResolvedValue(true);
+
+    // `initSync`'s startup snapshot is authoritative by design, and so is a
+    // user-initiated refresh — both mean "record what is true right now".
+    const result = await fullBalanceSync({ snapshot: "always" });
+
+    expect(mockHasPendingActivity).not.toHaveBeenCalled();
+    expect(result.snapshots).toHaveLength(3);
+  });
+
+  it("a failed pending probe defers the snapshot — it never guesses 'settled'", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockHasPendingActivity.mockRejectedValue(new Error("db unavailable"));
+
+    const result = await fullBalanceSync();
+
+    // A missing snapshot is recoverable on the next cycle; a wrong one poisons
+    // `pnlVsPrev` for every cycle after it.
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    expect(result.wallets).toHaveLength(3);
   });
 });
 

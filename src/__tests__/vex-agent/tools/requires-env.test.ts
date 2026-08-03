@@ -105,9 +105,11 @@ describe("requiresEnv filtering", () => {
 
     it("shows all 34 solana tools when JUPITER_API_KEY is set", async () => {
       process.env.JUPITER_API_KEY = "test-jupiter-key";
+      // Ranked mode clamps to MAX_DISCOVERY_LIMIT (20), so "every tool of the
+      // namespace is visible" is list mode's question — list ignores `limit`.
       const result = await discoverProtocolCapabilities({
         namespace: "solana",
-        limit: 100,
+        list: true,
       });
       expect(result.count).toBe(34);
     });

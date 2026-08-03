@@ -105,7 +105,9 @@ describe("virtuals.list", () => {
   it("rejects an unknown chain with the enum in the message", async () => {
     const res = await VIRTUALS_HANDLERS["virtuals.list"]!({ chain: "DOGECHAIN" }, CTX);
     expect(res.success).toBe(false);
-    expect(res.output).toContain("BASE, SOLANA, ROBINHOOD, ETH");
+    // The refusal names the vocabulary the MANIFEST gave the agent (canonical
+    // lowercase slugs), not the provider's internal UPPERCASE spelling.
+    expect(res.output).toContain("base, solana, robinhood, ethereum");
   });
 
   it("normalizes chain case and maps sort keywords to API fields", async () => {
@@ -410,7 +412,7 @@ describe("virtuals param DX", () => {
   it("virtuals.list orders by sortBy, and keeps accepting sort", async () => {
     const listManifest = VIRTUALS_TOOLS.find((t) => t.toolId === "virtuals.list")!;
     for (const key of ["sortBy", "sort"]) {
-      const params = { chain: "ROBINHOOD", [key]: "volume" };
+      const params = { chain: "robinhood", [key]: "volume" };
       expect(validateProtocolParams(listManifest, params)).toEqual({ ok: true });
 
       const client = mockClient();

@@ -34,6 +34,7 @@ import { buildRelayBridgeIdentity } from "@vex-agent/tools/protocols/prequote/id
 import { computePrequoteMatchHash } from "@vex-agent/tools/protocols/prequote/identity/hash.js";
 import { VexError } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 describe("canonSlippageBps — no silent coercion into hash material", () => {
   it("0.5 and 0.9 no longer collide — both are refused instead of becoming \"0\"", () => {
@@ -87,53 +88,57 @@ describe("canonSlippageBpsWithDefault — the Pendle identities' shared normaliz
 
 describe("relay bridge identity — slippageBps is bound", () => {
   const ctx = {} as unknown as ProtocolExecutionContext;
-  const params = (slippageBps?: string) => ({
+  const params = (slippageBps?: number) => ({
     fromChain: "8453",
     toChain: "4663",
     fromToken: "eth",
     toToken: "eth",
-    amount: "1000",
+    amountRaw: "1000",
     ...(slippageBps !== undefined ? { slippageBps } : {}),
   });
 
-  const hashFor = async (slippageBps?: string) =>
+  const hashFor = async (slippageBps?: number) =>
     computePrequoteMatchHash(await buildRelayBridgeIdentity("s1", params(slippageBps), ctx));
 
   it("a 50 bps quote no longer authorizes a 500 bps execute", async () => {
-    expect(await hashFor("50")).not.toBe(await hashFor("500"));
+    expect(await hashFor(50)).not.toBe(await hashFor(500));
   });
 
   it("the identity carries the canonical integer string", async () => {
-    const identity = await buildRelayBridgeIdentity("s1", params("50"), ctx);
+    const identity = await buildRelayBridgeIdentity("s1", params(50), ctx);
     expect(identity.slippageBps).toBe("50");
   });
 
-  it("an omitted slippage is the stable sentinel — quote↔execute still collide", async () => {
+  // W4a: an omitted slippage is no longer a `""` sentinel — the handler sends
+  // the Vex default explicitly, so the identity binds that same number.
+  it("an omitted slippage binds the materialized default — quote↔execute still collide", async () => {
     const identity = await buildRelayBridgeIdentity("s1", params(), ctx);
-    expect(identity.slippageBps).toBe("");
+    expect(identity.slippageBps).toBe(String(VEX_DEFAULT_SLIPPAGE_BPS));
     expect(await hashFor()).toBe(await hashFor());
   });
 
-  it("an omitted slippage does NOT authorize an explicit one", async () => {
-    expect(await hashFor()).not.toBe(await hashFor("50"));
+  it("an omitted slippage does NOT authorize a DIFFERENT explicit one", async () => {
+    expect(await hashFor()).not.toBe(await hashFor(VEX_DEFAULT_SLIPPAGE_BPS + 50));
   });
 
   it("the same slippage on both sides still collides", async () => {
-    expect(await hashFor("100")).toBe(await hashFor("100"));
+    expect(await hashFor(100)).toBe(await hashFor(100));
   });
 
   it("refuses an over-ceiling slippage — the identity can never bind 5000 bps", async () => {
-    await expect(buildRelayBridgeIdentity("s1", params("5000"), ctx)).rejects.toThrow(VexError);
+    await expect(buildRelayBridgeIdentity("s1", params(5000), ctx)).rejects.toThrow(VexError);
   });
 
-  it("refuses a non-integer slippage string rather than coercing it", async () => {
-    await expect(buildRelayBridgeIdentity("s1", params("0.5"), ctx)).rejects.toThrow(VexError);
-    await expect(buildRelayBridgeIdentity("s1", params("abc"), ctx)).rejects.toThrow(VexError);
-    await expect(buildRelayBridgeIdentity("s1", params("-50"), ctx)).rejects.toThrow(VexError);
+  it("refuses a non-integer or wrong-typed slippage rather than coercing it", async () => {
+    await expect(buildRelayBridgeIdentity("s1", params(0.5), ctx)).rejects.toThrow(VexError);
+    await expect(buildRelayBridgeIdentity("s1", params(-50), ctx)).rejects.toThrow(VexError);
+    await expect(
+      buildRelayBridgeIdentity("s1", { ...params(), slippageBps: "50" }, ctx),
+    ).rejects.toThrow(VexError);
   });
 
   it("accepts the ceiling itself", async () => {
-    const identity = await buildRelayBridgeIdentity("s1", params("1000"), ctx);
+    const identity = await buildRelayBridgeIdentity("s1", params(1000), ctx);
     expect(identity.slippageBps).toBe("1000");
   });
 });

@@ -15,6 +15,7 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { DEXSCREENER_ORDERS_DISCOVERY } from "../../embeddings/dexscreener/orders.js";
 import { AD_FEED_PARAMS, FEED_DESCRIPTION_WINDOW_CLAUSE } from "./feed-list-params.js";
+import { DEXSCREENER_CHAIN_PARAM } from "../chain-param.js";
 
 export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
   {
@@ -30,10 +31,10 @@ export const ORDERS_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chainId", type: "string", required: true, description: "Chain identifier (e.g. solana, ethereum, bsc, base)." },
+      DEXSCREENER_CHAIN_PARAM,
       { key: "tokenAddress", type: "string", required: true, description: "Token contract address." },
     ],
-    exampleParams: { chainId: "solana", tokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+    exampleParams: { chain: "solana", tokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
     discovery: DEXSCREENER_ORDERS_DISCOVERY["dexscreener.orders"],
   },
   {

@@ -23,6 +23,8 @@ import { getActionKind } from "./registry.js";
 import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
+import { isAbortError } from "@utils/cancellation.js";
+import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
 
 // Compatibility façade re-exports — preserve the dispatcher's public surface.
@@ -106,6 +108,25 @@ export async function dispatchTool(
     return { ...withActionKindFallback(result, call.name), durationMs };
   } catch (err) {
     const durationMs = Date.now() - startTime;
+
+    // Operator Stop, BEFORE the generic wrap. A cancelled call is not a failure
+    // to be dressed as one, and "Tool X failed: The operation was aborted" is
+    // exactly the generic-label output the truthful-tool-error decree exists to
+    // kill. Both conditions are required: the error must be a caller
+    // `AbortError` (a deadline breach is a `TimeoutError` and keeps saying
+    // "timed out") AND this turn's signal must actually be aborted, so a
+    // provider SDK's own internal abort is never mislabelled as an operator.
+    if (isAbortError(err) && context.abortSignal?.aborted === true) {
+      logger.info("tools.dispatch.aborted_by_user_stop", { tool: call.name, durationMs });
+      return {
+        ...withActionKindFallback(
+          { success: false, output: TOOL_ABORTED_BY_USER_STOP_OUTPUT },
+          call.name,
+        ),
+        durationMs,
+      };
+    }
+
     const message = err instanceof Error ? err.message : String(err);
 
     logger.warn("tools.dispatch.failed", {

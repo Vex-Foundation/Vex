@@ -14,7 +14,7 @@
  *
  *   swap_quote (EVM)    { chain, tokenIn, tokenOut, amountIn, slippageBps? }
  *                       → kyberswap.swap.quote (SAME keys — KyberSwap ONLY, no venue fallback)
- *   swap_quote (Solana) → solana.swap.quote   { inputToken: tokenIn, outputToken: tokenOut, amount: Number(amountIn), slippageBps? }
+ *   swap_quote (Solana) → solana.swap.quote (SAME keys — W5a unified them: tokenIn/tokenOut/amountIn)
  *   swap_quote_uniswap  → uniswap.swap.quote (SAME keys) — HIDDEN, dispatch-gated on
  *                         `isUniswapPairRevealed(sessionId)` (plan §11.2)
  *   token_check         { chain, address }      → kyberswap.tokens.check (same keys)
@@ -22,9 +22,11 @@
  *   bridge_status (list)→ khalani.orders.list (pass through list filters)
  *   bridge_quote        → khalani.quote.get (same keys)
  *
- * Units: kyber/uniswap/jupiter swap `amountIn` is HUMAN decimal (e.g. "1.5");
- * khalani bridge `amount` is SMALLEST units (wei/lamports). The alias schemas
- * document this and translation preserves it (no unit conversion happens here).
+ * Units (SPEC §1.3): kyber/uniswap/jupiter swap `amountIn` is HUMAN decimal
+ * (e.g. "1.5"); the bridge legs take `amountRaw`, RAW base units (wei/lamports)
+ * — the same key the khalani/relay manifests declare. The alias schemas document
+ * this and translation preserves it (no unit conversion happens here). The
+ * retired bare `amount` key is rejected by name on both lanes.
  *
  * Chain params on the swap/token aliases accept BOTH a slug and a chain ID, in
  * either JSON type (`"base"`, `"8453"`, `8453`) — `token_find`
@@ -62,6 +64,7 @@ import { classifySwapFamily, isEvmSwapTokenInput } from "./swap-family.js";
 import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParamOrDestinationKey } from "@tools/khalani/request.js";
+import { khalaniSlippageRejection } from "../protocols/khalani/slippage-unsupported.js";
 import { dropEmptyModelValues, formatZodIssuesForModel } from "./arg-validation.js";
 import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
@@ -82,6 +85,8 @@ function protocolContext(context: InternalToolContext): Parameters<typeof execut
     sessionId: context.sessionId,
     walletResolution: context.walletResolution,
     walletPolicy: context.walletPolicy,
+    // Operator Stop — an alias must not be the path that drops it.
+    ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
   };
 }
 
@@ -139,16 +144,13 @@ export async function handleSwapQuote(
   }
 
   if (family.kind === "solana") {
-    // Solana quote manifest types `amount` as a NUMBER (human decimal) — coerce
-    // the unified string here so the protocol-runtime type check passes.
-    const amount = Number(a.amountIn);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return fail(`swap_quote: amountIn "${a.amountIn}" is not a positive number.`);
-    }
+    // W5a: the Solana quote manifest now uses the SAME keys as the alias
+    // (tokenIn/tokenOut/amountIn, amount as a human decimal STRING), so this
+    // lane no longer coerces the amount through a float on its way in.
     const params: Record<string, unknown> = {
-      inputToken: a.tokenIn,
-      outputToken: a.tokenOut,
-      amount,
+      tokenIn: a.tokenIn,
+      tokenOut: a.tokenOut,
+      amountIn: a.amountIn,
       ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
     };
     return executeProtocolTool({ toolId: "solana.swap.quote", params }, protocolContext(context));
@@ -322,7 +324,7 @@ const BridgeQuoteArgs = z.object({
   fromToken: z.string().min(1, { message: "fromToken is required" }),
   toChain: z.string().min(1, { message: "toChain is required" }),
   toToken: z.string().min(1, { message: "toToken is required" }),
-  amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+  amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
   tradeType: z.string().min(1).optional(),
   fromAddress: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
@@ -330,7 +332,9 @@ const BridgeQuoteArgs = z.object({
   // source wallet, never taken from tool input (refund-destination policy in
   // `@tools/khalani/request.js`).
   filler: z.string().min(1).optional(),
-  slippageBps: z.string().min(1).optional(),
+  // Relay-only price protection, in basis points (1 bps = 0.01%). REJECTED by
+  // name on the Khalani branch — Khalani exposes no slippage tolerance.
+  slippageBps: z.number().int().nonnegative().optional(),
 });
 
 export async function handleBridgeQuote(
@@ -356,6 +360,12 @@ export async function handleBridgeQuote(
     );
   }
 
+  // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
+  // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
+  // it had bought price protection Khalani never offered.
+  const khalaniSlippage = khalaniSlippageRejection("bridge_quote", args);
+  if (khalaniSlippage !== null) return fail(khalaniSlippage);
+
   const parsed = BridgeQuoteArgs.safeParse(dropEmptyModelValues(args));
   if (!parsed.success) {
     return fail(`bridge_quote: ${formatZodIssuesForModel(parsed.error.issues, args)}`);
@@ -371,7 +381,7 @@ export async function handleBridgeQuote(
       fromToken: a.fromToken,
       toChain: a.toChain,
       toToken: a.toToken,
-      amount: a.amount,
+      amountRaw: a.amountRaw,
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
     if (a.recipient !== undefined) params.recipient = a.recipient;
@@ -384,7 +394,7 @@ export async function handleBridgeQuote(
     fromToken: a.fromToken,
     toChain: a.toChain,
     toToken: a.toToken,
-    amount: a.amount,
+    amountRaw: a.amountRaw,
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
@@ -408,13 +418,15 @@ const BridgeQuoteRelayArgs = z.object({
   fromToken: z.string().min(1, { message: "fromToken is required" }),
   toChain: z.string().min(1, { message: "toChain is required" }),
   toToken: z.string().min(1, { message: "toToken is required" }),
-  amount: z.string().min(1, { message: "amount is required (smallest units)" }),
+  amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
   tradeType: z.string().min(1).optional(),
   recipient: z.string().min(1).optional(),
   // No `refundTo` — the refund destination is derived from the selected
   // source wallet, never taken from tool input (refund-destination policy in
   // `@tools/khalani/request.js`).
-  slippageBps: z.string().min(1).optional(),
+  // Relay-only price protection, in basis points (1 bps = 0.01%). REJECTED by
+  // name on the Khalani branch — Khalani exposes no slippage tolerance.
+  slippageBps: z.number().int().nonnegative().optional(),
 });
 
 export async function handleBridgeQuoteRelay(
@@ -451,7 +463,7 @@ export async function handleBridgeQuoteRelay(
     fromToken: a.fromToken,
     toChain: a.toChain,
     toToken: a.toToken,
-    amount: a.amount,
+    amountRaw: a.amountRaw,
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.recipient !== undefined) params.recipient = a.recipient;

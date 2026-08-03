@@ -250,7 +250,7 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     const txHash = (result.data as { txHash: string }).txHash;
     expect(result.output).toContain(
       `Do not retry; this attempt is recorded as pending and will resolve automatically. `
-      + `You can verify it now yourself with chain_read (action tx_receipt, chainId=1, txHash=${txHash}).`,
+      + `You can verify it now yourself with chain_read (action tx_receipt, chain=1, txHash=${txHash}).`,
     );
   });
 

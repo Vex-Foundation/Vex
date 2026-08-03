@@ -214,9 +214,9 @@ describe("pair-list param validation", () => {
     }
   });
 
-  it("does not read a single-chain tool's required `chainId` as a filter", () => {
-    // On `pairs`/`tokens`/`tokenPairs`, `chainId` names the chain being queried.
-    const parsed = parsePairListQuery({ chainId: "ethereum" }, { sortBy: "liquidityUsd" });
+  it("does not read a single-chain tool's required `chain` as a filter", () => {
+    // On `pairs`/`tokens`/`tokenPairs`, `chain` names the chain being queried.
+    const parsed = parsePairListQuery({ chain: "ethereum" }, { sortBy: "liquidityUsd" });
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.query.filters.chainIds).toBeNull();
   });

@@ -96,7 +96,7 @@ describe("repairPendingActivity — status-only confirm", () => {
       checkReceiptByHash: vi.fn().mockResolvedValueOnce(null),
     });
 
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "receipt_not_found");
     expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
     expect(result).toEqual({ checked: 1, confirmed: 0, failed: 0, stillPending: 1 });
@@ -113,7 +113,7 @@ describe("repairPendingActivity — status-only confirm", () => {
     });
 
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "receipt_not_found");
     expect(result).toEqual({ checked: 1, confirmed: 0, failed: 0, stillPending: 1 });
   });
 
@@ -128,7 +128,7 @@ describe("repairPendingActivity — status-only confirm", () => {
       checkReceiptByHash: vi.fn().mockRejectedValueOnce(new Error("transport timeout")),
     });
 
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "lookup_error");
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
     expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
     expect(result).toEqual({ checked: 1, confirmed: 0, failed: 0, stillPending: 1 });

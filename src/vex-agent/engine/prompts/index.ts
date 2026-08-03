@@ -219,8 +219,12 @@ export function buildPromptStack(
       missionRunStartedAt: context.missionRunStartedAt ?? null,
       missionDeadline: context.missionDeadline ?? null,
     }),
-    // Wake scheduling exists only inside an active mission run.
-    { missionRunActive: Boolean(context.missionRunId) },
+    // Lockstep with `ToolVisibility.requiresAutonomousLoop` — the sessions that
+    // can actually call `loop_defer`.
+    {
+      wakeSchedulingAvailable: Boolean(context.missionRunId)
+        || (context.sessionKind === "agent" && context.sessionPermission === "full"),
+    },
   ));
 
   // $VEX own-token live metrics — right after the runtime clock (P1 audit slot).

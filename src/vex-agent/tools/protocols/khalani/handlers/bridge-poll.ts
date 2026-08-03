@@ -36,6 +36,23 @@ export async function interpretPoll(input: InterpretPollInput): Promise<ToolResu
     { role: "bridge_fill_expected", chain: toChainName, txHash: null, status },
   ];
 
+  if (poll.kind === "aborted") {
+    // The operator stopped the run while we were WATCHING. The deposit is
+    // broadcast and the row is pending for the background tracker exactly as in
+    // every other non-terminal outcome — the only thing lost is this turn's
+    // observation, and saying so is the truthful claim. Never "the bridge was
+    // stopped": nothing about the bridge was cancelled.
+    logger.info("khalani.bridge.status_poll_aborted", { orderId });
+    const observed = poll.lastObserved === null
+      ? "no status was read before the stop"
+      : `last status read was "${poll.lastObserved}"`;
+    return bridgeResult({
+      ...pendingBase, success: false, status: "pending", orderId, depositTxHash,
+      message: `The deposit was broadcast (${depositTxHash}) and you stopped the run while its delivery was being watched (${observed}). The bridge itself was NOT cancelled and is tracked automatically — do not re-bridge; verify via orderId=${orderId} if needed.`,
+      legs: withFill("pending"),
+    });
+  }
+
   if (poll.kind === "unavailable") {
     logger.warn("khalani.bridge.status_unverifiable", { orderId });
     return bridgeResult({

@@ -145,7 +145,7 @@ function bridgeParams(overrides: Record<string, unknown> = {}): Record<string, u
     fromToken: EVM_TOKEN,
     toChain: "solana",
     toToken: SOL_MINT_TOKEN,
-    amount: "1000000",
+    amountRaw: "1000000",
     ...overrides,
   };
 }

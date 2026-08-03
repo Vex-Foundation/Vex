@@ -153,8 +153,8 @@ describe("DexScreener list params accept a string OR a string array", () => {
     for (const [manifest, params] of [
       [search, { query: ["PEPE"] }],
       [meta, { slug: ["cat"] }],
-      [tokenPairs, { chainId: ["solana"], tokenAddress: "X" }],
-      [tokenPairs, { chainId: "solana", tokenAddress: ["X"] }],
+      [tokenPairs, { chain: ["solana"], tokenAddress: "X" }],
+      [tokenPairs, { chain: "solana", tokenAddress: ["X"] }],
     ] as const) {
       const outcome = validateProtocolParams(manifest, params);
       expect(outcome.ok, `${manifest.toolId} ${JSON.stringify(params)}`).toBe(false);
@@ -193,11 +193,11 @@ describe("DexScreener identity params accept a string OR a string array", () => 
     const asArray = requestedAddresses.split(",");
 
     const fromString = await callJson("dexscreener.tokens", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddresses: requestedAddresses,
     });
     const fromArray = await callJson("dexscreener.tokens", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddresses: asArray,
     });
 
@@ -214,7 +214,7 @@ describe("DexScreener identity params accept a string OR a string array", () => 
   it("tokens: a mixed-case address is never folded on either spelling", async () => {
     const mixed = "So11111111111111111111111111111111111111112";
     const fromArray = await callJson("dexscreener.tokens", {
-      chainId: "solana",
+      chain: "solana",
       tokenAddresses: [mixed],
     });
     expect(fromArray.requestedAddresses).toEqual([mixed]);
@@ -227,11 +227,11 @@ describe("DexScreener identity params accept a string OR a string array", () => 
     const second = "0x11b815efB8f581194ae79006d24E0d814B7697F6";
 
     const fromString = await callJson("dexscreener.pairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       pairAddress: `${first},${second}`,
     });
     const fromArray = await callJson("dexscreener.pairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       pairAddress: [first, second],
     });
 
@@ -243,7 +243,7 @@ describe("DexScreener identity params accept a string OR a string array", () => 
   it("an empty identity array is rejected by name, not treated as a missing param", async () => {
     const handler = DEXSCREENER_HANDLERS["dexscreener.tokens"];
     if (handler === undefined) throw new Error("no handler");
-    const result = await handler({ chainId: "ethereum", tokenAddresses: [] }, READ_CTX);
+    const result = await handler({ chain: "ethereum", tokenAddresses: [] }, READ_CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddresses");
   });

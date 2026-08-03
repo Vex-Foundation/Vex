@@ -1,8 +1,10 @@
 /**
  * Wallet send — PRESENCE/EXISTING input checks for prepare + confirm.
  *
- * Parsing + required/network/chain/positive-amount for prepare, and the
- * required network/intentId for confirm. These are the SAME checks the
+ * Parsing + required/walletFamily/chain/positive-amountIn for prepare, and the
+ * required walletFamily/intentId for confirm. The model-facing param keys are
+ * `walletFamily` and `amountIn` (SPEC §1.1/§1.3); the internal value keeps the
+ * name `network` because that is the stored `wallet_intents` column. These are the SAME checks the
  * handlers ran inline pre-split, in the SAME order. Recipient (`to`) is NOT
  * stricter-validated here — chain-specific recipient validation happens later
  * in the executors.
@@ -28,27 +30,27 @@ export type PrepareValidation =
 export function validatePrepareParams(
   params: Record<string, unknown>,
 ): PrepareValidation {
-  const network = str(params, "network") as "eip155" | "solana";
+  const network = str(params, "walletFamily") as "eip155" | "solana";
   const to = str(params, "to");
-  const amount = str(params, "amount");
+  const amount = str(params, "amountIn");
   const token = str(params, "token") || null;
 
   // Named ONE AT A TIME, and a wrong type said as a wrong type. `str()` gives
   // "" for both absent and wrong-typed, so the old combined "Missing required:
-  // network, to, amount" told a model that sent `amount: 1.5` (a number — the
+  // walletFamily, to, amountIn" told a model that sent `amountIn: 1.5` (a number — the
   // shape it holds after arithmetic) that it had sent nothing. On the send
   // path that is a burnt turn on a transfer the user is waiting for.
   const missing =
-    !network ? { key: "network", expected: 'a string ("eip155" or "solana")' }
+    !network ? { key: "walletFamily", expected: 'a string ("eip155" or "solana")' }
     : !to ? { key: "to", expected: "a string (the destination address)" }
-    : !amount ? { key: "amount", expected: "a STRING decimal amount (e.g. \"1.5\"), never a number" }
+    : !amount ? { key: "amountIn", expected: "a STRING decimal amount (e.g. \"1.5\"), never a number" }
     : null;
   if (missing !== null) {
     return { ok: false, result: fail(missingOrWrongTypeMessage(params, missing.key, missing.expected)) };
   }
 
   if (network !== "eip155" && network !== "solana") {
-    return { ok: false, result: fail("network must be eip155 or solana") };
+    return { ok: false, result: fail("walletFamily must be eip155 or solana") };
   }
 
   const chain = str(params, "chain") || null;
@@ -61,7 +63,7 @@ export function validatePrepareParams(
 
   const numAmount = Number(amount);
   if (!Number.isFinite(numAmount) || numAmount <= 0) {
-    return { ok: false, result: fail(`Invalid amount: ${amount}`) };
+    return { ok: false, result: fail(`Invalid amountIn: ${amount}`) };
   }
 
   return { ok: true, values: { network, to, amount, token, chain } };
@@ -79,11 +81,11 @@ export type ConfirmValidation =
 export function validateConfirmParams(
   params: Record<string, unknown>,
 ): ConfirmValidation {
-  const network = str(params, "network") as "eip155" | "solana";
+  const network = str(params, "walletFamily") as "eip155" | "solana";
   const intentId = str(params, "intentId");
 
   const missing =
-    !network ? { key: "network", expected: 'a string ("eip155" or "solana")' }
+    !network ? { key: "walletFamily", expected: 'a string ("eip155" or "solana")' }
     : !intentId ? { key: "intentId", expected: "a string (the id wallet_send_prepare returned)" }
     : null;
   if (missing !== null) {

@@ -168,8 +168,8 @@ export const PREDICT_SOCIAL_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.vaultInfo": async () => ok(await wrapPredictionRead(() => getJupiterPredictionVaultInfo())),
 
   "solana.predict.suggestedEvents": async (p) => {
-    const pubkey = str(p, "pubkey");
-    if (!pubkey) return fail("Missing required: pubkey");
+    const pubkey = str(p, "walletAddress");
+    if (!pubkey) return fail("Missing required: walletAddress");
     const provider = strictEnumField(p, "provider", PREDICT_PROVIDER);
     if (!provider.ok) return provider.result;
     // Lean markets (same convention as .events/.search/.event, W1-C): the

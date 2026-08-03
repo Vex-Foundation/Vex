@@ -87,6 +87,14 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     embeddingDim: retrieval?.embeddingDim,
     candidateCount: retrieval?.candidateCount,
     topkToolIds: matchedToolIds,
+    // W7 enriched the row shape (exampleParams, required, actionKind,
+    // constraints) and raised the default limit — both grow the payload the
+    // model pays for on every discovery. Measure it rather than assume it:
+    // `payloadChars` is the serialized ROWS only, so a regression is
+    // attributable to the row shape and not to warnings or retrieval meta.
+    payloadChars: JSON.stringify(result.tools).length,
+    listMode: request.list === true,
+    topToolActionKind: topTool?.actionKind,
   };
 
   if (result.count === 0) {

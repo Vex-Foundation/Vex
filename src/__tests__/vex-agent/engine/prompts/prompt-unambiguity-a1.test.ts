@@ -126,7 +126,7 @@ describe("prompt unambiguity (A1)", () => {
     it("says the toolIds are real but their schemas are not in the prompt", () => {
       const toolModel = buildToolModelPrompt();
       expect(toolModel).toContain("their parameter schemas are NOT shown anywhere in it");
-      expect(toolModel).toContain("Never build an `execute_tool` call without a `discover_tools` result from THIS session");
+      expect(toolModel).toContain("Never call a protocol tool without a `discover_tools` result from THIS session");
     });
 
     it("discover_tools no longer hard-codes a stale 4-namespace list", () => {

@@ -117,17 +117,21 @@ function classifyUnrecognized(err: unknown, category: string): { scenario: strin
   if (category === "timeout" || category === "network") {
     return { scenario: "transport_failure", failureCode: "unknown" };
   }
-  // Our OWN validation refused the parameters — saying "the provider
-  // rejected this" would send the agent chasing the wrong cause.
-  if (category === "invalid_request") {
-    return { scenario: "invalid_request", failureCode: "unknown" };
-  }
+  // The STATUS is read before the category (W1, SPEC §1.5): since the error
+  // contract began classifying a 4xx as `invalid_request`, that category no
+  // longer proves the rejection was OURS. A status proves a provider answered,
+  // and this persisted `failureReason` must keep naming WHO refused.
   const status = err instanceof VexError ? err.httpStatus : undefined;
   if (status !== undefined && status >= 400 && status < 500) {
     return { scenario: "provider_rejected", failureCode: "unknown" };
   }
   if (status !== undefined && status >= 500) {
     return { scenario: "provider_unavailable", failureCode: "unknown" };
+  }
+  // Our OWN validation refused the parameters — saying "the provider
+  // rejected this" would send the agent chasing the wrong cause.
+  if (category === "invalid_request") {
+    return { scenario: "invalid_request", failureCode: "unknown" };
   }
   return { scenario: "unclassified_failure", failureCode: "unknown" };
 }

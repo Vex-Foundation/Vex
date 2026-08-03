@@ -171,7 +171,7 @@ function ctx(): ProtocolExecutionContext {
 
 function execute(over: Record<string, unknown> = {}) {
   return BRIDGE_HANDLERS["khalani.bridge"]!(
-    { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amount: "1500000", ...over },
+    { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amountRaw: "1500000", ...over },
     ctx(),
   );
 }
@@ -386,7 +386,7 @@ describe("khalani.bridge — a failed fee is a PARTIAL PLAN SUCCESS, never a bri
 
 describe("khalani.bridge — no fee is taken when it cannot be taken honestly", () => {
   it("DUST: a fee that floors to 0 charges nothing and bridges the full amount", async () => {
-    const result = await execute({ amount: "300" });
+    const result = await execute({ amountRaw: "300" });
     expect((mockGetQuotes.mock.calls[0]![0] as { amount: string }).amount).toBe("300");
     expect(signedLegs().some((l) => l.purpose === "vex_fee")).toBe(false);
 

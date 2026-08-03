@@ -160,22 +160,22 @@ describe("protocol discovery", () => {
     expect(bigLimitResult.totalCount).toBe(allResult.totalCount);
   });
 
-  // ── Trimmed discovery item shape (P0-7) ──────────────────────────
+  // ── Discovery item shape ─────────────────────────────────────────
   //
-  // `lifecycle` (always "active" for advertised tools) and `exampleParams`
-  // (duplicate guidance — the agent is told to use `params`) were dropped
-  // from the model-visible discovery item. They remain on the underlying
-  // manifest; only the surfaced ITEM loses them.
+  // `lifecycle` (always "active" for advertised tools) stays off the
+  // model-visible row. `exampleParams` was dropped with it in P0-7 and put back
+  // by W7 (SPEC §1.7): it is the manifest's own WORKED CALL, it costs under 1%
+  // of the row, and its absence is what produced the live
+  // `missing required parameter query` failure on dexscreener.search.
 
-  it("discovery items omit lifecycle and exampleParams", async () => {
+  it("discovery items omit lifecycle but carry the manifest's worked example", async () => {
     const result = await discoverProtocolCapabilities({ namespace: "khalani", limit: 50 });
     expect(result.tools.length).toBeGreaterThan(0);
     for (const tool of result.tools) {
       expect(tool).not.toHaveProperty("lifecycle");
-      expect(tool).not.toHaveProperty("exampleParams");
-      // Retained item fields — guidance now points at `params`.
       expect(tool.toolId).toBeTruthy();
       expect(Array.isArray(tool.params)).toBe(true);
+      expect(tool.exampleParams).toBeDefined();
     }
   });
 

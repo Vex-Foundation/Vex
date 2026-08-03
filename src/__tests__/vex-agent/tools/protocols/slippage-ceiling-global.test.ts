@@ -42,7 +42,7 @@ const CTX: ProtocolExecutionContext = {
 const WETH = "0x4200000000000000000000000000000000000006";
 const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
-const JUPITER_SWAP = { inputToken: "SOL", outputToken: "USDC", amount: 1 };
+const JUPITER_SWAP = { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1" };
 const UNISWAP_SWAP = { chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" };
 
 /** Every tool that takes a caller slippage and reaches a signable route. */

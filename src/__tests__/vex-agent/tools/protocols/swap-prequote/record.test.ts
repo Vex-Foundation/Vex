@@ -219,7 +219,7 @@ describe("recordPrequoteFromQuote", () => {
     mockResolveSelectedAddress.mockReturnValue("SolWalletAddr");
     await mod.recordPrequoteFromQuote(
       "solana.swap.quote",
-      { amount: 2.5, slippageBps: 100 },
+      { amountIn: "2.5", slippageBps: 100 },
       solanaResult(SOLANA_MINT_A, SOL_MINT, { inputToken: { isSus: false } }),
       ctx(),
     );

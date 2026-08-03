@@ -6,7 +6,8 @@
  * Router fallback pays out. `pendle.sy.redeem` is therefore THE recovery path for
  * that fallback: the two descriptions name each other on purpose.
  *
- * Both tools take the corpus rank-8 param set (chain, sy, token, amountIn,
+ * Both tools take the corpus rank-8 param set (chain, sy, the direction's token
+ * leg — `tokenIn` on the mint, `tokenOut` on the redeem — amountIn,
  * slippageBps, dryRun) and use the DRY-RUN-IN-TOOL prequote pattern: one toolId
  * both quotes and executes. See `../handlers/sy-prequote.ts`.
  */
@@ -57,10 +58,10 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
       CHAIN_PARAM,
       SY_PARAM,
       {
-        key: "token",
+        key: "tokenIn",
         type: "string",
         required: true,
-        description: "The payment token CONTRACT ADDRESS to wrap (ERC-20; pass the chain's wrapped-native token for native exposure).",
+        description: "The payment token CONTRACT ADDRESS to wrap — the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
       },
       { key: "amountIn", type: "string", required: true, description: "Amount of the payment token in human-readable units." },
       SLIPPAGE_PARAM,
@@ -69,7 +70,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
     exampleParams: {
       chain: "ethereum",
       sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
-      token: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+      tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
       slippageBps: 50,
       dryRun: true,
@@ -88,10 +89,10 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
       CHAIN_PARAM,
       SY_PARAM,
       {
-        key: "token",
+        key: "tokenOut",
         type: "string",
         required: true,
-        description: "The output token CONTRACT ADDRESS to receive (ERC-20; pass the chain's wrapped-native token for native exposure).",
+        description: "The token CONTRACT ADDRESS to receive — the OUTPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
       },
       { key: "amountIn", type: "string", required: true, description: "Amount of SY to unwrap, in human-readable units." },
       SLIPPAGE_PARAM,
@@ -100,7 +101,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
     exampleParams: {
       chain: "ethereum",
       sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
-      token: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+      tokenOut: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
       slippageBps: 50,
       dryRun: true,

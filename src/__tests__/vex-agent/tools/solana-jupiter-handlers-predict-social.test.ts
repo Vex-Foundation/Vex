@@ -86,7 +86,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
 
   it("profile: resolves the owner wallet and converts the 3 *Usd money fields", async () => {
     getJupiterPredictionProfile.mockResolvedValue(structuredClone(FULL_PROFILE));
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.profile"]!({ address: ADDRESS }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.profile"]!({ walletAddress: ADDRESS }, ctx());
     expect(result.success).toBe(true);
     expect(getJupiterPredictionProfile).toHaveBeenCalledWith(ADDRESS);
     expect(result.data).toEqual({
@@ -110,21 +110,21 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
   it("profile: maps an HTTP 403 (geo-block) into a clear regional message", async () => {
     getJupiterPredictionProfile.mockRejectedValue(providerHttpError(403, "HTTP 403: Forbidden"));
     await expect(
-      SOLANA_JUPITER_HANDLERS["solana.predict.profile"]!({ address: ADDRESS }, ctx()),
+      SOLANA_JUPITER_HANDLERS["solana.predict.profile"]!({ walletAddress: ADDRESS }, ctx()),
     ).rejects.toThrow(/not available from your current region/);
   });
 
   it("profile: a non-403 error is NOT rewritten", async () => {
     getJupiterPredictionProfile.mockRejectedValue(providerHttpError(500, "HTTP 500: Internal Server Error"));
     await expect(
-      SOLANA_JUPITER_HANDLERS["solana.predict.profile"]!({ address: ADDRESS }, ctx()),
+      SOLANA_JUPITER_HANDLERS["solana.predict.profile"]!({ walletAddress: ADDRESS }, ctx()),
     ).rejects.toThrow("HTTP 500");
   });
 
   // ── pnlHistory ───────────────────────────────────────────────────
 
   it("pnlHistory fails without a required interval", async () => {
-    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!({ address: ADDRESS }, ctx());
+    const result = await SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!({ walletAddress: ADDRESS }, ctx());
     expect(result.success).toBe(false);
     expect(result.output).toContain("interval");
     expect(getJupiterPredictionPnlHistory).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
 
   it("pnlHistory rejects an invalid interval value (never silently forwarded)", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!(
-      { address: ADDRESS, interval: "1y" },
+      { walletAddress: ADDRESS, interval: "1y" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -145,7 +145,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
   // the wire.
   it("pnlHistory rejects a count above the owner-wide 100 cap (stricter than the SDK's 1000 bound)", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!(
-      { address: ADDRESS, interval: "1w", count: 101 },
+      { walletAddress: ADDRESS, interval: "1w", count: 101 },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -156,7 +156,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
   it("pnlHistory accepts a count of exactly 100", async () => {
     getJupiterPredictionPnlHistory.mockResolvedValue({ ownerPubkey: ADDRESS, history: [] });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!(
-      { address: ADDRESS, interval: "1w", count: 100 },
+      { walletAddress: ADDRESS, interval: "1w", count: 100 },
       ctx(),
     );
     expect(result.success).toBe(true);
@@ -174,7 +174,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
       ],
     });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!(
-      { address: ADDRESS, interval: "1w", count: 2 },
+      { walletAddress: ADDRESS, interval: "1w", count: 2 },
       ctx(),
     );
     expect(result.success).toBe(true);
@@ -195,7 +195,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
     getJupiterPredictionPnlHistory.mockRejectedValue(providerHttpError(404, "HTTP 404: Not Found"));
     await expect(
       SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!(
-        { address: ADDRESS, interval: "1w" },
+        { walletAddress: ADDRESS, interval: "1w" },
         ctx(),
       ),
     ).rejects.toThrow(/documented but currently\s+returns 404 upstream/);
@@ -205,7 +205,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
     getJupiterPredictionPnlHistory.mockRejectedValue(providerHttpError(500, "HTTP 500: Internal Server Error"));
     await expect(
       SOLANA_JUPITER_HANDLERS["solana.predict.pnlHistory"]!(
-        { address: ADDRESS, interval: "1w" },
+        { walletAddress: ADDRESS, interval: "1w" },
         ctx(),
       ),
     ).rejects.toThrow("HTTP 500");
@@ -304,11 +304,11 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
 
   it("vaultInfo: passes the response through verbatim (no *Usd field to convert)", async () => {
     getJupiterPredictionVaultInfo.mockResolvedValue({
-      pubkey: "vault-1", data: { foo: "bar" }, vaultBalance: "123456789",
+      walletAddress: "vault-1", data: { foo: "bar" }, vaultBalance: "123456789",
     });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.vaultInfo"]!({}, ctx());
     expect(result.success).toBe(true);
-    expect(result.data).toEqual({ pubkey: "vault-1", data: { foo: "bar" }, vaultBalance: "123456789" });
+    expect(result.data).toEqual({ walletAddress: "vault-1", data: { foo: "bar" }, vaultBalance: "123456789" });
   });
 
   // ── suggestedEvents ──────────────────────────────────────────────
@@ -324,13 +324,13 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
   it("suggestedEvents fails without pubkey", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.suggestedEvents"]!({}, ctx());
     expect(result.success).toBe(false);
-    expect(result.output).toContain("pubkey");
+    expect(result.output).toContain("walletAddress");
     expect(getJupiterPredictionSuggestedEvents).not.toHaveBeenCalled();
   });
 
   it("suggestedEvents rejects an invalid provider value instead of silently dropping it (F2)", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.suggestedEvents"]!(
-      { pubkey: ADDRESS, provider: "coinbase" },
+      { walletAddress: ADDRESS, provider: "coinbase" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -341,7 +341,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
   it("suggestedEvents: passes pubkey/provider through, lean by default (no markets key)", async () => {
     getJupiterPredictionSuggestedEvents.mockResolvedValue({ data: [structuredClone(SUGGESTED_EVENT)] });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.suggestedEvents"]!(
-      { pubkey: ADDRESS, provider: "polymarket" },
+      { walletAddress: ADDRESS, provider: "polymarket" },
       ctx(),
     );
     expect(result.success).toBe(true);
@@ -359,7 +359,7 @@ describe("solana-jupiter handlers — predict discovery & social (W1-F)", () => 
   it("suggestedEvents: includeMarkets:true restores the nested, projected markets array", async () => {
     getJupiterPredictionSuggestedEvents.mockResolvedValue({ data: [structuredClone(SUGGESTED_EVENT)] });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.suggestedEvents"]!(
-      { pubkey: ADDRESS, includeMarkets: true },
+      { walletAddress: ADDRESS, includeMarkets: true },
       ctx(),
     );
     expect(result.success).toBe(true);

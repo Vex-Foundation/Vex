@@ -23,6 +23,7 @@
  */
 
 import type { InternalToolContext } from "../../tools/internal/types.js";
+import { resolveInjectedProtocolTool } from "../../tools/registry/injected-protocol-tools.js";
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
@@ -205,6 +206,13 @@ function resolveEffectiveCall(
   toolName: string,
   args: Record<string, unknown>,
 ): { toolName: string; args: Record<string, unknown> } {
+  // Injected discovered-tool lane (owner decision 2026-08-03): the model calls
+  // the manifest directly under its mapped name (`khalani__bridge`), and the
+  // arguments ARE the params — there is no envelope to unwrap. The human must
+  // still see the dotted toolId, never the wire-safe mapped name.
+  const injected = resolveInjectedProtocolTool(toolName);
+  if (injected) return { toolName: injected.toolId, args };
+
   if (toolName !== "execute_tool") return { toolName, args };
 
   const toolId = typeof args.toolId === "string" ? args.toolId : null;

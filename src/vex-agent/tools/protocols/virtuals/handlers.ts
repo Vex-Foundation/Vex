@@ -14,12 +14,13 @@
  */
 
 import { getVirtualsClient } from "@tools/virtuals/client.js";
-import { VIRTUALS_CHAINS, type VirtualsChain, type VirtualsSortField } from "@tools/virtuals/types.js";
+import type { VirtualsSortField } from "@tools/virtuals/types.js";
 import { VexError } from "../../../../errors.js";
 import logger from "@utils/logger.js";
 import { describeFailureForAgent, describeFailureForLog } from "../runtime/errors.js";
 import type { ProtocolHandler } from "../types.js";
 import { str, num, ok, fail } from "../handler-helpers.js";
+import { VIRTUALS_CHAIN_SLUGS, resolveVirtualsChain, virtualsChainSlug } from "./chain-param.js";
 import {
   projectGenesis,
   projectVirtualsDetail,
@@ -52,13 +53,11 @@ function clampLimit(requested: number | undefined): number {
   return DEFAULT_LIMIT;
 }
 
-/** Normalize + validate the chain enum (case-insensitive). Null when invalid. */
-function resolveChain(raw: string): VirtualsChain | null {
-  const upper = raw.trim().toUpperCase();
-  return (VIRTUALS_CHAINS as readonly string[]).includes(upper) ? (upper as VirtualsChain) : null;
-}
-
-const CHAIN_LIST = VIRTUALS_CHAINS.join(", ");
+/**
+ * The legal chain values, as the MANIFEST spells them — a refusal must name the
+ * vocabulary the agent was given, not the provider's internal one.
+ */
+const CHAIN_LIST = VIRTUALS_CHAIN_SLUGS.join(", ");
 
 function resolveStatusFilter(raw: string): StatusFilter {
   const v = raw.trim().toLowerCase();
@@ -109,7 +108,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   "virtuals.list": async (p) => {
     const chainRaw = str(p, "chain");
     if (!chainRaw) return fail(`Missing required: chain (one of ${CHAIN_LIST})`);
-    const chain = resolveChain(chainRaw);
+    const chain = resolveVirtualsChain(chainRaw);
     if (!chain) return fail(`Invalid chain "${chainRaw}". Must be one of ${CHAIN_LIST}.`);
 
     const statusFilter = resolveStatusFilter(str(p, "status"));
@@ -124,7 +123,10 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
       const filtered = result.agents.filter((a) => matchesStatus(a.status, statusFilter));
       const projected = projectVirtualsList(filtered).slice(0, limit);
       return ok({
-        chain,
+        // Echoed as the canonical slug the manifest advertises, not the
+        // provider's UPPERCASE value — the reply must spell the chain the way
+        // the next call has to spell it.
+        chain: virtualsChainSlug(chain),
         status: statusFilter,
         sort: sortKeyword && SORT_MAP[sortKeyword] ? sortKeyword : "mcap",
         matched: filtered.length,
@@ -157,7 +159,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   "virtuals.graduations": async (p) => {
     const chainRaw = str(p, "chain");
     if (!chainRaw) return fail(`Missing required: chain (one of ${CHAIN_LIST})`);
-    const chain = resolveChain(chainRaw);
+    const chain = resolveVirtualsChain(chainRaw);
     if (!chain) return fail(`Invalid chain "${chainRaw}". Must be one of ${CHAIN_LIST}.`);
     const limit = clampLimit(num(p, "limit"));
 
@@ -168,7 +170,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
       const result = await client.listVirtuals({ chain, sort: "lpCreatedAt", pageSize: FETCH_PAGE_SIZE });
       const graduated = result.agents.filter((a) => a.status === "AVAILABLE" && a.lpCreatedAt !== null);
       const projected = projectVirtualsList(graduated).slice(0, limit);
-      return ok({ chain, count: projected.length, agents: projected });
+      return ok({ chain: virtualsChainSlug(chain), count: projected.length, agents: projected });
     } catch (err) {
       return fail(`Virtuals graduations unavailable (${failureDetail("virtuals.graduations", err)})`);
     }

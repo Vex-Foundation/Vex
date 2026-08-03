@@ -61,72 +61,72 @@ describe("dexscreener handlers", () => {
     expect(result.output).toContain("query");
   });
 
-  it("dexscreener.pairs fails without chainId and pairAddress", async () => {
+  it("dexscreener.pairs fails without chain and pairAddress", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
       {},
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.pairs fails with only chainId", async () => {
+  it("dexscreener.pairs fails with only chain", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
-      { chainId: "ethereum" },
+      { chain: "ethereum" },
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("pairAddress");
   });
 
-  it("dexscreener.tokens fails without chainId and tokenAddresses", async () => {
+  it("dexscreener.tokens fails without chain and tokenAddresses", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
       {},
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.tokens fails with only chainId", async () => {
+  it("dexscreener.tokens fails with only chain", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
-      { chainId: "ethereum" },
+      { chain: "ethereum" },
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddresses");
   });
 
-  it("dexscreener.tokenPairs fails without chainId and tokenAddress", async () => {
+  it("dexscreener.tokenPairs fails without chain and tokenAddress", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
       {},
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.tokenPairs fails with only chainId", async () => {
+  it("dexscreener.tokenPairs fails with only chain", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana" },
+      { chain: "solana" },
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddress");
   });
 
-  it("dexscreener.orders fails without chainId and tokenAddress", async () => {
+  it("dexscreener.orders fails without chain and tokenAddress", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
       {},
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.orders fails with only chainId", async () => {
+  it("dexscreener.orders fails with only chain", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
-      { chainId: "solana" },
+      { chain: "solana" },
       { sessionPermission: "restricted", approved: false },
     );
     expect(result.success).toBe(false);
@@ -196,7 +196,7 @@ describe("dexscreener handlers", () => {
   // rejected outright.
   it("dexscreener.orders returns the envelope against the LIVE endpoint", async () => {
     const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
-      { chainId: "solana", tokenAddress: "A55XjvzRU4KtR3Lrys8PpLZQvPojPqvnv5bJVHMYy3Jv" },
+      { chain: "solana", tokenAddress: "A55XjvzRU4KtR3Lrys8PpLZQvPojPqvnv5bJVHMYy3Jv" },
       READ_CTX,
     );
     expect(result.success).toBe(true);
@@ -296,7 +296,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN" },
+      { chain: "solana", tokenAddress: "TOKEN" },
       PERM,
     );
     expect(result.success).toBe(true);
@@ -314,7 +314,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN" },
+      { chain: "solana", tokenAddress: "TOKEN" },
       PERM,
     );
     const data = JSON.parse(result.output);
@@ -332,7 +332,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN", limit: 2 },
+      { chain: "solana", tokenAddress: "TOKEN", limit: 2 },
       PERM,
     );
     const data = JSON.parse(result.output);
@@ -352,7 +352,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN" },
+      { chain: "solana", tokenAddress: "TOKEN" },
       PERM,
     );
     const data = JSON.parse(result.output);
@@ -380,7 +380,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     ]);
 
     const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "ethereum", tokenAddress: "TOKEN" },
+      { chain: "ethereum", tokenAddress: "TOKEN" },
       PERM,
     );
     const data = JSON.parse(result.output);
@@ -434,7 +434,7 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
 
     const result = await handlerFor("dexscreener.tokenPairs")(
       {
-        chainId: "solana",
+        chain: "solana",
         tokenAddress: "TOKEN",
         fields: "liquidityBaseTokens,liquidityQuoteTokens,marketCapEqualsFdv,priceInQuoteToken,decimalsAvailable",
       },
@@ -513,7 +513,7 @@ describe("dexscreener.attention has no hidden limit", () => {
   });
 });
 
-// ── Search client-side filters (chainId / minLiquidityUsd / limit) ─
+// ── Search client-side filters (chainIds / minLiquidityUsd / limit) ─
 
 describe("dexscreener.search filters", () => {
   afterEach(() => {

@@ -146,7 +146,7 @@ describe("signStageBroadcast", () => {
 
     const outcome = await signStageBroadcast(publicClient, walletClient, { to: TO, data: "0x" }, h);
 
-    expect(outcome).toEqual({ kind: "ambiguous", txHash: HASH, stage: "send" });
+    expect(outcome).toMatchObject({ kind: "ambiguous", txHash: HASH, stage: "send" });
     expect(h.onHashStaged).toHaveBeenCalledTimes(1);
     // A send-time failure never reaches the broadcast-accepted bookkeeping.
     expect(h.onAccepted).not.toHaveBeenCalled();
@@ -180,7 +180,7 @@ describe("signStageBroadcast", () => {
       publicClient, walletClient, { to: TO, data: "0x" }, h, undefined, { delayMs: 0 },
     );
 
-    expect(outcome).toEqual({ kind: "ambiguous", txHash: HASH, stage: "confirm" });
+    expect(outcome).toMatchObject({ kind: "ambiguous", txHash: HASH, stage: "confirm" });
     // Ambiguity is declared only after the BOUNDED retry of the read.
     expect(publicClient.waitForTransactionReceipt).toHaveBeenCalledTimes(RECEIPT_WAIT_ATTEMPTS);
     // The RPC DID accept the submission before confirmation became ambiguous.

@@ -1,0 +1,100 @@
+/**
+ * W2c — the pending body must distinguish the three things it used to collapse:
+ *
+ *  1. "Relay says still in flight"  (observed, non-terminal status)
+ *  2. "Relay's status API was UNREACHABLE this turn" (`observed:false`) — before
+ *     this wave both rendered as `providerStatus: null`, indistinguishable;
+ *  3. WHY a bridge failed or refunded (`failReason` / `refundFailReason`).
+ *     `BLOCKED_WALLET` (funds NOT auto-refunded, compliance review) and
+ *     `TTL_EXPIRED` (refunded) are wildly different user outcomes that were
+ *     reported with the same sentence.
+ */
+
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+  createBridgePreBroadcastFailure: vi.fn(),
+}));
+
+import { pendingResult } from "@vex-agent/tools/protocols/relay/handlers/bridge/results.js";
+import type { RelayPollResult } from "@tools/relay/execute.js";
+
+const FROM = { id: 8453, name: "Base" };
+const TO = { id: 4663, name: "Robinhood Chain" };
+const AMOUNT = { amount: "0.0001", token: "ETH", usd: null, chainId: 8453 };
+
+function body(poll: RelayPollResult | null): Record<string, unknown> {
+  const result = pendingResult({
+    executionId: 1,
+    requestId: "0xreq",
+    from: FROM as never,
+    to: TO as never,
+    inSide: AMOUNT as never,
+    outSide: AMOUNT as never,
+    feeUsdByBucket: {},
+    broadcasts: [{ role: "bridge_deposit", txHash: "0xdep", status: "confirmed" }],
+    poll,
+    depositUnconfirmed: false,
+    vexFee: {} as never,
+    feeCollection: { collection: "confirmed", collectionNote: "" },
+  });
+  return JSON.parse(result.output) as Record<string, unknown>;
+}
+
+function poll(overrides: Partial<RelayPollResult>): RelayPollResult {
+  return {
+    status: "pending",
+    observed: true,
+    destinationTxHashes: [],
+    failReason: null,
+    refundFailReason: null,
+    lastError: null,
+    ...overrides,
+  };
+}
+
+describe("pendingResult — provider signals", () => {
+  it("says the status API was UNREACHABLE, with the last error, instead of staying silent", () => {
+    const out = body(poll({ observed: false, lastError: { code: "RELAY_RATE_LIMITED", httpStatus: 429 } }));
+    expect(String(out.message)).toContain("unreachable");
+    expect(String(out.message)).toContain("RELAY_RATE_LIMITED");
+    expect(String(out.message)).toContain("429");
+    expect(out.providerStatus).toBeNull();
+  });
+
+  it("does NOT claim unreachable when the status API answered", () => {
+    const out = body(poll({ status: "submitted" }));
+    expect(String(out.message)).not.toContain("unreachable");
+    expect(out.providerStatus).toBe("submitted");
+  });
+
+  it("surfaces failReason on a reported failure", () => {
+    const out = body(poll({ status: "failure", failReason: "BLOCKED_WALLET" }));
+    expect(String(out.message)).toContain("BLOCKED_WALLET");
+    expect(out.providerFailReason).toBe("BLOCKED_WALLET");
+  });
+
+  it("surfaces refundFailReason on a reported refund", () => {
+    const out = body(poll({ status: "refund", failReason: "TTL_EXPIRED", refundFailReason: "AMOUNT_TOO_LOW_TO_REFUND" }));
+    expect(String(out.message)).toContain("TTL_EXPIRED");
+    expect(String(out.message)).toContain("AMOUNT_TOO_LOW_TO_REFUND");
+  });
+
+  it("never invents a reason Relay did not send", () => {
+    const out = body(poll({ status: "failure" }));
+    expect(out.providerFailReason).toBeNull();
+    expect(String(out.message)).toContain("FAILED");
+  });
+
+  it("names loop_defer as the waiting pattern instead of inviting a re-poll loop", () => {
+    const out = body(poll({ status: "submitted" }));
+    expect(String(out.message)).toContain("loop_defer");
+    expect(String(out.message)).toMatch(/do not poll|Do NOT poll/i);
+  });
+
+  it("tolerates a null poll (deposit unconfirmed — nothing was polled)", () => {
+    const out = body(null);
+    expect(out.providerStatus).toBeNull();
+    expect(String(out.message)).not.toContain("unreachable");
+  });
+});

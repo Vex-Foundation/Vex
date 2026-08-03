@@ -23,8 +23,8 @@ describe("dispatcher — protocol meta-tools", () => {
 
   it("discover_tools returns khalani tools with params", async () => {
     const result = await dispatchTool(
-      // Explicit limit needed since DEFAULT_DISCOVERY_LIMIT=5 may not include khalani.bridge.
-      { name: "discover_tools", args: { namespace: "khalani", limit: 50 }, toolCallId: "call_2" },
+      // Explicit limit (max allowed) so khalani.bridge is in range regardless of ranking.
+      { name: "discover_tools", args: { namespace: "khalani", limit: 20 }, toolCallId: "call_2" },
       baseContext,
     );
 
@@ -44,7 +44,7 @@ describe("dispatcher — protocol meta-tools", () => {
     // Mutating tools now appear in discover_tools with the `mutating`
     // flag visible per item; agents handle approval at execute time.
     const result = await dispatchTool(
-      { name: "discover_tools", args: { namespace: "khalani", limit: 50 }, toolCallId: "call_3" },
+      { name: "discover_tools", args: { namespace: "khalani", limit: 20 }, toolCallId: "call_3" },
       baseContext,
     );
 
@@ -59,7 +59,7 @@ describe("dispatcher — protocol meta-tools", () => {
     // a specific top-5 ranking. A small limit can drop khalani's balance
     // tool below the cap; bumping to 50 keeps the test robust to ranking shifts.
     const result = await dispatchTool(
-      { name: "discover_tools", args: { query: "balance", limit: 50 }, toolCallId: "call_4" },
+      { name: "discover_tools", args: { query: "balance", limit: 20 }, toolCallId: "call_4" },
       baseContext,
     );
 

@@ -9,7 +9,7 @@
  *
  * DexScreener offers no server-side filter, sort, limit or pagination — the whole
  * API has one query parameter. Proven three ways on the live endpoint: the same
- * `search` query with and without `chainId`/`limit`/`sort`/`order`/`page`/
+ * `search` query with and without `chainIds`/`limit`/`sort`/`order`/`page`/
  * `minLiquidity` appended returned the identical 30-pair set. So every param
  * below subtracts from, orders, or narrows at most 30 rows DexScreener already
  * chose, and an empty result never means "this does not exist".
@@ -359,7 +359,7 @@ export const PAIR_QUALITY_FILTER_PARAMS: readonly ProtocolParamDef[] = [
  *
  * `chainIds` is NOT here: it only means something where the provider mixed chains
  * into one window, which is `dexscreener.search` alone. On the other three tools
- * every row is already on the `chainId` the caller supplied.
+ * every row is already on the `chain` the caller supplied.
  */
 export const PAIR_LIST_PARAMS: readonly ProtocolParamDef[] = [
   ...PAIR_WINDOW_PARAMS,

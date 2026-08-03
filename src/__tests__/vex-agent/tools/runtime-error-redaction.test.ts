@@ -123,8 +123,8 @@ describe("executeProtocolTool — B-003 raw error redaction", () => {
   it("emits a bounded, categorized failure output (toolId + code + message only)", async () => {
     const result = await executeProtocolTool({ toolId: "test.redact.read", params: {} }, ctx);
 
-    // Shape: `<toolId> failed (<category>): <bounded message>`.
-    expect(result.output).toMatch(/^test\.redact\.read failed \([a-z_]+\): /);
+    // Shape (W1, SPEC §1.5): `<toolId> failed [<CODE>/<category>{, HTTP n}]: <bounded message>`.
+    expect(result.output).toMatch(/^test\.redact\.read failed \[[A-Za-z_]+\/[a-z_]+(?:, HTTP \d+)?\]: /);
     // Length stays bounded even when the raw error is large.
     expect((result.output ?? "").length).toBeLessThan(280);
   });

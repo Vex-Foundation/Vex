@@ -145,7 +145,7 @@ function bridgeParams(overrides: Record<string, unknown> = {}): Record<string, u
     fromToken: EVM_TOKEN,
     toChain: "solana",
     toToken: SOL_MINT_TOKEN,
-    amount: "1000000",
+    amountRaw: "1000000",
     ...overrides,
   };
 }
@@ -204,7 +204,7 @@ describe("bridge quote ↔ execute identity collision", () => {
       { fromChain: "ethereum" },
       { fromToken: "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" },
       { toToken: "DifferentMintXYZ" },
-      { amount: "2000000" },
+      { amountRaw: "2000000" },
       { recipient: "ADifferentRecipient" },
       { tradeType: "EXACT_OUTPUT" },
     ];

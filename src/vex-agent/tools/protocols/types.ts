@@ -106,6 +106,23 @@ export interface ProtocolParamDef {
    * is a capability, not a second type.
    */
   acceptsStringArray?: true;
+  /**
+   * The CLOSED set of values this param accepts, when prose was the only place
+   * the set existed. `virtuals.list.chain` is the live case: an UPPERCASE value
+   * list written in a description, unenforced at the boundary, and absent from
+   * the compiled JSON schema — so a model that followed every other chain param
+   * in the tree sent `base` and burnt the call.
+   *
+   * Read in exactly three places: `runtime/params.ts` rejects an off-list value
+   * NAMING the allowed values, `paramsToJsonSchema` compiles it into the JSON
+   * Schema `enum` keyword, and `discovery.ts` ships it on the param row. Values
+   * are matched EXACTLY (case-sensitive) — a provider that wants a different
+   * casing converts inside its own adapter (see `conventions.ts`).
+   *
+   * Only meaningful on `type: "string"`. On a param that also declares
+   * {@link ProtocolParamDef.acceptsStringArray}, EVERY member must be on the list.
+   */
+  enum?: readonly string[];
 }
 
 export interface ProtocolToolManifest {
@@ -138,6 +155,23 @@ export interface ProtocolToolManifest {
   exampleParams: Record<string, unknown>;
   /** ENV var required for this tool. If set and ENV is empty, tool is hidden from discovery and blocked in execute. */
   requiresEnv?: string;
+  /**
+   * Mutually exclusive param sets: EXACTLY ONE member of each group must be
+   * present in a call. Retires the 15+ hand-written prose XOR sentences and
+   * their hand-written handler checks (SPEC §1.7) — including
+   * `borrowOperate`'s same-direction ban, which is documented nowhere today.
+   *
+   * Enforced once, at the boundary, by `runtime/params.ts`, and rendered as a
+   * `constraints` row by `discovery.ts` so the rule is a schema fact before the
+   * call rather than an error after it.
+   *
+   * EXACTLY one, not at-most one: a group whose members may legitimately ALL be
+   * absent is not an exclusive group and must not be declared here — express
+   * that with `required` on nothing and a sentence in the params' own
+   * descriptions. Members must be declared params of this manifest
+   * (`_manifest-lint.ts` territory).
+   */
+  exclusiveParamGroups?: readonly (readonly string[])[];
   /** Optional discovery metadata for improved retrieval — filled incrementally per tool. */
   discovery?: ToolDiscoveryMetadata;
 }
@@ -219,6 +253,16 @@ export interface ProtocolExecutionContext {
    * Absent ⇒ false ⇒ today's barrier.
    */
   preparationBypassesBarrier?: boolean;
+  /**
+   * Operator Stop for the turn that owns this dispatch, threaded verbatim from
+   * `InternalToolContext.abortSignal` — see that field's doc for the full
+   * contract, the never-interrupt clause, and the list of producers that
+   * deliberately leave it unset.
+   *
+   * In one line: a protocol handler passes it to every read, poll, sleep, and
+   * quota wait, and MUST NOT observe it inside a sign→broadcast→persist window.
+   */
+  abortSignal?: AbortSignal;
 }
 
 // ── Discovery request/result ─────────────────────────────────────
@@ -266,7 +310,32 @@ export interface ProtocolDiscoveryItem {
   namespace: ProtocolNamespace;
   description: string;
   mutating: boolean;
+  /**
+   * The manifest's own side-effect classification. `mutating` alone reads as
+   * "will spend funds" — `trench.launch_request_form` is `mutating: true` and
+   * spends nothing, which is a discovery-schema gap, not a trench bug.
+   */
+  actionKind: ActionKind;
   params: ProtocolParamDef[];
+  /**
+   * The required param keys, restated as a list. `params[i].required` is one
+   * boolean on object #1 of 37 and optional params carry no marker at all; a
+   * ~20-byte restatement is the one form of this fact no skim can miss.
+   */
+  required: string[];
+  /**
+   * The manifest's authored worked call. It exists on every manifest, is
+   * correct, and was dropped from this row until W7 — `dexscreener.search`'s is
+   * exactly the call whose absence produced the live
+   * `missing required parameter query` failure.
+   */
+  exampleParams: Record<string, unknown>;
+  /**
+   * Rendered {@link ProtocolToolManifest.exclusiveParamGroups} — one sentence
+   * per group. Only present when the manifest declares groups, so a tool
+   * without XORs pays nothing.
+   */
+  constraints?: string[];
   /** Retrieval score for this match (0 when no query, >0 for ranked matches). */
   score: number;
   /**
@@ -284,6 +353,8 @@ export interface ProtocolDiscoveryItem {
    * bypassed, to keep payloads minimal.
    */
   unavailable_at_pressure?: boolean;
+  /** Exclusive-union marker: `requiredParams` is the LIST row's spelling. */
+  requiredParams?: never;
 }
 
 /**
@@ -296,7 +367,18 @@ export interface ProtocolDiscoveryItem {
 export interface ProtocolDiscoveryListItem {
   toolId: string;
   mutating: boolean;
+  /** Same reason as the ranked row: `mutating` alone over-reads as "spends". */
+  actionKind: ActionKind;
   description: string;
+  /**
+   * Required param KEYS only — never the full schema. A listing exists to be
+   * cheap over a whole namespace, and a half-schema in a listing is the worst
+   * of both worlds (`reports/model-research.md` §4.1: a discovered tool must be
+   * re-materialized as a full definition before the call). The measured harm
+   * this fixes is the agent that listed, then executed, having never seen which
+   * keys were mandatory.
+   */
+  requiredParams: string[];
   /**
    * Exclusive-union markers: a list row NEVER carries the ranked item's fields.
    * Declaring them `never` keeps `tools` readable without a narrowing dance —
@@ -305,6 +387,9 @@ export interface ProtocolDiscoveryListItem {
    */
   namespace?: never;
   params?: never;
+  required?: never;
+  exampleParams?: never;
+  constraints?: never;
   score?: never;
   whyMatched?: never;
   unavailable_at_pressure?: never;

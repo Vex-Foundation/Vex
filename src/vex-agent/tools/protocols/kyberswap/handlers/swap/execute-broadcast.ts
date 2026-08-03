@@ -29,7 +29,7 @@ import {
   minedRevertApprovalLegReason,
 } from "@vex-agent/tools/protocols/runtime/mined-revert-reason.js";
 import { formatUnits, type Address } from "viem";
-import { sanitizeProviderNote } from "../../helpers.js";
+import { derivePriceImpact, sanitizeProviderNote } from "../../helpers.js";
 import type { ToolResult } from "../../../../types.js";
 import { abortRemainingPlans } from "./activity-recording.js";
 import { tryGetWrappedNativeAddress } from "./chain-native.js";
@@ -37,6 +37,7 @@ import { kyberFailureMessage } from "./error-output.js";
 import { buildPostIntentFailureResult } from "./execute-failure.js";
 import type { PreparedSwapExecution } from "./execute-plan.js";
 import { revealOnSwapMinedRevert } from "./reveal-messaging.js";
+import { safetyDisclosureSentence, type SafetyCheckUnavailable } from "./safety-disclosure.js";
 
 export interface SwapBroadcastInput {
   readonly toolId: string;
@@ -52,13 +53,17 @@ export interface SwapBroadcastInput {
   readonly tokenInLabel: string;
   readonly tokenOutLabel: string;
   readonly slippage: number;
+  /** Legs whose honeypot/FoT check could not run — disclosed, never silent (W2b). */
+  readonly safetyCheckUnavailable: readonly SafetyCheckUnavailable[];
 }
 
 export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise<ToolResult> {
   const {
     toolId, prepared, publicClient, walletClient, walletAddress, sessionId,
     chainId, slug, tokenIn, tokenOut, tokenInLabel, tokenOutLabel, slippage,
+    safetyCheckUnavailable,
   } = input;
+  const safetyDisclosure = safetyDisclosureSentence(safetyCheckUnavailable);
   const { executionId, events, plans, buildResp } = prepared;
 
   let currentIndex = 0;
@@ -112,8 +117,13 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
           // second half gives the agent a READ it can perform itself instead
           // of waiting on the sweep — the alternative to waiting must never
           // be a re-broadcast.
-          output: `${toolId}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with chain_read (action tx_receipt, chainId=${chainId}, txHash=${outcome.txHash}).`,
-          data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
+          output: `${toolId}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with chain_read (action tx_receipt, chain=${chainId}, txHash=${outcome.txHash}).${safetyDisclosure ? ` ${safetyDisclosure}` : ""}`,
+          data: {
+            _executionId: executionId,
+            txHash: outcome.txHash,
+            status: "pending",
+            ...(safetyCheckUnavailable.length > 0 ? { safetyCheckUnavailable } : {}),
+          },
         };
       }
 
@@ -211,8 +221,13 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         logger.warn("kyberswap.swap.execute.settlement_undecodable", { id: eventRow.id, txHash: outcome.txHash });
         return {
           success: true,
-          output: `${toolId}: swap confirmed on-chain (tx ${outcome.txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.`,
-          data: { _executionId: executionId, txHash: outcome.txHash, status: "confirmed_pending_amounts" },
+          output: `${toolId}: swap confirmed on-chain (tx ${outcome.txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.${safetyDisclosure ? ` ${safetyDisclosure}` : ""}`,
+          data: {
+            _executionId: executionId,
+            txHash: outcome.txHash,
+            status: "confirmed_pending_amounts",
+            ...(safetyCheckUnavailable.length > 0 ? { safetyCheckUnavailable } : {}),
+          },
         };
       }
 
@@ -270,7 +285,10 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       // convention note).
       const summary =
         `Swapped ${amountInHuman} ${tokenInLabel} → ${amountOutHuman} ${tokenOutLabel} on ${slug}. `
-        + `Tx: ${outcome.txHash}` + (buildResp.data.amountInUsd ? ` (~$${buildResp.data.amountInUsd} in / ~$${buildResp.data.amountOutUsd} out, estimated).` : ".");
+        + `Tx: ${outcome.txHash}` + (buildResp.data.amountInUsd ? ` (~$${buildResp.data.amountInUsd} in / ~$${buildResp.data.amountOutUsd} out, estimated).` : ".")
+        // W2b: a swap that ran without honeypot protection says so in the
+        // FIRST line the agent reads, not only in a machine field.
+        + (safetyDisclosure ? ` ${safetyDisclosure}` : "");
 
       // The build response's own cost disclosure was validated and then
       // dropped: `additionalCostUsd` is a real charge on this settlement
@@ -295,6 +313,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         // (real, on-chain) settlement did not persist — never claim
         // ordinary "confirmed".
         status: confirmWriteFailed ? "confirmed_unrecorded" : "confirmed",
+        ...(safetyCheckUnavailable.length > 0 ? { safetyCheckUnavailable } : {}),
         _executionId: executionId,
         _explorerRefs: [{ chain: slug, txRef: outcome.txHash }],
       };
@@ -315,6 +334,13 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       plans,
       events,
       slippage,
+      // The impact of the build that was being signed, so a slippage refusal can
+      // report what the pool actually did next to the tolerance it was given.
+      // Same fraction convention `helpers.ts` publishes on every quote.
+      observedPriceImpactFraction: derivePriceImpact(
+        buildResp.data.amountInUsd,
+        buildResp.data.amountOutUsd,
+      ),
     });
   }
 }

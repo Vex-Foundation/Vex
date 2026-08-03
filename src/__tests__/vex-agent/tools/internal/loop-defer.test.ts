@@ -15,12 +15,27 @@ const mockEnqueue = vi.fn();
 const mockCancelForSession = vi.fn();
 const mockClaimDue = vi.fn();
 const mockGetPendingForSession = vi.fn();
+const mockEnqueueSessionScopedWake = vi.fn();
+const mockFindActivityByProviderOrderId = vi.fn();
 
 vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
   enqueue: (...args: unknown[]) => mockEnqueue(...args),
   cancelForSession: (...args: unknown[]) => mockCancelForSession(...args),
   claimDue: (...args: unknown[]) => mockClaimDue(...args),
   getPendingForSession: (...args: unknown[]) => mockGetPendingForSession(...args),
+}));
+
+// The agent-session park goes through the shared session-scoped primitive
+// (gate + INSERT in ONE transaction under the session control lock). Mocked
+// here because that transaction needs a real pool; its own contract is covered
+// by the runtime-continuation suite.
+vi.mock("@vex-agent/engine/core/runner/runtime-continuation.js", () => ({
+  enqueueSessionScopedWake: (...args: unknown[]) => mockEnqueueSessionScopedWake(...args),
+}));
+
+vi.mock("@vex-agent/db/repos/agent-activity/watch-reads.js", () => ({
+  findActivityByProviderOrderId: (...args: unknown[]) =>
+    mockFindActivityByProviderOrderId(...args),
 }));
 
 // Stub DB client — handler doesn't touch it, but import chain via types.ts
@@ -75,9 +90,25 @@ function enqueueReturn(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function ctxAgentFull() {
+  return makeTestContext({
+    sessionId: "session-agent-1",
+    sessionPermission: "full",
+    sessionKind: "agent",
+    missionRunId: null,
+  });
+}
+
 beforeEach(() => {
   mockEnqueue.mockReset();
   mockEnqueue.mockResolvedValue(enqueueReturn());
+  mockEnqueueSessionScopedWake.mockReset();
+  mockEnqueueSessionScopedWake.mockResolvedValue({
+    kind: "decided",
+    row: enqueueReturn({ sessionId: "session-agent-1", missionRunId: null }),
+  });
+  mockFindActivityByProviderOrderId.mockReset();
+  mockFindActivityByProviderOrderId.mockResolvedValue({ id: 4242, status: "pending" });
   vi.useRealTimers();
 });
 
@@ -169,9 +200,10 @@ describe("loop_defer — argument validation", () => {
 // ── Defense-in-depth (runtime context) ─────────────────────────
 
 describe("loop_defer — defense-in-depth", () => {
-  it("rejects agent sessionKind", async () => {
+  it("rejects a RESTRICTED agent session (a human is in the loop there)", async () => {
     const ctx = makeTestContext({
       sessionKind: "agent",
+      sessionPermission: "restricted",
       missionRunId: null,
     });
     const result = await handleLoopDefer(
@@ -280,6 +312,204 @@ describe("loop_defer — happy path", () => {
   });
 });
 
+// ── Full-Autonomous agent sessions (owner decree 2026-08-03) ───
+
+describe("loop_defer — Full-Autonomous agent session", () => {
+  it("parks a full-permission agent session with missionRunId null", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-20T10:00:00.000Z"));
+
+    const result = await handleLoopDefer(
+      { after_ms: 300_000, reason: "bridge base→arbitrum ~5 min; on wake call bridge_status" },
+      ctxAgentFull(),
+    );
+
+    expect(result.success).toBe(true);
+    // The mission-shaped enqueue must NOT be used: it bypasses the session
+    // control lock the agent shape depends on.
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(mockEnqueueSessionScopedWake).toHaveBeenCalledTimes(1);
+    const [input] = mockEnqueueSessionScopedWake.mock.calls[0];
+    expect(input.sessionId).toBe("session-agent-1");
+    expect(input.dueAt.toISOString()).toBe("2026-04-20T10:05:00.000Z");
+    expect(result.engineSignal?.type).toBe("defer_until");
+  });
+
+  it("refuses without scheduling when the operator already stopped the session", async () => {
+    mockEnqueueSessionScopedWake.mockResolvedValueOnce({ kind: "stopped" });
+    const result = await handleLoopDefer(
+      { after_ms: 60_000, reason: "waiting" },
+      ctxAgentFull(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/stopped by the operator/i);
+    expect(result.engineSignal).toBeUndefined();
+  });
+});
+
+// ── Wait bounds and units ──────────────────────────────────────
+
+describe("loop_defer — wake time bounds", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-20T10:00:00.000Z"));
+  });
+
+  it("accepts a wake_at exactly at the 24h ceiling", async () => {
+    const result = await handleLoopDefer(
+      { wake_at: "2026-04-21T10:00:00.000Z", reason: "24h out" },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  // The defect this closes: `after_ms` capped at 24 h while `wake_at` had NO
+  // upper bound, so the same wait was refused one way and accepted the other,
+  // and a model could schedule itself years into the future.
+  it("rejects a wake_at beyond the same 24h ceiling as after_ms", async () => {
+    const result = await handleLoopDefer(
+      { wake_at: "2031-04-20T10:00:00Z", reason: "five years out" },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/24h/);
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects a wake_at less than 1s away, matching the after_ms floor", async () => {
+    const result = await handleLoopDefer(
+      { wake_at: "2026-04-20T10:00:00.500Z", reason: "half a second" },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/1000 ms/);
+  });
+
+  it("rejects a wake_at with no timezone designator (never interpreted as local time)", async () => {
+    const result = await handleLoopDefer(
+      { wake_at: "2026-04-20T12:00:00", reason: "local time" },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/ISO-8601 UTC/);
+  });
+
+  it("treats wake_at as UTC — an offset form resolves to the same instant", async () => {
+    const result = await handleLoopDefer(
+      { wake_at: "2026-04-20T12:00:00.000Z", reason: "utc" },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(true);
+    const [input] = mockEnqueue.mock.calls[0];
+    expect((input.dueAt as Date).toISOString()).toBe("2026-04-20T12:00:00.000Z");
+  });
+});
+
+// ── Watch (bridge_order_status) ────────────────────────────────
+
+describe("loop_defer — watch never kills the defer", () => {
+  // THE regression this suite exists for: an unsupported watch type used to
+  // fail the whole call, so the run did NOT park and the agent stayed in its
+  // loop — the exact "unlimited thoughts" pathology loop_defer exists to stop.
+  it("still parks on the timer when the watch type is unknown, naming what IS supported", async () => {
+    const result = await handleLoopDefer(
+      {
+        after_ms: 60_000,
+        reason: "waiting",
+        watch: [{ type: "token_price", token: "ETH" }],
+      },
+      ctxMissionActive(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    expect(result.engineSignal?.type).toBe("defer_until");
+    expect(result.output).toContain("token_price");
+    expect(result.output).toContain("bridge_order_status");
+    expect(mockEnqueue.mock.calls[0][0].payload).toBeNull();
+    expect(result.data?.watch_rejected).toHaveLength(1);
+  });
+
+  it("arms a bridge_order_status watch, resolving orderId to the activity row id", async () => {
+    const result = await handleLoopDefer(
+      {
+        after_ms: 300_000,
+        reason: "bridge fill",
+        watch: [{ type: "bridge_order_status", orderId: "order-abc" }],
+      },
+      ctxMissionActive(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockFindActivityByProviderOrderId).toHaveBeenCalledWith("order-abc");
+    const [input] = mockEnqueue.mock.calls[0];
+    expect(input.payload.conditions).toEqual([
+      { type: "bridge_order_status", orderId: "order-abc", activityId: 4242 },
+    ]);
+    expect(result.data?.watch_rejected).toEqual([]);
+  });
+
+  it("rejects an unknown orderId by name without failing the defer", async () => {
+    mockFindActivityByProviderOrderId.mockResolvedValueOnce(null);
+    const result = await handleLoopDefer(
+      {
+        after_ms: 60_000,
+        reason: "bridge fill",
+        watch: [{ type: "bridge_order_status", orderId: "nope" }],
+      },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(true);
+    expect(result.output).toMatch(/no recorded bridge has orderId "nope"/);
+    expect(mockEnqueue.mock.calls[0][0].payload).toBeNull();
+  });
+
+  it("rejects an already-settled order by name without failing the defer", async () => {
+    mockFindActivityByProviderOrderId.mockResolvedValueOnce({ id: 7, status: "confirmed" });
+    const result = await handleLoopDefer(
+      {
+        after_ms: 60_000,
+        reason: "bridge fill",
+        watch: [{ type: "bridge_order_status", orderId: "order-done" }],
+      },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(true);
+    expect(result.output).toMatch(/already reached status "confirmed"/);
+  });
+
+  // A condition with no `type` at all used to be a Zod ARGUMENT error, which
+  // failed the call. It is now a named watch rejection, so the park survives a
+  // malformed condition exactly as it survives an unsupported one.
+  it("still parks when a watch condition has no type", async () => {
+    const result = await handleLoopDefer(
+      { after_ms: 60_000, reason: "waiting", watch: [{ orderId: "order-abc" }] },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(true);
+    expect(result.output).toMatch(/needs a "type" string/);
+    expect(result.output).toContain("bridge_order_status");
+  });
+
+  it("keeps the valid conditions when only some are unarmable", async () => {
+    const result = await handleLoopDefer(
+      {
+        after_ms: 60_000,
+        reason: "mixed",
+        watch: [
+          { type: "bridge_order_status", orderId: "order-abc" },
+          { type: "nonsense" },
+        ],
+      },
+      ctxMissionActive(),
+    );
+    expect(result.success).toBe(true);
+    const [input] = mockEnqueue.mock.calls[0];
+    expect(input.payload.conditions).toHaveLength(1);
+    expect(result.data?.watch_rejected).toHaveLength(1);
+  });
+});
+
 // ── Registry visibility ────────────────────────────────────────
 
 describe("loop_defer — visibility", () => {
@@ -303,10 +533,36 @@ describe("loop_defer — visibility", () => {
     expect(names).toContain("loop_defer");
   });
 
-  it("is hidden in an agent session", () => {
-    const tools = getOpenAITools(defaultVisibilityContext({ sessionKind: "agent" }));
+  it("is VISIBLE in a Full-Autonomous agent session", () => {
+    const tools = getOpenAITools(defaultVisibilityContext({
+      sessionKind: "agent",
+      permission: "full",
+      missionRunActive: false,
+    }));
+    const names = tools.map((t) => t.function.name);
+    expect(names).toContain("loop_defer");
+  });
+
+  it("is hidden in a restricted agent session", () => {
+    const tools = getOpenAITools(defaultVisibilityContext({
+      sessionKind: "agent",
+      permission: "restricted",
+      missionRunActive: false,
+    }));
     const names = tools.map((t) => t.function.name);
     expect(names).not.toContain("loop_defer");
+  });
+
+  it("survives the pressure barrier — the loop-stopping tool is safe_at_barrier", () => {
+    for (const band of ["barrier", "critical"] as const) {
+      const tools = getOpenAITools(defaultVisibilityContext({
+        permission: "full",
+        sessionKind: "mission",
+        missionRunActive: true,
+        contextUsageBand: band,
+      }));
+      expect(tools.map((t) => t.function.name)).toContain("loop_defer");
+    }
   });
 
   it("is hidden in mission setup (missionRunActive=false)", () => {

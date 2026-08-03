@@ -57,32 +57,6 @@ export async function retryWithBackoff<T>(
   throw lastError!;
 }
 
-// ── Timeout ──────────────────────────────────────────────────────
-
-/**
- * Race a promise against a timeout. Cleans up the timer on completion.
- */
-export async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout>;
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms / 1000}s`)),
-      ms,
-    );
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    clearTimeout(timeoutId!);
-  }
-}
-
 // ── Error classification ─────────────────────────────────────────
 
 /**

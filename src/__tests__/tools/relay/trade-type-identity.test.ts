@@ -31,6 +31,7 @@ import {
   type BridgeTradeType,
 } from "@vex-agent/tools/protocols/prequote/identity/hash.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const baseIdentity: BridgeMatchInput = {
   kind: "bridge",
@@ -50,8 +51,9 @@ const baseIdentity: BridgeMatchInput = {
   referrer: "",
   referrerFeeBps: "",
   filler: "",
-  // Bound since the relay slippage fix — "" is the omitted-slippage sentinel.
-  slippageBps: "",
+  // Bound since the relay slippage fix; since W4a an omitted slippage
+  // materializes the Vex default rather than an "" sentinel.
+  slippageBps: String(VEX_DEFAULT_SLIPPAGE_BPS),
 };
 
 const hashOf = (tradeType: BridgeTradeType) => computePrequoteMatchHash({ ...baseIdentity, tradeType });
@@ -78,7 +80,7 @@ describe("B. build-level (parseTradeType through the shared builder)", () => {
     toChain: "4663",
     fromToken: "eth",
     toToken: "eth",
-    amount: "1000",
+    amountRaw: "1000",
     ...(tradeType !== undefined ? { tradeType } : {}),
   });
 

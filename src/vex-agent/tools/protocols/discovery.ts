@@ -1,5 +1,6 @@
 import {
   PROTOCOL_TOOLS,
+  getMissingEnvForNamespace,
   isAdvertisedProtocolNamespace,
   isKnownProtocolNamespace,
   isProtocolToolAvailable,
@@ -7,6 +8,7 @@ import {
 import { buildDiscoverNamespaceDescription } from "./descriptions.js";
 import { denseScore } from "./dense-score.js";
 import { pinExactToolIdMatch } from "./toolid-pin.js";
+import { describeExclusiveParamGroups } from "./runtime/params.js";
 import type {
   ProtocolDiscoveryItem,
   ProtocolDiscoveryListItem,
@@ -14,11 +16,39 @@ import type {
   ProtocolDiscoveryResult,
   ProtocolDiscoveryRetrievalMeta,
 } from "./types.js";
-import type { ProtocolToolManifest } from "./types.js";
+import type { ProtocolNamespace, ProtocolToolManifest } from "./types.js";
 import type { ScoredManifest } from "./lexical-score.js";
 import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 
-const DEFAULT_DISCOVERY_LIMIT = 5;
+/**
+ * Ranked rows returned when the caller names no limit. Owner decree
+ * (2026-08-03, revised same day): default 5, because every ranked row now
+ * carries the FULL manifest (params with required/enum/unit, exampleParams,
+ * constraints) and is injected as a callable function schema — five complete
+ * manifests are a working set, not a shortlist. The agent RAISES the limit
+ * itself (up to MAX_DISCOVERY_LIMIT) whenever the job needs more; the limit
+ * param description says so explicitly.
+ */
+export const DEFAULT_DISCOVERY_LIMIT = 5;
+
+/**
+ * Hard ceiling on a caller-supplied `limit` (owner clarification 2026-08-03:
+ * the default of 10 is an EXAMPLE — the agent asks for as many tools as the
+ * job needs, up to this maximum).
+ *
+ * 20 is not arbitrary: every ranked row is re-materialized as a real function
+ * schema for the rest of the session
+ * (`registry/injected-protocol-tools.ts`), and the injected-set cap
+ * (`MAX_DISCOVERED_TOOLS_PER_SESSION = 24`) is sized so that ONE round at this
+ * maximum is never partially evicted. Raising this ceiling without raising
+ * that cap would silently truncate the working set the agent just asked for.
+ *
+ * Enforced by REJECTION at the model boundary
+ * (`dispatcher/discover-tools-args.ts` — a supplied param is answered by name,
+ * never silently clamped) and clamped here as defense-in-depth for internal
+ * callers that bypass that boundary.
+ */
+export const MAX_DISCOVERY_LIMIT = 20;
 
 /**
  * The canonical dotted Uniswap swap toolIds (FIX-SPINE round 1, finding
@@ -32,6 +62,11 @@ const REVEAL_GATED_UNISWAP_TOOL_IDS: ReadonlySet<string> = new Set([
   "uniswap.swap.execute",
 ]);
 
+/** The manifest's required param keys, in declaration order. */
+function requiredParamKeys(manifest: ProtocolToolManifest): string[] {
+  return manifest.params.filter((param) => param.required === true).map((param) => param.key);
+}
+
 function toDiscoveryItem(
   entry: ScoredManifest,
   contextUsageBand: ProtocolDiscoveryRequest["contextUsageBand"],
@@ -42,10 +77,17 @@ function toDiscoveryItem(
     namespace: entry.manifest.namespace,
     description: entry.manifest.description,
     mutating: entry.manifest.mutating,
+    actionKind: entry.manifest.actionKind,
     params: entry.manifest.params,
+    required: requiredParamKeys(entry.manifest),
+    exampleParams: entry.manifest.exampleParams,
     score: entry.score,
     whyMatched: entry.whyMatched,
   };
+  // Absent unless the manifest declares XOR groups — a tool without them pays
+  // nothing for the field.
+  const constraints = describeExclusiveParamGroups(entry.manifest);
+  if (constraints.length > 0) item.constraints = constraints;
   // Only emit the advisory flag when it would be true — keeps payloads
   // minimal and gives the model a clear "absent = available" rule.
   // While a live preparation bypasses the barrier the dispatcher WILL allow
@@ -77,8 +119,25 @@ function toDiscoveryListItem(manifest: ProtocolToolManifest): ProtocolDiscoveryL
   return {
     toolId: manifest.toolId,
     mutating: manifest.mutating,
+    actionKind: manifest.actionKind,
     description: manifest.description,
+    requiredParams: requiredParamKeys(manifest),
   };
+}
+
+/**
+ * Why a namespace is empty, when we can say. `solana` listed as empty with no
+ * reason and no remedy while `getMissingEnvForNamespace` — the function that
+ * produces both — sat unused. Env var NAMES only: a name is configuration, a
+ * value is a secret (rule 06).
+ */
+function describeEmptyNamespace(namespace: ProtocolNamespace): string {
+  const missingEnv = getMissingEnvForNamespace(namespace);
+  if (missingEnv.length === 0) {
+    return `Namespace "${namespace}" has no available tools right now.`;
+  }
+  return `Namespace "${namespace}" has no available tools right now: `
+    + `set ${missingEnv.join(", ")} to enable it.`;
 }
 
 /**
@@ -88,7 +147,7 @@ function toDiscoveryListItem(manifest: ProtocolToolManifest): ProtocolDiscoveryL
  * is letting the model see everything a namespace offers in one cheap read.
  */
 function buildNamespaceListing(
-  namespace: string,
+  namespace: ProtocolNamespace,
   manifests: readonly ProtocolToolManifest[],
 ): ProtocolDiscoveryResult {
   const tools = manifests.map(toDiscoveryListItem);
@@ -98,7 +157,7 @@ function buildNamespaceListing(
     totalCount: tools.length,
     hasMore: false,
     tools,
-    warnings: tools.length === 0 ? [`Namespace "${namespace}" has no available tools right now.`] : [],
+    warnings: tools.length === 0 ? [describeEmptyNamespace(namespace)] : [],
     retrieval: { method: "list", denseFailed: false, candidateCount: tools.length },
   };
 }
@@ -114,7 +173,9 @@ function buildDiscoveryFailure(message: string): ProtocolDiscoveryResult {
   };
 }
 
-function resolveRequestedNamespace(rawNamespace: string | undefined): string | ProtocolDiscoveryResult | null {
+function resolveRequestedNamespace(
+  rawNamespace: string | undefined,
+): ProtocolNamespace | ProtocolDiscoveryResult | null {
   if (typeof rawNamespace !== "string" || rawNamespace.trim().length === 0) return null;
 
   const namespace = rawNamespace.trim();
@@ -130,8 +191,10 @@ function resolveRequestedNamespace(rawNamespace: string | undefined): string | P
 export async function discoverProtocolCapabilities(
   request: ProtocolDiscoveryRequest,
 ): Promise<ProtocolDiscoveryResult> {
+  // Model-supplied limits are REJECTED above `MAX_DISCOVERY_LIMIT` at the
+  // boundary; this clamp is the defense-in-depth for internal callers.
   const limit = typeof request.limit === "number" && Number.isFinite(request.limit)
-    ? Math.max(1, Math.floor(request.limit))
+    ? Math.min(MAX_DISCOVERY_LIMIT, Math.max(1, Math.floor(request.limit)))
     : DEFAULT_DISCOVERY_LIMIT;
 
   const resolvedNamespace = resolveRequestedNamespace(request.namespace);

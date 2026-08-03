@@ -83,7 +83,7 @@ describe("solana.lend.positions — earnings sub-call address", () => {
     getJupiterLendEarnEarnings.mockResolvedValueOnce({ earnings: [], raw: [] });
 
     const result = await LEND_HANDLERS["solana.lend.positions"]!(
-      { address: WALLET_ADDRESS },
+      { walletAddress: WALLET_ADDRESS },
       ctx(),
     );
 
@@ -103,7 +103,7 @@ describe("solana.lend.positions — earnings sub-call address", () => {
     getJupiterLendEarnPositions.mockResolvedValueOnce([]);
 
     const result = await LEND_HANDLERS["solana.lend.positions"]!(
-      { address: WALLET_ADDRESS },
+      { walletAddress: WALLET_ADDRESS },
       ctx(),
     );
 

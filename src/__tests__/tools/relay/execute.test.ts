@@ -148,16 +148,16 @@ describe("pollRelayIntentStatus — bounded 1s-cadence poll", () => {
     }
   });
 
-  it("returns the last OBSERVED non-terminal status when the 60s budget is exhausted", async () => {
+  it("returns the last OBSERVED non-terminal status when the 10s budget is exhausted", async () => {
     vi.useFakeTimers();
     try {
       getIntentStatus.mockResolvedValue({ status: "submitted" }); // never terminal
       const promise = pollRelayIntentStatus("0xreq");
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(10_000);
       const result = await promise;
       expect(result.status).toBe("submitted");
       expect(result.observed).toBe(true);
-      expect(getIntentStatus.mock.calls.length).toBeGreaterThan(50);
+      expect(getIntentStatus.mock.calls.length).toBe(10);
     } finally {
       vi.useRealTimers();
     }
@@ -168,11 +168,11 @@ describe("pollRelayIntentStatus — bounded 1s-cadence poll", () => {
     try {
       getIntentStatus.mockRejectedValue(new Error("status API down"));
       const promise = pollRelayIntentStatus("0xreq");
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(10_000);
       const result = await promise;
       expect(result.observed).toBe(false);
       expect(result.destinationTxHashes).toEqual([]);
-      expect(getIntentStatus.mock.calls.length).toBeGreaterThan(50);
+      expect(getIntentStatus.mock.calls.length).toBe(10);
     } finally {
       vi.useRealTimers();
     }

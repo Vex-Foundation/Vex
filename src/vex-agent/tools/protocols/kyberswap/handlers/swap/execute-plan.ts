@@ -37,6 +37,7 @@ import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { estimateKyberSwapCostsUsd } from "../../swap-cost-estimate.js";
 import { PROTOCOL } from "./protocol-id.js";
 import type { KyberBuildRouteResponse, KyberGetRouteResponse } from "./route-request.js";
+import type { SafetyCheckUnavailable } from "./safety-disclosure.js";
 
 export interface SwapEventPlan {
   readonly eventRole: AgentActivityEventRole;
@@ -66,12 +67,21 @@ export interface PrepareSwapExecutionInput {
   readonly slippage: number;
   readonly routerAddress: Address;
   readonly routeSummaryRaw: KyberGetRouteResponse["data"]["routeSummary"];
+  /**
+   * Legs whose honeypot/FoT check could not run (W2b). Persisted onto the
+   * activity row's `intent_params` under a Vex-authored `_`-prefixed key —
+   * same established pattern as the Jupiter lend `/operate` delta shape — so
+   * the record itself says the swap ran without that protection. No schema
+   * change: `intent_params` is already a sanitized, capped JSON blob.
+   */
+  readonly safetyCheckUnavailable: readonly SafetyCheckUnavailable[];
 }
 
 export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Promise<PreparedSwapExecution> {
   const {
     toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
     tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress, routeSummaryRaw,
+    safetyCheckUnavailable,
   } = input;
 
   if (!tokenIn.isNative) {
@@ -238,7 +248,11 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   });
 
   const created = await createAgentActivityIntent({
-    toolId, namespace: PROTOCOL, intentParams: p,
+    toolId,
+    namespace: PROTOCOL,
+    intentParams: safetyCheckUnavailable.length > 0
+      ? { ...p, _safetyCheckUnavailable: safetyCheckUnavailable }
+      : p,
     events: builtPlans.map((plan, i) => ({ ...plan.event, eventIndex: i })),
   });
   return {

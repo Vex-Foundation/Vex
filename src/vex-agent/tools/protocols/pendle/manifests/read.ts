@@ -23,7 +23,7 @@ export const PENDLE_READ_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chains", type: "string", description: "Comma-separated chains to scope to (e.g. 'ethereum,arbitrum,base'), or 'all'. Omit for every Pendle chain. An unsupported chain is rejected by name." },
+      { key: "chainIds", type: "string", description: "Comma-separated chains to scope to (e.g. 'ethereum,arbitrum,base'), or 'all'. Each entry is a chain slug/alias or a numeric chain id. Omit for every Pendle chain. An unsupported chain is rejected by name." },
       { key: "includeMatured", type: "boolean", description: "Include EXPIRED/matured markets (default false). Matured markets can only be redeemed or removed, never bought." },
       { key: "minLiquidityUsd", type: "number", description: "Minimum market liquidity in USD — screen out thin markets you could not exit." },
       { key: "maxLiquidityUsd", type: "number", description: "Maximum market liquidity in USD." },
@@ -44,7 +44,7 @@ export const PENDLE_READ_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "limit", type: "number", description: "Max markets to return (default 20). There is NO hidden ceiling — hasMore and nextOffset report what is left." },
       { key: "fields", type: "string", description: "Comma-separated row field groups to keep: identity, apy, liquidity, expiry, legs, points, protocols — or 'all' (default). Use it to keep large result sets small." },
     ],
-    exampleParams: { chains: "all", sort: "impliedApy", minLiquidityUsd: 100000, maxDaysToExpiry: 180, limit: 10 },
+    exampleParams: { chainIds: "all", sort: "impliedApy", minLiquidityUsd: 100000, maxDaysToExpiry: 180, limit: 10 },
     discovery: PENDLE_YIELDS_DISCOVERY["pendle.yields"],
   },
   {
@@ -56,7 +56,7 @@ export const PENDLE_READ_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chains", type: "string", description: "Comma-separated chains to scope to, or 'all'. Omit for every chain the dashboard returns." },
+      { key: "chainIds", type: "string", description: "Comma-separated chains to scope to, or 'all'. Each entry is a chain slug/alias or a numeric chain id. Omit for every chain the dashboard returns." },
       { key: "kinds", type: "string", description: "Comma-separated position kinds to keep: pt, yt, lp, sy. Omit for all four. Cross-chain PT legs are always reported separately." },
       { key: "redeemableOnly", type: "boolean", description: "Only legs in state matured_redeemable — the matured PTs ready to redeem (default false)." },
       { key: "minValueUsd", type: "number", description: "Server-side minimum USD value per position; smaller ones are not returned at all. Use it to drop dust. Default: unfiltered." },

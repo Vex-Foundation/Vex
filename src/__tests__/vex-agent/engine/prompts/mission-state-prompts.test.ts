@@ -105,7 +105,7 @@ describe("mission state prompts", () => {
     // Orientation (not market operation), Mission RUN ends in an actionable
     // decision, Chat answers and stops. The former `planning-discipline.ts`
     // constant is merged into research.ts, carrying the canonical heading + the
-    // negative `execute_tool`-on-market-data rule.
+    // negative market-data-call rule.
     const prompt = buildResearchPrompt();
 
     expect(prompt).toMatch(/Research workflow varies by mode/i);
@@ -117,7 +117,7 @@ describe("mission state prompts", () => {
     expect(prompt).toContain("## Capability Orientation vs Operational Research");
     expect(prompt).toContain("Operational Research");
     expect(prompt).toContain("This is orientation, not market operation");
-    expect(prompt).toContain("do NOT call `execute_tool` on market data");
+    expect(prompt).toContain("do NOT call market-data tools or pull quotes while planning");
 
     // Negative: the old "research + planning phase" framing is gone.
     expect(prompt).not.toContain("research + planning phase");

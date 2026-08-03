@@ -50,6 +50,8 @@ describe("KyberCommonClient", () => {
       ok: false,
       status: 500,
       json: async () => ({ message: "Server error" }),
+      // The error path reads the body as TEXT (W2a).
+      text: async () => JSON.stringify({ message: "Server error" }),
     });
 
     await expect(client.getSupportedChains()).rejects.toThrow(/Common Service error/);

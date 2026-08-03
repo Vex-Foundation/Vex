@@ -7,7 +7,7 @@ const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 function candidate() {
   return {
     toolName: "wallet_send_confirm",
-    args: { network: "solana", intentId: INTENT_ID },
+    args: { walletFamily: "solana", intentId: INTENT_ID },
     expiresAt: EXPIRES_AT,
     approvalPreview: {
       toolName: "wallet_send_confirm",
@@ -78,7 +78,7 @@ describe("prepared-action follow-up registry", () => {
     expect(
       validatePreparedActionFollowUp("wallet_send_prepare", {
         ...candidate(),
-        args: { network: "solana", intentId: "not-a-uuid" },
+        args: { walletFamily: "solana", intentId: "not-a-uuid" },
       }),
     ).toEqual({ ok: false, reason: "invalid_contract" });
   });
@@ -96,7 +96,7 @@ describe("prepared-action follow-up registry", () => {
     expect(
       validatePreparedActionFollowUp("wallet_send_prepare", {
         toolName: "wallet_send_confirm",
-        args: { network: "eip155", intentId: INTENT_ID },
+        args: { walletFamily: "eip155", intentId: INTENT_ID },
         expiresAt: EXPIRES_AT,
         approvalPreview: {
           toolName: "wallet_send_confirm",

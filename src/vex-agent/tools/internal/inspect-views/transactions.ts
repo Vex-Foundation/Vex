@@ -99,6 +99,29 @@ function usdEstimate(value: number | null | undefined): string | null {
   return value != null && Number.isFinite(value) ? `~$${value.toFixed(2)} est.` : null;
 }
 
+/**
+ * The Vex fee clause for a human summary line (owner decree 2026-08-03).
+ *
+ * The fee fields were already on every row, but only in the raw spread — the
+ * summary the agent reads first never mentioned them, so "what did that cost
+ * me?" had no answer at a glance.
+ *
+ * Two deliberate refusals here. It renders the EXACT token amount, never the
+ * USD estimate alone: `usdVexFeeEst` is nullable precisely when no trustworthy
+ * price existed, and a summary that showed only USD would print "no fee" for a
+ * fee that was charged. And it renders nothing at all when there is no fee
+ * amount — a failed attempt is not charged, and inventing a "fee: 0" line would
+ * assert something the record does not say.
+ */
+function vexFeeClause(row: TransactionRow): string | null {
+  const amount = row.vexFeeAmountHuman;
+  if (typeof amount !== "string" || amount.length === 0) return null;
+  const symbol = row.vexFeeTokenSymbol;
+  const fee = symbol ? `${amount} ${symbol}` : amount;
+  const usd = usdEstimate(row.usdVexFeeEst != null ? Number(row.usdVexFeeEst) : null);
+  return usd ? `Vex fee ${fee} (${usd})` : `Vex fee ${fee}`;
+}
+
 /** Chain display for a bridge route endpoint — slug preferred, numeric id as fallback. */
 function routeEndpoint(slug: string | null | undefined, id: number | null | undefined): string | null {
   return slug ?? (id != null ? String(id) : null);
@@ -130,8 +153,43 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (row.failureCode) parts.push(`(${row.failureCode})`);
+  const bridgeFee = vexFeeClause(row);
+  if (bridgeFee) parts.push(bridgeFee);
+  const stalled = stalledVerificationClause(row);
+  if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
   return parts.join(" — ");
+}
+
+/**
+ * Consecutive inconclusive verification attempts before a pending row says so.
+ * Mirrors `STALLED_VERIFICATION_ATTEMPTS` in the agent-activity repo.
+ */
+const STALLED_ATTEMPTS = 20;
+
+/**
+ * The agent-facing half of the Wave P stall surfacing (migration 065).
+ *
+ * A `pending` row tells the agent nothing about WHY it is pending. If Vex has
+ * been unable to verify it — most often `no_safe_rpc`, which is permanent for
+ * that chain, not transient — the agent will keep waiting or, worse, re-broadcast
+ * a transaction that may already have settled. That is the exact blind-retry
+ * failure the agent-facing-errors decree exists to stop, applied to a NON-error.
+ *
+ * The clause therefore states three things and no more: that VERIFICATION (not
+ * the transaction) stalled, the verifier's own reason verbatim, and the two
+ * instructions that follow from it. It never claims the transaction failed —
+ * an unverifiable transaction's outcome is UNKNOWN, and saying otherwise about
+ * real funds is the thing the never-auto-fail policy forbids.
+ */
+function stalledVerificationClause(row: TransactionRow): string | null {
+  if ((row.status ?? "") !== "pending") return null;
+  if ((row.verificationAttempts ?? 0) < STALLED_ATTEMPTS) return null;
+  const reason = row.lastVerificationReason ?? "unknown";
+  return (
+    `verification stalled (${reason}): Vex has repeatedly been unable to read this `
+    + `transaction's status on chain. It may still be settled. Do not re-broadcast`
+  );
 }
 
 /** Compact human line for one row — leads the item, full fields follow. */
@@ -168,6 +226,10 @@ function summarize(row: TransactionRow): string {
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (status === "definitively_failed" && row.failureCode) parts.push(`(${row.failureCode})`);
+  const fee = vexFeeClause(row);
+  if (fee) parts.push(fee);
+  const stalled = stalledVerificationClause(row);
+  if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
   return parts.join(" — ");
 }

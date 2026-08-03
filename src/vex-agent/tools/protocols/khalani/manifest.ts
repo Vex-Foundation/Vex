@@ -8,6 +8,17 @@
 
 import type { ProtocolToolManifest } from "../types.js";
 import { KHALANI_MAIN_DISCOVERY } from "../embeddings/khalani/manifest.js";
+import { CANONICAL_RAW_AMOUNT_SENTENCE } from "../conventions.js";
+
+/**
+ * The ONE raw-amount description both Khalani bridge tools declare (W5b). It
+ * ends with the shared convention sentence, which names `token_find` as the
+ * decimals source — rule 90: a raw amount that travels without the decimals
+ * needed to read it is a thousandfold error waiting to happen.
+ */
+const AMOUNT_RAW_DESCRIPTION =
+  "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). "
+  + CANONICAL_RAW_AMOUNT_SENTENCE;
 
 export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
   {
@@ -69,11 +80,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.tokens.balances",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `address` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results. Does NOT cover local chains like Robinhood Chain (4663) — read those with the internal `wallet_balances` tool.",
+    description: "Read your token balances on Khalani-supported chains for one wallet family (EVM or Solana). Defaults to your personal wallet — pass `walletAddress` to override with a different one. Returns balances with USD prices, scanned per chain for complete multi-chain results. Does NOT cover local chains like Robinhood Chain (4663) — read those with the internal `wallet_balances` tool.",
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "address", type: "string", description: "Optional. Pass a different wallet address to check; omit to use your personal wallet." },
+      { key: "walletAddress", type: "string", description: "Optional. The ACCOUNT address whose balances to read; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet, or the call fails with WALLET_SCOPE_MISMATCH." },
       { key: "wallet", type: "string", description: "Wallet family: eip155 or solana (default: eip155)." },
       { key: "chainIds", type: "string", description: "Comma-separated chain IDs or aliases. Omit to scan all chains in the family." },
     ],
@@ -92,7 +103,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "fromToken", type: "string", required: true, description: "Source token address." },
       { key: "toChain", type: "string", required: true, description: "Destination chain ID or alias." },
       { key: "toToken", type: "string", required: true, description: "Destination token address." },
-      { key: "amount", type: "string", required: true, description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
+      { key: "amountRaw", type: "string", required: true, description: AMOUNT_RAW_DESCRIPTION },
       { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
       { key: "recipient", type: "string", description: "Destination recipient override." },
@@ -112,7 +123,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       fromToken: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       toChain: "solana",
       toToken: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-      amount: "1000000",
+      amountRaw: "1000000",
     },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.quote.get"],
   },
@@ -124,7 +135,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "address", type: "string", description: "Wallet address (optional — uses configured wallet)." },
+      { key: "walletAddress", type: "string", description: "Optional. The ACCOUNT address whose orders to list; omit to use your personal wallet. Under a session-scoped wallet it must equal the selected wallet." },
       { key: "wallet", type: "string", description: "Wallet family: eip155 or solana." },
       { key: "limit", type: "number", description: "Max results." },
       { key: "cursor", type: "number", description: "Pagination cursor for next page." },
@@ -161,7 +172,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "fromToken", type: "string", required: true, description: "Source token address." },
       { key: "toChain", type: "string", required: true, description: "Destination chain ID or alias." },
       { key: "toToken", type: "string", required: true, description: "Destination token address." },
-      { key: "amount", type: "string", required: true, description: "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from token_find, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen." },
+      { key: "amountRaw", type: "string", required: true, description: AMOUNT_RAW_DESCRIPTION },
       { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT." },
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
       { key: "recipient", type: "string", description: "Destination recipient override." },
@@ -182,7 +193,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       fromToken: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       toChain: "base",
       toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      amount: "100000000",
+      amountRaw: "100000000",
     },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.bridge"],
   },

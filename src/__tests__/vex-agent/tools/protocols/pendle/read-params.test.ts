@@ -59,7 +59,7 @@ describe("parsePendleYieldsParams — defaults", () => {
   });
 
   it("treats `all` as unscoped for chains and fields", () => {
-    const q = requireValue(parsePendleYieldsParams({ chains: "all", fields: "all" }));
+    const q = requireValue(parsePendleYieldsParams({ chainIds: "all", fields: "all" }));
     expect(q.chainIds).toBeUndefined();
     expect(q.fields).toBeUndefined();
   });
@@ -77,7 +77,7 @@ describe("parsePendleYieldsParams — rejections name the param", () => {
   });
 
   it("rejects an unsupported chain and lists the supported ones", () => {
-    const message = expectRejection(parsePendleYieldsParams({ chains: "ethereum,solana" }), "chains");
+    const message = expectRejection(parsePendleYieldsParams({ chainIds: "ethereum,solana" }), "chainIds");
     expect(message).toContain("solana");
     expect(message).toContain("arbitrum");
   });
@@ -130,7 +130,7 @@ describe("parsePendleYieldsParams — rejections name the param", () => {
 
 describe("parsePendleYieldsParams — accepted values normalize", () => {
   it("resolves chain slugs and ids, de-duplicated, and is case-insensitive", () => {
-    const q = requireValue(parsePendleYieldsParams({ chains: "Ethereum, 42161 ,ethereum" }));
+    const q = requireValue(parsePendleYieldsParams({ chainIds: "Ethereum, 42161 ,ethereum" }));
     expect(q.chainIds).toEqual([1, 42161]);
   });
 

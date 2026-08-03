@@ -170,7 +170,7 @@ describe("verdict — Solana (solana.swap.quote)", () => {
     outMint: string,
     safety: Record<string, unknown> | undefined,
   ): string | undefined {
-    return mod.extractQuote("solana.swap.quote", { amount: 1 }, solanaResult(inMint, outMint, safety))?.verdict;
+    return mod.extractQuote("solana.swap.quote", { amountIn: "1" }, solanaResult(inMint, outMint, safety))?.verdict;
   }
 
   it("isSus:true → fail", () => {
@@ -226,7 +226,7 @@ describe("verdict — Solana (solana.swap.quote)", () => {
   it("safety_detail carries bounded audited fields", () => {
     const extracted = mod.extractQuote(
       "solana.swap.quote",
-      { amount: 1 },
+      { amountIn: "1" },
       solanaResult(SOLANA_MINT_A, SOL_MINT, {
         inputToken: { isSus: false, mintAuthorityDisabled: true, topHoldersPercentage: 12.5 },
       }),

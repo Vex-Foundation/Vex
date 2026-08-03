@@ -178,7 +178,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     );
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -203,7 +203,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -236,7 +236,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -264,7 +264,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -292,7 +292,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     );
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -317,7 +317,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockMarkAuditFailed.mockRejectedValueOnce(new Error("cascading DB throw"));
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -343,7 +343,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     );
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -369,7 +369,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockMarkAuditFailed.mockResolvedValueOnce(null);
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -389,7 +389,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockMarkFailed.mockResolvedValueOnce(null);
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 

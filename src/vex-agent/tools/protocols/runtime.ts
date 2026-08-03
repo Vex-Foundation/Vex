@@ -35,7 +35,7 @@ import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
 import { validateProtocolParams } from "./runtime/params.js";
 import { coerceStringArrayParams } from "./runtime/string-array-coercion.js";
 import { coerceNumericStringParams } from "./runtime/numeric-string-coercion.js";
-import { summarizeProtocolError } from "./runtime/errors.js";
+import { renderProtocolFailureOutput, summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
 import { captureExecution } from "./runtime/capture.js";
 import logger from "@utils/logger.js";
@@ -375,7 +375,9 @@ export async function executeProtocolTool(
 
     logger.warn("protocol.execute.failed", {
       toolId: request.toolId,
-      code: safe.category,
+      code: safe.code,
+      category: safe.category,
+      ...(safe.httpStatus === undefined ? {} : { httpStatus: safe.httpStatus }),
       message: safe.message,
       durationMs,
     });
@@ -385,7 +387,7 @@ export async function executeProtocolTool(
     const failedResult: ToolResult = withActionKind(
       {
         success: false,
-        output: `${request.toolId} failed (${safe.category}): ${safe.message}${safe.retryable ? " (retryable)" : ""}`,
+        output: renderProtocolFailureOutput(request.toolId, safe),
       },
       effectiveActionKind,
     );

@@ -62,14 +62,24 @@ export function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSch
   const required: string[] = [];
 
   for (const param of params) {
+    // A closed value set is compiled onto EVERY branch that can carry a value:
+    // JSON Schema's `enum` beside an `anyOf` would constrain the union as a
+    // whole, but an array VALUE never equals one of the member strings, so the
+    // array branch would become unsatisfiable — the same trap as `type` above.
+    const values = param.enum && param.enum.length > 0 ? [...param.enum] : undefined;
     properties[param.key] = param.acceptsStringArray === true
       // No outer `type`: JSON Schema conjoins siblings, so `type: "string"` here
       // would make the array branch unsatisfiable. See `JsonSchemaUnionProperty`.
       ? {
-          anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+          anyOf: [
+            values ? { type: "string", enum: values } : { type: "string" },
+            { type: "array", items: values ? { type: "string", enum: values } : { type: "string" } },
+          ],
           description: param.description,
         }
-      : { type: param.type, description: param.description };
+      : values
+        ? { type: param.type, description: param.description, enum: values }
+        : { type: param.type, description: param.description };
     if (param.required) required.push(param.key);
   }
 

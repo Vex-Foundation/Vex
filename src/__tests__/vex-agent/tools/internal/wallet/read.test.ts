@@ -117,7 +117,7 @@ beforeEach(() => {
 
 describe("handleWalletBalances — inclusive chain scope", () => {
   it("scans a local-only filter ('robinhood') direct-RPC and never calls the Khalani scan", async () => {
-    const res = await handleWalletBalances({ wallet: "eip155", chainIds: "robinhood" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "robinhood" }, CONTEXT);
     expect(res.success).toBe(true);
     expect(mockScan).not.toHaveBeenCalled();
     expect(mockReadLocal).toHaveBeenCalledTimes(1);
@@ -135,7 +135,7 @@ describe("handleWalletBalances — inclusive chain scope", () => {
   });
 
   it("accepts the numeric local chain id ('4663')", async () => {
-    const res = await handleWalletBalances({ wallet: "eip155", chainIds: "4663" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "4663" }, CONTEXT);
     expect(res.success).toBe(true);
     expect(mockScan).not.toHaveBeenCalled();
     expect(mockReadLocal).toHaveBeenCalledTimes(1);
@@ -146,7 +146,7 @@ describe("handleWalletBalances — inclusive chain scope", () => {
       expect(chainIds).toBeUndefined(); // unfiltered Khalani scan
       return khalaniScan(family, family === "eip155" ? { totalUsd: 7, scannedChainIds: [8453] } : {});
     });
-    const res = await handleWalletBalances({ wallet: "eip155" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT);
     expect(res.success).toBe(true);
     expect(mockScan).toHaveBeenCalledTimes(1);
     expect(mockReadLocal).toHaveBeenCalledTimes(1);
@@ -156,7 +156,7 @@ describe("handleWalletBalances — inclusive chain scope", () => {
   });
 
   it("a Khalani-only filter ('base') never touches the local reader", async () => {
-    const res = await handleWalletBalances({ wallet: "eip155", chainIds: "base" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "base" }, CONTEXT);
     expect(res.success).toBe(true);
     expect(mockScan).toHaveBeenCalledTimes(1);
     expect(mockScan.mock.calls[0]![0]).toMatchObject({ chainIds: [8453] });
@@ -164,7 +164,7 @@ describe("handleWalletBalances — inclusive chain scope", () => {
   });
 
   it("mixed filter ('base,robinhood') routes each side to its own scanner", async () => {
-    const res = await handleWalletBalances({ wallet: "eip155", chainIds: "base,robinhood" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "base,robinhood" }, CONTEXT);
     expect(res.success).toBe(true);
     expect(mockScan).toHaveBeenCalledTimes(1);
     expect(mockScan.mock.calls[0]![0]).toMatchObject({ chainIds: [8453] });
@@ -173,7 +173,7 @@ describe("handleWalletBalances — inclusive chain scope", () => {
 
   it("degrades a local RPC failure to a bounded per-chain error (no raw provider text)", async () => {
     mockReadLocal.mockRejectedValue(new Error("connect ECONNREFUSED https://rpc.secret"));
-    const res = await handleWalletBalances({ wallet: "eip155", chainIds: "robinhood" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "robinhood" }, CONTEXT);
     expect(res.success).toBe(true);
     const snap = (res.data as { wallets: Array<Record<string, unknown>> }).wallets[0]!;
     expect(snap.scannedChainIds).toEqual([]);
@@ -184,13 +184,13 @@ describe("handleWalletBalances — inclusive chain scope", () => {
   });
 
   it("fails a solana-family request filtered to a local EVM chain", async () => {
-    const res = await handleWalletBalances({ wallet: "solana", chainIds: "robinhood" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "solana", chainIds: "robinhood" }, CONTEXT);
     expect(res.success).toBe(false);
     expect(res.output).toContain("no solana chains matched");
   });
 
   it("still fails on a chain neither registry knows", async () => {
-    const res = await handleWalletBalances({ wallet: "eip155", chainIds: "foochain" }, CONTEXT);
+    const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "foochain" }, CONTEXT);
     expect(res.success).toBe(false);
     expect(res.output).toContain("Unsupported chain: foochain");
   });

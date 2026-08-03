@@ -125,7 +125,7 @@ function describePositionFilters(q: PendlePositionsQuery): Record<string, unknow
     redeemableOnly: q.redeemableOnly,
     sort: q.sort,
   };
-  if (q.chainIds !== undefined) applied.chains = q.chainIds.map((id) => pendleChainSlug(id) ?? String(id));
+  if (q.chainIds !== undefined) applied.chainIds = q.chainIds.map((id) => pendleChainSlug(id) ?? String(id));
   if (q.kinds !== undefined) applied.kinds = q.kinds;
   if (q.minValueUsd !== undefined) applied.minValueUsd = q.minValueUsd;
   if (q.fields !== undefined) applied.fields = q.fields;

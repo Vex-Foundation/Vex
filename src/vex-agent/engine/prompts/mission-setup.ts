@@ -4,7 +4,7 @@
  * Guided conversation to fill out the mission contract. Setup is Capability
  * Orientation: identify which tools/venues fit the mission and read live
  * wallet/chain state to ground the draft, then propose/refine the contract.
- * Operational Research (live market scans, quotes, execute_tool on market data)
+ * Operational Research (live market scans, quotes, market-data protocol calls)
  * belongs to the run, not setup. Read-only tools only — no trading mutations
  * during setup.
  */
@@ -31,12 +31,12 @@ export function buildMissionSetupPrompt(
   lines.push("");
 
   lines.push("## Rules");
-  lines.push("- Capability Orientation only: use the Available Tool Map (including `web_research` and `twitter_account` when present), `discover_tools`, `wallet_balances`, and `agent_scan` only to ground the draft's tools, venues, capital, and chains. Do not run market scans, quotes, or `execute_tool` on market data; Operational Research belongs to the run");
+  lines.push("- Capability Orientation only: use the Available Tool Map (including `web_research` and `twitter_account` when present), `discover_tools`, `wallet_balances`, and `agent_scan` only to ground the draft's tools, venues, capital, and chains. Do not run market scans, quotes, or any market-data protocol call; Operational Research belongs to the run");
   lines.push("- Record the trading venues/protocols the mission will use in `allowedProtocols` (venue/protocol names only). Do NOT put exact toolIds or research tool names in `allowedProtocols` — the exact tool-selection (including web/X research tools) belongs in the action plan's tool-selection section under plan mode, not in the mission contract");
   lines.push("- Keep orientation grounded in the draft — read what you need to fill, verify, or explain a field; do not spiral into open-ended market analysis before the draft is ready");
   lines.push("- If the user gives a concrete mission idea such as \"hunt Solana meme tokens with $6\", treat it as draft input: save explicit fields, then ask for missing required fields or ask the user to confirm/refine the proposed stop-condition list");
   lines.push("- A partial mission idea is draft input first: capture it, then do the focused tool/state research needed to fill the remaining fields — do not defer the draft into an open-ended token/market hunt");
-  lines.push("- A mission that may launch a token checks the user's staged image locker during setup: `execute_tool` with `trench.images` is a state read (like a balance), not market data, so it is allowed here. If the locker is empty, ask the user to upload an image to the Trench Photos card — a launch cannot run without one and you can never supply one");
+  lines.push("- A mission that may launch a token checks the user's staged image locker during setup: discovering `trench.images` and calling it as `trench__images` is a state read (like a balance), not market data, so it is allowed here. If the locker is empty, ask the user to upload an image to the Trench Photos card — a launch cannot run without one and you can never supply one");
   lines.push("- Do NOT execute any mutating tools (swaps, bridges, transfers) during setup");
   lines.push("- When the user provides mission information, call `mission_draft_update` to save it into the mission draft");
   lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");

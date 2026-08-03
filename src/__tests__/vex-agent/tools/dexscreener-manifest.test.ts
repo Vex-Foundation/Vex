@@ -103,24 +103,24 @@ describe("dexscreener manifest", () => {
     expect(required).toEqual(["query"]);
   });
 
-  it("dexscreener.pairs requires chainId, pairAddress", () => {
+  it("dexscreener.pairs requires chain, pairAddress", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.pairs")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chainId");
+    expect(required).toContain("chain");
     expect(required).toContain("pairAddress");
   });
 
-  it("dexscreener.tokens requires chainId, tokenAddresses", () => {
+  it("dexscreener.tokens requires chain, tokenAddresses", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokens")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chainId");
+    expect(required).toContain("chain");
     expect(required).toContain("tokenAddresses");
   });
 
-  it("dexscreener.tokenPairs requires chainId, tokenAddress", () => {
+  it("dexscreener.tokenPairs requires chain, tokenAddress", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.tokenPairs")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chainId");
+    expect(required).toContain("chain");
     expect(required).toContain("tokenAddress");
   });
 
@@ -133,10 +133,10 @@ describe("dexscreener manifest", () => {
     expect(limit!.required).toBeFalsy();
   });
 
-  it("dexscreener.orders requires chainId, tokenAddress", () => {
+  it("dexscreener.orders requires chain, tokenAddress", () => {
     const tool = DEXSCREENER_TOOLS.find(t => t.toolId === "dexscreener.orders")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("chainId");
+    expect(required).toContain("chain");
     expect(required).toContain("tokenAddress");
   });
 

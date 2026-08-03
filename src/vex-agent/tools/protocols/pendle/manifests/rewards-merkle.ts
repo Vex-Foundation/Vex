@@ -8,6 +8,12 @@ import { PENDLE_MARKET_READ_DISCOVERY } from "../../embeddings/pendle/market-rea
  *   - the description states that Vex cannot claim these, because the public
  *     endpoint publishes no merkle proof (live-verified). An agent that saw a
  *     claimable balance and looked for a claim tool would loop;
+ *   - the scope param stays the SINGULAR `chain`, not the `chainIds` list the two
+ *     Pendle read tools take (SPEC §2.7 item 18). The handler narrows to at most
+ *     one chain, so a list key would advertise a multi-chain filter the code does
+ *     not have; and omission already means "every chain", which is what an agent
+ *     would reach for `chainIds: "all"` to say. The description states both halves
+ *     so the semantic is readable without opening the handler;
  *   - there is NO wallet param. The wallet is the session's own, resolved in the
  *     privileged path. A wallet key here would let model output aim the read at
  *     a third party (rules/06), and the protocol runtime refuses undeclared
@@ -33,7 +39,7 @@ export const PENDLE_REWARDS_MERKLE_TOOL: ProtocolToolManifest = {
       key: "chain",
       type: "string",
       description:
-        "Optional chain slug or numeric id (e.g. 'ethereum', 42161) to narrow the list. Omit to see every chain's rewards in one call. An unsupported chain is rejected by name.",
+        "Optional chain slug or numeric id (e.g. 'ethereum', 42161) to narrow the list to ONE chain. Omit it to see every chain's rewards in one call — there is no chainIds list here, and no 'all' literal to pass. An unsupported chain is rejected by name.",
     },
   ],
   exampleParams: { chain: "ethereum" },

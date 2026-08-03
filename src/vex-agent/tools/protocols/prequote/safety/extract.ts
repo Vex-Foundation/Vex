@@ -206,15 +206,13 @@ function extractSolana(
 ): ExtractedQuote | null {
   const parsed = SolanaQuoteSchema.safeParse(data);
   if (!parsed.success) return null;
-  const amountRaw = params.amount;
-  // Solana params.amount is a human number; accept number or numeric string.
-  const amount =
-    typeof amountRaw === "number" && Number.isFinite(amountRaw)
-      ? String(amountRaw)
-      : typeof amountRaw === "string" && amountRaw.trim() !== ""
-        ? amountRaw
-        : null;
-  if (amount === null) return null;
+  // W5a: `amountIn` is a HUMAN decimal STRING (the old `amount` number param
+  // is gone, and with it the float multiply it fed). A missing or wrong-typed
+  // value records NO prequote row, so the later execute blocks for want of one
+  // — fail-closed, matching the gate's "" on the other side.
+  const amountIn = params.amountIn;
+  if (typeof amountIn !== "string" || amountIn.trim() === "") return null;
+  const amount = amountIn;
 
   // Slippage: prefer the quote's echoed value, else the request param.
   const slippage =

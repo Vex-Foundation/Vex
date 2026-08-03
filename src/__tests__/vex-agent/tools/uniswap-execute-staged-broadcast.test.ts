@@ -130,6 +130,23 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSigningWallet: vi.fn(() => ({ family: "eip155", address: WALLET, privateKey: `0x${"ab".repeat(32)}` })),
   walletScopeErrorToResult: vi.fn((err: unknown) => ({ success: false, output: String(err) })),
 }));
+// The Vex fee leg (migration 066) rides the SHARED staged broadcaster, not
+// this venue's own sign/broadcast pair. Confirmed by default so the fee never
+// changes the swap-side outcome these tests are about.
+vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
+  signStageBroadcast: async (
+    _p: unknown, _w: unknown, _tx: unknown,
+    hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> },
+  ) => {
+    await hooks.onHashStaged({ txHash: "0xfeehash", fromAddress: WALLET, nonce: 9 });
+    await hooks.onAccepted();
+    return { kind: "confirmed", txHash: "0xfeehash", receipt: { blockNumber: 2n } };
+  },
+}));
+// The fee-eligibility oracle is a token fact, never a network call in a unit test.
+vi.mock("@tools/kyberswap/token-api/client.js", () => ({
+  getKyberTokenApiClient: () => ({ getHoneypotFotInfo: async () => ({ isHoneypot: false, isFOT: false, tax: 0 }) }),
+}));
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: (...args: unknown[]) => loggerWarn(...args), debug: vi.fn() },
 }));
@@ -155,9 +172,14 @@ beforeEach(() => {
   broadcastUniswapTransaction.mockResolvedValue("0xhash");
   waitForSuccessfulReceipt.mockResolvedValue({ logs: [] });
   decodeUniswapExecutedLegs.mockReturnValue({ executedAmountInRaw: 1n, executedAmountOutRaw: 1n });
+  // The swap leg plus the `swap_fee` leg migration 066 added — the intent
+  // always returns a row for EVERY planned event, the fee row included.
   createAgentActivityIntent.mockResolvedValue({
     executionId: 1,
-    events: [{ id: 100, eventIndex: 0, eventRole: "swap" }],
+    events: [
+      { id: 100, eventIndex: 0, eventRole: "swap" },
+      { id: 101, eventIndex: 1, eventRole: "swap_fee" },
+    ],
   });
   createAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 999, event: {} });
   markActivityBroadcast.mockResolvedValue({ applied: true, row: {} });
@@ -308,6 +330,7 @@ describe("C17 — an ambiguous/reverted event aborts every downstream never-sign
       events: [
         { id: 200, eventIndex: 0, eventRole: "allowance" },
         { id: 201, eventIndex: 1, eventRole: "swap" },
+        { id: 202, eventIndex: 2, eventRole: "swap_fee" },
       ],
     });
   });
