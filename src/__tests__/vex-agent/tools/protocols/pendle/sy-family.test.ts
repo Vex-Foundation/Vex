@@ -344,7 +344,7 @@ describe("the pt.redeem fallback note now names sy.redeem as REAL", () => {
     readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
   it("the handler's fallback note points at pendle.sy.redeem and no longer says it does not exist", () => {
-    const source = read("../../../../../vex-agent/tools/protocols/pendle/handlers/pt.ts");
+    const source = read("../../../../../vex-agent/tools/protocols/pendle/handlers/pt/redeem.ts");
     expect(source).toMatch(/pendle\.sy\.redeem/);
     expect(source).not.toMatch(/pendle\.sy\.redeem, which does not exist yet/);
   });
