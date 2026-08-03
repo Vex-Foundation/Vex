@@ -155,7 +155,7 @@ function IslandBody({
             <ElapsedCounter startedAtMs={preview.startedAtMs} />
           ) : null}
         </span>
-        <LiveReasoning text={preview.reasoningText} live />
+        <LiveReasoning text={preview.reasoningText} />
       </DynamicContainer>
     );
   }

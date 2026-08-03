@@ -72,13 +72,13 @@ export const chatStopReasonSchema = z.enum([
   "checkpoint_pause",
   "iteration_limit",
   "timeout",
-  "waiting_for_parent",
   "waiting_for_wake",
   "waiting_for_compact_commit",
   "compact_unable_at_critical",
   "system_error",
   "user_paused",
   "plan_acceptance_required",
+  "user_form_required",
 ]);
 export type ChatStopReason = z.infer<typeof chatStopReasonSchema>;
 

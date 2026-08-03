@@ -167,6 +167,30 @@ export function SessionTranscript({
     setShowLatest(!pinned);
   }, []);
 
+  // The SAME measurement, coalesced to one per animation frame. Reading
+  // scrollHeight/scrollTop/clientHeight forces a synchronous layout, so doing
+  // it once per streamed growth tick made the reflow the stream's own cost
+  // (owner decree 2026-08-03). A frame is the finest cadence the pill can
+  // actually be seen changing at, and the trailing edge is guaranteed: the
+  // last scheduled frame always runs, so the pill can never settle on a stale
+  // measurement.
+  const latestSyncFrame = useRef<number | null>(null);
+  const scheduleLatestSync = useCallback((): void => {
+    if (latestSyncFrame.current !== null) return;
+    latestSyncFrame.current = window.requestAnimationFrame(() => {
+      latestSyncFrame.current = null;
+      syncLatestVisibility();
+    });
+  }, [syncLatestVisibility]);
+  useEffect(
+    () => () => {
+      if (latestSyncFrame.current !== null) {
+        window.cancelAnimationFrame(latestSyncFrame.current);
+      }
+    },
+    [],
+  );
+
   const jumpToLatest = useCallback((): void => {
     const el = scrollRef.current;
     if (el === null) return;
@@ -263,8 +287,10 @@ export function SessionTranscript({
       : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}`;
   useEffect(() => {
     if (previewSig === null) return;
-    syncLatestVisibility();
-  }, [previewSig, syncLatestVisibility]);
+    // Frame-coalesced: a growth tick asks for a measurement, it does not take
+    // one. See `scheduleLatestSync`.
+    scheduleLatestSync();
+  }, [previewSig, scheduleLatestSync]);
 
   // Turn settled (stream → null): retire the anchor run-out. The spacer's job
   // was to guarantee scroll range WHILE the reply streamed below the anchored
