@@ -38,6 +38,7 @@ import { coerceNumericStringParams } from "./runtime/numeric-string-coercion.js"
 import { renderProtocolFailureOutput, summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
 import { captureExecution } from "./runtime/capture.js";
+import { isAbortError } from "@utils/cancellation.js";
 import logger from "@utils/logger.js";
 import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
 import { REVEAL_GATED_RELAY_TOOL_IDS, evaluateRelayRevealGate } from "../registry/relay-reveal.js";
@@ -367,6 +368,25 @@ export async function executeProtocolTool(
     return withActionKind(result, effectiveActionKind);
   } catch (err) {
     const durationMs = Date.now() - startTime;
+
+    // Operator Stop — RETHROW, before provider-failure logging and before
+    // failure capture. A protocol handler that was interrupted mid-wait did not
+    // FAIL: dressing the abort as a failed ToolResult here swallowed it, made
+    // the dispatcher's `TOOL_ABORTED_BY_USER_STOP_OUTPUT` branch unreachable for
+    // every protocol tool, and wrote a failed-mutation audit row for a mutation
+    // that was never attempted. The predicate is the dispatcher's EXACT one
+    // (`dispatcher.ts`): a caller `AbortError` AND this turn's signal actually
+    // aborted — so a provider SDK's own internal abort/deadline (signal not
+    // aborted, or a `TimeoutError`) stays an ordinary classified tool failure
+    // with its capture intact.
+    if (isAbortError(err) && context.abortSignal?.aborted === true) {
+      logger.info("protocol.execute.aborted_by_user_stop", {
+        toolId: request.toolId,
+        durationMs,
+      });
+      throw err;
+    }
+
     // B-003: reduce the raw provider/SDK error to a redacted, bounded summary.
     // The original message may carry URLs, request/response bodies, auth, or
     // key material — none of which may reach the log, the tool output, or the
