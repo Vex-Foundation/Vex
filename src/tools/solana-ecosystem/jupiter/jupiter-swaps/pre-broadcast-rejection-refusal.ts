@@ -110,6 +110,8 @@
 
 import { SendTransactionError } from "@solana/web3.js";
 
+import { slippageRemediation } from "../../../../utils/error-summary.js";
+
 /**
  * The one condition this module can identify. A single-member `kind` on
  * purpose: everything else stays `null` and keeps the handler's conservative
@@ -314,16 +316,22 @@ function refusedWithPhrase(anchorErrorNumber: number): string {
 function remedyFor(kind: JupiterPreBroadcastRejection["kind"], slippage: JupiterSwapSlippageBounds): string {
   switch (kind) {
     case "slippage":
+      // Same shared remedy the EVM pre-sign refusal gives (owned by
+      // `utils/error-summary/remediation.ts`), so an agent that met this failure
+      // on KyberSwap reads the identical instruction here — including that Vex
+      // makes exactly one attempt at the tolerance it was passed.
       return `That is the price guard doing its job: the pool moved past otherAmountThreshold — the minimum output written into the transaction this quote produced — between the quote and the submit. `
-        + `Re-quote and retry with a higher slippageBps — ${appliedTolerancePhrase(slippage.appliedBps)}, and Vex rejects anything above ${slippage.maxBps} rather than clamping it. `
-        + `Raise it in steps; every increase widens the worst-case price you accept.`;
+        + slippageRemediation({
+          ...slippage,
+          // NO impact figure and NO stale-reserve caution on this venue.
+          // Jupiter's `priceImpactPct` carries the OPPOSITE sign to the
+          // cost-positive fraction the shared remedy documents — the repo's own
+          // captured healthy quote is `-0.00015…`, so an ordinary swap reads
+          // negative. Quoting it, or copying the EVM caution, would report every
+          // normal Jupiter swap as anomalous.
+          staleReserveCaution: false,
+        });
   }
-}
-
-function appliedTolerancePhrase(appliedBps: number | null): string {
-  return appliedBps === null
-    ? "this attempt set no slippageBps of its own, so the venue applied its default"
-    : `this attempt used ${appliedBps}`;
 }
 
 /**

@@ -7,11 +7,10 @@
 
 import { loadConfig } from "../../../config/store.js";
 import { fetchWithTimeout, readJson } from "../../../utils/http.js";
-import { mapKyberTransportError } from "../errors.js";
+import { mapKyberTransportError, readKyberErrorBody } from "../errors.js";
 import { mapAggregatorError } from "./errors.js";
 import { validateSwapRouteResponse, validateSwapBuildResponse } from "./validation.js";
-import { KYBER_CLIENT_ID, AGGREGATOR_TIMEOUT_MS } from "../constants.js";
-import { isRecord } from "../../../utils/validation-helpers.js";
+import { KYBERSWAP_REQUEST_HEADERS, AGGREGATOR_TIMEOUT_MS } from "../constants.js";
 import logger from "../../../utils/logger.js";
 import type { KyberChainSlug } from "../types.js";
 import type { SwapRouteParams, SwapRouteResponse, SwapBuildRequest, SwapBuildResponse } from "./types.js";
@@ -55,7 +54,7 @@ export class KyberAggregatorClient {
       const response = await fetchWithTimeout(url, {
         method,
         headers: {
-          "X-Client-Id": KYBER_CLIENT_ID,
+          ...KYBERSWAP_REQUEST_HEADERS,
           ...(options.body !== undefined ? { "Content-Type": "application/json" } : undefined),
         },
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -63,13 +62,19 @@ export class KyberAggregatorClient {
       });
 
       if (!response.ok) {
-        const raw = await readJson(response);
-        const code = isRecord(raw) && typeof raw.code === "number" ? raw.code : null;
-        const message = isRecord(raw) && typeof raw.message === "string" ? raw.message : `HTTP ${response.status}`;
-        const requestId = isRecord(raw) && typeof raw.requestId === "string" ? raw.requestId : undefined;
+        // Reads the body WHATEVER its content type: an edge challenge answers
+        // HTML, and `readJson` used to drop it, leaving a bare "HTTP 403".
+        const body = await readKyberErrorBody(response);
 
-        logger.warn({ event: "kyberswap.aggregator.request.error", chain, path, status: response.status, code, requestId });
-        throw mapAggregatorError(response.status, code, message, requestId);
+        logger.warn({
+          event: "kyberswap.aggregator.request.error",
+          chain,
+          path,
+          status: response.status,
+          code: body.code,
+          requestId: body.requestId,
+        });
+        throw mapAggregatorError(response.status, body.code, body.message, body.requestId);
       }
 
       const raw = await readJson(response);

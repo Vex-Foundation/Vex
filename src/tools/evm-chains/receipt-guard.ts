@@ -83,12 +83,18 @@ export async function waitForSuccessfulReceipt(
   let receipt: TransactionReceipt;
   try {
     receipt = await waitForReceiptWithRetry(client, hash, retry);
-  } catch {
-    throw new VexError(
+  } catch (err) {
+    const unknownConfirmation = new VexError(
       ErrorCodes.CONFIRMATION_UNKNOWN,
       `Transaction ${hash} was broadcast but its confirmation could not be determined. It may still confirm on-chain.`,
       "Do not retry automatically. Check the transaction hash on-chain before taking any further action.",
     );
+    // The cause is KEPT (SPEC §1.5). This fires on an ALREADY-BROADCAST
+    // transaction, where "why could we not read the receipt" is the whole
+    // question — an RPC 429 and a genuine non-inclusion are the same sentence
+    // without it. `summarizeProtocolError` walks the chain and scrubs it.
+    unknownConfirmation.cause = err;
+    throw unknownConfirmation;
   }
 
   if (receipt.status !== "success") {

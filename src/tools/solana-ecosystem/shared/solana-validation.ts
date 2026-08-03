@@ -40,18 +40,6 @@ export function atomicToExactDecimalString(atomic: bigint, decimals: number): st
   return `${negative ? "-" : ""}${whole.toString()}${frac ? `.${frac}` : ""}`;
 }
 
-export function uiToTokenAmount(uiAmount: number, decimals: number): bigint {
-  if (!Number.isFinite(uiAmount) || uiAmount <= 0) {
-    throw new VexError(
-      ErrorCodes.INVALID_AMOUNT,
-      `Invalid token amount: ${uiAmount}`,
-      "Amount must be a positive finite number.",
-    );
-  }
-
-  return BigInt(Math.round(uiAmount * 10 ** decimals));
-}
-
 export function looksLikeSolanaAddress(value: string): boolean {
   return value.length >= 32 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(value);
 }

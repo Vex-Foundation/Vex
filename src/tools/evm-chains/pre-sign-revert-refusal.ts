@@ -56,6 +56,8 @@
  * `uniswap/handlers/swap.ts`.
  */
 
+import { slippageRemediation } from "../../utils/error-summary.js";
+
 import { DependentLegGasEstimateError } from "./dependent-leg-gas-estimate.js";
 import {
   classifyRouterRevertReason,
@@ -67,6 +69,13 @@ import {
 export interface PreSignSlippageBounds {
   readonly appliedBps: number;
   readonly maxBps: number;
+  /**
+   * The price impact of the quote THIS attempt was built from, as a FRACTION
+   * (0.0015 = 0.15%) — KyberSwap's own convention (`kyberswap/helpers.ts`).
+   * Optional: a venue that has no impact to report omits it and the refusal
+   * simply says less, rather than printing a number nobody measured.
+   */
+  readonly observedPriceImpactFraction?: number | null;
 }
 
 export interface PreSignRevertClassification {
@@ -134,16 +143,19 @@ export function classifyDependentLegPoolStateRevert(
 function remedyFor(failureCode: EvmRouterRevertFailureCode, slippage: PreSignSlippageBounds): string {
   switch (failureCode) {
     case "slippage":
-      // The exception is not decoration: `engine/prompts/protocols.ts` already
-      // teaches that on a chain whose indexed reserves are stale, this exact
-      // revert together with a strongly negative priceImpact means the QUOTE
-      // is wrong, and raising tolerance there buys a worse fill rather than a
-      // fill. A remedy that contradicted shipped guidance would be worse than
-      // none.
+      // The shared remedy is owned by `utils/error-summary/remediation.ts` so
+      // this venue, Jupiter and any later one cannot drift apart on the ONE
+      // money instruction they all give. The priceImpact exception is opted
+      // into HERE (`staleReserveCaution`) because it holds for the EVM venues'
+      // cost-positive impact and not for Jupiter's inverted sign.
+      // It is not decoration: `engine/prompts/protocols.ts`
+      // already teaches that on a chain whose indexed reserves are stale, this
+      // exact revert together with a strongly negative priceImpact means the
+      // QUOTE is wrong, and raising tolerance there buys a worse fill rather
+      // than a fill. A remedy that contradicted shipped guidance would be worse
+      // than none.
       return `That is the price guard doing its job: the pool moved past the minimum output written into this quote's calldata between the quote and the estimate. `
-        + `Re-quote and retry with a higher slippageBps — this attempt used ${slippage.appliedBps}, and Vex rejects anything above ${slippage.maxBps} rather than clamping it. `
-        + `Raise it in steps; every increase widens the worst-case price you accept. `
-        + `One exception: if the fresh quote's priceImpact is strongly negative (output supposedly worth more than input), the venue is pricing off stale reserves and more tolerance would only buy a worse fill — re-quote or switch venue instead.`;
+        + slippageRemediation({ ...slippage, staleReserveCaution: true });
     case "deadline_expired":
       return `The quote's deadline had already passed when the estimate ran. Get a fresh quote and execute it promptly; that alone can succeed.`;
     case "allowance_or_balance":

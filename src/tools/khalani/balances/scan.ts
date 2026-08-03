@@ -17,6 +17,7 @@ import type { ChainFamily, KhalaniChain, KhalaniToken } from "../types.js";
 import { chainNotInRegistryError, tokenUsd } from "./_shared.js";
 import { calculateTokensTotalUsd } from "./aggregate.js";
 import type { BalanceChainError, TokenBalanceScanResult } from "./types.js";
+import { mapWithConcurrency } from "../../../utils/concurrency.js";
 
 const DEFAULT_BALANCE_SCAN_CONCURRENCY = 4;
 
@@ -288,26 +289,4 @@ function resolveTargetChains(
   }
 
   return result;
-}
-
-async function mapWithConcurrency<T>(
-  values: readonly T[],
-  concurrency: number,
-  worker: (value: T) => Promise<void>,
-): Promise<void> {
-  const limit = Math.max(1, Math.floor(concurrency));
-  let nextIndex = 0;
-
-  const workers = Array.from({ length: Math.min(limit, values.length) }, async () => {
-    while (nextIndex < values.length) {
-      const currentIndex = nextIndex;
-      nextIndex += 1;
-      const value = values[currentIndex];
-      if (value !== undefined) {
-        await worker(value);
-      }
-    }
-  });
-
-  await Promise.all(workers);
 }

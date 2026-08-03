@@ -283,7 +283,7 @@ describe("assertComputeBudgetWithinPolicy", () => {
 
     it("names computeUnitPricePercentile — the agent-settable lever — inside the 200-char budget", () => {
       const surfaced = refusalFor(50_000_000);
-      expect(surfaced.length).toBeLessThanOrEqual(201); // 200 + the truncation ellipsis
+      expect(surfaced.length).toBeLessThanOrEqual(321); // 320 + the truncation ellipsis
       expect(surfaced).toContain("computeUnitPricePercentile");
     });
 
