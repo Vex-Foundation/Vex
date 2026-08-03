@@ -57,6 +57,22 @@ export interface InternalToolContext {
    */
   approvalId?: string | null;
   /**
+   * True ONLY for a call the model emitted in a live turn. Set in exactly one
+   * place — `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`
+   * — and never derived from tool arguments, so the model cannot set, clear or
+   * forge it.
+   *
+   * It exists to keep `execute_tool` closed to the model (discovered tools are
+   * injected as real functions and called by name) while leaving its dispatch
+   * route open to the ONE non-model caller that needs it: the cold approval
+   * resume, whose stored envelope is canonicalized to `execute_tool` precisely
+   * so it survives a process restart (`approval-runtime/tool-call-envelope.ts`).
+   * ABSENT ⇒ NOT model-originated, which is correct for every host-built
+   * context (resume, run-tool, sync jobs) and is the conservative default for
+   * a gate that only ever REFUSES.
+   */
+  modelOriginated?: true;
+  /**
    * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
    * filter (e.g. `loop_defer` handler rejects non-mission calls even if the

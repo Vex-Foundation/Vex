@@ -34,6 +34,18 @@ export { dispatchTargetIsMutating } from "./dispatcher/mutating-targets.js";
 export { INTERNAL_TOOL_LOADERS } from "./dispatcher/internal-loaders.js";
 
 /**
+ * What the model is told when it calls `execute_tool` anyway. Names the real
+ * cause and the ONE way forward (rule 04) — the model's next move must be
+ * `discover_tools`, whose ranked rows come back as callable functions.
+ */
+const MODEL_EXECUTE_TOOL_REFUSAL =
+  "execute_tool is not callable. Protocol tools are called DIRECTLY by their " +
+  "own name: run discover_tools with a query describing what you need, and " +
+  "every tool it returns is added to your tool list as a real function " +
+  "(dotted id with `.` written as `__`, e.g. `kyberswap__swap__execute`) whose " +
+  "arguments ARE its parameters — no toolId, no params wrapper.";
+
+/**
  * Stamp `result.actionKind` from the registry fallback when the handler did
  * not set it. Preserves a handler-set value (e.g. `executeProtocolTool` which
  * derives from the TARGET protocol manifest, not from the `execute_tool`
@@ -62,6 +74,27 @@ export async function dispatchTool(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   const startTime = Date.now();
+
+  // `execute_tool` is closed to the MODEL. Discovered manifests are injected as
+  // real functions the model calls by their own name, so the two-level envelope
+  // is now an internal calling convention with exactly one live caller: the
+  // cold approval resume, whose stored call is canonicalized to `execute_tool`
+  // so it survives a process restart (`approval-runtime/tool-call-envelope.ts`).
+  // That caller is host-built and never carries `modelOriginated`.
+  //
+  // THE PLACEMENT IS THE POINT: this refusal runs BEFORE the plan-acceptance
+  // gate below and therefore before `routeToolCall`'s mission auto-retry-unsafe
+  // stamp. A call the model may not make at all must not durably mark the run
+  // auto-retry-unsafe or be recorded as a plan-gate denial on its way out.
+  if (call.name === "execute_tool" && context.modelOriginated === true) {
+    logger.info("tools.dispatch.execute_tool_model_originated_refused", {
+      toolId: typeof call.args.toolId === "string" ? call.args.toolId : null,
+    });
+    return withActionKindFallback(
+      { success: false, output: MODEL_EXECUTE_TOOL_REFUSAL },
+      call.name,
+    );
+  }
 
   // Pressure-band hard-deny: at barrier/critical bands, mutating tools are
   // rejected with a synthetic error. The soft filter (LLM-visible tool catalog

@@ -196,8 +196,8 @@ export async function routeToolCall(
         output:
           `Unknown tool: ${call.name}. It is not among the protocol tools discovered in this `
           + `session (only the most recent ${MAX_DISCOVERED_TOOLS_PER_SESSION} stay callable by name). `
-          + `Call discover_tools to get it back as a named tool, or call it right now through `
-          + `execute_tool with its dotted id "${fromInjectedToolName(call.name)}".`,
+          + `Call discover_tools for "${fromInjectedToolName(call.name)}" to get it back as a `
+          + `named tool, then call it again.`,
       };
     }
     return executeProtocolTool(
