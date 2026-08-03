@@ -73,6 +73,9 @@ export {
   // Wave P: the fast lane's by-id candidate read, and the group-wide pending
   // predicate `fullBalanceSync` consults before it may take a snapshot.
   listPendingByIds,
+  // Wave P: the PROVIDER-lane rearm set (logical bridge rows), whose candidate
+  // predicates are disjoint from every on-chain set.
+  listPendingProviderLogical,
   hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,

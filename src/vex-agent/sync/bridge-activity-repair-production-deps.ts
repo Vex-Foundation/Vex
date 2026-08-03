@@ -17,6 +17,8 @@ import {
   failActivityEvent,
   markBridgeLegObserved,
   attachProviderOrderId,
+  touchLastChecked,
+  clearVerificationStall,
   type BridgeChainFamily,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { clearRelayRouteReveal } from "@vex-agent/tools/registry/relay-reveal.js";
@@ -195,6 +197,13 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
         [executionId, providerStatus],
       );
     },
+
+    // Migration 065 — the W-SPINE repo primitives, keyed by the logical ROW id.
+    // No new SQL here: `touchLastChecked` and `clearVerificationStall` already
+    // own the increment/reset semantics (and both are guarded to
+    // `status = 'pending'`, so a row that terminalized in between is a no-op).
+    noteVerificationInconclusive: (logicalRowId, reason) => touchLastChecked(logicalRowId, reason),
+    noteVerificationConclusive: (logicalRowId) => clearVerificationStall(logicalRowId),
 
     fetchKhalaniOrder: async (orderId) => {
       try {

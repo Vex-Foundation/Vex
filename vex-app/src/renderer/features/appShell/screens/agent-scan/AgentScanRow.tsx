@@ -90,8 +90,18 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
   const usd = primaryUsdEstText(entry);
   const fee = vexFeeText(entry);
   const feeUsd = usdEstText(entry.usdFeeEst);
+  // Migration 065's DERIVED state. NOT a failure and deliberately not styled as
+  // one: `no_safe_rpc` means the outcome is UNKNOWN, and a row that renders red
+  // tells the user their funds are gone when nobody knows that. It says only
+  // what is true — repeated checks could not conclude — which is the difference
+  // between "still mining" and "we have been unable to look for forty minutes".
+  const verificationStalled = entry.status === "pending" && entry.stalledVerification;
+  // The stall supersedes the staleness chip: "we checked and could not
+  // conclude" is a strictly more specific statement than "we have not checked
+  // recently", and two attention chips on one row read as two problems.
   const trackingDelayed =
     entry.status === "pending" &&
+    !verificationStalled &&
     isBridgeTrackingStale(entry.lastCheckedAt, entry.createdAt);
   const lastChecked =
     entry.lastCheckedAt !== null ? timestampText(entry.lastCheckedAt) : null;
@@ -119,6 +129,19 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
           status={entry.status}
           statusTitle={entry.failureCode ?? undefined}
         />
+        {verificationStalled ? (
+          // `paper`, never `danger`/`warning`: this is a statement about OUR
+          // knowledge, not about the transaction's outcome.
+          <ActivityChip
+            tone="paper"
+            text="verification stalled"
+            title={
+              entry.stalledReason !== null
+                ? `Repeated checks could not confirm this yet (${entry.stalledReason}). Still pending — nothing has failed.`
+                : "Repeated checks could not confirm this yet. Still pending — nothing has failed."
+            }
+          />
+        ) : null}
         {trackingDelayed ? (
           // R12: a pending row whose sweep check has fallen far behind is NOT
           // reassuringly "tracked" — say so instead of implying progress.
@@ -213,6 +236,13 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
           {entry.status === "pending" ? (
             <DetailLine label="Last check">
               {lastChecked ?? "Not checked yet since this started"}
+            </DetailLine>
+          ) : null}
+          {verificationStalled ? (
+            <DetailLine label="Stalled">
+              {entry.stalledReason !== null
+                ? `Could not conclude: ${entry.stalledReason}. Still pending — this is not a failure.`
+                : "Repeated checks could not conclude. Still pending — this is not a failure."}
             </DetailLine>
           ) : null}
           {entry.legs.length > 0 ? (

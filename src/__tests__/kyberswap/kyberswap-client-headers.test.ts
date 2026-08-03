@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { KYBERSWAP_REQUEST_HEADERS, KYBER_CLIENT_ID } from "@tools/kyberswap/constants.js";
 import { mapAggregatorError } from "@tools/kyberswap/aggregator/errors.js";
 import { readKyberErrorBody } from "@tools/kyberswap/errors.js";
+import type { SwapRouteParams } from "@tools/kyberswap/aggregator/types.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 
 describe("KYBERSWAP_REQUEST_HEADERS", () => {
@@ -49,7 +50,7 @@ describe("every KyberSwap client sends the shared header set", () => {
     fetchMock.mockResolvedValue(new Response("{}", { status: 500 }));
     const { KyberAggregatorClient } = await import("@tools/kyberswap/aggregator/client.js");
     await new KyberAggregatorClient("https://aggregator-api.kyberswap.com")
-      .getRoute("base", { tokenIn: "0x1", tokenOut: "0x2", amountIn: "1" } as never)
+      .getRoute("base", { tokenIn: "0x1", tokenOut: "0x2", amountIn: "1" } satisfies SwapRouteParams)
       .catch(() => undefined);
     expect(sentHeaders()).toMatchObject(KYBERSWAP_REQUEST_HEADERS);
   });

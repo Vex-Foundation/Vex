@@ -125,7 +125,7 @@ describe("approval enqueue — direct-call canonicalization", () => {
       command: "execute_tool",
       args: { toolId: TOOL_ID, params: SWAP_PARAMS },
       vex: {
-        v: 1,
+        v: 2,
         originalToolName: INJECTED_NAME,
         manifestFingerprint: computeManifestFingerprint(makeManifest()),
       },
@@ -253,6 +253,26 @@ describe("manifest identity at resume", () => {
     })],
     ["the action kind changed", makeManifest({ actionKind: "read" })],
     ["mutating changed", makeManifest({ mutating: false })],
+    // ── v2 field families: every rule that decides whether a call is ADMITTED.
+    ["a param gained an enum", makeManifest({
+      params: makeManifest().params.map((p) =>
+        p.key === "chain" ? { ...p, enum: ["base", "arbitrum"] as const } : p,
+      ),
+    })],
+    ["a param started accepting a string array", makeManifest({
+      params: makeManifest().params.map((p) =>
+        p.key === "tokenIn" ? { ...p, acceptsStringArray: true as const } : p,
+      ),
+    })],
+    ["an exclusiveParamGroups group appeared", makeManifest({
+      exclusiveParamGroups: [["tokenIn", "tokenOut"]],
+    })],
+    ["an atMostOne group appeared", makeManifest({
+      atMostOne: [["tokenIn", "tokenOut"]],
+    })],
+    ["an atLeastOneOf group appeared", makeManifest({
+      atLeastOneOf: [["tokenIn", "tokenOut"]],
+    })],
   ])("FAILS CLOSED when %s", (_label, changed) => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(makeManifest());
     const stored = buildApprovalToolCall(INJECTED_NAME, SWAP_PARAMS);
@@ -263,6 +283,61 @@ describe("manifest identity at resume", () => {
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toBe("manifest_fingerprint_mismatch");
+    expect(verdict.refusal).toContain("Nothing was executed");
+    expect(verdict.refusal).toContain("fresh approval");
+  });
+
+  it("FAILS CLOSED when an enum LOSES a member — the approved value may now be illegal", () => {
+    const enumManifest = (values: readonly string[]) => makeManifest({
+      params: makeManifest().params.map((p) => (p.key === "chain" ? { ...p, enum: values } : p)),
+    });
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(enumManifest(["base", "arbitrum"]));
+    const stored = buildApprovalToolCall(INJECTED_NAME, SWAP_PARAMS);
+
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(enumManifest(["base"]));
+    expect(checkApprovalManifestIdentity(stored)).toMatchObject({
+      ok: false,
+      reason: "manifest_fingerprint_mismatch",
+    });
+  });
+
+  it("FAILS CLOSED when a group's MEMBERSHIP changes, not merely its order", () => {
+    const grouped = (group: readonly string[]) => makeManifest({ atMostOne: [group] });
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(grouped(["tokenIn", "tokenOut"]));
+    const stored = buildApprovalToolCall(INJECTED_NAME, SWAP_PARAMS);
+
+    // Reordering the same members is not a contract change.
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(grouped(["tokenOut", "tokenIn"]));
+    expect(checkApprovalManifestIdentity(stored)).toEqual({ ok: true });
+
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(grouped(["tokenOut", "amountIn"]));
+    expect(checkApprovalManifestIdentity(stored)).toMatchObject({
+      ok: false,
+      reason: "manifest_fingerprint_mismatch",
+    });
+  });
+
+  it("treats a reordered enum as the SAME contract — order carries no admission rule", () => {
+    const enumManifest = (values: readonly string[]) => makeManifest({
+      params: makeManifest().params.map((p) => (p.key === "chain" ? { ...p, enum: values } : p)),
+    });
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(enumManifest(["base", "arbitrum"]));
+    const stored = buildApprovalToolCall(INJECTED_NAME, SWAP_PARAMS);
+
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(enumManifest(["arbitrum", "base"]));
+    expect(checkApprovalManifestIdentity(stored)).toEqual({ ok: true });
+  });
+
+  it("FAILS CLOSED on a v1 metadata block — its hash never saw the v2 fields", () => {
+    const verdict = checkApprovalManifestIdentity({
+      command: "execute_tool",
+      args: { toolId: TOOL_ID, params: SWAP_PARAMS },
+      vex: { v: 1, originalToolName: INJECTED_NAME, manifestFingerprint: "deadbeef" },
+    });
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.reason).toBe("envelope_version_superseded");
     expect(verdict.refusal).toContain("Nothing was executed");
     expect(verdict.refusal).toContain("fresh approval");
   });

@@ -24,6 +24,11 @@ import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
 import { isAbortError } from "@utils/cancellation.js";
+import {
+  describeFailureForLog,
+  renderProtocolFailureOutput,
+  summarizeProtocolError,
+} from "@utils/error-summary.js";
 import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
 
@@ -160,17 +165,25 @@ export async function dispatchTool(
       };
     }
 
-    const message = err instanceof Error ? err.message : String(err);
+    // DEFENCE IN DEPTH (Codex final review, non-blocking 4). This is the LAST
+    // catch before a thrown value becomes agent-facing text, and it is the one
+    // place that never knows which venue threw. Routing it through the canonical
+    // summarizer rather than interpolating `err.message` raw means an SDK error
+    // that embedded a URL, a request/response body or an auth header cannot
+    // reach the model or the structured logs from here either — and the agent
+    // gets the classified cause plus its remediation instead of a bare string.
+    const summary = summarizeProtocolError(err);
 
     logger.warn("tools.dispatch.failed", {
       tool: call.name,
-      error: message,
+      category: summary.category,
+      error: describeFailureForLog(err),
       durationMs,
     });
 
     return {
       ...withActionKindFallback(
-        { success: false, output: `Tool ${call.name} failed: ${message}` },
+        { success: false, output: renderProtocolFailureOutput(call.name, summary) },
         call.name,
       ),
       durationMs,

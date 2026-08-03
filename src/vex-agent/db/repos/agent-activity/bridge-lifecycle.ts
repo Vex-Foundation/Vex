@@ -64,7 +64,7 @@ export async function attachProviderOrderId(input: {
   // The logical bridge row becomes POLLABLE the moment it carries a provider
   // order id — that is this row's equivalent of "the RPC accepted it", so the
   // fast lane is armed here rather than at deposit-broadcast time.
-  if (row) return { outcome: "attached", row: armFastLane(mapRow(row)) };
+  if (row) return { outcome: "attached", row: armFastLane(mapRow(row), "provider") };
 
   const current = await findLogicalRowByExecution(input.executionId);
   if (!current) return { outcome: "not_pending", row: null };

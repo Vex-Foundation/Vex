@@ -17,6 +17,10 @@
  *     aborts or fails the parent row, and no caller may mark a confirmed swap
  *     failed because its fee did not land. That is missed Vex revenue and
  *     nothing more.
+ *   - POST-CONFIRMATION BOOKKEEPING IS BEST-EFFORT. Once the network has spoken,
+ *     a repository failure may never rewrite what it said: a known outcome and a
+ *     known hash survive a failed audit write, and the failure is logged rather
+ *     than allowed to downgrade the report.
  *   - An AMBIGUOUS fee is NEVER retried. It is left pending with its staged hash
  *     for the receipt sweep, because a blind retry of an unconfirmed transfer
  *     could charge the user TWICE.
@@ -108,10 +112,11 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
     );
 
     if (outcome.kind === "reverted") {
-      await failActivityEvent(feeRowId, {
-        failureCode: "mined_revert",
-        failureReason: `Vex fee transfer ${outcome.txHash} reverted on-chain; the swap itself was unaffected.`,
-      });
+      // BEST-EFFORT, deliberately: the revert is a RECEIPT FACT with a known
+      // hash. Letting a repository failure fall through to the catch below
+      // would downgrade a proven on-chain revert to "not attempted" and erase
+      // the hash — bookkeeping rewriting chain truth. Log it, keep the truth.
+      await recordFeeRevert(feeRowId, outcome.txHash);
       return {
         collection: "reverted",
         collectionNote: "The Vex fee transfer reverted, so no fee was collected — your swap is unaffected.",
@@ -144,6 +149,24 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected — your swap is unaffected.",
       txHash: null,
     };
+  }
+}
+
+/**
+ * Record a receipt-proven fee revert. Never throws: the outcome and its hash are
+ * already established by the receipt, and no repository failure may unsay them.
+ */
+async function recordFeeRevert(feeRowId: number, txHash: string): Promise<void> {
+  try {
+    await failActivityEvent(feeRowId, {
+      failureCode: "mined_revert",
+      failureReason: `Vex fee transfer ${txHash} reverted on-chain; the swap itself was unaffected.`,
+    });
+  } catch (err) {
+    logger.warn("uniswap.fee.revert_record_failed", {
+      id: feeRowId,
+      error: err instanceof Error ? err.name : "unknown",
+    });
   }
 }
 

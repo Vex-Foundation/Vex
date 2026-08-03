@@ -120,7 +120,7 @@ function envelope(fingerprint: string) {
   return {
     command: "execute_tool",
     args: { toolId: TOOL_ID, params: { query: "VEX" } },
-    vex: { v: 1, originalToolName: "dexscreener__search", manifestFingerprint: fingerprint },
+    vex: { v: 2, originalToolName: "dexscreener__search", manifestFingerprint: fingerprint },
   };
 }
 
@@ -180,6 +180,25 @@ describe("applyApproveSideEffects — manifest identity", () => {
       args: { id: "x" },
       toolCallId: "tc-1",
     });
+  });
+
+  it("REFUSES a v1-enveloped approval without dispatching — the old hash cannot be verified", async () => {
+    const snapshot = snapshotWith({
+      command: "execute_tool",
+      args: { toolId: TOOL_ID, params: { query: "VEX" } },
+      vex: {
+        v: 1,
+        originalToolName: "dexscreener__search",
+        manifestFingerprint: computeManifestFingerprint(LIVE_MANIFEST),
+      },
+    });
+
+    const outcome = await applyApproveSideEffects("appr-1", snapshot);
+
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    if (outcome.kind !== "dispatched") throw new Error("expected a committed outcome");
+    expect(outcome.executionStatus).toBe("failed");
+    expect(outcome.toolResult?.output).toContain("fresh approval");
   });
 
   it("resumes with `approved: true` and NO model provenance, so execute_tool stays open to it", async () => {

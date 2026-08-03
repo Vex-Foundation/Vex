@@ -53,31 +53,13 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
     );
   });
 
-  // A `/borrow/positions` row genuinely carries no token descriptor, so the
-  // renderer must degrade to an explicit unknown. Interpolating the absent
-  // fields directly once put the literal "undefined decimals" in front of a
-  // human approving a loan — this pins that it cannot come back.
-  it("states an explicit unknown, never the word 'undefined', when the row carries no token descriptor", () => {
-    const preview = buildIntentPreview(
-      "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmountRaw: "30000000" },
-      {
-        riskPreview: {
-          ...RISK_PREVIEW,
-          supplyTokenSymbol: null,
-          supplyTokenDecimals: null,
-          borrowTokenSymbol: null,
-          borrowTokenDecimals: null,
-        },
-      },
-    );
-    const rendered = preview.criticalArgs.lendBorrowRisk;
-    expect(rendered).not.toContain("undefined");
-    expect(rendered).toContain(
-      "30000000 raw units of mint So11111111111111111111111111111111111111112 "
-      + "(symbol and decimals unavailable — amount shown in raw units only)",
-    );
-  });
+  // Codex final-review (non-blocking 1): the previous test here forced
+  // `supplyTokenSymbol`/`Decimals` to `null` on a type that declares them
+  // NON-NULL, conflating the nullable `/borrow/positions` PROJECTION with this
+  // vault-sourced risk preview. It could only be written by contradicting the
+  // type, so it proved nothing about production and cost four suppressed type
+  // diagnostics. The money type stays strict; the renderer's nullish fallback
+  // remains as defence-in-depth (see `describeRiskToken`'s note).
 
   it("names the existing position id when adjusting an existing position", () => {
     const preview = buildIntentPreview(

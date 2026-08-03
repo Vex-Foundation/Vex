@@ -31,24 +31,89 @@ vi.mock("@utils/logger.js", () => ({
   default: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { handlePostIntentFailure } from "@vex-agent/tools/protocols/trench/handlers/trade/failure-results.js";
+import {
+  handlePostIntentFailure,
+  type PostIntentFailureInput,
+} from "@vex-agent/tools/protocols/trench/handlers/trade/failure-results.js";
+import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
+import type { TradeLegPlan } from "@vex-agent/tools/protocols/trench/handlers/trade/plan.js";
+import type { Address, Hex } from "viem";
 
 /** A revert the pre-sign classifier recognises, so the finalizing write is attempted. */
 const PRE_SIGN_REVERT = Object.assign(new Error("execution reverted"), {
   shortMessage: "Execution reverted with reason: TrenchExpress: slippage.",
 });
 
-function input(over: Record<string, unknown> = {}) {
+/**
+ * The durable row as the live contract declares it. Only `id` is read on this
+ * path; the remaining columns are stated rather than omitted so a contract
+ * change fails here instead of being silenced.
+ */
+function activityEvent(id: number): AgentActivityEvent {
+  return {
+    id, protocolExecutionId: 4242, eventIndex: 0, eventRole: "swap", recordVersion: 1,
+    kind: "swap", protocol: "trench_express", chainId: 4663, chainSlug: "robinhood",
+    status: "pending", failureCode: null, failureReason: null,
+    tokenInAddress: "0xIN", tokenInSymbol: "ETH", tokenInDecimals: 18,
+    amountInHuman: "1", amountInRaw: "1000000000000000000",
+    tokenOutAddress: "0xOUT", tokenOutSymbol: "TRENCH", tokenOutDecimals: 18,
+    amountOutHuman: null, amountOutRaw: null,
+    executedAmountInHuman: null, executedAmountInRaw: null,
+    executedAmountOutHuman: null, executedAmountOutRaw: null,
+    tokenIn2Address: null, tokenIn2Symbol: null, tokenIn2Decimals: null,
+    amountIn2Human: null, amountIn2Raw: null,
+    executedAmountIn2Human: null, executedAmountIn2Raw: null,
+    tokenOut2Address: null, tokenOut2Symbol: null, tokenOut2Decimals: null,
+    amountOut2Human: null, amountOut2Raw: null,
+    executedAmountOut2Human: null, executedAmountOut2Raw: null,
+    usdInEst: null, usdOutEst: null, usdFeeEst: null, usdSource: null,
+    usdNetworkGasEst: null, usdVenueFeeEst: null, usdDestinationPrepayEst: null, usdVexFeeEst: null,
+    vexFeeTokenAddress: null, vexFeeTokenSymbol: null, vexFeeTokenDecimals: null,
+    vexFeeAmountRaw: null, vexFeeAmountHuman: null,
+    txHash: null, fromAddress: null, nonce: null,
+    walletAddress: "0xWALLET", sessionId: "00000000-0000-4000-8000-000000000001",
+    routeProvenance: null,
+    fromChainId: null, fromChainSlug: null, toChainId: null, toChainSlug: null,
+    chainFamily: "eip155", providerOrderId: null, normalizedRoute: null,
+    providerStatus: null, evidenceSource: null, observedAt: null, lastAttemptedAt: null,
+    submitAttemptedAt: null,
+    recentBlockhash: null, lastValidBlockHeight: null,
+    broadcastAt: null, confirmedAt: null, lastCheckedAt: null,
+    createdAt: "2026-08-02T09:00:00.000Z", updatedAt: "2026-08-02T09:00:00.000Z",
+    verificationAttempts: 0, lastVerificationReason: null,
+  };
+}
+
+/** Only `eventRole` is read on this path; `txParams`/`event` are the plan's real shape. */
+function swapLegPlan(): TradeLegPlan {
+  return {
+    eventRole: "swap",
+    txParams: {
+      to: "0x0000000000000000000000000000000000000dEF" as Address,
+      data: "0x" as Hex,
+    },
+    event: {
+      eventRole: "swap",
+      kind: "swap",
+      protocol: "trench_express",
+      chainId: 4663,
+      walletAddress: "0xWALLET",
+      sessionId: "00000000-0000-4000-8000-000000000001",
+    },
+  };
+}
+
+function input(over: Partial<PostIntentFailureInput> = {}): PostIntentFailureInput {
   return {
     executionId: 4242,
-    events: [{ id: 77 }],
-    plans: [{ eventRole: "swap" }],
+    events: [activityEvent(77)],
+    plans: [swapLegPlan()],
     slippageBps: 100,
     currentIndex: 0,
     legBroadcastAttempted: false,
     error: PRE_SIGN_REVERT,
     ...over,
-  } as never;
+  };
 }
 
 describe("a failed refusal-row write is logged, never swallowed", () => {
@@ -62,9 +127,10 @@ describe("a failed refusal-row write is logged, never swallowed", () => {
     const call = warn.mock.calls.find(
       ([event]) => event === "trench.trade_execute.fail_event_write_failed",
     );
-    expect(call, "the swallowed write failure must reach the log").toBeDefined();
-    expect(call![1]).toMatchObject({ executionId: 4242, eventId: 77 });
-    expect(String(call![1].error)).toContain("could not be finalized");
+    if (call === undefined) throw new Error("the swallowed write failure must reach the log");
+    const [, metadata] = call;
+    expect(metadata).toMatchObject({ executionId: 4242, eventId: 77 });
+    expect(String(metadata.error)).toContain("could not be finalized");
   });
 
   it("still aborts the remaining legs — the log is added, the guarantee is unchanged", async () => {

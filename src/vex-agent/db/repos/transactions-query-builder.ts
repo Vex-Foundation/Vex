@@ -253,9 +253,16 @@ export function buildSuccessHalf(
     `wallet_address = ANY($${push(addresses)}::text[])`,
     // D26 — the mirror of the failure half's guard (see buildFailureHalf): once
     // an agent_activity row exists for this execution, IT is the source of
-    // truth. Four Pendle families still ALSO project a legacy, quote-derived
-    // `proj_activity` capture row, so without this the same trade would render
-    // TWICE the moment the activity half learned `kind = 'yield'` above.
+    // truth, and the quote-derived `proj_activity` capture of the same
+    // execution must not render alongside it.
+    //
+    // The guard is NOT Pendle-specific and no longer has a Pendle emitter: the
+    // four Pendle families that once ALSO wrote a legacy `_tradeCapture` have
+    // since been changed to `capture: "none"` (every Pendle handler now states
+    // "NO `_tradeCapture`" at its return). It stays because the invariant is
+    // general — any venue emitting both halves for one execution would render
+    // the same trade TWICE — and because it is what keeps HISTORICAL dual-written
+    // rows from doubling now that the activity half knows `kind = 'yield'`.
     // `execution_id` is nullable in proj_activity; a NULL never matches, so a
     // historical row with no agent_activity twin (everything written before
     // migration 053, which is deliberately NOT backfilled) still renders.

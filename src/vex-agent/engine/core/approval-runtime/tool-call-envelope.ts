@@ -25,9 +25,13 @@
  * MANIFEST IDENTITY FAILS CLOSED. The envelope also carries a fingerprint of
  * the manifest the human actually approved. If the contract behind the toolId
  * changed while the approval sat in the queue, the resume REFUSES instead of
- * executing against a different contract. The fingerprint deliberately covers
- * only what changes the action — toolId, `mutating`, `actionKind`, and the
- * structural param schema (key, type, required, unit). DESCRIPTION PROSE IS
+ * executing against a different contract. The fingerprint covers EVERY field
+ * that validation or normalization reads — toolId, `mutating`, `actionKind`,
+ * the param schema (key, type, required, unit, enum, acceptsStringArray) and
+ * the three cross-param group fields (`exclusiveParamGroups`, `atMostOne`,
+ * `atLeastOneOf`). A v1 fingerprint omitted the enum / array / group fields, so
+ * a manifest could tighten admission under a queued approval and still resume;
+ * v1 metadata is therefore REFUSED, not re-verified. DESCRIPTION PROSE IS
  * EXCLUDED: description churn is constant in this repo and must never strand a
  * queued approval.
  *
@@ -45,8 +49,14 @@ import {
   isInjectedToolNameShape,
 } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 
-/** Current envelope-metadata version. Bump only with a reader for the old value. */
-const ENVELOPE_VERSION = 1;
+/**
+ * Current envelope-metadata version.
+ *
+ * v2 (2026-08-03) widened the fingerprint to every validation/normalization
+ * field. A v1 block cannot be re-verified — its hash never saw those fields —
+ * so it fails closed and asks for a fresh approval rather than being trusted.
+ */
+const ENVELOPE_VERSION = 2;
 
 const envelopeMetadataSchema = z.object({
   v: z.literal(ENVELOPE_VERSION),
@@ -95,6 +105,16 @@ export function checkApprovalManifestIdentity(
   const parsed = envelopeMetadataSchema.safeParse(rawToolCall.vex);
   if (!parsed.success) {
     if (rawToolCall.vex === undefined) return { ok: true };
+    if (isSupersededEnvelopeVersion(rawToolCall.vex)) {
+      return {
+        ok: false,
+        reason: "envelope_version_superseded",
+        refusal: buildIdentityRefusal(
+          "this approval was recorded under an older tool-contract format that "
+          + "cannot verify the tool's current validation rules",
+        ),
+      };
+    }
     return {
       ok: false,
       reason: "envelope_metadata_unreadable",
@@ -131,11 +151,14 @@ export function checkApprovalManifestIdentity(
 }
 
 /**
- * Structural identity of a manifest: what it does and what it takes.
+ * Structural identity of a manifest: what it does, what it takes, and every
+ * rule that decides whether a given call is admitted.
  *
- * Params are sorted by key so a manifest reordering — which changes nothing a
- * caller can observe — does not invalidate a queued approval, while an added,
- * removed, retyped, newly required or re-united param does.
+ * Ordering is canonicalized — params by key, enum values, group members, and
+ * the groups themselves — so a pure reordering (which no caller can observe)
+ * does not invalidate a queued approval, while an added, removed, retyped,
+ * newly required, re-united, re-enumerated, newly array-accepting or newly
+ * grouped param does.
  */
 export function computeManifestFingerprint(manifest: ProtocolToolManifest): string {
   const params = manifest.params
@@ -144,8 +167,10 @@ export function computeManifestFingerprint(manifest: ProtocolToolManifest): stri
       type: param.type,
       required: param.required === true,
       unit: param.unit ?? null,
+      enum: param.enum ? sortStrings(param.enum) : null,
+      acceptsStringArray: param.acceptsStringArray === true,
     }))
-    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    .sort((a, b) => compareStrings(a.key, b.key));
 
   return createHash("sha256")
     .update(
@@ -154,10 +179,38 @@ export function computeManifestFingerprint(manifest: ProtocolToolManifest): stri
         mutating: manifest.mutating === true,
         actionKind: manifest.actionKind,
         params,
+        exclusiveParamGroups: canonicalizeGroups(manifest.exclusiveParamGroups),
+        atMostOne: canonicalizeGroups(manifest.atMostOne),
+        atLeastOneOf: canonicalizeGroups(manifest.atLeastOneOf),
       }),
     )
     .digest("hex")
     .slice(0, 32);
+}
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function sortStrings(values: readonly string[]): string[] {
+  return [...values].sort(compareStrings);
+}
+
+/** Group members and groups both sorted: only membership changes the contract. */
+function canonicalizeGroups(
+  groups: readonly (readonly string[])[] | undefined,
+): string[][] {
+  if (!groups) return [];
+  return groups
+    .map(sortStrings)
+    .sort((a, b) => compareStrings(a.join(" "), b.join(" ")));
+}
+
+/** A readable metadata block from an older envelope version. */
+function isSupersededEnvelopeVersion(vex: unknown): boolean {
+  if (typeof vex !== "object" || vex === null) return false;
+  const version = (vex as { v?: unknown }).v;
+  return typeof version === "number" && version < ENVELOPE_VERSION;
 }
 
 function resolveInjectedManifest(toolName: string): ProtocolToolManifest | undefined {

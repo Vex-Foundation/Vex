@@ -29,6 +29,7 @@ import type {
   ProtocolHandler,
   ProtocolToolManifest,
 } from "@vex-agent/tools/protocols/types.js";
+import type { ToolCallRequest } from "@vex-agent/tools/types.js";
 import { makeTestContext } from "../_test-context.js";
 
 const TEST_TOOL_ID = "dexscreener.__abort_probe";
@@ -193,7 +194,7 @@ describe("dispatchTool → executeProtocolTool — the REAL route, no route mock
     const startedAt = Date.now();
 
     const result = await dispatchTool(
-      { id: "call-0", name: "execute_tool", args: { toolId: TEST_TOOL_ID, params: {} } } as never,
+      { toolCallId: "call-0", name: "execute_tool", args: { toolId: TEST_TOOL_ID, params: {} } } satisfies ToolCallRequest,
       makeTestContext({
         sessionId: "session-abort-probe",
         sessionPermission: "full",

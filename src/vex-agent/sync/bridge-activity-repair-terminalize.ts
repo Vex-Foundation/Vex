@@ -26,6 +26,7 @@ import {
   type BridgeRepairDeps,
   type BridgeSweepRow,
   type MutableSweepCounters,
+  toVerificationStallReason,
 } from "./bridge-activity-repair-contracts.js";
 
 /**
@@ -89,6 +90,7 @@ export async function recoverDebridgeFillHash(
     providerStatus: observation.providerStatus,
     recoveryAttempted: lookup !== undefined,
   });
+  await deps.noteVerificationInconclusive(logical.id, "filled_without_hash");
   counters.stillPending++;
 }
 
@@ -125,6 +127,7 @@ export async function confirmVerifiedFill(
       providerStatus: observation.providerStatus,
       reason: verification.reason ?? "verification_failed",
     });
+    await deps.noteVerificationInconclusive(logical.id, toVerificationStallReason(verification.reason));
     counters.stillPending++;
     return;
   }
@@ -238,6 +241,7 @@ export async function terminalizeRefund(
         providerStatus: observation.providerStatus,
         reason: verification.reason ?? "verification_failed",
       });
+      await deps.noteVerificationInconclusive(logical.id, toVerificationStallReason(verification.reason));
       counters.stillPending++;
       return;
     }
@@ -260,6 +264,7 @@ export async function terminalizeRefund(
         executionId,
         error: summarizeProtocolError(err).message,
       });
+      await deps.noteVerificationInconclusive(logical.id, "refund_evidence_write_failed");
       counters.stillPending++;
       return;
     }

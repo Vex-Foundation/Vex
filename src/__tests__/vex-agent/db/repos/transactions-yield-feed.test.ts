@@ -9,12 +9,15 @@
  * own `agent_scan` — while a FAILED one still surfaced through the failure
  * half, which does know the `yield` product. A history made of losses only.
  *
- * D26, in the same change. Four Pendle families still ALSO emit the legacy
- * `_tradeCapture` into `proj_activity`. Teaching the activity half `yield`
- * without a dedup on the SUCCESS half would render every such trade TWICE, so
- * the success half now carries the mirror of the failure half's `NOT EXISTS`
- * guard. Rows written before 053 have no `agent_activity` twin (the migration
- * is deliberately not backfilled) and keep rendering exactly as before.
+ * D26, in the same change. Teaching the activity half `yield` without a dedup
+ * on the SUCCESS half would render a dual-written trade TWICE, so the success
+ * half now carries the mirror of the failure half's `NOT EXISTS` guard. It was
+ * introduced when four Pendle families still ALSO emitted the legacy
+ * `_tradeCapture` into `proj_activity`; they are now all `capture: "none"`, so
+ * the guard no longer has a live Pendle emitter and is kept as the general
+ * one-execution-one-row invariant plus the protection for HISTORICAL
+ * dual-written rows. Rows written before 053 have no `agent_activity` twin (the
+ * migration is deliberately not backfilled) and keep rendering exactly as before.
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";

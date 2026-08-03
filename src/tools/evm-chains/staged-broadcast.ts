@@ -27,6 +27,7 @@
  */
 
 import type {
+  Account,
   Address,
   Chain,
   Hex,
@@ -104,16 +105,23 @@ export interface StagedBroadcastHooks {
  * (`dependent-leg-gas-estimate.ts`); omitting it keeps the single-shot
  * estimate. Either way a leg whose estimate never succeeds is still refused
  * before anything is signed.
+ *
+ * `walletClient` is typed `WalletClient<Transport, Chain, Account>` — an
+ * ACCOUNT-BOUND client, required at the TYPE level. This is a compile-time
+ * guarantee, not a runtime signal: an accountless client cannot reach the
+ * signer at all, so there is no state in which this function has to decide what
+ * to do about a missing account mid-flight. It replaces a `walletClient.account!`
+ * non-null assertion that asserted the same invariant without proving it.
  */
 export async function signStageBroadcast(
   publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain, Account>,
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
 ): Promise<StagedBroadcastOutcome> {
-  const account = walletClient.account!;
+  const account = walletClient.account;
   const value = txParams.value ?? 0n;
 
   // Estimated explicitly rather than left to `prepareTransactionRequest`,

@@ -123,6 +123,35 @@ export async function listPendingByIds(
 }
 
 /**
+ * PROVIDER-LANE fast-lane rearm candidates (Wave P): pending logical
+ * `bridge_fill_expected` rows that already carry a `provider_order_id`.
+ *
+ * A SEPARATE query because the on-chain rearm set is defined by exactly the two
+ * predicates this row can never satisfy — `tx_hash IS NOT NULL` and
+ * `submit_attempted_at IS NOT NULL`. The logical row is the expectation of a
+ * fill that has not happened; there is no local submission behind it, and its
+ * only handle on truth is the provider order id. Requiring that id keeps the set
+ * to rows the provider leg can actually ask about (a row still awaiting order-id
+ * recovery is the R5 sweep's, not the fast lane's).
+ *
+ * Bounded and fair-ordered on the same clock the sweeps use
+ * (`COALESCE(last_checked_at, created_at)`), so a restart rearms the
+ * least-recently-observed rows rather than an unbounded backlog.
+ */
+export async function listPendingProviderLogical(limit: number): Promise<AgentActivityEvent[]> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT * FROM agent_activity
+      WHERE status = 'pending'
+        AND event_role = 'bridge_fill_expected'
+        AND provider_order_id IS NOT NULL
+      ORDER BY COALESCE(last_checked_at, created_at) ASC, id ASC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows.map(mapRow);
+}
+
+/**
  * Group-wide pending predicate (Wave P): does ANY wallet in this set still have
  * an unresolved on-chain action?
  *

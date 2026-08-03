@@ -75,6 +75,8 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([]),
     touchAttempt: vi.fn().mockResolvedValue(undefined),
     touchChecked: vi.fn().mockResolvedValue(undefined),
+    noteVerificationInconclusive: vi.fn().mockResolvedValue(undefined),
+    noteVerificationConclusive: vi.fn().mockResolvedValue(undefined),
     fetchKhalaniOrder: vi.fn().mockResolvedValue(null),
     fetchRelayStatus: vi.fn().mockResolvedValue(null),
     // F2: a hashless fill only recovers a hash for DeBridge-routed orders; these

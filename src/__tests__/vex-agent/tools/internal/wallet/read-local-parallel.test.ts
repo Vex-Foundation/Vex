@@ -21,6 +21,7 @@ import assert from "node:assert/strict";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ChainFamily } from "@tools/khalani/types.js";
+import { makeTestContext } from "../../_test-context.js";
 
 const LOCAL_CHAIN_IDS = [4663, 4664, 4665, 4666, 4667] as const;
 
@@ -79,10 +80,7 @@ const { handleWalletBalances } = await import(
   "../../../../../vex-agent/tools/internal/wallet/read.js"
 );
 
-const CONTEXT = {
-  walletResolution: { source: "default" },
-  walletPolicy: { kind: "none" },
-} as never;
+const CONTEXT = makeTestContext();
 
 interface Snapshot {
   scannedChainIds: number[];
@@ -173,7 +171,7 @@ describe("wallet_balances — local chain scan", () => {
 
     const res = await handleWalletBalances(
       { walletFamily: "eip155" },
-      { ...(CONTEXT as object), abortSignal: controller.signal } as never,
+      makeTestContext({ abortSignal: controller.signal }),
     );
 
     // The abort surfaces as the family's error rather than a fabricated empty

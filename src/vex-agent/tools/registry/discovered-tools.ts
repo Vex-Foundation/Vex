@@ -25,7 +25,8 @@
  *
  * THE INVARIANT (owner clarification 2026-08-03): a single discovery round at
  * the maximum allowed limit is NEVER partially evicted. The agent sizes its
- * own working set through `discover_tools`'s `limit` (default 10, max
+ * own working set through `discover_tools`'s `limit` (default
+ * `DEFAULT_DISCOVERY_LIMIT` = 5, max
  * `MAX_DISCOVERY_LIMIT` = 20), so this cap must be ≥ that maximum; a smaller
  * cap would drop rows the model was shown in the very same result. 24 = 20 +
  * a four-tool tail from the previous round, so the agent keeps a little

@@ -41,7 +41,7 @@ import { resolveTradeInputs } from "@vex-agent/tools/protocols/trench/handlers/t
 import { canonSlippageBpsWithDefault } from "@vex-agent/tools/protocols/prequote/slippage.js";
 import { buildRelayBridgeIdentity } from "@vex-agent/tools/protocols/prequote/identity/relay-bridge.js";
 import { computePrequoteMatchHash } from "@vex-agent/tools/protocols/prequote/identity/hash.js";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "../_test-context.js";
 
 const OLD_DEFAULT_BPS = 50;
 
@@ -109,7 +109,7 @@ describe("prequote round-trip at the new default", () => {
   });
 
   it("relay identity: an omitted-slippage quote authorizes an explicit-100 execute, not an explicit-50 one", async () => {
-    const ctx = {} as unknown as ProtocolExecutionContext;
+    const ctx = makeProtocolContext();
     const params = (slippageBps?: number) => ({
       fromChain: "8453",
       toChain: "4663",

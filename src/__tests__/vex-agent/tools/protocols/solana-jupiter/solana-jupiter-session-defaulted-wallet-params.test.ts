@@ -40,9 +40,9 @@ function manifestFor(toolId: string) {
 describe("solana session-defaulted walletAddress params", () => {
   it.each(SESSION_DEFAULTED)("%s declares walletAddress optional and states the default", (toolId) => {
     const param = manifestFor(toolId).params.find((p) => p.key === "walletAddress");
-    expect(param).toBeDefined();
-    expect(param!.required).toBeFalsy();
-    expect(param!.description).toMatch(/Defaults to the session's selected Solana wallet/);
+    if (param === undefined) throw new Error(`${toolId} declares no walletAddress param`);
+    expect(param.required).toBeFalsy();
+    expect(param.description).toMatch(/Defaults to the session's selected Solana wallet/);
   });
 
   /** The tool's OTHER genuinely-required params, so the only thing omitted is walletAddress. */

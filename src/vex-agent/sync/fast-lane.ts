@@ -59,12 +59,14 @@
 import {
   listPendingByIds,
   listPendingOlderThan,
+  listPendingProviderLogical,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import {
   pendingActivityBus,
   type PendingActivityChainFamily,
   type PendingActivityEvent,
+  type PendingActivityLane,
 } from "@vex-agent/events/pending-activity-bus.js";
 import logger from "@utils/logger.js";
 
@@ -102,13 +104,12 @@ const WHEEL_INTERVAL_MS = 2_000;
 // ── Lane state ────────────────────────────────────────────────────────────
 
 /**
- * Which leg resolves this row.
- *
- * `onchain` covers every locally-signed row (EVM and Solana). `provider` is the
- * logical bridge-fill row, whose truth lives in a bridge API rather than in a
- * receipt we can look up ourselves.
+ * Which leg resolves this row — the bus's own discriminator, set by the arming
+ * CAS. This module NEVER re-derives it: the logical bridge row carries a
+ * non-null DESTINATION chain id, so any payload-shaped inference routes it into
+ * the on-chain leg, which then disarms it for lacking a hash it can never have.
  */
-type LaneLeg = "onchain" | "provider";
+type LaneLeg = PendingActivityLane;
 
 interface Lane {
   readonly activityId: number;
@@ -209,7 +210,7 @@ export function startFastLane(options: FastLaneOptions = {}): FastLaneHandle {
       void enqueueSnapshotAfterTerminalization(event.activityId);
       return;
     }
-    arm(event.activityId, event.chainFamily, legFor(event), Date.now());
+    arm(event.activityId, event.chainFamily, event.lane, Date.now());
   };
 
   const unsubscribe = pendingActivityBus.subscribe(onBusEvent);
@@ -391,21 +392,38 @@ function isUniqueViolation(err: unknown): boolean {
  * i.e. exactly the latency this wave exists to remove, on exactly the rows most
  * likely to be abandoned.
  *
- * The candidate query is the SWEEP's own (`listPendingOlderThan`), with a zero
- * age bound: same fairness ordering, same "must have a staged hash" predicate,
- * and no new query to keep correct. The 90 s gate still applies at resolution
- * time, so re-arming a row younger than the gate is safe.
+ * TWO CANDIDATE SETS, because the two lanes have disjoint candidate predicates:
+ *
+ * - ON-CHAIN — the SWEEP's own `listPendingOlderThan` with a zero age bound:
+ *   same fairness ordering, same "must have a staged hash" predicate, no new
+ *   query to keep correct. Freshness is measured from `submit_attempted_at`.
+ * - PROVIDER — `listPendingProviderLogical`, the bounded logical
+ *   `bridge_fill_expected` set. Those rows have NO hash and NO
+ *   `submit_attempted_at` — reusing the on-chain query would return none of
+ *   them, which is precisely why the provider lane never survived a restart.
+ *   Their freshness is measured from `created_at`, the only submission-shaped
+ *   timestamp a not-yet-filled expectation has.
+ *
+ * The 90 s gate still applies at on-chain resolution time, so re-arming a row
+ * younger than the gate is safe.
  */
 export async function rearmPendingFastLanes(): Promise<number> {
   let armed = 0;
   for (const family of ["eip155", "solana"] as const) {
     const rows = await listPendingOlderThan(0, FAST_LANE_MAX_ACTIVE, family);
     for (const row of rows) {
-      if (!isWithinFastLaneAge(row)) continue;
-      emitRearm(row);
+      if (!isWithinFastLaneAge(row.submitAttemptedAt)) continue;
+      emitRearm(row, "onchain");
       armed++;
     }
   }
+
+  for (const row of await listPendingProviderLogical(FAST_LANE_MAX_ACTIVE)) {
+    if (!isWithinFastLaneAge(row.createdAt)) continue;
+    emitRearm(row, "provider");
+    armed++;
+  }
+
   if (armed > 0) logger.info("sync.fast_lane.rearmed", { rows: armed });
   return armed;
 }
@@ -415,23 +433,25 @@ export async function rearmPendingFastLanes(): Promise<number> {
  * the cap, the dedup and the scheduling rules are the same ones a live broadcast
  * gets. There is exactly one arming path.
  */
-function emitRearm(row: AgentActivityEvent): void {
+function emitRearm(row: AgentActivityEvent, lane: LaneLeg): void {
   pendingActivityBus.emit({
     type: "sync.activity.pending",
     kind: "armed",
     activityId: row.id,
     chainFamily: row.chainFamily,
     chainId: row.chainId,
+    lane,
     status: null,
     occurredAt: new Date().toISOString(),
   });
 }
 
-function isWithinFastLaneAge(row: AgentActivityEvent): boolean {
-  if (!row.submitAttemptedAt) return false;
-  const submittedMs = Date.parse(row.submitAttemptedAt);
-  if (Number.isNaN(submittedMs)) return false;
-  return Date.now() - submittedMs < FAST_LANE_MAX_AGE_MS;
+/** Still "fresh" enough for the fast lane, measured from the lane's own submission-shaped timestamp. */
+function isWithinFastLaneAge(startedAt: string | null): boolean {
+  if (!startedAt) return false;
+  const startedMs = Date.parse(startedAt);
+  if (Number.isNaN(startedMs)) return false;
+  return Date.now() - startedMs < FAST_LANE_MAX_AGE_MS;
 }
 
 // ── Gate ──────────────────────────────────────────────────────────────────
@@ -453,13 +473,6 @@ export function isPastHandlerWindow(
   const submittedMs = Date.parse(row.submitAttemptedAt);
   if (Number.isNaN(submittedMs)) return false;
   return nowMs - submittedMs >= REPAIR_CANDIDATE_AGE_MS;
-}
-
-function legFor(event: PendingActivityEvent): LaneLeg {
-  // A bridge logical row is armed by `attachProviderOrderId`, which is the only
-  // arm site that carries no chain id — the fill has not happened yet, so there
-  // is no receipt to look up and the provider owns the answer.
-  return event.chainId === null ? "provider" : "onchain";
 }
 
 // ── Production wiring ─────────────────────────────────────────────────────

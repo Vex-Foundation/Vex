@@ -88,17 +88,21 @@ describe("W2g — Jupiter priceImpactPct SIGN CONVENTION (fresh capture 2026-08-
   ];
 
   it("every captured impact is cost-positive and grows monotonically with size", () => {
-    const fractions = CAPTURED.map((row) => observedPriceImpactFraction(row.priceImpactPct));
-    for (const fraction of fractions) {
-      expect(fraction).not.toBeNull();
-      expect(fraction!).toBeGreaterThanOrEqual(0);
-    }
-    for (let i = 1; i < fractions.length; i += 1) {
-      expect(fractions[i]!).toBeGreaterThanOrEqual(fractions[i - 1]!);
-    }
+    // A row that does not parse is itself the failure, so the list below is
+    // plain numbers and every later assertion reads one.
+    const fractions = CAPTURED.map((row) => {
+      const fraction = observedPriceImpactFraction(row.priceImpactPct);
+      if (fraction === null) throw new Error(`captured impact ${row.priceImpactPct} did not parse`);
+      return fraction;
+    });
+    for (const fraction of fractions) expect(fraction).toBeGreaterThanOrEqual(0);
+    fractions.reduce((previous, current) => {
+      expect(current).toBeGreaterThanOrEqual(previous);
+      return current;
+    });
     // The largest observed size is a real, non-trivial cost — not a rounding
     // artefact that could be read either way.
-    expect(fractions.at(-1)!).toBeGreaterThan(0.003);
+    expect(Math.max(...fractions)).toBeGreaterThan(0.003);
   });
 
   it("reads only a finite parse of a non-empty provider string, never a reassuring zero", () => {

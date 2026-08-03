@@ -68,6 +68,7 @@ describe("wake watch promoter", () => {
       activityId: 4242,
       chainFamily: "eip155",
       chainId: 8453,
+      lane: "onchain",
       status: "confirmed",
     });
     await settle();
@@ -86,6 +87,7 @@ describe("wake watch promoter", () => {
       activityId: 4242,
       chainFamily: "eip155",
       chainId: 8453,
+      lane: "onchain",
       status: "confirmed",
     });
     await settle();
@@ -102,6 +104,7 @@ describe("wake watch promoter", () => {
       activityId: 9999,
       chainFamily: "solana",
       chainId: null,
+      lane: "onchain",
       status: "definitively_failed",
     });
     await settle();
@@ -111,7 +114,7 @@ describe("wake watch promoter", () => {
   // `armed` means the lane STARTED watching, not that anything settled.
   // Promoting on it would wake the session immediately after it went to sleep.
   it("ignores the armed half of the bus", async () => {
-    emitPendingActivityArmed({ activityId: 4242, chainFamily: "eip155", chainId: 8453 });
+    emitPendingActivityArmed({ activityId: 4242, chainFamily: "eip155", chainId: 8453, lane: "onchain" });
     await settle();
     expect(mockGetPendingWithWatch).not.toHaveBeenCalled();
   });
@@ -124,6 +127,7 @@ describe("wake watch promoter", () => {
       activityId: 4242,
       chainFamily: "eip155",
       chainId: 8453,
+      lane: "onchain",
       status: "confirmed",
     });
     await settle();
@@ -140,6 +144,7 @@ describe("wake watch promoter", () => {
         activityId: 4242,
         chainFamily: "eip155",
         chainId: 8453,
+        lane: "onchain",
         status: "confirmed",
       }),
     ).not.toThrow();
@@ -154,6 +159,7 @@ describe("wake watch promoter", () => {
       activityId: 4242,
       chainFamily: "eip155",
       chainId: 8453,
+      lane: "onchain",
       status: "confirmed",
     });
     await settle();

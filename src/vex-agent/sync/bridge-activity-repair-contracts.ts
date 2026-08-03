@@ -25,6 +25,46 @@ import type {
  */
 export const BRIDGE_SWEEP_BATCH_LIMIT = 25;
 
+/**
+ * THE BOUND ON `last_verification_reason` (migration 065): a CLOSED SET of our
+ * own named codes.
+ *
+ * The column is surfaced verbatim to the UI and to the agent, so what may enter
+ * it has to be decided here rather than trimmed later. Bounding by LENGTH would
+ * still admit raw provider text — an unbounded string of someone else's making
+ * reaching a user-visible field. Bounding by NAME admits only codes this
+ * repository authored, which is also what makes the value actionable: the agent
+ * can tell `no_safe_rpc` (we could not look) from `not_yet_confirmed` (we
+ * looked, it is still mining).
+ *
+ * The first eight are the verifier's own (`bridge-activity-repair-verification.ts`);
+ * the rest are the sweep's inconclusive exits.
+ */
+export const VERIFICATION_STALL_REASONS = [
+  "malformed_fill_hash",
+  "no_safe_rpc",
+  "fill_reverted",
+  "receipt_unavailable",
+  "malformed_fill_signature",
+  "fill_failed",
+  "not_yet_confirmed",
+  "signature_status_unavailable",
+  "verification_failed",
+  "filled_without_hash",
+  "provider_unreachable",
+  "chain_mismatch",
+  "correlation_mismatch",
+  "missing_route",
+  "refund_evidence_write_failed",
+] as const;
+
+export type VerificationStallReason = (typeof VERIFICATION_STALL_REASONS)[number];
+
+/** Admit a known code, or fall back to the generic one. An UNRECOGNISED string is never stored. */
+export function toVerificationStallReason(raw: string | undefined): VerificationStallReason {
+  return VERIFICATION_STALL_REASONS.find((known) => known === raw) ?? "verification_failed";
+}
+
 /** Provider evidence-source markers persisted on confirmed/observed bridge rows (R6 provenance). */
 export const KHALANI_EVIDENCE_SOURCE = "khalani_order_status";
 export const RELAY_EVIDENCE_SOURCE = "relay_intent_status";
@@ -210,6 +250,27 @@ export interface BridgeRepairDeps {
   touchAttempt(executionId: number): Promise<void>;
   /** `last_checked_at = NOW()` + `provider_status` on the logical row — ONLY after a successful provider observation (B6). */
   touchChecked(executionId: number, providerStatus: string): Promise<void>;
+
+  // ── Stall visibility (migration 065) ──
+  /**
+   * ONE more CONSECUTIVE inconclusive verification attempt, with the named
+   * reason it could not conclude. Keyed by the LOGICAL ROW ID (not the execution
+   * id) because the counter is a property of that row.
+   *
+   * THIS NEVER TERMINALIZES ANYTHING and no threshold on the counter ever may:
+   * `stalled_verification` is a DERIVED read-side state. `no_safe_rpc` in
+   * particular means the outcome is UNKNOWN, and recording an unknown outcome as
+   * failed would report a possibly successful transfer of real funds as a
+   * failure. The never-auto-fail policy is unchanged.
+   */
+  noteVerificationInconclusive(logicalRowId: number, reason: VerificationStallReason): Promise<void>;
+  /**
+   * A verification attempt CONCLUDED — reset the consecutive-inconclusive
+   * counter. Without this reset an ordinary slow-but-healthy bridge would
+   * eventually render as "verification stalled", which is a lie about what the
+   * system knows: the counter must measure a STALL, not age.
+   */
+  noteVerificationConclusive(logicalRowId: number): Promise<void>;
 
   // ── Provider status (null = transport failure; the row stays pending) ──
   fetchKhalaniOrder(orderId: string): Promise<KhalaniOrderView | null>;

@@ -13,7 +13,12 @@ import assert from "node:assert/strict";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { discoverProtocolCapabilities } from "@vex-agent/tools/protocols/runtime.js";
 import { DEFAULT_DISCOVERY_LIMIT, isRankedDiscoveryItem } from "@vex-agent/tools/protocols/discovery.js";
-import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
+import { describeParamGroupConstraints } from "@vex-agent/tools/protocols/runtime/params.js";
+import {
+  PROTOCOL_TOOLS,
+  getProtocolManifest,
+  isProtocolToolAvailable,
+} from "@vex-agent/tools/protocols/catalog.js";
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 
 /** Every discovered row must have a manifest — a missing one is the failure. */
@@ -56,24 +61,57 @@ describe("discover_tools ranked payload", () => {
     }
   });
 
-  it("renders one constraint sentence per declared exclusive group", async () => {
-    const result = await discoverProtocolCapabilities({ limit: 500 });
-    let checked = 0;
-    for (const tool of result.tools) {
-      if (!isRankedDiscoveryItem(tool)) continue;
-      const groups = manifestFor(tool.toolId).exclusiveParamGroups ?? [];
-      if (groups.length === 0) continue;
-      checked += 1;
-      const constraints = tool.constraints;
-      assert.ok(constraints, `${tool.toolId} declares groups but rendered no constraints`);
-      expect(constraints).toHaveLength(groups.length);
-      for (const [index, group] of groups.entries()) {
-        expect(constraints[index]).toBe(`Provide exactly one of: ${group.join(", ")}.`);
+  // A `checked >= 0` assertion passes on an empty loop, so it proved nothing.
+  // The expected set is DERIVED from the catalog and asserted exactly, and all
+  // THREE group families must be represented in it.
+  describe("param-group constraints", () => {
+    const declaringManifests = PROTOCOL_TOOLS.filter(
+      (m) => describeParamGroupConstraints(m).length > 0,
+    );
+
+    // The three declaring namespaces include env-gated ones; a placeholder key
+    // makes them discoverable so this coverage does not depend on the machine.
+    const GATED_ENV_KEYS = ["JUPITER_API_KEY"] as const;
+    const originalEnv: Record<string, string | undefined> = {};
+
+    beforeEach(() => {
+      for (const key of GATED_ENV_KEYS) {
+        originalEnv[key] = process.env[key];
+        process.env[key] = process.env[key] ?? "test-key";
       }
-    }
-    // Manifest population lands per namespace in the same wave; this assertion
-    // is the contract, not a count.
-    expect(checked).toBeGreaterThanOrEqual(0);
+    });
+
+    afterEach(() => {
+      for (const key of GATED_ENV_KEYS) {
+        if (originalEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = originalEnv[key];
+      }
+    });
+
+    it("has at least one live manifest declaring EACH of the three group types", () => {
+      const withField = (pick: (m: ProtocolToolManifest) => readonly unknown[] | undefined) =>
+        declaringManifests.filter((m) => (pick(m) ?? []).length > 0).map((m) => m.toolId);
+
+      expect(withField((m) => m.exclusiveParamGroups)).toContain("solana.prices");
+      expect(withField((m) => m.atMostOne)).toContain("solana.lend.borrowOperate");
+      expect(withField((m) => m.atLeastOneOf)).toContain("solana.lend.borrowOperate");
+    });
+
+    it("renders the runtime's own sentences on EVERY declaring manifest discovery serves", async () => {
+      const expected = declaringManifests.filter(isProtocolToolAvailable);
+      expect(expected.length).toBeGreaterThan(0);
+
+      let checked = 0;
+      for (const manifest of expected) {
+        const result = await discoverProtocolCapabilities({ query: manifest.toolId, limit: 5 });
+        const row = result.tools.find((t) => t.toolId === manifest.toolId);
+        assert.ok(row, `${manifest.toolId} declares groups but was not discoverable`);
+        assert.ok(isRankedDiscoveryItem(row), `${manifest.toolId} returned a non-ranked row`);
+        expect(row.constraints).toEqual(describeParamGroupConstraints(manifest));
+        checked += 1;
+      }
+      expect(checked).toBe(expected.length);
+    });
   });
 
   // Owner decree 2026-08-03 (revised): default 5 — every row now carries the

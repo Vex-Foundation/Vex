@@ -18,6 +18,7 @@ import { resolveChainHint } from "./chains.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import { enrichPendleBalances, seedPendleChainBalances } from "./pendle-enrichment.js";
 import { PENDLE_SUPPORTED_CHAIN_IDS } from "@tools/pendle/chains.js";
+import { runSingleFlightBalanceSync } from "./balance-sync/single-flight.js";
 import logger from "@utils/logger.js";
 
 /** ChainFamily ("eip155"|"solana") → inventory family ("evm"|"solana"). */
@@ -319,9 +320,19 @@ export interface FullBalanceSyncOptions {
  * stays fresh while a transaction is in flight. Suppressing both would freeze
  * the user's portfolio for the whole duration of a pending swap.
  */
-export async function fullBalanceSync(
-  options: FullBalanceSyncOptions = {},
-): Promise<FullSyncResult> {
+export function fullBalanceSync(options: FullBalanceSyncOptions = {}): Promise<FullSyncResult> {
+  const policy = options.snapshot ?? "when-settled";
+  return runSingleFlightBalanceSync(policy, () => runFullBalanceSync(policy));
+}
+
+/**
+ * The UNGUARDED core. Private on purpose: it mints a `snapshotGroupId` and
+ * writes a snapshot group, so calling it concurrently is the corruption
+ * `runSingleFlightBalanceSync` exists to prevent. Every caller — startup, the
+ * periodic `balances` job, both sync-worker branches, and the user refresh —
+ * reaches it through the exported wrapper above.
+ */
+async function runFullBalanceSync(policy: SnapshotPolicy): Promise<FullSyncResult> {
   // One group id ties every per-wallet snapshot row from this cycle together,
   // so an aggregate view can stitch a cycle back despite distinct created_at.
   const snapshotGroupId = randomUUID();
@@ -334,7 +345,7 @@ export async function fullBalanceSync(
   );
 
   const snapshotAllowed = await isSnapshotAllowed(
-    options.snapshot ?? "when-settled",
+    policy,
     walletEntries.map((entry) => entry.address),
   );
 

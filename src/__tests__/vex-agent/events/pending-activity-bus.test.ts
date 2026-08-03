@@ -23,6 +23,7 @@ function event(over: Partial<PendingActivityEvent> = {}): PendingActivityEvent {
     activityId: 42,
     chainFamily: "eip155",
     chainId: 8453,
+    lane: "onchain",
     status: null,
     occurredAt: "2026-08-03T00:00:00.000Z",
     ...over,
@@ -71,7 +72,7 @@ describe("pendingActivityBus", () => {
     const seen: PendingActivityEvent[] = [];
     pendingActivityBus.subscribe((e) => seen.push(e));
 
-    emitPendingActivityArmed({ activityId: 7, chainFamily: "solana", chainId: null });
+    emitPendingActivityArmed({ activityId: 7, chainFamily: "solana", chainId: null, lane: "onchain" });
 
     expect(seen).toHaveLength(1);
     expect(seen[0]?.type).toBe(PENDING_ACTIVITY_EVENT_TYPE);
@@ -91,6 +92,7 @@ describe("pendingActivityBus", () => {
       activityId: 9,
       chainFamily: "eip155",
       chainId: 1,
+      lane: "onchain",
       status: "confirmed",
     });
 
@@ -98,14 +100,17 @@ describe("pendingActivityBus", () => {
     expect(seen[0]?.status).toBe("confirmed");
   });
 
-  it("the payload is ids only — seven bounded keys, no money content", () => {
+  it("the payload is ids only — eight bounded keys, no money content", () => {
     // A regression guard with teeth: adding txHash/executedAmount/token to the
-    // event would land here as a key this assertion does not name.
+    // event would land here as a key this assertion does not name. `lane`
+    // (provider|onchain routing discriminator, Codex FIX blocker 1) is an id-
+    // class field, not money content.
     expect(Object.keys(event()).sort()).toEqual([
       "activityId",
       "chainFamily",
       "chainId",
       "kind",
+      "lane",
       "occurredAt",
       "status",
       "type",

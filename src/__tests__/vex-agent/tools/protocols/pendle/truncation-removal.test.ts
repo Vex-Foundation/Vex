@@ -67,6 +67,6 @@ describe("category labels — no hidden cap on the values the filter matches aga
       ],
     });
 
-    expect(markets[0]!.categoryIds).toHaveLength(50);
+    expect(markets.at(0)?.categoryIds).toHaveLength(50);
   });
 });

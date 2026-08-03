@@ -35,24 +35,31 @@ import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js"
 import { handleTokenCheck } from "@vex-agent/tools/internal/action-aliases.js";
 import { buildSafetyContractPrompt } from "@vex-agent/engine/prompts/safety-contract.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import type { JsonSchema } from "@vex-agent/tools/types.js";
+import { makeTestContext } from "./_test-context.js";
 
 const TOKEN = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
-const MANIFEST = TOKENS_TOOLS.find((t) => t.toolId === "kyberswap.tokens.check")!;
-const ALIAS = ACTION_ALIAS_TOOLS.find((t) => t.name === "token_check")!;
+function required<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`${what} is not registered`);
+  return value;
+}
 
-function aliasSchema(): { properties: Record<string, unknown>; required: readonly string[] } {
-  return ALIAS.parameters as never;
+const MANIFEST = required(
+  TOKENS_TOOLS.find((t) => t.toolId === "kyberswap.tokens.check"),
+  "kyberswap.tokens.check",
+);
+const ALIAS = required(
+  ACTION_ALIAS_TOOLS.find((t) => t.name === "token_check"),
+  "the token_check alias",
+);
+
+function aliasSchema(): JsonSchema {
+  return ALIAS.parameters;
 }
 
 function context(): InternalToolContext {
-  return {
-    sessionId: "token-check-rename",
-    loadedDocuments: new Map<string, string>(),
-    sessionPermission: "restricted",
-    approved: false,
-    missionRunId: null,
-  } as never;
+  return makeTestContext({ sessionId: "token-check-rename" });
 }
 
 beforeEach(() => executeProtocolTool.mockClear());
@@ -76,7 +83,8 @@ describe("surface 2 — the kyberswap handler", () => {
     const { CHAIN_TOKEN_HANDLERS } = await import(
       "@vex-agent/tools/protocols/kyberswap/handlers/swap/chain-token-handlers.js"
     );
-    const source = CHAIN_TOKEN_HANDLERS["kyberswap.tokens.check"]!.toString();
+    const handler = required(CHAIN_TOKEN_HANDLERS["kyberswap.tokens.check"], "the tokens.check handler");
+    const source = handler.toString();
     expect(source).toContain("tokenAddress");
     expect(source).not.toMatch(/"address"|'address'/);
   });

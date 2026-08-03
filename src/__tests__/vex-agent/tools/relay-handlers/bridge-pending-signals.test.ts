@@ -18,24 +18,44 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 
 import { pendingResult } from "@vex-agent/tools/protocols/relay/handlers/bridge/results.js";
 import type { RelayPollResult } from "@tools/relay/execute.js";
+import type {
+  BridgeAmountDisplay,
+  BridgeEndpointDisplay,
+} from "@vex-agent/tools/protocols/relay/handlers/bridge-output.js";
+import type { BridgeFeeDisclosure } from "@tools/bridge-fee/index.js";
 
-const FROM = { id: 8453, name: "Base" };
-const TO = { id: 4663, name: "Robinhood Chain" };
-const AMOUNT = { amount: "0.0001", token: "ETH", usd: null, chainId: 8453 };
+const FROM: BridgeEndpointDisplay = { id: 8453, name: "Base" };
+const TO: BridgeEndpointDisplay = { id: 4663, name: "Robinhood Chain" };
+const AMOUNT: BridgeAmountDisplay = {
+  token: "ETH",
+  tokenAddress: "0x0000000000000000000000000000000000000000",
+  amount: "0.0001",
+  amountRaw: "100000000000000",
+  usd: null,
+};
+/** These tests read the provider-signal sentences; no fee was taken on this bridge. */
+const NO_FEE: BridgeFeeDisclosure = {
+  charged: false,
+  bps: 0,
+  reason: "this suite exercises the provider-signal text, not the fee",
+  bridgedAmountRaw: "100000000000000",
+  totalDebitedRaw: "100000000000000",
+  note: "no Vex fee was taken",
+};
 
 function body(poll: RelayPollResult | null): Record<string, unknown> {
   const result = pendingResult({
     executionId: 1,
     requestId: "0xreq",
-    from: FROM as never,
-    to: TO as never,
-    inSide: AMOUNT as never,
-    outSide: AMOUNT as never,
+    from: FROM,
+    to: TO,
+    inSide: AMOUNT,
+    outSide: AMOUNT,
     feeUsdByBucket: {},
     broadcasts: [{ role: "bridge_deposit", txHash: "0xdep", status: "confirmed" }],
     poll,
     depositUnconfirmed: false,
-    vexFee: {} as never,
+    vexFee: NO_FEE,
     feeCollection: { collection: "confirmed", collectionNote: "" },
   });
   return JSON.parse(result.output) as Record<string, unknown>;

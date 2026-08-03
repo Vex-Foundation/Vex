@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
-import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
+import { waitForSuccessfulReceipt, type ReceiptWaitClient } from "@tools/evm-chains/receipt-guard.js";
 import * as khalaniChains from "@tools/khalani/chains.js";
 import { describeFailureForAgent } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
@@ -94,12 +94,12 @@ describe("resolveInclusiveEvmChain — registry outage is not an unknown chain",
 
 describe("waitForSuccessfulReceipt — the confirmation-unknown cause survives", () => {
   it("keeps the RPC's own words on an already-broadcast transaction", async () => {
-    const client = {
+    const client: ReceiptWaitClient = {
       waitForTransactionReceipt: vi.fn().mockRejectedValue(new Error("rpc: 429 slow down")),
     };
 
     const err = await waitForSuccessfulReceipt(
-      client as never,
+      client,
       "0xabc",
       { code: "SWAP_FAILED", what: "Swap" },
       { delayMs: 0 },

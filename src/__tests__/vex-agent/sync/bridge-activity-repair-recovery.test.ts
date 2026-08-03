@@ -56,6 +56,8 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([]),
     touchAttempt: vi.fn().mockResolvedValue(undefined),
     touchChecked: vi.fn().mockResolvedValue(undefined),
+    noteVerificationInconclusive: vi.fn().mockResolvedValue(undefined),
+    noteVerificationConclusive: vi.fn().mockResolvedValue(undefined),
     fetchKhalaniOrder: vi.fn().mockResolvedValue(null),
     fetchRelayStatus: vi.fn().mockResolvedValue(null),
     // F2: recovery never reaches the DeBridge fill-hash lane; default to a refusal.
@@ -269,7 +271,7 @@ describe("repairPendingBridges — error text scrubbing", () => {
 
 /** Inferred so `mock.calls` keeps the spied method's argument tuple. */
 function captureWarn() {
-  return vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
+  return vi.spyOn(logger, "warn").mockImplementation(() => logger);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

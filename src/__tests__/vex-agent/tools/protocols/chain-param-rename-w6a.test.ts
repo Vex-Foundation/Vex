@@ -39,7 +39,11 @@ import { handleChainRead } from "@vex-agent/tools/internal/chain-read.js";
 import { EVM_TOOLS } from "@vex-agent/tools/registry/evm.js";
 import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
+import type { VirtualsListResult, VirtualsPagination } from "@tools/virtuals/types.js";
 import { makeProtocolContext, makeTestContext } from "../_test-context.js";
+
+/** An empty page, in the provider's own shape — these tests assert on the request, not the page. */
+const EMPTY_PAGINATION: VirtualsPagination = { page: 1, pageSize: 0, pageCount: 0, total: 0 };
 
 const CTX = makeProtocolContext();
 
@@ -218,7 +222,7 @@ describe("W7 — virtuals.chain enum", () => {
     const client = getVirtualsClient();
     const listVirtuals = vi
       .spyOn(client, "listVirtuals")
-      .mockResolvedValue({ agents: [], pagination: { total: 0 } } as never);
+      .mockResolvedValue({ agents: [], pagination: EMPTY_PAGINATION } satisfies VirtualsListResult);
 
     const result = await handlerFor(VIRTUALS_HANDLERS, "virtuals.list")({ chain: "ethereum" }, CTX);
 
@@ -230,7 +234,7 @@ describe("W7 — virtuals.chain enum", () => {
     const client = getVirtualsClient();
     const listVirtuals = vi
       .spyOn(client, "listVirtuals")
-      .mockResolvedValue({ agents: [], pagination: { total: 0 } } as never);
+      .mockResolvedValue({ agents: [], pagination: EMPTY_PAGINATION } satisfies VirtualsListResult);
 
     await handlerFor(VIRTUALS_HANDLERS, "virtuals.graduations")({ chain: "4663" }, CTX);
     await handlerFor(VIRTUALS_HANDLERS, "virtuals.graduations")({ chain: "ETH" }, CTX);

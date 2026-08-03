@@ -242,4 +242,58 @@ describe("AgentScanScreen — rows and audit detail", () => {
     expect(screen.getByText("PENDING")).not.toBeNull();
     expect(screen.getByText("tracking delayed")).not.toBeNull();
   });
+
+  // Migration 065's DERIVED state (Wave P, Blocker 2). The engine writes
+  // `verification_attempts`/`last_verification_reason`, the main mapper derives
+  // `stalledVerification`, and this is the surface that finally says it out
+  // loud. A row that could not be VERIFIED is not a row that FAILED — the whole
+  // point of never auto-failing it is that the outcome is UNKNOWN.
+  it("renders a stalled pending row as a distinct NON-FAILURE state, with its reason", () => {
+    mockQuery([
+      availablePage([
+        entry({
+          id: "1",
+          status: "pending",
+          stalledVerification: true,
+          stalledReason: "no_safe_rpc",
+        }),
+      ]),
+    ]);
+    mountScreen();
+
+    expect(screen.getByText("PENDING")).not.toBeNull();
+    expect(screen.getByText("verification stalled")).not.toBeNull();
+    // NOT dressed as a failure: no FAILED badge, and the chip does not wear the
+    // destructive tone reserved for a proven failure.
+    expect(screen.queryByText("FAILED")).toBeNull();
+    const chip = screen.getByText("verification stalled");
+    expect(chip.className).not.toContain("destructive");
+    expect(chip.className).not.toContain("warning");
+    expect(chip.getAttribute("title")).toContain("no_safe_rpc");
+    expect(chip.getAttribute("title")).toContain("nothing has failed");
+
+    // The expanded detail names the reason verbatim, so the user and the agent
+    // read the same bounded code.
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }));
+    expect(screen.getByText(/Could not conclude: no_safe_rpc/)).not.toBeNull();
+  });
+
+  it("a stalled row does not ALSO claim tracking delayed — one chip, the more specific one", () => {
+    mockQuery([
+      availablePage([
+        entry({
+          id: "1",
+          status: "pending",
+          createdAt: "2020-01-01T00:00:00+00:00",
+          lastCheckedAt: "2020-01-01T00:00:00+00:00",
+          stalledVerification: true,
+          stalledReason: "receipt_unavailable",
+        }),
+      ]),
+    ]);
+    mountScreen();
+
+    expect(screen.getByText("verification stalled")).not.toBeNull();
+    expect(screen.queryByText("tracking delayed")).toBeNull();
+  });
 });

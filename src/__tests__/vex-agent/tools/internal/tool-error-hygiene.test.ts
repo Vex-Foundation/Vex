@@ -211,6 +211,42 @@ describe("discover_tools — a supplied param is never silently discarded", () =
     expect(parsed.ok && parsed.args.limit).toBe(20);
   });
 
+  // The parser used to accept every one of these and let discovery floor,
+  // clamp or default them, so the agent silently got a differently-sized
+  // answer than it asked for. Reject-not-clamp applies to the VALUE too.
+  it.each([
+    ["zero", 0],
+    ["a negative", -3],
+    ["a fraction", 2.5],
+    ["NaN", Number.NaN],
+    ["negative infinity", Number.NEGATIVE_INFINITY],
+  ])("REJECTS %s limit BY NAME with the legal range", (_label, limit) => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("limit must be a whole number between 1 and 20");
+    expect(parsed.message).toContain("default 5");
+    expect(parsed.message).toContain("NOT run");
+  });
+
+  it("REJECTS the string spelling of an out-of-range limit the same way", () => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: "0" });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("between 1 and 20");
+  });
+
+  it("accepts the minimum limit itself (the lower boundary is not off by one)", () => {
+    expect(parseDiscoverToolsArgs({ query: "swap", limit: 1 }).ok).toBe(true);
+  });
+
+  it("REJECTS positive infinity through the over-max lane, still by name", () => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: Number.POSITIVE_INFINITY });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("maximum of 20");
+  });
+
   it("REJECTS a wrong-typed limit by name instead of dropping it", () => {
     const parsed = parseDiscoverToolsArgs({ query: "swap", limit: "ten" });
     expect(parsed.ok).toBe(false);

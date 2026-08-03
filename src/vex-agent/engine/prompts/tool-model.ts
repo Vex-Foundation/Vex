@@ -11,7 +11,10 @@
  * that flow: an envelope the model can no longer see would be an instruction it
  * cannot follow. The `.` → `__` name mapping stated below is the one
  * `toInjectedToolName` implements — if that mapping changes, this text changes
- * in the same commit.
+ * in the same commit. The discovery row counts are INTERPOLATED from
+ * `DEFAULT_DISCOVERY_LIMIT` / `MAX_DISCOVERY_LIMIT` for the same reason: the
+ * prose said "up to 10" while the runtime served 5 by default and capped at 20,
+ * and a number a human retypes is a number that drifts.
  *
  * Execution safety (quote/preview, 2-step transfers, pressure-barrier gate,
  * gas/balance/token rules) lives in the sibling `# Safety Contract` layer.
@@ -24,6 +27,11 @@
  * payloads in `tools/registry/*.ts` so the model sees them at the tool
  * selection point, not just in the system prompt.
  */
+
+import {
+  DEFAULT_DISCOVERY_LIMIT,
+  MAX_DISCOVERY_LIMIT,
+} from "@vex-agent/tools/protocols/discovery.js";
 
 import { buildMissingCapabilityNotice } from "./capability-availability.js";
 
@@ -74,7 +82,7 @@ If a fact is queryable live, querying is cheaper than remembering — and the me
 
 ## 3. Protocol Execution
 
-\`discover_tools\` searches by natural-language query and/or namespace and returns up to 10 tools, each with its toolId, its full \`params\` schema, and its \`mutating\` flag. Every tool it returns is then a real callable function for the rest of the session: you call it by its underscored name, and the provider enforces its required params for you. Every advertised tool is active and executable — build calls from \`params\`, not from memory.
+\`discover_tools\` searches by natural-language query and/or namespace and returns ${DEFAULT_DISCOVERY_LIMIT} tools by default — raise \`limit\` up to ${MAX_DISCOVERY_LIMIT} when the job needs a bigger working set, and note that a limit outside 1-${MAX_DISCOVERY_LIMIT} is rejected by name, not clamped. Each row carries its toolId, its full \`params\` schema, and its \`mutating\` flag. Every tool it returns is then a real callable function for the rest of the session: you call it by its underscored name, and the provider enforces its required params for you. Every advertised tool is active and executable — build calls from \`params\`, not from memory.
 
 ### A complete trace
 

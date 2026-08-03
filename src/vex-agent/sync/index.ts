@@ -160,33 +160,22 @@ export async function syncTick(): Promise<void> {
 }
 
 /**
- * SINGLE-FLIGHT user-initiated refresh (Wave P).
- *
- * `fullBalanceSync` is NOT concurrency-safe: each call mints its own
- * `snapshotGroupId` and inserts a full set of snapshot rows, so two overlapping
- * calls produce two groups for one moment in time and corrupt the `pnlVsPrev`
- * chain for every wallet. A second caller therefore JOINS the in-flight promise
- * instead of starting a second sync — the same shape as `executor.ts`'s
- * `inFlight` and `sync-worker.ts`'s `inFlightTick`.
- *
- * The mutex lives HERE, in the engine, rather than in the IPC handler, because
- * main is only one of several possible callers — the periodic tick is another,
- * and a handler-side lock would not see it.
+ * The user-initiated portfolio refresh (Wave P).
  *
  * `snapshot: "always"`: a user pressing refresh means "record what is true right
  * now", the same authoritative intent as the startup snapshot.
+ *
+ * SINGLE-FLIGHT NOW LIVES AT THE `fullBalanceSync` BOUNDARY ITSELF
+ * (`balance-sync/single-flight.ts`), not here. A mutex on this function alone
+ * guarded exactly one of five callers: startup, the periodic `balances` job and
+ * both sync-worker branches called `fullBalanceSync` directly, so a manual
+ * refresh could still overlap a background run and mint a second competing
+ * snapshot group. Because `"always"` may not adopt a `"when-settled"` run's
+ * possibly-suppressed snapshot, this caller QUEUES behind such a run rather than
+ * joining it — see that module's doc.
  */
-let refreshInFlight: Promise<FullSyncResult> | null = null;
-
 export async function refreshPortfolioNow(): Promise<FullSyncResult> {
-  if (refreshInFlight) {
-    logger.info("sync.refresh.joined_in_flight");
-    return refreshInFlight;
-  }
-  refreshInFlight = fullBalanceSync({ snapshot: "always" }).finally(() => {
-    refreshInFlight = null;
-  });
-  return refreshInFlight;
+  return fullBalanceSync({ snapshot: "always" });
 }
 
 export type { FullSyncResult } from "./balance-sync.js";

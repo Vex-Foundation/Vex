@@ -281,6 +281,14 @@ export async function executeUniswapSwap(
  * Run the Vex fee leg after a CONFIRMED swap and attach its disclosure.
  * Nothing here can change whether the swap succeeded.
  *
+ * TOTAL BY CONSTRUCTION — this function NEVER throws, and that is what keeps
+ * the guarantee true rather than merely intended: the swap is already confirmed
+ * on-chain by the time it is called, so an escape into the orchestrator's outer
+ * catch would report a settled swap as failed. Both of its awaits are
+ * non-throwing by contract (`abortRemainingPlans` is best-effort and returns
+ * whether it applied; `runUniswapFeeLeg` documents "Never throws. Every path
+ * returns a report."). Do not add a throwing call here.
+ *
  * The fee base is the amount the user ASKED to spend — known exactly before the
  * swap ran and unaffected by what the settlement decoded — so a swap whose
  * amounts could not be decoded is still charged correctly.
@@ -314,8 +322,17 @@ async function attachVexFee(x: {
   // A fee DID apply but has no row to record it under. A different truth from
   // the line above, and the audit surface must tell them apart.
   if (x.feeRowId === null) {
-    await abortRemainingPlans(x.executionId, x.swapLegCount, "the fee leg had no recorded row");
-    return attach(uniswapFeeNotAttempted("the fee leg had no recorded row, so nothing was signed"));
+    // Post-confirmation audit cleanup is BEST-EFFORT and never throws: the swap
+    // is already confirmed on-chain, so a repository failure here is a
+    // bookkeeping gap to DISCLOSE, never a reason to report it as failed.
+    const cleanedUp = await abortRemainingPlans(x.executionId, x.swapLegCount, "the fee leg had no recorded row");
+    return attach(
+      uniswapFeeNotAttempted(
+        cleanedUp
+          ? "the fee leg had no recorded row, so nothing was signed"
+          : "the fee leg had no recorded row, so nothing was signed; its audit rows could not be finalized either",
+      ),
+    );
   }
 
   const collection = await runUniswapFeeLeg({

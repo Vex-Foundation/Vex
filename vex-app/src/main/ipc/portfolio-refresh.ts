@@ -49,6 +49,19 @@ export function resetPortfolioRefreshRateLimit(): void {
   lastRefreshAt = 0;
 }
 
+/**
+ * The only part of a thrown value this handler is willing to log.
+ *
+ * A class name is code-authored; a `message`, `stack`, `cause` or serialized
+ * body is not. A non-`Error` throw is reported by its typeof alone — stringifying
+ * it would reintroduce exactly the arbitrary content this function exists to
+ * exclude.
+ */
+export function errorClassName(error: unknown): string {
+  if (error instanceof Error) return error.constructor.name;
+  return `non_error:${typeof error}`;
+}
+
 export function registerPortfolioRefreshHandler(): () => void {
   return registerHandler({
     channel: CH.portfolio.refresh,
@@ -88,12 +101,17 @@ export function registerPortfolioRefreshHandler(): () => void {
         });
       } catch (error) {
         // A failed refresh is a degraded SUCCESS, not an error Result: the
-        // portfolio the user is looking at is still valid, only not newer. The
-        // real cause stays in the main-process log, which is where a diagnosable
-        // provider/DB failure belongs — the renderer is an untrusted client.
+        // portfolio the user is looking at is still valid, only not newer.
+        //
+        // ONLY THE ERROR'S CLASS NAME IS LOGGED. A provider or DB `message` is
+        // attacker-and-third-party-shaped text — request URLs with query
+        // strings, SQL fragments, response bodies — and the logger's own
+        // contract states that a call site must NOT rely on its pattern
+        // scrubber to make raw content safe. The class name is authored in code,
+        // and `correlationId` is what ties this line to the rest of the trace.
         log.warn(
           `[ipc:vex:portfolio:refresh] unavailable correlationId=${ctx.requestId} ` +
-            `error=${error instanceof Error ? error.message : String(error)}`,
+            `errorName=${errorClassName(error)}`,
         );
         return ok({ status: "unavailable" });
       }

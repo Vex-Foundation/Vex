@@ -24,18 +24,30 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { formatEther, type Address } from "viem";
+import {
+  createPublicClient,
+  formatEther,
+  http,
+  type Address,
+  type Chain,
+  type PublicClient,
+  type Transport,
+} from "viem";
+import { mainnet } from "viem/chains";
 
 import {
   registerLaunchImageByteResolver,
   resetLaunchImageByteResolver,
 } from "@vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
-import { buildLaunchPlan } from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
+import {
+  buildLaunchPlan,
+  type BuildLaunchPlanInput,
+} from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
 import {
   TRENCH_CREATION_FEE_SLOT,
   TRENCH_CREATION_FEE_FIXTURE,
 } from "@tools/trench-express/evm/creation-fee.js";
-import type { PlanTrenchFeeLeg } from "@vex-agent/tools/protocols/trench/handlers/launch/fee-seam.js";
+import { planTrenchLaunchFeeLeg } from "@vex-agent/tools/protocols/trench/handlers/launch/fee-seam.js";
 import type { ValidatedLaunchRequest } from "@vex-agent/tools/protocols/trench/handlers/launch/validate.js";
 
 const WALLET = "0x33eF000000000000000000000000000000000001" as Address;
@@ -66,26 +78,33 @@ const VEX_FEE = (MSG_VALUE * 25n) / 10_000n;
 const VIEM_INSUFFICIENT_FUNDS =
   "The total cost (gas * gas fee + value) of executing this transaction exceeds the balance of the account.";
 
-const feePlanner: PlanTrenchFeeLeg = (req) => {
-  const feeWei = (req.baseWei * 25n) / 10_000n;
-  if (feeWei === 0n) return null;
-  return {
-    feeWei,
-    netWei: req.baseWei - feeWei,
-    txParams: { to: "0x00000000000000000000000000000000000feee5" as Address, value: feeWei },
-    event: {} as never,
-    disclosure: {},
-  } as never;
-};
-
 interface ClientCalls {
   readonly order: string[];
 }
 
-function publicClient(calls: ClientCalls, overrides: Record<string, unknown> = {}) {
-  return {
+/**
+ * The four RPC reads this plan performs, and nothing else. Typed against the
+ * real client so an override that stops matching viem's contract fails to
+ * compile instead of being silenced.
+ */
+type LaunchPlanReads = Pick<
+  PublicClient<Transport, Chain>,
+  "getBlockNumber" | "getStorageAt" | "estimateGas" | "getGasPrice" | "getBalance"
+>;
+
+/**
+ * A real viem client with those reads replaced. `Object.assign` preserves the
+ * full `PublicClient` type, so `buildLaunchPlan`'s contract is satisfied
+ * without a cast.
+ */
+function publicClient(calls: ClientCalls, overrides: Partial<LaunchPlanReads> = {}): PublicClient<Transport, Chain> {
+  const base: PublicClient<Transport, Chain> = createPublicClient({
+    chain: mainnet,
+    transport: http("http://127.0.0.1:1"),
+  });
+  const reads: LaunchPlanReads = {
     async getBlockNumber() { return ANCHOR; },
-    async getStorageAt(args: { slot: string }) {
+    async getStorageAt(args) {
       return args.slot.toLowerCase() === TRENCH_CREATION_FEE_SLOT.toLowerCase()
         ? TRENCH_CREATION_FEE_FIXTURE.rawWord
         : undefined;
@@ -93,18 +112,20 @@ function publicClient(calls: ClientCalls, overrides: Record<string, unknown> = {
     async estimateGas() { calls.order.push("estimateGas"); return GAS_ESTIMATE; },
     async getGasPrice() { return GAS_PRICE; },
     async getBalance() { calls.order.push("getBalance"); return MSG_VALUE * 100n; },
-    ...overrides,
-  } as never;
+  };
+  return Object.assign(base, reads, overrides);
 }
 
-function baseInput(client: unknown) {
+function baseInput(client: PublicClient<Transport, Chain>): BuildLaunchPlanInput {
   return {
     request: REQUEST,
     sessionId: "sess-underfunded",
     walletAddress: WALLET,
     permission: "full" as const,
     publicClient: client,
-    planFeeLeg: feePlanner,
+    // The REAL seam adapter: a hand-rolled 25bps double here would let the
+    // number this test asserts drift from the number a launch is charged.
+    planFeeLeg: planTrenchLaunchFeeLeg,
     nativeAddress: NATIVE,
   };
 }
@@ -121,7 +142,7 @@ describe("W2h — an under-funded launch produces the BALANCE message", () => {
     const calls: ClientCalls = { order: [] };
     const result = await buildLaunchPlan(baseInput(publicClient(calls, {
       async getBalance() { calls.order.push("getBalance"); return 1n; },
-    })) as never);
+    })));
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected a refusal");
@@ -136,7 +157,7 @@ describe("W2h — an under-funded launch produces the BALANCE message", () => {
     const calls: ClientCalls = { order: [] };
     const result = await buildLaunchPlan(baseInput(publicClient(calls, {
       async getBalance() { return 1n; },
-    })) as never);
+    })));
 
     if (result.ok) throw new Error("expected a refusal");
     expect(result.reason).toBe(
@@ -156,7 +177,7 @@ describe("W2h — an under-funded launch produces the BALANCE message", () => {
     const result = await buildLaunchPlan(baseInput(publicClient(calls, {
       async getBalance() { return MSG_VALUE + VEX_FEE; },
       async estimateGas() { throw new Error(VIEM_INSUFFICIENT_FUNDS); },
-    })) as never);
+    })));
 
     if (result.ok) throw new Error("expected a refusal");
     expect(result.code).toBe("insufficient_native_balance");
@@ -172,7 +193,7 @@ describe("W2h — an under-funded launch produces the BALANCE message", () => {
     const calls: ClientCalls = { order: [] };
     const result = await buildLaunchPlan(baseInput(publicClient(calls, {
       async estimateGas() { throw new Error("method eth_estimateGas is not available"); },
-    })) as never);
+    })));
 
     if (result.ok) throw new Error("expected a refusal");
     expect(result.code).toBe("gas_unestimable");
@@ -185,7 +206,7 @@ describe("W2h — an under-funded launch produces the BALANCE message", () => {
     const calls: ClientCalls = { order: [] };
     const result = await buildLaunchPlan(baseInput(publicClient(calls, {
       async getBalance() { throw new Error("upstream node returned 503"); },
-    })) as never);
+    })));
 
     if (result.ok) throw new Error("expected a refusal");
     expect(result.code).toBe("balance_unreadable");
@@ -198,7 +219,7 @@ describe("W2h — an under-funded launch produces the BALANCE message", () => {
     const calls: ClientCalls = { order: [] };
     const result = await buildLaunchPlan(baseInput(publicClient(calls, {
       async getStorageAt() { throw new Error("archive node refused the pinned block"); },
-    })) as never);
+    })));
 
     if (result.ok) throw new Error("expected a refusal");
     expect(result.code).toBe("fee_unreadable");

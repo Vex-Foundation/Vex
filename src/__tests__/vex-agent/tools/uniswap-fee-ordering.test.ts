@@ -179,9 +179,10 @@ const NATIVE_PARAMS = { chain: "robinhood", tokenIn: "ETH", tokenOut: TOKEN_OUT,
 function feeOf(result: { data?: unknown }): {
   collection: string;
   collectionNote: string;
+  txHash: string | null;
   disclosure: Record<string, unknown>;
 } {
-  return (result.data as { vexFee: { collection: string; collectionNote: string; disclosure: Record<string, unknown> } }).vexFee;
+  return (result.data as { vexFee: { collection: string; collectionNote: string; txHash: string | null; disclosure: Record<string, unknown> } }).vexFee;
 }
 
 /** A complete `TransactionReceipt`; only `blockNumber` is read downstream. */
@@ -379,6 +380,52 @@ describe("a fee that fails NEVER touches the swap", () => {
     expect(feeOf(result).collection).toBe("unconfirmed");
     expect(signStageBroadcast).toHaveBeenCalledTimes(1);
     expect(failActivityEvent).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Codex final-review blocker 4. Once the swap has CONFIRMED on-chain, every
+ * remaining fee/audit write is bookkeeping. A repository that throws is a
+ * bookkeeping gap to disclose — never a licence to rewrite what the chain
+ * already said.
+ */
+describe("post-confirmation bookkeeping can NEVER rewrite chain truth", () => {
+  it("a fee-row audit cleanup that THROWS still reports the confirmed swap as successful, and discloses the gap", async () => {
+    // A fee DOES apply, but the intent came back without the fee row — the
+    // `feeRowId === null` cleanup path — and that cleanup write fails.
+    createAgentActivityIntent.mockImplementation(async () => ({
+      executionId: 7,
+      events: [{ id: 100, eventIndex: 0, eventRole: "swap" }],
+    }));
+    abortPlannedEvents.mockRejectedValue(new Error("agent_activity: connection terminated"));
+
+    const result = await execute(ERC20_PARAMS, context);
+
+    // The parent swap is CONFIRMED. Its success is not the bookkeeper's to flip.
+    expect(result.success).toBe(true);
+    expect(feeOf(result).collection).toBe("not_attempted");
+    // …and the report says the audit rows could not be finalized rather than
+    // silently implying they were.
+    expect(feeOf(result).collectionNote).toContain("could not be finalized");
+    // Nothing was signed for a fee with no row to record it under.
+    expect(signStageBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("a revert-record write that THROWS leaves the outcome `reverted` WITH its known hash — never downgraded to not_attempted", async () => {
+    signStageBroadcast.mockImplementationOnce(async (_p: unknown, _w: unknown, tx: { to: string; data: Hex; value: bigint }) => {
+      feeTxs.push(tx);
+      return feeOutcome("reverted");
+    });
+    failActivityEvent.mockRejectedValue(new Error("agent_activity: connection terminated"));
+
+    const result = await execute(ERC20_PARAMS, context);
+
+    expect(result.success).toBe(true);
+    const fee = feeOf(result);
+    // The receipt proved the revert and the hash. A failed DB write unsays neither.
+    expect(fee.collection).toBe("reverted");
+    expect(fee.txHash).toBe(FEE_TX_HASH);
+    expect(failActivityEvent).toHaveBeenCalledWith(101, expect.objectContaining({ failureCode: "mined_revert" }));
   });
 });
 

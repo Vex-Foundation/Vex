@@ -20,10 +20,18 @@ import { describe, expect, it } from "vitest";
 
 import { pendleLpQuote } from "@vex-agent/tools/protocols/pendle/handlers/lp/quote.js";
 import { pendlePyQuote } from "@vex-agent/tools/protocols/pendle/handlers/py/quote.js";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
+import { makeProtocolContext } from "../../_test-context.js";
 
-const CTX = {} as unknown as ProtocolExecutionContext;
+/**
+ * A session with NO selected EVM wallet: every refusal asserted here fires at
+ * or before wallet resolution, so the quote fails closed without a wallet, a
+ * market or a provider call — reaching one of those would itself be the
+ * regression this file guards.
+ */
+const CTX = makeProtocolContext({
+  walletResolution: { source: "session", evm: null, solana: null },
+});
 
 const MARKET = "0x34280882267ffa6383b363e278b027be083bbe3b";
 const PT = "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c";

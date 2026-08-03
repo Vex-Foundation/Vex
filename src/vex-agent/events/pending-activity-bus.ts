@@ -43,12 +43,34 @@ export type PendingActivityEventKind = "armed" | "resolved";
 /** Chain family as persisted on `agent_activity.chain_family`. */
 export type PendingActivityChainFamily = "eip155" | "solana";
 
+/**
+ * WHICH LEG CAN ANSWER "did this row settle?" — the authoritative lane
+ * discriminator.
+ *
+ * - `onchain` — Vex signed and broadcast this row itself, so its truth is a
+ *   receipt/signature we can look up from a hash we hold.
+ * - `provider` — a LOGICAL row (the bridge `bridge_fill_expected`) whose fill
+ *   has not happened yet. It holds no hash and no submit timestamp of its own;
+ *   only the bridge API knows its state.
+ *
+ * THIS IS SET BY THE CAS THAT ARMS THE LANE, never inferred downstream. The CAS
+ * is the one place that knows which kind of row it just moved:
+ * `attachProviderOrderId` arms `provider`, the broadcast-accepted transitions
+ * arm `onchain`. Inferring it from the payload (e.g. "chain id is null") was the
+ * live defect this field replaces: a logical bridge row carries a NON-NULL
+ * destination chain id, so it was misrouted into the on-chain leg, which then
+ * disarmed it immediately for lacking the hash it can never have.
+ */
+export type PendingActivityLane = "onchain" | "provider";
+
 export interface PendingActivityEvent {
   readonly type: typeof PENDING_ACTIVITY_EVENT_TYPE;
   readonly kind: PendingActivityEventKind;
   readonly activityId: number;
   readonly chainFamily: PendingActivityChainFamily;
   readonly chainId: number | null;
+  /** The authoritative lane discriminator — see `PendingActivityLane`. */
+  readonly lane: PendingActivityLane;
   /**
    * Terminal status for `resolved`, `null` for `armed`. A bounded open string
    * rather than an enum, per the tolerant-reader law: a new terminal status must
@@ -100,6 +122,8 @@ export function emitPendingActivityArmed(input: {
   readonly activityId: number;
   readonly chainFamily: PendingActivityChainFamily;
   readonly chainId: number | null;
+  /** REQUIRED — the arming CAS names the lane; nothing downstream may guess it. */
+  readonly lane: PendingActivityLane;
 }): void {
   pendingActivityBus.emit({
     type: PENDING_ACTIVITY_EVENT_TYPE,
@@ -107,6 +131,7 @@ export function emitPendingActivityArmed(input: {
     activityId: input.activityId,
     chainFamily: input.chainFamily,
     chainId: input.chainId,
+    lane: input.lane,
     status: null,
     occurredAt: new Date().toISOString(),
   });
@@ -121,6 +146,7 @@ export function emitPendingActivityResolved(input: {
   readonly activityId: number;
   readonly chainFamily: PendingActivityChainFamily;
   readonly chainId: number | null;
+  readonly lane: PendingActivityLane;
   readonly status: string;
 }): void {
   pendingActivityBus.emit({
@@ -129,6 +155,7 @@ export function emitPendingActivityResolved(input: {
     activityId: input.activityId,
     chainFamily: input.chainFamily,
     chainId: input.chainId,
+    lane: input.lane,
     status: input.status,
     occurredAt: new Date().toISOString(),
   });

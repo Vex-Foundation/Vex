@@ -15,7 +15,7 @@
  *              create may already have minted their token.
  */
 
-import { formatEther, formatUnits, type Address, type Chain, type PublicClient, type Transport, type WalletClient } from "viem";
+import { formatEther, formatUnits, type Account, type Address, type Chain, type PublicClient, type Transport, type WalletClient } from "viem";
 
 import { TRENCH_CHAIN_ID, TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
 import { readTokenDecimals } from "@tools/trench-express/evm/curve-reader.js";
@@ -64,7 +64,7 @@ export interface BroadcastLaunchInput {
   readonly request: ValidatedLaunchRequest;
   readonly params: Record<string, unknown>;
   readonly publicClient: PublicClient<Transport, Chain>;
-  readonly walletClient: WalletClient<Transport, Chain>;
+  readonly walletClient: WalletClient<Transport, Chain, Account>;
   readonly deps: LaunchExecuteDeps;
 }
 

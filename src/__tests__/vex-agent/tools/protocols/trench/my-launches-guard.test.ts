@@ -26,17 +26,15 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 
 import { trenchMyLaunchesHandler } from "@vex-agent/tools/protocols/trench/handlers/my-launches.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "../../_test-context.js";
 
 const WALLET = "0x33eF000000000000000000000000000000000001";
 
 function context(): ProtocolExecutionContext {
-  return {
+  return makeProtocolContext({
     sessionId: "my-launches-guard",
-    sessionPermission: "restricted",
-    approved: false,
     walletResolution: { source: "session", evm: { id: "w1", address: WALLET }, solana: null },
-    walletPolicy: { kind: "none" },
-  } as never;
+  });
 }
 
 describe("trench.my_launches — the local index read is guarded", () => {

@@ -89,6 +89,7 @@ async function sweepLogicalRow(
   const correlation = readStoredCorrelation(logical);
   if (!correlation) {
     logger.warn("bridge.repair.logical_missing_route", { executionId });
+    await deps.noteVerificationInconclusive(logical.id, "missing_route");
     counters.stillPending++;
     return;
   }
@@ -96,6 +97,8 @@ async function sweepLogicalRow(
   const observation = await observeProvider(logical, orderId, correlation, deps);
   if (!observation) {
     // Transport failure — attempt already recorded, no observation, stays pending.
+    // Migration 065: this is exactly the shape that used to die in a debug log.
+    await deps.noteVerificationInconclusive(logical.id, "provider_unreachable");
     counters.stillPending++;
     return;
   }
@@ -137,6 +140,10 @@ async function applyObservation(
   const executionId = logical.protocolExecutionId;
   switch (observation.kind) {
     case "pending":
+      // CONCLUSIVE: the provider answered and the row is legitimately still in
+      // flight. Reset the stall counter — a healthy slow bridge must never
+      // accumulate its way into "verification stalled".
+      await deps.noteVerificationConclusive(logical.id);
       counters.stillPending++;
       return;
 
@@ -154,6 +161,7 @@ async function applyObservation(
         protocol: logical.protocol,
         providerStatus: observation.providerStatus,
       });
+      await deps.noteVerificationInconclusive(logical.id, "chain_mismatch");
       counters.stillPending++;
       return;
 
@@ -167,6 +175,7 @@ async function applyObservation(
         providerStatus: observation.providerStatus,
         field: observation.field,
       });
+      await deps.noteVerificationInconclusive(logical.id, "correlation_mismatch");
       counters.stillPending++;
       return;
 

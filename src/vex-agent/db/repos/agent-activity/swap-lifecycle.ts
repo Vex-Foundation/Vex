@@ -138,7 +138,7 @@ export async function markActivitySolanaBroadcast(
       RETURNING *`,
     [id, input.txHash, input.fromAddress, input.recentBlockhash, input.lastValidBlockHeight],
   );
-  if (row) return { applied: true, row: armFastLane(mapRow(row)) };
+  if (row) return { applied: true, row: armFastLane(mapRow(row), "onchain") };
   return { applied: false, row: await getCurrentRowOrThrow(id, "markActivitySolanaBroadcast") };
 }
 
@@ -156,7 +156,7 @@ export async function markBroadcastAccepted(id: number): Promise<CasResult> {
       RETURNING *`,
     [id],
   );
-  if (row) return { applied: true, row: armFastLane(mapRow(row)) };
+  if (row) return { applied: true, row: armFastLane(mapRow(row), "onchain") };
   return { applied: false, row: await getCurrentRowOrThrow(id, "markBroadcastAccepted") };
 }
 
@@ -509,6 +509,7 @@ export {
   getActivityEventById,
   listPendingOlderThan,
   listPendingByIds,
+  listPendingProviderLogical,
   hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,

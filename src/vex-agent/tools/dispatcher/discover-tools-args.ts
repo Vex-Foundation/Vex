@@ -17,7 +17,10 @@
  *    same round-trip rule the protocol runtime applies to declared-number
  *    params so the two cannot drift apart;
  *  - anything else is REJECTED by name, with the expected type — never
- *    swallowed.
+ *    swallowed. `limit` extends that to its VALUE: a count outside
+ *    `1..MAX_DISCOVERY_LIMIT`, a fraction, `NaN` or an infinity is rejected
+ *    here rather than floored/clamped/defaulted inside discovery, which would
+ *    hand the agent a differently-sized answer with no signal.
  *
  * Unknown keys stay tolerated (unchanged): discovery is read-only and a stray
  * key changes nothing about the answer.
@@ -46,6 +49,18 @@ function reject(key: string, expected: string, value: unknown): DiscoverToolsArg
       `discover_tools: ${key} must be ${expected} — it arrived as a ${typeof value}. `
       + "Send it with the declared type (or omit it); it was NOT applied to this search.",
   };
+}
+
+/**
+ * `limit` is a row COUNT: only a finite whole number in `1..MAX` can be
+ * honoured, and every other number is answered by name with the legal range.
+ */
+function buildLimitRangeRejection(limit: number): string {
+  return (
+    `discover_tools: limit must be a whole number between 1 and ${MAX_DISCOVERY_LIMIT} `
+    + `(default ${DEFAULT_DISCOVERY_LIMIT}) — it arrived as ${String(limit)}. `
+    + "Send a limit in that range or omit it; this search was NOT run."
+  );
 }
 
 /** The boolean a string unambiguously spells, or `null` to reject it. */
@@ -93,6 +108,13 @@ export function parseDiscoverToolsArgs(rawArgs: Record<string, unknown>): Discov
           + `Send limit ${MAX_DISCOVERY_LIMIT} or lower (default ${DEFAULT_DISCOVERY_LIMIT}), `
           + "or narrow the search with `namespace` / a sharper query; this search was NOT run.",
       };
+    }
+    // The same doctrine below the maximum: zero, a negative, a fraction, NaN
+    // and ±Infinity used to be accepted here and then floored/clamped/defaulted
+    // inside discovery, so the agent silently got a differently-sized result
+    // than it asked for. Rejected by name instead.
+    if (!Number.isInteger(limit) || limit < 1) {
+      return { ok: false, message: buildLimitRangeRejection(limit) };
     }
   }
 

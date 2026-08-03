@@ -72,15 +72,21 @@ export async function failPreBroadcast(
  * Best-effort: a throw here is logged, never propagated — the caller has
  * already decided its own return value and must not flip to a misleading
  * result just because this bookkeeping call failed.
+ *
+ * Returns whether the cleanup actually applied, so a caller reporting on an
+ * ALREADY-CONFIRMED leg can disclose the bookkeeping gap instead of implying
+ * the audit rows were finalized.
  */
-export async function abortRemainingPlans(executionId: number, fromIndex: number, reason: string): Promise<void> {
+export async function abortRemainingPlans(executionId: number, fromIndex: number, reason: string): Promise<boolean> {
   try {
     await abortPlannedEvents(executionId, fromIndex, reason);
+    return true;
   } catch (err) {
     logger.warn("uniswap.swap.execute.abort_planned_events_failed", {
       executionId,
       fromIndex,
       error: uniswapFailureMessage(err),
     });
+    return false;
   }
 }
