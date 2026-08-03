@@ -1,27 +1,37 @@
 /**
- * Manual real-stack eval: dense-primary discover_tools.
+ * Real-stack eval: dense-primary discover_tools.
  *
  * This file intentionally does NOT use the `.test.ts` suffix, so default
  * `pnpm test` never picks it up. Run only with:
  *
- *   pnpm test:eval:dense
+ *   pnpm test:eval:dense           # --check (default): compares, writes nothing
+ *   pnpm test:eval:dense:update    # recaptures baselines/dense.json
  *
  * Required local dependencies:
  * - Postgres/pgvector with migration 010 applied
  * - populated `tool_embeddings`
  * - local embedding model endpoint from ~/.config/vex/.env
+ *
+ * History (2026-08-03): this runner used to rewrite `baselines/dense.json`
+ * — timestamp included — on EVERY run, which meant there was no way to assert
+ * that dense quality had not moved, and it never noticed that its own baseline
+ * had gone stale at `v3-agent-200` while the dataset moved to `v3-agent-116`.
+ * Writing is now reachable only through an explicit `--update`.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { z } from "zod";
 import { loadProviderDotenv } from "../../providers/env-resolution.js";
 import { closePool } from "../../vex-agent/db/client.js";
 import { assertToolEmbeddingsReady } from "../../vex-agent/tools/protocols/embeddings/health.js";
 import {
+  resolveBaselineMode,
+  runBaselineTarget,
+  type BaselineTarget,
+  type MeasuredBaseline,
+} from "./baseline.js";
+import { toBaselineMetrics } from "./report-metrics.js";
+import {
   evaluateDiscoverTools,
-  formatMetrics,
   loadDataset,
   round3,
   validateDatasetExpectedTools,
@@ -30,104 +40,35 @@ import {
 
 loadProviderDotenv();
 
-// Agent Scan phase 1 (2026-07-22): dataset shrank 200 -> 116 (see
-// tool-discovery-seed.json's description + discovery-baseline.test.ts). This
-// generator's recall/mrr floors below were captured against the OLD 200-query
-// set and go stale with the version bump — regenerating this baseline against
-// the new dataset is the coordinator's named post-merge step, not done here.
+const CANONICAL_DATASET_ID = "tool-discovery-seed";
 const DATASET_VERSION = "v3-agent-116";
 const REQUIRED_ENV = "VEX_REAL_DENSE_EVAL";
+
+// Quality floors — unchanged by the 2026-08-03 baseline-tooling work.
 const RECALL5_OVERALL_FLOOR = 0.95;
 const RECALL5_BLIND_FLOOR = 0.94;
 const RECALL5_PROTOCOL_AWARE_FLOOR = 0.98;
 const MRR5_OVERALL_FLOOR = 0.88;
 
-const describeRealStack =
-  process.env[REQUIRED_ENV] === "1" ? describe : describe.skip;
+const realStackRequested = process.env[REQUIRED_ENV] === "1";
 
-const MetricSchema = z.object({
-  count: z.number().int().nonnegative(),
-  recall1: z.number().min(0).max(1),
-  recall5: z.number().min(0).max(1),
-  coverage5: z.number().min(0).max(1),
-  mrr5: z.number().min(0).max(1),
-  groupMrr5: z.number().min(0).max(1),
-});
+describe("real-stack discover_tools dense baseline", () => {
+  /**
+   * A misconfigured run must FAIL, not skip green. This config runs nothing
+   * but this file, so reaching it without the opt-in means the caller intended
+   * a dense eval and did not get one.
+   */
+  it("runs against the real stack", () => {
+    expect(
+      realStackRequested,
+      `${REQUIRED_ENV}=1 is required to run the dense eval. This suite evaluates nothing without `
+      + "the real embedding stack, and a silent skip would report green while measuring nothing. "
+      + "Use `pnpm test:eval:dense` (check) or `pnpm test:eval:dense:update` (recapture).",
+    ).toBe(true);
+  });
 
-const MetricsSchema = z.object({
-  overall: MetricSchema,
-  awareness: z.object({
-    blind: MetricSchema,
-    protocolAware: MetricSchema,
-  }),
-  intentShapes: z.object({
-    single: MetricSchema,
-    cross: MetricSchema,
-    compare: MetricSchema,
-    workflow: MetricSchema,
-  }),
-  scenarios: z.record(z.string(), MetricSchema),
-});
+  if (!realStackRequested) return;
 
-const FormattedReportSchema = z.object({
-  mode: z.literal("dense"),
-  overall: MetricSchema,
-  awareness: z.object({
-    blind: MetricSchema,
-    protocolAware: MetricSchema,
-  }),
-  intentShapes: z.object({
-    single: MetricSchema,
-    cross: MetricSchema,
-    compare: MetricSchema,
-    workflow: MetricSchema,
-  }),
-  scenarios: z.record(z.string(), MetricSchema),
-});
-
-const BaselineOutputSchema = z.object({
-  version: z.literal(DATASET_VERSION),
-  mode: z.literal("dense"),
-  capturedAt: z.string(),
-  datasetVersion: z.literal(DATASET_VERSION),
-  status: z.literal("captured"),
-  metrics: MetricsSchema,
-  notes: z.array(z.string()).optional(),
-});
-
-type BaselineOutput = z.infer<typeof BaselineOutputSchema>;
-
-function buildGateNotes(metrics: z.infer<typeof MetricsSchema>): string[] {
-  const notes: string[] = [];
-  if (metrics.overall.recall5 < RECALL5_OVERALL_FLOOR) {
-    notes.push(`Gate failed: overall Recall@5 ${round3(metrics.overall.recall5)} < ${RECALL5_OVERALL_FLOOR}.`);
-  }
-  if (metrics.overall.mrr5 < MRR5_OVERALL_FLOOR) {
-    notes.push(`Gate failed: overall MRR@5 ${round3(metrics.overall.mrr5)} < ${MRR5_OVERALL_FLOOR}.`);
-  }
-  if (metrics.awareness.blind.recall5 < RECALL5_BLIND_FLOOR) {
-    notes.push(`Gate failed: blind Recall@5 ${round3(metrics.awareness.blind.recall5)} < ${RECALL5_BLIND_FLOOR}.`);
-  }
-  if (metrics.awareness.protocolAware.recall5 < RECALL5_PROTOCOL_AWARE_FLOOR) {
-    notes.push(
-      `Gate failed: protocol-aware Recall@5 ${round3(metrics.awareness.protocolAware.recall5)} < ${RECALL5_PROTOCOL_AWARE_FLOOR}.`,
-    );
-  }
-  return notes.length > 0
-    ? notes
-    : ["Gate passed: dense retrieval met Recall@5 and MRR@5 floors; latency gate is captured separately."];
-}
-
-function baselinePath(): string {
-  return resolve(import.meta.dirname, "baselines", "dense.json");
-}
-
-function writeBaseline(output: BaselineOutput): void {
-  const validated = BaselineOutputSchema.parse(output);
-  writeFileSync(baselinePath(), JSON.stringify(validated, null, 2) + "\n", "utf8");
-}
-
-describeRealStack("manual real-stack discover_tools dense baseline", () => {
   beforeAll(async () => {
     await assertToolEmbeddingsReady();
   });
@@ -136,20 +77,15 @@ describeRealStack("manual real-stack discover_tools dense baseline", () => {
     await closePool();
   });
 
-  it("captures dense-primary metrics on the v3 seed dataset", async () => {
+  it("checks dense-primary metrics against the stored baseline", async () => {
+    const mode = resolveBaselineMode(process.argv.slice(2), process.env);
     const queries = loadDataset();
     expect(validateDatasetPrompts(queries)).toEqual([]);
     expect(validateDatasetExpectedTools(queries)).toEqual([]);
 
     const report = await evaluateDiscoverTools(queries, 5);
-    const formatted = FormattedReportSchema.parse(formatMetrics(report));
-    const metrics = MetricsSchema.parse({
-      overall: formatted.overall,
-      awareness: formatted.awareness,
-      intentShapes: formatted.intentShapes,
-      scenarios: formatted.scenarios,
-    });
-    const gateNotes = buildGateNotes(metrics);
+    const metrics = toBaselineMetrics(report);
+
     const denseFailures = report.results
       .filter((result) => result.denseFailed || result.retrievalMethod !== "dense")
       .map((result) => ({
@@ -159,35 +95,35 @@ describeRealStack("manual real-stack discover_tools dense baseline", () => {
         topIds: result.topIds,
       }));
 
-    process.stdout.write(
-      JSON.stringify(
-        {
-          dense: formatted,
-          gateNotes,
-          denseFailures,
-        },
-        null,
-        2,
-      ) + "\n",
-    );
-
-    writeBaseline({
-      version: DATASET_VERSION,
+    const measured: MeasuredBaseline = {
       mode: "dense",
-      capturedAt: new Date().toISOString(),
+      datasetId: CANONICAL_DATASET_ID,
       datasetVersion: DATASET_VERSION,
-      status: "captured",
       metrics,
-      notes: gateNotes,
-    });
+    };
+    const target: BaselineTarget = {
+      name: "dense / canonical seed dataset",
+      fileName: "dense.json",
+      expectedCaseCount: queries.length,
+      measure: () => measured,
+    };
 
+    const outcome = await runBaselineTarget(target, mode);
+    process.stdout.write(`${outcome.report}\n`);
+
+    // Dense fallback and the quality floors are asserted regardless of mode:
+    // an --update must never be able to record a broken capture as the new
+    // truth.
     expect(
       denseFailures,
       `Dense fallback occurred for ${denseFailures.length} queries:\n${JSON.stringify(denseFailures.slice(0, 10), null, 2)}`,
     ).toEqual([]);
-    expect(metrics.overall.recall5).toBeGreaterThanOrEqual(RECALL5_OVERALL_FLOOR);
-    expect(metrics.overall.mrr5).toBeGreaterThanOrEqual(MRR5_OVERALL_FLOOR);
-    expect(metrics.awareness.blind.recall5).toBeGreaterThanOrEqual(RECALL5_BLIND_FLOOR);
-    expect(metrics.awareness.protocolAware.recall5).toBeGreaterThanOrEqual(RECALL5_PROTOCOL_AWARE_FLOOR);
+    expect(round3(metrics.overall.recall5)).toBeGreaterThanOrEqual(RECALL5_OVERALL_FLOOR);
+    expect(round3(metrics.overall.mrr5)).toBeGreaterThanOrEqual(MRR5_OVERALL_FLOOR);
+    expect(round3(metrics.awareness?.blind.recall5 ?? 0)).toBeGreaterThanOrEqual(RECALL5_BLIND_FLOOR);
+    expect(round3(metrics.awareness?.protocolAware.recall5 ?? 0))
+      .toBeGreaterThanOrEqual(RECALL5_PROTOCOL_AWARE_FLOOR);
+
+    expect(outcome.ok, outcome.report).toBe(true);
   }, 240_000);
 });
