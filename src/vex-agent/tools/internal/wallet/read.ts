@@ -29,6 +29,8 @@ import {
   type ConciseKhalaniToken,
   projectTokens,
 } from "../../protocols/khalani/projectors.js";
+import { summarizeProtocolError } from "../../protocols/runtime/errors.js";
+import logger from "@utils/logger.js";
 
 import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
@@ -173,8 +175,26 @@ async function readLocalChainSnapshot(
       totalUsd += heldUsd(token.balanceWei, token.decimals, token.priceUsd);
     }
     return { ok: true, tokens, totalUsd };
-  } catch {
-    return { ok: false, chainName: config.name, message: "local chain RPC read failed" };
+  } catch (err) {
+    // Owner decree (2026-08-02): the REAL cause reaches the agent. This was a
+    // bare `catch {}` — the error object was dropped on the floor, so a dead
+    // RPC, a bad token in the scan set and a chain misconfiguration were all
+    // reported to the model (and logged nowhere) as the same five words. The
+    // provider's text is untrusted, so it is scrubbed + bounded by the
+    // runtime's canonical summarizer, exactly as the sibling Khalani-scope
+    // failure at `partitionBalanceChainScope` surfaces its own cause.
+    const summary = summarizeProtocolError(err);
+    logger.warn("wallet.local_chain_read.failed", {
+      chainId,
+      chainName: config.name,
+      category: summary.category,
+      error: summary.message,
+    });
+    return {
+      ok: false,
+      chainName: config.name,
+      message: `local chain RPC read failed: ${summary.message}`,
+    };
   }
 }
 

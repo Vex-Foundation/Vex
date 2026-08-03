@@ -31,6 +31,17 @@ export type ToolBatchOutcome =
       readonly toolCallsExecuted: number;
       readonly lastText: string | null;
     }
+  /**
+   * §C3b: the turn stopped on a launch form awaiting the human. The stopped call
+   * has NO transcript result — `resumeAgentAfterUserForm` appends the only one
+   * when the user deploys, dismisses, or the window expires.
+   */
+  | {
+      readonly kind: "user_form_pause";
+      readonly intentId: string;
+      readonly toolCallsExecuted: number;
+      readonly lastText: string | null;
+    }
   | {
       readonly kind: "waiting_for_wake";
       readonly text: string | null;

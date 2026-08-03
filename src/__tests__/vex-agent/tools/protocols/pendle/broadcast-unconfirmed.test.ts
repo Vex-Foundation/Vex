@@ -19,9 +19,11 @@
  *      retry, and report `success: false` — because `runtime/capture.ts` skips
  *      capture on a failed result, so a mined-but-unproven trade must never
  *      project a lot from amounts nobody decoded.
- *   2. A PRE-broadcast failure still keeps its byte-identical legacy message and
- *      still never mentions a broadcast or a hash. That boundary is the one that
- *      decides whether an agent may safely retry, and it must not blur.
+ *   2. A PRE-broadcast failure never mentions a broadcast or a hash. That
+ *      boundary is the one that decides whether an agent may safely retry, and
+ *      it must not blur. (Its wording is still pinned byte-for-byte, and now
+ *      includes the REAL cause: owner decree 2026-08-02 — a code + hint alone
+ *      told the agent nothing about what actually failed.)
  *
  * `selectSafeRoute` (the fund-safety calldata extractor) is stubbed so these
  * tests reach the broadcast at all — it has its own dedicated suites
@@ -369,7 +371,13 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
     )) as Res;
     expectPreBroadcastRefusal(
       res,
-      `Pendle buy failed (${ErrorCodes.PENDLE_INVALID_RESPONSE}: Retry shortly; do not treat this as an empty catalogue.)`,
+      // The pinned wording now also carries the REAL cause (owner decree
+      // 2026-08-02, Codex blocker 4): a code + hint alone hid what actually
+      // went wrong. The property this test exists to protect is UNCHANGED and
+      // still asserted by `expectPreBroadcastRefusal` — no broadcast, no hash,
+      // nothing signed.
+      `Pendle buy failed (${ErrorCodes.PENDLE_INVALID_RESPONSE}: Retry shortly; do not treat this as an empty catalogue.`
+      + ` — Pendle asset catalogue for chain 1 is unreadable.)`,
     );
   });
 
@@ -380,8 +388,64 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
     )) as Res;
     expectPreBroadcastRefusal(
       res,
-      `Pendle redeem failed (${ErrorCodes.PENDLE_INVALID_RESPONSE}: Retry shortly; do not treat this as an empty catalogue.)`,
+      // The pinned wording now also carries the REAL cause (owner decree
+      // 2026-08-02, Codex blocker 4): a code + hint alone hid what actually
+      // went wrong. The property this test exists to protect is UNCHANGED and
+      // still asserted by `expectPreBroadcastRefusal` — no broadcast, no hash,
+      // nothing signed.
+      `Pendle redeem failed (${ErrorCodes.PENDLE_INVALID_RESPONSE}: Retry shortly; do not treat this as an empty catalogue.`
+      + ` — Pendle asset catalogue for chain 1 is unreadable.)`,
     );
+  });
+
+  // Owner decree (2026-08-02, rules/04): a plain (non-Vex) throw on a WRITE
+  // path must reach the model as its REAL cause. Until now `failureDetail`
+  // answered "unexpected error" for every one of the ~40 Pendle write sites,
+  // so the agent could not tell "the wallet cannot pay" (only the user can fix
+  // it) from a transient RPC blip (retrying is correct) — and retried blind.
+  it("a plain Error on the write path surfaces the REAL cause, never 'unexpected error'", async () => {
+    mockConvert.mockRejectedValue(
+      new Error(
+        "The total cost (gas * gas fee + value) of executing this transaction "
+        + "exceeds the balance of the account.",
+      ),
+    );
+    const res = (await PENDLE_PT_HANDLERS["pendle.pt.buy"]!(
+      { chain: "ethereum", tokenIn: USDC, tokenOut: PT, amountIn: "100" }, ctx,
+    )) as Res;
+
+    expect(res.success).toBe(false);
+    expect(res.output).not.toContain("unexpected error");
+    expect(res.output).toContain("exceeds the balance");
+    // Classified, so the agent is told the remedy instead of guessing one.
+    expect(res.output).toContain("top up the wallet");
+    expect(mockSendRawTransaction).not.toHaveBeenCalled();
+  });
+
+  // Codex blocker 4: the WRAPPED case. `tools/pendle/erc20.ts` turns a failed
+  // approval into `VexError(APPROVAL_FAILED, "Failed to reset allowance: <the
+  // node's real words>")` — and the old code+hint-only rendering threw those
+  // words away, so an unpayable wallet reached the agent as a bare code it
+  // could only retry. Code and hint still LEAD; the real cause follows.
+  it("a WRAPPED VexError surfaces the cause buried in its message", async () => {
+    mockConvert.mockRejectedValue(
+      new VexError(
+        ErrorCodes.APPROVAL_FAILED,
+        "Failed to reset allowance: The total cost (gas * gas fee + value) of "
+        + "executing this transaction exceeds the balance of the account.",
+        "Check the transaction hash before retrying.",
+      ),
+    );
+    const res = (await PENDLE_PT_HANDLERS["pendle.pt.buy"]!(
+      { chain: "ethereum", tokenIn: USDC, tokenOut: PT, amountIn: "100" }, ctx,
+    )) as Res;
+
+    expect(res.success).toBe(false);
+    expect(res.output).toContain(ErrorCodes.APPROVAL_FAILED);
+    expect(res.output).toContain("Check the transaction hash before retrying.");
+    expect(res.output).toContain("exceeds the balance");
+    expect(res.output).toContain("top up the wallet");
+    expect(mockSendRawTransaction).not.toHaveBeenCalled();
   });
 
   it("a no-route refusal is RECORDED as a hashless definitively_failed row", async () => {

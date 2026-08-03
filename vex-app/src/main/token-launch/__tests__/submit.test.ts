@@ -46,8 +46,15 @@ vi.mock("../../logger/index.js", () => ({
 }));
 
 const createWith = vi.fn();
+const authorizeWith = vi.fn();
 vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
   createWith: (client: unknown, input: unknown) => createWith(client, input),
+  authorizeWith: (
+    client: unknown,
+    intentId: string,
+    sessionId: string,
+    input: unknown,
+  ) => authorizeWith(client, intentId, sessionId, input),
 }));
 
 const withSessionControlLock = vi.fn(
@@ -158,6 +165,7 @@ beforeEach(() => {
   });
   buildLaunchPlan.mockResolvedValue({ ok: true, plan: plan() });
   createWith.mockResolvedValue({ intentId: "written" });
+  authorizeWith.mockResolvedValue({ intentId: "drafted", origin: "agent_requested_form" });
 });
 
 afterEach(() => {
@@ -256,13 +264,23 @@ describe("the authorized intent row", () => {
     expect(withSessionControlLock).toHaveBeenCalledWith(SESSION_ID, expect.any(Function));
   });
 
-  it("reuses an agent-supplied intentId rather than minting a second one", async () => {
+  /**
+   * SUPERSEDED BEHAVIOUR, pinned as its inverse.
+   *
+   * This case previously asserted that an agent-supplied `intentId` was passed
+   * to `createWith` — i.e. that a SECOND, `user`-origin row was inserted under
+   * the agent's intent id. That is the §C3b defect: the drafted
+   * `awaiting_user_form` row carries the parked `tool_call_id`, and inserting
+   * alongside it leaves the agent's turn waiting on an intent nothing ever
+   * authorizes. The create path is now reached ONLY when there is no drafted
+   * row; the authorize-existing path is covered in its own block below.
+   */
+  it("only ever CREATES for a user-origin launch — an agent draft is authorized in place", async () => {
     await submitLaunch(
       submitInput({ intentId: "int_from_agent_form" }),
       vi.fn().mockResolvedValue(CONFIRMED),
     );
-    const written = createWith.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(written.intentId).toBe("int_from_agent_form");
+    expect(createWith).not.toHaveBeenCalled();
   });
 });
 
@@ -433,5 +451,169 @@ describe("the consent snapshot round-trips through the signing side's validator"
     expect(snapshot.sessionId).toBe(written.sessionId);
     expect(snapshot.walletAddress).toBe(written.walletAddress);
     expect(snapshot.chainId).toBe(written.chainId);
+  });
+});
+
+/**
+ * §C3b — the agent asked, the user deployed.
+ *
+ * The row ALREADY EXISTS at `awaiting_user_form`, drafted by
+ * `trench.launch_request_form`, carrying the parked `tool_call_id` and
+ * `origin: 'agent_requested_form'`. Creating a second row here is the defect
+ * these tests exist to prevent: the agent's turn would stay parked against an
+ * intent nobody ever authorizes, the wake would answer nothing, and the DB
+ * would hold two live intents for one launch.
+ */
+describe("an agent-requested intent authorizes the EXISTING row", () => {
+  const DRAFTED_INTENT = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+  it("calls authorizeWith on the drafted row and NEVER createWith", async () => {
+    const executor = vi.fn().mockResolvedValue(CONFIRMED);
+
+    const outcome = await submitLaunch(
+      submitInput({ intentId: DRAFTED_INTENT }),
+      executor,
+    );
+
+    expect(outcome.ok).toBe(true);
+    // THE PIN. A create here would orphan the agent's parked call.
+    expect(createWith).not.toHaveBeenCalled();
+    expect(authorizeWith).toHaveBeenCalledOnce();
+
+    const [, intentId, sessionId] = authorizeWith.mock.calls[0] ?? [];
+    expect(intentId).toBe(DRAFTED_INTENT);
+    expect(sessionId).toBe(SESSION_ID);
+  });
+
+  it("preserves origin by never passing one — authorizeWith cannot rewrite it", async () => {
+    const executor = vi.fn().mockResolvedValue(CONFIRMED);
+
+    await submitLaunch(submitInput({ intentId: DRAFTED_INTENT }), executor);
+
+    const input = authorizeWith.mock.calls[0]?.[3] as Record<string, unknown>;
+    // The writer's input has no `origin` and no `toolCallId` field at all, so
+    // `agent_requested_form` and the parked call survive by construction. A
+    // regression that reintroduced them would land here.
+    expect(input).not.toHaveProperty("origin");
+    expect(input).not.toHaveProperty("toolCallId");
+  });
+
+  /**
+   * THE EDITED-FORM ROUND TRIP.
+   *
+   * The dialog opens the agent's draft with every field editable. The consent
+   * snapshot is built from the SUBMITTED values, and `execute-user-submit.ts`
+   * cross-checks that snapshot against the intent row's own columns before
+   * signing — so if authorize left the row on the agent's original name, an
+   * edited launch would REFUSE at the gate rather than deploy.
+   */
+  it("writes the USER'S final values to the row, not the agent's draft", async () => {
+    const executor = vi.fn().mockResolvedValue(CONFIRMED);
+
+    await submitLaunch(submitInput({ intentId: DRAFTED_INTENT }), executor);
+
+    const input = authorizeWith.mock.calls[0]?.[3] as Record<string, unknown>;
+    // `REQUEST` is what `planLaunchContext` resolved from the submitted form.
+    expect(input.name).toBe(REQUEST.name);
+    expect(input.symbol).toBe(REQUEST.symbol);
+    expect(input.description).toBe(REQUEST.description);
+    expect(input.links).toEqual({ urls: REQUEST.links });
+    expect(input.imageId).toBe(REQUEST.imageId);
+  });
+
+  it("keeps the row and the consent record describing the SAME token", async () => {
+    const executor = vi.fn().mockResolvedValue(CONFIRMED);
+
+    await submitLaunch(submitInput({ intentId: DRAFTED_INTENT }), executor);
+
+    const input = authorizeWith.mock.calls[0]?.[3] as Record<string, unknown>;
+    const snapshot = input.authorizationJson as Record<string, unknown>;
+    // This equality IS the pre-sign cross-check, asserted at the write instead
+    // of discovered at the gate.
+    expect(input.name).toBe(snapshot.name);
+    expect(input.symbol).toBe(snapshot.symbol);
+    expect(input.imageId).toBe(snapshot.imageId);
+    expect(input.prebuyRaw).toBe(snapshot.prebuyWei);
+  });
+
+  it("persists the SAME user_submit consent snapshot the create path writes", async () => {
+    const executor = vi.fn().mockResolvedValue(CONFIRMED);
+
+    await submitLaunch(submitInput({ intentId: DRAFTED_INTENT }), executor);
+
+    const input = authorizeWith.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(input.authorizationKind).toBe("user_submit");
+    // Raw amount + its decimals, together and always (rule 90).
+    expect(input.prebuyRaw).toBe("10000000000000000");
+    expect(input.prebuyDecimals).toBe(18);
+
+    const snapshot = input.authorizationJson as Record<string, unknown>;
+    // The binding must be spread at the TOP level — nested, `parseStoredBinding`
+    // reads it as "no authorization was stored" and every launch refuses.
+    expect(snapshot.callFingerprint).toBe(BINDING.callFingerprint);
+    expect(snapshot.imageDigest).toBe(BINDING.imageDigest);
+    expect(snapshot.kind).toBe("user_submit");
+    expect(snapshot.previewId).toBe(PREVIEW_ID);
+  });
+
+  it("executes against the DRAFTED intent id, not a freshly minted one", async () => {
+    const executor = vi.fn().mockResolvedValue(CONFIRMED);
+
+    const outcome = await submitLaunch(
+      submitInput({ intentId: DRAFTED_INTENT }),
+      executor,
+    );
+
+    expect(executor).toHaveBeenCalledWith({
+      intentId: DRAFTED_INTENT,
+      sessionId: SESSION_ID,
+    });
+    if (!outcome.ok) throw new Error("unreachable");
+    expect(outcome.result.intentId).toBe(DRAFTED_INTENT);
+    // And the parked turn is woken against that same row.
+    expect(wakeParkedAgent).toHaveBeenCalledWith(
+      DRAFTED_INTENT,
+      SESSION_ID,
+      expect.objectContaining({ kind: "launched" }),
+    );
+  });
+
+  it("refuses without signing when the CAS misses — a lapsed or already-answered form", async () => {
+    // `null` is the repo's "race lost" signal: the predicate requires
+    // `awaiting_user_form` AND an unexpired window.
+    authorizeWith.mockResolvedValue(null);
+    const executor = vi.fn();
+
+    const outcome = await submitLaunch(
+      submitInput({ intentId: DRAFTED_INTENT }),
+      executor,
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error("unreachable");
+    expect(outcome.refusal.kind).toBe("launch_refused");
+    expect(outcome.refusal.detail).toContain("no longer open");
+    expect(outcome.refusal.detail).toContain("Nothing was signed");
+    // The half that matters: nothing was signed and no turn was woken with a
+    // fabricated outcome.
+    expect(executor).not.toHaveBeenCalled();
+    expect(wakeParkedAgent).not.toHaveBeenCalled();
+  });
+
+  it("reports a vanished image as the named, actionable refusal", async () => {
+    const missing = new Error("image gone");
+    missing.name = "LaunchImageMissingError";
+    authorizeWith.mockRejectedValue(missing);
+    const executor = vi.fn();
+
+    const outcome = await submitLaunch(
+      submitInput({ intentId: DRAFTED_INTENT }),
+      executor,
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error("unreachable");
+    expect(outcome.refusal.kind).toBe("image_not_found");
+    expect(executor).not.toHaveBeenCalled();
   });
 });

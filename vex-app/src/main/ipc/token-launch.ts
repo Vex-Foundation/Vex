@@ -29,6 +29,8 @@ import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   tokenLaunchCancelInputSchema,
   tokenLaunchCancelResultSchema,
+  tokenLaunchGetAwaitingInputSchema,
+  tokenLaunchGetAwaitingResultSchema,
   tokenLaunchMyLaunchesInputSchema,
   tokenLaunchMyLaunchesResultSchema,
   tokenLaunchPreviewInputSchema,
@@ -36,6 +38,7 @@ import {
   tokenLaunchSubmitInputSchema,
   tokenLaunchSubmitResultSchema,
   type TokenLaunchCancelResult,
+  type TokenLaunchGetAwaitingResult,
   type TokenLaunchMyLaunchesResult,
   type TokenLaunchPreviewResult,
   type TokenLaunchSubmitResult,
@@ -44,6 +47,7 @@ import { listWallets } from "@vex-lib/wallet.js";
 import { buildSubmittedLaunchExecutor } from "../token-launch/execute-seam.js";
 import {
   cancelLaunch,
+  getAwaitingLaunchForm,
   listMyLaunches,
   previewLaunch,
   submitLaunch,
@@ -114,31 +118,6 @@ function refuse(refusal: TokenLaunchRefusal, correlationId: string): Result<neve
   });
 }
 
-/**
- * The fail-closed refusal for the two SIGNING-adjacent operations that are not
- * implemented yet.
- *
- * It says so in words the dialog renders verbatim, because the alternative — a
- * generic "something went wrong" — invites a retry that can never succeed, and
- * a stub that resolved `ok` on a spend path would be far worse than one that
- * refuses. `retryable: false` is the whole point: no amount of trying makes
- * absent machinery appear.
- */
-function notWired(correlationId: string, what: string): Result<never, VexError> {
-  log.warn(`[ipc:vex:tokenLaunch] not wired: ${what} correlationId=${correlationId}`);
-  return err({
-    code: "internal.unexpected",
-    domain: DOMAIN,
-    message:
-      `Vex cannot ${what} yet — that part of the launch is not built in this build. `
-      + "Nothing was signed and no funds moved. Previewing a launch and reviewing your "
-      + "past launches both work; deploying does not.",
-    retryable: false,
-    userActionable: false,
-    redacted: true,
-    correlationId,
-  });
-}
 
 // ── preview ─────────────────────────────────────────────────────────────────
 
@@ -255,6 +234,53 @@ function registerMyLaunchesHandler(): () => void {
   });
 }
 
+// ── getAwaiting ─────────────────────────────────────────────────────────────
+
+function registerGetAwaitingHandler(): () => void {
+  return registerHandler({
+    channel: CH.tokenLaunch.getAwaiting,
+    domain: DOMAIN,
+    inputSchema: tokenLaunchGetAwaitingInputSchema,
+    outputSchema: tokenLaunchGetAwaitingResultSchema,
+    handle: async (input, ctx): Promise<Result<TokenLaunchGetAwaitingResult>> => {
+      // READ-ONLY, session-scoped, and NOT a spend surface: it returns the token
+      // the agent proposed so the dialog can prefill. Nothing here is an amount
+      // the signing path consumes — `preview` and `submit` still derive every
+      // figure main-side from the form the user finally confirms.
+      try {
+        const awaiting = await getAwaitingLaunchForm(input.sessionId);
+        // Logged at DEBUG-equivalent volume: this is polled/pushed often, and
+        // an INFO line per idle read would drown the log. Ids only, never the
+        // proposed name or amount.
+        if (awaiting !== null) {
+          log.info(
+            `[ipc:vex:tokenLaunch:getAwaiting] form open intentId=${awaiting.intentId} `
+              + `correlationId=${ctx.requestId}`,
+          );
+        }
+        return ok({ awaiting });
+      } catch (cause) {
+        // Structural only — a DB error message can carry a connection string.
+        log.warn(
+          `[ipc:vex:tokenLaunch:getAwaiting] read failed correlationId=${ctx.requestId} `
+            + `type=${cause instanceof Error ? cause.name : typeof cause}`,
+        );
+        return err({
+          code: "internal.unexpected",
+          domain: DOMAIN,
+          message:
+            "Vex could not check whether a launch form is waiting. Check that Vex services "
+            + "are running and retry.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: ctx.requestId,
+        });
+      }
+    },
+  });
+}
+
 /** Mount point for `register-all.ts` (coordinator-owned). */
 export function registerTokenLaunchHandlers(): ReadonlyArray<() => void> {
   return [
@@ -262,6 +288,7 @@ export function registerTokenLaunchHandlers(): ReadonlyArray<() => void> {
     registerSubmitHandler(),
     registerCancelHandler(),
     registerMyLaunchesHandler(),
+    registerGetAwaitingHandler(),
   ];
 }
 

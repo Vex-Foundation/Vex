@@ -1,10 +1,18 @@
 /**
  * `trench.launch_request_form` — the agent ASKS the user to launch a token.
  *
- * `mutating: false`. This tool DRAFTS and PARKS. It never signs, never
+ * `mutating: false`. This tool DRAFTS and goes PENDING. It never signs, never
  * broadcasts and never spends: it inserts a `token_launch_intents` row at
- * `awaiting_user_form`, signals the app to open the dialog, and parks the run on
- * the §C3b `paused_user_form` state carrying the ORIGINAL tool-call id.
+ * `awaiting_user_form` carrying the ORIGINAL tool-call id, then returns
+ * `pendingUserForm` — the §C3b sibling of `pendingApproval`.
+ *
+ * WHO DOES WHAT. This handler makes the wait DURABLE and nothing else. The turn
+ * loop's user-form arm (`turn-loop-tool-batch/user-form-stop.ts`) owns the park,
+ * the operator-stop gate and the dialog push, exactly as the approval arm owns
+ * the enqueue and the `paused_approval` flip. The split is not cosmetic: a
+ * handler that parked would be parking a run the loop is still driving, and a
+ * handler that returned a normal result would have the loop record an answer
+ * this call has not received yet.
  *
  * WHY IT PARKS ON ITS OWN STATE. Verified in the repo rather than assumed: the
  * approval seam ALWAYS enqueues an approval, flips the run to `paused_approval`
@@ -26,7 +34,6 @@ import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { withTransaction } from "@vex-agent/db/client.js";
 import { acquireSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status.js";
 import { createWith } from "@vex-agent/db/repos/token-launch-intents.js";
-import { parkRunForUserForm } from "@vex-agent/engine/core/user-form-runtime.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../../internal/wallet/resolve.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
@@ -107,32 +114,20 @@ export async function trenchLaunchRequestFormHandler(
     });
   });
 
-  // Park AFTER the row exists: a run parked with no intent to resume against is
-  // a hang. A chat session has no run and parks nothing — the turn simply ends
-  // holding the pending call.
-  await parkRunForUserForm({
-    sessionId,
-    missionRunId: context.missionRunId ?? null,
-    toolCallId,
-  });
-
-  return ok({
-    intentId,
-    status: "awaiting_user_form",
-    expiresAt,
-    chainId: TRENCH_CHAIN_ID,
-    name: validated.value.name,
-    symbol: validated.value.symbol,
-    imageId: validated.value.imageId,
-    prebuyWei: validated.value.prebuyWei.toString(),
-    prebuyDecimals: 18,
-    _openLaunchDialog: { intentId },
-    note:
-      "The launch form is now open for the user. NOTHING has been created and no funds have moved — "
-      + "this only drafted the launch and asked. You will receive the outcome as the result of this "
-      + "call when the user deploys, dismisses it, or it expires. Do not call this tool again while "
-      + "it is open, and do not assume the launch happened.",
-  });
+  // PENDING, not answered. The row above made the wait durable; the turn loop's
+  // user-form arm (`turn-loop-tool-batch/user-form-stop.ts`) now owns what
+  // happens next — the operator-stop gate, the park, and the dialog push, in
+  // one transaction with emit-after-commit.
+  //
+  // This handler deliberately does NOT park, emit, or produce a tool result.
+  // A result recorded here would be a SECOND result for this call once the
+  // resume appends the human's actual answer, and the transcript would carry
+  // two results for one `tool_call_id`. The output below is diagnostic only: on
+  // this path the batch records the call WITHOUT it.
+  return {
+    ...ok({ intentId, status: "awaiting_user_form", expiresAt, chainId: TRENCH_CHAIN_ID }),
+    pendingUserForm: { intentId },
+  };
 }
 
 /**

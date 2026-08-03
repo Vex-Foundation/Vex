@@ -62,6 +62,17 @@ export const APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT =
   + "The approval was rejected automatically and the action did NOT execute.";
 
 /**
+ * Synthetic tool-result for a launch form that was drafted while the operator's
+ * Stop was already in flight. The form is never shown and the turn is never
+ * parked, so this call is answered here instead of by the resume — and it says
+ * plainly that nothing was created, because the drafted intent still exists and
+ * a model that assumed otherwise would tell the user they own a token.
+ */
+export const USER_FORM_ABANDONED_RUN_TERMINAL_OUTPUT =
+  "user_form_abandoned: the launch form was drafted, but the run had already ended, so it was never "
+  + "shown to the user. NOTHING was created and no funds moved. Do not retry it on this run.";
+
+/**
  * Synthetic tool-result for a call that returned "approval required" while the
  * operator's Stop was already in flight. No approval row is created at all —
  * enqueueing one would park a live, approvable action on a run that is about
@@ -196,6 +207,8 @@ export function mapBatchOutcome(args: {
   readonly batchStopPayload: StopPayload | undefined;
   readonly compactCommittedThisBatch: boolean;
   readonly approvalId: string | null;
+  /** Set iff the batch stopped on a parked launch form (§C3b). */
+  readonly userFormIntentId?: string | null;
   readonly toolCallsExecuted: number;
   readonly lastText: string | null;
 }): ToolBatchOutcome {
@@ -205,6 +218,7 @@ export function mapBatchOutcome(args: {
     batchStopPayload,
     compactCommittedThisBatch,
     approvalId,
+    userFormIntentId,
     toolCallsExecuted,
     lastText,
   } = args;
@@ -217,6 +231,19 @@ export function mapBatchOutcome(args: {
     return {
       kind: "approval_break",
       pendingApprovalId: approvalId,
+      toolCallsExecuted,
+      lastText,
+    };
+  }
+  if (batchStopReason === "user_form_required") {
+    // Same helper invariant as the approval arm: the path that sets this reason
+    // always names the intent the resume must answer.
+    if (!userFormIntentId) {
+      throw new Error("turn-loop-tool-batch: user_form_required without intentId");
+    }
+    return {
+      kind: "user_form_pause",
+      intentId: userFormIntentId,
       toolCallsExecuted,
       lastText,
     };

@@ -7,6 +7,7 @@
  * different answers, and the old handlers gave the first for both.
  */
 
+import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import { VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 
@@ -20,17 +21,25 @@ export interface FailedChain {
 }
 
 /**
- * Model-facing failure detail — code-keyed and bounded, NEVER upstream text.
- * The provider's error body is hostile input; it is logged as metadata only.
+ * Model-facing failure detail for the READ path — the REAL cause, scrubbed and
+ * bounded (owner decree 2026-08-02). This is what lands in
+ * {@link FailedChain.reason}, so "this chain could not be read" now says WHY:
+ * a catalogue that would not parse and an RPC that timed out are different
+ * answers, and the static vocabulary gave "unexpected error" for both.
+ *
+ * The provider's body is still untrusted — it is SCRUBBED by
+ * `summarizeProtocolError` (the runtime's single owner of that redaction),
+ * not hidden. Kept as its own small wrapper rather than importing the write
+ * path's twin: this module is deliberately free of the wallet/RPC/viem imports
+ * `handlers/shared.ts` pulls in, and the read handlers must stay that way.
  */
 export function failureDetail(toolId: string, err: unknown): string {
   logger.warn("pendle.handler.error", {
     toolId,
     code: err instanceof VexError ? err.code : "UNEXPECTED",
-    error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+    error: describeFailureForLog(err),
   });
-  if (err instanceof VexError) return err.hint ? `${err.code}: ${err.hint}` : err.code;
-  return "unexpected error";
+  return describeFailureForAgent(err);
 }
 
 export function countBy<T>(items: readonly T[], key: (item: T) => string): Record<string, number> {

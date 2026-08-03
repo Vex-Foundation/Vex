@@ -188,13 +188,17 @@ export function buildProtocolsPrompt(): string {
   // therefore true, and the model must be told, or it will call the tool again
   // while the form is open or narrate a launch that has not happened.
   //
-  // STILL DEFERRED, and still taught as a refusal: the autonomous
-  // `launch_execute` path refuses while a contract carries no host-authored
-  // launch ceilings (the contract editor that authors them is a later wave).
-  // That refusal is SAFE (nothing created, no funds moved); the failure mode to
-  // prevent is the model improvising a launch by another route.
+  // THE EXECUTE BULLET STATES THE FULL AUTHORITY MATRIX (owner decrees
+  // 2026-08-02). Full-permission chat executes directly — a live session proved
+  // the old mission-only doctrine wrong when a full-mode user was refused for
+  // lacking mission provenance. Restricted refuses and routes to the FORM,
+  // which replaces the approval card there (a launch never produces both).
+  // Mission still refuses while a contract carries no host-authored ceilings
+  // (the contract editor that authors them is a later wave). Every refusal is
+  // SAFE (nothing created, no funds moved); the failure mode to prevent is the
+  // model improvising a launch by another route.
   lines.push("- `trench.launch_request_form` is how you hand the launch DECISION to the human: it asks them to fill in the launch form instead of you choosing the token's details. It spends nothing and creates nothing — it drafts the launch and parks the turn. The runtime resumes you with the outcome as this call's result when the user deploys, dismisses the form, or it expires, so do not call it again while the form is open and never assume the launch happened. Never improvise a launch another way.");
-  lines.push("- `trench.launch_execute` signs and broadcasts the launch irreversibly. Call it only under explicit authority: an approval for this launch, or a mission whose host-authored launch ceilings already cover it. When the mission contract carries no such ceilings the tool refuses by name — report that refusal and tell the user to set the max launch value and max launch count on the contract card; do not look for another way to launch.");
+  lines.push("- `trench.launch_execute` signs and broadcasts the launch irreversibly, and only under explicit authority. In a FULL-permission chat session that authority is the user's own permission: execute directly, exactly as you would a swap. In a RESTRICTED session it refuses by name — call `trench.launch_request_form` instead, because the launch form is this tool's consent surface and the user's Deploy click is what launches. In a MISSION run the authority is the contract's host-authored launch ceilings; when the contract carries none the tool refuses by name, so report that refusal and tell the user to set the max launch value and max launch count on the contract card. Never look for another way to launch.");
   lines.push("");
 
   // ── Virtuals Agent Tokens (Wave 3) — static trading doctrine for Virtuals

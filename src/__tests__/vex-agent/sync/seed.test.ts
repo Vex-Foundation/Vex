@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 11 sync jobs (6 global + 5 per-namespace)", async () => {
+  it("inserts 12 sync jobs (7 global + 5 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -28,8 +28,9 @@ describe("seedSyncJobs", () => {
     // _global/launch_identity_repair periodic sweep seed — net 11. Its
     // seed↔tick↔worker lockstep is pinned in
     // `periodic-sync-registration.test.ts`; this count is only the row total.
+    // The form-expiry sweep (`launch_form_expiry`) makes 12.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(11);
+    expect(mockExecute).toHaveBeenCalledTimes(12);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

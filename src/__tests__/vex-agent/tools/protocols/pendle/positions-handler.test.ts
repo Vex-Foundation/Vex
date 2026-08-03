@@ -332,7 +332,9 @@ describe("pendle.position.value — staleness and partial views", () => {
 
     const { data } = await run();
     expect(data.partial).toBe(true);
-    expect(data.failedChains).toEqual([{ chain: "ethereum", reason: "unexpected error" }]);
+    // FLIPPED (owner decree 2026-08-02): the reason is the REAL cause, scrubbed
+    // — "unexpected error" told the agent nothing about WHY the chain dropped out.
+    expect(data.failedChains).toEqual([{ chain: "ethereum", reason: "catalogue unreadable" }]);
     expect(data.positions).toHaveLength(0);
   });
 

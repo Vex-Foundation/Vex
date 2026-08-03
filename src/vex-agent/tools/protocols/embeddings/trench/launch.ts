@@ -9,8 +9,10 @@
  * HONESTY GATE (Fala B, 2026-08-02): a passage states what the runtime does
  * TODAY, in both directions. Park/resume is now wired, so `request_form` says
  * the turn parks and is resumed with the outcome — the round-3 denial of it is
- * stale. `execute` still names the refusal that stands while a mission contract
- * carries no host-authored launch ceilings. The failure these sentences prevent
+ * stale. `execute` names the authority matrix as it now stands (owner decrees
+ * 2026-08-02): full-permission chat executes directly, restricted refuses and
+ * routes to the form, a mission needs host-authored ceilings and refuses by
+ * name while its contract carries none. The failure these sentences prevent
  * is a model improvising a launch by another route, whether because it thinks
  * it is stuck or because it thinks it is authorized.
  */
@@ -49,7 +51,8 @@ export const TRENCH_LAUNCH_DISCOVERY = {
       `SPENDS REAL FUNDS and is irreversible: it pays the creation fee and, with a prebuy, buys that much of the token. ` +
       `Vex charges 25 bps of that ETH, transferred separately after the launch confirms. ` +
       `An image is REQUIRED and must already be in the Trench Photos locker. ` +
-      `Use this when authorized by an approval, or by a mission whose host-authored launch ceilings cover it; without them it refuses by name. ` +
+      `Use this when the session has full permission, or a mission's host-authored ceilings cover it. ` +
+      `A restricted session refuses by name: call the launch form, its consent surface. ` +
       `Example queries: launch it now, deploy the token, go ahead and create it.`,
     ),
     aliases: ["deploy the token", "execute the launch", "create the token now", "launch it for real"],

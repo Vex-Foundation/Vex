@@ -45,6 +45,13 @@ const SYNC_JOBS = [
   // ends, so it is not slowed to the bridge sweep's 120s provider cadence.
   { namespace: "_global", syncType: "launch_identity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // Trench launch FORM EXPIRY — stamps overdue `awaiting_user_form` intents
+  // `expired` and resumes the agent turn parked on them. Without it an
+  // unanswered form parks a turn forever. Deadline-driven and lookup-only;
+  // never signs. See sync/launch-form-expiry.ts. 60s: the window is minutes
+  // long, so a sub-minute cadence would only add lock traffic.
+  { namespace: "_global", syncType: "launch_form_expiry", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+
   // Per-namespace post_mutation triggers (runtime.ts capture hook finds these by namespace)
   { namespace: "khalani", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },
   { namespace: "solana", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "post_mutation", intervalSeconds: null },

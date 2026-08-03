@@ -32,6 +32,7 @@
  * have anyway.
  */
 
+import { useEffect } from "react";
 import {
   queryOptions,
   useMutation,
@@ -44,6 +45,7 @@ import type { Result } from "@shared/ipc/result.js";
 import type {
   TokenLaunchCancelInput,
   TokenLaunchCancelResult,
+  TokenLaunchGetAwaitingResult,
   TokenLaunchMyLaunchesInput,
   TokenLaunchMyLaunchesResult,
   TokenLaunchPreviewInput,
@@ -55,8 +57,10 @@ import type { TokenLaunchBridge } from "@shared/types/bridge/agent/token-launch.
 import { tokenLaunchKeys } from "./queryKeys.js";
 
 export type {
+  AwaitingLaunchFormDto,
   LaunchedTokenDto,
   TokenLaunchCancelInput,
+  TokenLaunchGetAwaitingResult,
   TokenLaunchCancelResult,
   TokenLaunchForm,
   TokenLaunchMyLaunchesResult,
@@ -246,4 +250,77 @@ export function useMyLaunches(): UseQueryResult<Result<TokenLaunchMyLaunchesResu
       retry: false,
     }),
   );
+}
+
+/**
+ * The dropped-event fallback interval.
+ *
+ * PUSH IS THE PRIMARY NET (`useLaunchFormLiveSync`); this poll exists because a
+ * subscribe can race an emit, the preload gate silently drops an off-contract
+ * payload, and a window opened after the agent asked would otherwise never
+ * learn. 30s is the compromise the GlobalApprovals precedent sets for an idle
+ * surface: the agent's turn is parked for 15 minutes, so a worst-case half-minute
+ * to notice costs the user nothing, while a tighter poll would query on every
+ * idle session forever.
+ */
+const AWAITING_POLL_MS = 30_000;
+
+/**
+ * Is a launch form waiting on this session?
+ *
+ * READ-ONLY and NOT a spend surface: it returns the token an agent proposed so
+ * the dialog can prefill. Deploy is still armed only by a resolved `preview`,
+ * and `submit` still re-derives every figure main-side — a prefilled form
+ * shortens the typing, never the authorization.
+ *
+ * `null` data is the ordinary idle answer, not an error.
+ */
+export function useAwaitingLaunchForm(
+  sessionId: string | null,
+): UseQueryResult<Result<TokenLaunchGetAwaitingResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: tokenLaunchKeys.awaiting(sessionId),
+      queryFn: async () => {
+        const bridge = tokenLaunchBridge();
+        if (bridge === null || sessionId === null) return BRIDGE_UNAVAILABLE;
+        return bridge.getAwaiting({ sessionId });
+      },
+      enabled: sessionId !== null && isTokenLaunchAvailable(),
+      refetchInterval: AWAITING_POLL_MS,
+      retry: false,
+    }),
+  );
+}
+
+/**
+ * Push half of the §C3b pair: invalidate the awaiting read the moment main says
+ * an agent drafted a form.
+ *
+ * SESSION-SCOPED ON PURPOSE, and this is the opposite choice from
+ * `useGlobalApprovalsLiveSync`. An approval inbox is a global badge that must
+ * surface background sessions; this drives a MODAL that takes over the screen,
+ * and popping a spend-consent dialog for a session the user is not looking at
+ * would interrupt them about a conversation they did not open. Foreign-session
+ * events are dropped here rather than filtered downstream so the query key and
+ * the filter can never disagree.
+ *
+ * The event carries ids only — nothing is reconstructed from it. It invalidates,
+ * and the DB answers.
+ */
+export function useLaunchFormLiveSync(sessionId: string | null): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const bridge = tokenLaunchBridge();
+    if (bridge === null || sessionId === null) return;
+    const off = bridge.onFormRequested((event) => {
+      if (event.sessionId !== sessionId) return;
+      void queryClient.invalidateQueries({
+        queryKey: tokenLaunchKeys.awaiting(sessionId),
+      });
+    });
+    return () => {
+      off();
+    };
+  }, [queryClient, sessionId]);
 }

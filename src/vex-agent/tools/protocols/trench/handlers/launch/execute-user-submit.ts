@@ -133,7 +133,10 @@ export async function executeUserSubmittedLaunch(
   const eligibility = checkEligibleForUserSubmit(intent);
   if (!eligibility.ok) return fail(eligibility.reason);
 
-  const stored = parseStoredBinding(storedAuthorizationOf(intent));
+  // `authorizationJson` is typed `unknown` by the read model precisely because
+  // the database guarantees nothing about a JSONB blob's shape — so it goes
+  // straight to the validator, never destructured on the way.
+  const stored = parseStoredBinding(intent.authorizationJson);
   if (!stored.ok) {
     return fail(
       `${ENTRY_ID}: the authorization recorded when you submitted this launch is incomplete `
@@ -247,7 +250,9 @@ export async function executeUserSubmittedLaunch(
  * this reader is the single place that changes when it does.
  */
 function storedAuthorizationOf(intent: TokenLaunchIntent): unknown {
-  return (intent as unknown as Record<string, unknown>)["authorizationJson"] ?? null;
+  // Direct typed read — the read-model exposure landed with the writer support,
+  // so the interim widening accessor collapsed to the field it promised.
+  return intent.authorizationJson ?? null;
 }
 
 type Eligibility = { readonly ok: true } | { readonly ok: false; readonly reason: string };
@@ -368,7 +373,32 @@ export function parseStoredBinding(value: unknown): StoredBindingResult {
     return { ok: false, reason: `it names chain ${String(record.chainId)}, not Robinhood Chain` };
   }
 
-  return { ok: true, binding: record as unknown as LaunchAuthorizationBinding };
+  // Explicit construction from the fields verified above — each `as` below is
+  // backed by a typeof/shape check earlier in this function, so no unchecked
+  // shape assertion survives (no-any policy: `as unknown as` is banned here).
+  return {
+    ok: true,
+    binding: {
+      name: record.name as string,
+      symbol: record.symbol as string,
+      description: record.description as string,
+      links: [...(record.links as string[])],
+      imageId: record.imageId as string,
+      imageDigest: record.imageDigest as string,
+      chainId: record.chainId as number,
+      contract: record.contract as LaunchAuthorizationBinding["contract"],
+      creationFeeWei: record.creationFeeWei as string,
+      prebuyWei: record.prebuyWei as string,
+      msgValueWei: record.msgValueWei as string,
+      vexFeeWei: record.vexFeeWei as string,
+      anchorBlockNumber: record.anchorBlockNumber as string,
+      calldata: record.calldata as LaunchAuthorizationBinding["calldata"],
+      callFingerprint: record.callFingerprint as LaunchAuthorizationBinding["callFingerprint"],
+      sessionId: record.sessionId as string,
+      walletAddress: record.walletAddress as LaunchAuthorizationBinding["walletAddress"],
+      permission: record.permission as LaunchAuthorizationBinding["permission"],
+    },
+  };
 }
 
 /**

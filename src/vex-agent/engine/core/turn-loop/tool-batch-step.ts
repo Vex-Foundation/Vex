@@ -51,6 +51,23 @@ export async function applyToolBatchOutcome(args: {
     };
   }
 
+  if (batchOutcome.kind === "user_form_pause") {
+    // §C3b. The run (if any) is already parked on `paused_user_form` by the
+    // batch's own transaction — same division of labour as the approval break,
+    // where the enqueue transaction owns the `paused_approval` flip. There is
+    // nothing to record here: the stopped call has NO result, and appending one
+    // would be the double-result the whole mechanism exists to prevent.
+    return {
+      kind: "return",
+      result: {
+        text: args.lastText,
+        toolCallsMade: args.totalToolCalls,
+        pendingApprovals: args.pendingApprovals,
+        stopReason: "user_form_required",
+      },
+    };
+  }
+
   if (batchOutcome.kind === "waiting_for_wake") {
     await applyWaitingForWakePostBatch({
       sessionId: args.sessionId,

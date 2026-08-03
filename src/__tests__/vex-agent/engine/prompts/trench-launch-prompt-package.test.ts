@@ -111,11 +111,22 @@ describe("trench prompt package", () => {
       expect(section).toContain("do not call it again while the form is open");
       expect(section).toContain("never assume the launch happened");
       expect(section).toContain("Never improvise a launch another way");
-      // Only the execute signs, and only under authority — and it refuses by
-      // name until the contract card carries the ceilings.
+      // Only the execute signs, and only under authority. The AUTHORITY PIN
+      // was "an approval for this launch, or a mission ..." — updated 2026-08-02
+      // with the owner decrees, because that text was WRONG in both directions:
+      // it refused a full-permission chat user who had already given the same
+      // consent every other mutating tool spends on, and it promised an
+      // approval card for launches, which the restricted path no longer
+      // produces (the FORM replaces it). All three arms are pinned so a
+      // regression that drops one is a failure, not a silent narrowing.
       expect(section).toContain("irreversibly");
       expect(section).toContain("only under explicit authority");
-      expect(section).toContain("the tool refuses by name");
+      expect(section).toContain("FULL-permission chat session");
+      expect(section).toContain("execute directly");
+      expect(section).toContain("RESTRICTED session it refuses by name");
+      expect(section).toContain("`trench.launch_request_form` instead");
+      expect(section).toContain("this tool's consent surface");
+      expect(section).toContain("MISSION run the authority is the contract's host-authored launch ceilings");
       expect(section).toContain("max launch value and max launch count on the contract card");
     });
 

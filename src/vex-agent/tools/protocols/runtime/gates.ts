@@ -174,7 +174,29 @@ export async function evaluatePrequoteGateDecision(
  * fee-on-transfer tax) and emits the SAME `protocol.execute.approval_required`
  * log. Returns `undefined` when the gate does not apply, so the orchestrator
  * proceeds to the handler. `actionKind` stamping stays the orchestrator's job.
+ *
+ * TWO exemptions exist, for opposite reasons. `local_write` action kinds
+ * prepare something a human still has to confirm, so a card in front of them
+ * would approve a decision nobody has made yet. And
+ * {@link FORM_IS_THE_APPROVAL_TOOLS} names tools whose consent surface IS a
+ * dedicated form — a card there would ask for the same spend twice, through
+ * two surfaces, only one of which shows what is actually being signed.
  */
+/**
+ * Mutating tools that must NOT become a generic approval card under restricted
+ * permission, because they own a richer consent surface.
+ *
+ * `trench.launch_execute` (owner ruling 2026-08-02): in restricted mode the
+ * launch FORM replaces the approval card — a launch must never produce both.
+ * The card would show tool arguments; the form shows the token, the image, the
+ * anchored creation fee, the prebuy, the Vex fee and the total, and its Deploy
+ * click is what authorizes the spend (the `user_submit` C0 variant). So the
+ * dispatch is allowed through to the handler, which refuses BY NAME and points
+ * at `trench.launch_request_form` instead of enqueueing a second, weaker
+ * consent surface for the same money.
+ */
+const FORM_IS_THE_APPROVAL_TOOLS: ReadonlySet<string> = new Set(["trench.launch_execute"]);
+
 export function evaluateApprovalGate(
   manifest: ProtocolToolManifest,
   request: { readonly toolId: string },
@@ -187,7 +209,7 @@ export function evaluateApprovalGate(
   prequoteRiskPreview: LendBorrowRiskPreview | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
-    && context.sessionPermission === "restricted") {
+    && context.sessionPermission === "restricted" && !FORM_IS_THE_APPROVAL_TOOLS.has(request.toolId)) {
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
     // Carry the gate-matched prequote verdict to the restricted-mode approval
     // preview via the TYPED `prequote` field (NOT raw args) so the human sees

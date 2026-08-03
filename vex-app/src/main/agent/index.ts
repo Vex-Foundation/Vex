@@ -14,6 +14,7 @@ import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupCompactionPreparationBridge } from "./compaction-preparation-bridge.js";
 import { setupControlBridge } from "./control-bridge.js";
 import { setupErrorBridge } from "./error-bridge.js";
+import { setupLaunchFormBridge } from "./launch-form-bridge.js";
 import { setupMissionUpdateBridge } from "./mission-update-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
@@ -40,6 +41,9 @@ export function setupAgentBridges(): () => void {
   // Compaction v2 — committed `compaction_preparations` transitions, so the
   // apply button reflects readiness on push rather than on a fast poll.
   teardowns.push(setupCompactionPreparationBridge());
+  // Trench Express §C3b — the agent asked the user to launch a token. Without
+  // this push the drafted form is visible only as text in the transcript.
+  teardowns.push(setupLaunchFormBridge());
 
   // Puzzle 03 — install the production BugReportSink for engine emit
   // points (turn-loop / wake / compact). Teardown resets to noop.

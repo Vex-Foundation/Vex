@@ -91,10 +91,9 @@ export function registerAllIpcHandlers(): void {
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
   teardowns.push(...registerImagesHandlers());
-  // Token-launch IPC (plan C5). The four handlers are currently FAIL-CLOSED
-  // stubs (`notWired`) until the main-side wallet/client mount lands — they are
-  // registered anyway so the renderer gets a typed refusal instead of a dead
-  // channel, and so the channel↔registration reconciliation stays honest.
+  // Token-launch IPC (plan C5): preview, submit (Deploy = consent), cancel and
+  // myLaunches are all real; the agent-requested form flow authorizes the
+  // drafted intent and resumes the parked turn.
   teardowns.push(...registerTokenLaunchHandlers());
   // T1: read-only VEX market snapshot for the welcome-screen price widget. The
   // handler serves main's in-memory cache; the external poll + EV.market.vex

@@ -16,6 +16,13 @@
  *                    codebase** — no human acted. It is trusted host/engine
  *                    evidence that a mission was permitted to spend, so it binds
  *                    the mission provenance that granted the permission.
+ *   `session_full`   the user put THIS CHAT SESSION in full permission and asked
+ *                    for the launch. The same consent basis every other mutating
+ *                    tool executes on in full mode (`swap_execute` precedent) —
+ *                    attended, no approval card, no mission, so it binds nothing
+ *                    but the session's own permission snapshot. Owner decree
+ *                    2026-08-02; mission ceilings are mission-scoped and do not
+ *                    apply here.
  *
  * ALL THREE BIND THE SAME FIELDS. That is the point: whatever authorized the
  * spend, the audit answer to "what exactly was authorized?" has one shape.
@@ -145,6 +152,12 @@ export type LaunchAuthorization =
       readonly binding: LaunchAuthorizationBinding;
       readonly provenance: LaunchMissionProvenance;
       readonly authorizedAt: string;
+    }
+  | {
+      readonly kind: "session_full";
+      readonly binding: LaunchAuthorizationBinding;
+      /** When the handler authorized it. The binding carries the permission. */
+      readonly authorizedAt: string;
     };
 
 /** sha256 of image bytes, hex — the value compared against the locker digest. */
@@ -256,5 +269,7 @@ export function describeLaunchAuthorization(kind: LaunchAuthorizationKind): stri
       return "an approval the user resolved";
     case "full_autonomy":
       return "the mission's full-autonomy permission (no human acted)";
+    case "session_full":
+      return "the session's full permission, which the user set and asked to launch under";
   }
 }

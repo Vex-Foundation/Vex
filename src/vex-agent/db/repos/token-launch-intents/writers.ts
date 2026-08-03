@@ -99,6 +99,21 @@ export async function createWith(
 export interface AuthorizeTokenLaunchInput {
   authorizationId: string;
   authorizationKind: LaunchAuthorizationKind;
+  /**
+   * The token AS THE USER FINALLY CONFIRMED IT — not as the agent drafted it.
+   *
+   * These are REQUIRED, and that is the point. The dialog opens an agent's draft
+   * with every field editable, and the C0 consent snapshot is built from the
+   * submitted values. `execute-user-submit.ts` cross-checks that snapshot
+   * against these very columns before signing, so a partial update here is a
+   * launch that either REFUSES at the gate (an edited name or symbol) or signs
+   * against stale metadata (an edited description or links). Making them
+   * optional would reintroduce exactly that drift one forgetful caller later.
+   */
+  name: string;
+  symbol: string;
+  description: string | null;
+  links: Record<string, unknown>;
   /** REQUIRED: a Vex launch refuses to execute without an image (product rule). */
   imageId: string;
   /** Raw wei. Travels with its decimals, always (rule 90). */
@@ -119,6 +134,13 @@ export interface AuthorizeTokenLaunchInput {
  * `expires_at > NOW()` is part of the predicate, so a click that arrives after
  * the form window lapsed CANNOT authorize a spend. `null` on any miss.
  *
+ * EVERY EDITABLE TOKEN FIELD MOVES IN THIS ONE CAS — name, symbol, description,
+ * links, image and prebuy. The user may edit any of them in the dialog before
+ * clicking Deploy, and the consent snapshot written in the same statement
+ * describes those submitted values; leaving the row on the agent's original
+ * draft would make the two disagree, which the pre-sign cross-check in
+ * `execute-user-submit.ts` treats as tampering and refuses.
+ *
  * This is the other write that binds an image to a live intent, so it locks and
  * re-reads the image before the CAS, and throws `LaunchImageMissingError` when
  * the image lost the race, for the reasons `createWith` documents. The throw is
@@ -134,11 +156,17 @@ export async function authorizeWith(
   await lockAndRequireLaunchImageWith(client, input.imageId);
   return casRow(
     client,
+    // The new columns are APPENDED at $9.. rather than woven into the existing
+    // order, so the parameter-index pins on the fields above keep holding.
+    // `origin`, `tool_call_id` and `mission_run_id` are absent by construction:
+    // they are how the parked turn is found again, and this statement must not
+    // be able to touch them.
     `UPDATE token_launch_intents
         SET status = 'authorized', authorization_id = $3, authorization_kind = $4,
             authorized_at = NOW(), image_id = $5,
             prebuy_raw = $6, prebuy_decimals = $7,
-            authorization_json = $8::jsonb
+            authorization_json = $8::jsonb,
+            name = $9, symbol = $10, description = $11, links = $12::jsonb
       WHERE intent_id = $1
         AND session_id = $2
         AND status = 'awaiting_user_form'
@@ -153,6 +181,14 @@ export async function authorizeWith(
       input.prebuyRaw,
       input.prebuyDecimals,
       nullableJsonb(input.authorizationJson ?? null),
+      input.name,
+      input.symbol,
+      input.description,
+      // `?? {}` matches `createWith`, and is a JSONB-serializability guard, not
+      // a contract loosening: `links` is REQUIRED on the input type, so a typed
+      // caller cannot reach it. `jsonb(undefined)` throws by design, and a
+      // throw here would refuse an honest launch at the write.
+      jsonb(input.links ?? {}),
     ],
   );
 }

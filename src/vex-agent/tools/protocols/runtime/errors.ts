@@ -75,6 +75,24 @@ export type ErrorCategory =
    * retry that could never succeed.
    */
   | "response_schema"
+  /**
+   * THE WALLET COULD NOT PAY — the chain refused the transaction because the
+   * account cannot cover `value + gas`. Distinct from `provider_error` for the
+   * same reason `policy_refusal` and `response_schema` are: the provider did
+   * not malfunction and no parameter is malformed, so "retry" is the one action
+   * guaranteed to fail, and it fails identically every time until the USER
+   * funds the wallet (or the agent lowers the amount).
+   *
+   * Live proof of the confusion this removes (owner decree 2026-08-02):
+   * `launch_preview` failed four times in a row reported as a bare "unexpected
+   * error" while the log carried the truth the whole time — "total cost (gas *
+   * gas fee + value) … exceeds the balance of the account". The agent retried
+   * blind, burning turns, instead of saying "top up the wallet".
+   *
+   * Attribution ONLY, like the two above: this is never `retryable`, but that
+   * is `retryable`'s field to state, not this label's.
+   */
+  | "insufficient_funds"
   | "provider_error"
   | "unknown";
 
@@ -156,6 +174,16 @@ const SENSITIVE_FRAGMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   // Auth headers (header: value OR header=value) — value consumes to
   // end-of-line/segment, not just one token. See fail-closed note above.
   [/\b(authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]+/gi, "[auth]"],
+  // Long hex blobs — calldata, signatures, raw tx payloads a node/SDK echoes
+  // back inside its error. `redact()` above already masks the two hex shapes
+  // that carry IDENTITY (0x+40 address, 0x+64 tx hash) and deliberately keeps
+  // their shape; both are `\b`-anchored, so neither matches a blob LONGER than
+  // 64 hex, which is exactly what a reverted-calldata dump is. Absorbed here
+  // from `trench/handlers/failure.ts` (owner decree 2026-08-02) when that
+  // venue's byte-clone sanitizer was routed through this module: the guarantee
+  // it held must not be lost by the consolidation, and every other venue gains
+  // it. 80 (not 65) keeps the threshold clear of any near-hash-length shape.
+  [/\b0x[a-fA-F0-9]{80,}/gi, "[hex]"],
   // Key/secret/token ASSIGNMENTS (key=value shape) — single-token value is
   // the established convention for this shape (unlike headers, an assignment
   // is not observed to carry multi-part semicolon-separated values).
@@ -339,6 +367,25 @@ function isResponseSchemaFailure(err: unknown): boolean {
   return RESPONSE_SCHEMA_ERROR_CODES.has(err.code);
 }
 
+/**
+ * The two phrasings the money paths actually produce for "the account cannot
+ * pay", both captured live in this repo: viem's EVM wording ("The total cost
+ * (gas * gas fee + value) of executing this transaction exceeds the balance of
+ * the account", pinned in `trench-failure-detail.test.ts`) and the node/Solana
+ * wording ("insufficient funds for gas * price + value" / "…for rent", pinned
+ * in `solana-program-error-reason.test.ts`). Deliberately narrow: a broader
+ * "balance" scan would swallow ordinary prose that merely mentions balances.
+ */
+const INSUFFICIENT_FUNDS_PATTERN = /exceeds the balance|insufficient funds/i;
+
+/**
+ * The remedy, appended to the provider's own words rather than replacing them.
+ * Only the USER can clear this failure, so the agent needs to be told to stop
+ * retrying and say so (owner decree 2026-08-02).
+ */
+const INSUFFICIENT_FUNDS_REMEDY =
+  "the wallet on this chain cannot cover value + gas: top up the wallet or lower the amount";
+
 /** Coarse, non-sensitive classification from the error's shape/text. */
 export function classifyError(raw: string, err: unknown): ErrorCategory {
   // Checked FIRST, ahead of the text heuristics: a typed code we ourselves
@@ -351,6 +398,14 @@ export function classifyError(raw: string, err: unknown): ErrorCategory {
   if (isLocallyAuthoredValidationFailure(err)) return "invalid_request";
   if (isVexAuthoredPolicyRefusal(err)) return "policy_refusal";
   if (isResponseSchemaFailure(err)) return "response_schema";
+  // Ahead of the keyword scans below because it is the most SPECIFIC text
+  // verdict of the set and none of those scans can produce it: whoever wrote
+  // the prose, "the account cannot pay" is the same fact and the same remedy.
+  // Scanned on the RAW text, not the scrubbed one, deliberately — scrubbing
+  // only ever REMOVES spans (a JSON body quoting the reason, for instance), so
+  // raw is strictly the more sensitive input, and the output here is a fixed
+  // label that cannot carry anything the raw text contained.
+  if (INSUFFICIENT_FUNDS_PATTERN.test(raw)) return "insufficient_funds";
   const name = err instanceof Error ? err.name.toLowerCase() : "";
   const text = raw.toLowerCase();
   if (name.includes("abort") || text.includes("timeout") || text.includes("timed out")) {
@@ -470,8 +525,81 @@ export function summarizeProtocolError(err: unknown): SafeErrorSummary {
     ? `${cleaned.slice(0, MAX_SAFE_ERROR_MESSAGE)}…`
     : cleaned;
 
-  const summary: SafeErrorSummary = { category, message: bounded || category };
+  // The remedy is appended AFTER the cap, and it is the ONE thing that may be:
+  // it is a fixed first-party literal, not provider text, so it can neither
+  // smuggle bytes past the redactor nor make the bound unpredictable (the
+  // maximum grows by exactly its own length). Inside the cap it was the part
+  // that got eaten — a wrapped balance failure ended "…top up the wall…", which
+  // is precisely the sentence the agent must be able to act on.
+  const withRemedy = category === "insufficient_funds"
+    ? `${bounded} — ${INSUFFICIENT_FUNDS_REMEDY}`
+    : bounded;
+
+  const summary: SafeErrorSummary = { category, message: withRemedy || category };
   return err instanceof VexError && err.retryable === true
     ? { ...summary, retryable: true }
     : summary;
+}
+
+/** How deep the `cause` chain is walked before the text is considered gathered. */
+const MAX_CAUSE_DEPTH = 5;
+
+/**
+ * The error's own message plus every DISTINCT message on its `cause` chain.
+ *
+ * A wrapped failure keeps the real reason one level down: `erc20.ts` throws
+ * `APPROVAL_FAILED` with "Failed to reset allowance: <the node's actual
+ * words>", and a viem error re-thrown with `{ cause }` keeps the node's words
+ * only in the cause. A message already containing an inner one (the
+ * interpolation shape above) does not repeat it.
+ */
+function causeChainText(err: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth++) {
+    if (!(current instanceof Error) || seen.has(current)) break;
+    seen.add(current);
+    const message = current.message.trim();
+    if (message && !parts.some((part) => part.includes(message))) parts.push(message);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return parts.join(" ← ");
+}
+
+/**
+ * The ONE model-facing rendering of a thrown failure, for every venue helper.
+ *
+ * A `VexError` leads with our own vocabulary — code + authored hint — because
+ * that is the most actionable thing we can say. But it must not STOP there:
+ * the wrapping throw sites carry the real cause inside `message` (or a
+ * `cause`), so a signing failure that was really "the wallet cannot pay"
+ * reached the agent as a bare `APPROVAL_FAILED` and it retried blind (owner
+ * decree 2026-08-02; Codex blocker 4). The scrubbed real cause is appended
+ * whenever it says more than the hint already does, which is also how the
+ * `insufficient_funds` remedy reaches a WRAPPED balance failure.
+ *
+ * Everything appended goes through `summarizeProtocolError`, so it is
+ * secret-redacted, body/URL/auth-stripped and length-capped exactly like an
+ * unwrapped provider error.
+ */
+export function describeFailureForAgent(err: unknown): string {
+  if (!(err instanceof VexError)) return summarizeProtocolError(err).message;
+  const label = err.hint ? `${err.code}: ${err.hint}` : err.code;
+  const detail = causeChainText(err);
+  if (detail.length === 0 || detail === err.hint?.trim()) return label;
+  const scrubbed = summarizeProtocolError(new Error(detail)).message;
+  return scrubbed.length === 0 ? label : `${label} — ${scrubbed}`;
+}
+
+/**
+ * The same failure as bounded, scrubbed LOG metadata.
+ *
+ * Logs are server-side, but rule 06 minimization still applies: the venues
+ * previously logged `err.message` raw and the logger performs no redaction of
+ * its own, so a provider body carrying a key shape landed in the log file
+ * verbatim. Same scrub-core as the model-facing text (Codex blocker 4).
+ */
+export function describeFailureForLog(err: unknown): string {
+  return summarizeProtocolError(new Error(causeChainText(err) || String(err))).message;
 }

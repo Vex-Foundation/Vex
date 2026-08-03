@@ -57,17 +57,6 @@ export function requireExecutionProvenance(
   return { ok: true, provenance: { sessionId, missionId, missionRunId } };
 }
 
-/**
- * The approval id of a dispatch resumed from a resolved approval card, or
- * `null` when this dispatch is not an approval resume. Callers building the
- * `approval_card` authorization variant refuse on `null`.
- */
-export function readApprovalProvenance(
-  context: ProtocolExecutionContext,
-): string | null {
-  return nonEmpty(context.approvalId);
-}
-
 function nonEmpty(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();

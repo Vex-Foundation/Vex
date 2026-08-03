@@ -28,8 +28,19 @@ export type TokenLaunchIntentStatus =
  * `full_autonomy` is deliberately NOT called consent anywhere in this codebase:
  * it is trusted host/engine evidence that a mission was permitted to spend, and
  * no human acted. Naming it consent would misdescribe the audit record.
+ *
+ * `session_full` is the CHAT counterpart of that evidence (owner decree
+ * 2026-08-02): the user put THIS session in full permission and asked for a
+ * launch in it. That is the same consent basis every other mutating tool
+ * executes on in full mode, but it is neither a resolved approval card nor a
+ * mission contract, so it gets its own name rather than borrowing one that
+ * would name evidence that does not exist. Migration 064 admits it.
  */
-export type LaunchAuthorizationKind = "user_submit" | "approval_card" | "full_autonomy";
+export type LaunchAuthorizationKind =
+  | "user_submit"
+  | "approval_card"
+  | "full_autonomy"
+  | "session_full";
 
 /**
  * The statuses that still hold LIVE money state — an intent that may yet sign,
