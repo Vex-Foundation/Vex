@@ -109,5 +109,9 @@ function mapRejection(
     }
     case "provider_unavailable":
       return { outcome: "provider_unavailable" };
+    case "session_stop_pending":
+      // The operator's Stop landed first and was consumed by the same
+      // transaction, so nothing is parked — a retry recovers normally.
+      return { outcome: "session_stop_pending" };
   }
 }

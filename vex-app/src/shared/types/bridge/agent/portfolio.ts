@@ -8,6 +8,7 @@ import type {
   TokenHistoryReadInput,
 } from "../../../schemas/token-history.js";
 import type {
+  ActivityProgressEvent,
   ActivityResolvedEvent,
   AgentScanDto,
   AgentScanReadInput,
@@ -66,5 +67,15 @@ export interface PortfolioBridge {
    */
   readonly onActivityResolved: (
     cb: (event: ActivityResolvedEvent) => void,
+  ) => () => void;
+  /**
+   * Subscribe to `EV.portfolio.activityProgress` — fired after EVERY observation
+   * of a row that is still pending, which is the half `onActivityResolved`
+   * cannot carry. Payload is ids plus the observation's reason and the row's
+   * current check interval; the subscriber's job is still to invalidate and
+   * re-read.
+   */
+  readonly onActivityProgress: (
+    cb: (event: ActivityProgressEvent) => void,
   ) => () => void;
 }

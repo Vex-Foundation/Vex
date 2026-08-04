@@ -141,6 +141,7 @@ beforeEach(() => {
 });
 
 const { TokenLaunchDialog } = await import("../TokenLaunchDialog.js");
+const { TokenLaunchButton } = await import("../token-launch/TokenLaunchButton.js");
 
 function renderDialog(): void {
   const queryClient = new QueryClient({
@@ -438,5 +439,401 @@ describe("TokenLaunchDialog — the honesty ladder", () => {
   it("shows the empty invitation only on a genuinely empty, available read", async () => {
     renderDialog();
     await screen.findByText(/You haven't launched a token yet/);
+  });
+});
+
+/**
+ * AUTO-DISMISS — the modal closes itself after a proven deploy.
+ *
+ * The owner's report: after a successful launch the form just sat there, so the
+ * user had to dismiss a dialog describing a spend that had already happened.
+ * Every case below is a way that could go wrong on a money surface: closing on
+ * an outcome that was NOT proven, painting a failure green, cancelling an
+ * intent the launch already consumed, or leaving the second launch stuck on the
+ * first one's receipt.
+ */
+describe("TokenLaunchDialog — auto-dismiss after a completed deploy", () => {
+  const TX_HASH = `0x${"a".repeat(64)}`;
+
+  function submitResult(
+    status: string,
+    txHash: string | null,
+    message = "Your launch confirmed.",
+  ): unknown {
+    return {
+      ok: true,
+      data: {
+        intentId: "i1",
+        status,
+        txHash,
+        tokenAddress: null,
+        msgValueWei: "51000000000000000",
+        message,
+      },
+    };
+  }
+
+  function renderWith(props: {
+    readonly onOpenChange: () => void;
+    readonly intentId?: string | null;
+  }): { rerender: (open: boolean) => void } {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const element = (open: boolean) =>
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(TokenLaunchDialog, {
+          open,
+          onOpenChange: props.onOpenChange,
+          sessionId: SESSION_ID,
+          origin: "agent_requested_form" as const,
+          intentId: props.intentId ?? "intent-1",
+        }),
+      );
+    const view = render(element(true));
+    return { rerender: (open: boolean) => view.rerender(element(open)) };
+  }
+
+  async function deploy(): Promise<void> {
+    await fillMinimalForm();
+    await waitFor(() => expect(deployButton().disabled).toBe(false));
+    fireEvent.click(deployButton());
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+  }
+
+  it.each([
+    ["confirmed", "the launch is mined and successful"],
+    ["confirmed_pending_identity", "only the token address is undecoded"],
+    // Dismissible since B-PRE: the resumed turn no longer claims it is done.
+    ["pending", "the broadcast is unproven but the receipt outlives the modal"],
+  ])("closes itself on %s — %s", async (status) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onOpenChange = vi.fn();
+      submitMock.mockResolvedValue(submitResult(status, TX_HASH, "Main's sentence."));
+      renderWith({ onOpenChange });
+      await deploy();
+
+      // Main's sentence, rendered verbatim.
+      await screen.findByText("Main's sentence.");
+      // Not before the dwell…
+      expect(onOpenChange).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2_600);
+      // …and closed after it, with no click anywhere.
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+      // A consumed intent is never cancelled by its own success.
+      expect(cancelMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("HOLDS a reverted launch open, in a failure tone — gas burned, no token", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onOpenChange = vi.fn();
+      submitMock.mockResolvedValue(
+        submitResult("reverted", TX_HASH, "The launch reverted on-chain."),
+      );
+      renderWith({ onOpenChange });
+      await deploy();
+
+      const alert = await screen.findByText("The launch reverted on-chain.");
+      expect(alert.getAttribute("role")).toBe("alert");
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(onOpenChange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["null", null],
+    ["an empty string", ""],
+  ])("HOLDS open when the hash is %s — there is no receipt to find", async (_l, hash) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onOpenChange = vi.fn();
+      submitMock.mockResolvedValue(submitResult("confirmed", hash, "Sent."));
+      renderWith({ onOpenChange });
+      await deploy();
+
+      await screen.findByText("Sent.");
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(onOpenChange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders main's message verbatim — never JSON, and the hash exactly once", async () => {
+    const onOpenChange = vi.fn();
+    submitMock.mockResolvedValue(
+      submitResult("confirmed", TX_HASH, `Your launch confirmed. Transaction ${TX_HASH}.`),
+    );
+    renderWith({ onOpenChange });
+    await deploy();
+
+    const note = await screen.findByText(new RegExp(`Your launch confirmed\\. Transaction`));
+    expect(note.textContent?.startsWith("{")).toBe(false);
+    expect(note.textContent?.split(TX_HASH)).toHaveLength(2);
+    expect(note.textContent).not.toContain("_executionId");
+  });
+
+  it("freezes the form and offers Close, not Cancel, once the submit completed", async () => {
+    const onOpenChange = vi.fn();
+    submitMock.mockResolvedValue(submitResult("confirmed", TX_HASH));
+    renderWith({ onOpenChange });
+    await deploy();
+
+    await screen.findByText("Your launch confirmed.");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).disabled).toBe(true);
+    const close = screen.getByRole("button", { name: /^Close$/ }) as HTMLButtonElement;
+    expect(close.disabled).toBe(false);
+    close.click();
+    // Closing a CONSUMED intent must not cancel it.
+    expect(cancelMock).not.toHaveBeenCalled();
+  });
+
+  it("gives a fresh, editable form on the next open cycle", async () => {
+    const onOpenChange = vi.fn();
+    submitMock.mockResolvedValue(submitResult("confirmed", TX_HASH));
+    const { rerender } = renderWith({ onOpenChange });
+    await deploy();
+    await screen.findByText("Your launch confirmed.");
+
+    rerender(false);
+    rerender(true);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+    });
+    expect((screen.getByLabelText("Name") as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText("Your launch confirmed.")).toBeNull();
+  });
+
+  it("cleans up its timer once closed — it never fires at an absent dialog", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onOpenChange = vi.fn();
+      submitMock.mockResolvedValue(submitResult("confirmed", TX_HASH));
+      const { rerender } = renderWith({ onOpenChange });
+      await deploy();
+      await screen.findByText("Your launch confirmed.");
+
+      rerender(false);
+      onOpenChange.mockClear();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(onOpenChange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * D4 — USER-ORIGIN PARITY. Decree #6 names the agent's form, but the Book
+ * button opens the SAME dialog for the same kind of spend, so it gets the same
+ * behaviour: one rule, one code path, rather than two behaviours by accident.
+ *
+ * This mounts the real BUTTON, which is the second visibility owner: it keeps
+ * ONE dialog instance and only toggles `open`, so a phase that is not reset on
+ * the open transition would leave the second launch stuck on the first one's
+ * receipt. Re-rendering the dialog directly cannot prove that.
+ */
+describe("TokenLaunchButton — the user-origin dialog dismisses itself too", () => {
+  const TX_HASH = `0x${"a".repeat(64)}`;
+
+  it("auto-dismisses, then reopens as a fresh editable form", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      submitMock.mockResolvedValue({
+        ok: true,
+        data: {
+          intentId: "i1",
+          status: "confirmed",
+          txHash: TX_HASH,
+          tokenAddress: null,
+          msgValueWei: "51000000000000000",
+          message: "Your launch confirmed.",
+        },
+      });
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(TokenLaunchButton, { sessionId: SESSION_ID }),
+        ),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /Launch a token/i }));
+      await screen.findByLabelText("Name");
+      await fillMinimalForm();
+      await waitFor(() => expect(deployButton().disabled).toBe(false));
+      fireEvent.click(deployButton());
+
+      await screen.findByText("Your launch confirmed.");
+      await vi.advanceTimersByTimeAsync(2_600);
+      // The native dialog closed itself — no click anywhere.
+      await waitFor(() =>
+        expect(document.querySelector("dialog")?.hasAttribute("open")).toBe(false),
+      );
+
+      // A second launch must not inherit the first one's completed phase.
+      fireEvent.click(screen.getByRole("button", { name: /Launch a token/i }));
+      await waitFor(() => {
+        expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+      });
+      expect((screen.getByLabelText("Name") as HTMLInputElement).disabled).toBe(false);
+      expect(screen.queryByText("Your launch confirmed.")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * DISMISSAL IS REFUSED WHILE A SUBMIT IS IN FLIGHT.
+ *
+ * The shared `dialog.tsx` routes BOTH Escape (the native `cancel` event) and a
+ * backdrop click to `onOpenChange(false)`, and this dialog's own close handler
+ * then cancels the intent AND closes. Between the Deploy click and the
+ * executor's answer that is a real transaction: closing there would fire a
+ * cancel against an intent the signature is already consuming, and would unmount
+ * the component that owns the terminal phase and the auto-dismiss — the exact
+ * receipt loss the host's busy guard exists to prevent, reached from the other
+ * side. The host cannot help here: this is the dialog closing ITSELF.
+ *
+ * Both dismissal routes are pinned, because they are separate handlers in the
+ * shared component and a fix at one is not a fix at the other.
+ */
+describe("TokenLaunchDialog — an in-flight deploy cannot be dismissed", () => {
+  const TX_HASH = `0x${"a".repeat(64)}`;
+
+  /** Deploy, and leave the submit UNRESOLVED so the dialog stays `submitting`. */
+  async function deployAndHang(onOpenChange: () => void): Promise<() => void> {
+    let release: () => void = () => undefined;
+    submitMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve({
+              ok: true,
+              data: {
+                intentId: "i1",
+                status: "confirmed",
+                txHash: TX_HASH,
+                tokenAddress: null,
+                msgValueWei: "51000000000000000",
+                message: "Your launch confirmed.",
+              },
+            });
+        }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(TokenLaunchDialog, {
+          open: true,
+          onOpenChange,
+          sessionId: SESSION_ID,
+          origin: "agent_requested_form" as const,
+          intentId: "intent-1",
+        }),
+      ),
+    );
+    await fillMinimalForm();
+    await waitFor(() => expect(deployButton().disabled).toBe(false));
+    fireEvent.click(deployButton());
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    // The signature is in flight.
+    await screen.findByRole("button", { name: /Deploying…/ });
+    return release;
+  }
+
+  it("refuses ESCAPE mid-signature — no cancel, no close", async () => {
+    const onOpenChange = vi.fn();
+    await deployAndHang(onOpenChange);
+
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    fireEvent(dialog as HTMLDialogElement, new Event("cancel", { cancelable: true }));
+
+    expect(cancelMock).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("Launch a token")).not.toBeNull();
+  });
+
+  it("refuses a BACKDROP CLICK mid-signature — no cancel, no close", async () => {
+    const onOpenChange = vi.fn();
+    await deployAndHang(onOpenChange);
+
+    // A backdrop click lands on the dialog element itself.
+    const dialog = document.querySelector("dialog") as HTMLDialogElement;
+    fireEvent.click(dialog);
+
+    expect(cancelMock).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("Launch a token")).not.toBeNull();
+  });
+
+  it("still dismisses a DRAFT by Escape — the refusal is scoped to the submit", async () => {
+    cancelMock.mockResolvedValue({
+      ok: true,
+      data: { cancelled: true, resumedAgentTurn: true },
+    });
+    const onOpenChange = vi.fn();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(TokenLaunchDialog, {
+          open: true,
+          onOpenChange,
+          sessionId: SESSION_ID,
+          origin: "agent_requested_form" as const,
+          intentId: "intent-1",
+        }),
+      ),
+    );
+    await screen.findByLabelText("Name");
+
+    const dialog = document.querySelector("dialog") as HTMLDialogElement;
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+
+    await waitFor(() =>
+      expect(cancelMock).toHaveBeenCalledWith({
+        sessionId: SESSION_ID,
+        intentId: "intent-1",
+      }),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("releases the refusal once the submit settles", async () => {
+    const onOpenChange = vi.fn();
+    const release = await deployAndHang(onOpenChange);
+
+    release();
+    await screen.findByText("Your launch confirmed.");
+
+    const dialog = document.querySelector("dialog") as HTMLDialogElement;
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+
+    // It closes — and a CONSUMED intent is still never cancelled.
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(cancelMock).not.toHaveBeenCalled();
   });
 });

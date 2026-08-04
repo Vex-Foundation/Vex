@@ -47,10 +47,14 @@ export interface ComposerSendControlProps {
   readonly globalModelId: string | null;
   readonly onReasoningPick: (effort: ReasoningEffort) => void;
   /**
-   * Render the Stop key. Broader than `submitPending`: a background slice
-   * (wake-driven continuation) holds the session lease with no submit pending,
-   * and keying this control off `submitPending` alone left that run with no
-   * stop affordance anywhere in the UI.
+   * Render the Stop key. Broader than `submitPending`, and broader than "a
+   * lease is held": autonomous work alternates between lease-held slices and
+   * lease-less parks on a pending wake, so a control keyed on either alone
+   * disappears while the agent is still running and still stoppable.
+   *
+   * The owner (`composer-submit.ts`) computes this from main's authoritative
+   * `stoppable`, and fails toward SHOWING the key when the runtime state is
+   * unknown. Do NOT re-derive it here.
    */
   readonly stopAvailable: boolean;
   readonly stopRequested: boolean;

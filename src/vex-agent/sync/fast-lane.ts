@@ -44,8 +44,9 @@
  *
  * - one wheel timer, not one timer per lane;
  * - per-lane jitter so N lanes never fire in lockstep against one RPC;
- * - `FAST_LANE_MAX_CONCURRENCY` EVM lookups at a time (the DB pool is `max: 10`
- *   and the sweeps share it);
+ * - the EVM lane bounds its own in-flight lookups (`EVM_LANE_MAX_CONCURRENCY`,
+ *   `agent-activity-repair.ts`) because the DB pool is `max: 10` and the sweeps
+ *   share it;
  * - Solana lanes coalesce into ONE `getSignatureStatuses` per cycle;
  * - EVM lanes share one memoized per-chain client per cycle;
  * - provider-status legs (Khalani/Relay) run at 30 s, NOT 12 s, and as one
@@ -68,9 +69,8 @@ import {
   type PendingActivityEvent,
   type PendingActivityLane,
 } from "@vex-agent/events/pending-activity-bus.js";
+import { describeFailureForLog } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
-
-import { REPAIR_CANDIDATE_AGE_MS } from "./agent-activity-repair.js";
 
 // ── Tunables ──────────────────────────────────────────────────────────────
 
@@ -94,9 +94,6 @@ export const FAST_LANE_MAX_AGE_MS = 15 * 60_000;
 
 /** Rows tracked at once. Overflow falls back to the sweep, which is built to absorb it. */
 export const FAST_LANE_MAX_ACTIVE = 12;
-
-/** Simultaneous chain reads. Raising this is the first thing that will exhaust the DB pool. */
-export const FAST_LANE_MAX_CONCURRENCY = 3;
 
 /** How often the wheel wakes to look for due lanes. */
 const WHEEL_INTERVAL_MS = 2_000;
@@ -133,8 +130,17 @@ export interface FastLaneHandle {
  * provider knowledge and — like the sweeps — no signer, ever.
  */
 export interface FastLaneDeps {
-  /** Resolve due EVM lanes. Bounded by `FAST_LANE_MAX_CONCURRENCY` by the caller. */
-  readonly resolveEvmRows: (rows: readonly AgentActivityEvent[]) => Promise<void>;
+  /**
+   * Run ONE pass of the EVM pending lane — a claim of every DUE row, wherever it
+   * came from, whether or not this process ever armed a lane for it.
+   *
+   * Deliberately NOT a per-row call. The registry used to read its own armed ids
+   * through a non-claiming query, which meant the registry and the sweep could
+   * observe the same row concurrently, and a row this process never saw (a
+   * restart, an overflowed registry) had no fast owner at all. The claimant is
+   * the single scheduler: its SQL due predicate IS the cadence contract.
+   */
+  readonly runEvmPendingLane: () => Promise<void>;
   /** Resolve due Solana lanes as ONE batched call. */
   readonly resolveSolanaRows: (rows: readonly AgentActivityEvent[]) => Promise<void>;
   /** Run one bounded bridge provider sweep. Called at most once per provider interval. */
@@ -174,6 +180,13 @@ export function startFastLane(options: FastLaneOptions = {}): FastLaneHandle {
     armedAt: number,
   ): void => {
     if (stopped) return;
+    // EVM ON-CHAIN ROWS ARE NOT REGISTRY WORK ANY MORE. The claimant observes
+    // every due EVM row every cycle, from age zero, whether or not it was ever
+    // armed — so a lane here would be a second owner with a weaker guarantee
+    // (capped at 12, lost on restart, and reading through a NON-claiming query
+    // that let it race the sweep on the same row). The bus event still matters
+    // for `resolved`: that is what disarms and enqueues the snapshot.
+    if (leg === "onchain" && chainFamily === "eip155") return;
     // Per-row dedup: a second arm for the same row is a no-op, mirroring the
     // sweeps' `duplicate_cas_miss` posture.
     if (lanes.has(activityId)) return;
@@ -184,15 +197,11 @@ export function startFastLane(options: FastLaneOptions = {}): FastLaneHandle {
       logger.debug("sync.fast_lane.capacity_reached", { activityId, active: lanes.size });
       return;
     }
-    // An EVM lane's first look is scheduled AT the 90 s gate: before it, this
-    // module may not terminalize anyway, so looking would spend an RPC call to
-    // learn something it is forbidden to act on. Solana has no gate. The bridge
-    // provider leg starts at its own slower interval.
+    // Solana has no handler window to respect; the bridge provider leg starts at
+    // its own slower interval.
     const firstDelayMs = leg === "provider"
       ? FAST_LANE_PROVIDER_INTERVAL_MS
-      : chainFamily === "eip155"
-        ? REPAIR_CANDIDATE_AGE_MS
-        : FAST_LANE_INTERVAL_MS;
+      : FAST_LANE_INTERVAL_MS;
     lanes.set(activityId, {
       activityId,
       chainFamily,
@@ -222,7 +231,12 @@ export function startFastLane(options: FastLaneOptions = {}): FastLaneHandle {
       await executeCycle();
     } catch (err) {
       logger.warn("sync.fast_lane.cycle_failed", {
-        error: err instanceof Error ? err.message : String(err),
+        // THE CANONICAL SCRUB BOUNDARY, not `err.message`. A cycle failure is
+        // the one place in this module where a PROVIDER error reaches a log, and
+        // a raw provider message can carry the RPC URL, its embedded
+        // credentials, an Authorization header and a response body — none of
+        // which `redact()`'s secret-SHAPE detection alone removes.
+        error: describeFailureForLog(err),
       });
     } finally {
       cycleInFlight = false;
@@ -231,6 +245,15 @@ export function startFastLane(options: FastLaneOptions = {}): FastLaneHandle {
 
   const executeCycle = async (): Promise<void> => {
     const now = Date.now();
+
+    // THE EVM LANE IS REGISTRY-INDEPENDENT. It runs every cycle and claims
+    // whatever SQL says is due, so a restart with an empty registry, a row that
+    // overflowed `FAST_LANE_MAX_ACTIVE`, and a row this process never armed all
+    // still hold their cadence. The claim's phase interval — 5 s for the row's
+    // first 10 minutes, then 30 s, measured from its own immutable
+    // `submit_attempted_at` — is the whole schedule; the wheel only decides how
+    // often we ASK, which is why it ticks faster than the shortest interval.
+    await deps.runEvmPendingLane();
 
     // Age-out first: a lane older than the max age is no longer "fresh", and the
     // global sweep is the right owner for a long-lived stuck row.
@@ -255,26 +278,13 @@ export function startFastLane(options: FastLaneOptions = {}): FastLaneHandle {
       );
     }
 
-    await runOnChainLegs(due, now);
+    await runSolanaLeg(due);
     await runProviderLeg(due, now);
   };
 
-  const runOnChainLegs = async (due: readonly Lane[], now: number): Promise<void> => {
-    const evmIds = due.filter((l) => l.leg === "onchain" && l.chainFamily === "eip155")
-      .map((l) => l.activityId);
+  const runSolanaLeg = async (due: readonly Lane[]): Promise<void> => {
     const solanaIds = due.filter((l) => l.leg === "onchain" && l.chainFamily === "solana")
       .map((l) => l.activityId);
-
-    if (evmIds.length > 0) {
-      const rows = await listPendingByIds(evmIds, "eip155");
-      disarmVanished(evmIds, rows);
-      // THE 90 s GATE, enforced against the row's OWN persisted
-      // `submit_attempted_at` rather than against when this process armed the
-      // lane. That distinction matters for the lanes re-armed at startup, whose
-      // `armedAt` is process time but whose submit may be seconds or hours old.
-      const gated = rows.filter((row) => isPastHandlerWindow(row, now));
-      if (gated.length > 0) await deps.resolveEvmRows(gated);
-    }
 
     if (solanaIds.length > 0) {
       const rows = await listPendingByIds(solanaIds, "solana");
@@ -422,13 +432,15 @@ export async function rearmPendingFastLanes(
 ): Promise<number> {
   const before = activeLaneCount?.() ?? 0;
   let emitted = 0;
-  for (const family of ["eip155", "solana"] as const) {
-    const rows = await listPendingOlderThan(0, FAST_LANE_MAX_ACTIVE, family);
-    for (const row of rows) {
-      if (!isWithinFastLaneAge(row.submitAttemptedAt)) continue;
-      emitRearm(row, "onchain");
-      emitted++;
-    }
+  // SOLANA ONLY. EVM pending rows no longer need re-arming at all: their
+  // schedule lives in the durable claim, which selects every due row from the
+  // database on the first cycle after a restart — including rows this process
+  // has never seen. Re-arming them would create a second, weaker owner for
+  // exactly the rows the claim already covers.
+  for (const row of await listPendingOlderThan(0, FAST_LANE_MAX_ACTIVE, "solana")) {
+    if (!isWithinFastLaneAge(row.submitAttemptedAt)) continue;
+    emitRearm(row, "onchain");
+    emitted++;
   }
 
   for (const row of await listPendingProviderLogical(FAST_LANE_MAX_ACTIVE)) {
@@ -470,24 +482,11 @@ function isWithinFastLaneAge(startedAt: string | null): boolean {
 
 // ── Gate ──────────────────────────────────────────────────────────────────
 
-/**
- * `true` once the owning broadcast handler can no longer be writing this row.
- *
- * This is the 90 s money-truth guard, not latency slack: inside the window the
- * handler may still be decoding its receipt and about to write real
- * `executed_*` amounts, and a status-only confirm that wins that CAS forfeits
- * them permanently. A row with no `submit_attempted_at`, or an unparseable one,
- * is treated as INSIDE the window — the conservative direction.
- */
-export function isPastHandlerWindow(
-  row: Pick<AgentActivityEvent, "submitAttemptedAt">,
-  nowMs: number,
-): boolean {
-  if (!row.submitAttemptedAt) return false;
-  const submittedMs = Date.parse(row.submitAttemptedAt);
-  if (Number.isNaN(submittedMs)) return false;
-  return nowMs - submittedMs >= REPAIR_CANDIDATE_AGE_MS;
-}
+// The 90 s money gate lives in its own leaf (`./handler-window.js`) because the
+// pending lane needs the same predicate, and a copy in each module is how two
+// money gates drift apart. Re-exported here so every existing caller's import is
+// unchanged.
+export { isPastHandlerWindow, REPAIR_CANDIDATE_AGE_MS } from "./handler-window.js";
 
 // ── Production wiring ─────────────────────────────────────────────────────
 
@@ -499,13 +498,10 @@ export function isPastHandlerWindow(
  */
 export function buildProductionFastLaneDeps(): FastLaneDeps {
   return {
-    resolveEvmRows: async (rows) => {
-      const { resolveEvmPendingRow, buildProductionRepairDeps } =
+    runEvmPendingLane: async () => {
+      const { repairPendingActivity, buildProductionRepairDeps } =
         await import("./agent-activity-repair.js");
-      const deps = buildProductionRepairDeps();
-      await forEachBounded(rows, FAST_LANE_MAX_CONCURRENCY, async (row) => {
-        await resolveEvmPendingRow(row, deps);
-      });
+      await repairPendingActivity(buildProductionRepairDeps());
     },
 
     resolveSolanaRows: async (rows) => {
@@ -522,21 +518,4 @@ export function buildProductionFastLaneDeps(): FastLaneDeps {
       await repairPendingBridges(buildProductionBridgeRepairDeps());
     },
   };
-}
-
-/** Run `task` over `items` with at most `limit` in flight. */
-async function forEachBounded<T>(
-  items: readonly T[],
-  limit: number,
-  task: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const item = items[cursor++];
-      if (item === undefined) return;
-      await task(item);
-    }
-  });
-  await Promise.all(workers);
 }

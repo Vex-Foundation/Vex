@@ -11,20 +11,26 @@
  *     hardcoded defaults (interval=2000ms, batchSize=10) after DB bootstrap.
  *     Wake is an installed-runtime concern, not a renderer concern.
  *
- * Tick semantics:
- *   1. `claimDue(now, batchSize)` — atomically flips the pending rows to
- *      `consumed` and returns them. Rows the executor cannot handle (e.g.
- *      session status drifted to `running` because a user preempted) are
- *      SKIPPED but NOT unclaimed — the row is terminal once consumed, and
- *      the race is accepted (the user already resumed the session, so no
- *      banner needs to be injected).
- *   2. For every claimed row, the executor re-checks the mission run state
- *      and either (a) injects a `wake_due` banner + triggers the resume
- *      path or (b) logs the drift and skips. Every outcome is reported on
- *      the returned `ClaimedWake` so tests and operators can see the result.
+ * Tick semantics — TWO reads, because the two wake shapes are claimed
+ * differently:
+ *   1a. MISSION-SCOPED: `claimDue(now, batchSize)` atomically flips the
+ *       pending rows to `consumed` and returns them. Rows the executor cannot
+ *       handle (e.g. run status drifted to `running` because a user preempted)
+ *       are SKIPPED but NOT unclaimed — the row is terminal once consumed, and
+ *       the race is accepted (the user already resumed, so no banner is owed).
+ *   1b. SESSION-SCOPED: `listDueSessionWakes` returns CANDIDATES without
+ *       consuming anything. Each is then claimed by `claimSessionWake`, which
+ *       revalidates the row, acquires the session lease and consumes the row as
+ *       ONE transaction under the session control lock. A session has no run
+ *       row to serve as backup evidence, so the destructive-first order would
+ *       (and did) throw the continuation away on a busy lease — and left a
+ *       window in which an operator Stop found nothing to stop.
+ *   2.  Every outcome is reported on the returned `ClaimedWake` so tests and
+ *       operators can see what the pass actually did.
  *
- * Post-M12 simplification: `full_autonomous` mode is gone. Every wake row
- * targets a mission run; the executor no longer branches on `wake.kind`.
+ * Post-M12 simplification: `full_autonomous` mode is gone. A wake row targets
+ * either a mission run or a Full-Autonomous agent SESSION; the executor
+ * branches on the row's own shape, never on a `wake.kind`.
  *
  * Structural split: this file is the compatibility façade + lifecycle owner.
  * The tick implementation lives under `./executor/`:
@@ -32,6 +38,8 @@
  *   deps.ts       — `WakeDeps` + production default deps wiring.
  *   tick.ts       — `tick` + `ClaimedWake` / `ClaimedWakeOutcome`.
  *   claimed.ts    — normal claimed-job handling (`handleClaimed`).
+ *   agent-session.ts     — Full-Autonomous agent SESSION continuation.
+ *   claim-session-wake.ts — the atomic session wake/lease claim + backoff.
  *   auto-retry.ts — auto-retry handling (`handleAutoRetryClaimed`).
  *   provider.ts   — `isWakeProviderConfigured`.
  *

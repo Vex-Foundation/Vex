@@ -1,0 +1,17 @@
+{
+  "providerStatus": "success",
+  "legs": [
+    { "role": "bridge_deposit", "status": "confirmed", "txHash": "0x77dd000000000000000000000000000000000000000000000000000000000000" },
+    { "role": "vex_fee", "status": "confirmed", "txHash": "0x5a57000000000000000000000000000000000000000000000000000000000000" },
+    { "role": "bridge_fill_expected", "status": "reported_success", "txHash": "0xd6cc000000000000000000000000000000000000000000000000000000000000" }
+  ],
+  "amounts": {
+    "in": { "amount": "0.0009975", "amountRaw": "997500000000000" },
+    "out": { "amount": "0.00098523", "amountRaw": "985231717592935" }
+  },
+  "vexFee": {
+    "charged": true,
+    "collection": "confirmed",
+    "feeAmountRaw": "2500000000000"
+  }
+}

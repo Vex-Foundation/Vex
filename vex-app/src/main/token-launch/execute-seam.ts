@@ -19,6 +19,7 @@
  * here — which names wallets, never secrets.
  */
 
+import type { LaunchFormOutcome } from "@vex-agent/engine/core/launch-form-resume.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 import type { TokenLaunchSubmitResult } from "@shared/schemas/token-launch.js";
 import { log } from "../logger/index.js";
@@ -32,6 +33,9 @@ const BROADCAST_STATUSES: ReadonlySet<string> = new Set([
   "confirmed_pending_identity",
 ]);
 
+/** Hard bound on any executor string reaching the renderer as prose. */
+export const MAX_LAUNCH_MESSAGE_CHARS = 400;
+
 /**
  * Read the executor's outcome.
  *
@@ -44,15 +48,60 @@ export function readExecutorOutcome(result: ToolResult): SubmittedLaunchOutcome 
   const data = result.data ?? {};
   const status = data.status;
   if (typeof status === "string" && BROADCAST_STATUSES.has(status)) {
+    const txHash = typeof data.txHash === "string" ? data.txHash : null;
+    const tokenAddress =
+      typeof data.tokenAddress === "string" ? data.tokenAddress : null;
     return {
       kind: "broadcast",
       status: status as TokenLaunchSubmitResult["status"],
-      txHash: typeof data.txHash === "string" ? data.txHash : null,
-      tokenAddress: typeof data.tokenAddress === "string" ? data.tokenAddress : null,
-      message: result.output,
+      txHash,
+      tokenAddress,
+      message: broadcastMessageFor(status, result.output, data.summary, txHash, tokenAddress),
     };
   }
   return { kind: "refused", message: result.output };
+}
+
+/**
+ * The sentence a HUMAN reads.
+ *
+ * THE FALLBACK IS STATUS-AWARE, and `result.output` is NEVER the fallback for a
+ * CONFIRMED result. The confirmed branch puts its human summary in
+ * `data.summary` and sets `output` to `JSON.stringify(data)`
+ * (`trench/handlers/launch/execute/broadcast.ts`), so "prefer summary, else
+ * output" would print a JSON dump of the user's own launch — internal
+ * `_executionId` included — in exactly the case this projection exists to
+ * prevent. The other three statuses return prose that already names its
+ * transaction, so the renderer must render them verbatim and append nothing.
+ *
+ *   confirmed
+ *     -> `data.summary` when USABLE (a string, non-empty after trim);
+ *     -> otherwise a sentence COMPOSED HERE from the fields already validated
+ *        above — never `output`.
+ *   pending | reverted | confirmed_pending_identity
+ *     -> `result.output` verbatim.
+ *
+ * The composed sentence is deliberately dull and claims only what the status
+ * already proves: no amount, no chain, no fee. This is not the place to
+ * re-derive money, and a confirmed launch's figures are already on the dialog's
+ * footer and in the Activity row.
+ */
+function broadcastMessageFor(
+  status: string,
+  output: string,
+  summary: unknown,
+  txHash: string | null,
+  tokenAddress: string | null,
+): string {
+  if (status !== "confirmed") return bounded(output);
+  if (typeof summary === "string" && summary.trim().length > 0) return bounded(summary);
+  if (txHash === null) return "Your launch confirmed.";
+  const token = tokenAddress === null ? "" : ` Token ${tokenAddress}.`;
+  return bounded(`Your launch confirmed. Transaction ${txHash}.${token}`);
+}
+
+function bounded(message: string): string {
+  return message.slice(0, MAX_LAUNCH_MESSAGE_CHARS);
 }
 
 /**
@@ -124,10 +173,10 @@ export function buildSubmittedLaunchExecutor(): SubmittedLaunchExecutor {
 export async function wakeParkedAgent(
   intentId: string,
   sessionId: string,
-  outcome:
-    | { readonly kind: "launched"; readonly txHash: string; readonly tokenAddress: string | null }
-    | { readonly kind: "failed"; readonly reason: string }
-    | { readonly kind: "dismissed" },
+  // The engine's own contract, imported rather than restated: a local copy is
+  // free to fall behind it, and the arm that went missing last time was the one
+  // distinguishing an unconfirmed broadcast from a launch.
+  outcome: Exclude<LaunchFormOutcome, { kind: "expired" }>,
 ): Promise<boolean> {
   try {
     const { resumeAgentAfterUserForm } = await import(

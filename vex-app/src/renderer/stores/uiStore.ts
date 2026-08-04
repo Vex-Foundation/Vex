@@ -22,6 +22,10 @@ import type { ReasoningEffort } from "@shared/schemas/chat.js";
 
 export const MAX_RENDER_LOGS = 500;
 
+/** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
+const MAX_BOOK_SECTION_ENTRIES = 32;
+const MAX_BOOK_SECTION_ID_LENGTH = 32;
+
 /**
  * Shell colour theme. `chronos` = the dark Eclipse desk (Focused · Quiet ·
  * Precise) — currently the only theme; the planned light `celeris` (Bright ·
@@ -208,6 +212,15 @@ interface UiState {
    * every rehydrate in `merge` below because the payload is user-writable.
    */
   readonly prologueVersion: string | null;
+  /**
+   * User's custom order for the session-stage BOOK rail sections. `[]` means
+   * "no custom order — use the default". Stored as an ID LIST, never component
+   * references, so a renamed component cannot invalidate a saved layout, and an
+   * unknown id from an older/newer build is simply dropped by
+   * `resolveBookSectionOrder`. COSMETIC, so it stays in the renderer's persist
+   * whitelist and never crosses IPC (the `prologueVersion` doctrine).
+   */
+  readonly bookSectionOrder: readonly string[];
   readonly setSidebarOpen: (value: boolean) => void;
   readonly setBookOpen: (value: boolean) => void;
   readonly toggleBook: () => void;
@@ -276,6 +289,7 @@ interface UiState {
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly setHideDustBalances: (value: boolean) => void;
+  readonly setBookSectionOrder: (order: readonly string[]) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -303,6 +317,7 @@ export const useUiStore = create<UiState>()(
       reviewModal: "none",
       hideDustBalances: true,
       prologueVersion: null,
+      bookSectionOrder: [],
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setBookOpen: (bookOpen) => set({ bookOpen }),
       toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
@@ -355,6 +370,7 @@ export const useUiStore = create<UiState>()(
       setSigningState: (signingState) => set({ signingState }),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
+      setBookSectionOrder: (bookSectionOrder) => set({ bookSectionOrder }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -363,7 +379,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
@@ -371,6 +387,7 @@ export const useUiStore = create<UiState>()(
         bookOpen: state.bookOpen,
         hideDustBalances: state.hideDustBalances,
         prologueVersion: state.prologueVersion,
+        bookSectionOrder: state.bookSectionOrder,
       }),
       // Expand-only migrations, oldest first:
       //   v2: BOOK now opens by default — force it open once on upgrade from v1
@@ -395,6 +412,10 @@ export const useUiStore = create<UiState>()(
       //       never recorded a completed prologue under this key, and null
       //       resolves to the full play, the same first-impression a fresh
       //       install gets.
+      //   v8: `bookSectionOrder` added (BOOK rail drag-to-reorder) — seed []
+      //       so an upgrading install hydrates into the DEFAULT order rather
+      //       than `undefined`. Expand-only; no existing key is read or
+      //       rewritten.
       migrate: (persisted, version) => {
         if (persisted === null || typeof persisted !== "object") {
           return persisted;
@@ -407,6 +428,9 @@ export const useUiStore = create<UiState>()(
         }
         if (version < 7 && !("prologueVersion" in next)) {
           next = { ...next, prologueVersion: null };
+        }
+        if (version < 8 && !("bookSectionOrder" in next)) {
+          next = { ...next, bookSectionOrder: [] };
         }
         return next;
       },
@@ -437,7 +461,29 @@ export const useUiStore = create<UiState>()(
           incoming.prologueVersion.length <= 64
             ? incoming.prologueVersion
             : null;
-        return { ...current, ...incoming, theme, hideDustBalances, prologueVersion };
+        // Same posture for the rail order, with a HARD BOUND on both the list
+        // and each entry so a hand-written payload cannot make the resolver
+        // walk an unbounded array. Anything off-shape degrades to [] — the
+        // default order, never a crash and never a blank rail.
+        const bookSectionOrder: readonly string[] =
+          Array.isArray(incoming?.bookSectionOrder) &&
+          incoming.bookSectionOrder.length <= MAX_BOOK_SECTION_ENTRIES &&
+          incoming.bookSectionOrder.every(
+            (value) =>
+              typeof value === "string" &&
+              value.length > 0 &&
+              value.length <= MAX_BOOK_SECTION_ID_LENGTH,
+          )
+            ? incoming.bookSectionOrder
+            : [];
+        return {
+          ...current,
+          ...incoming,
+          theme,
+          hideDustBalances,
+          prologueVersion,
+          bookSectionOrder,
+        };
       },
     }
   )

@@ -46,7 +46,18 @@
 
 import { formatUnits } from "viem";
 
-export type AgentActivitySwapStatus = "pending" | "confirmed" | "failed";
+/**
+ * `superseded_unproven` is a member so the "show nothing" decision for it is
+ * DELIBERATE rather than an accident of an unrecognized value. Both resolvers
+ * below display only for `pending` and `confirmed`, so this row renders no
+ * executed and no requested amount — its amounts were never proven, and printing
+ * the quote would report a quote as a settlement.
+ */
+export type AgentActivitySwapStatus =
+  | "pending"
+  | "confirmed"
+  | "failed"
+  | "superseded_unproven";
 
 /**
  * `raw` is a base-10 integer string (e.g. "1500000000000000000"); `decimals`

@@ -22,10 +22,13 @@ import { cardVariants } from "./portfolio-motion.js";
 
 export function PortfolioCard({
   eyebrow,
+  leading,
   trailing,
   children,
 }: {
   readonly eyebrow: string;
+  /** Optional mark rendered before the eyebrow (e.g. a venue's protocol logo). */
+  readonly leading?: ReactNode;
   /** Optional right-aligned header datum (e.g. the wallet count). */
   readonly trailing?: ReactNode;
   readonly children: ReactNode;
@@ -48,7 +51,10 @@ export function PortfolioCard({
       <header className="mb-2.5 flex items-baseline justify-between gap-2">
         {/* Landing eyebrow grammar — the same section-head voice as the
          * session rail's BookBlock. */}
-        <h3 className="vex-eyebrow">{eyebrow}</h3>
+        <span className="flex min-w-0 items-center gap-2">
+          {leading}
+          <h3 className="vex-eyebrow">{eyebrow}</h3>
+        </span>
         {trailing !== undefined ? (
           <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
             {trailing}

@@ -38,6 +38,7 @@ vi.mock("../../../lib/api/portfolio.js", () => ({
   // refresh button. Both are query-cache concerns owned by the api module, so
   // stubbing them here keeps these cases about the card's DISPLAY logic.
   useActivityResolvedInvalidation: () => undefined,
+  useActivityProgressInvalidation: () => undefined,
   usePortfolioRefresh: () => ({ refresh: async () => ({ status: "refreshed" }) }),
 }));
 

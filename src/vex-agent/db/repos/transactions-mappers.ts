@@ -10,6 +10,7 @@
  * this mapping implements.
  */
 
+import logger from "@utils/logger.js";
 import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 
 import { FAILURE_TOOL_PRODUCTS } from "./transactions-failure-tools.js";
@@ -121,6 +122,39 @@ function deriveBridgeDisplayAmounts(
   return { inputAmount: reqIn, outputAmount: reqOut, amountBasis };
 }
 
+/**
+ * WHICH WHOLE SOURCE the projected fee came from (R1 Step 2a). Mapper-internal —
+ * deliberately NOT an IPC DTO field, so no strict output schema moved.
+ *
+ * `in_transaction` — the venue took the fee inside the transaction this row
+ * records (KyberSwap, Jupiter); it has no row of its own.
+ * `separate_leg` — a sibling `bridge_fee`/`swap_fee`/`trench_fee` transfer.
+ * `null` — no fee is claimed: none was charged, none was collected yet, or the
+ * projection FAILED CLOSED on an anomaly.
+ */
+type VexFeeSource = "in_transaction" | "separate_leg" | null;
+
+function toVexFeeSource(raw: unknown): VexFeeSource {
+  return raw === "in_transaction" || raw === "separate_leg" ? raw : null;
+}
+
+/**
+ * The projection reported NO exact fee because the evidence contradicted itself
+ * — two confirmed fee legs on one execution, or an own-row fee beside a
+ * confirmed sibling. Reporting one exact-looking fee while knowingly omitting
+ * another is a money field stating less than the truth; failing closed and
+ * naming the anomaly is the honest outcome.
+ */
+function logVexFeeAnomaly(r: Record<string, unknown>): void {
+  const anomaly = r.vex_fee_anomaly;
+  if (typeof anomaly !== "string") return;
+  logger.warn("agent_scan.fee_leg_multiplicity", {
+    anomaly,
+    protocolExecutionId: Number(r.protocol_execution_id),
+    activityId: Number(r.id),
+  });
+}
+
 /** The Vex integrator fee as projected onto the feed row (migration 050 Part 2). */
 interface VexFeeClaim {
   usdVexFeeEst: string | null;
@@ -148,8 +182,19 @@ interface VexFeeClaim {
  * than blanking all economics: the other `usd*Est` figures are labelled
  * estimates of what the attempt would have cost and remain honest to show.
  */
-function deriveVexFeeClaim(status: string | null, recorded: VexFeeClaim): VexFeeClaim {
-  if (status !== "definitively_failed") return recorded;
+function deriveVexFeeClaim(
+  status: string | null,
+  source: VexFeeSource,
+  recorded: VexFeeClaim,
+): VexFeeClaim {
+  // R1 Step 2c: the withdrawal is correct for an IN-TRANSACTION fee and WRONG
+  // for a separate leg. A `bridge_fee`/`swap_fee`/`trench_fee` transfer is its
+  // OWN confirmed transaction — the money left the wallet — and it necessarily
+  // confirms before the bridge fill outcome exists. Blanking it because the
+  // parent later failed or refunded would tell the user a charge they actually
+  // paid never happened. Its own status is the evidence, and the projection
+  // already admits only a CONFIRMED fee leg.
+  if (status !== "definitively_failed" || source === "separate_leg") return recorded;
   return {
     usdVexFeeEst: null,
     vexFeeTokenAddress: null,
@@ -230,7 +275,9 @@ export function mapRow(r: Record<string, unknown>): TransactionRow {
           num(r.token_in_decimals),
           num(r.token_out_decimals),
         );
-    const vexFee = deriveVexFeeClaim(status, {
+    const vexFeeSource = toVexFeeSource(r.vex_fee_source);
+    logVexFeeAnomaly(r);
+    const vexFee = deriveVexFeeClaim(status, vexFeeSource, {
       usdVexFeeEst: str(r.usd_vex_fee_est),
       vexFeeTokenAddress: str(r.vex_fee_token_address),
       vexFeeTokenSymbol: str(r.vex_fee_token_symbol),

@@ -1,127 +1,42 @@
 /**
- * agent-activity-repair — provider exception logging (FIX5-SPINE, Codex
+ * agent-activity-repair — provider exception scrubbing (FIX5-SPINE, Codex
  * final-review round 4 finding 2).
  *
- * `repairPendingActivity`'s `checkReceiptByHash` catch block used to log a bare
- * `redact(err.message)` — that only redacts KNOWN SECRET SHAPES (keys/JWTs/mnemonics/addresses), not
- * the structured provider internals (URLs, request/response bodies, auth
- * headers) `summarizeProtocolError` exists to strip. It now routes through the
- * canonical `summarizeProtocolError(err).message` boundary. The sibling
- * decoder-throw catch is gone with the settlement decoders themselves — the
- * sweep is status-only and decodes nothing. This
- * is a mocked-dependency unit test (no DB, no signer) — the dedicated W0
- * integration suite (`src/__tests__/integration/agent-scan/repair-sweep.int.test.ts`)
- * covers the sweep's DB-level behavior separately and is not touched here.
+ * The receipt lookup's error text used to be logged as a bare
+ * `redact(err.message)`, which strips only KNOWN SECRET SHAPES
+ * (keys/JWTs/mnemonics/addresses) and not the structured provider internals —
+ * URLs, request/response bodies, auth headers — that `summarizeProtocolError`
+ * exists to remove.
+ *
+ * THE BOUNDARY MOVED, THE CANARY DID NOT. The lookup is now an OBSERVATION
+ * (`observation.ts`), so the scrub happens where the throw is caught, and the
+ * `rpc_error` reason that flows onward is already sanitized: it reaches a log
+ * line, and a reason string is the kind of value that ends up in front of the
+ * agent. So the assertion is made on the observation's own reason, one step
+ * closer to the throw than the old log-line assertion was.
+ *
+ * This is a mocked-dependency unit test (no DB, no signer). The DB-level
+ * behaviour is covered by `src/__tests__/integration/agent-scan/`.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import logger from "@utils/logger.js";
-import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
+const mockGetChains = vi.fn();
+const mockGetChain = vi.fn();
+const mockGetLocalChain = vi.fn();
+const mockGetLocalPublicClient = vi.fn();
 
-const mockListPendingOlderThan = vi.fn();
-const mockConfirmActivityEvent = vi.fn();
-const mockFailActivityEvent = vi.fn();
-const mockTouchLastChecked = vi.fn();
-
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  listPendingOlderThan: (...args: unknown[]) => mockListPendingOlderThan(...args),
-  confirmActivityEvent: (...args: unknown[]) => mockConfirmActivityEvent(...args),
-  failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
-  confirmActivityEventStatusOnly: vi.fn(),
-  touchLastChecked: (...args: unknown[]) => mockTouchLastChecked(...args),
+vi.mock("@tools/khalani/client.js", () => ({ getKhalaniClient: () => ({ getChains: mockGetChains }) }));
+vi.mock("@tools/khalani/chains.js", () => ({ getChain: (...a: unknown[]) => mockGetChain(...a) }));
+vi.mock("@tools/khalani/evm-client.js", () => ({ createDynamicPublicClient: vi.fn() }));
+vi.mock("@tools/evm-chains/registry.js", () => ({
+  getLocalChain: (...a: unknown[]) => mockGetLocalChain(...a),
+}));
+vi.mock("@tools/evm-chains/evm-client.js", () => ({
+  getLocalPublicClient: (...a: unknown[]) => mockGetLocalPublicClient(...a),
 }));
 
-const { repairPendingActivity } = await import("@vex-agent/sync/agent-activity-repair.js");
-
-function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActivityEvent {
-  const base: AgentActivityEvent = {
-    id: 1,
-    protocolExecutionId: 42,
-    eventIndex: 0,
-    eventRole: "swap",
-    recordVersion: 1,
-    kind: "swap",
-    protocol: "kyberswap",
-    chainId: 8453,
-    chainSlug: "base",
-    status: "pending",
-    failureCode: null,
-    failureReason: null,
-    tokenInAddress: "0xIN",
-    tokenInSymbol: "USDC",
-    tokenInDecimals: 6,
-    amountInHuman: "10",
-    amountInRaw: "10000000",
-    tokenOutAddress: "0xOUT",
-    tokenOutSymbol: "WETH",
-    tokenOutDecimals: 18,
-    amountOutHuman: null,
-    amountOutRaw: null,
-    executedAmountInHuman: null,
-    executedAmountInRaw: null,
-    executedAmountOutHuman: null,
-    executedAmountOutRaw: null,
-    usdInEst: null,
-    usdOutEst: null,
-    usdFeeEst: null,
-    usdSource: null,
-    txHash: "0xHASH",
-    fromAddress: "0xFROM",
-    nonce: 1,
-    walletAddress: "0xWALLET",
-    sessionId: "00000000-0000-4000-8000-000000000001",
-    routeProvenance: null,
-    submitAttemptedAt: "2026-07-23T09:00:00.000Z",
-    broadcastAt: "2026-07-23T09:00:01.000Z",
-    confirmedAt: null,
-    lastCheckedAt: null,
-    createdAt: "2026-07-23T09:00:00.000Z",
-    updatedAt: "2026-07-23T09:00:01.000Z",
-    // Columns the live contract requires that this fixture never exercises.
-    tokenIn2Address: null,
-    tokenIn2Symbol: null,
-    tokenIn2Decimals: null,
-    amountIn2Human: null,
-    amountIn2Raw: null,
-    executedAmountIn2Human: null,
-    executedAmountIn2Raw: null,
-    tokenOut2Address: null,
-    tokenOut2Symbol: null,
-    tokenOut2Decimals: null,
-    amountOut2Human: null,
-    amountOut2Raw: null,
-    executedAmountOut2Human: null,
-    executedAmountOut2Raw: null,
-    usdNetworkGasEst: null,
-    usdVenueFeeEst: null,
-    usdDestinationPrepayEst: null,
-    usdVexFeeEst: null,
-    vexFeeTokenAddress: null,
-    vexFeeTokenSymbol: null,
-    vexFeeTokenDecimals: null,
-    vexFeeAmountRaw: null,
-    vexFeeAmountHuman: null,
-    fromChainId: null,
-    fromChainSlug: null,
-    toChainId: null,
-    toChainSlug: null,
-    chainFamily: "eip155",
-    providerOrderId: null,
-    normalizedRoute: null,
-    providerStatus: null,
-    evidenceSource: null,
-    observedAt: null,
-    lastAttemptedAt: null,
-    recentBlockhash: null,
-    lastValidBlockHeight: null,
-    verificationAttempts: 0,
-    lastVerificationReason: null,
-  };
-  // `Object.assign`, not a spread: spreading a `Partial<…>` into an
-  // index-free literal widens every required field to `| undefined`.
-  return Object.assign(base, overrides);
-}
+const { buildProductionRepairDeps } = await import("@vex-agent/sync/agent-activity-repair.js");
 
 // Canary text carrying every shape summarizeProtocolError must strip: a
 // credential-bearing URL, an Authorization/Bearer header, and a JSON body.
@@ -133,34 +48,51 @@ const CANARY_FRAGMENTS = [
   "ROUND_CANARY_9f2a", "Bearer", '"error"', '"code"',
 ];
 
+const ROBINHOOD_CHAIN_ID = 4663;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetChains.mockResolvedValue([]);
+  mockGetChain.mockImplementation(() => {
+    throw new Error("Chain not supported by Khalani");
+  });
+  mockGetLocalChain.mockReturnValue({ id: ROBINHOOD_CHAIN_ID, name: "Robinhood Chain" });
+});
+
 describe("agent-activity-repair — provider error scrubbing (FIX5-SPINE)", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  it("a thrown RPC error becomes a SCRUBBED rpc_error observation, never raw provider text", async () => {
+    mockGetLocalPublicClient.mockReturnValue({
+      request: vi.fn().mockRejectedValue(new Error(CANARY_MESSAGE)),
+    });
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
-  });
+    const observation = await buildProductionRepairDeps().observeTransaction({
+      chainId: ROBINHOOD_CHAIN_ID,
+      txHash: "0xHASH",
+      fromAddress: "0xFROM",
+      nonce: 1,
+    });
 
-  afterEach(() => {
-    warnSpy.mockRestore();
-  });
-
-  it("lookup_failed: a thrown receipt-lookup error is logged through summarizeProtocolError, never raw", async () => {
-    mockListPendingOlderThan.mockResolvedValueOnce([candidateEvent()]);
-    const deps = {
-      checkReceiptByHash: vi.fn().mockRejectedValueOnce(new Error(CANARY_MESSAGE)),
-    };
-
-    const result = await repairPendingActivity(deps);
-    expect(result.stillPending).toBe(1);
-
-    const call = warnSpy.mock.calls.find((c) => c[0] === "agent_activity.repair.lookup_failed");
-    expect(call).toBeDefined();
-    const payload = call?.[1] as Record<string, unknown> | undefined;
-    expect(typeof payload?.error).toBe("string");
+    expect(observation.kind).toBe("rpc_error");
+    const reason = observation.kind === "rpc_error" ? observation.reason : "";
+    expect(typeof reason).toBe("string");
     for (const fragment of CANARY_FRAGMENTS) {
-      expect(payload?.error).not.toContain(fragment);
+      expect(reason).not.toContain(fragment);
     }
   });
 
+  it("an unresolvable chain says so by name, and its message carries no provider text either", async () => {
+    mockGetLocalChain.mockReturnValue(undefined);
+
+    const observation = await buildProductionRepairDeps().observeTransaction({
+      chainId: 999_999,
+      txHash: "0xHASH",
+      fromAddress: "0xFROM",
+      nonce: 1,
+    });
+
+    expect(observation).toEqual({
+      kind: "rpc_error",
+      reason: "no read-only RPC is configured for chain 999999",
+    });
+  });
 });

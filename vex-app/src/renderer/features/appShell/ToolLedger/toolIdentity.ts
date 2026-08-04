@@ -5,13 +5,22 @@
  * this act deal with (a protocol key `resolveProtocolMark` can turn into a
  * mark) and WHAT was it (a human title instead of a raw snake_case symbol).
  *
- * Two signals, in priority order:
+ * Three signals, in priority order:
  *
+ *  0. The tool NAME is itself a dotted protocol `toolId`. Main canonicalizes an
+ *     injected protocol call (`kyberswap__swap__quote`) to `kyberswap.swap.quote`
+ *     before the DTO is built, so that id — the same grammar `execute_tool`
+ *     carries in its args — is the strongest signal there is, and it is read
+ *     BEFORE the prefix rules so `khalani.bridge` is not eaten by
+ *     `startsWith("khalani_")`. A name that still carries `__` is one the live
+ *     catalog could NOT resolve; it is refused a venue outright rather than
+ *     falling through to a prefix match.
  *  1. The TOOL NAME prefix map. The engine's tool vocabulary is a closed set
  *     written by us (`swap_*`, `bridge_*`, `khalani_*`, `wallet_*`,
  *     `chain_read`, `*memory*`, `web_research`…), so a prefix match is proof,
  *     not a guess.
- *  2. For the two GENERIC wrappers (`execute_tool` / `discover_tools`) the
+ *  2. For the GENERIC wrappers (`execute_tool`, `discover_tools`,
+ *     `describe_tools`) the
  *     tool name says nothing — the venue lives in the `toolId` inside the
  *     args. Those args are the SANITIZED, pre-serialized JSON string from the
  *     DTO, capped at 2000 chars, so a large call is TRUNCATED and
@@ -99,6 +108,7 @@ const EXACT_TITLES: Readonly<Record<string, string>> = {
   wallet_track_token: "Track token",
   web_research: "Web research",
   discover_tools: "Tool discovery",
+  describe_tools: "Tool manifests",
 };
 
 /** snake_case / colon symbol → "Sentence case words" (bounded, lossless-ish). */
@@ -109,27 +119,27 @@ function humanizeToolName(name: string): string {
 }
 
 /**
- * Parse the sanitized args JSON and return the `toolId` NAMESPACE (the segment
- * before the first "."). Fail-closed at every step: a truncated payload (the
- * 2000-char DTO cap), an array, a primitive, a missing/empty/non-string
- * `toolId`, or a namespace that is not a plain lower-case identifier all
- * return `null`, so a generic wrapper simply shows no venue.
+ * The `toolId`'s NAMESPACE (the segment before the first "."), or `null` when
+ * it is not a plain lower-case identifier — so an id whose shape we do not
+ * recognise simply shows no venue.
  */
-export function parseToolIdNamespace(toolArgs: string | null): string | null {
-  if (toolArgs === null || toolArgs.length === 0) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(toolArgs);
-  } catch {
-    return null; // truncated or malformed — never guess the tail
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return null;
-  }
-  const toolId = (parsed as Record<string, unknown>)["toolId"];
-  if (typeof toolId !== "string" || toolId.length === 0) return null;
+function namespaceOfToolId(toolId: string | null): string | null {
+  if (toolId === null) return null;
   const namespace = toolId.split(".")[0] ?? "";
   return /^[a-z][a-z0-9_]*$/.test(namespace) ? namespace : null;
+}
+
+/**
+ * Is this string a dotted protocol `toolId` (`kyberswap.swap.quote`)?
+ *
+ * CASE-SENSITIVE on purpose: `dexscreener.tokenPairs` is a real id, and
+ * lower-casing it before the lookup would lose 14 camelCase manifests. Owned
+ * here, beside the resolvers that consume it, and imported by `toolOperation.ts`
+ * — one domain helper, not a second copy.
+ */
+export function isDottedProtocolToolId(name: string): boolean {
+  if (!name.includes(".") || /\s/.test(name)) return false;
+  return name.split(".").every((segment) => segment.length > 0);
 }
 
 /** The `toolId` string inside the sanitized args, or null at any failure. */
@@ -156,8 +166,9 @@ function toolIdAction(toolId: string | null): string | null {
 }
 
 /**
- * Curated titles and categories for the protocols the engine addresses ONLY
- * through `execute_tool` (Trench Express, `tools/protocols/trench/manifests/`).
+ * Curated titles and categories for the protocol acts whose friendly name and
+ * money category the humanizer cannot derive (Trench Express, plus the swap and
+ * bridge acts, whose CATEGORY is what drives the leg line and the glyph).
  * The humanizer would spell these as "Launch request form" / "My launches";
  * these read the way the rest of the card voice does ("Swap" vs "Swap quote",
  * "Transfer · prepare"). Consulted only AFTER `isCuratedProtocol` has proven
@@ -179,37 +190,52 @@ const TOOL_ID_PRESENTATION: Readonly<Record<string, ToolIdPresentation>> = {
   "trench.launch_execute": { action: "Launch", category: "tool" },
   "trench.my_launches": { action: "My launches", category: "tool" },
   "trench.images": { action: "Image locker", category: "tool" },
+
+  // Swap and bridge acts. There is deliberately no `relay.bridge.quote` /
+  // `relay.bridge.execute`: Relay's mutating tool is the two-segment
+  // `relay.bridge` and its quote is `relay.quote.get` — same for Khalani.
+  "kyberswap.swap.quote": { action: "Swap quote", category: "swap" },
+  "kyberswap.swap.execute": { action: "Swap", category: "swap" },
+  "uniswap.swap.quote": { action: "Swap quote", category: "swap" },
+  "uniswap.swap.execute": { action: "Swap", category: "swap" },
+  "solana.swap.quote": { action: "Swap quote", category: "swap" },
+  "solana.swap.execute": { action: "Swap", category: "swap" },
+  "relay.quote.get": { action: "Bridge quote", category: "bridge" },
+  "relay.bridge": { action: "Bridge", category: "bridge" },
+  "khalani.quote.get": { action: "Bridge quote", category: "bridge" },
+  "khalani.bridge": { action: "Bridge", category: "bridge" },
 };
 
 /**
- * Identity for the `execute_tool` / `discover_tools` generic wrappers.
+ * Identity for a PROTOCOL act, addressed by its dotted `toolId` — whether that
+ * id arrived as the canonicalized tool NAME or inside an `execute_tool`
+ * wrapper's args.
  *
- * The namespace comes from UNTRUSTED args text, so it is admitted ONLY when
+ * The namespace may come from UNTRUSTED args text, so it is admitted ONLY when
  * `isCuratedProtocol` recognises it (Codex review round 2 finding 1). Syntactic
  * validity is not provenance: `{"toolId":"kyberswapp.swap"}` would otherwise
  * have earned a "Kyberswapp ·" title and a venue-looking monogram ring, which
  * is a lie about who the agent dealt with. An unknown namespace falls through
- * to the wrapper's own honest generic presentation.
+ * to the caller's own honest generic presentation (`fallbackName`).
  */
-function genericWrapperIdentity(
-  toolName: string,
-  toolArgs: string | null,
+function protocolIdentity(
+  toolId: string | null,
+  fallbackName: string,
+  isDiscovery: boolean,
 ): ToolIdentity {
-  const parsedNamespace = parseToolIdNamespace(toolArgs);
+  const parsedNamespace = namespaceOfToolId(toolId);
   const protocol = isCuratedProtocol(parsedNamespace) ? parsedNamespace : null;
   const label = venueLabel(protocol);
-  const toolId = parseToolId(toolArgs);
   const curated = toolId === null ? undefined : TOOL_ID_PRESENTATION[toolId];
   const action = curated?.action ?? toolIdAction(toolId);
-  const isDiscovery = toolName === "discover_tools";
   const category: ToolCategory = isDiscovery
     ? "discovery"
     : (curated?.category ?? "tool");
   if (label === null) {
-    // Fail-closed: no proven venue → the wrapper's own honest name.
+    // Fail-closed: no proven venue → the caller's own honest name.
     return {
       protocol: null,
-      title: EXACT_TITLES[toolName] ?? humanizeToolName(toolName),
+      title: EXACT_TITLES[fallbackName] ?? humanizeToolName(fallbackName),
       category,
     };
   }
@@ -229,10 +255,38 @@ export function resolveToolIdentity(
   toolName: string,
   toolArgs: string | null,
 ): ToolIdentity {
+  // A dotted name IS a protocol toolId (main canonicalizes the injected wire
+  // name there; `execute_tool` still carries its target in the args). Read
+  // BEFORE the lower-casing below: `dexscreener.tokenPairs` is a real id and
+  // lower-casing it would lose the map.
+  if (isDottedProtocolToolId(toolName)) {
+    return protocolIdentity(toolName, toolName, false);
+  }
+
+  // A name that STILL carries `__` after main-side canonicalization is, by
+  // definition, one the live catalog could not resolve — an evicted, stale or
+  // hallucinated id. It must NOT fall through to the legacy prefix rules below,
+  // which would hand `khalani__unknown` the Khalani mark and
+  // `dexscreener__unknown` the DexScreener one on the strength of a prefix
+  // alone. Unknown tool, honest generic presentation.
+  if (toolName.includes("__")) {
+    return { protocol: null, title: humanizeToolName(toolName), category: "tool" };
+  }
+
   const name = toolName.toLowerCase();
 
-  if (name === "execute_tool" || name === "discover_tools") {
-    return genericWrapperIdentity(name, toolArgs);
+  // `describe_tools` fetches the FULL manifests for ids a ranked discovery
+  // already returned, so it is the same act family as `discover_tools` and is
+  // filed under DISCOVERY rather than as a generic tool. Like the others it
+  // names no venue: its args carry a LIST of toolIds, potentially spanning
+  // several namespaces, and one borrowed logo would misreport the rest.
+  if (
+    name === "execute_tool" ||
+    name === "discover_tools" ||
+    name === "describe_tools"
+  ) {
+    const isDiscovery = name === "discover_tools" || name === "describe_tools";
+    return protocolIdentity(parseToolId(toolArgs), name, isDiscovery);
   }
 
   if (name.startsWith("swap_")) {

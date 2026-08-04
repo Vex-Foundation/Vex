@@ -220,6 +220,30 @@ export function useActivityResolvedInvalidation(): void {
   }, [queryClient]);
 }
 
+/**
+ * OD-7 — the PENDING half of the same signal.
+ *
+ * `useActivityResolvedInvalidation` above only fires when a row terminalizes, so
+ * everything that happened to a pending row before that — "it is in the mempool,
+ * checked 3 s ago", a reason that changed, a stall clearing — reached the screen
+ * no sooner than the 60 s poll. That is what made a pending launch look frozen
+ * while the lane was in fact checking it every 5 seconds.
+ *
+ * Same degradation posture as its sibling: an absent bridge falls back to the
+ * poll rather than throwing. This is an optimisation channel, not a correctness
+ * boundary — the feed is already correct without it, just slower.
+ */
+export function useActivityProgressInvalidation(): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const subscribe = window.vex?.portfolio?.onActivityProgress;
+    if (typeof subscribe !== "function") return;
+    return subscribe(() => {
+      void queryClient.invalidateQueries({ queryKey: portfolioKeys.all });
+    });
+  }, [queryClient]);
+}
+
 export function useTokenHistoryInfinite(
   identity: TokenHistoryIdentity | null,
 ): UseInfiniteQueryResult<

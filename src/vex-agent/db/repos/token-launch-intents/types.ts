@@ -88,6 +88,12 @@ export interface TokenLaunchIntent {
   missionRunId: string | null;
   /** `messages.id` of the appended tool-result row — stamped in the SAME transaction as that row. */
   resultMessageId: number | null;
+  /**
+   * When a resumed turn COMPLETED for this form. The only thing that ends the
+   * continuation's eligibility — `resultMessageId` says the transcript has the
+   * answer, which is true long before the turn that answer exists for has run.
+   */
+  resumeConsumedAt: string | null;
   txHash: string | null;
   tokenAddress: string | null;
   failureReason: string | null;
@@ -182,7 +188,8 @@ export const SELECT_COLUMNS =
   "intent_id, session_id, origin, status, chain_id, wallet_address, " +
   "name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals, " +
   "authorization_id, authorization_kind, authorized_at, " +
-  "tool_call_id, mission_run_id, result_message_id, tx_hash, token_address, " +
+  "tool_call_id, mission_run_id, result_message_id, resume_consumed_at, " +
+  "tx_hash, token_address, " +
   "failure_reason, authorization_json, expires_at, consumed_at, cancelled_at, broadcast_at, " +
   "confirmed_at, created_at";
 
@@ -207,6 +214,7 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
     toolCallId: (r.tool_call_id as string | null) ?? null,
     missionRunId: (r.mission_run_id as string | null) ?? null,
     resultMessageId: nullableInt(r.result_message_id),
+    resumeConsumedAt: toIsoOrNull(r.resume_consumed_at as string | Date | null),
     txHash: (r.tx_hash as string | null) ?? null,
     tokenAddress: (r.token_address as string | null) ?? null,
     failureReason: (r.failure_reason as string | null) ?? null,

@@ -10,6 +10,13 @@
  * `reasoning`, `durationMs`, and `displayStatus` — five of them today, each
  * with its own fail-to-null schema. The `message_type` top-level column remains the
  * discriminator for row kind.
+ *
+ * TOOL NAMES ARE CANONICALIZED HERE. A discovered protocol manifest is called
+ * by the model under its OpenAI-legal wire name (`kyberswap__swap__quote`), and
+ * the persisted row keeps that name. The DTO carries the dotted `toolId` the
+ * human-facing surfaces speak (`canonicalToolName`); a name the live catalog
+ * cannot resolve is passed through verbatim, so nothing can borrow a venue's
+ * identity downstream. No schema field and no bound changes.
  */
 
 import {
@@ -26,6 +33,7 @@ import {
   type ToolCallDisplay,
   type ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
+import { canonicalToolName } from "../../agent/tool-name-canonical.js";
 import { sanitizeToolArgs } from "./redaction.js";
 
 export interface MessageRow {
@@ -86,9 +94,9 @@ function extractToolName(raw: unknown): string | null {
   const ns = typeof rec["namespace"] === "string" ? rec["namespace"] : null;
   const cmd = typeof rec["command"] === "string" ? rec["command"] : null;
   if (ns !== null && cmd !== null) return `${ns}:${cmd}`;
-  if (cmd !== null) return cmd;
+  if (cmd !== null) return canonicalToolName(cmd);
   const name = typeof rec["name"] === "string" ? rec["name"] : null;
-  return name;
+  return name === null ? null : canonicalToolName(name);
 }
 
 function hasToolCalls(raw: unknown): boolean {
@@ -115,11 +123,13 @@ function extractToolCalls(raw: unknown): ToolCallDisplay[] | null {
     const ns = str(rec["namespace"]);
     const cmd = str(rec["command"]);
     const name = str(rec["name"]);
-    const toolName = ns !== null && cmd !== null ? `${ns}:${cmd}` : (cmd ?? name);
-    if (id === null || toolName === null) continue; // skip malformed — no coercion
+    const rawToolName = ns !== null && cmd !== null ? `${ns}:${cmd}` : (cmd ?? name);
+    if (id === null || rawToolName === null) continue; // skip malformed — no coercion
     out.push({
       toolCallId: id.slice(0, 200),
-      toolName: toolName.slice(0, 120),
+      // Canonical BEFORE the cap: the dotted id is what the renderer and the
+      // Markdown export read, and it is never longer than the wire name.
+      toolName: canonicalToolName(rawToolName).slice(0, 120),
       toolArgs: sanitizeToolArgs(rec["args"]),
     });
   }

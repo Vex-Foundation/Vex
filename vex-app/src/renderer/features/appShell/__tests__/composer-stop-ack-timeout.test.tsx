@@ -55,7 +55,10 @@ const SESSION = "00000000-0000-4000-8000-000000000001";
 /** A lease that stays active forever — the stuck-slice case. */
 function liveRuntimeState() {
   return {
-    data: { ok: true, data: { sessionId: SESSION, status: null, leaseActive: true } },
+    data: {
+      ok: true,
+      data: { sessionId: SESSION, status: null, leaseActive: true, stoppable: true },
+    },
   };
 }
 
@@ -140,7 +143,10 @@ describe("stop acknowledgment time-box", () => {
 
     // The lease drops — the stop landed — before the box expires.
     mockUseRuntimeState.mockReturnValue({
-      data: { ok: true, data: { sessionId: SESSION, status: null, leaseActive: false } },
+      data: {
+        ok: true,
+        data: { sessionId: SESSION, status: null, leaseActive: false, stoppable: false },
+      },
     });
     await act(async () => { rerender(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });

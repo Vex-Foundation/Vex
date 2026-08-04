@@ -27,6 +27,7 @@ import {
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 import type { Address } from "viem";
 import type { ToolResult } from "../../../../types.js";
@@ -107,6 +108,13 @@ export async function runStagedLoop(x: StagedLoopInput): Promise<ToolResult> {
 
       if (outcome.kind === "ambiguous") {
         logger.info("trench.trade_execute.ambiguous", { id: eventRow.id, stage: outcome.stage, txHash: outcome.txHash });
+        // Migration 067: name WHICH ambiguity. "The submit itself never came
+        // back" and "we submitted but never saw the receipt" are different jobs
+        // for the fallback and produced an identical row before 067.
+        await noteHandlerPendingReason(
+          TOOL_ID, eventRow.id,
+          outcome.stage === "send" ? "broadcast_ambiguous_send" : "broadcast_ambiguous_confirm",
+        );
         // Aborts the fee row too (it sits at index `plans.length`): a trade whose
         // outcome is unknown must never be charged for.
         await abortRemaining(executionId, i + 1, `earlier ${plan.eventRole} ambiguous`);

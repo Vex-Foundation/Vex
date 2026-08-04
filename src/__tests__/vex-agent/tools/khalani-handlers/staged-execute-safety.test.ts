@@ -142,7 +142,9 @@ const mockMarkBroadcastAccepted = vi.fn();
 const mockConfirmActivityEvent = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockAbortPlannedEvents = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+const mockNotePendingReason = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
+const mockNoteBridgeProviderObservation = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
+vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   createBridgeActivityIntent: (...a: unknown[]) => mockCreateBridgeActivityIntent(...a),
   createBridgePreBroadcastFailure: (...a: unknown[]) => mockCreateBridgePreBroadcastFailure(...a),
   attachProviderOrderId: (...a: unknown[]) => mockAttachProviderOrderId(...a),
@@ -153,6 +155,12 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: (...a: unknown[]) => mockConfirmActivityEvent(...a),
   failActivityEvent: (...a: unknown[]) => mockFailActivityEvent(...a),
   abortPlannedEvents: (...a: unknown[]) => mockAbortPlannedEvents(...a),
+  // R1 Step 3b/4 primitives. `provenLegAmounts` is the REAL pure function — the
+  // point of the confirm assertions below is WHICH amounts a leg may claim, so
+  // stubbing the evidence matrix would test the stub.
+  provenLegAmounts: (await importOriginal<Record<string, unknown>>()).provenLegAmounts,
+  notePendingReason: (...a: unknown[]) => mockNotePendingReason(...a),
+  noteBridgeProviderObservation: (...a: unknown[]) => mockNoteBridgeProviderObservation(...a),
 }));
 
 const mockRevealRelayRoute = vi.fn();

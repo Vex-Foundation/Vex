@@ -22,15 +22,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 
-const mockListPendingOlderThan = vi.fn();
+const mockClaimDuePendingEvm = vi.fn();
 const mockFailActivityEvent = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  listPendingOlderThan: (...args: unknown[]) => mockListPendingOlderThan(...args),
+  claimDuePendingEvm: (...args: unknown[]) => mockClaimDuePendingEvm(...args),
   confirmActivityEvent: vi.fn(),
   confirmActivityEventStatusOnly: vi.fn(),
   failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
   touchLastChecked: vi.fn(),
+  clearVerificationStall: vi.fn(),
+  notePendingReason: vi.fn(),
+  noteNonInclusionObserved: vi.fn(),
+  clearNonInclusionClock: vi.fn(),
+  markSupersededUnproven: vi.fn(),
+  releaseEvmClaim: vi.fn(),
+  EVM_CLAIM_LIMIT: 25,
+  nextEvmCheckInMs: () => 5_000,
+  EVM_CLAIM_LEASE_MS: 30_000,
+  NONINCLUSION_TERMINALIZE_AFTER_MS: 600_000,
 }));
 
 vi.mock("@utils/logger.js", () => {
@@ -77,14 +87,29 @@ function pendingRow(eventRole: AgentActivityEvent["eventRole"]): AgentActivityEv
     // Columns the live contract requires that this fixture never exercises.
     verificationAttempts: 0,
     lastVerificationReason: null,
+  confirmationSource: null,
+  settlementSource: null,
+  pendingReason: null,
+  providerStatusObservedAt: null,
+  // The pending-fallback lane's own state (migration 068) — untouched by
+  // this fixture's row, which is exactly what NULL says.
+  evmClaimLeaseUntil: null,
+  evmClaimToken: null,
+  lastVerificationIncrementAt: null,
+  firstNonInclusionObservedAt: null,
+  settlementDecodeVersion: null,
   };
 }
 
 /** Run one sweep over a single reverted row of the given role, return its reason. */
 async function sweepReasonFor(eventRole: AgentActivityEvent["eventRole"]): Promise<string> {
-  mockListPendingOlderThan.mockResolvedValueOnce([pendingRow(eventRole)]);
+  mockClaimDuePendingEvm.mockResolvedValueOnce({
+    claimed: [{ row: pendingRow(eventRole), claimToken: "3b9a0000-0000-4000-8000-000000000009" }],
+    overflowDue: 0,
+    oldestUnclaimedWaitMs: null,
+  });
   const result = await repairPendingActivity({
-    checkReceiptByHash: vi.fn().mockResolvedValueOnce({ status: "reverted" }),
+    observeTransaction: vi.fn().mockResolvedValue({ kind: "mined", status: "reverted" }),
   });
   expect(result.failed).toBe(1);
   const call = mockFailActivityEvent.mock.calls.at(-1);

@@ -12,23 +12,104 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  parseToolIdNamespace,
+  isDottedProtocolToolId,
   resolveToolIdentity,
 } from "../ToolLedger/toolIdentity.js";
 
-describe("parseToolIdNamespace — fail-closed", () => {
-  it("reads the namespace before the first dot", () => {
-    expect(parseToolIdNamespace('{"toolId":"kyberswap.swap.quote"}')).toBe(
-      "kyberswap",
+/**
+ * Main normalizes an injected protocol call from `kyberswap__swap__quote` to
+ * its dotted `toolId` before the DTO is built, so the renderer now meets the
+ * dotted form as the tool NAME — the same grammar its `execute_tool` path
+ * already speaks. These blocks pin that lane, and the fail-closed guard for a
+ * name main could NOT canonicalize.
+ */
+describe("isDottedProtocolToolId", () => {
+  it.each(["kyberswap.swap.quote", "relay.bridge", "dexscreener.tokenPairs"])(
+    "accepts %s",
+    (id) => {
+      expect(isDottedProtocolToolId(id)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["no dot", "execute_tool"],
+    ["an empty segment", "kyberswap..quote"],
+    ["a trailing dot", "kyberswap."],
+    ["a leading dot", ".quote"],
+    ["whitespace", "kyberswap.swap quote"],
+    ["empty", ""],
+  ])("rejects %s", (_label, id) => {
+    expect(isDottedProtocolToolId(id)).toBe(false);
+  });
+});
+
+describe("resolveToolIdentity — dotted protocol toolIds (the canonicalized lane)", () => {
+  it.each([
+    ["kyberswap.swap.quote", "kyberswap", "KyberSwap · Swap quote", "swap"],
+    ["kyberswap.swap.execute", "kyberswap", "KyberSwap · Swap", "swap"],
+    ["uniswap.swap.execute", "uniswap", "Uniswap · Swap", "swap"],
+    ["solana.swap.quote", "solana", "Solana · Swap quote", "swap"],
+    ["relay.quote.get", "relay", "Relay · Bridge quote", "bridge"],
+    ["relay.bridge", "relay", "Relay · Bridge", "bridge"],
+    ["khalani.quote.get", "khalani", "Khalani · Bridge quote", "bridge"],
+    ["trench.launch_execute", "trench", "Trench Express · Launch", "tool"],
+    ["pendle.markets", "pendle", "Pendle · Markets", "tool"],
+    ["virtuals.agents.list", "virtuals", "Virtuals · Agents list", "tool"],
+  ])("resolves %s to the %s mark", (toolId, protocol, title, category) => {
+    expect(resolveToolIdentity(toolId, null)).toEqual({ protocol, title, category });
+  });
+
+  it("gives khalani.bridge the BRIDGE category — the `khalani_` prefix rule must not eat it", () => {
+    expect(resolveToolIdentity("khalani.bridge", null)).toEqual({
+      protocol: "khalani",
+      title: "Khalani · Bridge",
+      category: "bridge",
+    });
+  });
+
+  it("stops collapsing distinct dexscreener acts into one title", () => {
+    const search = resolveToolIdentity("dexscreener.search", null);
+    const trending = resolveToolIdentity("dexscreener.trending", null);
+    expect(search.protocol).toBe("dexscreener");
+    expect(trending.protocol).toBe("dexscreener");
+    expect(search.title).not.toBe(trending.title);
+  });
+
+  it("does not categorise a protocol SEARCH as a web act", () => {
+    expect(resolveToolIdentity("trench.search", null).category).toBe("market");
+    expect(resolveToolIdentity("solana.predict.search", null).category).not.toBe("web");
+  });
+
+  it("preserves camelCase — an incidental toLowerCase would lose the map", () => {
+    expect(resolveToolIdentity("dexscreener.tokenPairs", null).protocol).toBe(
+      "dexscreener",
     );
-    expect(parseToolIdNamespace('{"toolId":"solana.swap.quote"}')).toBe("solana");
   });
 
-  it("returns null for TRUNCATED JSON (the 2000-char DTO cap) — never guesses the tail", () => {
-    const truncated = '{"toolId":"kyberswap.swap.quote","params":{"amount":"10';
-    expect(parseToolIdNamespace(truncated)).toBeNull();
+  it("gives an UNCURATED dotted namespace no venue at all", () => {
+    const identity = resolveToolIdentity("kyberswapp.swap.quote", null);
+    expect(identity.protocol).toBeNull();
+    expect(identity.title).toBe("Kyberswapp swap quote");
   });
 
+  it.each(["khalani__unknown", "dexscreener__unknown", "kyberswapp__swap__quote"])(
+    "refuses a venue to %s — a name main could not canonicalize is unknown, not branded",
+    (name) => {
+      const identity = resolveToolIdentity(name, null);
+      expect(identity.protocol).toBeNull();
+      expect(identity.category).toBe("tool");
+    },
+  );
+});
+
+/**
+ * The wrapper's namespace read is fail-closed at every step. Asserted through
+ * the resolver itself (the parser is an implementation detail): a truncated
+ * payload — the 2000-char DTO cap makes a big call unparseable — an array, a
+ * primitive, a missing/empty/non-string `toolId`, or a namespace that is not a
+ * plain lower-case identifier must all yield NO venue at all.
+ */
+describe("resolveToolIdentity — the wrapper's namespace read is fail-closed", () => {
   it.each([
     ["null args", null],
     ["empty string", ""],
@@ -39,8 +120,11 @@ describe("parseToolIdNamespace — fail-closed", () => {
     ["non-string toolId", '{"toolId":42}'],
     ["empty toolId", '{"toolId":""}'],
     ["a hostile namespace", '{"toolId":"../../etc.passwd"}'],
-  ])("returns null for %s", (_label, args) => {
-    expect(parseToolIdNamespace(args)).toBeNull();
+    ["TRUNCATED JSON", '{"toolId":"kyberswap.swap.quote","params":{"amount":"10'],
+  ])("gives NO venue for %s", (_label, args) => {
+    const identity = resolveToolIdentity("execute_tool", args);
+    expect(identity.protocol).toBeNull();
+    expect(identity.title).toBe("Execute tool");
   });
 });
 
@@ -117,11 +201,15 @@ describe("resolveToolIdentity — named tools (prefix map is primary)", () => {
 });
 
 describe("resolveToolIdentity — generic wrappers", () => {
+  // The curated presentation map is shared with the dotted lane, so the legacy
+  // wrapper now reports the same (more accurate) `swap` category the dotted
+  // `kyberswap.swap.quote` does. Category is presentational — glyph and a data
+  // attribute; `resolveToolOperation`, not the category, gates the money legs.
   it("derives the venue from the toolId namespace", () => {
     expect(resolveToolIdentity("execute_tool", '{"toolId":"kyberswap.swap.quote"}')).toEqual({
       protocol: "kyberswap",
       title: "KyberSwap · Swap quote",
-      category: "tool",
+      category: "swap",
     });
   });
 
@@ -190,5 +278,26 @@ describe("resolveToolIdentity — generic wrappers", () => {
       title: "Tool discovery",
       category: "discovery",
     });
+  });
+
+  // `describe_tools` fetches the FULL manifests for ids a ranked discovery
+  // already returned, so it belongs to the same act family. The CATEGORY is the
+  // assertion that matters: a title row alone would still leave it filed as a
+  // generic "tool" and it would lose the discovery glyph.
+  it("files describe_tools under DISCOVERY, not as a generic tool", () => {
+    expect(resolveToolIdentity("describe_tools", null)).toEqual({
+      protocol: null,
+      title: "Tool manifests",
+      category: "discovery",
+    });
+  });
+
+  it("keeps describe_tools venue-less even when its args name toolIds", () => {
+    const identity = resolveToolIdentity(
+      "describe_tools",
+      '{"toolIds":["kyberswap.swap.quote","relay.bridge"]}',
+    );
+    expect(identity.protocol).toBeNull();
+    expect(identity.category).toBe("discovery");
   });
 });

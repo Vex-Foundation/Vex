@@ -19,7 +19,10 @@
 
 import { formatEther } from "viem";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
-import { getAwaitingForSession } from "@vex-agent/db/repos/token-launch-intents.js";
+import {
+  getAwaitingForSession,
+  listInFlightForWallets,
+} from "@vex-agent/db/repos/token-launch-intents.js";
 import type {
   AwaitingLaunchFormDto,
   LaunchedTokenDto,
@@ -125,7 +128,20 @@ export async function previewLaunch(input: {
 }
 
 /**
- * The user's own launches, mapped to the renderer DTO.
+ * The user's own launches — PROVEN and IN-FLIGHT, merged (OD-3).
+ *
+ * WHY THE MERGE EXISTS. `launched_tokens` is written only once a token identity
+ * is proven, so a launch that was broadcast and then stalled appeared NOWHERE:
+ * the owner watched a launch he had paid for vanish from his own list, with
+ * nothing to tell him why. The in-flight half comes from the intent table, which
+ * has the name and symbol he typed and the hash he can look up.
+ *
+ * IT IS A READ-SIDE MERGE, AND ONLY THAT. No `launched_tokens` row is ever
+ * written for an unproven launch — that table is the durable identity index, and
+ * a token that may not exist must never enter it.
+ *
+ * IN-FLIGHT ROWS COME FIRST: they are the ones the user is waiting on, and the
+ * proven ones are already history.
  *
  * `initialBuyRaw` and `initialBuyDecimals` travel TOGETHER and are null together
  * — a raw amount without its decimals is unreadable, and pairing a null amount
@@ -136,8 +152,32 @@ export async function listMyLaunches(
   chainId: number,
   limit: number,
 ): Promise<LaunchedTokenDto[]> {
-  const rows = await launchedTokens.listForWallets({ walletAddresses, chainId, limit });
-  return rows.map((row) => ({
+  const [proven, inFlight] = await Promise.all([
+    launchedTokens.listForWallets({ walletAddresses, chainId, limit }),
+    listInFlightForWallets({ walletAddresses, chainId, limit }),
+  ]);
+
+  const inFlightRows: LaunchedTokenDto[] = inFlight
+    // A launch with no hash was never broadcast: there is nothing to show and
+    // nothing to look up, and listing it would invent a launch that never left.
+    .filter((intent) => intent.txHash !== null)
+    .map((intent) => ({
+      lifecycle: "in_flight",
+      // NULL, never "": the row must be structurally unable to render as a token.
+      tokenAddress: null,
+      name: intent.name,
+      symbol: intent.symbol,
+      createTxHash: intent.txHash as string,
+      chainId: intent.chainId,
+      createdAt: intent.broadcastAt ?? intent.createdAt,
+      // The AUTHORIZED native prebuy, straight off the intent. Nothing here was
+      // decoded from a receipt, so no other amount may be shown.
+      initialBuyRaw: intent.prebuyRaw,
+      initialBuyDecimals: intent.prebuyRaw === null ? null : intent.prebuyDecimals,
+    }));
+
+  const provenRows: LaunchedTokenDto[] = proven.map((row) => ({
+    lifecycle: "launched",
     tokenAddress: row.tokenAddress,
     name: row.name,
     symbol: row.symbol,
@@ -147,6 +187,8 @@ export async function listMyLaunches(
     initialBuyRaw: row.initialBuyRaw,
     initialBuyDecimals: row.initialBuyRaw === null ? null : row.initialBuyDecimals,
   }));
+
+  return [...inFlightRows, ...provenRows].slice(0, limit);
 }
 
 /**

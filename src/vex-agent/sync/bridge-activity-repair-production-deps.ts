@@ -55,8 +55,31 @@ function toSweepRow(r: Record<string, unknown>): BridgeSweepRow {
     normalizedRoute: r.normalized_route === null || r.normalized_route === undefined ? null : String(r.normalized_route),
     lastAttemptedAt: toIsoOrNull(r.last_attempted_at),
     createdAt: toIso(r.created_at),
+    lastVerificationReason:
+      r.last_verification_reason === null || r.last_verification_reason === undefined
+        ? null
+        : String(r.last_verification_reason),
   };
 }
+
+/**
+ * The per-row due gate, phased on the row's IMMUTABLE `created_at`.
+ *
+ * `last_attempted_at` decides only WHETHER the row is due now; the PHASE comes
+ * from row age, because every attempt rewrites `last_attempted_at` and a phase
+ * computed from it would reset on every poll and never advance.
+ *
+ * A row never attempted is due immediately — the gate slows repeats, it does not
+ * delay a first look.
+ */
+const DUE_INTERVAL_SQL = `(
+  lg.last_attempted_at IS NULL
+  OR lg.last_attempted_at <= NOW() - (
+       CASE WHEN NOW() - lg.created_at < interval '5 minutes'  THEN interval '30 seconds'
+            WHEN NOW() - lg.created_at < interval '15 minutes' THEN interval '60 seconds'
+            ELSE interval '5 minutes'
+       END)
+)`;
 
 function toIso(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
@@ -95,22 +118,34 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
   return {
     listSweepCandidates: async (limit) => {
       const { query } = await import("@vex-agent/db/client.js");
+      // ATOMIC CLAIM (see the port's doc): the DUE rows are selected, locked
+      // with SKIP LOCKED and stamped in ONE statement, so the four drivers of
+      // this sweep take disjoint batches instead of all polling the same rows.
       // The logical row + its sibling `bridge_deposit` staged hash (R6 deposit
       // correlation), fair-scheduled oldest-touched first.
       const rows = await query<Record<string, unknown>>(
-        `SELECT lg.*,
+        `WITH candidates AS (
+           SELECT lg.id AS candidate_id
+             FROM agent_activity lg
+            WHERE lg.event_role = 'bridge_fill_expected'
+              AND lg.status = 'pending'
+              AND lg.provider_order_id IS NOT NULL
+              AND ${DUE_INTERVAL_SQL}
+            ORDER BY COALESCE(lg.last_attempted_at, lg.created_at) ASC, lg.id ASC
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED
+         )
+         UPDATE agent_activity lg
+            SET last_attempted_at = NOW(), updated_at = NOW()
+           FROM candidates c
+          WHERE lg.id = c.candidate_id
+      RETURNING lg.*,
                 (SELECT dep.tx_hash FROM agent_activity dep
                   WHERE dep.protocol_execution_id = lg.protocol_execution_id
                     AND dep.event_role = 'bridge_deposit'
                     AND dep.tx_hash IS NOT NULL
                   ORDER BY dep.event_index ASC
-                  LIMIT 1) AS deposit_tx_hash
-           FROM agent_activity lg
-          WHERE lg.event_role = 'bridge_fill_expected'
-            AND lg.status = 'pending'
-            AND lg.provider_order_id IS NOT NULL
-          ORDER BY COALESCE(lg.last_attempted_at, lg.created_at) ASC, lg.id ASC
-          LIMIT $1`,
+                  LIMIT 1) AS deposit_tx_hash`,
         [limit],
       );
       return rows.map(toSweepRow);
@@ -119,22 +154,41 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
     listOrderIdRecoveryCandidates: async (limit) => {
       const { query } = await import("@vex-agent/db/client.js");
       // Pending Khalani logical rows with NO order id yet, whose sibling
-      // `bridge_deposit` leg has a staged hash (the crash-after-broadcast window).
+      // `bridge_deposit` leg has a staged hash (the crash-after-broadcast
+      // window). Same atomic claim as the main queue: this queue also performs a
+      // provider lookup and an attach CAS, so two drivers reaching it
+      // concurrently would duplicate both.
       const rows = await query<Record<string, unknown>>(
-        `SELECT lg.id AS logical_row_id, lg.protocol_execution_id AS execution_id, lg.protocol AS protocol,
-                lg.wallet_address AS wallet_address, dep.tx_hash AS deposit_tx_hash,
-                lg.from_chain_id AS from_chain_id, lg.to_chain_id AS to_chain_id
-           FROM agent_activity lg
-           JOIN agent_activity dep
-             ON dep.protocol_execution_id = lg.protocol_execution_id
-            AND dep.event_role = 'bridge_deposit'
-            AND dep.tx_hash IS NOT NULL
-          WHERE lg.event_role = 'bridge_fill_expected'
-            AND lg.status = 'pending'
-            AND lg.provider_order_id IS NULL
-            AND lg.protocol = 'khalani'
-          ORDER BY COALESCE(lg.last_attempted_at, lg.created_at) ASC, lg.protocol_execution_id ASC
-          LIMIT $1`,
+        `WITH candidates AS (
+           SELECT lg.id AS candidate_id
+             FROM agent_activity lg
+            WHERE lg.event_role = 'bridge_fill_expected'
+              AND lg.status = 'pending'
+              AND lg.provider_order_id IS NULL
+              AND lg.protocol = 'khalani'
+              AND EXISTS (
+                SELECT 1 FROM agent_activity dep
+                 WHERE dep.protocol_execution_id = lg.protocol_execution_id
+                   AND dep.event_role = 'bridge_deposit'
+                   AND dep.tx_hash IS NOT NULL)
+              AND ${DUE_INTERVAL_SQL}
+            ORDER BY COALESCE(lg.last_attempted_at, lg.created_at) ASC, lg.id ASC
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED
+         )
+         UPDATE agent_activity lg
+            SET last_attempted_at = NOW(), updated_at = NOW()
+           FROM candidates c
+          WHERE lg.id = c.candidate_id
+      RETURNING lg.id AS logical_row_id, lg.protocol_execution_id AS execution_id, lg.protocol AS protocol,
+                lg.wallet_address AS wallet_address,
+                (SELECT dep.tx_hash FROM agent_activity dep
+                  WHERE dep.protocol_execution_id = lg.protocol_execution_id
+                    AND dep.event_role = 'bridge_deposit'
+                    AND dep.tx_hash IS NOT NULL
+                  ORDER BY dep.event_index ASC
+                  LIMIT 1) AS deposit_tx_hash,
+                lg.from_chain_id AS from_chain_id, lg.to_chain_id AS to_chain_id`,
         [limit],
       );
       return rows.map((r) => ({
@@ -192,8 +246,22 @@ export function buildProductionBridgeRepairDeps(): BridgeRepairDeps {
 
     touchChecked: async (executionId, providerStatus) => {
       const { execute } = await import("@vex-agent/db/client.js");
+      // `provider_status_observed_at` (migration 067) MOVES HERE TOO, in the same
+      // statement that writes the status it timestamps. Without it the ordering
+      // guard on `noteBridgeProviderObservation` is one-sided: this lane's newer
+      // observation would leave the clock untouched, and an OLDER handler
+      // observation arriving afterwards would still look fresh and win.
+      //
+      // It cannot be `last_checked_at`: that column has three other writers
+      // (`touchAttempt` aside, `touchLastChecked` and `clearVerificationStall`),
+      // so a verification write landing between two provider observations would
+      // push it past the newer one and the guard would reject the FRESHER
+      // provider status as stale. Ordering provider-against-provider needs a
+      // provider-only clock.
       await execute(
-        `UPDATE agent_activity SET last_checked_at = NOW(), provider_status = $2, updated_at = NOW()
+        `UPDATE agent_activity
+            SET last_checked_at = NOW(), provider_status = $2,
+                provider_status_observed_at = NOW(), updated_at = NOW()
           WHERE protocol_execution_id = $1 AND event_role = 'bridge_fill_expected' AND status = 'pending'`,
         [executionId, providerStatus],
       );

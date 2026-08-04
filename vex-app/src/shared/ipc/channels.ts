@@ -482,6 +482,12 @@ export const EV = {
    */
   portfolio: {
     activityResolved: "vex:event:portfolio:activityResolved",
+    /**
+     * A pending row was OBSERVED and is STILL pending (OD-7). Same ids-only
+     * posture; it additionally carries the observation's reason and the row's
+     * CURRENT check interval, neither of which the renderer can derive.
+     */
+    activityProgress: "vex:event:portfolio:activityProgress",
   },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",

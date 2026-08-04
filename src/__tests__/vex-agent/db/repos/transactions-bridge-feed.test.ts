@@ -63,7 +63,14 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
     // (the canonical bridge_fill_expected row included) — NO LIMIT (OWNER RULE).
     expect(activityHalf).toContain("jsonb_agg(jsonb_build_object");
     expect(activityHalf).toContain("leg.protocol_execution_id = agent_activity.protocol_execution_id");
-    expect(activityHalf).not.toMatch(/jsonb_agg[\s\S]*LIMIT/);
+    // Scoped to the legs subquery ITSELF: the half legitimately contains other
+    // LIMITs now (the Vex-fee LATERAL picks one leg), and an unscoped match
+    // would fail on those while proving nothing about truncation of the legs.
+    const legsSubquery = activityHalf.slice(
+      activityHalf.indexOf("jsonb_agg(jsonb_build_object"),
+      activityHalf.indexOf("END AS legs"),
+    );
+    expect(legsSubquery).not.toContain("LIMIT");
     // Route + provider columns selected.
     expect(activityHalf).toContain("from_chain_id");
     expect(activityHalf).toContain("to_chain_id");

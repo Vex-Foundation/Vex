@@ -26,6 +26,7 @@ import {
 } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 import type { ToolResult } from "../../../../types.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
@@ -213,6 +214,10 @@ export async function executeUniswapSwap(
           await abortRemainingPlans(executionId, next.eventIndex, `earlier ${event.eventRole} ambiguous`);
         }
         logger.info("uniswap.swap.execute.ambiguous", { id: event.id, txHash: outcome.txHash });
+        // Migration 067: this outcome is unconditionally "we could not prove
+        // inclusion" (see `execute-broadcast.ts`'s ambiguity mapping), so the
+        // named reason is the confirm-side one, never the send-side one.
+        await noteHandlerPendingReason(TOOL_ID, event.id, "broadcast_ambiguous_confirm");
         return ambiguousBroadcastResult({
           eventRole: event.eventRole, txHash: outcome.txHash, executionId, chainId: deployment.chainId,
         });

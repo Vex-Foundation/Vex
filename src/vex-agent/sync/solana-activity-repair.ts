@@ -367,7 +367,9 @@ function readTransactionMetaErr(raw: unknown): { present: false } | { present: t
 }
 
 async function finalizeStatusOnlyConfirm(event: AgentActivityEvent): Promise<CandidateOutcome> {
-  const outcome = await confirmActivityEventStatusOnly(event.id);
+  // A SIGNATURE STATUS, never a receipt — Solana has none. The provenance code
+  // says so, so a later reader cannot mistake this for a decoded receipt.
+  const outcome = await confirmActivityEventStatusOnly(event.id, "receipt_status_only_solana");
   if (outcome.applied) return "confirmed";
   logDuplicateCas(event.id, "confirm");
   return outcome.row.status === "pending" ? "pending" : "duplicate";

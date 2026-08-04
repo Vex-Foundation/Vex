@@ -46,7 +46,10 @@ import { appendMessage } from "../events/index.js";
 import {
   acquireSessionControlLock,
   claimRunLeaseAndFlipToRunning,
+  gateOnOperatorStopWithClient,
 } from "../runtime/lease-and-status.js";
+import { createLeaseHandle, type LeaseHandle } from "../runtime/lease-handle.js";
+import { releaseLeaseAndEmitControlState } from "../runtime/release-and-emit.js";
 import type { MissionRunStatus } from "../types.js";
 import { emitToolResultAppended } from "./approval-runtime/post-tx/result-message.js";
 import { LEASE_TTL_MS, toIsoNow } from "./approval-runtime/helpers.js";
@@ -69,7 +72,21 @@ export interface UserFormContinuationRef {
 }
 
 export type UserFormClaimOutcome =
-  | { readonly outcome: "claimed" }
+  | {
+    readonly outcome: "claimed";
+    /**
+     * The RUN lease this claim acquired, as a live handle — or `null` for a
+     * chat session, which has no run to flip and claims its SESSION lease at
+     * dispatch instead.
+     *
+     * Carried, not dropped. `claimRunLeaseAndFlipToRunning` acquires a real
+     * lease, and `resumeMissionRun`'s contract is explicit that the CALLER owns
+     * its lifecycle. Discarding it left the row held with no handle to release
+     * it and no heartbeat to renew it — the session stayed blocked until the
+     * TTL lapsed, and nothing in the process could shorten that.
+     */
+    readonly leaseHandle: LeaseHandle | null;
+  }
   | { readonly outcome: "already_resolved"; readonly currentStatus: string | null }
   | { readonly outcome: "busy" };
 
@@ -106,7 +123,10 @@ export async function claimUserFormResume(
   ref: UserFormContinuationRef,
   ownerId: string,
 ): Promise<UserFormClaimOutcome> {
-  if (ref.missionRunId === null) return { outcome: "claimed" };
+  // A chat session has no run to flip. Its SESSION lease is claimed at dispatch
+  // — the tool result must land whatever else is running, and only the model
+  // turn needs the exclusion.
+  if (ref.missionRunId === null) return { outcome: "claimed", leaseHandle: null };
 
   const claim = await claimRunLeaseAndFlipToRunning({
     sessionId: ref.sessionId,
@@ -119,7 +139,16 @@ export async function claimUserFormResume(
     ttlMs: LEASE_TTL_MS,
   });
 
-  if (claim.outcome === "claimed") return { outcome: "claimed" };
+  if (claim.outcome === "claimed") {
+    return {
+      outcome: "claimed",
+      leaseHandle: createLeaseHandle({
+        lease: claim.lease,
+        ownerId,
+        ttlMs: LEASE_TTL_MS,
+      }),
+    };
+  }
   if (claim.outcome === "lease_busy") return { outcome: "busy" };
   return { outcome: "already_resolved", currentStatus: claim.currentStatus ?? null };
 }
@@ -161,6 +190,75 @@ export async function commitUserFormToolResult(input: {
   });
 
   emitToolResultAppended(ref.sessionId, inserted, metadata);
+}
+
+/**
+ * CLOSE the continuation: retire the operator's Stop, mark the completion, and
+ * let the lease go — in the one order that leaves no instant where an open stop
+ * request has nobody to observe it.
+ *
+ * ## The interleaving this exists for
+ *
+ * Releasing the lease and THEN marking consumption looks harmless and is not.
+ * Between those two writes the form is still outstanding by the durable
+ * predicate, so a Stop landing there is RETAINED — correctly, at that instant.
+ * A moment later the consumption lands, the form leaves the outstanding set,
+ * the lease is already gone, and the retained request has lost its only
+ * observer. It does not disappear: it sits open until the NEXT thing to consult
+ * the gate — a fresh user turn, a `loop_defer`, an approved dispatch — is
+ * refused by a stop that was never meant for it.
+ *
+ * ## The order, and why each step is where it is
+ *
+ *   1. ONE TRANSACTION under the session control lock, with the lease STILL
+ *      HELD: consult the operator-stop gate, then mark the completion. The gate
+ *      both observes and APPLIES, so a Stop that landed during the turn is
+ *      consumed by this continuation's own closing decision rather than
+ *      outliving it. Marking consumption in the same commit means the two facts
+ *      can never disagree about whether this continuation is finished.
+ *   2. RELEASE the lease, through the chokepoint, after that commit.
+ *   3. One FINAL consultation under the lock. Step 2 is not transactional, so a
+ *      Stop can land between the commit and the release — retained at that
+ *      instant because the lease is still live, and orphaned the moment it is
+ *      not. This retires exactly that row.
+ *
+ * After step 3 the session has no lease, no outstanding form and nothing this
+ * continuation owes, so a Stop arriving later is handled by the stop
+ * transaction's own retention rule: it proves nothing will observe a request
+ * and leaves none behind. The sequence terminates.
+ *
+ * `consume` runs on THIS transaction — the same callback shape
+ * `commitUserFormToolResult` uses, and for the same reason: the record it marks
+ * belongs to another lane and this module owns only the mechanics.
+ */
+export async function closeUserFormContinuation(input: {
+  readonly sessionId: string;
+  readonly leaseHandle: LeaseHandle | null;
+  readonly consume: (client: PoolClient) => Promise<void>;
+}): Promise<void> {
+  await withTransaction(async (client) => {
+    // Lock FIRST, per the global order.
+    await acquireSessionControlLock(client, input.sessionId);
+    await gateOnOperatorStopWithClient(client, {
+      sessionId: input.sessionId,
+      missionRunId: null,
+    });
+    await input.consume(client);
+  });
+
+  if (input.leaseHandle !== null) {
+    await releaseLeaseAndEmitControlState(input.leaseHandle, input.sessionId);
+  }
+
+  // The release window. Cheap and idempotent: a session with nothing queued
+  // reports `clear` and writes nothing.
+  await withTransaction(async (client) => {
+    await acquireSessionControlLock(client, input.sessionId);
+    await gateOnOperatorStopWithClient(client, {
+      sessionId: input.sessionId,
+      missionRunId: null,
+    });
+  });
 }
 
 /**

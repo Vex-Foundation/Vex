@@ -15,11 +15,14 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 let overdue: unknown[];
+/** The durable floor's candidate set — continuations owed but never delivered. */
+let outstanding: unknown[];
 let mockExpire: Mock;
 let mockResume: Mock;
 
 function reset(): void {
   overdue = [];
+  outstanding = [];
   mockExpire = vi.fn(async () => ({ intentId: "i1" }));
   mockResume = vi.fn(async () => ({ resumed: true }));
 }
@@ -29,6 +32,10 @@ vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
   listOverdueAwaitingForms: async (limit: number) => {
     expect(limit).toBeGreaterThan(0);
     return overdue;
+  },
+  listOutstandingUserFormResumes: async (limit: number) => {
+    expect(limit).toBeGreaterThan(0);
+    return outstanding;
   },
   expireIfAwaitingWith: (...a: unknown[]) => mockExpire(...a),
 }));
@@ -126,5 +133,69 @@ describe("expireOverdueLaunchForms", () => {
     mockResume.mockResolvedValue({ resumed: false, reason: "busy" });
     const result = await expireOverdueLaunchForms();
     expect(result).toMatchObject({ expired: 1, resumed: 0, resumeFailures: 1 });
+  });
+});
+
+
+/**
+ * THE DURABLE FLOOR, driven by this same scheduled tick.
+ *
+ * `listOutstandingUserFormResumes` existed and had NO production caller — the
+ * identical defect this module was written to fix one layer down. Every doc
+ * comment promising "a failed dispatch does not lose the wake, the outstanding
+ * scan finds this row again" was describing a sweep nobody ran.
+ *
+ * It matters for the one interleaving no in-process ladder can cover: the
+ * result is stamped, then the lease is claimed, then the turn runs. A crash or
+ * a busy lease in that gap leaves an ANSWERED tool call with no turn to read
+ * it, and a crash has no process left to retry in.
+ */
+describe("the durable floor delivers continuations the resume could not", () => {
+  it("dispatches a stamped-but-unconsumed form the scan still owns", async () => {
+    outstanding = [{ intentId: "recovered-1", sessionId: "s-1" }];
+
+    const result = await expireOverdueLaunchForms();
+
+    expect(mockResume).toHaveBeenCalledWith({
+      intentId: "recovered-1",
+      sessionId: "s-1",
+      outcome: { kind: "expired" },
+    });
+    expect(result.recovered).toBe(1);
+    expect(result.recoveryFailures).toBe(0);
+  });
+
+  it("counts a still-busy session as a recovery failure, not a delivery", async () => {
+    outstanding = [{ intentId: "busy-1", sessionId: "s-1" }];
+    mockResume = vi.fn(async () => ({ resumed: false, reason: "busy" }));
+
+    const result = await expireOverdueLaunchForms();
+
+    expect(result.recovered).toBe(0);
+    // Visible rather than silently stuck — the next tick tries again.
+    expect(result.recoveryFailures).toBe(1);
+  });
+
+  it("keeps draining when one recovery throws", async () => {
+    outstanding = [
+      { intentId: "throws", sessionId: "s-1" },
+      { intentId: "ok", sessionId: "s-2" },
+    ];
+    mockResume = vi.fn(async (input: { intentId: string }) => {
+      if (input.intentId === "throws") throw new Error("provider down");
+      return { resumed: true };
+    });
+
+    const result = await expireOverdueLaunchForms();
+
+    expect(result.recovered).toBe(1);
+    expect(result.recoveryFailures).toBe(1);
+  });
+
+  it("does nothing when the floor is empty", async () => {
+    const result = await expireOverdueLaunchForms();
+
+    expect(result.recovered).toBe(0);
+    expect(mockResume).not.toHaveBeenCalled();
   });
 });

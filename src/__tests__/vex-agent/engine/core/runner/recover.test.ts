@@ -85,6 +85,12 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
       expiresAt: new Date(),
     },
   }),
+  // The run-creation transaction takes the SESSION CONTROL LOCK first, so run
+  // creation and the operator's Stop are strictly ordered, then consults the
+  // session-scoped stop gate. `clear` here; the refusal is pinned in
+  // `integration/engine/mission-start-stop-first.int.test.ts`.
+  acquireSessionControlLock: vi.fn().mockResolvedValue(undefined),
+  gateOnOperatorStopWithClient: vi.fn().mockResolvedValue({ kind: "clear" }),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({

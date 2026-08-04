@@ -81,6 +81,12 @@ import { feeNotTaken, NO_FEE_COLLECTION, relayFeeDisclosure, runRelayVexFeeLeg }
 import { runOriginBroadcasts, type OriginBroadcast } from "./bridge/broadcast.js";
 import { maybeAutoPin, relayLegInput } from "./bridge/recording.js";
 import { failPreSign, inFlightResult, pendingResult } from "./bridge/results.js";
+import {
+  noteHandlerPendingReason,
+  recordBridgeProviderObservation,
+  NO_PROVIDER_STATUS_OBSERVED,
+  type ProviderStatusRecording,
+} from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 /**
  * The two risk numbers an agent needs in order to DECLINE (W2c): the worst-case
@@ -408,11 +414,14 @@ async function relayBridge(
     poll: Parameters<typeof pendingResult>[0]["poll"];
     depositUnconfirmed: boolean;
     feeCollection: Parameters<typeof pendingResult>[0]["feeCollection"];
+    /** Absent on every path that never polled — nothing was read, so nothing was recorded. */
+    providerStatusRecording?: ProviderStatusRecording;
   }): ToolResult =>
     pendingResult({
       executionId, requestId, from, to, inSide, outSide, feeUsdByBucket: adapted.feeUsdByBucket,
       broadcasts: args.broadcasts, poll: args.poll, depositUnconfirmed: args.depositUnconfirmed,
       vexFee: relayFeeDisclosure(legs, adapted.currencyIn), feeCollection: args.feeCollection,
+      providerStatusRecording: args.providerStatusRecording ?? NO_PROVIDER_STATUS_OBSERVED,
     });
 
   const run = await runOriginBroadcasts({
@@ -432,6 +441,10 @@ async function relayBridge(
     destinationChainId: legs.destinationChainId,
     executionId,
   });
+  // R1 Step 4: the logical row is pending for a reason the fallback can route
+  // on — the destination fill is the PROVIDER's word and nothing here has proven
+  // it. Before 067 this row was pending with no stated reason at all.
+  await noteHandlerPendingReason("relay.bridge", logicalRow.id, "provider_fill_unverified");
 
   // Vex fee leg — LAST, and only now: the deposit is confirmed and its
   // requestId is attached, so collecting the fee cannot delay or alter Relay's
@@ -451,7 +464,16 @@ async function relayBridge(
       });
 
   const poll = await pollRelayIntentStatus(requestId);
-  return pending({ broadcasts, poll, depositUnconfirmed: false, feeCollection });
+  // R1 Step 3a: persist what the provider actually said, so `agent_scan` is fed
+  // at return instead of waiting for the next sweep. `observed:false` means
+  // every status call this turn threw — there is no status to record, and
+  // recording the placeholder would invent one.
+  const providerStatusRecording = poll.observed
+    ? await recordBridgeProviderObservation({
+      toolId: "relay.bridge", executionId, providerStatus: poll.status,
+    })
+    : NO_PROVIDER_STATUS_OBSERVED;
+  return pending({ broadcasts, poll, depositUnconfirmed: false, feeCollection, providerStatusRecording });
 }
 
 /**

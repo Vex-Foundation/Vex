@@ -17,6 +17,10 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 }));
 
 import { pendingResult } from "@vex-agent/tools/protocols/relay/handlers/bridge/results.js";
+import {
+  NO_PROVIDER_STATUS_OBSERVED,
+  type ProviderStatusRecording,
+} from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import type { RelayPollResult } from "@tools/relay/execute.js";
 import type {
   BridgeAmountDisplay,
@@ -43,8 +47,12 @@ const NO_FEE: BridgeFeeDisclosure = {
   note: "no Vex fee was taken",
 };
 
-function body(poll: RelayPollResult | null): Record<string, unknown> {
+function body(
+  poll: RelayPollResult | null,
+  providerStatusRecording: ProviderStatusRecording = NO_PROVIDER_STATUS_OBSERVED,
+): Record<string, unknown> {
   const result = pendingResult({
+    providerStatusRecording,
     executionId: 1,
     requestId: "0xreq",
     from: FROM,
@@ -116,5 +124,31 @@ describe("pendingResult — provider signals", () => {
     const out = body(null);
     expect(out.providerStatus).toBeNull();
     expect(String(out.message)).not.toContain("unreachable");
+  });
+});
+
+describe("pendingResult — O-8, whether the provider status actually reached agent_scan", () => {
+  it("reports a recorded write", () => {
+    const out = body(poll({ status: "success" }), {
+      providerStatusRecorded: true, providerStatusRecordedReason: null,
+    });
+    expect(out.providerStatusRecorded).toBe(true);
+    expect(out.providerStatusRecordedReason).toBeNull();
+  });
+
+  it("NAMES why a write did not land instead of returning a bare false", () => {
+    // The whole point of O-8: an agent told only `false` cannot tell "the row is
+    // already terminal" from "we could not write", and retries blind on both.
+    const out = body(poll({ status: "success" }), {
+      providerStatusRecorded: false, providerStatusRecordedReason: "stale_observation",
+    });
+    expect(out.providerStatusRecorded).toBe(false);
+    expect(out.providerStatusRecordedReason).toBe("stale_observation");
+  });
+
+  it("says `nothing was read` as null — never as a failed write", () => {
+    const out = body(poll({ observed: false }));
+    expect(out.providerStatusRecorded).toBeNull();
+    expect(out.providerStatusRecordedReason).toBeNull();
   });
 });

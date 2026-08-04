@@ -16,6 +16,7 @@ import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS } from "./lookup.js";
 import { isUniswapPairRevealed } from "./uniswap-reveal.js";
+import { isDescribeToolsRevealed } from "./describe-tools-reveal.js";
 import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-reveal.js";
 
 /**
@@ -277,6 +278,11 @@ function passesVisibility(
   // swap_execute_uniswap pair joins the catalog only for a session with an
   // active, fresh reveal. Absent sessionId fails closed to hidden.
   if (v.requiresUniswapReveal && !isUniswapPairRevealed(ctx.sessionId)) return false;
+
+  // describe_tools reveal gate (R5) — the manifest-fetch tool joins the catalog
+  // only after this session produced a successful, non-empty discover_tools
+  // result. Absent sessionId fails closed to hidden.
+  if (v.requiresDescribeToolsReveal && !isDescribeToolsRevealed(ctx.sessionId)) return false;
 
   // Prepared-compaction readiness gate — `compact_apply` exists only while
   // there is something prepared to apply. Fails closed: an unreadable

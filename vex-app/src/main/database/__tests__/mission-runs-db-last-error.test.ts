@@ -41,6 +41,7 @@ vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { getActiveRunForSession } = await import("../mission-runs-db.js");
 
+const CORRELATION = "33333333-3333-4333-8333-333333333333";
 const SESSION = "00000000-0000-4000-8000-00000000eeee";
 
 function pausedRow(overrides: Record<string, unknown> = {}) {
@@ -97,7 +98,7 @@ describe("runtime DTO lastError", () => {
       ],
     });
 
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.lastError).toEqual({
@@ -122,7 +123,7 @@ describe("runtime DTO lastError", () => {
       ],
     });
 
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // The bad key degrades to ABSENT; the good keys still cross.
@@ -142,7 +143,7 @@ describe("runtime DTO lastError", () => {
       ],
     });
 
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.lastError).toEqual({ errorClass: "ConnectionError" });
@@ -159,7 +160,7 @@ describe("runtime DTO lastError", () => {
       ],
     });
 
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.lastError).toEqual({ statusCode: 429 });
@@ -167,7 +168,7 @@ describe("runtime DTO lastError", () => {
 
   it("selects named evidence keys — never the evidence column or stop_summary", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [pausedRow()] });
-    await getActiveRunForSession(SESSION);
+    await getActiveRunForSession(SESSION, CORRELATION);
 
     const sql = String(mocks.query.mock.calls[0]?.[0]);
     expect(sql).toContain("stop_evidence_json->>'errorType'");
@@ -179,7 +180,7 @@ describe("runtime DTO lastError", () => {
 
   it("omits lastError entirely for evidence written before these keys existed", async () => {
     mocks.query.mockResolvedValueOnce({ rows: [pausedRow()] });
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.lastError).toBeUndefined();
@@ -195,7 +196,7 @@ describe("runtime DTO lastError", () => {
     void [last_error_type, last_error_class, last_error_status, last_error_cause_code];
     mocks.query.mockResolvedValueOnce({ rows: [bare] });
 
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.lastError).toBeUndefined();
@@ -216,7 +217,7 @@ describe("runtime DTO lastError", () => {
       ],
     });
 
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.lastError).toEqual({ errorType: "server_error" });

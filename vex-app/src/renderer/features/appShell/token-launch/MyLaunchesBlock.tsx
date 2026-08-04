@@ -112,7 +112,26 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
             {row.symbol}
           </span>
         </div>
-        <AddressDisplay address={row.tokenAddress} />
+        {/*
+          A launch whose token identity is NOT proven yet (OD-3) renders as what
+          it is — a broadcast still in flight — and NEVER as a token: there is no
+          address to show, and an empty one would read as a token with a missing
+          name rather than a launch that has not landed.
+
+          The test is on `row.tokenAddress` ITSELF rather than a derived boolean,
+          because only that narrows the property: `AddressDisplay` requires a
+          non-null address, and this branch is what proves it has one.
+        */}
+        {row.tokenAddress === null ? (
+          <span
+            className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+            title="Broadcast — Vex is still checking whether this launch was included on-chain. No token address is proven yet."
+          >
+            in flight — no token address yet
+          </span>
+        ) : (
+          <AddressDisplay address={row.tokenAddress} />
+        )}
       </div>
       {clock !== null ? (
         <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">

@@ -4,6 +4,7 @@ import type { PortfolioReadInput } from "../../shared/schemas/portfolio.js";
 import { tokenHistoryReadInputSchema } from "../../shared/schemas/token-history.js";
 import type { TokenHistoryReadInput } from "../../shared/schemas/token-history.js";
 import {
+  activityProgressEventSchema,
   activityResolvedEventSchema,
   agentScanReadInputSchema,
   portfolioRefreshInputSchema,
@@ -35,5 +36,8 @@ export const portfolio = {
   },
   onActivityResolved(cb) {
     return subscribe(EV.portfolio.activityResolved, activityResolvedEventSchema, cb);
+  },
+  onActivityProgress(cb) {
+    return subscribe(EV.portfolio.activityProgress, activityProgressEventSchema, cb);
   },
 } satisfies PortfolioBridge;

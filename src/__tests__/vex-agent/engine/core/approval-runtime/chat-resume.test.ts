@@ -135,10 +135,25 @@ vi.mock("@vex-agent/inference/registry.js", () => ({
 
 const mockClaimSessionLease = vi.fn();
 const mockClaimRunLeaseAndFlipToRunning = vi.fn();
+/**
+ * The chat-resume path now consults the DURABLE operator-stop gate under the
+ * session control lock before any provider work (delta-override D1.5). Default
+ * `clear` here so the existing cases keep exercising the resume; the stopped
+ * branch is pinned in `chat-resume-stop-gate.test.ts`.
+ */
+const mockGateOnOperatorStopWithClient = vi
+  .fn()
+  .mockResolvedValue({ kind: "clear" });
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) =>
     mockClaimRunLeaseAndFlipToRunning(...a),
+  gateOnOperatorStopWithClient: (...a: unknown[]) =>
+    mockGateOnOperatorStopWithClient(...a),
+  withSessionControlLock: async (
+    _sessionId: string,
+    fn: (client: unknown) => Promise<unknown>,
+  ) => fn(txClient),
 }));
 
 const mockCreateLeaseHandle = vi.fn();

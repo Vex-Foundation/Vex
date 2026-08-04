@@ -317,7 +317,7 @@ export async function executeKhalaniBridge(
     legs: activityLegs, expectedFill,
   });
   if (intent.outcome === "in_flight_conflict") return inFlightResult(toolId, intent.existing);
-  const { executionId } = intent;
+  const { executionId, expectedFill: logicalRow } = intent;
 
   // 12. Resolve the source-family signing wallet (decrypts) — only now.
   let signer: ChainWallet;
@@ -398,6 +398,7 @@ export async function executeKhalaniBridge(
   const poll = await pollKhalaniOrderToTerminal(pollOrderId, context.abortSignal);
   return interpretPoll({
     poll, orderId: pollOrderId, depositTxHash, recordedLegs, toChainName,
+    logicalRowId: logicalRow.id,
     pendingBase: { ...pendingBase, vexFee: { disclosure: vexFee, ...feeOutcome } },
   });
 }

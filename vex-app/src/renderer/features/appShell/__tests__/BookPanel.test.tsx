@@ -46,19 +46,13 @@ vi.mock("../book/SessionRuntimeCard.js", () => ({
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: () => <div data-testid="card-session" />,
 }));
-// The Trench Photos locker card talks to react-query (`useLockerImages`);
-// stubbed like every other card — this suite owns the router and the chrome,
-// not the locker's data. Its own behavior lives in ImageLockerCard.test.tsx.
+// The merged Trench Express card (locker + launch opener) talks to react-query
+// and the tokenLaunch IPC domain; stubbed like every other card — this suite
+// owns the router and the chrome. That the REAL card actually contains the
+// opener is pinned where it can be proven, in ImageLockerCard.test.tsx.
 vi.mock("../book/ImageLockerCard.js", () => ({
-  ImageLockerCard: () => <div data-testid="card-images" />,
-}));
-// The launch opener owns a dialog that talks to the tokenLaunch IPC domain;
-// stubbed like every other child. Its own behavior lives in
-// TokenLaunchDialog.test.tsx — this suite owns only the fact that the rail is
-// where the user can REACH a launch at all.
-vi.mock("../token-launch/TokenLaunchButton.js", () => ({
-  TokenLaunchButton: ({ sessionId }: { readonly sessionId: string | null }) => (
-    <div data-testid="launch-opener" data-session-id={sessionId ?? ""} />
+  ImageLockerCard: ({ sessionId }: { readonly sessionId?: string | null }) => (
+    <div data-testid="card-images" data-session-id={sessionId ?? ""} />
   ),
 }));
 // The rail reads the session detail so it can hand `permission` down to the
@@ -80,6 +74,7 @@ vi.mock("../book/portfolio/WelcomePortfolioPanel.js", () => ({
 }));
 
 const { BookPanel } = await import("../BookPanel.js");
+const { useUiStore } = await import("../../../stores/uiStore.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
 
@@ -96,6 +91,10 @@ const CARD_ORDER = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The rail now reads a PERSISTED section order; without this reset an order
+  // set by one case would leak into the next.
+  window.localStorage.clear();
+  useUiStore.setState({ bookSectionOrder: [] });
 });
 
 describe("BookPanel chrome", () => {
@@ -154,29 +153,26 @@ describe("BookPanel chrome", () => {
 });
 
 describe("the launch surface is reachable", () => {
-  it("mounts the launch opener under TRENCH PHOTOS, scoped to the active session", () => {
+  it("scopes the merged Trench card to the active session, so a launch has one", () => {
     // Reachability is the point: an unmounted launch dialog is a feature the
-    // user cannot use, however complete its internals are. It sits with the
-    // image locker because a launch REQUIRES an image from it.
-    const { container } = render(
-      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
-    );
-    const opener = screen.getByTestId("launch-opener");
-    expect(opener.getAttribute("data-session-id")).toBe(SESSION);
-    const stack = Array.from(
-      container.querySelectorAll("[data-testid^='card-'],[data-testid='launch-opener']"),
-    ).map((node) => node.getAttribute("data-testid"));
-    expect(stack.indexOf("launch-opener")).toBe(stack.indexOf("card-images") + 1);
+    // user cannot use. Since the merge, the opener lives INSIDE the locker card
+    // — the assertion that it is really there belongs to that card's own suite,
+    // where the component is real rather than a mock. What this router owes the
+    // flow is the session id.
+    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
+    expect(
+      screen.getByTestId("card-images").getAttribute("data-session-id"),
+    ).toBe(SESSION);
   });
 
-  it("does not mount the launch opener on the welcome stage — a launch needs a session", () => {
+  it("does not mount the Trench card on the welcome stage — a launch needs a session", () => {
     render(<BookPanel activeSessionId={null} bookOpen onToggle={() => {}} />);
-    expect(screen.queryByTestId("launch-opener")).toBeNull();
+    expect(screen.queryByTestId("card-images")).toBeNull();
   });
 
-  it("does not mount the launch opener while the rail is collapsed", () => {
+  it("does not mount the Trench card while the rail is collapsed", () => {
     render(<BookPanel activeSessionId={SESSION} bookOpen={false} onToggle={() => {}} />);
-    expect(screen.queryByTestId("launch-opener")).toBeNull();
+    expect(screen.queryByTestId("card-images")).toBeNull();
   });
 });
 
@@ -196,6 +192,26 @@ describe("BookPanel session card stack", () => {
     expect(
       screen.getByTestId("card-balances").getAttribute("data-session-id"),
     ).toBe(SESSION);
+  });
+
+  it("renders the RESOLVED persisted order, not the default, when the user has one", () => {
+    useUiStore.setState({ bookSectionOrder: ["trench", "session"] });
+    const { container } = render(
+      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
+    );
+    const rendered = Array.from(
+      container.querySelectorAll("[data-testid^='card-']"),
+    ).map((node) => node.getAttribute("data-testid"));
+    // Stored ids first, then every missing section appended in default order.
+    expect(rendered).toEqual([
+      "card-images",
+      "card-session",
+      "card-position",
+      "card-wallets",
+      "card-balances",
+      "card-activity",
+      "card-runtime",
+    ]);
   });
 
   it("keeps the SESSION rail on session stage — the welcome tab never mounts there", () => {

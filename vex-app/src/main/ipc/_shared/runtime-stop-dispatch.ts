@@ -111,8 +111,17 @@ async function signalLocalAbortBestEffort(
  *      leaves the stop recoverable, because step 1 already committed; a slice
  *      that misses the signal still refuses to continue at its next gate.
  *
- * Reported as `queued`: the durable request is what was committed, matching how
- * the graceful mission branch reports itself.
+ * Reported as `queued` when a durable request was retained. The engine decides
+ * that in the SAME transaction, from durable state: a request nothing will ever
+ * observe is not harmless — it sits open and refuses the session's next,
+ * unrelated work. So when the transaction proves no live lease and no
+ * incomplete approval lifecycle remain, it applies the stop and retains
+ * NOTHING, and this reports `stopped` rather than promising an observation that
+ * will never happen.
+ *
+ * It can also come back with the engine-internal `active_run_exists`: the
+ * target scope was revalidated under the lock and a mission run was found that
+ * the pre-transaction read had missed. See the reroute below.
  */
 async function stopChatSession(
   sessionId: string,
@@ -125,6 +134,27 @@ async function stopChatSession(
     sessionId,
     correlationId: ctx.requestId,
   });
+
+  // TARGET-SCOPE REVALIDATION (one-time reroute). The engine re-read the run
+  // under the session control lock and found one that was not visible to the
+  // read this dispatch chose its scope from. A session-scoped request would
+  // have been invisible to the run-scoped gate (which matches on
+  // `mission_run_id`), so the engine wrote NOTHING and handed the run back.
+  // Re-run the RUN-scoped path for it exactly once: `stopMissionRun` re-locks
+  // the run in its own transaction and reports `already_terminal` if it moved
+  // in between, which is the terminating condition — there is no retry loop.
+  if (enqueued.outcome === "active_run_exists") {
+    log.info(
+      `[ipc:${ctx.channelLabel}] session stop rerouted to run `
+      + `${enqueued.missionRunId} correlationId=${ctx.requestId}`,
+    );
+    const rechecked = await getActiveRunForSession(sessionId, ctx.requestId);
+    const leaseActive = rechecked.ok && rechecked.data.leaseActive;
+    return stopMissionRun(
+      { sessionId, missionRunId: enqueued.missionRunId, status: enqueued.runStatus, leaseActive },
+      ctx,
+    );
+  }
 
   try {
     const { abortSessionSliceLocal } = await import(
@@ -143,7 +173,88 @@ async function stopChatSession(
   }
 
   await emitControlStateAfterChange(sessionId, ctx.requestId);
+  // `applied` means the same transaction proved nothing durable or airborne
+  // remained, applied the stop and retained NO request. Reporting `queued`
+  // there would promise an observation that will never happen.
+  if (enqueued.outcome === "applied") return ok({ outcome: "stopped" });
   return ok({ outcome: "queued", requestId: enqueued.requestId });
+}
+
+interface RunStopTarget {
+  readonly sessionId: string;
+  readonly missionRunId: string;
+  readonly status: MissionRunStatus;
+  readonly leaseActive: boolean;
+}
+
+/**
+ * The RUN-scoped stop path. Extracted so the ordinary dispatch and the D2
+ * target-scope reroute run byte-identical logic rather than two spellings of
+ * it.
+ */
+async function stopMissionRun(
+  target: RunStopTarget,
+  ctx: StopFlowContext,
+): Promise<Result<StopFlowResult>> {
+  const { sessionId, missionRunId, status } = target;
+  if (
+    status === "completed"
+    || status === "failed"
+    || status === "stopped"
+    || status === "cancelled"
+  ) {
+    return ok({ outcome: "already_terminal", status });
+  }
+  if (classifyRunLeaseState(status, target.leaseActive) === "live") {
+    // Graceful path — ONLY when a live runner (active lease) is present:
+    // it observes this queued stop_terminal request at its next iteration
+    // boundary and finalizes the run.
+    //
+    // The insert goes through the engine's operator-stop boundary, not the
+    // bare repo, so it happens under the session control lock. That is what
+    // makes the request an ordering event: an approval enqueue or an
+    // approved money-path dispatch that passes its own gate is guaranteed to
+    // have either seen this row or committed before it existed. Run-scoped,
+    // so a stale stop can never terminate a LATER run.
+    const { enqueueOperatorStopRequest } = await import(
+      "@vex-agent/engine/runtime/lease-and-status.js"
+    );
+    const enqueued = await enqueueOperatorStopRequest({
+      sessionId,
+      missionRunId,
+      correlationId: ctx.requestId,
+    });
+    if (enqueued.outcome === "run_not_found") {
+      return ok({ outcome: "no_active_run" });
+    }
+    if (enqueued.outcome === "already_terminal") {
+      // The run went terminal between the read above and the locked insert.
+      // Queueing there would strand a request nobody will ever observe.
+      await emitControlStateAfterChange(sessionId, ctx.requestId);
+      return ok({ outcome: "already_terminal", status: enqueued.runStatus });
+    }
+    await signalLocalAbortBestEffort(missionRunId, ctx);
+    await emitControlStateAfterChange(sessionId, ctx.requestId);
+    return ok({ outcome: "queued", requestId: enqueued.requestId });
+  }
+  // No live runner is observing — either a paused run (approval/wake/
+  // error/user) OR a `running` run whose lease is not active (out-of-
+  // process / parked). A queued stop would never be applied, so abort
+  // directly: the engine finalizes the run to `cancelled` and rejects
+  // pending approvals + cancels wakes (`abortMissionRun` already handles
+  // out-of-process running).
+  const { abortActiveMissionForSession } = await import(
+    "@vex-agent/engine/index.js"
+  );
+  const aborted = await abortActiveMissionForSession(sessionId);
+  await emitControlStateAfterChange(sessionId, ctx.requestId);
+  // null = the run vanished mid-flight; `aborted:false` = it was already
+  // terminal by the time we aborted (race). Neither stopped a live paused
+  // run, so report nothing-to-stop rather than a misleading `stopped`.
+  if (aborted === null || !aborted.aborted) {
+    return ok({ outcome: "no_active_run" });
+  }
+  return ok({ outcome: "stopped" });
 }
 
 export async function runStopDispatch(
@@ -153,7 +264,7 @@ export async function runStopDispatch(
   const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
   if (!dbUrlOutcome.ok) return dbUrlOutcome;
   try {
-    const state = await getActiveRunForSession(input.sessionId);
+    const state = await getActiveRunForSession(input.sessionId, ctx.requestId);
     if (!state.ok) return state;
     if (!state.data.hasActiveRun) {
       // No mission run — but "no run" is NOT the same as "nothing to stop".
@@ -164,72 +275,31 @@ export async function runStopDispatch(
       return stopChatSession(input.sessionId, ctx);
     }
     const status = state.data.status;
-    if (
-      status === "completed"
-      || status === "failed"
-      || status === "stopped"
-      || status === "cancelled"
-    ) {
-      return ok({ outcome: "already_terminal", status });
-    }
     // `hasActiveRun` is derived from a real row, so the id is non-null here in
-    // practice; the test narrows the type for the run-scoped engine call below
-    // instead of asserting it. A null id falls through to the direct-abort
-    // path, which is the correct handling for "no run to queue against".
+    // practice; the test narrows the type for the run-scoped engine call
+    // instead of asserting it. A null id has no run to queue against, so it
+    // takes the direct-abort path inside `stopMissionRun`.
     const missionRunId = state.data.missionRunId;
-    if (
-      missionRunId !== null
-      && classifyRunLeaseState(status, state.data.leaseActive) === "live"
-    ) {
-      // Graceful path — ONLY when a live runner (active lease) is present:
-      // it observes this queued stop_terminal request at its next iteration
-      // boundary and finalizes the run.
-      //
-      // The insert goes through the engine's operator-stop boundary, not the
-      // bare repo, so it happens under the session control lock. That is what
-      // makes the request an ordering event: an approval enqueue or an
-      // approved money-path dispatch that passes its own gate is guaranteed to
-      // have either seen this row or committed before it existed. Run-scoped,
-      // so a stale stop can never terminate a LATER run.
-      const { enqueueOperatorStopRequest } = await import(
-        "@vex-agent/engine/runtime/lease-and-status.js"
+    if (status === null || missionRunId === null) {
+      const { abortActiveMissionForSession } = await import(
+        "@vex-agent/engine/index.js"
       );
-      const enqueued = await enqueueOperatorStopRequest({
-        sessionId: input.sessionId,
-        missionRunId,
-        correlationId: ctx.requestId,
-      });
-      if (enqueued.outcome === "run_not_found") {
+      const aborted = await abortActiveMissionForSession(input.sessionId);
+      await emitControlStateAfterChange(input.sessionId, ctx.requestId);
+      if (aborted === null || !aborted.aborted) {
         return ok({ outcome: "no_active_run" });
       }
-      if (enqueued.outcome === "already_terminal") {
-        // The run went terminal between the read above and the locked insert.
-        // Queueing there would strand a request nobody will ever observe.
-        await emitControlStateAfterChange(input.sessionId, ctx.requestId);
-        return ok({ outcome: "already_terminal", status: enqueued.runStatus });
-      }
-      await signalLocalAbortBestEffort(missionRunId, ctx);
-      await emitControlStateAfterChange(input.sessionId, ctx.requestId);
-      return ok({ outcome: "queued", requestId: enqueued.requestId });
+      return ok({ outcome: "stopped" });
     }
-    // No live runner is observing — either a paused run (approval/wake/
-    // error/user) OR a `running` run whose lease is not active (out-of-
-    // process / parked). A queued stop would never be applied, so abort
-    // directly: the engine finalizes the run to `cancelled` and rejects
-    // pending approvals + cancels wakes (`abortMissionRun` already handles
-    // out-of-process running).
-    const { abortActiveMissionForSession } = await import(
-      "@vex-agent/engine/index.js"
+    return stopMissionRun(
+      {
+        sessionId: input.sessionId,
+        missionRunId,
+        status,
+        leaseActive: state.data.leaseActive,
+      },
+      ctx,
     );
-    const aborted = await abortActiveMissionForSession(input.sessionId);
-    await emitControlStateAfterChange(input.sessionId, ctx.requestId);
-    // null = the run vanished mid-flight; `aborted:false` = it was already
-    // terminal by the time we aborted (race). Neither stopped a live paused
-    // run, so report nothing-to-stop rather than a misleading `stopped`.
-    if (aborted === null || !aborted.aborted) {
-      return ok({ outcome: "no_active_run" });
-    }
-    return ok({ outcome: "stopped" });
   } catch (cause) {
     log.warn(
       `[ipc:${ctx.channelLabel}] failed correlationId=${ctx.requestId}`,

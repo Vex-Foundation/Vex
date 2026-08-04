@@ -3,7 +3,11 @@
  *
  * Mirrors the `sessions-db.ts` decoupling pattern: `vex-app` owns its
  * own `pg.Client` per call and never imports `@vex-agent/db/repos/*`,
- * keeping the GUI build's module graph disjoint from the engine.
+ * keeping the GUI build's DB access disjoint from the engine. That rule is
+ * about the DB REPOSITORIES specifically, not a blanket ban on engine imports:
+ * the mapper does import the engine's injected-tool RESOLVER to canonicalize a
+ * protocol tool's wire name (`./messages/mappers.ts`), which touches no
+ * database at all.
  *
  * SQL is the contract here. The base Vex Agent migrations create
  * (selected for this helper):
@@ -24,7 +28,8 @@
  * JSONB get reduced:
  *   - `toolName` = best-effort `namespace:command` extraction (string
  *     fields only; rejects nested objects so a malicious blob can't
- *     leak through).
+ *     leak through), canonicalized from a protocol tool's wire name to its
+ *     dotted `toolId`.
  *   - `metadata` is dropped entirely until puzzle 02 introduces the
  *     controlled metadata DTO union. The mapper still inspects
  *     `metadata.message_type` to derive the renderer-visible `kind`

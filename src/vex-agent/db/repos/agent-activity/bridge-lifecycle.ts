@@ -19,6 +19,7 @@ import {
 import { insertBridgeRow, findPendingLogicalRow, buildNormalizedBridgeRoute } from "./bridge-intent.js";
 import type { BridgeRouteEndpoints } from "./bridge-intent.js";
 import { mapRow } from "./mappers.js";
+import { sanitizeFailureReason } from "./validation.js";
 import { armFastLane, resolveFastLane } from "./fast-lane-signal.js";
 import type { AgentActivityEvent, AgentActivityLegInput, BridgeChainFamily, CasResult } from "./types.js";
 
@@ -125,6 +126,10 @@ export async function confirmBridgeExpectedFill(input: {
             provider_status = $5,
             executed_amount_in_human = $6, executed_amount_in_raw = $7,
             executed_amount_out_human = $8, executed_amount_out_raw = $9,
+            confirmation_source = 'provider_fill_verified',
+            settlement_source = CASE WHEN $7::text IS NOT NULL OR $9::text IS NOT NULL
+                                     THEN 'provider_verified' ELSE settlement_source END,
+            pending_reason = NULL,
             updated_at = NOW()
       WHERE protocol_execution_id = $1
         AND event_role = 'bridge_fill_expected'
@@ -150,6 +155,64 @@ export async function confirmBridgeExpectedFill(input: {
     );
   }
   return { applied: false, row: current };
+}
+
+/** Why `noteBridgeProviderObservation` wrote nothing. Never a bare `false`. */
+export type NoteBridgeProviderObservationMiss =
+  | "not_pending"
+  | "stale_observation"
+  | "write_failed";
+
+export interface NoteBridgeProviderObservationResult {
+  readonly applied: boolean;
+  readonly reason?: NoteBridgeProviderObservationMiss;
+}
+
+/**
+ * Record the HANDLER's own in-turn provider observation on the logical row
+ * (R1 Step 3a). NEVER terminalizes: a provider report is the provider's word,
+ * and this repository refuses to confirm a bridge without independent proof.
+ *
+ * WHY THE ORDERING GUARD EXISTS. `attachProviderOrderId` arms the provider fast
+ * lane, which sweeps every 30 s, while a handler's own poll can run for about
+ * two minutes. A write guarded only by `status = 'pending'` really can replace a
+ * NEWER lane observation with an OLDER handler one — so the CAS compares
+ * `provider_status_observed_at`, migration 067's provider-only clock. It cannot
+ * use `last_checked_at`: three other writers advance that, and any one of them
+ * landing between two provider observations would make the fresher one look
+ * stale and drop it.
+ *
+ * NOT FAIL-SOFT-AND-SILENT. Every miss is named, and the caller is expected to
+ * surface it: an agent told only "false" cannot tell "already terminal" from "we
+ * could not write", and blind retries on that distinction are what the
+ * agent-facing-errors decree exists to stop.
+ */
+export async function noteBridgeProviderObservation(input: {
+  readonly executionId: number;
+  /** Provider-native status text; bounded + sanitized before the write. */
+  readonly providerStatus: string;
+  /** ISO instant of the handler's OWN poll — never `NOW()`, which would defeat the guard. */
+  readonly observedAt: string;
+}): Promise<NoteBridgeProviderObservationResult> {
+  const providerStatus = sanitizeFailureReason(input.providerStatus);
+  const row = await queryOne<{ id: number }>(
+    `UPDATE agent_activity
+        SET provider_status = $2, provider_status_observed_at = $3::timestamptz,
+            updated_at = NOW()
+      WHERE protocol_execution_id = $1
+        AND event_role = 'bridge_fill_expected'
+        AND status = 'pending'
+        AND (provider_status_observed_at IS NULL
+             OR provider_status_observed_at < $3::timestamptz)
+      RETURNING id`,
+    [input.executionId, providerStatus, input.observedAt],
+  );
+  if (row) return { applied: true };
+
+  const current = await findLogicalRowByExecution(input.executionId);
+  if (!current) return { applied: false, reason: "write_failed" };
+  if (current.status !== "pending") return { applied: false, reason: "not_pending" };
+  return { applied: false, reason: "stale_observation" };
 }
 
 export interface MarkBridgeLegObservedInput {

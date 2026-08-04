@@ -13,6 +13,7 @@
 
 import type { PoolClient } from "pg";
 
+import { executeWith } from "../../client.js";
 import { jsonb, nullableJsonb } from "../../params.js";
 import { lockAndRequireLaunchImageWith } from "../launch-image-lock.js";
 import {
@@ -291,6 +292,44 @@ export async function stampResultMessageWith(
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId, resultMessageId],
   );
+}
+
+/**
+ * The COMPLETION marker for a form continuation: a resumed turn has finished
+ * for this intent.
+ *
+ * Write-once CAS, and the ONLY thing that ends the continuation's eligibility.
+ * `result_message_id` does not: it says the transcript has the answer, which is
+ * true from the moment the result commits — long before the turn that answer
+ * exists for has been dispatched. Everything between those two points (a busy
+ * lease, a crash, a restart, an operator Stop) is recoverable precisely because
+ * this column is still NULL there.
+ *
+ * Returns `false` for a caller that lost the race, exactly as
+ * `casMarkResumeConsumed` does for approvals — a no-op rather than a fabricated
+ * second completion.
+ *
+ * Takes the CALLER's transaction, because the completion has to commit together
+ * with the closing operator-stop decision: two commits leave an instant where
+ * the continuation is finished but the Stop that arrived during it has not been
+ * retired, and that orphaned request later stops unrelated work.
+ */
+export async function casMarkUserFormResumeConsumedWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const affected = await executeWith(
+    client,
+    `UPDATE token_launch_intents
+        SET resume_consumed_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND tool_call_id IS NOT NULL
+        AND resume_consumed_at IS NULL`,
+    [intentId, sessionId],
+  );
+  return affected > 0;
 }
 
 // ── terminal transitions ────────────────────────────────────────────────────

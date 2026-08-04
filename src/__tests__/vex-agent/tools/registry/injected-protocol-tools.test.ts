@@ -24,7 +24,10 @@ import {
   resolveInjectedProtocolTool,
   toInjectedToolName,
 } from "@vex-agent/tools/registry/injected-protocol-tools.js";
-import { MAX_DISCOVERY_LIMIT } from "@vex-agent/tools/protocols/discovery.js";
+import {
+  MAX_DESCRIBE_TOOL_IDS,
+  MAX_DISCOVERY_LIMIT,
+} from "@vex-agent/tools/protocols/discovery.js";
 import {
   MAX_DISCOVERED_TOOLS_PER_SESSION,
   clearDiscoveredTools,
@@ -232,9 +235,11 @@ describe("session-scoped discovered set", () => {
 
   it("INVARIANT: a full discovery round at the maximum allowed limit is never partially evicted", () => {
     // The agent sizes its own working set (`discover_tools` limit, max
-    // MAX_DISCOVERY_LIMIT). Every row of ONE such round must survive, or the
+    // MAX_DISCOVERY_LIMIT; `describe_tools` id array, max
+    // MAX_DESCRIBE_TOOL_IDS). Every row of ONE such round must survive, or the
     // model loses tools it was shown in that very result.
     expect(MAX_DISCOVERED_TOOLS_PER_SESSION).toBeGreaterThanOrEqual(MAX_DISCOVERY_LIMIT);
+    expect(MAX_DISCOVERED_TOOLS_PER_SESSION).toBeGreaterThanOrEqual(MAX_DESCRIBE_TOOL_IDS);
 
     const previousRound = ids(MAX_DISCOVERED_TOOLS_PER_SESSION);
     recordDiscoveredTools(SESSION, previousRound);

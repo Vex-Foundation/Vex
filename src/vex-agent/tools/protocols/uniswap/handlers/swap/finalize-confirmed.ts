@@ -18,6 +18,7 @@ import { pinTrackedToken } from "@vex-agent/db/repos/tracked-tokens.js";
 import { confirmActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import { clearUniswapPairReveal } from "@vex-agent/tools/registry/uniswap-reveal.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 import type { ToolResult } from "../../../../types.js";
 import { TOOL_ID } from "./protocol-id.js";
@@ -100,6 +101,10 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
   if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
     logger.warn("uniswap.swap.execute.settlement_undecodable", { id: x.eventId, txHash });
+    // Migration 067: mined SUCCESSFULLY, amounts unreadable. Distinct from "we
+    // never saw the receipt", and the distinction is what lets the fallback
+    // route work instead of guessing which job this row needs.
+    await noteHandlerPendingReason("uniswap.swap.execute", x.eventId, "settlement_undecodable");
     return {
       outputPayload: null,
       result: {

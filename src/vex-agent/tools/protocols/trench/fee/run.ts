@@ -42,6 +42,7 @@ import {
   failActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { TrenchFeeLegPlan } from "./plan.js";
@@ -117,6 +118,9 @@ export async function runTrenchFeeLeg(input: RunTrenchFeeLegInput): Promise<Tren
       // Left PENDING with its staged hash for the receipt sweep. NEVER retried
       // here: a blind retry of an unconfirmed transfer could charge twice.
       logger.info("trench.fee.ambiguous", { id: feeRowId, stage: outcome.stage });
+      // Migration 067: the fee row's OWN pending reason — a fee that did not
+      // confirm says nothing about whether the trade did.
+      await noteHandlerPendingReason("trench.fee", feeRowId, "fee_broadcast_ambiguous");
       return {
         collection: "unconfirmed",
         collectionNote: "The Vex fee transfer was broadcast but not confirmed this turn; it is tracked automatically and is never re-sent. Your trade is unaffected.",

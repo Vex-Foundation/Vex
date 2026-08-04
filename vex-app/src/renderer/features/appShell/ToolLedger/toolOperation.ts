@@ -19,6 +19,12 @@
  *  - A `swap_*` / `bridge_*` name we do not recognise by exact name (a future
  *    venue variant) is `unproven` — legs render, but always labelled, never as
  *    a bare completed trade.
+ *  - A DOTTED tool name is itself a protocol `toolId` (main canonicalizes the
+ *    injected wire name), and resolves through the same curated exact-id path
+ *    as `execute_tool`'s args-borne id.
+ *  - A manifest that MULTIPLEXES preview and execution behind a `dryRun`
+ *    parameter (`relay.bridge`, `khalani.bridge`, every mutating Pendle
+ *    manifest) may not claim EXECUTED on a dry run — see `mutatingUnlessDryRun`.
  *  - `execute_tool` carries its real target in the `toolId` inside UNTRUSTED
  *    args. Untrusted text may only ever DOWNGRADE a claim, never upgrade one,
  *    so a `toolId` is read for one purpose only: a `quote` segment (e.g.
@@ -37,6 +43,8 @@
  *
  * Pure: no React, no IO.
  */
+
+import { isDottedProtocolToolId } from "./toolIdentity.js";
 
 /**
  * What kind of money operation this act is:
@@ -94,7 +102,95 @@ const TOOL_ID_OPERATIONS: ReadonlyMap<string, ToolOperation | null> = new Map<
   ["trench.launch_preview", "quote"],
   ["trench.trade_execute", "mutating"],
   ["trench.launch_execute", "mutating"],
+
+  // Swap and bridge acts, verified against the manifests. Relay's mutating tool
+  // is the two-segment `relay.bridge` and its quote is `relay.quote.get`; same
+  // for Khalani. Pendle's mutating ids are deliberately NOT listed: their leg
+  // keys have not been checked against `toolLegs.ts`, and a labelled `unproven`
+  // line is the honest default until someone verifies them against a capture.
+  ["kyberswap.swap.quote", "quote"],
+  ["kyberswap.swap.execute", "mutating"],
+  ["uniswap.swap.quote", "quote"],
+  ["uniswap.swap.execute", "mutating"],
+  ["solana.swap.quote", "quote"],
+  ["solana.swap.execute", "mutating"],
+  ["relay.quote.get", "quote"],
+  ["relay.bridge", "mutating"],
+  ["khalani.quote.get", "quote"],
+  ["khalani.bridge", "mutating"],
 ]);
+
+/**
+ * A manifest that multiplexes preview and execution behind `dryRun`
+ * (`relay.bridge`, `khalani.bridge`, every Pendle mutating manifest) may not
+ * claim EXECUTED on a dry run: those previews return `success: true`, and an
+ * unlabelled "executed bridge" for a call that moved nothing is exactly the
+ * rule-90 failure the leg ladder exists to prevent.
+ *
+ * STRICT TRI-STATE — anything that is not a proven boolean claims LESS:
+ *
+ *   dryRun === true                      -> "quote"     (a preview that succeeded)
+ *   dryRun === false, or absent          -> "mutating"
+ *   dryRun present with any other value  -> "unproven"  (null, "true", 1, {} …)
+ *   args unreadable / truncated / not an object -> "unproven"
+ *   top-level and nested values BOTH present and disagreeing -> "unproven"
+ *
+ * PRECEDENCE, stated because "read both" is ambiguous: a DOTTED call is a direct
+ * manifest call and its params ARE the top-level record, so only the top level
+ * is read. A legacy `execute_tool` call carries them under `params`, so only
+ * `params` is read. The conflict rule exists for the malformed case where a
+ * legacy envelope also carries a top-level `dryRun`.
+ *
+ * `"unproven"` (not `null`) is the right fail-closed value: it still renders a
+ * VISIBLY LABELLED "Completed" line rather than silently dropping the act's legs.
+ */
+function mutatingUnlessDryRun(
+  toolArgs: string | null,
+  lane: "dotted" | "envelope",
+): ToolOperation {
+  const record = parseArgsRecord(toolArgs);
+  if (record === null) return "unproven";
+
+  const topLevel = record["dryRun"];
+  if (lane === "dotted") return dryRunToOperation(topLevel);
+
+  const nested = readParamsRecord(record);
+  const nestedValue = nested === null ? undefined : nested["dryRun"];
+  if (topLevel !== undefined && nestedValue !== undefined && topLevel !== nestedValue) {
+    return "unproven"; // two sources, disagreeing — prove nothing
+  }
+  return dryRunToOperation(nestedValue ?? topLevel);
+}
+
+function dryRunToOperation(value: unknown): ToolOperation {
+  if (value === undefined || value === false) return "mutating";
+  if (value === true) return "quote";
+  return "unproven";
+}
+
+/** The `params` sub-object of a legacy `execute_tool` envelope, if it is one. */
+function readParamsRecord(record: Record<string, unknown>): Record<string, unknown> | null {
+  const params = record["params"];
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return null;
+  }
+  return params as Record<string, unknown>;
+}
+
+/** The sanitized args parsed as a plain object, or null at any failure. */
+function parseArgsRecord(toolArgs: string | null): Record<string, unknown> | null {
+  if (toolArgs === null || toolArgs.length === 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolArgs);
+  } catch {
+    return null; // truncated or malformed — never guess the tail
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  return parsed as Record<string, unknown>;
+}
 
 /** The `toolId` string inside the sanitized args, or null at any failure. */
 function parseToolId(toolArgs: string | null): string | null {
@@ -127,22 +223,42 @@ export function resolveToolOperation(
   curatedProtocol: string | null,
   toolArgs: string | null,
 ): ToolOperation | null {
+  // A dotted name IS the protocol toolId — read before the lower-casing below,
+  // because `dexscreener.tokenPairs` must keep its case.
+  if (isDottedProtocolToolId(toolName)) {
+    return operationForToolId(toolName, curatedProtocol, toolArgs, "dotted");
+  }
+
   const name = toolName.toLowerCase();
 
   if (QUOTE_TOOLS.has(name)) return "quote";
   if (MUTATING_TOOLS.has(name)) return "mutating";
 
   if (name === "execute_tool") {
-    if (curatedProtocol === null) return null; // unproven venue → no legs
-    const toolId = parseToolId(toolArgs);
-    if (toolId !== null && TOOL_ID_OPERATIONS.has(toolId)) {
-      return TOOL_ID_OPERATIONS.get(toolId) ?? null;
-    }
-    return toolIdIsQuote(toolId) ? "quote" : "unproven";
+    return operationForToolId(parseToolId(toolArgs), curatedProtocol, toolArgs, "envelope");
   }
 
   // A swap/bridge-family name we do not know by name: legs, always labelled.
   if (name.startsWith("swap_") || name.startsWith("bridge_")) return "unproven";
 
   return null;
+}
+
+/**
+ * One curated-id path, shared by the dotted lane and the legacy `execute_tool`
+ * envelope. Every `mutating` verdict is routed through `mutatingUnlessDryRun`,
+ * so a manifest that gains a `dryRun` parameter tomorrow is safe by default.
+ */
+function operationForToolId(
+  toolId: string | null,
+  curatedProtocol: string | null,
+  toolArgs: string | null,
+  lane: "dotted" | "envelope",
+): ToolOperation | null {
+  if (curatedProtocol === null) return null; // unproven venue → no legs
+  if (toolId !== null && TOOL_ID_OPERATIONS.has(toolId)) {
+    const operation = TOOL_ID_OPERATIONS.get(toolId) ?? null;
+    return operation === "mutating" ? mutatingUnlessDryRun(toolArgs, lane) : operation;
+  }
+  return toolIdIsQuote(toolId) ? "quote" : "unproven";
 }

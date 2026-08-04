@@ -65,6 +65,8 @@ import {
   type SettledIdsTracker,
 } from "./SessionTranscript/settledIds.js";
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
+import { showsCentredScene } from "./TurnIsland/islandTurnState.js";
+import { VexingWorking } from "./VexingWorking/index.js";
 
 const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
@@ -83,13 +85,6 @@ export function SessionTranscript({
   const query = useTranscriptInfinite(sessionId);
   const streamPreview = useStreamPreview(sessionId);
   const chatSubmitting = useIsChatSubmitting(sessionId);
-  // THE TURN, not the round (see `turnPreview.ts`). This is what the whole
-  // rest of this component means by "a turn is in flight": it opens on the
-  // SEND rather than on the first provider delta, and it survives the
-  // mid-turn assistant rows a tool call persists. Both the ghost-moment and
-  // the scroll-jump reports were the round-scoped value leaking into
-  // turn-scoped decisions (the island's mount, the anchor run-out).
-  const preview = useTurnPreview(streamPreview, chatSubmitting);
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorSpacerRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -244,6 +239,29 @@ export function SessionTranscript({
   const newestVariant = rows.at(-1)?.variant ?? null;
   const newestIsLiveAppend =
     settledIds !== null && newestId !== 0 && !settledIds.has(newestId);
+
+  // THE TURN, not the round (see `turnPreview.ts`). This is what the whole
+  // rest of this component means by "a turn is in flight": it opens on the
+  // SEND rather than on the first provider delta, and it survives the
+  // mid-turn assistant rows a tool call persists. Both the ghost-moment and
+  // the scroll-jump reports were the round-scoped value leaking into
+  // turn-scoped decisions (the island's mount, the anchor run-out).
+  //
+  // It is called HERE, after the row bookkeeping, because its centred-scene
+  // latch reads the very rows the top-anchor effect below keys on — passed in
+  // rather than re-queried, so there is no second source of truth.
+  const { preview, centredSceneEligible } = useTurnPreview({
+    sessionId,
+    preview: streamPreview,
+    submitting: chatSubmitting,
+    newestId,
+    newestVariant,
+    newestIsLiveAppend,
+  });
+  const centredSceneUp =
+    preview !== null &&
+    showsCentredScene(preview, centredSceneEligible, hasPendingApproval);
+
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el === null || newestId === 0) return;
@@ -470,6 +488,7 @@ export function SessionTranscript({
           <StreamingBubble
             preview={preview}
             awaitingApproval={hasPendingApproval}
+            centredSceneUp={centredSceneUp}
           />
         ) : null}
         {/* Anchor spacer — inert run-out below the newest turn. Sized (via the
@@ -480,6 +499,16 @@ export function SessionTranscript({
         <div ref={anchorSpacerRef} aria-hidden className="shrink-0" />
         </div>
       </div>
+
+      {/* THE CENTRED "VEXING…" SCENE. A sibling of the scroller, never a
+          descendant: inside the scrolled content it would add height to
+          `scrollHeight` and corrupt the anchor-spacer / "↓ latest" maths this
+          surface's scroll model depends on. It mounts only while
+          `showsCentredScene` holds — the transcript-evidence latch in
+          `turnPreview.ts` — so it can never cover text the reader is reading. */}
+      {centredSceneUp && preview !== null ? (
+        <VexingWorking startedAtMs={preview.startedAtMs} />
+      ) : null}
 
       {/* "↓ LATEST" — the jump the transcript no longer takes on the reader's
           behalf. Solid ink (no glass), bottom-centred over the chat column,

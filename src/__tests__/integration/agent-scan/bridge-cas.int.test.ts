@@ -399,3 +399,91 @@ describe("bridge repo — abortPlannedEvents exclusive bound (FIX-A blocker 1)",
     expect(byIndex.get(fill.eventIndex)).toBe("pending");
   });
 });
+
+/**
+ * R1 Step 3a, test 14 — the PROVIDER-ONLY CLOCK.
+ *
+ * The handler's own poll can run for about two minutes while the provider fast
+ * lane sweeps every 30 s, so a write guarded only by `status='pending'` really
+ * can replace a NEWER lane observation with an OLDER handler one. The guard has
+ * to compare `provider_status_observed_at` — and it cannot use `last_checked_at`,
+ * because three other writers advance that column and any one of them landing
+ * between two provider observations would make the FRESHER one look stale.
+ *
+ * These cases live against a real Postgres because the whole guard is the CAS's
+ * `WHERE` clause; a mocked client would assert only that we called our own code.
+ */
+describe("bridge repo — noteBridgeProviderObservation ordering (R1 Step 3a)", () => {
+  it("an OLDER handler observation cannot replace a NEWER lane one, and says why", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const { result } = await createIntent(repo);
+    if (result.outcome !== "created") throw new Error("unreachable");
+    const executionId = result.executionId;
+
+    const newer = new Date().toISOString();
+    const older = new Date(Date.parse(newer) - 60_000).toISOString();
+
+    expect(await repo.noteBridgeProviderObservation({
+      executionId, providerStatus: "published", observedAt: newer,
+    })).toEqual({ applied: true });
+
+    // The slow handler returns with what it read a minute ago.
+    expect(await repo.noteBridgeProviderObservation({
+      executionId, providerStatus: "created", observedAt: older,
+    })).toEqual({ applied: false, reason: "stale_observation" });
+
+    const row = await repo.getActivityEventById(result.expectedFill.id);
+    expect(row?.providerStatus).toBe("published");
+  });
+
+  it("a NEWER observation still lands after an older one", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const { result } = await createIntent(repo);
+    if (result.outcome !== "created") throw new Error("unreachable");
+    const executionId = result.executionId;
+
+    const older = new Date(Date.now() - 60_000).toISOString();
+    const newer = new Date().toISOString();
+    await repo.noteBridgeProviderObservation({ executionId, providerStatus: "created", observedAt: older });
+    expect(await repo.noteBridgeProviderObservation({
+      executionId, providerStatus: "filled", observedAt: newer,
+    })).toEqual({ applied: true });
+
+    const row = await repo.getActivityEventById(result.expectedFill.id);
+    expect(row?.providerStatus).toBe("filled");
+  });
+
+  it("a verification write between two provider observations does NOT make the fresher one stale", async () => {
+    // The reason the clock is its own column. `touchLastChecked` is one of the
+    // three other writers of `last_checked_at`; ordering on that column would
+    // reject the observation below and silently drop a fresher provider status.
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const { result } = await createIntent(repo);
+    if (result.outcome !== "created") throw new Error("unreachable");
+    const executionId = result.executionId;
+
+    await repo.noteBridgeProviderObservation({
+      executionId, providerStatus: "created", observedAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    await repo.touchLastChecked(result.expectedFill.id, "fill_not_mined");
+
+    expect(await repo.noteBridgeProviderObservation({
+      executionId, providerStatus: "filled", observedAt: new Date().toISOString(),
+    })).toEqual({ applied: true });
+    expect((await repo.getActivityEventById(result.expectedFill.id))?.providerStatus).toBe("filled");
+  });
+
+  it("refuses to observe a row that is no longer pending, by name", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const { result } = await createIntent(repo);
+    if (result.outcome !== "created") throw new Error("unreachable");
+    const executionId = result.executionId;
+
+    await repo.confirmBridgeExpectedFill({
+      executionId, txHash: "0xfill-observe-terminal", evidenceSource: "khalani_order_status",
+    });
+    expect(await repo.noteBridgeProviderObservation({
+      executionId, providerStatus: "filled", observedAt: new Date().toISOString(),
+    })).toEqual({ applied: false, reason: "not_pending" });
+  });
+});

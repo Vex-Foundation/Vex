@@ -19,6 +19,10 @@
 import type { PoolClient } from "pg";
 
 import { query, execute } from "../../client.js";
+import {
+  INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE,
+  RESUMABLE_SHAPES_PREDICATE,
+} from "../../contracts/approval-lifecycle-predicates.js";
 import { APPROVAL_RESUME_CLAIMABLE_RUN_STATUSES } from "../../../engine/types.js";
 import type {
   ApprovalDecision,
@@ -320,38 +324,6 @@ function mapLifecycleRow(r: Record<string, unknown>): ApprovalLifecycleRow {
 }
 
 /**
- * The two shapes an incomplete approval lifecycle can take. ONE predicate,
- * shared by the reconciler scan and the per-session deferred-resume lookup, so
- * the fast in-process paths can never be blind to a state the five-minute
- * sweep would have fixed:
- *
- *   1. DECIDED BUT UNDISPATCHED — approved, `not_started`. The tool provably
- *      never ran (the dispatch CAS is the only exit), so it still has to run.
- *      This is what a busy session lease at decision time leaves behind, i.e.
- *      the ordinary "user approved while a turn was in flight" case.
- *   2. DISPATCHED BUT UNRESUMED — a tool result exists and no resumed turn has
- *      COMPLETED for it. Only the agent wake is missing.
- *
- * Shape 2 keys off completion, never off a resume having started. An attempt
- * that claimed the lease and then died mid-turn is still an unresumed
- * approval, and it stays in this set until a turn actually finishes; the
- * runner lease, not this predicate, is what stops two attempts from
- * overlapping.
- *
- * `dispatching` rows are in scope for the reconciler only: deciding whether
- * one is abandoned needs the row lock + lease check that only the reconciler
- * performs, and no fast path may ever guess at it.
- *
- * Deliberately NOT filtered by age. Staleness is decided per row, under a row
- * lock, against the live runner lease — a fixed age alone would convert a
- * healthy heartbeated dispatch into a false alarm.
- */
-const RESUMABLE_SHAPES_PREDICATE = `(
-        (decision = 'approved' AND execution_status = 'not_started')
-     OR (result_message_id IS NOT NULL AND resume_consumed_at IS NULL)
-      )`;
-
-/**
  * Fairness ordering for the two fixed-size lifecycle scans below.
  *
  * Both take a bounded batch in age order (50 rows for the reconciler, 10 per
@@ -393,6 +365,9 @@ function resumeBlockedOrderExpr(statusParam: string): string {
 /**
  * Reconciler scan — every decided approval whose lifecycle is still
  * incomplete, including the `dispatching` rows only this pass may judge.
+ *
+ * The predicate is the shared one from `db/contracts`, so this scan and the
+ * operator-Stop reads (availability + stop retention) provably cannot drift.
  */
 export async function getIncompleteLifecycle(
   limit = 50,
@@ -400,11 +375,7 @@ export async function getIncompleteLifecycle(
   const rows = await query<Record<string, unknown>>(
     `SELECT ${LIFECYCLE_COLUMNS}
        FROM approval_intents
-      WHERE decision IS NOT NULL
-        AND (
-              (decision = 'approved' AND execution_status = 'dispatching')
-           OR ${RESUMABLE_SHAPES_PREDICATE}
-            )
+      WHERE ${INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE}
       ORDER BY ${resumeBlockedOrderExpr("$2")} ASC,
                decided_at ASC NULLS FIRST
       LIMIT $1`,

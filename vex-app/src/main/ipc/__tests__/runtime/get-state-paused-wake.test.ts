@@ -1,5 +1,5 @@
 /**
- * `runtime.getState` → `pausedWake` composition.
+ * `runtime.getState` → `pausedWake` composition AND the `stoppable` projection.
  *
  * The wake read is COMPOSED at the handler, not folded into
  * `getActiveRunForSession`'s query, for two reasons: the run query already
@@ -20,7 +20,7 @@ import type { IpcMainInvokeEvent } from "electron";
 import { CH } from "@shared/ipc/channels.js";
 import { createTestWebContents, createTrustedSender } from "../test-sender.js";
 
-const mockGetActiveRunForSession = vi.fn();
+const mockReadSessionControlFacts = vi.fn();
 const mockGetPendingWakeForSession = vi.fn();
 
 vi.mock("electron", () => {
@@ -40,9 +40,18 @@ vi.mock("electron", () => {
   };
 });
 
-vi.mock("../../../database/mission-runs-db.js", () => ({
-  getActiveRunForSession: (...a: unknown[]) => mockGetActiveRunForSession(...a),
-}));
+vi.mock("../../../database/session-control-state.js", async (importOriginal) => {
+  // `isStoppable` is the POLICY under test in the sibling file — the real one
+  // is used here so this file cannot accidentally pin a fake predicate.
+  const actual = await importOriginal<
+    typeof import("../../../database/session-control-state.js")
+  >();
+  return {
+    ...actual,
+    readSessionControlFacts: (...a: unknown[]) =>
+      mockReadSessionControlFacts(...a),
+  };
+});
 vi.mock("../../../database/wake-db.js", () => ({
   getPendingWakeForSession: (...a: unknown[]) =>
     mockGetPendingWakeForSession(...a),
@@ -62,7 +71,7 @@ const SESSION = "00000000-0000-4000-8000-00000000dddd";
 const DUE = "2026-07-30T20:57:00.000Z";
 const trustedSender = createTrustedSender({ sender: createTestWebContents() });
 
-function runState(status: string) {
+function runFacts(status: string) {
   return {
     sessionId: SESSION,
     hasActiveRun: true,
@@ -75,6 +84,10 @@ function runState(status: string) {
     leaseActive: false,
     leaseExpiresAt: null,
     pendingControlKind: null,
+    hasPendingWake: false,
+    hasPendingApproval: false,
+    hasIncompleteApprovalLifecycle: false,
+    hasOutstandingUserForm: false,
   };
 }
 
@@ -99,9 +112,9 @@ beforeEach(() => {
 
 describe("runtime.getState pausedWake", () => {
   it("attaches pausedWake for a paused_wake run", async () => {
-    mockGetActiveRunForSession.mockResolvedValueOnce({
+    mockReadSessionControlFacts.mockResolvedValueOnce({
       ok: true,
-      data: runState("paused_wake"),
+      data: runFacts("paused_wake"),
     });
     mockGetPendingWakeForSession.mockResolvedValueOnce({
       dueAt: DUE,
@@ -123,9 +136,9 @@ describe("runtime.getState pausedWake", () => {
   it.each(["running", "paused_approval", "paused_error", "paused_user"])(
     "never reads the wake table and omits pausedWake for status %s",
     async (status) => {
-      mockGetActiveRunForSession.mockResolvedValueOnce({
+      mockReadSessionControlFacts.mockResolvedValueOnce({
         ok: true,
-        data: runState(status),
+        data: runFacts(status),
       });
 
       const r = await call();
@@ -137,9 +150,9 @@ describe("runtime.getState pausedWake", () => {
   );
 
   it("omits pausedWake when the run is paused_wake but no pending row remains", async () => {
-    mockGetActiveRunForSession.mockResolvedValueOnce({
+    mockReadSessionControlFacts.mockResolvedValueOnce({
       ok: true,
-      data: runState("paused_wake"),
+      data: runFacts("paused_wake"),
     });
     // Real transient: the executor claimed the row (pending → consumed) between
     // the run read and this one. "Not sleeping" is the honest answer.
@@ -152,9 +165,9 @@ describe("runtime.getState pausedWake", () => {
   });
 
   it("still returns a successful runtime state when the wake read throws", async () => {
-    mockGetActiveRunForSession.mockResolvedValueOnce({
+    mockReadSessionControlFacts.mockResolvedValueOnce({
       ok: true,
-      data: runState("paused_wake"),
+      data: runFacts("paused_wake"),
     });
     mockGetPendingWakeForSession.mockRejectedValueOnce(new Error("db down"));
 
@@ -166,7 +179,7 @@ describe("runtime.getState pausedWake", () => {
   });
 
   it("does not read the wake table when the run query itself failed", async () => {
-    mockGetActiveRunForSession.mockResolvedValueOnce({
+    mockReadSessionControlFacts.mockResolvedValueOnce({
       ok: false,
       error: {
         code: "internal.unexpected",
@@ -175,6 +188,7 @@ describe("runtime.getState pausedWake", () => {
         retryable: true,
         userActionable: false,
         redacted: true,
+        correlationId: "11111111-1111-4111-8111-111111111111",
       },
     });
 
@@ -182,5 +196,128 @@ describe("runtime.getState pausedWake", () => {
 
     expect(r.ok).toBe(false);
     expect(mockGetPendingWakeForSession).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE REGRESSION SUITE for the reported defect: the Stop key vanished across a
+ * `loop_defer` park while the agent was still running and still stoppable.
+ *
+ * The projection is asserted at the DTO boundary rather than on the predicate
+ * alone, because the defect was never in the policy — it was that no field
+ * carried the answer across IPC.
+ */
+describe("runtime.getState stoppable", () => {
+  function idleFacts(overrides: Record<string, unknown> = {}) {
+    return {
+      sessionId: SESSION,
+      hasActiveRun: false,
+      missionRunId: null,
+      status: null,
+      stopReason: null,
+      lastCheckpointAt: null,
+      startedAt: null,
+      iterationCount: null,
+      leaseActive: false,
+      leaseExpiresAt: null,
+      pendingControlKind: null,
+      hasPendingWake: false,
+      hasPendingApproval: false,
+      hasIncompleteApprovalLifecycle: false,
+      hasOutstandingUserForm: false,
+      ...overrides,
+    };
+  }
+
+  it("is TRUE for an agent session parked on a pending wake — no run, no lease", async () => {
+    mockReadSessionControlFacts.mockResolvedValueOnce({
+      ok: true,
+      data: idleFacts({ hasPendingWake: true }),
+    });
+
+    const r = await call();
+
+    expect(r.ok).toBe(true);
+    // Every legacy signal says "nothing here"…
+    expect(r.data?.hasActiveRun).toBe(false);
+    expect(r.data?.status).toBeNull();
+    expect(r.data?.leaseActive).toBe(false);
+    // …and the agent is demonstrably still stoppable.
+    expect(r.data?.stoppable).toBe(true);
+  });
+
+  it.each([
+    ["a live lease", { leaseActive: true }],
+    ["an active mission run", { hasActiveRun: true, status: "running" }],
+    ["a pending approval decision", { hasPendingApproval: true }],
+    ["an incomplete approval lifecycle", { hasIncompleteApprovalLifecycle: true }],
+  ])("is TRUE for %s", async (_label, overrides) => {
+    mockReadSessionControlFacts.mockResolvedValueOnce({
+      ok: true,
+      data: idleFacts(overrides),
+    });
+
+    const r = await call();
+
+    expect(r.data?.stoppable).toBe(true);
+  });
+
+  it("is FALSE for a genuinely idle session", async () => {
+    mockReadSessionControlFacts.mockResolvedValueOnce({
+      ok: true,
+      data: idleFacts(),
+    });
+
+    const r = await call();
+
+    expect(r.data?.stoppable).toBe(false);
+  });
+
+  /**
+   * The `lane` lesson, pinned. The aggregate carries MAIN-INTERNAL existence
+   * facts; a `{ ...facts }` assembly would carry them across a `.strict()`
+   * cross-process contract the day one is added.
+   */
+  it("projects an EXACT key set — the private facts never cross IPC", async () => {
+    mockReadSessionControlFacts.mockResolvedValueOnce({
+      ok: true,
+      data: idleFacts({ hasPendingWake: true, hasPendingApproval: true }),
+    });
+
+    const r = await call();
+
+    expect(Object.keys(r.data ?? {}).sort()).toEqual([
+      "hasActiveRun",
+      "iterationCount",
+      "lastCheckpointAt",
+      "leaseActive",
+      "leaseExpiresAt",
+      "missionRunId",
+      "pendingControlKind",
+      "sessionId",
+      "startedAt",
+      "status",
+      "stopReason",
+      "stoppable",
+    ]);
+  });
+
+  /**
+   * The park term comes from the AGGREGATE's own snapshot, never from the
+   * status-gated banner read. A wake-table hiccup may cost the banner; it must
+   * never cost the Stop key.
+   */
+  it("keeps stoppable TRUE when the banner read throws", async () => {
+    mockReadSessionControlFacts.mockResolvedValueOnce({
+      ok: true,
+      data: { ...runFacts("paused_wake"), hasPendingWake: true },
+    });
+    mockGetPendingWakeForSession.mockRejectedValueOnce(new Error("db down"));
+
+    const r = await call();
+
+    expect(r.ok).toBe(true);
+    expect(r.data && "pausedWake" in r.data).toBe(false);
+    expect(r.data?.stoppable).toBe(true);
   });
 });

@@ -93,6 +93,20 @@ export interface ToolVisibility {
    */
   requiresUniswapReveal?: boolean;
   /**
+   * True → hide unless this session has already produced a successful,
+   * non-empty `discover_tools` result (`ToolVisibilityContext.sessionId` checked
+   * against `registry/describe-tools-reveal.js`). Used by `describe_tools`: it
+   * is the follow-up half of the listing flow, so a fresh session that has
+   * never listed anything has nothing to describe and should not pay for its
+   * schema on every request.
+   *
+   * Unlike the Uniswap reveal there is NO TTL — a menu reveal has no freshness
+   * to outlive. The handler ALSO re-checks the reveal as defence in depth, so
+   * this gate only controls what the LLM sees, not what it can be made to
+   * attempt.
+   */
+  requiresDescribeToolsReveal?: boolean;
+  /**
    * True → show only when the session has a VALIDATED prepared compaction
    * summary (`ToolVisibilityContext.hasCompactionSummaryReady === true`).
    * Used by `compact_apply`, whose whole precondition is readiness rather

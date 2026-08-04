@@ -18,11 +18,19 @@ const acquireSessionControlLock = vi.fn();
 const appendMessage = vi.fn();
 const emitToolResultAppended = vi.fn();
 const withTransaction = vi.fn();
+const createLeaseHandle = vi.fn();
+const releaseLeaseAndEmitControlState = vi.fn();
+const gateOnOperatorStopWithClient = vi.fn();
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({ updateStatus, updateStatusIfNotTerminal }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimRunLeaseAndFlipToRunning,
   acquireSessionControlLock,
+  gateOnOperatorStopWithClient,
+}));
+vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({ createLeaseHandle }));
+vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
+  releaseLeaseAndEmitControlState,
 }));
 vi.mock("@vex-agent/engine/events/index.js", () => ({ appendMessage }));
 vi.mock(
@@ -34,6 +42,7 @@ vi.mock("@vex-agent/db/client.js", () => ({ withTransaction }));
 const {
   USER_FORM_RESUME_CLAIMABLE_RUN_STATUSES,
   claimUserFormResume,
+  closeUserFormContinuation,
   commitUserFormToolResult,
   parkRunForUserForm,
   userFormDismissalOutput,
@@ -46,6 +55,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   withTransaction.mockImplementation(async (fn: (c: unknown) => Promise<unknown>) => fn(CLIENT));
   appendMessage.mockResolvedValue({ id: 42 });
+  createLeaseHandle.mockImplementation((opts: { ownerId: string }) => ({
+    ownerId: opts.ownerId,
+    release: vi.fn(),
+  }));
+  gateOnOperatorStopWithClient.mockResolvedValue({ kind: "clear" });
 });
 
 describe("parking", () => {
@@ -70,9 +84,46 @@ describe("exactly-once claim", () => {
     expect([...USER_FORM_RESUME_CLAIMABLE_RUN_STATUSES]).toEqual(["paused_user_form"]);
   });
 
+  /**
+   * DEFECT 2. The claim acquires a REAL run lease, and `resumeMissionRun`'s
+   * contract states the CALLER owns its lifecycle. Dropping `claim.lease` left
+   * the row held with no handle to release it and no heartbeat to renew it, so
+   * the session stayed blocked until the TTL lapsed.
+   */
+  it("CARRIES the claimed run lease back as a live handle", async () => {
+    claimRunLeaseAndFlipToRunning.mockResolvedValue({
+      outcome: "claimed",
+      lease: { sessionId: "s1", missionRunId: "r1" },
+    });
+
+    const outcome = await claimUserFormResume(REF, "owner_1");
+
+    expect(outcome.outcome).toBe("claimed");
+    expect(
+      outcome.outcome === "claimed" ? outcome.leaseHandle : null,
+    ).toMatchObject({ ownerId: "owner_1" });
+    expect(createLeaseHandle).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: "owner_1" }),
+    );
+  });
+
+  it("carries NO run lease for a chat session — there is no run to flip", async () => {
+    const outcome = await claimUserFormResume(
+      { ...REF, missionRunId: null },
+      "owner_1",
+    );
+
+    expect(outcome).toEqual({ outcome: "claimed", leaseHandle: null });
+    expect(claimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
+  });
+
   it("claims the run and flips it back to running", async () => {
-    claimRunLeaseAndFlipToRunning.mockResolvedValue({ outcome: "claimed" });
-    await expect(claimUserFormResume(REF, "owner_1")).resolves.toEqual({ outcome: "claimed" });
+    claimRunLeaseAndFlipToRunning.mockResolvedValue({
+      outcome: "claimed",
+      lease: { sessionId: "s1" },
+    });
+    const claimed = await claimUserFormResume(REF, "owner_1");
+    expect(claimed.outcome).toBe("claimed");
     expect(claimRunLeaseAndFlipToRunning).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "s1",
@@ -183,5 +234,108 @@ describe("cancel / expiry never hang the turn", () => {
     for (const reason of ["dismissed", "expired"] as const) {
       expect(userFormDismissalOutput(reason).toLowerCase()).not.toContain("approved");
     }
+  });
+});
+
+
+/**
+ * DEFECT 1. The closing decision, and the interleaving it exists for.
+ *
+ * Releasing the lease and THEN marking consumption leaves an interval in which
+ * the form is still outstanding by the durable predicate — so a Stop landing
+ * there is RETAINED, correctly — but the lease is already gone. The moment
+ * consumption lands, that retained request has no observer left: it sits open
+ * until the next unrelated turn, defer or approved dispatch is refused by a
+ * stop that was never meant for it.
+ */
+describe("closing the continuation leaves no orphaned Stop", () => {
+  const CONSUME = vi.fn();
+
+  /**
+   * A complete `LeaseHandle`, not a partial cast: the closing decision hands
+   * this straight to the release chokepoint, and a stub missing the fields that
+   * contract requires would pass a test the production type would reject.
+   */
+  function leaseHandle(): Parameters<
+    typeof closeUserFormContinuation
+  >[0]["leaseHandle"] {
+    return {
+      lease: {
+        sessionId: "s1",
+        missionRunId: null,
+        ownerId: "owner_1",
+        processKind: "electron_main",
+        acquiredAt: new Date(),
+        heartbeatAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      ownerId: "owner_1",
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  beforeEach(() => {
+    CONSUME.mockReset();
+    CONSUME.mockResolvedValue(undefined);
+  });
+
+  it("retires the Stop and marks completion in ONE transaction, lease still held", async () => {
+    const handle = leaseHandle();
+
+    await closeUserFormContinuation({
+      sessionId: "s1",
+      leaseHandle: handle,
+      consume: CONSUME,
+    });
+
+    // Both writes rode the SAME client, so they commit together — the two
+    // facts can never disagree about whether this continuation is finished.
+    const gateClient = gateOnOperatorStopWithClient.mock.calls[0]?.[0];
+    expect(gateClient).toBe(CLIENT);
+    expect(CONSUME).toHaveBeenCalledWith(CLIENT);
+    // …and the lock came first, per the global order.
+    expect(acquireSessionControlLock).toHaveBeenCalledWith(CLIENT, "s1");
+    // The release happened AFTER that decision, not before it.
+    expect(releaseLeaseAndEmitControlState).toHaveBeenCalledWith(handle, "s1");
+    const [consumeAt] = CONSUME.mock.invocationCallOrder;
+    const [releaseAt] = releaseLeaseAndEmitControlState.mock.invocationCallOrder;
+    expect(consumeAt).toBeLessThan(releaseAt ?? 0);
+  });
+
+  it("consults the gate again AFTER the release, closing that window too", async () => {
+    await closeUserFormContinuation({
+      sessionId: "s1",
+      leaseHandle: leaseHandle(),
+      consume: CONSUME,
+    });
+
+    // The release is not transactional, so a Stop can land between the commit
+    // and it — retained while the lease is live, orphaned the instant it is
+    // not. The second consultation retires exactly that row.
+    expect(gateOnOperatorStopWithClient).toHaveBeenCalledTimes(2);
+    // Invocation order, not first-call order: the FIRST consultation precedes
+    // the release (it rides the closing commit) and the SECOND must follow it.
+    const [firstGate, secondGate] =
+      gateOnOperatorStopWithClient.mock.invocationCallOrder;
+    const [release] = releaseLeaseAndEmitControlState.mock.invocationCallOrder;
+    expect(firstGate).toBeLessThan(release ?? 0);
+    expect(secondGate).toBeGreaterThan(release ?? 0);
+    for (const call of gateOnOperatorStopWithClient.mock.calls) {
+      expect(call[1]).toEqual({ sessionId: "s1", missionRunId: null });
+    }
+  });
+
+  it("still closes when there is no lease to release", async () => {
+    await closeUserFormContinuation({
+      sessionId: "s1",
+      leaseHandle: null,
+      consume: CONSUME,
+    });
+
+    expect(CONSUME).toHaveBeenCalledTimes(1);
+    expect(releaseLeaseAndEmitControlState).not.toHaveBeenCalled();
+    // The Stop is still retired — a continuation that ran without a lease of
+    // its own can still be the last observer of one.
+    expect(gateOnOperatorStopWithClient).toHaveBeenCalledTimes(2);
   });
 });

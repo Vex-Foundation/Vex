@@ -32,6 +32,7 @@ import type { JSX } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import {
   usePortfolio,
+  useActivityProgressInvalidation,
   useActivityResolvedInvalidation,
 } from "../../../lib/api/portfolio.js";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
@@ -50,6 +51,9 @@ export function PositionBlock({
   // card is mounted for the whole app shell, so one subscription here covers
   // every portfolio surface without a second listener per screen.
   useActivityResolvedInvalidation();
+  // OD-7 — the pending half: an observation of a row that is STILL pending.
+  // Without it the 5 s lane cadence reached this block only on the 60 s poll.
+  useActivityProgressInvalidation();
   const isSession = activeSessionId !== null;
   const title = isSession ? "Position" : "Portfolio";
 

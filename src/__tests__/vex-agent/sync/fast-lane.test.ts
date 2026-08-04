@@ -5,9 +5,12 @@
  * The properties pinned here are the ones whose absence causes damage rather
  * than slowness:
  *
- * 1. THE 90 s GATE. A lane may not terminalize a row while its broadcast
- *    handler could still be writing executed amounts. This is the money-truth
- *    guard, not latency slack, and it is the reason this file exists at all.
+ * 1. THE 90 s GATE, as a pure predicate. EVM ROWS ARE NO LONGER REGISTRY WORK:
+ *    the durable claim (`claimDuePendingEvm`) is their single scheduler, so this
+ *    module's job for them is to DRIVE that claimant every cycle — including
+ *    with an empty registry, which is exactly the restart case the old per-id
+ *    path could not serve. The gate itself is enforced where terminalization
+ *    happens, and is pinned in `agent-activity-repair-observation-lane.test.ts`.
  * 2. DEDUP / CAP. A second arm is a no-op; overflow is not an error and not a
  *    dropped row.
  * 3. SEMAPHORE. Bounded concurrent chain reads — the DB pool is `max: 10` and
@@ -43,13 +46,12 @@ const {
   rearmPendingFastLanes,
   isPastHandlerWindow,
   FAST_LANE_MAX_ACTIVE,
-  FAST_LANE_MAX_CONCURRENCY,
   FAST_LANE_INTERVAL_MS,
   FAST_LANE_MAX_AGE_MS,
   FAST_LANE_PROVIDER_INTERVAL_MS,
 } = await import("../../../vex-agent/sync/fast-lane.js");
 const { REPAIR_CANDIDATE_AGE_MS } = await import(
-  "../../../vex-agent/sync/agent-activity-repair.js"
+  "../../../vex-agent/sync/handler-window.js"
 );
 const { pendingActivityBus, emitPendingActivityArmed, emitPendingActivityResolved } =
   await import("../../../vex-agent/events/pending-activity-bus.js");
@@ -71,7 +73,7 @@ function pendingRow(over: Record<string, unknown> = {}) {
 
 function stubDeps() {
   return {
-    resolveEvmRows: vi.fn().mockResolvedValue(undefined),
+    runEvmPendingLane: vi.fn().mockResolvedValue(undefined),
     resolveSolanaRows: vi.fn().mockResolvedValue(undefined),
     runBridgeSweep: vi.fn().mockResolvedValue(undefined),
   };
@@ -116,41 +118,34 @@ describe("the 90 s handler window", () => {
     expect(isPastHandlerWindow({ submitAttemptedAt: "not-a-date" }, now)).toBe(false);
   });
 
-  it("a lane does NOT terminalize a row younger than the gate while its handler is alive", async () => {
+  it("drives the EVM claimant every cycle even with an EMPTY registry — the restart case", async () => {
+    // The old per-id path could only observe rows THIS process had armed, so a
+    // restart left every in-flight EVM row waiting for the 30 s sweep. The
+    // claimant reads the database, so an empty registry is not an empty queue.
     const deps = stubDeps();
     const handle = startFastLane({ deps, random: noJitter });
 
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 8453, lane: "onchain" });
-    // The row exists and is pending, but is ALWAYS only 10 s past its submit at
-    // the moment it is read — a handler that is still decoding its own receipt,
-    // however far the fake clock has advanced.
-    mockListPendingByIds.mockImplementation(async () => [
-      pendingRow({ submitAttemptedAt: new Date(Date.now() - 10_000).toISOString() }),
-    ]);
+    expect(handle.size()).toBe(0);
+    await vi.advanceTimersByTimeAsync(FAST_LANE_INTERVAL_MS);
 
-    // Run well past the first due time so the lane definitely fires.
-    await vi.advanceTimersByTimeAsync(REPAIR_CANDIDATE_AGE_MS + FAST_LANE_INTERVAL_MS * 2);
-
-    // The lane looked, but handed nothing to the resolver — no CAS was attempted.
-    expect(deps.resolveEvmRows).not.toHaveBeenCalled();
-    // And it is still armed: this is a deferral, never a give-up.
-    expect(handle.size()).toBe(1);
+    expect(deps.runEvmPendingLane).toHaveBeenCalled();
+    // And never through the non-claiming by-id read, which could race the sweep
+    // on the same row.
+    expect(mockListPendingByIds).not.toHaveBeenCalled();
 
     handle.stop();
   });
 
-  it("resolves the row once it is past the gate", async () => {
-    const deps = stubDeps();
-    const handle = startFastLane({ deps, random: noJitter });
+  it("an EVM arm takes NO registry slot — the claim owns those rows", async () => {
+    const handle = startFastLane({ deps: stubDeps(), random: noJitter });
 
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 8453, lane: "onchain" });
-    mockListPendingByIds.mockResolvedValue([pendingRow()]);
+    for (let id = 1; id <= 5; id++) {
+      emitPendingActivityArmed({ activityId: id, chainFamily: "eip155", chainId: 8453, lane: "onchain" });
+    }
 
-    await vi.advanceTimersByTimeAsync(REPAIR_CANDIDATE_AGE_MS + 4_000);
-
-    expect(deps.resolveEvmRows).toHaveBeenCalled();
-    expect(deps.resolveEvmRows.mock.calls[0]?.[0]).toHaveLength(1);
-
+    // A second owner with a weaker guarantee — capped at 12, lost on restart —
+    // is exactly what the claim replaced.
+    expect(handle.size()).toBe(0);
     handle.stop();
   });
 
@@ -170,7 +165,6 @@ describe("the 90 s handler window", () => {
     await vi.advanceTimersByTimeAsync(FAST_LANE_INTERVAL_MS + 4_000);
 
     expect(deps.resolveSolanaRows).toHaveBeenCalled();
-    expect(deps.resolveEvmRows).not.toHaveBeenCalled();
 
     handle.stop();
   });
@@ -182,9 +176,9 @@ describe("dedup and capacity", () => {
   it("a second arm for the same row is a no-op", () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
 
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
 
     expect(handle.size()).toBe(1);
     handle.stop();
@@ -194,7 +188,7 @@ describe("dedup and capacity", () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
 
     for (let id = 1; id <= FAST_LANE_MAX_ACTIVE + 5; id++) {
-      emitPendingActivityArmed({ activityId: id, chainFamily: "eip155", chainId: 1, lane: "onchain" });
+      emitPendingActivityArmed({ activityId: id, chainFamily: "solana", chainId: 101, lane: "onchain" });
     }
 
     // The overflow rows are still `pending` in the DB and still owned by the
@@ -204,45 +198,13 @@ describe("dedup and capacity", () => {
   });
 });
 
-// ── 3. Semaphore ──────────────────────────────────────────────────────────
+// ── 3. Batching ───────────────────────────────────────────────────────────
+//
+// The EVM in-flight bound moved with the EVM scheduler: it is now
+// `EVM_LANE_MAX_CONCURRENCY` in `agent-activity-repair.ts`, applied once over a
+// claimed page, and pinned there.
 
-describe("bounded concurrency", () => {
-  it("never has more than FAST_LANE_MAX_CONCURRENCY EVM lookups in flight", async () => {
-    // Exercises the real production dep's semaphore by injecting a resolver that
-    // records its own concurrency, wired through the same bounded runner.
-    const { buildProductionFastLaneDeps } = await import("../../../vex-agent/sync/fast-lane.js");
-    expect(typeof buildProductionFastLaneDeps).toBe("function");
-
-    let inFlight = 0;
-    let peak = 0;
-    const deps = {
-      ...stubDeps(),
-      resolveEvmRows: vi.fn(async (rows: readonly unknown[]) => {
-        // The production dep bounds per ROW; this stub asserts the fast lane
-        // hands the whole due batch over in one call so the bound is applied in
-        // exactly one place rather than re-derived per cycle.
-        inFlight++;
-        peak = Math.max(peak, inFlight);
-        await Promise.resolve();
-        inFlight--;
-        expect(rows.length).toBeLessThanOrEqual(FAST_LANE_MAX_ACTIVE);
-      }),
-    };
-
-    const handle = startFastLane({ deps, random: noJitter });
-    for (let id = 1; id <= 6; id++) {
-      emitPendingActivityArmed({ activityId: id, chainFamily: "eip155", chainId: 1, lane: "onchain" });
-    }
-    mockListPendingByIds.mockResolvedValue(
-      Array.from({ length: 6 }, (_, i) => pendingRow({ id: i + 1 })),
-    );
-
-    await vi.advanceTimersByTimeAsync(REPAIR_CANDIDATE_AGE_MS + 4_000);
-
-    expect(peak).toBeLessThanOrEqual(FAST_LANE_MAX_CONCURRENCY);
-    handle.stop();
-  });
-
+describe("batching", () => {
   it("batches all due Solana lanes into ONE resolver call per cycle", async () => {
     const deps = stubDeps();
     const handle = startFastLane({ deps, random: noJitter });
@@ -273,7 +235,7 @@ describe("disarm", () => {
   it("disarms on terminalization", () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
 
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
     expect(handle.size()).toBe(1);
 
     emitPendingActivityResolved({
@@ -311,14 +273,14 @@ describe("disarm", () => {
     const deps = stubDeps();
     const handle = startFastLane({ deps, random: noJitter });
 
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
     // The by-id read comes back empty: the row is no longer pending.
     mockListPendingByIds.mockResolvedValue([]);
 
-    await vi.advanceTimersByTimeAsync(REPAIR_CANDIDATE_AGE_MS + 4_000);
+    await vi.advanceTimersByTimeAsync(FAST_LANE_INTERVAL_MS + 4_000);
 
     expect(handle.size()).toBe(0);
-    expect(deps.resolveEvmRows).not.toHaveBeenCalled();
+    expect(deps.resolveSolanaRows).not.toHaveBeenCalled();
     handle.stop();
   });
 
@@ -326,8 +288,8 @@ describe("disarm", () => {
     const deps = stubDeps();
     const handle = startFastLane({ deps, random: noJitter });
 
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
-    mockListPendingByIds.mockResolvedValue([pendingRow()]);
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
+    mockListPendingByIds.mockResolvedValue([pendingRow({ chainFamily: "solana" })]);
 
     await vi.advanceTimersByTimeAsync(FAST_LANE_MAX_AGE_MS + 4_000);
 
@@ -339,13 +301,13 @@ describe("disarm", () => {
 
   it("stop() clears every lane and unsubscribes", () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 1, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
 
     handle.stop();
 
     expect(handle.size()).toBe(0);
     // A post-stop arm must not resurrect the lane.
-    emitPendingActivityArmed({ activityId: 2, chainFamily: "eip155", chainId: 1, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 2, chainFamily: "solana", chainId: 101, lane: "onchain" });
     expect(handle.size()).toBe(0);
   });
 });
@@ -356,7 +318,9 @@ describe("crash recovery", () => {
   it("re-arms in-flight rows through the bus, so the cap and dedup still apply", async () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
     mockListPendingOlderThan.mockImplementation(async (_age: number, _limit: number, family: string) =>
-      family === "eip155" ? [pendingRow({ id: 1 }), pendingRow({ id: 2 })] : [],
+      family === "solana"
+        ? [pendingRow({ id: 1, chainFamily: "solana" }), pendingRow({ id: 2, chainFamily: "solana" })]
+        : [],
     );
 
     const armed = await rearmPendingFastLanes();
@@ -366,15 +330,30 @@ describe("crash recovery", () => {
     handle.stop();
   });
 
+  it("does NOT re-arm EVM rows — the durable claim already covers every one of them", async () => {
+    const handle = startFastLane({ deps: stubDeps(), random: noJitter });
+    mockListPendingOlderThan.mockResolvedValue([]);
+
+    await rearmPendingFastLanes();
+
+    // Re-arming them would create a second, weaker owner for rows the claim
+    // selects from the database on the very first cycle after a restart.
+    expect(mockListPendingOlderThan).toHaveBeenCalledTimes(1);
+    expect(mockListPendingOlderThan).toHaveBeenCalledWith(0, FAST_LANE_MAX_ACTIVE, "solana");
+    handle.stop();
+  });
+
   // The count is a REPORT of how many rows the fast lane actually took over.
   // Counting emitted candidates instead overstated it whenever the registry
   // declined one — a restart that armed nothing could still log "12 re-armed",
   // which is exactly the wrong signal when the cap is the thing under pressure.
   it("counts lanes ACCEPTED, not candidates emitted, when a row is already armed", async () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
-    emitPendingActivityArmed({ activityId: 1, chainFamily: "eip155", chainId: 8453, lane: "onchain" });
+    emitPendingActivityArmed({ activityId: 1, chainFamily: "solana", chainId: 101, lane: "onchain" });
     mockListPendingOlderThan.mockImplementation(async (_a: number, _l: number, family: string) =>
-      family === "eip155" ? [pendingRow({ id: 1 }), pendingRow({ id: 2 })] : [],
+      family === "solana"
+        ? [pendingRow({ id: 1, chainFamily: "solana" }), pendingRow({ id: 2, chainFamily: "solana" })]
+        : [],
     );
 
     // Two candidates, one already armed → exactly one new lane.
@@ -385,9 +364,12 @@ describe("crash recovery", () => {
 
   it("counts lanes ACCEPTED, not candidates emitted, when the cap is reached", async () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
-    const overCap = Array.from({ length: FAST_LANE_MAX_ACTIVE + 5 }, (_, i) => pendingRow({ id: i + 1 }));
+    const overCap = Array.from(
+      { length: FAST_LANE_MAX_ACTIVE + 5 },
+      (_, i) => pendingRow({ id: i + 1, chainFamily: "solana" }),
+    );
     mockListPendingOlderThan.mockImplementation(async (_a: number, _l: number, family: string) =>
-      family === "eip155" ? overCap : [],
+      family === "solana" ? overCap : [],
     );
 
     expect(await rearmPendingFastLanes(() => handle.size())).toBe(FAST_LANE_MAX_ACTIVE);
@@ -398,7 +380,7 @@ describe("crash recovery", () => {
   it("does not re-arm a row already older than the fast lane's max age", async () => {
     const handle = startFastLane({ deps: stubDeps(), random: noJitter });
     mockListPendingOlderThan.mockImplementation(async (_a: number, _l: number, family: string) =>
-      family === "eip155"
+      family === "solana"
         ? [
             pendingRow({
               id: 1,
@@ -464,7 +446,7 @@ describe("the provider lane", () => {
 
     expect(deps.runBridgeSweep).toHaveBeenCalled();
     // Never the on-chain leg, and never disarmed for lacking a hash it cannot have.
-    expect(deps.resolveEvmRows).not.toHaveBeenCalled();
+    expect(deps.resolveSolanaRows).not.toHaveBeenCalled();
     expect(mockListPendingByIds).not.toHaveBeenCalled();
     expect(handle.size()).toBe(1);
     handle.stop();
@@ -484,7 +466,7 @@ describe("the provider lane", () => {
     await vi.advanceTimersByTimeAsync(FAST_LANE_PROVIDER_INTERVAL_MS + 4_000);
 
     expect(deps.runBridgeSweep).toHaveBeenCalled();
-    expect(deps.resolveEvmRows).not.toHaveBeenCalled();
+    expect(deps.resolveSolanaRows).not.toHaveBeenCalled();
     expect(handle.size()).toBe(1);
     handle.stop();
   });
@@ -499,6 +481,53 @@ describe("the provider lane", () => {
     // real-time slot. It is NOT failed — just handed back.
     expect(await rearmPendingFastLanes()).toBe(0);
     expect(handle.size()).toBe(0);
+    handle.stop();
+  });
+});
+
+// ── 7. Error scrubbing (the secrets decree) ───────────────────────────────
+
+describe("the cycle's own failure log", () => {
+  /**
+   * A cycle failure is the one place in this module where a PROVIDER error
+   * reaches a log, and it was logging `err.message` verbatim. That string can
+   * carry the RPC URL, its credentials, an Authorization header and a response
+   * body — `describeFailureForLog` is the canonical scrub boundary every other
+   * provider-error site in the repo already routes through.
+   *
+   * The dep is made to throw so the catch is genuinely exercised, rather than
+   * asserting on a hand-built string that never met the real code path.
+   */
+  it("scrubs a provider error instead of logging it verbatim", async () => {
+    const logger = (await import("@utils/logger.js")).default;
+    const warnSpy = vi.spyOn(logger, "warn").mockReturnThis();
+    const canary =
+      'Provider 500 https://user:p4ssw0rd@rpc.example.io/v1?key=SECRET123 '
+      + 'Authorization: Bearer FASTLANE_CANARY_7 body={"error":{"code":401}}';
+
+    const deps = {
+      ...stubDeps(),
+      runEvmPendingLane: vi.fn().mockRejectedValue(new Error(canary)),
+    };
+    const handle = startFastLane({ deps, random: noJitter });
+
+    await vi.advanceTimersByTimeAsync(FAST_LANE_INTERVAL_MS);
+
+    // Serialise EVERYTHING the logger was handed rather than indexing one
+    // argument: the logger's type models a single-object overload, so reaching
+    // for `call[1]` is both a type error and a weaker assertion. The question
+    // this test asks is "does any fragment of the secret appear ANYWHERE in what
+    // was logged?", and that is what is checked.
+    const logged = JSON.stringify(warnSpy.mock.calls);
+    expect(logged).toContain("sync.fast_lane.cycle_failed");
+    for (const fragment of [
+      "p4ssw0rd", "SECRET123", "rpc.example.io", "https://",
+      "FASTLANE_CANARY_7", "Bearer",
+    ]) {
+      expect(logged).not.toContain(fragment);
+    }
+
+    warnSpy.mockRestore();
     handle.stop();
   });
 });

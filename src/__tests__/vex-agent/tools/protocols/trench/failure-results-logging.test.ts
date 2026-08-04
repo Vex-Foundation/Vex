@@ -81,6 +81,17 @@ function activityEvent(id: number): AgentActivityEvent {
     broadcastAt: null, confirmedAt: null, lastCheckedAt: null,
     createdAt: "2026-08-02T09:00:00.000Z", updatedAt: "2026-08-02T09:00:00.000Z",
     verificationAttempts: 0, lastVerificationReason: null,
+  confirmationSource: null,
+  settlementSource: null,
+  pendingReason: null,
+  providerStatusObservedAt: null,
+  // The pending-fallback lane's own state (migration 068) — untouched by
+  // this fixture's row, which is exactly what NULL says.
+  evmClaimLeaseUntil: null,
+  evmClaimToken: null,
+  lastVerificationIncrementAt: null,
+  firstNonInclusionObservedAt: null,
+  settlementDecodeVersion: null,
   };
 }
 

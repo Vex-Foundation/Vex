@@ -11,6 +11,7 @@ import type { KhalaniChain } from "@tools/khalani/types.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import {
   confirmActivityEvent,
+  provenLegAmounts,
   failActivityEvent,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
@@ -100,7 +101,21 @@ export async function runKhalaniVexFeeLeg(input: KhalaniFeeLegInput): Promise<Ve
     }
     let legStatus = "confirmed";
     try {
-      const confirmResult = await confirmActivityEvent(feeRow.id, {});
+      // R1 Step 3b: Vex COMPOSED this transfer, so the amount recorded on its own
+      // intent row is the exact atomic amount that was signed — not a quote and
+      // not the provider's word. It is therefore one of the few legs whose
+      // executed amount may be written at return time.
+      const confirmResult = await confirmActivityEvent(
+        feeRow.id,
+        provenLegAmounts("bridge_fee",
+          feeRow.amountInRaw === null
+            ? { kind: "opaque_provider_payload" }
+            : {
+              kind: "vex_built_exact",
+              amountRaw: feeRow.amountInRaw,
+              ...(feeRow.amountInHuman === null ? {} : { amountHuman: feeRow.amountInHuman }),
+            }),
+      );
       if (!confirmResult.applied) {
         const alreadyMatches =
           confirmResult.row.status === "confirmed" && confirmResult.row.txHash === outcome.txHash;

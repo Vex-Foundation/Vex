@@ -72,6 +72,10 @@ export function entry(
     // trouble verifying.
     stalledVerification: false,
     stalledReason: null,
+    // The CONCLUSIVE half (migration 067). Required and nullable on the DTO, so
+    // the fixture must carry it explicitly — an optional field here would be
+    // `string | null | undefined`, which the strict entry type does not admit.
+    pendingReason: null,
     ...overrides,
   };
 }

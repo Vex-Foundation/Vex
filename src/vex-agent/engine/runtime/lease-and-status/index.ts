@@ -24,7 +24,10 @@ export {
 } from "./_types.js";
 
 export { claimRunLeaseAndFlipToRunning } from "./claim-run-lease.js";
-export { claimSessionLease } from "./claim-session-lease.js";
+export {
+  claimSessionLease,
+  claimSessionLeaseWithClient,
+} from "./claim-session-lease.js";
 export { observeAndApplyControl } from "./observe-and-apply.js";
 export {
   claimRunForAutoRetry,

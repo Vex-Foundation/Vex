@@ -16,6 +16,7 @@ import {
 } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   confirmActivityEvent,
+  provenLegAmounts,
   failActivityEvent,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
@@ -138,7 +139,16 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
       let legStatus = "confirmed";
       priorLeg = priorLegAnchorFrom(outcome.settledAtBlock);
       try {
-        const confirmResult = await confirmActivityEvent(legRow.id, {});
+        // R1 Step 3b, the NO-amount arm, stated rather than left silent. This
+        // loop is shared by allowance and deposit rows, and a Khalani
+        // `CONTRACT_CALL` or Solana deposit leg comes from a PROVIDER payload:
+        // confirming it proves inclusion, never the principal it carried. Only a
+        // Vex-built exact `TRANSFER` plan could claim otherwise, and this site
+        // cannot tell the two apart — so it claims nothing.
+        const confirmResult = await confirmActivityEvent(
+          legRow.id,
+          provenLegAmounts(legRow.eventRole, { kind: "opaque_provider_payload" }),
+        );
         if (!confirmResult.applied) {
           const alreadyMatches =
             confirmResult.row.status === "confirmed" && confirmResult.row.txHash === outcome.txHash;

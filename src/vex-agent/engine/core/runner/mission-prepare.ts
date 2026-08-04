@@ -118,7 +118,17 @@ export type PrepareMissionStartOutcome =
     readonly outcome: "lease_busy";
     readonly currentLease: RunnerLease;
   }
-  | { readonly outcome: "provider_unavailable" };
+  | { readonly outcome: "provider_unavailable" }
+  /**
+   * A SESSION-scoped operator Stop was outstanding when the run-creation
+   * transaction ran. The run was NOT created — a run committed after a Stop is
+   * unreachable by that Stop, because the run-scoped gate matches on
+   * `mission_run_id` and never finds a NULL-scoped request.
+   *
+   * The gate consumed the stop in the same transaction, so this is "your Stop
+   * landed first, start again" and a retry proceeds normally.
+   */
+  | { readonly outcome: "session_stop_pending" };
 
 export interface PrepareMissionStartInput {
   readonly missionId: string;
@@ -294,5 +304,7 @@ function mapCommitOutcomeToPrepareOutcome(
         missionRunId: commit.missionRunId,
         runStatus: commit.runStatus,
       };
+    case "session_stop_pending":
+      return { outcome: "session_stop_pending" };
   }
 }

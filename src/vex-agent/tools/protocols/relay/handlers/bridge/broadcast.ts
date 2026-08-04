@@ -27,6 +27,7 @@ import {
 import type { RelayStepRole } from "@tools/relay/step-policy.js";
 import {
   confirmActivityEvent,
+  provenLegAmounts,
   failActivityEvent,
   markActivityBroadcast,
   markBroadcastAccepted,
@@ -203,7 +204,19 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
       let legStatus: OriginBroadcast["status"] = "confirmed";
       priorLeg = priorLegAnchorFrom(outcome.receipt.blockNumber);
       try {
-        const confirmResult = await confirmActivityEvent(legRow.id, {});
+        // R1 Step 3b, the NO-amount arm, stated rather than left silent.
+        // Confirming this leg proves it was INCLUDED; it does not prove what it
+        // moved. Relay's own native-value module says the principal is provable
+        // only when the origin asset IS the chain's native currency — on an
+        // ERC-20 route it travels as provider calldata and `tx.value` is zero —
+        // and the final gate authorizes exactly such a zero-value deposit "with
+        // no components". Writing the quoted amount here would state a
+        // settlement this repository's authorization layer refuses to state.
+        // The amounts are left to a decode that can prove them.
+        const confirmResult = await confirmActivityEvent(
+          legRow.id,
+          provenLegAmounts(stepEntry.role, { kind: "opaque_provider_payload" }),
+        );
         if (!confirmResult.applied && confirmResult.row.status !== "confirmed") {
           legStatus = "confirmed_unrecorded";
           logger.warn("relay.bridge.leg_confirm_cas_miss", { id: legRow.id, rowStatus: confirmResult.row.status });

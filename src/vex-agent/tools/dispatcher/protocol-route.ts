@@ -21,6 +21,7 @@ import {
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
 import { revealUniswapPair } from "../registry/uniswap-reveal.js";
+import { revealDescribeTools } from "../registry/describe-tools-reveal.js";
 import {
   MAX_DISCOVERED_TOOLS_PER_SESSION,
   getDiscoveredToolIds,
@@ -31,7 +32,7 @@ import {
   isInjectedToolNameShape,
   resolveInjectedProtocolTool,
 } from "../registry/injected-protocol-tools.js";
-import { isRankedDiscoveryItem } from "../protocols/discovery.js";
+import { buildDisplacementWarning, isRankedDiscoveryItem } from "../protocols/discovery.js";
 import type { ProtocolExecutionContext } from "../protocols/types.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
 import { toResultData } from "../protocols/handler-helpers.js";
@@ -141,10 +142,28 @@ export async function routeToolCall(
     // discovered so the NEXT request carries those manifests as real function
     // schemas. RANKED rows only — a list-mode row has no param schema, so
     // injecting it would advertise a tool with no parameters.
-    recordDiscoveredTools(
+    const displaced = recordDiscoveredTools(
       context.sessionId,
       result.tools.filter(isRankedDiscoveryItem).map((tool) => tool.toolId),
     );
+    // Recording into a full session set evicts earlier rounds. That eviction
+    // used to be silent HERE while `describe_tools` named it, so the same cap
+    // took a capability away with no signal depending only on which tool the
+    // agent had used. Same sentence, one owner. A new array, because
+    // `toModelDiscoveryResult` shares `warnings` with the telemetry result.
+    const displacementWarning = buildDisplacementWarning(displaced);
+    if (displacementWarning !== null) {
+      modelResult.warnings = [...modelResult.warnings, displacementWarning];
+    }
+    // R5 — unlock the hidden `describe_tools` menu tool for this session. Fired
+    // on ANY successful non-empty discovery, list OR ranked (owner directive
+    // D1): gating it to list mode alone would block plan-recall and
+    // post-compaction schema recovery. A failed or empty result reveals nothing
+    // — there is nothing to describe. Core discovery must not own menu state,
+    // so the reveal is made here, beside the existing session recording.
+    if (result.success && result.count > 0) {
+      revealDescribeTools(context.sessionId);
+    }
     return {
       success: modelResult.success,
       // Compact, NOT pretty-printed: indentation was 15-25% of this payload and

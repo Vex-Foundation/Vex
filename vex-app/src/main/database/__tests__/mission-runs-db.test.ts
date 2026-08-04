@@ -39,11 +39,14 @@ vi.mock("../db-config.js", () => ({
 
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
+vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
+
 const { getActiveRunForSession, getLatestRunForSession } = await import(
   "../mission-runs-db.js"
 );
 
 const SESSION = "00000000-0000-4000-8000-00000000eeee";
+const CORRELATION = "22222222-2222-4222-8222-222222222222";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -64,18 +67,28 @@ afterEach(() => {
 
 describe("mission-runs-db mapper", () => {
   it("returns inactive shape when session has no active/paused mission run", async () => {
-    // Puzzle 03 — getActiveRunForSession does TWO queries when no row
-    // matches: (1) joined active-run lookup returns empty, (2) fallback
-    // query pulls session-only lease + pending control kind.
-    mocks.query.mockResolvedValueOnce({ rows: [] });
+    // ONE always-returning statement now: the aggregate drives off a one-row
+    // subquery, so "this session has no run" arrives as a row with null run
+    // columns rather than as an absence needing a second, differently-timed
+    // query. That second snapshot is exactly what could disagree with the
+    // first about a fact the Stop control turns on.
     mocks.query.mockResolvedValueOnce({
       rows: [{
+        mission_run_id: null,
+        status: null,
+        started_at: null,
+        last_checkpoint_at: null,
+        stop_reason: null,
+        iteration_count: null,
         lease_active: false,
         lease_expires_at: null,
         pending_control_kind: null,
+        has_pending_wake: false,
+        has_pending_approval: false,
+        has_incomplete_approval_lifecycle: false,
       }],
     });
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data).toEqual({
@@ -97,8 +110,7 @@ describe("mission-runs-db mapper", () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {
-          id: "run-1",
-          session_id: SESSION,
+          mission_run_id: "run-1",
           status: "running",
           started_at: "2026-05-21T09:00:00.000Z",
           last_checkpoint_at: "2026-05-21T10:00:00.000Z",
@@ -110,7 +122,7 @@ describe("mission-runs-db mapper", () => {
         },
       ],
     });
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.hasActiveRun).toBe(true);
@@ -126,8 +138,7 @@ describe("mission-runs-db mapper", () => {
     mocks.query.mockResolvedValueOnce({
       rows: [
         {
-          id: "run-2",
-          session_id: SESSION,
+          mission_run_id: "run-2",
           status: "paused_user",
           started_at: "2026-05-21T09:00:00.000Z",
           last_checkpoint_at: null,
@@ -139,7 +150,7 @@ describe("mission-runs-db mapper", () => {
         },
       ],
     });
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.status).toBe("paused_user");
@@ -151,7 +162,7 @@ describe("mission-runs-db mapper", () => {
   it("dbUnavailable maps to internal.unexpected with domain=runtime", async () => {
     mocks.buildPoolConfig.mockReset();
     mocks.buildPoolConfig.mockResolvedValueOnce(null);
-    const result = await getActiveRunForSession(SESSION);
+    const result = await getActiveRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("internal.unexpected");
@@ -167,7 +178,7 @@ describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
 
   it("returns null when the session never had a run", async () => {
     q.mockResolvedValueOnce({ rows: [] });
-    const result = await getLatestRunForSession(SESSION);
+    const result = await getLatestRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data).toBeNull();
@@ -177,7 +188,7 @@ describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
     q.mockResolvedValueOnce({
       rows: [{ id: "run-1", status: "running", lease_active: true }],
     });
-    const result = await getLatestRunForSession(SESSION);
+    const result = await getLatestRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data).toEqual({
@@ -191,7 +202,7 @@ describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
     q.mockResolvedValueOnce({
       rows: [{ id: "run-1", status: "running", lease_active: null }],
     });
-    const result = await getLatestRunForSession(SESSION);
+    const result = await getLatestRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data?.leaseActive).toBe(false);
@@ -201,7 +212,7 @@ describe("getLatestRunForSession — lease-active mapping (WP-C)", () => {
     q.mockResolvedValueOnce({
       rows: [{ id: "run-1", status: "not_a_real_status", lease_active: false }],
     });
-    const result = await getLatestRunForSession(SESSION);
+    const result = await getLatestRunForSession(SESSION, CORRELATION);
     expect(result.ok).toBe(false);
   });
 });

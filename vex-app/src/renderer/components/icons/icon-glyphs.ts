@@ -37,6 +37,7 @@ import {
   File,
   Flame,
   Globe,
+  GripVertical,
   Info,
   KeyRound,
   Lock,
@@ -89,6 +90,7 @@ export const Copy01Icon = Copy;
 export const CpuIcon = Cpu;
 export const Delete02Icon = Trash2;
 export const Download01Icon = Download;
+export const DragHandleIcon = GripVertical;
 export const File01Icon = File;
 export const FireIcon = Flame;
 export const InformationCircleIcon = Info;

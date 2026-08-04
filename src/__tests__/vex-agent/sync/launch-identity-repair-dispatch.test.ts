@@ -17,6 +17,8 @@
 
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
+import logger from "@utils/logger.js";
+
 let pending: unknown[];
 let mockConfirm: Mock;
 let mockFail: Mock;
@@ -106,6 +108,43 @@ describe("repairLaunchIdentities", () => {
     });
     expect(result).toMatchObject({ stillPending: 1, failed: 0 });
     expect(mockFail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * F1: a launch that is simply not mined yet is the sweep's most ORDINARY
+   * answer, and viem delivers it as a THROW. It used to be logged as a failure
+   * every 30 s for as long as the row existed.
+   *
+   * The classification is asserted through an INJECTED dep, which is the point:
+   * putting it only in the production wiring would leave every other caller —
+   * and this suite — disagreeing with production about the noisiest path.
+   */
+  it("a not-yet-mined receipt is a SILENT pending, not a warn every 30 s", async () => {
+    const warnSpy = vi.spyOn(logger, "warn");
+    pending = [INTENT];
+    const notFound = new Error("Transaction receipt with hash 0xhash could not be found. URL: https://rpc.example/KEY");
+    notFound.name = "TransactionReceiptNotFoundError";
+
+    const result = await repairLaunchIdentities({
+      resolveLaunchOutcome: async () => { throw notFound; },
+    });
+
+    expect(result).toMatchObject({ stillPending: 1, failed: 0, repaired: 0 });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("a GENERIC transport failure still warns exactly once, with a scrubbed message", async () => {
+    const warnSpy = vi.spyOn(logger, "warn");
+    pending = [INTENT];
+
+    await repairLaunchIdentities({
+      resolveLaunchOutcome: async () => { throw new Error("connect ECONNREFUSED"); },
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls.at(0)?.at(0)).toBe("trench.launch_identity_repair.lookup_failed");
+    warnSpy.mockRestore();
   });
 
   it("CLAIMS its candidates — the rotation that stops 25 ambiguous rows starving row 26", async () => {

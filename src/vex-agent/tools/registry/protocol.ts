@@ -7,7 +7,11 @@
 
 import type { ToolDef, JsonSchema } from "../types.js";
 import { buildDiscoverNamespaceDescription } from "../protocols/descriptions.js";
-import { DEFAULT_DISCOVERY_LIMIT, MAX_DISCOVERY_LIMIT } from "../protocols/discovery.js";
+import {
+  DEFAULT_DISCOVERY_LIMIT,
+  MAX_DESCRIBE_TOOL_IDS,
+  MAX_DISCOVERY_LIMIT,
+} from "../protocols/discovery.js";
 
 const EXECUTE_TOOL_PARAMS: JsonSchema = {
   type: "object",
@@ -36,7 +40,7 @@ export const PROTOCOL_TOOLS: readonly ToolDef[] = [
     description: [
       "Search advertised protocol tools by short English intent. Write what the user wants to do, including assets, chains, venue, or product hints when useful.",
       "Protocol/product names are allowed in the query as hints: Khalani, KyberSwap, Jupiter, DexScreener. Passing an exact toolId you already saw is fine — it returns that tool first. Do not invent dotted toolIds or internal implementation names; execute only toolIds returned by this response.",
-      "list:true with namespace returns EVERY tool of that protocol as one-line rows (no param schemas) — follow up with a query or the toolId to get params.",
+      "list:true with namespace returns EVERY tool of that protocol as one-line rows (no param schemas) — the listing's `nextStep` field tells you how to fetch the full parameter schemas of the ones you picked.",
       "Examples: 'estimate moving 250 USDC from Ethereum to Solana', 'use KyberSwap to preview a USDC to ETH swap on Base', 'use Jupiter to see USDC earn rates', 'show trending meme coins on Solana'.",
       "Optional namespace narrows search to one advertised namespace — the `namespace` parameter's own description lists them. Empty query returns an unranked catalog slice; prefer a refined intent query for normal use.",
       "Results include toolId, mutating, actionKind, score, whyMatched, params, warnings, hasMore, totalCount, and retrieval.method (dense|lexical|catalog). Every advertised tool is active and executable; build the call from the `params` schema and call the tool DIRECTLY by its function name in the same session — the returned toolId with every dot replaced by a double underscore, e.g. `kyberswap.swap.quote` becomes the tool `kyberswap__swap__quote`, whose parameters are exactly this row's `params`.",
@@ -47,8 +51,33 @@ export const PROTOCOL_TOOLS: readonly ToolDef[] = [
       query: { type: "string", description: "Short English intent/capability phrase. Include protocol/product names when useful (Khalani, KyberSwap, Jupiter, DexScreener). An exact toolId you already saw is also accepted and is returned first; do not invent dotted tool IDs or internal implementation names." },
       namespace: { type: "string", description: buildDiscoverNamespaceDescription() },
       limit: { type: "number", description: `Max tools to return (default: ${DEFAULT_DISCOVERY_LIMIT}, max ${MAX_DISCOVERY_LIMIT}). Ask for as many as the job needs, up to the max; a higher value is rejected, not clamped. Ignored in list mode.` },
-      list: { type: "boolean", description: "List mode: with `namespace`, return EVERY tool of that protocol as one-line rows (toolId, mutating, actionKind, description, requiredParams — no param schemas), unranked and untruncated. Follow up with a query or the toolId to get the full schema before calling. Requires `namespace`." },
+      list: { type: "boolean", description: "List mode: with `namespace`, return EVERY tool of that protocol as one-line rows (toolId, mutating, actionKind, description, requiredParams — no param schemas), unranked and untruncated. The result's `nextStep` field, at the very top, tells you how to fetch the full schemas of the rows you want before calling them. Requires `namespace`." },
     } },
+  },
+  {
+    // The follow-up half of the listing flow (R5, owner directive D2). HIDDEN
+    // until this session produced a successful, non-empty `discover_tools`
+    // result — `requiresDescribeToolsReveal`, enforced again inside the handler.
+    //
+    // Read-only in every sense that matters: it resolves manifests and records
+    // ids. It cannot execute anything; every execution gate still keys off the
+    // manifest resolved at dispatch.
+    name: "describe_tools", kind: "internal", mutating: false, pressureSafety: "read_only", actionKind: "read",
+    visibility: { requiresDescribeToolsReveal: true },
+    description: [
+      `Get the FULL manifest of up to ${MAX_DESCRIBE_TOOL_IDS} protocol tools you already know the toolId of — the complete parameter schema you build a call from, plus a worked example.`,
+      "Use it after `discover_tools(namespace=..., list=true)`: the listing gives you every toolId of a protocol with a one-line description; this returns the full manifests of the ones you picked, and makes them callable by name for the rest of the session.",
+      "Also use it to recover a schema you have lost — after a long conversation, or when a prior discovery result was compacted away.",
+      "Each returned row carries: `toolId`, `namespace`, `description`, `mutating`, `actionKind`, `params` (each with key, type, description and — when they apply — `required: true`, `unit`, `enum`), `required` (the required keys as a list), `exampleParams` (a working call), `constraints` when params are mutually exclusive, and `unavailable_at_pressure` when context pressure will make the dispatcher refuse it right now.",
+      "Every returned tool becomes a real callable function for the rest of the session: call it by the toolId with every dot replaced by a double underscore, e.g. `dexscreener.search` becomes the tool `dexscreener__search`, whose parameters are exactly this row's `params`.",
+      `Contract: pass 1-${MAX_DESCRIBE_TOOL_IDS} exact dotted toolIds — a whole namespace at once is fine. More than ${MAX_DESCRIBE_TOOL_IDS} is rejected by name and NOTHING runs; an unknown, unavailable, or non-advertised toolId is rejected by name with the real reason, not silently dropped. The result reports \`sessionCapacity\` (how many tools stay callable) and names any earlier tool this call displaced, so nothing goes missing in silence.`,
+    ].join(" "),
+    parameters: { type: "object", properties: {
+      toolIds: { type: "array", items: { type: "string" }, description: `Exact dotted toolIds from a discover_tools result, e.g. ["dexscreener.search","dexscreener.tokenPairs"]. 1-${MAX_DESCRIBE_TOOL_IDS} per call. Do not invent or guess a toolId — an unknown id is rejected by name.` },
+    // `additionalProperties: false` mirrors the handler's strict Zod boundary:
+    // the provider refuses an unknown argument up front instead of the model
+    // learning about it only from a rejection.
+    }, required: ["toolIds"], additionalProperties: false },
   },
   {
     // Wrapper itself is read-only; runtime stamps the TARGET protocol tool's

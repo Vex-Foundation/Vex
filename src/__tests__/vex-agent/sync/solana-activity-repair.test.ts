@@ -145,6 +145,17 @@ function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActiv
     vexFeeAmountHuman: null,
     verificationAttempts: 0,
     lastVerificationReason: null,
+  confirmationSource: null,
+  settlementSource: null,
+  pendingReason: null,
+  providerStatusObservedAt: null,
+  // The pending-fallback lane's own state (migration 068) — untouched by
+  // this fixture's row, which is exactly what NULL says.
+  evmClaimLeaseUntil: null,
+  evmClaimToken: null,
+  lastVerificationIncrementAt: null,
+  firstNonInclusionObservedAt: null,
+  settlementDecodeVersion: null,
   };
   // `Object.assign`, not a spread: spreading a `Partial<…>` into an
   // index-free literal widens every required field to `| undefined`.
@@ -207,7 +218,7 @@ describe("repairPendingSolanaActivity — landed status terminality", () => {
 
       const result = await repairPendingSolanaActivity(port);
 
-      expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1);
+      expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
       expect(port.getFinalizedTransaction).not.toHaveBeenCalled();
       expect(result).toMatchObject({ checked: 1, confirmed: 1, failed: 0, stillPending: 0 });
     },
@@ -291,7 +302,7 @@ describe("repairPendingSolanaActivity — not-found signature fallback", () => {
       }),
     );
 
-    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1);
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
   });
 
   it("a non-null meta.err fails the row", async () => {
@@ -432,7 +443,7 @@ describe("repairPendingSolanaActivity — cadence and batching", () => {
       }),
     );
 
-    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1);
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
     expect(mockFailActivityEvent).toHaveBeenCalledWith(2, expect.objectContaining({ failureCode: "mined_revert" }));
   });
 

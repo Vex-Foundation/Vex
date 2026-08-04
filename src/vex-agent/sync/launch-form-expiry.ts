@@ -35,6 +35,7 @@
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import {
   expireIfAwaitingWith,
+  listOutstandingUserFormResumes,
   listOverdueAwaitingForms,
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import { resumeAgentAfterUserForm } from "@vex-agent/engine/core/launch-form-resume.js";
@@ -60,6 +61,10 @@ export interface LaunchFormExpiryResult {
   readonly resumed: number;
   /** Expired rows whose parked turn could NOT be woken — busy, or a throw. */
   readonly resumeFailures: number;
+  /** Continuations recovered by the durable floor below (crash / busy lease). */
+  readonly recovered: number;
+  /** Floor candidates that still could not be delivered this pass. */
+  readonly recoveryFailures: number;
 }
 
 export async function expireOverdueLaunchForms(): Promise<LaunchFormExpiryResult> {
@@ -82,10 +87,63 @@ export async function expireOverdueLaunchForms(): Promise<LaunchFormExpiryResult
     else if (outcome === "failed") resumeFailures++;
   }
 
-  if (expired > 0 || resumeFailures > 0) {
-    logger.info("trench.launch_form_expiry.swept", { expired, resumed, resumeFailures });
+  const recovery = await deliverOutstandingContinuations();
+
+  if (expired > 0 || resumeFailures > 0 || recovery.recovered > 0
+      || recovery.recoveryFailures > 0) {
+    logger.info("trench.launch_form_expiry.swept", {
+      expired,
+      resumed,
+      resumeFailures,
+      ...recovery,
+    });
   }
-  return { checked: candidates.length, expired, resumed, resumeFailures };
+  return { checked: candidates.length, expired, resumed, resumeFailures, ...recovery };
+}
+
+/**
+ * THE DURABLE FLOOR, finally driven.
+ *
+ * `listOutstandingUserFormResumes` existed and had no production caller — the
+ * same defect this module was written to fix for `expireIfAwaitingWith`, one
+ * layer down. Every doc comment that promised "a failure to dispatch does not
+ * lose the wake, the outstanding scan finds this row again" was describing a
+ * sweep nobody ran.
+ *
+ * It matters most for the interleaving the resume cannot handle in-process: the
+ * form's result is stamped, then the session lease is claimed, then the turn
+ * runs. A busy lease, a crash or a restart between the stamp and the turn
+ * leaves an ANSWERED tool call with no turn to read it, and an in-process retry
+ * ladder cannot help — a crash has no process left to retry in. Eligibility
+ * keys off `resume_consumed_at`, so exactly those rows are still visible here.
+ *
+ * `resumeAgentAfterUserForm` is the ONE interface, so this reuses every guard
+ * it owns: it skips the append when a result already exists, dispatches through
+ * the stop-gated lease-held path, and stamps the completion marker itself. The
+ * `expired` outcome passed here is only used when a row somehow has no result
+ * yet — a settled intent that never got one — and is the honest thing to say
+ * about a form whose moment has passed.
+ *
+ * Same bounded batch and same containment as the expiry pass above: one stuck
+ * session must not abort the sweep for every other row.
+ */
+async function deliverOutstandingContinuations(): Promise<{
+  readonly recovered: number;
+  readonly recoveryFailures: number;
+}> {
+  const outstanding = await listOutstandingUserFormResumes(
+    LAUNCH_FORM_EXPIRY_BATCH_LIMIT,
+  );
+  let recovered = 0;
+  let recoveryFailures = 0;
+
+  for (const intent of outstanding) {
+    const outcome = await resumeParkedTurn(intent.intentId, intent.sessionId);
+    if (outcome === "resumed") recovered++;
+    else if (outcome === "failed") recoveryFailures++;
+  }
+
+  return { recovered, recoveryFailures };
 }
 
 /**

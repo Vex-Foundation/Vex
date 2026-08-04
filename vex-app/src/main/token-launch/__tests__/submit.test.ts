@@ -410,6 +410,92 @@ describe("the executor's outcome is reported, never reinterpreted", () => {
   });
 });
 
+/**
+ * THE WAKE IS CHOSEN FROM `status`, NEVER FROM "there is a hash".
+ *
+ * The owner's live launch (tx 0x09b84e…e955) sat unmined for minutes. Because
+ * the wake used to read `txHash !== null`, the parked agent was resumed with
+ * `{kind:"launched"}` — "deployed the token. This is done — do not launch
+ * again" — for a transaction the executor itself reported as unconfirmed. A
+ * broadcast hash proves only that gas is at stake, never that a token exists.
+ */
+describe("the parked agent's wake states what the chain actually says", () => {
+  it("a PENDING broadcast wakes it as UNCONFIRMED, hash and all, never as launched", async () => {
+    const txHash = `0x${"c".repeat(64)}`;
+    const message = "The launch was broadcast but has not settled. Do not resubmit.";
+    await submitLaunch(
+      submitInput(),
+      vi.fn().mockResolvedValue({
+        kind: "broadcast",
+        status: "pending",
+        txHash,
+        tokenAddress: null,
+        message,
+      }),
+    );
+    expect(wakeParkedAgent).toHaveBeenCalledWith(expect.any(String), SESSION_ID, {
+      kind: "unconfirmed",
+      txHash,
+      reason: message,
+    });
+  });
+
+  it("a REVERTED broadcast wakes it as failed, with the revert stated", async () => {
+    const message = "The launch transaction reverted on-chain. No token was created.";
+    await submitLaunch(
+      submitInput(),
+      vi.fn().mockResolvedValue({
+        kind: "broadcast",
+        status: "reverted",
+        txHash: `0x${"d".repeat(64)}`,
+        tokenAddress: null,
+        message,
+      }),
+    );
+    expect(wakeParkedAgent).toHaveBeenCalledWith(expect.any(String), SESSION_ID, {
+      kind: "failed",
+      reason: message,
+    });
+  });
+
+  it("a confirmed-but-unidentified launch is still a launch, with a null address", async () => {
+    const txHash = `0x${"e".repeat(64)}`;
+    await submitLaunch(
+      submitInput(),
+      vi.fn().mockResolvedValue({
+        kind: "broadcast",
+        status: "confirmed_pending_identity",
+        txHash,
+        tokenAddress: null,
+        message: "The launch confirmed on-chain, but the address could not be decoded yet.",
+      }),
+    );
+    expect(wakeParkedAgent).toHaveBeenCalledWith(expect.any(String), SESSION_ID, {
+      kind: "launched",
+      txHash,
+      tokenAddress: null,
+    });
+  });
+
+  it("a hashless broadcast is unconfirmed, never a launch", async () => {
+    await submitLaunch(
+      submitInput(),
+      vi.fn().mockResolvedValue({
+        kind: "broadcast",
+        status: "pending",
+        txHash: null,
+        tokenAddress: null,
+        message: "The broadcast could not be read back.",
+      }),
+    );
+    expect(wakeParkedAgent).toHaveBeenCalledWith(expect.any(String), SESSION_ID, {
+      kind: "unconfirmed",
+      txHash: null,
+      reason: "The broadcast could not be read back.",
+    });
+  });
+});
+
 // ── the integration check the signing side asked for ─────────────────────
 
 describe("the consent snapshot round-trips through the signing side's validator", () => {

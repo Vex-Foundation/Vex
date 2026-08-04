@@ -120,6 +120,13 @@ const mockClaimSessionLease = vi.fn();
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
   claimRunLeaseAndFlipToRunning: vi.fn(),
+  // Chat resume consults the durable operator-stop gate first (D1.5). These
+  // cases are about the cue, so the gate is `clear`.
+  gateOnOperatorStopWithClient: vi.fn().mockResolvedValue({ kind: "clear" }),
+  withSessionControlLock: async (
+    _sessionId: string,
+    fn: (client: unknown) => Promise<unknown>,
+  ) => fn({ query: vi.fn() }),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({

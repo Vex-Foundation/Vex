@@ -71,8 +71,10 @@ describe("TOOL_MAP_CATEGORIES integrity", () => {
     // `execute_tool` is gone from the map: discovered tools are injected as real
     // function schemas and the wrapper is withheld from the model surface, so
     // the category names discovery only.
+    // `describe_tools` follows `discover_tools`: the map's order is the flow's
+    // order — list/search first, fetch the chosen manifests second.
     const protocolMeta = TOOL_MAP_CATEGORIES.find(c => c.label === "Protocol discovery");
-    expect(protocolMeta?.toolNames).toEqual(["discover_tools"]);
+    expect(protocolMeta?.toolNames).toEqual(["discover_tools", "describe_tools"]);
     expect(TOOL_MAP_NAMES).not.toContain("execute_tool");
   });
 });

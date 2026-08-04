@@ -14,6 +14,9 @@ import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 
+import { settlementDecodeProvenance } from "@vex-agent/db/repos/agent-activity/settlement-decode.js";
+
+import { routerFor } from "./deployment.js";
 import { PROTOCOL } from "./protocol-id.js";
 import { legFor, type PlannedEvent } from "./activity-recording.js";
 import type { QuotedRoute } from "./route-quote.js";
@@ -94,7 +97,21 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
     eventIndex, eventRole: "swap", ...common,
     tokenIn: { ...legFor(tokenIn), amountHuman: input.amountInHuman, amountRaw: amountIn.toString() },
     tokenOut: { ...legFor(tokenOut), amountHuman: formatUnits(quoted.amountOut, tokenOut.decimals), amountRaw: quoted.amountOut.toString() },
-    routeProvenance: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
+    routeProvenance: {
+      version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null,
+      // R1 Step 5a — the decode inputs, persisted at INTENT time. The router is
+      // the deployment's own verified `router02`, never a provider-supplied
+      // address; `declaredValueRaw` is written only for a native input, and the
+      // wrapped-native contract only when the OUT leg is native, because those
+      // are the only cases where a decoder needs either.
+      ...settlementDecodeProvenance({
+        decoder: "uniswap",
+        chainId: deployment.chainId,
+        routerAddress: routerFor(deployment, quoted.route),
+        ...(tokenIn.isNative ? { declaredValueRaw: amountIn.toString() } : {}),
+        ...(tokenOut.isNative ? { wrappedNativeAddress: deployment.weth } : {}),
+      }),
+    },
   });
   return events;
 }

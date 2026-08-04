@@ -160,8 +160,17 @@ export type AgentScanCursor = z.infer<typeof agentScanCursorSchema>;
 
 // ── Input ─────────────────────────────────────────────────────────────────
 
-/** CLOSED — compiles to a SQL predicate (`failed` expands to `definitively_failed`). */
-export const agentScanStatusFilterSchema = z.enum(["pending", "confirmed", "failed"]);
+/**
+ * CLOSED — compiles to a SQL predicate (`failed` expands to
+ * `definitively_failed`; `superseded_unproven` is stored under its own name and
+ * translates to itself).
+ */
+export const agentScanStatusFilterSchema = z.enum([
+  "pending",
+  "confirmed",
+  "failed",
+  "superseded_unproven",
+]);
 export type AgentScanStatusFilter = z.infer<typeof agentScanStatusFilterSchema>;
 
 /** CLOSED — compiles to a SQL predicate against `agent_activity.chain_family`. */
@@ -180,7 +189,7 @@ export const agentScanFiltersSchema = z
       .array(z.string().min(1).max(ACTIVITY_KIND_MAX_LENGTH))
       .max(AGENT_SCAN_FILTER_KINDS_MAX)
       .optional(),
-    statuses: z.array(agentScanStatusFilterSchema).max(3).optional(),
+    statuses: z.array(agentScanStatusFilterSchema).max(4).optional(),
     protocols: z
       .array(z.string().min(1).max(PROTOCOL_MAX_LENGTH))
       .max(AGENT_SCAN_FILTER_PROTOCOLS_MAX)
@@ -387,6 +396,16 @@ export const agentScanEntrySchema = z
      * neutrally rather than blank the page.
      */
     stalledReason: z.string().max(FAILURE_REASON_MAX_LENGTH).nullable(),
+    /**
+     * Why a still-PENDING row is pending, as a CONCLUSIVE observation
+     * (`in_mempool`, `nonce_superseded`) — migration 067's own column, and a
+     * different fact from `stalledReason`, which means "the last CHECK could not
+     * conclude". A row has at most one of them meaningfully set: we either
+     * looked and learned something, or we could not look.
+     *
+     * A BOUNDED OPEN STRING, same tolerant-reader law as its sibling.
+     */
+    pendingReason: z.string().max(FAILURE_REASON_MAX_LENGTH).nullable(),
   })
   .strict();
 export type AgentScanEntry = z.infer<typeof agentScanEntrySchema>;
@@ -412,6 +431,39 @@ export const activityResolvedEventSchema = z
   })
   .strict();
 export type ActivityResolvedEvent = z.infer<typeof activityResolvedEventSchema>;
+
+// ── Push: a pending row was OBSERVED and is still pending (OD-7) ──────────
+
+/**
+ * `EV.portfolio.activityProgress` payload — IDS AND REASONS ONLY.
+ *
+ * The sibling `activityResolved` fires once, at the end. This one fires on every
+ * observation of a row that is STILL PENDING, which is the half the renderer
+ * could not see at all: it polls at 60 s, so a 5 s observation cadence was
+ * invisible and the owner's pending launch looked frozen.
+ *
+ * `nextCheckInMs` is on the payload because the renderer must not hard-code
+ * "every 5s" — that sentence is FALSE for any row past its fast phase, and
+ * stating a cadence we do not hold is a claim beyond the evidence.
+ *
+ * `pendingReason` and `verificationReason` are bounded OPEN strings, per the
+ * tolerant-reader law: a new engine reason must not require this schema to
+ * change before the push can carry it. Nothing that could carry model output,
+ * money, or a token identity rides this channel.
+ */
+export const activityProgressEventSchema = z
+  .object({
+    type: z.literal("sync.activity.progress"),
+    activityId: z.number().int().nonnegative(),
+    chainFamily: z.string().max(32),
+    chainId: z.number().int().nullable(),
+    pendingReason: z.string().max(64).nullable(),
+    verificationReason: z.string().max(64).nullable(),
+    nextCheckInMs: z.number().int().nonnegative().max(3_600_000),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type ActivityProgressEvent = z.infer<typeof activityProgressEventSchema>;
 
 // ── Manual portfolio refresh (Wave P) ─────────────────────────────────────
 

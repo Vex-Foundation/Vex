@@ -26,6 +26,7 @@ import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply } from "./shared.js";
 import { maxIterationsForPermission } from "./iteration-budget.js";
 import {
+  cancelForegroundStoppedSessionWake,
   isContinuableRuntimeStop,
   scheduleAgentSessionContinuation,
 } from "./runtime-continuation.js";
@@ -123,6 +124,26 @@ export async function processAgentTurn(
       ownerId,
     );
   } finally {
+    // COMMITTED-WAKE CLEANUP. A foreground Stop is request-local by contract,
+    // but the turn it stopped may already have COMMITTED a session-scoped park
+    // (`loop_defer`). Cancelling it here is what makes the foreground Stop mean
+    // "the agent stops", instead of "this response stops and the agent wakes up
+    // again in thirty seconds". Best-effort: a failure here must never mask the
+    // turn's own outcome, and the durable Stop path remains available.
+    if (signal?.aborted === true) {
+      try {
+        const cancelled = await cancelForegroundStoppedSessionWake(sessionId);
+        logger.info("engine.agent.foreground_stop_wake_cancelled", {
+          sessionId,
+          cancelled,
+        });
+      } catch (cause) {
+        logger.warn("engine.agent.foreground_stop_wake_cancel_failed", {
+          sessionId,
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
+    }
     // The end-of-turn resume hook (A5 attempt 3) fires inside this helper,
     // strictly after the release. See `end-of-turn-resume-hook.ts`.
     await releaseLeaseAndEmitControlState(sessionLease, sessionId);

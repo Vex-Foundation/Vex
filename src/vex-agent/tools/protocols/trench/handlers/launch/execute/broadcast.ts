@@ -34,7 +34,9 @@ import {
   failActivityEvent,
   abortPlannedEvents,
 } from "@vex-agent/db/repos/agent-activity.js";
+import { settlementDecodeProvenance } from "@vex-agent/db/repos/agent-activity/settlement-decode.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import type { ToolResult } from "../../../../../types.js";
 import { fail } from "../../../../handler-helpers.js";
 import { trenchFailureDetail } from "../../failure.js";
@@ -172,6 +174,10 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
 
   if (outcome.kind === "ambiguous") {
     logger.info("trench.launch_execute.ambiguous", { executionId, txHash: outcome.txHash });
+    // Migration 067: the launch row stays pending — say why, in the closed
+    // vocabulary, so the fallback knows it is chasing INCLUSION here, not a
+    // decode.
+    await noteHandlerPendingReason(TOOL_ID, launchRowId, "broadcast_ambiguous_confirm");
     await abortRemaining(executionId, 1, "launch ambiguous — a fee is never charged for an unproven launch");
     return {
       success: false,
@@ -221,6 +227,11 @@ function buildLaunchEvent(x: BroadcastLaunchInput) {
     // The prebuy is a LEG WITHIN this launch, never a second `swap` row for the
     // same tx hash — one create emits both `TokenCreated` and `Bought`.
     routeProvenance: {
+      // R1 Step 5a — a launch has NO router to match and no input token to
+      // value: the token does not exist yet when this row is written. Its
+      // decoder works from the receipt's own logs, so the hint names the
+      // decoder and the chain and deliberately claims nothing more.
+      ...settlementDecodeProvenance({ decoder: "trench_launch", chainId: TRENCH_CHAIN_ID }),
       creationFeeWei: x.plan.binding.creationFeeWei,
       prebuyRaw: x.plan.binding.prebuyWei,
       prebuyDecimals: PREBUY_DECIMALS,
@@ -325,6 +336,10 @@ async function finalizeConfirmedLaunch(
       // launch is missing from its own token's history for as long as the
       // amount stays unknown, which may be forever.
       logger.info("trench.launch_execute.prebuy_amount_pending", { executionId, txHash });
+      // The launch MINED and its token exists; only the prebuy leg is unread.
+      // Its own named reason, because the fallback's job here is a decode of a
+      // known-successful receipt, not a hunt for inclusion.
+      await noteHandlerPendingReason(TOOL_ID, launchRowId, "launch_prebuy_undecodable");
       await stampLaunchOutputIdentityByTxHash(txHash, decoded.tokenAddress);
     } else {
       const tokenOut = await readTokensOutDisplay(x, decoded.tokenAddress, tokensOutRaw);

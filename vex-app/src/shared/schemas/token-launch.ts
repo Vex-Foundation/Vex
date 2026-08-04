@@ -189,7 +189,26 @@ export type TokenLaunchMyLaunchesInput = z.infer<typeof tokenLaunchMyLaunchesInp
 
 export const launchedTokenDtoSchema = z
   .object({
-    tokenAddress: z.string(),
+    /**
+     * WHERE THIS ROW CAME FROM, and therefore what it may claim.
+     *
+     * `launched` — a proven identity from `launched_tokens`.
+     * `in_flight` — a broadcast launch whose token identity is NOT proven yet,
+     * merged in from `token_launch_intents` (OD-3). Before this, such a launch
+     * was invisible: the identity index is written only on confirm, so a user
+     * who had just paid for a launch saw nothing at all.
+     *
+     * A BOUNDED OPEN STRING, per the tolerant-reader law: a future lifecycle
+     * must not blank the list on an older renderer.
+     */
+    lifecycle: z.string().max(32),
+    /**
+     * NULL for an `in_flight` row, and modelled as null rather than an empty
+     * string ON PURPOSE: a launch with no proven token address must never render
+     * as a token, and `""` is exactly the value that would slip through a
+     * truthiness check into a token link.
+     */
+    tokenAddress: z.string().nullable(),
     name: z.string(),
     symbol: z.string(),
     createTxHash: z.string(),

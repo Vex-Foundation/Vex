@@ -96,9 +96,15 @@ function productTypeProjection(): string {
 
 /** The app feed's LOGICAL_ROW_PREDICATE literal. */
 function logicalRowPredicate(): string {
-  const match = /const LOGICAL_ROW_PREDICATE = `([\s\S]*?)`;/.exec(AGENT_SCAN_SRC);
-  if (!match) throw new Error("lockstep: LOGICAL_ROW_PREDICATE was not found");
-  return match[1];
+  // The literal is now built by `logicalRowPredicate(alias)` so the Vex-fee
+  // LATERAL can exclude a fee leg that is ALREADY its own ledger entry using
+  // the very same rule — one predicate, two callers, no drift.
+  const match = /function logicalRowPredicate\(alias: string\): string \{\s*return `([\s\S]*?)`;/
+    .exec(AGENT_SCAN_SRC);
+  const body = match?.[1];
+  if (body === undefined) throw new Error("lockstep: LOGICAL_ROW_PREDICATE was not found");
+  // Read the predicate as the feed itself reads it, with the alias resolved.
+  return body.replaceAll("${alias}", "aa");
 }
 
 describe("agent_activity kind <-> agent-facing feed lockstep", () => {

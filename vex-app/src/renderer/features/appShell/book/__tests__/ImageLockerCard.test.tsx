@@ -10,7 +10,10 @@
  *    dialog they opened;
  *  - a refused delete shows main's message verbatim, naming the launch that
  *    holds the image (the C2 lifecycle guarantee, made visible);
- *  - thumbnails are fetched PER TILE, not as one batch.
+ *  - thumbnails are fetched PER TILE, not as one batch;
+ *  - since the merge, "Launch a token" is REACHABLE FROM THIS CARD. That is the
+ *    production reachability guarantee, and it can only be proven here, where
+ *    the card is real — `BookPanel.test.tsx` mocks it.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +21,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import { ImageLockerCard } from "../ImageLockerCard.js";
+
+// The launch dialog owns the tokenLaunch IPC domain and a preview lifecycle of
+// its own (TokenLaunchDialog.test.tsx). Stubbed so this suite can prove the
+// REAL opener is inside the REAL card without dragging that domain in.
+vi.mock("../../TokenLaunchDialog.js", () => ({
+  TokenLaunchDialog: ({ open }: { readonly open: boolean }) =>
+    open ? <div data-testid="launch-dialog" /> : null,
+}));
 
 const listMock = vi.fn();
 const uploadMock = vi.fn();
@@ -55,6 +66,8 @@ function setVex(): void {
   });
 }
 
+const SESSION = "00000000-0000-4000-8000-00000000dddd";
+
 function renderCard() {
   setVex();
   const client = new QueryClient({
@@ -63,7 +76,9 @@ function renderCard() {
   function Wrapper({ children }: { readonly children: ReactNode }) {
     return createElement(QueryClientProvider, { client }, children);
   }
-  return render(createElement(ImageLockerCard), { wrapper: Wrapper });
+  return render(createElement(ImageLockerCard, { sessionId: SESSION }), {
+    wrapper: Wrapper,
+  });
 }
 
 function vexError(code: string, message: string) {
@@ -198,5 +213,29 @@ describe("read failure", () => {
     listMock.mockResolvedValue(vexError("images.store_unavailable", "unreadable"));
     renderCard();
     expect(await screen.findByText(/couldn't read your image locker/i)).toBeTruthy();
+  });
+});
+
+describe("the merged Trench Express card", () => {
+  it("is named Trench Express and wears the venue's own mark", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    const { container } = renderCard();
+    expect(await screen.findByLabelText("Trench Express")).toBeTruthy();
+    // The resolver owns which venue may wear which artwork — a card must never
+    // borrow another venue's mark.
+    expect(
+      container.querySelector('[data-vex-protocol-mark="Trench Express"]'),
+    ).not.toBeNull();
+  });
+
+  it("puts the launch opener INSIDE the card and opens the dialog", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    renderCard();
+    const card = await screen.findByLabelText("Trench Express");
+    const opener = screen.getByRole("button", { name: /launch a token/i });
+    expect(card.contains(opener)).toBe(true);
+    expect(screen.queryByTestId("launch-dialog")).toBeNull();
+    fireEvent.click(opener);
+    expect(screen.getByTestId("launch-dialog")).toBeTruthy();
   });
 });

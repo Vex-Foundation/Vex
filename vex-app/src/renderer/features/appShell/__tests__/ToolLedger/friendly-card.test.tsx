@@ -168,10 +168,11 @@ describe("ToolActRow — friendly card presentation", () => {
     );
     quoted.unmount();
 
-    // Anything else: mutating identity is NEVER derived from untrusted args,
-    // so the card says the call completed and nothing more.
+    // An id OUTSIDE the curated exact-id map proves nothing: mutating identity
+    // is never derived from the shape of untrusted args, so the card says the
+    // call completed and nothing more.
     const opaque = render(
-      createElement(ToolActRow, { act: wrapper("kyberswap.swap.execute") }),
+      createElement(ToolActRow, { act: wrapper("kyberswap.swap.futurething") }),
     );
     expect(
       opaque.container.querySelector('[data-vex-tool-leg-outcome="completed"]')
@@ -180,6 +181,75 @@ describe("ToolActRow — friendly card presentation", () => {
     expect(
       opaque.container.querySelector('[data-vex-tool-legs="executed"]'),
     ).toBeNull();
+  });
+
+  /**
+   * The CANONICALIZED lane: main normalizes `kyberswap__swap__quote` to its
+   * dotted toolId, so the card meets the id as the tool NAME. The case pinned
+   * hardest is `dryRun` — `relay.bridge` multiplexes preview and execution and
+   * its dry runs return `success: true`, so a preview must never take the
+   * unlabelled executed presentation.
+   */
+  it("renders a dotted protocol act with its venue, and never a dry run as executed", () => {
+    const dotted = (toolName: string, args: Record<string, unknown>) =>
+      act({ toolName, toolArgs: JSON.stringify(args), success: true });
+    const legs = { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1.5" };
+
+    const executed = render(
+      createElement(ToolActRow, { act: dotted("kyberswap.swap.execute", legs) }),
+    );
+    expect(executed.container.textContent).toContain("KyberSwap · Swap");
+    expect(
+      executed.container.querySelector('[data-vex-tool-legs="executed"]'),
+    ).not.toBeNull();
+    executed.unmount();
+
+    const quoted = render(
+      createElement(ToolActRow, { act: dotted("kyberswap.swap.quote", legs) }),
+    );
+    expect(
+      quoted.container.querySelector('[data-vex-tool-leg-outcome="quote"]')?.textContent,
+    ).toBe("Quote");
+    quoted.unmount();
+
+    const dryRun = render(
+      createElement(ToolActRow, {
+        act: dotted("relay.bridge", { ...legs, dryRun: true }),
+      }),
+    );
+    expect(
+      dryRun.container.querySelector('[data-vex-tool-leg-outcome="quote"]')?.textContent,
+    ).toBe("Quote");
+    expect(dryRun.container.querySelector('[data-vex-tool-legs="executed"]')).toBeNull();
+    dryRun.unmount();
+
+    const unreadableDryRun = render(
+      createElement(ToolActRow, {
+        act: dotted("relay.bridge", { ...legs, dryRun: "true" }),
+      }),
+    );
+    expect(
+      unreadableDryRun.container.querySelector('[data-vex-tool-leg-outcome="completed"]')
+        ?.textContent,
+    ).toBe("Completed");
+    expect(
+      unreadableDryRun.container.querySelector('[data-vex-tool-legs="executed"]'),
+    ).toBeNull();
+  });
+
+  it("labels a PENDING protocol act rather than showing it as done", () => {
+    const { container } = render(
+      createElement(ToolActRow, {
+        act: act({
+          toolName: "kyberswap.swap.execute",
+          toolArgs: '{"tokenIn":"SOL","tokenOut":"USDC","amountIn":"1.5"}',
+          success: false,
+          displayStatus: "pending",
+        }),
+      }),
+    );
+    expect(container.querySelector('[data-vex-tool-legs="executed"]')).toBeNull();
+    expect(container.textContent).toContain("Pending");
   });
 
   it("labels an UNKNOWN-outcome act as requested and ignores its untrusted output", () => {

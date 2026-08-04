@@ -74,6 +74,7 @@ function entry(overrides: Record<string, unknown> = {}): unknown {
     // had no trouble verifying.
     stalledVerification: false,
     stalledReason: null,
+    pendingReason: null,
     ...overrides,
   };
 }

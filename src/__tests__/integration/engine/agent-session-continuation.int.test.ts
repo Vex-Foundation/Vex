@@ -44,6 +44,7 @@ import {
   unregisterSessionSliceAbortController,
 } from "@vex-agent/engine/runtime/session-slice-abort.js";
 import { tick, type WakeDeps } from "@vex-agent/engine/wake/executor.js";
+import { claimSessionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-session-wake.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
 interface WakeRow {
@@ -79,6 +80,9 @@ async function openStopRequests(sessionId: string): Promise<{ id: string }[]> {
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
     claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
+    listDueSessionWakes: (now, limit) =>
+      loopWakeRepo.listDueSessionScoped(now, limit),
+    claimSessionWake: (input) => claimSessionWakeAtomically(input),
     getMissionRun: vi.fn().mockResolvedValue(null),
     casFlipToRunning: vi.fn().mockResolvedValue(null),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
@@ -125,7 +129,7 @@ describe("agent-session continuation (integration)", () => {
 
   // ── (a) lease busy must not lose the continuation ─────────────
 
-  it("a BUSY session lease re-schedules the wake instead of dropping it", async () => {
+  it("a BUSY session lease DEFERS the same wake instead of consuming it", async () => {
     const sessionId = await makeSession();
     await scheduleAgentSessionContinuation({
       sessionId,
@@ -152,22 +156,61 @@ describe("agent-session continuation (integration)", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]!.outcome).toMatchObject({
-      kind: "rescheduled_lease_busy",
+      kind: "deferred_lease_busy",
       attempt: 1,
-      scheduled: true,
     });
     // Nothing ran against a session someone else is driving.
     expect(deps.continueAgentSession).not.toHaveBeenCalled();
 
-    // THE POINT: the continuation still exists. The original row is consumed
-    // (claimDue is one-way), but a replacement is pending with the attempt
-    // counter, so the session is not silently abandoned.
+    // THE POINT: the ONE row still holds the park. Nothing was consumed, so
+    // there is no instant at which the session had neither a pending wake nor
+    // a lease — the window an operator Stop used to fall into.
     const all = await readWakes(sessionId);
-    expect(all.filter((w) => w.status === "consumed")).toHaveLength(1);
-    const pending = all.filter((w) => w.status === "pending");
-    expect(pending).toHaveLength(1);
-    expect(pending[0]!.mission_run_id).toBeNull();
-    expect(pending[0]!.payload).toMatchObject({ attempt: 1 });
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({
+      status: "pending",
+      mission_run_id: null,
+      payload: { attempt: 1 },
+    });
+
+    // And the backoff really moved the deadline out, so the row is not retried
+    // on every 2 s tick.
+    const stillDue = await loopWakeRepo.listDueSessionScoped(new Date(), 10);
+    expect(stillDue).toHaveLength(0);
+  });
+
+  it("a lease-busy deferral never loses the park across repeated ticks", async () => {
+    const sessionId = await makeSession();
+    await scheduleAgentSessionContinuation({
+      sessionId,
+      trigger: "iteration_limit",
+    });
+    await claimSessionLease({
+      sessionId,
+      ownerId: "unrelated-holder",
+      processKind: "electron_main",
+      ttlMs: 60_000,
+    });
+
+    const deps = makeDeps();
+    for (let i = 1; i <= 3; i++) {
+      await execute(
+        `UPDATE loop_wake_requests SET due_at = NOW() - interval '1 second'
+           WHERE session_id = $1 AND status = 'pending'`,
+        [sessionId],
+      );
+      const results = await tick(new Date(), 10, deps);
+      expect(results[0]?.outcome).toMatchObject({
+        kind: "deferred_lease_busy",
+        attempt: i,
+      });
+    }
+
+    // Still exactly ONE row, still pending. An unbounded retry cannot grow the
+    // queue — only the delay grows, and only up to the cap.
+    const all = await readWakes(sessionId);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ status: "pending" });
   });
 
   it("the re-scheduled wake FIRES once the lease is released", async () => {
@@ -209,7 +252,7 @@ describe("agent-session continuation (integration)", () => {
 
     // The other worker finishes and releases.
     await execute("DELETE FROM runner_leases WHERE session_id = $1", [sessionId]);
-    // The replacement is due (backoff elapsed).
+    // The deferred row is due again (backoff elapsed).
     await execute(
       `UPDATE loop_wake_requests SET due_at = NOW() - interval '1 second'
          WHERE session_id = $1 AND status = 'pending'`,
@@ -272,6 +315,17 @@ describe("agent-session continuation (integration)", () => {
    */
   it("a Stop racing the enqueue leaves NO live wake, whichever commits first", async () => {
     const sessionId = await makeSession();
+    // A runner holds the session lease — the state every REAL caller of the
+    // stop path is in, and what makes the stop-retention rule keep the request
+    // open for that runner's gate to consume. Without a live lease (or an
+    // incomplete approval lifecycle) the same transaction proves nothing is
+    // listening and deliberately leaves NO request behind.
+    await claimSessionLease({
+      sessionId,
+      ownerId: "airborne-slice",
+      processKind: "electron_main",
+      ttlMs: 60_000,
+    });
 
     const [, scheduled] = await Promise.all([
       enqueueSessionStopRequest({ sessionId, correlationId: "race" }),
@@ -289,6 +343,17 @@ describe("agent-session continuation (integration)", () => {
 
   it("the stop is CONSUMED by the scheduling gate, not left open", async () => {
     const sessionId = await makeSession();
+    // A runner holds the session lease — the state every REAL caller of the
+    // stop path is in, and what makes the stop-retention rule keep the request
+    // open for that runner's gate to consume. Without a live lease (or an
+    // incomplete approval lifecycle) the same transaction proves nothing is
+    // listening and deliberately leaves NO request behind.
+    await claimSessionLease({
+      sessionId,
+      ownerId: "airborne-slice",
+      processKind: "electron_main",
+      ttlMs: 60_000,
+    });
     await enqueueSessionStopRequest({ sessionId, correlationId: "consume" });
 
     const result = await scheduleAgentSessionContinuation({
@@ -325,7 +390,15 @@ describe("agent-session continuation (integration)", () => {
       trigger: "iteration_limit",
     });
 
-    // A slice is airborne, exactly as `continueAgentSessionUnderLease` runs it.
+    // A slice is airborne, exactly as `continueAgentSessionUnderLease` runs it:
+    // the executor's session lease is held for the whole slice, and the
+    // in-process controller is registered for its duration.
+    await claimSessionLease({
+      sessionId,
+      ownerId: "airborne-slice",
+      processKind: "electron_main",
+      ttlMs: 60_000,
+    });
     const controller = registerSessionSliceAbortController(sessionId);
     try {
       await enqueueSessionStopRequest({ sessionId, correlationId: "req-stop-1" });
@@ -389,11 +462,16 @@ describe("agent-session continuation (integration)", () => {
     const sessionId = await makeSession();
     await scheduleAgentSessionContinuation({ sessionId, trigger: "timeout" });
 
-    await enqueueSessionStopRequest({ sessionId, correlationId: "r1" });
-    await enqueueSessionStopRequest({ sessionId, correlationId: "r2" });
+    const first = await enqueueSessionStopRequest({ sessionId, correlationId: "r1" });
+    const second = await enqueueSessionStopRequest({ sessionId, correlationId: "r2" });
 
-    // No duplicate open rows piling up for a gate to consume one at a time.
-    expect(await openStopRequests(sessionId)).toHaveLength(1);
+    // No live lease and no incomplete approval lifecycle, so the same
+    // transaction proved nothing remains to observe a request — it applied the
+    // stop and left NOTHING behind. A second press changes neither the outcome
+    // nor the durable state.
+    expect(first).toEqual({ outcome: "applied" });
+    expect(second).toEqual({ outcome: "applied" });
+    expect(await openStopRequests(sessionId)).toHaveLength(0);
     expect(await pendingWakes(sessionId)).toHaveLength(0);
   });
 
@@ -442,6 +520,17 @@ describe("agent-session continuation (integration)", () => {
    */
   it("a consumed session stop does NOT stop the next, unrelated work", async () => {
     const sessionId = await makeSession();
+    // A runner holds the session lease — the state every REAL caller of the
+    // stop path is in, and what makes the stop-retention rule keep the request
+    // open for that runner's gate to consume. Without a live lease (or an
+    // incomplete approval lifecycle) the same transaction proves nothing is
+    // listening and deliberately leaves NO request behind.
+    await claimSessionLease({
+      sessionId,
+      ownerId: "airborne-slice",
+      processKind: "electron_main",
+      ttlMs: 60_000,
+    });
     await enqueueSessionStopRequest({ sessionId, correlationId: "stop-once" });
     expect(await openStopRequests(sessionId)).toHaveLength(1);
 
@@ -475,6 +564,17 @@ describe("agent-session continuation (integration)", () => {
 
   it("consuming twice is idempotent — the second pass is a no-op", async () => {
     const sessionId = await makeSession();
+    // A runner holds the session lease — the state every REAL caller of the
+    // stop path is in, and what makes the stop-retention rule keep the request
+    // open for that runner's gate to consume. Without a live lease (or an
+    // incomplete approval lifecycle) the same transaction proves nothing is
+    // listening and deliberately leaves NO request behind.
+    await claimSessionLease({
+      sessionId,
+      ownerId: "airborne-slice",
+      processKind: "electron_main",
+      ttlMs: 60_000,
+    });
     await enqueueSessionStopRequest({ sessionId, correlationId: "stop-twice" });
 
     const first = await gateOnOperatorStopTransaction({

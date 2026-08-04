@@ -12,6 +12,9 @@
  *  - `tool_call` deltas: the raw incremental-args fragment (`argsDelta`) is
  *    DROPPED. Mid-stream JSON fragments cannot be safely redacted; the
  *    canonical redacted args arrive later via the persisted `tool_call` DTO.
+ *    The `toolCallName` is normalized from the injected wire name to its dotted
+ *    `toolId` (`tool-name-canonical.ts`), the same form the persisted DTO and
+ *    the Markdown export carry.
  *  - `error` deltas: the raw provider message is replaced with a safe generic
  *    (`"Stream error"`); the numeric `code` and the bounded `errorType` enum
  *    label are preserved. The label is an enum member from the provider's own
@@ -42,6 +45,7 @@ import {
 } from "@vex-agent/engine/events/stream-bus.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { log } from "../logger/index.js";
+import { canonicalToolName } from "./tool-name-canonical.js";
 
 /** Renderer-facing replacement for any provider-supplied error text. */
 const SAFE_STREAM_ERROR_MESSAGE = "Stream error";
@@ -73,11 +77,17 @@ export function toRendererStreamDelta(
       break;
     case "tool_call":
       // argsDelta intentionally dropped (sanitization-by-omission).
+      //
+      // The NAME is canonicalized: the model calls a discovered protocol
+      // manifest under its OpenAI-legal wire name (`kyberswap__swap__quote`),
+      // and the live island is one of the three surfaces a human reads it on.
+      // An unresolvable name stays verbatim (`tool-name-canonical.ts`).
       payload = {
         kind: "tool_call",
         toolCallIndex: delta.toolCallIndex,
         toolCallId: delta.toolCallId,
-        toolCallName: delta.toolCallName,
+        toolCallName:
+          delta.toolCallName === null ? null : canonicalToolName(delta.toolCallName),
       };
       break;
     case "usage":

@@ -31,6 +31,11 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Agent Scan (renamed from `portfolio`, Agent Scan plan v3 §1.9)
   agent_scan: async () => (await import("../internal/portfolio-inspect.js")).handleAgentScan,
 
+  // Full manifests of named toolIds + registration (R5) — the follow-up half of
+  // `discover_tools(list:true)`. Session-reveal gate is enforced INSIDE the
+  // handler as well as by tool-list visibility.
+  describe_tools: async () => (await import("../internal/describe-tools.js")).handleDescribeTools,
+
   // Khalani direct read alias (the other three were removed 2026-07-30 — their
   // protocol tools remain reachable via discover_tools + execute_tool)
   token_find: async () => (await import("../internal/khalani.js")).handleTokenFind,

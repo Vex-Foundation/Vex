@@ -34,6 +34,7 @@ function resetStoreToDefaults(): void {
     createSessionInitialTurn: null,
     reviewModal: "none",
     hideDustBalances: true,
+    bookSectionOrder: [],
   });
 }
 
@@ -65,6 +66,7 @@ describe("uiStore", () => {
     expect(state.createSessionInitialTurn).toBeNull();
     expect(state.reviewModal).toBe("none");
     expect(state.hideDustBalances).toBe(true);
+    expect(state.bookSectionOrder).toEqual([]);
   });
 
   it("setReviewModal mutates and reflects new value, without persisting it", () => {
@@ -237,6 +239,7 @@ describe("uiStore", () => {
       bookOpen: true,
       hideDustBalances: true,
       prologueVersion: null,
+      bookSectionOrder: [],
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -345,6 +348,61 @@ describe("uiStore", () => {
     expect(useUiStore.getState().hideDustBalances).toBe(true);
   });
 
+  it("setBookSectionOrder persists the rail order and survives a rehydrate", async () => {
+    useUiStore.getState().setBookSectionOrder(["trench", "position"]);
+    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
+    expect(parsed.state.bookSectionOrder).toEqual(["trench", "position"]);
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().bookSectionOrder).toEqual([
+      "trench",
+      "position",
+    ]);
+  });
+
+  it("migrate v7→v8 seeds bookSectionOrder [] and preserves every earlier pref", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: {
+          theme: "chronos",
+          sidebarOpen: false,
+          bookOpen: false,
+          hideDustBalances: false,
+          prologueVersion: "0.1.9",
+        },
+        version: 7,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    const state = useUiStore.getState();
+    expect(state.bookSectionOrder).toEqual([]);
+    expect(state.sidebarOpen).toBe(false);
+    expect(state.bookOpen).toBe(false);
+    expect(state.hideDustBalances).toBe(false);
+    expect(state.prologueVersion).toBe("0.1.9");
+  });
+
+  it("coerces every off-shape persisted bookSectionOrder back to [] (a tampered payload must not blank the rail)", async () => {
+    // Current version + garbage: `migrate` is skipped, so only the
+    // rehydrate-time `merge` coercion stands between the payload and the rail.
+    const rejected: readonly unknown[] = [
+      "nope",
+      [1, 2, 3],
+      Array.from({ length: 100 }, () => "position"),
+      ["x".repeat(200)],
+      [""],
+      null,
+    ];
+    for (const bookSectionOrder of rejected) {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ state: { theme: "chronos", bookSectionOrder }, version: 8 }),
+      );
+      await useUiStore.persist.rehydrate();
+      expect(useUiStore.getState().bookSectionOrder).toEqual([]);
+    }
+  });
+
   it("setSessionModeFilter mutates and reflects new value", () => {
     useUiStore.getState().setSessionModeFilter("mission");
     expect(useUiStore.getState().sessionModeFilter).toBe("mission");
@@ -425,6 +483,7 @@ describe("uiStore", () => {
       bookOpen: true,
       hideDustBalances: true,
       prologueVersion: null,
+      bookSectionOrder: [],
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

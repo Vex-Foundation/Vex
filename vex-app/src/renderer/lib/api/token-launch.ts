@@ -54,7 +54,7 @@ import type {
   TokenLaunchSubmitResult,
 } from "@shared/schemas/token-launch.js";
 import type { TokenLaunchBridge } from "@shared/types/bridge/agent/token-launch.js";
-import { tokenLaunchKeys } from "./queryKeys.js";
+import { portfolioKeys, tokenLaunchKeys } from "./queryKeys.js";
 
 export type {
   AwaitingLaunchFormDto,
@@ -201,7 +201,15 @@ export function useSubmitLaunch(): UseMutationResult<
     onSuccess: (result) => {
       if (!result.ok) return;
       void queryClient.invalidateQueries({ queryKey: tokenLaunchKeys.myLaunches() });
+      // The receipt the auto-dismiss relies on must actually be ON SCREEN once
+      // the dialog is gone. `myLaunches` alone is not enough — the
+      // `confirmed_pending_identity` branch returns BEFORE the launch is
+      // recorded — and portfolio/Agent Scan otherwise refresh on a 60 s poll,
+      // which is not good enough for a spend the user just authorized.
+      void queryClient.invalidateQueries({ queryKey: portfolioKeys.all });
     },
+    // NOT the awaiting key: invalidating it here would race the dwell and
+    // re-introduce the mid-deploy unmount the host's snapshot exists to stop.
   });
 }
 

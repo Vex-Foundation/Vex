@@ -33,6 +33,7 @@ import {
   terminalizeProviderFailure,
   terminalizeRefund,
 } from "./bridge-activity-repair-terminalize.js";
+import { logInconclusiveVerification } from "./bridge-activity-repair-log.js";
 
 /** Provider-native Solana chain ids (Khalani vs Relay diverge) — used only to infer a row's chain family for explorer-link resolution. */
 const SOLANA_CHAIN_IDS: ReadonlySet<number> = new Set([20011000000, 792703809]);
@@ -88,7 +89,7 @@ async function sweepLogicalRow(
 
   const correlation = readStoredCorrelation(logical);
   if (!correlation) {
-    logger.warn("bridge.repair.logical_missing_route", { executionId });
+    logInconclusiveVerification({ event: "bridge.repair.logical_missing_route", logical, reason: "missing_route" });
     await deps.noteVerificationInconclusive(logical.id, "missing_route");
     counters.stillPending++;
     return;
@@ -137,7 +138,6 @@ async function applyObservation(
   deps: BridgeRepairDeps,
   counters: MutableSweepCounters,
 ): Promise<void> {
-  const executionId = logical.protocolExecutionId;
   switch (observation.kind) {
     case "pending":
       // CONCLUSIVE: the provider answered and the row is legitimately still in
@@ -156,10 +156,11 @@ async function applyObservation(
       return;
 
     case "chain_mismatch":
-      logger.warn("bridge.repair.chain_id_mismatch", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
+      logInconclusiveVerification({
+        event: "bridge.repair.chain_id_mismatch",
+        logical,
+        reason: "chain_mismatch",
+        context: { providerStatus: observation.providerStatus },
       });
       await deps.noteVerificationInconclusive(logical.id, "chain_mismatch");
       counters.stillPending++;
@@ -169,11 +170,11 @@ async function applyObservation(
       // R6 anomaly (Blocker 7): a carried-and-stored identity field disagrees. Log
       // the field NAME only (never raw provider values) and stay pending — we do
       // NOT terminalize a mismatched order onto our row.
-      logger.warn("bridge.repair.correlation_mismatch", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
-        field: observation.field,
+      logInconclusiveVerification({
+        event: "bridge.repair.correlation_mismatch",
+        logical,
+        reason: "correlation_mismatch",
+        context: { providerStatus: observation.providerStatus, field: observation.field },
       });
       await deps.noteVerificationInconclusive(logical.id, "correlation_mismatch");
       counters.stillPending++;

@@ -155,7 +155,9 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   if (row.failureCode) parts.push(`(${row.failureCode})`);
   const bridgeFee = vexFeeClause(row);
   if (bridgeFee) parts.push(bridgeFee);
-  const stalled = stalledVerificationClause(row);
+  const observed = chainObservationClause(row);
+  if (observed) parts.push(observed);
+  const stalled = observed ? null : stalledVerificationClause(row);
   if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
   return parts.join(" — ");
@@ -190,6 +192,77 @@ function stalledVerificationClause(row: TransactionRow): string | null {
     `verification stalled (${reason}): Vex has repeatedly been unable to read this `
     + `transaction's status on chain. It may still be settled. Do not re-broadcast`
   );
+}
+
+
+/**
+ * WHAT THE CHAIN OBSERVATION ESTABLISHED — the clause that answers "why is this
+ * not moving?" before the agent spends a `loop_defer` cycle guessing.
+ *
+ * It runs BEFORE the stall clause because these are CONCLUSIVE observations: we
+ * looked and learned something definite. A stall is the opposite — "we could not
+ * look" — and reporting both would describe one observation as a conclusion and
+ * a failure at once.
+ *
+ * THE COPY IS BOUNDED BY WHAT THE LANE ACTUALLY PROVED:
+ *
+ * - `in_mempool` is the HEALTHY answer, and the instruction that matters is "do
+ *   not re-broadcast" — re-broadcasting a mempool-resident transaction is how a
+ *   user pays for the same action twice.
+ * - `nonce_superseded` establishes only that ANOTHER transaction from this
+ *   wallet used this nonce and that THIS hash has no receipt. It does NOT
+ *   establish that nothing was spent or that a retry is safe: a replacement
+ *   reusing the nonce may have carried the same calldata and done the same
+ *   thing. Correlating the replacement is strictly more work than the lane does,
+ *   so this line must never claim it.
+ *
+ * NO CHECK INTERVAL IS STATED. The row's real cadence is 5 s for its first ten
+ * minutes and 30 s after, derived from `submit_attempted_at` — which this read
+ * model does not carry. A fixed "every 5s" would therefore be FALSE for any
+ * older row, and inventing a cadence is exactly the claim-beyond-the-evidence
+ * this file spends its other clauses avoiding.
+ */
+function chainObservationClause(row: TransactionRow): string | null {
+  const reason = row.lastVerificationReason ?? null;
+  const terminalUnproven = (row.status ?? "") === "superseded_unproven";
+
+  if (terminalUnproven) {
+    return (
+      "Vex is no longer tracking this transaction as in flight and its outcome is "
+      + "UNPROVEN: the original hash appears superseded and what the replacement did "
+      + "has not been checked. This is NOT a failure. Check the wallet/token state "
+      + "before deciding whether to act again"
+    );
+  }
+  if ((row.status ?? "") !== "pending") return null;
+
+  if (reason === "in_mempool") {
+    return (
+      "in the mempool, not yet mined: a node knows this transaction and it is "
+      + "waiting for inclusion. Vex is re-checking it automatically — do not re-broadcast"
+    );
+  }
+  if (reason === "nonce_superseded") {
+    return (
+      "this transaction hash appears superseded — another transaction from the same "
+      + "wallet has already used its nonce, and this hash has no receipt. What the "
+      + "replacement did has not been checked, so it may or may not have completed "
+      + "this action. Do not retry until you have checked the wallet/token state"
+    );
+  }
+  if (reason === "tx_unknown_to_node") {
+    return (
+      "no node we asked has heard of this transaction yet. That is not proof it was "
+      + "dropped — it may be sitting in a mempool we did not query — so Vex keeps "
+      + "checking. Do not re-broadcast"
+    );
+  }
+  return null;
+}
+
+/** Test seam: the summary line for ONE row, so the copy above can be pinned directly. */
+export function summarizeTransactionRowForTest(row: TransactionRow): string {
+  return summarize(row);
 }
 
 /** Compact human line for one row — leads the item, full fields follow. */
@@ -228,7 +301,11 @@ function summarize(row: TransactionRow): string {
   if (status === "definitively_failed" && row.failureCode) parts.push(`(${row.failureCode})`);
   const fee = vexFeeClause(row);
   if (fee) parts.push(fee);
-  const stalled = stalledVerificationClause(row);
+  // A CONCLUSIVE observation outranks the stall clause: the two answer opposite
+  // questions, and only one of them can be true of the same check.
+  const observed = chainObservationClause(row);
+  if (observed) parts.push(observed);
+  const stalled = observed ? null : stalledVerificationClause(row);
   if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
   return parts.join(" — ");

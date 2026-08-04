@@ -309,31 +309,46 @@ function buildOutstandingResumeGuard(
  * guard would not be enough: eligibility now ends at COMPLETION, so an attempt
  * that died mid-turn is legitimately retried, and only an idempotent cue keeps
  * the prompt contract from announcing the same resolved approval twice.
+ *
+ * ## The stop ordering lives in `gated-session-turn.ts`, not here
+ *
+ * This path is reached from the reconciler too: `resolveAbandonedDispatch`
+ * resolves an abandoned `approved + dispatching` row to `indeterminate`, writes
+ * the result and calls `resumeLifecycleRow` DIRECTLY. It never passes through
+ * `claimDispatchSlotUnderStopGate`, so before that ordering existed a Stop
+ * committed while the row sat abandoned was correctly written and durably
+ * retained — and then ignored, because nothing on this path read it. A full
+ * turn ran on a session the operator had stopped.
+ *
+ * The launch-form resume had the identical defect on its own path, which is
+ * why the ordering is a shared primitive rather than a pattern each caller
+ * re-types. This function supplies only what is approval-SPECIFIC: the lease
+ * owner it already holds, the resumed-turn guard, and the idempotent cue —
+ * ordered behind the gate so a stopped session is never told about a
+ * resolution it will not act on.
+ *
+ * The lease is claimed by `claimChatSessionResume` and released by
+ * `runResumeAfterDecision`'s `finally`; the primitive never touches it.
  */
 async function runChatSessionResume(
   cont: Extract<PreparedContinuation, { kind: "chat_session" }>,
   claimTurn: ResumedTurnClaim,
 ): Promise<TurnResult> {
-  const { resolveProvider } = await import("@vex-agent/inference/registry.js");
-  const provider = await resolveProvider();
-  if (!provider) throw new Error("No inference provider available");
-  const config = await provider.loadConfig();
-  if (!config) throw new Error("No inference config available");
-
-  await appendApprovalResolvedCueOnce(cont.sessionId, cont.approvalId);
-
-  const { runAgentTurnUnderLease } = await import("../runner/agent.js");
-  return runAgentTurnUnderLease(
-    cont.sessionId,
-    provider,
-    config,
-    undefined,
-    claimTurn,
-    undefined,
+  const { runStopGatedSessionTurn } = await import(
+    "../runner/gated-session-turn.js"
+  );
+  return runStopGatedSessionTurn({
+    sessionId: cont.sessionId,
     // The continuation carries the lease this resume runs under, so the turn
     // loop can prove ownership for a compaction cutover.
-    cont.ownerId,
-  );
+    runnerOwnerId: cont.ownerId,
+    claimTurn,
+    logScope: "approval_resume",
+    // Ordered AFTER the gate on purpose: a stopped session must not have a cue
+    // appended announcing a resolution it will never act on.
+    beforeTurn: () =>
+      appendApprovalResolvedCueOnce(cont.sessionId, cont.approvalId),
+  });
 }
 
 /**

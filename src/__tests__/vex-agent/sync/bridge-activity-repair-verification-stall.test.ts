@@ -34,8 +34,8 @@ import {
   type BridgeSweepRow,
 } from "@vex-agent/sync/bridge-activity-repair.js";
 import {
-  toVerificationStallReason,
-  VERIFICATION_STALL_REASONS,
+  toVerificationReason,
+  VERIFICATION_REASONS,
 } from "@vex-agent/sync/bridge-activity-repair-contracts.js";
 
 const LOGICAL_ROW_ID = 4242;
@@ -59,6 +59,7 @@ function row(overrides: Partial<BridgeSweepRow> = {}): BridgeSweepRow {
     normalizedRoute: "eip155:8453:0xa->eip155:42161:0xb",
     lastAttemptedAt: null,
     createdAt: "2026-08-03T09:00:00.000Z",
+    lastVerificationReason: null,
     ...overrides,
   };
 }
@@ -113,18 +114,18 @@ function khalaniOrder(status: string, transactions: Record<string, unknown> = {}
 
 describe("the reason bound", () => {
   it("admits only code-authored reason codes", () => {
-    expect(toVerificationStallReason("no_safe_rpc")).toBe("no_safe_rpc");
-    expect(toVerificationStallReason("receipt_unavailable")).toBe("receipt_unavailable");
+    expect(toVerificationReason("no_safe_rpc")).toBe("no_safe_rpc");
+    expect(toVerificationReason("receipt_unavailable")).toBe("receipt_unavailable");
   });
 
   it("refuses anything it did not author — raw provider text never reaches the column", () => {
     // The column is surfaced to the UI and the agent verbatim; bounding it by
     // NAME rather than by length is what keeps someone else's string out.
-    expect(toVerificationStallReason("https://provider.example/v1?key=SECRET")).toBe(
+    expect(toVerificationReason("https://provider.example/v1?key=SECRET")).toBe(
       "verification_failed",
     );
-    expect(toVerificationStallReason(undefined)).toBe("verification_failed");
-    expect(VERIFICATION_STALL_REASONS).not.toContain("verification stalled");
+    expect(toVerificationReason(undefined)).toBe("verification_failed");
+    expect(VERIFICATION_REASONS).not.toContain("verification stalled");
   });
 });
 

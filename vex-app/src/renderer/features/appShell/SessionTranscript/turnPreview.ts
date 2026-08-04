@@ -1,9 +1,10 @@
 /**
  * THE TURN-SCOPED PREVIEW — what the transcript renders as "the turn in
- * flight", from the instant of the send to the instant the turn settles.
+ * flight", from the instant of the send to the instant the turn settles — plus
+ * the latch that decides whether the centred "vexing…" scene may open.
  *
- * Two owner findings converge here, and they are the same defect seen from
- * two ends:
+ * Two owner findings converge on the preview, and they are the same defect seen
+ * from two ends:
  *
  * 1. THE GHOST MOMENT ("moment wysłania wiadomości, nic nie ma na ekranie i
  *    user myśli że nic nie działa"). The `streamStore` preview materializes on
@@ -31,66 +32,160 @@
  * consumer. The store stays a pure projection of what the ENGINE actually
  * said; "a turn is in flight and has not spoken yet" is a RENDERER fact and is
  * derived here, where it costs nothing and can lie to no one.
+ *
+ * ── THE CENTRED-SCENE LATCH ───────────────────────────────────────────────
+ * A centred particle scene may occupy the chat column only while it provably
+ * covers nothing. Two earlier designs got this wrong the same way — inferring
+ * "the viewport is blank" from the preview's CONTENT, then from a provider
+ * round count. Both were proxies. This one is transcript evidence:
+ *
+ *  - the send edge (`submitting` false→true) observed by THIS mounted session
+ *    snapshots a BASELINE row id, and opens nothing by itself: `submitting`
+ *    flips long before main appends the user row, so at that moment the
+ *    scroller still shows the previous conversation;
+ *  - the scene may open only once a VIEWPORT-SAFE LIVE USER ANCHOR appears — a
+ *    row newer than the baseline, of the `user` variant, appended live. This is
+ *    deliberately NOT a claim that the row belongs to "this send": the renderer
+ *    holds no turn correlation id and must never pretend otherwise. It is the
+ *    exact signal `SessionTranscript`'s top-anchor layout effect uses, so by
+ *    the time it is true the viewport has been re-anchored onto a fresh user
+ *    row and nothing is being covered;
+ *  - it closes PERMANENTLY for the submission on either the first real engine
+ *    preview OR any newer non-user row. The second clause matters because
+ *    stream-preview delivery is best-effort (`engine/core/turn.ts`): a round
+ *    whose previews were missed still persists its row;
+ *  - a closed latch never reopens while the submission runs, whatever the store
+ *    does (idle timer, abort, session cleanup all clear it);
+ *  - a session change resets every ref synchronously during render, and
+ *    mounting INTO an already-submitting session is never eligible.
+ *
+ * Fail-safe by direction: every uncertain state resolves to "no centred scene".
  */
 
 import { useRef } from "react";
 import type { StreamPreview } from "../../../stores/streamStore.js";
 
-/**
- * The preview to render for this turn, or `null` when no turn is in flight.
- *
- * Precedence is simple and total: a REAL preview always wins, because the
- * engine speaking beats the renderer's placeholder. The placeholder covers
- * exactly two gaps — before the first delta, and between the rounds of a
- * multi-round turn — and it carries the TURN's start time, so the elapsed
- * counter runs from the send rather than restarting per round.
- *
- * Not a store, not an effect: a ref pinned on the submitting edge. The
- * placeholder identity is stable while a turn runs, so it cannot churn the
- * memoized subtrees below it.
- */
-export function useTurnPreview(
-  preview: StreamPreview | null,
-  submitting: boolean,
-): StreamPreview | null {
+export interface TurnPreviewInput {
+  /** The mounted session. A change resets every latch, synchronously. */
+  readonly sessionId: string;
+  /** The engine's round-scoped preview for this session, or null. */
+  readonly preview: StreamPreview | null;
+  /** `chat.submit` is pending for this session — the turn boundary. */
+  readonly submitting: boolean;
+  /** Newest transcript row id, or 0 when there are none. */
+  readonly newestId: number;
+  /** Newest row's variant (`user`, `assistant`, `tool`, …), or null. */
+  readonly newestVariant: string | null;
+  /** The newest row arrived LIVE — its id is outside the settled set. */
+  readonly newestIsLiveAppend: boolean;
+}
+
+export interface TurnPreviewResult {
+  readonly preview: StreamPreview | null;
+  /** May the CENTRED scene mount? See the latch contract above. */
+  readonly centredSceneEligible: boolean;
+}
+
+export function useTurnPreview(input: TurnPreviewInput): TurnPreviewResult {
+  const {
+    sessionId,
+    preview,
+    submitting,
+    newestId,
+    newestVariant,
+    newestIsLiveAppend,
+  } = input;
+
+  const mountedSession = useRef<string | null>(null);
   // When the CURRENT turn began. Pinned once per turn so the elapsed counter
   // measures the turn the operator is waiting on, not the provider round the
   // engine happens to be in.
   const turnStartedAtMs = useRef<number | null>(null);
   const placeholder = useRef<StreamPreview | null>(null);
+  /** Has this mount ever observed `submitting === false` for this session? */
+  const observedIdle = useRef(false);
+  /** Did the send edge happen while THIS session was mounted? */
+  const observedSendEdge = useRef(false);
+  const wasSubmitting = useRef(false);
+  const baselineNewestId = useRef(0);
+  const latchOpen = useRef(false);
+  const latchClosed = useRef(false);
+
+  // Session change → reset synchronously during render (the file's existing
+  // render-time-ref idiom, not an effect): switching between two submitting
+  // sessions must never inherit the other's clock or its open latch.
+  if (mountedSession.current !== sessionId) {
+    mountedSession.current = sessionId;
+    turnStartedAtMs.current = null;
+    placeholder.current = null;
+    observedIdle.current = false;
+    observedSendEdge.current = false;
+    wasSubmitting.current = submitting;
+    baselineNewestId.current = 0;
+    latchOpen.current = false;
+    latchClosed.current = false;
+  }
 
   if (!submitting) {
     // The turn settled: nothing may outlive it, or the next send would reopen
-    // on a stale clock.
+    // on a stale clock and a stale latch.
     turnStartedAtMs.current = null;
     placeholder.current = null;
-    return preview;
+    observedIdle.current = true;
+    observedSendEdge.current = false;
+    wasSubmitting.current = false;
+    latchOpen.current = false;
+    latchClosed.current = false;
+    return { preview, centredSceneEligible: false };
+  }
+
+  if (!wasSubmitting.current) {
+    wasSubmitting.current = true;
+    // Mounting straight INTO a pending turn is not an observed send: this
+    // mount cannot know what the viewport already holds.
+    observedSendEdge.current = observedIdle.current;
+    baselineNewestId.current = newestId;
+    latchOpen.current = false;
+    latchClosed.current = false;
+  }
+
+  if (observedSendEdge.current && !latchClosed.current) {
+    const isNewer = newestId > baselineNewestId.current;
+    if (preview !== null || (isNewer && newestVariant !== "user")) {
+      latchClosed.current = true;
+    } else if (isNewer && newestVariant === "user" && newestIsLiveAppend) {
+      latchOpen.current = true;
+    }
   }
 
   turnStartedAtMs.current ??= preview?.startedAtMs ?? Date.now();
   const startedAtMs = turnStartedAtMs.current;
+  const centredSceneEligible =
+    observedSendEdge.current && latchOpen.current && !latchClosed.current;
 
   if (preview !== null) {
     placeholder.current = null;
-    return startedAtMs === preview.startedAtMs
-      ? preview
-      : { ...preview, startedAtMs };
-  }
-  if (placeholder.current === null) {
-    placeholder.current = {
-      streamId: PENDING_TURN_STREAM_ID,
-      text: "",
-      phase: "streaming",
-      toolName: null,
-      reasoningSegments: [],
-      reasoningText: "",
-      reasoningTokens: null,
-      startedAtMs,
-      status: "working",
-      errorType: null,
+    return {
+      preview:
+        startedAtMs === preview.startedAtMs
+          ? preview
+          : { ...preview, startedAtMs },
+      centredSceneEligible,
     };
   }
-  return placeholder.current;
+  placeholder.current ??= {
+    streamId: PENDING_TURN_STREAM_ID,
+    text: "",
+    phase: "streaming",
+    toolName: null,
+    reasoningSegments: [],
+    reasoningText: "",
+    reasoningTokens: null,
+    startedAtMs,
+    status: "working",
+    errorType: null,
+  };
+  return { preview: placeholder.current, centredSceneEligible };
 }
 
 /**

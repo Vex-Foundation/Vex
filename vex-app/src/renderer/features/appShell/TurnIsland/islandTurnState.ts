@@ -20,6 +20,7 @@ import { classifyEngineFailure } from "@shared/engine-error-classification.js";
 import { engineErrorCopy } from "@shared/engine-error-copy.js";
 import type { StreamPreview } from "../../../stores/streamStore.js";
 import { reasonedStampLabel } from "../reasoning-stamp.js";
+import { resolveToolIdentity } from "../ToolLedger/toolIdentity.js";
 
 export type TurnIslandState =
   | "working"
@@ -44,9 +45,50 @@ export interface TurnIslandView {
   readonly showElapsed: boolean;
 }
 
+/**
+ * The compact inline register for a `working` round — the same word the
+ * centred scene captions itself with, at island scale. The legacy "Working"
+ * label is retired from the UI entirely (owner brief §7): a mid-turn round, a
+ * resumed mission and a wake turn all get this instead, so "vexing" means one
+ * thing everywhere and never appears twice on screen at once.
+ */
+const VEXING_LABEL = "vexing…";
+
+/**
+ * May the CENTRED particle scene own the chat column right now?
+ *
+ * `centredSceneEligible` is the transcript-evidence latch owned by
+ * `SessionTranscript/turnPreview.ts` — this predicate only adds the conditions
+ * that are visible in the preview itself. Kept pure and separate so the mount
+ * decision is unit-testable without rendering a canvas.
+ *
+ * `awaitingApproval` is a FIRST-CLASS argument, not an afterthought: a pending
+ * signature freezes this surface (see the precedence note at the top of this
+ * file). A looping scene while we wait for the user's pen would read as
+ * progress that is not happening — trust is stillness.
+ */
+export function showsCentredScene(
+  preview: StreamPreview,
+  centredSceneEligible: boolean,
+  awaitingApproval: boolean,
+): boolean {
+  return (
+    centredSceneEligible &&
+    !awaitingApproval &&
+    preview.phase === "streaming" &&
+    preview.status === "working" &&
+    preview.text.length === 0 &&
+    preview.reasoningText.length === 0 &&
+    preview.reasoningSegments.length === 0
+  );
+}
+
 export function resolveTurnIslandView(
   preview: StreamPreview,
   awaitingApproval: boolean,
+  /** The centred scene is mounted — the island must not state the same fact
+   * a second time, so its `working` pill stands down. */
+  centredSceneUp = false,
 ): TurnIslandView {
   // Reasoning is TURN-scoped: a turn that thought, called a tool, and is now
   // writing has an empty ACTIVE buffer but a settled segment behind it. Both
@@ -114,10 +156,18 @@ export function resolveTurnIslandView(
         showElapsed: true,
       };
     case "calling":
+      // The NAME the model used is a raw symbol; the card ledger already turns
+      // it into a human title with its venue ("Calling KyberSwap · Swap
+      // quote"), and the live island must read the same way — main hands this
+      // lane the canonical dotted toolId, so the venue is provable here.
+      // `CallingMark` resolves the same identity for the logo.
       return {
         state: "calling",
         size: "row",
-        label: `Calling ${preview.toolName ?? "tool"}`,
+        label:
+          preview.toolName === null
+            ? "Calling tool"
+            : `Calling ${resolveToolIdentity(preview.toolName, null).title}`,
         tone: "neutral",
         animated: true,
         showElapsed: true,
@@ -138,11 +188,11 @@ export function resolveTurnIslandView(
     case "working":
       return {
         state: "working",
-        size: "pill",
-        label: "Working",
+        size: centredSceneUp ? "hidden" : "pill",
+        label: centredSceneUp ? "" : VEXING_LABEL,
         tone: "neutral",
         animated: true,
-        showElapsed: true,
+        showElapsed: !centredSceneUp,
       };
     default: {
       const exhaustive: never = preview.status;

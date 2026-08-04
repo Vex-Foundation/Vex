@@ -32,7 +32,10 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   // name, so there is no model-facing execution wrapper left to list here;
   // `execute_tool` is withheld from the model surface (`registry/visibility.ts`)
   // and its dispatch route survives solely for approval resume.
-  { label: "Protocol discovery", toolNames: ["discover_tools"] },
+  // `describe_tools` is reveal-gated (R5): it appears here only once this
+  // session has produced a successful discover_tools result, which is exactly
+  // when the follow-up fetch becomes meaningful.
+  { label: "Protocol discovery", toolNames: ["discover_tools", "describe_tools"] },
   { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
   { label: "Token resolution", toolNames: ["token_find"] },

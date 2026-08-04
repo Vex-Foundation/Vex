@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from "vitest";
 import type { StreamPreview } from "../../../stores/streamStore.js";
-import { resolveTurnIslandView } from "../TurnIsland/islandTurnState.js";
+import {
+  resolveTurnIslandView,
+  showsCentredScene,
+} from "../TurnIsland/islandTurnState.js";
 
 function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
   return {
@@ -28,9 +31,23 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
 }
 
 describe("resolveTurnIslandView — the four working states", () => {
-  it("working → compact pill", () => {
+  it("working → the compact 'vexing…' pill (the legacy 'Working' word is retired)", () => {
     const view = resolveTurnIslandView(preview({ status: "working" }), false);
-    expect(view).toMatchObject({ state: "working", size: "pill", label: "Working" });
+    expect(view).toMatchObject({
+      state: "working",
+      size: "pill",
+      label: "vexing\u2026",
+    });
+  });
+
+  it("working with the CENTRED scene up → the pill stands down entirely", () => {
+    const view = resolveTurnIslandView(preview({ status: "working" }), false, true);
+    expect(view).toMatchObject({
+      state: "working",
+      size: "hidden",
+      label: "",
+      showElapsed: false,
+    });
   });
 
   it("thinking → the expanded panel in the accent tone", () => {
@@ -43,14 +60,32 @@ describe("resolveTurnIslandView — the four working states", () => {
     });
   });
 
-  it("calling → a tool row naming the tool", () => {
+  // The label is the SAME human identity the persisted tool card shows, so the
+  // live island and the settled transcript name one act one way. The internal
+  // alias resolves a venue through `venueInToolName`, which is why even this
+  // non-protocol name gains "· Uniswap".
+  it("calling → a tool row naming the tool the way the card does", () => {
     const view = resolveTurnIslandView(
       preview({ status: "calling", toolName: "swap_execute_uniswap" }),
       false,
     );
     expect(view.state).toBe("calling");
     expect(view.size).toBe("row");
-    expect(view.label).toBe("Calling swap_execute_uniswap");
+    expect(view.label).toBe("Calling Swap · Uniswap");
+  });
+
+  // Main canonicalizes the injected wire name on this exact lane, so the island
+  // reads the protocol act rather than `kyberswap__swap__quote`.
+  it.each([
+    ["kyberswap.swap.quote", "Calling KyberSwap · Swap quote"],
+    ["trench.launch_execute", "Calling Trench Express · Launch"],
+    // Unresolvable at main: no venue is borrowed, and no `__` reaches the user
+    // as a branded act.
+    ["kyberswapp__swap__quote", "Calling Kyberswapp swap quote"],
+  ])("calling %s reads as %s", (toolName, label) => {
+    expect(resolveTurnIslandView(preview({ status: "calling", toolName }), false).label).toBe(
+      label,
+    );
   });
 
   it("calling with no tool name yet still reads honestly", () => {
@@ -138,5 +173,34 @@ describe("resolveTurnIslandView — precedence", () => {
     expect(
       resolveTurnIslandView(preview({ phase: "error" }), false).showElapsed,
     ).toBe(false);
+  });
+});
+
+describe("showsCentredScene", () => {
+  const blankFirstMoment = preview({ status: "working" });
+
+  it("opens only when the latch says the viewport is safe", () => {
+    expect(showsCentredScene(blankFirstMoment, true, false)).toBe(true);
+    expect(showsCentredScene(blankFirstMoment, false, false)).toBe(false);
+  });
+
+  it("a pending signature suppresses it — trust is stillness", () => {
+    // The freeze wins over every eligible input: a looping scene while we wait
+    // for the user's pen reads as progress that is not happening.
+    expect(showsCentredScene(blankFirstMoment, true, true)).toBe(false);
+  });
+
+  it("anything already on screen for this turn closes it", () => {
+    expect(showsCentredScene(preview({ text: "a" }), true, false)).toBe(false);
+    expect(showsCentredScene(preview({ reasoningText: "a" }), true, false)).toBe(false);
+    expect(
+      showsCentredScene(
+        preview({ reasoningSegments: ["a thought"] }),
+        true,
+        false,
+      ),
+    ).toBe(false);
+    expect(showsCentredScene(preview({ status: "thinking" }), true, false)).toBe(false);
+    expect(showsCentredScene(preview({ phase: "done" }), true, false)).toBe(false);
   });
 });

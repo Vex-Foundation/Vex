@@ -30,7 +30,7 @@
  * still owns the stage/viewport collapse edges — unchanged by this redesign.
  */
 
-import { useState, type JSX } from "react";
+import { useMemo, useState, type JSX, type ReactNode } from "react";
 import { motion } from "motion/react";
 import {
   PanelRightCloseIcon,
@@ -42,7 +42,6 @@ import { useSession } from "../../lib/api/sessions.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { ImageLockerCard } from "./book/ImageLockerCard.js";
-import { TokenLaunchButton } from "./token-launch/TokenLaunchButton.js";
 import { SessionBlock } from "./book/SessionBlock.js";
 import { SessionRuntimeCard } from "./book/SessionRuntimeCard.js";
 import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
@@ -53,6 +52,47 @@ import {
 } from "./book/portfolio/portfolio-motion.js";
 import { SidebarIconButton } from "./SessionRows.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
+import {
+  ReorderableSection,
+  useBookSectionReorder,
+} from "./book/ReorderableSection.js";
+import {
+  resolveBookSectionOrder,
+  type BookSectionId,
+} from "./book/section-order.js";
+import { useUiStore } from "../../stores/uiStore.js";
+import type { SessionPermission } from "@shared/schemas/sessions.js";
+
+/** The card a section id stands for. Exhaustive over `BookSectionId`. */
+function renderBookSection(
+  id: BookSectionId,
+  sessionId: string,
+  permission: SessionPermission | null,
+): ReactNode {
+  switch (id) {
+    case "position":
+      return <PositionBlock activeSessionId={sessionId} />;
+    case "wallets":
+      return <SessionWalletsCard sessionId={sessionId} />;
+    case "balances":
+      return <BalancesCard sessionId={sessionId} />;
+    case "activity":
+      return <SessionActivityCard sessionId={sessionId} />;
+    case "runtime":
+      return <SessionRuntimeCard sessionId={sessionId} permission={permission} />;
+    case "session":
+      return <SessionBlock sessionId={sessionId} />;
+    case "trench":
+      // Trench Photos + Launch a Token are ONE card now: a launch REQUIRES an
+      // image from that locker, so separating them sent the user hunting for
+      // the reason a launch refused.
+      return <ImageLockerCard sessionId={sessionId} />;
+    default: {
+      const exhaustive: never = id;
+      throw new Error(`Unhandled BOOK section: ${String(exhaustive)}`);
+    }
+  }
+}
 
 export function BookPanel({
   activeSessionId,
@@ -67,6 +107,17 @@ export function BookPanel({
   // if the OS preference changes while the rail is open (SidebarProfile
   // pattern, shared with WelcomePortfolioPanel).
   const [reduced] = useState(prefersReducedMotion);
+
+  // The rail's section order is a persisted COSMETIC preference; the stored
+  // payload is resolved (unknown ids dropped, missing ones appended) before it
+  // can decide what renders.
+  const storedOrder = useUiStore((state) => state.bookSectionOrder);
+  const setBookSectionOrder = useUiStore((state) => state.setBookSectionOrder);
+  const order = useMemo(
+    () => resolveBookSectionOrder(storedOrder),
+    [storedOrder],
+  );
+  const reorder = useBookSectionReorder(order, setBookSectionOrder);
 
   // The rail owns the session read that the Runtime & Cost card's apply
   // control needs: permission is a session-STATIC axis, so a prop cannot go
@@ -122,27 +173,30 @@ export function BookPanel({
       </div>
 
       {bookOpen ? (
-        <motion.div
+        <motion.ul
           variants={stackVariants}
           initial={reduced ? false : "hidden"}
           animate="show"
+          role="list"
           className="vex-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
         >
-          <PositionBlock activeSessionId={activeSessionId} />
-          <SessionWalletsCard sessionId={activeSessionId} />
-          <BalancesCard sessionId={activeSessionId} />
-          <SessionActivityCard sessionId={activeSessionId} />
-          <SessionRuntimeCard sessionId={activeSessionId} permission={permission} />
-          <SessionBlock sessionId={activeSessionId} />
-          <ImageLockerCard />
-          {/*
-            The ONLY way a user reaches the launch dialog. It sits directly under
-            TRENCH PHOTOS because a launch REQUIRES an image from that locker —
-            the two are one flow, and separating them would send the user hunting
-            for the reason a launch refused.
-          */}
-          <TokenLaunchButton sessionId={activeSessionId} />
-        </motion.div>
+          {order.map((id, index) => (
+            <ReorderableSection
+              key={id}
+              id={id}
+              index={index}
+              count={order.length}
+              reorder={reorder}
+            >
+              {renderBookSection(id, activeSessionId, permission)}
+            </ReorderableSection>
+          ))}
+          {/* The keyboard path's spoken confirmation — the same visually-hidden
+              live-region idiom the Turn Island uses. */}
+          <li aria-live="polite" className="sr-only">
+            {reorder.announcement}
+          </li>
+        </motion.ul>
       ) : null}
     </aside>
   );

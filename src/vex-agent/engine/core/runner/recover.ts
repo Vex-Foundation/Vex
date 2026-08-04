@@ -50,6 +50,12 @@ export async function recoverFailedMissionRun(
       throw new Error(
         `Session ${sessionId} runner lease busy — another runner is active.`,
       );
+    case "session_stop_pending":
+      // The operator's Stop reached the session first. It was applied and
+      // consumed by the same transaction, so a retry recovers cleanly.
+      throw new Error(
+        "Recovery did not start: an operator Stop for this session landed first. Try again.",
+      );
     case "provider_unavailable":
       throw new Error("No inference provider available");
   }

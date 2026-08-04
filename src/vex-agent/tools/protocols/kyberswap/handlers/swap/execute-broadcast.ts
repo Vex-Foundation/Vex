@@ -17,6 +17,7 @@ import { getLocalChain } from "@tools/evm-chains/registry.js";
 import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import {
   markActivityBroadcast,
   markBroadcastAccepted,
@@ -110,6 +111,14 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
 
       if (outcome.kind === "ambiguous") {
         logger.info("kyberswap.swap.execute.ambiguous", { id: eventRow.id, stage: outcome.stage, txHash: outcome.txHash });
+        // Migration 067: say WHY this row is pending, in the closed vocabulary,
+        // so the fallback can route work instead of guessing. "We never saw the
+        // receipt" and "we saw a successful receipt and could not read the
+        // amounts" are different jobs and used to produce an identical row.
+        await noteHandlerPendingReason(
+          toolId, eventRow.id,
+          outcome.stage === "send" ? "broadcast_ambiguous_send" : "broadcast_ambiguous_confirm",
+        );
         await abortRemainingPlans(executionId, i + 1, `earlier ${plan.eventRole} ambiguous`);
         return {
           success: false,
@@ -219,6 +228,8 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
 
       if (!decoded) {
         logger.warn("kyberswap.swap.execute.settlement_undecodable", { id: eventRow.id, txHash: outcome.txHash });
+        // Mined SUCCESSFULLY, amounts unreadable — the distinct fact above.
+        await noteHandlerPendingReason(toolId, eventRow.id, "settlement_undecodable");
         return {
           success: true,
           output: `${toolId}: swap confirmed on-chain (tx ${outcome.txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.${safetyDisclosure ? ` ${safetyDisclosure}` : ""}`,

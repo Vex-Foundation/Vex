@@ -46,6 +46,8 @@ type _AssertTypes = [
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
     claimDue: vi.fn().mockResolvedValue([]),
+    listDueSessionWakes: vi.fn().mockResolvedValue([]),
+    claimSessionWake: vi.fn().mockResolvedValue({ kind: "not_claimable" }),
     getMissionRun: vi.fn().mockResolvedValue(null),
     casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),

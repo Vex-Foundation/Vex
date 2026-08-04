@@ -55,6 +55,34 @@
   animation: vex-book-enter 240ms cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
+/* BOOK rail drop settle — the "plum": a card that has just been moved to a new
+ * slot lands with a soft plop instead of teleporting. One-shot, applied ONLY to
+ * the single moved card (never the stack), and TRANSFORM-ONLY — opacity is
+ * untouched, so a settling card never reads as a fresh arrival the way
+ * `vex-entry-settle` does.
+ *
+ * A build-time keyframe, not Motion's `layout`: that feature is banned outright
+ * (MOTION-POLICY.md "Disallowed in Phase 1"), and animating one known element
+ * needs none of the measuring it does. The global prefers-reduced-motion rule
+ * in base.css collapses this to a resting frame; the rail ALSO refuses to apply
+ * the class at all under that preference, so the reorder is genuinely instant
+ * rather than merely fast. */
+@keyframes vex-section-settle {
+  from {
+    transform: scale(1.03) translateY(-2px);
+  }
+  60% {
+    transform: scale(0.995) translateY(0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.vex-section-settle {
+  animation: vex-section-settle 240ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
 /* PremiumBadge "awaiting your action" shimmer — applied ONLY to a badge in the
  * `ready` state (the mission/plan is prepared and waiting for the host to
  * accept). Opacity pulse only (no transform, no moving stripe), so the global

@@ -183,6 +183,44 @@ describe("dispatcher — injected discovered-tool lane", () => {
     expect(getDiscoveredToolIds(SESSION)).toEqual([]);
   });
 
+  it("ranked discovery NAMES the ids it displaced from a full session set", async () => {
+    // The registry contract is "nothing is silently dropped", and it must hold
+    // on BOTH recording paths. `describe_tools` surfaced displacement from the
+    // start; the ranked path discarded `recordDiscoveredTools`'s return value,
+    // so a tool the model had been told was callable stopped being callable
+    // with no signal at all.
+    const { MAX_DISCOVERED_TOOLS_PER_SESSION } = await import(
+      "@vex-agent/tools/registry/discovered-tools.js"
+    );
+    const filler = Array.from(
+      { length: MAX_DISCOVERED_TOOLS_PER_SESSION },
+      (_, i) => `filler.tool${i}`,
+    );
+    recordDiscoveredTools(SESSION, filler);
+
+    const result = await dispatchTool(
+      { name: "discover_tools", args: { namespace: "dexscreener" }, toolCallId: "call_evict" },
+      context,
+    );
+    const payload = JSON.parse(result.output);
+    const kept = new Set(getDiscoveredToolIds(SESSION));
+    const displaced = filler.filter((id) => !kept.has(id));
+
+    expect(displaced.length).toBeGreaterThan(0);
+    const warningText = payload.warnings.join(" ");
+    for (const id of displaced) {
+      expect(warningText, `ranked discovery evicted ${id} with no signal`).toContain(id);
+    }
+  });
+
+  it("ranked discovery adds NO displacement warning when it displaced nothing", async () => {
+    const result = await dispatchTool(
+      { name: "discover_tools", args: { namespace: "dexscreener" }, toolCallId: "call_noevict" },
+      context,
+    );
+    expect(JSON.parse(result.output).warnings.join(" ")).not.toContain("no longer callable");
+  });
+
   it("refuses a name this session never discovered, pointing at discover_tools and execute_tool", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(makeManifest());
 

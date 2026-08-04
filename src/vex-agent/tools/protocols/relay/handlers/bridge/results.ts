@@ -20,6 +20,7 @@ import {
   type AgentActivityLegInput,
   type BridgeRouteEndpoints,
 } from "@vex-agent/db/repos/agent-activity.js";
+import type { ProviderStatusRecording } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import type { ToolResult } from "../../../../types.js";
 import {
   bridgeSummaryLine,
@@ -135,6 +136,8 @@ export function pendingResult(args: {
   depositUnconfirmed: boolean;
   vexFee: BridgeFeeDisclosure;
   feeCollection: RelayFeeCollection;
+  /** O-8 — what the durable provider-status write did, disclosed rather than assumed. */
+  providerStatusRecording: ProviderStatusRecording;
 }): ToolResult {
   const { executionId, requestId, from, to, inSide, outSide, feeUsdByBucket, broadcasts, poll } = args;
   const providerStatus = poll?.observed ? poll.status : null;
@@ -200,6 +203,11 @@ export function pendingResult(args: {
     providerRefundFailReason: refundFailReason,
     /** True when EVERY status call this turn threw — no provider status was read. */
     providerStatusUnreachable: poll !== null && !poll.observed,
+    // O-8: whether the status above actually reached `agent_scan`, and if not,
+    // WHY — `null` means none was read, so there was nothing to record. A write
+    // that silently did nothing does not meet "agent_scan is fed at return".
+    providerStatusRecorded: args.providerStatusRecording.providerStatusRecorded,
+    providerStatusRecordedReason: args.providerStatusRecording.providerStatusRecordedReason,
     legs: outputLegs(broadcasts, from, to, fillStatus, fillTxHash),
     inTxHashes,
     txHashes: destinationTxHashes,

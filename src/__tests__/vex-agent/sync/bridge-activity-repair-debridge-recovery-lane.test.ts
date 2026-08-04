@@ -187,6 +187,7 @@ function row(overrides: Partial<BridgeSweepRow> = {}): BridgeSweepRow {
     normalizedRoute: null,
     lastAttemptedAt: null,
     createdAt: "2026-07-25T03:05:12.813Z",
+    lastVerificationReason: null,
     ...overrides,
   };
 }

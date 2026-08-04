@@ -142,13 +142,26 @@ export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number]
 // ── Lifecycle status ──────────────────────────────────────────────────────
 
 /**
- * The renderer-facing lifecycle vocabulary. The DB stores `pending |
- * confirmed | definitively_failed`; every feed collapses
+ * The renderer-facing lifecycle vocabulary. The DB stores `pending | confirmed |
+ * definitively_failed | superseded_unproven`; every feed collapses
  * `definitively_failed` → `failed` in SQL (mirrors
  * `db/repos/transactions.ts`'s compatibility-feed naming, root `src/`,
  * read-only reference — NOT imported).
+ *
+ * `superseded_unproven` (engine migration 068, owner decision A6) is carried
+ * THROUGH as its own member and is deliberately NOT collapsed. It is a
+ * NON-FAILURE terminal state — the hash is no longer tracked as in flight and
+ * its inclusion outcome is unproven — so folding it into `failed` would tell the
+ * user their transaction failed when nobody established any such thing, and
+ * would hide the one distinction the state exists to make. It renders in a
+ * neutral tone, never `danger`, and carries NO amounts: they were never proven.
  */
-export const AGENT_ACTIVITY_STATUSES = ["pending", "confirmed", "failed"] as const;
+export const AGENT_ACTIVITY_STATUSES = [
+  "pending",
+  "confirmed",
+  "failed",
+  "superseded_unproven",
+] as const;
 export type AgentActivityStatus = (typeof AGENT_ACTIVITY_STATUSES)[number];
 
 /** The stored DB value that collapses to `failed`. */

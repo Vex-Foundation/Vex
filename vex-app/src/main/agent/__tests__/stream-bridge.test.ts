@@ -121,6 +121,53 @@ describe("stream bridge", () => {
     }
   });
 
+  it.each([
+    ["trench__launch_execute", "trench.launch_execute"],
+    ["dexscreener__tokenPairs", "dexscreener.tokenPairs"],
+    // Unresolvable: the live island must show the raw name, never borrow a venue.
+    ["kyberswapp__swap__quote", "kyberswapp__swap__quote"],
+    // Internal tools are untouched.
+    ["agent_scan", "agent_scan"],
+  ])("canonicalizes the live tool-call name %s to %s", (wire, expected) => {
+    const teardown = setupStreamBridge();
+    try {
+      streamDeltaBus.emit(
+        baseEvent({
+          deltaType: "tool_call",
+          delta: {
+            kind: "tool_call",
+            toolCallIndex: 0,
+            toolCallId: "call-1",
+            toolCallName: wire,
+          },
+        }) as never,
+      );
+      expect(lastBroadcast().delta["toolCallName"]).toBe(expected);
+    } finally {
+      teardown();
+    }
+  });
+
+  it("keeps a null tool-call name null", () => {
+    const teardown = setupStreamBridge();
+    try {
+      streamDeltaBus.emit(
+        baseEvent({
+          deltaType: "tool_call",
+          delta: {
+            kind: "tool_call",
+            toolCallIndex: 0,
+            toolCallId: "call-1",
+            toolCallName: null,
+          },
+        }) as never,
+      );
+      expect(lastBroadcast().delta["toolCallName"]).toBeNull();
+    } finally {
+      teardown();
+    }
+  });
+
   it("replaces raw provider error text with a safe generic, keeping code", () => {
     const teardown = setupStreamBridge();
     try {

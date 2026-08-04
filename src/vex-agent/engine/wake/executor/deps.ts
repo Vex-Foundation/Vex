@@ -1,6 +1,10 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
 import type { MissionRunStatus } from "../../types.js";
+import type {
+  ClaimSessionWakeInput,
+  ClaimSessionWakeOutcome,
+} from "./claim-session-wake.js";
 
 /**
  * Dependencies hoisted out of concrete imports so tests can inject fakes
@@ -9,8 +13,25 @@ import type { MissionRunStatus } from "../../types.js";
  * entrypoints.
  */
 export interface WakeDeps {
-  /** Claim up to `limit` due rows, atomically flipping them to `consumed`. */
+  /**
+   * Claim up to `limit` due MISSION-SCOPED rows, atomically flipping them to
+   * `consumed`. Session-scoped rows are excluded — see `listDueSessionWakes`.
+   */
   claimDue(now: Date, limit: number): Promise<LoopWakeRequest[]>;
+  /**
+   * List up to `limit` due SESSION-SCOPED candidates WITHOUT consuming them.
+   * Non-destructive by contract: the row is only claimed by
+   * `claimSessionWake`, under the session control lock.
+   */
+  listDueSessionWakes(now: Date, limit: number): Promise<LoopWakeRequest[]>;
+  /**
+   * Revalidate + lease-claim + consume ONE session-scoped wake as a single
+   * transaction under the session control lock. On a busy lease the row stays
+   * pending with a bounded backoff instead of being lost.
+   */
+  claimSessionWake(
+    input: ClaimSessionWakeInput,
+  ): Promise<ClaimSessionWakeOutcome>;
   /** Fetch a mission run by id (used to re-check status before resume). */
   getMissionRun(runId: string): Promise<MissionRun | null>;
   /** Claim a paused run before injecting a wake banner and resuming. */
@@ -53,10 +74,14 @@ import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { isWakeProviderConfigured } from "./provider.js";
+import { claimSessionWakeAtomically } from "./claim-session-wake.js";
 
 export function buildProductionDeps(): WakeDeps {
   return {
     claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
+    listDueSessionWakes: (now, limit) =>
+      loopWakeRepo.listDueSessionScoped(now, limit),
+    claimSessionWake: (input) => claimSessionWakeAtomically(input),
     getMissionRun: (runId) => missionRunsRepo.getRun(runId),
     casFlipToRunning: (runId, fromStatuses) =>
       missionRunsRepo.casFlipToRunning(runId, fromStatuses),

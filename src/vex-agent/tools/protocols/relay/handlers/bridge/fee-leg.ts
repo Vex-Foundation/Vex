@@ -27,6 +27,7 @@ import {
   failActivityEvent,
   markActivityBroadcast,
   markBroadcastAccepted,
+  provenLegAmounts,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
@@ -151,7 +152,18 @@ export async function runRelayVexFeeLeg(input: {
 
     let legStatus: OriginBroadcast["status"] = "confirmed";
     try {
-      const confirmResult = await confirmActivityEvent(legRowId, {});
+      // R1 Step 3b: Vex COMPOSED this transfer, so its atomic amount is the
+      // exact `feeSplit.feeRaw` we signed — not a quote, not a provider's word.
+      // It is therefore one of the few legs whose executed amount may be written
+      // at return time, and doing so is what puts the collected fee on the feed
+      // row instead of leaving it to a decode that may never happen.
+      const confirmResult = await confirmActivityEvent(
+        legRowId,
+        provenLegAmounts("bridge_fee", {
+          kind: "vex_built_exact",
+          amountRaw: input.feeRaw.toString(),
+        }),
+      );
       if (!confirmResult.applied && confirmResult.row.status !== "confirmed") {
         legStatus = "confirmed_unrecorded";
         logger.warn("relay.bridge.fee_confirm_cas_miss", { id: legRowId, rowStatus: confirmResult.row.status });

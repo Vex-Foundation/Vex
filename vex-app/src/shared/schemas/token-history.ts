@@ -216,8 +216,22 @@ const tokenLegSchema = z
 
 // ── Entries ───────────────────────────────────────────────────────────────
 
-/** `agent_activity`-only lifecycle status; `null` for a legacy swap row. */
-const tokenHistorySwapStatusSchema = z.enum(["pending", "confirmed", "failed"]);
+/**
+ * `agent_activity`-only lifecycle status; `null` for a legacy swap row.
+ *
+ * `superseded_unproven` is its OWN member and is deliberately not collapsed into
+ * `failed` (engine migration 068, owner decision A6): it means the hash is no
+ * longer tracked as in flight and its outcome is UNPROVEN, which is a different
+ * fact from "this failed" and must never be rendered as one. Without the member
+ * here the mapper's narrowing failed closed to `null` and the row silently lost
+ * its status on the one surface a user would look for it.
+ */
+const tokenHistorySwapStatusSchema = z.enum([
+  "pending",
+  "confirmed",
+  "failed",
+  "superseded_unproven",
+]);
 
 /**
  * The CANONICAL activity vocabulary (`../agent-activity-vocabulary.ts`),

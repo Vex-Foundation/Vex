@@ -59,7 +59,7 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({ pinTrackedToken: (...a
 
 const mockCreateIntent = vi.fn();
 const mockAttach = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   createBridgeActivityIntent: (...a: unknown[]) => mockCreateIntent(...a),
   createBridgePreBroadcastFailure: vi.fn(),
   checkBridgeInFlight: vi.fn().mockResolvedValue({ inFlight: false, existing: null }),
@@ -69,6 +69,12 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
   failActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
   abortPlannedEvents: vi.fn().mockResolvedValue([]),
+  // R1 Step 3b/4 primitives. `provenLegAmounts` is the REAL pure function —
+  // this suite asserts what a leg CONFIRMS WITH, so stubbing the evidence
+  // matrix would test the stub.
+  provenLegAmounts: (await importOriginal<Record<string, unknown>>()).provenLegAmounts,
+  notePendingReason: vi.fn().mockResolvedValue({ applied: true }),
+  noteBridgeProviderObservation: vi.fn().mockResolvedValue({ applied: true }),
 }));
 
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");

@@ -72,7 +72,15 @@ function humanAmountField(value: string | null): AmountField {
   return { value, unitProvenance: "unknown" };
 }
 
-const TOKEN_HISTORY_SWAP_STATUSES = ["pending", "confirmed", "failed"] as const;
+const TOKEN_HISTORY_SWAP_STATUSES = [
+  "pending",
+  "confirmed",
+  "failed",
+  // Named EXPLICITLY because the fallback below fails closed to `null`: without
+  // this member a `superseded_unproven` row would silently lose its status here
+  // rather than surfacing anywhere anyone would notice.
+  "superseded_unproven",
+] as const;
 type TokenHistorySwapStatus = (typeof TOKEN_HISTORY_SWAP_STATUSES)[number];
 
 /**

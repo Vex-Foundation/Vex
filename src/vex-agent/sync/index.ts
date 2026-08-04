@@ -108,11 +108,21 @@ export async function syncTick(): Promise<void> {
       } else if (job.syncType === "agent_activity_repair") {
         const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
         const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        // STAGE F, on the same driver: a row this sweep (or a handler) confirmed
+        // STATUS-ONLY still owes the user its executed amounts. Same job, because
+        // it is the same question one step later — "did it settle" and "what did
+        // it settle for" — and a separate job type would need its own seed row to
+        // do the identical work at the identical cadence.
+        const { repairMissingExecutedAmounts, buildProductionAmountFallbackDeps } =
+          await import("./executed-amount-fallback.js");
+        const amountResult = await repairMissingExecutedAmounts(
+          buildProductionAmountFallbackDeps(),
+        );
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(
           runId,
-          { ...repairResult, periodic: true },
-          repairResult.confirmed + repairResult.failed,
+          { ...repairResult, amounts: { ...amountResult }, periodic: true },
+          repairResult.confirmed + repairResult.failed + amountResult.filled,
         );
       } else if (job.syncType === "bridge_activity_repair") {
         // C1 fix (Batch 4 closure) — this periodic job was seeded (seed.ts)

@@ -82,7 +82,12 @@ export const toolCallDisplaySchema = z
   .object({
     /** Provider tool-call id — correlates a `tool_result` back to its call. */
     toolCallId: z.string().min(1).max(200),
-    /** `namespace:command` (or `command`/`name`) — string fields only. */
+    /**
+     * `namespace:command` (or `command`/`name`) — string fields only. A
+     * discovered PROTOCOL tool arrives as its canonical dotted `toolId`
+     * (`kyberswap.swap.quote`): the mapper normalizes the model's OpenAI-legal
+     * wire name (`kyberswap__swap__quote`) before it reaches this field.
+     */
     toolName: z.string().min(1).max(120),
     /** Sanitized JSON string of the call args; `null` when there were none. */
     toolArgs: z.string().max(2000).nullable(),
@@ -174,8 +179,10 @@ export const sessionMessageDtoSchema = z
     /**
      * Best-effort tool identifier extracted from `messages.tool_calls`
      * (first entry's `namespace:command` when both are strings, else
-     * `command`, else `name`, else `"unknown"`). Refined when tool
-     * registry metadata is wired in puzzle 05.
+     * `command`, else `name`, else `"unknown"`). A discovered PROTOCOL tool
+     * arrives as its canonical dotted `toolId`, normalized from the model's
+     * wire name by the mapper. Refined when tool registry metadata is wired in
+     * puzzle 05.
      */
     toolName: z.string().nullable(),
     /**
