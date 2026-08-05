@@ -155,8 +155,8 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     removeUpdaterEventListeners();
   });
-  // Ambient auto-CHECK only (start + window focus, throttled). Surfaces a new
-  // version; never downloads. Skill-allowed (start/focus check, no download).
+  // Ambient auto-CHECK only (start + window focus + 5-minute periodic tick,
+  // throttled). Surfaces a new version; never downloads.
   const stopUpdaterAutoCheck = installUpdaterAutoCheck();
   globalCleanup.add(() => {
     stopUpdaterAutoCheck();

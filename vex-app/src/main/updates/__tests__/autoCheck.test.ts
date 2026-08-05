@@ -30,8 +30,14 @@ vi.mock("../statusCache.js", () => ({
 }));
 
 let lastCheckedAt: string | null = null;
+let prefsLoadHook: (() => void) | null = null;
 vi.mock("../../preferences/store.js", () => ({
-  preferencesStore: { load: async () => ({ updater: { lastCheckedAt } }) },
+  preferencesStore: {
+    load: async () => {
+      prefsLoadHook?.();
+      return { updater: { lastCheckedAt } };
+    },
+  },
 }));
 
 const silentCheck = vi.fn(async () => true);
@@ -41,9 +47,8 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { maybeAutoCheck, __resetAutoCheckForTests } = await import(
-  "../autoCheck.js"
-);
+const { maybeAutoCheck, installUpdaterAutoCheck, __resetAutoCheckForTests } =
+  await import("../autoCheck.js");
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -51,6 +56,7 @@ beforeEach(() => {
   isPackaged = true;
   currentKind = "idle";
   lastCheckedAt = null;
+  prefsLoadHook = null;
   silentCheck.mockReset();
   silentCheck.mockResolvedValue(true);
   __resetAutoCheckForTests();
@@ -108,8 +114,8 @@ describe("maybeAutoCheck", () => {
     expect(silentCheck).not.toHaveBeenCalled();
   });
 
-  it("runs once lastCheckedAt is older than the throttle window", async () => {
-    lastCheckedAt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+  it("runs once lastCheckedAt is older than the throttle window (minutes, not hours)", async () => {
+    lastCheckedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     await maybeAutoCheck("focus");
     expect(silentCheck).toHaveBeenCalledTimes(1);
   });
@@ -125,8 +131,64 @@ describe("maybeAutoCheck", () => {
     silentCheck.mockResolvedValue(false);
     await maybeAutoCheck("startup"); // fails -> backoff armed
     expect(silentCheck).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(2 * 60 * 1000); // 2 min: past 60s debounce, within 20m backoff
+    vi.advanceTimersByTime(2 * 60 * 1000); // 2 min: past 60s debounce, within 10m backoff
     await maybeAutoCheck("focus");
     expect(silentCheck).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("installUpdaterAutoCheck - periodic timer", () => {
+  it("checks on startup, then every 5 minutes while the app runs, and stops on teardown", async () => {
+    const teardown = installUpdaterAutoCheck();
+
+    await vi.advanceTimersByTimeAsync(3_000); // deferred startup check
+    expect(silentCheck).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(silentCheck).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    expect(silentCheck).toHaveBeenCalledTimes(3);
+
+    teardown();
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    expect(silentCheck).toHaveBeenCalledTimes(3);
+  });
+
+  it("re-checks the safe-state guard AFTER the awaited preference read (download starting mid-schedule)", async () => {
+    // The preference read is async; a download can begin inside that gap.
+    // Simulate it: prefs load flips the status to `downloading` before
+    // resolving - the ambient check must then abort, not proceed.
+    prefsLoadHook = () => {
+      currentKind = "downloading";
+    };
+    await maybeAutoCheck("periodic");
+    expect(silentCheck).not.toHaveBeenCalled();
+  });
+
+  it("backs off exponentially: second consecutive failure doubles the wait", async () => {
+    silentCheck.mockResolvedValue(false);
+    await maybeAutoCheck("startup"); // failure #1 -> 10m backoff
+    expect(silentCheck).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000); // past 10m
+    await maybeAutoCheck("periodic"); // failure #2 -> 20m backoff
+    expect(silentCheck).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000); // 11m < 20m: blocked
+    await maybeAutoCheck("periodic");
+    expect(silentCheck).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000); // 21m total: allowed
+    await maybeAutoCheck("periodic");
+    expect(silentCheck).toHaveBeenCalledTimes(3);
+  });
+
+  it("a periodic tick respects the safe-state guard (never clobbers a download)", async () => {
+    const teardown = installUpdaterAutoCheck();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(silentCheck).toHaveBeenCalledTimes(1);
+
+    currentKind = "downloading";
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(silentCheck).toHaveBeenCalledTimes(1);
+    teardown();
   });
 });

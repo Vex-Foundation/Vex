@@ -2,7 +2,8 @@
  * Main-process `electron-updater` configuration (M13).
  *
  * Policy (skill vex-user-triggered-updates §"Non-negotiable rules"):
- *   - check runs on app start + window focus and on manual request — never
+ *   - check runs on app start + window focus + a periodic 5-minute tick and
+ *     on manual request — never
  *     auto-downloads or auto-installs;
  *   - download starts only via `updates.startUpdateNow()`;
  *   - restart/install happens only via `updates.restartAndInstallNow()`.
@@ -54,23 +55,46 @@ export function configureUpdater(): void {
   }
 
   const onChecking = (): void => {
-    // A SILENT (ambient) check must never visually clobber an existing
-    // `available` status: autoCheck.ts now runs ambient checks from
-    // `available` too (so a newer release can surface), but the transient
-    // `checking` state renders no toast — flipping to it and back would
-    // flash the toast away and immediately back for no reason. A manual
-    // (non-silent) check always reflects the live "checking" state, and a
-    // silent check from any OTHER safe state (idle/current/error) still
-    // transitions normally.
-    if (isSilentCheckActive() && getCurrentStatus().kind === "available") {
-      return;
+    // A SILENT (ambient) check transitions to `checking` ONLY from the quiet
+    // states (idle/current). Everything else is preserved:
+    //  - `available`: the transient `checking` renders no toast, so flipping
+    //    would flash the visible toast away and back for no reason;
+    //  - `error`: a silent retry from a broken feed must not cycle
+    //    error -> checking -> error, which the renderer reads as a FRESH
+    //    error and re-toasts a dismissed banner every retry (nag);
+    //  - `downloading`/`downloaded`/`installing`/`blockedByOperation`: the
+    //    scheduler's safe-state guard races its awaited preference read - a
+    //    download started in that gap must never be clobbered.
+    // A manual (non-silent) check always reflects the live "checking" state.
+    if (isSilentCheckActive()) {
+      const kind = getCurrentStatus().kind;
+      if (kind !== "idle" && kind !== "current") return;
     }
     setStatus({ kind: "checking", currentVersion: currentVersion() });
   };
+  /**
+   * During a SILENT check, an availability result must not clobber an
+   * in-progress or actionable download state: a user can start a download
+   * while the ambient check's HTTP round-trip is still in flight, and the
+   * late `update-available`/`update-not-available` event would otherwise
+   * rewind `downloading` back to `available`/`current`.
+   */
+  const silentResultMustYield = (): boolean => {
+    if (!isSilentCheckActive()) return false;
+    const kind = getCurrentStatus().kind;
+    return (
+      kind === "downloading" ||
+      kind === "downloaded" ||
+      kind === "installing" ||
+      kind === "blockedByOperation"
+    );
+  };
   const onAvailable = (info: UpdateInfo): void => {
+    if (silentResultMustYield()) return;
     setStatus(availableStatus(info, currentVersion()));
   };
   const onNotAvailable = (): void => {
+    if (silentResultMustYield()) return;
     setStatus({
       kind: "current",
       currentVersion: currentVersion(),

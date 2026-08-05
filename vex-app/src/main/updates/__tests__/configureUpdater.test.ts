@@ -131,13 +131,57 @@ describe("configureUpdater event wiring", () => {
       );
     });
 
-    it("still transitions to `checking` during a silent check when NOT `available`", () => {
+    it("still transitions to `checking` during a silent check from the quiet `idle`", () => {
       configureUpdater();
       silentActive = true;
       currentStatusForTest = { kind: "idle" };
       listeners["checking-for-update"]?.();
       expect(setStatus).toHaveBeenCalledWith(
         expect.objectContaining({ kind: "checking" }),
+      );
+    });
+
+    it("does NOT clobber `error` during a silent retry - a broken feed must not re-toast a dismissed banner", () => {
+      configureUpdater();
+      silentActive = true;
+      currentStatusForTest = { kind: "error" };
+      listeners["checking-for-update"]?.();
+      expect(setStatus).not.toHaveBeenCalled();
+    });
+
+    it("does NOT clobber `downloading` during a silent check (the scheduler's guard races its async preference read)", () => {
+      configureUpdater();
+      silentActive = true;
+      currentStatusForTest = { kind: "downloading" };
+      listeners["checking-for-update"]?.();
+      expect(setStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("silent availability results yield to an active download", () => {
+    it("a late `update-available` from a silent check does not rewind `downloading`", () => {
+      configureUpdater();
+      silentActive = true;
+      currentStatusForTest = { kind: "downloading" };
+      listeners["update-available"]?.({ version: "9.9.9" });
+      expect(setStatus).not.toHaveBeenCalled();
+    });
+
+    it("a late `update-not-available` from a silent check does not rewind `downloaded`", () => {
+      configureUpdater();
+      silentActive = true;
+      currentStatusForTest = { kind: "downloaded" };
+      listeners["update-not-available"]?.();
+      expect(setStatus).not.toHaveBeenCalled();
+    });
+
+    it("a MANUAL check's `update-available` still lands normally", () => {
+      configureUpdater();
+      silentActive = false;
+      currentStatusForTest = { kind: "idle" };
+      listeners["update-available"]?.({ version: "9.9.9" });
+      expect(setStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "available" }),
       );
     });
   });

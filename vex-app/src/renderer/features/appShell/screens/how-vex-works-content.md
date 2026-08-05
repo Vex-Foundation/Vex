@@ -71,7 +71,7 @@ Three rules:
 - **Calls to the AI model**, through OpenRouter. Text and tool descriptions go out; your keys never do, and the model never signs anything.
 - **Requests to blockchains, trading venues and market-data providers** - price lookups, quotes, token images, web research, and the transactions you approve.
 - **The $VEX price ticker**, which keeps polling market APIs in the background so the sidebar card stays live, whether or not Vex is working.
-- **A version check** against Vex's release server when the app starts and when its window comes back into focus. Updates never download or install by themselves.
+- **A version check** against Vex's release server when the app starts, when its window comes back into focus, and every few minutes while it runs. Updates never download or install by themselves.
 - **Downloads during setup** - Docker's installer and the container images for the database and the local embeddings model.
 - **Crash reports**, and only if you switch them on. They are off by default, carry no personal data, and are stripped before sending.
 
