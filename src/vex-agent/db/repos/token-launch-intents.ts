@@ -96,7 +96,10 @@ export type {
   UserFormContinuationCloseReason,
 } from "./token-launch-intents/types.js";
 
-export { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents/types.js";
+export {
+  EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES,
+  LIVE_TOKEN_LAUNCH_INTENT_STATUSES,
+} from "./token-launch-intents/types.js";
 
 export {
   authorizeWith,

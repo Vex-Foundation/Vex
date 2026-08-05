@@ -17,8 +17,9 @@
  * ── The lifecycle rule, and why it lives here ──────────────────────────────
  *
  * C2: cancelling or expiring an intent NEVER deletes an image, and an explicit
- * deletion REFUSES while a LIVE (non-terminal) intent references the image, and
- * says which.
+ * deletion REFUSES while a live intent that CAN STILL SIGN references the image,
+ * and says which. A non-terminal status is not enough on its own — see
+ * {@link LIVE_INTENTS_SQL} for the lapsed-window half of that question.
  *
  * That refusal is enforced INSIDE {@link deleteLaunchImage}, in one transaction
  * with the delete, rather than being left to the caller. A caller that checked
@@ -42,7 +43,10 @@
 
 import { query, queryOne, withTransaction } from "../client.js";
 import { lockLaunchImageWith } from "./launch-image-lock.js";
-import { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents.js";
+import {
+  EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES,
+  LIVE_TOKEN_LAUNCH_INTENT_STATUSES,
+} from "./token-launch-intents.js";
 import type { TokenLaunchIntentStatus } from "./token-launch-intents.js";
 
 /**
@@ -158,11 +162,38 @@ export async function getLaunchImage(imageId: string): Promise<LaunchImageRow | 
   return row ? mapRow(row) : null;
 }
 
+/**
+ * The blocking set: intents that reference this image AND can still reach a
+ * signature.
+ *
+ * THE EXPIRY CLAUSE IS PART OF THE QUESTION, not an optimisation. A live status
+ * alone is not evidence of live money state: `awaiting_user_form` and
+ * `authorized` can only move forward through a CAS that requires
+ * `expires_at > NOW()`, so once the window lapses the row is dead and nothing
+ * can revive it. Only `awaiting_user_form` has a sweep to stamp it terminal, so
+ * without this clause a single launch attempt that failed before it could be
+ * consumed held the user's image hostage forever — the C2 refusal outliving the
+ * launch it was protecting. The whole reason C2 refuses is a launch that is
+ * about to sign; a launch that can never sign is not one.
+ *
+ * `consuming` and `broadcast_pending` are unaffected: they are excluded from
+ * {@link EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES} precisely because a lapsed
+ * window does not stop them, so they block regardless of `expires_at`.
+ */
 const LIVE_INTENTS_SQL = `SELECT intent_id, status, name
      FROM token_launch_intents
     WHERE image_id = $1
       AND status = ANY($2::text[])
+      AND (NOT (status = ANY($3::text[])) OR expires_at > NOW())
     ORDER BY created_at ASC`;
+
+function liveIntentsParams(imageId: string): unknown[] {
+  return [
+    imageId,
+    LIVE_TOKEN_LAUNCH_INTENT_STATUSES,
+    EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES,
+  ];
+}
 
 /**
  * Which LIVE intents reference this image.
@@ -174,10 +205,10 @@ const LIVE_INTENTS_SQL = `SELECT intent_id, status, name
 export async function findLiveIntentsReferencingImage(
   imageId: string,
 ): Promise<LiveIntentReference[]> {
-  const rows = await query<Record<string, unknown>>(LIVE_INTENTS_SQL, [
-    imageId,
-    LIVE_TOKEN_LAUNCH_INTENT_STATUSES,
-  ]);
+  const rows = await query<Record<string, unknown>>(
+    LIVE_INTENTS_SQL,
+    liveIntentsParams(imageId),
+  );
   return rows.map(mapLiveIntent);
 }
 
@@ -204,10 +235,10 @@ export async function deleteLaunchImage(
 ): Promise<DeleteLaunchImageResult> {
   return withTransaction(async (client) => {
     await lockLaunchImageWith(client, imageId);
-    const blocking = await client.query<Record<string, unknown>>(LIVE_INTENTS_SQL, [
-      imageId,
-      LIVE_TOKEN_LAUNCH_INTENT_STATUSES,
-    ]);
+    const blocking = await client.query<Record<string, unknown>>(
+      LIVE_INTENTS_SQL,
+      liveIntentsParams(imageId),
+    );
     if (blocking.rows.length > 0) {
       return {
         deleted: false,

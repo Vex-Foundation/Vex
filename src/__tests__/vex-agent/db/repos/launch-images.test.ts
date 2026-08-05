@@ -51,9 +51,8 @@ vi.mock("@vex-agent/db/client.js", () => ({
 }));
 
 const repo = await import("@vex-agent/db/repos/launch-images.js");
-const { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } = await import(
-  "@vex-agent/db/repos/token-launch-intents.js"
-);
+const { EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES, LIVE_TOKEN_LAUNCH_INTENT_STATUSES } =
+  await import("@vex-agent/db/repos/token-launch-intents.js");
 const { launchImageLockKey } = await import("@vex-agent/db/repos/launch-image-lock.js");
 
 beforeEach(() => resetMocks());
@@ -117,6 +116,64 @@ describe("findLiveIntentsReferencingImage", () => {
     ]);
     const [, params] = mockQuery.mock.calls[0]!;
     expect(params![1]).toBe(LIVE_TOKEN_LAUNCH_INTENT_STATUSES);
+  });
+});
+
+// ── the lapsed-window half of "live" ────────────────────────────────────────
+//
+// THE LIVE BUG THIS PINS (owner report, 2026-08-05): a user launched a token
+// successfully and could then never delete its image from the locker again. The
+// `confirmed` intent was not the blocker — an EARLIER attempt on the same image
+// was, stranded at `authorized` by a refusal that returned before the consume
+// CAS. `authorized` can only move forward through `consumeIfAuthorizedWith`,
+// whose predicate carries `expires_at > NOW()`, so once that window lapsed the
+// row could never sign again; and the expiry sweep only stamps
+// `awaiting_user_form`, so nothing would ever retire it. The refusal outlived
+// the launch it existed to protect, permanently.
+//
+// These are SQL-SHAPE pins, like the lock pin below: the client is mocked, so
+// they prove the predicate is issued with the right parameters, not that
+// Postgres evaluates it. `expires_at` is compared in the database with NOW() so
+// the clock is never this process's.
+describe("a launch that can no longer sign does not block deletion", () => {
+  function liveIntentsPredicate(sql: string): string {
+    return sql.replace(/\s+/g, " ");
+  }
+
+  it("exempts the expiry-bound statuses whose window has lapsed", async () => {
+    await repo.findLiveIntentsReferencingImage(IMAGE_ID);
+    const firstCall = mockQuery.mock.calls[0];
+    if (firstCall === undefined) throw new Error("expected a query call");
+    const [sql, params] = firstCall;
+    expect(liveIntentsPredicate(sql)).toContain(
+      "AND (NOT (status = ANY($3::text[])) OR expires_at > NOW())",
+    );
+    if (params === undefined) throw new Error("expected query params");
+    expect(params[2]).toBe(EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES);
+  });
+
+  it("applies the SAME predicate inside the delete transaction, not just the preflight", async () => {
+    txRows = [[], [], [imageRow()]];
+    await repo.deleteLaunchImage(IMAGE_ID);
+    const secondCall = txCalls[1];
+    if (secondCall === undefined) throw new Error("expected a gate query inside the transaction");
+    const [sql, params] = secondCall;
+    expect(liveIntentsPredicate(sql)).toContain("OR expires_at > NOW()");
+    expect((params as unknown[])[2]).toBe(EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES);
+  });
+
+  it("the expiry-bound set is exactly the two PRE-SIGNING statuses", () => {
+    // `consuming` may still sign after its window lapses
+    // (`markBroadcastPendingWith` has no expiry predicate) and
+    // `broadcast_pending` already signed. Admitting either here would delete an
+    // image out from under a real launch, which is the guard's whole purpose.
+    expect([...EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES].sort()).toEqual([
+      "authorized",
+      "awaiting_user_form",
+    ]);
+    for (const status of EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES) {
+      expect(LIVE_TOKEN_LAUNCH_INTENT_STATUSES).toContain(status);
+    }
   });
 });
 

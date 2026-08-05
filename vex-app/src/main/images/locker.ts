@@ -38,6 +38,7 @@ import {
   listLaunchImages,
   type DeleteLaunchImageResult,
   type LaunchImageRow,
+  type LiveIntentReference,
 } from "@vex-agent/db/repos/launch-images.js";
 import {
   lockerImageSchema,
@@ -236,4 +237,4 @@ export async function readLockerImageDataUrl(imageId: string): Promise<string | 
   return `data:${image.mime};base64,${Buffer.from(bytes).toString("base64")}`;
 }
 
-export type { LaunchImageRow };
+export type { LaunchImageRow, LiveIntentReference };

@@ -45,6 +45,7 @@ import {
   listLockerImages,
   readLockerImageDataUrl,
   storeLockerImageFromFile,
+  type LiveIntentReference,
   type LockerImageRejection,
 } from "../images/index.js";
 import { log } from "../logger/index.js";
@@ -134,6 +135,38 @@ function rejectionError(
 
 function formatKb(bytes: number): string {
   return `${(bytes / 1000).toFixed(1)} KB`;
+}
+
+/**
+ * A blocking launch, named AND placed in its actual state.
+ *
+ * The name alone answers "which launch" but not "why is it still holding this",
+ * and those two questions have different remedies: a form nobody filled in is
+ * the user's to cancel, while a broadcast that has not settled is one they can
+ * only wait out. Telling them "finish or cancel it" about a transaction already
+ * on-chain sends them looking for a control that does not exist.
+ *
+ * The status is a closed DB vocabulary, but only the live half can reach here;
+ * a status outside it is surfaced RAW rather than dropped, because an unnamed
+ * state is still more than "a launch in progress".
+ */
+function describeHoldingLaunch(intent: LiveIntentReference): string {
+  return `${intent.name} (${describeLaunchStatus(intent.status)})`;
+}
+
+function describeLaunchStatus(status: LiveIntentReference["status"]): string {
+  switch (status) {
+    case "awaiting_user_form":
+      return "waiting for you to fill in its launch form";
+    case "authorized":
+      return "authorized and waiting to be signed";
+    case "consuming":
+      return "being signed right now";
+    case "broadcast_pending":
+      return "broadcast and waiting to settle on-chain";
+    default:
+      return status;
+  }
 }
 
 // ── list ──────────────────────────────────────────────────────────────────
@@ -251,18 +284,19 @@ function registerImagesDeleteHandler(): () => void {
       }
       if (outcome.reason === "not_found") return notFound(ctx.requestId);
 
-      const names = outcome.intents.map((intent) => intent.name).join(", ");
+      const holders = outcome.intents.map(describeHoldingLaunch).join(", ");
       log.info(
         `[ipc:vex:images:delete] refused reason=in_use intents=${outcome.intents.length} ` +
+          `statuses=${outcome.intents.map((intent) => intent.status).join("|")} ` +
           `correlationId=${ctx.requestId}`,
       );
       return err({
         code: "images.in_use",
         domain: "images",
         message:
-          `This image is still being used by a launch in progress (${names}). ` +
-          `Finish or cancel that launch first — deleting the image now would leave ` +
-          `it with nothing to publish.`,
+          `This image is still held by a launch that has not settled: ${holders}. ` +
+          `Finish, cancel, or wait out that launch first. Deleting the image now ` +
+          `would leave it with nothing to publish.`,
         retryable: false,
         userActionable: true,
         redacted: true,

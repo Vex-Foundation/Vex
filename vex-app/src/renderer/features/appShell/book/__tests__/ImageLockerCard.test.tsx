@@ -198,6 +198,19 @@ describe("delete", () => {
     expect(listMock).toHaveBeenCalledTimes(1);
   });
 
+  // A DESTRUCTIVE CONTROL MUST NEVER FAIL SILENTLY. When the delete call itself
+  // rejects, `onSuccess` never runs: the tile stayed put with nothing on screen,
+  // which is indistinguishable from a locker that simply refuses to let go.
+  it("names a THROWN delete instead of leaving the tile silently in place", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    deleteMock.mockRejectedValue(new Error("ipc channel closed"));
+    renderCard();
+    fireEvent.click(await screen.findByRole("button", { name: /remove moon\.png/i }));
+    expect(await screen.findByText(/could not reach the image locker/i)).toBeTruthy();
+    expect(await screen.findByText(/nothing was removed/i)).toBeTruthy();
+  });
+
   it("refreshes the locker after a successful delete", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
     readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });

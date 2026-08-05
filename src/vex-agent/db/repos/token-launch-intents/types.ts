@@ -59,6 +59,30 @@ export const LIVE_TOKEN_LAUNCH_INTENT_STATUSES: readonly TokenLaunchIntentStatus
 ];
 
 /**
+ * The live statuses whose ONLY forward transition carries `expires_at > NOW()`
+ * in its own predicate: `awaiting_user_form` can only be authorized or
+ * cancelled, and `authorized` can only be consumed, and both CAS writers in
+ * `./writers.js` require an unexpired window. So once `expires_at` has passed,
+ * a row in either status can NEVER reach a signature; it holds no live money
+ * state, only a stale label.
+ *
+ * `consuming` and `broadcast_pending` are deliberately NOT here.
+ * `markBroadcastPendingWith` has no expiry predicate, so a `consuming` row may
+ * still sign after its window lapses, and a `broadcast_pending` row already
+ * signed.
+ *
+ * Consumed by the image-locker delete refusal, which must not hold a user's
+ * image hostage to a launch that can never happen. Only the expiry sweep
+ * (`sync/launch-form-expiry.ts`) stamps a lapsed row terminal, and it covers
+ * `awaiting_user_form` alone, so a lapsed `authorized` row keeps its status
+ * indefinitely.
+ */
+export const EXPIRY_BOUND_TOKEN_LAUNCH_INTENT_STATUSES: readonly TokenLaunchIntentStatus[] = [
+  "awaiting_user_form",
+  "authorized",
+];
+
+/**
  * Why a form continuation was retired without its turn ever running. Mirrors
  * the CHECK constraint in migration 070 — both halves of one closed vocabulary.
  *

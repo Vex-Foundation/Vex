@@ -247,6 +247,28 @@ describe("delete refuses while a live launch intent holds the image (C2)", () =>
     expect(result.error.message).toMatch(/cancel/i);
   });
 
+  // Owner decree 2026-08-02: a refusal states the REAL cause. "A launch in
+  // progress" was true of four different situations with three different
+  // remedies, and the one the user most often hit — a launch already broadcast,
+  // which they can only wait out — was being told to "finish or cancel" a
+  // transaction that is already on-chain.
+  it("says what state each holding launch is actually in", async () => {
+    deleteLockerImage.mockResolvedValue({
+      deleted: false,
+      reason: "referenced_by_live_intent",
+      intents: [
+        { intentId: "int_1", status: "broadcast_pending", name: "MOONSHOT" },
+        { intentId: "int_2", status: "awaiting_user_form", name: "SECONDCOIN" },
+      ],
+    });
+    const result = expectError(await call(CH.images.delete, { imageId: VALID_ID }), "images.in_use");
+    expect(result.error.message).toContain("MOONSHOT (broadcast and waiting to settle on-chain)");
+    expect(result.error.message).toContain(
+      "SECONDCOIN (waiting for you to fill in its launch form)",
+    );
+    expect(result.error.message).toMatch(/wait/i);
+  });
+
   it("names every holding launch, not just the first", async () => {
     deleteLockerImage.mockResolvedValue({
       deleted: false,

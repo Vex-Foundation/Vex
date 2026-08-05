@@ -90,8 +90,17 @@ export function ImageLockerCard({
         onSuccess: (outcome) => {
           // A refusal ("a live launch still uses this image") arrives as a
           // failed Result and is shown verbatim — main already wrote a message
-          // that names the launch holding it.
+          // that names the launch holding it and what state it is in.
           if (!outcome.ok) setNotice(outcome.error.message);
+        },
+        // A THROWN delete is the one case that used to be invisible: the
+        // mutation rejected, `onSuccess` never ran, and the tile simply stayed
+        // put with nothing on screen. A destructive control that silently does
+        // nothing reads as a broken app, so the transport failure is named.
+        onError: () => {
+          setNotice(
+            "Vex could not reach the image locker to delete that image. Nothing was removed. Retry, and check that Vex services are running.",
+          );
         },
       },
     );

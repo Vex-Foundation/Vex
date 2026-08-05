@@ -24,6 +24,7 @@ export {
   readLockerImageDataUrl,
   storeLockerImageFromFile,
   type DeleteLockerImageOutcome,
+  type LiveIntentReference,
   type StoreImageOutcome,
 } from "./locker.js";
 
