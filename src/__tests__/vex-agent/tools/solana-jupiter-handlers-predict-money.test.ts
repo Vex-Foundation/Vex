@@ -110,7 +110,7 @@ describe("solana-jupiter handlers — predict money conversion (W1-B)", () => {
       pagination: { start: 0, end: 10, total: 1, hasNext: false },
     });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.history"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
       ctx(),
     );
     expect(result.success).toBe(true);

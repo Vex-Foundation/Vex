@@ -25,7 +25,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 
@@ -56,7 +55,10 @@ const { repairMissingExecutedAmounts, SETTLEMENT_DECODER_SET_VERSION } = await i
 
 const FIXTURE = JSON.parse(
   readFileSync(
-    resolve(process.cwd(), "agents_dm/verify/fixture-base-native-settlement-receipts.json"),
+    new URL(
+      "../../tools/kyberswap/fixtures/base-native-settlement-receipts.json",
+      import.meta.url,
+    ),
     "utf8",
   ),
 ) as Record<string, { from: string; to: string; logs: { address: string; topics: string[]; data: string }[] }>;
