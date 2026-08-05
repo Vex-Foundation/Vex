@@ -1,6 +1,6 @@
 {
   "name": "@vex/app",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Vex Electron desktop app — local self-custodial wallet + autonomous on-chain agent GUI",
   "homepage": "https://www.projectvex.ai/",
   "author": "Project VEX",
