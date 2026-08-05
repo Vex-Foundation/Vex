@@ -74,6 +74,10 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
   failActivityEvent: (...a: unknown[]) => mockFail(...a),
   abortPlannedEvents: (...a: unknown[]) => mockAbort(...a),
+  // Real export since migration 067. Without it the handler's best-effort
+  // `noteHandlerPendingReason` throws inside its own catch and the pending-reason
+  // path is silently skipped instead of exercised.
+  notePendingReason: vi.fn(async () => ({ applied: true })),
 }));
 
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");

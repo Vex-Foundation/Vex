@@ -109,7 +109,7 @@ describe("solana-jupiter handlers — predict positions", () => {
     getJupiterPredictionPositions.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
     await SOLANA_JUPITER_HANDLERS["solana.predict.positions"]!(
       {
-        address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
         marketPubkey: "MarketAcct111111111111111111111111111111",
         marketId: "mkt-1",
         isYes: true,
@@ -118,6 +118,7 @@ describe("solana-jupiter handlers — predict positions", () => {
     );
     expect(getJupiterPredictionPositions).toHaveBeenCalledWith(
       expect.objectContaining({
+        ownerPubkey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
         marketPubkey: "MarketAcct111111111111111111111111111111",
         marketId: "mkt-1",
         isYes: true,

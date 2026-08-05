@@ -8,7 +8,7 @@
  * - Robinhood 4663 (the owner's own swap, the transaction that motivated this
  *   entire workstream): NO `Withdrawal` at all — the WETH clone BURNS, i.e.
  *   `Transfer(src -> 0x0)`.
- * - Base 8453 (`agents_dm/verify/fixture-base-native-settlement-receipts.json`,
+ * - Base 8453 (`./fixtures/base-native-settlement-receipts.json`,
  *   tx 0x70d2…ed65): a canonical `Withdrawal` whose `src` is the KYBER EXECUTOR
  *   `0x8f10…f996`, not the router — which is exactly why
  *   `decodeKyberSwapSettlement` returned `null` for it.
@@ -37,7 +37,6 @@
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 import {
   decodeKyberSwapSettlement,
@@ -54,7 +53,7 @@ interface FixtureReceipt {
 
 const FIXTURE = JSON.parse(
   readFileSync(
-    resolve(process.cwd(), "agents_dm/verify/fixture-base-native-settlement-receipts.json"),
+    new URL("./fixtures/base-native-settlement-receipts.json", import.meta.url),
     "utf8",
   ),
 ) as Record<string, FixtureReceipt> & {

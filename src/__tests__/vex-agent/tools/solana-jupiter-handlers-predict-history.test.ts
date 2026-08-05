@@ -39,22 +39,26 @@ describe("solana-jupiter handlers — predict history", () => {
   it("history: defaults to start=0,end=20 (default limit raised 10→20) and rejects an out-of-range window", async () => {
     getJupiterPredictionHistory.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
     await SOLANA_JUPITER_HANDLERS["solana.predict.history"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
       ctx(),
     );
     expect(getJupiterPredictionHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ start: 0, end: 20 }),
+      expect.objectContaining({
+        ownerPubkey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        start: 0,
+        end: 20,
+      }),
     );
 
     const negative = await SOLANA_JUPITER_HANDLERS["solana.predict.history"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", offset: -1 },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", offset: -1 },
       ctx(),
     );
     expect(negative.success).toBe(false);
     expect(negative.output).toContain("offset");
 
     const tooLarge = await SOLANA_JUPITER_HANDLERS["solana.predict.history"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", limit: 500 },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", limit: 500 },
       ctx(),
     );
     expect(tooLarge.success).toBe(false);
@@ -65,21 +69,25 @@ describe("solana-jupiter handlers — predict history", () => {
     getJupiterPredictionHistory.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
     await SOLANA_JUPITER_HANDLERS["solana.predict.history"]!(
       {
-        address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
         positionPubkey: "Position1111111111111111111111111111111",
         id: 42,
       },
       ctx(),
     );
     expect(getJupiterPredictionHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ positionPubkey: "Position1111111111111111111111111111111", id: 42 }),
+      expect.objectContaining({
+        ownerPubkey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        positionPubkey: "Position1111111111111111111111111111111",
+        id: 42,
+      }),
     );
   });
 
   it("history: omitted positionPubkey/id are undefined, not empty strings", async () => {
     getJupiterPredictionHistory.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
     await SOLANA_JUPITER_HANDLERS["solana.predict.history"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
       ctx(),
     );
     const call = getJupiterPredictionHistory.mock.calls[0]![0] as Record<string, unknown>;

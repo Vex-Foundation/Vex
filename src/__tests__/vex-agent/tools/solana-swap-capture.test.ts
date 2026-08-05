@@ -78,6 +78,10 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   markActivitySolanaBroadcast: (...args: unknown[]) => mockMarkActivitySolanaBroadcast(...args),
   failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
   markBroadcastAccepted: (...args: unknown[]) => mockMarkBroadcastAccepted(...args),
+  // Real export since migration 067. Without it the handler's best-effort
+  // `noteHandlerPendingReason` throws inside its own catch and the pending-reason
+  // path is silently skipped instead of exercised.
+  notePendingReason: vi.fn(async () => ({ applied: true })),
 }));
 
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-prices/service.js", () => ({

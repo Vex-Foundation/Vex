@@ -36,6 +36,10 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: vi.fn(async () => ({ applied: true, row: {} })),
   failActivityEvent: vi.fn(async () => ({ applied: true, row: {} })),
   createAgentActivityPreBroadcastFailure: vi.fn(async () => ({ executionId: 1, event: {} })),
+  // Real export since migration 067. Without it the handler's best-effort
+  // `noteHandlerPendingReason` throws inside its own catch and the pending-reason
+  // path is silently skipped instead of exercised.
+  notePendingReason: vi.fn(async () => ({ applied: true })),
 }));
 vi.mock("@vex-agent/sync/pendle-acquisition-pin.js", () => ({
   pinConfirmedPendleAcquisition: vi.fn(async () => undefined),
