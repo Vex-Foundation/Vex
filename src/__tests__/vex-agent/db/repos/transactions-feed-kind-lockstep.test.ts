@@ -96,15 +96,13 @@ function productTypeProjection(): string {
 
 /** The app feed's LOGICAL_ROW_PREDICATE literal. */
 function logicalRowPredicate(): string {
-  // The literal is now built by `logicalRowPredicate(alias)` so the Vex-fee
-  // LATERAL can exclude a fee leg that is ALREADY its own ledger entry using
-  // the very same rule — one predicate, two callers, no drift.
-  const match = /function logicalRowPredicate\(alias: string\): string \{\s*return `([\s\S]*?)`;/
-    .exec(AGENT_SCAN_SRC);
+  // A plain literal again since the owner revision of 2026-08-05 retired its
+  // second caller: the Vex-fee LATERAL used to reuse this rule to skip a fee leg
+  // that was ALREADY its own ledger entry, and no fee leg is one any more.
+  const match = /const LOGICAL_ROW_PREDICATE = `([\s\S]*?)`;/.exec(AGENT_SCAN_SRC);
   const body = match?.[1];
   if (body === undefined) throw new Error("lockstep: LOGICAL_ROW_PREDICATE was not found");
-  // Read the predicate as the feed itself reads it, with the alias resolved.
-  return body.replaceAll("${alias}", "aa");
+  return body;
 }
 
 describe("agent_activity kind <-> agent-facing feed lockstep", () => {
@@ -147,6 +145,25 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
         `kind '${kind}' falls through to ELSE 'spot' — it would render as a spot trade`,
       ).toContain(`WHEN kind = '${kind}' THEN '${KIND_PRODUCT[kind]}'`);
     }
+  });
+
+  // OWNER REVISION 2026-08-05: a Vex-fee leg is not a user action and gets no
+  // row of its own on EITHER feed. The live screenshot showed a "LAUNCH-FEE"
+  // row above the launch it was 25 bps of; the charge belongs to its parent's
+  // row, where both feeds project it from the confirmed leg.
+  it("neither feed renders a Vex-fee leg as its own row", () => {
+    // The agent half excludes them alongside the approval legs; `bridge_fee`
+    // needs no entry there because its whole `kind = 'bridge'` arm is admitted
+    // only through `event_role = 'bridge_fill_expected'`.
+    expect(QUERY_BUILDER_SRC).toContain(
+      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee')",
+    );
+    // The Agent Scan feed excludes all three by role AHEAD of every admitting
+    // arm: a `trench_fee` leg carries `kind = 'launch'`, so the kind arm alone
+    // cannot tell it from the launch itself.
+    expect(logicalRowPredicate()).toContain(
+      "aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')",
+    );
   });
 
   it("the Agent Scan feed's logical-row predicate admits every kind", () => {

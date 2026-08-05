@@ -21,6 +21,7 @@ import {
 } from "@vex-lib/db/migrate-runner.js";
 import { log } from "../logger/index.js";
 import { buildPoolConfig } from "./db-config.js";
+import { markMigrationsApplied } from "./migrations-applied.js";
 import { migrationProgressBus } from "./progress-bus.js";
 
 const { Pool } = pg;
@@ -95,6 +96,10 @@ export async function runMigrationsForIpc(): Promise<MigrateRunResult> {
     log.info(
       `[ipc:vex:database:migrate] completed applied=${result.applied} elapsed=${Date.now() - startedAt}ms`
     );
+    // The engine workers' start gate. Both outcomes below mean the schema is at
+    // the version this build ships, so this is marked before either returns —
+    // a FAILED run falls through to the catch and marks nothing.
+    markMigrationsApplied();
 
     if (result.applied === 0) {
       return {

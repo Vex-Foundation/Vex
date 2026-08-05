@@ -23,12 +23,20 @@
 
 import { describe, it, expect } from "vitest";
 
+import type { TransactionRow } from "@vex-agent/db/repos/transactions.js";
+
 const { summarizeTransactionRowForTest } = await import(
   "../../../../vex-agent/tools/internal/inspect-views/transactions.js"
 );
 
-function row(over: Record<string, unknown> = {}) {
-  return {
+/**
+ * `TransactionRow` is a ~100-field display DTO and `summarize()` is a tolerant
+ * reader; these copy tests feed only the fields each line actually reads.
+ * Single cast from `unknown`, contained here — never `as never`, which would
+ * also swallow every future field rename.
+ */
+function row(over: Record<string, unknown> = {}): TransactionRow {
+  const partial: unknown = {
     source: "activity",
     kind: "swap",
     status: "pending",
@@ -38,7 +46,8 @@ function row(over: Record<string, unknown> = {}) {
     txHash: "0xabc0000000000000000000000000000000000000000000000000000000000001",
     createdAt: "2026-08-04T00:00:00.000Z",
     ...over,
-  } as never;
+  };
+  return partial as TransactionRow;
 }
 
 describe("a healthy pending transaction says so", () => {

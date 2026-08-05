@@ -225,6 +225,33 @@ describe("getAgentScan row selection", () => {
     );
   });
 
+  // OWNER REVISION 2026-08-05, superseding "the fee leg renders as its own row
+  // everywhere except the agent view". Live evidence: the feed rendered
+  // "LAUNCH-FEE 0.0000031675 ETH → —" above "LAUNCH 0.001267 ETH → 105721 PUSSY"
+  // — the same charge, at 25 bps of the launch, presented as a second user
+  // action. A `trench_fee` leg is stored with `kind = 'launch'`, so the kind arm
+  // admitted it; the exclusion is spelled on the ROLE, ahead of every arm, so no
+  // kind can readmit a fee leg.
+  it("EXCLUDES the Vex-fee legs from the feed on every kind (owner revision 2026-08-05)", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(pageCall().sql).toContain(
+      "aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')",
+    );
+  });
+
+  it("projects the fee leg onto its parent UNCONDITIONALLY — no fee leg is its own row now", async () => {
+    // The projection used to skip a fee leg that was already its own ledger
+    // entry. With no fee leg rendering as a row, that guard would hide the
+    // charge completely; its removal is what keeps the money visible.
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const { sql } = pageCall();
+    expect(sql).toContain("fee.event_role IN ('bridge_fee','swap_fee','trench_fee')");
+    expect(sql).toContain("fee.status     = 'confirmed'");
+    // The deleted guard was the logical-row predicate applied to the `fee`
+    // alias — the only place this SQL ever spoke of `fee.kind`.
+    expect(sql).not.toContain("fee.kind");
+  });
+
   it("reads agent_activity ONLY — no legacy union arm", async () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql } = pageCall();

@@ -142,7 +142,8 @@ describe("describe_tools — the manifest projection", () => {
     expect(payload.warnings).toEqual([]);
 
     const [search] = payload.tools;
-    const manifest = PROTOCOL_TOOLS.find((m) => m.toolId === "dexscreener.search")!;
+    const manifest = PROTOCOL_TOOLS.find((m) => m.toolId === "dexscreener.search");
+    if (manifest === undefined) throw new Error("dexscreener.search manifest missing");
     expect(search.toolId).toBe("dexscreener.search");
     expect(search.namespace).toBe(manifest.namespace);
     expect(search.description).toBe(manifest.description);
@@ -167,7 +168,8 @@ describe("describe_tools — the manifest projection", () => {
     const { payload } = await describeOk(["virtuals.list", "dexscreener.search"]);
     const [virtuals, dexscreener] = payload.tools;
 
-    const manifest = PROTOCOL_TOOLS.find((m) => m.toolId === "virtuals.list")!;
+    const manifest = PROTOCOL_TOOLS.find((m) => m.toolId === "virtuals.list");
+    if (manifest === undefined) throw new Error("virtuals.list manifest missing");
     expect(virtuals.constraints).toEqual(describeParamGroupConstraints(manifest));
     expect(virtuals.constraints.length).toBeGreaterThan(0);
     // A tool without groups pays nothing — the key is absent, not empty.
@@ -182,7 +184,8 @@ describe("describe_tools — the manifest projection", () => {
 
     expect(payload.count).toBe(3);
     for (const row of payload.tools) {
-      const manifest = PROTOCOL_TOOLS.find((m) => m.toolId === row.toolId)!;
+      const manifest = PROTOCOL_TOOLS.find((m) => m.toolId === row.toolId);
+      if (manifest === undefined) throw new Error(`no manifest for ${row.toolId}`);
       expect(row.constraints).toEqual(describeParamGroupConstraints(manifest));
       expect(row.constraints.length).toBeGreaterThan(0);
     }
@@ -191,7 +194,8 @@ describe("describe_tools — the manifest projection", () => {
   it("preserves a declared `unit` on a param verbatim", async () => {
     const withUnit = PROTOCOL_TOOLS
       .filter(isProtocolToolAvailable)
-      .find((m) => m.params.some((p) => p.unit !== undefined))!;
+      .find((m) => m.params.some((p) => p.unit !== undefined));
+    if (withUnit === undefined) throw new Error("no available manifest declares a param unit");
     const { payload } = await describeOk([withUnit.toolId]);
     expect(payload.tools[0].params).toEqual(withUnit.params);
     expect(payload.tools[0].params.some((p: { unit?: string }) => p.unit !== undefined)).toBe(true);

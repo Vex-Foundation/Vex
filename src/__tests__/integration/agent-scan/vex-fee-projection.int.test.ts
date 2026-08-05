@@ -17,6 +17,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { execute } from "@vex-agent/db/client.js";
 
+import { cleanupSeeded, seedIntent } from "./_fixtures.js";
+
 /** The owner's real relay capture: 2_500_000_000_000 wei of ETH. */
 const FEE_RAW = "2500000000000";
 const FEE_HUMAN = "0.0000025";
@@ -25,6 +27,7 @@ const CHAIN_ID = 8453;
 const trackedExecutions: number[] = [];
 
 afterEach(async () => {
+  await cleanupSeeded();
   if (trackedExecutions.length === 0) return;
   const ids = trackedExecutions.splice(0, trackedExecutions.length);
   await execute(`DELETE FROM agent_activity WHERE protocol_execution_id = ANY($1::bigint[])`, [ids]);
@@ -152,6 +155,149 @@ async function feedRow(seeded: Seeded): Promise<Record<string, unknown> | undefi
   });
   return page.items.find((row) => row.id === seeded.logicalId) as Record<string, unknown> | undefined;
 }
+
+/** The owner's live launch: 0.001267 ETH in, of which 25 bps is the Vex fee leg. */
+const LAUNCH_IN_RAW = "1267000000000000";
+const LAUNCH_FEE_RAW = "3167500000000";
+const LAUNCH_FEE_HUMAN = "0.0000031675";
+
+interface SeededLaunch extends Seeded {
+  readonly feeLegId: number;
+}
+
+/**
+ * One Trench launch execution: the `token_launch` row plus its `trench_fee`
+ * leg. BOTH rows carry `kind = 'launch'` (migration 063's kind↔role CHECK), and
+ * that is precisely why the fee leg has to be excluded on its ROLE — a kind
+ * filter cannot tell them apart.
+ */
+async function seedLaunchWithFeeLeg(
+  launchOutcome: "confirmed" | "failed",
+): Promise<SeededLaunch> {
+  const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+  const intent = await seedIntent("trench.launch");
+  const common = {
+    protocolExecutionId: intent.protocolExecutionId,
+    kind: "launch" as const,
+    protocol: "trench",
+    chainId: CHAIN_ID,
+    chainSlug: "base",
+    chainFamily: "eip155" as const,
+    walletAddress: intent.walletAddress,
+    sessionId: intent.sessionId,
+  };
+  const launch = await repo.createPendingActivityEvent({
+    ...common,
+    eventIndex: 0,
+    eventRole: "token_launch",
+    tokenIn: {
+      tokenAddress: "0x0000000000000000000000000000000000000000",
+      tokenSymbol: "ETH",
+      tokenDecimals: 18,
+      amountRaw: LAUNCH_IN_RAW,
+      amountHuman: "0.001267",
+    },
+  });
+  const feeLeg = await repo.createPendingActivityEvent({
+    ...common,
+    eventIndex: 1,
+    eventRole: "trench_fee",
+    tokenIn: {
+      tokenAddress: "0x0000000000000000000000000000000000000000",
+      tokenSymbol: "ETH",
+      tokenDecimals: 18,
+      amountRaw: LAUNCH_FEE_RAW,
+      amountHuman: LAUNCH_FEE_HUMAN,
+    },
+  });
+
+  await repo.markActivityBroadcast(feeLeg.id, {
+    txHash: `0x${String(feeLeg.id).padStart(64, "1")}`,
+    fromAddress: intent.walletAddress,
+    nonce: 1,
+  });
+  await repo.confirmActivityEvent(feeLeg.id, {
+    executedAmountInRaw: LAUNCH_FEE_RAW,
+    executedAmountInHuman: LAUNCH_FEE_HUMAN,
+  });
+
+  await repo.markActivityBroadcast(launch.id, {
+    txHash: `0x${String(launch.id).padStart(64, "2")}`,
+    fromAddress: intent.walletAddress,
+    nonce: 2,
+  });
+  if (launchOutcome === "confirmed") {
+    await repo.confirmLaunchWithOutputIdentity(launch.id, {
+      executedAmountInRaw: LAUNCH_IN_RAW,
+      executedAmountInHuman: "0.001267",
+      executedAmountOutRaw: "105721000000000000000000",
+      executedAmountOutHuman: "105721",
+      tokenOutAddress: "0x1234567890abcdef1234567890abcdef12345678",
+      tokenOutSymbol: "PUSSY",
+      tokenOutDecimals: 18,
+    });
+  } else {
+    await repo.failActivityEvent(launch.id, {
+      failureCode: "mined_revert",
+      failureReason: "fixture: the create reverted on chain",
+    });
+  }
+
+  return {
+    logicalId: launch.id,
+    feeLegId: feeLeg.id,
+    walletAddress: intent.walletAddress,
+    sessionId: intent.sessionId,
+  };
+}
+
+async function feedRows(seeded: Seeded) {
+  const { getTransactions } = await import("../../../vex-agent/db/repos/transactions.js");
+  const page = await getTransactions({
+    addresses: [seeded.walletAddress],
+    sessionId: seeded.sessionId,
+    limit: 20,
+  });
+  return page.items;
+}
+
+/**
+ * OWNER REVISION 2026-08-05: the Vex-fee leg is not a row of its own on ANY
+ * surface. The live screenshot showed "LAUNCH-FEE 0.0000031675 ETH → —" sitting
+ * above the launch it was 25 bps of — one charge presented as a second action,
+ * with no counterparty to show. The charge belongs to its parent's row.
+ *
+ * This suite proves it against REAL Postgres for the agent feed, whose
+ * role-exclusion predicate the UI feed's now mirrors. The UI feed
+ * (`vex-app/src/main/database/agent-scan-db-query.ts`) has no real-Postgres
+ * harness in this repository; its counterpart assertions are SQL-text pins in
+ * `vex-app/src/main/database/__tests__/agent-scan-db.test.ts`.
+ */
+describe("Vex fee — the fee leg is never its own feed row", () => {
+  it("shows ONE row for a confirmed launch, carrying the fee its own leg paid", async () => {
+    const seeded = await seedLaunchWithFeeLeg("confirmed");
+    const rows = await feedRows(seeded);
+
+    expect(rows.map((r) => r.id)).toEqual([seeded.logicalId]);
+    expect(rows.some((r) => r.id === seeded.feeLegId)).toBe(false);
+    expect(rows[0]?.vexFeeAmountRaw).toBe(LAUNCH_FEE_RAW);
+    expect(rows[0]?.vexFeeAmountHuman).toBe(LAUNCH_FEE_HUMAN);
+    expect(rows[0]?.vexFeeTokenSymbol).toBe("ETH");
+  });
+
+  it("keeps a CHARGED fee visible when the launch itself FAILED (A9)", async () => {
+    // The fee transfer is its own confirmed transaction — the money left the
+    // wallet. Now that it has no row of its own, the failed parent's row is the
+    // ONLY place it can appear; if that row dropped it, a real charge would
+    // become invisible.
+    const seeded = await seedLaunchWithFeeLeg("failed");
+    const rows = await feedRows(seeded);
+
+    expect(rows.map((r) => r.id)).toEqual([seeded.logicalId]);
+    expect(rows[0]?.status).toBe("definitively_failed");
+    expect(rows[0]?.vexFeeAmountRaw).toBe(LAUNCH_FEE_RAW);
+  });
+});
 
 describe("Vex fee — the separate leg reaches the logical feed row", () => {
   it("reports a CONFIRMED sibling fee leg on a row that carries no fee columns of its own", async () => {

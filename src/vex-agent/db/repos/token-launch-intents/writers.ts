@@ -23,6 +23,7 @@ import {
   type CreateTokenLaunchIntentInput,
   type LaunchAuthorizationKind,
   type TokenLaunchIntent,
+  type UserFormContinuationCloseReason,
 } from "./types.js";
 
 // ── create ──────────────────────────────────────────────────────────────────
@@ -328,6 +329,42 @@ export async function casMarkUserFormResumeConsumedWith(
         AND tool_call_id IS NOT NULL
         AND resume_consumed_at IS NULL`,
     [intentId, sessionId],
+  );
+  return affected > 0;
+}
+
+/**
+ * RETIRE a continuation that can never complete, with the reason it could not.
+ *
+ * The sibling of `casMarkUserFormResumeConsumedWith`, and deliberately a
+ * separate function rather than an optional argument on it: that one records a
+ * turn that RAN, this one records that no turn ever will. Conflating them would
+ * let a completed continuation acquire a failure reason.
+ *
+ * Same write-once CAS, so a row already consumed by a real turn is never
+ * relabelled — the completion wins and this returns `false`.
+ *
+ * Closing is not a money decision. `resume_consumed_at` and
+ * `resume_closed_reason` are the only columns touched: the launch's status,
+ * hash and fee are facts about the user's funds and are none of this lane's
+ * business.
+ */
+export async function casCloseUserFormContinuationWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+  reason: UserFormContinuationCloseReason,
+): Promise<boolean> {
+  const affected = await executeWith(
+    client,
+    `UPDATE token_launch_intents
+        SET resume_consumed_at = NOW(),
+            resume_closed_reason = $3
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND tool_call_id IS NOT NULL
+        AND resume_consumed_at IS NULL`,
+    [intentId, sessionId, reason],
   );
   return affected > 0;
 }

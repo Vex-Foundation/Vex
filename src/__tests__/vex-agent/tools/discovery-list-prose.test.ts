@@ -43,6 +43,16 @@ import { makeContext } from "../engine/prompts/_prompt-stack-helpers.js";
 const HIDDEN_TOOL_NAME = "describe_tools";
 const SESSION = "discovery-list-prose-suite";
 
+/**
+ * The wire delivers arbitrary JSON roots (`null`, arrays, primitives) while the
+ * dispatcher's arg type says `Record<string, unknown>` — these regressions exist
+ * precisely to prove the handler survives that gap. Single cast from `unknown`,
+ * contained here.
+ */
+function hostileWireArgs(root: unknown): Record<string, unknown> {
+  return root as Record<string, unknown>;
+}
+
 const ENV_KEYS = ["JUPITER_API_KEY", "EMBEDDING_BASE_URL", "EMBEDDING_MODEL", "EMBEDDING_DIM", "EMBEDDING_PROVIDER"] as const;
 const originalEnv: Record<string, string | undefined> = {};
 
@@ -207,8 +217,7 @@ describe("H2 reveal safety — the hidden tool is never named on the pre-reveal 
     const before = [...getDiscoveredToolIds(SESSION)];
 
     const result = await dispatchTool(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a provider CAN send this
-      { name: HIDDEN_TOOL_NAME, args: null as any, toolCallId: "call_null" },
+      { name: HIDDEN_TOOL_NAME, args: hostileWireArgs(null), toolCallId: "call_null" },
       makeTestContext({ sessionId: SESSION }),
     );
 
@@ -223,8 +232,7 @@ describe("H2 reveal safety — the hidden tool is never named on the pre-reveal 
     await listNamespace("dexscreener");
     for (const root of [[], "toolIds", 7, true]) {
       const result = await dispatchTool(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a provider CAN send these
-        { name: HIDDEN_TOOL_NAME, args: root as any, toolCallId: "call_root" },
+        { name: HIDDEN_TOOL_NAME, args: hostileWireArgs(root), toolCallId: "call_root" },
         makeTestContext({ sessionId: SESSION }),
       );
       expect(result.success, `root ${JSON.stringify(root)} was accepted`).toBe(false);

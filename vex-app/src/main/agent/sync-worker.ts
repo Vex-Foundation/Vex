@@ -34,6 +34,7 @@ import type { SyncExecutorHandle } from "@vex-agent/sync/executor.js";
 import { log } from "../logger/index.js";
 import { probeProtocolSyncReady } from "../database/sync-db.js";
 import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { migrationsApplied } from "../database/migrations-applied.js";
 
 const SUPERVISOR_INTERVAL_MS = 30_000;
 
@@ -78,7 +79,9 @@ export function setupSyncWorker(
   let handle: SyncExecutorHandle | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlightTick: Promise<void> | null = null;
-  let warnedWaiting = false;
+  // One line per DISTINCT wait reason: a worker that waited on the DB url and
+  // then on migrations must report both, not only whichever came first.
+  const loggedWaitReasons = new Set<string>();
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -88,8 +91,8 @@ export function setupSyncWorker(
   };
 
   const warnWaitingOnce = (reason: string): void => {
-    if (warnedWaiting) return;
-    warnedWaiting = true;
+    if (loggedWaitReasons.has(reason)) return;
+    loggedWaitReasons.add(reason);
     log.info(`[sync-worker] waiting to start: ${reason}`);
   };
 
@@ -100,6 +103,12 @@ export function setupSyncWorker(
     if (stopped || started) return; // re-check after await (non-reentrant)
     if (!dbUrl.ok) {
       warnWaitingOnce("database url unavailable");
+      return;
+    }
+
+    // Schema VERSION, not schema presence — see `database/migrations-applied.ts`.
+    if (!migrationsApplied()) {
+      warnWaitingOnce("migrations pending");
       return;
     }
 

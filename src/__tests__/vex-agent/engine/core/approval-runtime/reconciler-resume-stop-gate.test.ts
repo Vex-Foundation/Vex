@@ -254,7 +254,8 @@ describe("reconciler resume — durable operator-stop gate (D1-T1)", () => {
 
     await reconcileApprovalLifecycle(new Date());
 
-    const call = mockRunAgentTurnUnderLease.mock.calls[0]!;
+    const call = mockRunAgentTurnUnderLease.mock.calls[0];
+    if (call === undefined) throw new Error("runAgentTurnUnderLease was never called");
     const inferenceSignal = call[3] as AbortSignal | undefined;
     const boundarySignal = call[5] as AbortSignal | undefined;
     expect(inferenceSignal).toBeInstanceOf(AbortSignal);

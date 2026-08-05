@@ -215,17 +215,26 @@ const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"
  * Excluded: `allowance` / `allowance_reset` (approval plumbing) and a bridge's
  * deposit/fee/observed-fill/refund legs — all of which ride the logical row's
  * `legs` array instead of appearing as their own ledger entries.
+ *
+ * Also excluded, on EVERY kind: the three Vex-fee leg roles (OWNER REVISION
+ * 2026-08-05, supersedes the earlier "the fee leg renders as its own row
+ * everywhere except the agent view"). A `trench_fee` on a launch execution is
+ * stored with `kind = 'launch'`, so the kind arm above used to admit it and the
+ * feed rendered a bare "LAUNCH-FEE 0.0000031675 ETH → —" entry above the launch
+ * it belonged to. The charge is not a separate user action; it surfaces on its
+ * parent's row through the `vexFee*` fields projected by VEX_FEE_LATERALS below.
+ * `event_role` is NOT NULL (migration 044:59), so the leading NOT IN can never
+ * make the whole predicate NULL and swallow a row.
  */
-function logicalRowPredicate(alias: string): string {
-  return `(
-          ${alias}.event_role = 'swap'
-          OR ${alias}.event_role = 'bridge_fill_expected'
-          OR ${alias}.kind IN ('lend', 'prediction', 'wrap', 'launch')
-          OR (${alias}.kind = 'yield' AND ${alias}.event_role NOT IN ('allowance', 'allowance_reset'))
+const LOGICAL_ROW_PREDICATE = `(
+          aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')
+          AND (
+            aa.event_role = 'swap'
+            OR aa.event_role = 'bridge_fill_expected'
+            OR aa.kind IN ('lend', 'prediction', 'wrap', 'launch')
+            OR (aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))
+          )
         )`;
-}
-
-const LOGICAL_ROW_PREDICATE = logicalRowPredicate("aa");
 
 /**
  * THE VEX FEE FROM ITS SEPARATE LEG, projected onto the logical row (R1 Step 2b)
@@ -233,12 +242,17 @@ const LOGICAL_ROW_PREDICATE = logicalRowPredicate("aa");
  * `SUM(usd_vex_fee_est) WHERE status='confirmed'` revenue invariant is
  * byte-unaffected.
  *
- * ONLY when that leg is not ALREADY its own ledger entry here. A `trench_fee` on
- * a launch execution IS its own row in this feed (owner decision: it renders as
- * its own row everywhere except the agent view), so projecting it onto the
- * parent as well would show one charge twice on one screen. The exclusion is
- * spelled as the SAME logical-row predicate this query filters on rather than as
- * a hardcoded role list, so the two can never drift apart.
+ * Since the OWNER REVISION of 2026-08-05 no fee leg is its own ledger entry here
+ * (see `LOGICAL_ROW_PREDICATE`), so this is the ONLY place the charge is visible on
+ * this surface and it projects unconditionally. The former "and only if that leg
+ * is not already its own row" guard was the exact predicate that is now false for
+ * every fee role, and is deleted rather than kept as a tautology.
+ *
+ * A9 — a confirmed fee whose PARENT FAILED stays visible: the sibling arm gates
+ * on `fee.status = 'confirmed'` only, never on `aa.status`, so the failed launch
+ * row still reports the fee that was really charged. Only the OWN-ROW arm is
+ * gated on `aa.status = 'confirmed'`, because those columns are written at intent
+ * time and the row's own status is what says whether that fee was collected.
  *
  * ONE SOURCE WINS WHOLE, and the anomalies FAIL CLOSED — two confirmed fee legs
  * on one execution, or an own-row fee beside a confirmed sibling, report NO
@@ -257,7 +271,6 @@ const VEX_FEE_LATERALS = `
            AND fee.id        <> aa.id
            AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee')
            AND fee.status     = 'confirmed'
-           AND NOT ${logicalRowPredicate("fee")}
          ORDER BY fee.event_index ASC
          LIMIT 1
       ) fee_leg ON TRUE

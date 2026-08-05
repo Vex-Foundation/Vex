@@ -52,11 +52,18 @@ beforeEach(() => {
     .mockResolvedValue([]);
 });
 
+
+function firstQueryCall() {
+  const call = mockQuery.mock.calls[0];
+  if (call === undefined) throw new Error("mockQuery was never called");
+  return call;
+}
+
 describe("listSweepCandidates is a CLAIM, not a read", () => {
   it("selects, locks and stamps in one statement", async () => {
     await buildProductionBridgeRepairDeps().listSweepCandidates(25);
 
-    const [sql, params] = mockQuery.mock.calls[0]!;
+    const [sql, params] = firstQueryCall();
     expect(sql).toContain("FOR UPDATE SKIP LOCKED");
     expect(sql).toMatch(/UPDATE\s+agent_activity/);
     expect(sql).toMatch(/SET\s+last_attempted_at\s*=\s*NOW\(\)/);
@@ -67,7 +74,7 @@ describe("listSweepCandidates is a CLAIM, not a read", () => {
   it("gates a repeat on a phase clock the poll cannot reset", async () => {
     await buildProductionBridgeRepairDeps().listSweepCandidates(25);
 
-    const [sql] = mockQuery.mock.calls[0]!;
+    const [sql] = firstQueryCall();
     // Due-ness is measured on `last_attempted_at`; the PHASE is measured on the
     // immutable `created_at`. Phasing on `last_attempted_at` — which every
     // attempt rewrites — would reset the computed age on every poll and the row
@@ -82,7 +89,7 @@ describe("listSweepCandidates is a CLAIM, not a read", () => {
   it("a row never attempted is due immediately — the gate slows repeats, not first looks", async () => {
     await buildProductionBridgeRepairDeps().listSweepCandidates(25);
 
-    expect(mockQuery.mock.calls[0]![0]).toContain("lg.last_attempted_at IS NULL");
+    expect(firstQueryCall()[0]).toContain("lg.last_attempted_at IS NULL");
   });
 
   it("carries the stored verification reason into the read model", async () => {
@@ -126,7 +133,7 @@ describe("the order-id recovery queue claims the same way", () => {
   it("locks and stamps its candidates too — it performs a provider lookup and an attach CAS", async () => {
     await buildProductionBridgeRepairDeps().listOrderIdRecoveryCandidates(25);
 
-    const [sql] = mockQuery.mock.calls[0]!;
+    const [sql] = firstQueryCall();
     expect(sql).toContain("FOR UPDATE SKIP LOCKED");
     expect(sql).toMatch(/SET\s+last_attempted_at\s*=\s*NOW\(\)/);
     expect(sql).toContain("lg.provider_order_id IS NULL");

@@ -148,10 +148,12 @@ describe("the lane pushes progress for a still-pending row", () => {
 
   it("does NOT emit progress when the row terminalized — that is the resolved bus's job", async () => {
     const { confirmActivityEventStatusOnly } = await import("@vex-agent/db/repos/agent-activity.js");
-    vi.mocked(confirmActivityEventStatusOnly).mockResolvedValue({
-      applied: true,
-      row: row(60_000),
-    } as never);
+    // This case reads only `applied`; the CAS's full row type is irrelevant here.
+    // Single cast from `unknown`, contained — never `as never`.
+    const terminalized: unknown = { applied: true, row: row(60_000) };
+    vi.mocked(confirmActivityEventStatusOnly).mockResolvedValue(
+      terminalized as Awaited<ReturnType<typeof confirmActivityEventStatusOnly>>,
+    );
 
     await resolveEvmPendingRow(
       row(60_000),

@@ -80,7 +80,7 @@ async function seedIntent(input: {
       // kind of guard a mocked client would have let this fixture skip.
       authorizationId: randomUUID(),
       authorizationKind: "user_submit",
-    } as never);
+    });
   } finally {
     client.release();
   }

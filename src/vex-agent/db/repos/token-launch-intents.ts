@@ -93,6 +93,7 @@ export type {
   TokenLaunchIntent,
   TokenLaunchIntentOrigin,
   TokenLaunchIntentStatus,
+  UserFormContinuationCloseReason,
 } from "./token-launch-intents/types.js";
 
 export { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents/types.js";
@@ -100,6 +101,8 @@ export { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents/types.
 export {
   authorizeWith,
   cancelIfAwaitingWith,
+  // Retire a continuation that can NEVER complete, with its reason (A2).
+  casCloseUserFormContinuationWith,
   casMarkUserFormResumeConsumedWith,
   confirmWith,
   consumeIfAuthorizedWith,

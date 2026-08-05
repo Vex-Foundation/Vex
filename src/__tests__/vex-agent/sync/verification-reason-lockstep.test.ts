@@ -42,7 +42,10 @@ function reasonLiterals(source: string): string[] {
     /touchLastChecked\(\s*[^,()]+,\s*"([^"]+)"/g,
     /noteVerificationInconclusive\(\s*[^,()]+,\s*"([^"]+)"/g,
   ]) {
-    for (const match of source.matchAll(pattern)) found.push(match[1]!);
+    for (const match of source.matchAll(pattern)) {
+      const captured = match[1];
+      if (captured !== undefined) found.push(captured);
+    }
   }
   return found;
 }
