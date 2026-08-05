@@ -39,6 +39,7 @@ const PREBUY = 300_000_000_000_000n;
 const MSG_VALUE = CREATION_FEE + PREBUY;
 const VEX_FEE = (MSG_VALUE * 25n) / 10_000n;
 const TOKENS_OUT = 197_913_781_308_210_736_292_461n;
+const SIGNATURE = `0x${"ab".repeat(65)}`;
 
 /** Every durable write, in the order it happened. */
 let calls: string[];
@@ -53,6 +54,10 @@ let mockFailActivity: Mock;
 let mockConfirmLaunch: Mock;
 let mockStampIdentity: Mock;
 let mockFillIdentity: Mock;
+let mockStampSignature: Mock;
+let mockMarkAttributed: Mock;
+let mockAttribute: Mock;
+let mockSignMessage: Mock;
 let sentTransactions: number;
 
 function reset(): void {
@@ -69,6 +74,10 @@ function reset(): void {
   mockStampIdentity = vi.fn(async () => { calls.push("activity.stamp_identity"); return true; });
   mockFillIdentity = vi.fn(async () => { calls.push("activity.fill_identity"); return true; });
   mockRunFee = vi.fn(async () => { calls.push("fee.run"); return { collection: "confirmed", txHash: "0xfee" }; });
+  mockSignMessage = vi.fn(async () => { calls.push("attest.sign"); return SIGNATURE; });
+  mockStampSignature = vi.fn(async () => { calls.push("attest.store"); return true; });
+  mockAttribute = vi.fn(async () => { calls.push("attribute.post"); return { kind: "attributed" }; });
+  mockMarkAttributed = vi.fn(async () => { calls.push("attribute.mark"); return true; });
 }
 reset();
 
@@ -100,6 +109,13 @@ vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
 }));
 vi.mock("@vex-agent/db/repos/launched-tokens.js", () => ({
   record: (...a: unknown[]) => mockRecord(...a),
+  stampAttestSignature: (...a: unknown[]) => mockStampSignature(...a),
+  getByIdentity: async () => ({ id: 42 }),
+  markAttributed: (...a: unknown[]) => mockMarkAttributed(...a),
+}));
+vi.mock("@tools/trench-express/attribution.js", async (orig) => ({
+  ...(await (orig as () => Promise<Record<string, unknown>>)()),
+  attributeLaunchedToken: (...a: unknown[]) => mockAttribute(...a),
 }));
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: async (input: { events: Array<{ eventRole: string }> }) => {
@@ -205,7 +221,7 @@ function input(over: Record<string, unknown> = {}) {
     request: REQUEST,
     params: {},
     publicClient: {} as never,
-    walletClient: {} as never,
+    walletClient: { signMessage: (...a: unknown[]) => mockSignMessage(...a) },
     deps: { planFeeLeg: () => null, runFeeLeg: (...a: unknown[]) => mockRunFee(...a) },
     ...over,
   } as never;
@@ -261,13 +277,21 @@ describe("the confirmed path writes the durable index BEFORE confirming the inte
   // is finalized opens a crash window nothing can ever close — the intent is no
   // longer a candidate and the activity row stays pending forever. Every write
   // that the sweep cannot redo must happen while the intent is still claimable.
-  it("orders launched_tokens.record → activity.confirm → intent.confirm (LAST) → fee", async () => {
+  it("orders launched_tokens.record → activity.confirm → intent.confirm (LAST) → fee → attribution POST", async () => {
     await broadcastLaunch(input());
     expect(calls.filter((c) => c !== "intent.broadcast_pending" && c !== "activity.intent")).toEqual([
       "launched_tokens.record",
+      // The attest signature is produced while the launch's signing clients are
+      // still open — the token address did not exist before the receipt, and
+      // nothing after this handler holds a signer.
+      "attest.sign",
+      "attest.store",
       "activity.confirm",
       "intent.confirm",
       "fee.run",
+      // The badge is claimed LAST: cosmetic work never sits in front of money.
+      "attribute.post",
+      "attribute.mark",
     ]);
   });
 
@@ -311,6 +335,69 @@ describe("the confirmed path writes the durable index BEFORE confirming the inte
       initialBuyTokenAddress: null,
     });
     expect(mockConfirmLaunch.mock.calls[0]![1]).toMatchObject({ executedAmountOutRaw: "0" });
+  });
+});
+
+/**
+ * ATTRIBUTION IS A BADGE. It is allowed to fail in every way a network and a
+ * wallet can fail, and none of those failures may reach the launch: the user's
+ * money already moved, and a cosmetic claim is not a reason to report a
+ * successful launch as anything else.
+ */
+describe("attribution never affects the launch", () => {
+  beforeEach(() => { outcome = confirmedOutcome([tokenCreatedLog(), boughtLog()]); });
+
+  it("signs the exact attest string with the SAME wallet that signed create", async () => {
+    await broadcastLaunch(input());
+    expect(mockSignMessage).toHaveBeenCalledTimes(1);
+    expect(mockSignMessage).toHaveBeenCalledWith({
+      message: `VEX-attest:${TRENCH_CHAIN_ID}:${TOKEN.toLowerCase()}`,
+    });
+    expect(mockStampSignature).toHaveBeenCalledWith({
+      chainId: TRENCH_CHAIN_ID,
+      tokenAddress: TOKEN,
+      attestSignature: SIGNATURE,
+    });
+    expect(mockAttribute).toHaveBeenCalledWith({
+      tokenAddress: TOKEN,
+      attestSignature: SIGNATURE,
+    });
+  });
+
+  it("still confirms the launch when the wallet refuses to sign, and posts nothing", async () => {
+    mockSignMessage.mockRejectedValue(new Error("wallet is locked"));
+
+    const result = await broadcastLaunch(input());
+
+    expect(result.success).toBe(true);
+    expect(mockConfirmIntent).toHaveBeenCalledTimes(1);
+    expect(mockRunFee).toHaveBeenCalledTimes(1);
+    // No signature means nothing to send: the sweep counts it as a named gap
+    // rather than POSTing an empty proof.
+    expect(mockAttribute).not.toHaveBeenCalled();
+  });
+
+  it("still confirms the launch when the attribution POST rejects the signature", async () => {
+    mockAttribute.mockResolvedValue({ kind: "rejected", status: 403, detail: "not the creator" });
+
+    const result = await broadcastLaunch(input());
+
+    expect(result.success).toBe(true);
+    expect(mockMarkAttributed).not.toHaveBeenCalled();
+  });
+
+  it("still confirms the launch when the attribution client throws", async () => {
+    mockAttribute.mockRejectedValue(new Error("boom"));
+    const result = await broadcastLaunch(input());
+    expect(result.success).toBe(true);
+    expect((result.data as { status: string }).status).toBe("confirmed");
+  });
+
+  it("does not sign or post when the token identity could not be decoded", async () => {
+    outcome = confirmedOutcome([]);
+    await broadcastLaunch(input());
+    expect(mockSignMessage).not.toHaveBeenCalled();
+    expect(mockAttribute).not.toHaveBeenCalled();
   });
 });
 

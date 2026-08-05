@@ -45,6 +45,14 @@ const SYNC_JOBS = [
   // ends, so it is not slowed to the bridge sweep's 120s provider cadence.
   { namespace: "_global", syncType: "launch_identity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // Trench launch ATTRIBUTION retry lane — claims the VEX badge on trench.express
+  // for launched tokens whose creator signature is stored but whose POST has not
+  // succeeded yet (app closed, network down, provider 5xx). The handler does this
+  // inline on a healthy launch; this is the catch-up. Never signs; see
+  // sync/launch-attribution.ts. 120s mirrors the bridge sweep's provider cadence —
+  // a badge is cosmetic, so it is not given the 30s per-tx repair urgency.
+  { namespace: "_global", syncType: "launch_attribution", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+
   // Trench launch FORM EXPIRY — stamps overdue `awaiting_user_form` intents
   // `expired` and resumes the agent turn parked on them. Without it an
   // unanswered form parks a turn forever. Deadline-driven and lookup-only;

@@ -132,6 +132,13 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
         result = { ...launchResult };
         rowsAffected = launchResult.repaired + launchResult.failed;
+      } else if (syncType === "launch_attribution") {
+        // Trench attribution retry lane — see sync/launch-attribution.ts. Keyless
+        // POST only; holds no signer.
+        const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
+        const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
+        result = { ...attributionResult };
+        rowsAffected = attributionResult.attributed;
       } else if (syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
         const expiryResult = await expireOverdueLaunchForms();
@@ -223,6 +230,10 @@ export async function processNextRun(): Promise<boolean> {
       const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
       const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
       await syncRepo.completeRun(run.id, { ...launchResult }, launchResult.repaired + launchResult.failed);
+    } else if (job.syncType === "launch_attribution") {
+      const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
+      const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
+      await syncRepo.completeRun(run.id, { ...attributionResult }, attributionResult.attributed);
     } else if (job.syncType === "launch_form_expiry") {
       const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
       const expiryResult = await expireOverdueLaunchForms();

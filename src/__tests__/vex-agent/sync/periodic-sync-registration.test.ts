@@ -69,4 +69,8 @@ describe("every seeded periodic sync type is reachable", () => {
   it("includes the Trench launch identity sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("launch_identity_repair");
   });
+
+  it("includes the Trench launch attribution retry lane", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("launch_attribution");
+  });
 });

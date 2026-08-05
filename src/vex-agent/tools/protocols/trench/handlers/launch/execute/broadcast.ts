@@ -45,6 +45,7 @@ import { priorLegAnchorFrom } from "@tools/evm-chains/dependent-leg-gas-estimate
 import type { LaunchExecuteDeps } from "../fee-seam.js";
 import { decodeLaunchReceipt } from "../settlement.js";
 import { settleLaunchFailure } from "./authorize.js";
+import { postLaunchAttribution, signAndStoreAttestation } from "./attribute.js";
 import type { ValidatedLaunchRequest } from "../validate.js";
 
 const DIAMOND = TRENCH_DIAMOND_ADDRESS as Address;
@@ -293,6 +294,9 @@ async function finalizeConfirmedLaunch(
   // Cleared only when the activity identity could NOT be written by either
   // writer: the intent must then stay claimable for the repair sweep.
   let intentMayConfirm = true;
+  // The VEX badge's proof. Signable ONLY here, while the launch's signing
+  // clients are open — see `./attribute.ts`. Never fails a launch.
+  let attestSignature: string | null = null;
   const prebuyWei = x.request.prebuyWei;
   const hasPrebuy = prebuyWei > 0n;
   // No prebuy means zero tokens were acquired — a proven amount, not a missing
@@ -323,6 +327,7 @@ async function finalizeConfirmedLaunch(
       sessionId: x.sessionId,
       protocolExecutionId: executionId,
     });
+    attestSignature = await signAndStoreAttestation(x.walletClient, decoded.tokenAddress);
     // `event_role='token_launch'` REQUIRES both executed legs (see
     // `agent-activity/swap-lifecycle.ts`): the native value spent AND the
     // tokens the launch produced. Confirming with the input leg alone threw
@@ -389,6 +394,10 @@ async function finalizeConfirmedLaunch(
   }
 
   const vexFee = await chargeVexFee(x, executionId, feeRowId, outcome);
+
+  // LAST, after the money is settled: claiming the badge is cosmetic and must
+  // never sit in front of the fee leg or the launch's own result.
+  await postLaunchAttribution(decoded.tokenAddress, attestSignature);
 
   const data = {
     summary:

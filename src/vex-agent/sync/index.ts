@@ -162,6 +162,17 @@ export async function syncTick(): Promise<void> {
           { ...launchResult, periodic: true },
           launchResult.repaired + launchResult.failed,
         );
+      } else if (job.syncType === "launch_attribution") {
+        // Trench attribution retry lane — periodic driver, mirroring the branch
+        // above exactly. Omitting it is the silent C1 defect the bridge sweep hit.
+        const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
+        const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...attributionResult, periodic: true },
+          attributionResult.attributed,
+        );
       } else if (job.syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
         const expiryResult = await expireOverdueLaunchForms();

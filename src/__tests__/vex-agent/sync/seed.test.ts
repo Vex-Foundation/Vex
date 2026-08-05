@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 12 sync jobs (7 global + 5 per-namespace)", async () => {
+  it("inserts 14 sync jobs (8 global + 6 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -30,9 +30,10 @@ describe("seedSyncJobs", () => {
     // `periodic-sync-registration.test.ts`; this count is only the row total.
     // The form-expiry sweep (`launch_form_expiry`) makes 12. Wave P added the
     // _global/balances_snapshot post_mutation job (enqueued on terminalization,
-    // never timed) — net 13.
+    // never timed) — net 13. The Trench attribution retry lane
+    // (`launch_attribution`, periodic 120s) makes 14.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(13);
+    expect(mockExecute).toHaveBeenCalledTimes(14);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

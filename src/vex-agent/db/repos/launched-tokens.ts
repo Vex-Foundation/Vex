@@ -151,6 +151,111 @@ export async function record(
   return { inserted: false, row: existing };
 }
 
+/**
+ * Attach the creator's attest signature to an already-recorded token.
+ *
+ * A SEPARATE write from `record` on purpose: `record` is `DO NOTHING`, so a row
+ * the identity-repair sweep inserted first would silently swallow the signature
+ * the handler holds — and the handler is the ONLY thing that can ever produce
+ * one (nothing after it holds a signer). `attest_signature IS NULL` in the
+ * predicate keeps it write-once: a re-run never replaces a stored signature.
+ *
+ * Returns whether this call stored it.
+ */
+export async function stampAttestSignature(input: {
+  chainId: number;
+  tokenAddress: string;
+  attestSignature: string;
+}): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launched_tokens
+        SET attest_signature = $3
+      WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+        AND attest_signature IS NULL
+      RETURNING id`,
+    [input.chainId, input.tokenAddress, input.attestSignature],
+  );
+  return row !== null;
+}
+
+/** What the attribution sweep needs to make one POST, and nothing more. */
+export interface AttributionCandidate {
+  id: number;
+  chainId: number;
+  tokenAddress: string;
+  attestSignature: string;
+}
+
+/**
+ * Claim up to `limit` signed-but-unattributed tokens, least-recently-attempted
+ * first, stamping `attribution_attempted_at` in the SAME statement.
+ *
+ * The stamp is what makes the window advance: attribution can be refused
+ * permanently (a 403 is not retryable into a success), and without the stamp the
+ * same 25 refused rows would be re-served on every pass forever while row 26 is
+ * never reached — the starvation `token-launch-intents/sweep-claim.ts` documents.
+ * `retryAfterSeconds` keeps a just-attempted row out of the next pass.
+ *
+ * `FOR UPDATE SKIP LOCKED` gives two concurrent sweeps disjoint batches.
+ */
+export async function claimAttributionCandidates(input: {
+  chainId: number;
+  limit: number;
+  retryAfterSeconds: number;
+}): Promise<AttributionCandidate[]> {
+  const rows = await query<Record<string, unknown>>(
+    `WITH candidates AS (
+       SELECT id AS candidate_id
+         FROM launched_tokens
+        WHERE chain_id = $1
+          AND attributed_at IS NULL
+          AND attest_signature IS NOT NULL
+          AND (attribution_attempted_at IS NULL
+               OR attribution_attempted_at < NOW() - ($3 || ' seconds')::interval)
+        ORDER BY attribution_attempted_at ASC NULLS FIRST, id ASC
+        LIMIT $2
+        FOR UPDATE SKIP LOCKED
+     )
+     UPDATE launched_tokens t
+        SET attribution_attempted_at = NOW()
+       FROM candidates c
+      WHERE t.id = c.candidate_id
+      RETURNING t.id, t.chain_id, t.token_address, t.attest_signature`,
+    [input.chainId, input.limit, String(input.retryAfterSeconds)],
+  );
+  return rows.map((r) => ({
+    id: Number(r.id),
+    chainId: Number(r.chain_id),
+    tokenAddress: r.token_address as string,
+    attestSignature: r.attest_signature as string,
+  }));
+}
+
+/** The badge landed. Terminal — the row leaves the sweep's candidate set for good. */
+export async function markAttributed(id: number): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launched_tokens SET attributed_at = NOW()
+      WHERE id = $1 AND attributed_at IS NULL
+      RETURNING id`,
+    [id],
+  );
+  return row !== null;
+}
+
+/**
+ * Tokens on this chain that can NEVER be attributed by the sweep: unattributed,
+ * with no stored signature. Counted rather than claimed, because the sweep holds
+ * no signer and re-serving them would be a loop that can only fail.
+ */
+export async function countUnsignedAttributionGap(chainId: number): Promise<number> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT COUNT(*)::int AS gap FROM launched_tokens
+      WHERE chain_id = $1 AND attributed_at IS NULL AND attest_signature IS NULL`,
+    [chainId],
+  );
+  return row === null ? 0 : Number(row.gap);
+}
+
 /** Case-insensitive identity lookup — the same notion of identity as the unique index. */
 export async function getByIdentity(
   chainId: number,
