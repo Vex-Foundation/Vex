@@ -7,9 +7,9 @@
  */
 
 import {
-  FireIcon,
+  FlameIcon,
   type IconGlyph,
-  PercentSquareIcon,
+  PercentIcon,
   RocketIcon,
 } from "../../components/icons/index.js";
 
@@ -25,13 +25,13 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
     label: "Hunt trending memecoins",
     prompt:
       "Hunt the trendiest memecoins right now — combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
-    icon: FireIcon,
+    icon: FlameIcon,
   },
   {
     label: "Scout Pendle yields",
     prompt:
       "Scout the highest-APY Pendle markets across chains, pick the best fit for my holdings, and walk me through a PT quote — ask me for the amount before quoting.",
-    icon: PercentSquareIcon,
+    icon: PercentIcon,
   },
   {
     label: "Explore Trench launchpad",

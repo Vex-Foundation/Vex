@@ -18,8 +18,8 @@ vi.mock("../../../components/icons/VexIcon.js", () => ({
 }));
 
 vi.mock("../../../components/icons/icon-glyphs.js", () => ({
-  FireIcon: "FireIcon",
-  PercentSquareIcon: "PercentSquareIcon",
+  FlameIcon: "FlameIcon",
+  PercentIcon: "PercentIcon",
   RocketIcon: "RocketIcon",
 }));
 
@@ -35,9 +35,9 @@ describe("ComposerQuickActions", () => {
     expect(chips).toHaveLength(3);
 
     // Each intent icon is present (flame / percent square / rocket).
-    expect(container.querySelector('[data-icon="FireIcon"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="FlameIcon"]')).not.toBeNull();
     expect(
-      container.querySelector('[data-icon="PercentSquareIcon"]'),
+      container.querySelector('[data-icon="PercentIcon"]'),
     ).not.toBeNull();
     expect(container.querySelector('[data-icon="RocketIcon"]')).not.toBeNull();
 

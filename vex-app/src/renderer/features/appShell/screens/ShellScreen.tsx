@@ -29,7 +29,7 @@
 
 import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { motion, type TargetAndTransition } from "motion/react";
-import { Cancel01Icon, VexIcon } from "../../../components/icons/index.js";
+import { XIcon, VexIcon } from "../../../components/icons/index.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion.js";
 
@@ -239,7 +239,7 @@ export function ShellScreen({
         onClick={onClose}
         className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full border border-[var(--vex-line)] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
-        <VexIcon icon={Cancel01Icon} size={16} aria-hidden />
+        <VexIcon icon={XIcon} size={16} aria-hidden />
       </button>
     </motion.section>
   );

@@ -13,8 +13,8 @@
 
 import type { JSX } from "react";
 import {
-  BookOpen01Icon,
-  Brain01Icon,
+  BookOpenIcon,
+  BrainIcon,
   type IconGlyph,
   SparklesIcon,
   VexIcon,
@@ -28,13 +28,13 @@ interface RecallCopy {
 function recallCopy(toolName: string | null): RecallCopy {
   switch (toolName) {
     case "session_memory_search":
-      return { label: "Recalled session memory", icon: Brain01Icon };
+      return { label: "Recalled session memory", icon: BrainIcon };
     case "long_memory_search":
     case "long_memory_get":
     case "long_memory_history":
       return {
         label: "Recalled long-term memory",
-        icon: BookOpen01Icon,
+        icon: BookOpenIcon,
       };
     default:
       return { label: "Recalled context", icon: SparklesIcon };

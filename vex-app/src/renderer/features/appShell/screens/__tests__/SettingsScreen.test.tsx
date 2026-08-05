@@ -32,9 +32,9 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
   VexIcon: () => null,
 }));
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  ArrowLeft01Icon: "ArrowLeft01Icon",
-  ArrowRight01Icon: "ArrowRight01Icon",
-  Cancel01Icon: "Cancel01Icon",
+  ChevronLeftIcon: "ChevronLeftIcon",
+  ChevronRightIcon: "ChevronRightIcon",
+  XIcon: "XIcon",
 }));
 
 // Sibling screens pull heavy registers; only the settings branch is under test.

@@ -47,14 +47,14 @@ import {
 } from "react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import {
-  AiChat01Icon,
-  ArrowUp01Icon,
-  BookOpen01Icon,
-  Brain01Icon,
+  MessageSquareIcon,
+  ArrowUpIcon,
+  BookOpenIcon,
+  BrainIcon,
   type IconGlyph,
-  Radar01Icon,
-  Settings02Icon,
-  UserEdit01Icon,
+  RadarIcon,
+  Settings2Icon,
+  UserPenIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import { Docker, Postgresql } from "@thesvg/react";
@@ -273,7 +273,7 @@ export function SidebarProfile({
             {/* Chevron affordance — the menu opens upward, so the closed state
              * points up and rotates when open. */}
             <VexIcon
-              icon={ArrowUp01Icon}
+              icon={ArrowUpIcon}
               size={15}
               aria-hidden
               className={cn(
@@ -314,7 +314,7 @@ export function SidebarProfile({
               className="vex-noise vex-noise--panel pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
             />
             <ProfileMenuItem
-              icon={UserEdit01Icon}
+              icon={UserPenIcon}
               label="Personalize"
               hint={
                 nameLine.asksToPersonalize
@@ -326,32 +326,32 @@ export function SidebarProfile({
             />
             {memoryEnabled ? (
               <ProfileMenuItem
-                icon={Brain01Icon}
+                icon={BrainIcon}
                 label="Memory"
                 hint="What Vex has learned"
                 onSelect={(event) => openScreenFromRow("memory", event)}
               />
             ) : null}
             <ProfileMenuItem
-              icon={AiChat01Icon}
+              icon={MessageSquareIcon}
               label="Sessions"
               hint="Find any conversation"
               onSelect={(event) => openScreenFromRow("sessions", event)}
             />
             <ProfileMenuItem
-              icon={Radar01Icon}
+              icon={RadarIcon}
               label="Agent Scan"
               hint="Every move, verified on-chain"
               onSelect={(event) => openScreenFromRow("agentScan", event)}
             />
             <ProfileMenuItem
-              icon={BookOpen01Icon}
+              icon={BookOpenIcon}
               label="How Vex works"
               hint="Start here — the five-minute tour"
               onSelect={(event) => openScreenFromRow("howItWorks", event)}
             />
             <ProfileMenuItem
-              icon={Settings02Icon}
+              icon={Settings2Icon}
               label="Settings"
               hint="Wallets, keys, model"
               onSelect={(event) => openSettings(event)}

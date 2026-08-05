@@ -22,7 +22,7 @@
 import { useCallback, useState, type JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeft01Icon,
+  ChevronLeftIcon,
   VexIcon,
 } from "../../../../components/icons/index.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -163,7 +163,7 @@ export function ReviewStep({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
             )}
           >
-            <VexIcon icon={ArrowLeft01Icon} size={11} aria-hidden />
+            <VexIcon icon={ChevronLeftIcon} size={11} aria-hidden />
             Return to review
           </button>
         </div>

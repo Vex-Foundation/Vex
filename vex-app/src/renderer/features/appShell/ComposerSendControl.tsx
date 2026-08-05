@@ -15,8 +15,8 @@
 
 import type { JSX } from "react";
 import {
-  ArrowUp01Icon,
-  StopCircleIcon,
+  ArrowUpIcon,
+  CircleStopIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import type { ReasoningCapability, ReasoningEffort } from "@shared/schemas/reasoning.js";
@@ -116,7 +116,7 @@ export function ComposerSendControl({
               "border-[var(--vex-line-strong)] bg-[var(--vex-surface-0)] text-[var(--vex-text-3)]",
             )}
           >
-            <VexIcon icon={StopCircleIcon} size={16} aria-hidden />
+            <VexIcon icon={CircleStopIcon} size={16} aria-hidden />
           </button>
         ) : (
           <button
@@ -128,7 +128,7 @@ export function ComposerSendControl({
               "border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-12)] text-[var(--vex-accent-text)]",
             )}
           >
-            <VexIcon icon={StopCircleIcon} size={16} aria-hidden />
+            <VexIcon icon={CircleStopIcon} size={16} aria-hidden />
           </button>
         )
       ) : (
@@ -146,7 +146,7 @@ export function ComposerSendControl({
               : "border-transparent bg-[var(--vex-accent)] text-[var(--vex-accent-contrast)] hover:bg-[var(--vex-accent-hover)] active:scale-[0.96]",
           )}
         >
-          <VexIcon icon={ArrowUp01Icon} size={16} aria-hidden />
+          <VexIcon icon={ArrowUpIcon} size={16} aria-hidden />
         </button>
       )}
     </div>

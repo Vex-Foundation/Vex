@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import {
-  Add01Icon,
-  Cancel01Icon,
+  PlusIcon,
+  XIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
-  Search01Icon,
+  SearchIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import type {
@@ -229,7 +229,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
             label={searchOpen ? "Close session search" : "Search sessions"}
             onClick={toggleSearch}
           >
-            <VexIcon icon={Search01Icon} size={16} aria-hidden />
+            <VexIcon icon={SearchIcon} size={16} aria-hidden />
           </SidebarIconButton>
           <SidebarIconButton
             label={sidebarOpen ? "Collapse sessions sidebar" : "Expand sessions sidebar"}
@@ -251,7 +251,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
         <div className="px-3 pt-3">
           <div className="flex h-9 items-center gap-2 rounded-lg border border-[var(--vex-line-strong)] bg-white/[0.04] px-2.5 transition-colors focus-within:border-[var(--vex-accent-border)]">
             <VexIcon
-              icon={Search01Icon}
+              icon={SearchIcon}
               size={14}
               aria-hidden
               className="shrink-0 text-[var(--vex-text-3)]"
@@ -277,7 +277,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
               onClick={closeSearch}
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
             >
-              <VexIcon icon={Cancel01Icon} size={12} aria-hidden />
+              <VexIcon icon={XIcon} size={12} aria-hidden />
             </button>
           </div>
         </div>
@@ -305,7 +305,7 @@ export function SessionsList({ onCreate }: SessionsListProps): JSX.Element {
               sidebarOpen ? "w-full px-4" : "mx-auto w-10",
             )}
           >
-            <VexIcon icon={Add01Icon} size={15} aria-hidden />
+            <VexIcon icon={PlusIcon} size={15} aria-hidden />
             {sidebarOpen ? <span>New session</span> : null}
             <span
               aria-hidden

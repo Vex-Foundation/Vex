@@ -6,16 +6,16 @@
  */
 
 import {
-  AiWebBrowsingIcon,
-  BitcoinWalletIcon,
-  Brain01Icon,
-  ConnectIcon,
-  File01Icon,
+  GlobeIcon,
+  WalletIcon,
+  BrainIcon,
+  CableIcon,
+  FileIcon,
   type IconGlyph,
-  RefreshIcon,
-  Search01Icon,
+  RefreshCwIcon,
+  SearchIcon,
   TerminalIcon,
-  Wrench01Icon,
+  WrenchIcon,
 } from "../../../components/icons/index.js";
 
 /**
@@ -28,14 +28,14 @@ import {
  * a curated namespace renders its own logo and never reaches this function.
  */
 const GLYPH_RULES: readonly (readonly [RegExp, IconGlyph])[] = [
-  [/bridge/, ConnectIcon],
-  [/swap|trade|quote/, RefreshIcon],
-  [/search/, Search01Icon],
-  [/web|browse/, AiWebBrowsingIcon],
+  [/bridge/, CableIcon],
+  [/swap|trade|quote/, RefreshCwIcon],
+  [/search/, SearchIcon],
+  [/web|browse/, GlobeIcon],
   [/terminal|exec|shell/, TerminalIcon],
-  [/file/, File01Icon],
-  [/memory|recall|knowledge/, Brain01Icon],
-  [/wallet|chain|balance/, BitcoinWalletIcon],
+  [/file/, FileIcon],
+  [/memory|recall|knowledge/, BrainIcon],
+  [/wallet|chain|balance/, WalletIcon],
 ];
 
 /** Resolve the glyph for a sanitized tool name; wrench is the fallback act. */
@@ -44,5 +44,5 @@ export function toolGlyph(toolName: string): IconGlyph {
   for (const [pattern, icon] of GLYPH_RULES) {
     if (pattern.test(name)) return icon;
   }
-  return Wrench01Icon;
+  return WrenchIcon;
 }

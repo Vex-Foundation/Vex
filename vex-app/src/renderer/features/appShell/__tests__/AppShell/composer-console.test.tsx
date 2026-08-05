@@ -55,21 +55,21 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
 }));
 
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Add01Icon: "Add01Icon",
-  CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
-  Download01Icon: "Download01Icon",
-  ArrowDown01Icon: "ArrowDown01Icon",
-  ArrowUp01Icon: "ArrowUp01Icon",
+  PlusIcon: "PlusIcon",
+  CircleCheckBigIcon: "CircleCheckBigIcon",
+  DownloadIcon: "DownloadIcon",
+  ChevronDownIcon: "ChevronDownIcon",
+  ArrowUpIcon: "ArrowUpIcon",
   // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  ArrowRight01Icon: "ArrowRight01Icon",
-  Wallet01Icon: "Wallet01Icon",
+  ChevronRightIcon: "ChevronRightIcon",
+  WalletIcon: "WalletIcon",
   MapPinIcon: "MapPinIcon",
-  AiBrain05Icon: "AiBrain05Icon",
-  StopCircleIcon: "StopCircleIcon",
-  FireIcon: "FireIcon",
+  BrainCircuitIcon: "BrainCircuitIcon",
+  CircleStopIcon: "CircleStopIcon",
+  FlameIcon: "FlameIcon",
   RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
-  PercentSquareIcon: "PercentSquareIcon",
+  PercentIcon: "PercentIcon",
 }));
 
 const mockSubmitChat = {

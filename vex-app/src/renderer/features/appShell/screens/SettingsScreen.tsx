@@ -29,8 +29,8 @@
 import { useEffect, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   VexIcon,
 } from "../../../components/icons/index.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
@@ -223,7 +223,7 @@ export function SettingsScreen({
                   className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--vex-line)] px-4 text-[13px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
                   data-vex-settings-back
                 >
-                  <VexIcon icon={ArrowLeft01Icon} size={14} aria-hidden />
+                  <VexIcon icon={ChevronLeftIcon} size={14} aria-hidden />
                   Settings
                 </button>
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--vex-text-3)]">
@@ -314,7 +314,7 @@ function SettingsRegister({
                   {status.word}
                 </span>
                 <VexIcon
-                  icon={ArrowRight01Icon}
+                  icon={ChevronRightIcon}
                   size={14}
                   aria-hidden
                   className="shrink-0 text-[var(--vex-text-3)]"

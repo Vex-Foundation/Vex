@@ -10,8 +10,8 @@
 
 import type { JSX } from "react";
 import {
-  Archive02Icon,
-  StopCircleIcon,
+  ArchiveIcon,
+  CircleStopIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
@@ -132,7 +132,7 @@ export function SessionsErrorPlaceholder({
       sidebarOpen={sidebarOpen}
       text={message}
       tone="error"
-      icon={<VexIcon icon={StopCircleIcon} size={18} aria-hidden />}
+      icon={<VexIcon icon={CircleStopIcon} size={18} aria-hidden />}
     />
   );
 }
@@ -146,7 +146,7 @@ export function SessionsEmptyPlaceholder({
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
       text="No sessions"
-      icon={<VexIcon icon={Archive02Icon} size={18} aria-hidden />}
+      icon={<VexIcon icon={ArchiveIcon} size={18} aria-hidden />}
     />
   );
 }

@@ -39,7 +39,7 @@ import {
   useState,
   type JSX,
 } from "react";
-import { ArrowDown01Icon, VexIcon } from "../../components/icons/index.js";
+import { ChevronDownIcon, VexIcon } from "../../components/icons/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -521,7 +521,7 @@ export function SessionTranscript({
           aria-label="Jump to latest message"
           className="vex-micro absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-3 py-1.5 text-[var(--vex-text-2)] transition-colors hover:border-[var(--vex-accent-border)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <VexIcon icon={ArrowDown01Icon} size={12} aria-hidden />
+          <VexIcon icon={ChevronDownIcon} size={12} aria-hidden />
           Latest
         </button>
       ) : null}

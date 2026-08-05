@@ -33,21 +33,21 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
 }));
 
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Add01Icon: "Add01Icon",
-  CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
-  Download01Icon: "Download01Icon",
-  ArrowDown01Icon: "ArrowDown01Icon",
-  PercentSquareIcon: "PercentSquareIcon",
-  FireIcon: "FireIcon",
+  PlusIcon: "PlusIcon",
+  CircleCheckBigIcon: "CircleCheckBigIcon",
+  DownloadIcon: "DownloadIcon",
+  ChevronDownIcon: "ChevronDownIcon",
+  PercentIcon: "PercentIcon",
+  FlameIcon: "FlameIcon",
   RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
-  AiBrain05Icon: "AiBrain05Icon",
-  ArrowRight01Icon: "ArrowRight01Icon",
-  ArrowUp01Icon: "ArrowUp01Icon",
+  BrainCircuitIcon: "BrainCircuitIcon",
+  ChevronRightIcon: "ChevronRightIcon",
+  ArrowUpIcon: "ArrowUpIcon",
   // Welcome Portfolio tab (BookPanel's welcome stage): handle + card icons.
-  Wallet01Icon: "Wallet01Icon",
+  WalletIcon: "WalletIcon",
   MapPinIcon: "MapPinIcon",
-  StopCircleIcon: "StopCircleIcon",
+  CircleStopIcon: "CircleStopIcon",
 }));
 
 // Brand-icon lib mocked per sibling suites — keeps this suite immune to

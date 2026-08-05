@@ -24,7 +24,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { VexIcon, ViewIcon } from "../../../../components/icons/index.js";
+import { VexIcon, EyeIcon } from "../../../../components/icons/index.js";
 import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { chainDisplay } from "@shared/chains/display.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
@@ -155,7 +155,7 @@ export function TokenHoldingRow({
             onClick={openHistory}
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-accent-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
           >
-            <VexIcon icon={ViewIcon} size={13} aria-hidden />
+            <VexIcon icon={EyeIcon} size={13} aria-hidden />
           </button>
         ) : null}
       </span>

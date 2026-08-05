@@ -29,7 +29,7 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
 }));
 
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Cancel01Icon: "Cancel01Icon",
+  XIcon: "XIcon",
 }));
 
 const ORIGIN = { x: 10, y: 620, width: 240, height: 44 };

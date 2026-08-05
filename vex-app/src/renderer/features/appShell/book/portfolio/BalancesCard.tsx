@@ -24,7 +24,7 @@
 
 import type { JSX, MouseEvent } from "react";
 import {
-  ArrowRight01Icon,
+  ChevronRightIcon,
   VexIcon,
 } from "../../../../components/icons/index.js";
 import { usePortfolio } from "../../../../lib/api/portfolio.js";
@@ -101,7 +101,7 @@ export function BalancesCard({
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
           >
             View all assets
-            <VexIcon icon={ArrowRight01Icon} size={13} aria-hidden />
+            <VexIcon icon={ChevronRightIcon} size={13} aria-hidden />
           </button>
         </>
       )}

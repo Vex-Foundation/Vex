@@ -8,7 +8,7 @@
  * `opener` open against a freshly-launched browser tab is bad hygiene.
  */
 
-import { ArrowUpRight01Icon, VexIcon } from "../icons/index.js";
+import { ArrowUpRightIcon, VexIcon } from "../icons/index.js";
 
 interface DocsLinkProps {
   readonly href: string;
@@ -28,7 +28,7 @@ export function DocsLink({ href, label }: DocsLinkProps): JSX.Element {
       className="inline-flex items-center gap-1 self-start text-xs text-[var(--vex-accent-text,var(--color-accent-secondary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-primary)]"
     >
       {label}
-      <VexIcon icon={ArrowUpRight01Icon} size={12} aria-hidden />
+      <VexIcon icon={ArrowUpRightIcon} size={12} aria-hidden />
     </a>
   );
 }

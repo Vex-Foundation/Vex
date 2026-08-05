@@ -7,7 +7,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { Delete02Icon, VexIcon } from "../../../components/icons/index.js";
+import { Trash2Icon, VexIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 
 export function RemoveButton({
@@ -27,7 +27,7 @@ export function RemoveButton({
         "focus-visible:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
       )}
     >
-      <VexIcon icon={Delete02Icon} size={13} aria-hidden />
+      <VexIcon icon={Trash2Icon} size={13} aria-hidden />
     </button>
   );
 }

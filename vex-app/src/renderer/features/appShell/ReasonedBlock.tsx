@@ -26,7 +26,7 @@
 
 import { useId, useState, type JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
-import { ArrowRight01Icon, VexIcon } from "../../components/icons/index.js";
+import { ChevronRightIcon, VexIcon } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { reasonedStampLabel } from "./reasoning-stamp.js";
 
@@ -58,7 +58,7 @@ export function ReasonedBlock({
         className="flex items-center gap-1 rounded-[4px] text-left font-serif text-[12px] italic text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
       >
         <VexIcon
-          icon={ArrowRight01Icon}
+          icon={ChevronRightIcon}
           size={11}
           aria-hidden
           className={cn("shrink-0 transition-transform", open && "rotate-90")}

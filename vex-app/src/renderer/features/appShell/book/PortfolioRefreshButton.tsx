@@ -63,7 +63,7 @@ export function PortfolioRefreshButton(): JSX.Element {
         title="Refresh portfolio"
         className="rounded p-1 text-[var(--vex-text-3)] transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <RefreshIcon spinning={inFlight} />
+        <RefreshCwIcon spinning={inFlight} />
       </button>
       {feedback.kind === "throttled" ? (
         <span className="text-[10px] tabular-nums text-[var(--vex-text-3)]">
@@ -79,7 +79,7 @@ export function PortfolioRefreshButton(): JSX.Element {
   );
 }
 
-function RefreshIcon({ spinning }: { readonly spinning: boolean }): JSX.Element {
+function RefreshCwIcon({ spinning }: { readonly spinning: boolean }): JSX.Element {
   return (
     <svg
       width="13"

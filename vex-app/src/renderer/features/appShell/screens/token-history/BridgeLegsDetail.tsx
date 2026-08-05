@@ -14,7 +14,7 @@
 
 import { useState, type JSX } from "react";
 import {
-  ArrowUpRight01Icon,
+  ArrowUpRightIcon,
   VexIcon,
 } from "../../../../components/icons/index.js";
 import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
@@ -96,7 +96,7 @@ export function BridgeLegs({
                     className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
                   >
                     TX
-                    <VexIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
+                    <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
                   </a>
                 ) : null}
               </li>

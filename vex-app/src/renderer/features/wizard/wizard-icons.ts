@@ -12,14 +12,14 @@
  */
 
 import {
-  AiBrain05Icon,
-  CheckmarkBadge02Icon,
-  ConnectIcon,
+  BrainCircuitIcon,
+  BadgeCheckIcon,
+  CableIcon,
   CpuIcon,
   type IconGlyph,
-  Key02Icon,
-  SquareLock02Icon,
-  Wallet01Icon,
+  KeyRoundIcon,
+  LockIcon,
+  WalletIcon,
 } from "../../components/icons/index.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 
@@ -31,25 +31,25 @@ export interface WizardStepMeta {
 
 export const WIZARD_STEP_META: Readonly<Record<WizardStepId, WizardStepMeta>> = {
   keystore: {
-    icon: SquareLock02Icon,
+    icon: LockIcon,
     label: "Master password",
     description:
       "Unlock the encrypted local vault that protects your wallet keystores.",
   },
   wallets: {
-    icon: Wallet01Icon,
+    icon: WalletIcon,
     label: "Wallets",
     description:
       "Generate, import, or restore your EVM and Solana wallets. Encrypted with the master password.",
   },
   apiKeys: {
-    icon: Key02Icon,
+    icon: KeyRoundIcon,
     label: "API keys",
     description:
       "Connect Jupiter and optional integrations (Tavily, Rettiwt).",
   },
   embedding: {
-    icon: AiBrain05Icon,
+    icon: BrainCircuitIcon,
     label: "Embedding",
     description:
       "Pick the embedding endpoint that powers long-term memory recall.",
@@ -61,12 +61,12 @@ export const WIZARD_STEP_META: Readonly<Record<WizardStepId, WizardStepMeta>> = 
       "Tune context and output-token limits, plus sampling temperature. All optional.",
   },
   provider: {
-    icon: ConnectIcon,
+    icon: CableIcon,
     label: "Provider",
     description: "Verify your OpenRouter API key and pick a model.",
   },
   review: {
-    icon: CheckmarkBadge02Icon,
+    icon: BadgeCheckIcon,
     label: "Review",
     description:
       "Confirm your setup and finalize. Nothing leaves this machine until you invoke a tool.",

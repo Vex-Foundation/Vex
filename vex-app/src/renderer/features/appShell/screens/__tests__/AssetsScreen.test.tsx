@@ -35,8 +35,8 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
   VexIcon: () => null,
 }));
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Cancel01Icon: "Cancel01Icon",
-  ViewIcon: "ViewIcon",
+  XIcon: "XIcon",
+  EyeIcon: "EyeIcon",
 }));
 
 vi.mock("@thesvg/react", () => ({

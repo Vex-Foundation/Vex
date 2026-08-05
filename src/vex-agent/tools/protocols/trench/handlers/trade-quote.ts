@@ -119,7 +119,7 @@ export async function trenchTradeQuoteHandler(
     const impactText = priceImpactPct !== null ? ` Price impact ${priceImpactPct.toFixed(2)}%.` : "";
     const summary =
       `Quote (${side}): ${amountInHuman} ${side === "buy" ? "ETH" : "token"} → ${formatUnits(expectedOutRaw, outputDecimals)} ${side === "buy" ? "token" : "ETH"} on Robinhood Chain. ` +
-      `Deterministic curve quote (fee-inclusive). 1% ETH-leg fee ~${formatEther(feeWei)} ETH.${impactText} ` +
+      `Deterministic curve quote (fee-inclusive). Trench's own 1% ETH-leg curve fee ~${formatEther(feeWei)} ETH.${impactText} ` +
       `Curve reserve ${formatEther(stats.ethReserveWei)} ETH (~${progressPct}% to graduation). ` +
       (vexFee.charged
         ? `Vex fee ${vexFee.feeAmountEth} ETH (${vexFee.bps} bps of ${vexFee.chargedOn}), charged as a separate transfer AFTER the trade confirms.`

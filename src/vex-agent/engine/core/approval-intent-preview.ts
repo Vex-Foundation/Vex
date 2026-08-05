@@ -27,6 +27,7 @@ import { resolveInjectedProtocolTool } from "../../tools/registry/injected-proto
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
+import { describeApprovalVexFee } from "./approval-vex-fee.js";
 
 /**
  * Allow-list of `tool_call.arguments` keys eligible for the preview
@@ -42,6 +43,12 @@ const PREVIEW_KEY_ALLOWLIST: ReadonlySet<string> = new Set([
   "amount",
   "amountUsd",
   "amountIn",
+  // The bridges' OWN amount key. Its absence meant a bridge approval card
+  // showed the chains, the tokens and the safety verdict but NOT the amount
+  // being moved — the one number a human most needs before signing. Same class
+  // as `amountIn` above (a model-supplied argument that the executor signs
+  // verbatim), so it is surfaced, not trusted.
+  "amountRaw",
   "amountUsdc",
   // Stage 9: swap money/safety leg now BOUND into the prequote identity (it
   // cannot change post-quote). These are normal args, not secrets — surface
@@ -275,6 +282,19 @@ export function buildIntentPreview(
   for (const key of Object.keys(effective.args)) {
     if (!PREVIEW_KEY_ALLOWLIST.has(key)) continue;
     criticalArgs[key] = coerceSummaryValue(effective.args[key]);
+  }
+
+  // Itemise the Vex platform fee AFTER allow-list extraction, from the venue's
+  // own product-owner rate constant applied to the amount being approved
+  // (`approval-vex-fee.ts`). `vexFee` is deliberately NOT in
+  // PREVIEW_KEY_ALLOWLIST, so a `fee`/`feeBps`/`feeReceiver` argument can never
+  // reach this line — the rate is ours, never the model's. Undefined for every
+  // tool that carries no Vex fee or discloses it elsewhere (Jupiter's richer
+  // `feeDisclosure` below; the Trench launch form), so the card grows no line
+  // rather than an empty or zero one.
+  const vexFee = describeApprovalVexFee(effective.toolName, effective.args);
+  if (vexFee !== undefined) {
+    criticalArgs.vexFee = vexFee;
   }
 
   // Stage 7 R5: inject the swap safety verdict AFTER allow-list extraction,
