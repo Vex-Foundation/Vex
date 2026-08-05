@@ -28,7 +28,7 @@ export const TRENCH_TRADE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "trench",
     lifecycle: "active",
     description:
-      "Read-only price quote for buying or selling a Trench Express bonding-curve token on Robinhood Chain (4663): reads the curve on-chain and returns the exact, fee-inclusive expected output, the 1% ETH-leg fee, the price impact against the curve reserves, and progress toward graduation. Records the quote so a matching trench.trade_execute can broadcast. Signs nothing and moves no funds. Pass tokenIn=\"ETH\" + tokenOut=<token> for a buy, or tokenIn=<token> + tokenOut=\"ETH\" for a sell.",
+      "Read-only price quote for buying or selling a Trench Express bonding-curve token on Robinhood Chain (4663): reads the curve on-chain and returns the exact, fee-inclusive expected output, BOTH fees on the ETH leg — Trench's own 1% curve fee (feeBps/feeEth, already inside the quoted output) and Vex's SEPARATE 25 bps (0.25%) fee (the vexFee block, charged after the trade confirms) — the price impact against the curve reserves, and progress toward graduation. Records the quote so a matching trench.trade_execute can broadcast. Signs nothing and moves no funds. Pass tokenIn=\"ETH\" + tokenOut=<token> for a buy, or tokenIn=<token> + tokenOut=\"ETH\" for a sell.",
     mutating: false,
     actionKind: "read",
     params: TRADE_PARAMS,
@@ -40,7 +40,7 @@ export const TRENCH_TRADE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "trench",
     lifecycle: "active",
     description:
-      "Buy or sell a Trench Express bonding-curve token on Robinhood Chain (4663): a BUY spends ETH to acquire the token; a SELL approves then swaps the token back for ETH. Vex derives a minimum-output floor from a fresh on-chain quote (never zero, never from the caller) and sets the deadline locally; a 1% fee applies to the ETH leg. Spends real funds and is approval-gated — requires a fresh matching trench.trade_quote first. Pass tokenIn=\"ETH\" + tokenOut=<token> for a buy, or tokenIn=<token> + tokenOut=\"ETH\" for a sell.",
+      "Buy or sell a Trench Express bonding-curve token on Robinhood Chain (4663): a BUY spends ETH to acquire the token; a SELL approves then swaps the token back for ETH. Vex derives a minimum-output floor from a fresh on-chain quote (never zero, never from the caller) and sets the deadline locally. TWO DISTINCT fees apply to the ETH leg and must not be conflated: Trench's own 1% curve fee, taken inside the contract and already reflected in the quote; and Vex's 25 bps (0.25%) fee — on a BUY the ETH you spend, on a SELL the ETH you receive — charged as a SEPARATE transfer that runs only after the trade confirms, so a trade that does not happen is never charged. Spends real funds and is approval-gated — requires a fresh matching trench.trade_quote first. Pass tokenIn=\"ETH\" + tokenOut=<token> for a buy, or tokenIn=<token> + tokenOut=\"ETH\" for a sell.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: TRADE_PARAMS,

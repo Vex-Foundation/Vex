@@ -7,14 +7,14 @@
  *
  * Mapping is hardcoded — small, predictable, and CSP-friendly (no
  * dynamic require/import; bundle stays static). Unknown prefixes fall
- * back to a generic `AiBrain05Icon` so the UI never goes blank.
+ * back to a generic `BrainCircuitIcon` so the UI never goes blank.
  *
  * `parseModelProvider` lives in a sibling file so the parsing logic
  * has its own unit tests (`__tests__/parseModelProvider.test.ts`).
  */
 
 import { useMemo, type ComponentType, type SVGProps } from "react";
-import { AiBrain05Icon, VexIcon } from "../../../../components/icons/index.js";
+import { BrainCircuitIcon, VexIcon } from "../../../../components/icons/index.js";
 import {
   Anthropic,
   Claude,
@@ -104,7 +104,7 @@ export function ModelBrandIcon({
   }
   return (
     <VexIcon
-      icon={AiBrain05Icon}
+      icon={BrainCircuitIcon}
       size={size}
       aria-hidden
       className={className}

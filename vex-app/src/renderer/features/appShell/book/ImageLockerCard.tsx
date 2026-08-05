@@ -31,7 +31,7 @@
 import { useState, type JSX } from "react";
 import type { VexError } from "@shared/ipc/result.js";
 import type { ImageOptimization } from "@shared/schemas/images.js";
-import { Add01Icon, VexIcon } from "../../../components/icons/index.js";
+import { PlusIcon, VexIcon } from "../../../components/icons/index.js";
 import {
   useDeleteLockerImage,
   useLockerImages,
@@ -137,7 +137,7 @@ export function ImageLockerCard({
         disabled={busy}
         className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-[var(--vex-line)] py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--vex-text-2)] transition-colors hover:text-[var(--vex-text)] disabled:opacity-50"
       >
-        <VexIcon icon={Add01Icon} size={12} aria-hidden />
+        <VexIcon icon={PlusIcon} size={12} aria-hidden />
         {busy ? "Adding…" : "Add image"}
       </button>
 

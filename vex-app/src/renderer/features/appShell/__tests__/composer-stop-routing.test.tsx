@@ -29,13 +29,6 @@ const mockRequestStopMutate = vi.fn();
 const mockUseRuntimeState = vi.fn();
 let submitPending = false;
 
-vi.mock("@hugeicons/react", () => ({ HugeiconsIcon: () => null }));
-vi.mock("@hugeicons/core-free-icons", () => ({
-  StopCircleIcon: "StopCircleIcon",
-  ArrowUp01Icon: "ArrowUp01Icon",
-  SentIcon: "SentIcon",
-}));
-
 vi.mock("../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
     isPending: submitPending,

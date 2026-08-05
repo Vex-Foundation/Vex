@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { ArrowUpRight01Icon, VexIcon } from "../../components/icons/index.js";
+import { ArrowUpRightIcon, VexIcon } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface LicenseNoticeProps {
@@ -131,7 +131,7 @@ export function LicenseNotice({
           className="mb-5 inline-flex items-center gap-1 text-sm text-[color-mix(in_oklab,var(--vex-onboarding-accent,var(--color-accent-primary))_55%,white)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]"
         >
           Docker Desktop license terms
-          <VexIcon icon={ArrowUpRight01Icon} size={14} aria-hidden />
+          <VexIcon icon={ArrowUpRightIcon} size={14} aria-hidden />
         </button>
         <div className="flex justify-end gap-2">
           <button

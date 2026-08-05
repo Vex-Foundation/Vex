@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { useRef, type JSX } from "react";
-import { useScrollbarVisibility } from "../../SessionTranscript/useScrollbarVisibility.js";
+import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 
 afterEach(() => {
   cleanup();

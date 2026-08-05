@@ -17,13 +17,13 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import {
-  AiWebBrowsingIcon,
-  BitcoinWalletIcon,
-  Brain01Icon,
-  File01Icon,
-  Search01Icon,
+  GlobeIcon,
+  WalletIcon,
+  BrainIcon,
+  FileIcon,
+  SearchIcon,
   TerminalIcon,
-  Wrench01Icon,
+  WrenchIcon,
 } from "../../../components/icons/index.js";
 import { ToolActRow } from "../ToolLedger/ToolActRow.js";
 import { ToolGroupRow } from "../ToolLedger/ToolGroupRow.js";
@@ -61,16 +61,16 @@ function groupModel(
 
 describe("toolGlyph", () => {
   it("maps act categories by keyword, search outranking web", () => {
-    expect(toolGlyph("web_search")).toBe(Search01Icon);
-    expect(toolGlyph("browser:navigate")).toBe(AiWebBrowsingIcon);
+    expect(toolGlyph("web_search")).toBe(SearchIcon);
+    expect(toolGlyph("browser:navigate")).toBe(GlobeIcon);
     expect(toolGlyph("shell:exec")).toBe(TerminalIcon);
-    expect(toolGlyph("file_write")).toBe(File01Icon);
-    expect(toolGlyph("long_memory_suggest")).toBe(Brain01Icon);
-    expect(toolGlyph("wallet:send")).toBe(BitcoinWalletIcon);
+    expect(toolGlyph("file_write")).toBe(FileIcon);
+    expect(toolGlyph("long_memory_suggest")).toBe(BrainIcon);
+    expect(toolGlyph("wallet:send")).toBe(WalletIcon);
   });
 
   it("falls back to the wrench for unknown tools", () => {
-    expect(toolGlyph("polymarket:order")).toBe(Wrench01Icon);
+    expect(toolGlyph("polymarket:order")).toBe(WrenchIcon);
   });
 });
 

@@ -26,8 +26,8 @@ import { useMemo, type JSX, type MouseEvent } from "react";
 import type { AgentScanDto, AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
-  ArrowRight01Icon,
-  ArrowUpRight01Icon,
+  ChevronRightIcon,
+  ArrowUpRightIcon,
   VexIcon,
 } from "../../../components/icons/index.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
@@ -119,7 +119,7 @@ export function SessionActivityCard({
         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
       >
         View all activity
-        <VexIcon icon={ArrowRight01Icon} size={13} aria-hidden />
+        <VexIcon icon={ChevronRightIcon} size={13} aria-hidden />
       </button>
     </PortfolioCard>
   );
@@ -178,7 +178,7 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
             className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
           >
             TX
-            <VexIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
+            <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
           </a>
         ) : null}
       </div>

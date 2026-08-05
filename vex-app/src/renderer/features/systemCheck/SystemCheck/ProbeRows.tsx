@@ -14,9 +14,9 @@
  */
 
 import {
-  Settings02Icon,
+  Settings2Icon,
   VexIcon,
-  Wifi02Icon,
+  WifiIcon,
 } from "../../../components/icons/index.js";
 import { Docker } from "@thesvg/react";
 
@@ -67,7 +67,7 @@ export function ProbeRows({
       <StepRow
         label="Network connectivity"
         status={networkStatus}
-        icon={<VexIcon icon={Wifi02Icon} size={20} aria-hidden />}
+        icon={<VexIcon icon={WifiIcon} size={20} aria-hidden />}
         detail={
           health.data?.ok
             ? health.data.data.network.online
@@ -94,7 +94,7 @@ export function ProbeRows({
         label="Vex configuration"
         status={envStatus}
         icon={
-          <VexIcon icon={Settings02Icon} size={20} aria-hidden />
+          <VexIcon icon={Settings2Icon} size={20} aria-hidden />
         }
         // First-run nudge: "SETUP" beats "WARN" for a warn state that
         // means "guided setup required" — the only warn cause for

@@ -81,6 +81,14 @@ export interface SessionPanelProps {
   readonly headerTrailing?: ReactNode;
 }
 
+/**
+ * The tape stage's READING COLUMN. Applied to each child that wants it rather
+ * than to one wrapper around them all, so the transcript can opt OUT and scroll
+ * at panel width (see the wrapper comment below). Identical geometry to the
+ * wrapper it replaced — same max-width, same gutter, same `mx-auto` axis.
+ */
+const TAPE_COLUMN = "mx-auto w-full max-w-[860px] px-6";
+
 export function SessionPanel({
   headerTrailing,
 }: SessionPanelProps = {}): JSX.Element {
@@ -217,8 +225,17 @@ export function SessionPanel({
       <div
         className={cn(
           "flex h-full min-h-0 w-full flex-col",
-          // Idle stage is full-bleed (no max-w, no padding).
-          isIdleSession ? undefined : "mx-auto max-w-[860px] px-6 py-4",
+          // PANEL-WIDE on both stages. The reading column used to live here,
+          // which made the TRANSCRIPT's scroller only as wide as the column —
+          // so its scrollbar floated mid-screen beside the text instead of at
+          // the panel's edge, which is not how any browser behaves (owner,
+          // 2026-08-05). The column now lives on the individual children, so
+          // the transcript can scroll at full panel width and its native
+          // overlay bar hugs the right edge next to the BOOK rail. The
+          // composer band below already centers itself and is unaffected: the
+          // column was `mx-auto`, so its centre axis and the panel's are the
+          // same one.
+          isIdleSession ? undefined : "py-4",
         )}
       >
         {/* Content above the composer — swaps the full-bleed idle stage for
@@ -239,13 +256,16 @@ export function SessionPanel({
             <SessionWelcomeHero />
           ) : (
             <>
-              <SessionContext
-                activeSession={activeSession}
-                activeSessionId={activeSessionId}
-                loading={detailQuery.isLoading}
-                error={detailError}
-                trailing={headerTrailing}
-              />
+              {/* Header + banners keep the reading column; only the
+                  transcript goes full-bleed. */}
+              <div className={TAPE_COLUMN}>
+                <SessionContext
+                  activeSession={activeSession}
+                  activeSessionId={activeSessionId}
+                  loading={detailQuery.isLoading}
+                  error={detailError}
+                  trailing={headerTrailing}
+                />
               {/* The mission contract + action plan no longer render inline:
                   the two tall cards used to push MissionControls + the Accept
                   footer below the fold. They now live in the DESK RULE
@@ -255,21 +275,28 @@ export function SessionPanel({
                   reachable. The transcript now owns the full column height. */}
               {/* Above the transcript and OUTSIDE the mission-mode gate —
                   every session gets an error surface. */}
-              {activeSession !== null ? (
-                <SessionSleepBanner sessionId={activeSession.id} />
-              ) : null}
-              {activeSession !== null ? (
-                <SessionErrorBanner sessionId={activeSession.id} />
-              ) : null}
+                {activeSession !== null ? (
+                  <SessionSleepBanner sessionId={activeSession.id} />
+                ) : null}
+                {activeSession !== null ? (
+                  <SessionErrorBanner sessionId={activeSession.id} />
+                ) : null}
+              </div>
+              {/* FULL-BLEED: the transcript owns the panel's width so its
+                  scroller — and therefore the native scrollbar — reaches the
+                  panel's right edge. The reading column is re-applied INSIDE
+                  it, around the rows. */}
               {activeSession !== null ? (
                 <SessionTranscript sessionId={activeSession.id} />
               ) : null}
-              {activeSession !== null ? (
-                <ApprovalsRegion sessionId={activeSession.id} />
-              ) : null}
-              {showMissionCard && activeSession !== null ? (
-                <MissionControls sessionId={activeSession.id} />
-              ) : null}
+              <div className={TAPE_COLUMN}>
+                {activeSession !== null ? (
+                  <ApprovalsRegion sessionId={activeSession.id} />
+                ) : null}
+                {showMissionCard && activeSession !== null ? (
+                  <MissionControls sessionId={activeSession.id} />
+                ) : null}
+              </div>
             </>
           )}
         </div>

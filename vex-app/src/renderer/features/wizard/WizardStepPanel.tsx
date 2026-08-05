@@ -35,7 +35,7 @@
 import type { FormEvent, JSX, ReactNode } from "react";
 
 import {
-  ArrowUpRight01Icon,
+  ArrowUpRightIcon,
   type IconGlyph,
   VexIcon,
 } from "../../components/icons/index.js";
@@ -151,7 +151,7 @@ function TrailingMeta({
         )}
       >
         Your data stays yours
-        <VexIcon icon={ArrowUpRight01Icon} size={10} aria-hidden />
+        <VexIcon icon={ArrowUpRightIcon} size={10} aria-hidden />
       </a>
     </div>
   );

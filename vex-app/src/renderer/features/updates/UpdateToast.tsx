@@ -22,10 +22,10 @@
 
 import { useEffect, type JSX } from "react";
 import {
-  AlertCircleIcon,
-  ArrowUp01Icon,
-  Cancel01Icon,
-  CheckmarkCircle01Icon,
+  CircleAlertIcon,
+  ArrowUpIcon,
+  XIcon,
+  CircleCheckIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
@@ -142,7 +142,7 @@ export function UpdateToast({
             onClick={onDismissError}
             className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
           >
-            <VexIcon icon={Cancel01Icon} size={14} aria-hidden />
+            <VexIcon icon={XIcon} size={14} aria-hidden />
           </button>
         ) : null}
       </div>
@@ -300,7 +300,7 @@ function ToastIcon({
   if (status.kind === "downloaded") {
     return (
       <VexIcon
-        icon={CheckmarkCircle01Icon}
+        icon={CircleCheckIcon}
         size={14}
         className="mt-0.5 shrink-0 text-primary"
         aria-hidden
@@ -310,7 +310,7 @@ function ToastIcon({
   if (status.kind === "blockedByOperation" || status.kind === "error") {
     return (
       <VexIcon
-        icon={AlertCircleIcon}
+        icon={CircleAlertIcon}
         size={14}
         className="mt-0.5 shrink-0 text-destructive"
         aria-hidden
@@ -319,7 +319,7 @@ function ToastIcon({
   }
   return (
     <VexIcon
-      icon={ArrowUp01Icon}
+      icon={ArrowUpIcon}
       size={14}
       className="mt-0.5 shrink-0 text-primary"
       aria-hidden

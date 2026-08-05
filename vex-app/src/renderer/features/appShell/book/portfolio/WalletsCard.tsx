@@ -16,7 +16,7 @@
  */
 
 import type { JSX } from "react";
-import { Add01Icon, VexIcon } from "../../../../components/icons/index.js";
+import { PlusIcon, VexIcon } from "../../../../components/icons/index.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import { useWalletPortfolio } from "../../../../lib/api/portfolio.js";
 import { formatUsd } from "../../../../lib/format.js";
@@ -75,7 +75,7 @@ export function WalletsCard(): JSX.Element {
             }}
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--vex-line)] py-1.5 text-[12px] text-[var(--vex-text-2)] transition-colors hover:border-[var(--vex-line-strong)] hover:bg-white/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--vex-accent)]"
           >
-            <VexIcon icon={Add01Icon} size={13} aria-hidden />
+            <VexIcon icon={PlusIcon} size={13} aria-hidden />
             Add wallet
           </button>
         </>

@@ -44,6 +44,49 @@ describe("buildIntentPreview", () => {
     expect(preview.criticalArgs.tokenIn).toBe("USDC");
   });
 
+  it("itemises the Vex fee on an EVM swap card, from OUR rate not the model's", () => {
+    const preview = buildIntentPreview("kyberswap.swap.execute", {
+      chain: "base",
+      tokenIn: "ETH",
+      tokenOut: "0xdeadbeef",
+      amountIn: "1.5",
+      feeBps: 9999,
+      feeReceiver: "0xattacker",
+    });
+    expect(preview.criticalArgs.vexFee).toContain("0.25% (25 bps)");
+    expect(preview.criticalArgs.vexFee).toContain("0.00375 ETH");
+    // The spoof attempt reaches neither the fee line nor any other arg.
+    expect(preview.criticalArgs.vexFee).not.toContain("9999");
+    expect(preview.criticalArgs).not.toHaveProperty("feeBps");
+    expect(preview.criticalArgs).not.toHaveProperty("feeReceiver");
+  });
+
+  it("projects a bridge's amountRaw AND its fee — the amount being signed", () => {
+    const preview = buildIntentPreview("relay.bridge", {
+      fromChain: "base",
+      toChain: "arbitrum",
+      fromToken: "0xUSDC",
+      toToken: "0xUSDC",
+      amountRaw: "1000000",
+    });
+    expect(preview.criticalArgs.amountRaw).toBe("1000000");
+    expect(preview.criticalArgs.vexFee).toContain("2500 raw units of fromToken");
+  });
+
+  it("carries NO vexFee key for a tool that has no Vex fee (tolerant reader)", () => {
+    const preview = buildIntentPreview("pendle.pt.buy", { chain: "base", amountIn: "1.5" });
+    expect(preview.criticalArgs).not.toHaveProperty("vexFee");
+  });
+
+  it("unwraps an injected/execute_tool wrapper before pricing the fee", () => {
+    const preview = buildIntentPreview("execute_tool", {
+      toolId: "uniswap.swap.execute",
+      params: { tokenIn: "ETH", amountIn: "2" },
+    });
+    expect(preview.toolName).toBe("uniswap.swap.execute");
+    expect(preview.criticalArgs.vexFee).toContain("0.005 ETH");
+  });
+
   it("drops keys outside the allowlist (defense-in-depth against leak)", () => {
     const preview = buildIntentPreview("wallet_send_prepare", {
       to: "0xabc",
@@ -328,13 +371,18 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
     expect(preview.namespace).toBe("kyberswap");
     // criticalArgs come from nested `params`, not the wrapper args. Stage 9:
     // `slippageBps` is now allow-listed (it is bound into the prequote identity
-    // and surfaced to the human), so it appears in the preview.
+    // and surfaced to the human), so it appears in the preview. The engine-owned
+    // `vexFee` line rides alongside them (see `approval-vex-fee.ts`) — it is not
+    // an arg, so it survives the unwrap on the TARGET tool's identity.
     expect(preview.criticalArgs).toEqual({
       chain: "base",
       tokenIn: "ETH",
       tokenOut: "USDC",
       amountIn: "1.0",
       slippageBps: 50,
+      vexFee:
+        "0.25% (25 bps) — 0.0025 ETH. Taken on the input token and included in the amountIn "
+        + "above — the route is priced for the remainder, so the quoted output is already net of it.",
     });
   });
 

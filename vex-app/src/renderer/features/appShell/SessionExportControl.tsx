@@ -21,8 +21,8 @@
 
 import { useEffect, useState, type JSX } from "react";
 import {
-  CheckmarkCircle02Icon,
-  Download01Icon,
+  CircleCheckBigIcon,
+  DownloadIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import { useExportSessionMarkdown, useSession } from "../../lib/api/sessions.js";
@@ -104,7 +104,7 @@ export function SessionExportControl({
         className="grid size-7 shrink-0 place-items-center rounded-md text-[var(--vex-text-3)] transition-colors hover:bg-[var(--vex-surface-2)] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vex-accent)] disabled:cursor-wait disabled:opacity-50"
       >
         <VexIcon
-          icon={exportStatus === "saved" ? CheckmarkCircle02Icon : Download01Icon}
+          icon={exportStatus === "saved" ? CircleCheckBigIcon : DownloadIcon}
           size={15}
           aria-hidden
           className={exportMutation.isPending ? "animate-pulse" : undefined}

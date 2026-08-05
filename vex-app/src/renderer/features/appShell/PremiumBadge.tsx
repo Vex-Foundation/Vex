@@ -35,11 +35,11 @@
 
 import type { JSX } from "react";
 import {
-  AlertCircleIcon,
-  CheckmarkCircle02Icon,
+  CircleAlertIcon,
+  CircleCheckBigIcon,
   type IconGlyph,
-  InformationCircleIcon,
-  Target02Icon,
+  InfoIcon,
+  TargetIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
@@ -103,7 +103,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-[var(--vex-line-strong)] text-[var(--vex-text-3)] hover:border-[var(--vex-line-strong)]",
         iconClass: "text-[var(--vex-text-3)]",
         markClass: "bg-[var(--vex-text-3)]",
-        icon: Target02Icon,
+        icon: TargetIcon,
         dataState: "preparing",
       };
     case "ready":
@@ -113,7 +113,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-[var(--vex-accent-border)] text-[var(--vex-accent-text)] hover:bg-[var(--vex-accent-fill-8)]",
         iconClass: "text-[var(--vex-accent-text)]",
         markClass: "bg-[var(--vex-accent)]",
-        icon: InformationCircleIcon,
+        icon: InfoIcon,
         dataState: "ready",
       };
     case "accepted":
@@ -123,7 +123,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] text-success hover:bg-[color-mix(in_oklab,var(--color-success)_8%,transparent)]",
         iconClass: "text-success",
         markClass: "bg-success",
-        icon: CheckmarkCircle02Icon,
+        icon: CircleCheckBigIcon,
         dataState: "accepted",
       };
     case "stale":
@@ -133,7 +133,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
         iconClass: "text-warning",
         markClass: "bg-warning",
-        icon: InformationCircleIcon,
+        icon: InfoIcon,
         dataState: "stale",
       };
     case "error":
@@ -143,7 +143,7 @@ function stateMeta(state: PremiumBadgeState): StateMeta {
           "border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] text-warning hover:bg-[color-mix(in_oklab,var(--color-warning)_8%,transparent)]",
         iconClass: "text-warning",
         markClass: "bg-warning",
-        icon: AlertCircleIcon,
+        icon: CircleAlertIcon,
         dataState: "error",
       };
   }

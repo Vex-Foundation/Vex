@@ -15,7 +15,7 @@
  */
 
 import { memo, type JSX, type ReactNode } from "react";
-import { StopCircleIcon, VexIcon } from "../../components/icons/index.js";
+import { CircleStopIcon, VexIcon } from "../../components/icons/index.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
 import { CompactionMarker } from "./CompactionMarker.js";
@@ -216,7 +216,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
-            <VexIcon icon={StopCircleIcon} size={12} aria-hidden />
+            <VexIcon icon={CircleStopIcon} size={12} aria-hidden />
             <span>Stopped</span>
           </div>
         </div>

@@ -34,8 +34,8 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
   VexIcon: () => null,
 }));
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Cancel01Icon: "Cancel01Icon",
-  ArrowUpRight01Icon: "ArrowUpRight01Icon",
+  XIcon: "XIcon",
+  ArrowUpRightIcon: "ArrowUpRightIcon",
 }));
 
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());

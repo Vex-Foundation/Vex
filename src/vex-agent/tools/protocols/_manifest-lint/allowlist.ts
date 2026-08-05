@@ -766,8 +766,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "trench.tokens", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
   { subject: "trench.tokens", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "trench.trade_execute", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
-  { subject: "trench.trade_execute", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
-  { subject: "trench.trade_quote", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "trench.trades", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },
   { subject: "trench.trades", rule: "tool-description", detail: "when-to-use", reason: "tool description predates the description template; deleted by W8" },
   { subject: "uniswap.swap.execute", rule: "tool-description", detail: "returns", reason: "tool description predates the description template; deleted by W8" },

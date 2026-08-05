@@ -112,9 +112,9 @@ publish:
   provider: github
   owner: Vex-Foundation
   repo: Vex
-  # Draft = mandatory human review gate before users see the release: confirm the
-  # signed + notarized artifacts and latest-mac.yml / latest-linux.yml uploaded,
-  # add release notes, then click "Publish release" in GitHub. Users' updaters
-  # only see PUBLISHED releases, so a draft is invisible until you publish it.
-  # Flip to `release` if you want fully zero-touch auto-publish on tag.
-  releaseType: draft
+  # Zero-touch auto-publish on tag (owner decision 2026-08-05, starting v0.2.1):
+  # the release is PUBLISHED as soon as the pipeline uploads the artifacts and
+  # latest-mac.yml / latest-linux.yml — users' updaters see it immediately, with
+  # no human artifact-review gate in between. Flip back to `draft` to restore
+  # the manual review step.
+  releaseType: release

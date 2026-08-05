@@ -14,7 +14,7 @@
 
 import { useId, useState, type JSX } from "react";
 import {
-  ArrowRight01Icon,
+  ChevronRightIcon,
   type IconGlyph,
   VexIcon,
 } from "../../../components/icons/index.js";
@@ -74,7 +74,7 @@ export function ToolGroupRow({
           className="flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
           <VexIcon
-            icon={ArrowRight01Icon}
+            icon={ChevronRightIcon}
             size={12}
             aria-hidden
             className={cn(

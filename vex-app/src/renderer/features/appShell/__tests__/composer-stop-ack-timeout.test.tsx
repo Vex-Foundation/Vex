@@ -26,13 +26,6 @@ const mockStopTurn = vi.fn();
 const mockRequestStopMutate = vi.fn();
 const mockUseRuntimeState = vi.fn();
 
-vi.mock("@hugeicons/react", () => ({ HugeiconsIcon: () => null }));
-vi.mock("@hugeicons/core-free-icons", () => ({
-  StopCircleIcon: "StopCircleIcon",
-  ArrowUp01Icon: "ArrowUp01Icon",
-  SentIcon: "SentIcon",
-}));
-
 vi.mock("../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
     // Background slice: nothing pending in THIS window, so the settle effect

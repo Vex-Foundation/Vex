@@ -116,6 +116,32 @@ describe("ApprovalCard", () => {
     expect(args.textContent).toContain("0xabc");
   });
 
+  it("renders the Vex fee as its own labelled line, not as the raw key", () => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "swap.execute",
+          namespace: "kyberswap",
+          criticalArgs: {
+            amountIn: "1.5",
+            vexFee: "0.25% (25 bps) — 0.00375 ETH. Taken on the input token.",
+          },
+        },
+      }),
+      false,
+    );
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("Vex fee");
+    expect(args.textContent).toContain("0.25% (25 bps) — 0.00375 ETH.");
+    expect(args.textContent).not.toContain("vexFee");
+  });
+
+  it("omits the fee line entirely when the preview carries no fee — never '0'", () => {
+    renderCard(makeSummary(), false);
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).not.toContain("Vex fee");
+  });
+
   it("low-risk: single click on Approve fires mutate", () => {
     renderCard(
       makeSummary({ riskLevel: "info", actionKind: "read" }),

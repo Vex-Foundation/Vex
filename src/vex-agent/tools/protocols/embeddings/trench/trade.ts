@@ -12,7 +12,7 @@ export const TRENCH_TRADE_DISCOVERY = {
   "trench.trade_quote": {
     embeddingText: embeddingText(
       `Preview the price of buying or selling a Trench Express bonding-curve token on Robinhood Chain before trading. ` +
-      `Use when the user wants to know how many tokens a given amount of ETH would buy, or how much ETH selling a token would return, with the 1% fee and the price impact against the curve reserves. ` +
+      `Use when the user wants to know how many tokens a given amount of ETH would buy, or how much ETH selling a token would return, with Trench's own 1% curve fee, Vex's separate 25 bps fee, and the price impact against the curve reserves. ` +
       `The quote reads the curve on-chain and is exact and fee-inclusive; it signs nothing. ` +
       `Example queries: how much of this trench token can I buy with 0.01 ETH, what would selling my trench tokens return, price impact of a trench curve buy.`,
     ),
@@ -23,8 +23,8 @@ export const TRENCH_TRADE_DISCOVERY = {
   "trench.trade_execute": {
     embeddingText: embeddingText(
       `Buy or sell a Trench Express bonding-curve token on Robinhood Chain, spending ETH to acquire the token or selling it back for ETH against the curve. ` +
-      `Use when the user has decided to trade a launchpad token and wants the transaction broadcast: a buy pays ETH for tokens, a sell approves then swaps tokens for ETH, both protected by a minimum-output floor Vex derives from a fresh quote. ` +
-      `A 1% fee applies to the ETH leg; it spends real funds and requires approval. ` +
+      `Use when the user has decided to trade a launchpad token: a buy pays ETH for tokens, a sell approves then swaps tokens for ETH, both protected by a minimum-output floor from a fresh quote. ` +
+      `Two fees hit the ETH leg: Trench's 1% curve fee and Vex's separate 25 bps (0.25%), taken after the trade confirms; it spends real funds and requires approval. ` +
       `Example queries: buy this trench token with 0.01 ETH, sell my trench launchpad tokens for ETH, execute a trench curve trade.`,
     ),
     aliases: ["buy trench token", "sell trench token", "execute trench trade", "trench curve buy", "trench curve sell"],

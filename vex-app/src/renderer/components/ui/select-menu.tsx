@@ -27,7 +27,7 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { ArrowDown01Icon, VexIcon } from "../icons/index.js";
+import { ChevronDownIcon, VexIcon } from "../icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 export interface SelectMenuOption {
@@ -214,7 +214,7 @@ export function SelectMenu({
           {selectedLabel}
         </span>
         <VexIcon
-          icon={ArrowDown01Icon}
+          icon={ChevronDownIcon}
           size={15}
           aria-hidden
           className={cn(

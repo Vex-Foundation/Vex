@@ -1,13 +1,21 @@
 /**
- * A single dense ledger row (48px): mode glyph, two text lines (title +
- * time/activity, subtitle + exception stamps), hairline-separated — no card
- * box, no resting glow. Selection is the landing's workspace beam
- * (`.vex-select-beam`, globals.css): a cobalt gradient sweep with a white
- * ledger bar on the left edge, text lifted to white (stamps flip to
- * white-ink via `onBeam` so they stay legible on the gradient).
- * Mode/permission badge pairs are gone: the glyph already says mode, and
- * stamps appear only when state deviates from the default (restricted /
- * live / paused — terminal sessions earn silence).
+ * A single dense ledger row (48px): two text lines (title + time/activity,
+ * subtitle + exception stamps), hairline-separated — no card box, no resting
+ * glow. Selection is the landing's workspace beam (`.vex-select-beam`,
+ * globals.css): a cobalt gradient sweep with a white ledger bar on the left
+ * edge, text lifted to white (stamps flip to white-ink via `onBeam` so they
+ * stay legible on the gradient). Mode/permission badge pairs are gone, and
+ * stamps appear only when state deviates from the default (restricted / live /
+ * paused — terminal sessions earn silence).
+ *
+ * THE MODE GLYPH IS COLLAPSED-RAIL ONLY (owner, 2026-08-05: "te ikony z
+ * historii sesji są niepotrzebnie wyświetlane obok nazwy"). Beside a name it
+ * said nothing the subtitle did not already say in words — "Agent
+ * conversation" / "Mission setup" — so an EXPANDED row is text flush to the
+ * gutter. Collapsed, there is no name and no subtitle: the glyph is the row's
+ * entire content AND the anchor for the live/paused activity dot, so it stays
+ * exactly as it was. Nothing about a11y turns on it either way — it is
+ * `aria-hidden`, and a collapsed row is named by the button's `aria-label`.
  *
  * The row-select control and the row actions (trash + pin) are SIBLINGS
  * inside a non-interactive wrapper — never nested buttons — so Enter/Space
@@ -16,8 +24,8 @@
 
 import type { JSX, MouseEvent } from "react";
 import {
-  AiChat01Icon,
-  Target02Icon,
+  MessageSquareIcon,
+  TargetIcon,
   VexIcon,
 } from "../../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
@@ -53,7 +61,7 @@ export function SessionRow({
   const title = getSessionTitle(row);
   const subtitle = getSessionSubtitle(row);
   const activity = getMissionActivity(row);
-  const Icon = row.mode === "mission" ? Target02Icon : AiChat01Icon;
+  const Icon = row.mode === "mission" ? TargetIcon : MessageSquareIcon;
   const isPinned = row.pinnedAt !== null;
 
   const handlePinClick = (event: MouseEvent<HTMLButtonElement>): void => {
@@ -106,34 +114,40 @@ export function SessionRow({
             // padding swap is deliberately instant (no transition) so the
             // truncation never smears mid-reflow. Collapsed sidebar hides
             // both actions, so no reservation.
+            // No `gap` on the expanded arm any more: the text column is the
+            // button's only child once the mode glyph is gone.
             sidebarOpen
-              ? "items-center gap-2.5 px-2.5 group-focus-within:pr-14 group-hover:pr-14"
+              ? "items-center px-2.5 group-focus-within:pr-14 group-hover:pr-14"
               : "items-center justify-center px-0",
           )}
           title={sidebarOpen ? undefined : title}
         >
-          <span
-            className={cn(
-              "relative flex h-7 w-7 shrink-0 items-center justify-center",
-              selected
-                ? "text-[var(--vex-accent-contrast)]"
-                : "text-[var(--vex-text-3)]",
-            )}
-          >
-            <VexIcon icon={Icon} size={15} aria-hidden />
-            {!sidebarOpen && activity !== null ? (
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-black/60",
-                  // On the selected beam the tone dot flips to the beam's
-                  // contrast ink (white on cobalt, ink on lime) — an accent dot
-                  // would vanish into the gradient.
-                  selected ? "bg-[var(--vex-accent-contrast)]" : activity.dotClass,
-                )}
-              />
-            ) : null}
-          </span>
+          {!sidebarOpen ? (
+            <span
+              className={cn(
+                "relative flex h-7 w-7 shrink-0 items-center justify-center",
+                selected
+                  ? "text-[var(--vex-accent-contrast)]"
+                  : "text-[var(--vex-text-3)]",
+              )}
+            >
+              <VexIcon icon={Icon} size={15} aria-hidden />
+              {activity !== null ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-black/60",
+                    // On the selected beam the tone dot flips to the beam's
+                    // contrast ink (white on cobalt, ink on lime) — an accent
+                    // dot would vanish into the gradient.
+                    selected
+                      ? "bg-[var(--vex-accent-contrast)]"
+                      : activity.dotClass,
+                  )}
+                />
+              ) : null}
+            </span>
+          ) : null}
 
           {sidebarOpen ? (
             <span className="min-w-0 flex-1">

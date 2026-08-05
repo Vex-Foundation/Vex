@@ -39,7 +39,7 @@ import {
   useState,
   type JSX,
 } from "react";
-import { ArrowDown01Icon, VexIcon } from "../../components/icons/index.js";
+import { ChevronDownIcon, VexIcon } from "../../components/icons/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -70,7 +70,7 @@ import {
   isCentredSceneUp,
 } from "./SessionTranscript/VexingOverlay.js";
 import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
-import { useScrollbarVisibility } from "./SessionTranscript/useScrollbarVisibility.js";
+import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 
 const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
@@ -448,10 +448,16 @@ export function SessionTranscript({
         // `.vex-scroll` is the repo's thin cobalt treatment.
         className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
       >
-      {/* SIGNAL TAPE content wrapper — holds the single monotonic spine the
-          whole session hangs off. It sizes to content, so the outer scroll
-          math is unchanged: scrollHeight still equals total row height + py-4
-          (the bottom-follow + load-older anchoring on scrollRef are untouched). */}
+      {/* THE READING COLUMN, re-applied INSIDE the scroller. The scroller
+          itself now spans the whole chat panel so the native scrollbar sits at
+          the panel's right edge (next to the BOOK rail) instead of floating
+          beside the text — the browser-native arrangement. Nesting the column
+          here keeps the text measure byte-identical to when the column was the
+          scroller: the same `max-w-[860px] px-6` box, the same inner `px-3`.
+          Both wrappers size to content, so the outer scroll math is unchanged —
+          scrollHeight is still total row height + py-4, and the bottom-follow,
+          top-anchor and load-older bookkeeping on scrollRef are untouched. */}
+      <div className="mx-auto w-full max-w-[860px] px-6">
       <div className="relative flex flex-col gap-3 px-3">
         {/* The spine hairline that used to run the gutter's full height was
             removed (seamless-chat owner review): a wall-to-wall vertical rule
@@ -491,6 +497,7 @@ export function SessionTranscript({
             session switch: history browsing gets no dead scroll region. */}
         <div ref={anchorSpacerRef} aria-hidden className="shrink-0" />
         </div>
+        </div>
       </div>
 
       {/* The centred scene — a SIBLING of the scroller, never a descendant.
@@ -514,7 +521,7 @@ export function SessionTranscript({
           aria-label="Jump to latest message"
           className="vex-micro absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--vex-line-strong)] bg-[var(--vex-surface-1)] px-3 py-1.5 text-[var(--vex-text-2)] transition-colors hover:border-[var(--vex-accent-border)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
         >
-          <VexIcon icon={ArrowDown01Icon} size={12} aria-hidden />
+          <VexIcon icon={ChevronDownIcon} size={12} aria-hidden />
           Latest
         </button>
       ) : null}

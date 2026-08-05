@@ -46,23 +46,23 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
 }));
 
 // The proven icon set for a real-SessionComposer mount (copied from
-// composer-console.test.tsx — the quick-action chips consume FireIcon/
-// ChartLineData01Icon/PercentSquareIcon, the send/stop key the arrows).
+// composer-console.test.tsx — the quick-action chips consume FlameIcon/
+// ChartLineData01Icon/PercentIcon, the send/stop key the arrows).
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Add01Icon: "Add01Icon",
-  CheckmarkCircle02Icon: "CheckmarkCircle02Icon",
-  Download01Icon: "Download01Icon",
-  ArrowDown01Icon: "ArrowDown01Icon",
-  ArrowUp01Icon: "ArrowUp01Icon",
-  ArrowRight01Icon: "ArrowRight01Icon",
-  Wallet01Icon: "Wallet01Icon",
+  PlusIcon: "PlusIcon",
+  CircleCheckBigIcon: "CircleCheckBigIcon",
+  DownloadIcon: "DownloadIcon",
+  ChevronDownIcon: "ChevronDownIcon",
+  ArrowUpIcon: "ArrowUpIcon",
+  ChevronRightIcon: "ChevronRightIcon",
+  WalletIcon: "WalletIcon",
   MapPinIcon: "MapPinIcon",
-  AiBrain05Icon: "AiBrain05Icon",
-  StopCircleIcon: "StopCircleIcon",
-  FireIcon: "FireIcon",
+  BrainCircuitIcon: "BrainCircuitIcon",
+  CircleStopIcon: "CircleStopIcon",
+  FlameIcon: "FlameIcon",
   RocketIcon: "RocketIcon",
   ChartLineData01Icon: "ChartLineData01Icon",
-  PercentSquareIcon: "PercentSquareIcon",
+  PercentIcon: "PercentIcon",
 }));
 
 const mockSubmitChat = {

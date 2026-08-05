@@ -11,8 +11,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
-  ArrowDown01Icon,
-  RefreshIcon,
+  ChevronDownIcon,
+  RefreshCwIcon,
   VexIcon,
 } from "../../../../components/icons/index.js";
 import type { ProviderModelOption } from "@shared/schemas/provider.js";
@@ -171,7 +171,7 @@ export function ModelPicker({
           className="pr-10 font-mono text-xs"
         />
         <VexIcon
-          icon={ArrowDown01Icon}
+          icon={ChevronDownIcon}
           size={15}
           aria-hidden
           className={cn(
@@ -210,7 +210,7 @@ export function ModelPicker({
                 onClick={onRetry}
                 className="inline-flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
               >
-                <VexIcon icon={RefreshIcon} size={12} aria-hidden />
+                <VexIcon icon={RefreshCwIcon} size={12} aria-hidden />
                 Retry
               </button>
             </div>

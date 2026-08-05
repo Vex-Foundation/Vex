@@ -26,8 +26,8 @@
 
 import { useId, useMemo, useState, type JSX } from "react";
 import {
-  ArrowRight01Icon,
-  CheckmarkCircle01Icon,
+  ChevronRightIcon,
+  CircleCheckIcon,
   VexIcon,
 } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
@@ -89,7 +89,7 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
     >
-      <VexIcon icon={CheckmarkCircle01Icon} size={12} aria-hidden />
+      <VexIcon icon={CircleCheckIcon} size={12} aria-hidden />
       Confirmed
     </span>
   );
@@ -229,7 +229,7 @@ export function ToolActRow({
           <DurationChip durationMs={act.durationMs} />
           {/* Chevron stays even when stamped — it is the expand affordance. */}
           <VexIcon
-            icon={ArrowRight01Icon}
+            icon={ChevronRightIcon}
             size={12}
             aria-hidden
             className={cn(

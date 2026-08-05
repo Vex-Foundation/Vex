@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy01Icon, VexIcon } from "../../components/icons/index.js";
+import { CopyIcon, VexIcon } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface LinuxManualInstructionsProps {
@@ -82,7 +82,7 @@ export function LinuxManualInstructions({
                 : "",
           )}
         >
-          <VexIcon icon={Copy01Icon} size={12} aria-hidden />
+          <VexIcon icon={CopyIcon} size={12} aria-hidden />
           <span aria-live="polite">{copyLabel}</span>
         </button>
       </div>

@@ -35,9 +35,9 @@ vi.mock("../../../../components/icons/VexIcon.js", () => ({
   VexIcon: () => null,
 }));
 vi.mock("../../../../components/icons/icon-glyphs.js", () => ({
-  Cancel01Icon: "Cancel01Icon",
-  ViewIcon: "ViewIcon",
-  ArrowUpRight01Icon: "ArrowUpRight01Icon",
+  XIcon: "XIcon",
+  EyeIcon: "EyeIcon",
+  ArrowUpRightIcon: "ArrowUpRightIcon",
   ArrowDataTransferHorizontalIcon: "ArrowDataTransferHorizontalIcon",
   BridgeIcon: "BridgeIcon",
   CoinsSwapIcon: "CoinsSwapIcon",

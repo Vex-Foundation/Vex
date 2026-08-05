@@ -17,6 +17,16 @@ import type {
 } from "@shared/schemas/approvals.js";
 import { riskChipClasses } from "./risk.js";
 
+/**
+ * Human labels for the engine-injected, non-argument preview keys. A tool
+ * ARGUMENT is shown under its own name on purpose (the user is verifying the
+ * exact field that will be signed), but `vexFee` is not an argument — it is
+ * Vex's own cost disclosure, and "VEXFEE" is not what a person calls it.
+ * Tolerant reader: a key with no entry keeps its raw name, and an absent key
+ * renders no row at all — never a placeholder or a zero.
+ */
+const CRITICAL_ARG_LABELS: Readonly<Record<string, string>> = { vexFee: "Vex fee" };
+
 export interface ApprovalDetailsProps {
   readonly summary: ApprovalSummaryDto;
   readonly titleId: string;
@@ -101,7 +111,7 @@ export function ApprovalDetails({
               // pair a stable React key.
               <div key={k} className="contents">
                 <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-                  {k}
+                  {CRITICAL_ARG_LABELS[k] ?? k}
                 </dt>
                 <dd className="break-all text-[var(--vex-text-2)]">{String(v)}</dd>
               </div>

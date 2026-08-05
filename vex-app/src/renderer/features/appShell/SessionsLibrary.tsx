@@ -14,8 +14,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import {
-  AlertCircleIcon,
-  Search01Icon,
+  CircleAlertIcon,
+  SearchIcon,
   VexIcon,
 } from "../../components/icons/index.js";
 import type {
@@ -187,7 +187,7 @@ export function SessionsLibrary(): JSX.Element {
 
         <div className="relative ml-auto min-w-[220px] flex-1 sm:max-w-[320px]">
           <VexIcon
-            icon={Search01Icon}
+            icon={SearchIcon}
             size={14}
             aria-hidden
             className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--vex-text-3)]"
@@ -222,7 +222,7 @@ export function SessionsLibrary(): JSX.Element {
         </p>
       ) : query.data && query.data.ok === false ? (
         <div className="flex items-center gap-2 rounded-[6px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <VexIcon icon={AlertCircleIcon} size={15} aria-hidden />
+          <VexIcon icon={CircleAlertIcon} size={15} aria-hidden />
           <span>{query.data.error.message}</span>
         </div>
       ) : totalRows === 0 ? (
