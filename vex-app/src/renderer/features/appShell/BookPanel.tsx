@@ -61,7 +61,7 @@ import {
   type BookSectionId,
 } from "./book/section-order.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { useScrollbarVisibility } from "./SessionTranscript/useScrollbarVisibility.js";
+import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 
 /** The card a section id stands for. Exhaustive over `BookSectionId`. */

@@ -23,6 +23,7 @@
 import type { JSX, RefObject } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { EASE_STANDARD } from "../../lib/motion.js";
+import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 
 export interface ComposerFieldProps {
   readonly fieldSlotRef: RefObject<HTMLDivElement | null>;
@@ -48,6 +49,10 @@ export function ComposerField({
   onBlur,
   onSubmitRequest,
 }: ComposerFieldProps): JSX.Element {
+  // The draft field is the third consumer of the overlay bar (see its class
+  // list below).
+  useScrollbarVisibility(textareaRef);
+
   return (
     <div ref={fieldSlotRef} className="vex-composer-grow relative min-w-0 flex-1">
       {draft.length === 0 ? (
@@ -109,7 +114,11 @@ export function ComposerField({
           // stay mirrored. The vertical padding builds the resting
           // single-line height instead of a min-height. pl-4: breathing room
           // off the rounded-2xl edge.
-          "max-h-[200px] py-[9px] pr-1 text-[15px] pl-4"
+          // The draft caps at 200px and scrolls — intentional, but it was
+          // wearing the GLOBAL 8px always-on thumb, which is the stray bar the
+          // owner spotted beside the composer. Same overlay treatment as the
+          // transcript: present only while the draft is actually scrolling.
+          "vex-scroll vex-scroll-overlay max-h-[200px] py-[9px] pr-1 text-[15px] pl-4"
         }
       />
     </div>
