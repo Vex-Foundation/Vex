@@ -11,7 +11,7 @@ describe("dispatcher — wallet, unknown, no-stubs", () => {
 
   it("routes wallet_balances to live handler (not stub)", async () => {
     const result = await dispatchTool(
-      { name: "wallet_balances", args: { wallet: "eip155" }, toolCallId: "call_14" },
+      { name: "wallet_balances", args: { walletFamily: "eip155" }, toolCallId: "call_14" },
       baseContext,
     );
 

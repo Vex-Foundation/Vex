@@ -26,17 +26,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { LpAddMatchInput, LpRemoveMatchInput } from "./hash.js";
-
-/**
- * Default slippage (bps) when the caller omits it — MUST match the handler's
- * default (`handlers/shared.ts` DEFAULT_SLIPPAGE_BPS) so a quote-without-slippage
- * authorizes an execute-without-slippage. Both sides go through THESE builders, so
- * the default is applied identically by construction. A PRESENT but invalid
- * value is refused by `canonSlippageBpsWithDefault` rather than replaced by
- * this default — a silent fallback would fold the default into the digest and
- * let an out-of-contract slippage hash like an omitted one.
- */
-const DEFAULT_SLIPPAGE_BPS = 50;
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 
 function pStr(params: Record<string, unknown>, key: string): string {
   const v = params[key];
@@ -125,7 +115,7 @@ export async function buildPendleLpAddIdentity(
     market: leg.marketAddress,
     tokenIn,
     amount: leg.amount,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   };
 }
 
@@ -161,6 +151,6 @@ export async function buildPendleLpRemoveIdentity(
     market: leg.marketAddress,
     tokenOut,
     amount: leg.amount,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   };
 }

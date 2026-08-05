@@ -40,14 +40,15 @@ const { computePrequoteMatchHash } = await import(
   "../../../../../vex-agent/tools/protocols/prequote/identity/hash.js"
 );
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CTX = {} as unknown as ProtocolExecutionContext;
 const PT = "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c";
 const WSTETH = "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0";
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
-const mintParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", pt: PT, tokenIn: WSTETH, amountIn: "1", slippageBps: 50, ...over });
-const redeemParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", pt: PT, tokenOut: WSTETH, amountIn: "1", slippageBps: 50, ...over });
+const mintParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", pt: PT, tokenIn: WSTETH, amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS, ...over });
+const redeemParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", pt: PT, tokenOut: WSTETH, amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS, ...over });
 
 async function mintHash(over: Record<string, unknown> = {}): Promise<string> {
   return computePrequoteMatchHash(await buildPendleMintIdentity("sess-1", mintParams(over), CTX));
@@ -68,7 +69,7 @@ describe("pendle PY mint identity", () => {
   });
 
   it("changed slippage ⇒ different hash", async () => {
-    expect(await mintHash({ slippageBps: 50 })).not.toBe(await mintHash({ slippageBps: 100 }));
+    expect(await mintHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS })).not.toBe(await mintHash({ slippageBps: 300 }));
   });
 
   it("changed tokenIn ⇒ different hash", async () => {
@@ -79,9 +80,9 @@ describe("pendle PY mint identity", () => {
     expect(await mintHash({ chain: "ethereum" })).not.toBe(await mintHash({ chain: "base" }));
   });
 
-  it("omitted slippage normalizes to the default (50) on both sides", async () => {
+  it("omitted slippage normalizes to the default on both sides", async () => {
     const withDefault = await mintHash({ slippageBps: undefined });
-    expect(withDefault).toBe(await mintHash({ slippageBps: 50 }));
+    expect(withDefault).toBe(await mintHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
   });
 });
 
@@ -97,7 +98,7 @@ describe("pendle PY pre-expiry redeem identity", () => {
   });
 
   it("changed slippage ⇒ different hash", async () => {
-    expect(await redeemHash({ slippageBps: 50 })).not.toBe(await redeemHash({ slippageBps: 100 }));
+    expect(await redeemHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS })).not.toBe(await redeemHash({ slippageBps: 300 }));
   });
 
   it("changed outputToken ⇒ different hash", async () => {

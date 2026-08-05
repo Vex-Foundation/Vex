@@ -6,7 +6,7 @@
  */
 
 import { seedSyncJobs } from "./seed.js";
-import { fullBalanceSync } from "./balance-sync.js";
+import { fullBalanceSync, type FullSyncResult } from "./balance-sync.js";
 import { drainPendingRuns } from "./worker.js";
 import * as syncRepo from "@vex-agent/db/repos/sync.js";
 import logger from "@utils/logger.js";
@@ -19,7 +19,17 @@ import logger from "@utils/logger.js";
  * 2. Drain pending runs from previous process (selective, no snapshot)
  * 3. Full balance sync + authoritative startup snapshot
  */
-export async function initSync(): Promise<void> {
+export interface InitSyncOptions {
+  /**
+   * The RUNNING fast-lane registry's active-lane count, injected by the caller
+   * that owns the handle (`startSyncExecutor`). It is what makes the re-arm
+   * report lanes ACCEPTED rather than candidates emitted — the registry may
+   * decline a candidate under its cap or its per-row dedup.
+   */
+  readonly activeLaneCount?: () => number;
+}
+
+export async function initSync(options: InitSyncOptions = {}): Promise<void> {
   logger.info("sync.init.starting");
 
   // 1. Seed default sync jobs
@@ -31,9 +41,21 @@ export async function initSync(): Promise<void> {
     logger.info("sync.init.backlog_drained", { processed: backlog.processed });
   }
 
-  // 3. Authoritative startup full sync + snapshot
+  // 3. Re-arm fast lanes for rows that were in flight when the process died.
+  //    Before the snapshot: a crash-recovered row is exactly the kind the
+  //    snapshot guard must see as still pending.
   try {
-    const result = await fullBalanceSync();
+    const { rearmPendingFastLanes } = await import("./fast-lane.js");
+    await rearmPendingFastLanes(options.activeLaneCount);
+  } catch (err) {
+    logger.warn("sync.init.fast_lane_rearm_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // 4. Authoritative startup full sync + snapshot
+  try {
+    const result = await fullBalanceSync({ snapshot: "always" });
     logger.info("sync.init.completed", {
       totalUsd: result.totalUsd.toFixed(2),
       wallets: result.wallets.length,
@@ -75,7 +97,7 @@ export async function syncTick(): Promise<void> {
 
     try {
       if (job.syncType === "balances") {
-        const result = await fullBalanceSync();
+        const result = await fullBalanceSync({ snapshot: "when-settled" });
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(runId, { periodic: true, totalUsd: result.totalUsd }, result.wallets.reduce((s, w) => s + w.tokensUpdated, 0));
       } else if (job.syncType === "prediction_settlement") {
@@ -86,11 +108,21 @@ export async function syncTick(): Promise<void> {
       } else if (job.syncType === "agent_activity_repair") {
         const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
         const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        // STAGE F, on the same driver: a row this sweep (or a handler) confirmed
+        // STATUS-ONLY still owes the user its executed amounts. Same job, because
+        // it is the same question one step later — "did it settle" and "what did
+        // it settle for" — and a separate job type would need its own seed row to
+        // do the identical work at the identical cadence.
+        const { repairMissingExecutedAmounts, buildProductionAmountFallbackDeps } =
+          await import("./executed-amount-fallback.js");
+        const amountResult = await repairMissingExecutedAmounts(
+          buildProductionAmountFallbackDeps(),
+        );
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(
           runId,
-          { ...repairResult, periodic: true },
-          repairResult.confirmed + repairResult.failed,
+          { ...repairResult, amounts: { ...amountResult }, periodic: true },
+          repairResult.confirmed + repairResult.failed + amountResult.filled,
         );
       } else if (job.syncType === "bridge_activity_repair") {
         // C1 fix (Batch 4 closure) — this periodic job was seeded (seed.ts)
@@ -147,6 +179,26 @@ export async function syncTick(): Promise<void> {
   }
 }
 
+/**
+ * The user-initiated portfolio refresh (Wave P).
+ *
+ * `snapshot: "always"`: a user pressing refresh means "record what is true right
+ * now", the same authoritative intent as the startup snapshot.
+ *
+ * SINGLE-FLIGHT NOW LIVES AT THE `fullBalanceSync` BOUNDARY ITSELF
+ * (`balance-sync/single-flight.ts`), not here. A mutex on this function alone
+ * guarded exactly one of five callers: startup, the periodic `balances` job and
+ * both sync-worker branches called `fullBalanceSync` directly, so a manual
+ * refresh could still overlap a background run and mint a second competing
+ * snapshot group. Because `"always"` may not adopt a `"when-settled"` run's
+ * possibly-suppressed snapshot, this caller QUEUES behind such a run rather than
+ * joining it — see that module's doc.
+ */
+export async function refreshPortfolioNow(): Promise<FullSyncResult> {
+  return fullBalanceSync({ snapshot: "always" });
+}
+
+export type { FullSyncResult } from "./balance-sync.js";
 export { fullBalanceSync, selectiveBalanceSync } from "./balance-sync.js";
 export { drainPendingRuns } from "./worker.js";
 export { seedSyncJobs } from "./seed.js";

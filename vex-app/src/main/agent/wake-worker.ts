@@ -29,6 +29,7 @@ import type { WakeExecutorHandle } from "@vex-agent/engine/wake/executor.js";
 import { log } from "../logger/index.js";
 import { probeLoopWakeReady } from "../database/wake-db.js";
 import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { migrationsApplied } from "../database/migrations-applied.js";
 
 const SUPERVISOR_INTERVAL_MS = 30_000;
 
@@ -74,7 +75,9 @@ export function setupWakeWorker(
   let handle: WakeExecutorHandle | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlightTick: Promise<void> | null = null;
-  let warnedWaiting = false;
+  // One line per DISTINCT wait reason: a worker that waited on the DB url and
+  // then on migrations must report both, not only whichever came first.
+  const loggedWaitReasons = new Set<string>();
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -84,8 +87,8 @@ export function setupWakeWorker(
   };
 
   const warnWaitingOnce = (reason: string): void => {
-    if (warnedWaiting) return;
-    warnedWaiting = true;
+    if (loggedWaitReasons.has(reason)) return;
+    loggedWaitReasons.add(reason);
     log.info(`[wake-worker] waiting to start: ${reason}`);
   };
 
@@ -96,6 +99,12 @@ export function setupWakeWorker(
     if (stopped || started) return; // re-check after await (non-reentrant)
     if (!dbUrl.ok) {
       warnWaitingOnce("database url unavailable");
+      return;
+    }
+
+    // Schema VERSION, not schema presence — see `database/migrations-applied.ts`.
+    if (!migrationsApplied()) {
+      warnWaitingOnce("migrations pending");
       return;
     }
 

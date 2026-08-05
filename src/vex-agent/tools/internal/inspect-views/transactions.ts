@@ -99,6 +99,29 @@ function usdEstimate(value: number | null | undefined): string | null {
   return value != null && Number.isFinite(value) ? `~$${value.toFixed(2)} est.` : null;
 }
 
+/**
+ * The Vex fee clause for a human summary line (owner decree 2026-08-03).
+ *
+ * The fee fields were already on every row, but only in the raw spread — the
+ * summary the agent reads first never mentioned them, so "what did that cost
+ * me?" had no answer at a glance.
+ *
+ * Two deliberate refusals here. It renders the EXACT token amount, never the
+ * USD estimate alone: `usdVexFeeEst` is nullable precisely when no trustworthy
+ * price existed, and a summary that showed only USD would print "no fee" for a
+ * fee that was charged. And it renders nothing at all when there is no fee
+ * amount — a failed attempt is not charged, and inventing a "fee: 0" line would
+ * assert something the record does not say.
+ */
+function vexFeeClause(row: TransactionRow): string | null {
+  const amount = row.vexFeeAmountHuman;
+  if (typeof amount !== "string" || amount.length === 0) return null;
+  const symbol = row.vexFeeTokenSymbol;
+  const fee = symbol ? `${amount} ${symbol}` : amount;
+  const usd = usdEstimate(row.usdVexFeeEst != null ? Number(row.usdVexFeeEst) : null);
+  return usd ? `Vex fee ${fee} (${usd})` : `Vex fee ${fee}`;
+}
+
 /** Chain display for a bridge route endpoint — slug preferred, numeric id as fallback. */
 function routeEndpoint(slug: string | null | undefined, id: number | null | undefined): string | null {
   return slug ?? (id != null ? String(id) : null);
@@ -130,8 +153,116 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (row.failureCode) parts.push(`(${row.failureCode})`);
+  const bridgeFee = vexFeeClause(row);
+  if (bridgeFee) parts.push(bridgeFee);
+  const observed = chainObservationClause(row);
+  if (observed) parts.push(observed);
+  const stalled = observed ? null : stalledVerificationClause(row);
+  if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
   return parts.join(" — ");
+}
+
+/**
+ * Consecutive inconclusive verification attempts before a pending row says so.
+ * Mirrors `STALLED_VERIFICATION_ATTEMPTS` in the agent-activity repo.
+ */
+const STALLED_ATTEMPTS = 20;
+
+/**
+ * The agent-facing half of the Wave P stall surfacing (migration 065).
+ *
+ * A `pending` row tells the agent nothing about WHY it is pending. If Vex has
+ * been unable to verify it — most often `no_safe_rpc`, which is permanent for
+ * that chain, not transient — the agent will keep waiting or, worse, re-broadcast
+ * a transaction that may already have settled. That is the exact blind-retry
+ * failure the agent-facing-errors decree exists to stop, applied to a NON-error.
+ *
+ * The clause therefore states three things and no more: that VERIFICATION (not
+ * the transaction) stalled, the verifier's own reason verbatim, and the two
+ * instructions that follow from it. It never claims the transaction failed —
+ * an unverifiable transaction's outcome is UNKNOWN, and saying otherwise about
+ * real funds is the thing the never-auto-fail policy forbids.
+ */
+function stalledVerificationClause(row: TransactionRow): string | null {
+  if ((row.status ?? "") !== "pending") return null;
+  if ((row.verificationAttempts ?? 0) < STALLED_ATTEMPTS) return null;
+  const reason = row.lastVerificationReason ?? "unknown";
+  return (
+    `verification stalled (${reason}): Vex has repeatedly been unable to read this `
+    + `transaction's status on chain. It may still be settled. Do not re-broadcast`
+  );
+}
+
+
+/**
+ * WHAT THE CHAIN OBSERVATION ESTABLISHED — the clause that answers "why is this
+ * not moving?" before the agent spends a `loop_defer` cycle guessing.
+ *
+ * It runs BEFORE the stall clause because these are CONCLUSIVE observations: we
+ * looked and learned something definite. A stall is the opposite — "we could not
+ * look" — and reporting both would describe one observation as a conclusion and
+ * a failure at once.
+ *
+ * THE COPY IS BOUNDED BY WHAT THE LANE ACTUALLY PROVED:
+ *
+ * - `in_mempool` is the HEALTHY answer, and the instruction that matters is "do
+ *   not re-broadcast" — re-broadcasting a mempool-resident transaction is how a
+ *   user pays for the same action twice.
+ * - `nonce_superseded` establishes only that ANOTHER transaction from this
+ *   wallet used this nonce and that THIS hash has no receipt. It does NOT
+ *   establish that nothing was spent or that a retry is safe: a replacement
+ *   reusing the nonce may have carried the same calldata and done the same
+ *   thing. Correlating the replacement is strictly more work than the lane does,
+ *   so this line must never claim it.
+ *
+ * NO CHECK INTERVAL IS STATED. The row's real cadence is 5 s for its first ten
+ * minutes and 30 s after, derived from `submit_attempted_at` — which this read
+ * model does not carry. A fixed "every 5s" would therefore be FALSE for any
+ * older row, and inventing a cadence is exactly the claim-beyond-the-evidence
+ * this file spends its other clauses avoiding.
+ */
+function chainObservationClause(row: TransactionRow): string | null {
+  const reason = row.lastVerificationReason ?? null;
+  const terminalUnproven = (row.status ?? "") === "superseded_unproven";
+
+  if (terminalUnproven) {
+    return (
+      "Vex is no longer tracking this transaction as in flight and its outcome is "
+      + "UNPROVEN: the original hash appears superseded and what the replacement did "
+      + "has not been checked. This is NOT a failure. Check the wallet/token state "
+      + "before deciding whether to act again"
+    );
+  }
+  if ((row.status ?? "") !== "pending") return null;
+
+  if (reason === "in_mempool") {
+    return (
+      "in the mempool, not yet mined: a node knows this transaction and it is "
+      + "waiting for inclusion. Vex is re-checking it automatically — do not re-broadcast"
+    );
+  }
+  if (reason === "nonce_superseded") {
+    return (
+      "this transaction hash appears superseded — another transaction from the same "
+      + "wallet has already used its nonce, and this hash has no receipt. What the "
+      + "replacement did has not been checked, so it may or may not have completed "
+      + "this action. Do not retry until you have checked the wallet/token state"
+    );
+  }
+  if (reason === "tx_unknown_to_node") {
+    return (
+      "no node we asked has heard of this transaction yet. That is not proof it was "
+      + "dropped — it may be sitting in a mempool we did not query — so Vex keeps "
+      + "checking. Do not re-broadcast"
+    );
+  }
+  return null;
+}
+
+/** Test seam: the summary line for ONE row, so the copy above can be pinned directly. */
+export function summarizeTransactionRowForTest(row: TransactionRow): string {
+  return summarize(row);
 }
 
 /** Compact human line for one row — leads the item, full fields follow. */
@@ -168,6 +299,14 @@ function summarize(row: TransactionRow): string {
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (status === "definitively_failed" && row.failureCode) parts.push(`(${row.failureCode})`);
+  const fee = vexFeeClause(row);
+  if (fee) parts.push(fee);
+  // A CONCLUSIVE observation outranks the stall clause: the two answer opposite
+  // questions, and only one of them can be true of the same check.
+  const observed = chainObservationClause(row);
+  if (observed) parts.push(observed);
+  const stalled = observed ? null : stalledVerificationClause(row);
+  if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
   return parts.join(" — ");
 }

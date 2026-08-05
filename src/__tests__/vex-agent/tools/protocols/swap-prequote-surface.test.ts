@@ -124,7 +124,7 @@ describe("swap-prequote façade surface", () => {
       slippageBps: "",
     };
     const match: PrequoteMatchInput = swap;
-    const gateReg: ExecuteGateRegistration = { kind: "bridge" };
+    const gateReg: ExecuteGateRegistration = { kind: "bridge", provider: "relay" };
     const decision: GateDecision = { kind: "allow", verdict: "pass", prequoteId: "p" };
 
     expect(swap.kind).toBe("swap");

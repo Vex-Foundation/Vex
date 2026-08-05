@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 
 import { createMissionDraft, getMissionSetupState } from "@vex-agent/engine/mission/setup.js";
 import { handleMissionDraftUpdate } from "@vex-agent/tools/internal/mission.js";
+import { makeTestContext } from "../../vex-agent/tools/_test-context.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
 describe("mission draft persistence (integration)", () => {
@@ -27,16 +28,12 @@ describe("mission draft persistence (integration)", () => {
         stopConditions: ["6 hours elapsed from start", "Manual stop via /mission stop"],
         deadline: "2026-05-02T23:00:00Z",
       },
-      {
+      makeTestContext({
         sessionId,
-        loadedDocuments: new Map(),
         sessionPermission: "full",
-        approved: false,
-        missionRunId: null,
         missionId: draft.missionId,
         sessionKind: "mission",
-        contextUsageBand: "normal",
-      },
+      }),
     );
 
     expect(result.success).toBe(true);

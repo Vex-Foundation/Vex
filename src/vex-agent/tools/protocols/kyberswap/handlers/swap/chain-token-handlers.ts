@@ -24,10 +24,13 @@ export const CHAIN_TOKEN_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "kyberswap.tokens.check": async (p) => {
-    const chain = str(p, "chain"), address = str(p, "address");
-    if (!chain || !address) return fail("Missing required: chain, address");
+    // `tokenAddress`, never the retired `address` — the fleet convention key.
+    // The runtime rejects an unknown param by name before this runs, so a call
+    // still spelling it `address` is refused rather than silently read here.
+    const chain = str(p, "chain"), tokenAddress = str(p, "tokenAddress");
+    if (!chain || !tokenAddress) return fail("Missing required: chain, tokenAddress");
     const { chainId } = resolveChainWithId(chain);
-    const info = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, address);
-    return ok({ chain, chainId, address, ...info });
+    const info = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, tokenAddress);
+    return ok({ chain, chainId, tokenAddress, ...info });
   },
 };

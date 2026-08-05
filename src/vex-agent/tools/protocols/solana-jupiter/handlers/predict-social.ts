@@ -29,7 +29,6 @@ import {
   getJupiterPredictionSuggestedEvents,
 } from "@tools/solana-ecosystem/jupiter/jupiter-prediction/prediction-api/service.js";
 
-import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolHandler } from "../../types.js";
 import { str, num, bool, ok, fail } from "../../handler-helpers.js";
 import { walletAddress } from "./core.js";
@@ -43,6 +42,7 @@ import {
 } from "../predict-projector.js";
 import { strictEnumField } from "../predict-params.js";
 import { wrapPredictionRead } from "../predict-region-block.js";
+import { appendProviderHint } from "../provider-error-hint.js";
 
 // ── SDK enum mirrors ──────────────────────────────────────────────
 // Source: `JupiterPredictionProvider`/`JupiterPredictionPnlInterval`/
@@ -75,19 +75,18 @@ const PREDICT_LEADERBOARD_METRIC = ["pnl", "volume", "win_rate"] as const;
 // is a provider-side outage or stale documentation, NOT an endpoint removal and
 // NOT a stale client path — do not repoint or hide the tool; report honestly
 // and let the agent fall back to `profile`.
-const PNL_HISTORY_UNAVAILABLE_MESSAGE =
-  "Jupiter Prediction's pnl-history endpoint is documented but currently " +
-  "returns 404 upstream for every wallet (a provider-side outage, not a Vex " +
-  "error) — retry later, or use solana.predict.profile for a lifetime PnL " +
-  "snapshot now.";
-
-// Branch on `VexError.httpStatus` (set by `parseJsonResponse` on every non-ok
-// response), never on the message text: the message now carries the provider's
-// OWN reason string whenever the body supplies one, so it no longer reliably
-// begins with "HTTP 404".
-function isPnlHistoryUnavailableUpstream(err: unknown): boolean {
-  return err instanceof VexError && err.httpStatus === 404;
-}
+//
+// W2g — APPEND, NEVER REPLACE. This used to REWRITE every 404 into the outage
+// sentence and drop `httpStatus` with it. A 404 is evidence the provider
+// answered and did not find the route or the resource; it is not evidence of
+// WHICH, and Jupiter is free to start answering "no history for this wallet"
+// on the same status. So the provider's own (scrubbed) words stay first and
+// the known-outage note is appended as context, with the status preserved.
+const PNL_HISTORY_UNAVAILABLE_HINT =
+  "(Jupiter answered 404 on the documented pnl-history route. Since 2026-07-24 that route " +
+  "has returned 404 for every wallet, including traders whose solana.predict.profile returns " +
+  "200 — a provider-side outage or stale docs, not a Vex error. Retry later, or use " +
+  "solana.predict.profile for a lifetime PnL snapshot now.)";
 
 export const PREDICT_SOCIAL_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.profile": async (p, ctx) => {
@@ -132,10 +131,7 @@ export const PREDICT_SOCIAL_HANDLERS: Record<string, ProtocolHandler> = {
         count,
       }));
     } catch (err) {
-      if (isPnlHistoryUnavailableUpstream(err)) {
-        throw new VexError(ErrorCodes.HTTP_REQUEST_FAILED, PNL_HISTORY_UNAVAILABLE_MESSAGE);
-      }
-      throw err;
+      throw appendProviderHint(err, 404, PNL_HISTORY_UNAVAILABLE_HINT);
     }
     return ok({ ...result, history: result.history.map(projectPredictionPnlHistoryPoint) });
   },
@@ -168,8 +164,8 @@ export const PREDICT_SOCIAL_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.vaultInfo": async () => ok(await wrapPredictionRead(() => getJupiterPredictionVaultInfo())),
 
   "solana.predict.suggestedEvents": async (p) => {
-    const pubkey = str(p, "pubkey");
-    if (!pubkey) return fail("Missing required: pubkey");
+    const pubkey = str(p, "walletAddress");
+    if (!pubkey) return fail("Missing required: walletAddress");
     const provider = strictEnumField(p, "provider", PREDICT_PROVIDER);
     if (!provider.ok) return provider.result;
     // Lean markets (same convention as .events/.search/.event, W1-C): the

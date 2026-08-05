@@ -1,5 +1,5 @@
 /**
- * TRENCH PHOTOS — the image locker card (C2), for the BOTTOM of the BOOK rail.
+ * TRENCH EXPRESS — the image locker AND the launch opener, as ONE card.
  *
  * This is the ONE place the user and the agent see the same library. A Trench
  * token launch REQUIRES an image (our product rule — the Diamond itself
@@ -19,8 +19,13 @@
  * red build. (The guard is a raw TEXT scan, so even naming the banned utility
  * in a comment trips it — hence the circumlocution.)
  *
- * READY TO MOUNT, NOT MOUNTED: `BookPanel.tsx` composition is coordinator-
- * owned, so this exports the symbol and touches nothing else.
+ * THE MERGE (owner brief §8): the locker and "Launch a token" are one card,
+ * under the Trench Express mark the app already pairs with that name
+ * (`TokenLaunchDialog` renders the same resolution beside the same words). A
+ * launch REQUIRES an image from this locker, so two cards sent the user hunting
+ * for the reason a launch refused. `TokenLaunchButton` is composed unchanged —
+ * the agent-driven `AgentLaunchFormHost` path is a separate flow and keeps
+ * working.
  */
 
 import { useState, type JSX } from "react";
@@ -32,10 +37,22 @@ import {
   useLockerImages,
   useUploadLockerImage,
 } from "../../../lib/api/images.js";
+import { ProtocolMark } from "../../../components/common/ProtocolMark.js";
+import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
+import { TokenLaunchButton } from "../token-launch/TokenLaunchButton.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { ImageThumb } from "./image-locker/ImageThumb.js";
 
-export function ImageLockerCard(): JSX.Element {
+export function ImageLockerCard({
+  sessionId,
+}: {
+  /**
+   * Scopes a user-origin launch to the open session. REQUIRED-nullable: every
+   * host must decide, because `null` means "this launch answers no session"
+   * and that is a lifecycle fact, not an omission.
+   */
+  readonly sessionId: string | null;
+}): JSX.Element {
   const query = useLockerImages();
   const upload = useUploadLockerImage();
   const remove = useDeleteLockerImage();
@@ -82,7 +99,8 @@ export function ImageLockerCard(): JSX.Element {
 
   return (
     <PortfolioCard
-      eyebrow="Trench Photos"
+      eyebrow="Trench Express"
+      leading={<ProtocolMark mark={resolveProtocolMark("trench")} size={16} />}
       trailing={images.length > 0 ? `${images.length}` : undefined}
     >
       {query.isLoading ? (
@@ -122,6 +140,12 @@ export function ImageLockerCard(): JSX.Element {
         <VexIcon icon={Add01Icon} size={12} aria-hidden />
         {busy ? "Adding…" : "Add image"}
       </button>
+
+      {/* The ONLY way a user reaches the launch dialog, now inside the card
+          that holds the image every launch needs. */}
+      <div className="mt-2.5 border-t border-[var(--vex-line)] pt-2.5">
+        <TokenLaunchButton sessionId={sessionId} />
+      </div>
     </PortfolioCard>
   );
 }

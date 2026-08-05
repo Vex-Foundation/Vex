@@ -11,9 +11,15 @@ export const TOKENS_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: "Chain slug or alias." },
-      { key: "address", type: "string", required: true, description: "Token contract address." },
+      {
+        key: "tokenAddress",
+        type: "string",
+        required: true,
+        description:
+          "Token contract address to inspect (0x… on the named chain). Resolve it with token_find first — a symbol is not accepted. The former key `address` is retired and is rejected by name.",
+      },
     ],
-    exampleParams: { chain: "ethereum", address: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" },
+    exampleParams: { chain: "ethereum", tokenAddress: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" },
     discovery: KYBERSWAP_TOKENS_DISCOVERY["kyberswap.tokens.check"],
   },
 ];

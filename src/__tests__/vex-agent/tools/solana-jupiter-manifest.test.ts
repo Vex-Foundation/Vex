@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import assert from "node:assert/strict";
 import { SOLANA_JUPITER_TOOLS } from "../../../vex-agent/tools/protocols/solana-jupiter/manifest.js";
 
 describe("solana-jupiter manifest", () => {
@@ -113,7 +114,8 @@ describe("solana-jupiter manifest", () => {
 
   for (const toolId of EXPECTED_MUTATING) {
     it(`${toolId} is mutating`, () => {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       expect(tool.mutating).toBe(true);
     });
   }
@@ -136,12 +138,35 @@ describe("solana-jupiter manifest", () => {
 
   // ── Required params ──────────────────────────────────────────────
 
-  it("solana.swap.execute requires inputToken, outputToken, amount", () => {
+  it("solana.swap.execute requires tokenIn, tokenOut, amountIn", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.swap.execute")!;
     const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toContain("inputToken");
-    expect(required).toContain("outputToken");
-    expect(required).toContain("amount");
+    expect(required).toContain("tokenIn");
+    expect(required).toContain("tokenOut");
+    expect(required).toContain("amountIn");
+  });
+
+  // W5a: the retired spellings must be gone from BOTH swap tools — a manifest
+  // that still declares one would keep the runtime accepting it silently.
+  it("neither swap tool declares the retired inputToken/outputToken/amount keys", () => {
+    for (const toolId of ["solana.swap.quote", "solana.swap.execute"]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
+      const keys = tool.params.map(p => p.key);
+      expect(keys).not.toContain("inputToken");
+      expect(keys).not.toContain("outputToken");
+      expect(keys).not.toContain("amount");
+    }
+  });
+
+  // The amount must be a STRING: a declared-number amount is exactly the
+  // invariant violation `runtime/numeric-string-coercion.ts` documents.
+  it("solana.swap.* amountIn is a string param", () => {
+    for (const toolId of ["solana.swap.quote", "solana.swap.execute"]) {
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
+      expect(tool.params.find(p => p.key === "amountIn")?.type).toBe("string");
+    }
   });
 
   it("solana.predict.buy requires marketId, side, amountUsdc", () => {
@@ -158,7 +183,8 @@ describe("solana-jupiter manifest", () => {
 
   for (const toolId of ["solana.tokens.search", "solana.tokens.trending"]) {
     it(`${toolId} declares statsInterval + threshold filter params`, () => {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       const byKey = new Map(tool.params.map(p => [p.key, p]));
 
       expect(byKey.get("statsInterval")?.type).toBe("string");
@@ -183,7 +209,8 @@ describe("solana-jupiter manifest", () => {
 
   for (const toolId of ["solana.predict.events", "solana.predict.positions", "solana.predict.history"]) {
     it(`${toolId} declares optional number limit + offset params`, () => {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       const limit = tool.params.find(p => p.key === "limit");
       const offset = tool.params.find(p => p.key === "offset");
       expect(limit, `${toolId} missing limit param`).toBeDefined();
@@ -260,7 +287,8 @@ describe("solana-jupiter manifest", () => {
 
   it("events/positions/history limit descriptions state the owner-wide 1-100 cap", () => {
     for (const toolId of ["solana.predict.events", "solana.predict.positions", "solana.predict.history"]) {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       const limit = tool.params.find(p => p.key === "limit")!;
       expect(limit.description, `${toolId}.limit description`).toContain("100");
     }
@@ -279,10 +307,17 @@ describe("solana-jupiter manifest", () => {
     expect(tool.params).toHaveLength(0);
   });
 
-  it("solana.predict.orders requires address and declares optional limit/offset", () => {
+  // `walletAddress` is OPTIONAL on the wallet-scoped reads, deliberately: the
+  // handler resolves the session's selected Solana wallet when it is omitted,
+  // and REJECTS a different one when it is supplied
+  // (`handlers/core/wallet-scope.ts`). Optional-but-scoped is stricter than the
+  // old required-and-free-form spelling, so the pin is that the param exists,
+  // is a string, and does NOT demand an address the agent would have to guess.
+  it("solana.predict.orders takes an optional session-scoped walletAddress and declares optional limit/offset", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.orders")!;
     const byKey = new Map(tool.params.map(p => [p.key, p]));
-    expect(byKey.get("address")?.required).toBe(true);
+    expect(byKey.get("walletAddress")?.type).toBe("string");
+    expect(byKey.get("walletAddress")?.required).toBeFalsy();
     expect(byKey.get("limit")?.type).toBe("number");
     expect(byKey.get("offset")?.type).toBe("number");
     expect(byKey.get("limit")?.required).toBeFalsy();
@@ -291,7 +326,8 @@ describe("solana-jupiter manifest", () => {
 
   for (const toolId of ["solana.predict.order", "solana.predict.orderStatus"]) {
     it(`${toolId} requires orderPubkey`, () => {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       const required = tool.params.filter(p => p.required).map(p => p.key);
       expect(required).toEqual(["orderPubkey"]);
     });
@@ -312,7 +348,8 @@ describe("solana-jupiter manifest", () => {
       "solana.predict.orderbook", "solana.predict.tradingStatus", "solana.predict.orders",
       "solana.predict.order", "solana.predict.orderStatus", "solana.predict.trades",
     ]) {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
     }
@@ -320,16 +357,18 @@ describe("solana-jupiter manifest", () => {
 
   // ── Discovery & social tools (W1-F, Packet F) ────────────────────
 
-  it("solana.predict.profile requires address", () => {
+  it("solana.predict.profile takes an optional session-scoped walletAddress and requires nothing", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.profile")!;
-    const required = tool.params.filter(p => p.required).map(p => p.key);
-    expect(required).toEqual(["address"]);
+    const byKey = new Map(tool.params.map(p => [p.key, p]));
+    expect(byKey.get("walletAddress")?.type).toBe("string");
+    expect(tool.params.filter(p => p.required).map(p => p.key)).toEqual([]);
   });
 
-  it("solana.predict.pnlHistory requires address and interval, declares optional count capped at 100 (F2 owner-wide limit)", () => {
+  it("solana.predict.pnlHistory requires interval, takes an optional session-scoped walletAddress, declares optional count capped at 100 (F2 owner-wide limit)", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.pnlHistory")!;
     const byKey = new Map(tool.params.map(p => [p.key, p]));
-    expect(byKey.get("address")?.required).toBe(true);
+    expect(byKey.get("walletAddress")?.type).toBe("string");
+    expect(byKey.get("walletAddress")?.required).toBeFalsy();
     expect(byKey.get("interval")?.required).toBe(true);
     expect(byKey.get("count")?.type).toBe("number");
     expect(byKey.get("count")?.required).toBeFalsy();
@@ -357,10 +396,10 @@ describe("solana-jupiter manifest", () => {
     expect(tool.params).toHaveLength(0);
   });
 
-  it("solana.predict.suggestedEvents requires pubkey and declares optional provider/includeMarkets", () => {
+  it("solana.predict.suggestedEvents requires walletAddress and declares optional provider/includeMarkets", () => {
     const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === "solana.predict.suggestedEvents")!;
     const byKey = new Map(tool.params.map(p => [p.key, p]));
-    expect(byKey.get("pubkey")?.required).toBe(true);
+    expect(byKey.get("walletAddress")?.required).toBe(true);
     expect(byKey.get("provider")?.type).toBe("string");
     expect(byKey.get("includeMarkets")?.type).toBe("boolean");
     expect(byKey.get("provider")?.required).toBeFalsy();
@@ -372,7 +411,8 @@ describe("solana-jupiter manifest", () => {
       "solana.predict.profile", "solana.predict.pnlHistory", "solana.predict.leaderboards",
       "solana.predict.vaultInfo", "solana.predict.suggestedEvents",
     ]) {
-      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId)!;
+      const tool = SOLANA_JUPITER_TOOLS.find(t => t.toolId === toolId);
+      assert.ok(tool, `${toolId} is missing from the manifest`);
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
     }
@@ -482,7 +522,7 @@ describe("solana-jupiter manifest", () => {
     const byKey = new Map(tool.params.map(p => [p.key, p]));
     expect(byKey.get("vaultId")?.required).toBe(true);
     expect(byKey.get("vaultId")?.type).toBe("number");
-    for (const key of ["depositAmount", "withdrawAmount", "borrowAmount", "repayAmount"]) {
+    for (const key of ["depositAmountRaw", "withdrawAmountRaw", "borrowAmountRaw", "repayAmountRaw"]) {
       expect(byKey.get(key)?.type, key).toBe("string");
       expect(byKey.get(key)?.required, key).toBeFalsy();
     }

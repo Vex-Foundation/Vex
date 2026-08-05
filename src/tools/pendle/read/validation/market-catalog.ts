@@ -27,7 +27,6 @@ import {
 } from "./_shared.js";
 
 const ENDPOINT = "markets catalogue";
-const MAX_CATEGORY_IDS = 32;
 
 function normalizeMarket(raw: unknown): PendleReadMarket | null {
   if (!isRecord(raw)) return null;
@@ -65,7 +64,7 @@ function normalizeMarket(raw: unknown): PendleReadMarket | null {
       ptRoi: readDisplayNumber(details.ptRoi),
       ytRoi: readDisplayNumber(details.ytRoi),
     },
-    categoryIds: readDisplayStringList(raw.categoryIds, MAX_CATEGORY_IDS),
+    categoryIds: readDisplayStringList(raw.categoryIds),
     isNew: readDisplayBool(raw.isNew),
     isPrime: readDisplayBool(raw.isPrime),
   };

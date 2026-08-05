@@ -10,8 +10,14 @@
  * class of hole one source further down: absent from Khalani, present in
  * Pendle's registry.
  *
- * Only the chain SOURCE widens. A genuine RPC failure must still come back
- * `null` (row stays pending).
+ * Only the chain SOURCE widens. A genuine RPC failure is still an OBSERVATION
+ * that concludes nothing (`rpc_error`) — the row stays pending.
+ *
+ * The lookup now goes through each client's EIP-1193 `request` rather than
+ * viem's `getTransactionReceipt` action, because only `request` accepts the
+ * whole-observation `AbortSignal` the claim lease depends on. What is asserted
+ * here is unchanged in substance: which chain source answers, and that only a
+ * literal `0x0` is ever reported as a revert.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -22,7 +28,7 @@ const mockCreateDynamicPublicClient = vi.fn();
 const mockGetLocalChain = vi.fn();
 const mockGetLocalPublicClient = vi.fn();
 const mockGetPendlePublicClient = vi.fn();
-const mockGetTransactionReceipt = vi.fn();
+const mockRequest = vi.fn();
 
 vi.mock("@tools/khalani/client.js", () => ({ getKhalaniClient: () => ({ getChains: mockGetChains }) }));
 vi.mock("@tools/khalani/chains.js", () => ({ getChain: (...a: unknown[]) => mockGetChain(...a) }));
@@ -50,6 +56,17 @@ const MONAD_CHAIN_ID = 143;
 const ROBINHOOD_CHAIN_ID = 4663;
 const TX = "0xabc";
 
+/** The row shape an observation needs — the persisted sender/nonce included. */
+function input(chainId: number, txHash: string = TX) {
+  return { chainId, txHash, fromAddress: "0x1111111111111111111111111111111111111111", nonce: 7 };
+}
+
+/** A client that answers only the receipt call, as a raw JSON-RPC result. */
+function receiptOnly(status: unknown) {
+  return vi.fn().mockImplementation(async (args: { method: string }) =>
+    args.method === "eth_getTransactionReceipt" ? { status } : null);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetChains.mockResolvedValue([]);
@@ -57,63 +74,57 @@ beforeEach(() => {
     throw new Error("Chain not supported by Khalani");
   });
   mockGetLocalChain.mockReturnValue(undefined);
-  mockGetPendlePublicClient.mockReturnValue({ getTransactionReceipt: mockGetTransactionReceipt });
+  mockGetPendlePublicClient.mockReturnValue({ request: mockRequest });
+  mockRequest.mockResolvedValue(null);
 });
 
 describe("buildProductionRepairDeps chain-source fallback", () => {
   it("resolves a Monad receipt through the Pendle registry when Khalani lacks the chain", async () => {
-    mockGetTransactionReceipt.mockResolvedValue({ status: "success", logs: [] });
+    mockGetPendlePublicClient.mockReturnValue({ request: receiptOnly("0x1") });
 
-    const result = await buildProductionRepairDeps().checkReceiptByHash({
-      chainId: MONAD_CHAIN_ID,
-      txHash: TX,
-    });
+    const result = await buildProductionRepairDeps().observeTransaction(input(MONAD_CHAIN_ID));
 
     expect(mockGetPendlePublicClient).toHaveBeenCalledWith(MONAD_CHAIN_ID);
     // Status only — the raw receipt is deliberately NOT carried any more.
-    expect(result).toEqual({ status: "success" });
+    expect(result).toEqual({ kind: "mined", status: "success" });
   });
 
   it("resolves a Robinhood (4663) receipt through the LOCAL evm-chains registry — the stuck-row case", async () => {
     const robinhood = { id: ROBINHOOD_CHAIN_ID, name: "Robinhood Chain" };
     mockGetLocalChain.mockReturnValue(robinhood);
-    mockGetLocalPublicClient.mockReturnValue({
-      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "success", logs: [] }),
-    });
+    mockGetLocalPublicClient.mockReturnValue({ request: receiptOnly("0x1") });
 
-    const result = await buildProductionRepairDeps().checkReceiptByHash({
-      chainId: ROBINHOOD_CHAIN_ID,
-      txHash: TX,
-    });
+    const result = await buildProductionRepairDeps().observeTransaction(input(ROBINHOOD_CHAIN_ID));
 
     expect(mockGetLocalPublicClient).toHaveBeenCalledWith(robinhood);
     expect(mockGetPendlePublicClient).not.toHaveBeenCalled();
-    expect(result).toEqual({ status: "success" });
+    expect(result).toEqual({ kind: "mined", status: "success" });
   });
 
   it("memoizes the resolved client per chain for the lifetime of ONE sweep run", async () => {
-    mockGetTransactionReceipt.mockResolvedValue({ status: "success", logs: [] });
+    const request = receiptOnly("0x1");
+    mockGetPendlePublicClient.mockReturnValue({ request });
     const deps = buildProductionRepairDeps();
 
-    await deps.checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: TX });
-    await deps.checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: "0xdef" });
+    await deps.observeTransaction(input(MONAD_CHAIN_ID));
+    await deps.observeTransaction(input(MONAD_CHAIN_ID, "0xdef"));
 
     // Chain discovery happens once per distinct chain per run, not per row.
     expect(mockGetChains).toHaveBeenCalledTimes(1);
     expect(mockGetPendlePublicClient).toHaveBeenCalledTimes(1);
-    expect(mockGetTransactionReceipt).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(2);
 
     // A NEW run re-resolves, so a chain-list change is picked up next tick.
-    await buildProductionRepairDeps().checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: TX });
+    await buildProductionRepairDeps().observeTransaction(input(MONAD_CHAIN_ID));
     expect(mockGetChains).toHaveBeenCalledTimes(2);
   });
 
   it("reports a mined revert through the fallback source too", async () => {
-    mockGetTransactionReceipt.mockResolvedValue({ status: "reverted" });
+    mockGetPendlePublicClient.mockReturnValue({ request: receiptOnly("0x0") });
 
     await expect(
-      buildProductionRepairDeps().checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: TX }),
-    ).resolves.toEqual({ status: "reverted" });
+      buildProductionRepairDeps().observeTransaction(input(MONAD_CHAIN_ID)),
+    ).resolves.toEqual({ kind: "mined", status: "reverted" });
   });
 
   // A receipt whose status we cannot READ must never be reported as a revert:
@@ -121,49 +132,42 @@ describe("buildProductionRepairDeps chain-source fallback", () => {
   // yields `null` for a status value it does not recognize. Only the literal
   // "reverted" is proof of a revert; everything else is ambiguity.
   it.each([
-    ["an unrecognized status string", { status: "0x1" }],
-    ["a null status", { status: null }],
-    ["an absent status", {}],
-  ])("treats %s as 'no answer yet', never as a revert", async (_label, receipt) => {
-    mockGetTransactionReceipt.mockResolvedValue(receipt);
+    ["an unrecognized status string", "0x2"],
+    ["a null status", null],
+    ["an absent status", undefined],
+  ])("treats %s as an UNREADABLE receipt, never as a revert", async (_label, status) => {
+    mockGetPendlePublicClient.mockReturnValue({ request: receiptOnly(status) });
 
     await expect(
-      buildProductionRepairDeps().checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: TX }),
-    ).resolves.toBeNull();
+      buildProductionRepairDeps().observeTransaction(input(MONAD_CHAIN_ID)),
+    ).resolves.toEqual({ kind: "unreadable_receipt" });
   });
 
-  it("still reports the literal 'reverted' status as a revert", async () => {
-    mockGetTransactionReceipt.mockResolvedValue({ status: "reverted" });
+  it("keeps the existing error posture: an RPC failure concludes NOTHING", async () => {
+    mockRequest.mockRejectedValue(new Error("transport timeout"));
 
-    await expect(
-      buildProductionRepairDeps().checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: TX }),
-    ).resolves.toEqual({ status: "reverted" });
+    const observation = await buildProductionRepairDeps().observeTransaction(input(MONAD_CHAIN_ID));
+
+    expect(observation.kind).toBe("rpc_error");
   });
 
-  it("keeps the existing error posture: an RPC failure is still 'no answer yet'", async () => {
-    mockGetTransactionReceipt.mockRejectedValue(new Error("transport timeout"));
+  it("says so by name when no chain source knows the chain — never a silent 'nothing there'", async () => {
+    mockGetPendlePublicClient.mockReturnValue(undefined);
 
-    await expect(
-      buildProductionRepairDeps().checkReceiptByHash({ chainId: MONAD_CHAIN_ID, txHash: TX }),
-    ).resolves.toBeNull();
-  });
+    const observation = await buildProductionRepairDeps().observeTransaction(input(999_999));
 
-  it("returns null when no chain source knows the chain", async () => {
-    await expect(
-      buildProductionRepairDeps().checkReceiptByHash({ chainId: 999_999, txHash: TX }),
-    ).resolves.toBeNull();
-    expect(mockGetPendlePublicClient).not.toHaveBeenCalled();
+    // NOT `unknown_to_node`: we never looked. Reporting non-inclusion here would
+    // start the A6 clock on a row nobody ever asked a node about.
+    expect(observation.kind).toBe("rpc_error");
   });
 
   it("still prefers the Khalani client when that registry does carry the chain", async () => {
     mockGetChain.mockReturnValue({ chainId: 8453 });
-    mockCreateDynamicPublicClient.mockReturnValue({
-      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "success", logs: [] }),
-    });
+    mockCreateDynamicPublicClient.mockReturnValue({ request: receiptOnly("0x1") });
 
-    const result = await buildProductionRepairDeps().checkReceiptByHash({ chainId: 8453, txHash: TX });
+    const result = await buildProductionRepairDeps().observeTransaction(input(8453));
 
-    expect(result).toEqual({ status: "success" });
+    expect(result).toEqual({ kind: "mined", status: "success" });
     expect(mockGetLocalPublicClient).not.toHaveBeenCalled();
     expect(mockGetPendlePublicClient).not.toHaveBeenCalled();
   });

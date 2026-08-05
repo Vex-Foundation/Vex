@@ -10,7 +10,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mapAgentScanRow } from "../agent-scan-db-mappers.js";
+import {
+  mapAgentScanRow,
+  STALLED_VERIFICATION_ATTEMPTS,
+} from "../agent-scan-db-mappers.js";
 import { agentScanEntrySchema } from "@shared/schemas/agent-scan-feed.js";
 import type { AgentScanRow } from "../agent-scan-db-types.js";
 
@@ -53,13 +56,21 @@ function row(overrides: Partial<AgentScanRow> = {}): AgentScanRow {
     executed_amount_out_raw: "400000000000000",
     usd_out_est: "1.49",
     usd_fee_est: null,
+    vex_fee_usd_est: null,
     vex_fee_token_symbol: null,
     vex_fee_amount_human: null,
+    vex_fee_source: null,
     failure_code: null,
     failure_reason: null,
     tx_hash: "0xdeadbeef",
     provider_order_id: null,
     last_checked_at: null,
+    verification_attempts: 0,
+    last_verification_reason: null,
+    // Migration 067's CONCLUSIVE half — required and nullable on the row type,
+    // so the base fixture must carry it. Omitting it makes the literal
+    // `string | null | undefined`, which `AgentScanRow` does not admit.
+    pending_reason: null,
     legs: null,
     ...overrides,
   };
@@ -286,10 +297,40 @@ describe("mapAgentScanRow amount honesty", () => {
   });
 
   it("keeps USD figures as strings and never fabricates a zero", () => {
-    const entry = mapValid(row({ usd_in_est: null, usd_out_est: 1.49, usd_fee_est: "0.01" }));
+    const entry = mapValid(
+      row({ usd_in_est: null, usd_out_est: 1.49, vex_fee_usd_est: "0.01" }),
+    );
     expect(entry.input.usdEst).toBeNull();
     expect(entry.output.usdEst).toBe("1.49");
     expect(entry.usdFeeEst).toBe("0.01");
+  });
+
+  // O-7: the renderer prints `usdFeeEst` beside the "Vex fee" label, so it may
+  // only be fed from vex_fee provenance. `usd_fee_est` is migration 050's
+  // deprecated mixed-meaning column — network gas on a Kyber row, the VENUE's
+  // own fee on a Jupiter one — and reporting either as "Vex fee" tells the user
+  // a charge they never paid.
+  it("never labels the deprecated mixed-meaning usd_fee_est as the Vex fee", () => {
+    const entry = mapValid(row({ usd_fee_est: "0.01", vex_fee_usd_est: null }));
+    expect(entry.usdFeeEst).toBeNull();
+  });
+
+  // Step 2c: suppression parity with the agent feed, narrowed by PROVENANCE.
+  it("withholds an in-transaction fee on a failed row but keeps a separate leg's", () => {
+    const inTransaction = mapValid(
+      row({ status: "failed", vex_fee_source: "in_transaction",
+            vex_fee_token_symbol: "USDC", vex_fee_amount_human: "0.01" }),
+    );
+    expect(inTransaction.vexFee).toBeNull();
+
+    // The fee transfer is its OWN confirmed transaction — the money left the
+    // wallet — and it necessarily confirms before the bridge fill outcome
+    // exists. Blanking it would deny a charge the user actually paid.
+    const separateLeg = mapValid(
+      row({ status: "failed", vex_fee_source: "separate_leg",
+            vex_fee_token_symbol: "USDC", vex_fee_amount_human: "0.01" }),
+    );
+    expect(separateLeg.vexFee).toEqual({ tokenSymbol: "USDC", amountHuman: "0.01" });
   });
 });
 
@@ -495,5 +536,59 @@ describe("mapAgentScanRow fees, failures and bounds", () => {
       row({ last_checked_at: new Date("2026-05-21T11:00:00.000Z") }),
     );
     expect(entry.lastCheckedAt).toBe("2026-05-21T11:00:00.000Z");
+  });
+
+  // ── Wave P: stalled verification is DERIVED, never a stored status ──
+  //
+  // The row stays `pending` throughout. What changes is only what the UI is
+  // TOLD, so a chain whose RPC can never answer stops being an invisible
+  // forever-pending row.
+
+  it("derives stalledVerification once the attempt counter crosses the threshold", () => {
+    const entry = mapValid(
+      row({
+        status: "pending",
+        verification_attempts: STALLED_VERIFICATION_ATTEMPTS,
+        last_verification_reason: "no_safe_rpc",
+      }),
+    );
+    expect(entry.stalledVerification).toBe(true);
+    expect(entry.stalledReason).toBe("no_safe_rpc");
+    // The status itself is UNTOUCHED — never auto-failed, never rewritten.
+    expect(entry.status).toBe("pending");
+  });
+
+  it("is NOT stalled one attempt below the threshold", () => {
+    const entry = mapValid(
+      row({
+        status: "pending",
+        verification_attempts: STALLED_VERIFICATION_ATTEMPTS - 1,
+        last_verification_reason: "receipt_unavailable",
+      }),
+    );
+    expect(entry.stalledVerification).toBe(false);
+    // The reason still rides along — it describes the last attempt either way.
+    expect(entry.stalledReason).toBe("receipt_unavailable");
+  });
+
+  it("never marks a TERMINAL row stalled, however high the counter", () => {
+    // A confirmed row is settled; a stale counter on it is history, not a
+    // current inability to check, and rendering it as "stalled" would be a lie.
+    const entry = mapValid(
+      row({
+        status: "confirmed",
+        verification_attempts: STALLED_VERIFICATION_ATTEMPTS + 50,
+        last_verification_reason: "no_safe_rpc",
+      }),
+    );
+    expect(entry.stalledVerification).toBe(false);
+  });
+
+  it("treats a pre-065 row (no counter) as not stalled", () => {
+    const entry = mapValid(
+      row({ status: "pending", verification_attempts: null, last_verification_reason: null }),
+    );
+    expect(entry.stalledVerification).toBe(false);
+    expect(entry.stalledReason).toBeNull();
   });
 });

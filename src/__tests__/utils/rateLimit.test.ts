@@ -78,3 +78,57 @@ describe("ConcurrencyLimiter", () => {
     expect(order).toEqual([1, 2]);
   });
 });
+
+/**
+ * Wave S1 (T7) — quota waits must not sit out an operator Stop, and an aborted
+ * waiter must LEAVE the queue: a stranded resolver would hand a later
+ * `release()` a slot to a caller that is already gone.
+ */
+describe("quota-wait cancellation", () => {
+  it("rejects a TokenBucket wait when the signal aborts", async () => {
+    const bucket = new TokenBucket(1);
+    await bucket.acquire();
+
+    const controller = new AbortController();
+    const pending = bucket.acquire(controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toSatisfy(
+      (err: unknown) => err instanceof Error && err.name === "AbortError",
+    );
+  });
+
+  it("rejects immediately when the signal is already aborted", async () => {
+    const bucket = new TokenBucket(1);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(bucket.acquire(controller.signal)).rejects.toSatisfy(
+      (err: unknown) => err instanceof Error && err.name === "AbortError",
+    );
+  });
+
+  it("removes an aborted ConcurrencyLimiter waiter from the queue", async () => {
+    const limiter = new ConcurrencyLimiter(1);
+    await limiter.acquire();
+    expect(limiter.queueLength).toBe(0);
+
+    const controller = new AbortController();
+    const pending = limiter.acquire(controller.signal);
+    expect(limiter.queueLength).toBe(1);
+
+    controller.abort();
+    await expect(pending).rejects.toSatisfy(
+      (err: unknown) => err instanceof Error && err.name === "AbortError",
+    );
+    expect(limiter.queueLength).toBe(0);
+
+    // The released slot goes to a live caller, not to the abandoned waiter.
+    limiter.release();
+    let acquired = false;
+    await limiter.acquire().then(() => {
+      acquired = true;
+    });
+    expect(acquired).toBe(true);
+    expect(limiter.queueLength).toBe(0);
+  });
+});

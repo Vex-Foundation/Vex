@@ -9,9 +9,10 @@ import {
   STRING_OR_ARRAY_CLAUSE,
   TOKENS_BATCH_PARAMS,
 } from "./pair-list-params.js";
+import { DEXSCREENER_CHAIN_PARAM } from "../chain-param.js";
 
 // Chain slugs are DexScreener string ids: ethereum, base, solana, bsc,
-// arbitrum, polygon, avalanche, optimism, robinhood (chainId 4663), and more.
+// arbitrum, polygon, avalanche, optimism, robinhood (chain id 4663), and more.
 // Typical research flow: search → tokenPairs (pick deepest pool) → pairs (deep
 // stats on that pool).
 //
@@ -73,7 +74,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chainId", type: "string", required: true, description: "Chain slug (e.g. ethereum, base, solana, bsc, arbitrum, robinhood)." },
+      DEXSCREENER_CHAIN_PARAM,
       {
         key: "pairAddress",
         type: "string",
@@ -88,7 +89,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       },
       ...PAIR_LOOKUP_PARAMS,
     ],
-    exampleParams: { chainId: "ethereum", pairAddress: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640" },
+    exampleParams: { chain: "ethereum", pairAddress: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640" },
     discovery: DEXSCREENER_CORE_DISCOVERY["dexscreener.pairs"],
   },
   {
@@ -103,7 +104,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chainId", type: "string", required: true, description: "Chain slug (e.g. ethereum, base, solana, bsc, arbitrum, robinhood)." },
+      DEXSCREENER_CHAIN_PARAM,
       {
         key: "tokenAddresses",
         type: "string",
@@ -119,7 +120,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       },
       ...TOKENS_BATCH_PARAMS,
     ],
-    exampleParams: { chainId: "ethereum", tokenAddresses: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,0xdAC17F958D2ee523a2206206994597C13D831ec7" },
+    exampleParams: { chain: "ethereum", tokenAddresses: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,0xdAC17F958D2ee523a2206206994597C13D831ec7" },
     discovery: DEXSCREENER_CORE_DISCOVERY["dexscreener.tokens"],
   },
   {
@@ -137,11 +138,11 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chainId", type: "string", required: true, description: "Chain slug (e.g. ethereum, base, solana, bsc, arbitrum, robinhood)." },
+      DEXSCREENER_CHAIN_PARAM,
       { key: "tokenAddress", type: "string", required: true, description: "Token contract address." },
       ...PAIR_LIST_PARAMS,
     ],
-    exampleParams: { chainId: "solana", tokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+    exampleParams: { chain: "solana", tokenAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
     discovery: DEXSCREENER_CORE_DISCOVERY["dexscreener.tokenPairs"],
   },
 ];

@@ -44,14 +44,32 @@ export type EvmBridgeFeeTransfer =
  * nothing.
  */
 export function buildEvmBridgeFeeTransfer(tokenAddress: string, feeRaw: bigint): EvmBridgeFeeTransfer {
+  return buildEvmVexFeeTransfer(tokenAddress, feeRaw, BRIDGE_FEE_RECEIVER_EVM);
+}
+
+/**
+ * The venue-neutral core. A Vex integrator fee is the SAME leg wherever it is
+ * taken — a plain transfer of the input token to a Vex-owned receiver — so the
+ * bridge venues, the Uniswap swap venue (migration 066's `swap_fee` row), and
+ * any later fee-parameterless venue build it here rather than each writing
+ * their own `encodeFunctionData`.
+ *
+ * `receiver` is a PRODUCT CONSTANT at every call site and must never come from
+ * model or caller input.
+ */
+export function buildEvmVexFeeTransfer(
+  tokenAddress: string,
+  feeRaw: bigint,
+  receiver: Address,
+): EvmBridgeFeeTransfer {
   if (feeRaw <= 0n) {
     throw new VexError(
       ErrorCodes.INVALID_AMOUNT,
-      "Refusing to build a bridge fee transfer for a non-positive amount.",
+      "Refusing to build a Vex fee transfer for a non-positive amount.",
     );
   }
   if (isNativeEvmFeeToken(tokenAddress)) {
-    return { kind: "native", to: BRIDGE_FEE_RECEIVER_EVM, value: feeRaw };
+    return { kind: "native", to: receiver, value: feeRaw };
   }
   return {
     kind: "erc20",
@@ -59,7 +77,7 @@ export function buildEvmBridgeFeeTransfer(tokenAddress: string, feeRaw: bigint):
     data: encodeFunctionData({
       abi: ERC20_ABI,
       functionName: "transfer",
-      args: [BRIDGE_FEE_RECEIVER_EVM, feeRaw],
+      args: [receiver, feeRaw],
     }),
     value: 0n,
   };

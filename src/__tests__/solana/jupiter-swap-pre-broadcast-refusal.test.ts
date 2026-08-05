@@ -29,7 +29,7 @@ import {
 const SWAP_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
 const OTHER_PROGRAM = "ComputeBudget111111111111111111111111111111";
 
-const SLIPPAGE = { appliedBps: 50, maxBps: 1000 } as const;
+const SLIPPAGE = { appliedBps: 50, maxBps: 1000, observedPriceImpactFraction: null } as const;
 
 /**
  * A preflight rejection exactly as `sendRawTransaction` (skipPreflight:false)
@@ -256,7 +256,7 @@ describe("jupiterPreBroadcastRefusalGuidance — the autonomy contract (plan rul
     const text = jupiterPreBroadcastRefusalGuidance({
       rejectionReason: "Slippage tolerance exceeded.",
       rejection: { kind: "slippage", anchorErrorNumber: 6001 },
-      slippage: { appliedBps: null, maxBps: 1000 },
+      slippage: { appliedBps: null, maxBps: 1000, observedPriceImpactFraction: null },
     });
 
     // No invented number: it says the request named none rather than quoting a
@@ -266,14 +266,17 @@ describe("jupiterPreBroadcastRefusalGuidance — the autonomy contract (plan rul
     expect(text).toContain("1000");
   });
 
-  it("does NOT carry the EVM priceImpact caution — Jupiter's sign convention is inverted", () => {
+  it("does NOT carry the EVM stale-reserve caution, and quotes no impact when none was observed", () => {
     // `engine/prompts/protocols.ts:121` teaches "priceImpact strongly NEGATIVE
-    // = output supposedly worth more than input" for KYBERSWAP, whose impact is
-    // derived as (inUsd - outUsd)/inUsd — negative only in the anomaly.
-    // Jupiter reports the OPPOSITE sign: the repo's own captured healthy quote
-    // is `priceImpactPct: "-0.00015864212550172836"`, i.e. an ORDINARY swap is
-    // negative. Copying the clause would flag every Jupiter swap as broken.
-    expect(guidance).not.toMatch(/priceImpact/i);
+    // = output supposedly worth more than input" for KYBERSWAP, resting on
+    // stale INDEXED reserves. Jupiter routes against live on-chain state and no
+    // capture in this repo evidences that failure mode, so the clause is not
+    // copied. (The earlier reason given here — that Jupiter's sign is inverted
+    // — was read off ONE negative sample and is disproven by the fresh
+    // 2026-08-03 capture; see `solana-jupiter-w2g-error-fidelity.test.ts`.)
+    // This fixture observed no impact, so no impact sentence is printed either.
+    expect(guidance).not.toMatch(/stale reserves/i);
+    expect(guidance).not.toMatch(/Observed price impact/i);
   });
 });
 

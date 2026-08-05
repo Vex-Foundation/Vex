@@ -33,6 +33,7 @@ import {
   terminalizeProviderFailure,
   terminalizeRefund,
 } from "./bridge-activity-repair-terminalize.js";
+import { logInconclusiveVerification } from "./bridge-activity-repair-log.js";
 
 /** Provider-native Solana chain ids (Khalani vs Relay diverge) — used only to infer a row's chain family for explorer-link resolution. */
 const SOLANA_CHAIN_IDS: ReadonlySet<number> = new Set([20011000000, 792703809]);
@@ -88,7 +89,8 @@ async function sweepLogicalRow(
 
   const correlation = readStoredCorrelation(logical);
   if (!correlation) {
-    logger.warn("bridge.repair.logical_missing_route", { executionId });
+    logInconclusiveVerification({ event: "bridge.repair.logical_missing_route", logical, reason: "missing_route" });
+    await deps.noteVerificationInconclusive(logical.id, "missing_route");
     counters.stillPending++;
     return;
   }
@@ -96,6 +98,8 @@ async function sweepLogicalRow(
   const observation = await observeProvider(logical, orderId, correlation, deps);
   if (!observation) {
     // Transport failure — attempt already recorded, no observation, stays pending.
+    // Migration 065: this is exactly the shape that used to die in a debug log.
+    await deps.noteVerificationInconclusive(logical.id, "provider_unreachable");
     counters.stillPending++;
     return;
   }
@@ -134,9 +138,12 @@ async function applyObservation(
   deps: BridgeRepairDeps,
   counters: MutableSweepCounters,
 ): Promise<void> {
-  const executionId = logical.protocolExecutionId;
   switch (observation.kind) {
     case "pending":
+      // CONCLUSIVE: the provider answered and the row is legitimately still in
+      // flight. Reset the stall counter — a healthy slow bridge must never
+      // accumulate its way into "verification stalled".
+      await deps.noteVerificationConclusive(logical.id);
       counters.stillPending++;
       return;
 
@@ -149,11 +156,13 @@ async function applyObservation(
       return;
 
     case "chain_mismatch":
-      logger.warn("bridge.repair.chain_id_mismatch", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
+      logInconclusiveVerification({
+        event: "bridge.repair.chain_id_mismatch",
+        logical,
+        reason: "chain_mismatch",
+        context: { providerStatus: observation.providerStatus },
       });
+      await deps.noteVerificationInconclusive(logical.id, "chain_mismatch");
       counters.stillPending++;
       return;
 
@@ -161,12 +170,13 @@ async function applyObservation(
       // R6 anomaly (Blocker 7): a carried-and-stored identity field disagrees. Log
       // the field NAME only (never raw provider values) and stay pending — we do
       // NOT terminalize a mismatched order onto our row.
-      logger.warn("bridge.repair.correlation_mismatch", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
-        field: observation.field,
+      logInconclusiveVerification({
+        event: "bridge.repair.correlation_mismatch",
+        logical,
+        reason: "correlation_mismatch",
+        context: { providerStatus: observation.providerStatus, field: observation.field },
       });
+      await deps.noteVerificationInconclusive(logical.id, "correlation_mismatch");
       counters.stillPending++;
       return;
 
@@ -184,6 +194,20 @@ async function applyObservation(
   }
 }
 
+/**
+ * R5 order-id recovery — the ONLY verifier a crash-after-deposit row has.
+ *
+ * Such a row carries no `provider_order_id`, so the ordinary sweep's candidate
+ * query cannot see it at all. That makes recording the stall REASON on every
+ * unsuccessful exit load-bearing rather than cosmetic: without it the row is
+ * retried forever while the UI renders an ordinary healthy pending, and the
+ * user is never told that Vex has repeatedly been unable to check. It stays
+ * pending either way — a stall is "we could not look", never an auto-fail.
+ *
+ * The counter is CLEARED on a successful attach: the row now has an order id,
+ * the ordinary sweep owns it, and carrying a stall in from the recovery queue
+ * would render a now-verifiable row as stalled.
+ */
 async function recoverMissingOrderIds(deps: BridgeRepairDeps, counters: MutableSweepCounters): Promise<void> {
   const candidates = await deps.listOrderIdRecoveryCandidates(BRIDGE_SWEEP_BATCH_LIMIT);
   for (const candidate of candidates) {
@@ -196,19 +220,23 @@ async function recoverMissingOrderIds(deps: BridgeRepairDeps, counters: MutableS
         executionId: candidate.executionId,
         error: summarizeProtocolError(err).message,
       });
+      await deps.noteVerificationInconclusive(candidate.logicalRowId, "recovery_throw");
       counters.stillPending++;
       continue;
     }
     if (!orderId) {
+      await deps.noteVerificationInconclusive(candidate.logicalRowId, "recovery_null");
       counters.stillPending++;
       continue;
     }
     const attach = await deps.attachOrderId({ executionId: candidate.executionId, providerOrderId: orderId });
     await deps.touchChecked(candidate.executionId, `order_recovered:${attach.outcome}`);
     if (attach.outcome === "attached" || attach.outcome === "already_attached_same") {
+      await deps.noteVerificationConclusive(candidate.logicalRowId);
       counters.recovered++;
     } else {
       // conflict_different_id / not_pending — the repo already logged the anomaly.
+      await deps.noteVerificationInconclusive(candidate.logicalRowId, "attach_conflict");
       counters.stillPending++;
     }
   }

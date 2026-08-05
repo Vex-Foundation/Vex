@@ -99,7 +99,7 @@ describe("wallet_balances", () => {
     const result = await handleWalletBalances({}, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
-    expect(data.wallet).toBe("all");
+    expect(data.walletFamily).toBe("all");
     expect(data.wallets).toHaveLength(2);
     expect(data.wallets.map((wallet: { wallet: string }) => wallet.wallet)).toEqual(["eip155", "solana"]);
     expect(data.totalUsd).toBeGreaterThan(0);
@@ -109,8 +109,8 @@ describe("wallet_balances", () => {
   // serializers and many LLM providers emit `""` for "no value" — the handler
   // must treat that as omission, not a validation error.
   it("treats empty chainIds string as omission (scans all chains)", async () => {
-    const omitted = await handleWalletBalances({ wallet: "all" }, baseContext);
-    const empty = await handleWalletBalances({ wallet: "all", chainIds: "" }, baseContext);
+    const omitted = await handleWalletBalances({ walletFamily: "all" }, baseContext);
+    const empty = await handleWalletBalances({ walletFamily: "all", chainIds: "" }, baseContext);
     expect(empty.success).toBe(true);
     expect(omitted.success).toBe(true);
     const omittedData = JSON.parse(omitted.output);
@@ -122,14 +122,14 @@ describe("wallet_balances", () => {
   });
 
   it("treats whitespace-only chainIds as omission", async () => {
-    const result = await handleWalletBalances({ wallet: "all", chainIds: "   " }, baseContext);
+    const result = await handleWalletBalances({ walletFamily: "all", chainIds: "   " }, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.wallets).toHaveLength(2);
   });
 
   it("returns EVM snapshot when wallet=eip155", async () => {
-    const result = await handleWalletBalances({ wallet: "eip155" }, baseContext);
+    const result = await handleWalletBalances({ walletFamily: "eip155" }, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.wallets).toHaveLength(1);
@@ -139,7 +139,7 @@ describe("wallet_balances", () => {
   });
 
   it("returns Solana snapshot when wallet=solana", async () => {
-    const result = await handleWalletBalances({ wallet: "solana" }, baseContext);
+    const result = await handleWalletBalances({ walletFamily: "solana" }, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.wallets).toHaveLength(1);
@@ -148,7 +148,7 @@ describe("wallet_balances", () => {
   });
 
   it("snapshot includes token data with prices", async () => {
-    const result = await handleWalletBalances({ wallet: "eip155" }, baseContext);
+    const result = await handleWalletBalances({ walletFamily: "eip155" }, baseContext);
     const data = JSON.parse(result.output);
     const tokens = data.wallets[0].tokens;
     expect(tokens.map((token: { symbol: string }) => token.symbol)).toContain("ETH");
@@ -166,7 +166,7 @@ describe("wallet_balances", () => {
 
   it("concise + limit=1 trims to the single highest held-USD token (ETH)", async () => {
     const result = await handleWalletBalances(
-      { wallet: "eip155", response_format: "concise", limit: 1 },
+      { walletFamily: "eip155", response_format: "concise", limit: 1 },
       baseContext,
     );
     expect(result.success).toBe(true);
@@ -181,7 +181,7 @@ describe("wallet_balances", () => {
 
   it("concise + limit greater than token count returns all tokens", async () => {
     const result = await handleWalletBalances(
-      { wallet: "eip155", response_format: "concise", limit: 99 },
+      { walletFamily: "eip155", response_format: "concise", limit: 99 },
       baseContext,
     );
     expect(result.success).toBe(true);
@@ -191,7 +191,7 @@ describe("wallet_balances", () => {
 
   it("concise + limit is null-safe for a token with no priceUsd (sinks to bottom, no throw)", async () => {
     const result = await handleWalletBalances(
-      { wallet: "eip155", response_format: "concise", limit: 2 },
+      { walletFamily: "eip155", response_format: "concise", limit: 2 },
       baseContext,
     );
     expect(result.success).toBe(true);
@@ -204,9 +204,9 @@ describe("wallet_balances", () => {
   });
 
   it("default (no limit / detailed) returns all tokens unchanged", async () => {
-    const detailedDefault = await handleWalletBalances({ wallet: "eip155" }, baseContext);
+    const detailedDefault = await handleWalletBalances({ walletFamily: "eip155" }, baseContext);
     const conciseNoLimit = await handleWalletBalances(
-      { wallet: "eip155", response_format: "concise" },
+      { walletFamily: "eip155", response_format: "concise" },
       baseContext,
     );
     expect(detailedDefault.success).toBe(true);
@@ -222,7 +222,7 @@ describe("wallet_balances", () => {
   // ── errors ─────────────────────────────────────────────────────
 
   it("fails on invalid wallet parameter", async () => {
-    const result = await handleWalletBalances({ wallet: "bitcoin" }, baseContext);
+    const result = await handleWalletBalances({ walletFamily: "bitcoin" }, baseContext);
     expect(result.success).toBe(false);
     expect(result.output).toContain("wallet_balances");
   });

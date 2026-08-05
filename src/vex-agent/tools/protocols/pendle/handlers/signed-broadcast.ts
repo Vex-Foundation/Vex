@@ -67,9 +67,11 @@ import {
   type AgentActivityFailureCode,
   type AgentActivityLegInput,
 } from "@vex-agent/db/repos/agent-activity.js";
+import { settlementDecodeProvenance } from "@vex-agent/db/repos/agent-activity/settlement-decode.js";
 import { decodePendleSettlement } from "@vex-agent/sync/pendle-settlement-decoder.js";
 import { pinConfirmedPendleAcquisition } from "@vex-agent/sync/pendle-acquisition-pin.js";
 import logger from "@utils/logger.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 /** The Pendle protocol string stored on every row this module writes. */
 export const PENDLE_ACTIVITY_PROTOCOL = "pendle";
@@ -288,7 +290,20 @@ export async function sendPendleRouterTx(
         ...(plan.usdInEst !== undefined ? { usdInEst: plan.usdInEst } : {}),
         ...(plan.usdOutEst !== undefined ? { usdOutEst: plan.usdOutEst } : {}),
         usdSource: "pendle",
-        ...(plan.routeProvenance ? { routeProvenance: plan.routeProvenance } : {}),
+        // R1 Step 5a — the WHOLE Pendle family gains the decode inputs at its
+        // one intent spine. The router is `tx.to`, the address this very
+        // transaction is sent to, so the hint cannot name a contract the
+        // transaction did not use. `declaredValueRaw` is recorded only for a
+        // value-bearing call, where the input really is native.
+        routeProvenance: {
+          ...(plan.routeProvenance ?? {}),
+          ...settlementDecodeProvenance({
+            decoder: "pendle",
+            chainId: plan.chainId,
+            routerAddress: getAddress(tx.to),
+            ...(tx.value === 0n ? {} : { declaredValueRaw: tx.value.toString() }),
+          }),
+        },
       },
     ],
   });
@@ -328,6 +343,11 @@ export async function sendPendleRouterTx(
     // Ambiguity NEVER terminalizes (§11.1 / FIX-SPINE C1). No `failActivityEvent`,
     // no re-broadcast — the row keeps its staged hash and the sweep resolves it.
     logger.info("pendle.activity.ambiguous", { id: eventRow.id, toolId: plan.toolId, stage: outcome.stage });
+    // Migration 067 — the whole Pendle family gains this at its ONE spine.
+    await noteHandlerPendingReason(
+      plan.toolId, eventRow.id,
+      outcome.stage === "send" ? "broadcast_ambiguous_send" : "broadcast_ambiguous_confirm",
+    );
     return {
       kind: "unproven",
       reason: "ambiguous",
@@ -360,6 +380,11 @@ export async function sendPendleRouterTx(
   const decoded = decodeExecuted(plan, outcome.receipt);
   if (decoded === null) {
     logger.warn("pendle.activity.undecodable_receipt", { id: eventRow.id, toolId: plan.toolId, role: plan.eventRole });
+    // Mined SUCCESSFULLY; the receipt did not prove the legs. `no_credit` is a
+    // claim that swept nothing, which is a different fact from an unreadable
+    // receipt — but both leave the row pending with its amounts unknown, and
+    // this column names WHY it is pending, not what the agent should be told.
+    await noteHandlerPendingReason(plan.toolId, eventRow.id, "settlement_undecodable");
     return {
       kind: "unproven",
       // A claim's specific shape — mined, credited nothing — gets its own

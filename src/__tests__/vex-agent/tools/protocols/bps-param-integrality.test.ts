@@ -23,6 +23,7 @@ import type {
   ProtocolHandler,
   ProtocolToolManifest,
 } from "@vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "../_test-context.js";
 
 vi.mock("@vex-agent/tools/protocols/catalog.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/tools/protocols/catalog.js")>(
@@ -77,7 +78,7 @@ async function callWithSlippage(slippageBps: unknown) {
   observedSlippage = [];
   return executeProtocolTool(
     { toolId: TOOL_ID, params: { amount: 1.5, slippageBps } },
-    { sessionPermission: "full", approved: true },
+    makeProtocolContext({ sessionPermission: "full", approved: true }),
   );
 }
 
@@ -146,7 +147,7 @@ describe("valid basis-point values are unchanged", () => {
     observedSlippage = [];
     const result = await executeProtocolTool(
       { toolId: TOOL_ID, params: { amount: 1.5 } },
-      { sessionPermission: "full", approved: true },
+      makeProtocolContext({ sessionPermission: "full", approved: true }),
     );
     expect(result.success).toBe(true);
     expect(observedSlippage).toEqual([undefined]);
@@ -192,9 +193,9 @@ describe("reachability regression — real solana.swap manifests", () => {
       const result = await executeProtocolTool(
         {
           toolId,
-          params: { inputToken: "SOL", outputToken: "USDC", amount: 1, slippageBps: 50.5 },
+          params: { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1", slippageBps: 50.5 },
         },
-        { sessionPermission: "full", approved: true },
+        makeProtocolContext({ sessionPermission: "full", approved: true }),
       );
 
       expect(result.success).toBe(false);
@@ -207,9 +208,9 @@ describe("reachability regression — real solana.swap manifests", () => {
     const result = await executeProtocolTool(
       {
         toolId: "solana.swap.quote",
-        params: { inputToken: "SOL", outputToken: "USDC", amount: 1, slippageBps: 0.5 },
+        params: { tokenIn: "SOL", tokenOut: "USDC", amountIn: "1", slippageBps: 0.5 },
       },
-      { sessionPermission: "full", approved: true },
+      makeProtocolContext({ sessionPermission: "full", approved: true }),
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/whole number of basis points/i);
@@ -243,25 +244,26 @@ describe("manifest bps declarations", () => {
     // (E3) and the three term-mobility moves (E4) — registered by card E5 — plus
     // the two Trench Express curve slippageBps params (trade_quote + execute),
     // which reject above the 1000 bps cap rather than clamping like the rest.
-    expect(declared.length).toBe(29);
+    // +2 since W3: the two Relay bridge tools, whose slippageBps moved from a
+    // manifest STRING (which the bps gate never inspected) to number+unit.
+    expect(declared.length).toBe(31);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
-      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench"]),
+      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay"]),
     );
   });
 
-  it("Relay's slippageBps is STRING-typed and therefore NOT covered here", () => {
-    // Documented, not fixed: relay declares slippage as a string, forwards any
-    // non-empty value unvalidated, and does not bind it into the bridge
-    // prequote identity at all. Three gaps on one param, owned by a separate
-    // card. Pinned so the gap is visible rather than silently assumed closed.
+  it("Relay's slippageBps is number+unit and therefore IS covered here (W3)", () => {
+    // Was a manifest STRING: the numeric `unit:"bps"` gate never inspected it,
+    // so a fractional or out-of-range tolerance reached the provider. All three
+    // gaps (type, gate, identity binding) closed together in W3/W4a.
     const relayBps = PROTOCOL_TOOLS.flatMap((m) =>
       m.params
         .filter((p) => m.namespace === "relay" && p.key.endsWith("Bps"))
-        .map((p) => p.type),
+        .map((p) => `${p.type}:${p.unit ?? "none"}`),
     );
 
     expect(relayBps.length).toBeGreaterThan(0);
-    expect(new Set(relayBps)).toEqual(new Set(["string"]));
+    expect(new Set(relayBps)).toEqual(new Set(["number:bps"]));
   });
 
   it("unit:\"bps\" is only declared on numeric params", () => {

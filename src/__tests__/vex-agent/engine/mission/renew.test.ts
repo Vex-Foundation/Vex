@@ -8,6 +8,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { Mission } from "@vex-agent/db/repos/missions.js";
+
 const mockGetMissionForUpdate = vi.fn();
 const mockGetActiveRun = vi.fn();
 const mockGetActiveRunBySession = vi.fn();
@@ -76,8 +78,8 @@ const { extractLegacyHyperliquidRiskV2, missionToDraft } = await import(
   "../../../../vex-agent/engine/mission/mapper.js"
 );
 
-function makeMission(overrides: Record<string, unknown> = {}) {
-  const mission = {
+function makeMission(overrides: Partial<Mission> = {}): Mission {
+  const mission: Mission = {
     id: "mission-source",
     rootSessionId: "session-1",
     status: "completed",
@@ -106,7 +108,7 @@ function makeMission(overrides: Record<string, unknown> = {}) {
     // Key-presence check: an explicit `acceptedContractHash: null` override
     // (the never-accepted case) must survive — `??` would silently re-hash it.
     acceptedContractHash: "acceptedContractHash" in overrides
-      ? overrides["acceptedContractHash"]
+      ? (overrides.acceptedContractHash ?? null)
       : computeContractHash(missionToDraft(mission), LEGACY_CONTRACT_HASH_VERSION),
   };
 }

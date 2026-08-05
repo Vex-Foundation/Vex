@@ -4,6 +4,8 @@
 
 import type { ZodType } from "zod";
 import { VexError, ErrorCodes } from "../errors.js";
+import { composeDeadline } from "./cancellation.js";
+import { readRetryAfterSeconds } from "./http/retry-after.js";
 import { isRecord } from "./validation-helpers.js";
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -73,24 +75,38 @@ function readErrorBodyCode(
 
 /**
  * Fetch with timeout and standardized error handling.
+ *
+ * `options.signal` is COMPOSED with the timeout rather than replacing it: a
+ * caller that wants cancellation must not silently lose the ceiling. The two
+ * aborts stay distinguishable — a deadline breach is reported as `HTTP_TIMEOUT`
+ * as it always was, while a caller abort propagates as itself. Reporting an
+ * operator Stop as "Request timed out after 30000ms" would be a lie to the
+ * agent (owner decree 2026-08-02).
+ *
+ * With no caller signal the path is unchanged: own controller, own timer, same
+ * `HTTP_TIMEOUT` error.
  */
 export async function fetchWithTimeout(
   url: string,
   options: FetchOptions = {}
 ): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: callerSignal, ...fetchOptions } = options;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const composed = composeDeadline(callerSignal ?? undefined, timeoutMs);
+  const controller = composed === undefined ? new AbortController() : undefined;
+  const timeoutId =
+    controller === undefined ? undefined : setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
       ...fetchOptions,
-      signal: controller.signal,
+      signal: composed ?? controller?.signal ?? null,
     });
     return response;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    // A caller abort is the caller's own event — never a timeout.
+    if (callerSignal?.aborted === true) throw err;
+    if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
       throw new VexError(
         ErrorCodes.HTTP_TIMEOUT,
         `Request timed out after ${timeoutMs}ms`,
@@ -103,7 +119,7 @@ export async function fetchWithTimeout(
       "Check network connectivity"
     );
   } finally {
-    clearTimeout(timeoutId);
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 }
 
@@ -142,6 +158,11 @@ export async function parseJsonResponse<T>(
     // It is also the ONLY reliable way to branch on a status — never re-parse
     // it out of the message, which the provider's own text now replaces.
     error.httpStatus = response.status;
+    // The interval the provider itself advertised, when it did. A bounded
+    // integer, never the header text — see `http/retry-after.ts` for why the
+    // `x-ratelimit-*` family is only trusted on a 429.
+    const retryAfterSeconds = readRetryAfterSeconds(response.headers, response.status);
+    if (retryAfterSeconds !== undefined) error.retryAfterSeconds = retryAfterSeconds;
     if (externalName) error.externalName = externalName;
     throw error;
   }

@@ -17,8 +17,11 @@
 
 import { VexError, ErrorCodes } from "../../../errors.js";
 
-/** Default curve slippage tolerance when the model omits `slippageBps` — 1%. */
-export const TRENCH_DEFAULT_SLIPPAGE_BPS = 100;
+// No default slippage lives here: `curveMinOut` takes an EXPLICIT `slippageBps`,
+// and what an omitted value means is Vex product policy with one home
+// (`@vex-agent/tools/protocols/slippage-policy.ts` `VEX_DEFAULT_SLIPPAGE_BPS`),
+// resolved by `protocols/trench/handlers/trade/shared.ts` before calling in.
+
 /** Hard cap on the model-supplied tolerance — 10%. Above this Vex REJECTS, never clamps. */
 export const TRENCH_MAX_SLIPPAGE_BPS = 1000;
 const BPS_DENOMINATOR = 10_000n;

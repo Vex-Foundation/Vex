@@ -192,6 +192,14 @@ export interface TransactionRow {
   providerOrderId?: string | null;
   /** agent_activity BRIDGE logical row only — last provider-native status (sweep feed; "tracking delayed" UX). */
   providerStatus?: string | null;
+  /**
+   * agent_activity only (migration 065) — consecutive INCONCLUSIVE verification
+   * attempts. Feeds the DERIVED "verification stalled" clause in the agent's
+   * summary line; never a status and never a failure trigger.
+   */
+  verificationAttempts?: number | null;
+  /** agent_activity only — why the last verification attempt could not conclude, e.g. `no_safe_rpc`. */
+  lastVerificationReason?: string | null;
   /** agent_activity BRIDGE logical row only — every leg of the execution (B8); `null` on swaps. NEVER truncated (OWNER RULE). */
   legs?: BridgeLegRow[] | null;
   txHash: string | null;

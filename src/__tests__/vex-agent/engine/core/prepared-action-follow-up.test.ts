@@ -83,7 +83,7 @@ function prepareResult(overrides: Record<string, unknown> = {}) {
     actionKind: "approval_prepare",
     preparedActionFollowUp: {
       toolName: "wallet_send_confirm",
-      args: { network: "solana", intentId: INTENT_ID },
+      args: { walletFamily: "solana", intentId: INTENT_ID },
       expiresAt: EXPIRES_AT,
       approvalPreview: trustedPreview,
     },
@@ -110,6 +110,7 @@ async function run(permission: "restricted" | "full", abortSignal?: AbortSignal)
     context: context(permission),
     turnResult: {
       content: "Preparing transfer.",
+      reasoning: null,
       toolCalls: [
         {
           id: "prepare-call",
@@ -160,7 +161,7 @@ describe("prepared-action follow-up handoff", () => {
     expect(dispatchTool).toHaveBeenCalledTimes(2);
     expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
       name: "wallet_send_confirm",
-      args: { network: "solana", intentId: INTENT_ID },
+      args: { walletFamily: "solana", intentId: INTENT_ID },
     });
     expect(enqueueApprovalIntent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -222,7 +223,7 @@ describe("prepared-action follow-up handoff", () => {
           prepareResult({
             preparedActionFollowUp: {
               toolName: "wallet_send_confirm",
-              args: { network: "eip155", intentId: INTENT_ID },
+              args: { walletFamily: "eip155", intentId: INTENT_ID },
               expiresAt: EXPIRES_AT,
               approvalPreview: evmPreview,
             },
@@ -242,7 +243,7 @@ describe("prepared-action follow-up handoff", () => {
       const outcome = await run(permission);
       expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
         name: "wallet_send_confirm",
-        args: { network: "eip155", intentId: INTENT_ID },
+        args: { walletFamily: "eip155", intentId: INTENT_ID },
       });
       if (permission === "restricted") {
         expect(outcome.kind).toBe("approval_break");

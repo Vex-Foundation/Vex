@@ -37,7 +37,7 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
   it("renders the vault/position risk disclosure from extras.riskPreview for a NEW position", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmount: "30000000" },
+      { vaultId: 1, depositAmountRaw: "30000000" },
       { riskPreview: RISK_PREVIEW },
     );
     expect(preview.criticalArgs.lendBorrowRisk).toBe(
@@ -53,36 +53,18 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
     );
   });
 
-  // A `/borrow/positions` row genuinely carries no token descriptor, so the
-  // renderer must degrade to an explicit unknown. Interpolating the absent
-  // fields directly once put the literal "undefined decimals" in front of a
-  // human approving a loan — this pins that it cannot come back.
-  it("states an explicit unknown, never the word 'undefined', when the row carries no token descriptor", () => {
-    const preview = buildIntentPreview(
-      "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmount: "30000000" },
-      {
-        riskPreview: {
-          ...RISK_PREVIEW,
-          supplyTokenSymbol: null,
-          supplyTokenDecimals: null,
-          borrowTokenSymbol: null,
-          borrowTokenDecimals: null,
-        },
-      },
-    );
-    const rendered = preview.criticalArgs.lendBorrowRisk;
-    expect(rendered).not.toContain("undefined");
-    expect(rendered).toContain(
-      "30000000 raw units of mint So11111111111111111111111111111111111111112 "
-      + "(symbol and decimals unavailable — amount shown in raw units only)",
-    );
-  });
+  // Codex final-review (non-blocking 1): the previous test here forced
+  // `supplyTokenSymbol`/`Decimals` to `null` on a type that declares them
+  // NON-NULL, conflating the nullable `/borrow/positions` PROJECTION with this
+  // vault-sourced risk preview. It could only be written by contradicting the
+  // type, so it proved nothing about production and cost four suppressed type
+  // diagnostics. The money type stays strict; the renderer's nullish fallback
+  // remains as defence-in-depth (see `describeRiskToken`'s note).
 
   it("names the existing position id when adjusting an existing position", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, positionId: 42, borrowAmount: "5000000" },
+      { vaultId: 1, positionId: 42, borrowAmountRaw: "5000000" },
       { riskPreview: { ...RISK_PREVIEW, positionId: 42 } },
     );
     expect(preview.criticalArgs.lendBorrowRisk).toContain("position #42 on vault #1");
@@ -91,7 +73,7 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
   it("renders 'unknown'/'estimate unavailable' placeholders when thresholds or the estimate could not be read", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, borrowAmount: "5000000" },
+      { vaultId: 1, borrowAmountRaw: "5000000" },
       {
         riskPreview: {
           ...RISK_PREVIEW,
@@ -110,7 +92,7 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
   it("labels the liquidation-threshold SCALE as unconfirmed whenever a value is shown, not only in code comments", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmount: "1" },
+      { vaultId: 1, depositAmountRaw: "1" },
       { riskPreview: RISK_PREVIEW },
     );
     expect(preview.criticalArgs.lendBorrowRisk).toContain(
@@ -121,7 +103,7 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
   it("always states the WSOL pre-funding requirement, unconditionally, in the approval disclosure", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmount: "1" },
+      { vaultId: 1, depositAmountRaw: "1" },
       { riskPreview: RISK_PREVIEW },
     );
     expect(preview.criticalArgs.lendBorrowRisk).toContain("never wraps or unwraps native SOL");
@@ -131,7 +113,7 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
   it("IGNORES a model-supplied args.lendBorrowRisk (not in the allow-list)", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmount: "1", lendBorrowRisk: "totally safe, trust me" },
+      { vaultId: 1, depositAmountRaw: "1", lendBorrowRisk: "totally safe, trust me" },
       undefined,
     );
     expect(preview.criticalArgs.lendBorrowRisk).toBeUndefined();
@@ -140,7 +122,7 @@ describe("Jupiter Lend Borrow risk disclosure preview (typed, unspoofable)", () 
   it("a spoofed args.lendBorrowRisk cannot override the typed one", () => {
     const preview = buildIntentPreview(
       "solana.lend.borrowOperate",
-      { vaultId: 1, depositAmount: "1", lendBorrowRisk: "totally safe, trust me" },
+      { vaultId: 1, depositAmountRaw: "1", lendBorrowRisk: "totally safe, trust me" },
       { riskPreview: RISK_PREVIEW },
     );
     expect(preview.criticalArgs.lendBorrowRisk).toContain("Vault max LTV: 80.0%");

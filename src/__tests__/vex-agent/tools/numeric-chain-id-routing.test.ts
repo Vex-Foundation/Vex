@@ -318,11 +318,11 @@ describe("swap_quote_uniswap — the same numeric chain id is accepted post-reve
 describe("token_check — token_find's numeric chainId reaches the token API", () => {
   it("accepts a JSON NUMBER chain id", async () => {
     const context = freshContext();
-    const result = await handleTokenCheck({ chain: 8453, address: USDC_BASE }, context);
+    const result = await handleTokenCheck({ chain: 8453, tokenAddress: USDC_BASE }, context);
 
     expect(result.success).toBe(true);
     const { toolId, params } = lastDispatch();
     expect(toolId).toBe("kyberswap.tokens.check");
-    expect(params).toEqual({ chain: "8453", address: USDC_BASE });
+    expect(params).toEqual({ chain: "8453", tokenAddress: USDC_BASE });
   });
 });

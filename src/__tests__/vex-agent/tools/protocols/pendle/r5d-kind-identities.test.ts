@@ -243,7 +243,10 @@ const { recordPendleSyPrequote, gatePendleSyExecute } = await import(
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const CTX = {} as unknown as ProtocolExecutionContext;
-const SY_PARAMS = { chain: "ethereum", sy: SY, token: TOKEN, amountIn: "1", slippageBps: 50 };
+// The plain-token leg is named for its DIRECTION (W6e): `tokenIn` on the mint,
+// `tokenOut` on the redeem. Both directions are exercised below, so both keys
+// are present — each handler/identity reads only the one its direction owns.
+const SY_PARAMS = { chain: "ethereum", sy: SY, tokenIn: TOKEN, tokenOut: TOKEN, amountIn: "1", slippageBps: 50 };
 const ROUTE_REF = { direction: "mint", sy: SY, aggregator: null } as const;
 
 async function recordSy(direction: "mint" | "redeem", params = SY_PARAMS): Promise<void> {

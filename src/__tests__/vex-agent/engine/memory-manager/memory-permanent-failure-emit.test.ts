@@ -21,15 +21,15 @@ const claimNextDueJob = vi.fn();
 const markFailed = vi.fn();
 const markCompleted = vi.fn();
 const heartbeat = vi.fn();
-const recoverStaleRunning = vi.fn(async () => 0);
-const listJobsByStatus = vi.fn(async () => []);
+const recoverStaleRunning = vi.fn(async (..._args: unknown[]) => 0);
+const listJobsByStatus = vi.fn(async (..._args: unknown[]) => []);
 const enqueueConsolidateJob = vi.fn();
 const bumpJobInference = vi.fn();
 
-const reserveCandidatesForJob = vi.fn(async () => 0);
-const listItemsByJob = vi.fn(async () => []);
+const reserveCandidatesForJob = vi.fn(async (..._args: unknown[]) => 0);
+const listItemsByJob = vi.fn(async (..._args: unknown[]) => []);
 
-const emitMemoryWorkerPermanentlyFailedBug = vi.fn(async () => {});
+const emitMemoryWorkerPermanentlyFailedBug = vi.fn(async (..._args: unknown[]) => {});
 
 vi.mock("@vex-agent/db/repos/memory-jobs/index.js", () => ({
   claimNextDueJob: (...a: unknown[]) => claimNextDueJob(...a),

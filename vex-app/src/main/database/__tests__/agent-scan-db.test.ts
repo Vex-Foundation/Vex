@@ -93,7 +93,9 @@ function row(overrides: Partial<Record<string, unknown>> = {}) {
     executed_amount_out_raw: "400000000000000",
     usd_out_est: "1.49",
     usd_fee_est: null,
+    vex_fee_usd_est: null,
     vex_fee_token_symbol: null,
+    vex_fee_source: null,
     vex_fee_amount_human: null,
     failure_code: null,
     failure_reason: null,
@@ -210,6 +212,44 @@ describe("getAgentScan row selection", () => {
     expect(sql).toContain("aa.event_role = 'swap'");
     expect(sql).toContain("aa.event_role = 'bridge_fill_expected'");
     expect(sql).toContain("aa.kind IN ('lend', 'prediction', 'wrap', 'launch')");
+  });
+
+  it("INCLUDES yield (migration 053) — a Pendle trade is a logical row, its approval legs are not", async () => {
+    // The regression this pins: every Pendle mutation writes a receipt-truth
+    // `kind = 'yield'` row and none of them reached this feed. Spelled as the
+    // kind minus the approval roles so a SEVENTH yield role added later is
+    // visible the day it is written — a role allow-list would silently omit it.
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(pageCall().sql).toContain(
+      "(aa.kind = 'yield' AND aa.event_role NOT IN ('allowance', 'allowance_reset'))",
+    );
+  });
+
+  // OWNER REVISION 2026-08-05, superseding "the fee leg renders as its own row
+  // everywhere except the agent view". Live evidence: the feed rendered
+  // "LAUNCH-FEE 0.0000031675 ETH → —" above "LAUNCH 0.001267 ETH → 105721 PUSSY"
+  // — the same charge, at 25 bps of the launch, presented as a second user
+  // action. A `trench_fee` leg is stored with `kind = 'launch'`, so the kind arm
+  // admitted it; the exclusion is spelled on the ROLE, ahead of every arm, so no
+  // kind can readmit a fee leg.
+  it("EXCLUDES the Vex-fee legs from the feed on every kind (owner revision 2026-08-05)", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(pageCall().sql).toContain(
+      "aa.event_role NOT IN ('bridge_fee', 'swap_fee', 'trench_fee')",
+    );
+  });
+
+  it("projects the fee leg onto its parent UNCONDITIONALLY — no fee leg is its own row now", async () => {
+    // The projection used to skip a fee leg that was already its own ledger
+    // entry. With no fee leg rendering as a row, that guard would hide the
+    // charge completely; its removal is what keeps the money visible.
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const { sql } = pageCall();
+    expect(sql).toContain("fee.event_role IN ('bridge_fee','swap_fee','trench_fee')");
+    expect(sql).toContain("fee.status     = 'confirmed'");
+    // The deleted guard was the logical-row predicate applied to the `fee`
+    // alias — the only place this SQL ever spoke of `fee.kind`.
+    expect(sql).not.toContain("fee.kind");
   });
 
   it("reads agent_activity ONLY — no legacy union arm", async () => {

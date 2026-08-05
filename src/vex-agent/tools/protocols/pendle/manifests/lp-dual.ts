@@ -20,6 +20,7 @@
 
 import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_LP_DUAL_DISCOVERY } from "../../embeddings/pendle/lp-dual.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CHAIN_PARAM = {
   key: "chain",
@@ -41,7 +42,7 @@ const SLIPPAGE_PARAM = {
   type: "number" as const,
   unit: "bps" as const,
   description:
-    "Slippage tolerance in whole basis points (default 50 = 0.50%; maximum 1000 = 10%). A fractional, negative or larger value is REJECTED, never clamped. It bounds BOTH output legs. The dry run and the execute must pass the SAME value (or omit it on both).",
+    `Slippage tolerance in whole basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%; maximum 1000 = 10%). A fractional, negative or larger value is REJECTED, never clamped. It bounds BOTH output legs. The dry run and the execute must pass the SAME value (or omit it on both).`,
 };
 
 const DRY_RUN_PARAM = {
@@ -78,7 +79,7 @@ export const PENDLE_LP_DUAL_TOOLS: readonly ProtocolToolManifest[] = [
       market: "0x34280882267ffa6383b363e278b027be083bbe3b",
       tokenOut: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
-      slippageBps: 50,
+      slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       dryRun: true,
     },
     discovery: PENDLE_LP_DUAL_DISCOVERY["pendle.lp.removeDual"],
@@ -109,7 +110,7 @@ export const PENDLE_LP_DUAL_TOOLS: readonly ProtocolToolManifest[] = [
       market: "0x34280882267ffa6383b363e278b027be083bbe3b",
       tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
-      slippageBps: 50,
+      slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       dryRun: true,
     },
     discovery: PENDLE_LP_DUAL_DISCOVERY["pendle.lp.addKeepYt"],

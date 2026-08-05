@@ -22,7 +22,10 @@ import {
 import { createElement, type ReactNode } from "react";
 import type { StreamDeltaEvent } from "@shared/schemas/stream.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
-import { useStreamStore } from "../../../../stores/streamStore.js";
+import {
+  STREAM_FLUSH_MS,
+  useStreamStore,
+} from "../../../../stores/streamStore.js";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import { CHAT_SUBMIT_MUTATION_KEY } from "../../chat.js";
 
@@ -179,7 +182,19 @@ export function reasoningDelta(
   };
 }
 
-export const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Settle pending async work AND the store's delta-coalescing window: every
+ * streamed delta kind now lands in the store one flush window after it is
+ * emitted (`STREAM_FLUSH_MS`), so a test that asserts on the preview has to
+ * wait it out. Real timers — the fake-timer suites use `settleDeltas`.
+ */
+export const flush = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, STREAM_FLUSH_MS + 1));
+
+/** Fake-timer counterpart of `flush` for the coalescing window alone. */
+export function settleDeltas(): void {
+  vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
+}
 
 /** The engine's delta callback for the mounted hook (throws if unmounted). */
 export function emitDelta(event: StreamDeltaEvent): void {

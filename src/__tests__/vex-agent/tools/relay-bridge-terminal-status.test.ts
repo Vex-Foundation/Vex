@@ -46,7 +46,7 @@ vi.mock("@tools/relay/quote.js", () => ({
   }),
   RELAY_QUOTE_USD_SOURCE: "relay_quote_v2",
 }));
-vi.mock("@tools/relay/health.js", () => ({ evaluateRelayRouteHealth: () => ({ serviceable: true }) }));
+vi.mock("@tools/relay/health.js", () => ({ evaluateRelayRouteHealth: () => ({ serviceable: true, blockProductionLagging: [] }) }));
 vi.mock("@tools/relay/correlation.js", () => ({ assertRelayQuoteCorrelation: () => ({ ok: true, requestId: "0xreq" }) }));
 const depositStepDef = {
   stepId: "deposit", role: "bridge_deposit", chainId: 8453,
@@ -89,7 +89,7 @@ const CHAINS = [
   { id: 8453, name: "base", displayName: "Base", currency: { symbol: "ETH", decimals: 18 }, vmType: "evm", depositEnabled: true, disabled: false },
   { id: 4663, name: "robinhood", displayName: "Robinhood Chain", currency: { symbol: "ETH", decimals: 18 }, vmType: "evm", depositEnabled: true, disabled: false },
 ];
-const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: ERC20, amount: "1000000000000000" };
+const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: ERC20, amountRaw: "1000000000000000" };
 
 function confirmedSign(txHash = "0xorigin") {
   return async (_p: unknown, _w: unknown, _tx: unknown, hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> }) => {
@@ -110,14 +110,14 @@ beforeEach(() => {
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue({ steps: [depositStepDef.step], requestId: "0xreq" } as unknown as RelayQuoteResponse);
   mockSign.mockImplementation(confirmedSign());
-  mockPoll.mockResolvedValue({ status: "submitted", observed: true, destinationTxHashes: [] });
+  mockPoll.mockResolvedValue({ status: "submitted", observed: true, destinationTxHashes: [], failReason: null, refundFailReason: null, lastError: null });
   mockAbort.mockResolvedValue([]);
 });
 
 describe("relay.bridge — an in-turn provider status NEVER terminalizes the durable row (W4 owns it)", () => {
   for (const status of ["submitted", "pending", "delayed"]) {
     it(`non-terminal '${status}' → success:false pending, tracked automatically, row not failed`, async () => {
-      mockPoll.mockResolvedValue({ status, observed: true, destinationTxHashes: [] });
+      mockPoll.mockResolvedValue({ status, observed: true, destinationTxHashes: [], failReason: null, refundFailReason: null, lastError: null });
       const result = await run();
       expect(result.success).toBe(false);
       expect(out(result).status).toBe("pending");
@@ -127,7 +127,7 @@ describe("relay.bridge — an in-turn provider status NEVER terminalizes the dur
   }
 
   it("provider 'success' → still NOT-final (verified confirm deferred to W4), row not confirmed/failed", async () => {
-    mockPoll.mockResolvedValue({ status: "success", observed: true, destinationTxHashes: ["0xfill"] });
+    mockPoll.mockResolvedValue({ status: "success", observed: true, destinationTxHashes: ["0xfill"], failReason: null, refundFailReason: null, lastError: null });
     const result = await run();
     expect(result.success).toBe(false);
     expect(out(result).status).toBe("pending");
@@ -136,7 +136,7 @@ describe("relay.bridge — an in-turn provider status NEVER terminalizes the dur
   });
 
   it("provider 'refund' → money-back-≠-success message, row stays pending for W4 (not terminalized here)", async () => {
-    mockPoll.mockResolvedValue({ status: "refund", observed: true, destinationTxHashes: [] });
+    mockPoll.mockResolvedValue({ status: "refund", observed: true, destinationTxHashes: [], failReason: null, refundFailReason: null, lastError: null });
     const result = await run();
     expect(result.success).toBe(false);
     expect(String(out(result).message)).toMatch(/refund/i);
@@ -145,7 +145,7 @@ describe("relay.bridge — an in-turn provider status NEVER terminalizes the dur
   });
 
   it("provider 'failure' → destination-did-not-arrive message, row stays pending for W4", async () => {
-    mockPoll.mockResolvedValue({ status: "failure", observed: true, destinationTxHashes: [] });
+    mockPoll.mockResolvedValue({ status: "failure", observed: true, destinationTxHashes: [], failReason: null, refundFailReason: null, lastError: null });
     const result = await run();
     expect(result.success).toBe(false);
     expect(String(out(result).message)).toMatch(/failed|did NOT arrive/i);
@@ -153,7 +153,7 @@ describe("relay.bridge — an in-turn provider status NEVER terminalizes the dur
   });
 
   it("status API unreachable (observed:false) → still pending (deposit confirmed on origin; W4 tracks), NOT a hard failure", async () => {
-    mockPoll.mockResolvedValue({ status: "pending", observed: false, destinationTxHashes: [] });
+    mockPoll.mockResolvedValue({ status: "pending", observed: false, destinationTxHashes: [], failReason: null, refundFailReason: null, lastError: null });
     const result = await run();
     expect(result.success).toBe(false);
     expect(out(result).status).toBe("pending");

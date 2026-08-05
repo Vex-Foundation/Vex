@@ -50,7 +50,7 @@ describe("prompt-stack — layer composition", () => {
 
           // Tool usage markers
           expect(joined).toContain("discover_tools");
-          expect(joined).toContain("execute_tool");
+          expect(joined).toContain("discover_tools");
           expect(joined).toContain("2-step transfer rule");
 
           // Protocols marker

@@ -1,5 +1,6 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_PY_DISCOVERY } from "../../embeddings/pendle/py.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CHAIN_PARAM = {
   key: "chain",
@@ -31,7 +32,7 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenIn", type: "string", description: "MINT only: the payment token CONTRACT ADDRESS to spend (ERC-20; use WETH for ETH)." },
       { key: "tokenOut", type: "string", description: "REDEEM only: the output token CONTRACT ADDRESS. Defaults to the market's underlying asset." },
       { key: "amountIn", type: "string", required: true, description: "Human-readable amount — mint: the payment token amount; redeem: the PT+YT pair amount to burn." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
     ],
     exampleParams: { chain: "ethereum", direction: "mint", pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1" },
     discovery: PENDLE_PY_DISCOVERY["pendle.py.quote"],
@@ -49,10 +50,10 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
       PT_PARAM,
       { key: "tokenIn", type: "string", required: true, description: "The payment token CONTRACT ADDRESS to spend (ERC-20; use WETH for ETH)." },
       { key: "amountIn", type: "string", required: true, description: "Amount of the payment token in human-readable units." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
       { key: "dryRun", type: "boolean", description: "Preview without executing." },
     ],
-    exampleParams: { chain: "ethereum", pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1", slippageBps: 50 },
+    exampleParams: { chain: "ethereum", pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: PENDLE_PY_DISCOVERY["pendle.py.mint"],
   },
   {
@@ -68,10 +69,10 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
       PT_PARAM,
       { key: "tokenOut", type: "string", description: "The output token CONTRACT ADDRESS. Defaults to the market's underlying asset." },
       { key: "amountIn", type: "string", required: true, description: "Amount of the PT+YT pair to burn in human-readable units (equal PT and YT)." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
       { key: "dryRun", type: "boolean", description: "Preview without executing." },
     ],
-    exampleParams: { chain: "ethereum", pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c", amountIn: "1", slippageBps: 50 },
+    exampleParams: { chain: "ethereum", pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c", amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: PENDLE_PY_DISCOVERY["pendle.py.redeem"],
   },
 ];

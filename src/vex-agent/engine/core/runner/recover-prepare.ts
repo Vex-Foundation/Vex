@@ -78,7 +78,16 @@ export type PrepareMissionRecoverOutcome =
     readonly outcome: "lease_busy";
     readonly currentLease: RunnerLease;
   }
-  | { readonly outcome: "provider_unavailable" };
+  | { readonly outcome: "provider_unavailable" }
+  /**
+   * A SESSION-scoped operator Stop was outstanding when the run-creation
+   * transaction ran. No run was created: a run committed after a Stop is
+   * unreachable by that Stop, because the run-scoped gate matches on
+   * `mission_run_id` and never finds a NULL-scoped request.
+   *
+   * The gate consumed the stop in the same transaction, so a retry proceeds.
+   */
+  | { readonly outcome: "session_stop_pending" };
 
 export interface PrepareMissionRecoverInput {
   readonly sessionId: string;
@@ -151,9 +160,25 @@ export async function prepareMissionRecover(
   // 7. Durable atomic tx — setStatus + setApprovedAt + createRun +
   //    getRun (same client, readback inside the tx).
   const newRunId = `run-${Date.now()}-${randomUUID().slice(0, 8)}`;
-  let createdRun: MissionRun;
+  let created: MissionRun | "session_stop_pending";
   try {
-    createdRun = await withTransaction(async (client) => {
+    created = await withTransaction(async (client) => {
+      // SESSION CONTROL LOCK FIRST, per the canonical global lock order. Same
+      // reason as `commitMissionStart`: run CREATION and the operator's Stop
+      // must be strictly ordered, or a Stop that read "no active run" commits a
+      // SESSION-scoped `stop_terminal` the run-scoped gate can never find, and
+      // the recovered run proceeds unstoppable. The lock gives the ORDER; the
+      // gate below is what makes the stop-committed-first ordering safe. It
+      // applies and consumes the stop in this same transaction, so the refusal
+      // parks nothing for later work to trip over.
+      const { acquireSessionControlLock, gateOnOperatorStopWithClient } =
+        await import("../../runtime/lease-and-status.js");
+      await acquireSessionControlLock(client, input.sessionId);
+      const stopGate = await gateOnOperatorStopWithClient(client, {
+        sessionId: input.sessionId,
+        missionRunId: null,
+      });
+      if (stopGate.kind === "stopped") return "session_stop_pending" as const;
       await setStatus(mission.id, "running", client);
       await setApprovedAt(mission.id, client);
       await missionRunsRepo.createRun(
@@ -180,6 +205,16 @@ export async function prepareMissionRecover(
     }).catch(() => undefined);
     throw err;
   }
+
+  if (created === "session_stop_pending") {
+    // Nothing was committed, so the lease this prepare claimed is ours to
+    // release — the same rule every other refusal path here follows.
+    await releaseLeaseAndEmitControlState(sessionLease, input.sessionId, {
+      missionRunId: null,
+    }).catch(() => undefined);
+    return { outcome: "session_stop_pending" };
+  }
+  const createdRun: MissionRun = created;
 
   logger.info("engine.mission.prepare_recover.committed", {
     missionId: mission.id,

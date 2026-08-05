@@ -34,19 +34,21 @@
  * 60 s `maxElapsedTime` retry envelope.
  */
 
+import { composeDeadline } from "@utils/cancellation.js";
+
 /**
  * Compose a caller's cancellation with the configured request deadline.
  *
  * Returns `undefined` when there is nothing to cancel, so the SDK keeps arming
  * its own equivalent timeout (see module doc). `deadlineMs` is a build-time
  * constant, never external input.
+ *
+ * The composition itself is shared with every other cancellable call site —
+ * this module keeps only the SDK-specific evidence above.
  */
 export function composeRequestDeadline(
   callerSignal: AbortSignal | undefined,
   deadlineMs: number,
 ): AbortSignal | undefined {
-  if (callerSignal === undefined) return undefined;
-  // The timeout signal's timer is unref'd by Node, so an early-completing
-  // request never holds the process open waiting for a deadline it beat.
-  return AbortSignal.any([callerSignal, AbortSignal.timeout(deadlineMs)]);
+  return composeDeadline(callerSignal, deadlineMs);
 }

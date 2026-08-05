@@ -36,6 +36,9 @@ const mocks = vi.hoisted(() => ({
   getMemoryStats: vi.fn(),
   // mission-runs-db
   getActiveRunForSession: vi.fn(),
+  // session-control-state — `runtime.getState` reads the aggregate directly
+  // now, so the DTO's required `stoppable` is projected from one snapshot.
+  readSessionControlFacts: vi.fn(),
   // approvals-db
   listPendingForSession: vi.fn(),
   listPendingAllApprovals: vi.fn(),
@@ -91,6 +94,12 @@ vi.mock("../../../database/memory-db.js", () => ({
   getMemoryStats: mocks.getMemoryStats,
 }));
 
+vi.mock("../../../database/session-control-state.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../../database/session-control-state.js")
+  >();
+  return { ...actual, readSessionControlFacts: mocks.readSessionControlFacts };
+});
 vi.mock("../../../database/mission-runs-db.js", () => ({
   getActiveRunForSession: mocks.getActiveRunForSession,
 }));
@@ -177,7 +186,7 @@ async function callUntrusted(channel: string, payload: unknown): Promise<ResultS
 
 describe("runtime handlers", () => {
   it("getState returns mission run state with lease and pending-control fields", async () => {
-    mocks.getActiveRunForSession.mockResolvedValueOnce({
+    mocks.readSessionControlFacts.mockResolvedValueOnce({
       ok: true,
       data: {
         sessionId: SESSION,
@@ -191,6 +200,10 @@ describe("runtime handlers", () => {
         leaseActive: false,
         leaseExpiresAt: null,
         pendingControlKind: null,
+        hasPendingWake: false,
+        hasPendingApproval: false,
+        hasIncompleteApprovalLifecycle: false,
+        hasOutstandingUserForm: false,
       },
     });
     const result = await call(CH.runtime.getState, { sessionId: SESSION });

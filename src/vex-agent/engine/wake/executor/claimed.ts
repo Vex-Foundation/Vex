@@ -11,12 +11,16 @@ import { handleAgentSessionClaimed } from "./agent-session.js";
 export async function handleClaimed(
   wake: LoopWakeRequest,
   deps: WakeDeps,
+  now: Date,
 ): Promise<ClaimedWakeOutcome> {
   // Session-scoped continuation of a Full-Autonomous agent session. Routed on
   // the row's own shape, before anything reads a run: there is no run row to
   // read, and the claim is the session lease rather than a run-status CAS.
+  // Unlike the mission branch below, this row is NOT yet consumed — the atomic
+  // claim does that under the session control lock, and needs `now` to prove
+  // the row is still due.
   if (wake.missionRunId === null) {
-    return handleAgentSessionClaimed(wake, deps);
+    return handleAgentSessionClaimed(wake, deps, now);
   }
 
   const run = await deps.getMissionRun(wake.missionRunId);

@@ -6,6 +6,7 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  type Account,
   type Address,
   type Chain,
   type Hex,
@@ -143,7 +144,7 @@ export function toViemChain(slug: KyberChainSlug): Chain {
 
 export interface KyberEvmClients {
   publicClient: PublicClient<Transport, Chain>;
-  walletClient: WalletClient<Transport, Chain>;
+  walletClient: WalletClient<Transport, Chain, Account>;
 }
 
 export function getKyberEvmClients(slug: KyberChainSlug, privateKey: Hex): KyberEvmClients {
@@ -159,7 +160,7 @@ export function getKyberEvmClients(slug: KyberChainSlug, privateKey: Hex): Kyber
     account: privateKeyToAccount(privateKey),
     chain,
     transport: http(rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT }),
-  }) as WalletClient<Transport, Chain>;
+  }) as WalletClient<Transport, Chain, Account>;
 
   return { publicClient, walletClient };
 }

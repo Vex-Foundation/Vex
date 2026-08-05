@@ -92,7 +92,7 @@ describe("data-exposure invariant", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.source).toBe("failure");
     expect(row.productType).toBe("spot"); // derived from the allowlist
     expect(row.status).toBe("failed");
@@ -100,7 +100,7 @@ describe("data-exposure invariant", () => {
     expect("params" in row).toBe(false);
     expect("result" in row).toBe(false);
     // No economics fields on a failure row.
-    for (const econ of ["valueUsd", "inputToken", "outputToken", "tradeSide", "captureStatus"]) {
+    for (const econ of ["valueUsd", "inputToken", "outputToken", "tradeSide", "captureStatus"] as const) {
       expect(row[econ]).toBeUndefined();
     }
   });
@@ -119,7 +119,7 @@ describe("data-exposure invariant", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.source).toBe("agent_activity");
     expect(row.status).toBe("pending");
     expect(row.failureCode).toBeNull();
@@ -161,7 +161,7 @@ describe("agent_activity display amount (FIX2-SPINE C20, finding 5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.amountBasis).toBe("executed");
     expect(row.inputAmount).toBe("4.99"); // from executed_amount_in_raw, NOT the "5" quote
     expect(row.outputAmount).toBe("0.001987"); // from executed_amount_out_raw
@@ -184,7 +184,7 @@ describe("agent_activity display amount (FIX2-SPINE C20, finding 5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.amountBasis).toBe("requested");
     expect(row.inputAmount).toBe("5");
     expect(row.outputAmount).toBe("0.002");
@@ -311,7 +311,7 @@ describe("filters", () => {
     // Bridges collapse to the logical row; swaps/lend/prediction/launch still
     // emit every row (one role per on-chain tx — no logical/leg split, R5).
     expect(activityHalf).toContain(
-      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'launch' OR event_role = 'bridge_fill_expected')",
+      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR event_role = 'bridge_fill_expected')",
     );
   });
 

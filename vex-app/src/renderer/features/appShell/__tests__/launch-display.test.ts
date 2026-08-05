@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  classifyLaunchOutcome,
   classifyLaunchRefusal,
   formatWeiEth,
   formatWeiEthWithUnit,
@@ -153,5 +154,49 @@ describe("isAcceptableLaunchLink", () => {
     expect(isAcceptableLaunchLink("javascript:alert(1)")).toBe(false);
     expect(isAcceptableLaunchLink("data:text/html,x")).toBe(false);
     expect(isAcceptableLaunchLink("vex.example")).toBe(false);
+  });
+});
+
+/**
+ * The auto-dismiss decision, over the full matrix. This is the rule that lets a
+ * modal close itself after a REAL SPEND, so every cell is stated rather than
+ * inferred: four statuses × four hash shapes. A blank hash is not a receipt —
+ * `z.string().nullable()` admits `""` and `"   "` alike, and neither is
+ * something the user could look up after the dialog is gone.
+ */
+describe("classifyLaunchOutcome", () => {
+  const HASH = `0x${"a".repeat(64)}`;
+
+  it.each([
+    ["confirmed", "success", true],
+    ["confirmed_pending_identity", "success", true],
+    // Dismissible since B-PRE: the agent's resumed turn no longer claims the
+    // launch is done, so the receipt and the transcript agree.
+    ["pending", "caution", true],
+    // A failed spend the user must see. Never dismissed.
+    ["reverted", "failure", false],
+  ])("with a real hash, %s is %s and autoDismiss=%s", (status, tone, autoDismiss) => {
+    expect(classifyLaunchOutcome({ status, txHash: HASH } as never)).toEqual({
+      tone,
+      autoDismiss,
+    });
+  });
+
+  it.each([
+    ["null", null],
+    ["an empty string", ""],
+    ["whitespace only", "   "],
+  ])("HOLDS every status when the hash is %s", (_label, txHash) => {
+    for (const status of [
+      "confirmed",
+      "confirmed_pending_identity",
+      "pending",
+      "reverted",
+    ]) {
+      const presentation = classifyLaunchOutcome({ status, txHash } as never);
+      expect(presentation.autoDismiss).toBe(false);
+      // A hashless broadcast is never painted as a success.
+      expect(presentation.tone).toBe(status === "reverted" ? "failure" : "caution");
+    }
   });
 });

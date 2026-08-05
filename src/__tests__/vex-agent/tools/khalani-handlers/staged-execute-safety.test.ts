@@ -142,7 +142,9 @@ const mockMarkBroadcastAccepted = vi.fn();
 const mockConfirmActivityEvent = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockAbortPlannedEvents = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+const mockNotePendingReason = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
+const mockNoteBridgeProviderObservation = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
+vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   createBridgeActivityIntent: (...a: unknown[]) => mockCreateBridgeActivityIntent(...a),
   createBridgePreBroadcastFailure: (...a: unknown[]) => mockCreateBridgePreBroadcastFailure(...a),
   attachProviderOrderId: (...a: unknown[]) => mockAttachProviderOrderId(...a),
@@ -153,6 +155,12 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: (...a: unknown[]) => mockConfirmActivityEvent(...a),
   failActivityEvent: (...a: unknown[]) => mockFailActivityEvent(...a),
   abortPlannedEvents: (...a: unknown[]) => mockAbortPlannedEvents(...a),
+  // R1 Step 3b/4 primitives. `provenLegAmounts` is the REAL pure function — the
+  // point of the confirm assertions below is WHICH amounts a leg may claim, so
+  // stubbing the evidence matrix would test the stub.
+  provenLegAmounts: (await importOriginal<Record<string, unknown>>()).provenLegAmounts,
+  notePendingReason: (...a: unknown[]) => mockNotePendingReason(...a),
+  noteBridgeProviderObservation: (...a: unknown[]) => mockNoteBridgeProviderObservation(...a),
 }));
 
 const mockRevealRelayRoute = vi.fn();
@@ -218,7 +226,7 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
 
 function execute(over: Record<string, unknown> = {}, context = ctx()) {
   return BRIDGE_HANDLERS["khalani.bridge"]!(
-    { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amount: "1500000", ...over },
+    { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amountRaw: "1500000", ...over },
     context,
   );
 }
@@ -401,7 +409,7 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     await execute();
     expect(mockLoggerWarn).toHaveBeenCalledWith("khalani.bridge.order_id_conflict", expect.any(Object));
     // FIXED CONTRACT (m4): poll the persisted id, never the newly-returned "o1".
-    expect(mockPollKhalaniOrderToTerminal).toHaveBeenCalledWith("persisted-order");
+    expect(mockPollKhalaniOrderToTerminal.mock.calls[0]?.[0]).toBe("persisted-order");
     expect(mockPollKhalaniOrderToTerminal).not.toHaveBeenCalledWith("o1");
   });
 
@@ -417,7 +425,7 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
   it("attach not_pending (terminal row) → logged, polls the persisted id", async () => {
     mockAttachProviderOrderId.mockResolvedValueOnce({ outcome: "not_pending", row: { id: 200, status: "confirmed", providerOrderId: "o1" } });
     await execute();
-    expect(mockPollKhalaniOrderToTerminal).toHaveBeenCalledWith("o1");
+    expect(mockPollKhalaniOrderToTerminal.mock.calls[0]?.[0]).toBe("o1");
   });
 
   it("poll filled → filled_unverified, NEVER a fabricated confirmed fill", async () => {

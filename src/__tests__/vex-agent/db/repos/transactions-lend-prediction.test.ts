@@ -107,7 +107,7 @@ describe("agent_activity display amount — W5/R5 correction", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.amountBasis).toBe("estimated");
     expect(row.inputAmount).toBe("5"); // the quote, since no executed data was decoded
   });
@@ -138,7 +138,7 @@ describe("agent_activity lend/prediction feed (R5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.productType).toBe("lend");
     expect(row.eventRole).toBe("lend_deposit");
     expect(row.amountBasis).toBe("executed");
@@ -171,7 +171,7 @@ describe("agent_activity lend/prediction feed (R5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.productType).toBe("prediction");
     expect(row.eventRole).toBe("predict_buy");
     expect(row.amountBasis).toBe("requested");
@@ -198,7 +198,7 @@ describe("agent_activity lend/prediction feed (R5)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.productType).toBe("spot");
     expect(row.chainFamily).toBe("solana");
   });

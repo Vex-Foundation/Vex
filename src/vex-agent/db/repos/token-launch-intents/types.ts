@@ -58,6 +58,19 @@ export const LIVE_TOKEN_LAUNCH_INTENT_STATUSES: readonly TokenLaunchIntentStatus
   "broadcast_pending",
 ];
 
+/**
+ * Why a form continuation was retired without its turn ever running. Mirrors
+ * the CHECK constraint in migration 070 — both halves of one closed vocabulary.
+ *
+ *   `session_deleted`             the session is gone (removed or soft-deleted),
+ *                                 so there is no history to resume against.
+ *   `resume_failed_deterministic` the same deterministic provider refusal on two
+ *                                 consecutive attempts with an unchanged prompt.
+ */
+export type UserFormContinuationCloseReason =
+  | "session_deleted"
+  | "resume_failed_deterministic";
+
 export interface TokenLaunchIntent {
   intentId: string;
   sessionId: string;
@@ -88,6 +101,18 @@ export interface TokenLaunchIntent {
   missionRunId: string | null;
   /** `messages.id` of the appended tool-result row — stamped in the SAME transaction as that row. */
   resultMessageId: number | null;
+  /**
+   * When a resumed turn COMPLETED for this form. The only thing that ends the
+   * continuation's eligibility — `resultMessageId` says the transcript has the
+   * answer, which is true long before the turn that answer exists for has run.
+   */
+  resumeConsumedAt: string | null;
+  /**
+   * Why the continuation was closed WITHOUT a resumed turn ever running, or
+   * `null` for the ordinary path where one did. Describes the owed model turn
+   * only — never the launch's own outcome.
+   */
+  resumeClosedReason: UserFormContinuationCloseReason | null;
   txHash: string | null;
   tokenAddress: string | null;
   failureReason: string | null;
@@ -182,7 +207,9 @@ export const SELECT_COLUMNS =
   "intent_id, session_id, origin, status, chain_id, wallet_address, " +
   "name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals, " +
   "authorization_id, authorization_kind, authorized_at, " +
-  "tool_call_id, mission_run_id, result_message_id, tx_hash, token_address, " +
+  "tool_call_id, mission_run_id, result_message_id, resume_consumed_at, " +
+  "resume_closed_reason, " +
+  "tx_hash, token_address, " +
   "failure_reason, authorization_json, expires_at, consumed_at, cancelled_at, broadcast_at, " +
   "confirmed_at, created_at";
 
@@ -207,6 +234,9 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
     toolCallId: (r.tool_call_id as string | null) ?? null,
     missionRunId: (r.mission_run_id as string | null) ?? null,
     resultMessageId: nullableInt(r.result_message_id),
+    resumeConsumedAt: toIsoOrNull(r.resume_consumed_at as string | Date | null),
+    resumeClosedReason:
+      (r.resume_closed_reason as UserFormContinuationCloseReason | null) ?? null,
     txHash: (r.tx_hash as string | null) ?? null,
     tokenAddress: (r.token_address as string | null) ?? null,
     failureReason: (r.failure_reason as string | null) ?? null,

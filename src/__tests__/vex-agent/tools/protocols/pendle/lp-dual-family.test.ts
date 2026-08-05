@@ -43,6 +43,7 @@ import { PENDLE_LP_DUAL_TOOLS } from "@vex-agent/tools/protocols/pendle/manifest
 import { ErrorCodes } from "../../../../../errors.js";
 import { PENDLE_R5D_FIXTURES as F } from "./r5d-fixtures.js";
 import { mutableConvertFixture } from "./validated-fixtures.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const WALLET = getAddress("0x742d35cc6634c0532925a3b844bc454e4438f44e");
 const MARKET = getAddress("0x34280882267ffa6383b363e278b027be083bbe3b");
@@ -271,9 +272,9 @@ const legs = (over: Partial<PendleLpDualLegs> = {}): PendleLpDualLegs => ({
   ...over,
 });
 
-const removeHash = (params: Record<string, unknown> = { slippageBps: 50 }, over: Partial<PendleLpDualLegs> = {}): string =>
+const removeHash = (params: Record<string, unknown> = { slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, over: Partial<PendleLpDualLegs> = {}): string =>
   computePrequoteMatchHash(buildLpDualMatchInput("lp_remove_dual", "sess-1", params, legs(over)));
-const addHash = (params: Record<string, unknown> = { slippageBps: 50 }, over: Partial<PendleLpDualLegs> = {}): string =>
+const addHash = (params: Record<string, unknown> = { slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, over: Partial<PendleLpDualLegs> = {}): string =>
   computePrequoteMatchHash(buildLpDualMatchInput("lp_add_keep_yt", "sess-1", params, legs(over)));
 
 describe("dual-LP prequote identity — dry run ↔ execute agreement", () => {
@@ -287,17 +288,17 @@ describe("dual-LP prequote identity — dry run ↔ execute agreement", () => {
   });
 
   it("a changed market / token leg / amount / slippage / chain / wallet each diverge", () => {
-    expect(removeHash()).not.toBe(removeHash({ slippageBps: 50 }, { market: PT }));
-    expect(removeHash()).not.toBe(removeHash({ slippageBps: 50 }, { token: USDC }));
-    expect(removeHash()).not.toBe(removeHash({ slippageBps: 50 }, { amount: "1.0001" }));
-    expect(removeHash()).not.toBe(removeHash({ slippageBps: 100 }));
-    expect(removeHash()).not.toBe(removeHash({ slippageBps: 50 }, { chainId: 42161 }));
-    expect(removeHash()).not.toBe(removeHash({ slippageBps: 50 }, { walletAddress: USDC }));
+    expect(removeHash()).not.toBe(removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, { market: PT }));
+    expect(removeHash()).not.toBe(removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, { token: USDC }));
+    expect(removeHash()).not.toBe(removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, { amount: "1.0001" }));
+    expect(removeHash()).not.toBe(removeHash({ slippageBps: 300 }));
+    expect(removeHash()).not.toBe(removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, { chainId: 42161 }));
+    expect(removeHash()).not.toBe(removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, { walletAddress: USDC }));
   });
 
-  it("an omitted slippage normalizes to the handler default (50) on both sides", () => {
-    expect(removeHash({})).toBe(removeHash({ slippageBps: 50 }));
-    expect(addHash({})).toBe(addHash({ slippageBps: 50 }));
+  it("an omitted slippage normalizes to the handler default on both sides", () => {
+    expect(removeHash({})).toBe(removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
+    expect(addHash({})).toBe(addHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
   });
 
   it("the identity binds the RESOLVED market and puts the varying leg on the right side", () => {
@@ -420,7 +421,7 @@ describe("the dual-LP manifests meet the context-free agent bar", () => {
   it("slippage is documented as whole basis points with the policy maximum, covering both legs", () => {
     const slippage = manifestFor("pendle.lp.removeDual").params.find((param) => param.key === "slippageBps");
     expect(slippage?.unit).toBe("bps");
-    expect(slippage?.description).toMatch(/0\.50%/);
+    expect(slippage?.description).toMatch(new RegExp(`default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%`));
     expect(slippage?.description).toMatch(/1000 = 10%/);
     expect(slippage?.description).toMatch(/BOTH output legs/);
   });

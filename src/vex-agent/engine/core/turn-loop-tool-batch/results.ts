@@ -82,6 +82,24 @@ export const APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT =
   "approval_skipped_by_user_stop: this action required approval, but the operator stopped the run "
   + "while the call was in flight. No approval was created and the action did NOT execute.";
 
+/**
+ * Result for a call that WAS dispatched and then cancelled mid-flight by the
+ * operator's Stop. Distinct from every drain above, which describe calls that
+ * never started: this one really ran, so `dispatchTool` stamps its `durationMs`.
+ *
+ * The closing sentence is a truth claim about money and it is provable, not
+ * hopeful: the sign→broadcast→persist modules take no abort signal at all, so a
+ * signal-driven cancellation cannot originate inside one
+ * (`src/__tests__/vex-agent/tools/never-interrupt-no-abort-signal.test.ts`).
+ *
+ * Emitted ONLY for an `AbortError` on a context whose signal is aborted — a
+ * deadline breach is a `TimeoutError` and must keep saying "timed out".
+ */
+export const TOOL_ABORTED_BY_USER_STOP_OUTPUT =
+  "tool_aborted_by_user_stop: the operator stopped the run while this tool call was "
+  + "running. It was cancelled mid-flight and did NOT complete. Nothing was signed or "
+  + "broadcast by this call.";
+
 interface ExecutedResult {
   toolCallId: string;
   toolName: string;

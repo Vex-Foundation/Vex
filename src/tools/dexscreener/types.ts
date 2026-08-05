@@ -326,5 +326,3 @@ export interface WsHandshake<T> {
   limit: number;
   data: T[];
 }
-
-export type DexStreamChannel = "profiles" | "boosts" | "boosts-top" | "community-takeovers" | "ads";

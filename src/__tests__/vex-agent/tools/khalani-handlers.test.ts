@@ -8,11 +8,12 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { makeProtocolContext } from "./_test-context.js";
 
 import { KHALANI_HANDLERS } from "../../../vex-agent/tools/protocols/khalani/handlers.js";
 import { KHALANI_TOOLS } from "../../../vex-agent/tools/protocols/khalani/manifest.js";
 
-const EXECUTION_CTX = { sessionPermission: "restricted" as const, approved: false };
+const EXECUTION_CTX = makeProtocolContext();
 
 describe("khalani handlers — structural coverage", () => {
   it("has a handler for every manifest toolId", () => {

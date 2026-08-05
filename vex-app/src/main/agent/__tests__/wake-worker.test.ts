@@ -23,6 +23,11 @@ vi.mock("../../database/wake-db.js", () => ({
 vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
   ensureEngineDbUrl: vi.fn(),
 }));
+// Migrations are the bootstrap gate every worker now consults; these tests are
+// about the LIFECYCLE past it. `migrations-gate.test.ts` owns the gate itself.
+vi.mock("../../database/migrations-applied.js", () => ({
+  migrationsApplied: () => true,
+}));
 
 const { setupWakeWorker } = await import("../wake-worker.js");
 

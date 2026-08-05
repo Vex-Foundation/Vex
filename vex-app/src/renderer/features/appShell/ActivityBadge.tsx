@@ -206,6 +206,9 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   // Reads the same as the bridge fee leg — it IS the same kind of leg, on a
   // different venue.
   trench_fee: "FEE",
+  // Migration 066 — the same fee leg again, on a swap venue whose router takes
+  // no fee parameter.
+  swap_fee: "FEE",
 };
 
 /**
@@ -251,12 +254,20 @@ const STATUS_MARK: Record<AgentActivityStatus, StatusMark> = {
   pending: { label: "PENDING", tone: "warning" },
   confirmed: { label: "CONFIRMED", tone: "success" },
   failed: { label: "FAILED", tone: "danger" },
+  // NEVER `danger`. A6's state says the hash is no longer tracked as in flight
+  // and its outcome is UNPROVEN — not that it failed, not that nothing was
+  // spent, not that a retry is safe. A red chip would state all three.
+  superseded_unproven: { label: "SUPERSEDED", tone: "paper" },
 };
 
 /** Statuses the shell renders a chip for. `confirmed` is the quiet default. */
 const ATTENTION_STATUSES: ReadonlySet<AgentActivityStatus> = new Set<AgentActivityStatus>([
   "pending",
   "failed",
+  // It needs the chip precisely because it is neither pending nor confirmed: a
+  // row that silently stopped moving with no mark is the state this whole wave
+  // exists to end.
+  "superseded_unproven",
 ]);
 
 /**

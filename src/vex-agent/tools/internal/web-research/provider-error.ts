@@ -183,9 +183,24 @@ export function classifyProviderFailure(error: unknown): WebResearchFailure {
   return { code, message: STATIC_MESSAGES[code], httpStatus };
 }
 
-/** What the agent reads: the code it can branch on, then the static sentence. */
+/**
+ * The code the agent branches on, plus the provider's own status WHENEVER one
+ * was recovered — `provider_rejected, HTTP 429`.
+ *
+ * The status was already validated to a bounded integer in 100-599 and was
+ * already considered safe enough to log; withholding it from the agent while
+ * keeping it in an operator's log file is the split that made a 429 and a 403
+ * read identically to the only reader who could act on the difference (W1
+ * contract, `renderProtocolFailureOutput`, which uses this same `, HTTP <n>`
+ * clause). No prose crosses: only `Number` output.
+ */
+export function providerFailureReason(failure: WebResearchFailure): string {
+  return failure.httpStatus === null ? failure.code : `${failure.code}, HTTP ${failure.httpStatus}`;
+}
+
+/** What the agent reads: the reason it can branch on, then the static sentence. */
 export function providerFailureMessage(failure: WebResearchFailure): string {
-  return `${failure.code} — ${failure.message}`;
+  return `${providerFailureReason(failure)} — ${failure.message}`;
 }
 
 /**

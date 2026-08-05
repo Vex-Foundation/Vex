@@ -102,6 +102,23 @@ export function mapRow(r: Record<string, unknown>): AgentActivityEvent {
     broadcastAt: toIsoOrNull(r.broadcast_at),
     confirmedAt: toIsoOrNull(r.confirmed_at),
     lastCheckedAt: toIsoOrNull(r.last_checked_at),
+    verificationAttempts: Number(r.verification_attempts ?? 0),
+    lastVerificationReason:
+      typeof r.last_verification_reason === "string" ? r.last_verification_reason : null,
+    // Migration 067 — tolerant reads, closed-union writes (`./provenance-vocabulary.js`).
+    confirmationSource: typeof r.confirmation_source === "string" ? r.confirmation_source : null,
+    settlementSource: typeof r.settlement_source === "string" ? r.settlement_source : null,
+    pendingReason: typeof r.pending_reason === "string" ? r.pending_reason : null,
+    providerStatusObservedAt: toIsoOrNull(r.provider_status_observed_at),
+    // Migration 068 — the pending-fallback lane's own state. Read tolerantly:
+    // every one of these is NULL on a row the lane has never touched, which is
+    // every row written before 068.
+    evmClaimLeaseUntil: toIsoOrNull(r.evm_claim_lease_until),
+    evmClaimToken: typeof r.evm_claim_token === "string" ? r.evm_claim_token : null,
+    lastVerificationIncrementAt: toIsoOrNull(r.last_verification_increment_at),
+    firstNonInclusionObservedAt: toIsoOrNull(r.first_noninclusion_observed_at),
+    settlementDecodeVersion:
+      typeof r.settlement_decode_version === "string" ? r.settlement_decode_version : null,
     createdAt: toIso(r.created_at),
     updatedAt: toIso(r.updated_at),
   };

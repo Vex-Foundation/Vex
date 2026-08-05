@@ -44,9 +44,18 @@
 import type { PoolClient } from "pg";
 import { executeWith, queryOneWith, withTransaction } from "../../../db/client.js";
 import * as controlRequestsRepo from "../../../db/repos/runtime-control-requests.js";
-import { TERMINAL_RUN_STATUSES, type MissionRunStatus } from "../../types.js";
+import { INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE } from "../../../db/contracts/approval-lifecycle-predicates.js";
+import { OUTSTANDING_USER_FORM_PREDICATE } from "../../../db/contracts/user-form-lifecycle-predicates.js";
+import {
+  ACTIVE_OR_PAUSED_RUN_STATUSES,
+  TERMINAL_RUN_STATUSES,
+  type MissionRunStatus,
+} from "../../types.js";
 import { applySessionStopWithClient } from "./apply-session-stop.js";
-import { applyUserStopWithClient } from "./apply-user-stop.js";
+import {
+  applyUserStopWithClient,
+  rejectPendingApprovalsWithClient,
+} from "./apply-user-stop.js";
 import { lockOpenControlRequests } from "./control-request-locks.js";
 import {
   acquireSessionControlLock,
@@ -226,11 +235,113 @@ export async function enqueueOperatorStopRequest(
 export type EnqueueSessionStopOutcome =
   | { readonly outcome: "queued"; readonly requestId: string }
   /** A session-scoped stop was already open — this call added nothing. */
-  | { readonly outcome: "already_queued"; readonly requestId: string };
+  | { readonly outcome: "already_queued"; readonly requestId: string }
+  /**
+   * The stop was fully APPLIED by this transaction and NO request was left
+   * behind, because the same transaction proved nothing durable or airborne
+   * remains to observe one.
+   */
+  | { readonly outcome: "applied" }
+  /**
+   * ENGINE-INTERNAL. A non-terminal mission run for this session became visible
+   * under the lock, so this session-scoped stop would have named the wrong
+   * scope. NOTHING was written; the caller must re-run the RUN-scoped stop path
+   * for `missionRunId`. Never surfaced over IPC.
+   */
+  | {
+    readonly outcome: "active_run_exists";
+    readonly missionRunId: string;
+    readonly runStatus: MissionRunStatus;
+  };
 
 export interface EnqueueSessionStopInput {
   readonly sessionId: string;
   readonly correlationId?: string | null;
+}
+
+/** Does a live (unexpired) runner lease exist for this session? */
+async function hasLiveSessionLease(
+  client: PoolClient,
+  sessionId: string,
+): Promise<boolean> {
+  const row = await queryOneWith<{ readonly present: boolean }>(
+    client,
+    `SELECT TRUE AS present
+       FROM runner_leases
+      WHERE session_id = $1 AND expires_at >= NOW()
+      LIMIT 1`,
+    [sessionId],
+  );
+  return row !== null;
+}
+
+/**
+ * Does the session still owe approval-lifecycle work? The predicate is the
+ * SHARED one from `db/contracts` — the same fact the Stop-availability
+ * aggregate reads — so a session whose Stop key was shown for this reason
+ * cannot have its stop request retired here.
+ */
+async function hasIncompleteApprovalLifecycle(
+  client: PoolClient,
+  sessionId: string,
+): Promise<boolean> {
+  const row = await queryOneWith<{ readonly present: boolean }>(
+    client,
+    `SELECT TRUE AS present
+       FROM approval_intents
+      WHERE session_id = $1
+        AND ${INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE}
+      LIMIT 1`,
+    [sessionId],
+  );
+  return row !== null;
+}
+
+/**
+ * Is an agent turn parked on a user form and still owed an answer?
+ *
+ * The predicate is the SHARED one — the same fact the Stop-availability
+ * aggregate reads and the durable resume floor selects on. A parked form has no
+ * run, no lease and no wake, so without this the transaction would prove
+ * "nothing will observe a stop request", retire it, and the form's resume would
+ * then run a model turn on a stopped session.
+ */
+async function hasOutstandingUserForm(
+  client: PoolClient,
+  sessionId: string,
+): Promise<boolean> {
+  const row = await queryOneWith<{ readonly present: boolean }>(
+    client,
+    `SELECT TRUE AS present
+       FROM token_launch_intents
+      WHERE session_id = $1
+        AND ${OUTSTANDING_USER_FORM_PREDICATE}
+      LIMIT 1`,
+    [sessionId],
+  );
+  return row !== null;
+}
+
+/**
+ * The newest non-terminal mission run for this session, read under the lock.
+ * `FOR UPDATE` so a concurrent run-creation transaction cannot commit between
+ * this read and this transaction's own commit.
+ */
+async function lockActiveRunForSession(
+  client: PoolClient,
+  sessionId: string,
+): Promise<{ readonly id: string; readonly status: MissionRunStatus } | null> {
+  return queryOneWith<{ readonly id: string; readonly status: MissionRunStatus }>(
+    client,
+    `SELECT id, status
+       FROM mission_runs
+      WHERE session_id = $1
+        AND status = ANY($2::text[])
+      ORDER BY started_at DESC
+      LIMIT 1
+      FOR UPDATE`,
+    [sessionId, [...ACTIVE_OR_PAUSED_RUN_STATUSES]],
+  );
 }
 
 /**
@@ -244,9 +355,37 @@ export interface EnqueueSessionStopInput {
  * row. That includes the continuation scheduler — which is how a Stop cannot
  * race a wake into existence.
  *
- * The pending wake is cancelled in THIS transaction too, not in a follow-up:
- * a stop that clears the request but leaves a due wake behind would be undone
- * by the executor moments later.
+ * ## Target scope is REVALIDATED, never a read of the past
+ *
+ * The caller chose "session scope" from a read taken before this transaction.
+ * A `mission_runs` row committed in between would make that choice wrong in the
+ * worst possible way: the run-scoped gate matches on `mission_run_id`, so a
+ * NULL-scoped row is never found for a run, and the operator's Stop on real
+ * money-moving work would do nothing. So the run is re-read HERE, under the
+ * lock, and a session-scoped request is never written for a session that has an
+ * active run. The caller re-runs the run-scoped path instead.
+ *
+ * Lock order is the canonical one: SESSION CONTROL LOCK → OPEN CONTROL
+ * REQUESTS → RUN. The re-check is the RUN step of that same order.
+ *
+ * ## The request is retained only if something will OBSERVE it
+ *
+ * The pending wake is cancelled and the pending approvals rejected in THIS
+ * transaction, not in a follow-up: a stop that clears the request but leaves a
+ * due wake behind would be undone by the executor moments later.
+ *
+ * Whether the `stop_terminal` row is then RETAINED is decided by the same
+ * transaction, from durable state rather than from an in-process registry:
+ *
+ *   - a LIVE LEASE, an INCOMPLETE APPROVAL LIFECYCLE, or an OUTSTANDING USER
+ *     FORM → something will consult the gate (the pre-slice gate, an iteration
+ *     boundary, the approved-dispatch gate, the reconciler's resume, the
+ *     launch-form resume), so the request stays OPEN for it to consume;
+ *   - NEITHER → this transaction has just proven no durable or airborne work
+ *     remains, so no request is created at all. That is what makes "Stop on an
+ *     idle session leaves nothing behind" true, and therefore what keeps a
+ *     later, unrelated `loop_defer` from being refused by a stop nobody
+ *     retired.
  *
  * Idempotent. A second press finds the open row and returns it rather than
  * stacking duplicates the gate would have to consume one by one.
@@ -258,12 +397,40 @@ export async function enqueueSessionStopRequest(
     await acquireSessionControlLock(client, input.sessionId);
     const openRequests = await lockOpenControlRequests(client, input.sessionId);
 
+    const activeRun = await lockActiveRunForSession(client, input.sessionId);
+    if (activeRun !== null) {
+      return {
+        outcome: "active_run_exists",
+        missionRunId: activeRun.id,
+        runStatus: activeRun.status,
+      };
+    }
+
     const existing = openRequests.find(
       (row) => row.kind === "stop_terminal" && row.mission_run_id === null,
     );
     if (existing !== undefined) {
       return { outcome: "already_queued", requestId: existing.id };
     }
+
+    // Apply the parts of a session stop that must land regardless of whether a
+    // request row is retained — see the doc comment above.
+    await executeWith(
+      client,
+      `UPDATE loop_wake_requests
+          SET status           = 'cancelled',
+              cancelled_at     = NOW(),
+              cancelled_reason = 'consumed_by_session_stop'
+        WHERE session_id = $1 AND status = 'pending'`,
+      [input.sessionId],
+    );
+    await rejectPendingApprovalsWithClient(client, input.sessionId);
+
+    const observable =
+      await hasLiveSessionLease(client, input.sessionId)
+      || await hasIncompleteApprovalLifecycle(client, input.sessionId)
+      || await hasOutstandingUserForm(client, input.sessionId);
+    if (!observable) return { outcome: "applied" };
 
     const request = await controlRequestsRepo.enqueueRequest(
       {
@@ -274,17 +441,6 @@ export async function enqueueSessionStopRequest(
         correlationId: input.correlationId ?? null,
       },
       client,
-    );
-
-    // Same-transaction wake cancellation — see the doc comment above.
-    await executeWith(
-      client,
-      `UPDATE loop_wake_requests
-          SET status           = 'cancelled',
-              cancelled_at     = NOW(),
-              cancelled_reason = 'consumed_by_session_stop'
-        WHERE session_id = $1 AND status = 'pending'`,
-      [input.sessionId],
     );
 
     return { outcome: "queued", requestId: request.id };

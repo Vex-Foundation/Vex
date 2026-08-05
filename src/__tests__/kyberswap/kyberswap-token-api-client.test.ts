@@ -67,6 +67,8 @@ describe("KyberTokenApiClient", () => {
         ok: false,
         status: 400,
         json: async () => ({ message: "Bad request" }),
+        // The error path reads the body as TEXT (W2a).
+        text: async () => JSON.stringify({ message: "Bad request" }),
       });
       await expect(client.searchTokens("1")).rejects.toMatchObject({
         code: ErrorCodes.KYBER_TOKEN_SEARCH_FAILED,
@@ -91,6 +93,7 @@ describe("KyberTokenApiClient", () => {
         ok: false,
         status: 500,
         json: async () => ({ message: "Server error" }),
+        text: async () => JSON.stringify({ message: "Server error" }),
       });
       await expect(client.getHoneypotFotInfo(1, "0x1")).rejects.toMatchObject({
         code: ErrorCodes.KYBER_HONEYPOT_CHECK_FAILED,

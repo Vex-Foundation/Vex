@@ -60,7 +60,7 @@ export async function runRetryDispatch(
   const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
   if (!dbUrlOutcome.ok) return dbUrlOutcome;
   try {
-    const latest = await getLatestRunForSession(input.sessionId);
+    const latest = await getLatestRunForSession(input.sessionId, ctx.requestId);
     if (!latest.ok) return latest;
     if (latest.data === null) return ok({ outcome: "no_active_run" });
 
@@ -149,7 +149,10 @@ export async function runRetryDispatch(
       await markFailed(auditRequest.id, "status_changed");
       // Deliberate re-read: if a race winner already resumed the run, report
       // it as already_running rather than a generic error.
-      const after = await getLatestRunForSession(input.sessionId);
+      const after = await getLatestRunForSession(
+        input.sessionId,
+        ctx.requestId,
+      );
       if (after.ok && after.data?.status === "running") {
         return ok({ outcome: "already_running", runId: after.data.missionRunId });
       }

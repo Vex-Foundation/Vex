@@ -90,7 +90,9 @@ export async function handleWalletSendPrepare(
     ...result,
     preparedActionFollowUp: {
       toolName: "wallet_send_confirm",
-      args: { network, intentId },
+      // The confirm TOOL's param key is `walletFamily` (SPEC §1.1); `network`
+      // is only the internal/stored spelling of the same value.
+      args: { walletFamily: network, intentId },
       expiresAt,
       approvalPreview: {
         toolName: "wallet_send_confirm",

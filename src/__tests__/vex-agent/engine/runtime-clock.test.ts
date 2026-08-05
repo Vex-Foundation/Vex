@@ -45,7 +45,7 @@ describe("runtime-clock", () => {
     });
 
     expect(snapshot.missionDeadlineState).toBe("overdue by 19m 18s");
-    expect(buildRuntimeClockPrompt(snapshot, { missionRunActive: true })).toContain("overdue by 19m 18s");
+    expect(buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: true })).toContain("overdue by 19m 18s");
   });
 
   // WP-I1: the deadline prompt line is NEUTRAL timebox awareness only — the
@@ -58,7 +58,7 @@ describe("runtime-clock", () => {
       timezone: "UTC",
       missionDeadline: "2026-05-03T14:10:00.000Z",
     });
-    const prompt = buildRuntimeClockPrompt(snapshot, { missionRunActive: true });
+    const prompt = buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: true });
 
     expect(prompt).toContain("auto-finalizes");
     expect(prompt).toContain("reported as unresolved");
@@ -76,7 +76,7 @@ describe("runtime-clock", () => {
       timezone: "UTC",
     });
 
-    expect(buildRuntimeClockPrompt(snapshot, { missionRunActive: true })).not.toContain("auto-finalizes");
+    expect(buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: true })).not.toContain("auto-finalizes");
   });
 
   // Wake scheduling exists only inside an active mission run: an agent session
@@ -88,13 +88,13 @@ describe("runtime-clock", () => {
       timezone: "UTC",
       sessionStartedAt: "2026-05-03T08:01:02.000Z",
     });
-    const agentPrompt = buildRuntimeClockPrompt(snapshot, { missionRunActive: false });
+    const agentPrompt = buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: false });
 
     expect(agentPrompt).toContain("Current time UTC:");
     expect(agentPrompt).not.toContain("Pending wake");
     expect(agentPrompt).not.toContain("loop_defer");
 
-    const runPrompt = buildRuntimeClockPrompt(snapshot, { missionRunActive: true });
+    const runPrompt = buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: true });
     expect(runPrompt).toContain("Pending wake: none");
     expect(runPrompt).toContain("loop_defer(after_ms=");
   });
@@ -115,7 +115,7 @@ describe("runtime-clock", () => {
     });
 
     expect(snapshot.sessionElapsed).toBe("not started yet — starts in 1h 15m");
-    const prompt = buildRuntimeClockPrompt(snapshot, { missionRunActive: false });
+    const prompt = buildRuntimeClockPrompt(snapshot, { wakeSchedulingAvailable: false });
     expect(prompt).toContain("not started yet — starts in 1h 15m");
     expect(prompt).not.toContain("elapsed: 1h 15m");
   });

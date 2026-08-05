@@ -121,7 +121,7 @@ describe("DexScreener pair-list byte budgets", () => {
 
   it("tokenPairs, lean default, 30 pools: under the cap (it was 17.5 KB before)", async () => {
     const bytes = await outputBytes("dexscreener.tokenPairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     });
     expect(bytes).toBeLessThan(DEXSCREENER_BYTE_BUDGET_BYTES);
@@ -129,7 +129,7 @@ describe("DexScreener pair-list byte budgets", () => {
 
   it("tokenPairs, rich: over the cap, opt-in only", async () => {
     const bytes = await outputBytes("dexscreener.tokenPairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       fields: "full",
     });
@@ -145,7 +145,7 @@ describe("DexScreener pair-list byte budgets", () => {
   // disclosed rather than a hidden default.
   it("tokens (40 requested, 30 returned), lean: over the cap, because of the address echo", async () => {
     const bytes = await outputBytes("dexscreener.tokens", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddresses: tokensEthereum40().requestedAddresses,
     });
     expect(bytes).toBeGreaterThan(DEXSCREENER_BYTE_BUDGET_BYTES);
@@ -157,7 +157,7 @@ describe("DexScreener pair-list byte budgets", () => {
     const handler = DEXSCREENER_HANDLERS["dexscreener.tokens"];
     if (handler === undefined) throw new Error("no handler");
     const result = await handler(
-      { chainId: "ethereum", tokenAddresses: requestedAddresses, limit: 15 },
+      { chain: "ethereum", tokenAddresses: requestedAddresses, limit: 15 },
       READ_CTX,
     );
     expect(result.success).toBe(true);
@@ -172,11 +172,11 @@ describe("DexScreener pair-list byte budgets", () => {
 
   it("pairs, single pool, lean and rich both trivially under the cap", async () => {
     const lean = await outputBytes("dexscreener.pairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       pairAddress: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
     });
     const rich = await outputBytes("dexscreener.pairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       pairAddress: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
       fields: "full",
     });
@@ -204,14 +204,14 @@ describe("DexScreener pair-list byte budgets", () => {
       [
         "tokenPairs WETH lean",
         await outputBytes("dexscreener.tokenPairs", {
-          chainId: "ethereum",
+          chain: "ethereum",
           tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         }),
       ],
       [
         "tokenPairs WETH rich",
         await outputBytes("dexscreener.tokenPairs", {
-          chainId: "ethereum",
+          chain: "ethereum",
           tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
           fields: "full",
         }),
@@ -219,14 +219,14 @@ describe("DexScreener pair-list byte budgets", () => {
       [
         "tokens 40-requested lean",
         await outputBytes("dexscreener.tokens", {
-          chainId: "ethereum",
+          chain: "ethereum",
           tokenAddresses: tokensEthereum40().requestedAddresses,
         }),
       ],
       [
         "tokens 40-requested rich",
         await outputBytes("dexscreener.tokens", {
-          chainId: "ethereum",
+          chain: "ethereum",
           tokenAddresses: tokensEthereum40().requestedAddresses,
           fields: "full",
         }),
@@ -234,7 +234,7 @@ describe("DexScreener pair-list byte budgets", () => {
       [
         "pairs single lean",
         await outputBytes("dexscreener.pairs", {
-          chainId: "ethereum",
+          chain: "ethereum",
           pairAddress: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
         }),
       ],

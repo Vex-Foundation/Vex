@@ -78,24 +78,24 @@ describe("khalani manifest", () => {
     expect(keywordParam!.required).toBe(true);
   });
 
-  it("khalani.quote.get requires fromChain, fromToken, toChain, toToken, amount", () => {
+  it("khalani.quote.get requires fromChain, fromToken, toChain, toToken, amountRaw", () => {
     const tool = KHALANI_TOOLS.find(t => t.toolId === "khalani.quote.get")!;
     const requiredKeys = tool.params.filter(p => p.required).map(p => p.key);
     expect(requiredKeys).toContain("fromChain");
     expect(requiredKeys).toContain("fromToken");
     expect(requiredKeys).toContain("toChain");
     expect(requiredKeys).toContain("toToken");
-    expect(requiredKeys).toContain("amount");
+    expect(requiredKeys).toContain("amountRaw");
   });
 
-  it("khalani.bridge requires fromChain, fromToken, toChain, toToken, amount", () => {
+  it("khalani.bridge requires fromChain, fromToken, toChain, toToken, amountRaw", () => {
     const tool = KHALANI_TOOLS.find(t => t.toolId === "khalani.bridge")!;
     const requiredKeys = tool.params.filter(p => p.required).map(p => p.key);
     expect(requiredKeys).toContain("fromChain");
     expect(requiredKeys).toContain("fromToken");
     expect(requiredKeys).toContain("toChain");
     expect(requiredKeys).toContain("toToken");
-    expect(requiredKeys).toContain("amount");
+    expect(requiredKeys).toContain("amountRaw");
   });
 
   it("khalani.orders.get requires orderId", () => {

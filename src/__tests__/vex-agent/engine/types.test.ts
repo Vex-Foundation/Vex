@@ -130,11 +130,14 @@ describe("engine types", () => {
         stopConditions: null,
         deadline: null,
         durationMinutes: null,
+        maxLaunchValueRaw: null,
+        maxLaunchValueDecimals: null,
+        maxLaunchCount: null,
       };
       // Puzzle 04 removed `stopConditionsAccepted` from MissionDraft —
       // acceptance is host-only via `missions.accepted_contract_hash`.
       // WP-I1 added `durationMinutes` (hard time-box, minutes).
-      expect(Object.keys(draft)).toHaveLength(12);
+      expect(Object.keys(draft)).toHaveLength(15);
     });
 
     it("accepts populated values", () => {
@@ -151,6 +154,9 @@ describe("engine types", () => {
         stopConditions: ["capital_depleted", "deadline_reached"],
         deadline: "2026-04-04",
         durationMinutes: 60,
+        maxLaunchValueRaw: "1000000000000000000",
+        maxLaunchValueDecimals: 18,
+        maxLaunchCount: 3,
       };
       expect(draft.title).toBe("SOL DCA Strategy");
       expect(draft.allowedChains).toEqual(["solana"]);

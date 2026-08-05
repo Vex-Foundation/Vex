@@ -63,7 +63,14 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
     // (the canonical bridge_fill_expected row included) — NO LIMIT (OWNER RULE).
     expect(activityHalf).toContain("jsonb_agg(jsonb_build_object");
     expect(activityHalf).toContain("leg.protocol_execution_id = agent_activity.protocol_execution_id");
-    expect(activityHalf).not.toMatch(/jsonb_agg[\s\S]*LIMIT/);
+    // Scoped to the legs subquery ITSELF: the half legitimately contains other
+    // LIMITs now (the Vex-fee LATERAL picks one leg), and an unscoped match
+    // would fail on those while proving nothing about truncation of the legs.
+    const legsSubquery = activityHalf.slice(
+      activityHalf.indexOf("jsonb_agg(jsonb_build_object"),
+      activityHalf.indexOf("END AS legs"),
+    );
+    expect(legsSubquery).not.toContain("LIMIT");
     // Route + provider columns selected.
     expect(activityHalf).toContain("from_chain_id");
     expect(activityHalf).toContain("to_chain_id");
@@ -94,7 +101,7 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.productType).toBe("bridge");
     expect(row.amountBasis).toBe("executed");
     expect(row.inputAmount).toBe("2"); // 2000000 / 10^6
@@ -105,7 +112,7 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
     expect(row.chainFamily).toBe("eip155");
     expect(row.providerOrderId).toBe("ord_123");
     expect(row.providerStatus).toBe("filled");
-    const legs = row.legs as Array<Record<string, unknown>>;
+    const legs = row.legs ?? [];
     expect(legs).toHaveLength(2);
     expect(legs[0]?.role).toBe("bridge_deposit");
     expect(legs[0]?.txHash).toBe("0xdeposit");
@@ -137,13 +144,13 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.status).toBe("pending");
     expect(row.amountBasis).toBe("estimated");
     expect(row.inputAmount).toBe("0.001"); // the QUOTE, shown as estimate
     expect(row.outputAmount).toBe("0.00099");
     // The pending fill leg carries a null hash but is preserved (never dropped).
-    const legs = row.legs as Array<Record<string, unknown>>;
+    const legs = row.legs ?? [];
     expect(legs).toHaveLength(2);
     expect(legs[1]?.txHash).toBeNull();
   });
@@ -173,14 +180,14 @@ describe("agent_activity bridge feed (R14/B8/Q2)", () => {
       },
     ]);
     const res = await repo.getTransactions({ addresses: ADDRS, sessionId: SESSION, limit: 20 });
-    const row = res.items[0]! as Record<string, unknown>;
+    const row = res.items[0];
     expect(row.status).toBe("definitively_failed");
     expect(row.failureCode).toBe("bridge_refunded");
     expect(row.amountBasis).toBeNull();
     expect(row.inputAmount).toBeNull();
     expect(row.outputAmount).toBeNull();
     // Every leg preserved, incl. the refund evidence row.
-    const legs = row.legs as Array<Record<string, unknown>>;
+    const legs = row.legs ?? [];
     expect(legs).toHaveLength(3);
     expect(legs[2]?.role).toBe("bridge_refund");
     expect(legs[2]?.txHash).toBe("0xrefund");

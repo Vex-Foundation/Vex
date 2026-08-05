@@ -57,6 +57,22 @@ export interface InternalToolContext {
    */
   approvalId?: string | null;
   /**
+   * True ONLY for a call the model emitted in a live turn. Set in exactly one
+   * place — `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`
+   * — and never derived from tool arguments, so the model cannot set, clear or
+   * forge it.
+   *
+   * It exists to keep `execute_tool` closed to the model (discovered tools are
+   * injected as real functions and called by name) while leaving its dispatch
+   * route open to the ONE non-model caller that needs it: the cold approval
+   * resume, whose stored envelope is canonicalized to `execute_tool` precisely
+   * so it survives a process restart (`approval-runtime/tool-call-envelope.ts`).
+   * ABSENT ⇒ NOT model-originated, which is correct for every host-built
+   * context (resume, run-tool, sync jobs) and is the conservative default for
+   * a gate that only ever REFUSES.
+   */
+  modelOriginated?: true;
+  /**
    * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
    * filter (e.g. `loop_defer` handler rejects non-mission calls even if the
@@ -106,6 +122,31 @@ export interface InternalToolContext {
   walletResolution: WalletResolution;
   /** Mission wallet policy — enforced alongside the resolution by the resolvers. */
   walletPolicy: WalletPolicy;
+  /**
+   * Operator Stop for the turn that owns this dispatch.
+   *
+   * PUSH cancellation for everything a handler does that is a READ, a POLL, a
+   * SLEEP, or a QUOTA WAIT. Handlers pass it to `delay`, `pollUntil`,
+   * `composeDeadline` (`@utils/cancellation.js`) and `fetchWithTimeout`, and
+   * MUST NOT construct their own.
+   *
+   * MUST NOT be observed inside a sign→broadcast→persist window. See
+   * `@tools/evm-chains/staged-broadcast.ts` and
+   * `turn-loop-tool-batch.ts:165-170`: a leg that may already have moved funds
+   * runs to completion, always. That exemption is enforced structurally — the
+   * never-interrupt modules take no signal parameter at all, and
+   * `src/__tests__/vex-agent/tools/never-interrupt-no-abort-signal.test.ts`
+   * fails the build if the identifier appears in any of them.
+   *
+   * OPTIONAL because non-turn producers have no turn signal to hand over.
+   * ABSENT means "no cancellation", never "cancelled". The producers that
+   * deliberately leave it unset, so a future reader knows each omission is a
+   * decision and not an oversight:
+   *  - `engine/core/run-tool.ts` — operator direct invoke; there is no turn.
+   *  - `approval-runtime/post-tx/dispatch-approved` — cold approval resume;
+   *    the turn that requested the approval is long gone.
+   */
+  abortSignal?: AbortSignal;
 }
 
 // ── Param accessors ─────────────────────────────────────────────
@@ -133,9 +174,9 @@ export function num(params: Record<string, unknown>, key: string): number | unde
  * Why a `str()`/`num()` read came back empty — absent, or present with the
  * wrong type — phrased for the model.
  *
- * The distinction is the whole point. `chain_read {chainId: 8453}` is a NUMBER
+ * The distinction is the whole point. `chain_read {chain: 8453}` is a NUMBER
  * where the tool wants the string spelling; answering "Missing required:
- * chainId" is factually false (`token_find` returns `chainId` as a number, so
+ * chain" is factually false (`token_find` returns the chain id as a number, so
  * this is the form the agent normally holds) and the only repair it suggests is
  * the one that cannot work. Values are never echoed — only the shape.
  */

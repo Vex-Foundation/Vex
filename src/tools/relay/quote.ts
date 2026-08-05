@@ -37,6 +37,11 @@ export interface RelayQuoteSide {
   readonly amountFormatted: string | null;
   /** Per-side USD ESTIMATE — null unless Relay returned a finite decimal. */
   readonly amountUsd: string | null;
+  /**
+   * The WORST-CASE smallest-unit amount for this side (`minimumAmount`) — the
+   * guaranteed floor `slippageBps` controls. Null when Relay omitted it.
+   */
+  readonly minimumAmountRaw: string | null;
 }
 
 /** Flat, recorder-facing projection of a validated `/quote/v2` response. */
@@ -54,6 +59,14 @@ export interface RelayBridgeQuote {
    * No total is derived (buckets overlap). Empty when no bucket had numeric USD.
    */
   readonly feeUsdByBucket: Record<string, string>;
+  /**
+   * `details.totalImpact.percent` VERBATIM (live probe: `"-11.53"`). The one
+   * number that tells an agent to decline a bad bridge. Null when absent or not
+   * a finite decimal.
+   */
+  readonly totalImpactPercent: string | null;
+  /** `details.slippageTolerance.destination.percent` — the tolerance Relay APPLIED. */
+  readonly destinationSlippagePercent: string | null;
   /** Provenance marker for any recorded USD estimate (see RELAY_QUOTE_USD_SOURCE). */
   readonly usdSource: string;
 }
@@ -89,7 +102,18 @@ function projectSide(side: RelayQuoteDetailsSide | undefined): RelayQuoteSide {
     amountRaw: strOrNull(side?.amount),
     amountFormatted: strOrNull(side?.amountFormatted),
     amountUsd: finiteDecimalOrNull(side?.amountUsd),
+    minimumAmountRaw: strOrNull(side?.minimumAmount),
   };
+}
+
+/**
+ * A `{percent}` bearer, normalized to a verbatim finite-decimal STRING. Relay
+ * sends a string today; a number is accepted so a benign provider change
+ * degrades to a value rather than to null.
+ */
+function percentOrNull(bearer: { percent?: unknown } | undefined): string | null {
+  const raw = bearer?.percent;
+  return finiteDecimalOrNull(typeof raw === "number" ? String(raw) : raw);
 }
 
 /**
@@ -133,6 +157,8 @@ export function adaptRelayQuote(quote: RelayQuoteResponse): RelayBridgeQuote {
     currencyIn: projectSide(quote.details?.currencyIn),
     currencyOut: projectSide(quote.details?.currencyOut),
     feeUsdByBucket: projectFeeUsd(quote.fees),
+    totalImpactPercent: percentOrNull(quote.details?.totalImpact),
+    destinationSlippagePercent: percentOrNull(quote.details?.slippageTolerance?.destination),
     usdSource: RELAY_QUOTE_USD_SOURCE,
   };
 }

@@ -16,6 +16,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { makeTestContext } from "../../../_test-context.js";
 
 const mockCreate = vi.fn().mockResolvedValue(undefined);
 const mockGetById = vi.fn();
@@ -135,22 +137,13 @@ function pendingIntent(overrides: Partial<FixtureIntent> = {}): FixtureIntent {
   };
 }
 
-function makeContext(overrides: Partial<{ sessionPermission: "restricted" | "full"; approved: boolean; sessionId: string }> = {}) {
-  return {
+function makeContext(overrides: Partial<InternalToolContext> = {}): InternalToolContext {
+  return makeTestContext({
     sessionId: SESSION_ID,
-    loadedDocuments: new Map(),
-    sessionPermission: "restricted" as const,
-    approved: false,
-    missionRunId: null,
-    missionId: null,
-    sessionKind: "agent" as const,
-    contextUsageBand: "normal" as const,
-    sourceSurface: "vex_agent" as const,
+    sourceSurface: "vex_agent",
     sourceSession: SESSION_ID,
-    walletResolution: { source: "default" as const },
-    walletPolicy: { kind: "none" as const },
     ...overrides,
-  };
+  });
 }
 
 beforeEach(() => {
@@ -178,7 +171,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     );
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -203,7 +196,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -236,7 +229,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -264,7 +257,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -292,7 +285,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     );
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -317,7 +310,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockMarkAuditFailed.mockRejectedValueOnce(new Error("cascading DB throw"));
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -343,7 +336,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     );
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -369,7 +362,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockMarkAuditFailed.mockResolvedValueOnce(null);
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 
@@ -389,7 +382,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     mockMarkFailed.mockResolvedValueOnce(null);
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
 

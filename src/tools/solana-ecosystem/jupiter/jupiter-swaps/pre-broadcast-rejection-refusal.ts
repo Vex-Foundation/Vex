@@ -92,23 +92,42 @@
  * scrub boundary (C37: one scrub entry point per venue, never a fork) —
  * `staged-broadcast.ts` has already put it through `summarizeProtocolError`.
  *
- * It does not carry the EVM message's `priceImpact` exception clause. That
- * clause exists because `vex-agent/engine/prompts/protocols.ts` ships a
- * KyberSwap-specific caution — "a quote whose priceImpact is strongly NEGATIVE
- * (output supposedly worth more than input) … do NOT retry with higher
- * slippage" — and a refusal contradicting shipped guidance would be worse than
- * none. It does not transfer to Jupiter, because the two venues report price
- * impact with OPPOSITE SIGNS. KyberSwap derives it as
- * `(inUsd - outUsd) / inUsd` (`protocols/kyberswap/helpers.ts`), so negative
- * means the anomaly. Jupiter's is negative in the ORDINARY case: the repo's own
- * captured healthy quote is `priceImpactPct: "-0.00015864212550172836"`
- * (`solana-jupiter/swap-route-projector.ts`, pinned by its test). Copying the
- * clause would tell the agent that every normal Jupiter swap is priced off
- * stale reserves. No Jupiter-specific equivalent is invented in its place —
- * there is no shipped instruction and no captured evidence to support one.
+ * It DOES now carry the observed price impact, and it still does NOT carry the
+ * EVM message's stale-reserve exception clause. Those two used to be one
+ * decision, taken from a single 2026-07-25 capture whose `priceImpactPct` was
+ * `"-0.00015864212550172836"`; that reading — "Jupiter's is negative in the
+ * ORDINARY case, the two venues report OPPOSITE SIGNS" — is DISPROVEN.
+ *
+ * FRESH READ-ONLY CAPTURE, 2026-08-03, `GET /swap/v2/build` SOL→USDC, three
+ * independent runs, sizes walked until the pool actually moved
+ * (`agents_dm/verify/capture-jupiter-price-impact-sign.ts`, fixture
+ * `fixture-jupiter-price-impact-sign-2026-08-03.jsonl`):
+ *
+ *     0.001 SOL   priceImpactPct "0"
+ *     1 SOL       "0"
+ *     100 SOL     "0.0001118598285146309544582555"
+ *     2 000 SOL   "0.0003852935836355501562726267"
+ *     10 000 SOL  "0.0007307931699665665259144052"
+ *     50 000 SOL  "0.0036607697691746029222925233"
+ *
+ * POSITIVE, and monotonically increasing with size. Jupiter's convention is
+ * the COST-POSITIVE decimal fraction — the SAME one KyberSwap's
+ * `(inUsd - outUsd) / inUsd` uses and the one the shared remedy documents. So
+ * the figure is safe to quote and IS quoted: the remedy puts the observed
+ * impact beside the tolerance that was applied, which is what tells an agent
+ * whether it met a moving pool or a route that cannot fill.
+ *
+ * The stale-reserve caution stays OFF regardless. That clause is KyberSwap's
+ * shipped instruction in `vex-agent/engine/prompts/protocols.ts`, resting on
+ * indexed EVM reserves going stale; Jupiter routes against live on-chain state
+ * and no capture in this repo shows the negative anomaly it warns about.
+ * Shipping a caution with no evidence behind it is the same defect as
+ * suppressing one — see `staleReserveCaution` at the call site below.
  */
 
 import { SendTransactionError } from "@solana/web3.js";
+
+import { slippageRemediation } from "../../../../utils/error-summary.js";
 
 /**
  * The one condition this module can identify. A single-member `kind` on
@@ -138,6 +157,33 @@ export interface JupiterSwapSlippageBounds {
   /** `null` when the request named none and the venue applied its own default — stated as such, never guessed at. */
   readonly appliedBps: number | null;
   readonly maxBps: number;
+  /**
+   * The price impact the `/build` response behind THIS attempt carried, as the
+   * cost-positive decimal fraction the shared remedy documents (see the file
+   * header for the capture that settled the sign). `null` when the provider
+   * sent nothing usable — unknown impact is stated by omitting the sentence,
+   * never by printing a reassuring 0.
+   *
+   * Required, never defaulted: whether a money-path message quotes a
+   * provider number is a decision each call site makes out loud.
+   */
+  readonly observedPriceImpactFraction: number | null;
+}
+
+/**
+ * Read `JupiterSwapBuildResponse.priceImpactPct` as a number, or `null`.
+ *
+ * Provider-controlled and therefore untrusted, exactly like the echoed
+ * `slippageBps` above: only a finite parse of a non-empty string is quoted,
+ * and everything else degrades to "unknown". Jupiter sends this as a STRING
+ * of full precision (`"0.0036607697691746029222925233"`); the projector
+ * deliberately passes that string through unparsed, and this is the one place
+ * that needs it as a number because the remedy formats a percentage from it.
+ */
+export function observedPriceImpactFraction(priceImpactPct: unknown): number | null {
+  if (typeof priceImpactPct !== "string" || priceImpactPct.trim().length === 0) return null;
+  const parsed = Number(priceImpactPct);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /**
@@ -314,16 +360,21 @@ function refusedWithPhrase(anchorErrorNumber: number): string {
 function remedyFor(kind: JupiterPreBroadcastRejection["kind"], slippage: JupiterSwapSlippageBounds): string {
   switch (kind) {
     case "slippage":
+      // Same shared remedy the EVM pre-sign refusal gives (owned by
+      // `utils/error-summary/remediation.ts`), so an agent that met this failure
+      // on KyberSwap reads the identical instruction here — including that Vex
+      // makes exactly one attempt at the tolerance it was passed.
       return `That is the price guard doing its job: the pool moved past otherAmountThreshold — the minimum output written into the transaction this quote produced — between the quote and the submit. `
-        + `Re-quote and retry with a higher slippageBps — ${appliedTolerancePhrase(slippage.appliedBps)}, and Vex rejects anything above ${slippage.maxBps} rather than clamping it. `
-        + `Raise it in steps; every increase widens the worst-case price you accept.`;
+        + slippageRemediation({
+          ...slippage,
+          // The impact figure IS quoted: the 2026-08-03 capture in the file
+          // header proves Jupiter's `priceImpactPct` is the same cost-positive
+          // fraction the shared remedy documents. The EVM stale-reserve caution
+          // is still NOT copied — it is KyberSwap's shipped instruction about
+          // stale indexed reserves, and no capture here evidences it on Jupiter.
+          staleReserveCaution: false,
+        });
   }
-}
-
-function appliedTolerancePhrase(appliedBps: number | null): string {
-  return appliedBps === null
-    ? "this attempt set no slippageBps of its own, so the venue applied its default"
-    : `this attempt used ${appliedBps}`;
 }
 
 /**

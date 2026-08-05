@@ -5,23 +5,17 @@ import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
 import type { DexBoost, DexBoostFeed, DexPair, DexTokenProfile } from "@tools/dexscreener/types.js";
 import type { ProtocolExecutionContext, ProtocolHandler } from "../../../vex-agent/tools/protocols/types.js";
+import { makeProtocolContext } from "./_test-context.js";
 
 /**
- * A fully-typed read-only execution context.
+ * The read-only execution context every DexScreener test runs with.
  *
- * The inline `{ sessionPermission, approved }` literals elsewhere in this file
- * predate `ProtocolExecutionContext` gaining `walletResolution`/`walletPolicy`
- * and no longer satisfy it (they are carried in the test-type baseline). Tests
- * added here use this instead, so new call sites do not enlarge that debt.
- * DexScreener handlers are read-only and touch no wallet, so the neutral
- * "default"/"none" pair is the honest value, not a stub standing in for one.
+ * DexScreener handlers touch no wallet, so the shared builder's least-privilege
+ * defaults (restricted / unapproved / no wallet policy) are the honest value.
+ * Building it here keeps the suite compiling when `ProtocolExecutionContext`
+ * gains a required field, instead of drifting silently.
  */
-const READ_CTX: ProtocolExecutionContext = {
-  sessionPermission: "restricted",
-  approved: false,
-  walletResolution: { source: "default" },
-  walletPolicy: { kind: "none" },
-};
+const READ_CTX: ProtocolExecutionContext = makeProtocolContext();
 
 describe("dexscreener handlers", () => {
   // ── Handler coverage ─────────────────────────────────────────────
@@ -53,81 +47,81 @@ describe("dexscreener handlers", () => {
   // ── Required param validation ────────────────────────────────────
 
   it("dexscreener.search fails without query", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
+    const result = await DEXSCREENER_HANDLERS["dexscreener.search"](
       {},
-      { sessionPermission: "restricted", approved: false },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("query");
   });
 
-  it("dexscreener.pairs fails without chainId and pairAddress", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
+  it("dexscreener.pairs fails without chain and pairAddress", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"](
       {},
-      { sessionPermission: "restricted", approved: false },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.pairs fails with only chainId", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"]!(
-      { chainId: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+  it("dexscreener.pairs fails with only chain", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.pairs"](
+      { chain: "ethereum" },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("pairAddress");
   });
 
-  it("dexscreener.tokens fails without chainId and tokenAddresses", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
+  it("dexscreener.tokens fails without chain and tokenAddresses", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"](
       {},
-      { sessionPermission: "restricted", approved: false },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.tokens fails with only chainId", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"]!(
-      { chainId: "ethereum" },
-      { sessionPermission: "restricted", approved: false },
+  it("dexscreener.tokens fails with only chain", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokens"](
+      { chain: "ethereum" },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddresses");
   });
 
-  it("dexscreener.tokenPairs fails without chainId and tokenAddress", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
+  it("dexscreener.tokenPairs fails without chain and tokenAddress", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
       {},
-      { sessionPermission: "restricted", approved: false },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.tokenPairs fails with only chainId", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana" },
-      { sessionPermission: "restricted", approved: false },
+  it("dexscreener.tokenPairs fails with only chain", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
+      { chain: "solana" },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddress");
   });
 
-  it("dexscreener.orders fails without chainId and tokenAddress", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
+  it("dexscreener.orders fails without chain and tokenAddress", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"](
       {},
-      { sessionPermission: "restricted", approved: false },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
   });
 
-  it("dexscreener.orders fails with only chainId", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
-      { chainId: "solana" },
-      { sessionPermission: "restricted", approved: false },
+  it("dexscreener.orders fails with only chain", async () => {
+    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"](
+      { chain: "solana" },
+      READ_CTX,
     );
     expect(result.success).toBe(false);
     expect(result.output).toContain("tokenAddress");
@@ -136,9 +130,9 @@ describe("dexscreener handlers", () => {
   // ── Read-only handlers return data (no wallet needed) ────────────
 
   it("dexscreener.search returns pairs for a known query", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
+    const result = await DEXSCREENER_HANDLERS["dexscreener.search"](
       { query: "USDC" },
-      { sessionPermission: "restricted", approved: false },
+      READ_CTX,
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -157,7 +151,7 @@ describe("dexscreener handlers", () => {
   // payload" from "rows that survived the filters" — the envelope's `returned` and
   // `totalMatched` do.
   it("dexscreener.profiles returns the envelope and rows against the LIVE feed", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.profiles"]!({}, READ_CTX);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.profiles"]({}, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(typeof data.returned).toBe("number");
@@ -169,7 +163,7 @@ describe("dexscreener handlers", () => {
   });
 
   it("dexscreener.boosts returns the envelope and rows against the LIVE feed", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]!({}, READ_CTX);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts"]({}, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(typeof data.returned).toBe("number");
@@ -180,7 +174,7 @@ describe("dexscreener handlers", () => {
   // Live regression guard: this tool threw on 100% of calls because the shared
   // boost schema required `amount`, which `/token-boosts/top/v1` never sends.
   it("dexscreener.boosts.top returns rows against the LIVE top feed", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts.top"]!({}, READ_CTX);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.boosts.top"]({}, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.returned).toBeGreaterThan(0);
@@ -195,8 +189,8 @@ describe("dexscreener handlers", () => {
   // Same for orders: the live root is `{orders, boosts}`, which the validator
   // rejected outright.
   it("dexscreener.orders returns the envelope against the LIVE endpoint", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"]!(
-      { chainId: "solana", tokenAddress: "A55XjvzRU4KtR3Lrys8PpLZQvPojPqvnv5bJVHMYy3Jv" },
+    const result = await DEXSCREENER_HANDLERS["dexscreener.orders"](
+      { chain: "solana", tokenAddress: "A55XjvzRU4KtR3Lrys8PpLZQvPojPqvnv5bJVHMYy3Jv" },
       READ_CTX,
     );
     expect(result.success).toBe(true);
@@ -210,7 +204,7 @@ describe("dexscreener handlers", () => {
   });
 
   it("dexscreener.attention returns merged rows against the LIVE feeds", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]!({ limit: 5 }, READ_CTX);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]({ limit: 5 }, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.returned).toBeLessThanOrEqual(5);
@@ -226,7 +220,7 @@ describe("dexscreener handlers", () => {
   });
 
   it("dexscreener.ads returns the envelope and rows against the LIVE feed", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.ads"]!({}, READ_CTX);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.ads"]({}, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(typeof data.returned).toBe("number");
@@ -241,8 +235,6 @@ describe("dexscreener handlers", () => {
 // handler's sort/limit/projection logic is exercised against crafted fixtures
 // instead of `https://api.dexscreener.com`. Spies are restored after each test
 // so the live-network integration tests above stay untouched.
-
-const PERM = { sessionPermission: "restricted" as const, approved: false };
 
 /**
  * Resolve a handler without a non-null assertion.
@@ -295,9 +287,9 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     ];
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN" },
-      PERM,
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
+      { chain: "solana", tokenAddress: "TOKEN" },
+      READ_CTX,
     );
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
@@ -313,9 +305,9 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     ];
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN" },
-      PERM,
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
+      { chain: "solana", tokenAddress: "TOKEN" },
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     expect(data.pairs[0].dexId).toBe("real");
@@ -331,9 +323,9 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     ];
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN", limit: 2 },
-      PERM,
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
+      { chain: "solana", tokenAddress: "TOKEN", limit: 2 },
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     expect(data.returned).toBe(2);
@@ -351,9 +343,9 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
     );
     vi.spyOn(client, "getTokenPairs").mockResolvedValue(pairs);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "solana", tokenAddress: "TOKEN" },
-      PERM,
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
+      { chain: "solana", tokenAddress: "TOKEN" },
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     expect(data.returned).toBe(30);
@@ -379,9 +371,9 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
       }),
     ]);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"]!(
-      { chainId: "ethereum", tokenAddress: "TOKEN" },
-      PERM,
+    const result = await DEXSCREENER_HANDLERS["dexscreener.tokenPairs"](
+      { chain: "ethereum", tokenAddress: "TOKEN" },
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     const pair = data.pairs[0];
@@ -434,11 +426,11 @@ describe("dexscreener.tokenPairs sort / limit / projection", () => {
 
     const result = await handlerFor("dexscreener.tokenPairs")(
       {
-        chainId: "solana",
+        chain: "solana",
         tokenAddress: "TOKEN",
         fields: "liquidityBaseTokens,liquidityQuoteTokens,marketCapEqualsFdv,priceInQuoteToken,decimalsAvailable",
       },
-      PERM,
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     const pair = data.pairs[0];
@@ -491,7 +483,7 @@ describe("dexscreener.attention has no hidden limit", () => {
     vi.spyOn(client, "getBoosts").mockResolvedValue(feedOf(boostRows(25)));
     vi.spyOn(client, "getProfiles").mockResolvedValue(profiles);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]!({}, PERM);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]({}, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.returned).toBe(25);
@@ -504,7 +496,7 @@ describe("dexscreener.attention has no hidden limit", () => {
     vi.spyOn(client, "getBoosts").mockResolvedValue(feedOf(boostRows(25)));
     vi.spyOn(client, "getProfiles").mockResolvedValue([]);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]!({ limit: 5 }, PERM);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.attention"]({ limit: 5 }, READ_CTX);
     const data = JSON.parse(result.output);
     expect(data.returned).toBe(5);
     // The count the old shape could not express: 25 matched, 5 delivered.
@@ -513,7 +505,7 @@ describe("dexscreener.attention has no hidden limit", () => {
   });
 });
 
-// ── Search client-side filters (chainId / minLiquidityUsd / limit) ─
+// ── Search client-side filters (chainIds / minLiquidityUsd / limit) ─
 
 describe("dexscreener.search filters", () => {
   afterEach(() => {
@@ -533,9 +525,9 @@ describe("dexscreener.search filters", () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "search").mockResolvedValue({ schemaVersion: "1", pairs: searchPairs() });
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
+    const result = await DEXSCREENER_HANDLERS["dexscreener.search"](
       { query: "xx", chainIds: "BASE" },
-      PERM,
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     // The predecessor echoed `chainId: "BASE"` while every row it returned said
@@ -551,9 +543,9 @@ describe("dexscreener.search filters", () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "search").mockResolvedValue({ schemaVersion: "1", pairs: searchPairs() });
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.search"]!(
+    const result = await DEXSCREENER_HANDLERS["dexscreener.search"](
       { query: "xx", minLiquidityUsd: 10000, sortBy: "liquidityUsd" },
-      PERM,
+      READ_CTX,
     );
     const data = JSON.parse(result.output);
     // Only base@100k and solana@900k clear the 10k floor; sorted desc on request.
@@ -573,13 +565,13 @@ describe("dexscreener.search filters", () => {
     // The predecessor's `SEARCH_DEFAULT_LIMIT = 20` dropped rows 21-30 of a
     // 30-row provider window with no flag and no count of what was cut.
     const def = JSON.parse(
-      (await handlerFor("dexscreener.search")({ query: "xx" }, PERM)).output,
+      (await handlerFor("dexscreener.search")({ query: "xx" }, READ_CTX)).output,
     );
     expect(def.returned).toBe(30);
     expect(def.hasMore).toBe(false);
 
     const capped = JSON.parse(
-      (await handlerFor("dexscreener.search")({ query: "xx", limit: 3 }, PERM)).output,
+      (await handlerFor("dexscreener.search")({ query: "xx", limit: 3 }, READ_CTX)).output,
     );
     expect(capped.returned).toBe(3);
     expect(capped.totalMatched).toBe(30);
@@ -591,7 +583,7 @@ describe("dexscreener.search filters", () => {
     vi.spyOn(client, "search").mockResolvedValue({ schemaVersion: "1", pairs: searchPairs() });
 
     const asReturned = JSON.parse(
-      (await handlerFor("dexscreener.search")({ query: "xx" }, PERM)).output,
+      (await handlerFor("dexscreener.search")({ query: "xx" }, READ_CTX)).output,
     );
     expect(asReturned.pairs.map((pr: { dexId: string }) => pr.dexId)).toEqual(["a", "b", "c", "d"]);
     expect(asReturned.filtersApplied.sortBy).toBe("relevance");
@@ -600,7 +592,7 @@ describe("dexscreener.search filters", () => {
       (
         await handlerFor("dexscreener.search")(
           { query: "xx", sortBy: "liquidityUsd" },
-          PERM,
+          READ_CTX,
         )
       ).output,
     );
@@ -608,7 +600,7 @@ describe("dexscreener.search filters", () => {
   });
 
   it("refuses a 1-character query instead of surfacing an unexplained HTTP 400", async () => {
-    const result = await handlerFor("dexscreener.search")({ query: "a" }, PERM);
+    const result = await handlerFor("dexscreener.search")({ query: "a" }, READ_CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("2 characters");
   });
@@ -637,7 +629,7 @@ describe("dexscreener metas + recent handlers", () => {
     }));
     vi.spyOn(client, "getMetasTrending").mockResolvedValue(metas);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.trending"]!({ limit: 3 }, PERM);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.trending"]({ limit: 3 }, READ_CTX);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.returned).toBe(3);
@@ -668,11 +660,11 @@ describe("dexscreener metas + recent handlers", () => {
     rateLimited.retryable = true;
     vi.spyOn(client, "getMetasTrending").mockRejectedValue(rateLimited);
 
-    await expect(DEXSCREENER_HANDLERS["dexscreener.trending"]!({}, PERM)).rejects.toBe(rateLimited);
+    await expect(DEXSCREENER_HANDLERS["dexscreener.trending"]({}, READ_CTX)).rejects.toBe(rateLimited);
   });
 
   it("dexscreener.meta requires slug", async () => {
-    const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]!({}, PERM);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]({}, READ_CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("slug");
   });
@@ -693,7 +685,7 @@ describe("dexscreener metas + recent handlers", () => {
       pairs: [makePair({ dexId: "raydium", liquidity: { usd: 10, base: 1, quote: 1 } })],
     });
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]!({ slug: "knockoff-legends" }, PERM);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]({ slug: "knockoff-legends" }, READ_CTX);
     const data = JSON.parse(result.output);
     expect(data.slug).toBe("knockoff-legends");
     // THREE distinct numbers replace two that could be confused. `tokenCount` and
@@ -722,7 +714,7 @@ describe("dexscreener metas + recent handlers", () => {
     const client = getDexScreenerClient();
     vi.spyOn(client, "getMeta").mockResolvedValue(null);
 
-    const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]!({ slug: "gone" }, PERM);
+    const result = await DEXSCREENER_HANDLERS["dexscreener.meta"]({ slug: "gone" }, READ_CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("did not match the expected shape");
     expect(result.output).toContain("gone");
@@ -740,7 +732,7 @@ describe("dexscreener metas + recent handlers", () => {
       },
     ]);
     const okResult = JSON.parse(
-      (await DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]!({}, PERM)).output,
+      (await DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]({}, READ_CTX)).output,
     );
     expect(okResult.returned).toBe(1);
     expect(okResult.rows[0].updatedAt).toBe("2026-07-04T00:00:00.000Z");
@@ -749,6 +741,6 @@ describe("dexscreener metas + recent handlers", () => {
 
     const boom = new Error("boom");
     vi.spyOn(client, "getProfilesRecentUpdates").mockRejectedValue(boom);
-    await expect(DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]!({}, PERM)).rejects.toBe(boom);
+    await expect(DEXSCREENER_HANDLERS["dexscreener.profiles.recent"]({}, READ_CTX)).rejects.toBe(boom);
   });
 });

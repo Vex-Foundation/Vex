@@ -46,5 +46,6 @@ export {
 
 export {
   parseKhalaniErrorBody,
+  parseKhalaniErrorPayload,
   isSolanaAddressLike,
 } from "./validation/errors.js";

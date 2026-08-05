@@ -106,6 +106,31 @@ export interface ProtocolParamDef {
    * is a capability, not a second type.
    */
   acceptsStringArray?: true;
+  /**
+   * The CLOSED set of values this param accepts, when prose was the only place
+   * the set existed. `virtuals.list.chain` is the live case: an UPPERCASE value
+   * list written in a description, unenforced at the boundary, and absent from
+   * the compiled JSON schema — so a model that followed every other chain param
+   * in the tree sent `base` and burnt the call.
+   *
+   * Read in exactly three places: `runtime/params.ts` rejects an off-list value
+   * NAMING the allowed values, `paramsToJsonSchema` compiles it into the JSON
+   * Schema `enum` keyword, and `discovery.ts` ships it on the param row. Values
+   * are matched EXACTLY (case-sensitive) — a provider that wants a different
+   * casing converts inside its own adapter (see `conventions.ts`).
+   *
+   * ONE deliberate exception: a param whose key is in `CHAIN_VALUE_PARAM_KEYS`
+   * matches CASE-INSENSITIVELY and is rewritten to the declared spelling,
+   * for the same reason the chain number→string normalization exists — every
+   * other chain param in the tree advertises a lowercase slug, so
+   * `virtuals.list`'s UPPERCASE list burnt calls from models that had read
+   * forty manifests spelling it the other way. Case is not a distinction a
+   * chain value carries; on any other param it can be, so nothing else folds.
+   *
+   * Only meaningful on `type: "string"`. On a param that also declares
+   * {@link ProtocolParamDef.acceptsStringArray}, EVERY member must be on the list.
+   */
+  enum?: readonly string[];
 }
 
 export interface ProtocolToolManifest {
@@ -138,6 +163,67 @@ export interface ProtocolToolManifest {
   exampleParams: Record<string, unknown>;
   /** ENV var required for this tool. If set and ENV is empty, tool is hidden from discovery and blocked in execute. */
   requiresEnv?: string;
+  /**
+   * Mutually exclusive param sets: EXACTLY ONE member of each group must be
+   * present in a call. Retires the 15+ hand-written prose XOR sentences and
+   * their hand-written handler checks (SPEC §1.7) — including
+   * `borrowOperate`'s same-direction ban, which is documented nowhere today.
+   *
+   * Enforced once, at the boundary, by `runtime/params.ts`, and rendered as a
+   * `constraints` row by `discovery.ts` so the rule is a schema fact before the
+   * call rather than an error after it.
+   *
+   * EXACTLY one, not at-most one: a group whose members may legitimately ALL be
+   * absent is not an exclusive group and must not be declared here — express
+   * that with `required` on nothing and a sentence in the params' own
+   * descriptions. Members must be declared params of this manifest
+   * (`_manifest-lint.ts` territory).
+   */
+  exclusiveParamGroups?: readonly (readonly string[])[];
+  /**
+   * AT MOST ONE member of each group may be present — zero is legal.
+   *
+   * The weaker sibling of {@link ProtocolToolManifest.exclusiveParamGroups},
+   * and the shape most real multi-leg tools actually have.
+   * `solana.lend.borrowOperate` is the case that forced it: its collateral leg
+   * (`depositAmountRaw|withdrawAmountRaw|withdrawAll`) and its debt leg
+   * (`borrowAmountRaw|repayAmountRaw|repayAll`) each accept at most one member,
+   * but a call that adjusts only collateral legitimately sets NONE of the debt
+   * params. Declaring those as exactly-one groups would reject every legal
+   * single-leg call, which is why six prose-only "mutually exclusive" sentences
+   * sat unenforced in the allowlist until this field existed.
+   *
+   * Combine with {@link ProtocolToolManifest.atLeastOneOf} to express
+   * "at most one per leg, and at least one leg overall" — the two fields
+   * together are what `exclusiveParamGroups` cannot say.
+   *
+   * A group may also encode a CROSS-leg ban: borrowOperate's two direction
+   * groups (`depositAmountRaw|repayAmountRaw|repayAll` = money in,
+   * `withdrawAmountRaw|withdrawAll|borrowAmountRaw` = money out) are exactly
+   * the handler's same-direction refusal, expressed as a schema fact the model
+   * reads BEFORE the call instead of an error after it.
+   *
+   * Enforced by `runtime/params.ts`, rendered into the discovery `constraints`
+   * row and the injected function description, and required as the backing for
+   * any "at most one of …" prose by `_manifest-lint`. Members must be declared
+   * params of this manifest.
+   */
+  atMostOne?: readonly (readonly string[])[];
+  /**
+   * AT LEAST ONE member of each group must be present — two or more is legal.
+   *
+   * The complement of {@link ProtocolToolManifest.atMostOne}: it forbids the
+   * EMPTY call for a tool whose params are individually optional. Without it
+   * "nothing to do" is a handler-side refusal discovered after the model has
+   * already spent a call; with it, the rule is a schema fact and a boundary
+   * rejection that names every acceptable key.
+   *
+   * `required: true` on any single param cannot express this — the point is
+   * that any ONE of several alternatives suffices.
+   *
+   * Same six surfaces as {@link ProtocolToolManifest.atMostOne}.
+   */
+  atLeastOneOf?: readonly (readonly string[])[];
   /** Optional discovery metadata for improved retrieval — filled incrementally per tool. */
   discovery?: ToolDiscoveryMetadata;
 }
@@ -219,159 +305,16 @@ export interface ProtocolExecutionContext {
    * Absent ⇒ false ⇒ today's barrier.
    */
   preparationBypassesBarrier?: boolean;
-}
-
-// ── Discovery request/result ─────────────────────────────────────
-
-export interface ProtocolDiscoveryRequest {
-  query?: string;
-  namespace?: string;
-  limit?: number;
   /**
-   * Context-pressure band at dispatch time (threaded by the dispatcher).
-   * When `barrier` or `critical`, the assembly flags `mutating` tools with
-   * `unavailable_at_pressure: true` so the LLM sees the advisory before
-   * even attempting `execute_tool` — soft companion to dispatcher hard-deny
-   * + Tool Map omission already in force at the same bands.
+   * Operator Stop for the turn that owns this dispatch, threaded verbatim from
+   * `InternalToolContext.abortSignal` — see that field's doc for the full
+   * contract, the never-interrupt clause, and the list of producers that
+   * deliberately leave it unset.
+   *
+   * In one line: a protocol handler passes it to every read, poll, sleep, and
+   * quota wait, and MUST NOT observe it inside a sign→broadcast→persist window.
    */
-  contextUsageBand?: "normal" | "warning" | "barrier" | "critical";
-  /**
-   * Session id at dispatch time (FIX-SPINE round 1, finding 8/C3) — lets
-   * `discoverProtocolCapabilities` filter the canonical hidden Uniswap swap
-   * manifests out of the result set for a session that has not revealed
-   * them, so discovery never advertises a tool `executeProtocolTool` would
-   * then hard-reject. Omitted/undefined fails closed (hidden).
-   */
-  sessionId?: string;
-  /**
-   * True iff a live compaction preparation suppresses the `barrier` mutating
-   * block for this turn (contract C8). While true, discovery must NOT tag
-   * mutating rows `unavailable_at_pressure` at `barrier` — the dispatcher will
-   * in fact allow them, and an advisory that contradicts the gate is worse than
-   * no advisory. `critical` still tags. Absent ⇒ false ⇒ today's tagging.
-   */
-  preparationBypassesBarrier?: boolean;
-  /**
-   * Namespace list mode. When true, `namespace` is REQUIRED and the response is
-   * the COMPLETE set of that protocol's advertised, available tools as lean
-   * rows ({@link ProtocolDiscoveryListItem} — no param schemas, no scores) with
-   * no ranking and no `limit` truncation. Without a namespace the request fails:
-   * dumping every namespace as one payload is forbidden.
-   */
-  list?: boolean;
-}
-
-export interface ProtocolDiscoveryItem {
-  toolId: string;
-  namespace: ProtocolNamespace;
-  description: string;
-  mutating: boolean;
-  params: ProtocolParamDef[];
-  /** Retrieval score for this match (0 when no query, >0 for ranked matches). */
-  score: number;
-  /**
-   * Field tags that contributed to the score, e.g. ["description", "params", "navigation"].
-   * Useful for the LLM to disambiguate between similarly-scored shortlists.
-   */
-  whyMatched: string[];
-  /**
-   * Only present and `true` when the current context-usage band is `barrier`
-   * or `critical` AND this tool is `mutating: true` AND no live compaction
-   * preparation is suppressing the barrier. Tells the LLM the dispatcher will
-   * hard-deny `execute_tool` for this row right now — stick to read-only /
-   * preview variants in the same namespace while the runtime compacts. Omitted
-   * on read-only tools, at normal/warning bands, and while the barrier is
-   * bypassed, to keep payloads minimal.
-   */
-  unavailable_at_pressure?: boolean;
-}
-
-/**
- * Lean row emitted by namespace list mode (`list: true` + `namespace`). It
- * deliberately carries NO `params`, `score`, or `whyMatched`: the point of a
- * list is a complete, cheap index of what a protocol can do. The model follows
- * up with a query or the exact toolId to get the param schema it builds the
- * call from. Distinguished on the wire by `retrieval.method === "list"`.
- */
-export interface ProtocolDiscoveryListItem {
-  toolId: string;
-  mutating: boolean;
-  description: string;
-  /**
-   * Exclusive-union markers: a list row NEVER carries the ranked item's fields.
-   * Declaring them `never` keeps `tools` readable without a narrowing dance —
-   * `item.params` types as `… | undefined` — while making an accidental
-   * assignment a compile error.
-   */
-  namespace?: never;
-  params?: never;
-  score?: never;
-  whyMatched?: never;
-  unavailable_at_pressure?: never;
-}
-
-/**
- * Retrieval metadata attached to a discovery result. Surfaces whether the
- * response was an unranked catalog listing, dense-ranked, or lexical fallback,
- * plus audit columns of the embedding used. The `embeddingModel`/`embeddingDim`
- * columns are internal retrieval mechanics consumed ONLY by telemetry — they
- * are stripped from the model-facing copy (see {@link ProtocolDiscoveryModelRetrievalMeta}
- * and the dispatcher's `toModelDiscoveryResult`). The model uses `method` and
- * `denseFailed` to interpret weak matches (lexical fallback often signals
- * embedding-sidecar issues, not query problems).
- */
-export interface ProtocolDiscoveryRetrievalMeta {
-  method: "catalog" | "dense" | "lexical" | "list";
-  /** True when dense retrieval was attempted but lexical fallback produced the result. */
-  denseFailed: boolean;
-  /** Provider-reported embedding model (only set when dense retrieval ran). Telemetry-only. */
-  embeddingModel?: string;
-  /** Provider-reported embedding dim (only set when dense retrieval ran). Telemetry-only. */
-  embeddingDim?: number;
-  /** Number of candidates before scoring (post env/advertised/lifecycle filters). */
-  candidateCount: number;
-}
-
-/**
- * Model-facing projection of {@link ProtocolDiscoveryRetrievalMeta}: the same
- * shape minus the telemetry-only `embeddingModel`/`embeddingDim` mechanics.
- * Built by the dispatcher's `toModelDiscoveryResult` for serialization into the
- * `discover_tools` output string; the full meta stays on the result object for
- * telemetry/logging.
- */
-export type ProtocolDiscoveryModelRetrievalMeta = Omit<
-  ProtocolDiscoveryRetrievalMeta,
-  "embeddingModel" | "embeddingDim"
->;
-
-export interface ProtocolDiscoveryResult {
-  success: boolean;
-  /** Number of tools returned in this response (after limit is applied). */
-  count: number;
-  /** Total number of matching tools before pagination/limit is applied. */
-  totalCount: number;
-  /** True when additional matching tools exist beyond this response. */
-  hasMore: boolean;
-  /**
-   * Ranked/catalog rows, or lean {@link ProtocolDiscoveryListItem} rows when
-   * `retrieval.method === "list"`. Narrow before reading `params`/`score`.
-   */
-  tools: (ProtocolDiscoveryItem | ProtocolDiscoveryListItem)[];
-  warnings: string[];
-  /** Optional retrieval metadata for telemetry. */
-  retrieval?: ProtocolDiscoveryRetrievalMeta;
-}
-
-/**
- * Model-facing projection of {@link ProtocolDiscoveryResult}: identical except
- * the `retrieval` block carries only the model-relevant fields (no
- * `embeddingModel`/`embeddingDim`). The dispatcher serializes THIS shape into
- * the `discover_tools` tool-output string while keeping the full result for
- * telemetry. See `toModelDiscoveryResult` in `dispatcher/protocol-route.ts`.
- */
-export interface ProtocolDiscoveryModelResult
-  extends Omit<ProtocolDiscoveryResult, "retrieval"> {
-  retrieval?: ProtocolDiscoveryModelRetrievalMeta;
+  abortSignal?: AbortSignal;
 }
 
 // ── Execute request ──────────────────────────────────────────────
@@ -390,3 +333,22 @@ export interface ProtocolExecuteRequest {
 
 /** Whether handler produces _tradeCapture today. */
 export type CaptureSupport = "full" | "none";
+
+// ── Discovery request/result ─────────────────────────────────────
+//
+// Split into `./types/discovery.ts` when this file crossed the 550-line hard
+// limit (rules/04, owner decree 2026-07-28). Re-exported here so this module
+// stays the single public entry point for the protocol contracts and no
+// caller's import changed.
+
+export type {
+  ManifestRow,
+  ProtocolDiscoveryItem,
+  ProtocolDiscoveryListItem,
+  ProtocolDiscoveryModelResult,
+  ProtocolDiscoveryModelRetrievalMeta,
+  ProtocolDiscoveryRequest,
+  ProtocolDiscoveryResult,
+  ProtocolDiscoveryRetrievalMeta,
+  ProtocolManifestResult,
+} from "./types/discovery.js";

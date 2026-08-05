@@ -107,6 +107,12 @@ export async function startMission(missionId: string): Promise<TurnResult> {
       throw new Error(
         "Session runner lease busy — another runner is active.",
       );
+    case "session_stop_pending":
+      // The operator's Stop reached the session first. It was applied and
+      // consumed by the same transaction, so a retry starts cleanly.
+      throw new Error(
+        `Mission ${missionId} was not started: an operator Stop for this session landed first. Start again.`,
+      );
     case "provider_unavailable":
       throw new Error("No inference provider available");
   }

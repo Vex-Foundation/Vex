@@ -25,6 +25,7 @@ import {
 import { emitMissionUpdate } from "@vex-agent/engine/runtime/mission-bus.js";
 import logger from "@utils/logger.js";
 import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
+import { buildApprovalToolCall } from "../approval-runtime/tool-call-envelope.js";
 import {
   buildIntentPreview,
   buildPolicySnapshot,
@@ -188,7 +189,14 @@ export async function enqueueApprovalIntent(args: {
     await approvalsRepo.enqueueWith(
       client,
       approvalId,
-      { command: toolCall.name, args: toolCall.arguments },
+      // An injected direct call (`kyberswap__swap__execute`) is CANONICALIZED
+      // here into the `execute_tool {toolId, params}` envelope so the approval
+      // survives a process restart: the injected lane resolves its name from
+      // the process-local discovered set, which is empty in a fresh process,
+      // and the human's Approve click would fail "not discovered". Every other
+      // lane keeps today's `{command, args}` shape — see
+      // `approval-runtime/tool-call-envelope.ts`.
+      buildApprovalToolCall(toolCall.name, toolCall.arguments),
       result.output,
       context.sessionId,
       toolCall.id,

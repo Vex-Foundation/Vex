@@ -44,7 +44,7 @@ const VALID_BRIDGE = {
   fromToken: "0xfrom",
   toChain: "arbitrum",
   toToken: "0xto",
-  amount: "1000000",
+  amountRaw: "1000000",
 } as const;
 
 describe("bridge_quote — a refused param is answered BY NAME, before normalization", () => {
@@ -122,7 +122,7 @@ describe("action aliases — every rejection locates its field", () => {
 
   it("token_check names the field", async () => {
     const result = await aliases.handleTokenCheck({ chain: "base" }, ctx);
-    expect(result.output).toContain("address:");
+    expect(result.output).toContain("tokenAddress:");
   });
 
   it("bridge_status names the field", async () => {
@@ -146,39 +146,40 @@ describe("wallet_balances — the live failure", () => {
 });
 
 describe("a wrong TYPE is never reported as MISSING", () => {
-  it("chain_read tells a numeric chainId it is the wrong type, not absent", async () => {
-    // token_find returns chainId as a NUMBER, so this is the form the agent holds.
+  it("chain_read tells a numeric chain it is the wrong type, not absent", async () => {
+    // token_find returns the chain id as a NUMBER, so this is the form the
+    // agent holds.
     const result = await handleChainRead(
-      { action: "tx_receipt", chainId: 8453, txHash: "0xabc" },
+      { action: "tx_receipt", chain: 8453, txHash: "0xabc" },
       ctx,
     );
     expect(result.success).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
     expect(result.output).not.toContain("Missing required");
     expect(result.output).toContain("number");
   });
 
   it("chain_read still says MISSING when the key really is absent", async () => {
     const result = await handleChainRead({ action: "tx_receipt" }, ctx);
-    expect(result.output).toContain("Missing required: chainId");
+    expect(result.output).toContain("Missing required: chain");
   });
 
-  it("wallet_send_prepare names ONE field, and a number amount as a number", () => {
-    const validation = validatePrepareParams({ network: "eip155", to: "0xdead", amount: 907.42 });
+  it("wallet_send_prepare names ONE field, and a number amountIn as a number", () => {
+    const validation = validatePrepareParams({ walletFamily: "eip155", to: "0xdead", amountIn: 907.42 });
     expect(validation.ok).toBe(false);
     if (validation.ok) return;
-    expect(validation.result.output).toContain("amount");
-    expect(validation.result.output).not.toContain("Missing required: network, to, amount");
+    expect(validation.result.output).toContain("amountIn");
+    expect(validation.result.output).not.toContain("Missing required: walletFamily, to, amountIn");
     // The amount itself is never echoed.
     expect(validation.result.output).not.toContain("907.42");
   });
 
   it("wallet_send_confirm names the absent field only", () => {
-    const validation = validateConfirmParams({ network: "eip155" });
+    const validation = validateConfirmParams({ walletFamily: "eip155" });
     expect(validation.ok).toBe(false);
     if (validation.ok) return;
     expect(validation.result.output).toContain("intentId");
-    expect(validation.result.output).not.toContain("network,");
+    expect(validation.result.output).not.toContain("walletFamily,");
   });
 });
 
@@ -191,6 +192,59 @@ describe("discover_tools — a supplied param is never silently discarded", () =
   it("coerces the string spelling of list", () => {
     const parsed = parseDiscoverToolsArgs({ namespace: "khalani", list: "true" });
     expect(parsed.ok && parsed.args.list).toBe(true);
+  });
+
+  it("REJECTS an over-max limit BY NAME rather than silently clamping it", () => {
+    // Owner clarification 2026-08-03: the agent sizes its own working set, but
+    // the ceiling is real (it bounds the injected function-schema set). A
+    // silent clamp would hand back fewer tools than asked for, with no signal.
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: 50 });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("limit 50");
+    expect(parsed.message).toContain("maximum of 20");
+    expect(parsed.message).toContain("NOT run");
+  });
+
+  it("accepts the maximum limit itself (the boundary is not off by one)", () => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: 20 });
+    expect(parsed.ok && parsed.args.limit).toBe(20);
+  });
+
+  // The parser used to accept every one of these and let discovery floor,
+  // clamp or default them, so the agent silently got a differently-sized
+  // answer than it asked for. Reject-not-clamp applies to the VALUE too.
+  it.each([
+    ["zero", 0],
+    ["a negative", -3],
+    ["a fraction", 2.5],
+    ["NaN", Number.NaN],
+    ["negative infinity", Number.NEGATIVE_INFINITY],
+  ])("REJECTS %s limit BY NAME with the legal range", (_label, limit) => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("limit must be a whole number between 1 and 20");
+    expect(parsed.message).toContain("default 5");
+    expect(parsed.message).toContain("NOT run");
+  });
+
+  it("REJECTS the string spelling of an out-of-range limit the same way", () => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: "0" });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("between 1 and 20");
+  });
+
+  it("accepts the minimum limit itself (the lower boundary is not off by one)", () => {
+    expect(parseDiscoverToolsArgs({ query: "swap", limit: 1 }).ok).toBe(true);
+  });
+
+  it("REJECTS positive infinity through the over-max lane, still by name", () => {
+    const parsed = parseDiscoverToolsArgs({ query: "swap", limit: Number.POSITIVE_INFINITY });
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.message).toContain("maximum of 20");
   });
 
   it("REJECTS a wrong-typed limit by name instead of dropping it", () => {

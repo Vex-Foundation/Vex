@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeProtocolContext } from "./_test-context.js";
 
 // ── Top-level vi.mocks (hoisted) ──────────────────────────────────
 // Mock identifiers must be declared at module scope BEFORE `vi.mock` calls
@@ -151,12 +152,12 @@ describe("executeProtocolTool — pressure guard (protocol runtime)", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.mutate", params: {} },
-      {
+      makeProtocolContext({
         sessionPermission: "full",
         approved: false,
         sessionId: "s-1",
         contextUsageBand: "barrier",
-      },
+      }),
     );
 
     expect(result.success).toBe(false);
@@ -173,12 +174,12 @@ describe("executeProtocolTool — pressure guard (protocol runtime)", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.mutate", params: {} },
-      {
+      makeProtocolContext({
         sessionPermission: "full",
         approved: false,
         sessionId: "s-1",
         contextUsageBand: "critical",
-      },
+      }),
     );
 
     expect(result.success).toBe(false);
@@ -192,12 +193,12 @@ describe("executeProtocolTool — pressure guard (protocol runtime)", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.read", params: {} },
-      {
+      makeProtocolContext({
         sessionPermission: "full",
         approved: false,
         sessionId: "s-1",
         contextUsageBand: "barrier",
-      },
+      }),
     );
 
     expect(result.success).toBe(true);
@@ -211,12 +212,12 @@ describe("executeProtocolTool — pressure guard (protocol runtime)", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.mutate", params: {} },
-      {
+      makeProtocolContext({
         sessionPermission: "full",
         approved: true,
         sessionId: "s-1",
         contextUsageBand: "normal",
-      },
+      }),
     );
 
     expect(result.success).toBe(true);
@@ -230,12 +231,12 @@ describe("executeProtocolTool — pressure guard (protocol runtime)", () => {
 
     const result = await executeProtocolTool(
       { toolId: "test.mutate", params: {} },
-      {
+      makeProtocolContext({
         sessionPermission: "full",
         approved: true,
         sessionId: "s-1",
         contextUsageBand: "warning",
-      },
+      }),
     );
 
     expect(result.success).toBe(true);

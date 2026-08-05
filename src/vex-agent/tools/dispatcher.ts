@@ -23,6 +23,13 @@ import { getActionKind } from "./registry.js";
 import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
+import { isAbortError } from "@utils/cancellation.js";
+import {
+  describeFailureForLog,
+  renderProtocolFailureOutput,
+  summarizeProtocolError,
+} from "@utils/error-summary.js";
+import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
 
 // Compatibility façade re-exports — preserve the dispatcher's public surface.
@@ -30,6 +37,18 @@ export { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 export { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 export { dispatchTargetIsMutating } from "./dispatcher/mutating-targets.js";
 export { INTERNAL_TOOL_LOADERS } from "./dispatcher/internal-loaders.js";
+
+/**
+ * What the model is told when it calls `execute_tool` anyway. Names the real
+ * cause and the ONE way forward (rule 04) — the model's next move must be
+ * `discover_tools`, whose ranked rows come back as callable functions.
+ */
+const MODEL_EXECUTE_TOOL_REFUSAL =
+  "execute_tool is not callable. Protocol tools are called DIRECTLY by their " +
+  "own name: run discover_tools with a query describing what you need, and " +
+  "every tool it returns is added to your tool list as a real function " +
+  "(dotted id with `.` written as `__`, e.g. `kyberswap__swap__execute`) whose " +
+  "arguments ARE its parameters — no toolId, no params wrapper.";
 
 /**
  * Stamp `result.actionKind` from the registry fallback when the handler did
@@ -60,6 +79,27 @@ export async function dispatchTool(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   const startTime = Date.now();
+
+  // `execute_tool` is closed to the MODEL. Discovered manifests are injected as
+  // real functions the model calls by their own name, so the two-level envelope
+  // is now an internal calling convention with exactly one live caller: the
+  // cold approval resume, whose stored call is canonicalized to `execute_tool`
+  // so it survives a process restart (`approval-runtime/tool-call-envelope.ts`).
+  // That caller is host-built and never carries `modelOriginated`.
+  //
+  // THE PLACEMENT IS THE POINT: this refusal runs BEFORE the plan-acceptance
+  // gate below and therefore before `routeToolCall`'s mission auto-retry-unsafe
+  // stamp. A call the model may not make at all must not durably mark the run
+  // auto-retry-unsafe or be recorded as a plan-gate denial on its way out.
+  if (call.name === "execute_tool" && context.modelOriginated === true) {
+    logger.info("tools.dispatch.execute_tool_model_originated_refused", {
+      toolId: typeof call.args.toolId === "string" ? call.args.toolId : null,
+    });
+    return withActionKindFallback(
+      { success: false, output: MODEL_EXECUTE_TOOL_REFUSAL },
+      call.name,
+    );
+  }
 
   // Pressure-band hard-deny: at barrier/critical bands, mutating tools are
   // rejected with a synthetic error. The soft filter (LLM-visible tool catalog
@@ -106,17 +146,44 @@ export async function dispatchTool(
     return { ...withActionKindFallback(result, call.name), durationMs };
   } catch (err) {
     const durationMs = Date.now() - startTime;
-    const message = err instanceof Error ? err.message : String(err);
+
+    // Operator Stop, BEFORE the generic wrap. A cancelled call is not a failure
+    // to be dressed as one, and "Tool X failed: The operation was aborted" is
+    // exactly the generic-label output the truthful-tool-error decree exists to
+    // kill. Both conditions are required: the error must be a caller
+    // `AbortError` (a deadline breach is a `TimeoutError` and keeps saying
+    // "timed out") AND this turn's signal must actually be aborted, so a
+    // provider SDK's own internal abort is never mislabelled as an operator.
+    if (isAbortError(err) && context.abortSignal?.aborted === true) {
+      logger.info("tools.dispatch.aborted_by_user_stop", { tool: call.name, durationMs });
+      return {
+        ...withActionKindFallback(
+          { success: false, output: TOOL_ABORTED_BY_USER_STOP_OUTPUT },
+          call.name,
+        ),
+        durationMs,
+      };
+    }
+
+    // DEFENCE IN DEPTH (Codex final review, non-blocking 4). This is the LAST
+    // catch before a thrown value becomes agent-facing text, and it is the one
+    // place that never knows which venue threw. Routing it through the canonical
+    // summarizer rather than interpolating `err.message` raw means an SDK error
+    // that embedded a URL, a request/response body or an auth header cannot
+    // reach the model or the structured logs from here either — and the agent
+    // gets the classified cause plus its remediation instead of a bare string.
+    const summary = summarizeProtocolError(err);
 
     logger.warn("tools.dispatch.failed", {
       tool: call.name,
-      error: message,
+      category: summary.category,
+      error: describeFailureForLog(err),
       durationMs,
     });
 
     return {
       ...withActionKindFallback(
-        { success: false, output: `Tool ${call.name} failed: ${message}` },
+        { success: false, output: renderProtocolFailureOutput(call.name, summary) },
         call.name,
       ),
       durationMs,

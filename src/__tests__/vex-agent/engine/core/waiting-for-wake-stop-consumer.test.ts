@@ -62,6 +62,7 @@ const ARGS = {
   missionRunId: "run-1" as string | null,
   currentTokenCount: 10,
   contextLimit: 1000,
+  sessionPermission: "restricted" as const,
 };
 
 describe("paused_wake post-batch park — durable operator-Stop consumer", () => {

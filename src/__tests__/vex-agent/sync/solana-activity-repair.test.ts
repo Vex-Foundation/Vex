@@ -34,6 +34,7 @@ const mockListSolanaStagedPending = vi.fn();
 const mockConfirmActivityEventStatusOnly = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockTouchLastChecked = vi.fn();
+const mockClearVerificationStall = vi.fn();
 const mockRecoverStaleHashlessIntents = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
@@ -42,6 +43,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEventStatusOnly: (...args: unknown[]) => mockConfirmActivityEventStatusOnly(...args),
   failActivityEvent: (...args: unknown[]) => mockFailActivityEvent(...args),
   touchLastChecked: (...args: unknown[]) => mockTouchLastChecked(...args),
+  clearVerificationStall: (...args: unknown[]) => mockClearVerificationStall(...args),
   recoverStaleHashlessIntents: (...args: unknown[]) => mockRecoverStaleHashlessIntents(...args),
   HASHLESS_INTENT_RECOVERY_LEASE_MS: 15 * 60 * 1000,
 }));
@@ -61,7 +63,7 @@ const {
 } = await import("@vex-agent/sync/solana-activity-repair.js");
 
 function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActivityEvent {
-  return {
+  const base: AgentActivityEvent = {
     id: 1,
     protocolExecutionId: 42,
     eventIndex: 0,
@@ -117,8 +119,47 @@ function candidateEvent(overrides: Partial<AgentActivityEvent> = {}): AgentActiv
     lastCheckedAt: null,
     createdAt: "2026-07-24T09:59:00.000Z",
     updatedAt: "2026-07-24T10:00:01.000Z",
-    ...overrides,
+    // Columns the live contract requires that this fixture never exercises.
+    tokenIn2Address: null,
+    tokenIn2Symbol: null,
+    tokenIn2Decimals: null,
+    amountIn2Human: null,
+    amountIn2Raw: null,
+    executedAmountIn2Human: null,
+    executedAmountIn2Raw: null,
+    tokenOut2Address: null,
+    tokenOut2Symbol: null,
+    tokenOut2Decimals: null,
+    amountOut2Human: null,
+    amountOut2Raw: null,
+    executedAmountOut2Human: null,
+    executedAmountOut2Raw: null,
+    usdNetworkGasEst: null,
+    usdVenueFeeEst: null,
+    usdDestinationPrepayEst: null,
+    usdVexFeeEst: null,
+    vexFeeTokenAddress: null,
+    vexFeeTokenSymbol: null,
+    vexFeeTokenDecimals: null,
+    vexFeeAmountRaw: null,
+    vexFeeAmountHuman: null,
+    verificationAttempts: 0,
+    lastVerificationReason: null,
+  confirmationSource: null,
+  settlementSource: null,
+  pendingReason: null,
+  providerStatusObservedAt: null,
+  // The pending-fallback lane's own state (migration 068) — untouched by
+  // this fixture's row, which is exactly what NULL says.
+  evmClaimLeaseUntil: null,
+  evmClaimToken: null,
+  lastVerificationIncrementAt: null,
+  firstNonInclusionObservedAt: null,
+  settlementDecodeVersion: null,
   };
+  // `Object.assign`, not a spread: spreading a `Partial<…>` into an
+  // index-free literal widens every required field to `| undefined`.
+  return Object.assign(base, overrides);
 }
 
 function statusesFound(
@@ -177,7 +218,7 @@ describe("repairPendingSolanaActivity — landed status terminality", () => {
 
       const result = await repairPendingSolanaActivity(port);
 
-      expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1);
+      expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
       expect(port.getFinalizedTransaction).not.toHaveBeenCalled();
       expect(result).toMatchObject({ checked: 1, confirmed: 1, failed: 0, stillPending: 0 });
     },
@@ -216,7 +257,12 @@ describe("repairPendingSolanaActivity — landed status terminality", () => {
 
       expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
       expect(mockFailActivityEvent).not.toHaveBeenCalled();
-      expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+      // The RPC ANSWERED — we know exactly where this row stands, so the stall
+      // counter is CLEARED rather than incremented. Counting a healthy,
+      // successfully-observed transaction toward "verification stalled" would
+      // make the flag a lie about our own knowledge.
+      expect(mockClearVerificationStall).toHaveBeenCalledWith(1);
+      expect(mockTouchLastChecked).not.toHaveBeenCalled();
       expect(result).toMatchObject({ checked: 1, stillPending: 1 });
     },
   );
@@ -235,8 +281,8 @@ describe("repairPendingSolanaActivity — landed status terminality", () => {
 
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
     expect(mockConfirmActivityEventStatusOnly).not.toHaveBeenCalled();
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(2);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "signature_status_unavailable");
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(2, "signature_status_unavailable");
     expect(result).toMatchObject({ stillPending: 2 });
   });
 });
@@ -256,7 +302,7 @@ describe("repairPendingSolanaActivity — not-found signature fallback", () => {
       }),
     );
 
-    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1);
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
   });
 
   it("a non-null meta.err fails the row", async () => {
@@ -311,7 +357,7 @@ describe("repairPendingSolanaActivity — not-found signature fallback", () => {
       deps({ getSignatureStatuses: vi.fn(async () => statusesFound(null)) }),
     );
 
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "get_transaction_unavailable");
     expect(result).toMatchObject({ stillPending: 1 });
   });
 });
@@ -360,7 +406,7 @@ describe("repairPendingSolanaActivity — expiry gate (the only absence-of-proof
     );
 
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
-    expect(mockTouchLastChecked).toHaveBeenCalledWith(1);
+    expect(mockTouchLastChecked).toHaveBeenCalledWith(1, "block_height_unavailable");
   });
 });
 
@@ -397,7 +443,7 @@ describe("repairPendingSolanaActivity — cadence and batching", () => {
       }),
     );
 
-    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1);
+    expect(mockConfirmActivityEventStatusOnly).toHaveBeenCalledWith(1, "receipt_status_only_solana");
     expect(mockFailActivityEvent).toHaveBeenCalledWith(2, expect.objectContaining({ failureCode: "mined_revert" }));
   });
 

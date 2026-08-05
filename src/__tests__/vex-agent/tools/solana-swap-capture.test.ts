@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import assert from "node:assert/strict";
 import { SendTransactionError } from "@solana/web3.js";
 import type { ProtocolExecutionContext } from "../../../vex-agent/tools/protocols/types.js";
 import { JupiterSubmitTipProof } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/submit-tip-proof.js";
@@ -6,11 +7,19 @@ import {
   JUPITER_SUBMIT_MIN_TIP_LAMPORTS,
   JUPITER_TIP_RECEIVER_ADDRESSES,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/constants.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const mockRequestLendDeposit = vi.fn();
 const mockLendPositions = vi.fn();
 const mockRequireJupiterResolvedTokenWithSafety = vi.fn();
 const mockPrepareFeeBearingJupiterSwap = vi.fn();
+
+/** The swap-preparation argument at `index` (negative counts from the end). */
+function swapPreparation(index: number): { amountRaw?: string; knobs: { slippageBps?: number } } {
+  const call = mockPrepareFeeBearingJupiterSwap.mock.calls.at(index);
+  assert.ok(call, `no swap preparation at call index ${index}`);
+  return call[0] as { amountRaw?: string; knobs: { slippageBps?: number } };
+}
 const mockGetSolanaConnection = vi.fn();
 const mockPrepareVersionedTx = vi.fn();
 const mockSubmitPreparedTx = vi.fn();
@@ -232,8 +241,8 @@ describe("solana.swap.execute capture", () => {
   });
 
   it("stages the write (intent -> sign -> persist -> submit) and returns truthful-pending, never _tradeCapture", async () => {
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -295,8 +304,8 @@ describe("solana.swap.execute capture", () => {
       preparedFeeBearingSwap({ submitTipProof: null }),
     );
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -311,8 +320,8 @@ describe("solana.swap.execute capture", () => {
       cause: new Error("missing or insufficient tip"),
     });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -362,8 +371,8 @@ describe("solana.swap.execute capture", () => {
       cause: preflightRejectionCause(BUILD_SWAP_PROGRAM_ID, "0x1771"),
     });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", slippageBps: 50 },
       SWAP_SESSION_CTX,
     );
 
@@ -399,8 +408,8 @@ describe("solana.swap.execute capture", () => {
       cause: preflightRejectionCause(BUILD_SWAP_PROGRAM_ID, "0x1780"),
     });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", slippageBps: 50 },
       SWAP_SESSION_CTX,
     );
 
@@ -420,8 +429,8 @@ describe("solana.swap.execute capture", () => {
       cause: preflightRejectionCause("ComputeBudget111111111111111111111111111111", "0x1771"),
     });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", slippageBps: 50 },
       SWAP_SESSION_CTX,
     );
 
@@ -439,8 +448,8 @@ describe("solana.swap.execute capture", () => {
       cause: new Error("ECONNRESET"),
     });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, slippageBps: 50 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", slippageBps: 50 },
       SWAP_SESSION_CTX,
     );
 
@@ -464,8 +473,8 @@ describe("solana.swap.execute capture", () => {
       preparedFeeBearingSwap({ raw: { inAmount: "1000000000", outAmount: "100000000", otherAmountThreshold: "1", swapMode: "ExactIn" } }),
     );
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -486,8 +495,8 @@ describe("solana.swap.execute capture", () => {
     );
     mockCreateAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 99, event: {} });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -505,8 +514,8 @@ describe("solana.swap.execute capture", () => {
     );
     mockCreateAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 97, event: {} });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -520,8 +529,8 @@ describe("solana.swap.execute capture", () => {
   it("blocks with a clear message when no matching fee-bearing quote is found (no broadcast, no intent)", async () => {
     mockFindFreshMatchedSwapPrequote.mockResolvedValue(null);
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -532,8 +541,8 @@ describe("solana.swap.execute capture", () => {
   });
 
   it("rejects an explicit address that differs from the session's selected Solana wallet (no broadcast)", async () => {
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, address: "SpoofedWallet" },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", walletAddress: "SpoofedWallet" },
       SWAP_SESSION_CTX,
     );
 
@@ -545,8 +554,8 @@ describe("solana.swap.execute capture", () => {
   it("a post-intent signing failure finalizes the EXISTING row via failActivityEvent, never a second intent (design R2)", async () => {
     mockPrepareVersionedTx.mockRejectedValueOnce(new Error("sole-signer violation"));
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -562,8 +571,8 @@ describe("solana.swap.execute capture", () => {
   it("a staging CAS-miss refuses to submit untracked (never calls submitPreparedTx, never retries blindly)", async () => {
     mockMarkActivitySolanaBroadcast.mockResolvedValueOnce({ applied: false });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -578,8 +587,8 @@ describe("solana.swap.execute capture", () => {
       kind: "signature_mismatch", localSignature: "realSig123", providerSignature: "attackerSig",
     });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -592,8 +601,8 @@ describe("solana.swap.execute capture", () => {
   it("a submit network failure stays truthful-pending — never terminalizes the locally-signed row", async () => {
     mockSubmitPreparedTx.mockResolvedValueOnce({ kind: "transport_uncertain", cause: new Error("ECONNRESET") });
 
-    const result = await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -609,8 +618,8 @@ describe("solana.swap.execute capture", () => {
   // from one where Vex charged nothing.
 
   it("records the Vex fee in TOKEN units even though no USD value exists for it", async () => {
-    await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -620,7 +629,7 @@ describe("solana.swap.execute capture", () => {
         vexFee?: { tokenAddress: string; tokenSymbol?: string; tokenDecimals: number; amountRaw: string; amountHuman: string };
       }>;
     };
-    const event = intent.events[0]!;
+    const event = intent.events[0];
 
     // The USD column stays empty — deliberately, and that is a finished answer.
     expect(event.usdVexFeeEst).toBeUndefined();
@@ -643,8 +652,8 @@ describe("solana.swap.execute capture", () => {
       preparedFeeBearingSwap({ feeAmountRaw: hugeFeeRaw, feeAmountDecimal: "18446744073709.551615" }),
     );
 
-    await CORE_HANDLERS["solana.swap.execute"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -668,8 +677,8 @@ describe("solana.swap.quote", () => {
   });
 
   it("builds a wallet-scoped fee-bearing quote and discloses fee/tip/landing (never executes)", async () => {
-    const result = await CORE_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -686,9 +695,61 @@ describe("solana.swap.quote", () => {
   // showed a weaker model lifting a raw base-unit figure out of a quote into
   // its user-facing reply, so the human layer spells token units — while the
   // machine fields keep the provider's raw strings byte-for-byte.
+  // W4a — Jupiter live-substitutes its own 50 bps when `slippageBps` is
+  // omitted, which would make the PROVIDER the owner of Vex's only price
+  // protection. Quote and execute adopt Vex's value at the SAME code point
+  // (`resolveJupiterSwapKnobs`), so a quote and its execute still bind the
+  // identical economics.
+  it("quote and execute both send Vex's slippage default EXPLICITLY when the caller omits it", async () => {
+    await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
+      SWAP_SESSION_CTX,
+    );
+    const quoted = swapPreparation(0);
+    expect(quoted.knobs.slippageBps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
+
+    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequote());
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 7 }] });
+    mockPrepareVersionedTx.mockResolvedValue({
+      serialized: new Uint8Array([1, 2, 3]),
+      signature: "realSig123",
+      recentBlockhash: "freshBlockhash",
+      lastValidBlockHeight: 555,
+    });
+    mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: true, row: {} });
+    mockSubmitPreparedTx.mockResolvedValue({ kind: "accepted", signature: "realSig123" });
+    mockMarkBroadcastAccepted.mockResolvedValue({ applied: true, row: {} });
+
+    await CORE_HANDLERS["solana.swap.execute"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
+      SWAP_SESSION_CTX,
+    );
+    const executed = swapPreparation(-1);
+    expect(executed.knobs.slippageBps).toBe(quoted.knobs.slippageBps);
+  });
+
+  // W5a — the raw atomic amount reaching the provider comes from integer
+  // string math, and a fractional tail the mint cannot hold is REFUSED rather
+  // than rounded into the signed transaction.
+  it("converts amountIn exactly and refuses more precision than the mint holds", async () => {
+    await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1.000001" },
+      SWAP_SESSION_CTX,
+    );
+    expect(swapPreparation(-1)).toMatchObject({ amountRaw: "1000001" });
+
+    const refused = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1.0000001" },
+      SWAP_SESSION_CTX,
+    );
+    expect(refused.success).toBe(false);
+    expect(refused.output).toContain("amountIn");
+    expect(mockPrepareFeeBearingJupiterSwap).toHaveBeenCalledTimes(1);
+  });
+
   it("adds a HUMAN summary while leaving every raw machine field untouched", async () => {
-    const result = await CORE_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -712,8 +773,8 @@ describe("solana.swap.quote", () => {
       }),
     );
 
-    const result = await CORE_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -725,8 +786,8 @@ describe("solana.swap.quote", () => {
   // Unknown is not zero: a missing price impact is omitted, never rendered
   // as a reassuring "0.00%".
   it("omits price impact entirely when the provider gave none", async () => {
-    const result = await CORE_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000 },
+    const result = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
       SWAP_SESSION_CTX,
     );
 
@@ -734,8 +795,8 @@ describe("solana.swap.quote", () => {
   });
 
   it("rejects an explicit address that differs from the session's selected Solana wallet (wallet-scoped, no quote built)", async () => {
-    const result = await CORE_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, address: "SpoofedWallet" },
+    const result = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", walletAddress: "SpoofedWallet" },
       SWAP_SESSION_CTX,
     );
 
@@ -744,8 +805,8 @@ describe("solana.swap.quote", () => {
   });
 
   it("rejects an out-of-range tipLamports without silently clamping (owner reject-not-clamp rule)", async () => {
-    const result = await CORE_HANDLERS["solana.swap.quote"]!(
-      { inputToken: "BonkMint", outputToken: "SolMint", amount: 1000, tipLamports: 10_000_001 },
+    const result = await CORE_HANDLERS["solana.swap.quote"](
+      { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000", tipLamports: 10_000_001 },
       SWAP_SESSION_CTX,
     );
 
@@ -759,8 +820,8 @@ describe("solana.swap.quote", () => {
 
 describe("jupiter session wallet scope", () => {
   it("lend.deposit fails closed when explicit address != session wallet (NO broadcast)", async () => {
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC", amount: "100", address: "DifferentWallet" },
+    const result = await LEND_HANDLERS["solana.lend.deposit"](
+      { asset: "USDC", amountRaw: "100", walletAddress: "DifferentWallet" },
       SESSION_CTX,
     );
 
@@ -773,12 +834,12 @@ describe("jupiter session wallet scope", () => {
   });
 
   it("lend.positions scopes the read to the session selected wallet", async () => {
-    await LEND_HANDLERS["solana.lend.positions"]!({}, SESSION_CTX);
+    await LEND_HANDLERS["solana.lend.positions"]({}, SESSION_CTX);
     expect(mockLendPositions).toHaveBeenCalledWith("SignerWallet");
   });
 
   it("lend.positions under source:default preserves the explicit-address override", async () => {
-    await LEND_HANDLERS["solana.lend.positions"]!({ address: "ExplicitWallet" }, DEFAULT_CTX);
+    await LEND_HANDLERS["solana.lend.positions"]({ walletAddress: "ExplicitWallet" }, DEFAULT_CTX);
     expect(mockLendPositions).toHaveBeenCalledWith("ExplicitWallet");
   });
 });

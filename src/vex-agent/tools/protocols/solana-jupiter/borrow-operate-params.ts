@@ -10,8 +10,8 @@
  * standard (an agent would have to know the MIN_I128 sentinel by heart to
  * withdraw everything) — this module owns the translation from six
  * intent-labeled, mutually-exclusive params
- * (depositAmount/withdrawAmount/withdrawAll for collateral,
- * borrowAmount/repayAmount/repayAll for debt) to the provider's signed
+ * (depositAmountRaw/withdrawAmountRaw/withdrawAll for collateral,
+ * borrowAmountRaw/repayAmountRaw/repayAll for debt) to the provider's signed
  * strings, shared verbatim by BOTH the mutation handler
  * (`handlers/lend-borrow.ts`) and the pre-approval risk-preview evaluator
  * (`borrow-risk-preview.ts`) so the two never drift.
@@ -154,10 +154,10 @@ function assertPositiveIntegerAmount(name: string, value: string): bigint | Tool
 // below rather than assumed from a generic "in/out" naming.
 
 interface LegParamNames {
-  /** Param that produces a POSITIVE provider delta (depositAmount | borrowAmount). */
+  /** Param that produces a POSITIVE provider delta (depositAmountRaw | borrowAmountRaw). */
   readonly positiveName: string;
   readonly positiveDirection: "in" | "out";
-  /** Param that produces a NEGATIVE provider delta (withdrawAmount | repayAmount). */
+  /** Param that produces a NEGATIVE provider delta (withdrawAmountRaw | repayAmountRaw). */
   readonly negativeName: string;
   readonly negativeDirection: "in" | "out";
   /** Boolean sentinel param (withdrawAll | repayAll) — always the MOST NEGATIVE delta, so shares `negativeDirection`. */
@@ -241,9 +241,9 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
   // Collateral: deposit (colAmount > 0) = wallet sends = "in"; withdraw
   // (colAmount < 0) = wallet receives = "out".
   const collateral = resolveLeg(p, {
-    positiveName: "depositAmount",
+    positiveName: "depositAmountRaw",
     positiveDirection: "in",
-    negativeName: "withdrawAmount",
+    negativeName: "withdrawAmountRaw",
     negativeDirection: "out",
     closeAllName: "withdrawAll",
   });
@@ -253,9 +253,9 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
   // INVERSE of collateral's sign↔direction pairing (see the module doc above
   // `resolveLeg`).
   const debt = resolveLeg(p, {
-    positiveName: "borrowAmount",
+    positiveName: "borrowAmountRaw",
     positiveDirection: "out",
-    negativeName: "repayAmount",
+    negativeName: "repayAmountRaw",
     negativeDirection: "in",
     closeAllName: "repayAll",
   });
@@ -265,8 +265,8 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
     return {
       ok: false,
       result: fail(
-        "Nothing to do — provide at least one of depositAmount, withdrawAmount, withdrawAll, "
-        + "borrowAmount, repayAmount, repayAll.",
+        "Nothing to do — provide at least one of depositAmountRaw, withdrawAmountRaw, withdrawAll, "
+        + "borrowAmountRaw, repayAmountRaw, repayAll.",
       ),
     };
   }

@@ -49,33 +49,33 @@ const CASES: ReadonlyArray<readonly [string, string, Record<string, unknown>]> =
   ["search q=SOL/USDC rich", "dexscreener.search", { query: "SOL/USDC", fields: "full" }],
   ["search +baseName", "dexscreener.search", { query: "SOL/USDC", fields: "baseName" }],
   ["search limit=5", "dexscreener.search", { query: "USDC", limit: 5 }],
-  ["tokenPairs WETH lean", "dexscreener.tokenPairs", { chainId: "ethereum", tokenAddress: "WETH" }],
+  ["tokenPairs WETH lean", "dexscreener.tokenPairs", { chain: "ethereum", tokenAddress: "WETH" }],
   [
     "tokenPairs WETH rich",
     "dexscreener.tokenPairs",
-    { chainId: "ethereum", tokenAddress: "WETH", fields: "full" },
+    { chain: "ethereum", tokenAddress: "WETH", fields: "full" },
   ],
-  ["tokenPairs BONK lean", "dexscreener.tokenPairs", { chainId: "solana", tokenAddress: "BONK" }],
+  ["tokenPairs BONK lean", "dexscreener.tokenPairs", { chain: "solana", tokenAddress: "BONK" }],
   [
     "tokens 40-req lean",
     "dexscreener.tokens",
-    { chainId: "ethereum", tokenAddresses: batch.requestedAddresses },
+    { chain: "ethereum", tokenAddresses: batch.requestedAddresses },
   ],
   [
     "tokens 40-req rich",
     "dexscreener.tokens",
-    { chainId: "ethereum", tokenAddresses: batch.requestedAddresses, fields: "full" },
+    { chain: "ethereum", tokenAddresses: batch.requestedAddresses, fields: "full" },
   ],
   [
     "tokens 40-req limit=15",
     "dexscreener.tokens",
-    { chainId: "ethereum", tokenAddresses: batch.requestedAddresses, limit: 15 },
+    { chain: "ethereum", tokenAddresses: batch.requestedAddresses, limit: 15 },
   ],
-  ["pairs single lean", "dexscreener.pairs", { chainId: "ethereum", pairAddress: "0x88e6" }],
+  ["pairs single lean", "dexscreener.pairs", { chain: "ethereum", pairAddress: "0x88e6" }],
   [
     "pairs single rich",
     "dexscreener.pairs",
-    { chainId: "ethereum", pairAddress: "0x88e6", fields: "full" },
+    { chain: "ethereum", pairAddress: "0x88e6", fields: "full" },
   ],
 ];
 

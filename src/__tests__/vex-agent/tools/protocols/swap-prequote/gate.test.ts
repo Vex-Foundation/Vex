@@ -180,7 +180,7 @@ describe("evaluateSwapPrequoteGate", () => {
     tokenOut: GATE_TOKEN_OUT,
     amountIn: "1",
   };
-  const SOL_PARAMS = { inputToken: SOLANA_MINT_A, outputToken: SOL_MINT, amount: 1 };
+  const SOL_PARAMS = { tokenIn: SOLANA_MINT_A, tokenOut: SOL_MINT, amountIn: "1" };
 
   // ── Decision matrix ────────────────────────────────────────────────────
 
@@ -363,7 +363,7 @@ describe("evaluateSwapPrequoteGate", () => {
     mockFindLatest.mockResolvedValue(prequoteRow("pass", { family: "solana", chainId: null }));
     const d = await mod.evaluateSwapPrequoteGate(
       "solana.swap.execute",
-      { inputToken: "SOLSYM", outputToken: SOL_MINT, amount: 1 },
+      { tokenIn: "SOLSYM", tokenOut: SOL_MINT, amountIn: "1" },
       ctx(),
     );
     expect(d.kind).toBe("allow");
@@ -395,6 +395,27 @@ describe("evaluateSwapPrequoteGate", () => {
     });
     expect(mockFindLatest.mock.calls[0]![1]).toBe(expected);
     expect(mockFindLatest.mock.calls[0]![2]).toBe("swap");
+  });
+
+  // W5a fail-closed proof. The retired spellings are rejected by
+  // `validateProtocolParams` before this gate ever runs, but if one ever
+  // reached here the identity must degrade to a NON-MATCHING digest — never to
+  // a hash over `undefined` that could collide with a real recorded row.
+  it("Solana: the retired amount/inputToken spellings never produce a matching identity", async () => {
+    mockRequireJupiter.mockImplementation(async (q: string) => ({ address: q }));
+    mockExistsFail.mockResolvedValue(false);
+    mockFindLatest.mockResolvedValue(null);
+
+    await mod.evaluateSwapPrequoteGate(
+      "solana.swap.execute",
+      { inputToken: SOLANA_MINT_A, outputToken: SOL_MINT, amount: 1 },
+      ctx(),
+    );
+    const staleHash = mockFindLatest.mock.calls[0]?.[1];
+
+    mockFindLatest.mockClear();
+    await mod.evaluateSwapPrequoteGate("solana.swap.execute", SOL_PARAMS, ctx());
+    expect(mockFindLatest.mock.calls[0]?.[1]).not.toBe(staleHash);
   });
 });
 

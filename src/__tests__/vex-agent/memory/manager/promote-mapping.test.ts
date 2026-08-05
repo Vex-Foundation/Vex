@@ -114,6 +114,7 @@ describe("applyDecision — promote mapping", () => {
     );
     const di = res.decisionInput;
     expect(di.decisionType).toBe("promote");
+    if (di.decisionType !== "promote") throw new Error("unreachable");
     expect(di.candidateId).toBe(candidate.id);
     expect(di.jobId).toBe(77);
     expect(di.decisionVersion).toBe(0);

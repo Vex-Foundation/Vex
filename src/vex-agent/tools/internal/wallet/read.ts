@@ -36,14 +36,27 @@ import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { fail, ok } from "../types.js";
 import { formatZodIssueForModel } from "../arg-validation.js";
+import { mapWithConcurrency } from "@utils/concurrency.js";
+import { throwIfAborted } from "@utils/cancellation.js";
 
 const WalletReadArgs = z.object({
-  wallet: z.enum(["eip155", "solana", "all"]).optional().default("all"),
+  walletFamily: z.enum(["eip155", "solana", "all"]).optional().default("all"),
   // Empty / whitespace-only `chainIds` is treated as omission (scan all chains).
   // LLM serializers often emit `""` for "no value" — see plan PR-balance-toolkit.
+  //
+  // An ARRAY is accepted alongside the CSV string (`acceptsStringArray`
+  // semantics, SPEC §2.10 item 12): the manifest advertises both, and a model
+  // that holds a list of chains must not lose a turn learning it had to join
+  // them itself. Empty entries are dropped; an all-empty list reads as omitted.
   chainIds: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().trim().min(1, { message: "chainIds must be a non-empty comma-separated string" }).optional(),
+    (v) => {
+      if (Array.isArray(v)) {
+        const joined = v.filter((entry) => typeof entry === "string" && entry.trim() !== "").join(",");
+        return joined === "" ? undefined : joined;
+      }
+      return typeof v === "string" && v.trim() === "" ? undefined : v;
+    },
+    z.string().trim().min(1, { message: "chainIds must be a non-empty comma-separated string, or an array of chain slugs/ids" }).optional(),
   ),
   // Optional cap on the number of tokens returned per wallet snapshot. Only
   // applied when response_format is 'concise' (see below); ignored in the
@@ -124,6 +137,13 @@ async function partitionBalanceChainScope(raw: string | undefined): Promise<Bala
 type LocalChainSnapshot =
   | { ok: true; tokens: ConciseKhalaniToken[]; totalUsd: number }
   | { ok: false; chainName?: string; message: string };
+
+/**
+ * Matches `DEFAULT_BALANCE_SCAN_CONCURRENCY` in the Khalani scan: the two sides
+ * of one `wallet_balances` answer must not race each other into a provider's
+ * rate limit.
+ */
+const LOCAL_CHAIN_SCAN_CONCURRENCY = 4;
 
 function heldUsd(balanceWei: bigint, decimals: number, priceUsd: number | null): number {
   if (priceUsd === null) return 0;
@@ -215,7 +235,7 @@ export async function handleWalletBalances(
   } catch (err) {
     return fail(`wallet_balances: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const walletFamilies = requestedWalletFamilies(parsed.data.wallet);
+  const walletFamilies = requestedWalletFamilies(parsed.data.walletFamily);
   const snapshots: WalletSnapshot[] = [];
   const walletErrors: Array<{ wallet: ChainFamily; message: string }> = [];
 
@@ -228,7 +248,7 @@ export async function handleWalletBalances(
     const khalaniRequested =
       !scope.rawProvided || (scope.selection.rawProvided && (khalaniChainIds?.length ?? 0) > 0);
     if (!khalaniRequested && localChainIds.length === 0) {
-      if (parsed.data.wallet === family) {
+      if (parsed.data.walletFamily === family) {
         return fail(`wallet_balances: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
       }
       continue;
@@ -266,8 +286,29 @@ export async function handleWalletBalances(
 
       // Local (non-Khalani) chains — direct RPC, same failure surface as a
       // Khalani per-chain error (the family snapshot survives a dead chain).
-      for (const localChainId of localChainIds) {
-        const local = await readLocalChainSnapshot(address, localChainId);
+      //
+      // Bounded-concurrency, not serial: each chain costs a scan-set build, an
+      // RPC read and a DexScreener price batch, and running N of them one after
+      // another is the `wallet_balances` latency complaint. The bound matches
+      // the Khalani scan's own (4) so the provider rate limits are not the new
+      // failure mode, and results are written into slots keyed by index so the
+      // output order stays chain order rather than completion order.
+      throwIfAborted(context.abortSignal);
+      const localResults = new Array<LocalChainSnapshot | undefined>(localChainIds.length);
+      await mapWithConcurrency(localChainIds, LOCAL_CHAIN_SCAN_CONCURRENCY, async (localChainId, index) => {
+        throwIfAborted(context.abortSignal);
+        localResults[index] = await readLocalChainSnapshot(address, localChainId);
+      });
+
+      localChainIds.forEach((localChainId, index) => {
+        const local = localResults[index];
+        // Unreachable while `mapWithConcurrency` visits every index; treated as
+        // a per-chain failure rather than asserted, because the alternative is
+        // losing a whole family snapshot to a bookkeeping slip.
+        if (local === undefined) {
+          chainErrors.push({ chainId: localChainId, message: "local chain scan produced no result" });
+          return;
+        }
         if (local.ok) {
           projected.push(...local.tokens);
           totalUsd += local.totalUsd;
@@ -275,7 +316,7 @@ export async function handleWalletBalances(
         } else {
           chainErrors.push({ chainId: localChainId, chainName: local.chainName, message: local.message });
         }
-      }
+      });
 
       snapshots.push({
         wallet: family,
@@ -288,7 +329,7 @@ export async function handleWalletBalances(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (parsed.data.wallet === family) {
+      if (parsed.data.walletFamily === family) {
         return fail(`${family} wallet error: ${message}`);
       }
       walletErrors.push({ wallet: family, message });
@@ -300,7 +341,8 @@ export async function handleWalletBalances(
   }
 
   return ok({
-    wallet: parsed.data.wallet,
+    // Echoes the PARAM the caller filled in, under the same name.
+    walletFamily: parsed.data.walletFamily,
     walletCount: snapshots.length,
     totalUsd: snapshots.reduce((sum, snapshot) => sum + snapshot.totalUsd, 0),
     walletErrors,

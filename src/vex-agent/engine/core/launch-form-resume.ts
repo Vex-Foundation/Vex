@@ -13,8 +13,8 @@
  * still pending when the form opens. Without this wake the run stays parked on
  * `paused_user_form` forever holding an unanswered tool call: the user's token
  * launches and the agent never learns it happened. Every terminal outcome —
- * deployed, refused, dismissed, expired — therefore resumes the turn with an
- * honest result.
+ * deployed, broadcast-but-unconfirmed, refused, dismissed, expired — therefore
+ * resumes the turn with an honest result.
  *
  * EXACTLY ONCE, through two independent guards, because a double click, a
  * retried IPC call and a submit racing the expiry sweep are all real:
@@ -30,13 +30,39 @@ import type { PoolClient } from "pg";
 
 import logger from "@utils/logger.js";
 
-import { getById, stampResultMessageWith } from "../../db/repos/token-launch-intents.js";
+import {
+  casMarkUserFormResumeConsumedWith,
+  getById,
+  stampResultMessageWith,
+} from "../../db/repos/token-launch-intents.js";
+// STATIC, per `release-and-emit-chokepoint.test.ts`. A dynamic import here
+// would put the release behind a fallible module load: a rejected import means
+// the lease is never released at all, and a leaked heartbeat keeps renewing
+// `expires_at`, so no TTL sweep can reclaim the session and it stays blocked
+// for the life of the process. The module is safe to bind statically — it
+// reaches `core/approval-runtime/` only dynamically and only AFTER the
+// release, so `runtime/` keeps no static edge into `core/`.
+import type { LeaseHandle } from "../runtime/lease-handle.js";
+import { releaseLeaseAndEmitControlState } from "../runtime/release-and-emit.js";
+import { LEASE_TTL_MS } from "./approval-runtime/helpers.js";
 import {
   claimUserFormResume,
+  closeUserFormContinuation,
   commitUserFormToolResult,
   userFormDismissalOutput,
   type UserFormContinuationRef,
 } from "./user-form-runtime.js";
+
+/**
+ * Whether the continuation's turn got its chance to run — and, when it did, the
+ * lease it ran under. The lease is HANDED BACK rather than released here: the
+ * closing decision (retire the Stop, mark completion, release) has to happen
+ * while it is still held, or an operator Stop landing at the end of the turn
+ * outlives the continuation that should have consumed it.
+ */
+type DispatchOutcome =
+  | { readonly kind: "dispatched"; readonly leaseHandle: LeaseHandle | null }
+  | { readonly kind: "lease_busy" };
 
 /** What actually happened to the form the agent opened. */
 export type LaunchFormOutcome =
@@ -46,6 +72,15 @@ export type LaunchFormOutcome =
       /** `null` when the receipt could not be decoded — say so, never guess. */
       readonly tokenAddress: string | null;
     }
+  /**
+   * BROADCAST, BUT NOT PROVEN — the third state, and the one that has no honest
+   * home in either arm above. The user's gas is at stake and the token may
+   * already exist, so this is not `failed` (whose "No token was created" would
+   * be a false statement); nothing is confirmed, so it is not `launched`
+   * either. `txHash` is `null` only when the broadcast could not be read back.
+   * `reason` is the executor's own user-safe prose.
+   */
+  | { readonly kind: "unconfirmed"; readonly txHash: string | null; readonly reason: string }
   /** A refusal or a mined revert. `reason` is already user-safe prose. */
   | { readonly kind: "failed"; readonly reason: string }
   | { readonly kind: "dismissed" }
@@ -103,13 +138,23 @@ export async function resumeAgentAfterUserForm(input: {
   // launch has no pending call and nothing to wake — that is not an error.
   if (!intent.toolCallId) return { resumed: false, reason: "no_parked_call" };
 
+  // THE consumption authority. `result_message_id` is NOT it: that stamp says
+  // the transcript has the answer, which is true from the moment the result
+  // commits — long before the turn it answers has been dispatched. Only a
+  // COMPLETED resumed turn ends eligibility, exactly as `resume_consumed_at`
+  // does for the approval lifecycle.
+  if (intent.resumeConsumedAt !== null) {
+    return { resumed: false, reason: "already_resolved" };
+  }
+
   const ref: UserFormContinuationRef = {
     sessionId: input.sessionId,
     missionRunId: intent.missionRunId,
     toolCallId: intent.toolCallId,
   };
+  const ownerId = `launch-form-${input.intentId}`;
 
-  const claim = await claimUserFormResume(ref, `launch-form-${input.intentId}`);
+  const claim = await claimUserFormResume(ref, ownerId);
   if (claim.outcome === "busy") {
     armBusyRetry(input);
     return { resumed: false, reason: "busy" };
@@ -118,35 +163,103 @@ export async function resumeAgentAfterUserForm(input: {
     return { resumed: false, reason: "already_resolved" };
   }
 
+  // ONE owner for the claimed lease, from here to the closing decision. The
+  // mission branch's RUN lease is live from the claim above; `resumeMissionRun`
+  // is explicit that the CALLER owns its lifecycle, and a stamp or dispatch
+  // failure must not strand it.
+  let closed = false;
   try {
-    await commitUserFormToolResult({
-      ref,
-      success: input.outcome.kind === "launched",
-      output: describeOutcome(input.outcome),
-      stamp: async (client: PoolClient, resultMessageId: number) => {
-        const stamped = await stampResultMessageWith(
-          client,
-          input.intentId,
-          input.sessionId,
-          resultMessageId,
-        );
-        if (stamped === null) throw new ResultAlreadyStampedError();
-      },
-    });
-  } catch (err) {
-    if (err instanceof ResultAlreadyStampedError) {
-      return { resumed: false, reason: "already_resolved" };
+
+  // RESULT-ALREADY-APPENDED is a RECOVERY, not a refusal. The row reaching here
+  // with a stamp and no consumption is precisely the crash/restart/busy-lease
+  // case: the transcript carries its answer and the turn that answer exists for
+  // never ran. Re-appending would answer one tool call twice; stopping would
+  // strand the turn forever. So skip the append and go straight to the dispatch.
+  if (intent.resultMessageId === null) {
+    try {
+      await commitUserFormToolResult({
+        ref,
+        success: input.outcome.kind === "launched",
+        output: describeOutcome(input.outcome),
+        stamp: async (client: PoolClient, resultMessageId: number) => {
+          const stamped = await stampResultMessageWith(
+            client,
+            input.intentId,
+            input.sessionId,
+            resultMessageId,
+          );
+          if (stamped === null) throw new ResultAlreadyStampedError();
+        },
+      });
+    } catch (err) {
+      // Someone else appended it between our read and this write. The result
+      // exists either way, so the remaining work is identical to the recovery
+      // branch above — fall through to the dispatch rather than giving up on a
+      // turn that is still owed.
+      if (!(err instanceof ResultAlreadyStampedError)) throw err;
+      logger.info("engine.user_form.result_appended_concurrently", {
+        intentId: input.intentId,
+        sessionId: input.sessionId,
+      });
     }
-    throw err;
   }
 
   // The result exists; now WAKE THE AGENT. Appending without dispatching is the
   // half-fix the approval path already learned to avoid — the turn would sit
-  // with its answer written and nobody reading it. Failure to dispatch does not
-  // undo the result: the outstanding scan below finds this row again, and a
-  // second dispatch is safe because the result is already stamped.
-  await dispatchContinuation(ref, `launch-form-${input.intentId}`);
-  return { resumed: true };
+  // with its answer written and nobody reading it.
+    const dispatched = await dispatchContinuation(
+      ref,
+      ownerId,
+      claim.leaseHandle,
+    );
+    if (dispatched.kind === "lease_busy") {
+      // NOT consumed: the turn is still owed, and the durable scan can still
+      // see this row precisely because eligibility keys off
+      // `resume_consumed_at` rather than off the result stamp. An in-process
+      // ladder would not be enough on its own — a crash here has no process
+      // left to retry in.
+      armBusyRetry(input);
+      return { resumed: false, reason: "busy" };
+    }
+
+    // CLOSE IT: retire the operator's Stop, write the COMPLETION marker, and
+    // release the lease — in one ordering, while the lease is still held. See
+    // `closeUserFormContinuation` for the interleaving that ordering exists
+    // for. The marker is written even when the gated turn declined on a stop: a
+    // stop is a terminal answer to this continuation, not a reason to retry it
+    // forever.
+    await closeUserFormContinuation({
+      sessionId: input.sessionId,
+      leaseHandle: dispatched.leaseHandle,
+      consume: async (client) => {
+        const recorded = await casMarkUserFormResumeConsumedWith(
+          client,
+          input.intentId,
+          input.sessionId,
+        );
+        if (!recorded) {
+          logger.info("engine.user_form.resume_completion_already_recorded", {
+            intentId: input.intentId,
+            sessionId: input.sessionId,
+          });
+        }
+      },
+    });
+    closed = true;
+    return { resumed: true };
+  } finally {
+    // Every exit that did NOT reach the closing decision — a stamp throw, a
+    // dispatch throw, a busy lease — still owes the claimed RUN lease its
+    // release. The chat branch's own lease is released by the close, or was
+    // never claimed.
+    if (!closed && claim.leaseHandle !== null) {
+      await releaseLeaseAndEmitControlState(
+        claim.leaseHandle,
+        input.sessionId,
+        { missionRunId: ref.missionRunId },
+      ).catch(() => undefined);
+    }
+  }
 }
 
 /**
@@ -198,28 +311,80 @@ function armBusyRetry(input: {
  * Run the agent's next turn now that the form's result is in the transcript.
  *
  * Mirrors `approval-runtime/continuation.ts`: a mission run resumes through
- * `resumeMissionRun`, a chat session through `runAgentTurnUnderLease`. Dynamic
+ * `resumeMissionRun` under the run lease its claim already took; a chat session
+ * claims the SESSION lease here and runs the shared stop-gated turn. Dynamic
  * imports for the same reason that module uses them — the runner imports the
  * engine core back, and a static edge here is a cycle.
+ *
+ * ## Why the chat branch claims a lease and a gate, and why HERE
+ *
+ * It used to call `runAgentTurnUnderLease` — the LEASE-ALREADY-HELD runner —
+ * with no lease held at all, no operator-stop gate and no abort signal. Three
+ * consequences, all real:
+ *
+ *   - a full model turn could overlap a turn another runner was already
+ *     driving, because nothing excluded them;
+ *   - a Stop committed in the gap between the result being appended and this
+ *     dispatch was retired as "nothing will observe it" and the turn then ran
+ *     anyway — the operator stopped the session and the agent kept going, on
+ *     the LAUNCH path, where the next thing it does can spend real money;
+ *   - a Stop landing mid-turn had no controller to fire.
+ *
+ * The lease is claimed at DISPATCH rather than at claim time on purpose. The
+ * tool result is a durable write that must land whatever else is running — the
+ * form's outcome is a fact about the user's money and delaying it behind a
+ * lease would risk losing it. What must not overlap, and what must observe the
+ * operator's Stop, is the MODEL TURN. So the exclusion is placed exactly there.
+ *
+ * A busy lease is not an error: the result is already stamped, so the durable
+ * floor (`listOutstandingUserFormResumes`) finds this row again and a later
+ * dispatch is safe.
  */
 async function dispatchContinuation(
   ref: UserFormContinuationRef,
   ownerId: string,
-): Promise<void> {
+  missionLease: LeaseHandle | null,
+): Promise<DispatchOutcome> {
   if (ref.missionRunId !== null) {
     const { resumeMissionRun } = await import("./runner/mission.js");
     await resumeMissionRun(ref.missionRunId, ownerId);
-    return;
+    // The RUN lease the claim acquired, handed straight back — this function
+    // never owned it and must not release it.
+    return { kind: "dispatched", leaseHandle: missionLease };
   }
 
-  const { resolveProvider } = await import("@vex-agent/inference/registry.js");
-  const provider = await resolveProvider();
-  if (!provider) throw new Error("No inference provider available");
-  const config = await provider.loadConfig();
-  if (!config) throw new Error("No inference config available");
+  const { claimSessionLease } = await import(
+    "../runtime/lease-and-status.js"
+  );
+  const claim = await claimSessionLease({
+    sessionId: ref.sessionId,
+    ownerId,
+    processKind: "electron_main",
+    ttlMs: LEASE_TTL_MS,
+  });
+  if (claim.outcome === "lease_busy") {
+    logger.info("engine.user_form.dispatch_lease_busy", {
+      sessionId: ref.sessionId,
+      ownerId,
+    });
+    return { kind: "lease_busy" };
+  }
 
-  const { runAgentTurnUnderLease } = await import("./runner/agent.js");
-  await runAgentTurnUnderLease(ref.sessionId, provider, config);
+  const { createLeaseHandle } = await import("../runtime/lease-handle.js");
+  const handle = createLeaseHandle({
+    lease: claim.lease,
+    ownerId,
+    ttlMs: LEASE_TTL_MS,
+  });
+  const { runStopGatedSessionTurn } = await import(
+    "./runner/gated-session-turn.js"
+  );
+  await runStopGatedSessionTurn({
+    sessionId: ref.sessionId,
+    runnerOwnerId: ownerId,
+    logScope: "launch_form_resume",
+  });
+  return { kind: "dispatched", leaseHandle: handle };
 }
 
 /**
@@ -239,6 +404,22 @@ function describeOutcome(outcome: LaunchFormOutcome): string {
         + (outcome.tokenAddress === null
           ? "The token address could not be decoded from the receipt yet; do not state one until it settles."
           : `Token address: ${outcome.tokenAddress}.`)
+      );
+    case "unconfirmed":
+      // Deliberately mirrors the executor's own ambiguous wording
+      // (`trench.launch_execute.ambiguous`): the two paths describe the SAME
+      // event, and a model told "done" here while the tool result says
+      // "unconfirmed" learns whichever it read last.
+      return (
+        // Not "deployed": the word is the one the model latches onto, and
+        // nothing here proves a deployment happened.
+        `The user reviewed the form and submitted the launch, but it is NOT confirmed: ${outcome.reason} `
+        + (outcome.txHash === null
+          ? "The broadcast returned no transaction hash, so it cannot be checked yet. "
+          : `Transaction: ${outcome.txHash}. `)
+        + "It is recorded as pending and will resolve automatically — DO NOT launch again and do "
+        + "not retry. Tell the user it is still settling; do not say the token exists until it "
+        + "confirms."
       );
     case "failed":
       return (

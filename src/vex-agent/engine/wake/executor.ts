@@ -11,20 +11,26 @@
  *     hardcoded defaults (interval=2000ms, batchSize=10) after DB bootstrap.
  *     Wake is an installed-runtime concern, not a renderer concern.
  *
- * Tick semantics:
- *   1. `claimDue(now, batchSize)` — atomically flips the pending rows to
- *      `consumed` and returns them. Rows the executor cannot handle (e.g.
- *      session status drifted to `running` because a user preempted) are
- *      SKIPPED but NOT unclaimed — the row is terminal once consumed, and
- *      the race is accepted (the user already resumed the session, so no
- *      banner needs to be injected).
- *   2. For every claimed row, the executor re-checks the mission run state
- *      and either (a) injects a `wake_due` banner + triggers the resume
- *      path or (b) logs the drift and skips. Every outcome is reported on
- *      the returned `ClaimedWake` so tests and operators can see the result.
+ * Tick semantics — TWO reads, because the two wake shapes are claimed
+ * differently:
+ *   1a. MISSION-SCOPED: `claimDue(now, batchSize)` atomically flips the
+ *       pending rows to `consumed` and returns them. Rows the executor cannot
+ *       handle (e.g. run status drifted to `running` because a user preempted)
+ *       are SKIPPED but NOT unclaimed — the row is terminal once consumed, and
+ *       the race is accepted (the user already resumed, so no banner is owed).
+ *   1b. SESSION-SCOPED: `listDueSessionWakes` returns CANDIDATES without
+ *       consuming anything. Each is then claimed by `claimSessionWake`, which
+ *       revalidates the row, acquires the session lease and consumes the row as
+ *       ONE transaction under the session control lock. A session has no run
+ *       row to serve as backup evidence, so the destructive-first order would
+ *       (and did) throw the continuation away on a busy lease — and left a
+ *       window in which an operator Stop found nothing to stop.
+ *   2.  Every outcome is reported on the returned `ClaimedWake` so tests and
+ *       operators can see what the pass actually did.
  *
- * Post-M12 simplification: `full_autonomous` mode is gone. Every wake row
- * targets a mission run; the executor no longer branches on `wake.kind`.
+ * Post-M12 simplification: `full_autonomous` mode is gone. A wake row targets
+ * either a mission run or a Full-Autonomous agent SESSION; the executor
+ * branches on the row's own shape, never on a `wake.kind`.
  *
  * Structural split: this file is the compatibility façade + lifecycle owner.
  * The tick implementation lives under `./executor/`:
@@ -32,6 +38,8 @@
  *   deps.ts       — `WakeDeps` + production default deps wiring.
  *   tick.ts       — `tick` + `ClaimedWake` / `ClaimedWakeOutcome`.
  *   claimed.ts    — normal claimed-job handling (`handleClaimed`).
+ *   agent-session.ts     — Full-Autonomous agent SESSION continuation.
+ *   claim-session-wake.ts — the atomic session wake/lease claim + backoff.
  *   auto-retry.ts — auto-retry handling (`handleAutoRetryClaimed`).
  *   provider.ts   — `isWakeProviderConfigured`.
  *
@@ -44,6 +52,10 @@ import logger from "@utils/logger.js";
 
 import { tick } from "./executor/tick.js";
 import { buildProductionDeps, type WakeDeps } from "./executor/deps.js";
+import {
+  startWakeWatchPromoter,
+  type WakeWatchPromoterHandle,
+} from "./watch-promoter.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
@@ -62,6 +74,13 @@ export interface StartOptions {
   batchSize?: number;
   deps?: WakeDeps;
   now?: () => Date;
+  /**
+   * Watch-promoter override for tests. The promoter is the PUSH half of the
+   * same mechanism this executor polls for, so its lifetime is bound to the
+   * executor's rather than started separately by the host — a live promoter
+   * with no executor would advance deadlines nothing would ever claim.
+   */
+  startWatchPromoter?: () => WakeWatchPromoterHandle;
 }
 
 /**
@@ -78,6 +97,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const limit = options.batchSize ?? 10;
   const now = options.now ?? (() => new Date());
   const deps = options.deps ?? buildProductionDeps();
+  const promoter = (options.startWatchPromoter ?? startWakeWatchPromoter)();
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
@@ -109,6 +129,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   return {
     async stop(): Promise<void> {
       stopped = true;
+      promoter.stop();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

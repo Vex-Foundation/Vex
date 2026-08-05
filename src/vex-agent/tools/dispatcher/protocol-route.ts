@@ -21,6 +21,19 @@ import {
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
 import { revealUniswapPair } from "../registry/uniswap-reveal.js";
+import { revealDescribeTools } from "../registry/describe-tools-reveal.js";
+import {
+  MAX_DISCOVERED_TOOLS_PER_SESSION,
+  getDiscoveredToolIds,
+  recordDiscoveredTools,
+} from "../registry/discovered-tools.js";
+import {
+  fromInjectedToolName,
+  isInjectedToolNameShape,
+  resolveInjectedProtocolTool,
+} from "../registry/injected-protocol-tools.js";
+import { buildDisplacementWarning, isRankedDiscoveryItem } from "../protocols/discovery.js";
+import type { ProtocolExecutionContext } from "../protocols/types.js";
 import { logDiscoveryTelemetry, newDiscoveryRunId } from "../protocols/discovery.telemetry.js";
 import { toResultData } from "../protocols/handler-helpers.js";
 import logger from "@utils/logger.js";
@@ -44,6 +57,37 @@ export function toModelDiscoveryResult(
   }
   const { embeddingModel: _model, embeddingDim: _dim, ...modelRetrieval } = result.retrieval;
   return { ...result, retrieval: modelRetrieval };
+}
+
+/**
+ * The `ProtocolExecutionContext` every protocol lane passes to
+ * `executeProtocolTool` — one shape, built once, so a field added for one lane
+ * (the C0 provenance trio, the Stop signal) can never be threaded through some
+ * lanes and silently dropped by another.
+ */
+function toProtocolExecutionContext(
+  call: ToolCallRequest,
+  context: InternalToolContext,
+): ProtocolExecutionContext {
+  return {
+    sessionPermission: context.sessionPermission,
+    approved: context.approved,
+    sessionId: context.sessionId,
+    contextUsageBand: context.contextUsageBand,
+    preparationBypassesBarrier: context.preparationBypassesBarrier === true,
+    walletResolution: context.walletResolution,
+    walletPolicy: context.walletPolicy,
+    // Trusted provenance (C0) — host-side evidence, never model input.
+    missionId: context.missionId,
+    missionRunId: context.missionRunId,
+    approvalId: context.approvalId,
+    // The call this dispatch answers. `trench.launch_request_form` parks the
+    // turn and its later result must address exactly this id (§C3b).
+    toolCallId: call.toolCallId,
+    // Operator Stop. EVERY protocol lane must carry it — passing it on only
+    // some silently un-cancels part of the protocol surface.
+    ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+  };
 }
 
 export async function routeToolCall(
@@ -94,6 +138,32 @@ export async function routeToolCall(
     });
     // The model only sees the trimmed copy — retrieval mechanics stripped.
     const modelResult = toModelDiscoveryResult(result);
+    // Owner decision 2026-08-03 (SPEC §7 Q1): remember what this session
+    // discovered so the NEXT request carries those manifests as real function
+    // schemas. RANKED rows only — a list-mode row has no param schema, so
+    // injecting it would advertise a tool with no parameters.
+    const displaced = recordDiscoveredTools(
+      context.sessionId,
+      result.tools.filter(isRankedDiscoveryItem).map((tool) => tool.toolId),
+    );
+    // Recording into a full session set evicts earlier rounds. That eviction
+    // used to be silent HERE while `describe_tools` named it, so the same cap
+    // took a capability away with no signal depending only on which tool the
+    // agent had used. Same sentence, one owner. A new array, because
+    // `toModelDiscoveryResult` shares `warnings` with the telemetry result.
+    const displacementWarning = buildDisplacementWarning(displaced);
+    if (displacementWarning !== null) {
+      modelResult.warnings = [...modelResult.warnings, displacementWarning];
+    }
+    // R5 — unlock the hidden `describe_tools` menu tool for this session. Fired
+    // on ANY successful non-empty discovery, list OR ranked (owner directive
+    // D1): gating it to list mode alone would block plan-recall and
+    // post-compaction schema recovery. A failed or empty result reveals nothing
+    // — there is nothing to describe. Core discovery must not own menu state,
+    // so the reveal is made here, beside the existing session recording.
+    if (result.success && result.count > 0) {
+      revealDescribeTools(context.sessionId);
+    }
     return {
       success: modelResult.success,
       // Compact, NOT pretty-printed: indentation was 15-25% of this payload and
@@ -121,22 +191,37 @@ export async function routeToolCall(
 
     return executeProtocolTool(
       { toolId, params: resolved.params },
-      {
-        sessionPermission: context.sessionPermission,
-        approved: context.approved,
-        sessionId: context.sessionId,
-        contextUsageBand: context.contextUsageBand,
-        preparationBypassesBarrier: context.preparationBypassesBarrier === true,
-        walletResolution: context.walletResolution,
-        walletPolicy: context.walletPolicy,
-        // Trusted provenance (C0) — host-side evidence, never model input.
-        missionId: context.missionId,
-        missionRunId: context.missionRunId,
-        approvalId: context.approvalId,
-        // The call this dispatch answers. `trench.launch_request_form` parks the
-        // turn and its later result must address exactly this id (§C3b).
-        toolCallId: call.toolCallId,
-      },
+      toProtocolExecutionContext(call, context),
+    );
+  }
+
+  // Injected discovered-tool lane (owner decision 2026-08-03, SPEC §7 Q1).
+  // A discovered manifest is offered to the model as a real function whose
+  // name is the dotted toolId with `.` mapped to `__`; a call to it is
+  // reverse-mapped and enters the SAME `executeProtocolTool` pipeline as
+  // `execute_tool` — param validation → prequote gate → approval gate →
+  // handler. Every gate keys off the RESOLVED MANIFEST, never this name.
+  // The function's arguments ARE the params: unlike `execute_tool` there is no
+  // `{toolId, params}` envelope to resolve, because the injected schema IS the
+  // manifest's param schema.
+  if (isInjectedToolNameShape(call.name)) {
+    const manifest = resolveInjectedProtocolTool(call.name);
+    // Fail closed on a name this session was never offered: an evicted,
+    // stale-from-another-session, or hallucinated dotted id. The message names
+    // the real cause and both ways forward (rule 04, 2026-08-02).
+    if (!manifest || !getDiscoveredToolIds(context.sessionId).includes(manifest.toolId)) {
+      return {
+        success: false,
+        output:
+          `Unknown tool: ${call.name}. It is not among the protocol tools discovered in this `
+          + `session (only the most recent ${MAX_DISCOVERED_TOOLS_PER_SESSION} stay callable by name). `
+          + `Call discover_tools for "${fromInjectedToolName(call.name)}" to get it back as a `
+          + `named tool, then call it again.`,
+      };
+    }
+    return executeProtocolTool(
+      { toolId: manifest.toolId, params: call.args },
+      toProtocolExecutionContext(call, context),
     );
   }
 
@@ -169,22 +254,7 @@ export async function routeToolCall(
     }
     return executeProtocolTool(
       { toolId: target.toolId, params: target.params },
-      {
-        sessionPermission: context.sessionPermission,
-        approved: context.approved,
-        sessionId: context.sessionId,
-        contextUsageBand: context.contextUsageBand,
-        preparationBypassesBarrier: context.preparationBypassesBarrier === true,
-        walletResolution: context.walletResolution,
-        walletPolicy: context.walletPolicy,
-        // Trusted provenance (C0) — host-side evidence, never model input.
-        missionId: context.missionId,
-        missionRunId: context.missionRunId,
-        approvalId: context.approvalId,
-        // The call this dispatch answers. `trench.launch_request_form` parks the
-        // turn and its later result must address exactly this id (§C3b).
-        toolCallId: call.toolCallId,
-      },
+      toProtocolExecutionContext(call, context),
     );
   }
 

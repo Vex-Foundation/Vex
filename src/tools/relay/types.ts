@@ -46,6 +46,14 @@ export const RelayChainSchema = z
     depositEnabled: z.boolean().optional(),
     disabled: z.boolean().optional(),
     vmType: z.string().optional(),
+    /**
+     * Relay's own "this chain is behind" signal (live on every chain 2026-08-03).
+     * Display/advisory ONLY — it is NOT part of the fail-closed serviceability
+     * gate, because a lagging chain still accepts deposits and the sweep still
+     * terminalizes the fill; it is the condition under which a fill HANGS, which
+     * the agent is told about rather than blocked on.
+     */
+    blockProductionLagging: z.boolean().optional(),
     currency: RelayCurrencySchema.optional(),
   })
   .passthrough();
@@ -110,9 +118,20 @@ export const RelayQuoteDetailsSideSchema = z
     amount: z.string().optional(),
     amountFormatted: z.string().optional(),
     amountUsd: z.string().optional(),
+    /**
+     * The WORST-CASE amount for this side — the number `slippageBps` actually
+     * controls (live 2026-08-03: `88466568981856` expected vs `87581903292038`
+     * minimum on a 0.99 % applied tolerance). Display-only, so optional.
+     */
+    minimumAmount: z.string().optional(),
   })
   .passthrough();
 export type RelayQuoteDetailsSide = z.infer<typeof RelayQuoteDetailsSideSchema>;
+
+/** A `{percent}` bearer in the quote's `details{}` (impact, applied slippage). */
+export const RelayQuotePercentSchema = z
+  .object({ percent: z.union([z.string(), z.number()]).optional() })
+  .passthrough();
 
 /**
  * Quote `details{}` — tolerant (passthrough). Only the fields Vex projects are
@@ -128,6 +147,21 @@ export const RelayQuoteDetailsSchema = z
     currencyOut: RelayQuoteDetailsSideSchema.optional(),
     operation: z.string().optional(),
     timeEstimate: z.number().optional(),
+    /**
+     * Total price impact of the whole route (live 2026-08-03: `-11.53` % on a
+     * $0.18 bridge) — exactly the signal an agent needs to decline. Tolerant:
+     * Relay sends `percent` as a decimal STRING today, and a number would be a
+     * benign change, so both are accepted and the adapter normalizes.
+     */
+    totalImpact: RelayQuotePercentSchema.optional(),
+    /** The tolerance Relay ACTUALLY applied per side, as a percent. */
+    slippageTolerance: z
+      .object({
+        origin: RelayQuotePercentSchema.optional(),
+        destination: RelayQuotePercentSchema.optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -154,6 +188,15 @@ export const RelayStatusResponseSchema = z
     details: z.unknown().optional(),
     txHashes: z.array(z.string()).optional(),
     destinationTxHashes: z.array(z.string()).optional(),
+    /**
+     * WHY the intent failed / why a refund failed, from Relay's documented
+     * closed vocabulary (`TTL_EXPIRED`, `BLOCKED_WALLET`, `SLIPPAGE`, …).
+     * `BLOCKED_WALLET` (funds NOT auto-refunded, compliance review) and
+     * `TTL_EXPIRED` (refunded) are wildly different user outcomes that were
+     * reported identically before W2c. Display-only, so optional.
+     */
+    failReason: z.string().optional(),
+    refundFailReason: z.string().optional(),
   })
   .passthrough();
 export type RelayStatusResponse = z.infer<typeof RelayStatusResponseSchema>;

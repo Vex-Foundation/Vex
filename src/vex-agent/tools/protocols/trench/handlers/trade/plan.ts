@@ -14,6 +14,7 @@
 import { formatUnits, formatEther, type Address, type Hex } from "viem";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
+import { settlementDecodeProvenance } from "@vex-agent/db/repos/agent-activity/settlement-decode.js";
 import { buildBuyCalldata, buildSellCalldata, buildApproveCalldata } from "@tools/trench-express/evm/calldata.js";
 import { curveBuyNativePrincipal } from "@tools/trench-express/evm/native-value.js";
 import {
@@ -102,7 +103,19 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
           // The BUY input is `msg.value`, NOT an on-chain Transfer from the
           // wallet, so the repair sweep cannot reconstruct the input leg from
           // logs alone — persist the planned raw input for the settlement decoder.
-          routeProvenance: { plannedInputRaw: input.amountInRaw.toString(), side: input.side },
+          routeProvenance: {
+            plannedInputRaw: input.amountInRaw.toString(), side: input.side,
+            // R1 Step 5a — the decoder identity and the Diamond this call is
+            // sent to, persisted at intent time. A BUY's input IS `msg.value`,
+            // so the declared value is recorded; a SELL's is zero and recording
+            // it would tell a decoder nothing it does not already know.
+            ...settlementDecodeProvenance({
+              decoder: "trench_trade",
+              chainId: input.chainId,
+              routerAddress: DIAMOND,
+              declaredValueRaw: input.amountInRaw.toString(),
+            }),
+          },
         },
       },
     ];
@@ -129,7 +142,16 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
         tokenOut: { tokenAddress: input.nativeAddress, tokenSymbol: NATIVE_LABEL, tokenDecimals: ETH_DECIMALS, amountHuman: formatEther(input.expectedOutRaw), amountRaw: input.expectedOutRaw.toString() },
         // Persist the planned raw token input so the repair sweep can supply the
         // Sold cross-check amount (proves the event's ETH-leg positional mapping).
-        routeProvenance: { plannedInputRaw: input.amountInRaw.toString(), side: input.side },
+        routeProvenance: {
+          plannedInputRaw: input.amountInRaw.toString(), side: input.side,
+          // R1 Step 5a — same decoder and Diamond; no declared value, because a
+          // SELL sends none.
+          ...settlementDecodeProvenance({
+            decoder: "trench_trade",
+            chainId: input.chainId,
+            routerAddress: DIAMOND,
+          }),
+        },
       },
     },
   ];

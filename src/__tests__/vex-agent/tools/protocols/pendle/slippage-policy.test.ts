@@ -3,7 +3,7 @@
  * clamped (G-40 / P1-4, owner decision Q8).
  *
  * DEFECT 1 (closed earlier): the original expression was
- *   `const b = bps !== undefined && bps >= 0 ? bps : DEFAULT_SLIPPAGE_BPS;`
+ *   `const b = bps !== undefined && bps >= 0 ? bps : <the default>;`
  * so `-1` returned the 50 bps DEFAULT — trading with a tolerance the caller
  * never asked for, at a price-protection boundary.
  *
@@ -24,10 +24,9 @@
 import { describe, it, expect } from "vitest";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
-import { VEX_MAX_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS, VEX_MAX_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import {
   resolvePendleSlippage,
-  DEFAULT_SLIPPAGE_BPS,
 } from "@vex-agent/tools/protocols/pendle/handlers/shared.js";
 
 const TOOL = "pendle.pt.buy";
@@ -96,8 +95,8 @@ describe("resolvePendleSlippage rejects invalid basis points", () => {
 describe("resolvePendleSlippage preserves valid behaviour", () => {
   it("an omitted value still takes the documented default", () => {
     const resolved = resolvePendleSlippage(TOOL, undefined);
-    expect(resolved.bps).toBe(DEFAULT_SLIPPAGE_BPS);
-    expect(resolved.fraction).toBe(DEFAULT_SLIPPAGE_BPS / 10_000);
+    expect(resolved.bps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
+    expect(resolved.fraction).toBe(VEX_DEFAULT_SLIPPAGE_BPS / 10_000);
   });
 
   it.each([

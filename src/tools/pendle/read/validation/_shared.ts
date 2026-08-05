@@ -96,8 +96,14 @@ export function requireAddressList(v: unknown): string[] | null {
   return out;
 }
 
-/** Tolerant bounded string list (category labels and the like). */
-export function readDisplayStringList(v: unknown, max: number): string[] {
+/**
+ * Tolerant string list (category labels and the like). NOT truncated (W9d):
+ * this list feeds the `categories` / `excludeCategories` filter, and a cap that
+ * dropped the 17th label let an explicitly EXCLUDED market back into the
+ * result with nothing said. Entries are narrowed to a bounded token vocabulary
+ * downstream (`trusted-fields.ts` `trustedCategoryId`).
+ */
+export function readDisplayStringList(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
-  return v.filter((entry): entry is string => typeof entry === "string" && entry.length > 0).slice(0, max);
+  return v.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
 }

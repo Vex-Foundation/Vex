@@ -20,16 +20,36 @@
  *     certainty from the transaction itself, not a decode — no log exists
  *     for a plain native transfer). The CALLER must pass the actual signed
  *     value, not a re-derived amount.
- *   - the NATIVE tokenOut leg is decoded from the chain's wrapped-native
- *     ERC-20 contract's `Withdrawal(address indexed src, uint256 wad)`
- *     event, bound to the KNOWN router address as `src` (C21: "WETH events
- *     bound to the router/account topic") — the router unwraps WETH it is
- *     holding before forwarding native to the recipient, so `src` is the
- *     router, never an unrelated contract's incidental unwrap elsewhere in
- *     the same receipt (e.g. another pool visited mid-route). This is a
- *     best-effort heuristic (documented residual risk — see the module's
- *     consumer for the crash-recovery caveat): a missing/unbound Withdrawal
- *     event means the decoder DECLINES rather than guesses.
+ *   - the NATIVE tokenOut leg has TWO independent proofs, tried in this order
+ *     (R2 stage F2). Either establishes the amount; neither guesses.
+ *
+ *     1. CORRELATED (preferred, and the only one that may use a widened
+ *        unwrap): exactly ONE `Swapped` emitted BY the verified router, whose
+ *        `sender`/`dstReceiver` are our wallet, whose `srcToken` is our input
+ *        token and whose `dstToken` is the native sentinel. Its `returnAmount`
+ *        is the output, REQUIRING corroboration by exactly one same-value
+ *        unwrap of the wrapped native — a `Withdrawal` from ANY source, or a
+ *        burn `Transfer(src -> 0x0)`. Corroboration is required because it is
+ *        NOT verified from Kyber's source that `Swapped` implies delivery.
+ *        Two real receipts forced this rule into existence: the owner's own
+ *        Robinhood swap (no `Withdrawal` at all — the WETH clone burns) and a
+ *        Base receipt whose `Withdrawal` came from the EXECUTOR, not the
+ *        router. The old rule returned `null` for both.
+ *     2. ROUTER-BOUND `Withdrawal` (the original): a `Withdrawal(address
+ *        indexed src, uint256 wad)` whose `src` IS the verified router (C21:
+ *        "WETH events bound to the router/account topic"). RETAINED because it
+ *        is unsound only in the false-negative direction — it is the posture
+ *        this repository has shipped, and deleting it would stop decoding
+ *        receipt shapes that decode correctly today. Its documented residual
+ *        risk is unchanged: a multi-hop route where the router unwraps for an
+ *        intermediate step.
+ *
+ *     A leg no proof establishes DECLINES rather than guessing.
+ *
+ *     `Swapped.spentAmount` is NEVER the executed INPUT: the Vex fee is a
+ *     component of the input, so `spentAmount` under-reports what the user
+ *     actually paid by exactly that fee. The input leg stays wallet-relative
+ *     net delta. Do not re-propose this.
  *
  * Returns `null` when either leg cannot be confidently decoded — the caller
  * must never confirm a swap-role `agent_activity` event without both amounts.
@@ -90,6 +110,16 @@ export interface DecodeSwapSettlementInput {
    * ignored otherwise.
    */
   readonly wrappedNativeWithdrawalSource?: string;
+  /**
+   * The VERIFIED router for this row — the address whose `Swapped` event is the
+   * proof of a native output leg. REQUIRED to decode a native tokenOut leg;
+   * ignored otherwise.
+   *
+   * "Verified" means it came from the row's persisted `settlementDecode`
+   * provenance or from this venue's own registry keyed by the row's chain id —
+   * never from a log, and never from model input.
+   */
+  readonly routerAddress?: string;
 }
 
 export interface DecodedSwapAmounts {
@@ -197,7 +227,7 @@ export function decodeKyberSwapSettlement(input: DecodeSwapSettlementInput): Dec
     : negateToPositive(netTransferDelta(input.logs, input.tokenIn.address, input.walletAddress));
 
   const amountOut = input.tokenOut.isNative
-    ? decodeNativeOut(input.logs, input.wrappedNativeAddress, input.wrappedNativeWithdrawalSource)
+    ? decodeNativeOut(input.logs, input)
     : positiveOnly(netTransferDelta(input.logs, input.tokenOut.address, input.walletAddress));
 
   if (amountIn === null || amountOut === null) return null;
@@ -226,12 +256,178 @@ function decodeNativeIn(nativeAmountInRaw: string | undefined): bigint | null {
   }
 }
 
+/**
+ * THE NATIVE OUTPUT LEG — one rule, correlated and corroborated (R2 stage F2).
+ *
+ * The previous rule accepted only a canonical `Withdrawal` bound to the ROUTER
+ * as `src`. Two REAL receipts on two chains defeat that binding, which is why it
+ * is gone rather than merely extended:
+ *
+ * - Robinhood 4663 (the owner's own swap, the transaction this whole workstream
+ *   exists for): no `Withdrawal` at all — the WETH clone BURNS, i.e.
+ *   `Transfer(src -> 0x0)`.
+ * - Base 8453 (tx 0x70d2…ed65): a canonical `Withdrawal` whose `src` is the
+ *   Kyber EXECUTOR, not the router.
+ *
+ * So the PROOF is the router's own `Swapped` event, fully correlated to this
+ * row, and the unwrap is CORROBORATION rather than evidence in itself:
+ *
+ *   1. exactly ONE `Swapped` emitted BY the verified router;
+ *   2. `sender` and `dstReceiver` are our wallet, `srcToken` is our input token,
+ *      `dstToken` is the native sentinel;
+ *   3. `returnAmount` is the executed output;
+ *   4. exactly ONE same-value unwrap of the wrapped native — a `Withdrawal`
+ *      from ANY source, or a burn `Transfer(src -> 0x0)`;
+ *   5. anything else declines.
+ *
+ * WHY CORROBORATION IS REQUIRED, not optional: it has NOT been verified from
+ * Kyber's contract source that `Swapped` is emitted only after `returnAmount` is
+ * actually delivered to `dstReceiver`. Rule 4 is what makes this safe without
+ * that proof. Do not relax it to "optional" without obtaining it.
+ *
+ * Widening the unwrap's source is safe precisely BECAUSE of rule 1: an
+ * unrelated contract's incidental unwrap elsewhere in the receipt cannot match
+ * both the exact `returnAmount` of a router event naming our wallet AND be the
+ * only such unwrap. Ambiguity declines.
+ */
 function decodeNativeOut(
   logs: readonly SwapSettlementLog[],
-  wrappedNativeAddress: string | undefined,
-  expectedSource: string | undefined,
+  input: DecodeSwapSettlementInput,
 ): bigint | null {
-  if (wrappedNativeAddress === undefined || expectedSource === undefined) return null;
-  const withdrawn = sumBoundWethWithdrawals(logs, wrappedNativeAddress, expectedSource);
+  const { wrappedNativeAddress } = input;
+  if (wrappedNativeAddress === undefined) return null;
+  // The handler has always passed the verified router under the older name, so
+  // this keeps the happy path working without a venue-handler edit.
+  const routerAddress = input.routerAddress ?? input.wrappedNativeWithdrawalSource;
+  if (routerAddress === undefined) return null;
+
+  const correlated = decodeCorrelatedNativeOut(logs, input, wrappedNativeAddress, routerAddress);
+  if (correlated !== null) return correlated;
+
+  // SECOND, INDEPENDENT PROOF — the original strictly-router-bound `Withdrawal`.
+  //
+  // Deliberately RETAINED rather than replaced. The correlated rule above exists
+  // because router-binding produces FALSE NEGATIVES (it returned `null` for the
+  // owner's own swap and for the Base receipt whose executor emitted the
+  // unwrap), not because it is unsound: it binds `src` to the verified router,
+  // which is the posture this repository has shipped and relied on. Deleting it
+  // would stop decoding receipt shapes that decode correctly TODAY — a
+  // regression on the money path, dressed as a tightening.
+  //
+  // The widenings — an unwrap from the EXECUTOR, or a burn instead of a
+  // `Withdrawal` — are available ONLY through the correlated rule, which is what
+  // keeps them safe. Its documented residual risk is unchanged: a multi-hop
+  // route where the router unwraps for an intermediate step.
+  const withdrawn = sumBoundWethWithdrawals(logs, wrappedNativeAddress, routerAddress);
   return withdrawn > 0n ? withdrawn : null;
 }
+
+/** The correlated `Swapped` + corroborating-unwrap proof. `null` = not established. */
+function decodeCorrelatedNativeOut(
+  logs: readonly SwapSettlementLog[],
+  input: DecodeSwapSettlementInput,
+  wrappedNativeAddress: string,
+  routerAddress: string,
+): bigint | null {
+  const swapped = findSoleRouterSwapped(logs, routerAddress);
+  if (swapped === null) return null;
+  if (!addressesEqual(swapped.sender, input.walletAddress)) return null;
+  if (!addressesEqual(swapped.dstReceiver, input.walletAddress)) return null;
+  if (!addressesEqual(swapped.dstToken, NATIVE_SENTINEL)) return null;
+  // The input leg's own token must match the row's, or this `Swapped` describes
+  // a different swap than the one we are decoding.
+  if (!input.tokenIn.isNative && !addressesEqual(swapped.srcToken, input.tokenIn.address)) {
+    return null;
+  }
+  if (swapped.returnAmount <= 0n) return null;
+
+  return countMatchingUnwraps(logs, wrappedNativeAddress, swapped.returnAmount) === 1
+    ? swapped.returnAmount
+    : null;
+}
+
+/** Kyber's native pseudo-token address, as it appears in `Swapped.dstToken`. */
+const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+/**
+ * `Swapped(address sender, address srcToken, address dstToken, address
+ * dstReceiver, uint256 spentAmount, uint256 returnAmount)` — ALL NON-INDEXED,
+ * so the six words live in `data` and topic0 is the only topic.
+ */
+const KYBER_SWAPPED_TOPIC = "0xd6d4f5681c246c9f42c203e287975af1601f8df8035a9251f79aab5c8f09e2f8";
+
+interface SwappedEvent {
+  readonly sender: string;
+  readonly srcToken: string;
+  readonly dstToken: string;
+  readonly dstReceiver: string;
+  readonly returnAmount: bigint;
+}
+
+/**
+ * The ONE `Swapped` this router emitted, or `null` when there is none — or more
+ * than one, which is ambiguity and must never be resolved by picking a
+ * favourite.
+ */
+function findSoleRouterSwapped(
+  logs: readonly SwapSettlementLog[],
+  routerAddress: string,
+): SwappedEvent | null {
+  let found: SwappedEvent | null = null;
+  for (const log of logs) {
+    if (!addressesEqual(log.address, routerAddress)) continue;
+    if (log.topics[0]?.toLowerCase() !== KYBER_SWAPPED_TOPIC) continue;
+    if (log.topics.length !== 1) continue;
+    const decoded = decodeSwappedData(log.data);
+    if (decoded === null) continue;
+    if (found !== null) return null; // two candidates — ambiguous, decline
+    found = decoded;
+  }
+  return found;
+}
+
+/** Six ABI words, or `null` for anything that is not exactly that. */
+function decodeSwappedData(data: string): SwappedEvent | null {
+  if (!/^0x[0-9a-fA-F]{384}$/.test(data)) return null;
+  const word = (index: number): string => data.slice(2 + index * 64, 2 + (index + 1) * 64);
+  const asAddress = (raw: string): string => `0x${raw.slice(24)}`;
+  const returnAmount = parseLogAmount(`0x${word(5)}`);
+  if (returnAmount === null) return null;
+  return {
+    sender: asAddress(word(0)),
+    srcToken: asAddress(word(1)),
+    dstToken: asAddress(word(2)),
+    dstReceiver: asAddress(word(3)),
+    returnAmount,
+  };
+}
+
+/**
+ * How many unwraps of the wrapped native carry EXACTLY this value — a canonical
+ * `Withdrawal` from any source, or a burn `Transfer(src -> 0x0)`.
+ *
+ * The caller requires exactly one. Zero means the delivery is uncorroborated;
+ * two or more means we cannot tell which unwrap belongs to this leg, and a
+ * money decode may not choose.
+ */
+function countMatchingUnwraps(
+  logs: readonly SwapSettlementLog[],
+  wrappedNativeAddress: string,
+  expected: bigint,
+): number {
+  let matches = 0;
+  for (const log of logs) {
+    if (!addressesEqual(log.address, wrappedNativeAddress)) continue;
+    const amount = parseLogAmount(log.data);
+    if (amount === null || amount !== expected) continue;
+    const isWithdrawal = log.topics[0] === WETH_WITHDRAWAL_TOPIC && log.topics.length === 2;
+    const isBurn = log.topics[0] === ERC20_TRANSFER_TOPIC
+      && log.topics.length === 3
+      && log.topics[2] === ZERO_ADDRESS_TOPIC;
+    if (isWithdrawal || isBurn) matches++;
+  }
+  return matches;
+}
+
+/** `to = 0x0` in an ERC-20 Transfer's indexed topic — the burn that stands in for a Withdrawal. */
+const ZERO_ADDRESS_TOPIC = `0x${"0".repeat(64)}`;

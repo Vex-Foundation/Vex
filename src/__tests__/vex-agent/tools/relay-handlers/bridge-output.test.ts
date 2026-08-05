@@ -23,6 +23,7 @@ function side(overrides: Partial<RelayQuoteSide> = {}): RelayQuoteSide {
     amountRaw: null,
     amountFormatted: null,
     amountUsd: null,
+    minimumAmountRaw: null,
     ...overrides,
   };
 }

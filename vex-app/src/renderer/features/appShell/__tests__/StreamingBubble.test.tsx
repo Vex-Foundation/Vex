@@ -79,12 +79,29 @@ describe("StreamingBubble — answer stream", () => {
 });
 
 describe("TurnIsland — state transitions", () => {
-  it("starts in the compact Working state", () => {
+  it("starts in the compact working state, captioned 'vexing…' — the legacy word is retired", () => {
     const { container } = render(
       createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
     expect(islandState(container)).toBe("working");
-    expect(container.textContent).toContain("Working");
+    const label = container.querySelector("[data-vex-island-label]");
+    expect(label?.textContent).toBe("vexing\u2026");
+    // The visible "Working" label is gone everywhere (owner brief §7). The
+    // sr-only announcement below stays literal and is asserted elsewhere.
+    expect(label?.textContent).not.toContain("Working");
+  });
+
+  it("stands the pill down entirely while the CENTRED scene owns the column", () => {
+    const { container } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ status: "working" }),
+        centredSceneUp: true,
+      }),
+    );
+    // The same fact is never stated twice — but the sr-only announcement is
+    // deliberately unchanged, so a screen reader still hears the turn.
+    expect(container.querySelector("[data-vex-island-label]")).toBeNull();
+    expect(screen.getByText("Vex is responding")).not.toBeNull();
   });
 
   it("expands into Thinking and renders the FULL reasoning as live markdown", () => {
@@ -114,7 +131,9 @@ describe("TurnIsland — state transitions", () => {
     expect(container.textContent).not.toContain("Ephemeral");
   });
 
-  it("shows Calling with the tool name while a tool is preparing", () => {
+  // The label carries the tool's HUMAN identity — the same title the persisted
+  // card shows — rather than the raw symbol the model called.
+  it("shows Calling with the tool's human title while a tool is preparing", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ status: "calling", toolName: "swap_execute_uniswap" }),
@@ -123,7 +142,7 @@ describe("TurnIsland — state transitions", () => {
     expect(islandState(container)).toBe("calling");
     const label = container.querySelector("[data-vex-island-label]");
     expect(label?.textContent).toContain("Calling");
-    expect(label?.textContent).toContain("swap_execute_uniswap");
+    expect(label?.textContent).toContain("Swap · Uniswap");
     // Contract C5: a protocol-backed tool wears its venue mark.
     expect(
       container.querySelector('[data-vex-protocol-mark="Uniswap"]'),

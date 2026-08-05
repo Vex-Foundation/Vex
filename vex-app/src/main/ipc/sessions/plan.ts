@@ -75,7 +75,10 @@ function registerPlanSetEnabledHandler(): () => void {
         // — else the run is stranded (generic resume refuses it, and accept
         // would no longer apply). The user must accept the plan or stop first.
         if (!input.enabled) {
-          const runState = await getActiveRunForSession(input.sessionId);
+          const runState = await getActiveRunForSession(
+            input.sessionId,
+            ctx.requestId,
+          );
           // Fail closed: if we cannot read the run state, do NOT flip the flag
           // (else we might strand a paused-for-acceptance run we couldn't see).
           if (!runState.ok) return runState;
@@ -129,7 +132,10 @@ function registerPlanAcceptHandler(): () => void {
       try {
         // Fail closed: read the run state BEFORE persisting acceptance, so we
         // never accept a plan we cannot then resume/track.
-        const runState = await getActiveRunForSession(input.sessionId);
+        const runState = await getActiveRunForSession(
+          input.sessionId,
+          ctx.requestId,
+        );
         if (!runState.ok) return runState;
 
         const { acceptSessionPlan } = await import("@vex-agent/engine/plan/authority.js");

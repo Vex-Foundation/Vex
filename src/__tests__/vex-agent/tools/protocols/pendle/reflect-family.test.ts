@@ -246,6 +246,7 @@ const { computePrequoteMatchHash } = await import(
 );
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { PendleTermAction, PendleTermLegs } from "@vex-agent/tools/protocols/pendle/handlers/reflect-prequote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CTX = {} as unknown as ProtocolExecutionContext;
 
@@ -262,7 +263,7 @@ const hashFor = (
   legs: Partial<PendleTermLegs> = {},
 ): string =>
   computePrequoteMatchHash(
-    buildPendleTermMatchInput(action, "sess-1", { chain: "ethereum", slippageBps: 50, ...params }, CTX, rollLegs(legs)),
+    buildPendleTermMatchInput(action, "sess-1", { chain: "ethereum", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS, ...params }, CTX, rollLegs(legs)),
   );
 
 describe("term-mobility prequote identity — dry run ↔ execute agreement", () => {
@@ -284,7 +285,7 @@ describe("term-mobility prequote identity — dry run ↔ execute agreement", ()
   it("a changed SOURCE, amount or slippage each diverge", () => {
     expect(hashFor("lp_transfer")).not.toBe(hashFor("lp_transfer", {}, { source: STRANGER }));
     expect(hashFor("lp_transfer")).not.toBe(hashFor("lp_transfer", {}, { amount: "1.0001" }));
-    expect(hashFor("lp_transfer")).not.toBe(hashFor("lp_transfer", { slippageBps: 100 }));
+    expect(hashFor("lp_transfer")).not.toBe(hashFor("lp_transfer", { slippageBps: 300 }));
   });
 
   it("the direction is bound: a reversed roll hashes differently", () => {
@@ -299,13 +300,13 @@ describe("term-mobility prequote identity — dry run ↔ execute agreement", ()
     expect(arb).not.toBe(hashFor("pt_rollover", { chain: "ethereum" }));
   });
 
-  it("an omitted slippage normalizes to the handler default (50) on both sides", () => {
-    expect(hashFor("pt_rollover", { slippageBps: undefined })).toBe(hashFor("pt_rollover", { slippageBps: 50 }));
+  it("an omitted slippage normalizes to the handler default on both sides", () => {
+    expect(hashFor("pt_rollover", { slippageBps: undefined })).toBe(hashFor("pt_rollover", { slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
   });
 
   it("the venue label is neither 'pendle' nor 'pendle-sy', so no other family's quote can authorize these", () => {
     expect(PENDLE_TERM_PREQUOTE_PROVIDER).toBe("pendle-term");
-    const identity = buildPendleTermMatchInput("pt_rollover", "sess-1", { chain: "ethereum", slippageBps: 50 }, CTX, rollLegs());
+    const identity = buildPendleTermMatchInput("pt_rollover", "sess-1", { chain: "ethereum", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }, CTX, rollLegs());
     expect(identity.provider).toBe("pendle-term");
     expect(computePrequoteMatchHash({ ...identity, provider: "pendle" })).not.toBe(hashFor("pt_rollover"));
     expect(computePrequoteMatchHash({ ...identity, provider: "pendle-sy" })).not.toBe(hashFor("pt_rollover"));
@@ -411,7 +412,7 @@ describe("the term-mobility manifests meet the context-free agent bar", () => {
     for (const toolId of TOOL_IDS) {
       const slippage = manifestFor(toolId).params.find((param) => param.key === "slippageBps");
       expect(slippage?.unit).toBe("bps");
-      expect(slippage?.description).toMatch(/0\.50%/);
+      expect(slippage?.description).toMatch(new RegExp(`default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%`));
       expect(slippage?.description).toMatch(/1000 = 10%/);
     }
   });

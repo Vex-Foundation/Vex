@@ -10,10 +10,8 @@
  */
 
 import { requireJupiterResolvedTokenWithSafety } from "@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js";
-import { uiToTokenAmount } from "@tools/solana-ecosystem/shared/solana-validation.js";
 import {
   prepareFeeBearingJupiterSwap,
-  resolveJupiterFeeSwapKnobs,
   buildJupiterFeePreview,
   type JupiterFeeSwapKnobs,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
@@ -21,16 +19,17 @@ import { getSolanaConnection } from "@tools/solana-ecosystem/shared/solana-trans
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 
 import type { ProtocolHandler } from "../../../types.js";
-import { str, num, ok, fail } from "../../../handler-helpers.js";
+import { str, ok, fail } from "../../../handler-helpers.js";
 import { projectJupiterSwapRoute } from "../../swap-route-projector.js";
 import { formatRawAmount } from "../../../amount-display.js";
-import { jupiterSlippageViolation, swapFailureMessage } from "./swap-policy.js";
+import { humanAmountToAtomic } from "./swap-amount.js";
+import { jupiterSlippageViolation, resolveJupiterSwapKnobs, swapFailureMessage } from "./swap-policy.js";
 import { walletAddress } from "./wallet-scope.js";
 
 export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
-  const inputRaw = str(p, "inputToken"), outputRaw = str(p, "outputToken");
-  const amount = num(p, "amount");
-  if (!inputRaw || !outputRaw || amount == null) return fail("Missing required: inputToken, outputToken, amount");
+  const inputRaw = str(p, "tokenIn"), outputRaw = str(p, "tokenOut");
+  const amountInRaw = str(p, "amountIn");
+  if (!inputRaw || !outputRaw || !amountInRaw) return fail("Missing required: tokenIn, tokenOut, amountIn");
 
   const slippageViolation = jupiterSlippageViolation("solana.swap.quote", p);
   if (slippageViolation) return fail(slippageViolation);
@@ -44,7 +43,7 @@ export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
 
   let knobs: JupiterFeeSwapKnobs;
   try {
-    knobs = resolveJupiterFeeSwapKnobs(p);
+    knobs = resolveJupiterSwapKnobs(p);
   } catch (err) {
     return fail(`solana.swap.quote failed: ${swapFailureMessage(err)}`);
   }
@@ -53,7 +52,9 @@ export const swapQuoteHandler: ProtocolHandler = async (p, ctx) => {
     requireJupiterResolvedTokenWithSafety(inputRaw),
     requireJupiterResolvedTokenWithSafety(outputRaw),
   ]);
-  const amountRaw = uiToTokenAmount(amount, inputToken.decimals).toString();
+  const converted = humanAmountToAtomic("amountIn", amountInRaw, inputToken.decimals, inputToken.symbol);
+  if (!converted.ok) return fail(`solana.swap.quote failed: ${converted.reason}`);
+  const amountRaw = converted.amountRaw;
 
   let prepared;
   try {

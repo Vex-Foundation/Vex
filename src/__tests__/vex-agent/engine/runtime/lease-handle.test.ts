@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import { createLeaseHandle } from "../../../../vex-agent/engine/runtime/lease-handle.js";
+import type { CreateLeaseHandleOptions } from "../../../../vex-agent/engine/runtime/lease-handle.js";
 import type { RunnerLease } from "../../../../vex-agent/db/repos/runner-leases.js";
 
 const SAMPLE_LEASE: RunnerLease = {
@@ -13,18 +15,26 @@ const SAMPLE_LEASE: RunnerLease = {
   expiresAt: new Date("2026-05-21T12:05:00Z"),
 };
 
+/** The injectable timer contract `createLeaseHandle` actually accepts. */
+type LeaseTimer = NonNullable<CreateLeaseHandleOptions["timer"]>;
+
 interface FakeTimer {
-  setInterval: ReturnType<typeof vi.fn>;
-  clearInterval: ReturnType<typeof vi.fn>;
+  setInterval: Mock<LeaseTimer["setInterval"]>;
+  clearInterval: Mock<LeaseTimer["clearInterval"]>;
   trigger: () => Promise<void>;
 }
 
 function makeFakeTimer(): FakeTimer {
   let stored: (() => void) | null = null;
+  // A real `setInterval` handle, immediately cleared: the fake never fires it
+  // (`trigger` drives the callback), but it keeps the handle a genuine
+  // `Timeout` rather than a lie about one.
+  const handle = setInterval(() => {}, 1_000_000);
+  clearInterval(handle);
   return {
     setInterval: vi.fn((cb: () => void) => {
       stored = cb;
-      return 42 as unknown as ReturnType<typeof setInterval>;
+      return handle;
     }),
     clearInterval: vi.fn(),
     async trigger(): Promise<void> {

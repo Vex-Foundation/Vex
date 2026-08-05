@@ -36,10 +36,10 @@ describe("agent_activity repair sweep — lookup-only", () => {
     const sendTransaction = vi.fn();
     const broadcastTransaction = vi.fn();
     const submitSignedTx = vi.fn();
-    const checkReceiptByHash = vi.fn().mockResolvedValue({ status: "success", executedLegs: {} });
+    const observeTransaction = vi.fn().mockResolvedValue({ kind: "mined", status: "success" });
 
     await repairPendingActivity({
-      checkReceiptByHash,
+      observeTransaction,
       // These three are deliberately NOT part of the sweep's real dependency
       // surface; if the implementation somehow imported and called a
       // send/broadcast primitive despite them not being wired in as deps,
@@ -83,7 +83,7 @@ describe("agent_activity repair sweep — lookup-only", () => {
 
     const requote = vi.fn();
     await repairPendingActivity({
-      checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success" }),
+      observeTransaction: vi.fn().mockResolvedValue({ kind: "mined", status: "success" }),
     });
 
     expect(requote).not.toHaveBeenCalled();
@@ -109,7 +109,7 @@ describe("agent_activity repair sweep — lookup-only", () => {
       await backdateSubmitAttempt(event.id, REPAIR_CANDIDATE_AGE_MS + 1_000);
 
       await repairPendingActivity({
-        checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success" }),
+        observeTransaction: vi.fn().mockResolvedValue({ kind: "mined", status: "success" }),
       });
 
       const finalRow = await repo.getActivityEventById(event.id);
@@ -130,7 +130,7 @@ describe("agent_activity repair sweep — lookup-only", () => {
     await backdateSubmitAttempt(event.id, REPAIR_CANDIDATE_AGE_MS + 1_000);
 
     await repairPendingActivity({
-      checkReceiptByHash: vi.fn().mockResolvedValue({ status: "reverted" }),
+      observeTransaction: vi.fn().mockResolvedValue({ kind: "mined", status: "reverted" }),
     });
 
     const finalRow = await repo.getActivityEventById(event.id);
@@ -152,7 +152,7 @@ describe("agent_activity repair sweep — lookup-only", () => {
     await backdateSubmitAttempt(event.id, 365 * 24 * 60 * 60 * 1000);
 
     await repairPendingActivity({
-      checkReceiptByHash: vi.fn().mockResolvedValue(null), // not yet mined / transient lookup failure
+      observeTransaction: vi.fn().mockResolvedValue({ kind: "unknown_to_node" }), // not yet mined / transient lookup failure
     });
 
     const row = await repo.getActivityEventById(event.id);

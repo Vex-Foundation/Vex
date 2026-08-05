@@ -118,6 +118,7 @@ import {
   summarizeErrorForLog,
 } from "../helpers.js";
 import type { ApproveSnapshot } from "../snapshot.js";
+import { checkApprovalManifestIdentity } from "../tool-call-envelope.js";
 import {
   ApprovalDispatchError,
   ApprovalPostDecisionError,
@@ -278,28 +279,48 @@ export async function applyApproveSideEffects(
       // narrow local type must not silently drop it (C1: null is never 0).
       durationMs?: number;
     };
-    try {
-      dispatchResult = await dispatchTool(
-        {
-          name: toolCall.toolName,
-          args: toolCall.toolArgs,
-          toolCallId: toolCall.toolCallId,
-        },
-        toolContext,
-      );
-    } catch (cause) {
-      // The continuation is deliberately left owned by this scope: the outer
-      // catch releases it in its `finally`, AFTER the terminal status write,
-      // so the release does not publish a stale `running` to the renderer.
-      await onDispatchThrow(
+    // MANIFEST IDENTITY, fail closed. The contract behind a canonicalized
+    // direct call can change while the approval waits in the queue; executing
+    // against a different contract than the human approved is exactly the
+    // silent substitution the envelope's fingerprint exists to prevent. This is
+    // a CONTROLLED failure, not a throw: the refusal is committed as the tool
+    // result and the agent resumes knowing nothing ran (a throw would park the
+    // run in `paused_error` and offer `/retry` on an action that must not be
+    // retried without a fresh approval). It sits AFTER the slot claim so the
+    // refused approval is terminal and cannot be re-dispatched.
+    const identity = checkApprovalManifestIdentity(row.queue_tool_call);
+    if (!identity.ok) {
+      logger.warn("engine.approval_runtime.manifest_identity_refused", {
         approvalId,
         sessionId,
         missionRunId,
-        toolCall.toolCallId,
-        cause,
-      );
-      // unreachable — onDispatchThrow always throws ApprovalDispatchError
-      throw new Error("unreachable");
+        reason: identity.reason,
+      });
+      dispatchResult = { success: false, output: identity.refusal };
+    } else {
+      try {
+        dispatchResult = await dispatchTool(
+          {
+            name: toolCall.toolName,
+            args: toolCall.toolArgs,
+            toolCallId: toolCall.toolCallId,
+          },
+          toolContext,
+        );
+      } catch (cause) {
+        // The continuation is deliberately left owned by this scope: the outer
+        // catch releases it in its `finally`, AFTER the terminal status write,
+        // so the release does not publish a stale `running` to the renderer.
+        await onDispatchThrow(
+          approvalId,
+          sessionId,
+          missionRunId,
+          toolCall.toolCallId,
+          cause,
+        );
+        // unreachable — onDispatchThrow always throws ApprovalDispatchError
+        throw new Error("unreachable");
+      }
     }
 
     // ── 5. Commit result + result_message_id in ONE transaction ─────────

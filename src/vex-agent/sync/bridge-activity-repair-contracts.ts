@@ -9,6 +9,7 @@
  */
 
 import type {
+  VerificationReason,
   BridgeChainFamily,
   CasResult,
   MarkBridgeLegObservedResult,
@@ -24,6 +25,15 @@ import type {
  * remainder is picked up on the next periodic tick.
  */
 export const BRIDGE_SWEEP_BATCH_LIMIT = 25;
+
+/**
+ * The `last_verification_reason` vocabulary is owned by the column's own repo
+ * module (`db/repos/agent-activity/types.ts`), beside the read side that derives
+ * `stalledVerification` from it — this family only consumes it. Re-exported here
+ * so the sweep's existing import path is unchanged.
+ */
+export type { VerificationReason } from "@vex-agent/db/repos/agent-activity.js";
+export { VERIFICATION_REASONS, toVerificationReason } from "@vex-agent/db/repos/agent-activity.js";
 
 /** Provider evidence-source markers persisted on confirmed/observed bridge rows (R6 provenance). */
 export const KHALANI_EVIDENCE_SOURCE = "khalani_order_status";
@@ -57,6 +67,17 @@ export interface BridgeSweepRow {
   readonly normalizedRoute: string | null;
   readonly lastAttemptedAt: string | null;
   readonly createdAt: string;
+  /**
+   * The reason the LAST check could not conclude (migration 065), as already
+   * stored on this row.
+   *
+   * Carried so the sweep can log a state CHANGE instead of one identical `warn`
+   * per poll, forever: an unverifiable row used to emit the same
+   * `bridge.repair.fill_unverified` line every 30 s indefinitely, which buries
+   * every other line in the shared sync log and tells the reader nothing new.
+   * NULL before the first inconclusive check.
+   */
+  readonly lastVerificationReason: string | null;
 }
 
 // ── Provider payload shapes the sweep reads (already client-validated) ──────
@@ -122,6 +143,13 @@ export interface RelayStatusView {
 
 /** A pending logical row awaiting recovery of its provider order id (crash after deposit broadcast, before attach — R5). */
 export interface BridgeOrderIdRecoveryCandidate {
+  /**
+   * The LOGICAL row's own `agent_activity.id` — what the stall counter is keyed
+   * on. Carried because `executionId` addresses the whole execution (deposit leg
+   * included), while `noteVerificationInconclusive`/`Conclusive` move the
+   * verification state of the single `bridge_fill_expected` row.
+   */
+  readonly logicalRowId: number;
   readonly executionId: number;
   readonly protocol: string;
   readonly walletAddress: string;
@@ -189,7 +217,8 @@ export interface DebridgeFillHashLookup {
 /** Result of the B4 verification. Executed amounts are present ONLY when decoded against the stored token + recipient (Q2). */
 export interface FillVerification {
   readonly verified: boolean;
-  readonly reason?: string;
+  /** A member of the closed 065 vocabulary — the type is what keeps provider text out of a stored column. */
+  readonly reason?: VerificationReason;
   readonly executedAmountInHuman?: string;
   readonly executedAmountInRaw?: string;
   readonly executedAmountOutHuman?: string;
@@ -197,10 +226,35 @@ export interface FillVerification {
 }
 
 export interface BridgeRepairDeps {
-  // ── Fair-scheduled candidate reads (bounded) ──
-  /** Pending logical rows with a `provider_order_id`, oldest-touched first (COALESCE(last_attempted_at, created_at) ASC), bounded. */
+  // ── Fair-scheduled candidate CLAIMS (bounded, atomic) ──
+  /**
+   * CLAIM up to `limit` pending logical rows with a `provider_order_id` that are
+   * DUE now, oldest-touched first, stamping `last_attempted_at` in the SAME
+   * statement.
+   *
+   * A CLAIM, not a read, and a due gate, not a plain LIMIT — two independent
+   * defects, both live in production:
+   *
+   * 1. FOUR drivers call this sweep (the fast lane's provider leg at 30 s, the
+   *    periodic 120 s job, `drainPendingRuns` and `processNextRun`). A
+   *    read-then-`touchAttempt` only serialises SEQUENTIAL callers: two drivers
+   *    can both select the same rows before either commits its stamp, and then
+   *    both poll the provider for them. `FOR UPDATE SKIP LOCKED` + `UPDATE …
+   *    RETURNING` makes selection and stamp one statement, so concurrent
+   *    drivers take DISJOINT batches (the repo's own shape —
+   *    `db/repos/token-launch-intents/sweep-claim.ts`).
+   * 2. Without a due gate the extra drivers are pure amplification: the same row
+   *    is re-checked whenever ANY driver runs. The gate is per row, phased on
+   *    the row's IMMUTABLE `created_at` — 30 s for the first 5 minutes of row
+   *    age, 60 s to 15 minutes, 5 minutes after that. It is deliberately NOT
+   *    phased on `last_attempted_at`, which every attempt rewrites: that clock
+   *    resets on every poll, so the row would never reach a later phase.
+   *
+   * Bounded and never auto-failing: a row that stays inconclusive simply moves
+   * to the back of the queue and is checked less often as it ages.
+   */
   listSweepCandidates(limit: number): Promise<BridgeSweepRow[]>;
-  /** Pending Khalani logical rows with a staged deposit hash but NULL `provider_order_id` (R5 recovery queue), bounded, same fairness. */
+  /** CLAIM pending Khalani logical rows with a staged deposit hash but NULL `provider_order_id` (R5 recovery queue) — same atomicity, fairness and due gate. */
   listOrderIdRecoveryCandidates(limit: number): Promise<BridgeOrderIdRecoveryCandidate[]>;
   /** Confirmed logical bridge rows whose execution still has no balance-refresh run (C3 confirm→enqueue crash recovery), bounded, fair-ordered. */
   listConfirmedNeedingBalanceRefresh(limit: number): Promise<ConfirmedBalanceRefreshCandidate[]>;
@@ -210,6 +264,27 @@ export interface BridgeRepairDeps {
   touchAttempt(executionId: number): Promise<void>;
   /** `last_checked_at = NOW()` + `provider_status` on the logical row — ONLY after a successful provider observation (B6). */
   touchChecked(executionId: number, providerStatus: string): Promise<void>;
+
+  // ── Stall visibility (migration 065) ──
+  /**
+   * ONE more CONSECUTIVE inconclusive verification attempt, with the named
+   * reason it could not conclude. Keyed by the LOGICAL ROW ID (not the execution
+   * id) because the counter is a property of that row.
+   *
+   * THIS NEVER TERMINALIZES ANYTHING and no threshold on the counter ever may:
+   * `stalled_verification` is a DERIVED read-side state. `no_safe_rpc` in
+   * particular means the outcome is UNKNOWN, and recording an unknown outcome as
+   * failed would report a possibly successful transfer of real funds as a
+   * failure. The never-auto-fail policy is unchanged.
+   */
+  noteVerificationInconclusive(logicalRowId: number, reason: VerificationReason): Promise<void>;
+  /**
+   * A verification attempt CONCLUDED — reset the consecutive-inconclusive
+   * counter. Without this reset an ordinary slow-but-healthy bridge would
+   * eventually render as "verification stalled", which is a lie about what the
+   * system knows: the counter must measure a STALL, not age.
+   */
+  noteVerificationConclusive(logicalRowId: number): Promise<void>;
 
   // ── Provider status (null = transport failure; the row stays pending) ──
   fetchKhalaniOrder(orderId: string): Promise<KhalaniOrderView | null>;

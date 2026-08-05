@@ -186,7 +186,7 @@ const SESSION_CTX: ProtocolExecutionContext = {
   sessionId: "session-1",
 };
 
-const baseParams = { fromChain: "ethereum", toChain: "ethereum", fromToken: "USDC", toToken: "USDC", amount: "1000000" };
+const baseParams = { fromChain: "ethereum", toChain: "ethereum", fromToken: "USDC", toToken: "USDC", amountRaw: "1000000" };
 
 function run(over: Record<string, unknown> = {}) {
   return BRIDGE_HANDLERS["khalani.bridge"]!({ ...baseParams, ...over }, SESSION_CTX);

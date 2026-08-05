@@ -21,6 +21,7 @@
 
 import { queryOne, queryOneWith } from "../../client.js";
 import { mapRow } from "./mappers.js";
+import { resolveFastLane } from "./fast-lane-signal.js";
 import { getActivityEventById } from "./swap-lifecycle/reads.js";
 import { withActivitySessionLock } from "./session-lock.js";
 import type { CasResult } from "./types.js";
@@ -84,7 +85,14 @@ export async function confirmLaunchWithOutputIdentity(
           SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW(),
               executed_amount_in_human = $2, executed_amount_in_raw = $3,
               executed_amount_out_human = $4, executed_amount_out_raw = $5,
-              token_out_address = $6, token_out_symbol = $7, token_out_decimals = $8
+              token_out_address = $6, token_out_symbol = $7, token_out_decimals = $8,
+              confirmation_source = 'tool_response', settlement_source = 'tool_response',
+              pending_reason = NULL,
+              -- A TERMINAL ROW HOLDS NO CLAIM — same invariant as every other
+              -- winning terminal write, cleared in this statement rather than a
+              -- follow-up. A launch row is an ordinary EVM pending row to the
+              -- fallback lane, so it can be under claim when this lands.
+              evm_claim_lease_until = NULL, evm_claim_token = NULL
         WHERE id = $1 AND status = 'pending' AND event_role = 'token_launch'
         RETURNING *`,
       [
@@ -99,7 +107,7 @@ export async function confirmLaunchWithOutputIdentity(
       ],
     ));
 
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   const currentRow = await getActivityEventById(id);
   if (!currentRow) {
     throw new Error(`agent_activity: confirmLaunchWithOutputIdentity — row ${id} vanished`);

@@ -70,19 +70,19 @@ import {
 export interface ConciseJupiterLendBorrowVault {
   /** Pass this as `solana.lend.borrowOperate`'s `vaultId` param. */
   vaultId: string;
-  /** Collateral leg mint. Deposits/withdrawals (`depositAmount`/`withdrawAmount`) are denominated in THIS token. */
+  /** Collateral leg mint. Deposits/withdrawals (`depositAmountRaw`/`withdrawAmountRaw`) are denominated in THIS token. */
   supplyTokenAddress: string;
   /** Collateral mint symbol as the provider reports it (e.g. "WSOL" — the wrapped mint, not "SOL"). */
   supplyTokenSymbol: string;
-  /** Collateral token decimals — REQUIRED to read `withdrawableRaw` and to build `depositAmount`/`withdrawAmount`. */
+  /** Collateral token decimals — REQUIRED to read `withdrawableRaw` and to build `depositAmountRaw`/`withdrawAmountRaw`. */
   supplyTokenDecimals: number;
   /** Provider's own point-in-time USD quote for the collateral token, exact decimal string (Jupiter's number, not a Vex valuation). */
   supplyTokenPriceUsd: string;
-  /** Debt leg mint. Borrows/repayments (`borrowAmount`/`repayAmount`) are denominated in THIS token. */
+  /** Debt leg mint. Borrows/repayments (`borrowAmountRaw`/`repayAmountRaw`) are denominated in THIS token. */
   borrowTokenAddress: string;
   /** Debt mint symbol as the provider reports it. */
   borrowTokenSymbol: string;
-  /** Debt token decimals — REQUIRED to read `borrowableRaw`/`minimumBorrowingRaw` and to build `borrowAmount`/`repayAmount`. */
+  /** Debt token decimals — REQUIRED to read `borrowableRaw`/`minimumBorrowingRaw` and to build `borrowAmountRaw`/`repayAmountRaw`. */
   borrowTokenDecimals: number;
   /** Provider's own point-in-time USD quote for the debt token, exact decimal string (Jupiter's number, not a Vex valuation). */
   borrowTokenPriceUsd: string;
@@ -132,14 +132,14 @@ export interface ConciseJupiterLendBorrowPosition {
   /** Collateral leg mint, from the vault. `null` when the vault could not be read (see `risk`). */
   supplyTokenAddress: string | null;
   supplyTokenSymbol: string | null;
-  /** REQUIRED to read `supplyRaw` and to build `depositAmount`/`withdrawAmount`. */
+  /** REQUIRED to read `supplyRaw` and to build `depositAmountRaw`/`withdrawAmountRaw`. */
   supplyTokenDecimals: number | null;
   /** Collateral, raw atomic units of the collateral token (`supplyTokenDecimals`). */
   supplyRaw: string;
   /** Debt leg mint, from the vault. `null` when the vault could not be read. */
   borrowTokenAddress: string | null;
   borrowTokenSymbol: string | null;
-  /** REQUIRED to read `borrowRaw`/`dustBorrowRaw`/`totalDebtRaw` and to build `borrowAmount`/`repayAmount`. */
+  /** REQUIRED to read `borrowRaw`/`dustBorrowRaw`/`totalDebtRaw` and to build `borrowAmountRaw`/`repayAmountRaw`. */
   borrowTokenDecimals: number | null;
   /** Debt principal, raw atomic units of the debt token. NOT the whole debt — see `totalDebtRaw`. */
   borrowRaw: string;

@@ -44,6 +44,11 @@ const clearUniswapPairReveal = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
 const abortPlannedEvents = vi.fn();
 
+// The fee-eligibility oracle (migration 066's `swap_fee` leg) is a token fact,
+// never a live network call in a unit test.
+vi.mock("@tools/kyberswap/token-api/client.js", () => ({
+  getKyberTokenApiClient: () => ({ getHoneypotFotInfo: async () => ({ isHoneypot: false, isFOT: false, tax: 0 }) }),
+}));
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood",

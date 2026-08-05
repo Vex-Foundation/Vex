@@ -28,12 +28,41 @@
  */
 
 import {
+  classifyError,
   describeFailureForAgent,
   describeFailureForLog,
   summarizeProtocolError,
+  type ErrorCategory,
 } from "../../runtime/errors.js";
 import { VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
+
+/**
+ * The text a viem/provider error should be READ from.
+ *
+ * viem puts the readable one-line cause in `shortMessage` and a multi-hundred-
+ * character docs dump in `message`. Both the agent-facing summary and the
+ * category classification must read the SAME words, or a launch could be
+ * classified off one string and explained with another.
+ */
+function preferredRawMessage(err: unknown): string {
+  return err instanceof Error
+    ? ((err as { shortMessage?: string }).shortMessage ?? err.message)
+    : String(err);
+}
+
+/**
+ * The canonical category of a Trench provider failure.
+ *
+ * Exists so a caller can BRANCH on the cause before rendering — the launch
+ * pipeline uses it to tell "the node will not estimate this call" apart from
+ * "the account cannot pay for it", which viem reports through the same
+ * `estimateGas` rejection and which the 2026-08-02 incident proved must never
+ * be blamed on the chain.
+ */
+export function trenchErrorCategory(err: unknown): ErrorCategory {
+  return classifyError(preferredRawMessage(err), err);
+}
 
 export function trenchFailureDetail(toolId: string, err: unknown): string {
   logger.warn("trench.handler.error", {
@@ -54,11 +83,7 @@ export function trenchFailureDetail(toolId: string, err: unknown): string {
   // character docs dump in `message`; the canonical summarizer reads `.message`,
   // so the preferred text is chosen HERE and handed over as the error to
   // summarize. The original is preserved as `cause` — nothing is swallowed.
-  const raw =
-    err instanceof Error
-      ? ((err as { shortMessage?: string }).shortMessage ?? err.message)
-      : String(err);
-  const summary = summarizeProtocolError(new Error(raw, { cause: err }));
+  const summary = summarizeProtocolError(new Error(preferredRawMessage(err), { cause: err }));
 
   // The one failure class worth naming ahead of the provider text, because its
   // remedy is always the same and always the user's: fund the wallet. The

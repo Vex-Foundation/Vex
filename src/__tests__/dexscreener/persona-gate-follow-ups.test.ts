@@ -92,27 +92,27 @@ describe("`limit` states the measured cost of a bare call, where there is one", 
 
 describe("missing-parameter messages name only the genuinely absent params", () => {
   it("does not accuse a parameter that was supplied", async () => {
-    // The live repro: chainId present, tokenAddresses empty, and the message
-    // said "Missing required: chainId, tokenAddresses".
-    const result = await run("dexscreener.tokens", { chainId: "solana", tokenAddresses: "" });
+    // The live repro: the chain param was present, tokenAddresses empty, and
+    // the message said "Missing required: chain, tokenAddresses".
+    const result = await run("dexscreener.tokens", { chain: "solana", tokenAddresses: "" });
     expect(result.ok).toBe(false);
     expect(result.output).toContain("tokenAddresses");
-    expect(result.output).not.toMatch(/\bchainId\b/);
+    expect(result.output).not.toMatch(/\bchain\b/);
   });
 
   it("names both when both are absent", async () => {
     const result = await run("dexscreener.tokens", {});
     expect(result.ok).toBe(false);
-    expect(result.output).toContain("chainId");
+    expect(result.output).toContain("chain");
     expect(result.output).toContain("tokenAddresses");
   });
 
   it("holds for every multi-param lookup in the namespace", async () => {
     const cases: readonly (readonly [string, Record<string, unknown>, string, string])[] = [
-      ["dexscreener.pairs", { chainId: "ethereum" }, "pairAddress", "chainId"],
-      ["dexscreener.pairs", { pairAddress: "0xabc" }, "chainId", "pairAddress"],
-      ["dexscreener.tokenPairs", { chainId: "solana" }, "tokenAddress", "chainId"],
-      ["dexscreener.orders", { chainId: "solana" }, "tokenAddress", "chainId"],
+      ["dexscreener.pairs", { chain: "ethereum" }, "pairAddress", "chain"],
+      ["dexscreener.pairs", { pairAddress: "0xabc" }, "chain", "pairAddress"],
+      ["dexscreener.tokenPairs", { chain: "solana" }, "tokenAddress", "chain"],
+      ["dexscreener.orders", { chain: "solana" }, "tokenAddress", "chain"],
     ];
     for (const [toolId, params, absent, supplied] of cases) {
       const result = await run(toolId, params);
@@ -181,7 +181,7 @@ describe("depth numbers travel with the symbol that reads them", () => {
     // `rules/90` money-path discipline. Both symbols are in the LEAN set, so
     // this holds by construction; the pin is what keeps it holding.
     const result = await run("dexscreener.tokenPairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       fields: "liquidityBaseTokens",
     });
@@ -196,7 +196,7 @@ describe("depth numbers travel with the symbol that reads them", () => {
 
   it("quoteSymbol rides along with liquidityQuoteTokens, the mirror case", async () => {
     const result = await run("dexscreener.tokenPairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       fields: "liquidityQuoteTokens",
     });

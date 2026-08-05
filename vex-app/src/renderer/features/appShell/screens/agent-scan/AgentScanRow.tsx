@@ -90,8 +90,32 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
   const usd = primaryUsdEstText(entry);
   const fee = vexFeeText(entry);
   const feeUsd = usdEstText(entry.usdFeeEst);
+  // Migration 065's DERIVED state. NOT a failure and deliberately not styled as
+  // one: `no_safe_rpc` means the outcome is UNKNOWN, and a row that renders red
+  // tells the user their funds are gone when nobody knows that. It says only
+  // what is true — repeated checks could not conclude — which is the difference
+  // between "still mining" and "we have been unable to look for forty minutes".
+  // A CONCLUSIVE observation about a pending row (migration 067). It outranks
+  // every other attention chip because it is the most specific true statement
+  // available: "we looked and it is in the mempool" beats "we could not
+  // conclude", which in turn beats "we have not checked lately".
+  const supersededTerminal = entry.status === "superseded_unproven";
+  const inMempool = entry.status === "pending" && entry.pendingReason === "in_mempool";
+  const appearsSuperseded =
+    entry.status === "pending" && entry.pendingReason === "nonce_superseded";
+  const verificationStalled =
+    entry.status === "pending"
+    && !inMempool
+    && !appearsSuperseded
+    && entry.stalledVerification;
+  // The stall supersedes the staleness chip: "we checked and could not
+  // conclude" is a strictly more specific statement than "we have not checked
+  // recently", and two attention chips on one row read as two problems.
   const trackingDelayed =
     entry.status === "pending" &&
+    !verificationStalled &&
+    !inMempool &&
+    !appearsSuperseded &&
     isBridgeTrackingStale(entry.lastCheckedAt, entry.createdAt);
   const lastChecked =
     entry.lastCheckedAt !== null ? timestampText(entry.lastCheckedAt) : null;
@@ -119,6 +143,45 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
           status={entry.status}
           statusTitle={entry.failureCode ?? undefined}
         />
+        {inMempool ? (
+          // `paper`, never `warning`: this is the HEALTHY pending answer — a
+          // node knows the transaction and it is waiting for inclusion.
+          <ActivityChip
+            tone="paper"
+            text="in mempool"
+            title={
+              lastChecked !== null
+                ? `Known to a node and waiting for inclusion — last checked ${lastChecked}. Vex re-checks this automatically.`
+                : "Known to a node and waiting for inclusion. Vex re-checks this automatically."
+            }
+          />
+        ) : null}
+        {appearsSuperseded || supersededTerminal ? (
+          // NEVER `danger`. The title states exactly what was established and
+          // refuses the two things that were not: that nothing was spent, and
+          // that a retry is safe.
+          <ActivityChip
+            tone="paper"
+            text={supersededTerminal ? "superseded" : "appears superseded"}
+            title={
+              "Another transaction from this wallet used this one's nonce; what it did has not been checked."
+              + (supersededTerminal ? " Vex has stopped tracking this as in flight — the outcome is unproven." : "")
+            }
+          />
+        ) : null}
+        {verificationStalled ? (
+          // `paper`, never `danger`/`warning`: this is a statement about OUR
+          // knowledge, not about the transaction's outcome.
+          <ActivityChip
+            tone="paper"
+            text="verification stalled"
+            title={
+              entry.stalledReason !== null
+                ? `Repeated checks could not confirm this yet (${entry.stalledReason}). Still pending — nothing has failed.`
+                : "Repeated checks could not confirm this yet. Still pending — nothing has failed."
+            }
+          />
+        ) : null}
         {trackingDelayed ? (
           // R12: a pending row whose sweep check has fallen far behind is NOT
           // reassuringly "tracked" — say so instead of implying progress.
@@ -213,6 +276,39 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
           {entry.status === "pending" ? (
             <DetailLine label="Last check">
               {lastChecked ?? "Not checked yet since this started"}
+            </DetailLine>
+          ) : null}
+          {inMempool ? (
+          // `paper`, never `warning`: this is the HEALTHY pending answer — a
+          // node knows the transaction and it is waiting for inclusion.
+          <ActivityChip
+            tone="paper"
+            text="in mempool"
+            title={
+              lastChecked !== null
+                ? `Known to a node and waiting for inclusion — last checked ${lastChecked}. Vex re-checks this automatically.`
+                : "Known to a node and waiting for inclusion. Vex re-checks this automatically."
+            }
+          />
+        ) : null}
+        {appearsSuperseded || supersededTerminal ? (
+          // NEVER `danger`. The title states exactly what was established and
+          // refuses the two things that were not: that nothing was spent, and
+          // that a retry is safe.
+          <ActivityChip
+            tone="paper"
+            text={supersededTerminal ? "superseded" : "appears superseded"}
+            title={
+              "Another transaction from this wallet used this one's nonce; what it did has not been checked."
+              + (supersededTerminal ? " Vex has stopped tracking this as in flight — the outcome is unproven." : "")
+            }
+          />
+        ) : null}
+        {verificationStalled ? (
+            <DetailLine label="Stalled">
+              {entry.stalledReason !== null
+                ? `Could not conclude: ${entry.stalledReason}. Still pending — this is not a failure.`
+                : "Repeated checks could not conclude. Still pending — this is not a failure."}
             </DetailLine>
           ) : null}
           {entry.legs.length > 0 ? (

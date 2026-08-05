@@ -110,7 +110,7 @@ function createInput(imageId: string | null) {
     sessionId: SESSION_ID,
     origin: "agent_requested_form" as const,
     status: "awaiting_user_form" as const,
-    chainId: "4663",
+    chainId: 4663,
     walletAddress: WALLET,
     name: "Test Coin",
     symbol: "TEST",
@@ -280,7 +280,12 @@ describe("DELETE-FIRST — a writer that locks after a completed delete refuses"
     const client = fakeClientAfterImageDeleted();
     const err = await writers
       .createWith(client as never, createInput(IMAGE_ID))
-      .catch((e: unknown) => e as InstanceType<typeof lock.LaunchImageMissingError>);
+      .then(
+        () => { throw new Error("expected the writer to refuse"); },
+        (thrown: unknown) => thrown,
+      );
+    expect(err).toBeInstanceOf(lock.LaunchImageMissingError);
+    if (!(err instanceof lock.LaunchImageMissingError)) throw new Error("unreachable");
     expect(err.code).toBe("image_not_found");
     expect(err.imageId).toBe(IMAGE_ID);
     expect(err.message).toContain(IMAGE_ID);

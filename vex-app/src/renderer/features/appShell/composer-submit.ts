@@ -11,6 +11,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import type { Result } from "@shared/ipc/result.js";
+import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { ReasoningEffort } from "@shared/schemas/reasoning.js";
 import { useSubmitChat } from "../../lib/api/chat.js";
@@ -55,12 +57,15 @@ export interface ComposerSubmit {
   /**
    * Whether a Stop affordance should be offered at all.
    *
-   * NOT the same as `submitPending`. A wake-driven background slice holds the
-   * session lease with no pending submit in this window, and while the control
-   * keyed off `submitPending` alone that run had NO stop affordance anywhere in
-   * the UI — the user could see the agent working and had no way to interrupt
-   * it. The lease is the honest signal for "something is running in this
-   * session", and it is already pushed to us on every committed transition.
+   * NOT the same as `submitPending`, and NOT derived from the lease. Autonomous
+   * work alternates between lease-held slices and lease-less parks on a pending
+   * wake, so `leaseActive` is a sawtooth: keying the control off it made the
+   * Stop key vanish across every `loop_defer` while the agent was still running
+   * and still stoppable. The authoritative answer is `stoppable`, computed in
+   * main from ONE snapshot of every state the stop dispatcher acts on.
+   *
+   * The renderer adds exactly one thing on top: a conservative posture when it
+   * does not KNOW. See `StopAvailability`.
    */
   readonly stopAvailable: boolean;
   readonly awaitingApproval: boolean;
@@ -76,6 +81,31 @@ export interface ComposerSubmit {
  */
 const STOP_FAILED_NOTICE =
   "Couldn't stop the run. It's still going — try Stop again.";
+
+/**
+ * How long the disabled "Stopping…" acknowledgment may stand before the
+ * control re-arms itself.
+ *
+ * Comfortably above the ~1 s stop target plus an IPC round-trip, and well below
+ * the 60 s runtime-state fallback poll — so a dropped `controlState` event
+ * cannot pin the badge on "Stopping…" while work is visibly continuing. That
+ * indefinite pin is the same class of lie the `ok:false` recovery below was
+ * added to kill.
+ *
+ * Deliberately NOT paired with a shorter `RUNTIME_STATE_FALLBACK_POLL_MS`: that
+ * value's 8 s → 60 s change is documented push-first design, and shortening it
+ * would trade a real regression for a symptom.
+ */
+const STOP_ACK_MAX_MS = 8_000;
+
+/**
+ * Shown when the acknowledgment times out. It must not claim the stop failed —
+ * it may well land a moment later — and it must not claim it succeeded. The
+ * honest statement is that the request is in and something uninterruptible is
+ * still finishing, which is exactly the sign→broadcast→persist exemption.
+ */
+const STOP_ACK_TIMEOUT_NOTICE =
+  "Stop was requested but the agent is still finishing a step it cannot safely interrupt.";
 
 export function useComposerSubmit(
   sessionId: string | null,
@@ -102,12 +132,16 @@ export function useComposerSubmit(
   );
   const runtimeQuery = useRuntimeState(sessionId);
   const requestStop = useRequestStop();
-  // "Something is running in this session RIGHT NOW", from the lease rather
-  // than from a pending submit. Covers a wake-driven background slice, which
-  // holds the lease with no submit pending in this window. A failed/loading
-  // read reads as not-live so the control cannot flicker on a transient error.
-  const sliceLive =
-    runtimeQuery.data?.ok === true && runtimeQuery.data.data.leaseActive;
+  const availability = readStopAvailability(
+    sessionId,
+    runtimeQuery.data,
+    runtimeQuery.isError,
+  );
+  /**
+   * The control is hidden ONLY on a known negative. Unknown fails toward
+   * SHOWING Stop — see `StopAvailability`.
+   */
+  const stopKnownUnavailable = availability === "known-unavailable";
   const handedOffRef = useRef<string | null>(null);
 
   const [draft, setDraft] = useState<string>("");
@@ -131,13 +165,34 @@ export function useComposerSubmit(
 
   // Reset the stop acknowledgment when the work settles so the next turn
   // starts from a clean Stop key. Both signals matter: a pending submit
-  // settling covers the foreground case, and the lease dropping covers a
-  // background slice — without the latter, stopping a background slice would
-  // leave the key stuck on the disabled "Stopping" state forever, because no
-  // submit was ever pending to settle.
+  // settling covers the foreground case, and `stoppable` going KNOWN-false
+  // covers a background slice or a park — without the latter, stopping
+  // autonomous work would leave the key stuck on the disabled "Stopping" state
+  // forever, because no submit was ever pending to settle.
+  //
+  // Deliberately keyed on the KNOWN negative: an errored read is not evidence
+  // that the work ended, and treating it as such would clear the badge while
+  // the agent is still running.
   useEffect(() => {
-    if (!submitPending && !sliceLive) setStopRequested(false);
-  }, [submitPending, sliceLive]);
+    if (!submitPending && stopKnownUnavailable) setStopRequested(false);
+  }, [submitPending, stopKnownUnavailable]);
+
+  // Escape hatch for the acknowledgment that never settles.
+  //
+  // `stoppable` stays true while an uninterruptible leg finishes (the lease is
+  // still heart-beating, the wake is still parked) — so the settle effect
+  // above can wait indefinitely and the key stays disabled on "Stopping…"
+  // while the run visibly continues. Time-box it: re-arm the control, say what
+  // is actually happening, and let a second press re-fire the request (the
+  // durable `stop_terminal` enqueue is idempotent, so it costs nothing).
+  useEffect(() => {
+    if (!stopRequested) return undefined;
+    const timer = setTimeout(() => {
+      setStopRequested(false);
+      setNotice({ tone: "info", text: STOP_ACK_TIMEOUT_NOTICE });
+    }, STOP_ACK_MAX_MS);
+    return () => { clearTimeout(timer); };
+  }, [stopRequested]);
 
   // Single owner of a chat-turn submit + its failure/success notice. A
   // retryable provider error in a KNOWN agent session arms an inline Retry
@@ -334,10 +389,14 @@ export function useComposerSubmit(
    * was meant for and is later applied to an unrelated approval resume or
    * continuation, stopping something the user never asked to stop.
    *
-   * BACKGROUND (lease held, no pending submit): the durable
+   * BACKGROUND (stoppable, no pending submit — a live slice, a `loop_defer`
+   * park, or an unknown state we fail open on): the durable
    * `runtime.requestStop` only. `stopTurn()` has nothing to cancel here — the
-   * slice belongs to a wake-driven continuation this window never started —
-   * and the durable row is exactly what that path's consumer observes.
+   * work belongs to a wake-driven continuation this window never started — and
+   * the durable row is exactly what that path's consumer observes. It is also
+   * the correct route when availability is UNKNOWN: the engine decides what, if
+   * anything, there is to stop, and answers honestly (`no_active_run`) when
+   * there is nothing.
    *
    * The split is the point: each route is the one the running work actually
    * listens to, and neither leaves a row behind for work that is not running.
@@ -376,10 +435,69 @@ export function useComposerSubmit(
     notice,
     submitPending,
     stopRequested,
-    stopAvailable: submitPending || sliceLive,
+    stopAvailable: submitPending || !stopKnownUnavailable,
     awaitingApproval,
     onSubmit,
     onRetry,
     onStop,
   };
+}
+
+/**
+ * Three states, never two.
+ *
+ * Collapsing "we do not know" into "not stoppable" is the failure this type
+ * exists to prevent: a DB hiccup or an errored read would hide the Stop key
+ * from work that is running and spending money. So the unknown state is
+ * explicit, and the caller fails toward SHOWING the control.
+ *
+ * A merely PENDING refetch is NOT unknown — the query keeps serving the last
+ * value, so the known answer stands until a new one lands.
+ *
+ * A persistent DB outage therefore leaves Stop visible. That is the declared
+ * conservative posture: a Stop that cannot be applied already surfaces
+ * `STOP_FAILED_NOTICE` rather than lying, and the state clears on the next
+ * successful `stoppable:false`.
+ */
+type StopAvailability =
+  | "known-available"
+  | "known-unavailable"
+  | "unknown";
+
+/** Exactly what `useRuntimeState` serves: the envelope, or nothing read yet. */
+type RuntimeStateQueryData = Result<RuntimeStateDto> | undefined;
+
+/**
+ * UNKNOWN means "we ASKED the engine and did not get an answer" — an errored
+ * read, at either the transport or the Result layer. Two other absences are
+ * deliberately NOT unknown, and both distinctions are load-bearing:
+ *
+ * NO SESSION. The welcome composer runs with `sessionId === null`, which
+ * DISABLES the runtime query, so its data stays `undefined` forever. Read as
+ * unknown, that turned Send into a permanent Stop button and the user could
+ * never send a first message. A session that does not exist yet is not an
+ * unanswered question: there is provably nothing running in it.
+ *
+ * NOT ASKED YET. On the very first paint the query is still in flight. Read as
+ * unknown, EVERY session open would show Stop where Send belongs until an IPC
+ * round-trip completed — a guaranteed wrong affordance on the app's most common
+ * interaction, to cover a renderer that mounted inside a live slice. That case
+ * is now covered by something better: a session-lease ACQUIRE publishes a
+ * control-state event (both claim primitives do), which invalidates this query
+ * and refetches within milliseconds. The push spine closes the window; guessing
+ * "stoppable" for everyone is not the way to close it.
+ *
+ * An ERRORED read has no such correction — nothing will push it back to the
+ * truth — which is exactly why it, and only it, fails open.
+ */
+function readStopAvailability(
+  sessionId: string | null,
+  state: RuntimeStateQueryData,
+  isError: boolean,
+): StopAvailability {
+  if (sessionId === null || sessionId.length === 0) return "known-unavailable";
+  if (isError) return "unknown";
+  if (state === undefined) return "known-unavailable";
+  if (!state.ok) return "unknown";
+  return state.data.stoppable ? "known-available" : "known-unavailable";
 }

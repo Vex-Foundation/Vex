@@ -24,8 +24,21 @@ function argumentValue(flag) {
   return index === -1 ? null : process.argv[index + 1] ?? null;
 }
 
+/**
+ * `execFileSync` defaults to a 1 MiB stdout buffer and THROWS `ENOBUFS` past
+ * it. A branch-wide `git diff` of the test tree exceeds that easily, and the
+ * failure looks like a broken script rather than "the diff got big" — which is
+ * exactly when this check matters most. 64 MiB is far beyond any diff this
+ * repository produces while still being a bound.
+ */
+const GIT_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
+
 function runGit(args) {
-  return execFileSync("git", args, { cwd: repositoryRoot, encoding: "utf8" });
+  return execFileSync("git", args, {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: GIT_OUTPUT_MAX_BYTES,
+  });
 }
 
 function changedTestFiles(base) {
@@ -80,6 +93,12 @@ function lineOf(sourceFile, position) {
 function isForbiddenAssertion(node) {
   if (!ts.isAsExpression(node) && !ts.isTypeAssertionExpression(node)) return null;
   if (node.type.kind === ts.SyntaxKind.AnyKeyword) return "as any";
+  /**
+   * `as never` is `as any`'s twin for test evasion: it type-checks against every
+   * parameter position, so a fake object cast to it silences exactly the errors
+   * a real typed double would surface.
+   */
+  if (node.type.kind === ts.SyntaxKind.NeverKeyword) return "as never";
   if ((ts.isAsExpression(node.expression) || ts.isTypeAssertionExpression(node.expression))
     && node.expression.type.kind === ts.SyntaxKind.UnknownKeyword) return "as unknown as";
   return null;
@@ -120,9 +139,34 @@ function inspectFile(file, addedLines) {
   return findings;
 }
 
+/**
+ * The gate is only meaningful against the real branch point: a wrong or absent
+ * base silently shrinks the added-line set and reports green. `--base` stays
+ * available for ad-hoc runs, but the packaged command must not depend on the
+ * caller remembering it, so the base is derived here:
+ *
+ *   1. `git merge-base HEAD origin/main` — the branch point against the shared
+ *      trunk, correct on any feature branch with a fetched remote;
+ *   2. `git merge-base HEAD main` — same intent when only a local `main` exists.
+ *
+ * Both are computed, never hardcoded: pinning a commit would keep passing after
+ * the branch moves on. If neither ref resolves, the run fails rather than
+ * scanning an arbitrary range.
+ */
+function deriveMergeBase() {
+  for (const trunk of ["origin/main", "main"]) {
+    try {
+      return runGit(["merge-base", "HEAD", trunk]).trim();
+    } catch {
+      continue;
+    }
+  }
+  return fail("cannot derive a merge base: neither origin/main nor main resolves; pass --base <revision>");
+}
+
 function main() {
-  const base = argumentValue("--base");
-  if (!base) fail("requires --base <merge-base revision>");
+  const base = argumentValue("--base") ?? deriveMergeBase();
+  console.log(`• comparing against base ${base}`);
   const forbiddenPaths = new Set(["tsconfig.json", "tsconfig.test.json", "scripts/test-type-baseline.json", "scripts/test-type-baseline-allowlist.json"]);
   const changedForbidden = changedPaths(base).filter((file) => forbiddenPaths.has(file));
   if (changedForbidden.length > 0) fail(`this remediation patch may not edit type config or ratchet baseline files: ${changedForbidden.join(", ")}`);

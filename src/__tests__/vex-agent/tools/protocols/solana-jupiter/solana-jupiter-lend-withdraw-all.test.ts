@@ -215,7 +215,7 @@ describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)",
 
   describe("strict XOR: exactly one of {amount} / {withdrawAll: true}", () => {
     it("refuses BOTH amount and withdrawAll:true by name, before any provider call", async () => {
-      const result = await withdraw({ asset: USDC_MINT, amount: "500000", withdrawAll: true });
+      const result = await withdraw({ asset: USDC_MINT, amountRaw: "500000", withdrawAll: true });
 
       expect(result.success).toBe(false);
       expect(result.output).toMatch(/exactly one/i);
@@ -244,7 +244,7 @@ describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)",
     });
 
     it("refuses withdrawAll:false even alongside amount — a money param is never silently dropped", async () => {
-      const result = await withdraw({ asset: USDC_MINT, amount: "500000", withdrawAll: false });
+      const result = await withdraw({ asset: USDC_MINT, amountRaw: "500000", withdrawAll: false });
 
       expect(result.success).toBe(false);
       expect(result.output).toContain("withdrawAll: false");
@@ -392,7 +392,7 @@ describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)",
 
   describe("amount path (sibling flow) is unchanged", () => {
     it("a partial withdrawal still calls /withdraw with the raw amount and never reads positions", async () => {
-      const result = await withdraw({ asset: USDC_MINT, amount: "500000" });
+      const result = await withdraw({ asset: USDC_MINT, amountRaw: "500000" });
 
       expect(mockRequestWithdraw).toHaveBeenCalledWith({
         asset: USDC_MINT, amount: "500000", signer: WALLET_ADDRESS,
@@ -401,7 +401,7 @@ describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)",
       // No extra provider round-trip on the path that does not need one.
       expect(mockGetPositions).not.toHaveBeenCalled();
       expect(mockCreateAgentActivityIntent).toHaveBeenCalledWith(expect.objectContaining({
-        intentParams: { asset: USDC_MINT, amount: "500000" },
+        intentParams: { asset: USDC_MINT, amountRaw: "500000" },
         events: [expect.objectContaining({
           eventRole: "lend_withdraw",
           tokenOut: {
@@ -416,7 +416,7 @@ describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)",
     it("a provider rejection on the amount path is still recorded as a PRE-broadcast failure", async () => {
       mockRequestWithdraw.mockRejectedValue(new Error("insufficient balance for withdraw"));
 
-      const result = await withdraw({ asset: USDC_MINT, amount: "500000" });
+      const result = await withdraw({ asset: USDC_MINT, amountRaw: "500000" });
 
       expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
       expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();

@@ -26,7 +26,9 @@ import {
   type BridgeRepairDeps,
   type BridgeSweepRow,
   type MutableSweepCounters,
+  toVerificationReason,
 } from "./bridge-activity-repair-contracts.js";
+import { logInconclusiveVerification } from "./bridge-activity-repair-log.js";
 
 /**
  * The DeBridge fill-hash recovery lane (F2): a Khalani order routed through
@@ -89,6 +91,7 @@ export async function recoverDebridgeFillHash(
     providerStatus: observation.providerStatus,
     recoveryAttempted: lookup !== undefined,
   });
+  await deps.noteVerificationInconclusive(logical.id, "filled_without_hash");
   counters.stillPending++;
 }
 
@@ -119,12 +122,14 @@ export async function confirmVerifiedFill(
     recipient: null,
   });
   if (!verification.verified) {
-    logger.warn("bridge.repair.fill_unverified", {
-      executionId,
-      protocol: logical.protocol,
-      providerStatus: observation.providerStatus,
-      reason: verification.reason ?? "verification_failed",
+    const reason = toVerificationReason(verification.reason);
+    logInconclusiveVerification({
+      event: "bridge.repair.fill_unverified",
+      logical,
+      reason,
+      context: { providerStatus: observation.providerStatus },
     });
+    await deps.noteVerificationInconclusive(logical.id, reason);
     counters.stillPending++;
     return;
   }
@@ -232,12 +237,14 @@ export async function terminalizeRefund(
       recipient: null,
     });
     if (!verification.verified) {
-      logger.warn("bridge.repair.refund_unverified", {
-        executionId,
-        protocol: logical.protocol,
-        providerStatus: observation.providerStatus,
-        reason: verification.reason ?? "verification_failed",
+      const reason = toVerificationReason(verification.reason);
+      logInconclusiveVerification({
+        event: "bridge.repair.refund_unverified",
+        logical,
+        reason,
+        context: { providerStatus: observation.providerStatus },
       });
+      await deps.noteVerificationInconclusive(logical.id, reason);
       counters.stillPending++;
       return;
     }
@@ -260,6 +267,7 @@ export async function terminalizeRefund(
         executionId,
         error: summarizeProtocolError(err).message,
       });
+      await deps.noteVerificationInconclusive(logical.id, "refund_evidence_write_failed");
       counters.stillPending++;
       return;
     }

@@ -32,7 +32,14 @@ import {
 const USER_AGENT = "Vex-Agent/1.0 (+https://vexlabs.ai)";
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 50;
+/**
+ * The provider's proven ceiling, not ours. The old value of 50 was OUR
+ * invention: live probe 2026-08-03 sent `pagination[pageSize]=200` and got
+ * HTTP 200 with 200 rows and `meta.pagination.pageSize: 200` echoed back. A
+ * cap we invented and then described as the API's is how `virtuals.list` came
+ * to search 50 rows of a 54,785-row chain (SPEC §2.6 W9a).
+ */
+const MAX_PAGE_SIZE = 200;
 
 export class VirtualsClient {
   private readonly throttle: VirtualsThrottle;
@@ -74,17 +81,17 @@ export class VirtualsClient {
             const retryMs = parseRetryAfterMs(response.headers?.get?.("retry-after"));
             this.throttle.penalize(retryMs);
           }
-          // The upstream error body is HOSTILE input (unauthenticated,
-          // undocumented API) — it must NEVER reach the thrown error message
-          // (which can surface to the model). Log a BOUNDED slice as metadata
-          // for debugging and throw the fixed, code-keyed error only.
+          // The upstream body is untrusted, so it is SANITIZED — not hidden.
+          // Hiding it (the module's previous, documented policy) made a 403
+          // edge challenge and a 400 missing-filter indistinguishable at the
+          // agent; `mapVirtualsError` redacts and caps it instead.
           const raw = await readJson(response);
           logger.warn("virtuals.api.http_error", {
             status: response.status,
             path,
             detail: raw === null ? null : JSON.stringify(raw).slice(0, 200),
           });
-          throw mapVirtualsError(response.status);
+          throw mapVirtualsError(response.status, raw);
         }
 
         const raw = await readJson(response);

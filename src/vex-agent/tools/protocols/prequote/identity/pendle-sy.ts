@@ -37,6 +37,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { SwapMatchInput } from "./hash.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 
 /**
  * The venue label bound into every SY prequote digest. Deliberately NOT
@@ -44,19 +45,20 @@ import type { SwapMatchInput } from "./hash.js";
  */
 export const PENDLE_SY_PREQUOTE_PROVIDER = "pendle-sy";
 
-/**
- * Default slippage (bps) when the caller omits it — MUST match the handler's
- * default (`pendle/handlers/shared.ts` DEFAULT_SLIPPAGE_BPS) so a
- * dry-run-without-slippage authorizes an execute-without-slippage. Both sides go
- * through THIS builder, so the default is applied identically by construction. A
- * PRESENT but invalid value is refused by `canonSlippageBpsWithDefault` rather
- * than replaced by this default — a silent fallback would fold the default into
- * the digest and let an out-of-contract slippage hash like an omitted one.
- */
-const DEFAULT_SLIPPAGE_BPS = 50;
-
 /** Which way the wrapper runs. Decides only which leg is in and which is out. */
 export type PendleSyDirection = "mint" | "redeem";
+
+/**
+ * The manifest key carrying the plain-token leg for a direction (SPEC §1.2).
+ *
+ * A mint pays a token IN and receives SY; a redeem burns SY and receives the
+ * token OUT. Both lanes — the handler and this identity builder — read the key
+ * through this ONE function, so the recorder and the gate can never read
+ * different keys and silently diverge the digest.
+ */
+export function pendleSyTokenParamKey(direction: PendleSyDirection): "tokenIn" | "tokenOut" {
+  return direction === "mint" ? "tokenIn" : "tokenOut";
+}
 
 function pStr(params: Record<string, unknown>, key: string): string {
   const v = params[key];
@@ -86,11 +88,15 @@ export function buildPendleSyIdentity(
   context: ProtocolExecutionContext,
   direction: PendleSyDirection,
 ): SwapMatchInput {
+  const tokenKey = pendleSyTokenParamKey(direction);
   const syRaw = pStr(params, "sy");
-  const tokenRaw = pStr(params, "token");
+  const tokenRaw = pStr(params, tokenKey);
   const amount = pStr(params, "amountIn");
   if (!syRaw || !tokenRaw || !amount) {
-    throw new VexError(ErrorCodes.AGENT_VALIDATION_ERROR, "Pendle SY identity missing sy/token/amount.");
+    throw new VexError(
+      ErrorCodes.AGENT_VALIDATION_ERROR,
+      `Pendle SY identity missing sy/${tokenKey}/amountIn.`,
+    );
   }
 
   const chainId = resolvePendleChainId(pStr(params, "chain"));
@@ -99,7 +105,7 @@ export function buildPendleSyIdentity(
   }
 
   const sy = requireAddr(syRaw, "SY");
-  const token = requireAddr(tokenRaw, "token");
+  const token = requireAddr(tokenRaw, tokenKey);
   if (sy.toLowerCase() === token.toLowerCase()) {
     throw new VexError(
       ErrorCodes.PENDLE_TOKEN_NOT_FOUND,
@@ -121,6 +127,6 @@ export function buildPendleSyIdentity(
     amount,
     recipient: wallet,
     approveExact: false,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   };
 }

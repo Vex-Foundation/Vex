@@ -139,6 +139,7 @@ async function escalateAndFinalize(): Promise<string> {
     sessionId: SESSION_ID,
     missionRunId: RUN_ID,
     turnBand: "critical",
+    sessionPermission: "restricted" as const,
     skipCriticalCheckNextIter: false,
     criticalNoopCounter: COMPACT_MAX_CONSECUTIVE_NOOPS - 1,
     currentTokenCount: 120_000,

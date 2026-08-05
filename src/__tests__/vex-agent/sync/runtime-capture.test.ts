@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
+import { makeProtocolContext } from "../tools/_test-context.js";
+
 vi.mock("@vex-agent/db/repos/executions.js", () => ({
   recordExecution: vi.fn().mockResolvedValue(1),
 }));
@@ -20,7 +22,7 @@ describe("runtime approval gate", () => {
     // proven with an ungated mutating tool instead.
     const result = await executeProtocolTool(
       { toolId: "pendle.claim", params: { chain: "ethereum" } },
-      { sessionPermission: "restricted", approved: false },
+      makeProtocolContext(),
     );
 
     expect(result.success).toBe(false);
@@ -31,7 +33,7 @@ describe("runtime approval gate", () => {
   it("non-mutating tool passes in restricted permission", async () => {
     const result = await executeProtocolTool(
       { toolId: "khalani.tokens.search", params: { query: "USDC" } },
-      { sessionPermission: "restricted", approved: false },
+      makeProtocolContext(),
     );
 
     // Will fail at network level but NOT at approval gate

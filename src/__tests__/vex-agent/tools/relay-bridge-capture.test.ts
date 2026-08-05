@@ -59,7 +59,7 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({ pinTrackedToken: (...a
 
 const mockCreateIntent = vi.fn();
 const mockAttach = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   createBridgeActivityIntent: (...a: unknown[]) => mockCreateIntent(...a),
   createBridgePreBroadcastFailure: vi.fn(),
   checkBridgeInFlight: vi.fn().mockResolvedValue({ inFlight: false, existing: null }),
@@ -69,6 +69,12 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
   failActivityEvent: vi.fn().mockResolvedValue({ applied: true, row: {} }),
   abortPlannedEvents: vi.fn().mockResolvedValue([]),
+  // R1 Step 3b/4 primitives. `provenLegAmounts` is the REAL pure function —
+  // this suite asserts what a leg CONFIRMS WITH, so stubbing the evidence
+  // matrix would test the stub.
+  provenLegAmounts: (await importOriginal<Record<string, unknown>>()).provenLegAmounts,
+  notePendingReason: vi.fn().mockResolvedValue({ applied: true }),
+  noteBridgeProviderObservation: vi.fn().mockResolvedValue({ applied: true }),
 }));
 
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
@@ -86,7 +92,7 @@ const CHAINS = [
   { id: 4663, name: "robinhood", displayName: "Robinhood Chain", currency: { symbol: "ETH", decimals: 18 }, vmType: "evm", depositEnabled: true, disabled: false },
 ];
 
-const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: ERC20, amount: "1714000000000000" };
+const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: ERC20, amountRaw: "1714000000000000" };
 
 const depositStep = {
   stepId: "deposit", role: "bridge_deposit", chainId: 8453,
@@ -97,7 +103,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue({ steps: [depositStep.step], requestId: "0xreq" } as unknown as RelayQuoteResponse);
-  mockHealth.mockReturnValue({ serviceable: true });
+  mockHealth.mockReturnValue({ serviceable: true, blockProductionLagging: [] });
   mockStepPolicy.mockReturnValue({ ok: true, steps: [depositStep] });
   mockAdapt.mockReturnValue({
     requestId: "0xreq", operation: "bridge", timeEstimateSeconds: 12, usdSource: "relay_quote_v2",
@@ -107,7 +113,7 @@ beforeEach(() => {
   });
   mockCreateIntent.mockImplementation(async (input: { legs: unknown[] }) => ({ outcome: "created", executionId: 100, legs: input.legs.map((_l, i) => ({ id: 200 + i })), expectedFill: { id: 300 } }));
   mockAttach.mockResolvedValue({ outcome: "attached", row: {} });
-  mockPoll.mockResolvedValue({ status: "submitted", observed: true, destinationTxHashes: ["0xfill"] });
+  mockPoll.mockResolvedValue({ status: "submitted", observed: true, destinationTxHashes: ["0xfill"], failReason: null, refundFailReason: null, lastError: null });
   mockSign.mockImplementation(async (_p: unknown, _w: unknown, _tx: unknown, hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> }) => {
     await hooks.onHashStaged({ txHash: "0xorigin", fromAddress: SEL_EVM, nonce: 1 });
     await hooks.onAccepted();

@@ -76,6 +76,29 @@ describe("session Markdown export", () => {
     expect(markdown).not.toContain("mint");
   });
 
+  /**
+   * The export reads `ToolCallDisplay.toolName`, which the messages mapper
+   * already canonicalized. This pins the END of that chain: an exported
+   * transcript never shows a human the model's OpenAI-legal wire name.
+   */
+  it("prints the canonical dotted toolId, never a `__` wire name", () => {
+    const markdown = renderSessionMarkdown(SESSION, [
+      message({
+        id: 2,
+        role: "assistant",
+        kind: "tool_call",
+        content: "Pricing it.",
+        toolName: "kyberswap.swap.quote",
+        toolCalls: [
+          { toolCallId: "c1", toolName: "kyberswap.swap.quote", toolArgs: null },
+        ],
+      }),
+    ]);
+
+    expect(markdown).toContain("> Tool: `kyberswap.swap.quote`");
+    expect(markdown).not.toContain("__");
+  });
+
   it("omits system, runtime, compaction, and raw tool-result rows and redacts secrets in prose", () => {
     const apiKey = `sk-or-v1-${"a".repeat(32)}`;
     const markdown = renderSessionMarkdown(SESSION, [

@@ -29,9 +29,9 @@ const claimNextDueJob = vi.fn();
 const markFailed = vi.fn();
 const markCompleted = vi.fn();
 const heartbeat = vi.fn();
-const recoverStaleRunning = vi.fn(async () => 0);
+const recoverStaleRunning = vi.fn(async (..._args: unknown[]) => 0);
 const loadArchivedPrefix = vi.fn();
-const emitCompactWorkerPermanentlyFailedBug = vi.fn(async () => {});
+const emitCompactWorkerPermanentlyFailedBug = vi.fn(async (..._args: unknown[]) => {});
 
 vi.mock("@vex-agent/db/repos/compact-jobs/index.js", () => ({
   claimNextDueJob: (...a: unknown[]) => claimNextDueJob(...a),

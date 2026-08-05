@@ -16,6 +16,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { makeTestContext } from "../../../_test-context.js";
 
 const mockCreate = vi.fn().mockResolvedValue(undefined);
 const mockGetById = vi.fn();
@@ -135,22 +137,13 @@ function pendingIntent(overrides: Partial<FixtureIntent> = {}): FixtureIntent {
   };
 }
 
-function makeContext(overrides: Partial<{ sessionPermission: "restricted" | "full"; approved: boolean; sessionId: string }> = {}) {
-  return {
+function makeContext(overrides: Partial<InternalToolContext> = {}): InternalToolContext {
+  return makeTestContext({
     sessionId: SESSION_ID,
-    loadedDocuments: new Map(),
-    sessionPermission: "restricted" as const,
-    approved: false,
-    missionRunId: null,
-    missionId: null,
-    sessionKind: "agent" as const,
-    contextUsageBand: "normal" as const,
-    sourceSurface: "vex_agent" as const,
+    sourceSurface: "vex_agent",
     sourceSession: SESSION_ID,
-    walletResolution: { source: "default" as const },
-    walletPolicy: { kind: "none" as const },
     ...overrides,
-  };
+  });
 }
 
 beforeEach(() => {
@@ -163,7 +156,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
   it("session-scoped getById call (cross-session miss returns 'Intent not found')", async () => {
     mockGetById.mockResolvedValueOnce(null);
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -175,7 +168,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
   it("network mismatch returns fail without consume", async () => {
     mockGetById.mockResolvedValueOnce(pendingIntent({ network: "solana" }));
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -186,7 +179,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
   it("non-pending status returns fail with current status", async () => {
     mockGetById.mockResolvedValueOnce(pendingIntent({ status: "cancelled" }));
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -199,7 +192,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
       pendingIntent({ expiresAt: new Date(Date.now() - 60_000).toISOString() }),
     );
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -210,7 +203,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
   it("approval gate: !approved && restricted → pendingApproval, intent stays pending (no consume)", async () => {
     mockGetById.mockResolvedValueOnce(pendingIntent());
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: false, sessionPermission: "restricted" }),
     );
     expect(result.success).toBe(false);
@@ -225,7 +218,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
     mockGetById.mockResolvedValueOnce(pendingIntent({ status: "consuming" }));
 
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
     expect(result.success).toBe(false);
@@ -241,7 +234,7 @@ describe("handleWalletSendConfirm — preconditions", () => {
       pendingIntent({ walletAddress: "0x9999999999999999999999999999999999999999" }),
     );
     const result = await handleWalletSendConfirm(
-      { network: "eip155", intentId: "intent-test-1" },
+      { walletFamily: "eip155", intentId: "intent-test-1" },
       makeContext({ approved: true }),
     );
     expect(result.success).toBe(false);

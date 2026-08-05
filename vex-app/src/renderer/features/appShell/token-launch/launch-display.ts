@@ -46,6 +46,8 @@
  *     would understate what is being authorized.
  */
 
+import type { TokenLaunchSubmitResult } from "../../../lib/api/token-launch.js";
+
 /** Native ETH on Robinhood Chain 4663. Never inferred, never a parameter. */
 const WEI_DECIMALS = 18n;
 const WEI_PER_ETH = 10n ** WEI_DECIMALS;
@@ -204,6 +206,59 @@ export function classifyLaunchRefusal(code: string): LaunchRefusalKind {
  */
 export const RE_REVIEW_NOTE =
   "The amounts you were shown are no longer current, so nothing was signed. Review the new numbers before deploying.";
+
+/**
+ * How a COMPLETED submit is presented, and whether the dialog may close itself.
+ *
+ * `success` is the confirmed receipt; `caution` is a real spend whose outcome is
+ * not yet proven; `failure` is a launch that burned gas and created nothing. The
+ * tone exists because every completed submit used to render green, which paints
+ * a REVERTED launch as a success.
+ *
+ * AUTO-DISMISS requires a receipt the user can still find after the dialog is
+ * gone AND a transcript that does not contradict it:
+ *
+ *  - `confirmed` / `confirmed_pending_identity` — mined and successful. An
+ *    Activity row carries it and the agent's resumed turn states it truthfully.
+ *  - `pending` — DISMISSIBLE, with a caution tone. This flipped when B-PRE
+ *    landed: `submit.ts` now picks the wake arm from the STATUS
+ *    (`wakeOutcomeFor`), so an unconfirmed broadcast resumes the agent as
+ *    `unconfirmed` with honest do-not-retry prose instead of "deployed the
+ *    token. This is done". The transcript no longer contradicts the receipt, so
+ *    holding the modal open bought nothing. It still never invites a retry.
+ *  - `reverted` — HELD. A failed launch that burned gas is not a successful
+ *    deploy and the user must see it.
+ *  - missing/EMPTY hash — HELD. `execute-seam` can report a broadcast with no
+ *    hash, and there is then no receipt to find anywhere else.
+ */
+export type TerminalTone = "success" | "caution" | "failure";
+
+export interface LaunchOutcomePresentation {
+  readonly tone: TerminalTone;
+  readonly autoDismiss: boolean;
+}
+
+/** The statuses whose receipt outlives the dialog. `reverted` is not one. */
+const DISMISSIBLE_STATUSES: ReadonlySet<string> = new Set([
+  "confirmed",
+  "confirmed_pending_identity",
+  "pending",
+]);
+
+export function classifyLaunchOutcome(
+  result: Pick<TokenLaunchSubmitResult, "status" | "txHash">,
+): LaunchOutcomePresentation {
+  // `.trim()`, because `z.string().nullable()` admits `""` and `"   "` alike
+  // and neither is a transaction the user could ever look up.
+  const hasHash = result.txHash !== null && result.txHash.trim().length > 0;
+  const tone: TerminalTone =
+    result.status === "reverted"
+      ? "failure"
+      : result.status === "pending" || !hasHash
+        ? "caution"
+        : "success";
+  return { tone, autoDismiss: hasHash && DISMISSIBLE_STATUSES.has(result.status) };
+}
 
 /**
  * Links are user-authored and travel into a token's public metadata. Only

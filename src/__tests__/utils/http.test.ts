@@ -19,17 +19,23 @@ import { z } from "zod";
 import { parseJsonResponse } from "../../utils/http.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 
-/** Minimal Response stand-in — parseJsonResponse only reads ok/status/statusText/json(). */
+/**
+ * Minimal Response stand-in — parseJsonResponse reads ok/status/statusText/
+ * headers/json(). `headers` is a real `Headers`, empty unless a test supplies
+ * one, because the rate-limit lane asks the response what it advertised.
+ */
 function fakeResponse(opts: {
   ok: boolean;
   status?: number;
   statusText?: string;
+  headers?: Record<string, string>;
   json: () => Promise<unknown>;
 }): Response {
   return {
     ok: opts.ok,
     status: opts.status ?? (opts.ok ? 200 : 500),
     statusText: opts.statusText ?? "",
+    headers: new Headers(opts.headers ?? {}),
     json: opts.json,
   } as unknown as Response;
 }

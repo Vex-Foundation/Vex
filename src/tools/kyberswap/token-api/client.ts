@@ -8,9 +8,9 @@
 import { loadConfig } from "../../../config/store.js";
 import { fetchWithTimeout, readJson } from "../../../utils/http.js";
 import { VexError, ErrorCodes } from "../../../errors.js";
-import { mapKyberTransportError } from "../errors.js";
+import { carryStatus, mapKyberTransportError, readKyberErrorBody } from "../errors.js";
 import { validateTokenSearchResponse, validateHoneypotFotResponse } from "./validation.js";
-import { TOKEN_API_TIMEOUT_MS, KYBER_CLIENT_ID } from "../constants.js";
+import { TOKEN_API_TIMEOUT_MS, KYBERSWAP_REQUEST_HEADERS } from "../constants.js";
 import logger from "../../../utils/logger.js";
 import type { KyberToken, KyberTokenSearchResponse, HoneypotFotInfo } from "./types.js";
 
@@ -52,15 +52,15 @@ export class KyberTokenApiClient {
 
       const response = await fetchWithTimeout(url, {
         timeoutMs: this.timeoutMs,
-        headers: { "X-Client-Id": KYBER_CLIENT_ID },
+        headers: { ...KYBERSWAP_REQUEST_HEADERS },
       });
 
       if (!response.ok) {
-        const raw = await readJson(response);
-        const message = typeof raw === "object" && raw !== null && "message" in raw
-          ? String((raw as Record<string, unknown>).message)
-          : `HTTP ${response.status}`;
-        throw new VexError(ErrorCodes.KYBER_TOKEN_SEARCH_FAILED, `Token search failed: ${message}`);
+        const body = await readKyberErrorBody(response);
+        throw carryStatus(
+          new VexError(ErrorCodes.KYBER_TOKEN_SEARCH_FAILED, `Token search failed: ${body.message}`),
+          response.status,
+        );
       }
 
       const raw = await readJson(response);
@@ -88,15 +88,15 @@ export class KyberTokenApiClient {
 
       const response = await fetchWithTimeout(url, {
         timeoutMs: this.timeoutMs,
-        headers: { "X-Client-Id": KYBER_CLIENT_ID },
+        headers: { ...KYBERSWAP_REQUEST_HEADERS },
       });
 
       if (!response.ok) {
-        const raw = await readJson(response);
-        const message = typeof raw === "object" && raw !== null && "message" in raw
-          ? String((raw as Record<string, unknown>).message)
-          : `HTTP ${response.status}`;
-        throw new VexError(ErrorCodes.KYBER_HONEYPOT_CHECK_FAILED, `Honeypot check failed: ${message}`);
+        const body = await readKyberErrorBody(response);
+        throw carryStatus(
+          new VexError(ErrorCodes.KYBER_HONEYPOT_CHECK_FAILED, `Honeypot check failed: ${body.message}`),
+          response.status,
+        );
       }
 
       const raw = await readJson(response);

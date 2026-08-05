@@ -33,7 +33,6 @@ import {
 } from "./config.js";
 import {
   retryWithBackoff,
-  withTimeout,
   isRetryableError,
 } from "@vex-agent/inference/resilience.js";
 import logger from "@utils/logger.js";
@@ -146,12 +145,12 @@ interface OpenAIEmbeddingsResponse {
 
 async function embedSingle(input: string, config: EmbeddingConfig): Promise<EmbedResult> {
   return retryWithBackoff(
-    () =>
-      withTimeout(
-        callEmbeddingsEndpoint(input, config),
-        EMBEDDING_REQUEST_TIMEOUT_MS,
-        "embeddings.request",
-      ),
+    // Per ATTEMPT, and a REAL fetch signal rather than a `Promise.race` against
+    // a timer. The race settled on time but ABANDONED the HTTP request with its
+    // socket still held — the failure this repo already documented inline at
+    // `compact-jobs/chunker-call.ts` and `memory/manager/judge.ts`. A timeout
+    // signal tears the request down.
+    () => callEmbeddingsEndpoint(input, config, AbortSignal.timeout(EMBEDDING_REQUEST_TIMEOUT_MS)),
     {
       maxRetries: EMBEDDING_MAX_RETRIES,
       baseDelayMs: EMBEDDING_BASE_DELAY_MS,
@@ -166,15 +165,30 @@ async function embedSingle(input: string, config: EmbeddingConfig): Promise<Embe
 async function callEmbeddingsEndpoint(
   input: string,
   config: EmbeddingConfig,
+  signal: AbortSignal,
 ): Promise<EmbedResult> {
   const url = `${config.baseUrl}/embeddings`;
   const body = JSON.stringify({ input, model: config.model });
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal,
+    });
+  } catch (err) {
+    // Name the deadline the way the replaced `withTimeout` did — "aborted due
+    // to timeout" tells a reader nothing about which call gave up or when.
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error(
+        `embeddings.request timed out after ${EMBEDDING_REQUEST_TIMEOUT_MS / 1000}s`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");

@@ -1,0 +1,59 @@
+{
+  "provider": "khalani",
+  "providerOrderId": "cmsdmld2p000000000000000",
+  "providerStatus": "filled_unverified",
+  "expiresInSeconds": 57,
+  "legs": [
+    {
+      "index": 0,
+      "role": "bridge_deposit",
+      "status": "confirmed",
+      "txHash": "0x8b00000000000000000000000000000000000000000000000000000000000000",
+      "explorerUrl": "https://arbiscan.io/tx/0x8b00000000000000000000000000000000000000000000000000000000000000",
+      "nativeCost": {
+        "totalWei": "997500000000000",
+        "components": [
+          {
+            "kind": "native_principal",
+            "amountWei": "997500000000000",
+            "recipient": "0x2222222222222222222222222222222222222222",
+            "refundPolicy": "refunded_to_source_on_failure",
+            "provenBy": "vex_built_transfer",
+            "authorized": true
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "role": "vex_fee",
+      "status": "confirmed",
+      "txHash": "0x2678000000000000000000000000000000000000000000000000000000000000",
+      "explorerUrl": "https://arbiscan.io/tx/0x2678000000000000000000000000000000000000000000000000000000000000",
+      "nativeCost": {
+        "totalWei": "2500000000000",
+        "components": [
+          {
+            "kind": "vex_platform_fee",
+            "amountWei": "2500000000000",
+            "recipient": "0xe341000000000000000000000000000000000000",
+            "refundPolicy": "spent_not_recoverable",
+            "provenBy": "vex_built_transfer",
+            "authorized": true
+          }
+        ]
+      }
+    },
+    { "index": 2, "role": "bridge_fill_expected", "status": "filled_unverified", "txHash": null }
+  ],
+  "amounts": {
+    "in": { "amount": "0.0009975", "amountRaw": "997500000000000" },
+    "out": { "amount": "0.0009973", "amountRaw": "997300000000000" }
+  },
+  "vexFee": {
+    "charged": true,
+    "collection": "confirmed",
+    "feeAmountRaw": "2500000000000"
+  },
+  "etaSeconds": 10
+}

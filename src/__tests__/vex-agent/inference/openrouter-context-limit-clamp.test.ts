@@ -16,6 +16,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
 
+import type { Logger } from "winston";
+
 import { OpenRouter, HTTPClient } from "@openrouter/sdk";
 
 import {
@@ -214,18 +216,36 @@ describe("fetchModelInferenceConfig — recorded /models response drives the cla
   });
 });
 
+/**
+ * winston's `warn`/`info` are overloaded, so a spy's `mock.calls` type collapses
+ * to the single-object overload and hides the `(event, meta)` shape the runtime
+ * actually uses. Recording the arguments explicitly keeps these reads honest
+ * without casting the spy.
+ */
+function recordLogCalls(logger: Logger, level: "warn" | "info"): {
+  calls: unknown[][];
+  restore: () => void;
+} {
+  const calls: unknown[][] = [];
+  const spy = vi.spyOn(logger, level).mockImplementation((...args: unknown[]) => {
+    calls.push(args);
+    return logger;
+  });
+  return { calls, restore: () => { spy.mockRestore(); } };
+}
+
 describe("model-catalog logging — bounded, and no longer echoes the env value", () => {
   it("warns once per catalogue read when the configured limit is clamped", async () => {
     const logger = (await import("@utils/logger.js")).default;
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
-    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    const warn = recordLogCalls(logger, "warn");
+    const info = recordLogCalls(logger, "info");
     try {
       await fetchModelInferenceConfig(
         fixtureClient(),
         specFor("aion-labs/aion-3.0", CONFIGURED_DEFAULT),
       );
 
-      const adjusted = warn.mock.calls.filter(
+      const adjusted = warn.calls.filter(
         ([event]) => event === "inference.openrouter.context_limit_adjusted",
       );
       expect(adjusted).toHaveLength(1);
@@ -236,19 +256,19 @@ describe("model-catalog logging — bounded, and no longer echoes the env value"
         reason: "clamped_to_model_window",
       });
 
-      const loaded = info.mock.calls.find(
+      const loaded = info.calls.find(
         ([event]) => event === "inference.openrouter.config_loaded",
       );
       expect(loaded?.[1]).toMatchObject({ contextLimit: 131_072 });
     } finally {
-      warn.mockRestore();
-      info.mockRestore();
+      warn.restore();
+      info.restore();
     }
   });
 
   it("stays silent when the configured limit already fits", async () => {
     const logger = (await import("@utils/logger.js")).default;
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const warn = recordLogCalls(logger, "warn");
     try {
       await fetchModelInferenceConfig(
         fixtureClient(),
@@ -256,12 +276,12 @@ describe("model-catalog logging — bounded, and no longer echoes the env value"
       );
 
       expect(
-        warn.mock.calls.filter(
+        warn.calls.filter(
           ([event]) => event === "inference.openrouter.context_limit_adjusted",
         ),
       ).toHaveLength(0);
     } finally {
-      warn.mockRestore();
+      warn.restore();
     }
   });
 });

@@ -19,7 +19,17 @@ import {
   type ToolVisibilityContext,
 } from "../../../vex-agent/tools/registry.js";
 
-const AGENT_SURFACE_TOOL_NAMES = getAllTools().map(t => t.name);
+/**
+ * Registered but NEVER model-facing, so the Tool Map (a system-prompt section)
+ * must not carry them. `execute_tool` is withheld in `registry/visibility.ts`
+ * (`MODEL_WITHHELD_TOOL_NAMES`) — its definition and dispatch route survive only
+ * for approval resume, which never reads this map.
+ */
+const MODEL_WITHHELD_TOOL_NAMES = ["execute_tool"];
+
+const AGENT_SURFACE_TOOL_NAMES = getAllTools()
+  .map(t => t.name)
+  .filter(name => !MODEL_WITHHELD_TOOL_NAMES.includes(name));
 
 const TOOL_MAP_NAMES = TOOL_MAP_CATEGORIES.flatMap(c => c.toolNames);
 
@@ -58,8 +68,14 @@ describe("TOOL_MAP_CATEGORIES integrity", () => {
     // future refactor sorted alphabetically, "confirm" would come first
     // and lose the workflow signal.
 
-    const protocolMeta = TOOL_MAP_CATEGORIES.find(c => c.label === "Protocol discovery/execution");
-    expect(protocolMeta?.toolNames).toEqual(["discover_tools", "execute_tool"]);
+    // `execute_tool` is gone from the map: discovered tools are injected as real
+    // function schemas and the wrapper is withheld from the model surface, so
+    // the category names discovery only.
+    // `describe_tools` follows `discover_tools`: the map's order is the flow's
+    // order — list/search first, fetch the chosen manifests second.
+    const protocolMeta = TOOL_MAP_CATEGORIES.find(c => c.label === "Protocol discovery");
+    expect(protocolMeta?.toolNames).toEqual(["discover_tools", "describe_tools"]);
+    expect(TOOL_MAP_NAMES).not.toContain("execute_tool");
   });
 });
 

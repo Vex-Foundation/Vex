@@ -62,7 +62,7 @@ export async function runResumeDispatch(
   const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
   if (!dbUrlOutcome.ok) return dbUrlOutcome;
   try {
-    const state = await getActiveRunForSession(input.sessionId);
+    const state = await getActiveRunForSession(input.sessionId, ctx.requestId);
     if (!state.ok) return state;
     if (!state.data.hasActiveRun || state.data.missionRunId === null) {
       return ok({ outcome: "no_active_run" });

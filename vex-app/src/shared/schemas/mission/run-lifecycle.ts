@@ -80,6 +80,16 @@ export const missionStartResultSchema = z.discriminatedUnion("outcome", [
     })
     .strict(),
   z.object({ outcome: z.literal("provider_unavailable") }).strict(),
+  /**
+   * A SESSION-scoped operator Stop was outstanding when the run-creation
+   * transaction ran, so no run was created. A run committed after a Stop is
+   * unreachable by that Stop (the run-scoped gate matches on `mission_run_id`
+   * and never finds a NULL-scoped request), so the engine refuses instead.
+   *
+   * The Stop was applied and consumed in the same transaction, so this is
+   * "your Stop landed first — start again", not a dead end. Retryable.
+   */
+  z.object({ outcome: z.literal("session_stop_pending") }).strict(),
 ]);
 export type MissionStartResult = z.infer<typeof missionStartResultSchema>;
 
@@ -147,6 +157,8 @@ export const missionRecoverResultSchema = z.discriminatedUnion("outcome", [
     })
     .strict(),
   z.object({ outcome: z.literal("provider_unavailable") }).strict(),
+  /** See `missionStartResultSchema` — same refusal, same reason. */
+  z.object({ outcome: z.literal("session_stop_pending") }).strict(),
 ]);
 export type MissionRecoverResult = z.infer<typeof missionRecoverResultSchema>;
 
@@ -297,6 +309,8 @@ export const missionRestartWithInstructionResultSchema = z.discriminatedUnion(
     z.object({ outcome: z.literal("lease_busy") }).strict(),
     z.object({ outcome: z.literal("not_ready") }).strict(),
     z.object({ outcome: z.literal("provider_unavailable") }).strict(),
+    /** See `missionStartResultSchema` — same refusal, same reason. */
+    z.object({ outcome: z.literal("session_stop_pending") }).strict(),
   ],
 );
 export type MissionRestartWithInstructionResult = z.infer<

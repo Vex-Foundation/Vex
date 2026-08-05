@@ -29,7 +29,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { getPool, query, queryOneWith, execute } from "../client.js";
+import { getPool, query, queryOneWith, execute, executeWith } from "../client.js";
 import { nullableJsonb } from "../params.js";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -166,7 +166,18 @@ export async function cancelForSession(
 // ── Claim due (exactly-once) ────────────────────────────────────────
 
 /**
- * Atomically claim up to `limit` pending wake rows whose `due_at <= now`.
+ * Atomically claim up to `limit` pending MISSION-SCOPED wake rows whose
+ * `due_at <= now`.
+ *
+ * SESSION-SCOPED rows (`mission_run_id IS NULL`) are deliberately excluded.
+ * They are claimed by the atomic session-wake protocol
+ * (`engine/wake/executor/claim-session-wake.ts`), which takes the session
+ * control lock, revalidates the row and acquires the session lease as ONE
+ * commit. Consuming such a row here first would reopen the window this split
+ * exists to remove: between the destructive `pending → consumed` and the lease
+ * acquisition there was neither a pending wake nor a lease, so a Stop landing
+ * in it found nothing to stop, and a lease-busy claim had already destroyed the
+ * only durable record of the continuation.
  *
  * The UPDATE takes a short-lived dedicated connection (`pool.connect()`)
  * and runs inside an explicit `BEGIN…COMMIT` so the `SELECT … FOR UPDATE
@@ -192,7 +203,9 @@ export async function claimDue(
        SET status = 'consumed', consumed_at = NOW()
        WHERE id IN (
          SELECT id FROM loop_wake_requests
-         WHERE status = 'pending' AND due_at <= $1::timestamptz
+         WHERE status = 'pending'
+           AND due_at <= $1::timestamptz
+           AND mission_run_id IS NOT NULL
          ORDER BY due_at
          LIMIT $2
          FOR UPDATE SKIP LOCKED
@@ -212,6 +225,108 @@ export async function claimDue(
   } finally {
     client.release();
   }
+}
+
+// ── Session-scoped atomic claim primitives ──────────────────────────
+
+/**
+ * Due SESSION-SCOPED candidates, read WITHOUT consuming.
+ *
+ * Step 1 of the atomic protocol: the session identity has to be known before
+ * the session control lock can be taken, and a single batch statement cannot
+ * take a per-session lock. This read is therefore deliberately non-destructive
+ * and its result is a CANDIDATE list — every row is revalidated under the lock
+ * in `lockDueSessionScopedWith` before anything acts on it.
+ */
+export async function listDueSessionScoped(
+  now: Date,
+  limit: number,
+): Promise<LoopWakeRequest[]> {
+  const rows = await query<LoopWakeRow>(
+    `SELECT * FROM loop_wake_requests
+      WHERE status = 'pending'
+        AND due_at <= $1::timestamptz
+        AND mission_run_id IS NULL
+      ORDER BY due_at
+      LIMIT $2`,
+    [now.toISOString(), limit],
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Re-read ONE session-scoped candidate under a row lock, inside the caller's
+ * transaction, and prove it is still claimable.
+ *
+ * `null` means the row stopped being claimable between the candidate read and
+ * this lock — cancelled by an operator Stop or by ingress preempt, or already
+ * claimed by another executor. That is a normal outcome, not an error: the
+ * transaction simply does nothing.
+ *
+ * The caller MUST already hold the session control lock (canonical order), so a
+ * Stop for this session is either fully visible here or committed after this
+ * transaction did.
+ */
+export async function lockDueSessionScopedWith(
+  client: PoolClient,
+  wakeId: string,
+  now: Date,
+): Promise<LoopWakeRequest | null> {
+  const row = await queryOneWith<LoopWakeRow>(
+    client,
+    `SELECT * FROM loop_wake_requests
+      WHERE id = $1
+        AND status = 'pending'
+        AND mission_run_id IS NULL
+        AND due_at <= $2::timestamptz
+      FOR UPDATE`,
+    [wakeId, now.toISOString()],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Consume a locked session-scoped row. Called ONLY after the session lease was
+ * successfully acquired on the same client, so `pending → consumed` and "a
+ * runner now owns this session" commit together.
+ */
+export async function consumeLockedWith(
+  client: PoolClient,
+  wakeId: string,
+): Promise<number> {
+  return executeWith(
+    client,
+    `UPDATE loop_wake_requests
+        SET status = 'consumed', consumed_at = NOW()
+      WHERE id = $1 AND status = 'pending'`,
+    [wakeId],
+  );
+}
+
+/**
+ * Push a locked session-scoped row's deadline out and record the attempt — the
+ * lease-busy backoff, applied to the SAME row rather than to a replacement.
+ *
+ * The row stays `pending`, so nothing about the continuation is lost and the
+ * partial unique index cannot be violated. `attempt` is telemetry: it makes a
+ * contended session DIAGNOSABLE and is never a cap. Without this the overdue
+ * row would be retried on every 2 s tick.
+ */
+export async function deferLockedWith(
+  client: PoolClient,
+  wakeId: string,
+  dueAt: Date,
+  attempt: number,
+): Promise<number> {
+  return executeWith(
+    client,
+    `UPDATE loop_wake_requests
+        SET due_at  = $2::timestamptz,
+            payload = COALESCE(payload, '{}'::jsonb)
+                      || jsonb_build_object('attempt', $3::int)
+      WHERE id = $1 AND status = 'pending'`,
+    [wakeId, dueAt.toISOString(), attempt],
+  );
 }
 
 // ── Read ────────────────────────────────────────────────────────────
@@ -247,14 +362,39 @@ export async function getPendingWithWatch(): Promise<LoopWakeRequest[]> {
 }
 
 /**
- * Move a matching wake deadline to now, never later. The mission-run predicate
- * prevents a stale tick from promoting a run that was resumed or preempted.
+ * Move a matching wake deadline to now, NEVER later — `LEAST(due_at, NOW())`,
+ * so a promotion can only ever make the session wake sooner. A watch is an
+ * optimization over the timer; it must not be able to extend a wait.
+ *
+ * TWO SHAPES, matching the two shapes of wake row (module header):
+ *
+ *   - MISSION RUN (`missionRunId` set) joins `mission_runs` and requires the run
+ *     to still be `paused_wake`. That predicate is what stops a stale trigger
+ *     from promoting a run that a user message or a terminal transition already
+ *     resumed.
+ *   - AGENT SESSION (`missionRunId === null`) has no run row to join, so the
+ *     pending wake row IS the park — exactly the invariant
+ *     `scheduleAgentSessionContinuation` already relies on. `mission_run_id IS
+ *     NULL` is asserted explicitly rather than left to a parameter compare,
+ *     because `= NULL` is never true in SQL and would silently promote nothing.
  */
-export async function promotePendingWake(
-  sessionId: string,
-  missionRunId: string,
-  watchId: string,
-): Promise<boolean> {
+export async function promotePendingWake(input: {
+  readonly sessionId: string;
+  readonly missionRunId: string | null;
+  readonly watchId: string;
+}): Promise<boolean> {
+  if (input.missionRunId === null) {
+    const affected = await execute(
+      `UPDATE loop_wake_requests AS wake
+       SET due_at = LEAST(wake.due_at, NOW())
+       WHERE wake.session_id = $1
+         AND wake.mission_run_id IS NULL
+         AND wake.status = 'pending'
+         AND wake.payload->>'watchId' = $2`,
+      [input.sessionId, input.watchId],
+    );
+    return affected > 0;
+  }
   const affected = await execute(
     `UPDATE loop_wake_requests AS wake
      SET due_at = LEAST(wake.due_at, NOW())
@@ -265,30 +405,7 @@ export async function promotePendingWake(
        AND wake.payload->>'watchId' = $3
        AND run.id = wake.mission_run_id
        AND run.status = 'paused_wake'`,
-    [sessionId, missionRunId, watchId],
-  );
-  return affected > 0;
-}
-
-/**
- * Safety escalation equivalent of watch promotion. Unlike a price trigger it
- * deliberately does not inspect a watch payload: a detected protection fault
- * must advance the one existing pending wake regardless of why it was waiting.
- */
-export async function promotePendingWakeForSafety(
-  sessionId: string,
-  missionRunId: string,
-): Promise<boolean> {
-  const affected = await execute(
-    `UPDATE loop_wake_requests AS wake
-     SET due_at = LEAST(wake.due_at, NOW())
-     FROM mission_runs AS run
-     WHERE wake.session_id = $1
-       AND wake.mission_run_id = $2
-       AND wake.status = 'pending'
-       AND run.id = wake.mission_run_id
-       AND run.status = 'paused_wake'`,
-    [sessionId, missionRunId],
+    [input.sessionId, input.missionRunId, input.watchId],
   );
   return affected > 0;
 }

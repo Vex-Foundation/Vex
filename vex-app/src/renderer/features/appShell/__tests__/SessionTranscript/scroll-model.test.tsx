@@ -254,7 +254,10 @@ describe("SessionTranscript scroll model", () => {
       });
     });
     expect(scroller.scrollTop).toBe(100); // still no auto-follow
-    expect(latestPill(container)).not.toBeNull();
+    // The measurement is frame-coalesced now (one forced reflow per frame, not
+    // one per growth tick), so the pill lands on the next frame — awaited, not
+    // asserted synchronously. What must hold is that it lands at all.
+    await waitFor(() => expect(latestPill(container)).not.toBeNull());
   });
 
   it("anchors a just-sent user message at the viewport top with a run-out spacer", async () => {

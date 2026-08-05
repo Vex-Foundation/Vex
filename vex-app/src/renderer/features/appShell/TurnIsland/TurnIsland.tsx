@@ -155,7 +155,7 @@ function IslandBody({
             <ElapsedCounter startedAtMs={preview.startedAtMs} />
           ) : null}
         </span>
-        <LiveReasoning text={preview.reasoningText} live />
+        <LiveReasoning text={preview.reasoningText} />
       </DynamicContainer>
     );
   }
@@ -182,8 +182,15 @@ function IslandBody({
 export function TurnIsland({
   preview,
   awaitingApproval = false,
+  centredSceneUp = false,
 }: {
   readonly preview: StreamPreview;
+  /**
+   * The centred "vexing…" scene is mounted over the transcript. The island's
+   * `working` pill stands down so the same fact is not stated twice; the
+   * sr-only announcement below is deliberately unchanged.
+   */
+  readonly centredSceneUp?: boolean;
   /**
    * The active session has ≥1 pending approval. The island FREEZES: every
    * animation stops and the label becomes the pin-tone "Awaiting signature".
@@ -192,7 +199,7 @@ export function TurnIsland({
    */
   readonly awaitingApproval?: boolean;
 }): JSX.Element {
-  const view = resolveTurnIslandView(preview, awaitingApproval);
+  const view = resolveTurnIslandView(preview, awaitingApproval, centredSceneUp);
   const streaming = preview.phase === "streaming";
 
   return (

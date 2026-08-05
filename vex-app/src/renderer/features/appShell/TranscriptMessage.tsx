@@ -14,7 +14,7 @@
  * inject markup.
  */
 
-import type { JSX, ReactNode } from "react";
+import { memo, type JSX, type ReactNode } from "react";
 import { StopCircleIcon, VexIcon } from "../../components/icons/index.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
@@ -154,7 +154,15 @@ function AssistantBody({ content }: { readonly content: string }): JSX.Element {
   );
 }
 
-export function TranscriptMessage({
+/**
+ * MEMOIZED (owner decree 2026-08-03 — streaming speed). The transcript re-maps
+ * every row on each preview tick, and without this boundary each of those rows
+ * re-rendered and re-lexed its markdown at provider token rate. All three
+ * props are referentially stable across a preview tick — `row` comes from the
+ * `rows` memo, `pendingApprovals` from its own memo, `agentWorking` is a
+ * boolean — so the default shallow comparison actually holds.
+ */
+export const TranscriptMessage = memo(function TranscriptMessage({
   row,
   pendingApprovals,
   agentWorking = false,
@@ -301,7 +309,7 @@ export function TranscriptMessage({
       throw new Error(`Unhandled transcript variant: ${String(exhaustive)}`);
     }
   }
-}
+});
 
 /**
  * Acts for a call row. Rows that went through `groupTranscriptRows` carry

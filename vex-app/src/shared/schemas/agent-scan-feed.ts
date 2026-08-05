@@ -160,8 +160,17 @@ export type AgentScanCursor = z.infer<typeof agentScanCursorSchema>;
 
 // ── Input ─────────────────────────────────────────────────────────────────
 
-/** CLOSED — compiles to a SQL predicate (`failed` expands to `definitively_failed`). */
-export const agentScanStatusFilterSchema = z.enum(["pending", "confirmed", "failed"]);
+/**
+ * CLOSED — compiles to a SQL predicate (`failed` expands to
+ * `definitively_failed`; `superseded_unproven` is stored under its own name and
+ * translates to itself).
+ */
+export const agentScanStatusFilterSchema = z.enum([
+  "pending",
+  "confirmed",
+  "failed",
+  "superseded_unproven",
+]);
 export type AgentScanStatusFilter = z.infer<typeof agentScanStatusFilterSchema>;
 
 /** CLOSED — compiles to a SQL predicate against `agent_activity.chain_family`. */
@@ -180,7 +189,7 @@ export const agentScanFiltersSchema = z
       .array(z.string().min(1).max(ACTIVITY_KIND_MAX_LENGTH))
       .max(AGENT_SCAN_FILTER_KINDS_MAX)
       .optional(),
-    statuses: z.array(agentScanStatusFilterSchema).max(3).optional(),
+    statuses: z.array(agentScanStatusFilterSchema).max(4).optional(),
     protocols: z
       .array(z.string().min(1).max(PROTOCOL_MAX_LENGTH))
       .max(AGENT_SCAN_FILTER_PROTOCOLS_MAX)
@@ -371,9 +380,111 @@ export const agentScanEntrySchema = z
      * "tracking delayed" (see `../bridge-tracking.ts`).
      */
     lastCheckedAt: z.string().datetime({ offset: true }).nullable(),
+    /**
+     * DERIVED (Wave P), never a stored status: `status === 'pending'` AND the
+     * verification attempt counter has crossed `STALLED_VERIFICATION_ATTEMPTS`.
+     *
+     * This is NOT a failure and the row is NOT auto-failed — it means "we have
+     * repeatedly been unable to check", which is a different fact from "this
+     * transaction failed" and must never be rendered as one.
+     */
+    stalledVerification: z.boolean(),
+    /**
+     * Why the last verification attempt could not conclude, e.g. `no_safe_rpc`.
+     * A BOUNDED OPEN STRING per the tolerant-reader law above: the verifier
+     * mints these names and a build that has never heard of one must render it
+     * neutrally rather than blank the page.
+     */
+    stalledReason: z.string().max(FAILURE_REASON_MAX_LENGTH).nullable(),
+    /**
+     * Why a still-PENDING row is pending, as a CONCLUSIVE observation
+     * (`in_mempool`, `nonce_superseded`) — migration 067's own column, and a
+     * different fact from `stalledReason`, which means "the last CHECK could not
+     * conclude". A row has at most one of them meaningfully set: we either
+     * looked and learned something, or we could not look.
+     *
+     * A BOUNDED OPEN STRING, same tolerant-reader law as its sibling.
+     */
+    pendingReason: z.string().max(FAILURE_REASON_MAX_LENGTH).nullable(),
   })
   .strict();
 export type AgentScanEntry = z.infer<typeof agentScanEntrySchema>;
+
+// ── Push: a pending row terminalized (Wave P) ─────────────────────────────
+
+/**
+ * `EV.portfolio.activityResolved` payload — IDS ONLY.
+ *
+ * The renderer's only reaction is to invalidate and re-read, so nothing that
+ * could carry model output, money, or a token identity rides this channel.
+ * `status` is a bounded open string for the same reason the DTO's is.
+ */
+export const activityResolvedEventSchema = z
+  .object({
+    type: z.literal("sync.activity.pending"),
+    kind: z.literal("resolved"),
+    activityId: z.number().int().nonnegative(),
+    chainFamily: z.string().max(32),
+    chainId: z.number().int().nullable(),
+    status: z.string().max(64),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type ActivityResolvedEvent = z.infer<typeof activityResolvedEventSchema>;
+
+// ── Push: a pending row was OBSERVED and is still pending (OD-7) ──────────
+
+/**
+ * `EV.portfolio.activityProgress` payload — IDS AND REASONS ONLY.
+ *
+ * The sibling `activityResolved` fires once, at the end. This one fires on every
+ * observation of a row that is STILL PENDING, which is the half the renderer
+ * could not see at all: it polls at 60 s, so a 5 s observation cadence was
+ * invisible and the owner's pending launch looked frozen.
+ *
+ * `nextCheckInMs` is on the payload because the renderer must not hard-code
+ * "every 5s" — that sentence is FALSE for any row past its fast phase, and
+ * stating a cadence we do not hold is a claim beyond the evidence.
+ *
+ * `pendingReason` and `verificationReason` are bounded OPEN strings, per the
+ * tolerant-reader law: a new engine reason must not require this schema to
+ * change before the push can carry it. Nothing that could carry model output,
+ * money, or a token identity rides this channel.
+ */
+export const activityProgressEventSchema = z
+  .object({
+    type: z.literal("sync.activity.progress"),
+    activityId: z.number().int().nonnegative(),
+    chainFamily: z.string().max(32),
+    chainId: z.number().int().nullable(),
+    pendingReason: z.string().max(64).nullable(),
+    verificationReason: z.string().max(64).nullable(),
+    nextCheckInMs: z.number().int().nonnegative().max(3_600_000),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type ActivityProgressEvent = z.infer<typeof activityProgressEventSchema>;
+
+// ── Manual portfolio refresh (Wave P) ─────────────────────────────────────
+
+/** No parameters: the refresh always covers the server-resolved wallet inventory. */
+export const portfolioRefreshInputSchema = z.object({}).strict();
+
+/**
+ * `throttled` is a first-class OUTCOME, not an error: a user holding the button
+ * gets honest feedback and a retry hint, and the provider quota this sync spends
+ * is protected. `unavailable` covers a sync the engine could not complete.
+ */
+export const portfolioRefreshOutputSchema = z
+  .object({
+    status: z.enum(["refreshed", "throttled", "unavailable"]),
+    /** Present on `refreshed`. Decimal string — never a float across IPC. */
+    totalUsd: z.string().max(40).optional(),
+    walletCount: z.number().int().nonnegative().optional(),
+    retryAfterMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type PortfolioRefreshOutput = z.infer<typeof portfolioRefreshOutputSchema>;
 
 // ── Output: page ──────────────────────────────────────────────────────────
 

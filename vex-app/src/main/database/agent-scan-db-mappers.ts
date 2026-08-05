@@ -124,7 +124,14 @@ function boundedText(value: unknown, max: number): string | null {
 
 // ── Status ────────────────────────────────────────────────────────────────
 
-const KNOWN_AMOUNT_STATUSES = ["pending", "confirmed", "failed"] as const;
+const KNOWN_AMOUNT_STATUSES = [
+  "pending",
+  "confirmed",
+  "failed",
+  // Recognized so the row keeps its real state; it still displays NO amount,
+  // because neither resolver shows anything outside pending/confirmed.
+  "superseded_unproven",
+] as const;
 
 /**
  * Narrow the SQL-collapsed status to the closed vocabulary the amount
@@ -265,7 +272,23 @@ function resolveRowAmountBasis(
 
 // ── Vex fee ───────────────────────────────────────────────────────────────
 
+/**
+ * SUPPRESSION PARITY with the agent-side feed (R1 Step 2c). This mapper used to
+ * map the fee unconditionally, so a `failed` row kept showing an in-transaction
+ * fee the agent correctly withheld — a charge that, the transaction being
+ * atomic, reverted with everything else in it.
+ *
+ * The rule is narrowed by PROVENANCE, not applied to every fee: a separate
+ * `bridge_fee`/`swap_fee`/`trench_fee` transfer is its OWN confirmed
+ * transaction, so the money genuinely left the wallet and must keep reporting
+ * even after the parent bridge fails or refunds. The projection already admits
+ * only a CONFIRMED fee leg, so its own status is the evidence.
+ *
+ * No DTO field moved — `agentScanVexFeeSchema` is untouched — so the strict
+ * output-schema failure mode cannot recur here.
+ */
 function mapVexFee(row: AgentScanRow): AgentScanVexFee | null {
+  if (row.status === "failed" && row.vex_fee_source !== "separate_leg") return null;
   const tokenSymbol = sanitizeTokenSymbol(row.vex_fee_token_symbol);
   const amountHuman = row.vex_fee_amount_human;
   if (tokenSymbol === null && amountHuman === null) return null;
@@ -361,7 +384,10 @@ export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
     }),
     amountBasis,
     vexFee: mapVexFee(row),
-    usdFeeEst: toUsdStringOrNull(row.usd_fee_est),
+    // O-7: fed from vex_fee provenance ONLY. The renderer prints this beside
+    // the "Vex fee" label, and `usd_fee_est` is migration 050's deprecated
+    // mixed-meaning column, which carries network gas or the VENUE's fee.
+    usdFeeEst: toUsdStringOrNull(row.vex_fee_usd_est),
     failureCode: boundedText(row.failure_code, AGENT_SCAN_TEXT_BOUNDS.failureCode),
     failureReason: boundedText(row.failure_reason, AGENT_SCAN_TEXT_BOUNDS.failureReason),
     txHash,
@@ -372,5 +398,42 @@ export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
     ),
     legs: mapExecutionLegs(row.legs),
     lastCheckedAt: row.last_checked_at != null ? toIso(row.last_checked_at) : null,
+    // DERIVED (Wave P), never read from a status column: a pending row we have
+    // repeatedly failed to VERIFY. This is not a failure, and the renderer copy
+    // must say "we could not check", never "this failed".
+    stalledVerification: isStalledVerification({
+      status: String(row.status ?? ""),
+      verificationAttempts: Number(row.verification_attempts ?? 0),
+    }),
+    stalledReason: boundedText(
+      row.last_verification_reason,
+      AGENT_SCAN_TEXT_BOUNDS.failureReason,
+    ),
+    // The CONCLUSIVE half (migration 067): "we looked and it is in the mempool"
+    // is a different fact from "the last check could not conclude", and the row
+    // must be able to say the first without being rendered as the second.
+    pendingReason: boundedText(
+      row.pending_reason,
+      AGENT_SCAN_TEXT_BOUNDS.failureReason,
+    ),
   };
+}
+
+/**
+ * The DERIVED stalled-verification predicate, mirroring the engine's
+ * `isStalledVerification` (`db/repos/agent-activity/types.ts`).
+ *
+ * Re-implemented rather than imported because `vex-app` main reaches engine code
+ * only through the `@vex-lib` alias, and this DB layer deliberately owns its own
+ * read model. The THRESHOLD is the thing that must not drift, so it is named
+ * here and pinned by a test rather than left as a bare literal.
+ */
+export const STALLED_VERIFICATION_ATTEMPTS = 20;
+
+function isStalledVerification(row: {
+  readonly status: string;
+  readonly verificationAttempts: number;
+}): boolean {
+  return row.status === "pending"
+    && row.verificationAttempts >= STALLED_VERIFICATION_ATTEMPTS;
 }

@@ -93,6 +93,90 @@ export async function listSolanaStagedPending(limit: number): Promise<AgentActiv
   return rows.map(mapRow);
 }
 
+/**
+ * Fast-lane candidate set (Wave P): the CURRENT state of a specific, bounded set
+ * of ids that are still `pending` and carry a staged hash.
+ *
+ * Deliberately NOT a time or fairness query — the fast lane already knows which
+ * rows it armed, and re-reading them by id is what lets it notice that a row was
+ * terminalized by someone else (its handler, or a global sweep) and disarm.
+ * `chainFamily` is required for the same disjointness reason
+ * `listPendingOlderThan` requires it: an EVM cycle must never pick up a Solana
+ * row, whose terminality is owned by a different sweep.
+ */
+export async function listPendingByIds(
+  ids: readonly number[],
+  chainFamily: BridgeChainFamily,
+): Promise<AgentActivityEvent[]> {
+  if (ids.length === 0) return [];
+  const rows = await query<Record<string, unknown>>(
+    `SELECT * FROM agent_activity
+      WHERE id = ANY($1::bigint[])
+        AND status = 'pending'
+        AND tx_hash IS NOT NULL
+        AND submit_attempted_at IS NOT NULL
+        AND chain_family = $2
+      ORDER BY id ASC`,
+    [[...ids], chainFamily],
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * PROVIDER-LANE fast-lane rearm candidates (Wave P): pending logical
+ * `bridge_fill_expected` rows that already carry a `provider_order_id`.
+ *
+ * A SEPARATE query because the on-chain rearm set is defined by exactly the two
+ * predicates this row can never satisfy — `tx_hash IS NOT NULL` and
+ * `submit_attempted_at IS NOT NULL`. The logical row is the expectation of a
+ * fill that has not happened; there is no local submission behind it, and its
+ * only handle on truth is the provider order id. Requiring that id keeps the set
+ * to rows the provider leg can actually ask about (a row still awaiting order-id
+ * recovery is the R5 sweep's, not the fast lane's).
+ *
+ * Bounded and fair-ordered on the same clock the sweeps use
+ * (`COALESCE(last_checked_at, created_at)`), so a restart rearms the
+ * least-recently-observed rows rather than an unbounded backlog.
+ */
+export async function listPendingProviderLogical(limit: number): Promise<AgentActivityEvent[]> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT * FROM agent_activity
+      WHERE status = 'pending'
+        AND event_role = 'bridge_fill_expected'
+        AND provider_order_id IS NOT NULL
+      ORDER BY COALESCE(last_checked_at, created_at) ASC, id ASC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Group-wide pending predicate (Wave P): does ANY wallet in this set still have
+ * an unresolved on-chain action?
+ *
+ * Covers EVERY pending kind — swaps, launches, Solana legs, and the logical
+ * bridge-fill row — because it filters on `status` alone. That breadth is the
+ * point: `fullBalanceSync` must suppress its snapshot for the WHOLE cycle when
+ * anything at all is in flight, since a snapshot taken mid-settlement records a
+ * balance the user never actually held and poisons the next `pnlVsPrev`.
+ *
+ * Uses the `status='pending'` partial index from migration 044.
+ */
+export async function hasPendingActivityForWallets(
+  walletAddresses: readonly string[],
+): Promise<boolean> {
+  if (walletAddresses.length === 0) return false;
+  const row = await queryOne<{ exists: boolean }>(
+    `SELECT EXISTS(
+       SELECT 1 FROM agent_activity
+        WHERE status = 'pending' AND wallet_address = ANY($1::text[])
+     ) AS exists`,
+    [[...walletAddresses]],
+  );
+  return row?.exists === true;
+}
+
 export interface ListActivityFeedOptions {
   walletAddresses: string[];
   before?: { createdAt: string; id: number };

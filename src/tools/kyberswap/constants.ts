@@ -10,6 +10,34 @@ import { VEX_TREASURY_EVM } from "../../lib/vex-treasury.js";
 
 export const KYBER_CLIENT_ID = "Vex";
 
+/**
+ * The header set EVERY KyberSwap client sends (SPEC §2.1, W2a).
+ *
+ * BLOCKING, live-reproduced 2026-08-03: KyberSwap sits behind Cloudflare on all
+ * three hosts, and our previous header shape (no `User-Agent`, no `Accept`)
+ * returns HTTP 403 with `cf-mitigated: challenge` — an HTML page, not JSON.
+ * We had been running on a runtime accident: Node's `fetch` happens to send
+ * `user-agent: node`, and any non-empty UA satisfies the edge. Making the UA
+ * explicit removes the dependency on that accident.
+ *
+ * `X-Client-Id` is a REGISTERED id, not decoration: live-proven 60 requests /
+ * 10 s with it against 30 / 10 s with a garbage id or none. It belongs on the
+ * common-service client too, which sent none.
+ *
+ * Re-probed 2026-08-03 with this exact set: aggregator 200
+ * (`x-ratelimit-limit: 60, 10`), token-api 200 (`100, 10`), common-service 200.
+ *
+ * The version is a LITERAL rather than a `package.json` read: this module is
+ * bundled into the Electron main process, the value is only an identifier for
+ * the provider's edge, and a stale digit has no behavioral effect. Update it
+ * with the product version when it matters.
+ */
+export const KYBERSWAP_REQUEST_HEADERS: Readonly<Record<string, string>> = {
+  "X-Client-Id": KYBER_CLIENT_ID,
+  "User-Agent": "Vex/1.0.0 (+https://projectvex.ai)",
+  Accept: "application/json",
+};
+
 // ── Vex integrator fee (aggregator swaps) ───────────────────────────
 //
 // Product-owner-reviewed constants — NEVER derived from model/tool params. A
@@ -31,13 +59,11 @@ export const KYBERSWAP_FEE_RECEIVER: Address = VEX_TREASURY_EVM;
 // the two). `src/tools` must not import `src/vex-agent`, which is why the
 // venue fact and the product policy are stated in different places.
 
-/**
- * Slippage applied when the caller omits `slippageBps`. Read by BOTH the
- * execute handler and the quote-time approved-floor computation, so an
- * omitted-slippage quote persists the SAME floor the omitted-slippage execute
- * will be held to.
- */
-export const KYBERSWAP_DEFAULT_SLIPPAGE_BPS = 50;
+// NOTE: there is no KyberSwap default slippage here anymore. What an omitted
+// `slippageBps` MEANS is Vex product policy with exactly one home
+// (`@vex-agent/tools/protocols/slippage-policy.ts` `VEX_DEFAULT_SLIPPAGE_BPS`),
+// resolved by `protocols/kyberswap/handlers/swap/slippage.ts` before anything in
+// this layer is called. A venue-local copy split the prequote match hash.
 
 /**
  * The largest `slippageTolerance` KyberSwap's `/route/build` accepts.

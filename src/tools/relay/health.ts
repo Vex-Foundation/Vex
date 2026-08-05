@@ -23,7 +23,18 @@ export type RelayChainHealthFailure =
   | "chain_disabled";
 
 export type RelayRouteHealth =
-  | { readonly serviceable: true; readonly origin: RelayChain; readonly destination: RelayChain }
+  | {
+      readonly serviceable: true;
+      readonly origin: RelayChain;
+      readonly destination: RelayChain;
+      /**
+       * Sides Relay currently reports as `blockProductionLagging` (W2c) — the
+       * condition under which a fill hangs. ADVISORY, never a gate: a lagging
+       * chain still accepts deposits and the sweep still terminalizes the fill,
+       * so the agent is told rather than blocked. Empty when neither side lags.
+       */
+      readonly blockProductionLagging: readonly RelayRouteSide[];
+    }
   | {
       readonly serviceable: false;
       readonly failedSide: RelayRouteSide;
@@ -84,5 +95,13 @@ export function evaluateRelayRouteHealth(
     };
   }
 
-  return { serviceable: true, origin, destination };
+  return { serviceable: true, origin, destination, blockProductionLagging: laggingSides(origin, destination) };
+}
+
+/** Sides Relay reports as behind. Strict `=== true`: an absent field is not a lag claim. */
+function laggingSides(origin: RelayChain, destination: RelayChain): readonly RelayRouteSide[] {
+  const sides: RelayRouteSide[] = [];
+  if (origin.blockProductionLagging === true) sides.push("origin");
+  if (destination.blockProductionLagging === true) sides.push("destination");
+  return sides;
 }

@@ -242,6 +242,30 @@ export async function isSessionSoftDeleted(id: string): Promise<boolean> {
   return row !== null && row.deleted_at !== null;
 }
 
+/**
+ * Whether a session is still there to run a turn in: the row EXISTS and has not
+ * been soft-deleted.
+ *
+ * Both halves are one question, and asking them separately is what produced the
+ * live defect. A launch form's continuation kept being retried for a session the
+ * user had deleted (`sessions:delete` at 22:22:54): each attempt rebuilt a
+ * prompt from a history that was no longer readable and each attempt was
+ * refused, once a minute, forever. `isSessionSoftDeleted` cannot answer it —
+ * it returns `false` for a row that does not exist at all, which is the
+ * opposite of what a resume needs to hear.
+ *
+ * `ended_at` is deliberately NOT consulted: an ended session is a finished
+ * conversation, not a missing one, and a turn owed to it is still owed.
+ */
+export async function isSessionResumable(id: string): Promise<boolean> {
+  if (!id) return false;
+  const row = await queryOne<{ deleted_at: string | Date | null }>(
+    "SELECT deleted_at FROM sessions WHERE id = $1",
+    [id],
+  );
+  return row !== null && row.deleted_at === null;
+}
+
 export async function setScope(id: string, scope: string): Promise<void> {
   await executeWith(getPool(), "UPDATE sessions SET scope = $1 WHERE id = $2", [scope, id]);
 }

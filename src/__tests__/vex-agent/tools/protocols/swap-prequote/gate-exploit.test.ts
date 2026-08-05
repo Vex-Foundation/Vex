@@ -22,7 +22,7 @@ const EVM_PARAMS = {
   tokenOut: GATE_TOKEN_OUT,
   amountIn: "1",
 };
-const SOL_PARAMS = { inputToken: SOLANA_MINT_A, outputToken: SOL_MINT, amount: 1 };
+const SOL_PARAMS = { tokenIn: SOLANA_MINT_A, tokenOut: SOL_MINT, amountIn: "1" };
 
 let mockCreate: CreateMock;
 let mockResolveSelectedAddress: ResolveMock;

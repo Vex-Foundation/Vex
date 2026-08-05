@@ -39,7 +39,7 @@
  * re-exported from here unchanged.
  */
 
-import { execute, queryOne, queryOneWith, queryWith } from "../../client.js";
+import { queryOne, queryOneWith, queryWith } from "../../client.js";
 import {
   resolveActivitySessionByExecutionId,
   resolveActivitySessionByRowId,
@@ -49,6 +49,9 @@ import {
 import { assertFailureCode, sanitizeFailureReason } from "./validation.js";
 import { mapRow } from "./mappers.js";
 import type { AgentActivityEvent, AgentActivityFailureCode, CasResult } from "./types.js";
+import type { ConfirmationSource } from "./provenance-vocabulary.js";
+import { armFastLane, resolveFastLane } from "./fast-lane-signal.js";
+import logger from "@utils/logger.js";
 
 // ── Types (swap-only inputs) ─────────────────────────────────────────
 
@@ -73,6 +76,78 @@ export interface ConfirmActivityEventInput {
 export interface FailActivityEventInput {
   failureCode: AgentActivityFailureCode;
   failureReason: string;
+}
+
+// ── The claim fence on the terminal CASes ────────────────────────────
+
+/**
+ * WHERE a terminalizing CAS is being called from, and therefore which extra
+ * clause guards it. A DISCRIMINATED UNION, not an optional token, so a
+ * claim-window caller cannot forget the fence and a venue handler is not asked
+ * for a token it cannot have.
+ *
+ * WHY A TERMINAL WRITE NEEDS A FENCE AT ALL — the counterexample is this
+ * repository's own reported bug. A terminalizing CAS writes an immutable chain
+ * fact, so a stale write is still TRUE; what that misses is that the CAS is
+ * ONCE-ONLY, so whoever wins it locks everyone else out — and the stale winner
+ * can be writing the WEAKER truth:
+ *
+ *   Claim A expires mid-RPC; claim B is acquired legitimately. Stale worker A
+ *   returns and wins `WHERE status = 'pending'` with
+ *   `confirmActivityEventStatusOnly` — status confirmed, NO amounts. The venue
+ *   handler then arrives with DECODED amounts and misses the CAS, because the
+ *   row is no longer pending. Result: `confirmed` + `amountBasis: "estimated"` +
+ *   `executedAmount* = null` — exactly the row the owner reported, re-created by
+ *   the concurrency design.
+ *
+ * The `handler_return` branch keeps today's CAS byte-for-byte, and that is a
+ * REQUIREMENT, not an implementation detail: applying the token predicate to
+ * BOTH variants (the natural mistake when adding one `AND` to a shared
+ * statement) would make a venue handler lose its exact amounts merely because
+ * the fallback lane happens to hold a lease — the same amountless-confirmed row,
+ * reached from the opposite direction.
+ *
+ * `evm_claim_token` is the pending-fallback workstream's column (its migration
+ * `068`); it is referenced ONLY in the `claim` branch, so this file is
+ * unaffected until that lane exists.
+ */
+export type TerminalWriteContext =
+  | { readonly kind: "handler_return" }
+  | { readonly kind: "claim"; readonly claimToken: string };
+
+/** `CasResult` plus the one miss a fenced writer can report. */
+export type TerminalCasResult = CasResult & { reason?: "claim_lost" };
+
+const HANDLER_RETURN: TerminalWriteContext = { kind: "handler_return" };
+
+/** The extra CAS clause and its bound parameter for a given context. */
+function claimFence(
+  context: TerminalWriteContext,
+  nextParamIndex: number,
+): { clause: string; params: readonly string[] } {
+  if (context.kind === "claim") {
+    return { clause: ` AND evm_claim_token = $${nextParamIndex}`, params: [context.claimToken] };
+  }
+  return { clause: "", params: [] };
+}
+
+/**
+ * A fenced terminal CAS wrote zero rows. Distinguishes "someone else already
+ * terminalized this" from "my claim expired" — the caller must not retry blind.
+ */
+async function terminalMiss(
+  id: number,
+  caller: string,
+  context: TerminalWriteContext,
+): Promise<TerminalCasResult> {
+  const current = await getCurrentRowOrThrow(id, caller);
+  if (context.kind === "claim" && current.status === "pending") {
+    // The fallback lane's own event name, emitted here because this is the write
+    // site that observes the zero-row result. Expected under load, not an error.
+    logger.debug("sync.evm_claim.lost", { id, caller });
+    return { applied: false, row: current, reason: "claim_lost" };
+  }
+  return { applied: false, row: current };
 }
 
 // ── Staged broadcast persistence ────────────────────────────────────
@@ -128,16 +203,24 @@ export async function markActivitySolanaBroadcast(
   },
 ): Promise<CasResult> {
   const row = await queryOne<Record<string, unknown>>(
+    // Migration 067: a Solana row is awaiting confirmation from the moment its
+    // signature is staged. Written HERE, in the one statement every Solana
+    // handler already funnels through, rather than repeated at four submit
+    // sites — Solana has no receipt to read at return, so this is the ONLY
+    // reason a locally-staged Solana row is ever pending, and a per-handler
+    // variant would have nothing different to say. `COALESCE` keeps it
+    // write-once, matching `notePendingReason`'s handler contract.
     `UPDATE agent_activity
         SET tx_hash = $2, from_address = $3,
             recent_blockhash = $4, last_valid_block_height = $5,
-            submit_attempted_at = NOW(), updated_at = NOW()
+            submit_attempted_at = NOW(), updated_at = NOW(),
+            pending_reason = COALESCE(pending_reason, 'solana_awaiting_confirmation')
       WHERE id = $1 AND status = 'pending' AND tx_hash IS NULL
         AND chain_family = 'solana'
       RETURNING *`,
     [id, input.txHash, input.fromAddress, input.recentBlockhash, input.lastValidBlockHeight],
   );
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: armFastLane(mapRow(row), "onchain") };
   return { applied: false, row: await getCurrentRowOrThrow(id, "markActivitySolanaBroadcast") };
 }
 
@@ -155,7 +238,7 @@ export async function markBroadcastAccepted(id: number): Promise<CasResult> {
       RETURNING *`,
     [id],
   );
-  if (row) return { applied: true, row: mapRow(row) };
+  if (row) return { applied: true, row: armFastLane(mapRow(row), "onchain") };
   return { applied: false, row: await getCurrentRowOrThrow(id, "markBroadcastAccepted") };
 }
 
@@ -176,7 +259,8 @@ export async function markBroadcastAccepted(id: number): Promise<CasResult> {
 export async function confirmActivityEvent(
   id: number,
   input: ConfirmActivityEventInput,
-): Promise<CasResult> {
+  context: TerminalWriteContext = HANDLER_RETURN,
+): Promise<TerminalCasResult> {
   const current = await getActivityEventById(id);
   if (!current) {
     throw new Error(`agent_activity: confirmActivityEvent — row ${id} does not exist`);
@@ -224,6 +308,12 @@ export async function confirmActivityEvent(
   // safe-moment gate reads. `current` is the pre-read this function already
   // does, so the session key costs no extra round trip. DB-only — the receipt
   // lookup that produced these amounts finished before this call.
+  // Migration 067: this confirmation was established by decoding our OWN receipt
+  // at return time, so BOTH provenance columns say `tool_response` — but the
+  // settlement half only where amounts were actually written, because a caller
+  // that supplied none has proven nothing about the money. `pending_reason` is
+  // cleared: a terminal row must never store a reason it "is pending".
+  const fence = claimFence(context, 10);
   const row = await withActivitySessionLock(current.sessionId, (client) =>
     queryOneWith<Record<string, unknown>>(
     client,
@@ -232,8 +322,19 @@ export async function confirmActivityEvent(
             executed_amount_in_human = $2, executed_amount_in_raw = $3,
             executed_amount_out_human = $4, executed_amount_out_raw = $5,
             executed_amount_in2_human = $6, executed_amount_in2_raw = $7,
-            executed_amount_out2_human = $8, executed_amount_out2_raw = $9
-      WHERE id = $1 AND status = 'pending'
+            executed_amount_out2_human = $8, executed_amount_out2_raw = $9,
+            confirmation_source = 'tool_response',
+            settlement_source = CASE WHEN $3::text IS NOT NULL OR $5::text IS NOT NULL
+                                     THEN 'tool_response' ELSE settlement_source END,
+            pending_reason = NULL,
+            -- A TERMINAL ROW HOLDS NO CLAIM. Cleared in the WINNING update
+            -- itself, never in a follow-up statement: the resolver deliberately
+            -- skips releaseEvmClaim after a terminal outcome, so a second
+            -- statement that got interrupted would leave the row terminal WITH a
+            -- live lease and token — state that outlives the thing it describes
+            -- and that a late worker could still try to act on.
+            evm_claim_lease_until = NULL, evm_claim_token = NULL
+      WHERE id = $1 AND status = 'pending'${fence.clause}
       RETURNING *`,
     [
       id,
@@ -245,10 +346,11 @@ export async function confirmActivityEvent(
       input.executedAmountIn2Raw ?? null,
       input.executedAmountOut2Human ?? null,
       input.executedAmountOut2Raw ?? null,
+      ...fence.params,
     ],
   ));
-  if (row) return { applied: true, row: mapRow(row) };
-  return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEvent") };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
+  return terminalMiss(id, "confirmActivityEvent", context);
 }
 
 /**
@@ -271,20 +373,42 @@ export async function confirmActivityEvent(
  *
  * NOT for venue handlers. A broadcast handler decodes its own receipt and MUST
  * use `confirmActivityEvent`, whose guards are unchanged.
+ *
+ * `source` (migration 067) is CALLER-SUPPLIED and a closed union, because both
+ * sweeps call this: the EVM sweep reads a receipt, the Solana sweep reads a
+ * SIGNATURE STATUS and never a receipt at all. A hardcoded `receipt_status_only`
+ * would be factually wrong on every Solana row.
  */
-export async function confirmActivityEventStatusOnly(id: number): Promise<CasResult> {
+export async function confirmActivityEventStatusOnly(
+  id: number,
+  source: Extract<ConfirmationSource, "receipt_status_only_evm" | "receipt_status_only_solana">,
+  context: TerminalWriteContext = HANDLER_RETURN,
+): Promise<TerminalCasResult> {
   const sessionId = await resolveActivitySessionByRowId(id);
+  const fence = claimFence(context, 3);
+  // `settlement_source` is deliberately UNTOUCHED: this sweep proved inclusion
+  // and learned nothing whatsoever about the amounts, so it has no business
+  // stating how they were established — that is a separate fact with its own
+  // writer, and a late decode must still be able to record it.
   const row = await withActivitySessionLock(sessionId, (client) =>
     queryOneWith<Record<string, unknown>>(
       client,
       `UPDATE agent_activity
-        SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW()
-      WHERE id = $1 AND status = 'pending'
+        SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW(),
+            confirmation_source = $2, pending_reason = NULL,
+            -- A TERMINAL ROW HOLDS NO CLAIM. Cleared in the WINNING update
+            -- itself, never in a follow-up statement: the resolver deliberately
+            -- skips releaseEvmClaim after a terminal outcome, so a second
+            -- statement that got interrupted would leave the row terminal WITH a
+            -- live lease and token — state that outlives the thing it describes
+            -- and that a late worker could still try to act on.
+            evm_claim_lease_until = NULL, evm_claim_token = NULL
+      WHERE id = $1 AND status = 'pending'${fence.clause}
       RETURNING *`,
-      [id],
+      [id, source, ...fence.params],
     ));
-  if (row) return { applied: true, row: mapRow(row) };
-  return { applied: false, row: await getCurrentRowOrThrow(id, "confirmActivityEventStatusOnly") };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
+  return terminalMiss(id, "confirmActivityEventStatusOnly", context);
 }
 
 /**
@@ -345,22 +469,31 @@ function assertYieldConfirmLegs(
 export async function failActivityEvent(
   id: number,
   input: FailActivityEventInput,
-): Promise<CasResult> {
+  context: TerminalWriteContext = HANDLER_RETURN,
+): Promise<TerminalCasResult> {
   assertFailureCode(input.failureCode);
   // Under the session control lock — see `./session-lock.ts`. DB-only.
   const sessionId = await resolveActivitySessionByRowId(id);
+  const fence = claimFence(context, 4);
   const row = await withActivitySessionLock(sessionId, (client) =>
     queryOneWith<Record<string, unknown>>(
       client,
       `UPDATE agent_activity
         SET status = 'definitively_failed', failure_code = $2, failure_reason = $3,
-            updated_at = NOW()
-      WHERE id = $1 AND status = 'pending'
+            updated_at = NOW(), pending_reason = NULL,
+            -- A TERMINAL ROW HOLDS NO CLAIM. Cleared in the WINNING update
+            -- itself, never in a follow-up statement: the resolver deliberately
+            -- skips releaseEvmClaim after a terminal outcome, so a second
+            -- statement that got interrupted would leave the row terminal WITH a
+            -- live lease and token — state that outlives the thing it describes
+            -- and that a late worker could still try to act on.
+            evm_claim_lease_until = NULL, evm_claim_token = NULL
+      WHERE id = $1 AND status = 'pending'${fence.clause}
       RETURNING *`,
-      [id, input.failureCode, sanitizeFailureReason(input.failureReason)],
+      [id, input.failureCode, sanitizeFailureReason(input.failureReason), ...fence.params],
     ));
-  if (row) return { applied: true, row: mapRow(row) };
-  return { applied: false, row: await getCurrentRowOrThrow(id, "failActivityEvent") };
+  if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
+  return terminalMiss(id, "failActivityEvent", context);
 }
 
 /**
@@ -420,7 +553,7 @@ export async function abortPlannedEvents(
     client,
     `UPDATE agent_activity
         SET status = 'definitively_failed', failure_code = 'unknown',
-            failure_reason = $3, updated_at = NOW()
+            failure_reason = $3, updated_at = NOW(), pending_reason = NULL
       WHERE protocol_execution_id = $1 AND event_index >= $2
         AND ($4::int IS NULL OR event_index < $4::int)
         AND status = 'pending' AND tx_hash IS NULL
@@ -440,13 +573,27 @@ export async function abortPlannedEvents(
 // the in-execution CAS transitions above. Re-exported unchanged from the
 // top-level `agent-activity.ts` facade.
 
-/** Repair-sweep bookkeeping — a receipt lookup found nothing new to report yet. */
-export async function touchLastChecked(id: number): Promise<void> {
-  await execute(
-    `UPDATE agent_activity SET last_checked_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
-    [id],
-  );
-}
+// The verification-bookkeeping family (`touchLastChecked`,
+// `clearVerificationStall`) lives in the sibling
+// `./swap-lifecycle/verification-bookkeeping.js` — what we currently KNOW about
+// a still-`pending` row is a different reason to change from this file's
+// once-only CAS state transitions, and the same argument the fast-lane
+// signalling and the read queries were split out on. RE-EXPORTED here so every
+// existing import site is byte-unaffected.
+export type {
+  PendingReasonContext,
+  NotePendingReasonMiss,
+} from "./swap-lifecycle/verification-bookkeeping.js";
+export {
+  touchLastChecked,
+  clearVerificationStall,
+  notePendingReason,
+} from "./swap-lifecycle/verification-bookkeeping.js";
+
+// Fast-lane arm/resolve emits live in the sibling `./fast-lane-signal.js` — the
+// same helpers are needed by `./bridge-lifecycle.ts` and `./launch-lifecycle.ts`,
+// and the signalling contract is a different reason to change than this file's
+// CAS state transitions.
 
 // ── Reads ─────────────────────────────────────────────────────────
 
@@ -460,6 +607,9 @@ export type { ListActivityFeedOptions } from "./swap-lifecycle/reads.js";
 export {
   getActivityEventById,
   listPendingOlderThan,
+  listPendingByIds,
+  listPendingProviderLogical,
+  hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,
   existsForExecutionId,

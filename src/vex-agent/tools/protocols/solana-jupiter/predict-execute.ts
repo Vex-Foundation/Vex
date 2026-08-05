@@ -81,6 +81,7 @@ import type { ToolResult } from "../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../types.js";
 import { str, num, fail } from "../handler-helpers.js";
 import { broadcastStagedSolanaTx } from "./staged-broadcast.js";
+import { classifyJupiterProviderFailure } from "./provider-failure-mapping.js";
 import { walletAddress, walletSecret } from "./handlers/core.js";
 import { microUsdToDollarString } from "./predict-money.js";
 import {
@@ -132,8 +133,17 @@ export function sharedFields(input: SharedEventInput) {
 /**
  * A pre-broadcast failure (invalid params, provider rejects the order/close/
  * claim build before signing) — atomically creates the intent + a hashless
- * `definitively_failed` row (R1's stage/error mapping table: pre-broadcast
- * provider rejection -> `route_not_found`, detail in `failure_reason`).
+ * `definitively_failed` row.
+ *
+ * W2g: this used to hardcode `failureCode: "route_not_found"` — the EXACT
+ * defect `provider-failure-mapping.ts` was written to fix, and the one place
+ * still carrying it after lend and borrow adopted the classifier. Prediction
+ * has no quote and no route, so "no route" never transferred: on 2026-07-25
+ * the production DB told the agent a routing failure while Jupiter had
+ * answered "Minimum order is $5", and an autonomous agent reads a routing
+ * failure as a liquidity problem and retries a call that can never succeed.
+ * The same classified reason now goes to the row AND to the agent.
+ *
  * Exported for `predict-execute-close-all.ts`.
  */
 export async function failPreBroadcast(
@@ -142,12 +152,12 @@ export async function failPreBroadcast(
   input: SharedEventInput,
   err: unknown,
 ): Promise<ToolResult> {
-  const reason = predictFailureMessage(err);
+  const { failureCode, failureReason } = classifyJupiterProviderFailure(err);
   const { executionId } = await createAgentActivityPreBroadcastFailure({
     toolId, namespace: NAMESPACE, intentParams: p,
-    event: { ...sharedFields(input), eventIndex: 0, failureCode: "route_not_found", failureReason: reason },
+    event: { ...sharedFields(input), eventIndex: 0, failureCode, failureReason },
   });
-  return { success: false, output: `${toolId} failed: ${reason}.`, data: { _executionId: executionId } };
+  return { success: false, output: `${toolId} failed: ${failureReason}.`, data: { _executionId: executionId } };
 }
 
 /** Best-effort post-intent finalize — a throw here is logged, never propagated (mirrors kyberswap/khalani/lend). */

@@ -217,19 +217,21 @@ export function parsePairListQuery(
       ok: false,
       reason:
         '"chainIds" does not apply to this tool — every row it returns is already on the '
-        + "chainId you supplied. Use dexscreener.search when you need to compare chains.",
+        + '"chain" you supplied. Use dexscreener.search when you need to compare chains.',
     };
   }
 
-  // NOTE on the retired `chainId` (singular) param of `search`: it is gone, not
-  // aliased. One filter with two spellings costs a second name to keep in sync
-  // AND measurably degrades lexical tool retrieval (the duplicate key and its
-  // description both score on "chain", which was enough to push
-  // `khalani.tokens.search` out of the golden top-3 for "cross chain token
-  // search"). An agent that still tries the old spelling gets
-  // `Unknown parameter "chainId" … Allowed parameters: query, chainIds, …` from
-  // the runtime param boundary, which names the replacement and is correctable in
-  // one turn.
+  // NOTE on the retired `chainId` spelling: it is gone everywhere in this
+  // namespace, not aliased. `search` never regained a singular chain filter, and
+  // W6a renamed the single-chain tools' required `chainId` to `chain`. One
+  // filter with two spellings costs a second name to keep in sync AND measurably
+  // degrades lexical tool retrieval (the duplicate key and its description both
+  // score on "chain", which was enough to push `khalani.tokens.search` out of the
+  // golden top-3 for "cross chain token search"). An agent that still tries the
+  // old spelling gets `Unknown parameter "chainId" … Allowed parameters: query,
+  // chainIds, …` (or `… chain, pairAddress, …` on a single-chain tool) from the
+  // runtime param boundary, which names the replacement and is correctable in one
+  // turn.
   const chainIds: string[] | null = chainIdsRead.value;
   const dexIds = readStringList(params, "dexIds", { lowercase: true, acceptsArray: true });
   if (!dexIds.ok) return dexIds;

@@ -191,7 +191,7 @@ describe("trench prompt package", () => {
     expect(prompt).toContain("if a direct internal tool is not in it RIGHT NOW, it is not callable");
     // The un-scoped version made the model believe the whole protocol surface
     // was gone whenever a namespace was absent from the Map.
-    expect(prompt).toContain("Protocol toolIds are NOT listed there individually");
+    expect(prompt).toContain("Protocol tools are NOT listed there individually");
     expect(prompt).toContain("not evidence its tools do not exist");
     expect(prompt).toContain('`discover_tools(namespace="x", list=true)`');
     expect(prompt).toContain("unranked and untruncated");

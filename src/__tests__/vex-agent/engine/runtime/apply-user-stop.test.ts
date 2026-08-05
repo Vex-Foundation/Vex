@@ -21,6 +21,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ControlRequestRow } from "@vex-agent/engine/runtime/lease-and-status/_row-shapes.js";
+
 const queryWith = vi.fn();
 const queryOneWith = vi.fn();
 const executeWith = vi.fn().mockResolvedValue(1);
@@ -68,13 +70,20 @@ function runRow(status: string) {
 }
 
 /** Minimal shape of a locked `runtime_control_requests` row. */
-function requestRow(over: Record<string, unknown> = {}) {
+function requestRow(over: Partial<ControlRequestRow> = {}): ControlRequestRow {
   return {
     id: "req-1",
     session_id: "sess-1",
     mission_run_id: "run-1",
     kind: "stop_terminal",
     status: "pending",
+    requested_by: "user",
+    reason: null,
+    correlation_id: null,
+    created_at: new Date("2026-08-03T00:00:00.000Z"),
+    observed_at: null,
+    cleared_at: null,
+    expires_at: null,
     ...over,
   };
 }

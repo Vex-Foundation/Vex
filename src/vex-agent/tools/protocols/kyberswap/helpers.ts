@@ -98,7 +98,7 @@ function parseUsd(value: string | undefined): number | null {
  * Returns `null` when either leg is unparseable OR the input-USD denominator
  * is 0 (division-by-zero guard) — callers surface `null` rather than NaN/Inf.
  */
-function derivePriceImpact(amountInUsd: string, amountOutUsd: string): number | null {
+export function derivePriceImpact(amountInUsd: string, amountOutUsd: string): number | null {
   const inUsd = parseUsd(amountInUsd);
   const outUsd = parseUsd(amountOutUsd);
   if (inUsd === null || outUsd === null) return null;

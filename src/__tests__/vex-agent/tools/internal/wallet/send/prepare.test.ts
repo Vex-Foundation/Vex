@@ -16,6 +16,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { makeTestContext } from "../../../_test-context.js";
 
 const mockCreate = vi.fn().mockResolvedValue(undefined);
 const mockGetById = vi.fn();
@@ -135,22 +137,13 @@ function pendingIntent(overrides: Partial<FixtureIntent> = {}): FixtureIntent {
   };
 }
 
-function makeContext(overrides: Partial<{ sessionPermission: "restricted" | "full"; approved: boolean; sessionId: string }> = {}) {
-  return {
+function makeContext(overrides: Partial<InternalToolContext> = {}): InternalToolContext {
+  return makeTestContext({
     sessionId: SESSION_ID,
-    loadedDocuments: new Map(),
-    sessionPermission: "restricted" as const,
-    approved: false,
-    missionRunId: null,
-    missionId: null,
-    sessionKind: "agent" as const,
-    contextUsageBand: "normal" as const,
-    sourceSurface: "vex_agent" as const,
+    sourceSurface: "vex_agent",
     sourceSession: SESSION_ID,
-    walletResolution: { source: "default" as const },
-    walletPolicy: { kind: "none" as const },
     ...overrides,
-  };
+  });
 }
 
 beforeEach(() => {
@@ -162,7 +155,7 @@ beforeEach(() => {
 describe("handleWalletSendPrepare", () => {
   it("creates a DB intent row with 10-min TTL + structured preview", async () => {
     const result = await handleWalletSendPrepare(
-      { network: "eip155", chain: "base", to: "0xfedcba0987654321fedcba0987654321fedcba09", amount: "1.5" },
+      { walletFamily: "eip155", chain: "base", to: "0xfedcba0987654321fedcba0987654321fedcba09", amountIn: "1.5" },
       makeContext(),
     );
 
@@ -199,7 +192,7 @@ describe("handleWalletSendPrepare", () => {
     expect(result.preparedActionFollowUp).toEqual({
       toolName: "wallet_send_confirm",
       args: {
-        network: "eip155",
+        walletFamily: "eip155",
         intentId: createArgs.intentId,
       },
       expiresAt: createArgs.expiresAt,
@@ -212,7 +205,7 @@ describe("handleWalletSendPrepare", () => {
 
   it("rejects missing required fields", async () => {
     const result = await handleWalletSendPrepare(
-      { network: "eip155", to: "0xfed", amount: "" },
+      { walletFamily: "eip155", to: "0xfed", amountIn: "" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -221,7 +214,7 @@ describe("handleWalletSendPrepare", () => {
 
   it("rejects eip155 without chain", async () => {
     const result = await handleWalletSendPrepare(
-      { network: "eip155", to: "0xfed", amount: "1.0" },
+      { walletFamily: "eip155", to: "0xfed", amountIn: "1.0" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -231,7 +224,7 @@ describe("handleWalletSendPrepare", () => {
 
   it("rejects invalid numeric amount", async () => {
     const result = await handleWalletSendPrepare(
-      { network: "solana", to: "SoLAdr", amount: "abc" },
+      { walletFamily: "solana", to: "SoLAdr", amountIn: "abc" },
       makeContext(),
     );
     expect(result.success).toBe(false);
@@ -240,7 +233,7 @@ describe("handleWalletSendPrepare", () => {
 
   it("uses solana wallet address for solana network", async () => {
     const result = await handleWalletSendPrepare(
-      { network: "solana", to: "SoLAdr11111111111111111111111111111111", amount: "0.5" },
+      { walletFamily: "solana", to: "SoLAdr11111111111111111111111111111111", amountIn: "0.5" },
       makeContext(),
     );
     expect(mockCreate.mock.calls[0][1].walletAddress).toBe(
@@ -248,7 +241,7 @@ describe("handleWalletSendPrepare", () => {
     );
     expect(mockCreate.mock.calls[0][1].chainAlias).toBeNull();
     expect(result.preparedActionFollowUp).toMatchObject({
-      args: { network: "solana" },
+      args: { walletFamily: "solana" },
       approvalPreview: {
         criticalArgs: {
           network: "solana",

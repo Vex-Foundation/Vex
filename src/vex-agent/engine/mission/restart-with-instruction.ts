@@ -83,7 +83,13 @@ export type RestartMissionWithInstructionOutcome =
   | { readonly outcome: "lease_busy" }
   /** Draft is no longer complete, or no provider — host shows the reason. */
   | { readonly outcome: "not_ready" }
-  | { readonly outcome: "provider_unavailable" };
+  | { readonly outcome: "provider_unavailable" }
+  /**
+   * A SESSION-scoped operator Stop was outstanding when the restart tried to
+   * commit its run. Nothing was created; the Stop was applied and consumed, so
+   * a retry restarts normally.
+   */
+  | { readonly outcome: "session_stop_pending" };
 
 /**
  * Normalise the operator instruction before it becomes transcript text.
@@ -214,5 +220,7 @@ export async function restartMissionWithInstruction(
       return { outcome: "not_ready" };
     case "provider_unavailable":
       return { outcome: "provider_unavailable" };
+    case "session_stop_pending":
+      return { outcome: "session_stop_pending" };
   }
 }

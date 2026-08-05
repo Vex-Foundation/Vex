@@ -1,11 +1,11 @@
-# DexScreener Module Map — Multi-Chain DEX Analytics, Narratives & Real-Time Streams
+# DexScreener Module Map — Multi-Chain DEX Analytics & Narratives
 
 This document maps every `.ts` file in `src/tools/dexscreener/` to the data it
 provides for token research, pair analytics, trending narratives, attention
-signals, community takeovers, and real-time WebSocket streaming, plus how the
+signals, and community takeovers, plus how the
 agent reaches it.
 
-**Last updated: 2026-07-04**
+**Last updated: 2026-08-03**
 
 **LLM maintainers:** If you modify any file in this folder, update this document
 to reflect the change — add/remove endpoints, update types, fix stale references.
@@ -31,7 +31,6 @@ every token listed on any DEX with at least one transaction. The API provides:
 - **Community takeovers (CTO)**: tokens where community has reclaimed control — strong trading signal
 - **Ads**: paid promotional placements with impressions and duration
 - **Orders**: verification of paid promotional orders per token
-- **Real-time WebSocket**: streaming updates for profiles, boosts, CTOs, and ads
 
 All read-only. No wallet, signing, or API key needed.
 
@@ -55,14 +54,13 @@ Note: a bad narrative slug on `/metas/meta/v1/{slug}` returns **HTTP 500** (not
 | File | Role |
 |------|------|
 | `client.ts` | `DexScreenerClient` — 13 REST methods, singleton via `getDexScreenerClient()`. Every request runs through the throttle/cache. |
-| `throttle.ts` | `DexScreenerThrottle` — per-process token buckets (300/min + 60/min), TTL cache (fast ~8s / slow ~60s), in-flight dedupe, bounded cache, `Retry-After` honoring. |
-| `types.ts` | TypeScript interfaces: `DexPair`, `DexTokenProfile`, `DexBoost`, `DexCommunityTakeover`, `DexAd`, `DexOrder`, `DexTrendingItem`, `DexMeta`/`DexMetaDetail`, `DexProfileUpdate`, WS types |
+| `throttle.ts` | `DexScreenerThrottle` — per-process token buckets (300/min + 60/min), TTL cache (fast 30s / slow 60s), in-flight dedupe, bounded cache, `Retry-After` honoring. |
+| `types.ts` | TypeScript interfaces: `DexPair`, `DexTokenProfile`, `DexBoost`, `DexCommunityTakeover`, `DexAd`, `DexOrder`, `DexTrendingItem`, `DexMeta`/`DexMetaDetail`, `DexProfileUpdate` |
 | `validation.ts` | Barrel re-exporting the 14 documented-surface validators (pairs/search/tokens, profiles, boosts, orders, community/ads, websocket) |
 | `validation/metas.ts` | Tolerant validators for `/metas/trending/v1` and `/metas/meta/v1/{slug}` |
 | `validation/profiles.ts` | `validateProfilesResponse` + tolerant `validateProfilesRecentResponse` |
 | `validation/pairs.ts` | Pair/search/token validators; exports `parsePair` (reused by metas detail) |
 | `errors.ts` | `mapDexScreenerError()` + `mapTransportError()` — HTTP status to typed `VexError` |
-| `ws-client.ts` | `DexScreenerStream` — EventEmitter WebSocket client with auto-reconnect (5 channels) |
 
 There is **no** `src/commands/dexscreener` CLI. The agent reaches DexScreener
 exclusively through the protocol tools in
@@ -88,20 +86,13 @@ exclusively through the protocol tools in
 | `getAds()` | `GET /ads/latest/v1` | slow | documented |
 | `getOrders(chainId, address)` | `GET /orders/v1/{chainId}/{address}` | slow | documented |
 
-### WebSocket (real-time streaming, `ws-client.ts`)
+### WebSocket
 
-| Channel | WS Path | Data Type |
-|---------|---------|-----------|
-| `profiles` | `wss://api.dexscreener.com/token-profiles/latest/v1` | `DexTokenProfile` |
-| `boosts` | `wss://api.dexscreener.com/token-boosts/latest/v1` | `DexBoost` |
-| `boosts-top` | `wss://api.dexscreener.com/token-boosts/top/v1` | `DexBoost` |
-| `community-takeovers` | `wss://api.dexscreener.com/community-takeovers/latest/v1` | `DexCommunityTakeover` |
-| `ads` | `wss://api.dexscreener.com/ads/latest/v1` | `DexAd` |
-
-**WS protocol**: First message is handshake `{ limit, data: T[] }` (initial
-snapshot). Subsequent messages are individual updates. Auto-reconnect with
-exponential backoff (1s→30s) + jitter. (DexScreener has **no** price WebSocket —
-the WS surface is profiles/boosts/CTO/ads only.)
+None. `ws-client.ts` was deleted (SPEC §2.5 W2f) — it had zero importers for its
+whole life, so no tool ever streamed. The REST feeds above, throttled and cached,
+are the only DexScreener surface. The `validateWs*` parsers still exported by
+`validation.ts` are likewise consumer-free and are flagged for a separate
+dead-code pass.
 
 ---
 
@@ -112,7 +103,7 @@ Every `DexScreenerClient.request()` runs through a per-instance
 **Per-process only — no cross-process coordination.**
 
 - **Token bucket per rate class**: `fast` (300/min) for search/pairs/tokens/token-pairs, `slow` (60/min) for everything else. `acquire()` waits for a token before a fetch fires.
-- **TTL cache** keyed by the normalized request URL: `fast` ~8s, `slow` ~60s. Bounded (256 entries, oldest-first eviction).
+- **TTL cache** keyed by the normalized request URL: `fast` 30s (matches the provider's own `cache-control: max-age=30`), `slow` 60s. Bounded (256 entries, oldest-first eviction).
 - **In-flight dedupe**: concurrent identical requests share one promise (one fetch, one token).
 - **`Retry-After` honoring**: on a 429 the client calls `throttle.penalize(rateClass, ms)`, parking the whole rate class until the delay elapses.
 
@@ -336,10 +327,7 @@ via other protocols:
    dexscreener.tokenPairs (all pools, find deepest liquidity → pool address)
    dexscreener.orders (paid-promotion SPEND record — not a legitimacy signal)
 
-3. REAL-TIME MONITORING (ws-client.ts)
-   community-takeovers / boosts / profiles streams
-
-4. EXECUTE (via other protocol namespaces)
+3. EXECUTE (via other protocol namespaces)
    → Solana tokens: solana.swap.*
    → EVM tokens:    kyberswap.swap.* (and uniswap.* on Robinhood chain)
    → Cross-chain:   khalani.* / relay.*

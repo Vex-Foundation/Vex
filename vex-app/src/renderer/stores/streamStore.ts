@@ -12,9 +12,10 @@
  *
  * S4 surfaces the reasoning deltas in the working strip (`StreamingBubble`),
  * still under the same honest-ephemerality rule: the trace lives ONLY here,
- * vanishes with the preview, and is never written anywhere. Reasoning arrives
- * token-by-token, so it is batched (one state write per ~80ms window) instead
- * of thrashing React per token; see `applyDelta`.
+ * vanishes with the preview, and is never written anywhere. Reasoning AND
+ * answer text arrive token-by-token and go through ONE coalescing path (owner
+ * decree 2026-08-03) — a single flush window per session, never a second
+ * mechanism per delta kind; see `applyDelta`.
  *
  * A single response is bounded by the engine's max output tokens, so `text`
  * does not grow without bound; `reasoningText` is explicitly capped.
@@ -37,8 +38,17 @@ export type StreamWorkingStatus = "working" | "thinking" | "calling" | "writing"
 /** Keep only the newest reasoning chars: bounds memory + expanded-trace DOM on very long traces. */
 export const REASONING_TEXT_CAP = 16_384;
 
-/** Reasoning batch window — one store write per window, not per token. */
-export const REASONING_FLUSH_MS = 80;
+/**
+ * Delta coalescing window — one store write per window for EVERY streamed
+ * delta kind, not one per token.
+ *
+ * One frame (~16ms), not the old 80ms reasoning window: the flush cost is now
+ * bounded by the LIVE message alone (memoized markdown + memoized transcript
+ * rows), so the cadence can sit at the display's own rate and the stream reads
+ * as printing rather than trickling. A plain timer, not rAF, so the mechanism
+ * is identical under jsdom, a hidden window, and a live renderer.
+ */
+export const STREAM_FLUSH_MS = 16;
 
 export interface StreamPreview {
   /** Per-turn stream id; a new id resets the preview. */
@@ -225,7 +235,7 @@ export function reducePreview(
     }
     case "reasoning":
       // Pure per-delta append keeps the reducer total + unit-testable; the
-      // store path batches reasoning instead (see `applyDelta`).
+      // store path coalesces the deltas instead (see `applyDelta`).
       return appendReasoning(base, event.delta.text);
     case "usage":
       // Surfaces as the strip's "Reasoned · N tokens" summary. A usage delta
@@ -248,103 +258,131 @@ export function reducePreview(
 }
 
 /**
- * Reasoning batching: deltas accumulate here and flush into the store in ONE
- * setState per `REASONING_FLUSH_MS` window — a per-token setState would
- * re-render the transcript at provider token rate. Keyed by sessionId (one
- * live stream per session); the recorded streamId guards a flush against a
- * superseding stream. Module-level on purpose: timers are not React state and
- * must outlive individual component renders, but never the preview itself —
- * `clear` cancels them.
+ * THE ONE COALESCING PATH (owner decree 2026-08-03). Every streamed delta —
+ * reasoning and answer text alike — queues here and lands in the store as ONE
+ * setState per `STREAM_FLUSH_MS` window. There is no second, kind-specific
+ * mechanism: a per-token setState re-rendered the transcript at provider token
+ * rate, and having reasoning batched while text was not is what made the two
+ * halves of a turn behave like different products.
+ *
+ * The queue holds the EVENTS, not a merged string, so the flush replays them
+ * through the same `reducePreview` in arrival order — interleaved reasoning
+ * and text can never reorder. Keyed by sessionId (one live stream per
+ * session); the recorded streamId guards a flush against a superseding stream.
+ * Module-level on purpose: timers are not React state and must outlive
+ * individual component renders, but never the preview itself — `clear` cancels
+ * them.
  */
-interface PendingReasoning {
+interface PendingDeltas {
   readonly streamId: string;
-  text: string;
+  readonly events: StreamDeltaEvent[];
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
-const pendingReasoningBySession = new Map<string, PendingReasoning>();
+const pendingBySession = new Map<string, PendingDeltas>();
 
-function cancelPendingReasoning(sessionId: string): void {
-  const pending = pendingReasoningBySession.get(sessionId);
+/**
+ * The kinds that arrive token-by-token and are therefore worth waiting for.
+ * Every other kind (`tool_call`, `usage`, `done`, `error`, `aborted`) is a
+ * turn milestone: it queues behind whatever is buffered — so ordering still
+ * survives — and then flushes the queue SYNCHRONOUSLY, because a finalize, an
+ * abort or a tool call must be visible in the frame it happened.
+ */
+const COALESCED_KINDS: ReadonlySet<StreamDeltaEvent["delta"]["kind"]> = new Set([
+  "text",
+  "reasoning",
+]);
+
+function cancelPendingDeltas(sessionId: string): void {
+  const pending = pendingBySession.get(sessionId);
   if (pending === undefined) return;
   clearTimeout(pending.timer);
-  pendingReasoningBySession.delete(sessionId);
+  pendingBySession.delete(sessionId);
 }
 
-/** Apply the buffered reasoning text to the store in a single state write. */
-function flushPendingReasoning(sessionId: string): void {
-  const pending = pendingReasoningBySession.get(sessionId);
+/** Replay the queued deltas into the store in a single state write. */
+function flushPendingDeltas(sessionId: string): void {
+  const pending = pendingBySession.get(sessionId);
   if (pending === undefined) return;
-  cancelPendingReasoning(sessionId);
-  useStreamStore.setState((state) => ({
-    bySessionId: {
-      ...state.bySessionId,
-      [sessionId]: appendReasoning(
-        resolveBase(state.bySessionId[sessionId], pending.streamId),
-        pending.text,
-      ),
-    },
-  }));
+  cancelPendingDeltas(sessionId);
+  useStreamStore.setState((state) => {
+    let preview = state.bySessionId[sessionId];
+    for (const event of pending.events) {
+      preview = reducePreview(preview, event);
+    }
+    return { bySessionId: { ...state.bySessionId, [sessionId]: preview } };
+  });
+}
+
+/**
+ * Queue one delta for the next flush. A queue left over from a SUPERSEDED
+ * stream is dropped rather than replayed: it belongs to a stream the engine
+ * has already abandoned, and the new stream's first flush resolves its own
+ * base through `resolveBase` anyway.
+ */
+function enqueueDelta(sessionId: string, event: StreamDeltaEvent): void {
+  const pending = pendingBySession.get(sessionId);
+  if (pending !== undefined && pending.streamId === event.streamId) {
+    pending.events.push(event);
+    return;
+  }
+  cancelPendingDeltas(sessionId);
+  pendingBySession.set(sessionId, {
+    streamId: event.streamId,
+    events: [event],
+    timer: setTimeout(() => flushPendingDeltas(sessionId), STREAM_FLUSH_MS),
+  });
 }
 
 /**
  * The streamId currently OWNING this session's preview, materialized or not.
  *
- * A reasoning-only stream lives purely in the batching buffer for its first
- * `REASONING_FLUSH_MS`, with no `bySessionId` entry yet. A consumer that
- * correlates on the materialized entry alone would read "no live stream" and
- * mistake that stream's own abort for a stale one — then the buffer would
+ * A stream that has only emitted coalesced deltas lives purely in the queue
+ * for its first `STREAM_FLUSH_MS`, with no `bySessionId` entry yet. A consumer
+ * that correlates on the materialized entry alone would read "no live stream"
+ * and mistake that stream's own abort for a stale one — then the queue would
  * flush a moment later and the orphaned preview would survive to the idle
- * timer. Reading the buffer here is what makes the correlation total.
+ * timer. Reading the queue here is what makes the correlation total.
  */
 export function getLiveStreamId(sessionId: string): string | undefined {
   return (
     useStreamStore.getState().bySessionId[sessionId]?.streamId
-    ?? pendingReasoningBySession.get(sessionId)?.streamId
+    ?? pendingBySession.get(sessionId)?.streamId
   );
 }
 
-/** Test-only: drop every pending reasoning buffer + timer (isolation between tests). */
-export function __resetPendingReasoningForTests(): void {
-  for (const sessionId of [...pendingReasoningBySession.keys()]) {
-    cancelPendingReasoning(sessionId);
+/**
+ * Force the queued tail of a session's stream into the store NOW.
+ *
+ * For consumers that observe a turn boundary the store cannot see: the
+ * transcript append that persists a round arrives on its own IPC channel, and
+ * it must never overtake the deltas of the round it persists — reading the
+ * preview while the tail is still queued made the round look like it had no
+ * live stream at all, and the queue then materialized an orphan preview a
+ * frame after the clear that was supposed to retire it.
+ */
+export function flushStreamDeltas(sessionId: string): void {
+  flushPendingDeltas(sessionId);
+}
+
+/** Test-only: drop every pending delta queue + timer (isolation between tests). */
+export function __resetPendingDeltasForTests(): void {
+  for (const sessionId of [...pendingBySession.keys()]) {
+    cancelPendingDeltas(sessionId);
   }
 }
 
 export const useStreamStore = create<StreamStoreState>((set) => ({
   bySessionId: {},
   applyDelta: (sessionId, event) => {
-    if (event.delta.kind === "reasoning") {
-      const pending = pendingReasoningBySession.get(sessionId);
-      if (pending !== undefined && pending.streamId === event.streamId) {
-        pending.text += event.delta.text;
-        return; // a flush is already scheduled for this window
-      }
-      // A buffer from a superseded stream is stale — drop it; the new
-      // stream's first flush resets the preview via resolveBase anyway.
-      cancelPendingReasoning(sessionId);
-      pendingReasoningBySession.set(sessionId, {
-        streamId: event.streamId,
-        text: event.delta.text,
-        timer: setTimeout(() => flushPendingReasoning(sessionId), REASONING_FLUSH_MS),
-      });
-      return;
-    }
-    // Any non-reasoning delta forces the buffered trace into state FIRST so
-    // delta ordering survives batching (e.g. the trace a tool call follows is
-    // visible before status flips to "calling").
-    flushPendingReasoning(sessionId);
-    set((state) => ({
-      bySessionId: {
-        ...state.bySessionId,
-        [sessionId]: reducePreview(state.bySessionId[sessionId], event),
-      },
-    }));
+    enqueueDelta(sessionId, event);
+    if (COALESCED_KINDS.has(event.delta.kind)) return;
+    flushPendingDeltas(sessionId);
   },
   settleRound: (sessionId) => {
-    // Buffered reasoning belongs to the round that is closing — flush it so it
-    // lands in THAT round's segment rather than leaking into the next one.
-    flushPendingReasoning(sessionId);
+    // Queued deltas belong to the round that is closing — flush them so the
+    // trace lands in THAT round's segment rather than leaking into the next.
+    flushPendingDeltas(sessionId);
     set((state) => {
       const prev = state.bySessionId[sessionId];
       if (prev === undefined) return state;
@@ -359,8 +397,8 @@ export const useStreamStore = create<StreamStoreState>((set) => ({
     });
   },
   clear: (sessionId) => {
-    // The pending buffer + timer die with the preview — no orphan timers.
-    cancelPendingReasoning(sessionId);
+    // The pending queue + timer die with the preview — no orphan timers.
+    cancelPendingDeltas(sessionId);
     set((state) => {
       if (state.bySessionId[sessionId] === undefined) return state;
       const next = { ...state.bySessionId };

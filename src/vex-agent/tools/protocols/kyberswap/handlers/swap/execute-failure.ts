@@ -46,10 +46,22 @@ export interface PostIntentFailureInput {
   readonly plans: readonly SwapEventPlan[];
   readonly events: readonly AgentActivityEvent[];
   readonly slippage: number;
+  /**
+   * The price impact of the build this execution was signing, as a FRACTION
+   * (KyberSwap's own convention — `helpers.ts`), so a slippage refusal can put
+   * the observed impact next to the tolerance that was applied. `null` when the
+   * build carried no usable USD legs.
+   */
+  readonly observedPriceImpactFraction: number | null;
 }
 
 export async function buildPostIntentFailureResult(input: PostIntentFailureInput): Promise<ToolResult> {
   const { err, toolId, sessionId, executionId, currentIndex, legBroadcastAttempted, plans, events, slippage } = input;
+  const slippageBounds = {
+    appliedBps: slippage,
+    maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS),
+    observedPriceImpactFraction: input.observedPriceImpactFraction,
+  };
 
   // C18: the intent already exists — never call failPreBroadcast (that
   // would create a SECOND execution). Abort every planned row from the
@@ -101,7 +113,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
           // Chain-controlled text through this venue's single scrub boundary (C37).
           revertReason: kyberFailureMessage(toolId, poolState.revertReason),
           failureCode: poolState.failureCode,
-          slippage: { appliedBps: slippage, maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS) },
+          slippage: slippageBounds,
         })} Recorded as execution ${executionId}.`,
         data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: poolState.failureCode },
       };
@@ -128,7 +140,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
       output: `${toolId}: the ${refusedRole} step was refused before signing. ${preSignRefusalGuidance({
         revertReason: safeRevertReason,
         failureCode: preSignRevert.failureCode,
-        slippage: { appliedBps: slippage, maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS) },
+        slippage: slippageBounds,
       })} Recorded as execution ${executionId}.${revealSuffix}`,
       data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: preSignRevert.failureCode },
     };

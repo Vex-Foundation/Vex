@@ -55,6 +55,7 @@ function args() {
     sessionId: "00000000-0000-4000-8000-0000000000b1",
     missionRunId: "00000000-0000-4000-8000-0000000000d1",
     runStatus: "stopped" as const,
+    scope: "run" as const,
     toolCallId: "call-1",
     continuation: CONTINUATION,
   };

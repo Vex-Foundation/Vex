@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   retryWithBackoff,
-  withTimeout,
   isRetryableError,
 } from "../../../vex-agent/inference/resilience.js";
 
@@ -69,37 +68,6 @@ describe("retryWithBackoff", () => {
     // With jitter, delay should be at least baseDelayMs but bounded
     expect(elapsed).toBeGreaterThanOrEqual(5);
     expect(calls).toBe(2);
-  });
-});
-
-describe("withTimeout", () => {
-  it("resolves when promise completes before timeout", async () => {
-    const result = await withTimeout(
-      Promise.resolve("fast"),
-      1000,
-      "test",
-    );
-    expect(result).toBe("fast");
-  });
-
-  it("rejects when promise exceeds timeout", async () => {
-    await expect(
-      withTimeout(
-        new Promise((r) => setTimeout(r, 5000)),
-        50,
-        "slow-op",
-      ),
-    ).rejects.toThrow("slow-op timed out after 0.05s");
-  });
-
-  it("propagates original error when promise rejects before timeout", async () => {
-    await expect(
-      withTimeout(
-        Promise.reject(new Error("original")),
-        5000,
-        "test",
-      ),
-    ).rejects.toThrow("original");
   });
 });
 

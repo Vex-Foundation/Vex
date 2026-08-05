@@ -112,7 +112,7 @@ function applyStopGate() {
  * `withSessionControlLock`. Only `dispatch-slot-gate.ts` acquires the lock on
  * its own transaction, so this is the one unambiguous marker for it.
  */
-const mockAcquireSessionControlLock = vi.fn(async () => {
+const mockAcquireSessionControlLock = vi.fn(async (..._args: unknown[]) => {
   order.push("pre_dispatch_stop_gate");
 });
 const mockGateOnOperatorStopTransaction = vi.fn(async () => {

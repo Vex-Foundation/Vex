@@ -27,6 +27,7 @@
  */
 
 import type {
+  Account,
   Address,
   Chain,
   Hex,
@@ -46,6 +47,7 @@ import {
   estimateGasForPlanLeg,
   type ConfirmedPriorLeg,
 } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import { describeFailureForLog } from "../../utils/error-summary.js";
 
 export interface StagedTxParams {
   readonly to: Address;
@@ -63,7 +65,18 @@ export interface StagedSendHandles {
 export type StagedBroadcastOutcome =
   | { readonly kind: "confirmed"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
   | { readonly kind: "reverted"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
-  | { readonly kind: "ambiguous"; readonly txHash: Hex; readonly stage: "send" | "confirm" };
+  | {
+      readonly kind: "ambiguous";
+      readonly txHash: Hex;
+      readonly stage: "send" | "confirm";
+      /**
+       * The sanitized reason the stage could not be resolved (SPEC §1.5).
+       * Ambiguity is still ambiguity — this NEVER terminalizes the row — but
+       * "the RPC rate-limited us" and "not mined yet" led to the same silent
+       * `pending` before, and only one of them is worth retrying the READ for.
+       */
+      readonly reason: string;
+    };
 
 export interface StagedBroadcastHooks {
   /**
@@ -92,16 +105,23 @@ export interface StagedBroadcastHooks {
  * (`dependent-leg-gas-estimate.ts`); omitting it keeps the single-shot
  * estimate. Either way a leg whose estimate never succeeds is still refused
  * before anything is signed.
+ *
+ * `walletClient` is typed `WalletClient<Transport, Chain, Account>` — an
+ * ACCOUNT-BOUND client, required at the TYPE level. This is a compile-time
+ * guarantee, not a runtime signal: an accountless client cannot reach the
+ * signer at all, so there is no state in which this function has to decide what
+ * to do about a missing account mid-flight. It replaces a `walletClient.account!`
+ * non-null assertion that asserted the same invariant without proving it.
  */
 export async function signStageBroadcast(
   publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain, Account>,
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
 ): Promise<StagedBroadcastOutcome> {
-  const account = walletClient.account!;
+  const account = walletClient.account;
   const value = txParams.value ?? 0n;
 
   // Estimated explicitly rather than left to `prepareTransactionRequest`,
@@ -145,8 +165,8 @@ export async function signStageBroadcast(
 
   try {
     await publicClient.sendRawTransaction({ serializedTransaction });
-  } catch {
-    return { kind: "ambiguous", txHash, stage: "send" };
+  } catch (err) {
+    return { kind: "ambiguous", txHash, stage: "send", reason: describeFailureForLog(err) };
   }
 
   // Best-effort bookkeeping (per this function's contract) — a throw here
@@ -167,7 +187,7 @@ export async function signStageBroadcast(
     return receipt.status === "success"
       ? { kind: "confirmed", txHash, receipt }
       : { kind: "reverted", txHash, receipt };
-  } catch {
-    return { kind: "ambiguous", txHash, stage: "confirm" };
+  } catch (err) {
+    return { kind: "ambiguous", txHash, stage: "confirm", reason: describeFailureForLog(err) };
   }
 }

@@ -42,6 +42,7 @@ function makeManifest(overrides: Partial<ProtocolToolManifest> = {}): ProtocolTo
     lifecycle: "active",
     description: "Get token pair analytics.",
     mutating: false,
+    actionKind: "read",
     params: [{ key: "tokenAddress", type: "string", required: true, description: "Token address." }],
     exampleParams: { tokenAddress: "0x123" },
     ...overrides,

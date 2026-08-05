@@ -70,6 +70,11 @@ function entry(overrides: Record<string, unknown> = {}): unknown {
     legs: [],
     providerOrderId: null,
     lastCheckedAt: null,
+    // Wave P — DERIVED, never a stored status. Default fixture is a row we have
+    // had no trouble verifying.
+    stalledVerification: false,
+    stalledReason: null,
+    pendingReason: null,
     ...overrides,
   };
 }

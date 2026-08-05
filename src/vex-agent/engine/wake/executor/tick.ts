@@ -13,17 +13,16 @@ export type ClaimedWakeOutcome =
   | { kind: "resumed"; runId: string }
   | { kind: "agent_session_continued"; sessionId: string }
   /**
-   * The session lease was held by unrelated work, so a REPLACEMENT wake was
-   * enqueued with backoff. The continuation is not lost — this is the outcome
-   * that used to be `skipped_claim_lost`, which silently dropped it.
+   * The session lease was held by unrelated work. The SAME pending row stays
+   * pending with a pushed-out `due_at` and incremented attempt metadata —
+   * nothing was consumed and nothing was lost. `attempt` is telemetry only; the
+   * retry is unbounded by design and only the DELAY is bounded.
    */
   | {
-      kind: "rescheduled_lease_busy";
+      kind: "deferred_lease_busy";
       sessionId: string;
       attempt: number;
       dueAt: string;
-      /** False only when the gate refused (session stopped while backing off). */
-      scheduled: boolean;
     }
   | { kind: "skipped_stale_status"; currentStatus: string }
   | { kind: "skipped_claim_lost" }
@@ -38,9 +37,22 @@ export interface ClaimedWake {
 // ── Pure tick ──────────────────────────────────────────────────────
 
 /**
- * Run a single executor pass. Returns every claimed row with its outcome so
- * callers (scheduler loop, tests, health endpoints) can observe what the
- * executor actually did.
+ * Run a single executor pass. Returns every row this pass acted on with its
+ * outcome so callers (scheduler loop, tests, health endpoints) can observe what
+ * the executor actually did.
+ *
+ * TWO reads, because the two wake shapes are claimed differently:
+ *
+ *   - MISSION-SCOPED rows are consumed by the batch `claimDue`, whose
+ *     `FOR UPDATE SKIP LOCKED` exactly-once contract is unchanged;
+ *   - SESSION-SCOPED rows are only LISTED here. Each is then claimed atomically
+ *     under the session control lock (`claim-session-wake.ts`), which is why
+ *     this read must be non-destructive: the session identity has to be known
+ *     before the per-session lock can be taken.
+ *
+ * A listed candidate is not a claim. Every one of them is revalidated under the
+ * lock, so a row cancelled by an operator Stop between the two simply yields
+ * `skipped_claim_lost`.
  */
 export async function tick(
   now: Date,
@@ -52,12 +64,15 @@ export async function tick(
   // skip the entire pass (no row consumed) when provider config is absent.
   if (!deps.isProviderReady()) return [];
 
-  const claimed = await deps.claimDue(now, limit);
+  const claimed = [
+    ...await deps.claimDue(now, limit),
+    ...await deps.listDueSessionWakes(now, limit),
+  ];
   const results: ClaimedWake[] = [];
 
   for (const wake of claimed) {
     try {
-      const outcome = await handleClaimed(wake, deps);
+      const outcome = await handleClaimed(wake, deps, now);
       results.push({ wake, outcome });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

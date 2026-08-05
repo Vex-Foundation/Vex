@@ -244,7 +244,7 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
 // and the signed execution, and a live funded exit left 5 shares
 // (0.000005 USDC) stranded. Redeeming the position's exact current share
 // balance is therefore the only dust-free exit, which is what `withdrawAll`
-// selects. The params are a STRICT XOR (exactly one of `amount` /
+// selects. The params are a STRICT XOR (exactly one of `amountRaw` /
 // `withdrawAll: true`) so the agent can never express "some amount, and also
 // everything" and have one half silently win.
 
@@ -258,7 +258,7 @@ type EarnWithdrawIntentResolution =
   | { readonly ok: false; readonly result: ToolResult };
 
 function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawIntentResolution {
-  const amount = str(p, "amount");
+  const amount = str(p, "amountRaw");
   const withdrawAll = bool(p, "withdrawAll");
 
   // `withdrawAll: false` is rejected BY NAME rather than treated as absent.
@@ -269,7 +269,7 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
       ok: false,
       result: fail(
         "solana.lend.withdraw: withdrawAll: false is not a valid instruction. Omit withdrawAll entirely and "
-        + "pass amount (raw atomic units) to withdraw part of the position, or pass withdrawAll: true to exit it fully.",
+        + "pass amountRaw (raw atomic units) to withdraw part of the position, or pass withdrawAll: true to exit it fully.",
       ),
     };
   }
@@ -277,8 +277,8 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
     return {
       ok: false,
       result: fail(
-        "solana.lend.withdraw: pass exactly one of amount or withdrawAll: true — both were provided. Drop "
-        + "withdrawAll to withdraw exactly amount, or drop amount to exit the whole position.",
+        "solana.lend.withdraw: pass exactly one of amountRaw or withdrawAll: true — both were provided. Drop "
+        + "withdrawAll to withdraw exactly amountRaw, or drop amountRaw to exit the whole position.",
       ),
     };
   }
@@ -287,7 +287,7 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
   return {
     ok: false,
     result: fail(
-      "solana.lend.withdraw: pass exactly one of amount (raw atomic units — see solana.lend.positions for the "
+      "solana.lend.withdraw: pass exactly one of amountRaw (raw atomic units — see solana.lend.positions for the "
       + "balance) or withdrawAll: true (exit the whole position). Neither was provided.",
     ),
   };
@@ -411,8 +411,8 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     return ok({ positions, earnings: earningsResult?.earnings ?? [] });
   },
   "solana.lend.deposit": async (p, ctx) => {
-    const asset = str(p, "asset"), amount = str(p, "amount");
-    if (!asset || !amount) return fail("Missing required: asset, amount");
+    const asset = str(p, "asset"), amount = str(p, "amountRaw");
+    if (!asset || !amount) return fail("Missing required: asset, amountRaw");
     const sessionId = ctx.sessionId;
     if (!sessionId) return fail("solana.lend.deposit requires an active session.");
     // Resolve owner + signer BEFORE any provider call (5D-protocols p2) so a

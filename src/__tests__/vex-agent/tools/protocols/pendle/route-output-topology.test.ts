@@ -93,7 +93,7 @@ vi.mock("@tools/pendle/evm-client.js", () => ({
   }),
 }));
 
-const mockEnsureAllowance = vi.fn(async () => undefined);
+const mockEnsureAllowance = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("@tools/pendle/erc20.js", () => ({
   ensurePendleAllowanceExact: (...a: unknown[]) => mockEnsureAllowance(...a),
 }));
@@ -121,7 +121,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
  * `recordPendle*Prequote` runs and this suite proves the authorization is never
  * written, rather than proving a stub was not called.
  */
-const mockPrequoteCreate = vi.fn(async () => undefined);
+const mockPrequoteCreate = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("@vex-agent/db/repos/swap-prequotes.js", () => ({
   create: (...a: unknown[]) => mockPrequoteCreate(...a),
   existsFreshFailByMatch: vi.fn(async () => false),
@@ -183,7 +183,7 @@ const POISONED_DRY_RUNS: Array<{
   {
     toolId: "pendle.sy.mint",
     run: (p) => PENDLE_SY_HANDLERS["pendle.sy.mint"]!(p, ctx),
-    params: { chain: "ethereum", sy: SY, token: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
+    params: { chain: "ethereum", sy: SY, tokenIn: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
     stage: () => mockConvert.mockResolvedValue(poisoned("mintSy")),
   },
   {
@@ -233,7 +233,7 @@ describe("the same responses UNPOISONED still authorize — the guard is not a b
   it("pendle.sy.mint records its prequote on the provider's own capture", async () => {
     mockConvert.mockResolvedValue(mutableConvertFixture(F.mintSy));
     const res = (await PENDLE_SY_HANDLERS["pendle.sy.mint"]!(
-      { chain: "ethereum", sy: SY, token: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
+      { chain: "ethereum", sy: SY, tokenIn: WSTETH, amountIn: "1", slippageBps: 100, dryRun: true },
       ctx,
     )) as Res;
     expect(res.success).toBe(true);

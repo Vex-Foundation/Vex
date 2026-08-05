@@ -1,5 +1,6 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_LP_DISCOVERY } from "../../embeddings/pendle/lp.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CHAIN_PARAM = {
   key: "chain",
@@ -31,7 +32,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "tokenIn", type: "string", description: "ADD only: the payment token CONTRACT ADDRESS to deposit (ERC-20; use WETH for ETH)." },
       { key: "tokenOut", type: "string", description: "REMOVE only: the output token CONTRACT ADDRESS. Defaults to the market's underlying asset." },
       { key: "amountIn", type: "string", required: true, description: "Human-readable amount — add: the payment token amount; remove: the LP token amount to burn." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
     ],
     exampleParams: { chain: "ethereum", direction: "add", market: "0x34280882267ffa6383b363e278b027be083bbe3b", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1" },
     discovery: PENDLE_LP_DISCOVERY["pendle.lp.quote"],
@@ -49,10 +50,10 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
       MARKET_PARAM,
       { key: "tokenIn", type: "string", required: true, description: "The payment token CONTRACT ADDRESS to deposit (ERC-20; use WETH for ETH)." },
       { key: "amountIn", type: "string", required: true, description: "Amount of the payment token in human-readable units." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
       { key: "dryRun", type: "boolean", description: "Preview without executing." },
     ],
-    exampleParams: { chain: "ethereum", market: "0x34280882267ffa6383b363e278b027be083bbe3b", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1", slippageBps: 50 },
+    exampleParams: { chain: "ethereum", market: "0x34280882267ffa6383b363e278b027be083bbe3b", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: PENDLE_LP_DISCOVERY["pendle.lp.add"],
   },
   {
@@ -68,10 +69,10 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
       MARKET_PARAM,
       { key: "tokenOut", type: "string", description: "The output token CONTRACT ADDRESS. Defaults to the market's underlying asset." },
       { key: "amountIn", type: "string", required: true, description: "Amount of the LP token to remove in human-readable units." },
-      { key: "slippageBps", type: "number", unit: "bps", description: "Slippage tolerance in basis points (default 50)." },
+      { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
       { key: "dryRun", type: "boolean", description: "Preview without executing." },
     ],
-    exampleParams: { chain: "ethereum", market: "0x34280882267ffa6383b363e278b027be083bbe3b", amountIn: "1", slippageBps: 50 },
+    exampleParams: { chain: "ethereum", market: "0x34280882267ffa6383b363e278b027be083bbe3b", amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: PENDLE_LP_DISCOVERY["pendle.lp.remove"],
   },
 ];

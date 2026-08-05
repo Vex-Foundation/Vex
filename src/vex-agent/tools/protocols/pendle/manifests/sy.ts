@@ -6,13 +6,15 @@
  * Router fallback pays out. `pendle.sy.redeem` is therefore THE recovery path for
  * that fallback: the two descriptions name each other on purpose.
  *
- * Both tools take the corpus rank-8 param set (chain, sy, token, amountIn,
+ * Both tools take the corpus rank-8 param set (chain, sy, the direction's token
+ * leg — `tokenIn` on the mint, `tokenOut` on the redeem — amountIn,
  * slippageBps, dryRun) and use the DRY-RUN-IN-TOOL prequote pattern: one toolId
  * both quotes and executes. See `../handlers/sy-prequote.ts`.
  */
 
 import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_SY_DISCOVERY } from "../../embeddings/pendle/sy.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CHAIN_PARAM = {
   key: "chain",
@@ -34,7 +36,7 @@ const SLIPPAGE_PARAM = {
   type: "number" as const,
   unit: "bps" as const,
   description:
-    "Slippage tolerance in whole basis points (default 50 = 0.50%; maximum 1000 = 10%). A fractional, negative or larger value is REJECTED, never clamped. The dry run and the execute must pass the SAME value (or omit it on both).",
+    `Slippage tolerance in whole basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%; maximum 1000 = 10%). A fractional, negative or larger value is REJECTED, never clamped. The dry run and the execute must pass the SAME value (or omit it on both).`,
 };
 
 const DRY_RUN_PARAM = {
@@ -57,10 +59,10 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
       CHAIN_PARAM,
       SY_PARAM,
       {
-        key: "token",
+        key: "tokenIn",
         type: "string",
         required: true,
-        description: "The payment token CONTRACT ADDRESS to wrap (ERC-20; pass the chain's wrapped-native token for native exposure).",
+        description: "The payment token CONTRACT ADDRESS to wrap — the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
       },
       { key: "amountIn", type: "string", required: true, description: "Amount of the payment token in human-readable units." },
       SLIPPAGE_PARAM,
@@ -69,9 +71,9 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
     exampleParams: {
       chain: "ethereum",
       sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
-      token: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+      tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
-      slippageBps: 50,
+      slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       dryRun: true,
     },
     discovery: PENDLE_SY_DISCOVERY["pendle.sy.mint"],
@@ -88,10 +90,10 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
       CHAIN_PARAM,
       SY_PARAM,
       {
-        key: "token",
+        key: "tokenOut",
         type: "string",
         required: true,
-        description: "The output token CONTRACT ADDRESS to receive (ERC-20; pass the chain's wrapped-native token for native exposure).",
+        description: "The token CONTRACT ADDRESS to receive — the OUTPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
       },
       { key: "amountIn", type: "string", required: true, description: "Amount of SY to unwrap, in human-readable units." },
       SLIPPAGE_PARAM,
@@ -100,9 +102,9 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
     exampleParams: {
       chain: "ethereum",
       sy: "0xcbc72d92b2dc8187414f6734718563898740c0bc",
-      token: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+      tokenOut: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
       amountIn: "1",
-      slippageBps: 50,
+      slippageBps: VEX_DEFAULT_SLIPPAGE_BPS,
       dryRun: true,
     },
     discovery: PENDLE_SY_DISCOVERY["pendle.sy.redeem"],

@@ -89,7 +89,7 @@ export async function buildBridgeIdentity(
   const toChain = bridgeStr(params, "toChain");
   const fromToken = bridgeStr(params, "fromToken");
   const toToken = bridgeStr(params, "toToken");
-  const amount = bridgeStr(params, "amount");
+  const amount = bridgeStr(params, "amountRaw");
   if (!fromChain || !toChain || !fromToken || !toToken || !amount) {
     throw new VexError(ErrorCodes.AGENT_VALIDATION_ERROR, "Bridge identity missing required field.");
   }
@@ -159,9 +159,11 @@ export async function buildBridgeIdentity(
     // Khalani has NO slippage surface — `khalani.bridge` accepts no
     // `slippageBps` and forwards none, so the identity binds the stable empty
     // on BOTH sides and Khalani quote↔execute pairs collide exactly as before.
-    // (The generic `bridge` alias declares a `slippageBps` arg, but documents
-    // it as "Relay-only ... Ignored on the Khalani path" and the Khalani
-    // handler never reads it.)
+    // (The generic `bridge`/`bridge_quote` aliases declare a `slippageBps` arg
+    // for their Relay branch; on the Khalani branch it is REJECTED BY NAME —
+    // Khalani is filler-bound and the param would have had no effect, so
+    // accepting it silently told the agent it had bought price protection it
+    // did not have.)
     slippageBps: "",
   };
 }

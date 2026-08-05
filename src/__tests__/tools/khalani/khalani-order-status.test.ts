@@ -114,6 +114,51 @@ describe("pollKhalaniOrderToTerminal — bounded 5s/24 poll", () => {
     }
   });
 
+  // REAL timers deliberately: with a signal, `delay` is backed by
+  // `node:timers/promises`, which vitest's fake timers do NOT intercept. These
+  // assert real elapsed wall clock, which is also what the decree is about.
+  describe("operator Stop", () => {
+    it("returns {kind:'aborted'} in well under a second, without reading the status API", async () => {
+      mockGetOrderById.mockResolvedValue({ status: "deposited" });
+      const controller = new AbortController();
+      controller.abort();
+
+      const startedAt = Date.now();
+      const result = await pollKhalaniOrderToTerminal("o1", controller.signal);
+
+      expect(result).toEqual({ kind: "aborted", lastObserved: null });
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+      // Not a single provider call: the window never opened.
+      expect(mockGetOrderById).not.toHaveBeenCalled();
+    });
+
+    it("aborts DURING the window instead of serving out the 120s budget", async () => {
+      mockGetOrderById.mockResolvedValue({ status: "deposited" });
+      const controller = new AbortController();
+      setTimeout(() => { controller.abort(); }, 10);
+
+      const startedAt = Date.now();
+      const result = await pollKhalaniOrderToTerminal("o1", controller.signal);
+
+      // The bespoke loop this replaced could only land at the next 5s boundary,
+      // and at worst cost the full two minutes.
+      expect(result).toEqual({ kind: "aborted", lastObserved: null });
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+    });
+
+    it("keeps the no-signal path unchanged (nothing to cancel, byte-identical cadence)", async () => {
+      vi.useFakeTimers();
+      try {
+        mockGetOrderById.mockResolvedValueOnce({ status: "filled" });
+        const promise = pollKhalaniOrderToTerminal("o1");
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(await promise).toEqual({ kind: "terminal", status: "filled" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("returns {kind:'unavailable'} when NO poll ever succeeds (status API outage, never a synthetic 'created')", async () => {
     vi.useFakeTimers();
     try {

@@ -106,14 +106,14 @@ describe("swap_execute alias — EVM / Solana routing (KyberSwap-only, no side/b
     });
   });
 
-  it("Solana → solana.swap.execute with amountIn translated to a numeric amount", async () => {
+  it("Solana → solana.swap.execute with the SAME keys (W5a)", async () => {
     await dispatchTool(
       { name: "swap_execute", args: { chain: "solana", tokenIn: "SOL", tokenOut: "USDC", amountIn: "1.5", slippageBps: 50 }, toolCallId: "c2" },
       ctx(),
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ toolId: string; params: Record<string, unknown> }];
     expect(req.toolId).toBe("solana.swap.execute");
-    expect(req.params).toEqual({ inputToken: "SOL", outputToken: "USDC", amount: 1.5, slippageBps: 50 });
+    expect(req.params).toEqual({ tokenIn: "SOL", tokenOut: "USDC", amountIn: "1.5", slippageBps: 50 });
   });
 
   it("unknown chain (neither Kyber nor Uniswap) → clear reject, NO dispatch", async () => {

@@ -70,6 +70,7 @@ function escalatingArgs(missionRunId: string | null) {
     sessionId: "s1",
     missionRunId,
     turnBand: "critical" as const,
+    sessionPermission: "restricted" as const,
     skipCriticalCheckNextIter: false,
     // One below the max, so this call is the escalating one.
     criticalNoopCounter: COMPACT_MAX_CONSECUTIVE_NOOPS - 1,

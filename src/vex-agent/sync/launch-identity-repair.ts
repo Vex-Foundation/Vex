@@ -107,7 +107,27 @@ export interface LaunchReceiptIdentity {
  */
 export type LaunchReceiptOutcome =
   | { readonly kind: "created"; readonly identity: LaunchReceiptIdentity }
-  | { readonly kind: "reverted" };
+  | { readonly kind: "reverted" }
+  /**
+   * NO NODE CAN ACCOUNT FOR THIS HASH: no receipt, and another transaction from
+   * the same wallet has already used its nonce. The owner's live case — a launch
+   * hash still unknown to the RPC ~24 h after broadcast, reported by this sweep
+   * exactly like "not mined yet" and therefore re-checked forever.
+   *
+   * IT IS NOT A FAILURE AND IT IS NOT TERMINAL HERE. It establishes only that
+   * THIS hash has no receipt; a replacement reusing the nonce may have carried
+   * the same calldata and created the token, and correlating that is strictly
+   * more work than this sweep does.
+   *
+   * WHY THIS SWEEP DOES NOT TERMINALIZE IT. The `superseded_unproven` transition
+   * is CLAIM FENCED — `markSupersededUnproven` requires the pending lane's
+   * `evm_claim_token` — and the launch's sibling `agent_activity` row is already
+   * covered by that lane, which holds the claim and owns both A6 clocks. A
+   * second writer for one terminal transition is exactly the stale-over-fresh
+   * race the fence exists to prevent. So this sweep CLASSIFIES, and the lane
+   * TERMINALIZES.
+   */
+  | { readonly kind: "superseded" };
 
 export interface LaunchIdentityRepairDeps {
   /**
@@ -118,6 +138,14 @@ export interface LaunchIdentityRepairDeps {
    * `null` means "no answer yet" — not yet mined, a transient RPC error, an
    * unreadable receipt, or a SUCCESSFUL receipt with no decodable
    * `TokenCreated`. All of those leave the intent `broadcast_pending`.
+   *
+   * THE NOT-YET-MINED CASE MAY ALSO THROW, and that is the ordinary shape: viem
+   * raises `TransactionReceiptNotFoundError` for a hash with no receipt, so the
+   * commonest healthy answer arrives as an exception. `lookupOutcome` classifies
+   * it — the sweep's control flow is the same quiet `null` either way, but the
+   * OBSERVABILITY differs: not-yet-mined is silent, everything else warns once.
+   * A launch broadcast four minutes ago is not an incident, and logging it as
+   * one every 30 s forever is what buried the real failures.
    */
   readonly resolveLaunchOutcome: (
     input: LaunchReceiptLookupInput,
@@ -147,6 +175,21 @@ export async function repairLaunchIdentities(
   for (const intent of candidates) {
     const outcome = await lookupOutcome(deps, intent);
     if (outcome === null) {
+      stillPending++;
+      continue;
+    }
+
+    if (outcome.kind === "superseded") {
+      // Said ONCE per pass at `info`, never `warn`: this is a diagnosis, not an
+      // incident, and warning about it every thirty seconds forever is the
+      // runaway loop this workstream exists to end. The prose claims only what
+      // the observation established.
+      logger.info("trench.launch_identity_repair.superseded", {
+        intentId: intent.intentId,
+        chainId: intent.chainId,
+        hint: "another transaction from this wallet used this one's nonce and this hash has no receipt; "
+          + "what the replacement did has NOT been checked. The pending lane owns the terminal transition.",
+      });
       stillPending++;
       continue;
     }
@@ -261,9 +304,15 @@ async function lookupOutcome(
       walletAddress: intent.walletAddress,
     });
     if (outcome === null) return null;
-    if (outcome.kind === "reverted") return outcome;
+    if (outcome.kind === "reverted" || outcome.kind === "superseded") return outcome;
     return outcome.identity.tokenAddress.length > 0 ? outcome : null;
   } catch (err) {
+    if (isReceiptNotFound(err)) {
+      // NOT YET MINED — the sweep's most common and most ordinary answer, and
+      // not a failure of anything. It stays a quiet `null`, as this module's
+      // dependency contract has always said it should.
+      return null;
+    }
     logger.warn("trench.launch_identity_repair.lookup_failed", {
       intentId: intent.intentId,
       chainId: intent.chainId,
@@ -274,6 +323,19 @@ async function lookupOutcome(
     });
     return null;
   }
+}
+
+/**
+ * viem's `TransactionReceiptNotFoundError`, identified by its stable `name`.
+ *
+ * NEVER by its message: that string embeds the RPC URL, so a message match would
+ * be both fragile and a reason to handle provider text where none is needed.
+ * Classified HERE rather than inside the production dep so an INJECTED dep that
+ * throws the same error behaves identically — otherwise the tests and production
+ * would disagree about the sweep's noisiest path.
+ */
+function isReceiptNotFound(err: unknown): boolean {
+  return err instanceof Error && err.name === "TransactionReceiptNotFoundError";
 }
 
 /**
@@ -301,9 +363,20 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
       );
       const { TRENCH_DIAMOND_ADDRESS } = await import("@tools/trench-express/constants.js");
 
-      const receipt = await getLocalPublicClient(chain).getTransactionReceipt({
-        hash: txHash as `0x${string}`,
-      });
+      const client = getLocalPublicClient(chain);
+
+      let receipt;
+      try {
+        receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      } catch (err) {
+        // NO RECEIPT. Before this, every such answer was the same quiet `null` —
+        // "not mined yet" — which is why the owner's launch was re-checked for a
+        // day without anyone learning that its nonce had already been consumed.
+        // Ask the SECOND question exactly when the first one misses.
+        if (!isReceiptNotFound(err)) throw err;
+        return await classifyMissingLaunchReceipt(client, txHash);
+      }
+
       const status: unknown = receipt.status;
       if (status === "reverted") return { kind: "reverted" };
       if (status !== "success") return null;
@@ -323,6 +396,46 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
       return decoded === null ? null : { kind: "created", identity: { tokenAddress: decoded.tokenAddress } };
     },
   };
+}
+
+/**
+ * A launch hash with NO receipt: is it waiting, or has its nonce already been
+ * consumed by something else?
+ *
+ * The nonce is NOT on `token_launch_intents` (migration 062 stores only
+ * `tx_hash`, `wallet_address`, `chain_id`), so it is read from the sibling
+ * `agent_activity` row that `markActivityBroadcast` staged. That is a lookup, not
+ * an inference, and a missing sender or nonce yields `null` — "still waiting" —
+ * because supersession is never guessed.
+ *
+ * The whole check runs under the SAME whole-observation deadline the pending
+ * lane uses, through the EIP-1193 `request` that actually honours a signal.
+ */
+async function classifyMissingLaunchReceipt(
+  client: unknown,
+  txHash: string,
+): Promise<LaunchReceiptOutcome | null> {
+  const { asJsonRpcClient, observeEvmTransaction } = await import(
+    "./agent-activity-repair/observation.js"
+  );
+  const { findBroadcastSenderByTxHash } = await import("@vex-agent/db/repos/agent-activity.js");
+
+  const jsonRpc = asJsonRpcClient(client);
+  if (!jsonRpc) return null;
+  const sender = await findBroadcastSenderByTxHash(txHash);
+
+  const observation = await observeEvmTransaction(jsonRpc, {
+    chainId: 0, // unused by the observation; the client is already chain-bound
+    txHash,
+    fromAddress: sender?.fromAddress ?? null,
+    nonce: sender?.nonce ?? null,
+  });
+
+  // ONLY a proven supersession is reported. `in_mempool`, `unknown_to_node` and
+  // `rpc_error` all stay the quiet `null` this sweep's contract has always
+  // promised for "no answer yet" — none of them establishes anything about the
+  // launch, and this sweep must never terminalize on ambiguity.
+  return observation.kind === "nonce_superseded" ? { kind: "superseded" } : null;
 }
 
 function requireTxHash(intent: TokenLaunchIntent): string {

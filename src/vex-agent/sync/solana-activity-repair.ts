@@ -77,6 +77,7 @@ import {
   confirmActivityEventStatusOnly,
   failActivityEvent,
   touchLastChecked,
+  clearVerificationStall,
   listSolanaStagedPending,
   recoverStaleHashlessIntents,
   HASHLESS_INTENT_RECOVERY_LEASE_MS,
@@ -184,18 +185,56 @@ export async function repairPendingSolanaActivity(
   const candidates = await listSolanaStagedPending(SOLANA_SWEEP_BATCH_LIMIT);
   const now = Date.now();
   const due = candidates.filter((event) => event.txHash && isSolanaSweepCandidateDue(event, now));
+  const notDue = candidates.length - due.length;
+
+  const batch = await resolveSolanaPendingRows(due, deps, now);
+
+  return {
+    recovered: recovered.length,
+    checked: due.length,
+    confirmed: batch.confirmed,
+    failed: batch.failed,
+    stillPending: notDue + batch.stillPending,
+  };
+}
+
+export interface SolanaBatchResolution {
+  readonly confirmed: number;
+  readonly failed: number;
+  readonly stillPending: number;
+}
+
+/**
+ * Resolve a BATCH of staged Solana rows — the sweep's entire per-row policy,
+ * extracted so the Wave P fast lane asks the chain exactly the same question,
+ * through exactly the same deps, and terminalizes under exactly the same rules.
+ *
+ * Batching is preserved across both callers, and is why this takes a list rather
+ * than a row: `getSignatureStatuses` accepts an array, so one cycle costs ONE
+ * RPC round trip however many lanes are due. A per-row fast lane that called
+ * this once per row would multiply Solana RPC load by the lane count — exactly
+ * the load risk the fast-lane design bounds everywhere else.
+ *
+ * The caller selects which rows are due; this function owns what an observation
+ * means. Every row it cannot resolve still gets `touchLastChecked`, so the
+ * global sweep's fairness ordering stays honest even when the fast lane is the
+ * one doing the looking.
+ */
+export async function resolveSolanaPendingRows(
+  due: readonly AgentActivityEvent[],
+  deps: SolanaActivitySweepDeps,
+  nowMs: number,
+): Promise<SolanaBatchResolution> {
+  if (due.length === 0) return { confirmed: 0, failed: 0, stillPending: 0 };
+
   let confirmed = 0;
   let failed = 0;
-  let stillPending = candidates.length - due.length;
-
-  if (due.length === 0) {
-    return { recovered: recovered.length, checked: 0, confirmed, failed, stillPending };
-  }
+  let stillPending = 0;
 
   const statuses = await deps.getSignatureStatuses(due.map((event) => event.txHash!));
 
   for (const [index, event] of due.entries()) {
-    if (isSolanaSweepEscalated(event, now)) {
+    if (isSolanaSweepEscalated(event, nowMs)) {
       logger.warn("solana_activity_repair.long_pending_escalation", {
         id: event.id,
         protocol: event.protocol,
@@ -211,7 +250,7 @@ export async function repairPendingSolanaActivity(
     // — logged in logDuplicateCas already; never double-counted here.
   }
 
-  return { recovered: recovered.length, checked: due.length, confirmed, failed, stillPending };
+  return { confirmed, failed, stillPending };
 }
 
 /** Project the batched lookup onto ONE row. A short/absent entry is ambiguity, never absence. */
@@ -241,7 +280,7 @@ async function processSolanaCandidate(
     // would reselect the same oldest `SOLANA_SWEEP_BATCH_LIMIT` rows every tick
     // forever and starve every newer pending row behind them. No terminal state
     // changes here — fail-closed is untouched.
-    await touchLastChecked(event.id);
+    await touchLastChecked(event.id, "signature_status_unavailable");
     return "pending";
   }
 
@@ -249,7 +288,10 @@ async function processSolanaCandidate(
     if (!isLandedStatus(statusLookup.value.confirmationStatus)) {
       // `processed` only (or an unknown commitment): NOT proven either way —
       // the fork carrying it can still be dropped, taking its error with it.
-      await touchLastChecked(event.id);
+      // The RPC ANSWERED, so this is not a stall — clear the counter, or an
+      // ordinary slow transaction would eventually render "verification
+      // stalled", which is a lie about what we know.
+      await clearVerificationStall(event.id);
       return "pending";
     }
     if (!hasOwnErr(statusLookup.value)) {
@@ -257,7 +299,7 @@ async function processSolanaCandidate(
       // declines this shape; this is the sweep's own belt-and-suspenders, so a
       // hand-built or future port can never confirm on absent evidence.
       logger.warn("solana_activity_repair.unreadable_signature_status", { id: event.id });
-      await touchLastChecked(event.id);
+      await touchLastChecked(event.id, "unreadable_signature_status");
       return "pending";
     }
     if (isOnChainError(statusLookup.value.err)) {
@@ -282,14 +324,14 @@ async function processSolanaCandidate(
     // `last_checked_at` under a LIMIT, so a row whose fallback keeps failing
     // must move to the BACK of the queue or it pins the window and starves
     // every newer pending row behind it.
-    await touchLastChecked(event.id);
+    await touchLastChecked(event.id, "get_transaction_unavailable");
     return "pending";
   }
   if (txLookup.outcome === "found") {
     const meta = readTransactionMetaErr(txLookup.value);
     if (!meta.present) {
       logger.warn("solana_activity_repair.unreadable_transaction_meta", { id: event.id });
-      await touchLastChecked(event.id);
+      await touchLastChecked(event.id, "unreadable_transaction_meta");
       return "pending";
     }
     if (isOnChainError(meta.err)) {
@@ -325,7 +367,9 @@ function readTransactionMetaErr(raw: unknown): { present: false } | { present: t
 }
 
 async function finalizeStatusOnlyConfirm(event: AgentActivityEvent): Promise<CandidateOutcome> {
-  const outcome = await confirmActivityEventStatusOnly(event.id);
+  // A SIGNATURE STATUS, never a receipt — Solana has none. The provenance code
+  // says so, so a later reader cannot mistake this for a decoded receipt.
+  const outcome = await confirmActivityEventStatusOnly(event.id, "receipt_status_only_solana");
   if (outcome.applied) return "confirmed";
   logDuplicateCas(event.id, "confirm");
   return outcome.row.status === "pending" ? "pending" : "duplicate";
@@ -338,7 +382,7 @@ async function finalizeIfExpired(
   if (event.lastValidBlockHeight === null) {
     // No persisted evidence to reason about expiry from (a grandfathered
     // pre-049 row) — never guess; stays pending, like any other ambiguous row.
-    await touchLastChecked(event.id);
+    await touchLastChecked(event.id, "no_blockhash_evidence");
     return "pending";
   }
   const heightLookup = await deps.getCurrentBlockHeight();
@@ -346,11 +390,13 @@ async function finalizeIfExpired(
     logUnavailable(event, "block_height");
     // Same fairness reason as the `getTransaction` outage above: a row that
     // cannot be resolved must still rotate out of the LIMIT window.
-    await touchLastChecked(event.id);
+    await touchLastChecked(event.id, "block_height_unavailable");
     return "pending";
   }
   if (heightLookup.value <= event.lastValidBlockHeight) {
-    await touchLastChecked(event.id);
+    // Both lookups answered and the blockhash is provably still valid — we know
+    // exactly where this row stands, so this is not a stall.
+    await clearVerificationStall(event.id);
     return "pending"; // not yet expired — the tx may still land.
   }
   const outcome = await failActivityEvent(event.id, {

@@ -14,6 +14,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "queries", type: "string", description: "Comma-separated token symbols, names, or mint addresses to resolve and price (e.g. \"SOL,BONK\"). Provide this OR mints, not both." },
     ],
     exampleParams: { mints: "So11111111111111111111111111111111111111112" },
+    // Exactly one, per the handler: both is refused, neither is refused. The
+    // boundary now says it before the call instead of after it.
+    exclusiveParamGroups: [["mints", "queries"]],
     requiresEnv: "JUPITER_API_KEY",
     discovery: SOLANA_CORE_DISCOVERY["solana.prices"],
   },
@@ -26,7 +29,7 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "query", type: "string", required: true, description: "Token name, symbol, or mint address. Accepts a comma-separated list of mint addresses (up to 100) for batch lookup." },
-      { key: "statsInterval", type: "string", description: "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: 1h)." },
+      { key: "statsInterval", type: "string", enum: ["5m", "1h", "6h", "24h", "all"], description: "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: 1h)." },
       { key: "minOrganicScore", type: "number", description: "Only include tokens with organicScore >= this value (0-100). Rejected if out of range." },
       { key: "verifiedOnly", type: "boolean", description: "Only include Jupiter-verified tokens." },
       { key: "minLiquidity", type: "number", description: "Only include tokens with liquidity (USD) >= this value. Rejected if negative." },
@@ -43,10 +46,10 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "category", type: "string", description: "Category: recent (freshly launched / newly listed tokens by first pool creation — use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora)." },
-      { key: "interval", type: "string", description: "Time interval: 5m, 1h, 6h, 24h." },
+      { key: "category", type: "string", enum: ["toptrending", "toptraded", "toporganicscore", "recent", "lst", "verified", "stocks"], description: "Category: recent (freshly launched / newly listed tokens by first pool creation — use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora)." },
+      { key: "interval", type: "string", enum: ["5m", "1h", "6h", "24h"], description: "Time interval: 5m, 1h, 6h, 24h." },
       { key: "limit", type: "number", description: "Max results (default 20)." },
-      { key: "statsInterval", type: "string", description: "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: same as interval, or 1h)." },
+      { key: "statsInterval", type: "string", enum: ["5m", "1h", "6h", "24h", "all"], description: "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: same as interval, or 1h)." },
       { key: "minOrganicScore", type: "number", description: "Only include tokens with organicScore >= this value (0-100). Rejected if out of range." },
       { key: "verifiedOnly", type: "boolean", description: "Only include Jupiter-verified tokens." },
       { key: "minLiquidity", type: "number", description: "Only include tokens with liquidity (USD) >= this value. Rejected if negative." },

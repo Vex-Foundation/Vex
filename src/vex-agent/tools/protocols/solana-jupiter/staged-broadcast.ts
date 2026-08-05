@@ -34,6 +34,7 @@
  */
 
 import { markBroadcastAccepted } from "@vex-agent/db/repos/agent-activity.js";
+import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { submitPreparedTx } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/submit-prepared-tx.js";
 import type { JupiterSubmitTipProof } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/submit-tip-proof.js";
@@ -174,6 +175,12 @@ async function recordAcceptance(toolId: string, rowId: number): Promise<void> {
   try {
     const result = await markBroadcastAccepted(rowId);
     if (!result.applied) logger.warn(`${toolId}.broadcast_accept_miss`, { rowId });
+    // Migration 067, the whole Solana family at its ONE acceptance spine: the
+    // signature is submitted and no commitment has been observed. Nothing here
+    // ever confirms a Solana row — the repair sweep owns that — so before this
+    // the row sat pending with no stated reason, indistinguishable from a row
+    // whose receipt we looked for and could not read.
+    await noteHandlerPendingReason(toolId, rowId, "solana_awaiting_confirmation");
   } catch (err) {
     logger.warn(`${toolId}.broadcast_accept_failed`, {
       rowId,

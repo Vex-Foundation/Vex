@@ -391,3 +391,101 @@ describe("timeout must not produce a silent turn", () => {
     );
   });
 });
+
+/**
+ * FOREGROUND STOP after a COMMITTED park.
+ *
+ * The foreground Stop is deliberately request-local: it aborts the IPC request
+ * and writes nothing durable. That was correct while a turn could only be
+ * generating text. It stopped being correct once the model could park the
+ * session mid-turn — `loop_defer` commits a pending wake, the batch tears down,
+ * the turn returns, and the operator's Stop had cancelled a request while
+ * leaving a live continuation behind. The executor then started a fresh
+ * autonomous slice moments later: the user pressed Stop and the agent kept
+ * going.
+ */
+describe("foreground stop — committed-wake cleanup", () => {
+  function abortedSignal(): AbortSignal {
+    const controller = new AbortController();
+    controller.abort();
+    return controller.signal;
+  }
+
+  it("cancels the session-scoped park the stopped turn committed", async () => {
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: null,
+      toolCallsMade: 3,
+      pendingApprovals: [],
+      stopReason: "waiting_for_wake",
+    });
+    const statements: string[] = [];
+    mockWithSessionControlLock.mockImplementation(
+      async (_sessionId: string, fn: (client: unknown) => Promise<unknown>) =>
+        fn({
+          query: vi.fn(async (sql: string) => {
+            statements.push(sql);
+            return { rows: [], rowCount: 1 };
+          }),
+        }),
+    );
+
+    await processAgentTurn("session-1", "go", abortedSignal());
+
+    const cancels = statements.filter((sql) =>
+      sql.includes("UPDATE loop_wake_requests")
+      && sql.includes("consumed_by_foreground_stop"),
+    );
+    expect(cancels).toHaveLength(1);
+    // Scoped to the SESSION park only — a mission's park belongs to its run
+    // row and its own stop path, and is not this turn's to cancel.
+    expect(cancels[0]).toContain("mission_run_id IS NULL");
+    expect(cancels[0]).toContain("status         = 'pending'");
+  });
+
+  it("does NOT cancel anything when the turn was not stopped", async () => {
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: "done",
+      toolCallsMade: 0,
+      pendingApprovals: [],
+      stopReason: null,
+    });
+    const statements: string[] = [];
+    mockWithSessionControlLock.mockImplementation(
+      async (_sessionId: string, fn: (client: unknown) => Promise<unknown>) =>
+        fn({
+          query: vi.fn(async (sql: string) => {
+            statements.push(sql);
+            return { rows: [], rowCount: 0 };
+          }),
+        }),
+    );
+
+    await processAgentTurn("session-1", "go");
+
+    expect(
+      statements.filter((sql) => sql.includes("consumed_by_foreground_stop")),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * Best-effort by contract: the turn's own outcome is what the caller needs,
+   * and the durable Stop path stays available. A cleanup failure must never
+   * mask the result.
+   */
+  it("never masks the turn outcome when the cleanup fails", async () => {
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: "partial",
+      toolCallsMade: 1,
+      pendingApprovals: [],
+      stopReason: "waiting_for_wake",
+    });
+    mockWithSessionControlLock.mockRejectedValue(new Error("db down"));
+
+    const result = await processAgentTurn("session-1", "go", abortedSignal());
+
+    expect(result.text).toBe("partial");
+  });
+});

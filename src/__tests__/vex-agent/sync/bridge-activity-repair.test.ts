@@ -54,6 +54,7 @@ function row(overrides: Partial<BridgeSweepRow> = {}): BridgeSweepRow {
     normalizedRoute: "eip155:8453:0xa->eip155:42161:0xb",
     lastAttemptedAt: null,
     createdAt: "2026-07-23T09:00:00.000Z",
+    lastVerificationReason: null,
     ...overrides,
   };
 }
@@ -75,6 +76,8 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([]),
     touchAttempt: vi.fn().mockResolvedValue(undefined),
     touchChecked: vi.fn().mockResolvedValue(undefined),
+    noteVerificationInconclusive: vi.fn().mockResolvedValue(undefined),
+    noteVerificationConclusive: vi.fn().mockResolvedValue(undefined),
     fetchKhalaniOrder: vi.fn().mockResolvedValue(null),
     fetchRelayStatus: vi.fn().mockResolvedValue(null),
     // F2: a hashless fill only recovers a hash for DeBridge-routed orders; these

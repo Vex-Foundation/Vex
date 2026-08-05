@@ -1,6 +1,6 @@
 /**
  * ApiKeysStep provider-card bodies — the three `ProviderCard` instances
- * rendered inside the step form (Jupiter / Tavily / Rettiwt).
+ * rendered inside the step form (Jupiter / Tavily / Rettiwt / Relay).
  *
  * Each component owns the per-provider chrome (icon, copy, external
  * links, status badge) and forwards the parent-owned uncontrolled secret
@@ -15,6 +15,7 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
+import { Waypoints } from "lucide-react";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
@@ -175,6 +176,49 @@ export function RettiwtCard({
       </Label>
       <PasswordField
         id="vex-apikey-rettiwt"
+        autoComplete="new-password"
+        ref={inputRef}
+      />
+    </ProviderCard>
+  );
+}
+
+export interface RelayCardProps {
+  readonly status: ProviderCardStatus;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+}
+
+/**
+ * Relay is the ONLY optional-by-design card here: bridging works fully without
+ * a key, so the copy must not imply anything is unavailable without one.
+ */
+export function RelayCard({
+  status,
+  inputRef,
+}: RelayCardProps): JSX.Element {
+  return (
+    <ProviderCard
+      slug="relay"
+      iconSlot={<Waypoints width={18} height={18} aria-hidden />}
+      name="Relay"
+      status={status}
+      description="Cross-chain bridging."
+      detail={
+        <>
+          Optional. Bridging works without it; a key raises Relay&apos;s rate
+          limits and enables faster live bridge status.
+        </>
+      }
+      getKey={{
+        url: "https://dashboard.relay.link",
+        label: "Open Relay dashboard",
+      }}
+    >
+      <Label htmlFor="vex-apikey-relay" className="sr-only">
+        Relay API key
+      </Label>
+      <PasswordField
+        id="vex-apikey-relay"
         autoComplete="new-password"
         ref={inputRef}
       />

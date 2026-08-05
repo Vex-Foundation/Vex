@@ -22,7 +22,11 @@
 
 import { randomUUID, createHash } from "node:crypto";
 import logger from "@utils/logger.js";
-import type { ProtocolDiscoveryRequest, ProtocolDiscoveryResult } from "./types.js";
+import type {
+  ProtocolDiscoveryRequest,
+  ProtocolDiscoveryResult,
+  ProtocolManifestResult,
+} from "./types.js";
 
 const MATCHED_TOOL_IDS_LIMIT = 5;
 
@@ -87,6 +91,14 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     embeddingDim: retrieval?.embeddingDim,
     candidateCount: retrieval?.candidateCount,
     topkToolIds: matchedToolIds,
+    // W7 enriched the row shape (exampleParams, required, actionKind,
+    // constraints) and raised the default limit — both grow the payload the
+    // model pays for on every discovery. Measure it rather than assume it:
+    // `payloadChars` is the serialized ROWS only, so a regression is
+    // attributable to the row shape and not to warnings or retrieval meta.
+    payloadChars: JSON.stringify(result.tools).length,
+    listMode: request.list === true,
+    topToolActionKind: topTool?.actionKind,
   };
 
   if (result.count === 0) {
@@ -94,4 +106,37 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     return;
   }
   logger.info("tools.discover.completed", fields);
+}
+
+export interface DescribeTelemetryInput {
+  requestedCount: number;
+  result: ProtocolManifestResult;
+  payloadChars: number;
+  sourceSurface?: string;
+  sourceSession?: string;
+}
+
+/**
+ * `describe_tools` completion event — METADATA ONLY.
+ *
+ * Counts, the top id and the payload SIZE, never a manifest body: the whole
+ * point of the tool is that the payload is large, so logging it would be the
+ * one place this feature could quietly become a retention problem (rule 07).
+ * `payloadChars` is what makes the recurring-cost regression measurable without
+ * storing the content it measures.
+ */
+export function logDescribeTelemetry({
+  requestedCount, result, payloadChars, sourceSurface, sourceSession,
+}: DescribeTelemetryInput): void {
+  logger.info("tools.describe.completed", {
+    sourceSurface: sourceSurface ?? "vex_agent",
+    sourceSession,
+    requestedCount,
+    resolvedCount: result.count,
+    rejectedCount: result.warnings.length,
+    topToolId: result.tools[0]?.toolId,
+    sessionCapacityUsed: result.sessionCapacity.used,
+    sessionCapacityMax: result.sessionCapacity.max,
+    payloadChars,
+  });
 }

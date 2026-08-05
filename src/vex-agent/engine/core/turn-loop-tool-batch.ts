@@ -198,6 +198,7 @@ export async function processTurnToolBatch(args: {
       context,
       dispatchBand,
       args.preparationBypassesBarrier === true,
+      args.abortSignal,
     );
 
     const result = await dispatchTool(

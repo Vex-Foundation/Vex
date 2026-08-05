@@ -462,7 +462,12 @@ describe("turn-loop", () => {
         {
           ...defaultLoopConfig,
           maxIterations: 1,
-          baseVisibility: { permission: "restricted", sessionKind: "mission", missionRunActive: true },
+          baseVisibility: {
+            permission: "restricted",
+            sessionKind: "mission",
+            missionRunActive: true,
+            planMode: false,
+          },
         },
       );
 
@@ -505,9 +510,9 @@ describe("turn-loop", () => {
       expect(result.stopReason).toBe("compact_unable_at_critical");
       expect(mockForcedFallback).toHaveBeenCalledTimes(2);
       // Mission run flipped to paused_error with the right reason.
-      const lastUpdate = mockUpdateStatus.mock.calls.findLast(
-        (c: unknown[]) => c[0] === "run-1" && c[1] === "paused_error",
-      );
+      const lastUpdate = mockUpdateStatus.mock.calls
+        .filter((c: unknown[]) => c[0] === "run-1" && c[1] === "paused_error")
+        .at(-1);
       expect(lastUpdate).toBeDefined();
       expect(lastUpdate![2]).toBe("compact_unable_at_critical");
     });
@@ -708,7 +713,12 @@ describe("turn-loop", () => {
           ...defaultLoopConfig,
           maxIterations: 2,
           contextLimit: 1000,
-          baseVisibility: { permission: "restricted", sessionKind: "mission", missionRunActive: true },
+          baseVisibility: {
+            permission: "restricted",
+            sessionKind: "mission",
+            missionRunActive: true,
+            planMode: false,
+          },
         },
       );
 

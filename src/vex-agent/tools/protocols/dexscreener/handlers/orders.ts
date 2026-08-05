@@ -12,19 +12,24 @@ import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import type { ProtocolHandler } from "../../types.js";
 import { str, ok, fail } from "../../handler-helpers.js";
 import { missingRequired } from "./missing-params.js";
+import { resolveDexScreenerChain } from "../chain-param.js";
 
 export const DEXSCREENER_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
   "dexscreener.orders": async (p) => {
-    const chainId = str(p, "chainId"), tokenAddress = str(p, "tokenAddress");
-    const missing = missingRequired("dexscreener.orders", { chainId, tokenAddress });
+    const chainRaw = str(p, "chain"), tokenAddress = str(p, "tokenAddress");
+    const missing = missingRequired("dexscreener.orders", { chain: chainRaw, tokenAddress });
     if (missing) return fail(missing);
+    const chain = resolveDexScreenerChain(chainRaw);
+    if (!chain.ok) return fail(`dexscreener.orders: ${chain.reason}`);
     const client = getDexScreenerClient();
     // The endpoint answers with BOTH the paid-order history and the
     // boost-payment ledger for the same token. Both are spend signals, so
     // both are surfaced; the ledger used to be discarded entirely.
-    const result = await client.getOrders(chainId, tokenAddress);
+    const result = await client.getOrders(chain.slug, tokenAddress);
     return ok({
-      chainId,
+      // Echoed under the param key the caller sent (`chain`), lowercased so it
+      // agrees with the provider rows, which all carry a lowercase slug.
+      chain: chain.slug.toLowerCase(),
       tokenAddress,
       orderCount: result.orders.length,
       orders: result.orders,

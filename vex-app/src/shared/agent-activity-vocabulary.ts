@@ -105,6 +105,9 @@ export type FeedActivityKind = (typeof FEED_ACTIVITY_KINDS)[number];
  * prebuy are a single transaction. `trench_fee` is migration 063: Vex's 25 bps
  * integrator fee on Trench Express, a separate treasury transfer that runs after
  * the trade or launch confirms, admitted on the `swap` and `launch` arms.
+ * `swap_fee` is migration 066: the same fee leg on a swap venue whose router
+ * takes no fee parameter (Uniswap), a separate transfer of the INPUT token that
+ * runs after the swap confirms, admitted on the `swap` arm only.
  */
 export const AGENT_ACTIVITY_EVENT_ROLES = [
   "allowance_reset",
@@ -132,19 +135,33 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   "yield_claim",
   "token_launch",
   "trench_fee",
+  "swap_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 
 // ── Lifecycle status ──────────────────────────────────────────────────────
 
 /**
- * The renderer-facing lifecycle vocabulary. The DB stores `pending |
- * confirmed | definitively_failed`; every feed collapses
+ * The renderer-facing lifecycle vocabulary. The DB stores `pending | confirmed |
+ * definitively_failed | superseded_unproven`; every feed collapses
  * `definitively_failed` → `failed` in SQL (mirrors
  * `db/repos/transactions.ts`'s compatibility-feed naming, root `src/`,
  * read-only reference — NOT imported).
+ *
+ * `superseded_unproven` (engine migration 068, owner decision A6) is carried
+ * THROUGH as its own member and is deliberately NOT collapsed. It is a
+ * NON-FAILURE terminal state — the hash is no longer tracked as in flight and
+ * its inclusion outcome is unproven — so folding it into `failed` would tell the
+ * user their transaction failed when nobody established any such thing, and
+ * would hide the one distinction the state exists to make. It renders in a
+ * neutral tone, never `danger`, and carries NO amounts: they were never proven.
  */
-export const AGENT_ACTIVITY_STATUSES = ["pending", "confirmed", "failed"] as const;
+export const AGENT_ACTIVITY_STATUSES = [
+  "pending",
+  "confirmed",
+  "failed",
+  "superseded_unproven",
+] as const;
 export type AgentActivityStatus = (typeof AGENT_ACTIVITY_STATUSES)[number];
 
 /** The stored DB value that collapses to `failed`. */

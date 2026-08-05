@@ -14,7 +14,12 @@
  * through a float), so a param the manifest DECLARED `type: "number"` is
  * structurally non-monetary — limits, counts, offsets, thresholds, page
  * numbers, ids. This module only ever looks at declared-number params, so no
- * amount is in its reach. Proven by
+ * amount is in its reach. That invariant was FALSE when this was written:
+ * `solana.swap.quote/execute` declared `amount` as `type: "number"` (human
+ * decimals) and converted it through `uiAmount * 10 ** decimals`. W5a renamed
+ * it to `amountIn`, typed it `string`, and deleted the float multiply, so the
+ * sentence above is now true of the whole fleet rather than aspirational.
+ * Proven by
  * `src/__tests__/vex-agent/tools/protocol-param-numeric-string.test.ts`.
  *
  * LOSSLESS ONLY, AND THE TEST IS THE ROUND-TRIP. A string is rewritten only

@@ -14,6 +14,7 @@ import {
   MUTATING_PROTOCOL_ALIAS_ROUTERS,
   isMutatingProtocolAlias,
 } from "../mutating-aliases.js";
+import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools.js";
 
 /**
  * Phase 4d: does this dispatch run an IRREVERSIBLE (mutating) tool? For
@@ -39,6 +40,10 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
     if (!toolId) return false;
     return getProtocolManifest(toolId)?.mutating === true;
   }
+  // Injected discovered-tool lane — the manifest resolved from the mapped
+  // function name is the side-effect authority, exactly as for `execute_tool`.
+  const injected = resolveInjectedProtocolTool(call.name);
+  if (injected) return injected.mutating;
   if (isMutatingProtocolAlias(call.name)) {
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
     try {

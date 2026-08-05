@@ -15,7 +15,7 @@
  *
  * THE DEFECT THE ACCOUNTING CLOSES
  *
- * `dexscreener.search { query: "USDC", chainId: "ethereum" }` returned
+ * `dexscreener.search { query: "USDC", chainIds: "ethereum" }` returned
  * `pairs: [], matched: 0, success: true`. Measured on the live window: `q=USDC`
  * spans 15 chains and holds ZERO Ethereum rows. A context-free agent reads that
  * empty result as "USDC does not trade on Ethereum". With `droppedByFilter` the

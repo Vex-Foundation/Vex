@@ -206,13 +206,16 @@ export function planRelayStepTx(
 
 // ── Bounded, informational in-turn status poll ─────────────────────────────────
 //
-// Relay recommends ~1 poll/second; a constant 1s interval within the 60s budget
-// lands the final poll at window close. This poll is INFORMATIONAL ONLY: W3b
-// never confirms/terminalizes the logical row from it (W4's verified sweep owns
-// pending→confirmed and reveal-clear). A fast bridge simply surfaces a nicer
-// last-seen status in the tool output; a slow one returns the last non-terminal
-// status and the durable row stays pending for W4.
-const POLL_MAX_MS = 60_000;
+// Relay recommends ~1 poll/second, so the CADENCE stays at 1 s (vendor
+// guidance). The BUDGET is 10 s, cut from 60 s: this poll is INFORMATIONAL ONLY
+// — it never confirms or terminalizes the logical row (the background sweep owns
+// the verified pending→confirmed and the reveal-clear), so a longer window buys
+// a nicer last-seen status at the cost of blocking the whole turn. The live
+// probe's Base→Robinhood `timeEstimate` is 2-3 s, and anything slower is
+// recovered by the sweep, so nothing is lost that was not already owned
+// elsewhere. When the budget expires the caller returns the pending result
+// IMMEDIATELY and tells the agent not to re-poll in a loop.
+const POLL_MAX_MS = 10_000;
 const POLL_INTERVAL_MS = 1_000;
 
 function delay(ms: number): Promise<void> {
@@ -230,6 +233,46 @@ export interface RelayPollResult {
   readonly status: string;
   readonly observed: boolean;
   readonly destinationTxHashes: readonly string[];
+  /**
+   * WHY Relay reports this intent as failed / why its refund failed, from
+   * Relay's documented closed vocabulary. Accepted ONLY in that vocabulary's
+   * SCREAMING_SNAKE shape — this crosses into agent-facing output and
+   * `src/tools/**` cannot reach the protocol runtime's scrubber (one-way
+   * layering), so free provider text is dropped rather than forwarded unscrubbed.
+   */
+  readonly failReason: string | null;
+  readonly refundFailReason: string | null;
+  /**
+   * The last status-call failure, when one happened. Bounded, non-sensitive
+   * fields only, for the same layering reason as above: our own error code, the
+   * provider's own closed code, and the HTTP status. Present so the handler can
+   * say "the status API was unreachable" instead of silently reporting `null`
+   * — the poll used to log a code and surface nothing at all.
+   */
+  readonly lastError: RelayPollError | null;
+}
+
+export interface RelayPollError {
+  readonly code: string;
+  readonly providerCode?: string;
+  readonly httpStatus?: number;
+}
+
+/** Relay's closed vocabularies are SCREAMING_SNAKE; anything else is free text we do not forward. */
+const RELAY_CLOSED_CODE_SHAPE = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+function closedCodeOrNull(raw: unknown): string | null {
+  return typeof raw === "string" && RELAY_CLOSED_CODE_SHAPE.test(raw) ? raw : null;
+}
+
+function pollErrorFrom(err: unknown): RelayPollError {
+  if (!(err instanceof VexError)) return { code: "unknown" };
+  const providerCode = closedCodeOrNull(err.externalName);
+  return {
+    code: err.code,
+    ...(providerCode !== null ? { providerCode } : {}),
+    ...(err.httpStatus !== undefined ? { httpStatus: err.httpStatus } : {}),
+  };
 }
 
 export async function pollRelayIntentStatus(requestId: string): Promise<RelayPollResult> {
@@ -238,6 +281,9 @@ export async function pollRelayIntentStatus(requestId: string): Promise<RelayPol
   let status = "pending";
   let observed = false;
   let destinationTxHashes: readonly string[] = [];
+  let failReason: string | null = null;
+  let refundFailReason: string | null = null;
+  let lastError: RelayPollError | null = null;
   while (Date.now() - started < POLL_MAX_MS) {
     await delay(POLL_INTERVAL_MS);
     try {
@@ -245,16 +291,20 @@ export async function pollRelayIntentStatus(requestId: string): Promise<RelayPol
       status = res.status;
       observed = true;
       destinationTxHashes = res.txHashes ?? res.destinationTxHashes ?? [];
-      if (RELAY_TERMINAL_STATUSES.has(status)) return { status, observed, destinationTxHashes };
+      failReason = closedCodeOrNull(res.failReason);
+      refundFailReason = closedCodeOrNull(res.refundFailReason);
+      if (RELAY_TERMINAL_STATUSES.has(status)) {
+        return { status, observed, destinationTxHashes, failReason, refundFailReason, lastError };
+      }
     } catch (err) {
-      // Relay status errors carry no provider free-text worth surfacing — log a
-      // bounded code only, never the raw error.
-      logger.warn("relay.bridge.status_poll_failed", {
-        reason: err instanceof VexError ? err.code : "unknown",
-      });
+      // The failure is RETAINED, not just logged: a window where every status
+      // call threw is agent-relevant and used to be indistinguishable from
+      // "polled fine, still pending".
+      lastError = pollErrorFrom(err);
+      logger.warn("relay.bridge.status_poll_failed", { reason: lastError.code });
     }
   }
-  return { status, observed, destinationTxHashes };
+  return { status, observed, destinationTxHashes, failReason, refundFailReason, lastError };
 }
 
 /**

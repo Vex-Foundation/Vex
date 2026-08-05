@@ -18,11 +18,14 @@ function mockFetchOk(body: unknown) {
   });
 }
 
+// The error path reads the body as TEXT (W2a): a non-JSON edge challenge page
+// must survive to the agent sanitized, instead of being dropped by `readJson`.
 function mockFetchError(status: number, body: unknown) {
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
     ok: false,
     status,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   });
 }
 

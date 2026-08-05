@@ -218,7 +218,9 @@ describe("patch-parser", () => {
       const sanitized = sanitizePatch({
         title: "SOL DCA",
         stopConditions: ["capital_depleted"],
-        // @ts-expect-error — field no longer exists on MissionPatch.
+        // Field no longer exists on `MissionDraft`. `MissionPatch` carries an
+        // index signature (raw model prose), so the compiler cannot reject it —
+        // the DROP is the runtime guarantee asserted below.
         stopConditionsAccepted: true,
       });
       expect("stopConditionsAccepted" in sanitized).toBe(false);

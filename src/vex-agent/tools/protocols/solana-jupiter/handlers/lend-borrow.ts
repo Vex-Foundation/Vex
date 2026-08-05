@@ -19,7 +19,7 @@
  */
 
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { getAccount } from "@solana/spl-token";
+import { getAccount, TokenAccountNotFoundError, TokenInvalidAccountOwnerError } from "@solana/spl-token";
 
 import {
   getJupiterLendBorrowPositions,
@@ -136,6 +136,24 @@ function resolveActivityLegs(
  * or `null` when the leg is fine (not an "in" leg, not WSOL-denominated, or
  * sufficiently funded).
  */
+/**
+ * The two spl-token errors that PROVE there is no such token account, and
+ * therefore a zero balance: `getAccount` throws `TokenAccountNotFoundError`
+ * when the address holds no account at all, and
+ * `TokenInvalidAccountOwnerError` when it holds one owned by another program —
+ * in both cases the wallet has no WSOL there. Every OTHER throw (an RPC that
+ * did not answer, a malformed response) proves nothing about the balance.
+ *
+ * Matched by `name` as well as by `instanceof`: a duplicated `@solana/spl-token`
+ * copy in the dependency tree would break the prototype check, and failing that
+ * check open would put us straight back into the defect this replaces.
+ */
+function isMissingTokenAccount(err: unknown): boolean {
+  if (err instanceof TokenAccountNotFoundError || err instanceof TokenInvalidAccountOwnerError) return true;
+  return err instanceof Error
+    && (err.name === "TokenAccountNotFoundError" || err.name === "TokenInvalidAccountOwnerError");
+}
+
 async function checkWsolFunding(
   leg: BorrowOperateLeg | null,
   tokenAddress: string,
@@ -147,13 +165,27 @@ async function checkWsolFunding(
   const owner = new PublicKey(walletAddr);
   const mintPubkey = new PublicKey(tokenAddress);
 
-  let balanceRaw = 0n;
+  // W2g: `catch { balanceRaw = 0n }` used to swallow EVERY failure here,
+  // including an RPC that never answered, and then produced a confident,
+  // WRONG "wrap SOL into WSOL first, then retry" on a money path — advice the
+  // agent cannot act on and that cannot succeed, because nothing was ever
+  // learned about the balance. Only the ABSENCE of the account proves a zero
+  // balance; anything else is an unread balance and must say so.
+  let balanceRaw: bigint;
   try {
     const tokenProgramId = await resolveMintTokenProgramId(connection, tokenAddress);
     const ata = deriveAssociatedTokenAccount(owner, mintPubkey, tokenProgramId);
     balanceRaw = (await getAccount(connection, ata)).amount;
-  } catch {
-    balanceRaw = 0n; // no WSOL token account found — treated as zero balance
+  } catch (err) {
+    if (!isMissingTokenAccount(err)) {
+      // Nothing has been sent anywhere — this is still a pre-broadcast refusal,
+      // it just names the real cause instead of inventing a WSOL remedy.
+      return `the WSOL balance check could not be completed — the Solana RPC did not answer `
+        + `(${summarizeProtocolError(err).message}). Nothing was sent and no funds moved. `
+        + `This is a transport failure, not a verdict about your WSOL balance: retry, and do not `
+        + `wrap SOL on the strength of this message.`;
+    }
+    balanceRaw = 0n; // the associated token account does not exist — a proven zero balance.
   }
 
   // A close-all sentinel's exact required amount is provider-computed

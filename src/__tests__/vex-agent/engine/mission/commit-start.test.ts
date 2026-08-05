@@ -56,7 +56,26 @@ vi.mock("@vex-agent/db/client.js", () => ({
     }
   },
   executeWith: vi.fn(),
-  queryOneWith: vi.fn().mockResolvedValue(null),
+  // The pre-lock session-id read: `commitMissionStart` takes the SESSION
+  // CONTROL LOCK first (canonical order), which needs the session identity
+  // before the missions row can be locked. `root_session_id` is immutable, so
+  // the unlocked read is safe; the authoritative locked read follows.
+  queryOneWith: vi.fn().mockImplementation(async (_client: unknown, sql: string) =>
+    typeof sql === "string" && sql.includes("root_session_id")
+      ? { root_session_id: "session-1" }
+      : null,
+  ),
+}));
+
+const mockGateOnOperatorStop = vi.fn().mockResolvedValue({ kind: "clear" });
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  acquireSessionControlLock: vi.fn().mockResolvedValue(undefined),
+  // Run CREATION consults the session-scoped operator-stop gate under that
+  // lock, so a Stop that committed first refuses the start instead of creating
+  // a run the Stop could never reach. `clear` for the cases below; the refusal
+  // is pinned in `integration/engine/mission-start-stop-first.int.test.ts`.
+  gateOnOperatorStopWithClient: (...a: unknown[]) =>
+    mockGateOnOperatorStop(...a),
 }));
 
 const { commitMissionStart } = await import(

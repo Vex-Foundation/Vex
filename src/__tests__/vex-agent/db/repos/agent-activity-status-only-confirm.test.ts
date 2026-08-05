@@ -88,7 +88,7 @@ describe("confirmActivityEventStatusOnly", () => {
     // 1st queryOne: the pre-read (session id). 2nd: the CAS UPDATE.
     mockQueryOne.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ status: "confirmed" }));
 
-    const result = await repo.confirmActivityEventStatusOnly(42);
+    const result = await repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm");
 
     expect(result.applied).toBe(true);
     expect(result.row.status).toBe("confirmed");
@@ -98,7 +98,13 @@ describe("confirmActivityEventStatusOnly", () => {
     expect(update).toContain("confirmed_at = NOW()");
     expect(update).toContain("WHERE id = $1 AND status = 'pending'");
     expect(update).not.toContain("executed_amount");
-    expect(mockQueryOne.mock.calls[1]?.[1]).toEqual([42]);
+    // The caller-supplied provenance rides along; it says HOW the status was
+    // established and nothing about the amounts (migration 067).
+    expect(mockQueryOne.mock.calls[1]?.[1]).toEqual([42, "receipt_status_only_evm"]);
+    expect(update).toContain("confirmation_source = $2");
+    // `settlement_source` is deliberately untouched: this sweep learned nothing
+    // whatsoever about the money, so it has no business stating how it is known.
+    expect(update).not.toContain("settlement_source");
   });
 
   it("leaves any PRE-EXISTING executed_* values untouched — it writes no amount column at all", async () => {
@@ -116,13 +122,13 @@ describe("confirmActivityEventStatusOnly", () => {
       .mockResolvedValueOnce(row(decoded))
       .mockResolvedValueOnce(row({ ...decoded, status: "confirmed" }));
 
-    const result = await repo.confirmActivityEventStatusOnly(42);
+    const result = await repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm");
 
     const update = mockQueryOne.mock.calls[1]?.[0] ?? "";
     // No amount column is named, so none can be nulled by omission.
     expect(update).not.toMatch(/executed_amount_(in|out)2?_(raw|human)/);
-    // The CAS carries the row id and NOTHING else — no amount parameter exists.
-    expect(mockQueryOne.mock.calls[1]?.[1]).toEqual([42]);
+    // The CAS carries the row id and its provenance — no amount parameter exists.
+    expect(mockQueryOne.mock.calls[1]?.[1]).toEqual([42, "receipt_status_only_evm"]);
     expect(result.row.executedAmountInRaw).toBe("1400000");
     expect(result.row.executedAmountOutRaw).toBe("400000000000000");
   });
@@ -133,7 +139,7 @@ describe("confirmActivityEventStatusOnly", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(row({ status: "confirmed" }));
 
-    const result = await repo.confirmActivityEventStatusOnly(42);
+    const result = await repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm");
 
     expect(result.applied).toBe(false);
     expect(result.row.status).toBe("confirmed");
@@ -141,7 +147,7 @@ describe("confirmActivityEventStatusOnly", () => {
 
   it("throws when the row does not exist", async () => {
     mockQueryOne.mockResolvedValue(null);
-    await expect(repo.confirmActivityEventStatusOnly(42)).rejects.toThrow(/does not exist/);
+    await expect(repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm")).rejects.toThrow(/does not exist/);
   });
 });
 

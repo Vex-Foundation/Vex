@@ -65,6 +65,12 @@ import {
   type SettledIdsTracker,
 } from "./SessionTranscript/settledIds.js";
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
+import {
+  VexingOverlay,
+  isCentredSceneUp,
+} from "./SessionTranscript/VexingOverlay.js";
+import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
+import { useScrollbarVisibility } from "./SessionTranscript/useScrollbarVisibility.js";
 
 const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
@@ -83,13 +89,6 @@ export function SessionTranscript({
   const query = useTranscriptInfinite(sessionId);
   const streamPreview = useStreamPreview(sessionId);
   const chatSubmitting = useIsChatSubmitting(sessionId);
-  // THE TURN, not the round (see `turnPreview.ts`). This is what the whole
-  // rest of this component means by "a turn is in flight": it opens on the
-  // SEND rather than on the first provider delta, and it survives the
-  // mid-turn assistant rows a tool call persists. Both the ghost-moment and
-  // the scroll-jump reports were the round-scoped value leaking into
-  // turn-scoped decisions (the island's mount, the anchor run-out).
-  const preview = useTurnPreview(streamPreview, chatSubmitting);
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorSpacerRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -167,6 +166,33 @@ export function SessionTranscript({
     setShowLatest(!pinned);
   }, []);
 
+  // The SAME measurement, coalesced to one per animation frame. Reading
+  // scrollHeight/scrollTop/clientHeight forces a synchronous layout, so doing
+  // it once per streamed growth tick made the reflow the stream's own cost
+  // (owner decree 2026-08-03). A frame is the finest cadence the pill can
+  // actually be seen changing at, and the trailing edge is guaranteed: the
+  // last scheduled frame always runs, so the pill can never settle on a stale
+  // measurement.
+  const latestSyncFrame = useRef<number | null>(null);
+  const scheduleLatestSync = useCallback((): void => {
+    if (latestSyncFrame.current !== null) return;
+    latestSyncFrame.current = window.requestAnimationFrame(() => {
+      latestSyncFrame.current = null;
+      syncLatestVisibility();
+    });
+  }, [syncLatestVisibility]);
+  useEffect(
+    () => () => {
+      if (latestSyncFrame.current !== null) {
+        window.cancelAnimationFrame(latestSyncFrame.current);
+      }
+    },
+    [],
+  );
+
+  // macOS-style overlay bar: visible while scrolling, gone ~1s after.
+  useScrollbarVisibility(scrollRef);
+
   const jumpToLatest = useCallback((): void => {
     const el = scrollRef.current;
     if (el === null) return;
@@ -220,6 +246,31 @@ export function SessionTranscript({
   const newestVariant = rows.at(-1)?.variant ?? null;
   const newestIsLiveAppend =
     settledIds !== null && newestId !== 0 && !settledIds.has(newestId);
+
+  // THE TURN, not the round (see `turnPreview.ts`). This is what the whole
+  // rest of this component means by "a turn is in flight": it opens on the
+  // SEND rather than on the first provider delta, and it survives the
+  // mid-turn assistant rows a tool call persists. Both the ghost-moment and
+  // the scroll-jump reports were the round-scoped value leaking into
+  // turn-scoped decisions (the island's mount, the anchor run-out).
+  //
+  // It is called HERE, after the row bookkeeping, because its centred-scene
+  // latch reads the very rows the top-anchor effect below keys on — passed in
+  // rather than re-queried, so there is no second source of truth.
+  const { preview, centredSceneEligible } = useTurnPreview({
+    sessionId,
+    preview: streamPreview,
+    submitting: chatSubmitting,
+    newestId,
+    newestVariant,
+    newestIsLiveAppend,
+  });
+  const centredSceneUp = isCentredSceneUp(
+    preview,
+    centredSceneEligible,
+    hasPendingApproval,
+  );
+
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el === null || newestId === 0) return;
@@ -263,8 +314,10 @@ export function SessionTranscript({
       : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}`;
   useEffect(() => {
     if (previewSig === null) return;
-    syncLatestVisibility();
-  }, [previewSig, syncLatestVisibility]);
+    // Frame-coalesced: a growth tick asks for a measurement, it does not take
+    // one. See `scheduleLatestSync`.
+    scheduleLatestSync();
+  }, [previewSig, scheduleLatestSync]);
 
   // Turn settled (stream → null): retire the anchor run-out. The spacer's job
   // was to guarantee scroll range WHILE the reply streamed below the anchored
@@ -393,7 +446,7 @@ export function SessionTranscript({
         // stable` reserves the track so content never shifts when it appears,
         // and the row padding moved INSIDE (`px-3` on the content wrapper).
         // `.vex-scroll` is the repo's thin cobalt treatment.
-        className="vex-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
+        className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
       >
       {/* SIGNAL TAPE content wrapper — holds the single monotonic spine the
           whole session hangs off. It sizes to content, so the outer scroll
@@ -418,32 +471,17 @@ export function SessionTranscript({
             Couldn&apos;t load older messages.
           </div>
         ) : null}
-        {rows.map((row) => (
-          // Turn rhythm: the list gap is the 12px intra-turn beat; a USER row
-          // starts a new turn, so its extra mt-4 totals the 28px turn spacing.
-          // Live-appended rows (id outside the settled set) print with the
-          // one-shot entry settle; historical rows hard-cut. A tool group keeps
-          // its first call row's id, so its settle status matches its members'.
-          <div
-            key={entryKey(row)}
-            data-vex-entry-id={row.id}
-            data-vex-entry-variant={row.variant}
-            className={cn(
-              row.variant === "user" && "mt-4",
-              settledIds !== null && !settledIds.has(row.id) && "vex-entry-settle",
-            )}
-          >
-            <TranscriptMessage
-              row={row}
-              pendingApprovals={pendingApprovals}
-              agentWorking={workingAgentEntryKey === entryKey(row)}
-            />
-          </div>
-        ))}
+        <TranscriptRows
+          rows={rows}
+          settledIds={settledIds}
+          pendingApprovals={pendingApprovals}
+          workingAgentEntryKey={workingAgentEntryKey}
+        />
         {preview !== null ? (
           <StreamingBubble
             preview={preview}
             awaitingApproval={hasPendingApproval}
+            centredSceneUp={centredSceneUp}
           />
         ) : null}
         {/* Anchor spacer — inert run-out below the newest turn. Sized (via the
@@ -454,6 +492,14 @@ export function SessionTranscript({
         <div ref={anchorSpacerRef} aria-hidden className="shrink-0" />
         </div>
       </div>
+
+      {/* The centred scene — a SIBLING of the scroller, never a descendant.
+          See `SessionTranscript/VexingOverlay.tsx` for why. */}
+      <VexingOverlay
+        preview={preview}
+        centredSceneEligible={centredSceneEligible}
+        awaitingApproval={hasPendingApproval}
+      />
 
       {/* "↓ LATEST" — the jump the transcript no longer takes on the reader's
           behalf. Solid ink (no glass), bottom-centred over the chat column,

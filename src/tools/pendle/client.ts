@@ -29,9 +29,10 @@
  * `useLimitOrder` is FALSE (live-probed: the server defaults it to true, which
  * would inject limit-order fills and widen the safety-decode surface).
  *
- * The upstream error body is HOSTILE input — it is logged as bounded metadata
- * only and NEVER copied into the thrown (model-facing) error. Singleton via
- * `getPendleClient()`.
+ * The upstream error body is untrusted, and it is CARRIED rather than dropped:
+ * `mapPendleError` quotes it bounded so the agent learns which parameter Pendle
+ * rejected, and the single redaction owner (`utils/error-summary.ts`) sanitizes
+ * it downstream. Singleton via `getPendleClient()`.
  */
 
 import { loadConfig } from "../../config/store.js";

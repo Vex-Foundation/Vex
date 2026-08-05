@@ -67,10 +67,9 @@ describe("resolveToolOperation — execute_tool reads args ONE way only", () => 
   });
 
   it.each([
-    ['an execute toolId', '{"toolId":"kyberswap.swap.execute"}'],
-    ["a bare bridge toolId", '{"toolId":"khalani.bridge"}'],
     ["a malformed payload", '{"toolId":"kyberswap.swap.exec'],
     ["a non-string toolId", '{"toolId":42}'],
+    ["an id outside the curated map", '{"toolId":"kyberswap.swap.futurething"}'],
     ["no args at all", null],
   ])(
     "never upgrades %s to mutating — it stays unproven (and therefore labelled)",
@@ -80,6 +79,120 @@ describe("resolveToolOperation — execute_tool reads args ONE way only", () => 
       );
     },
   );
+
+  // The swap/bridge execute ids joined the CURATED exact-id map (the same
+  // doctrine that already covered Trench Express): matched whole against a set
+  // we wrote, never a shape inferred from attacker-chosen text. A proven
+  // execution is allowed to render its legs unlabelled — that is the point of
+  // the quote/execution distinction.
+  it.each([
+    ['{"toolId":"kyberswap.swap.execute"}', "kyberswap"],
+    ['{"toolId":"khalani.bridge"}', "khalani"],
+  ])("reads the curated exact id in %s as a real mutation", (args, protocol) => {
+    expect(resolveToolOperation("execute_tool", protocol, args)).toBe("mutating");
+  });
+});
+
+/**
+ * The DOTTED lane — a canonicalized protocol call, where the tool NAME is the
+ * `toolId`. The blocker pinned hardest here is `dryRun`: `relay.bridge`,
+ * `khalani.bridge` and 13 Pendle manifests multiplex preview and execution
+ * behind that boolean, and their DRY RUNS RETURN `success: true`. A preview
+ * that renders as an executed bridge is precisely the money-path lie rule 90
+ * forbids, so anything short of a proven `false` claims less.
+ */
+describe("resolveToolOperation — dotted protocol toolIds", () => {
+  it.each([
+    ["kyberswap.swap.execute", "kyberswap", "mutating"],
+    ["kyberswap.swap.quote", "kyberswap", "quote"],
+    ["uniswap.swap.execute", "uniswap", "mutating"],
+    ["solana.swap.quote", "solana", "quote"],
+    ["relay.quote.get", "relay", "quote"],
+    ["khalani.quote.get", "khalani", "quote"],
+    ["trench.launch_execute", "trench", "mutating"],
+    // A `local_write` that drafts a row and spends nothing draws no money legs.
+    ["trench.launch_request_form", "trench", null],
+  ])("reads %s as %s", (toolId, protocol, expected) => {
+    expect(resolveToolOperation(toolId, protocol, "{}")).toBe(expected);
+  });
+
+  // Every mutating id is routed through the dryRun guard, so a manifest that
+  // GAINS a `dryRun` tomorrow is safe by default. The price is that unreadable
+  // args downgrade a mutating claim to a labelled one — claiming less, never
+  // more, which is the only direction rule 90 allows.
+  it("downgrades a mutating id to unproven when its args cannot be read at all", () => {
+    expect(resolveToolOperation("kyberswap.swap.execute", "kyberswap", null)).toBe(
+      "unproven",
+    );
+  });
+
+  it("gives an unproven venue no legs, whatever the id claims", () => {
+    expect(resolveToolOperation("kyberswap.swap.execute", null, null)).toBeNull();
+  });
+
+  it("reads an unmirrored future id as unproven, never mutating", () => {
+    expect(resolveToolOperation("kyberswap.some.future.thing", "kyberswap", null)).toBe(
+      "unproven",
+    );
+  });
+
+  it("NEVER reads a dry run as an executed bridge", () => {
+    expect(resolveToolOperation("relay.bridge", "relay", '{"dryRun":true}')).toBe("quote");
+  });
+
+  it.each([
+    ["dryRun false", '{"dryRun":false}'],
+    ["dryRun absent", '{"originChainId":1}'],
+  ])("reads relay.bridge with %s as a real mutation", (_label, args) => {
+    expect(resolveToolOperation("relay.bridge", "relay", args)).toBe("mutating");
+  });
+
+  it.each([
+    ["null", '{"dryRun":null}'],
+    ["the STRING true", '{"dryRun":"true"}'],
+    ["the number 1", '{"dryRun":1}'],
+    ["an object", '{"dryRun":{}}'],
+    ["truncated args", '{"dryRun":tr'],
+    ["a non-object payload", '"dryRun"'],
+    ["no args at all", null],
+  ])(
+    "reads relay.bridge with %s as UNPROVEN — labelled, never a bare executed summary",
+    (_label, args) => {
+      expect(resolveToolOperation("relay.bridge", "relay", args)).toBe("unproven");
+    },
+  );
+});
+
+describe("resolveToolOperation — dryRun through the LEGACY envelope", () => {
+  it("reads the nested params.dryRun", () => {
+    expect(
+      resolveToolOperation(
+        "execute_tool",
+        "khalani",
+        '{"toolId":"khalani.bridge","params":{"dryRun":true}}',
+      ),
+    ).toBe("quote");
+  });
+
+  it("proves nothing when a top-level dryRun DISAGREES with the nested one", () => {
+    expect(
+      resolveToolOperation(
+        "execute_tool",
+        "khalani",
+        '{"toolId":"khalani.bridge","dryRun":false,"params":{"dryRun":true}}',
+      ),
+    ).toBe("unproven");
+  });
+
+  it("still reads a nested false as a real mutation", () => {
+    expect(
+      resolveToolOperation(
+        "execute_tool",
+        "relay",
+        '{"toolId":"relay.bridge","params":{"dryRun":false}}',
+      ),
+    ).toBe("mutating");
+  });
 });
 
 /**

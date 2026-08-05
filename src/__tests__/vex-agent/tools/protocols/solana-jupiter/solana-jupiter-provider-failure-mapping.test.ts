@@ -102,9 +102,23 @@ describe("classifyJupiterProviderFailure — route_not_found is earned, not the 
     expect(classifyJupiterProviderFailure(timeout).failureCode).toBe("unknown");
   });
 
-  it("names OUR OWN parameter rejection as such rather than blaming the provider", () => {
+  it("names OUR OWN parameter rejection by ACTOR, not by the widened category name", () => {
+    // W1 gave `invalid_request` two producers (our validation AND any provider
+    // 4xx), so echoing the category into the persisted reason stopped saying
+    // WHO refused. Every other scenario in this module names an actor; so does
+    // this one now.
     const local = new VexError(ErrorCodes.SOLANA_INVALID_ADDRESS, "not a valid base58 Solana address");
-    expect(classifyJupiterProviderFailure(local).failureReason).toMatch(/^invalid_request: /);
+    const result = classifyJupiterProviderFailure(local);
+    expect(result.failureReason).toMatch(/^vex_validation_rejected: /);
+    expect(result.failureCode).toBe("unknown");
+  });
+
+  it("a provider 4xx never lands on the vex-validation scenario, whatever category it carries", () => {
+    // The status branch claims the provider-answered half of `invalid_request`
+    // BEFORE the local branch can see it.
+    const answered = classifyJupiterProviderFailure(providerError(422, "something we have never seen"));
+    expect(answered.failureReason).toMatch(/^provider_rejected: /);
+    expect(answered.failureReason).not.toMatch(/vex_validation_rejected/);
   });
 });
 

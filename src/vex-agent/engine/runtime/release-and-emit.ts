@@ -60,25 +60,13 @@
  */
 
 import logger from "@utils/logger.js";
-import { getActiveRunBySession, getRun } from "../../db/repos/mission-runs.js";
-import { getLease } from "../../db/repos/runner-leases.js";
 import {
-  CONTROL_STATE_EVENT_TYPE,
-  controlStateBus,
-} from "./control-bus.js";
+  emitSessionControlState,
+  type EmitSessionControlStateOptions,
+} from "./emit-control-state.js";
 import type { LeaseHandle } from "./lease-handle.js";
 
-export interface ReleaseAndEmitOptions {
-  /**
-   * Mission run id the caller was working on. When provided the helper
-   * prefers `getRun(runId)` over `getActiveRunBySession(sessionId)` so
-   * the emit references the terminated run even after the active-run
-   * lookup window closes (`completed`/`cancelled`/etc. are excluded
-   * from active-run filters in some queries).
-   */
-  readonly missionRunId?: string | null;
-  readonly correlationId?: string | null;
-}
+export type ReleaseAndEmitOptions = EmitSessionControlStateOptions;
 
 export async function releaseLeaseAndEmitControlState(
   handle: LeaseHandle,
@@ -88,37 +76,10 @@ export async function releaseLeaseAndEmitControlState(
   // Release first — this is the only side effect callers depend on.
   await handle.release();
 
-  try {
-    const lease = await getLease(sessionId);
-    let run: Awaited<ReturnType<typeof getRun>> | null = null;
-    if (options.missionRunId) {
-      run = await getRun(options.missionRunId);
-    }
-    if (run === null) {
-      run = await getActiveRunBySession(sessionId);
-    }
-
-    controlStateBus.emit({
-      type: CONTROL_STATE_EVENT_TYPE,
-      sessionId,
-      missionRunId: run?.id ?? options.missionRunId ?? null,
-      runStatus: run?.status ?? null,
-      stopReason: run?.stopReason ?? null,
-      pendingControlKind: null,
-      leaseActive: lease !== null && lease.expiresAt >= new Date(),
-      leaseExpiresAt:
-        lease !== null && lease.expiresAt >= new Date()
-          ? lease.expiresAt.toISOString()
-          : null,
-      correlationId: options.correlationId ?? null,
-    });
-  } catch (err) {
-    logger.warn("runtime.release_and_emit.read_failed", {
-      sessionId,
-      missionRunId: options.missionRunId ?? null,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  // The emit body lives in `emit-control-state.ts` so the ACQUIRE side can
+  // publish the same event. It is TOTAL — it swallows its own failures — which
+  // is why there is no try/catch here.
+  await emitSessionControlState(sessionId, options);
 
   // STRICTLY after the release above — see this file's header and
   // `end-of-turn-resume-hook.ts`. Outside the try/catch on purpose: a failed

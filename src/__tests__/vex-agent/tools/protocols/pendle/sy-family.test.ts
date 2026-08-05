@@ -222,12 +222,16 @@ const { computePrequoteMatchHash } = await import(
   "../../../../../vex-agent/tools/protocols/prequote/identity/hash.js"
 );
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CTX = {} as unknown as ProtocolExecutionContext;
+// `tokenIn` (mint) and `tokenOut` (redeem) name the SAME plain-token leg for
+// opposite directions (W6e); both are set so one fixture drives both builders.
 const syParams = (over: Record<string, unknown> = {}) => ({
   chain: "ethereum",
   sy: SY,
-  token: WSTETH,
+  tokenIn: WSTETH,
+  tokenOut: WSTETH,
   amountIn: "1",
   slippageBps: 50,
   ...over,
@@ -255,13 +259,13 @@ describe("SY prequote identity — dry run ↔ execute agreement", () => {
 
   it("a changed SY / token / amount / slippage each diverge", () => {
     expect(mintHash()).not.toBe(mintHash({ sy: USDC }));
-    expect(mintHash()).not.toBe(mintHash({ token: USDC }));
+    expect(mintHash()).not.toBe(mintHash({ tokenIn: USDC }));
     expect(mintHash()).not.toBe(mintHash({ amountIn: "1.0001" }));
-    expect(mintHash()).not.toBe(mintHash({ slippageBps: 100 }));
+    expect(mintHash()).not.toBe(mintHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS + 50 }));
   });
 
-  it("an omitted slippage normalizes to the handler default (50) on both sides", () => {
-    expect(mintHash({ slippageBps: undefined })).toBe(mintHash({ slippageBps: 50 }));
+  it("an omitted slippage normalizes to the ONE Vex default on both sides", () => {
+    expect(mintHash({ slippageBps: undefined })).toBe(mintHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
   });
 
   it("the venue label is NOT plain 'pendle', so a PT quote can never authorize a wrap", () => {
@@ -275,7 +279,7 @@ describe("SY prequote identity — dry run ↔ execute agreement", () => {
     expect(() => buildPendleSyIdentity("s", syParams({ sy: "" }), CTX, "mint")).toThrow();
     expect(() => buildPendleSyIdentity("s", syParams({ amountIn: "" }), CTX, "mint")).toThrow();
     expect(() => buildPendleSyIdentity("s", syParams({ chain: "dogecoin" }), CTX, "mint")).toThrow();
-    expect(() => buildPendleSyIdentity("s", syParams({ token: SY }), CTX, "mint")).toThrow();
+    expect(() => buildPendleSyIdentity("s", syParams({ tokenIn: SY }), CTX, "mint")).toThrow();
     expect(() => buildPendleSyIdentity("s", syParams({ sy: "not-an-address" }), CTX, "mint")).toThrow();
     // A fractional slippage is refused, never truncated into the digest.
     expect(() => buildPendleSyIdentity("s", syParams({ slippageBps: 0.5 }), CTX, "mint")).toThrow();
@@ -300,11 +304,12 @@ describe("the SY manifests meet the context-free agent bar", () => {
       const m = manifestFor(toolId);
       expect(m.mutating).toBe(true);
       expect(m.actionKind).toBe("user_wallet_broadcast");
-      expect(m.params.map((param) => param.key)).toEqual(["chain", "sy", "token", "amountIn", "slippageBps", "dryRun"]);
+      const tokenLeg = toolId === "pendle.sy.mint" ? "tokenIn" : "tokenOut";
+      expect(m.params.map((param) => param.key)).toEqual(["chain", "sy", tokenLeg, "amountIn", "slippageBps", "dryRun"]);
       expect(m.params.filter((param) => param.required).map((param) => param.key)).toEqual([
         "chain",
         "sy",
-        "token",
+        tokenLeg,
         "amountIn",
       ]);
     }
@@ -324,7 +329,7 @@ describe("the SY manifests meet the context-free agent bar", () => {
   it("slippage is documented as whole basis points with the policy maximum", () => {
     const slippage = manifestFor("pendle.sy.mint").params.find((param) => param.key === "slippageBps");
     expect(slippage?.unit).toBe("bps");
-    expect(slippage?.description).toMatch(/0\.50%/);
+    expect(slippage?.description).toMatch(new RegExp(`default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%`));
     expect(slippage?.description).toMatch(/1000 = 10%/);
   });
 
@@ -340,7 +345,7 @@ describe("the pt.redeem fallback note now names sy.redeem as REAL", () => {
     readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
   it("the handler's fallback note points at pendle.sy.redeem and no longer says it does not exist", () => {
-    const source = read("../../../../../vex-agent/tools/protocols/pendle/handlers/pt.ts");
+    const source = read("../../../../../vex-agent/tools/protocols/pendle/handlers/pt/redeem.ts");
     expect(source).toMatch(/pendle\.sy\.redeem/);
     expect(source).not.toMatch(/pendle\.sy\.redeem, which does not exist yet/);
   });

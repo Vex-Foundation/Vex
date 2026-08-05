@@ -187,6 +187,7 @@ function row(overrides: Partial<BridgeSweepRow> = {}): BridgeSweepRow {
     normalizedRoute: null,
     lastAttemptedAt: null,
     createdAt: "2026-07-25T03:05:12.813Z",
+    lastVerificationReason: null,
     ...overrides,
   };
 }
@@ -209,6 +210,8 @@ function makeDeps(overrides: Partial<BridgeRepairDeps> = {}): BridgeRepairDeps {
     listConfirmedNeedingBalanceRefresh: vi.fn().mockResolvedValue([]),
     touchAttempt: vi.fn().mockResolvedValue(undefined),
     touchChecked: vi.fn().mockResolvedValue(undefined),
+    noteVerificationInconclusive: vi.fn().mockResolvedValue(undefined),
+    noteVerificationConclusive: vi.fn().mockResolvedValue(undefined),
     fetchKhalaniOrder: vi.fn().mockResolvedValue(null),
     fetchRelayStatus: vi.fn().mockResolvedValue(null),
     fetchDebridgeFillHash: vi.fn().mockResolvedValue(null),

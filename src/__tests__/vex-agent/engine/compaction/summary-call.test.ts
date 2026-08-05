@@ -72,11 +72,14 @@ describe("callSummaryLLM", () => {
   });
 
   async function capturedMessages(): Promise<ProviderMessage[]> {
-    const chatCompletionSimple = vi.fn(async () => ({ content: VALID }));
+    const chatCompletionSimple =
+      vi.fn<BranchInferenceProvider["chatCompletionSimple"]>(async () => ({
+        content: VALID,
+      }));
     await callSummaryLLM(INPUT, async () =>
       stubProvider(VALID, { chatCompletionSimple }),
     );
-    return (chatCompletionSimple.mock.calls[0]?.[0] ?? []) as ProviderMessage[];
+    return chatCompletionSimple.mock.calls[0]?.[0] ?? [];
   }
 
   it("sends the frozen prefix VERBATIM, roles and tool pairing intact", async () => {
@@ -120,7 +123,10 @@ describe("callSummaryLLM", () => {
   });
 
   it("sends NO tool definitions — a branch never executes anything", async () => {
-    const chatCompletionSimple = vi.fn(async () => ({ content: VALID }));
+    const chatCompletionSimple =
+      vi.fn<BranchInferenceProvider["chatCompletionSimple"]>(async () => ({
+        content: VALID,
+      }));
     await callSummaryLLM(INPUT, async () =>
       stubProvider(VALID, { chatCompletionSimple }),
     );
@@ -148,13 +154,14 @@ describe("callSummaryLLM", () => {
   });
 
   it("passes the per-call deadline as a real AbortSignal", async () => {
-    const chatCompletionSimple = vi.fn(async () => ({ content: VALID }));
+    const chatCompletionSimple =
+      vi.fn<BranchInferenceProvider["chatCompletionSimple"]>(async () => ({
+        content: VALID,
+      }));
     await callSummaryLLM(INPUT, async () =>
       stubProvider(VALID, { chatCompletionSimple }),
     );
-    const signal = chatCompletionSimple.mock.calls[0]?.[3] as
-      | AbortSignal
-      | undefined;
+    const signal = chatCompletionSimple.mock.calls[0]?.[3];
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(SUMMARY_CALL_TIMEOUT_MS).toBe(90_000);
   });

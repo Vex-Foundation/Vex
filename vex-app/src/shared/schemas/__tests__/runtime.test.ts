@@ -29,6 +29,7 @@ describe("runtime schemas", () => {
       leaseActive: false,
       leaseExpiresAt: null,
       pendingControlKind: null,
+      stoppable: false,
     });
     expect(parsed.success).toBe(true);
   });
@@ -46,6 +47,7 @@ describe("runtime schemas", () => {
       leaseActive: true,
       leaseExpiresAt: ISO,
       pendingControlKind: null,
+      stoppable: false,
     });
     expect(parsed.success).toBe(true);
   });
@@ -63,6 +65,7 @@ describe("runtime schemas", () => {
       leaseActive: false,
       leaseExpiresAt: null,
       pendingControlKind: null,
+      stoppable: false,
     });
     expect(parsed.success).toBe(true);
   });
@@ -80,6 +83,7 @@ describe("runtime schemas", () => {
       leaseActive: true,
       leaseExpiresAt: ISO,
       pendingControlKind: null,
+      stoppable: false,
     });
     expect(parsed.success).toBe(true);
     // OPTIONAL, not nullable: a state that is not sleeping carries no key at
@@ -100,6 +104,7 @@ describe("runtime schemas", () => {
       leaseActive: false,
       leaseExpiresAt: null,
       pendingControlKind: null,
+      stoppable: false,
       pausedWake: {
         dueAt: ISO,
         reason: "waiting for the ETH funding window",
@@ -124,6 +129,7 @@ describe("runtime schemas", () => {
       leaseActive: true,
       leaseExpiresAt: ISO,
       pendingControlKind: null,
+      stoppable: false,
       pausedWake: { dueAt: ISO, reason: null, watchSummary: null },
     });
     expect(parsed.success).toBe(false);
@@ -142,6 +148,7 @@ describe("runtime schemas", () => {
       leaseActive: false,
       leaseExpiresAt: null,
       pendingControlKind: null,
+      stoppable: false,
     });
     expect(parsed.success).toBe(true);
   });
@@ -159,6 +166,7 @@ describe("runtime schemas", () => {
       leaseActive: false,
       leaseExpiresAt: null,
       pendingControlKind: null,
+      stoppable: false,
     };
     expect(
       runtimeStateDtoSchema.safeParse({
@@ -193,6 +201,7 @@ describe("runtime schemas", () => {
       leaseActive: false,
       leaseExpiresAt: null,
       pendingControlKind: null,
+      stoppable: false,
     };
     expect(
       runtimeStateDtoSchema.safeParse({

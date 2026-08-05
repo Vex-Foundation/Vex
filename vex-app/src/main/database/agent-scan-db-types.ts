@@ -59,10 +59,28 @@ export interface AgentScanRow {
   readonly executed_amount_out_raw: string | null;
   readonly usd_out_est: number | string | null;
 
+  /**
+   * Migration 050's DEPRECATED mixed-meaning column — network gas on a Kyber
+   * row, the VENUE's own fee on a Jupiter one. Still selected; NO LONGER what
+   * feeds the "Vex fee" label (see `vex_fee_usd_est`).
+   */
   readonly usd_fee_est: number | string | null;
-  /** Vex integrator fee as recorded (migration 050), token-denominated. */
+  /**
+   * The Vex integrator fee in USD, from the SAME whole source as the two
+   * token-denominated fields below. This — not `usd_fee_est` — is what the
+   * "Vex fee" label may be fed from.
+   */
+  readonly vex_fee_usd_est: number | string | null;
+  /** Vex integrator fee (migration 050), token-denominated, from ONE whole source. */
   readonly vex_fee_token_symbol: string | null;
   readonly vex_fee_amount_human: string | null;
+  /**
+   * Which whole source won: `in_transaction` (taken inside the transaction this
+   * row records), `separate_leg` (a sibling fee transfer), or `null` (no fee
+   * claimed — none charged, none collected yet, or the projection failed closed
+   * on contradictory evidence). Mapper-internal; never an IPC DTO field.
+   */
+  readonly vex_fee_source: string | null;
 
   readonly failure_code: string | null;
   /** Redacted engine text, SQL-clamped to the DTO's 500-char bound. */
@@ -70,6 +88,14 @@ export interface AgentScanRow {
   readonly tx_hash: string | null;
   readonly provider_order_id: string | null;
   readonly last_checked_at: string | Date | null;
+  /**
+   * Migration 065. Consecutive INCONCLUSIVE verification attempts; the DTO's
+   * `stalledVerification` is DERIVED from this and is never a stored status.
+   */
+  readonly verification_attempts: number | string | null;
+  /** Why the last attempt could not conclude, e.g. `no_safe_rpc`. Bounded open string. */
+  readonly last_verification_reason: string | null;
+  readonly pending_reason: string | null;
 
   /**
    * BRIDGE rows only — `jsonb_agg(...)` of every sibling leg of the execution

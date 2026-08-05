@@ -18,11 +18,14 @@ function makeCtx(overrides: Partial<ToolVisibilityContext> = {}): ToolVisibility
     permission: "full",
     sessionKind: "agent",
     missionRunActive: false,
+    planMode: false,
     contextUsageBand: "normal",
     // Default to a session that HAS narrative chunks so the existing
     // "Session memory" category assertions exercise the populated case; the
     // dedicated gate tests below flip this to false.
     hasSessionMemory: true,
+    preparationBypassesBarrier: false,
+    hasCompactionSummaryReady: false,
     ...overrides,
   };
 }
@@ -35,7 +38,11 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       expect(out).toContain("# Available Tool Map");
 
       // Reads / orientation visible
-      expect(out).toContain("**Protocol discovery/execution:** discover_tools, execute_tool");
+      // `execute_tool` is withheld from the model-facing surface (staged retirement,
+      // `registry/visibility.ts`) — discovered tools are injected as real functions —
+      // and the category no longer advertises an execution wrapper at all.
+      expect(out).toContain("**Protocol discovery:** discover_tools");
+      expect(out).not.toContain("execute_tool");
       expect(out).toContain("**Live state reads:** wallet_balances, chain_read, agent_scan");
 
       // Memory visible (read tools at normal band)
@@ -48,7 +55,11 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       // Mission-only / setup-only categories are HIDDEN in agent chat
       expect(out).not.toContain("Mission setup draft");
       expect(out).not.toContain("Mission run stop");
-      expect(out).not.toContain("Mission run scheduling");
+      // `loop_defer` IS present here: makeCtx is a FULL-permission agent session,
+      // and owner decree 2026-08-03 gave those sessions the ability to wait
+      // (`requiresAutonomousLoop`). Its absence was the "unlimited thoughts"
+      // incident — an agent waiting on a bridge with no way to sleep.
+      expect(out).toContain("loop_defer");
 
       // The compaction category is absent while nothing is prepared
       expect(out).not.toContain("Context compaction");
@@ -94,7 +105,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
 
       expect(out).toContain("**Mission setup draft:** mission_draft_update");
       expect(out).not.toContain("Mission run stop");
-      expect(out).not.toContain("Mission run scheduling");
+      expect(out).not.toContain("loop_defer");
     });
   });
 
@@ -106,13 +117,15 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       }));
 
       expect(out).toContain("**Mission run stop:** mission_stop");
-      expect(out).toContain("**Mission run scheduling:** loop_defer");
+      // Labelled as the WAITING pattern, not a mission-run scheduling niche —
+      // full agent sessions get the same tool.
+      expect(out).toContain("**Waiting — park the loop until an event you cannot make happen sooner:** loop_defer");
       expect(out).not.toContain("Mission setup draft");
     });
   });
 
   describe("mission active run, critical band", () => {
-    it("loop_defer disappears (pressureSafety: mutating); mission_stop remains (safe_at_barrier)", () => {
+    it("loop_defer SURVIVES at critical alongside mission_stop (both safe_at_barrier)", () => {
       const out = buildToolCatalogPrompt(makeCtx({
         sessionKind: "mission",
         missionRunActive: true,
@@ -121,21 +134,29 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
 
       // mission_stop is safe_at_barrier — survives at critical
       expect(out).toContain("**Mission run stop:** mission_stop");
-      // loop_defer is pressureSafety: "mutating" — gone at critical
-      expect(out).not.toContain("Mission run scheduling");
+      // loop_defer is safe_at_barrier too (owner decree 2026-08-03): stripping the
+      // one tool that STOPS the loop at ≥88% context, while telling the model to
+      // "continue with read-only work", was the incident. Deferring writes one row
+      // and ends the slice — the cheapest possible context action.
+      expect(out).toContain("loop_defer");
       // Nothing prepared ⇒ no compaction category, even at critical.
       expect(out).not.toContain("Context compaction");
     });
+  });
+
+  it("a RESTRICTED agent session still has no way to defer (human in the loop)", () => {
+    const out = buildToolCatalogPrompt(makeCtx({ permission: "restricted" }));
+    expect(out).not.toContain("loop_defer");
   });
 
   describe("ordering preservation", () => {
     it("renders categories in TOOL_MAP_CATEGORIES declared order", () => {
       const out = buildToolCatalogPrompt(makeCtx());
       const lines = out.split("\n").filter(l => l.startsWith("**"));
-      // First content line MUST be Protocol discovery/execution per
-      // declared order — this catches an accidental alphabetical sort
-      // (which would put "Khalani" or another K-label earlier).
-      expect(lines[0]).toMatch(/^\*\*Protocol discovery\/execution:/);
+      // First content line MUST be Protocol discovery per declared order —
+      // this catches an accidental alphabetical sort (which would put
+      // "Khalani" or another K-label earlier).
+      expect(lines[0]).toMatch(/^\*\*Protocol discovery:/);
     });
 
     it("preserves tool order within Wallet transfers (prepare before confirm)", () => {

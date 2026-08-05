@@ -96,7 +96,7 @@ beforeEach(reset);
 
 describe("trench.trade_execute — staged-loop behaviors", () => {
   it("(a) ambiguity stays pending and is NEVER re-broadcast", async () => {
-    outcomes = [{ kind: "ambiguous", txHash: "0xhash", stage: "send" }];
+    outcomes = [{ kind: "ambiguous", txHash: "0xhash", stage: "send", reason: "no receipt observed for the broadcast trade leg" }];
     const r = await trenchTradeExecuteHandler(BUY, ctx());
     expect(signCalls).toBe(1); // never retried / re-broadcast
     expect(r.success).toBe(false);

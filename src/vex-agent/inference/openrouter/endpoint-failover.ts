@@ -43,6 +43,7 @@ import type {
   InferenceRequestContext,
 } from "../types.js";
 import { resolveEffectiveContextLimit } from "../context-window.js";
+import { delay } from "@utils/cancellation.js";
 import logger from "@utils/logger.js";
 import {
   getLatestEndpointSwitch,
@@ -95,7 +96,7 @@ export interface EndpointFailoverDeps {
    */
   readonly loadCandidates: () => Promise<readonly EndpointCandidate[]>;
   /** Injected for tests; defaults to a real timer. */
-  readonly sleep?: (ms: number) => Promise<void>;
+  readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Injected for tests; defaults to the `session_endpoint_switches` repo. */
   readonly persistSwitch?: typeof recordEndpointSwitch;
   /**
@@ -105,8 +106,17 @@ export interface EndpointFailoverDeps {
   readonly loadPersistedSwitch?: typeof getLatestEndpointSwitch;
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * The backoff wait, cancellable by the operator's Stop.
+ *
+ * This is the one inference-path wait that is neither a tool nor a batch
+ * boundary: a Stop pressed while we sit out a provider's honoured `Retry-After`
+ * used to cost the full advertised delay, twice. Aborting it just unwinds the
+ * `for(;;)` and lets the caller's existing capacity-failure error surface — no
+ * new error shape is needed, because the provider's own error is the truth.
+ */
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return delay(ms, signal);
 }
 
 /**
@@ -386,6 +396,7 @@ export async function sendWithEndpointFailover<T>(
   config: InferenceConfig,
   context: InferenceRequestContext | undefined,
   deps: EndpointFailoverDeps,
+  signal?: AbortSignal,
 ): Promise<T> {
   const sessionId = context?.sessionId ?? null;
   const sleep = deps.sleep ?? defaultSleep;
@@ -449,7 +460,16 @@ export async function sendWithEndpointFailover<T>(
       // session's failure count survives, so the NEXT turn's failure is the
       // second consecutive one and does switch.
       if (delayMs === null) throw err;
-      await sleep(delayMs);
+      // A Stop during the backoff surfaces the provider's own capacity error
+      // rather than the abort: the operator stopped a request that was already
+      // failing, and the provider's reason is the useful one. `maybeSwitch`
+      // above stays un-signalled on purpose — a half-written switch record is
+      // worse than a 100 ms delay.
+      try {
+        await sleep(delayMs, signal);
+      } catch {
+        throw err;
+      }
     }
   }
 }

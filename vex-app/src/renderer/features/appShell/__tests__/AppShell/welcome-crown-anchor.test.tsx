@@ -72,6 +72,10 @@ const mockSubmitChat = {
 };
 vi.mock("../../../../lib/api/chat.js", () => ({
   useSubmitChat: () => mockSubmitChat,
+  // The panel retires the welcome hero on the SEND edge (so the transcript is
+  // mounted before the turn runs — see turnPreview's B1 arm). This suite is
+  // about the idle crown's anchoring, so nothing here is ever submitting.
+  useIsChatSubmitting: () => false,
 }));
 vi.mock("../../../../lib/api/messages.js", () => ({
   useTranscriptLiveSync: () => undefined,

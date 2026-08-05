@@ -1,0 +1,102 @@
+{
+  "version": "supplemental-v1",
+  "description": "SUPPLEMENTAL retrieval coverage for namespaces that entered the tool surface after the canonical v3 seed dataset was curated: Pendle, Relay and Virtuals. This is a SEPARATE file on purpose — the canonical `tool-discovery-seed.json` contract (116 queries, 55/61 awareness split, its floors) is frozen and must never be silently edited to add coverage. Every query here is protocol-aware by construction, so the canonical dataset's blind/protocol-aware prompt rules are deliberately NOT applied to this file; only expected tool IDs are validated against the live catalog. Uniswap is absent BY EVIDENCE, not by oversight: `uniswap` is not an advertised namespace, so `discover_tools` can never return its manifests. That contract is pinned by an assertion in `supplemental-lexical.test.ts` instead of by an unreachable retrieval expectation.",
+  "queries": [
+    {
+      "query": "What is the fixed yield on Pendle right now",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.yields"],
+      "expectedCoverageGroups": [["pendle.yields"]]
+    },
+    {
+      "query": "Buy Pendle principal tokens for a fixed return",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.buy"],
+      "expectedCoverageGroups": [["pendle.pt.buy", "pendle.pt.quote"]]
+    },
+    {
+      "query": "Add liquidity to a Pendle pool",
+      "awareness": "protocol-aware",
+      "scenario": "evm_lp",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.lp.add"],
+      "expectedCoverageGroups": [["pendle.lp.add", "pendle.lp.quote"]]
+    },
+    {
+      "query": "Claim my Pendle rewards",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.claim"],
+      "expectedCoverageGroups": [["pendle.claim", "pendle.rewards.merkle"]]
+    },
+    {
+      "query": "Check the Pendle market orderbook",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.orderbook"],
+      "expectedCoverageGroups": [["pendle.orderbook"]]
+    },
+    {
+      "query": "Redeem my Pendle PT at maturity",
+      "awareness": "protocol-aware",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": ["pendle.pt.redeem"],
+      "expectedCoverageGroups": [["pendle.pt.redeem"]]
+    },
+    {
+      "query": "Bridge tokens across chains with Relay",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.bridge"],
+      "expectedCoverageGroups": [["relay.bridge", "relay.quote.get"]]
+    },
+    {
+      "query": "Get a Relay bridge quote before moving funds",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get"],
+      "expectedCoverageGroups": [["relay.quote.get"]]
+    },
+    {
+      "query": "Move USDC from Base to Arbitrum using Relay",
+      "awareness": "protocol-aware",
+      "scenario": "bridge",
+      "intentShape": "single",
+      "expectedToolIds": ["relay.quote.get", "relay.bridge"],
+      "expectedCoverageGroups": [["relay.quote.get", "relay.bridge"]]
+    },
+    {
+      "query": "List the newest Virtuals agents",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["virtuals.list"],
+      "expectedCoverageGroups": [["virtuals.list"]]
+    },
+    {
+      "query": "Which Virtuals agents just graduated",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["virtuals.graduations"],
+      "expectedCoverageGroups": [["virtuals.graduations"]]
+    },
+    {
+      "query": "Show upcoming Virtuals genesis launches",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["virtuals.geneses"],
+      "expectedCoverageGroups": [["virtuals.geneses"]]
+    }
+  ]
+}

@@ -76,6 +76,7 @@ describe("memory_decisions repo (integration)", () => {
     expect(clash.ok).toBe(false);
     if (clash.ok) throw new Error("unreachable");
     expect(clash.reason).toBe("idempotency_conflict");
+    if (clash.reason !== "idempotency_conflict") throw new Error("unreachable");
     expect(clash.existing.decisionType).toBe("retain");
 
     // Still exactly one row (the conflicting decision was never inserted).

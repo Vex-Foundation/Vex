@@ -150,10 +150,10 @@ describe("solana-jupiter handlers — predict money conversion (W1-B)", () => {
   // Regional-block mapping (FIX-D — extends P1's wrapPredictionRead to the
   // last 2 of the domain's 18 reads: .market and .position, both flagged as a
   // gap in P1's delta log).
-  it("solana.predict.market: maps an HTTP 403 (geo-block) into a clear regional message", async () => {
+  it("solana.predict.market: appends the region hint to an HTTP 403 without replacing the provider words", async () => {
     getJupiterPredictionMarket.mockRejectedValue(providerHttpError(403, "HTTP 403: Forbidden"));
     await expect(
       SOLANA_JUPITER_HANDLERS["solana.predict.market"]!({ marketId: "mkt-1" }, ctx()),
-    ).rejects.toThrow(/not available from your current region/);
+    ).rejects.toThrow(/United States and South Korea/);
   });
 });

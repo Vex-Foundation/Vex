@@ -57,13 +57,20 @@ export function trustedText(raw: string | null, maxLen = 64): string | null {
   return sanitizeForSystemPrompt(raw.slice(0, maxLen));
 }
 
-/** Filter + narrow a category-id list. */
+/**
+ * Filter + narrow a category-id list. NOT capped (W9d).
+ *
+ * It used to stop at 16. That cap was invisible and it fed a FILTER: a market
+ * whose 17th category was the one an agent passed to `excludeCategories` came
+ * back in the result set anyway. Each surviving id is already bounded by
+ * `trustedCategoryId` (≤40 chars, `[a-z0-9_-]` only) and deduped here, so the
+ * list is bounded by the vocabulary rather than by a number that hides rows.
+ */
 export function trustedCategoryIds(raw: readonly string[]): string[] {
   const out: string[] = [];
   for (const c of raw) {
     const id = trustedCategoryId(c);
     if (id !== null && !out.includes(id)) out.push(id);
-    if (out.length >= 16) break;
   }
   return out;
 }

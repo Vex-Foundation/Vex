@@ -240,8 +240,24 @@ export interface OrdersResponse {
   cursor?: number;
 }
 
+/**
+ * Khalani's error envelope, as the API actually emits it (W2d).
+ *
+ * BOTH fields are optional because both are optional on the wire. Live
+ * (2026-08-03): `GET /v1/nope` answers `404 Not Found` as PLAIN TEXT, and a
+ * gateway JSON body can carry `message` with no `name`. Requiring `name` made
+ * the parser return `null` for those, which collapsed the provider's own words
+ * into a bare status line.
+ *
+ * `details` is the field Khalani's own docs tell integrators to read — "use the
+ * details array to identify problematic fields". Live 400 body:
+ * `{"message":"Validation failed","name":"ValidationException",
+ *   "details":[{"field":"fromToken","message":"Must be a valid EVM, Solana,
+ *   BTC, CKB, or Tron address","code":"custom"}]}`. The object form is kept
+ * because other exceptions use it (e.g. `{"quoteId":"…"}`).
+ */
 export interface KhalaniErrorBody {
-  message: string;
-  name: string;
+  message?: string;
+  name?: string;
   details?: Record<string, unknown> | Array<Record<string, unknown>>;
 }

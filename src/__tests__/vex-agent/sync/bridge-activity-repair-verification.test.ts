@@ -343,6 +343,7 @@ function schedRow(overrides: Partial<BridgeSweepRow>): BridgeSweepRow {
     normalizedRoute: "r",
     lastAttemptedAt: null,
     createdAt: "2026-07-23T09:00:00.000Z",
+    lastVerificationReason: null,
     ...overrides,
   };
 }

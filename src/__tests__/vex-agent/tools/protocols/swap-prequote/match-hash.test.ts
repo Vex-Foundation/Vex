@@ -365,6 +365,7 @@ describe("computePrequoteMatchHash", () => {
       referrer: "",
       referrerFeeBps: "",
       filler: "",
+      slippageBps: "",
     };
     const khalani = mod.computePrequoteMatchHash(bridgeBase);
     const relay = mod.computePrequoteMatchHash({ ...bridgeBase, provider: "relay" });

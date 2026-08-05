@@ -5,61 +5,30 @@
  * contract (Phase-2 W3a; plan R2/R4/R5/R14-Q2/R15/C1/C2) this function
  * implements end to end (the 16 numbered steps below are unchanged from the
  * original single-file version).
+ *
+ * This file is the public entry point; the stages live in `./bridge-execute/`
+ * (0R.4 facade split, refactor-only): venue/wallet preflight and the
+ * pre-sign failure recorder stay here because they own the identity every
+ * stage depends on; `quote.ts` (3–5), `fee-disclosure.ts` (7),
+ * `deposit-plan.ts` (6/7b), `staging.ts` (CAS hooks), `legs.ts` (13),
+ * `fee-leg.ts` (13b) and `submit.ts` (14/15) own the rest.
  */
 
-import { getKhalaniClient } from "@tools/khalani/client.js";
-import {
-  getCachedKhalaniChains,
-  getChain,
-  getChainFamily,
-} from "@tools/khalani/chains.js";
-import { resolveRouteBestIndex } from "@tools/khalani/helpers.js";
-import { findCallerSuppliedForbiddenParam, prepareQuoteRequest } from "@tools/khalani/request.js";
+import { getCachedKhalaniChains, getChain, getChainFamily } from "@tools/khalani/chains.js";
+import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
-import { classifyKhalaniQuoteResponse } from "@tools/khalani/quote-result.js";
 import { pollKhalaniOrderToTerminal } from "@tools/khalani/order-status.js";
-import {
-  planKhalaniDepositLegs,
-  signStageKhalaniLeg,
-  type KhalaniStagedLeg,
-} from "@tools/khalani/bridge-executor.js";
-import {
-  authorizeKhalaniPlanNativeValue,
-  khalaniNativeValueRefusalReason,
-  type KhalaniPlanNativeValue,
-} from "@tools/khalani/deposit-native-value.js";
-import {
-  BRIDGE_FEE_RECEIVER_EVM,
-  BRIDGE_FEE_RECEIVER_SOLANA,
-  buildBridgeFeeDisclosure,
-  buildBridgeFeeSkippedDisclosure,
-  evaluateEvmBridgeFeeEligibility,
-  splitBridgeAmountForFee,
-  type BridgeFeeDisclosure,
-  type BridgeFeeSplit,
-} from "@tools/bridge-fee/index.js";
-import {
-  DependentLegGasEstimateError,
-  dependentLegEstimateGuidance,
-  priorLegAnchorFrom,
-  type ConfirmedPriorLeg,
-} from "@tools/evm-chains/dependent-leg-gas-estimate.js";
-import type { DepositMethod, DepositPlan, KhalaniChain, QuoteRoute } from "@tools/khalani/types.js";
+import type { KhalaniStagedLeg } from "@tools/khalani/bridge-executor.js";
+import { khalaniNativeValueRefusalReason } from "@tools/khalani/deposit-native-value.js";
+import type { DepositMethod } from "@tools/khalani/types.js";
 import type { KhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
-import type { PreparedQuoteRequest } from "@tools/khalani/request.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import { familyToInventory, walletAddressesEqual } from "@tools/wallet/inventory.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import {
   createBridgeActivityIntent,
   createBridgePreBroadcastFailure,
-  attachProviderOrderId,
   checkBridgeInFlight,
-  markActivityBroadcast,
-  markActivitySolanaBroadcast,
-  markBroadcastAccepted,
-  confirmActivityEvent,
-  failActivityEvent,
   type AgentActivityFailureCode,
   type AgentActivityLegInput,
   type BridgeActivityLeg,
@@ -68,64 +37,34 @@ import {
   type BridgeRouteEndpoints,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { type KhalaniFailureSignal } from "../failure-mapping.js";
-import { khalaniRouteExpiryUnixSeconds, projectQuoteRoute } from "../projectors.js";
+import { projectQuoteRoute } from "../projectors.js";
 import { revealOnEligibleKhalaniFailure } from "./reveal.js";
-import {
-  estimateUsd,
-  humanizeAmount,
-  resolveKhalaniTokenInfo,
-  KHALANI_TOKEN_PRICE_USD_SOURCE,
-  type KhalaniTokenInfo,
-} from "./bridge-usd.js";
-import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { estimateUsd, humanizeAmount, KHALANI_TOKEN_PRICE_USD_SOURCE } from "./bridge-usd.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import { str } from "../../handler-helpers.js";
-import logger from "@utils/logger.js";
 import {
   abortRemaining,
   type AmountView,
   type BridgeVexFeeView,
   bridgeResult,
-  fetchExistingOrderId,
-  type VexFeeCollection,
   humanizeRouteType,
   inFlightResult,
   khalaniFailureMessage,
+  khalaniFailureOutput,
   type RecordedLeg,
-  txExplorerUrl,
 } from "./bridge-support.js";
 import { interpretPoll } from "./bridge-poll.js";
+import { quoteKhalaniBridgeRoute } from "./bridge-execute/quote.js";
+import { buildKhalaniDepositPlan } from "./bridge-execute/deposit-plan.js";
+import { nativeCostPreview, resolveKhalaniFeeDisclosure } from "./bridge-execute/fee-disclosure.js";
+import { runKhalaniBridgeLegs } from "./bridge-execute/legs.js";
+import { runKhalaniVexFeeLeg } from "./bridge-execute/fee-leg.js";
+import { submitKhalaniDeposit } from "./bridge-execute/submit.js";
+import type { KhalaniBridgePendingBase } from "./bridge-execute/types.js";
 
 const PROTOCOL = "khalani";
 const NAMESPACE = "khalani";
-
-/**
- * The native-cost block the dryRun preview carries. A preview that cannot show
- * the breakdown says so and says why — silence would read as "no native charge",
- * which is exactly the misreading that let an undisclosed 1e15 wei through.
- */
-function nativeCostPreview(
-  nativeCost: KhalaniPlanNativeValue | null,
-  planUnavailable: boolean,
-): Record<string, unknown> {
-  if (nativeCost === null) {
-    return {
-      available: false,
-      reason: planUnavailable
-        ? "this deposit plan cannot be broadcast by Vex, so it has no signable legs to classify"
-        : "the native-currency charges could not be verified on-chain this turn",
-      note: "An execute would refuse rather than sign an unclassified native charge.",
-    };
-  }
-  return {
-    available: true,
-    totalNativeOutflowWei: nativeCost.totalNativeOutflowWei,
-    legs: nativeCost.disclosures,
-    wouldRefuse: nativeCost.refusal !== null,
-    refusal: nativeCost.refusal,
-  };
-}
 
 export async function executeKhalaniBridge(
   params: Record<string, unknown>,
@@ -136,9 +75,9 @@ export async function executeKhalaniBridge(
   const toChain = str(params, "toChain");
   const fromToken = str(params, "fromToken");
   const toToken = str(params, "toToken");
-  const amount = str(params, "amount");
+  const amount = str(params, "amountRaw");
   if (!fromChain || !toChain || !fromToken || !toToken || !amount) {
-    return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amount" };
+    return { success: false, output: "Missing required parameters: fromChain, toChain, fromToken, toToken, amountRaw" };
   }
 
   // Fee params AND the refund destination are never accepted from tool input
@@ -166,7 +105,7 @@ export async function executeKhalaniBridge(
     prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
   } catch (err) {
     // Registry-fetch failure — transport, not a venue decision. Fail-closed.
-    return { success: false, output: `${toolId} failed: ${khalaniFailureMessage(err)}` };
+    return { success: false, output: khalaniFailureOutput(toolId, err) };
   }
   if (prequote.outcome === "static_relay") {
     return {
@@ -236,167 +175,36 @@ export async function executeKhalaniBridge(
     return { success: false, output: `${toolId} failed: ${reason}.${revealSuffix}`, data: { _executionId: executionId } };
   };
 
-  // 3. Prepare the quote request (normalizes addresses, parses hex amounts).
-  let prepared: PreparedQuoteRequest;
-  try {
-    prepared = await prepareQuoteRequest({
-      fromChain, fromToken, toChain, toToken, amount,
-      tradeType: str(params, "tradeType") || undefined,
-      fromAddress, recipient,
-      // No `refundTo`: `prepareQuoteRequest` derives it from `fromAddress`
-      // (refund-destination policy in `@tools/khalani/request.js`).
-      filler: str(params, "filler") || undefined,
-    });
-  } catch (err) {
-    return failPreSign("bridge_failed", khalaniFailureMessage(err));
-  }
+  // 3–5. Fee split, quote, route selection, freshness.
+  const quoted = await quoteKhalaniBridgeRoute({
+    fromChain, toChain, fromToken, toToken, amount,
+    tradeType: str(params, "tradeType") || undefined,
+    filler: str(params, "filler") || undefined,
+    fromAddress, recipient, fromChainId, fromFamily,
+    routeIdParam: str(params, "routeId"),
+  }, failPreSign);
+  if (quoted.outcome === "failed") return quoted.result;
+  const { feeSplit, chargeFee, quoteId, selectedRoute } = quoted;
 
-  // 3b. Vex integrator fee (`@tools/bridge-fee`) — split BEFORE the quote so
-  // the venue prices the amount it will actually receive and the `amountOut`
-  // the agent is shown is what the user actually gets. `params.amount` stays
-  // the TOTAL debited (Kyber/Jupiter `currency_in` parity); the fee leaves as
-  // Vex's own transfer AFTER the deposit confirms.
-  let feeSplit: BridgeFeeSplit;
-  try {
-    feeSplit = splitBridgeAmountForFee(prepared.request.amount);
-  } catch (err) {
-    return failPreSign("bridge_failed", khalaniFailureMessage(err));
-  }
-  // A token Vex declines to skim (fee-on-transfer / honeypot) must be settled
-  // HERE: skipping the fee changes the amount the venue is quoted for, so it
-  // cannot be discovered at broadcast time.
-  let feeSkipReason: string | null = feeSplit.charged
-    ? null
-    : "25 bps of the requested amount floors to 0 in smallest units";
-  if (feeSplit.charged && fromFamily === "eip155") {
-    const eligibility = await evaluateEvmBridgeFeeEligibility(fromChainId, fromToken);
-    if (!eligibility.charge) feeSkipReason = eligibility.reason;
-  }
-  const chargeFee = feeSkipReason === null;
-  const quoteRequest = {
-    ...prepared.request,
-    amount: (chargeFee ? feeSplit.bridgedRaw : feeSplit.totalRaw).toString(),
-  };
-
-  // 4. Quote (plain). Empty routes[] is Khalani's canonical no-route signal.
-  const routeIdParam = str(params, "routeId");
-  let selectedRoute: QuoteRoute;
-  let quoteId: string;
-  try {
-    const quoteResponse = await getKhalaniClient().getQuotes(
-      quoteRequest,
-      routeIdParam ? { routes: [routeIdParam] } : undefined,
-    );
-    const outcome = classifyKhalaniQuoteResponse(quoteResponse);
-    if (outcome.outcome === "no_route") {
-      return failPreSign("route_not_found", "Khalani returned no route for this pair", { kind: "empty_routes" });
-    }
-    quoteId = outcome.quoteId;
-    if (routeIdParam) {
-      const found = outcome.routes.find((r) => r.routeId === routeIdParam);
-      if (!found) return failPreSign("route_not_found", `Route ${routeIdParam} not found in quote`);
-      selectedRoute = found;
-    } else {
-      selectedRoute = outcome.routes[resolveRouteBestIndex(outcome.routes)]!;
-    }
-  } catch (err) {
-    const externalName = err instanceof VexError ? err.externalName : undefined;
-    return failPreSign("bridge_failed", khalaniFailureMessage(err), { kind: "exception", externalName });
-  }
-
-  // 5. Freshness. The rule (quoteExpiresAt, else validBefore, non-positive =
-  // none) has ONE owner — `khalaniRouteExpiryUnixSeconds` — shared with the
-  // quote/dryRun previews, so what the agent is SHOWN is what is ENFORCED.
-  const expiresAt = khalaniRouteExpiryUnixSeconds(selectedRoute);
-  if (expiresAt !== null && Date.now() >= expiresAt * 1000) {
-    return failPreSign("deadline_expired", "Quote has expired — re-request a fresh quote");
-  }
-
-  // 6. Build deposit plan (needed for BOTH dryRun and execute).
-  const depositMethod = str(params, "depositMethod") as DepositMethod | "";
-  let plan: DepositPlan;
-  try {
-    plan = await getKhalaniClient().buildDeposit({
-      from: prepared.request.fromAddress,
-      quoteId,
-      routeId: selectedRoute.routeId,
-      ...(depositMethod ? { depositMethod } : {}),
-    });
-  } catch (err) {
-    const externalName = err instanceof VexError ? err.externalName : undefined;
-    return failPreSign("bridge_failed", khalaniFailureMessage(err), { kind: "exception", externalName });
-  }
+  // 6 + 7b. Deposit plan, its signable legs, and their native-cost classification.
+  const sourceChain = getChain(fromChainId, chains);
+  const planning = await buildKhalaniDepositPlan({
+    fromAddress: quoted.prepared.request.fromAddress,
+    quoteId, routeId: selectedRoute.routeId,
+    depositMethod: str(params, "depositMethod") as DepositMethod | "",
+    sourceChain, chains, fromToken, chargeFee,
+    feeRaw: feeSplit.feeRaw,
+    bridgedAmountRaw: quoted.quotedAmountRaw,
+  }, failPreSign);
+  if (planning.outcome === "failed") return planning.result;
+  const { plannedLegs, planError, nativeCost, nativeCostError } = planning;
 
   // 7. USD + token facts (Khalani serves no USD) — resolved BEFORE the dryRun
   // branch so the preview discloses the SAME fee the execute charges.
-  const [fromInfo, toInfo]: [KhalaniTokenInfo | null, KhalaniTokenInfo | null] = await Promise.all([
-    resolveKhalaniTokenInfo(fromToken, fromChainId),
-    resolveKhalaniTokenInfo(toToken, toChainId),
-  ]);
-  const feeAmountHuman = humanizeAmount(feeSplit.feeRaw.toString(), fromInfo?.decimals);
-  // ONE derivation, used by BOTH the agent-facing disclosure below and the
-  // `bridge_fee` row's `usd_vex_fee_est` (migration 050), so the number Vex
-  // discloses and the number Vex records can never drift apart. `undefined`
-  // (never 0) when the source token has no price.
-  const usdVexFee = chargeFee ? estimateUsd(feeAmountHuman, fromInfo?.priceUsd) : undefined;
-  const vexFee: BridgeFeeDisclosure = chargeFee
-    ? buildBridgeFeeDisclosure({
-        tokenAddress: fromToken,
-        tokenSymbol: fromInfo?.symbol,
-        tokenDecimals: fromInfo?.decimals,
-        feeRaw: feeSplit.feeRaw,
-        bridgedRaw: feeSplit.bridgedRaw,
-        totalRaw: feeSplit.totalRaw,
-        receiver: fromFamily === "solana" ? BRIDGE_FEE_RECEIVER_SOLANA : BRIDGE_FEE_RECEIVER_EVM,
-        feeUsdEstimate: usdVexFee,
-      })
-    : buildBridgeFeeSkippedDisclosure({
-        reason: feeSkipReason ?? "no fee applies to this bridge",
-        totalRaw: feeSplit.totalRaw,
-      });
-
-  // 7b. Materialize AND classify the deposit plan BEFORE the preview and before
-  // ANY recording or signing.
-  //
-  // This ordering is the point of the card, not a detail. Khalani's deposit
-  // plan used to be built after the approval gate had already run, so the
-  // provider's `tx.value` reached the signer having never been disclosed: a
-  // deBridge deposit carrying 1e15 wei (~$1.86) that appears in NEITHER
-  // `amountIn` NOR `amountOut` NOR `estimatedGas` was signed as-is. Classifying
-  // here means the exposure is in the preview the agent reads, in the record
-  // the intent persists, and in the fingerprint the signer re-checks.
-  //
-  // Planning is fault-TOLERATED here and fault-FATAL at step 8: a PERMIT2 plan
-  // legitimately throws, and `dryRun` is the documented way to inspect a permit
-  // payload, so a preview must still render. Nothing can be signed from a plan
-  // that did not build.
-  const sourceChain = getChain(fromChainId, chains);
-  let plannedLegs: KhalaniStagedLeg[] | null = null;
-  let planError: unknown = null;
-  try {
-    plannedLegs = planKhalaniDepositLegs(
-      plan,
-      sourceChain,
-      chargeFee ? { tokenAddress: fromToken, feeRaw: feeSplit.feeRaw } : null,
-    );
-  } catch (err) {
-    planError = err;
-  }
-
-  let nativeCost: KhalaniPlanNativeValue | null = null;
-  let nativeCostError: unknown = null;
-  if (plannedLegs !== null) {
-    try {
-      nativeCost = await authorizeKhalaniPlanNativeValue(plannedLegs, sourceChain, chains, {
-        fromToken,
-        // What the venue was actually quoted for and will deposit — the number
-        // VEX derived, never the provider's echo of it.
-        bridgedAmountRaw: quoteRequest.amount,
-      });
-    } catch (err) {
-      nativeCostError = err;
-    }
-  }
+  const { fromInfo, toInfo, feeAmountHuman, usdVexFee, vexFee } = await resolveKhalaniFeeDisclosure({
+    fromToken, toToken, fromChainId, toChainId, fromFamily,
+    feeSplit, chargeFee, feeSkipReason: quoted.feeSkipReason,
+  });
 
   // 7c. dryRun — read-only preview (no recording, no signing). Carries the same
   // deadline the real execute enforces (step 5), so a preview never hides the
@@ -509,7 +317,7 @@ export async function executeKhalaniBridge(
     legs: activityLegs, expectedFill,
   });
   if (intent.outcome === "in_flight_conflict") return inFlightResult(toolId, intent.existing);
-  const { executionId } = intent;
+  const { executionId, expectedFill: logicalRow } = intent;
 
   // 12. Resolve the source-family signing wallet (decrypts) — only now.
   let signer: ChainWallet;
@@ -522,7 +330,7 @@ export async function executeKhalaniBridge(
 
   const recordedLegs: RecordedLeg[] = [];
 
-  const pendingBase = {
+  const pendingBase: KhalaniBridgePendingBase = {
     executionId, fromChainName, toChainName,
     routeType: selectedRoute.type, etaSeconds: selectedRoute.quote.expectedDurationSeconds,
     amountIn: amountInView, amountOut: amountOutView,
@@ -542,319 +350,35 @@ export async function executeKhalaniBridge(
     } satisfies BridgeVexFeeView,
   };
 
-  // The staging CAS hooks, shared by the bridge loop below and the Vex fee leg
-  // (13b): both must persist the hash BEFORE the payload reaches the network,
-  // and both must refuse to broadcast an untracked transaction on a CAS miss.
-  const stageHooksFor = (rowId: number) => ({
-    onHashStaged: async (h: Parameters<Parameters<typeof signStageKhalaniLeg>[4]["onHashStaged"]>[0]) => {
-      // Nonce-less staging is Solana-only: the dedicated CAS's
-      // `chain_family='solana'` predicate makes a nonce-less EVM leg a
-      // CAS miss (abort below), never a wrongly-shaped stage. A `null`
-      // nonce always carries the blockhash evidence (W5 §2/R2b) — see
-      // `KhalaniStageHandles`'s discriminated-union doc.
-      const res = h.nonce === null
-        ? await markActivitySolanaBroadcast(rowId, {
-            txHash: h.txHash, fromAddress: h.fromAddress,
-            recentBlockhash: h.recentBlockhash, lastValidBlockHeight: h.lastValidBlockHeight,
-          })
-        : await markActivityBroadcast(rowId, { txHash: h.txHash, fromAddress: h.fromAddress, nonce: h.nonce });
-      if (!res.applied) {
-        throw new Error(`agent_activity: staging CAS miss for event ${rowId} — refusing to broadcast untracked`);
-      }
-    },
-    onAccepted: async () => {
-      const r = await markBroadcastAccepted(rowId);
-      if (!r.applied) logger.warn("khalani.bridge.broadcast_accept_miss", { id: rowId });
-    },
-  });
-
   // The Vex fee leg is planned LAST (index `stagedLegs.length - 1` when
   // charged) and is driven OUTSIDE the bridge loop — its outcome must never
   // fail, abort, or delay the bridge (see 13b).
   const feeLegIndex = stagedLegs.findIndex((leg) => leg.purpose === "vex_fee");
   const bridgeLegCount = feeLegIndex === -1 ? stagedLegs.length : feeLegIndex;
-  /** Finalize a never-attempted fee row without touching the logical fill row. */
-  const skipFeeLeg = async (reason: string): Promise<void> => {
-    if (feeLegIndex === -1) return;
-    await abortRemaining(executionId, feeLegIndex, reason, feeLegIndex + 1);
-  };
-
-  /**
-   * Sign, stage, broadcast and record the Vex fee transfer. Called ONLY after
-   * the deposit is confirmed AND registered with the provider. Every path
-   * returns a report — none throws, none aborts the logical row, none marks
-   * the bridge failed: the bridge already happened, so a fee that does not
-   * land is missed Vex revenue and nothing more.
-   */
-  const runVexFeeLeg = async (): Promise<VexFeeCollection> => {
-    if (feeLegIndex === -1) {
-      return { collection: "not_charged", collectionNote: "No Vex fee applies to this bridge." };
-    }
-    const feeLeg = stagedLegs[feeLegIndex]!;
-    const feeRow = intent.legs[feeLegIndex];
-    if (!feeRow) {
-      logger.warn("khalani.bridge.fee_leg_row_missing", { executionId, index: feeLegIndex });
-      return {
-        collection: "not_attempted",
-        collectionNote: "The bridge went through. The Vex fee had no recorded row, so no fee was taken.",
-      };
-    }
-    try {
-      const outcome = await signStageKhalaniLeg(feeLeg, sourceChain, chains, signer, stageHooksFor(feeRow.id));
-      const explorerUrl = txExplorerUrl(fromChainId, chains, outcome.txHash);
-      if (outcome.kind === "reverted") {
-        await failActivityEvent(feeRow.id, {
-          failureCode: "mined_revert",
-          failureReason: `Vex fee transfer ${outcome.txHash} reverted on-chain; the bridge itself was unaffected.`,
-        });
-        recordedLegs.push({ role: "vex_fee", chain: fromChainName, txHash: outcome.txHash, explorerUrl, status: "reverted" });
-        return {
-          collection: "reverted",
-          collectionNote: "The bridge went through. The Vex fee transfer reverted, so no fee was collected — your bridge is unaffected.",
-        };
-      }
-      if (outcome.kind === "ambiguous") {
-        // Left PENDING with its staged hash for the receipt sweep. NEVER
-        // retried here: a blind retry of an unconfirmed transfer could charge
-        // the user twice.
-        logger.info("khalani.bridge.fee_leg_ambiguous", { id: feeRow.id, stage: outcome.stage });
-        recordedLegs.push({ role: "vex_fee", chain: fromChainName, txHash: outcome.txHash, explorerUrl, status: "broadcast_unconfirmed" });
-        return {
-          collection: "unconfirmed",
-          collectionNote: "The bridge went through. The Vex fee transfer was broadcast but not confirmed this turn; it is tracked automatically and is never re-sent.",
-        };
-      }
-      let legStatus = "confirmed";
-      try {
-        const confirmResult = await confirmActivityEvent(feeRow.id, {});
-        if (!confirmResult.applied) {
-          const alreadyMatches =
-            confirmResult.row.status === "confirmed" && confirmResult.row.txHash === outcome.txHash;
-          if (!alreadyMatches) {
-            legStatus = "confirmed_unrecorded";
-            logger.warn("khalani.bridge.fee_leg_confirm_cas_miss", { id: feeRow.id, rowStatus: confirmResult.row.status });
-          }
-        }
-      } catch (err) {
-        legStatus = "confirmed_unrecorded";
-        logger.warn("khalani.bridge.fee_leg_confirm_failed", { id: feeRow.id, error: khalaniFailureMessage(err) });
-      }
-      recordedLegs.push({ role: "vex_fee", chain: fromChainName, txHash: outcome.txHash, explorerUrl, status: legStatus });
-      return {
-        collection: legStatus,
-        collectionNote: "The bridge went through and the Vex fee was transferred to the treasury.",
-      };
-    } catch (err) {
-      const safe = khalaniFailureMessage(err);
-      logger.warn("khalani.bridge.fee_leg_failed", { executionId, error: safe });
-      await skipFeeLeg("vex fee leg refused before signing");
-      recordedLegs.push({ role: "vex_fee", chain: fromChainName, txHash: null, status: "not_attempted" });
-      return {
-        collection: "not_attempted",
-        collectionNote: "The bridge went through. The Vex fee transfer was refused before signing, so no fee was collected — your bridge is unaffected.",
-      };
-    }
-  };
 
   // 13. Staged broadcast loop — one Vex-signed BRIDGE leg at a time.
-  let depositTxHash: string | undefined;
-  let currentIndex = 0;
-  // Read-after-write anchor for the NEXT leg: the allowance this loop just
-  // confirmed is exactly the state the deposit leg's pre-sign estimate depends
-  // on, and the estimating node does not always have it yet (live 2026-07-24,
-  // allowance `0x2445ce73…` confirmed, deposit refused with "ERC20: transfer
-  // amount exceeds allowance", immediate retry succeeded — see
-  // `dependent-leg-gas-estimate.ts`). `null` for Solana legs: no EVM anchor.
-  let priorLeg: ConfirmedPriorLeg | undefined;
-  try {
-    for (let i = 0; i < bridgeLegCount; i++) {
-      currentIndex = i;
-      const stagedLeg = stagedLegs[i]!;
-      const legRow = intent.legs[i]!;
-      const outcome = await signStageKhalaniLeg(
-        stagedLeg, sourceChain, chains, signer, stageHooksFor(legRow.id), priorLeg,
-      );
-
-      if (outcome.kind === "ambiguous") {
-        logger.info("khalani.bridge.leg_ambiguous", { id: legRow.id, role: stagedLeg.role, stage: outcome.stage });
-        recordedLegs.push({ role: stagedLeg.role, chain: fromChainName, txHash: outcome.txHash, explorerUrl: txExplorerUrl(fromChainId, chains, outcome.txHash), status: "broadcast_unconfirmed" });
-        // Do NOT submit to Khalani — the deposit hash is staged.
-        if (stagedLeg.isDeposit) {
-          // Blocker 1: an ambiguous DEPOSIT hash MAY have landed on-chain. The
-          // logical `bridge_fill_expected` row + the in-flight guard MUST stay
-          // pending so W4's null-order-id recovery reconciles the deposit hash
-          // against the provider — terminalizing it here would release the guard
-          // mid-flight and permit a duplicate bridge. Abort ONLY the never-signed
-          // sibling legs strictly BELOW the expected-fill event index (normally
-          // none, since the deposit is the last broadcast leg); the exclusive
-          // bound (= stagedLegs.length, the expected-fill index) leaves the
-          // logical row untouched.
-          await abortRemaining(executionId, i + 1, `earlier ${stagedLeg.role} ambiguous`, stagedLegs.length);
-        } else {
-          // An upstream allowance ended ambiguously and NO deposit was broadcast,
-          // so nothing is in flight; abort the whole remaining plan (including the
-          // logical row) to release the guard — W4 cannot recover a row that has
-          // no staged deposit hash.
-          await abortRemaining(executionId, i + 1, `earlier ${stagedLeg.role} ambiguous`);
-        }
-        return bridgeResult({
-          ...pendingBase, success: false, status: "pending",
-          message: `The ${stagedLeg.role} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not re-bridge; this attempt is recorded and tracked automatically.`,
-          legs: recordedLegs, depositTxHash: stagedLeg.isDeposit ? outcome.txHash : undefined,
-        });
-      }
-      if (outcome.kind === "reverted") {
-        await failActivityEvent(legRow.id, { failureCode: "mined_revert", failureReason: `${stagedLeg.role} transaction ${outcome.txHash} reverted on-chain.` });
-        recordedLegs.push({ role: stagedLeg.role, chain: fromChainName, txHash: outcome.txHash, explorerUrl: txExplorerUrl(fromChainId, chains, outcome.txHash), status: "reverted" });
-        await abortRemaining(executionId, i + 1, `earlier ${stagedLeg.role} reverted`);
-        // REVISION 1 R1: reveal ONLY for the bridge_deposit leg (never allowance).
-        const revealSuffix = stagedLeg.role === "bridge_deposit"
-          ? revealOnEligibleKhalaniFailure({ kind: "deposit_mined_revert" }, sessionId, params)
-          : "";
-        return bridgeResult({
-          ...pendingBase, success: false, status: "reverted",
-          message: `The ${stagedLeg.role} transaction (${outcome.txHash}) reverted on-chain. No further steps were attempted and no bridge was initiated.${revealSuffix}`,
-          legs: recordedLegs,
-        });
-      }
-
-      // Confirmed on-chain — record the leg from its own receipt, but RESPECT
-      // the CAS result (m5, mirrors Phase-1 C41): a miss that is not a benign
-      // already-confirmed-with-the-SAME-hash race means Vex's own record of the
-      // (real) on-chain settlement did not persist, so the leg is reported
-      // `confirmed_unrecorded`, never an ordinary confirmed.
-      let legStatus = "confirmed";
-      priorLeg = priorLegAnchorFrom(outcome.settledAtBlock);
-      try {
-        const confirmResult = await confirmActivityEvent(legRow.id, {});
-        if (!confirmResult.applied) {
-          const alreadyMatches =
-            confirmResult.row.status === "confirmed" && confirmResult.row.txHash === outcome.txHash;
-          if (!alreadyMatches) {
-            legStatus = "confirmed_unrecorded";
-            logger.warn("khalani.bridge.leg_confirm_cas_miss", { id: legRow.id, role: stagedLeg.role, rowStatus: confirmResult.row.status });
-          }
-        }
-      } catch (err) {
-        legStatus = "confirmed_unrecorded";
-        logger.warn("khalani.bridge.leg_confirm_failed", { id: legRow.id, role: stagedLeg.role, error: khalaniFailureMessage(err) });
-      }
-      recordedLegs.push({ role: stagedLeg.role, chain: fromChainName, txHash: outcome.txHash, explorerUrl: txExplorerUrl(fromChainId, chains, outcome.txHash), status: legStatus });
-      if (stagedLeg.isDeposit) depositTxHash = outcome.txHash;
-    }
-  } catch (err) {
-    // Post-intent failure (e.g. a CAS-miss throw) — NEVER create a second
-    // execution. Abort the remaining never-signed rows; return the SAME id.
-    const safeMessage = khalaniFailureMessage(err);
-    await abortRemaining(executionId, currentIndex, safeMessage);
-    logger.warn("khalani.bridge.post_intent_failure", { executionId, index: currentIndex, error: safeMessage });
-    // A leg refused because its estimate never succeeded after an allowance
-    // this same bridge confirmed is NOT an interruption of unknown scope:
-    // nothing was signed for it, every remaining row (including the logical
-    // fill row, so the in-flight guard is released) is finalized "not
-    // attempted", and no deposit reached the network. "Do not re-bridge" is
-    // the wrong instruction here — it is what made a transient RPC lag a
-    // permanent, funded failure for an autonomous agent (live 2026-07-24).
-    if (err instanceof DependentLegGasEstimateError) {
-      const refusedRole = stagedLegs[currentIndex]?.role ?? "bridge_deposit";
-      return bridgeResult({
-        ...pendingBase, success: false, status: "not_attempted",
-        message: `The ${refusedRole} leg could not be gas-estimated, so it was refused before signing and no bridge was initiated. ${dependentLegEstimateGuidance(err)} The node reported: ${safeMessage}`,
-        legs: recordedLegs,
-      });
-    }
-    // The signer's native-value backstop. Step 8 should already have refused
-    // this plan, so reaching here means the exposure changed AFTER the intent
-    // was recorded — but it is still a refusal that signed nothing, and it must
-    // not be reported as an interruption of unknown scope. Telling an
-    // autonomous agent "do not re-bridge" when no transaction exists is exactly
-    // what turns a safe refusal into a stuck, funded-looking failure.
-    if (err instanceof VexError && err.code === ErrorCodes.NATIVE_VALUE_UNAUTHORIZED) {
-      const refusedRole = stagedLegs[currentIndex]?.role ?? "bridge_deposit";
-      return bridgeResult({
-        ...pendingBase, success: false, status: "not_attempted",
-        message: `The ${refusedRole} leg sends native currency Vex could not account for, so it was refused before signing and no bridge was initiated. ${safeMessage} Re-quote to get a fresh deposit plan.`,
-        legs: recordedLegs,
-      });
-    }
-    // The signer's gas-ceiling backstop (W6/6a), same shape and same reasoning
-    // as the native-value branch above: a PRE-SIGN refusal that signed nothing
-    // must never be reported as an interruption of unknown scope. Carried here
-    // rather than left to the generic tail because `safeMessage` is capped at
-    // 200 characters — the cap holds the numbers, this sentence holds the
-    // action.
-    if (err instanceof VexError && err.code === ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE) {
-      const refusedRole = stagedLegs[currentIndex]?.role ?? "bridge_deposit";
-      return bridgeResult({
-        ...pendingBase, success: false, status: "not_attempted",
-        message: `The ${refusedRole} leg asked for far more gas than Vex measured for that exact call, so it was refused before signing and no bridge was initiated. ${safeMessage} Re-quote for a fresh deposit plan; a gas estimate does not move with congestion, so waiting will not change this. If a fresh quote asks for the same limit, bridge over a different route instead of retrying this one.`,
-        legs: recordedLegs,
-      });
-    }
-    return bridgeResult({
-      ...pendingBase, success: false, status: "pending",
-      message: `An internal error interrupted the bridge after it was recorded — ${safeMessage}. Check the record (execution ${executionId}) before any further action; do not re-bridge.`,
-      legs: recordedLegs, depositTxHash,
-    });
-  }
+  const legLoop = await runKhalaniBridgeLegs({
+    executionId, stagedLegs, bridgeLegCount, intentLegs: intent.legs,
+    sourceChain, chains, signer, fromChainId, fromChainName,
+    sessionId, params, pendingBase, recordedLegs,
+  });
+  if (legLoop.outcome === "halted") return legLoop.result;
+  const { depositTxHash } = legLoop;
 
   if (!depositTxHash) {
     // Unreachable — planKhalaniDepositLegs guarantees exactly one deposit leg.
-    await abortRemaining(executionId, currentIndex, "no deposit hash after staged legs");
+    await abortRemaining(executionId, legLoop.currentIndex, "no deposit hash after staged legs");
     return bridgeResult({ ...pendingBase, success: false, status: "pending", message: "The bridge deposit did not produce a hash; the attempt is recorded — do not re-bridge.", legs: recordedLegs });
   }
 
-  // 14. Submit the confirmed deposit hash to Khalani → order id.
-  let orderId: string;
-  try {
-    const submitted = await getKhalaniClient().submitDeposit({ quoteId, routeId: selectedRoute.routeId, txHash: depositTxHash });
-    orderId = submitted.orderId;
-  } catch (err) {
-    const externalName = err instanceof VexError ? err.externalName : undefined;
-    if (externalName === "DuplicateRecordException") {
-      // Already submitted — fetch the existing order (no new action).
-      const existing = await fetchExistingOrderId(fromAddress, depositTxHash);
-      if (existing) {
-        orderId = existing;
-      } else {
-        logger.warn("khalani.bridge.duplicate_no_existing", { executionId });
-        await skipFeeLeg("provider order could not be reconciled; fee not attempted");
-        return bridgeResult({ ...pendingBase, success: false, status: "pending", message: `The deposit (${depositTxHash}) was already submitted; its order could not be re-fetched in this turn but is recorded and tracked automatically. Do not re-bridge.`, legs: recordedLegs, depositTxHash });
-      }
-    } else {
-      // Deposit is confirmed + recorded; W4 recovers the null-order-id row.
-      logger.warn("khalani.bridge.submit_failed", { executionId, error: khalaniFailureMessage(err) });
-      await skipFeeLeg("provider order submission pending; fee not attempted");
-      return bridgeResult({ ...pendingBase, success: false, status: "pending", message: `The deposit confirmed on-chain (${depositTxHash}) but the provider order submission is pending — it is recorded and tracked automatically. Do not re-bridge.`, legs: recordedLegs, depositTxHash });
-    }
-  }
-
-  // 15. Attach the provider order id to the logical row (CAS, all outcomes).
-  const attach = await attachProviderOrderId({ executionId, providerOrderId: orderId });
-  // m4: the in-turn poll must use the PERSISTED order id, NEVER a newly-returned
-  // conflicting one. On `conflict_different_id` the logical row already carries a
-  // different id (that persisted id is the one to trust); on `not_pending` the row
-  // may carry the id a prior attach/W4 recorded. Default to the id we just
-  // submitted only when the fresh attach succeeded.
-  let pollOrderId = orderId;
-  if (attach.outcome === "conflict_different_id") {
-    logger.warn("khalani.bridge.order_id_conflict", { executionId });
-    const persisted = attach.row?.providerOrderId ?? null;
-    if (!persisted) {
-      // Defensive: a genuine conflict always carries a persisted id, but never
-      // poll the conflicting id — skip the poll with a truthful pending output.
-      await skipFeeLeg("provider order id could not be reconciled; fee not attempted");
-      return bridgeResult({
-        ...pendingBase, success: false, status: "pending", depositTxHash,
-        message: `The deposit confirmed on-chain (${depositTxHash}) but the provider order id could not be reconciled this turn — it is recorded and tracked automatically. Do not re-bridge.`,
-        legs: recordedLegs,
-      });
-    }
-    pollOrderId = persisted;
-  } else if (attach.outcome === "not_pending") {
-    logger.info("khalani.bridge.attach_not_pending", { executionId });
-    pollOrderId = attach.row?.providerOrderId ?? orderId;
-  }
+  // 14 + 15. Submit the confirmed deposit hash to Khalani and attach the
+  // provider order id to the logical row.
+  const submitted = await submitKhalaniDeposit({
+    executionId, feeLegIndex, quoteId, routeId: selectedRoute.routeId,
+    depositTxHash, fromAddress, pendingBase, recordedLegs,
+  });
+  if (submitted.outcome === "halted") return submitted.result;
+  const pollOrderId = submitted.pollOrderId;
 
   // 13b. Vex fee leg — LAST, and only now: the deposit is confirmed on-chain
   // and registered with the provider, so collecting the fee can neither delay
@@ -865,12 +389,16 @@ export async function executeKhalaniBridge(
   // risk. An ambiguous broadcast is left unresolved for the receipt sweep
   // exactly like any other staged transaction — a blind retry could charge the
   // user twice.
-  const feeOutcome = await runVexFeeLeg();
+  const feeOutcome = await runKhalaniVexFeeLeg({
+    executionId, feeLegIndex, stagedLegs, intentLegs: intent.legs,
+    sourceChain, chains, signer, fromChainId, fromChainName, recordedLegs,
+  });
 
   // 16. In-turn order poll — truthful, never fabricated (R6/B4/Q2).
-  const poll = await pollKhalaniOrderToTerminal(pollOrderId);
+  const poll = await pollKhalaniOrderToTerminal(pollOrderId, context.abortSignal);
   return interpretPoll({
     poll, orderId: pollOrderId, depositTxHash, recordedLegs, toChainName,
+    logicalRowId: logicalRow.id,
     pendingBase: { ...pendingBase, vexFee: { disclosure: vexFee, ...feeOutcome } },
   });
 }

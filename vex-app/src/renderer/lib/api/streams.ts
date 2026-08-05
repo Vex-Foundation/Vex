@@ -4,7 +4,8 @@
  * Subscribes the active session to the engine stream spine and drives the
  * ephemeral `streamStore`:
  *  - `onStreamDelta` → accumulate the preview (text/tool/reasoning/usage/
- *    phase/status — reasoning is batched inside the store, see `applyDelta`);
+ *    phase/status — EVERY delta kind is coalesced inside the store on one
+ *    shared flush window, see `applyDelta`);
  *  - `onTranscriptAppend` (assistant role) → the streamed text is now
  *    persisted, so retire the preview's copy of it. We AWAIT the transcript
  *    query refetch first (TanStack v5 `invalidateQueries` resolves after
@@ -57,7 +58,11 @@
 
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getLiveStreamId, useStreamStore } from "../../stores/streamStore.js";
+import {
+  flushStreamDeltas,
+  getLiveStreamId,
+  useStreamStore,
+} from "../../stores/streamStore.js";
 import { useIsChatSubmitting } from "./chat.js";
 import { messagesKeys } from "./queryKeys.js";
 
@@ -118,10 +123,10 @@ export function useStreamPreviewSync(sessionId: string | null): void {
       //
       // A mismatched abort is a complete no-op: nothing applied, nothing
       // cleared, and the surviving preview keeps the idle timer it already
-      // has armed. `getLiveStreamId` also reads the reasoning batching buffer,
-      // so a reasoning-only stream aborted inside its 80 ms window is
+      // has armed. `getLiveStreamId` also reads the store's pending delta
+      // queue, so a stream aborted inside its own coalescing window is
       // correctly recognised as the LIVE stream rather than a stale one —
-      // `clear` then cancels the buffer, so it never materializes.
+      // `clear` then cancels the queue, so it never materializes.
       if (
         event.delta.kind === "aborted"
         && getLiveStreamId(sessionId) !== event.streamId
@@ -161,6 +166,11 @@ export function useStreamPreviewSync(sessionId: string | null): void {
       // then clear ONLY if that SAME stream is still showing: a newer stream
       // that started during the await must be preserved (it clears on its own
       // append).
+      // The append persists a round whose last deltas may still be sitting in
+      // the store's coalescing window. Land them FIRST, or this handler reads
+      // a preview that does not exist yet and the queue materializes an orphan
+      // one a frame after the clear.
+      flushStreamDeltas(sessionId);
       const target = useStreamStore.getState().bySessionId[sessionId];
       if (target === undefined) return;
       const targetStreamId = target.streamId;

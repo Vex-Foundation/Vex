@@ -59,6 +59,10 @@ export function restartNoticeFor(
       return "No inference provider is available. Check your provider settings.";
     case "instruction_empty":
       return "Type what should be different before restarting.";
+    case "session_stop_pending":
+      // Not an error and not a dead end: the operator's own Stop reached the
+      // session first and was consumed, so pressing Restart again works.
+      return "Your Stop landed first. Press Restart again to start a fresh run.";
     case "mission_not_found":
     case "session_mismatch":
       return "This mission is no longer available in this session.";

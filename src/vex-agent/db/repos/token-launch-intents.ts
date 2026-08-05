@@ -93,6 +93,7 @@ export type {
   TokenLaunchIntent,
   TokenLaunchIntentOrigin,
   TokenLaunchIntentStatus,
+  UserFormContinuationCloseReason,
 } from "./token-launch-intents/types.js";
 
 export { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents/types.js";
@@ -100,6 +101,9 @@ export { LIVE_TOKEN_LAUNCH_INTENT_STATUSES } from "./token-launch-intents/types.
 export {
   authorizeWith,
   cancelIfAwaitingWith,
+  // Retire a continuation that can NEVER complete, with its reason (A2).
+  casCloseUserFormContinuationWith,
+  casMarkUserFormResumeConsumedWith,
   confirmWith,
   consumeIfAuthorizedWith,
   createWith,
@@ -112,6 +116,9 @@ export {
 export {
   getAwaitingForSession,
   getById,
+  // IN-FLIGHT launches for a wallet set — what "My Launches" needs to show a
+  // launch that has been paid for but whose token identity is not proven yet.
+  listInFlightForWallets,
   listOutstandingUserFormResumes,
   listOverdueAwaitingForms,
 } from "./token-launch-intents/reads.js";

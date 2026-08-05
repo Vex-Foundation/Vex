@@ -9,7 +9,7 @@ import {
   type Hex,
 } from "viem";
 
-import { curveMinOut, curveTradeDeadline, TRENCH_TRADE_DEADLINE_SECONDS, TRENCH_DEFAULT_SLIPPAGE_BPS, TRENCH_MAX_SLIPPAGE_BPS } from "@tools/trench-express/evm/min-out.js";
+import { curveMinOut, curveTradeDeadline, TRENCH_TRADE_DEADLINE_SECONDS, TRENCH_MAX_SLIPPAGE_BPS } from "@tools/trench-express/evm/min-out.js";
 import { buildBuyCalldata, buildSellCalldata, buildApproveCalldata } from "@tools/trench-express/evm/calldata.js";
 import { decodeCurveBuy, decodeCurveSell, type DecodedLog } from "@tools/trench-express/evm/settlement.js";
 import { curveBuyNativePrincipal } from "@tools/trench-express/evm/native-value.js";
@@ -30,14 +30,14 @@ const TOKEN = getAddress("0x58659Ef9Be57216632BFD341FC57736a429EFB91");
 describe("curveMinOut", () => {
   it("never returns 0 for a positive expected output, and stays below it", () => {
     const expected = 197_913_781_308_210_736_292_461n;
-    const min = curveMinOut(expected, TRENCH_DEFAULT_SLIPPAGE_BPS);
+    const min = curveMinOut(expected, 100);
     expect(min).toBeGreaterThan(0n);
     expect(min).toBeLessThan(expected);
   });
 
-  it("applies the default 100 bps (1%) tolerance", () => {
+  it("applies a 100 bps (1%) tolerance exactly", () => {
     const expected = 1_000_000n;
-    expect(curveMinOut(expected, TRENCH_DEFAULT_SLIPPAGE_BPS)).toBe(990_000n);
+    expect(curveMinOut(expected, 100)).toBe(990_000n);
   });
 
   it("a wider model-supplied slippage produces a LOWER floor", () => {
@@ -60,12 +60,12 @@ describe("curveMinOut", () => {
 
   it("refuses (throws) rather than emitting a zero floor for a dust expected output", () => {
     // A `min == 0` disables the contract's slippage guard entirely.
-    expect(() => curveMinOut(1n, TRENCH_DEFAULT_SLIPPAGE_BPS)).toThrow();
+    expect(() => curveMinOut(1n, 100)).toThrow();
   });
 
   it("refuses a non-positive expected output", () => {
-    expect(() => curveMinOut(0n, TRENCH_DEFAULT_SLIPPAGE_BPS)).toThrow();
-    expect(() => curveMinOut(-5n, TRENCH_DEFAULT_SLIPPAGE_BPS)).toThrow();
+    expect(() => curveMinOut(0n, 100)).toThrow();
+    expect(() => curveMinOut(-5n, 100)).toThrow();
   });
 });
 

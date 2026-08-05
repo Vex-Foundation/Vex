@@ -51,6 +51,9 @@ function deps(claimed: ReadonlyArray<unknown>) {
   return {
     isProviderReady: () => true,
     claimDue: async () => claimed,
+    // Session-scoped rows take the non-destructive list; this file drives the
+    // mission path, so the list is empty.
+    listDueSessionWakes: async () => [],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }

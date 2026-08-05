@@ -87,7 +87,7 @@ describe("solana-jupiter handlers — predict positions", () => {
 
   it("positions: rejects a negative offset instead of clamping", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.positions"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", offset: -2 },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", offset: -2 },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -97,7 +97,7 @@ describe("solana-jupiter handlers — predict positions", () => {
 
   it("positions: rejects a limit outside 1-100 instead of clamping", async () => {
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.positions"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", limit: -10 },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", limit: -10 },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -128,7 +128,7 @@ describe("solana-jupiter handlers — predict positions", () => {
   it("positions: omitted marketPubkey/marketId/isYes are undefined, not empty strings", async () => {
     getJupiterPredictionPositions.mockResolvedValue({ data: [], pagination: { start: 0, end: 20, total: 0, hasNext: false } });
     await SOLANA_JUPITER_HANDLERS["solana.predict.positions"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
       ctx(),
     );
     const call = getJupiterPredictionPositions.mock.calls[0]![0] as Record<string, unknown>;
@@ -143,7 +143,7 @@ describe("solana-jupiter handlers — predict positions", () => {
       pagination: { start: 0, end: 10, total: 1, hasNext: false },
     });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.positions"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", limit: 5, offset: 2 },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", limit: 5, offset: 2 },
       ctx(),
     );
     expect(result.success).toBe(true);
@@ -188,7 +188,7 @@ describe("solana-jupiter handlers — predict positions", () => {
       pagination: { start: 0, end: 20, total: 1, hasNext: false },
     });
     const result = await SOLANA_JUPITER_HANDLERS["solana.predict.positions"]!(
-      { address: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+      { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
       ctx(),
     );
     expect(result.success).toBe(true);
@@ -212,10 +212,10 @@ describe("solana-jupiter handlers — predict positions", () => {
   // Regional-block mapping (FIX-D — extends P1's wrapPredictionRead to the
   // last 2 of the domain's 18 reads: .market and .position, both flagged as a
   // gap in P1's delta log).
-  it("position: maps an HTTP 403 (geo-block) into a clear regional message", async () => {
+  it("position: appends the region hint to an HTTP 403 without replacing the provider words", async () => {
     getJupiterPredictionPosition.mockRejectedValue(providerHttpError(403, "HTTP 403: Forbidden"));
     await expect(
       SOLANA_JUPITER_HANDLERS["solana.predict.position"]!({ positionPubkey: "pos-1" }, ctx()),
-    ).rejects.toThrow(/not available from your current region/);
+    ).rejects.toThrow(/United States and South Korea/);
   });
 });

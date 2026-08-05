@@ -91,6 +91,13 @@ export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
  * only on the `kind='bridge'` arm. It is admitted on the `swap` AND `launch`
  * arms because a trade fee rides a `swap` execution and a launch fee rides a
  * `launch` one, and they are the same kind of leg.
+ * `swap_fee` is migration 066 — Vex's 25 bps integrator fee on a SWAP venue whose
+ * router takes no fee parameter (Uniswap V2 Router02 / V3 SwapRouter02), charged
+ * as a separate transfer of the INPUT token that runs after the swap confirms.
+ * Admitted on the `swap` arm only. Neither `bridge_fee` (barred by the binding
+ * to `kind='bridge'`) nor `trench_fee` (which names another venue, and whose
+ * rows answer "what did Trench Express earn") could carry it. The name is
+ * venue-neutral so a later fee-parameterless swap venue reuses it.
  */
 export type AgentActivityEventRole =
   | "allowance_reset"
@@ -117,12 +124,178 @@ export type AgentActivityEventRole =
   | "yield_sy"
   | "yield_claim"
   | "token_launch"
-  | "trench_fee";
+  | "trench_fee"
+  | "swap_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";
 
-export type AgentActivityStatus = "pending" | "confirmed" | "definitively_failed";
+/**
+ * How many CONSECUTIVE inconclusive verification attempts make a pending row
+ * `stalled_verification` (migration 065).
+ *
+ * 20 ≈ 10 minutes of fast-lane checks or ≈ 20 minutes of global sweeps — long
+ * enough that a slow-but-healthy transaction never trips it, short enough that a
+ * permanently unverifiable chain (`no_safe_rpc`) is named while the user still
+ * remembers the transaction.
+ *
+ * DERIVED, NEVER STORED. Crossing this threshold changes what the UI and the
+ * agent are TOLD; it never changes `status`, and it can never fail a row.
+ */
+export const STALLED_VERIFICATION_ATTEMPTS = 20;
+
+/**
+ * THE BOUND ON `last_verification_reason` (migration 065): a CLOSED SET of our
+ * own named codes, and the ONE owner of that vocabulary.
+ *
+ * It lives here, beside `STALLED_VERIFICATION_ATTEMPTS` and
+ * `isStalledVerification`, because the read side of this column already lives
+ * here. It used to live in `sync/bridge-activity-repair-contracts.ts` while
+ * three sweeps wrote reasons it had never heard of — the EVM sweep's
+ * `receipt_not_found`/`lookup_error` and the Solana sweep's five — so the
+ * "closed set" was closed over one writer out of three. Every one of them is
+ * admitted BY NAME below.
+ *
+ * WHAT THIS COLUMN MEANS, exactly: *why the last verification CHECK could not
+ * conclude*. It is NOT "why the row is pending" and NOT "what evidence the
+ * amounts have" — a conclusive-but-non-terminal observation and an
+ * amount-evidence fact are different facts in different columns, with their own
+ * writers. Putting either here is what made two columns collide.
+ *
+ * The column is surfaced verbatim to the UI (`AgentScanRow.tsx`) and to the
+ * agent (`inspect-views/transactions.ts`), so bounding it by NAME — not by
+ * length — is what keeps an unbounded string of someone else's making out of a
+ * user-visible field, and it is also what makes the value actionable: the agent
+ * can tell `no_safe_rpc` ("we could not look") from `not_yet_confirmed` ("we
+ * looked, it is still mining").
+ *
+ * DELIBERATELY NOT A DB CHECK. Migration 065 is expand-only; a CHECK would make
+ * every future reason a migration. The union plus the single writer is the
+ * boundary.
+ */
+/**
+ * How long `verification_attempts` must wait between increments (migration 068).
+ *
+ * The counter measures a STALL, and its threshold is documented in minutes; the
+ * lane polls in seconds. Without this throttle a healthy transaction merely
+ * unknown to the queried node reaches the 20-attempt threshold in 100 s at the
+ * 5 s cadence and renders as "verification stalled" — a lie about what the
+ * system knows. With it, `verification_attempts` counts inconclusive WINDOWS,
+ * so the threshold keeps its ~10-minute meaning at any polling rate.
+ */
+export const STALL_INCREMENT_MIN_INTERVAL_MS = 30_000;
+
+export const VERIFICATION_REASONS = [
+  // ── The bridge verifier's own (`sync/bridge-activity-repair-verification.ts`) ──
+  "malformed_fill_hash",
+  "no_safe_rpc",
+  "fill_reverted",
+  /**
+   * PRE-EXISTING ROWS ONLY. Superseded by the four precise reasons below, which
+   * say WHY no receipt was obtained; nothing produces it any more.
+   */
+  "receipt_unavailable",
+  "malformed_fill_signature",
+  "fill_failed",
+  "not_yet_confirmed",
+  "signature_status_unavailable",
+  // ── The bridge sweep's inconclusive exits ──
+  "verification_failed",
+  "filled_without_hash",
+  "provider_unreachable",
+  "chain_mismatch",
+  "correlation_mismatch",
+  "missing_route",
+  "refund_evidence_write_failed",
+  // The order-id recovery queue's own inconclusive exits. A crash-after-deposit
+  // row has NO order id, so this queue is the only verifier it has: without a
+  // reasoned stall it could be retried forever while the UI kept rendering an
+  // ordinary healthy pending.
+  "recovery_throw",
+  "recovery_null",
+  "attach_conflict",
+  // ── The EVM receipt sweep (`sync/agent-activity-repair.ts`) ──
+  "receipt_not_found",
+  /** The lookup itself threw — we could not look, as opposed to looking and learning nothing. */
+  "rpc_error",
+  // ── The Solana sweep (`sync/solana-activity-repair.ts`) ──
+  "unreadable_signature_status",
+  "get_transaction_unavailable",
+  "unreadable_transaction_meta",
+  "no_blockhash_evidence",
+  "block_height_unavailable",
+  // ── The bridge verifier's four-way split of the old `receipt_unavailable` ──
+  /** An endpoint echoed the right chain and answered "no receipt yet" — WAIT. */
+  "fill_not_mined",
+  /** No endpoint ever answered — we cannot see this chain at all. */
+  "rpc_unreachable",
+  /** Every endpoint answered `eth_chainId` with a different chain than the one we need. */
+  "chain_echo_mismatch",
+  /**
+   * A receipt exists but its status is a value viem cannot read. NOT a revert:
+   * claiming a revert we cannot prove is a claim beyond the evidence.
+   */
+  "unreadable_receipt_status",
+  /**
+   * The EVM lane looked and NO node knew this hash — no receipt, no mempool
+   * entry, and the wallet's own nonce has not passed it. An inconclusive CHECK,
+   * not a conclusion: the transaction may be sitting in a node we did not ask,
+   * which is exactly why a terminalization built on it needs a bounded window.
+   */
+  "tx_unknown_to_node",
+] as const;
+
+export type VerificationReason = (typeof VERIFICATION_REASONS)[number];
+
+/** Admit a known code, or fall back to the generic one. An UNRECOGNISED string is never stored. */
+export function toVerificationReason(raw: string | undefined): VerificationReason {
+  return VERIFICATION_REASONS.find((known) => known === raw) ?? "verification_failed";
+}
+
+/**
+ * `true` iff this row is pending AND we have repeatedly been unable to verify
+ * it. NOT a failure — it means "we could not look", which the copy must say.
+ */
+export function isStalledVerification(
+  row: Pick<AgentActivityEvent, "status" | "verificationAttempts">,
+): boolean {
+  return row.status === "pending"
+    && row.verificationAttempts >= STALLED_VERIFICATION_ATTEMPTS;
+}
+
+/**
+ * A row's stored status (migration 044, widened by 068).
+ *
+ * `superseded_unproven` is a NON-FAILURE TERMINAL state (owner decision A6). It
+ * asserts exactly two things: the hash is NO LONGER TRACKED AS IN FLIGHT, and
+ * its inclusion/replacement outcome is UNPROVEN. It does NOT assert that the
+ * transaction failed, that nothing was spent, or that a retry is safe — only
+ * `nonce_superseded` establishes non-inclusion at all, and even then a
+ * replacement reusing the nonce may have carried the same calldata.
+ *
+ * It carries NO `failure_code`, and no surface may render it as a failure. It
+ * exists because the alternative is a row that stays `pending` forever, which is
+ * what froze every background portfolio snapshot and kept the repair loops
+ * shouting about a hash nothing was going to resolve.
+ */
+export type AgentActivityStatus =
+  | "pending"
+  | "confirmed"
+  | "definitively_failed"
+  | "superseded_unproven";
+
+/** `true` for a status no longer in flight — the predicate every "is it done" question should ask. */
+export function isTerminalActivityStatus(status: AgentActivityStatus): boolean {
+  return status !== "pending";
+}
+
+/**
+ * `true` iff this row ended in a state that means the transaction DID NOT
+ * happen. `superseded_unproven` is deliberately excluded: we do not know.
+ */
+export function isFailedActivityStatus(status: AgentActivityStatus): boolean {
+  return status === "definitively_failed";
+}
 
 /**
  * Closed enum — plan §4.1, grown to 11 members by FIX-SPINE round 1 (finding
@@ -332,6 +505,47 @@ export interface AgentActivityEvent {
   broadcastAt: string | null;
   confirmedAt: string | null;
   lastCheckedAt: string | null;
+  /**
+   * Consecutive INCONCLUSIVE verification attempts (migration 065). Resets to 0
+   * on any successful observation, so it measures a STALL rather than age.
+   * Feeds the DERIVED `stalled_verification` read-side flag and NOTHING else —
+   * no threshold on it may ever write `status`.
+   */
+  verificationAttempts: number;
+  /** Why the last attempt could not conclude, e.g. `no_safe_rpc`. NULL when nothing has failed yet. */
+  lastVerificationReason: string | null;
+  // ── Provenance (migration 067) ──────────────────────────────────────
+  //
+  // Read as `string | null`, written through the closed unions in
+  // `./provenance-vocabulary.js`. Narrow on write, tolerate on read: pre-067
+  // rows carry NULL and a future build may write a code this one has never
+  // heard of, so a strict read type would break on the repo's own history.
+  /** How the TERMINAL STATUS was established (`ConfirmationSource`). NULL while pending. */
+  confirmationSource: string | null;
+  /** How the EXECUTED AMOUNTS were established, or why they are absent (`SettlementSource`). */
+  settlementSource: string | null;
+  /** Why a still-PENDING row is pending (`PendingReason`). Cleared by every terminalizing CAS. */
+  pendingReason: string | null;
+  /** When `providerStatus` was observed — provider-to-provider ordering only. */
+  providerStatusObservedAt: string | null;
+  // ── The pending-fallback lane's own state (migration 068) ───────────
+  /** When the current claim's lease expires. NULL when no claim is held. */
+  evmClaimLeaseUntil: string | null;
+  /** The current claim's GENERATION. Every post-RPC write must match it, or it writes nothing. */
+  evmClaimToken: string | null;
+  /**
+   * When `verificationAttempts` last INCREMENTED — not when the row was last
+   * checked. The two differ on purpose: the counter is throttled so it keeps
+   * measuring ~10 minutes of stall whatever the polling rate is.
+   */
+  lastVerificationIncrementAt: string | null;
+  /**
+   * Start of a CONTINUOUS non-inclusion run, reset by any conclusive contrary
+   * observation. Gates the `superseded_unproven` terminalization.
+   */
+  firstNonInclusionObservedAt: string | null;
+  /** The decoder identity+version that last completed a decline on this row. */
+  settlementDecodeVersion: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -74,21 +74,21 @@ describe("buildRedeemPyToSyPlan", () => {
   it("refuses by name when exchangeRate() cannot be read — never falls back to 1:1", async () => {
     const { client } = clientReturning(new Error("rpc down"));
     await expect(
-      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: YT, sy: SY, netPyIn: LIVE.netPyIn }),
+      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: YT, sy: SY, netPyIn: LIVE.netPyIn, slippage: 0.005 }),
     ).rejects.toMatchObject({ code: ErrorCodes.PENDLE_UNSAFE_TX, message: expect.stringMatching(/exchange rate/i) });
   });
 
   it("refuses a non-positive exchangeRate", async () => {
     const { client } = clientReturning(0n);
     await expect(
-      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: YT, sy: SY, netPyIn: LIVE.netPyIn }),
+      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: YT, sy: SY, netPyIn: LIVE.netPyIn, slippage: 0.005 }),
     ).rejects.toMatchObject({ code: ErrorCodes.PENDLE_UNSAFE_TX });
   });
 
   it("refuses a non-positive amount before touching the network", async () => {
     const { client, readContract } = clientReturning(10n ** 18n);
     await expect(
-      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: YT, sy: SY, netPyIn: 0n }),
+      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: YT, sy: SY, netPyIn: 0n, slippage: 0.005 }),
     ).rejects.toMatchObject({ code: ErrorCodes.INVALID_AMOUNT });
     expect(readContract).not.toHaveBeenCalled();
   });
@@ -96,7 +96,7 @@ describe("buildRedeemPyToSyPlan", () => {
   it("refuses a malformed address before touching the network", async () => {
     const { client, readContract } = clientReturning(10n ** 18n);
     await expect(
-      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: "0xnope", sy: SY, netPyIn: 1_000_000n }),
+      buildRedeemPyToSyPlan({ publicClient: client, receiver: RECEIVER, yt: "0xnope", sy: SY, netPyIn: 1_000_000n, slippage: 0.005 }),
     ).rejects.toMatchObject({ code: ErrorCodes.PENDLE_UNSAFE_TX });
     expect(readContract).not.toHaveBeenCalled();
   });

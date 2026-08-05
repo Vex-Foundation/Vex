@@ -9,6 +9,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
+import { TokenAccountNotFoundError, TokenInvalidAccountOwnerError } from "@solana/spl-token";
 import { BORROW_MINT, ctx, PREPARED, SUPPLY_MINT, VAULT, WSOL_VAULT } from "./solana-jupiter-borrow-handlers.test-fixtures.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
@@ -46,7 +47,9 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/service.js", ()
 }));
 
 const mockPrepareVersionedTx = vi.fn();
-const mockGetSolanaConnection = vi.fn<SolanaTransactionModule["getSolanaConnection"]>(() => ({}));
+const mockGetSolanaConnection = vi.fn(
+  (..._args: Parameters<SolanaTransactionModule["getSolanaConnection"]>) => ({}),
+);
 const mockSubmitOverRpc = vi.fn();
 vi.mock("@tools/solana-ecosystem/shared/solana-transaction.js", () => ({
   prepareVersionedTx: (...args: unknown[]) => mockPrepareVersionedTx(...args),
@@ -58,8 +61,12 @@ vi.mock("@tools/solana-ecosystem/shared/solana-transaction.js", () => ({
 // short-circuits to `TOKEN_PROGRAM_ID` for WSOL without a network call in
 // production; mocked here as a pure passthrough so only `getAccount`'s
 // balance drives the test outcomes.
-const mockResolveMintTokenProgramId = vi.fn<SolanaTokenProgramModule["resolveMintTokenProgramId"]>(() => "TokenProgram111");
-const mockDeriveAta = vi.fn<SolanaTokenProgramModule["deriveAssociatedTokenAccount"]>(() => "AtaAddress111");
+const mockResolveMintTokenProgramId = vi.fn(
+  (..._args: Parameters<SolanaTokenProgramModule["resolveMintTokenProgramId"]>) => "TokenProgram111",
+);
+const mockDeriveAta = vi.fn(
+  (..._args: Parameters<SolanaTokenProgramModule["deriveAssociatedTokenAccount"]>) => "AtaAddress111",
+);
 vi.mock("@tools/solana-ecosystem/shared/solana-token-program.js", () => ({
   resolveMintTokenProgramId: (...args: Parameters<SolanaTokenProgramModule["resolveMintTokenProgramId"]>) => mockResolveMintTokenProgramId(...args),
   deriveAssociatedTokenAccount: (...args: Parameters<SolanaTokenProgramModule["deriveAssociatedTokenAccount"]>) => mockDeriveAta(...args),
@@ -106,6 +113,14 @@ vi.mock("@utils/logger.js", () => {
 
 const { LEND_BORROW_HANDLERS } = await import("@vex-agent/tools/protocols/solana-jupiter/handlers/lend-borrow.js");
 
+
+/** A handler-map lookup that fails loudly instead of asserting non-null. */
+function handlerFor<THandler>(handlers: Record<string, THandler>, toolId: string): THandler {
+  const handler = handlers[toolId];
+  if (handler === undefined) throw new Error(`no handler for ${toolId}`);
+  return handler;
+}
+
 describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -114,7 +129,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
 
   it("borrowVaults defaults market to main and projects the vault list", async () => {
     mockGetVaults.mockResolvedValue([VAULT]);
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowVaults"]!({}, ctx());
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowVaults")({}, ctx());
     expect(mockGetVaults).toHaveBeenCalledWith("main");
     expect(result.success).toBe(true);
     const [projected] = (result.data as unknown as unknown[]);
@@ -122,7 +137,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
   });
 
   it("borrowVaults rejects an unknown market", async () => {
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowVaults"]!({ market: "bogus" }, ctx());
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowVaults")({ market: "bogus" }, ctx());
     expect(result.success).toBe(false);
     expect(mockGetVaults).not.toHaveBeenCalled();
   });
@@ -132,7 +147,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
     mockGetPositions.mockResolvedValue([
       { id: 42, vaultId: 1, ownerAddress: WALLET_ADDRESS, supply: "30000000", borrow: "5000000", dustBorrow: "1" },
     ]);
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowPositions")({}, ctx());
     expect(mockGetPositions).toHaveBeenCalledWith(WALLET_ADDRESS, "main");
     expect(result.success).toBe(true);
   });
@@ -152,7 +167,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
       { id: 42, vaultId: 1, ownerAddress: WALLET_ADDRESS, supply: "1000000000", borrow: "50000000", dustBorrow: "0", isLiquidated: false },
     ]);
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowPositions")({}, ctx());
 
     expect(mockGetVaults).toHaveBeenCalledWith("main");
     const data = result.data as unknown as { positions: Array<Record<string, unknown>>; howToReadRisk: string };
@@ -178,7 +193,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
       { id: 42, vaultId: 1, ownerAddress: WALLET_ADDRESS, supply: "30000000", borrow: "5000000", dustBorrow: "1" },
     ]);
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowPositions")({}, ctx());
 
     expect(result.success).toBe(true);
     const data = result.data as unknown as {
@@ -196,7 +211,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
     const order: string[] = [];
     mockGetVaults.mockImplementation(async () => { order.push("vaults:start"); return [VAULT]; });
     mockGetPositions.mockImplementation(async () => { order.push("positions:start"); return []; });
-    await LEND_BORROW_HANDLERS["solana.lend.borrowPositions"]!({}, ctx());
+    await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowPositions")({}, ctx());
     // Both started before either resolved.
     expect(order).toEqual(["positions:start", "vaults:start"]);
   });
@@ -219,8 +234,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   });
 
   it("deposit-only (create position): fetches the vault, records intent with tokenIn=supplyToken.address, signs/persists/submits, surfaces nftId", async () => {
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -278,8 +293,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   });
 
   it("deposit + borrow (documented combo): tokenIn=supply leg AND tokenOut=debt leg on the SAME row", async () => {
-    await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000", borrowAmount: "5000000" },
+    await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000", borrowAmountRaw: "5000000" },
       ctx(),
     );
 
@@ -299,7 +314,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   });
 
   it("withdrawAll: tokenOut has no amountRaw (magnitude is provider-computed, unknown to us in advance)", async () => {
-    await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
+    await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
       { vaultId: 1, positionId: 5, withdrawAll: true },
       ctx(),
     );
@@ -319,8 +334,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   });
 
   it("an invalid param combination (both legs same direction) never calls the vault or provider", async () => {
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, positionId: 5, depositAmount: "1", repayAmount: "1" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, positionId: 5, depositAmountRaw: "1", repayAmountRaw: "1" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -330,8 +345,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 
   it("an unknown vaultId is a plain client-side failure — no activity row, no provider call", async () => {
     mockGetVaults.mockResolvedValue([VAULT]);
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 999, depositAmount: "1" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 999, depositAmountRaw: "1" },
       ctx(),
     );
     expect(result.success).toBe(false);
@@ -344,8 +359,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   it("a provider rejection of the unsigned-tx request is a PRE-broadcast failure — no intent row, no signing", async () => {
     mockRequestOperate.mockRejectedValue(new Error("insufficient collateral"));
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -377,8 +392,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   it("a sole-signer refusal finalizes the EXISTING row via failActivityEvent — never a second intent", async () => {
     mockPrepareVersionedTx.mockRejectedValue(new Error("Refusing to sign: transaction requires 2 signers, expected exactly 1."));
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -392,8 +407,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   it("a staging CAS miss refuses to submit untracked", async () => {
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: false, row: {} });
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -407,8 +422,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
       kind: "signature_mismatch", localSignature: PREPARED.signature, providerSignature: "OtherSig",
     });
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -418,8 +433,8 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   });
 
   it("fails closed without an active session — no vault fetch, no provider call, no recording", async () => {
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 1, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 1, depositAmountRaw: "30000000" },
       ctx({ sessionId: undefined }),
     );
 
@@ -446,8 +461,8 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
   it("proceeds when the wallet's WSOL account already holds enough wrapped SOL", async () => {
     mockGetAccount.mockResolvedValue({ amount: 50_000_000n });
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -459,8 +474,8 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
   it("fails CLEARLY, before any provider call, when the WSOL balance is insufficient — no activity row", async () => {
     mockGetAccount.mockResolvedValue({ amount: 1_000n });
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -478,8 +493,8 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
   it("spells both the required and the found WSOL amounts in human units, keeping the raws", async () => {
     mockGetAccount.mockResolvedValue({ amount: 1_000n });
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -488,10 +503,12 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
   });
 
   it("fails CLEARLY when no WSOL token account exists at all (getAccount throws)", async () => {
-    mockGetAccount.mockRejectedValue(new Error("TokenAccountNotFoundError"));
+    // The REAL spl-token error class — the absence of the account is the one
+    // thing that proves a zero balance (W2g).
+    mockGetAccount.mockRejectedValue(new TokenAccountNotFoundError());
 
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
-      { vaultId: 2, depositAmount: "30000000" },
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 2, depositAmountRaw: "30000000" },
       ctx(),
     );
 
@@ -500,8 +517,44 @@ describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding ch
     expect(mockRequestOperate).not.toHaveBeenCalled();
   });
 
+  // W2g: `catch { balanceRaw = 0n }` used to swallow an RPC that never
+  // answered and then produce a confident "wrap SOL into WSOL first, then
+  // retry" — advice about a balance nothing had read, on a money path.
+  it("does NOT claim a zero WSOL balance when the RPC failed — names the transport failure instead", async () => {
+    mockGetAccount.mockRejectedValue(new Error("fetch failed: ECONNREFUSED 127.0.0.1:8899"));
+
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 2, depositAmountRaw: "30000000" },
+      ctx(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/transport failure/i);
+    expect(result.output).toMatch(/did not answer/i);
+    // The wrong remedy must NOT appear: no "found 0 WSOL", no wrap instruction.
+    expect(result.output).not.toMatch(/found 0 WSOL/i);
+    expect(result.output).not.toMatch(/never wraps native SOL/i);
+    // Still pre-broadcast: nothing sent, no activity row.
+    expect(mockRequestOperate).not.toHaveBeenCalled();
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockCreateAgentActivityPreBroadcastFailure).not.toHaveBeenCalled();
+  });
+
+  it("treats a token account owned by another program as a proven zero balance", async () => {
+    mockGetAccount.mockRejectedValue(new TokenInvalidAccountOwnerError());
+
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
+      { vaultId: 2, depositAmountRaw: "30000000" },
+      ctx(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/wrapped sol/i);
+    expect(result.output).not.toMatch(/transport failure/i);
+  });
+
   it("does NOT check WSOL funding for an 'out' direction leg (withdraw/borrow) even on a WSOL vault", async () => {
-    const result = await LEND_BORROW_HANDLERS["solana.lend.borrowOperate"]!(
+    const result = await handlerFor(LEND_BORROW_HANDLERS, "solana.lend.borrowOperate")(
       { vaultId: 2, positionId: 3, withdrawAll: true },
       ctx(),
     );

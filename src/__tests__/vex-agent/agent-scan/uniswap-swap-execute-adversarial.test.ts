@@ -52,6 +52,24 @@ const markBroadcastAccepted = vi.fn();
 const confirmActivityEvent = vi.fn();
 const failActivityEvent = vi.fn();
 
+// The fee-eligibility oracle (migration 066's `swap_fee` leg) is a token fact,
+// never a live network call in a unit test.
+vi.mock("@tools/kyberswap/token-api/client.js", () => ({
+  getKyberTokenApiClient: () => ({ getHoneypotFotInfo: async () => ({ isHoneypot: false, isFOT: false, tax: 0 }) }),
+}));
+// The Vex fee leg rides the SHARED staged broadcaster, not this venue's own
+// sign/broadcast pair. Confirmed by default so it never changes the outcome
+// these tests are about.
+vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
+  signStageBroadcast: async (
+    _p: unknown, _w: unknown, _tx: unknown,
+    hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> },
+  ) => {
+    await hooks.onHashStaged({ txHash: "0xfeehash", fromAddress: "0x1111111111111111111111111111111111111111", nonce: 9 });
+    await hooks.onAccepted();
+    return { kind: "confirmed", txHash: "0xfeehash", receipt: { blockNumber: 2n } };
+  },
+}));
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood",
@@ -180,7 +198,7 @@ describe("uniswap.swap.execute — adversarial (FIX2-W0)", () => {
     // "Do not retry" AND the self-serve verification path that replaces it.
     expect(result.output).toContain(
       `Do not retry; this attempt is recorded as pending and will resolve automatically. `
-      + `You can verify it now yourself with chain_read (action tx_receipt, chainId=4663, txHash=${SIGNED_TX_HASH}).`,
+      + `You can verify it now yourself with chain_read (action tx_receipt, chain=4663, txHash=${SIGNED_TX_HASH}).`,
     );
   });
 

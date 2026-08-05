@@ -59,7 +59,16 @@ export async function handlePostIntentFailure(x: PostIntentFailureInput): Promis
         failureCode: preSignForRow.failureCode,
         failureReason: `refused before signing: ${safeDetail(preSignForRow.revertReason)}`,
       });
-    } catch { /* best-effort */ }
+    } catch (rowErr) {
+      // Best-effort: the abort below still runs, so the row cannot strand as
+      // pending. But a silent swallow here hid the one case where the refusal
+      // code never reached the record — every sibling logs, and so does this.
+      logger.warn("trench.trade_execute.fail_event_write_failed", {
+        executionId,
+        eventId: events[currentIndex]!.id,
+        error: safeDetail(rowErr),
+      });
+    }
   }
   await abortRemaining(executionId, currentIndex, safeMessage);
 

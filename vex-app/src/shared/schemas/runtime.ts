@@ -147,6 +147,25 @@ export const runtimeStateDtoSchema = z
      * being conflated at the call site.
      */
     pausedWake: runtimePausedWakeSchema.optional(),
+    /**
+     * THE authoritative control-gating predicate: would pressing Stop do
+     * anything for this session right now?
+     *
+     * Computed in main by `session-control-state.ts` from ONE snapshot —
+     * active run OR live lease OR pending wake OR pending approval decision OR
+     * incomplete approval lifecycle. Every disjunct is exactly a state the stop
+     * dispatcher acts on.
+     *
+     * NO CONSUMER MAY RE-DERIVE IT, and in particular not from `leaseActive`.
+     * That field is a sawtooth: true inside a runtime slice, false across every
+     * `loop_defer` park, so a control keyed on it disappears while the agent is
+     * still running and still stoppable. That was the defect.
+     *
+     * REQUIRED, not optional. It gates a safety control, and an absent value
+     * silently read as `false` is the exact failure being fixed. Main and
+     * renderer ship in one bundle, so a required field is safe here.
+     */
+    stoppable: z.boolean(),
   })
   .strict()
   /**
@@ -168,6 +187,20 @@ export const runtimeStateDtoSchema = z
     }
   });
 export type RuntimeStateDto = z.infer<typeof runtimeStateDtoSchema>;
+
+/**
+ * The run + lease + pending-control projection, WITHOUT the two fields that
+ * are composed at the IPC boundary rather than read from the run.
+ *
+ * `mission-runs-db.ts` reports these facts and must not know about wakes or the
+ * control-gating policy; `stoppable` is decided by the aggregate and
+ * `pausedWake` by a separate, status-gated read. Naming the subset keeps a
+ * required DTO field from silently becoming that helper's problem.
+ */
+export type RuntimeRunStateFacts = Omit<
+  RuntimeStateDto,
+  "stoppable" | "pausedWake"
+>;
 
 // ── Inputs ──────────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ import type {
 export interface ValidatedPreparedActionFollowUp {
   readonly toolName: "wallet_send_confirm";
   readonly args: {
-    readonly network: "eip155" | "solana";
+    readonly walletFamily: "eip155" | "solana";
     readonly intentId: string;
   };
   readonly expiresAt: string;
@@ -36,7 +36,9 @@ function isScalar(value: unknown): value is ApprovalPreviewScalar {
 
 /**
  * Validate and canonicalize a handler-authored follow-up. Unknown pairs fail
- * closed. For wallet sends, only network + intentId cross into confirm args;
+ * closed. For wallet sends, only walletFamily + intentId cross into confirm
+ * args (`criticalArgs` keeps the preview vocabulary, where the family is still
+ * spelled `network` — that is stored preview data, not a param);
  * the richer preview is validated independently and never rebuilt from args.
  *
  * Maintainer decision (2026-07): wallet-only. Exactly one mapping —
@@ -56,10 +58,10 @@ export function validatePreparedActionFollowUp(
   }
 
   const argKeys = Object.keys(candidate.args).sort();
-  if (argKeys.join(",") !== "intentId,network") {
+  if (argKeys.join(",") !== "intentId,walletFamily") {
     return { ok: false, reason: "invalid_contract" };
   }
-  const network = candidate.args.network;
+  const network = candidate.args.walletFamily;
   const intentId = candidate.args.intentId;
   if (
     (network !== "eip155" && network !== "solana") ||
@@ -105,7 +107,7 @@ export function validatePreparedActionFollowUp(
     ok: true,
     followUp: {
       toolName: "wallet_send_confirm",
-      args: { network, intentId },
+      args: { walletFamily: network, intentId },
       expiresAt: candidate.expiresAt,
       approvalPreview: {
         toolName: "wallet_send_confirm",

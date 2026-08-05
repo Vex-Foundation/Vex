@@ -23,6 +23,7 @@
  */
 
 import type { InternalToolContext } from "../../tools/internal/types.js";
+import { resolveInjectedProtocolTool } from "../../tools/registry/injected-protocol-tools.js";
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
@@ -205,6 +206,13 @@ function resolveEffectiveCall(
   toolName: string,
   args: Record<string, unknown>,
 ): { toolName: string; args: Record<string, unknown> } {
+  // Injected discovered-tool lane (owner decision 2026-08-03): the model calls
+  // the manifest directly under its mapped name (`khalani__bridge`), and the
+  // arguments ARE the params — there is no envelope to unwrap. The human must
+  // still see the dotted toolId, never the wire-safe mapped name.
+  const injected = resolveInjectedProtocolTool(toolName);
+  if (injected) return { toolName: injected.toolId, args };
+
   if (toolName !== "execute_tool") return { toolName, args };
 
   const toolId = typeof args.toolId === "string" ? args.toolId : null;
@@ -219,11 +227,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Human-facing token label for the Borrow risk disclosure. Jupiter's vault rows
- * carry `symbol`/`decimals`, but a `/borrow/positions` row genuinely does not,
- * so both are optional at this boundary. An absent field must read as an
- * explicit unknown — interpolating it directly once put the literal string
- * "undefined decimals" in front of a human approving a loan.
+ * Human-facing token label for the Borrow risk disclosure.
+ *
+ * `LendBorrowRiskPreview` declares both fields NON-NULL and the evaluator
+ * sources them from the VAULT (`borrow-risk-preview.ts` → `vault.supplyToken`),
+ * which always carries them — the nullable descriptors belong to the separate
+ * `/borrow/positions` PROJECTION type, which never reaches this renderer. The
+ * fallbacks below are therefore a defence-in-depth guard against an unvalidated
+ * provider row arriving nullish at runtime in spite of the type, not a modelled
+ * product state: interpolating an absent field directly once put the literal
+ * string "undefined decimals" in front of a human approving a loan, and that
+ * must not come back. They are deliberately not exercised by a fixture that
+ * would have to contradict the type to construct the input.
  */
 function describeRiskToken(
   symbol: string | null | undefined,
@@ -344,9 +359,9 @@ export function buildIntentPreview(
       // 2026-07-25: the raw amounts always travel with the symbol AND the
       // decimals needed to read them — "1047061 of EPjFW…" is 1.05 at 6
       // decimals and 0.00105 at 9, and a human approver cannot tell which
-      // from a bare mint address. When the provider row carries no token
-      // descriptor (a `/borrow/positions` row genuinely does not), the mint
-      // alone is stated: an honest omission, never the literal "undefined".
+      // from a bare mint address. Both descriptors are non-null on this type
+      // (vault-sourced); `describeRiskToken` still degrades to the bare mint
+      // rather than the literal "undefined" if one ever arrives nullish.
       + `Projected collateral: ${rp.projectedSupplyRaw} raw units of ${describeRiskToken(rp.supplyTokenSymbol, rp.supplyTokenDecimals, rp.supplyTokenAddress)}; `
       + `projected debt: ${rp.projectedBorrowRaw} raw units of ${describeRiskToken(rp.borrowTokenSymbol, rp.borrowTokenDecimals, rp.borrowTokenAddress)}. `
       + `Estimated LTV after this call: ${rp.estimatedLtvPercent ?? "estimate unavailable"}. ${rp.riskNote} `

@@ -61,9 +61,15 @@ export function chainIdFromId(v: unknown): number | null {
 
 // ── markets/active ─────────────────────────────────────────────────
 
+/**
+ * Category labels. NOT truncated (W9d) — the same list the read lane matches
+ * `categories` / `excludeCategories` against, where a hidden cap let an
+ * explicitly excluded market through. Narrowed to a bounded token vocabulary
+ * downstream (`trusted-fields.ts` `trustedCategoryId`).
+ */
 function readCategoryIds(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((c): c is string => typeof c === "string" && c.length > 0).slice(0, 32);
+  return raw.filter((c): c is string => typeof c === "string" && c.length > 0);
 }
 
 function normalizeMarket(raw: unknown): PendleMarket | null {

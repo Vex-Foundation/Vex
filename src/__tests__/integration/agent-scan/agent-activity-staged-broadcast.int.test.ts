@@ -17,7 +17,7 @@
  *   - (3) the ambiguous-RPC case now spies on the REAL `failActivityEvent`
  *     export and asserts it was NEVER called (not merely that the row
  *     "happens to" still read pending) — driven through the REAL repair
- *     seam (`repairPendingActivity` with a `checkReceiptByHash` that resolves
+ *     seam (`repairPendingActivity` with a `observeTransaction` that resolves
  *     `null`, the documented ambiguous-outcome contract). The spy is restored
  *     afterward.
  *   - (4) duplicate-repair now asserts `applied:false` EXACTLY (C7's
@@ -125,7 +125,7 @@ describe("staged broadcast durability", () => {
       // The documented ambiguous outcome (receipt-guard.ts:29 semantics,
       // C1): a missing receipt / RPC error resolves the lookup to `null`.
       await repairModule.repairPendingActivity({
-        checkReceiptByHash: vi.fn().mockResolvedValue(null),
+        observeTransaction: vi.fn().mockResolvedValue({ kind: "unknown_to_node" }),
       });
 
       expect(failSpy).not.toHaveBeenCalled();
@@ -148,7 +148,7 @@ describe("staged broadcast durability", () => {
     await backdateSubmitAttempt(event.id, REPAIR_CANDIDATE_AGE_MS + 1_000);
 
     const sweepResult = await repairModule.repairPendingActivity({
-      checkReceiptByHash: vi.fn().mockResolvedValue({ status: "success" }),
+      observeTransaction: vi.fn().mockResolvedValue({ kind: "mined", status: "success" }),
     });
     expect(sweepResult.confirmed).toBe(1);
     const afterFirstSweep = await repo.getActivityEventById(event.id);

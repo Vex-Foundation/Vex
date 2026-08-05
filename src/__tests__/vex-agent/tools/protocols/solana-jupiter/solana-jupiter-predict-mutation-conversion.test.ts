@@ -82,7 +82,13 @@ describe("solana.predict.buy/.sell/.claim/.closeAll — staged Solana seam (K5)"
 
     expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
     const failArg = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0][0];
-    expect(failArg.event).toMatchObject({ failureCode: "route_not_found", kind: "prediction", chainFamily: "solana" });
+    // W2g: prediction has no quote and no route, so a hardcoded
+    // `route_not_found` told the agent to hunt for liquidity that was never
+    // the problem. The row now carries what Jupiter actually said, classified
+    // by `provider-failure-mapping.ts` — and `market_closed` maps to the
+    // enum's honest catch-all rather than to a specific WRONG code.
+    expect(failArg.event).toMatchObject({ failureCode: "unknown", kind: "prediction", chainFamily: "solana" });
+    expect(failArg.event.failureReason).toMatch(/^market_closed: /);
     expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
     expect(mockPrepareVersionedTx).not.toHaveBeenCalled();
     expect(result.success).toBe(false);

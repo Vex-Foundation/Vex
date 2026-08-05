@@ -16,6 +16,7 @@ import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS } from "./lookup.js";
 import { isUniswapPairRevealed } from "./uniswap-reveal.js";
+import { isDescribeToolsRevealed } from "./describe-tools-reveal.js";
 import { RELAY_REVEAL_GATED_ALIAS_NAMES, hasAnyRelayRouteReveal } from "./relay-reveal.js";
 
 /**
@@ -140,8 +141,28 @@ export function defaultVisibilityContext(
  *   4. `passesPressureSafety` — PR2 cutover catalog-level filter
  *      (drops `mutating` at barrier+, unless a live preparation bypasses it).
  */
+/**
+ * Tool names withheld from the MODEL-FACING surface while their replacement
+ * is proven (owner decision 2026-08-03, staged retirement).
+ *
+ * `execute_tool` — discovered protocol tools are now injected as real function
+ * schemas (`./injected-protocol-tools.ts`), so the `{toolId, params}` envelope
+ * is no longer the path the model should take: it is the shape that produced
+ * the live missing-required-param loops, because the wrapper's schema can only
+ * say "an object called params exists".
+ *
+ * WITHHELD, NOT DELETED. The `execute_tool` DISPATCH ROUTE stays fully
+ * functional this round: an approved intent is re-dispatched by its STORED
+ * tool name (`approval-runtime/post-tx/dispatch-approved.ts`), so every
+ * approval queued as `execute_tool` — real, human-approved, fund-moving work —
+ * must still run. Physical deletion of the definition happens after the
+ * prompt sweep, in a later change.
+ */
+const MODEL_WITHHELD_TOOL_NAMES: ReadonlySet<string> = new Set(["execute_tool"]);
+
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
   return TOOLS
+    .filter(t => !MODEL_WITHHELD_TOOL_NAMES.has(t.name))
     .filter(t => !t.requiresEnv || Boolean(process.env[t.requiresEnv]?.trim()))
     .filter(t => !t.showOnlyWhenEnvMissing || !process.env[t.showOnlyWhenEnvMissing]?.trim())
     .filter(t => ctx.sessionKind === "agent" ? !t.proactive : true)
@@ -218,6 +239,14 @@ function passesVisibility(
     return false;
   }
 
+  // Autonomous-loop gate — a session that can act between user messages. See
+  // `ToolVisibility.requiresAutonomousLoop` for the owner decree behind it.
+  if (v.requiresAutonomousLoop
+      && !ctx.missionRunActive
+      && !(ctx.sessionKind === "agent" && ctx.permission === "full")) {
+    return false;
+  }
+
   if (v.requiresMissionRun
       && (ctx.sessionKind !== "mission" || !ctx.missionRunActive)) {
     return false;
@@ -249,6 +278,11 @@ function passesVisibility(
   // swap_execute_uniswap pair joins the catalog only for a session with an
   // active, fresh reveal. Absent sessionId fails closed to hidden.
   if (v.requiresUniswapReveal && !isUniswapPairRevealed(ctx.sessionId)) return false;
+
+  // describe_tools reveal gate (R5) — the manifest-fetch tool joins the catalog
+  // only after this session produced a successful, non-empty discover_tools
+  // result. Absent sessionId fails closed to hidden.
+  if (v.requiresDescribeToolsReveal && !isDescribeToolsRevealed(ctx.sessionId)) return false;
 
   // Prepared-compaction readiness gate — `compact_apply` exists only while
   // there is something prepared to apply. Fails closed: an unreadable

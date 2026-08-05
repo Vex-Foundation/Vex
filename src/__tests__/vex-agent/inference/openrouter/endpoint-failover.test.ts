@@ -236,6 +236,55 @@ describe("sendWithEndpointFailover — retry", () => {
     expect(h.sleeps).toEqual([1_000]);
   });
 
+  // T8 — the operator's Stop reaches the capacity backoff.
+  //
+  // A Stop pressed while we sit out an honoured `Retry-After` used to cost the
+  // full advertised delay (up to 10 s, twice). The wait is now signal-aware, so
+  // the `for(;;)` unwinds immediately — and it surfaces the PROVIDER'S error,
+  // not the abort: the operator stopped a request that was already failing, and
+  // the provider's reason is the one worth reporting.
+  describe("operator Stop during the capacity backoff", () => {
+    it("exits with the provider's error and never re-attempts", async () => {
+      const withHint = (): Error => {
+        const err = sharedPool429();
+        Object.defineProperty(err, "retryAfterSeconds", { value: 10, enumerable: false });
+        return err;
+      };
+      const { attempt, callCount } = failingAttempt(5, withHint);
+      const controller = new AbortController();
+      const h = harness();
+      // The real `defaultSleep` is signal-aware; this double reproduces its
+      // contract so the policy — not the timer — is what is under test.
+      const deps: EndpointFailoverDeps = {
+        ...h.deps,
+        sleep: async (ms, signal) => {
+          h.sleeps.push(ms);
+          controller.abort();
+          signal?.throwIfAborted();
+        },
+      };
+
+      const startedAt = Date.now();
+      await expect(
+        sendWithEndpointFailover(attempt, baseConfig(), CONTEXT, deps, controller.signal),
+      ).rejects.toThrow(/429|Provider returned error/);
+
+      // One attempt, one abandoned wait, and NO second attempt — the loop is
+      // gone, not merely slowed.
+      expect(callCount()).toBe(1);
+      expect(h.sleeps).toEqual([10_000]);
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+    });
+
+    it("with no signal, the backoff is unchanged", async () => {
+      const { attempt, callCount } = failingAttempt(1);
+      const h = harness();
+      await sendWithEndpointFailover(attempt, baseConfig(), CONTEXT, h.deps);
+      expect(callCount()).toBe(2);
+      expect(h.sleeps).toEqual([1_000]);
+    });
+  });
+
   it("HONOURS Retry-After when the provider does send one", async () => {
     const withHint = (): Error => {
       const err = sharedPool429();

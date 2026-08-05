@@ -161,8 +161,13 @@ const ctx = {
 };
 const params = { chain: "ethereum", tokenIn: MATURED_MARKET.pt, amountIn: "1" };
 
-function capture(res: unknown): Record<string, unknown> {
-  return ((res as { data: { _tradeCapture: Record<string, unknown> } }).data)._tradeCapture;
+/**
+ * The tool's `data` block. A Pendle mutating tool is `capture: "none"` — its
+ * durable truth is the `agent_activity` row, so this block carries the execution
+ * id and NOTHING that the legacy projection pipeline could pick up.
+ */
+function data(res: unknown): Record<string, unknown> {
+  return (res as { data: Record<string, unknown> }).data;
 }
 function output(res: unknown): Record<string, unknown> {
   return JSON.parse((res as { output: string }).output) as Record<string, unknown>;
@@ -204,8 +209,7 @@ describe("the CONVERT path delivers the underlying, and says so", () => {
 
   it("records the UNDERLYING as the delivered asset", async () => {
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
-    expect(capture(res).outputTokenAddress?.toString().toLowerCase()).toBe(MATURED_MARKET.underlyingAsset);
-    expect(capture(res).settlementAssetKey?.toString().toLowerCase()).toBe(MATURED_MARKET.underlyingAsset);
+    expect(output(res).deliveredAsset?.toString().toLowerCase()).toBe(MATURED_MARKET.underlyingAsset);
   });
 
   it("marks the path and the asset kind for the agent", async () => {
@@ -218,7 +222,6 @@ describe("the CONVERT path delivers the underlying, and says so", () => {
     // that cannot be mistaken for one — a lot opened at a quoted size that never
     // arrived is a wrong lot forever.
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
-    expect(capture(res).outputAmount).toBe("990000000000000000");
     expect(output(res).executedAmountOut).toBe("0.99");
     expect(output(res).quotedAmountOut).toBe("0.99");
   });
@@ -227,10 +230,9 @@ describe("the CONVERT path delivers the underlying, and says so", () => {
     // The evidence wins. A route that advertised 0.99 and delivered 0.90 must
     // book 0.90, or the ledger records proceeds the wallet never received.
     creditedToken = MATURED_MARKET.underlyingAsset;
-    const shortfall = 900_000_000_000_000_000n;
+    const shortfall = 900_000_000_000_000_000n; // 0.9 at 18 decimals
     mockShortCredit = shortfall;
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
-    expect(capture(res).outputAmount).toBe(shortfall.toString());
     expect(output(res).executedAmountOut).toBe("0.9");
     expect(output(res).quotedAmountOut).toBe("0.99");
     mockShortCredit = null;
@@ -253,10 +255,10 @@ describe("the FALLBACK path delivers SY — and no longer pretends otherwise (P1
   it("records SY as the delivered asset, NOT the underlying", async () => {
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
 
-    expect(capture(res).outputTokenAddress?.toString().toLowerCase()).toBe(MATURED_MARKET.sy);
-    // The exact defect: the wallet holds SY, the ledger used to say underlying.
-    expect(capture(res).outputTokenAddress?.toString().toLowerCase()).not.toBe(MATURED_MARKET.underlyingAsset);
-    expect(capture(res).settlementAssetKey?.toString().toLowerCase()).toBe(MATURED_MARKET.sy);
+    expect(output(res).deliveredAsset?.toString().toLowerCase()).toBe(MATURED_MARKET.sy);
+    // The exact defect: the wallet holds SY, the record used to say underlying.
+    expect(output(res).deliveredAsset?.toString().toLowerCase()).not.toBe(MATURED_MARKET.underlyingAsset);
+    expect(output(res).deliveredAssetKind).toBe("sy");
   });
 
   it("names the path and the asset kind so the agent knows what it now holds", async () => {
@@ -273,15 +275,17 @@ describe("the FALLBACK path delivers SY — and no longer pretends otherwise (P1
     // The old shape had nothing to measure with — no quote, no receipt wait — so
     // it honestly booked "0". The receipt wait supplies the missing evidence.
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
-    expect(capture(res).outputAmount).toBe("990000000000000000");
     expect(output(res).executedAmountOut).toBe("0.99");
   });
 
   it("still refuses to state a USD proceeds figure nothing priced", async () => {
-    // A measured AMOUNT is not a measured VALUE. With no price for SY, carrying
-    // the input's USD across would state proceeds the evidence cannot support.
+    // A measured AMOUNT is not a measured VALUE. With no price for SY, the tool
+    // states no proceeds figure at all rather than one the evidence cannot
+    // support — the valuation now lives only on the `agent_activity` row, which
+    // carries a USD estimate only when a leg was actually priced.
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
-    expect(capture(res).outputValueUsd).toBe("0");
+    expect(Object.keys(output(res))).not.toContain("outputValueUsd");
+    expect(Object.keys(output(res))).not.toContain("proceedsUsd");
   });
 
   it("reports NO quoted amount — this path never had a quote to compare against", async () => {
@@ -297,11 +301,14 @@ describe("the FALLBACK path delivers SY — and no longer pretends otherwise (P1
     expect(note).toMatch(/unknown|not.*decoded|receipt/i);
   });
 
-  it("carries the discriminant into the capture meta too, not only the model text", async () => {
+  it("carries the discriminant on the execution the durable row belongs to", async () => {
+    // The discriminant no longer rides a legacy capture — it reaches the agent in
+    // the result, and the durable `agent_activity` row for this same execution is
+    // what the feed reads.
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
-    const meta = capture(res).meta as { pendle: unknown; deliveredPath: string; deliveredAssetKind: string };
-    expect(meta.deliveredPath).toBe("router_fallback_redeemPyToSy");
-    expect(meta.deliveredAssetKind).toBe("sy");
+    expect(output(res).deliveredPath).toBe("router_fallback_redeemPyToSy");
+    expect(output(res).deliveredAssetKind).toBe("sy");
+    expect(data(res)._executionId).toBe(5);
   });
 
   it("REFUSES rather than booking the wrong asset when the market reports no SY", async () => {

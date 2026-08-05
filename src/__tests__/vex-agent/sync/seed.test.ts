@@ -28,9 +28,11 @@ describe("seedSyncJobs", () => {
     // _global/launch_identity_repair periodic sweep seed — net 11. Its
     // seed↔tick↔worker lockstep is pinned in
     // `periodic-sync-registration.test.ts`; this count is only the row total.
-    // The form-expiry sweep (`launch_form_expiry`) makes 12.
+    // The form-expiry sweep (`launch_form_expiry`) makes 12. Wave P added the
+    // _global/balances_snapshot post_mutation job (enqueued on terminalization,
+    // never timed) — net 13.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(12);
+    expect(mockExecute).toHaveBeenCalledTimes(13);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -56,7 +58,10 @@ describe("seedSyncJobs", () => {
     const postMutationCalls = mockExecute.mock.calls.filter(
       (call: unknown[]) => (call[1] as unknown[])[3] === "post_mutation",
     );
-    expect(postMutationCalls).toHaveLength(5); // khalani, solana, kyberswap, pendle, relay (polymarket, hyperliquid removed)
+    // khalani, solana, kyberswap, pendle, relay (polymarket, hyperliquid
+    // removed) + Wave P's _global/balances_snapshot, which is post_mutation
+    // rather than periodic because it is ENQUEUED on terminalization.
+    expect(postMutationCalls).toHaveLength(6);
     for (const call of postMutationCalls) {
       expect((call[1] as unknown[])[4]).toBeNull(); // no interval
     }

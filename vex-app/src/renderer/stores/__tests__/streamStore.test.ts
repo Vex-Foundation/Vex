@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  __resetPendingReasoningForTests,
-  REASONING_FLUSH_MS,
+  __resetPendingDeltasForTests,
+  STREAM_FLUSH_MS,
   REASONING_TEXT_CAP,
   reducePreview,
   useStreamStore,
@@ -153,18 +153,20 @@ describe("reducePreview", () => {
 
 describe("useStreamStore actions", () => {
   beforeEach(() => {
-    __resetPendingReasoningForTests();
+    __resetPendingDeltasForTests();
     useStreamStore.setState({ bySessionId: {} });
   });
   afterEach(() => {
-    __resetPendingReasoningForTests();
+    __resetPendingDeltasForTests();
     vi.useRealTimers();
   });
 
   it("applyDelta writes per session; clear removes only that session", () => {
+    vi.useFakeTimers();
     const store = useStreamStore.getState();
     store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "hi" } }));
     store.applyDelta("other", ev({ delta: { kind: "text", text: "yo" } }));
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
     expect(useStreamStore.getState().bySessionId[SESSION]?.text).toBe("hi");
 
     useStreamStore.getState().clear(SESSION);
@@ -178,7 +180,7 @@ describe("useStreamStore actions", () => {
     expect(useStreamStore.getState().bySessionId).toBe(before);
   });
 
-  it("batches reasoning deltas into one state write per flush window", () => {
+  it("coalesces reasoning deltas into one state write per flush window", () => {
     vi.useFakeTimers();
     const store = useStreamStore.getState();
     store.applyDelta(SESSION, reasoning("tok1 "));
@@ -187,33 +189,117 @@ describe("useStreamStore actions", () => {
     // No state write until the window elapses.
     expect(useStreamStore.getState().bySessionId[SESSION]).toBeUndefined();
 
-    vi.advanceTimersByTime(REASONING_FLUSH_MS + 1);
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
     const preview = useStreamStore.getState().bySessionId[SESSION];
     expect(preview?.reasoningText).toBe("tok1 tok2 tok3");
     expect(preview?.status).toBe("thinking");
   });
 
-  it("force-flushes the buffered reasoning when a non-reasoning delta arrives", () => {
+  /**
+   * THE ONE COALESCING PATH (owner decree 2026-08-03). Text used to write per
+   * token while reasoning batched — two mechanisms for one job. These pin the
+   * single one: both kinds wait for the same window, milestone deltas flush it
+   * synchronously, and nothing reorders or is lost on the way.
+   */
+  it("coalesces ANSWER TEXT on the same window as reasoning", () => {
+    vi.useFakeTimers();
+    const store = useStreamStore.getState();
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "Hel" } }));
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "lo" } }));
+    // No per-token state write — this is the asymmetry that is gone.
+    expect(useStreamStore.getState().bySessionId[SESSION]).toBeUndefined();
+
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
+    expect(useStreamStore.getState().bySessionId[SESSION]?.text).toBe("Hello");
+  });
+
+  it("preserves the ARRIVAL ORDER of interleaved reasoning and text deltas", () => {
+    vi.useFakeTimers();
+    const store = useStreamStore.getState();
+    store.applyDelta(SESSION, reasoning("weigh "));
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "An" } }));
+    store.applyDelta(SESSION, reasoning("options"));
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "swer" } }));
+
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
+    const preview = useStreamStore.getState().bySessionId[SESSION];
+    expect(preview?.reasoningText).toBe("weigh options");
+    expect(preview?.text).toBe("Answer");
+    // Text arrived before the last reasoning burst, so "writing" is pinned —
+    // only replay in arrival order can produce this.
+    expect(preview?.status).toBe("writing");
+  });
+
+  it("flushes the queue SYNCHRONOUSLY on a tool_call milestone", () => {
     vi.useFakeTimers();
     const store = useStreamStore.getState();
     store.applyDelta(SESSION, reasoning("trace"));
-    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "Answer" } }));
-    // Both visible immediately — ordering survives batching.
+    store.applyDelta(
+      SESSION,
+      ev({ delta: { kind: "tool_call", toolCallIndex: 0, toolCallId: "c", toolCallName: "swap" } }),
+    );
+    // Visible in the same tick, with the trace settled BEFORE the call.
     const preview = useStreamStore.getState().bySessionId[SESSION];
-    expect(preview?.reasoningText).toBe("trace");
-    expect(preview?.text).toBe("Answer");
-    expect(preview?.status).toBe("writing");
-    // The flush timer was cancelled — advancing must not double-append.
-    vi.advanceTimersByTime(REASONING_FLUSH_MS + 1);
-    expect(useStreamStore.getState().bySessionId[SESSION]?.reasoningText).toBe("trace");
+    expect(preview?.reasoningSegments).toEqual(["trace"]);
+    expect(preview?.toolName).toBe("swap");
+    expect(preview?.status).toBe("calling");
+    // The window timer was cancelled — advancing must not double-append.
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
+    expect(useStreamStore.getState().bySessionId[SESSION]?.reasoningSegments).toEqual(["trace"]);
   });
 
-  it("clear cancels a pending reasoning flush (no orphan timer write)", () => {
+  it("flushes the tail synchronously when the stream finalizes (done)", () => {
+    vi.useFakeTimers();
+    const store = useStreamStore.getState();
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "tail" } }));
+    store.applyDelta(SESSION, reasoning("last thought"));
+    store.applyDelta(SESSION, ev({ delta: { kind: "done" } }));
+
+    const preview = useStreamStore.getState().bySessionId[SESSION];
+    expect(preview?.text).toBe("tail");
+    expect(preview?.reasoningText).toBe("last thought");
+    expect(preview?.phase).toBe("done");
+  });
+
+  it("flushes the tail synchronously on abort and on error", () => {
+    vi.useFakeTimers();
+    const store = useStreamStore.getState();
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "partial" } }));
+    store.applyDelta(SESSION, ev({ delta: { kind: "aborted" } }));
+    expect(useStreamStore.getState().bySessionId[SESSION]?.text).toBe("partial");
+    expect(useStreamStore.getState().bySessionId[SESSION]?.phase).toBe("done");
+
+    store.clear(SESSION);
+    store.applyDelta(SESSION, ev({ delta: { kind: "text", text: "cut off" } }));
+    store.applyDelta(
+      SESSION,
+      ev({ delta: { kind: "error", message: "Stream error", code: null } }),
+    );
+    expect(useStreamStore.getState().bySessionId[SESSION]?.text).toBe("cut off");
+    expect(useStreamStore.getState().bySessionId[SESSION]?.phase).toBe("error");
+  });
+
+  it("settleRound flushes the queued tail into the closing round", () => {
+    vi.useFakeTimers();
+    const store = useStreamStore.getState();
+    store.applyDelta(SESSION, reasoning("thought before the boundary"));
+    store.settleRound(SESSION);
+    // The trace settled into THIS round's segment, not the next one's buffer.
+    const preview = useStreamStore.getState().bySessionId[SESSION];
+    expect(preview?.reasoningSegments).toEqual(["thought before the boundary"]);
+    expect(preview?.reasoningText).toBe("");
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
+    expect(useStreamStore.getState().bySessionId[SESSION]?.reasoningSegments).toEqual([
+      "thought before the boundary",
+    ]);
+  });
+
+  it("clear cancels a pending flush (no orphan timer write)", () => {
     vi.useFakeTimers();
     const store = useStreamStore.getState();
     store.applyDelta(SESSION, reasoning("trace"));
     store.clear(SESSION);
-    vi.advanceTimersByTime(REASONING_FLUSH_MS + 1);
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
     expect(useStreamStore.getState().bySessionId[SESSION]).toBeUndefined();
   });
 
@@ -222,7 +308,7 @@ describe("useStreamStore actions", () => {
     const store = useStreamStore.getState();
     store.applyDelta(SESSION, reasoning("old-stream", "s1"));
     store.applyDelta(SESSION, reasoning("new-stream", "s2"));
-    vi.advanceTimersByTime(REASONING_FLUSH_MS + 1);
+    vi.advanceTimersByTime(STREAM_FLUSH_MS + 1);
     const preview = useStreamStore.getState().bySessionId[SESSION];
     expect(preview?.streamId).toBe("s2");
     expect(preview?.reasoningText).toBe("new-stream");
@@ -238,10 +324,10 @@ describe("useStreamStore actions", () => {
  */
 describe("reasoning segments", () => {
   beforeEach(() => {
-    __resetPendingReasoningForTests();
+    __resetPendingDeltasForTests();
     useStreamStore.setState({ bySessionId: {} });
   });
-  afterEach(__resetPendingReasoningForTests);
+  afterEach(__resetPendingDeltasForTests);
 
   it("a tool_call SETTLES the active segment and empties the live buffer", () => {
     const a = reducePreview(undefined, reasoning("weighing the route"));

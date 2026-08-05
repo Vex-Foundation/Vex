@@ -87,17 +87,19 @@ export function buildTimeRulesPrompt(): string {
 
 export interface RuntimeClockPromptOptions {
   /**
-   * True only while a mission RUN is active. Wake scheduling (`loop_defer`) and
-   * the "Pending wake" concept exist only in that phase; emitting them in an
-   * agent session is ~60 tokens per turn of instructions the session cannot act
-   * on (amendment 3).
+   * True exactly when this session can call `loop_defer` — an active mission
+   * RUN, or a Full-Autonomous agent session (owner decree 2026-08-03). It must
+   * stay in LOCKSTEP with `ToolVisibility.requiresAutonomousLoop`: rendering the
+   * call forms for a session that cannot call the tool wastes ~60 tokens a turn
+   * on an impossible instruction, and withholding them from one that can is how
+   * an agent ends up polling a bridge instead of sleeping.
    */
-  missionRunActive: boolean;
+  wakeSchedulingAvailable: boolean;
 }
 
 export function buildRuntimeClockPrompt(
   snapshot: RuntimeClockSnapshot,
-  options: RuntimeClockPromptOptions = { missionRunActive: false },
+  options: RuntimeClockPromptOptions = { wakeSchedulingAvailable: false },
 ): string {
   const lines: string[] = [];
 
@@ -116,13 +118,13 @@ export function buildRuntimeClockPrompt(
   if (snapshot.missionDeadline) {
     lines.push(`Mission deadline: ${snapshot.missionDeadline} (${snapshot.missionDeadlineState ?? "unknown"})`);
   }
-  if (options.missionRunActive) {
+  if (options.wakeSchedulingAvailable) {
     lines.push(snapshot.pendingWakeDueAt
       ? `Pending wake: ${snapshot.pendingWakeDueAt} (${snapshot.pendingWakeState ?? "unknown"}; reason: ${snapshot.pendingWakeReason ?? "none"})`
       : "Pending wake: none");
     lines.push("");
     lines.push("- You do not observe time while deferred; a wake means the executor resumed you after real time passed.");
-    lines.push("- To wait, call `loop_defer(after_ms=60000, reason=\"...\")` for a relative wait or `loop_defer(wake_at=\"2026-01-01T00:00:00Z\", reason=\"...\")` for an exact ISO time.");
+    lines.push("- To wait, call `loop_defer(after_ms=60000, reason=\"...\")` — after_ms is MILLISECONDS, 1000 to 86400000 — or `loop_defer(wake_at=\"2026-01-01T00:00:00Z\", reason=\"...\")` for an exact ISO-8601 UTC time within the next 24 h.");
     lines.push("- Before using deadline_reached or scheduling another wake, compare live state against this Runtime Clock.");
     if (snapshot.missionDeadline) {
       lines.push("- The mission auto-finalizes when this deadline passes. Any positions still open at that point are reported as unresolved, not closed automatically.");

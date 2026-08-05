@@ -117,6 +117,14 @@ const USDC_METADATA = {
   chain: "solana", address: "USDC_MINT", symbol: "USDC", name: "USD Coin", decimals: 6,
 };
 
+
+/** A handler-map lookup that fails loudly instead of asserting non-null. */
+function handlerFor<THandler>(handlers: Record<string, THandler>, toolId: string): THandler {
+  const handler = handlers[toolId];
+  if (handler === undefined) throw new Error(`no handler for ${toolId}`);
+  return handler;
+}
+
 describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,8 +143,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   });
 
   it("deposit: records the intent BEFORE signing (kind='lend', chainFamily='solana', tokenIn=asset), then signs/persists/submits in order", async () => {
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -183,8 +191,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   });
 
   it("withdraw: records tokenOut (not tokenIn) with role lend_withdraw", async () => {
-    await LEND_HANDLERS["solana.lend.withdraw"]!(
-      { asset: "USDC_MINT", amount: "500000" },
+    await handlerFor(LEND_HANDLERS, "solana.lend.withdraw")(
+      { asset: "USDC_MINT", amountRaw: "500000" },
       ctx(),
     );
 
@@ -205,7 +213,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
     const hugeRaw = "18446744073709551615";
     expect(Number(hugeRaw)).toBeGreaterThan(Number.MAX_SAFE_INTEGER);
 
-    await LEND_HANDLERS["solana.lend.deposit"]!({ asset: "USDC_MINT", amount: hugeRaw }, ctx());
+    await handlerFor(LEND_HANDLERS, "solana.lend.deposit")({ asset: "USDC_MINT", amountRaw: hugeRaw }, ctx());
 
     const intentArg = mockCreateAgentActivityIntent.mock.calls[0][0];
     expect(intentArg.events[0].tokenIn).toEqual({
@@ -217,8 +225,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("token-metadata resolution THROWING never blocks the funded mutation — the row is still recorded with the raw facts", async () => {
     mockResolveJupiterToken.mockRejectedValue(new Error("Jupiter Tokens API V2 key is not configured"));
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "500000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "500000" },
       ctx(),
     );
 
@@ -236,7 +244,7 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("a pre-broadcast provider rejection still records the resolved leg metadata", async () => {
     mockRequestDeposit.mockRejectedValue(new Error("insufficient balance for deposit"));
 
-    await LEND_HANDLERS["solana.lend.deposit"]!({ asset: "USDC_MINT", amount: "500000" }, ctx());
+    await handlerFor(LEND_HANDLERS, "solana.lend.deposit")({ asset: "USDC_MINT", amountRaw: "500000" }, ctx());
 
     const failArg = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0][0];
     expect(failArg.event.tokenIn).toEqual({
@@ -248,8 +256,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("a provider rejection of the unsigned-tx request is a PRE-broadcast failure — no intent row, no signing", async () => {
     mockRequestDeposit.mockRejectedValue(new Error("insufficient balance for deposit"));
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -270,8 +278,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("a sole-signer refusal (prepareVersionedTx throws) finalizes the EXISTING row via failActivityEvent — never a second intent", async () => {
     mockPrepareVersionedTx.mockRejectedValue(new Error("Refusing to sign: transaction requires 2 signers, expected exactly 1."));
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -286,8 +294,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("a staging CAS miss refuses to submit untracked — no lane is ever entered", async () => {
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: false, row: {} });
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -302,8 +310,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
       kind: "signature_mismatch", localSignature: PREPARED.signature, providerSignature: "OtherSig",
     });
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -317,8 +325,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   it("an AMBIGUOUS transport failure stays truthful-pending and never throws out of the handler", async () => {
     mockSubmitOverRpc.mockResolvedValue({ kind: "transport_uncertain", cause: new Error("fetch failed") });
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -334,8 +342,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
       cause: new Error("Simulation failed. Message: insufficient funds for rent."),
     });
 
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx(),
     );
 
@@ -353,8 +361,8 @@ describe("solana.lend.deposit / solana.lend.withdraw — staged Solana seam (K6)
   });
 
   it("fails closed without an active session — no provider call, no recording", async () => {
-    const result = await LEND_HANDLERS["solana.lend.deposit"]!(
-      { asset: "USDC_MINT", amount: "1000000" },
+    const result = await handlerFor(LEND_HANDLERS, "solana.lend.deposit")(
+      { asset: "USDC_MINT", amountRaw: "1000000" },
       ctx({ sessionId: undefined }),
     );
 

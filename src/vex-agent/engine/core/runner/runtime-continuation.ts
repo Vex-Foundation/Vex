@@ -96,6 +96,112 @@ export async function scheduleRuntimeContinuation(
   return { dueAt: scheduledAt, enqueued: row !== null };
 }
 
+// ── Session-scoped wake primitive ──────────────────────────────────
+
+export interface SessionScopedWakeInput {
+  readonly sessionId: string;
+  readonly dueAt: Date;
+  readonly reason: string;
+  readonly payload: Record<string, unknown> | null;
+  readonly abortSignal?: AbortSignal;
+}
+
+export type SessionScopedWakeOutcome =
+  | { readonly kind: "stopped" }
+  | { readonly kind: "decided"; readonly row: Awaited<ReturnType<typeof loopWakeRepo.enqueue>> };
+
+/**
+ * Insert a session-scoped (`missionRunId: null`) pending wake, with the
+ * operator-stop gate and the INSERT committing in ONE transaction under the
+ * session control lock.
+ *
+ * This is the transactional core shared by the two things that can park a
+ * Full-Autonomous AGENT session: the automatic slice-exhaustion continuation
+ * below, and an explicit `loop_defer` from the model. Both need the identical
+ * guarantee and neither may re-derive it: sampling the stop and then inserting
+ * leaves a LIVE wake on a session the operator stopped, because the
+ * compensating cancel races the very thing it compensates for. The long-form
+ * rationale is in `scheduleAgentSessionContinuation`'s doc block.
+ *
+ * What differs between the two callers is only what they say afterwards — the
+ * continuation appends a `runtime_yield` transcript marker, the defer carries
+ * its own `defer_until` engine signal — so the transcript write deliberately
+ * stays OUT of this primitive.
+ */
+export async function enqueueSessionScopedWake(
+  input: SessionScopedWakeInput,
+): Promise<SessionScopedWakeOutcome> {
+  const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
+    "../../runtime/lease-and-status.js"
+  );
+
+  return withSessionControlLock(input.sessionId, async (client) => {
+    const gate = await gateOnOperatorStopWithClient(client, {
+      sessionId: input.sessionId,
+      missionRunId: null,
+    });
+    // Fail-closed on either signal, re-read INSIDE the transaction. Nothing is
+    // inserted for a session the operator stopped, so there is nothing to
+    // compensate for afterwards.
+    if (gate.kind === "stopped" || input.abortSignal?.aborted === true) {
+      return { kind: "stopped" as const };
+    }
+    const row = await loopWakeRepo.enqueue(
+      {
+        sessionId: input.sessionId,
+        missionRunId: null,
+        dueAt: input.dueAt,
+        reason: input.reason,
+        payload: input.payload,
+      },
+      client,
+    );
+    return { kind: "decided" as const, row };
+  });
+}
+
+/**
+ * Cancel the session-scoped park a FOREGROUND turn left behind after the
+ * operator stopped it.
+ *
+ * The foreground Stop is deliberately request-local (`stopTurn()` aborts the
+ * IPC request and writes nothing durable — see `composer-submit.ts`). That is
+ * correct for a turn that is merely generating text. It was NOT correct once
+ * the model could park the session: `loop_defer` commits a pending wake row
+ * DURING the turn, the batch tears down, the turn returns, and the operator's
+ * Stop had cancelled a request while leaving a live continuation behind. The
+ * executor then started a fresh autonomous slice moments later — the user
+ * pressed Stop and the agent kept going.
+ *
+ * Scoped to `mission_run_id IS NULL`: a mission's park is owned by its run row
+ * and its own stop path, and is not this turn's to cancel.
+ *
+ * Runs under the session control lock, so it is strictly ordered against
+ * `enqueueSessionScopedWake` — either the defer committed and this sees it, or
+ * this committed and the defer's own gate runs afterwards. Returns the number
+ * of rows cancelled so the caller can log an honest number.
+ */
+export async function cancelForegroundStoppedSessionWake(
+  sessionId: string,
+): Promise<number> {
+  const { withSessionControlLock } = await import(
+    "../../runtime/lease-and-status.js"
+  );
+  const { executeWith } = await import("@vex-agent/db/client.js");
+  return withSessionControlLock(sessionId, (client) =>
+    executeWith(
+      client,
+      `UPDATE loop_wake_requests
+          SET status           = 'cancelled',
+              cancelled_at     = NOW(),
+              cancelled_reason = 'consumed_by_foreground_stop'
+        WHERE session_id     = $1
+          AND status         = 'pending'
+          AND mission_run_id IS NULL`,
+      [sessionId],
+    ));
+}
+
 // ── Agent-session continuation ─────────────────────────────────────
 
 export interface AgentSessionContinuationInput {
@@ -108,10 +214,6 @@ export interface AgentSessionContinuationInput {
    * an operator Stop actually looks like today.
    */
   readonly abortSignal?: AbortSignal;
-  /** Backoff attempt for a re-scheduled wake; omitted for a first schedule. */
-  readonly attempt?: number;
-  /** Overrides the 5 s default (the executor's lease-busy backoff uses this). */
-  readonly delayMs?: number;
 }
 
 export interface AgentSessionContinuationResult {
@@ -153,40 +255,15 @@ export interface AgentSessionContinuationResult {
 export async function scheduleAgentSessionContinuation(
   input: AgentSessionContinuationInput,
 ): Promise<AgentSessionContinuationResult> {
-  const delayMs = input.delayMs ?? AUTO_CONTINUE_AFTER_MS;
-  const dueAt = new Date(currentDate().getTime() + delayMs);
+  const dueAt = new Date(currentDate().getTime() + AUTO_CONTINUE_AFTER_MS);
   const reason = `${input.trigger}: runtime slice exhausted; continue autonomously`;
 
-  const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
-    "../../runtime/lease-and-status.js"
-  );
-
-  const outcome = await withSessionControlLock(input.sessionId, async (client) => {
-    const gate = await gateOnOperatorStopWithClient(client, {
-      sessionId: input.sessionId,
-      missionRunId: null,
-    });
-    // Fail-closed on either signal, re-read INSIDE the transaction. Nothing is
-    // inserted for a session the operator stopped, so there is nothing to
-    // compensate for afterwards.
-    if (gate.kind === "stopped" || input.abortSignal?.aborted === true) {
-      return { kind: "stopped" as const };
-    }
-    const row = await loopWakeRepo.enqueue(
-      {
-        sessionId: input.sessionId,
-        missionRunId: null,
-        dueAt,
-        reason,
-        payload: {
-          trigger: input.trigger,
-          automatic: true,
-          ...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
-        },
-      },
-      client,
-    );
-    return { kind: "decided" as const, row };
+  const outcome = await enqueueSessionScopedWake({
+    sessionId: input.sessionId,
+    dueAt,
+    reason,
+    payload: { trigger: input.trigger, automatic: true },
+    ...(input.abortSignal === undefined ? {} : { abortSignal: input.abortSignal }),
   });
 
   if (outcome.kind === "stopped") {
@@ -217,7 +294,6 @@ export async function scheduleAgentSessionContinuation(
         dueAt: scheduledAt,
         enqueued: outcome.row !== null,
         missionRunId: null,
-        ...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
       },
     },
   );

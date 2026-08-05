@@ -46,7 +46,9 @@ describe("khalani client", () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: false,
       status: 404,
-      json: async () => ({
+      // The client reads an error payload as TEXT (W2d) — Khalani does not
+      // always answer JSON on an error.
+      text: async () => JSON.stringify({
         message: "Quote not found or expired",
         name: "QuoteNotFoundException",
         details: { quoteId: "abc" },
@@ -286,7 +288,7 @@ describe("khalani client", () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: false,
       status: 429,
-      json: async () => ({ message: "Too many requests" }),
+      text: async () => JSON.stringify({ message: "Too many requests" }),
     });
 
     const client = new KhalaniClient("https://api.hyperstream.dev");

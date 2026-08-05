@@ -52,7 +52,7 @@ import {
 } from "../../prequote/identity/hash.js";
 import { canonSlippageBpsWithDefault } from "../../prequote/slippage.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../prequote/registry.js";
-import { DEFAULT_SLIPPAGE_BPS } from "./shared.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 /** The venue label bound into every dual-LP digest — the LP family's own. */
 export const PENDLE_LP_DUAL_PREQUOTE_PROVIDER = "pendle";
@@ -102,7 +102,7 @@ export function buildLpDualMatchInput(
     receiver: legs.walletAddress,
     market: legs.market,
     amount: legs.amount,
-    slippageBps: canonSlippageBpsWithDefault(params, DEFAULT_SLIPPAGE_BPS),
+    slippageBps: canonSlippageBpsWithDefault(params, VEX_DEFAULT_SLIPPAGE_BPS),
   } as const;
   return kind === "lp_remove_dual"
     ? { kind, ...common, tokenOut: legs.token }

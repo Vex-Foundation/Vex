@@ -38,6 +38,7 @@ import type { ReconcileReport } from "@vex-agent/tools/protocols/embeddings/reem
 import { log } from "../logger/index.js";
 import { probeToolEmbeddingsReady } from "../database/tool-embeddings-db.js";
 import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { migrationsApplied } from "../database/migrations-applied.js";
 
 /** Base supervisor cadence (gate wait + first retry delay). */
 const SUPERVISOR_INTERVAL_MS = 30_000;
@@ -99,7 +100,9 @@ export function setupToolEmbeddingReconcileWorker(
   let attempts = 0; // reconcile passes actually run (gate-passed) this boot
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inFlightTick: Promise<void> | null = null;
-  let warnedWaiting = false;
+  // One line per DISTINCT wait reason: a worker that waited on the DB url and
+  // then on migrations must report both, not only whichever came first.
+  const loggedWaitReasons = new Set<string>();
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -109,8 +112,8 @@ export function setupToolEmbeddingReconcileWorker(
   };
 
   const warnWaitingOnce = (reason: string): void => {
-    if (warnedWaiting) return;
-    warnedWaiting = true;
+    if (loggedWaitReasons.has(reason)) return;
+    loggedWaitReasons.add(reason);
     log.info(`[tool-embedding-reconcile] waiting to start: ${reason}`);
   };
 
@@ -134,6 +137,13 @@ export function setupToolEmbeddingReconcileWorker(
     if (stopped || dormant) return; // re-check after await
     if (!dbUrl.ok) {
       warnWaitingOnce("database url unavailable");
+      scheduleNext(intervalMs); // gate wait — not an attempt, no cap
+      return;
+    }
+
+    // Schema VERSION, not schema presence — see `database/migrations-applied.ts`.
+    if (!migrationsApplied()) {
+      warnWaitingOnce("migrations pending");
       scheduleNext(intervalMs); // gate wait — not an attempt, no cap
       return;
     }

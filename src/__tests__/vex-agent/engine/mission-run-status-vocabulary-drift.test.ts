@@ -89,7 +89,10 @@ describe("mission run status vocabulary — cross-package drift guard", () => {
 
     expect(
       literalsBetween(
-        read("vex-app/src/main/database/mission-runs-db.ts"),
+        // The whitelist moved with the query: the run/lease read is now the
+        // one-statement control-state aggregate, and `mission-runs-db.ts`
+        // projects from it rather than owning a second copy of the SQL.
+        read("vex-app/src/main/database/session-control-state.ts"),
         "const ACTIVE_OR_PAUSED_STATUSES",
         "];",
       ),

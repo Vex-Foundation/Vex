@@ -150,6 +150,41 @@ export function buildIdentityPrompt(context: EngineContext): string {
     lines.push("");
   }
 
+  // Vex Fee — owner decree 2026-08-03. In the STATIC identity layer on purpose:
+  // it is a permanent product fact about what Vex costs, not a per-mode policy,
+  // and it must be deterministic text so the cache prefix stays stable. Before
+  // this, the fee was explained NOWHERE in the prompt except one clause in the
+  // Trench launch bullet — asked "what did that swap cost me?", the agent had no
+  // basis to answer even though `agent_scan` returns every field it needs.
+  lines.push("## Vex Fee");
+  lines.push("");
+  lines.push("Vex charges a 25 bps fee (0.25%) on the operations it executes for the user:");
+  lines.push("");
+  // VENUE BRANDS ARE DELIBERATELY ABSENT from this list. The fee applies to
+  // every swap venue including the HIDDEN Uniswap fallback pair, and naming
+  // that pair in a static layer would reveal it to every session pre-reveal —
+  // the C42 no-silent-whitelist guard
+  // (`prompt-stack-protocol-doctrine-and-reveal-safety.test.ts`) fails the build
+  // on exactly that. "the venue Vex routed through" is both true for every
+  // venue and reveal-safe, and the agent needs no brand name to answer what an
+  // action cost: the recorded row carries the venue.
+  lines.push("- token swaps on EVM chains and on Solana, whichever venue Vex routed through;");
+  lines.push("- cross-chain bridges;");
+  lines.push("- Trench token launches.");
+  lines.push("");
+  lines.push("Three rules govern it, and you may state all three as fact:");
+  lines.push("");
+  lines.push("1. It is taken on the INPUT token — the asset the user is spending, not the one they receive.");
+  lines.push("2. It is charged ONLY after the operation succeeds. A failed, reverted, or never-broadcast attempt is never charged, and its recorded fee fields are empty for exactly that reason.");
+  lines.push("3. It is Vex's own fee. It is separate from network gas, from the venue's own protocol fee, and from bridge relayer costs — never conflate them when the user asks what something cost.");
+  lines.push("");
+  lines.push("Read-only actions cost nothing: quotes, previews, balance reads, research, and every discovery call are free.");
+  lines.push("");
+  lines.push("You can answer \"what did that cost?\" from the record, and you should. `agent_scan(view=\"transactions\")` returns, on every row: `vexFeeAmountHuman` and `vexFeeTokenSymbol` (the exact fee and the token it was taken in), `vexFeeAmountRaw` with `vexFeeTokenDecimals` (the same figure in atomic units), and `usdVexFeeEst` (an ESTIMATE in USD — label it as one). Read them carefully: a row where `vexFeeAmountHuman` is set but `usdVexFeeEst` is null means the fee WAS charged and no trustworthy USD price existed, not that it was free. A row with no fee figures at all is either a failed attempt (never charged) or a non-fee-bearing action. The fee is already contained in the recorded input amount for in-transaction venues, so never add it on top when reporting what the user spent.");
+  lines.push("");
+  lines.push("Be straightforward about it. If the user asks whether Vex takes a cut, say yes, say 25 bps, say on what and when. Do not volunteer a fee breakdown on every action, and never present the fee as optional, negotiable, or waivable.");
+  lines.push("");
+
   lines.push("## Current Context");
   lines.push("");
   lines.push(`Session: ${context.sessionId}`);

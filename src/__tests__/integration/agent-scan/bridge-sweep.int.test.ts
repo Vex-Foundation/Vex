@@ -320,7 +320,18 @@ describe("W4 sweep — refund evidence (Blocker 8)", () => {
     expect((await repo.getActivityEventById(seed.logicalId))?.status).toBe("pending");
     expect(await rowsByRole(seed.executionId, "bridge_refund")).toHaveLength(0);
 
-    // Pass 2: the real evidence write succeeds — now it terminalizes.
+    // Pass 2 is a LATER sweep, and it now has to be one: the candidate claim
+    // stamps `last_attempted_at` and gates a repeat behind the row's own due
+    // interval (30 s for a fresh row), so a second sweep in the same
+    // millisecond legitimately claims nothing. Backdating the stamp is how this
+    // test says "later" to the scheduler instead of relying on every driver
+    // re-checking every row on every run.
+    await execute(
+      `UPDATE agent_activity SET last_attempted_at = NOW() - INTERVAL '1 hour'
+        WHERE protocol_execution_id = $1 AND event_role = 'bridge_fill_expected'`,
+      [seed.executionId],
+    );
+
     const realDeps = depsWith({
       fetchKhalaniOrder: async () => khalaniOrderFor(seed, "refunded", { refund: { txHash: refundHash, chainId: 8453 } }),
       verifyFill: async () => ({ verified: true }),

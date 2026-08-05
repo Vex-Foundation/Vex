@@ -8,11 +8,11 @@
  *  2. stream the answer markdown BELOW it, in the same gutter grammar as a
  *     persisted assistant row (relative pl-9).
  *
- * The `useMemo` on `preview.text` is load-bearing and must not be inlined: an
- * 80ms reasoning flush re-renders this component, and without the memo the
- * ANSWER markdown would be re-parsed on every reasoning delta. The island's
- * live reasoning lives in its own memoized subtree for the mirror-image
- * reason.
+ * The `useMemo` on `preview.text` is load-bearing and must not be inlined: a
+ * reasoning flush re-renders this component, and without the memo the ANSWER
+ * subtree would be rebuilt on every reasoning delta. The island's live
+ * reasoning is memoized for the mirror-image reason, and both bodies parse
+ * through the same memoized `MarkdownContent`.
  *
  * When the canonical message DTO lands, `useStreamPreviewSync` clears the
  * whole preview and the persisted row takes over seamlessly — the island's
@@ -28,15 +28,18 @@ import { TurnIsland } from "./TurnIsland/index.js";
 export function StreamingBubble({
   preview,
   awaitingApproval = false,
+  centredSceneUp = false,
 }: {
   readonly preview: StreamPreview;
   /** Pending approval in the active session — freezes the island (S5). */
   readonly awaitingApproval?: boolean;
+  /** The centred "vexing…" scene owns the column — the island stands down. */
+  readonly centredSceneUp?: boolean;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
-  // Memoized on the answer text: an 80ms reasoning flush must not re-parse
-  // the markdown answer body.
+  // Memoized on the answer text: a reasoning flush must not rebuild the
+  // markdown answer body.
   const answerBody = useMemo(
     () =>
       preview.text.length > 0 ? (
@@ -60,7 +63,11 @@ export function StreamingBubble({
       aria-busy={streaming}
       className="relative flex flex-col gap-2 pl-9"
     >
-      <TurnIsland preview={preview} awaitingApproval={awaitingApproval} />
+      <TurnIsland
+        preview={preview}
+        awaitingApproval={awaitingApproval}
+        centredSceneUp={centredSceneUp}
+      />
       {/* The raw provider text never renders on the error path. */}
       {preview.phase === "error" ? null : answerBody}
     </div>

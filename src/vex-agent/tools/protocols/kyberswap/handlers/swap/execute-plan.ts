@@ -35,8 +35,10 @@ import {
 import { formatUnits, getAddress, type Address, type Hex } from "viem";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { estimateKyberSwapCostsUsd } from "../../swap-cost-estimate.js";
+import { settlementDecodeProvenance } from "@vex-agent/db/repos/agent-activity/settlement-decode.js";
 import { PROTOCOL } from "./protocol-id.js";
 import type { KyberBuildRouteResponse, KyberGetRouteResponse } from "./route-request.js";
+import type { SafetyCheckUnavailable } from "./safety-disclosure.js";
 
 export interface SwapEventPlan {
   readonly eventRole: AgentActivityEventRole;
@@ -66,12 +68,21 @@ export interface PrepareSwapExecutionInput {
   readonly slippage: number;
   readonly routerAddress: Address;
   readonly routeSummaryRaw: KyberGetRouteResponse["data"]["routeSummary"];
+  /**
+   * Legs whose honeypot/FoT check could not run (W2b). Persisted onto the
+   * activity row's `intent_params` under a Vex-authored `_`-prefixed key —
+   * same established pattern as the Jupiter lend `/operate` delta shape — so
+   * the record itself says the swap ran without that protection. No schema
+   * change: `intent_params` is already a sanitized, capped JSON blob.
+   */
+  readonly safetyCheckUnavailable: readonly SafetyCheckUnavailable[];
 }
 
 export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Promise<PreparedSwapExecution> {
   const {
     toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
     tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress, routeSummaryRaw,
+    safetyCheckUnavailable,
   } = input;
 
   if (!tokenIn.isNative) {
@@ -233,12 +244,29 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
         amountHuman: formatUnits(vexFeeRaw, tokenIn.decimals),
       },
       usdSource: "kyberswap_quote",
-      routeProvenance: { routeID: routeSummaryRaw.routeID, checksum: routeSummaryRaw.checksum },
+      routeProvenance: {
+        routeID: routeSummaryRaw.routeID, checksum: routeSummaryRaw.checksum,
+        // R1 Step 5a — the decode inputs, persisted at INTENT time. The router
+        // is the one `verifyRouterAddress` accepted above, not a value echoed
+        // back from the build; the declared value is the signed transaction's
+        // own, and it is recorded only when the input really is native, because
+        // on an ERC-20 route it is zero and would tell a decoder nothing.
+        ...settlementDecodeProvenance({
+          decoder: "kyberswap",
+          chainId,
+          routerAddress: getAddress(buildResp.data.routerAddress),
+          ...(tokenIn.isNative ? { declaredValueRaw: buildResp.data.transactionValue } : {}),
+        }),
+      },
     },
   });
 
   const created = await createAgentActivityIntent({
-    toolId, namespace: PROTOCOL, intentParams: p,
+    toolId,
+    namespace: PROTOCOL,
+    intentParams: safetyCheckUnavailable.length > 0
+      ? { ...p, _safetyCheckUnavailable: safetyCheckUnavailable }
+      : p,
     events: builtPlans.map((plan, i) => ({ ...plan.event, eventIndex: i })),
   });
   return {

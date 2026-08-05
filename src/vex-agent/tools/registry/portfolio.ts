@@ -23,6 +23,7 @@ export const PORTFOLIO_TOOLS: readonly ToolDef[] = [
       "- `summary`: balances-only portfolio overview (total USD, open position count, latest snapshot). No realized/unrealized PnL — compute that yourself from `transactions`' recorded amounts if you need it.",
       "- `executions`: the global protocol-call audit log (every tool execution, not wallet-scoped).",
       "Filters narrow the rows: `namespace` (protocol), `productType` (spot/perps/prediction/bridge/order/lend), `txHash`, `cursor`, `limit`.",
+      "Vex fee: every `transactions` row carries what Vex charged for that action — `vexFeeAmountHuman` + `vexFeeTokenSymbol` (exact, in the input token), `vexFeeAmountRaw` + `vexFeeTokenDecimals` (atomic units), and `usdVexFeeEst` (a nullable USD ESTIMATE). This is the source of truth for \"what did that cost me?\". A row with a fee amount but a null `usdVexFeeEst` WAS charged — no trustworthy USD price existed; a row with no fee figures at all is a failed attempt (never charged) or a non-fee-bearing action.",
       "Freshness caveat: balances/snapshots reflect the last indexer sync, not on-chain head. For real-time per-token balance (e.g. confirming a swap landed), prefer `wallet_balances`. For instrument prices, use the relevant quote tools in the kyberswap namespace.",
     ].join(" "),
     parameters: { type: "object", properties: {

@@ -51,7 +51,7 @@ export type SeedQuery = z.infer<typeof SeedQuerySchema>;
 export type AwarenessName = SeedQuery["awareness"];
 export type IntentShapeName = SeedQuery["intentShape"];
 export type ScenarioName = SeedQuery["scenario"];
-export type RetrievalEvalMode = "dense";
+export type RetrievalEvalMode = "dense" | "lexical";
 
 export interface QueryResult {
   query: SeedQuery;
@@ -267,7 +267,7 @@ async function evaluateDiscoverQuery(query: SeedQuery, limit: number): Promise<Q
   };
 }
 
-function buildModeReport(mode: RetrievalEvalMode, results: QueryResult[]): ModeReport {
+export function buildModeReport(mode: RetrievalEvalMode, results: QueryResult[]): ModeReport {
   const awareness = splitByAwareness(results);
   const intentShapes = splitByIntentShape(results);
   const scenarios = splitByScenario(results);

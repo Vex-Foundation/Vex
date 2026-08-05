@@ -291,13 +291,7 @@ export async function submitLaunch(
     return { ok: false, refusal: { kind: "launch_refused", detail: outcome.message } };
   }
 
-  await wake(
-    intentId,
-    input.sessionId,
-    outcome.txHash === null
-      ? { kind: "failed", reason: outcome.message }
-      : { kind: "launched", txHash: outcome.txHash, tokenAddress: outcome.tokenAddress },
-  );
+  await wake(intentId, input.sessionId, wakeOutcomeFor(outcome));
 
   return {
     ok: true,
@@ -310,6 +304,37 @@ export async function submitLaunch(
       message: outcome.message,
     },
   };
+}
+
+/**
+ * What the parked agent is told a broadcast did — read from the STATUS.
+ *
+ * A hash is not a receipt. The previous rule here was `txHash !== null`, which
+ * made a `pending` broadcast resume the turn as `launched`: "deployed the token.
+ * This is done — do not launch again", for a transaction the executor was
+ * simultaneously reporting as unconfirmed. That was observed live (tx
+ * 0x09b84e…e955 sat unmined for minutes). Every arm below now states exactly
+ * what the chain proved:
+ *
+ *   - `confirmed` / `confirmed_pending_identity` — mined and successful. The
+ *     second is still a launch; only the token's ADDRESS is undecoded, and
+ *     `tokenAddress: null` already says "do not state one yet";
+ *   - `reverted` — mined and failed. No token exists, so `failed` is true prose;
+ *   - `pending` — broadcast, unproven, gas at stake. Neither of the above.
+ *
+ * A missing hash cannot make an unmined broadcast into a failure either: it
+ * means we could not read back what was sent, not that nothing was sent.
+ */
+function wakeOutcomeFor(
+  outcome: Extract<SubmittedLaunchOutcome, { kind: "broadcast" }>,
+): Parameters<typeof wake>[2] {
+  if (outcome.status === "reverted") {
+    return { kind: "failed", reason: outcome.message };
+  }
+  if (outcome.status === "pending" || outcome.txHash === null) {
+    return { kind: "unconfirmed", txHash: outcome.txHash, reason: outcome.message };
+  }
+  return { kind: "launched", txHash: outcome.txHash, tokenAddress: outcome.tokenAddress };
 }
 
 /**

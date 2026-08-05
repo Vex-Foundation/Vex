@@ -285,6 +285,13 @@ export const CH = {
     // only `{cursor, filters}`, never an address, and its optional
     // `filters.sessionId` can only NARROW that scope.
     listAgentScan: "vex:portfolio:listAgentScan",
+    // Wave P — user-initiated portfolio refresh (the sidebar refresh button).
+    // Runs a full balance sync + authoritative snapshot in the engine. The
+    // engine holds a single-flight mutex (`fullBalanceSync` is NOT
+    // concurrency-safe) and this handler rate-limits to one call per 30s,
+    // returning a `throttled` DTO rather than an error. Public-address network
+    // reads only — no keystore, no signing.
+    refresh: "vex:portfolio:refresh",
   },
 
   // Market — read-only live VEX token metrics for the welcome-screen price
@@ -462,6 +469,25 @@ export const EV = {
    */
   launch: {
     formRequested: "vex:event:launch:formRequested",
+  },
+  /**
+   * A pending transaction reached a terminal status (Wave P).
+   *
+   * Payload is IDS ONLY — the renderer invalidates its Agent Scan / portfolio
+   * queries and re-reads, with the DB as source of truth. No amount, tx hash or
+   * token identity rides this channel.
+   *
+   * Emitted only AFTER the terminalizing CAS has committed, so a renderer that
+   * re-reads on this signal never observes the pre-terminal row.
+   */
+  portfolio: {
+    activityResolved: "vex:event:portfolio:activityResolved",
+    /**
+     * A pending row was OBSERVED and is STILL pending (OD-7). Same ids-only
+     * posture; it additionally carries the observation's reason and the row's
+     * CURRENT check interval, neither of which the renderer can derive.
+     */
+    activityProgress: "vex:event:portfolio:activityProgress",
   },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",

@@ -19,7 +19,8 @@ import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.
 import type { StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
 import { TRENCH_DIAMOND_ABI } from "@tools/trench-express/abi.js";
 import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
-import { TRENCH_FEE_RECEIVER_EVM } from "@tools/trench-express/fee/index.js";
+import { TRENCH_FEE_RECEIVER_EVM, type TrenchFeeDisclosure } from "@tools/trench-express/fee/index.js";
+import type { TrenchFeeCollection } from "@vex-agent/tools/protocols/trench/fee/run.js";
 
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const TOKEN = getAddress("0x58659Ef9Be57216632BFD341FC57736a429EFB91");
@@ -109,8 +110,11 @@ function transferLog(from: Address, to: Address, value: bigint) {
 function confirmed(logs: unknown[]): StagedBroadcastOutcome {
   return { kind: "confirmed", txHash: "0xhash", receipt: { blockNumber: 1n, status: "success", logs } } as unknown as StagedBroadcastOutcome;
 }
-function feeOf(r: { data?: unknown }): { collection: string; disclosure: { charged: boolean; basis?: string; feeAmountWei?: string } } {
-  return (r.data as { vexFee: { collection: string; disclosure: { charged: boolean; basis?: string; feeAmountWei?: string } } }).vexFee;
+/** The live shape `withFeeDisclosure` merges into the trade result. */
+type VexFeeReport = TrenchFeeCollection & { readonly disclosure: TrenchFeeDisclosure };
+
+function feeOf(r: { data?: unknown }): VexFeeReport {
+  return (r.data as { vexFee: VexFeeReport }).vexFee;
 }
 
 // 0.01 ETH = 1e16 wei → fee = 25e12 wei, curve gets 1e16 − 25e12.
@@ -195,7 +199,7 @@ describe("Trench fee — a trade that did not happen is NEVER charged", () => {
   });
 
   it("an AMBIGUOUS buy never signs the fee — the outcome is unknown, so nothing is charged", async () => {
-    outcomes = [{ kind: "ambiguous", txHash: "0xhash", stage: "send" }];
+    outcomes = [{ kind: "ambiguous", txHash: "0xhash", stage: "send", reason: "no receipt observed for the broadcast trade leg" }];
     const r = await trenchTradeExecuteHandler(BUY, ctx());
 
     expect(signedTxs).toHaveLength(1);
@@ -248,7 +252,7 @@ describe("Trench fee — a failed fee leaves the trade untouched", () => {
     const tokensOut = 197_913_781_308_210_736_292_461n;
     outcomes = [
       confirmed([curveLog("Bought", 495n, tokensOut), transferLog(DIAMOND, WALLET, tokensOut)]),
-      { kind: "ambiguous", txHash: "0xfee", stage: "send" } as StagedBroadcastOutcome,
+      { kind: "ambiguous", txHash: "0xfee", stage: "send", reason: "no receipt observed for the broadcast fee transfer" },
     ];
     mockReadQuote.mockImplementation(async () => tokensOut);
 

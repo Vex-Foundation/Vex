@@ -152,7 +152,7 @@ describe("DexScreener research flows — generality", () => {
     const address = found[0]?.tokenAddress;
     expect(typeof address).toBe("string");
     const pools = await flow.call("dexscreener.tokenPairs", {
-      chainId: "robinhood",
+      chain: "robinhood",
       tokenAddress: String(address),
       maxPairAgeSeconds: 86_400,
       minTurnoverRatio: 0.05,
@@ -184,7 +184,7 @@ describe("DexScreener research flows — generality", () => {
     expect(typeof target).toBe("string");
 
     const orders = await flow.call("dexscreener.orders", {
-      chainId: "solana",
+      chain: "solana",
       tokenAddress: String(target),
     });
     expect(orders).toHaveProperty("orderCount");
@@ -237,7 +237,7 @@ describe("DexScreener research flows — generality", () => {
 
     // Depth and price sanity across every pool of the token.
     const pools = await flow.call("dexscreener.tokenPairs", {
-      chainId: "solana",
+      chain: "solana",
       tokenAddress: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
       minQuoteDepthTokens: 1,
       requireSocials: true,
@@ -273,7 +273,7 @@ describe("DexScreener research flows — generality", () => {
     // `minQuoteDepthTokens` is the one depth number a pool cannot inflate by
     // mispricing itself, and it is the same key on every pair tool.
     const venues = await flow.call("dexscreener.tokenPairs", {
-      chainId: "solana",
+      chain: "solana",
       tokenAddress: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
       minQuoteDepthTokens: 100,
       minTurnoverRatio: 0.01,
@@ -297,7 +297,7 @@ describe("DexScreener research flows — generality", () => {
     const flow = new FlowRecorder();
 
     const priced = await flow.call("dexscreener.tokens", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddresses: tokensEthereum40().requestedAddresses,
       limit: 20,
       sortBy: "liquidityUsd",
@@ -306,7 +306,7 @@ describe("DexScreener research flows — generality", () => {
     expect(priced.unresolvedAddresses).toHaveLength(10);
 
     const thin = await flow.call("dexscreener.tokenPairs", {
-      chainId: "ethereum",
+      chain: "ethereum",
       tokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       sortBy: "liquidityUsd",
       limit: 5,
@@ -331,7 +331,7 @@ describe("DexScreener research flows — generality", () => {
     await flow.call("dexscreener.meta", { slug: "cat", chainIds: "solana", limit: 10 });
     await flow.call("dexscreener.search", { query: "USDC", chainIds: "base", limit: 10 });
     await flow.call("dexscreener.tokenPairs", {
-      chainId: "solana",
+      chain: "solana",
       tokenAddress: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
       limit: 10,
     });
@@ -371,9 +371,8 @@ describe("DexScreener shared param vocabulary", () => {
     // with the one spelling the namespace uses. A contributor who adds the left
     // side to one tool re-creates the guesswork this card removed.
     const banned: Record<string, string> = {
-      chainId: "chainIds",
+      chainId: "chain",
       chains: "chainIds",
-      chain: "chainIds",
       minLiquidity: "minLiquidityUsd",
       liquidityMin: "minLiquidityUsd",
       maxResults: "limit",
@@ -387,9 +386,10 @@ describe("DexScreener shared param vocabulary", () => {
     };
     for (const tool of DEXSCREENER_TOOLS) {
       for (const param of tool.params) {
-        // `chainId` (singular) survives ONLY where it is a required identity
+        // `chain` (singular) survives ONLY where it is a required identity
         // argument naming the single chain being queried — never as a filter.
-        const isIdentityArgument = param.key === "chainId" && param.required === true;
+        // W6a: the old `chainId` spelling of that argument is banned outright.
+        const isIdentityArgument = param.key === "chain" && param.required === true;
         if (isIdentityArgument) continue;
         const replacement = banned[param.key];
         expect(

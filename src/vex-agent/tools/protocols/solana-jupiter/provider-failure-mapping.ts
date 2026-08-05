@@ -117,17 +117,30 @@ function classifyUnrecognized(err: unknown, category: string): { scenario: strin
   if (category === "timeout" || category === "network") {
     return { scenario: "transport_failure", failureCode: "unknown" };
   }
-  // Our OWN validation refused the parameters — saying "the provider
-  // rejected this" would send the agent chasing the wrong cause.
-  if (category === "invalid_request") {
-    return { scenario: "invalid_request", failureCode: "unknown" };
-  }
+  // The STATUS is read before the category (W1, SPEC §1.5): since the error
+  // contract began classifying a 4xx as `invalid_request`, that category no
+  // longer proves the rejection was OURS. A status proves a provider answered,
+  // and this persisted `failureReason` must keep naming WHO refused.
   const status = err instanceof VexError ? err.httpStatus : undefined;
   if (status !== undefined && status >= 400 && status < 500) {
     return { scenario: "provider_rejected", failureCode: "unknown" };
   }
   if (status !== undefined && status >= 500) {
     return { scenario: "provider_unavailable", failureCode: "unknown" };
+  }
+  // W1 gave `invalid_request` TWO producers: our own validation
+  // (`isLocallyAuthoredValidationFailure`) and any provider 4xx
+  // (`categoryFromHttpStatus`). The category name alone therefore no longer
+  // says WHO refused, and this persisted `failureReason` must — so the status
+  // branch above claims the provider-answered half FIRST, and only the
+  // statusless remainder reaches here. That remainder is Vex's own validation
+  // by construction: `carriesProviderVerdict` disqualifies anything bearing
+  // `httpStatus` or `externalName` from the local set, and no keyword scan can
+  // produce this category. The scenario is named for the ACTOR, like every
+  // other scenario in this function, instead of echoing a category whose
+  // meaning has since widened.
+  if (category === "invalid_request") {
+    return { scenario: "vex_validation_rejected", failureCode: "unknown" };
   }
   return { scenario: "unclassified_failure", failureCode: "unknown" };
 }

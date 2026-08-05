@@ -117,7 +117,7 @@ describe("prompt unambiguity (A1)", () => {
     it("the Safety Contract routes through the shortcuts, not past them", () => {
       const prompt = fullPrompt();
       expect(prompt).toContain('token_find(query="SYMBOL"');
-      expect(prompt).toContain('token_check(chain="..."');
+      expect(prompt).toContain('token_check(chain="...", tokenAddress="...")');
       expect(prompt).not.toContain("khalani.tokens.search(query, chainIds)");
     });
   });
@@ -126,7 +126,7 @@ describe("prompt unambiguity (A1)", () => {
     it("says the toolIds are real but their schemas are not in the prompt", () => {
       const toolModel = buildToolModelPrompt();
       expect(toolModel).toContain("their parameter schemas are NOT shown anywhere in it");
-      expect(toolModel).toContain("Never build an `execute_tool` call without a `discover_tools` result from THIS session");
+      expect(toolModel).toContain("Never call a protocol tool without a `discover_tools` result from THIS session");
     });
 
     it("discover_tools no longer hard-codes a stale 4-namespace list", () => {
@@ -165,7 +165,7 @@ describe("prompt unambiguity (A1)", () => {
       // Agent sessions have no mission contract to re-accept.
       const agent = buildWalletStateBanner(makeContext({
         sessionKind: "agent",
-        walletPolicy: { kind: "explicit", walletIds: ["wallet-not-in-session"] },
+        walletPolicy: { kind: "mission_allowed", allowedWallets: ["wallet-not-in-session"] },
         selectedEvmWallet: null,
         selectedSolanaWallet: null,
       }));

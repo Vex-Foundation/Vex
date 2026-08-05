@@ -12,6 +12,7 @@ import type { InternalToolContext } from "../internal/types.js";
 import { getActionKind } from "../registry.js";
 import { isMutatingProtocolAlias } from "../mutating-aliases.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
+import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools.js";
 
 /**
  * Tools always allowed while a plan is pending acceptance — the safe-control
@@ -63,8 +64,13 @@ export async function checkPlanAcceptanceDeny(
 
   if (PLAN_GATE_SAFE_CONTROL.has(call.name)) return null;
 
+  // An injected discovered-tool name is a protocol execution too — without
+  // this the gate would fall through to `getActionKind(<mapped name>)`, which
+  // is undefined, and block read-only quotes the plan needs.
   const isProtocolExecution =
-    call.name === "execute_tool" || isMutatingProtocolAlias(call.name);
+    call.name === "execute_tool"
+    || isMutatingProtocolAlias(call.name)
+    || resolveInjectedProtocolTool(call.name) !== undefined;
   const allowed = isProtocolExecution
     ? !dispatchTargetIsMutating(call) // non-mutating target (read/quote/preview) ok
     : getActionKind(call.name) === "read"; // read-kind internal tools ok

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EngineContext } from "../../../../vex-agent/engine/types.js";
+import { makeEngineContext } from "../_engine-context.js";
 import {
   buildPromptStack,
   buildMissionRunPrompt,
@@ -11,15 +12,12 @@ import {
 import { buildContextPressureBanner } from "../../../../vex-agent/engine/prompts/context-pressure.js";
 
 function makeMissionContext(overrides: Partial<EngineContext> = {}): EngineContext {
-  return {
+  return makeEngineContext({
     sessionId: "session-1",
     sessionKind: "mission",
-    sessionPermission: "restricted",
     missionId: "mission-1",
-    missionRunId: null,
-    loadedDocuments: new Map(),
     ...overrides,
-  };
+  });
 }
 
 describe("mission state prompts", () => {
@@ -105,7 +103,7 @@ describe("mission state prompts", () => {
     // Orientation (not market operation), Mission RUN ends in an actionable
     // decision, Chat answers and stops. The former `planning-discipline.ts`
     // constant is merged into research.ts, carrying the canonical heading + the
-    // negative `execute_tool`-on-market-data rule.
+    // negative market-data-call rule.
     const prompt = buildResearchPrompt();
 
     expect(prompt).toMatch(/Research workflow varies by mode/i);
@@ -117,7 +115,7 @@ describe("mission state prompts", () => {
     expect(prompt).toContain("## Capability Orientation vs Operational Research");
     expect(prompt).toContain("Operational Research");
     expect(prompt).toContain("This is orientation, not market operation");
-    expect(prompt).toContain("do NOT call `execute_tool` on market data");
+    expect(prompt).toContain("do NOT call market-data tools or pull quotes while planning");
 
     // Negative: the old "research + planning phase" framing is gone.
     expect(prompt).not.toContain("research + planning phase");

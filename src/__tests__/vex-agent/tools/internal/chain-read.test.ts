@@ -52,19 +52,19 @@ const ctx = makeTestContext({ sessionId: "test" });
 
 describe("chain_read", () => {
   it("rejects missing action", async () => {
-    const result = await handleChainRead({ chainId: "137" }, ctx);
+    const result = await handleChainRead({ chain: "137" }, ctx);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required: action");
   });
 
-  it("rejects missing chainId", async () => {
+  it("rejects missing chain", async () => {
     const result = await handleChainRead({ action: "tx_receipt" }, ctx);
     expect(result.success).toBe(false);
-    expect(result.output).toContain("Missing required: chainId");
+    expect(result.output).toContain("Missing required: chain");
   });
 
   it("rejects unknown action", async () => {
-    const result = await handleChainRead({ action: "hack_contract", chainId: "137" }, ctx);
+    const result = await handleChainRead({ action: "hack_contract", chain: "137" }, ctx);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Unknown action");
   });
@@ -77,7 +77,7 @@ describe("chain_read — tx_receipt", () => {
       logs: [{ address: "0x1", topics: [], data: "0x" }],
       from: "0xabc", to: "0xdef", contractAddress: null,
     });
-    const result = await handleChainRead({ action: "tx_receipt", chainId: "137", txHash: "0xabc123" }, ctx);
+    const result = await handleChainRead({ action: "tx_receipt", chain: "137", txHash: "0xabc123" }, ctx);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.status).toBe("success");
@@ -86,7 +86,7 @@ describe("chain_read — tx_receipt", () => {
   });
 
   it("rejects missing txHash", async () => {
-    const result = await handleChainRead({ action: "tx_receipt", chainId: "137" }, ctx);
+    const result = await handleChainRead({ action: "tx_receipt", chain: "137" }, ctx);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required: txHash");
   });
@@ -95,13 +95,13 @@ describe("chain_read — tx_receipt", () => {
   // local EVM registry. Forensics must still read it, by alias and by numeric id.
   it.each(["robinhood", "4663"])(
     "reads a receipt on a local-registry chain (%s)",
-    async (chainId) => {
+    async (chain) => {
       mockGetTransactionReceipt.mockResolvedValue({
         status: "success", blockNumber: 42n, gasUsed: 21000n,
         logs: [], from: "0xabc", to: "0xdef", contractAddress: null,
       });
       const result = await handleChainRead(
-        { action: "tx_receipt", chainId, txHash: "0xabc123" }, ctx,
+        { action: "tx_receipt", chain, txHash: "0xabc123" }, ctx,
       );
       expect(result.success).toBe(true);
       const data = JSON.parse(result.output);
@@ -126,7 +126,7 @@ describe("chain_read — erc721_mint", () => {
       from: "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79", to: "0xrouter", contractAddress: null,
     });
 
-    const result = await handleChainRead({ action: "erc721_mint", chainId: "137", txHash: "0xabc", address: "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79" }, ctx);
+    const result = await handleChainRead({ action: "erc721_mint", chain: "137", txHash: "0xabc", address: "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79" }, ctx);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.mintsFound).toBe(1);
@@ -135,7 +135,7 @@ describe("chain_read — erc721_mint", () => {
   });
 
   it("rejects missing txHash", async () => {
-    const result = await handleChainRead({ action: "erc721_mint", chainId: "137" }, ctx);
+    const result = await handleChainRead({ action: "erc721_mint", chain: "137" }, ctx);
     expect(result.success).toBe(false);
     expect(result.output).toContain("Missing required: txHash");
   });
@@ -171,7 +171,7 @@ describe("chain_read — error redaction", () => {
     mockGetTransactionReceipt.mockClear();
 
     const result = await handleChainRead(
-      { action: "tx_receipt", chainId: "not-a-real-chain", txHash: "0xabc123" },
+      { action: "tx_receipt", chain: "not-a-real-chain", txHash: "0xabc123" },
       ctx,
     );
 
@@ -191,7 +191,7 @@ describe("chain_read — error redaction", () => {
     );
 
     const result = await handleChainRead(
-      { action: "tx_receipt", chainId: "137", txHash: "0xdeadbeef" },
+      { action: "tx_receipt", chain: "137", txHash: "0xdeadbeef" },
       ctx,
     );
 
@@ -217,7 +217,7 @@ describe("chain_read — error redaction", () => {
     );
 
     const result = await handleChainRead(
-      { action: "erc721_mint", chainId: "137", txHash: "0xabc" },
+      { action: "erc721_mint", chain: "137", txHash: "0xabc" },
       ctx,
     );
 

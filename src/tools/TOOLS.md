@@ -46,7 +46,6 @@ constants.ts      — URLs, limits, addresses, fee tiers
 Some modules extend this with:
 - `abi/` — Contract ABIs for on-chain interaction
 - `subgraph/` — GraphQL clients for indexed data
-- `ws-client.ts` — WebSocket streaming (DexScreener)
 
 (The Polymarket CLOB's `signing.ts`/`auth.ts` EIP-712/HMAC examples were removed with the
 Polymarket integration, Agent Scan Phase 1 — no remaining module in this tree uses that

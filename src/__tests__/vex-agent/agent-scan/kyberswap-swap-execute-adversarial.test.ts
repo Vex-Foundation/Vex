@@ -40,7 +40,7 @@ import { ErrorCodes, VexError } from "../../../errors.js";
 
 const SESSION_EVM = {
   family: "eip155" as const,
-  address: "0x1234567890abcdef1234567890abcdef12345678",
+  address: "0x1234567890abcdef1234567890abcdef12345678" as const,
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
 const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
@@ -250,7 +250,7 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     const txHash = (result.data as { txHash: string }).txHash;
     expect(result.output).toContain(
       `Do not retry; this attempt is recorded as pending and will resolve automatically. `
-      + `You can verify it now yourself with chain_read (action tx_receipt, chainId=1, txHash=${txHash}).`,
+      + `You can verify it now yourself with chain_read (action tx_receipt, chain=1, txHash=${txHash}).`,
     );
   });
 

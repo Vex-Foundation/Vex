@@ -68,6 +68,14 @@ export function entry(
     providerOrderId: null,
     legs: [],
     lastCheckedAt: null,
+    // Wave P — DERIVED, never a stored status. Default is a row we have had no
+    // trouble verifying.
+    stalledVerification: false,
+    stalledReason: null,
+    // The CONCLUSIVE half (migration 067). Required and nullable on the DTO, so
+    // the fixture must carry it explicitly — an optional field here would be
+    // `string | null | undefined`, which the strict entry type does not admit.
+    pendingReason: null,
     ...overrides,
   };
 }

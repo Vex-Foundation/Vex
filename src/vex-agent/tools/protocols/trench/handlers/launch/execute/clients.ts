@@ -12,7 +12,7 @@
  * client it does not have.
  */
 
-import type { Chain, PublicClient, Transport, WalletClient } from "viem";
+import type { Account, Chain, PublicClient, Transport, WalletClient } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalEvmClients } from "@tools/evm-chains/evm-client.js";
@@ -23,7 +23,7 @@ import { fail } from "../../../../handler-helpers.js";
 
 export interface LaunchSigningClients {
   readonly publicClient: PublicClient<Transport, Chain>;
-  readonly walletClient: WalletClient<Transport, Chain>;
+  readonly walletClient: WalletClient<Transport, Chain, Account>;
 }
 
 export type LaunchSigningClientsResult =

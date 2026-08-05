@@ -14,7 +14,7 @@
  *
  * THE DEFECT THIS CLOSES
  *
- * `dexscreener.search { query: "USDC", chainId: "ethereum" }` returns
+ * `dexscreener.search { query: "USDC", chainIds: "ethereum" }` returns
  * `pairs: [], matched: 0, success: true`. Measured on the live window: `q=USDC`
  * spans 15 chains and holds ZERO Ethereum rows. A context-free agent reads that
  * empty result as "USDC does not trade on Ethereum".

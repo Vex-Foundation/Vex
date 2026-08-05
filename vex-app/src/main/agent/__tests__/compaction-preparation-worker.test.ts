@@ -18,6 +18,11 @@ vi.mock("../../logger/index.js", () => ({
 vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
   ensureEngineDbUrl: vi.fn(),
 }));
+// Migrations are the bootstrap gate every worker now consults; these tests are
+// about the LIFECYCLE past it. `migrations-gate.test.ts` owns the gate itself.
+vi.mock("../../database/migrations-applied.js", () => ({
+  migrationsApplied: () => true,
+}));
 
 const probeOwnerMock = vi.hoisted(() => vi.fn(async () => false));
 vi.mock("../../database/compaction-preparation-db.js", () => ({

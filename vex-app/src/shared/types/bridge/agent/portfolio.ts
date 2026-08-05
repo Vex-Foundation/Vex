@@ -8,8 +8,11 @@ import type {
   TokenHistoryReadInput,
 } from "../../../schemas/token-history.js";
 import type {
+  ActivityProgressEvent,
+  ActivityResolvedEvent,
   AgentScanDto,
   AgentScanReadInput,
+  PortfolioRefreshOutput,
 } from "../../../schemas/agent-scan-feed.js";
 
 /**
@@ -44,4 +47,35 @@ export interface PortfolioBridge {
   readonly listAgentScan: (
     input: AgentScanReadInput,
   ) => Promise<Result<AgentScanDto>>;
+  /**
+   * User-initiated portfolio refresh (Wave P — the sidebar refresh button).
+   *
+   * Runs a full balance sync plus an authoritative snapshot in the engine. The
+   * engine holds a single-flight mutex, because `fullBalanceSync` is NOT
+   * concurrency-safe: two overlapping calls mint two `snapshotGroupId`s and
+   * corrupt the `pnlVsPrev` chain. The handler additionally rate-limits to one
+   * call per 30s and returns `{status: "throttled", retryAfterMs}` — a genuine
+   * OUTCOME the button renders as feedback, never an error `Result`.
+   *
+   * Public-address network reads only. No keystore, no signing.
+   */
+  readonly refresh: () => Promise<Result<PortfolioRefreshOutput>>;
+  /**
+   * Subscribe to `EV.portfolio.activityResolved` — fired after a pending
+   * transaction's terminalizing write has committed. Payload is IDS ONLY; the
+   * subscriber's job is to invalidate and re-read.
+   */
+  readonly onActivityResolved: (
+    cb: (event: ActivityResolvedEvent) => void,
+  ) => () => void;
+  /**
+   * Subscribe to `EV.portfolio.activityProgress` — fired after EVERY observation
+   * of a row that is still pending, which is the half `onActivityResolved`
+   * cannot carry. Payload is ids plus the observation's reason and the row's
+   * current check interval; the subscriber's job is still to invalidate and
+   * re-read.
+   */
+  readonly onActivityProgress: (
+    cb: (event: ActivityProgressEvent) => void,
+  ) => () => void;
 }

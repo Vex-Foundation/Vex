@@ -210,7 +210,7 @@ describe("web_research — W2B output contract", () => {
     expect(row.pageRead).toBe("failed");
     // The provider's reason selects the code and is then dropped — Tavily error
     // text is untrusted content, not diagnostics.
-    expect(row.pageError).toBe("provider_rejected");
+    expect(row.pageError).toBe("provider_rejected, HTTP 403");
     expect(result.output).not.toContain("403 Forbidden");
     expect(row.snippet).toBe("snippet 0");
   });

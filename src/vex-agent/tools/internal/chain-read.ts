@@ -37,7 +37,7 @@ export async function handleChainRead(
   _context: InternalToolContext,
 ): Promise<ToolResult> {
   const action = str(params, "action");
-  const chainIdRaw = str(params, "chainId");
+  const chainRaw = str(params, "chain");
 
   if (!action) {
     return {
@@ -45,12 +45,25 @@ export async function handleChainRead(
       output: missingOrWrongTypeMessage(params, "action", 'a string ("tx_receipt" or "erc721_mint")'),
     };
   }
-  if (!chainIdRaw) {
+  // W6a renamed `chainId` → `chain`. Internal tools have no strict unknown-key
+  // gate, so an unrenamed call would silently drop the value and be answered
+  // with "Missing required: chain" — an accusation the caller cannot act on,
+  // because it DID send a chain. Refuse the old spelling by name and name the
+  // replacement, which is correctable in one turn.
+  if (!chainRaw && params["chainId"] !== undefined) {
+    return {
+      success: false,
+      output:
+        'chain_read no longer takes "chainId" — the key said Id while the value was usually a slug. '
+        + 'Resend it as "chain" (a chain slug or the STRING spelling of a chain id, e.g. "base" or "8453").',
+    };
+  }
+  if (!chainRaw) {
     return {
       success: false,
       output: missingOrWrongTypeMessage(
         params,
-        "chainId",
+        "chain",
         'a chain slug or the STRING spelling of a chain id (e.g. "base" or "8453")',
       ),
     };
@@ -65,7 +78,7 @@ export async function handleChainRead(
   let chainName: string;
   let client: DynamicPublicClient;
   try {
-    const resolved = await resolveInclusiveEvmChain(chainIdRaw);
+    const resolved = await resolveInclusiveEvmChain(chainRaw);
     chainId = resolved.chainId;
     if (resolved.source === "khalani") {
       chainName = resolved.khalaniChain.name;

@@ -60,6 +60,7 @@ const { computePrequoteMatchHash } = await import(
   "../../../../../vex-agent/tools/protocols/prequote/identity/hash.js"
 );
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const CTX = {} as unknown as ProtocolExecutionContext;
 const MARKET = "0x34280882267ffa6383b363e278b027be083bbe3b";
@@ -67,8 +68,8 @@ const MARKET2 = "0xba1cbaece600beec76dabc0a4ead31e0339cbe37";
 const WSTETH = UNDERLYING;
 const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
 
-const addParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", market: MARKET, tokenIn: WSTETH, amountIn: "1", slippageBps: 50, ...over });
-const removeParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", market: MARKET, tokenOut: WSTETH, amountIn: "1", slippageBps: 50, ...over });
+const addParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", market: MARKET, tokenIn: WSTETH, amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS, ...over });
+const removeParams = (over: Record<string, unknown> = {}) => ({ chain: "ethereum", market: MARKET, tokenOut: WSTETH, amountIn: "1", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS, ...over });
 
 async function addHash(over: Record<string, unknown> = {}): Promise<string> {
   return computePrequoteMatchHash(await buildPendleLpAddIdentity("sess-1", addParams(over), CTX));
@@ -89,7 +90,7 @@ describe("pendle LP add identity", () => {
   });
 
   it("changed slippage ⇒ different hash", async () => {
-    expect(await addHash({ slippageBps: 50 })).not.toBe(await addHash({ slippageBps: 100 }));
+    expect(await addHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS })).not.toBe(await addHash({ slippageBps: 300 }));
   });
 
   it("changed tokenIn ⇒ different hash", async () => {
@@ -104,8 +105,8 @@ describe("pendle LP add identity", () => {
     expect(await addHash({ chain: "ethereum" })).not.toBe(await addHash({ chain: "base" }));
   });
 
-  it("omitted slippage normalizes to the default (50) on both sides", async () => {
-    expect(await addHash({ slippageBps: undefined })).toBe(await addHash({ slippageBps: 50 }));
+  it("omitted slippage normalizes to the default on both sides", async () => {
+    expect(await addHash({ slippageBps: undefined })).toBe(await addHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS }));
   });
 });
 
@@ -121,7 +122,7 @@ describe("pendle LP remove identity", () => {
   });
 
   it("changed slippage ⇒ different hash", async () => {
-    expect(await removeHash({ slippageBps: 50 })).not.toBe(await removeHash({ slippageBps: 100 }));
+    expect(await removeHash({ slippageBps: VEX_DEFAULT_SLIPPAGE_BPS })).not.toBe(await removeHash({ slippageBps: 300 }));
   });
 
   it("changed tokenOut ⇒ different hash", async () => {

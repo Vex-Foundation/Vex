@@ -13,13 +13,28 @@ import { getChainExplorerUrl } from "@tools/khalani/chains.js";
 import type { KhalaniChain } from "@tools/khalani/types.js";
 import type { BridgeFeeDisclosure } from "@tools/bridge-fee/index.js";
 import { abortPlannedEvents, type AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
-import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import type { ProviderStatusRecording } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import type { ToolResult } from "../../../types.js";
 import logger from "@utils/logger.js";
 
 /** The ONE entry point for provider-error text reaching an output/log/reason (scrub boundary). */
 export function khalaniFailureMessage(err: unknown): string {
   return summarizeProtocolError(err).message;
+}
+
+/**
+ * The same failure rendered under the W1 AGENT-FACING contract —
+ * `<toolId> failed [<CODE>/<category>, HTTP <status>]: <cause> — <remedy>`.
+ *
+ * Separate from {@link khalaniFailureMessage} on purpose: that one feeds
+ * persisted `failure_reason` values and log lines, where the bracketed envelope
+ * is noise and the bare sanitized cause is the contract. This one is for the
+ * text the model reads, where the code and the provider's HTTP status are the
+ * difference between a definitive refusal and an ambiguous transport failure.
+ */
+export function khalaniFailureOutput(toolId: string, err: unknown): string {
+  return renderProtocolFailureOutput(toolId, summarizeProtocolError(err));
 }
 
 /** Build a `.../tx/<hash>` explorer link from the Khalani chain registry, or undefined. */
@@ -99,6 +114,13 @@ export function bridgeResult(input: {
   legs: readonly RecordedLeg[];
   orderId?: string;
   depositTxHash?: string;
+  /**
+   * O-8 — what the durable provider-status write did. Supplied only by the
+   * post-deposit poll bodies, because they are the only ones where a provider
+   * status could have been read; a pre-broadcast rejection has nothing to
+   * disclose and stays byte-unchanged.
+   */
+  providerStatusRecording?: ProviderStatusRecording;
 }): ToolResult {
   const inLabel = input.amountIn.amountHuman ?? `${input.amountIn.amountRaw} (smallest units)`;
   const inSym = input.amountIn.symbol ?? input.amountIn.token;
@@ -137,6 +159,10 @@ export function bridgeResult(input: {
     },
     nativeCost: input.nativeCost,
     legs: input.legs,
+    ...(input.providerStatusRecording === undefined ? {} : {
+      providerStatusRecorded: input.providerStatusRecording.providerStatusRecorded,
+      providerStatusRecordedReason: input.providerStatusRecording.providerStatusRecordedReason,
+    }),
     ...(input.orderId ? { orderId: input.orderId } : {}),
     ...(input.depositTxHash ? { depositTxHash: input.depositTxHash } : {}),
     _executionId: input.executionId,

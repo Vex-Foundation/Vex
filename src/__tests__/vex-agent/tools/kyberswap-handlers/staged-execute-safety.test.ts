@@ -30,10 +30,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
 
-const SESSION_EVM = {
+const SESSION_EVM: EvmWallet = {
   family: "eip155" as const,
   // Correct EIP-55 checksum for 0x1234567890abcdef1234567890abcdef12345678 —
   // `getAddress()` re-derives this from the mocked address-only resolver, so

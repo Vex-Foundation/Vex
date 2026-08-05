@@ -67,6 +67,7 @@ function escalatingArgs(missionRunId: string | null) {
     sessionId: "s1",
     missionRunId,
     turnBand: "critical" as const,
+    sessionPermission: "restricted" as const,
     skipCriticalCheckNextIter: false,
     criticalNoopCounter: COMPACT_MAX_CONSECUTIVE_NOOPS - 1,
     currentTokenCount: 120_000,

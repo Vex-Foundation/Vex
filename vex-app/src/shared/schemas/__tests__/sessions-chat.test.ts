@@ -139,13 +139,13 @@ describe("chatStopReasonSchema (engine StopReason mirror)", () => {
     "checkpoint_pause",
     "iteration_limit",
     "timeout",
-    "waiting_for_parent",
     "waiting_for_wake",
     "waiting_for_compact_commit",
     "compact_unable_at_critical",
     "system_error",
     "user_paused",
     "plan_acceptance_required",
+    "user_form_required",
   ] as const;
 
   it("accepts every engine StopReason member (S7 fix: user_paused + plan_acceptance_required)", () => {

@@ -59,7 +59,7 @@ const BRIDGE_ARGS = {
   fromToken: EVM_TOKEN,
   toChain: "base",
   toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  amount: "1000000",
+  amountRaw: "1000000",
 };
 
 beforeEach(() => {
@@ -79,7 +79,7 @@ describe("bridge alias — routing + translation", () => {
       fromToken: EVM_TOKEN,
       toChain: "base",
       toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      amount: "1000000",
+      amountRaw: "1000000",
     });
   });
 
@@ -162,14 +162,14 @@ describe("bridge alias — routing + translation", () => {
     }
   });
 
-  it("missing required arg (amount) → clear reject, NO dispatch", async () => {
+  it("missing required arg (amountRaw) → clear reject, NO dispatch", async () => {
     const result = await dispatchTool(
       { name: "bridge", args: { fromChain: "ethereum", fromToken: EVM_TOKEN, toChain: "base", toToken: "0x" }, toolCallId: "b3" },
       ctx(),
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/^bridge:/);
-    expect(result.output).toContain("amount");
+    expect(result.output).toContain("amountRaw");
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 });
@@ -187,13 +187,13 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
           fromToken: BASE_USDC,
           toChain: "robinhood",
           toToken: VIRTUAL,
-          amount: "1000000",
+          amountRaw: "1000000",
           // Khalani-only knob — must NOT reach the Relay target. (`referrer` is
           // no longer part of the alias surface at all: it is rejected by name
           // before routing, so it cannot be exercised here.)
           filler: "native-filler",
           // Relay-only slippage — SHOULD pass through.
-          slippageBps: "50",
+          slippageBps: 50,
         },
         toolCallId: "rhb1",
       },
@@ -207,8 +207,8 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
       fromToken: BASE_USDC,
       toChain: "robinhood",
       toToken: VIRTUAL,
-      amount: "1000000",
-      slippageBps: "50",
+      amountRaw: "1000000",
+      slippageBps: 50,
     });
     expect(req.params).not.toHaveProperty("referrer");
     expect(req.params).not.toHaveProperty("referrerFeeBps");
@@ -219,7 +219,7 @@ describe("bridge alias — Robinhood Chain 4663 routes to Relay, never Khalani (
     await dispatchTool(
       {
         name: "bridge",
-        args: { fromChain: "4663", fromToken: VIRTUAL, toChain: "base", toToken: BASE_USDC, amount: "1000000" },
+        args: { fromChain: "4663", fromToken: VIRTUAL, toChain: "base", toToken: BASE_USDC, amountRaw: "1000000" },
         toolCallId: "rhb2",
       },
       ctx(),

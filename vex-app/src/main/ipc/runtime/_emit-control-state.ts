@@ -11,6 +11,8 @@
 import {
   CONTROL_STATE_EVENT_TYPE,
 } from "@shared/schemas/runtime.js";
+import { randomUUID } from "node:crypto";
+
 import { controlStateBus } from "@vex-agent/engine/runtime/control-bus.js";
 import { getActiveRunForSession } from "../../database/mission-runs-db.js";
 import { log } from "../../logger/index.js";
@@ -19,7 +21,14 @@ export async function emitControlStateAfterChange(
   sessionId: string,
   correlationId: string | null,
 ): Promise<void> {
-  const state = await getActiveRunForSession(sessionId);
+  // A control-state emit runs beneath no handler, so there is no inbound
+  // request to inherit an id from. Minting one here mirrors what
+  // `registerHandler` does for a malformed envelope, and keeps the failure
+  // traceable rather than anonymous.
+  const state = await getActiveRunForSession(
+    sessionId,
+    correlationId ?? randomUUID(),
+  );
   if (!state.ok) {
     log.warn(
       `[ipc:runtime] post-change state read failed code=${state.error.code}`,

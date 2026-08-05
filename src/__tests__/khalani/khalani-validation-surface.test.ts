@@ -3,10 +3,11 @@
  * structural split into `validation/` (chains+tokens / quotes / deposits /
  * submit+orders / errors).
  *
- * Guards the PUBLIC export surface against drift: the exact 12-key set and the
- * `typeof` of each export (all functions). `parseKhalaniErrorBody` and
- * `isSolanaAddressLike` are consumed by the Khalani client/helpers, so they are
- * pinned alongside the strict response validators. The split is behaviour-
+ * Guards the PUBLIC export surface against drift: the exact 13-key set and the
+ * `typeof` of each export (all functions). `parseKhalaniErrorBody`,
+ * `parseKhalaniErrorPayload` and `isSolanaAddressLike` are consumed by the
+ * Khalani client/helpers, so they are pinned alongside the strict response
+ * validators. The split is behaviour-
  * preserving; equivalence is covered by `khalani-validation-equivalence.test.ts`.
  */
 
@@ -18,6 +19,7 @@ import * as barrel from "@tools/khalani/validation.js";
 const EXPECTED_KEYS = [
   "isSolanaAddressLike",
   "parseKhalaniErrorBody",
+  "parseKhalaniErrorPayload",
   "validateAutocompleteResponse",
   "validateChainsResponse",
   "validateDepositPlan",
@@ -31,7 +33,7 @@ const EXPECTED_KEYS = [
 ] as const;
 
 describe("khalani validation barrel surface", () => {
-  it("exposes exactly the expected 12 exports", () => {
+  it("exposes exactly the expected 13 exports", () => {
     expect(Object.keys(barrel).sort()).toEqual([...EXPECTED_KEYS]);
   });
 
