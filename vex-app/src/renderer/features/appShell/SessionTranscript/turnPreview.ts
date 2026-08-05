@@ -120,7 +120,11 @@ export function useTurnPreview(input: TurnPreviewInput): TurnPreviewResult {
     placeholder.current = null;
     observedIdle.current = false;
     observedSendEdge.current = false;
-    wasSubmitting.current = submitting;
+    // Deliberately FALSE, not `submitting`: the arming block below is the ONE
+    // place that decides eligibility, and pre-setting this to `true` skipped it
+    // entirely for a mount that lands mid-submit — which is every fresh
+    // session's first send (B1).
+    wasSubmitting.current = false;
     baselineNewestId.current = 0;
     latchOpen.current = false;
     latchClosed.current = false;
@@ -141,9 +145,19 @@ export function useTurnPreview(input: TurnPreviewInput): TurnPreviewResult {
 
   if (!wasSubmitting.current) {
     wasSubmitting.current = true;
-    // Mounting straight INTO a pending turn is not an observed send: this
-    // mount cannot know what the viewport already holds.
-    observedSendEdge.current = observedIdle.current;
+    // Mounting straight INTO a pending turn is normally not an observed send:
+    // such a mount cannot know what the viewport already holds.
+    //
+    // ONE exception, and it is evidence rather than inference: a transcript
+    // with ZERO rows and no preview holds nothing, so there is provably
+    // nothing to cover. This is the first send of a FRESH session, where
+    // `SessionPanel` shows the welcome hero and does not mount the transcript
+    // until the turn is already in flight — without this arm, send #1 could
+    // never open the scene while send #N always did (owner report, B1).
+    // A mount over a POPULATED transcript stays ineligible, which is exactly
+    // R3.2's guard restated at the mount edge.
+    const mountedOntoEmptyTranscript = newestId === 0 && preview === null;
+    observedSendEdge.current = observedIdle.current || mountedOntoEmptyTranscript;
     baselineNewestId.current = newestId;
     latchOpen.current = false;
     latchClosed.current = false;

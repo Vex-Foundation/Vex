@@ -75,3 +75,53 @@ html {
   scrollbar-width: thin;
 }
 
+
+/* ============================================================ *
+ *  OVERLAY SCROLLBAR (macOS behaviour), opt-in                  *
+ * ============================================================ */
+
+/* An overlay bar: present only while the surface is actually scrolling, then
+ * gone. Compose it WITH `.vex-scroll` — that class still owns the shape (6px,
+ * the 2px content-box inset, the rounded thumb, the transparent track); this
+ * one owns only WHEN the thumb is visible.
+ *
+ * The visibility signal is `data-vex-scrolling`, written by
+ * `SessionTranscript/useScrollbarVisibility.ts` once per scroll burst. CSS
+ * cannot observe "is scrolling", and JS must not drive a fade frame by frame —
+ * so the attribute is the whole handshake and the transition below does the
+ * rest.
+ *
+ * The fade is expressed as `background-color` rather than `opacity`: a
+ * `::-webkit-scrollbar-thumb` is not a real element and its opacity handling is
+ * the less reliable of the two, while the colour transition is already the
+ * grammar `.vex-scroll` uses for hover.
+ *
+ * HOVER OVERRIDES IDLE — a user reaching for the bar must not have it vanish
+ * from under the pointer, so the hover rules sit after the idle rule and win.
+ *
+ * Reduced motion: the global rule in base.css collapses the transition, which
+ * turns the fade into an instant show/hide. That is the correct reading — the
+ * bar is wayfinding, and appearing at once is never the problem. */
+.vex-scroll-overlay::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 420ms ease-out;
+}
+.vex-scroll-overlay[data-vex-scrolling]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, #1f44ff 34%, transparent);
+  background-clip: content-box;
+  /* Appearing is immediate; only the fade OUT is slow. */
+  transition: background-color 90ms ease-out;
+}
+.vex-scroll-overlay:hover::-webkit-scrollbar-thumb,
+.vex-scroll-overlay::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, #1f44ff 52%, transparent);
+  background-clip: content-box;
+  transition: background-color 90ms ease-out;
+}
+/* Firefox has no thumb pseudo-element to fade; it keeps the resting bar from
+ * `.vex-scroll` rather than losing its scrollbar entirely. */
+@supports (-moz-appearance: none) {
+  .vex-scroll-overlay {
+    scrollbar-color: color-mix(in oklab, #1f44ff 26%, transparent) transparent;
+  }
+}

@@ -56,6 +56,7 @@ import {
 import { useControlStateLiveSync } from "../../lib/api/runtime.js";
 import { useMissionUpdateLiveSync } from "../../lib/api/mission.js";
 import { useStreamPreviewSync } from "../../lib/api/streams.js";
+import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
 import { SessionErrorBanner } from "./SessionErrorBanner.js";
 import { SessionSleepBanner } from "./SessionSleepBanner.js";
@@ -107,6 +108,7 @@ export function SessionPanel({
   // panel tell an empty/idle session apart so it can show the centered landing.
   const transcriptQuery = useTranscriptInfinite(activeSessionId ?? "");
   const preview = useStreamPreview(activeSessionId);
+  const chatSubmitting = useIsChatSubmitting(activeSessionId ?? "");
 
   const activeSession = useMemo((): SessionListItem | null => {
     if (activeSessionId === null) return null;
@@ -128,11 +130,19 @@ export function SessionPanel({
   // prompt) like the welcome screen until the first message lands, then the
   // left-anchored tape takes over. Mission sessions keep their contract layout.
   const transcriptPages = transcriptQuery.data?.pages;
+  //
+  // A turn IN FLIGHT is not idle, even before its first row or delta exists.
+  // Waiting for one kept the hero up across the send and deferred the
+  // transcript's mount until the turn was already running — which is what made
+  // a fresh session's FIRST send miss the centred scene while every later send
+  // got it (B1). Retiring the hero on the send edge also stops the send from
+  // reading as a no-op on the idle stage.
   const isIdleSession =
     activeSession !== null &&
     activeSession.mode !== "mission" &&
     !transcriptQuery.isLoading &&
     preview === null &&
+    !chatSubmitting &&
     transcriptPages !== undefined &&
     flattenTranscriptPages(transcriptPages).length === 0;
 

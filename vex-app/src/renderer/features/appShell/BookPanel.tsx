@@ -30,7 +30,7 @@
  * still owns the stage/viewport collapse edges — unchanged by this redesign.
  */
 
-import { useMemo, useState, type JSX, type ReactNode } from "react";
+import { useMemo, useRef, useState, type JSX, type ReactNode } from "react";
 import { motion } from "motion/react";
 import {
   PanelRightCloseIcon,
@@ -61,6 +61,7 @@ import {
   type BookSectionId,
 } from "./book/section-order.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { useScrollbarVisibility } from "./SessionTranscript/useScrollbarVisibility.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 
 /** The card a section id stands for. Exhaustive over `BookSectionId`. */
@@ -118,6 +119,9 @@ export function BookPanel({
     [storedOrder],
   );
   const reorder = useBookSectionReorder(order, setBookSectionOrder);
+  // Same macOS overlay bar as the transcript — one shared utility, one hook.
+  const stackRef = useRef<HTMLUListElement>(null);
+  useScrollbarVisibility(stackRef);
 
   // The rail owns the session read that the Runtime & Cost card's apply
   // control needs: permission is a session-STATIC axis, so a prop cannot go
@@ -178,7 +182,8 @@ export function BookPanel({
           initial={reduced ? false : "hidden"}
           animate="show"
           role="list"
-          className="vex-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+          ref={stackRef}
+          className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
         >
           {order.map((id, index) => (
             <ReorderableSection

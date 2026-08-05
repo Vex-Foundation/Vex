@@ -65,8 +65,12 @@ import {
   type SettledIdsTracker,
 } from "./SessionTranscript/settledIds.js";
 import { useTurnPreview } from "./SessionTranscript/turnPreview.js";
-import { showsCentredScene } from "./TurnIsland/islandTurnState.js";
-import { VexingWorking } from "./VexingWorking/index.js";
+import {
+  VexingOverlay,
+  isCentredSceneUp,
+} from "./SessionTranscript/VexingOverlay.js";
+import { TranscriptRows } from "./SessionTranscript/TranscriptRows.js";
+import { useScrollbarVisibility } from "./SessionTranscript/useScrollbarVisibility.js";
 
 const PINNED_THRESHOLD_PX = 48;
 const LOAD_OLDER_THRESHOLD_PX = 64;
@@ -186,6 +190,9 @@ export function SessionTranscript({
     [],
   );
 
+  // macOS-style overlay bar: visible while scrolling, gone ~1s after.
+  useScrollbarVisibility(scrollRef);
+
   const jumpToLatest = useCallback((): void => {
     const el = scrollRef.current;
     if (el === null) return;
@@ -258,9 +265,11 @@ export function SessionTranscript({
     newestVariant,
     newestIsLiveAppend,
   });
-  const centredSceneUp =
-    preview !== null &&
-    showsCentredScene(preview, centredSceneEligible, hasPendingApproval);
+  const centredSceneUp = isCentredSceneUp(
+    preview,
+    centredSceneEligible,
+    hasPendingApproval,
+  );
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -437,7 +446,7 @@ export function SessionTranscript({
         // stable` reserves the track so content never shifts when it appears,
         // and the row padding moved INSIDE (`px-3` on the content wrapper).
         // `.vex-scroll` is the repo's thin cobalt treatment.
-        className="vex-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
+        className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
       >
       {/* SIGNAL TAPE content wrapper — holds the single monotonic spine the
           whole session hangs off. It sizes to content, so the outer scroll
@@ -462,28 +471,12 @@ export function SessionTranscript({
             Couldn&apos;t load older messages.
           </div>
         ) : null}
-        {rows.map((row) => (
-          // Turn rhythm: the list gap is the 12px intra-turn beat; a USER row
-          // starts a new turn, so its extra mt-4 totals the 28px turn spacing.
-          // Live-appended rows (id outside the settled set) print with the
-          // one-shot entry settle; historical rows hard-cut. A tool group keeps
-          // its first call row's id, so its settle status matches its members'.
-          <div
-            key={entryKey(row)}
-            data-vex-entry-id={row.id}
-            data-vex-entry-variant={row.variant}
-            className={cn(
-              row.variant === "user" && "mt-4",
-              settledIds !== null && !settledIds.has(row.id) && "vex-entry-settle",
-            )}
-          >
-            <TranscriptMessage
-              row={row}
-              pendingApprovals={pendingApprovals}
-              agentWorking={workingAgentEntryKey === entryKey(row)}
-            />
-          </div>
-        ))}
+        <TranscriptRows
+          rows={rows}
+          settledIds={settledIds}
+          pendingApprovals={pendingApprovals}
+          workingAgentEntryKey={workingAgentEntryKey}
+        />
         {preview !== null ? (
           <StreamingBubble
             preview={preview}
@@ -500,15 +493,13 @@ export function SessionTranscript({
         </div>
       </div>
 
-      {/* THE CENTRED "VEXING…" SCENE. A sibling of the scroller, never a
-          descendant: inside the scrolled content it would add height to
-          `scrollHeight` and corrupt the anchor-spacer / "↓ latest" maths this
-          surface's scroll model depends on. It mounts only while
-          `showsCentredScene` holds — the transcript-evidence latch in
-          `turnPreview.ts` — so it can never cover text the reader is reading. */}
-      {centredSceneUp && preview !== null ? (
-        <VexingWorking startedAtMs={preview.startedAtMs} />
-      ) : null}
+      {/* The centred scene — a SIBLING of the scroller, never a descendant.
+          See `SessionTranscript/VexingOverlay.tsx` for why. */}
+      <VexingOverlay
+        preview={preview}
+        centredSceneEligible={centredSceneEligible}
+        awaitingApproval={hasPendingApproval}
+      />
 
       {/* "↓ LATEST" — the jump the transcript no longer takes on the reader's
           behalf. Solid ink (no glass), bottom-centred over the chat column,

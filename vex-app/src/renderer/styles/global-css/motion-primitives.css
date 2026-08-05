@@ -55,6 +55,43 @@
   animation: vex-book-enter 240ms cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
+/* MESSAGE SEND — the user's own message arriving in the transcript.
+ *
+ * A one-shot, TRANSFORM-ONLY entry on the row the send just appended: it rises
+ * the last few px and settles at full size, which is the iMessage feel the
+ * owner asked for without any of the machinery that feel usually implies.
+ *
+ * It is deliberately NOT a bubble flying out of the composer: that is a FLIP —
+ * measure both boxes, animate the delta — and FLIP is what Motion's `layout`
+ * does, which MOTION-POLICY bans outright. A build-time keyframe on the
+ * arriving row buys ~90% of the impression for none of the policy cost.
+ *
+ * The class rides an INNER wrapper, never the row element that carries
+ * `data-vex-entry-id`: the transcript's top-anchor layout effect measures that
+ * element's rect before paint, and a transform on it would shift the anchor by
+ * the animation's opening offset. A descendant's transform cannot move its
+ * parent's border box, so the scroll model measures an untransformed row.
+ *
+ * Reduced motion collapses this to a resting frame via base.css — an instant
+ * append, which is exactly right: the message is already there. */
+@keyframes vex-message-send {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.vex-message-send {
+  animation: vex-message-send 280ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  /* The row is the transform's own containing box, so a scaled bubble cannot
+   * bleed over its neighbours mid-flight. */
+  transform-origin: center bottom;
+}
+
 /* BOOK rail drop settle — the "plum": a card that has just been moved to a new
  * slot lands with a soft plop instead of teleporting. One-shot, applied ONLY to
  * the single moved card (never the stack), and TRANSFORM-ONLY — opacity is

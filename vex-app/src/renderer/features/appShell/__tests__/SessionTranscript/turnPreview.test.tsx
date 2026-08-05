@@ -134,6 +134,53 @@ describe("useTurnPreview — the centred scene latch", () => {
     expect(result.current.centredSceneEligible).toBe(false);
   });
 
+  it("a FRESH session's first send arms even though the mount is already submitting", () => {
+    // THE B1 BUG. On an empty session `SessionPanel` shows the welcome hero and
+    // does not mount the transcript at all, so this hook's first render for
+    // that session lands mid-submit and the "never observed idle" veto killed
+    // send #1 forever. An EMPTY transcript is not an inference: zero rows is
+    // direct evidence that there is nothing on screen to cover.
+    const { result, rerender } = renderHook(useTurnPreview, {
+      initialProps: input({
+        submitting: true,
+        newestId: 0,
+        newestVariant: null,
+        newestIsLiveAppend: false,
+      }),
+    });
+    expect(result.current.centredSceneEligible).toBe(false);
+
+    // …and it opens the moment the first user row lands, exactly as send #N.
+    rerender(userAnchor({ newestId: 1 }));
+    expect(result.current.centredSceneEligible).toBe(true);
+  });
+
+  it("a fresh-session mount that ALREADY sees a preview stays closed", () => {
+    // The engine spoke before the transcript mounted — whatever is on screen,
+    // this turn has already produced something.
+    const { result, rerender } = renderHook(useTurnPreview, {
+      initialProps: input({
+        submitting: true,
+        newestId: 0,
+        newestVariant: null,
+        newestIsLiveAppend: false,
+        preview: livePreview(),
+      }),
+    });
+    rerender(userAnchor({ newestId: 1, preview: null }));
+    expect(result.current.centredSceneEligible).toBe(false);
+  });
+
+  it("the empty-transcript arm does NOT rescue a mount over a populated transcript", () => {
+    // R3.2's guard, restated at the mount edge: rows on screen mean the
+    // viewport is not ours to cover, however the mount came about.
+    const { result, rerender } = renderHook(useTurnPreview, {
+      initialProps: input({ submitting: true, newestId: 40 }),
+    });
+    rerender(userAnchor({ newestId: 41 }));
+    expect(result.current.centredSceneEligible).toBe(false);
+  });
+
   it("re-arms across false→true→false→true (retry, and Stop-then-send)", () => {
     const { result, rerender } = renderHook(useTurnPreview, {
       initialProps: input(),

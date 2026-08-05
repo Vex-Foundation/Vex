@@ -21,6 +21,14 @@
  *  - Nothing here writes an inline style attribute or injects a stylesheet:
  *    all drawing is JS on a canvas (CSP `style-src 'self'` safe).
  *
+ * THE CLOUD HAS NO FRAME. Seats are one radial disc sized to sit inside the box
+ * (`particles.ts`), so nothing is ever clipped by the canvas rect, and this
+ * element paints no border, background or backdrop of its own — the only pixels
+ * are the particles. A particle near its SEAT is painted at that seat's
+ * feathered alpha and a particle near its TARGET at the base level, so the
+ * cloud's rim fades out while the assembled mark stays solid. Choosing the
+ * bucket per particle costs nothing: it is the same ≤9 fills either way.
+ *
  * FAILURE CONTRACT: no 2D context (the jsdom case), an image error, or an
  * empty sample → the plain <img src="/logo_clean.png"> renders inside the SAME
  * fixed square box, so the fallback causes no layout shift.
@@ -95,6 +103,8 @@ export function VexingScene({ className }: VexingSceneProps): JSX.Element {
     /** Scratch positions — sized once, never reallocated per frame. */
     let posX: Float32Array | null = null;
     let posY: Float32Array | null = null;
+    /** Scratch style bucket per particle — sized once, rewritten per frame. */
+    let styleIdx: Uint8Array | null = null;
     /** Loop origin; rebased on resume so a hidden window costs no phase. */
     let loopStart = 0;
     let bankedElapsedMs = 0;
@@ -126,19 +136,40 @@ export function VexingScene({ className }: VexingSceneProps): JSX.Element {
       }
     }
 
+    /**
+     * Assign each particle its style bucket for this frame. `nearSeat` is the
+     * feather switch: a particle still closer to its seat than to its target
+     * wears the seat's falloff alpha, so the rim fades exactly when it is the
+     * rim. `null` means "fully assembled" — the mark always paints solid.
+     */
+    function setStyleBuckets(nearSeat: ((index: number) => boolean) | null): void {
+      if (particles === null || styleIdx === null) return;
+      const p = particles;
+      const buckets = styleIdx;
+      for (let i = 0; i < p.count; i++) {
+        const alphaIdx =
+          nearSeat !== null && nearSeat(i)
+            ? (p.seatAlphaIdx[i] ?? BASE_ALPHA_IDX)
+            : BASE_ALPHA_IDX;
+        buckets[i] = (p.colorIdx[i] ?? 0) * ALPHA_LEVELS.length + alphaIdx;
+      }
+    }
+
     /** Batched paint: ONE path + ONE fill per style bucket (≤9 per frame). */
     function paintFrame(): void {
       if (particles === null || posX === null || posY === null) return;
+      if (styleIdx === null) return;
       const p = particles;
       const x = posX;
       const y = posY;
+      const buckets = styleIdx;
       ctx.clearRect(0, 0, boxW, boxH);
       for (const [s, style] of styles.entries()) {
         ctx.fillStyle = style;
         ctx.beginPath();
         let bucketHasRects = false;
         for (let i = 0; i < p.count; i++) {
-          if ((p.colorIdx[i] ?? 0) * ALPHA_LEVELS.length + BASE_ALPHA_IDX !== s) {
+          if (buckets[i] !== s) {
             continue;
           }
           const size = p.sizePx[i] ?? 0;
@@ -159,6 +190,7 @@ export function VexingScene({ className }: VexingSceneProps): JSX.Element {
       if (particles === null || posX === null || posY === null) return;
       posX.set(particles.targetX);
       posY.set(particles.targetY);
+      setStyleBuckets(null);
     }
 
     function tickFrame(now: number): void {
@@ -179,31 +211,46 @@ export function VexingScene({ className }: VexingSceneProps): JSX.Element {
           else {
             x.set(p.outX);
             y.set(p.outY);
+            // Dispersed and resting: the whole cloud wears its feather.
+            setStyleBuckets(() => true);
           }
           paintFrame();
           lastPaintedPhase = frame.phase;
         }
       } else {
         const assembling = frame.phase === "assemble";
+        const buckets = styleIdx;
         for (let i = 0; i < p.count; i++) {
           const tx = p.targetX[i] ?? 0;
           const ty = p.targetY[i] ?? 0;
           const ox = p.outX[i] ?? 0;
           const oy = p.outY[i] ?? 0;
           const delay = p.delay[i] ?? 0;
+          // `travelled` is 0 at the seat and 1 at the target, whichever way the
+          // particle is going — so one comparison drives the feather on both
+          // the assemble and the disperse arm.
+          let travelled: number;
           if (assembling) {
             // easeOutQuint — the landing Out curve VexSigil arrives on.
             const local = stagger(frame.t, delay);
-            const eased = 1 - (1 - local) ** 5;
-            x[i] = ox + (tx - ox) * eased;
-            y[i] = oy + (ty - oy) * eased;
+            travelled = 1 - (1 - local) ** 5;
+            x[i] = ox + (tx - ox) * travelled;
+            y[i] = oy + (ty - oy) * travelled;
           } else {
             // easeInQuint, with the stagger reversed so the mark comes apart
             // from the other end than it came together.
             const local = stagger(frame.t, 1 - delay);
             const eased = local ** 5;
+            travelled = 1 - eased;
             x[i] = tx + (ox - tx) * eased;
             y[i] = ty + (oy - ty) * eased;
+          }
+          if (buckets !== null) {
+            const alphaIdx =
+              travelled < 0.5
+                ? (p.seatAlphaIdx[i] ?? BASE_ALPHA_IDX)
+                : BASE_ALPHA_IDX;
+            buckets[i] = (p.colorIdx[i] ?? 0) * ALPHA_LEVELS.length + alphaIdx;
           }
         }
         paintFrame();
@@ -244,6 +291,7 @@ export function VexingScene({ className }: VexingSceneProps): JSX.Element {
       particles = built;
       posX = new Float32Array(built.count);
       posY = new Float32Array(built.count);
+      styleIdx = new Uint8Array(built.count);
       resize();
       if (reducedMotion) {
         // FULL STOP: the assembled mark, painted exactly once.
@@ -253,6 +301,7 @@ export function VexingScene({ className }: VexingSceneProps): JSX.Element {
       }
       posX.set(built.outX);
       posY.set(built.outY);
+      setStyleBuckets(() => true);
       startLoop();
     };
     const handleError = (): void => {

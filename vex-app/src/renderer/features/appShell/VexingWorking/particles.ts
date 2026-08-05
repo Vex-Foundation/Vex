@@ -10,6 +10,16 @@
  * the act (the act length lives in `phases.ts`, so a cadence change cannot
  * silently rescale the stagger).
  *
+ * THE CLOUD IS RADIAL, AND THAT IS THE POINT (owner: "aby nie było widać ramki
+ * kwadratowej z której powstaje"). Seats scattered around each particle's OWN
+ * target — VexSigil's one-shot geometry — produce the letterform's bounding box
+ * dilated, i.e. a SQUARE halo, and the parts that overflow the box are clipped
+ * by the canvas rect, which is the hard edge that was visible. Here every seat
+ * is drawn from ONE disc about the mark's centre, sized to sit INSIDE the box,
+ * so nothing is ever clipped and the cloud has no edge of any shape. The rim is
+ * then feathered — dimmer and smaller particles further out — so the cloud
+ * fades into the backdrop instead of ending.
+ *
  * Deterministic by construction: one seeded PRNG walked in index order, so a
  * remount rebuilds the identical constellation and the mark never flickers into
  * a different shape between cycles.
@@ -27,6 +37,16 @@ const VEXING_SEED = 0x5645584e;
 /** Fraction of an act spent staggering; the rest is a particle's own flight. */
 export const STAGGER_FRACTION = 0.35;
 
+/**
+ * The scatter disc's radius, in sample space. Deliberately just INSIDE half the
+ * mark's shorter side: the canvas cover-fits sample space onto a square box, so
+ * anything beyond `0.5 * min(w, h)` would be clipped by the canvas rect and
+ * draw exactly the square edge this design exists to remove.
+ */
+export function scatterRadiusOf(width: number, height: number): number {
+  return 0.46 * Math.min(width, height);
+}
+
 export { DPR_CAP };
 
 export interface VexingParticles {
@@ -42,6 +62,13 @@ export interface VexingParticles {
   /** Per-particle stagger, as a fraction of the act, in [0,1). */
   readonly delay: Float32Array;
   readonly sizePx: Float32Array;
+  /**
+   * Alpha bucket (0 dim … 2 bright) used while the particle sits near its SEAT.
+   * Falls off toward the rim, which is what feathers the cloud's edge. The
+   * assembled mark ignores it and paints at the base level, so the letterform
+   * itself is never dimmed.
+   */
+  readonly seatAlphaIdx: Uint8Array;
   /** 0 = body tone, 1–2 = the two spark tones (~85/15, as the sigil). */
   readonly colorIdx: Uint8Array;
 }
@@ -66,23 +93,31 @@ export function buildVexingParticles(
   const delay = new Float32Array(count);
   const sizePx = new Float32Array(count);
   const colorIdx = new Uint8Array(count);
+  const seatAlphaIdx = new Uint8Array(count);
 
-  /** Scatter reference: the mark's half-diagonal (VexSigil's proven value). */
-  const scatterRadius = 0.5 * Math.hypot(width, height);
+  const centreX = width / 2;
+  const centreY = height / 2;
+  const scatterRadius = scatterRadiusOf(width, height);
   for (let i = 0; i < count; i++) {
     const tx = coords[i * 2] ?? 0;
     const ty = coords[i * 2 + 1] ?? 0;
     targetX[i] = tx;
     targetY[i] = ty;
+
+    // ONE disc about the mark's centre. `sqrt` on the uniform draw is what
+    // makes the seats area-uniform: without it they bunch at the middle and
+    // the cloud reads as a blob with a gap around it.
     const angle = prng() * Math.PI * 2;
-    // 40–120% of the half-diagonal beyond the target — far enough that the
-    // mark genuinely dissolves, near enough that it never leaves the box's
-    // cover-fit frame as a visible spray.
-    const distance = (0.4 + prng() * 0.8) * scatterRadius;
-    outX[i] = tx + Math.cos(angle) * distance;
-    outY[i] = ty + Math.sin(angle) * distance;
+    const normRadius = Math.sqrt(prng());
+    const radius = normRadius * scatterRadius;
+    outX[i] = centreX + Math.cos(angle) * radius;
+    outY[i] = centreY + Math.sin(angle) * radius;
+
     delay[i] = prng();
-    sizePx[i] = 1.6 + prng() * 0.6;
+    // The feather: rim particles are smaller and dimmer, so the cloud's outer
+    // reach fades out rather than terminating on a countable boundary.
+    sizePx[i] = (1.6 + prng() * 0.6) * (1 - 0.35 * normRadius);
+    seatAlphaIdx[i] = normRadius > 0.72 ? 0 : normRadius > 0.4 ? 1 : 2;
     const roll = prng();
     colorIdx[i] = roll < 0.85 ? 0 : roll < 0.925 ? 1 : 2;
   }
@@ -97,6 +132,7 @@ export function buildVexingParticles(
     outY,
     delay,
     sizePx,
+    seatAlphaIdx,
     colorIdx,
   };
 }
