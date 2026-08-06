@@ -27,6 +27,13 @@ import { parseUnits } from "viem";
 
 import { readStringList } from "../../../runtime/list-params.js";
 import { rejectForbiddenTokenMetadataText } from "../../../../../../lib/token-metadata-text-policy.js";
+import {
+  TOKEN_METADATA_NAME_MAX as NAME_MAX,
+  TOKEN_METADATA_SYMBOL_MAX as SYMBOL_MAX,
+  TOKEN_METADATA_DESCRIPTION_MAX as DESCRIPTION_MAX,
+  TOKEN_METADATA_LINKS_MAX as LINKS_MAX,
+  TOKEN_METADATA_LINK_LENGTH_MAX as LINK_LEN_MAX,
+} from "../../../../../../lib/token-metadata-limits.js";
 
 /**
  * Params that must NEVER come from model input. Rejected by name, never dropped.
@@ -43,19 +50,11 @@ export const FORBIDDEN_LAUNCH_PARAMS = [
   "value",
 ] as const;
 
-// MEASURED ON-CHAIN limits (bisected via free eth_estimateGas, 2026-08-02,
-// block ~26003783; harness: agents_dm/trench-live/limit-probe.mts). The
-// Diamond hardcodes these in facet bytecode — a storage scan found no limit
-// slots, so a runtime reader is impossible and the measured constants are the
-// live data. create() reverts `invalid name/symbol/image/desc` past: name 18,
-// symbol 18, description 512, links 4. A looser local limit turned those
-// reverts into a vague "gas_unestimable"; the local caps mirror the chain's
-// (symbol deliberately tighter at 16) and refuse by name instead.
-const NAME_MAX = 18;
-const SYMBOL_MAX = 16;
-const DESCRIPTION_MAX = 512;
-const LINKS_MAX = 4;
-const LINK_LEN_MAX = 128;
+// The length caps are the MEASURED chain limits and live in ONE place,
+// `lib/token-metadata-limits.ts`, shared with `trench.launch_preview` and the
+// IPC form schema. A looser cap on any surface turns a chain revert into a
+// vague "gas_unestimable" instead of a refusal that names the field.
+
 const ETH_DECIMALS = 18;
 
 /**
@@ -152,8 +151,15 @@ export function validateLaunchRequest(p: Record<string, unknown>): LaunchValidat
   return { ok: true, value: { name, symbol, description, links, imageId, prebuyWei: prebuy } };
 }
 
-/** Parse the prebuy to wei, or return the refusal message. */
-function parsePrebuy(raw: unknown): bigint | string {
+/**
+ * Parse the prebuy to wei, or return the refusal message.
+ *
+ * THE ONE PREBUY PARSER. `trench.launch_preview` prices a prebuy through this
+ * exact function, so a prebuy the preview accepts is a prebuy the launch
+ * accepts, and an invalid one is refused with the SAME words on both surfaces.
+ * A second parser would be a second opinion about how much ETH to spend.
+ */
+export function parsePrebuy(raw: unknown): bigint | string {
   if (raw === undefined || raw === null) return 0n;
 
   const text = typeof raw === "string" ? raw.trim() : typeof raw === "number" ? String(raw) : "";

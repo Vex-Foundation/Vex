@@ -46,6 +46,7 @@ import type { LaunchExecuteDeps } from "../fee-seam.js";
 import { decodeLaunchReceipt } from "../settlement.js";
 import { settleLaunchFailure } from "./authorize.js";
 import { postLaunchAttribution, signAndStoreAttestation } from "./attribute.js";
+import { pinLaunchedToken } from "./track.js";
 import type { ValidatedLaunchRequest } from "../validate.js";
 
 const DIAMOND = TRENCH_DIAMOND_ADDRESS as Address;
@@ -394,6 +395,11 @@ async function finalizeConfirmedLaunch(
   }
 
   const vexFee = await chargeVexFee(x, executionId, feeRowId, outcome);
+
+  // After the money is settled: make the new token visible to `wallet_balances`
+  // without the agent having to pin it by hand. A local DB write that can never
+  // fail, delay or reorder the launch — see `./track.js`.
+  await pinLaunchedToken(x.walletAddress, decoded.tokenAddress);
 
   // LAST, after the money is settled: claiming the badge is cosmetic and must
   // never sit in front of the fee leg or the launch's own result.

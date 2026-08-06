@@ -57,6 +57,7 @@ let mockFillIdentity: Mock;
 let mockStampSignature: Mock;
 let mockMarkAttributed: Mock;
 let mockAttribute: Mock;
+let mockPinToken: Mock;
 let mockSignMessage: Mock;
 let sentTransactions: number;
 
@@ -78,6 +79,7 @@ function reset(): void {
   mockStampSignature = vi.fn(async () => { calls.push("attest.store"); return true; });
   mockAttribute = vi.fn(async () => { calls.push("attribute.post"); return { kind: "attributed" }; });
   mockMarkAttributed = vi.fn(async () => { calls.push("attribute.mark"); return true; });
+  mockPinToken = vi.fn(async () => { calls.push("track.pin"); return { inserted: true }; });
 }
 reset();
 
@@ -112,6 +114,9 @@ vi.mock("@vex-agent/db/repos/launched-tokens.js", () => ({
   stampAttestSignature: (...a: unknown[]) => mockStampSignature(...a),
   getByIdentity: async () => ({ id: 42 }),
   markAttributed: (...a: unknown[]) => mockMarkAttributed(...a),
+}));
+vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
+  pinTrackedToken: (...a: unknown[]) => mockPinToken(...a),
 }));
 vi.mock("@tools/trench-express/attribution.js", async (orig) => ({
   ...(await (orig as () => Promise<Record<string, unknown>>)()),
@@ -277,7 +282,7 @@ describe("the confirmed path writes the durable index BEFORE confirming the inte
   // is finalized opens a crash window nothing can ever close — the intent is no
   // longer a candidate and the activity row stays pending forever. Every write
   // that the sweep cannot redo must happen while the intent is still claimable.
-  it("orders launched_tokens.record → activity.confirm → intent.confirm (LAST) → fee → attribution POST", async () => {
+  it("orders launched_tokens.record → activity.confirm → intent.confirm (LAST) → fee → auto-pin → attribution POST", async () => {
     await broadcastLaunch(input());
     expect(calls.filter((c) => c !== "intent.broadcast_pending" && c !== "activity.intent")).toEqual([
       "launched_tokens.record",
@@ -289,6 +294,11 @@ describe("the confirmed path writes the durable index BEFORE confirming the inte
       "activity.confirm",
       "intent.confirm",
       "fee.run",
+      // The auto-pin sits AFTER the fee leg — it is a convenience write, and
+      // nothing on the money path may wait on it. It is still ahead of the
+      // badge: a local DB write the user feels (the token appears in
+      // `wallet_balances`) rather than a cosmetic third-party POST.
+      "track.pin",
       // The badge is claimed LAST: cosmetic work never sits in front of money.
       "attribute.post",
       "attribute.mark",
@@ -408,6 +418,63 @@ describe("attribution never affects the launch", () => {
     await broadcastLaunch(input());
     expect(mockSignMessage).not.toHaveBeenCalled();
     expect(mockAttribute).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE AUTO-PIN. A launched token is in neither the chain's seed set nor the
+ * pins, so without this the user cannot see what they just paid for until the
+ * agent calls `wallet_track_token` by hand. It reuses that tool's own
+ * mechanism (`pinTrackedToken`, `ON CONFLICT DO NOTHING`), so it is idempotent,
+ * and it carries the attribution hook's failure contract: never fatal, never
+ * ahead of the money.
+ */
+describe("a confirmed launch pins its own token", () => {
+  beforeEach(() => { outcome = confirmedOutcome([tokenCreatedLog(), boughtLog()]); });
+
+  it("pins the created token for the launching wallet, on the launch chain", async () => {
+    await broadcastLaunch(input());
+    expect(mockPinToken).toHaveBeenCalledTimes(1);
+    expect(mockPinToken).toHaveBeenCalledWith({
+      walletAddress: WALLET,
+      chainId: TRENCH_CHAIN_ID,
+      tokenAddress: TOKEN,
+      // The closed provenance set (migration 036) has no launch value; "swap"
+      // is the existing "auto-pinned by a successful execute" one.
+      source: "swap",
+    });
+  });
+
+  it("pins AFTER the fee leg — the money path never waits on it", async () => {
+    await broadcastLaunch(input());
+    expect(calls.indexOf("track.pin")).toBeGreaterThan(calls.indexOf("fee.run"));
+  });
+
+  it("is a no-op when the token is already pinned", async () => {
+    // The repo's ON CONFLICT DO NOTHING reports the existing row rather than
+    // failing, so launch → manual pin → repair pass cannot duplicate or error.
+    mockPinToken.mockImplementation(async () => { calls.push("track.pin"); return { inserted: false }; });
+    const result = await broadcastLaunch(input());
+    expect(result.success).toBe(true);
+    expect((result.data as { status: string }).status).toBe("confirmed");
+  });
+
+  it("leaves the launch result unchanged when the pin fails", async () => {
+    mockPinToken.mockRejectedValue(new Error("database is not available"));
+
+    const result = await broadcastLaunch(input());
+
+    expect(result.success).toBe(true);
+    expect((result.data as { status: string }).status).toBe("confirmed");
+    expect((result.data as { tokenAddress: string }).tokenAddress).toBe(TOKEN);
+    // And nothing after it was skipped: the badge still gets claimed.
+    expect(mockAttribute).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not pin when the token identity could not be decoded", async () => {
+    outcome = confirmedOutcome([]);
+    await broadcastLaunch(input());
+    expect(mockPinToken).not.toHaveBeenCalled();
   });
 });
 

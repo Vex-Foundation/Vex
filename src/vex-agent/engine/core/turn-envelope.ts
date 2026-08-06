@@ -17,6 +17,10 @@
  *   […]  history (DB tape; LAST non-empty message      "history_tail"
  *        marked AFTER repairOrphanedToolCalls)
  *   [N]  system  turn state (joined turnLayers)        "turn_state"
+ *
+ * Both system segments are wrapped in the sentinel pair from
+ * `prompts/system-boundary.ts` so the model can see where operator text starts
+ * and ends; history messages are never wrapped.
  */
 
 import type { EngineContext } from "../types.js";
@@ -24,6 +28,7 @@ import type { ProviderMessage } from "@vex-agent/inference/types.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import { buildPromptStack, type PromptStackOptions } from "../prompts/index.js";
 import { sanitizeForSystemPrompt } from "../prompts/sanitize.js";
+import { wrapSystemBlock, wrapTurnStateBlock } from "../prompts/system-boundary.js";
 import { repairOrphanedToolCalls } from "./transcript-integrity.js";
 import logger from "@utils/logger.js";
 
@@ -98,8 +103,14 @@ function buildProviderMessages(
 ): ProviderMessage[] {
   const result: ProviderMessage[] = [];
 
-  // Static system prefix — breakpoint A candidate.
-  result.push({ role: "system", content: staticPrompt, cacheHint: "static_prefix" });
+  // Static system prefix — breakpoint A candidate. Wrapped in the system-block
+  // sentinels so the model can tell operator text from conversation text; the
+  // wrapper is constant, so the cached prefix stays stable.
+  result.push({
+    role: "system",
+    content: wrapSystemBlock(staticPrompt),
+    cacheHint: "static_prefix",
+  });
 
   // Compaction summary (if checkpoint happened). The summary is LLM-emitted
   // prose that reaches the next provider call as a system message. Sanitize
@@ -136,7 +147,14 @@ function buildProviderMessages(
   }
 
   // Trailing turn-state system message — NEVER cache-marked for a breakpoint.
-  result.push({ role: "system", content: turnStatePrompt, cacheHint: "turn_state" });
+  // Same sentinel pair as the static prefix, plus the no-echo contract as its
+  // last line: this block sits AFTER the user's last message, and a model that
+  // reads it as the start of its own reply leaks operator state to the user.
+  result.push({
+    role: "system",
+    content: wrapTurnStateBlock(turnStatePrompt),
+    cacheHint: "turn_state",
+  });
 
   return result;
 }

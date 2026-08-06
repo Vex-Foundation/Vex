@@ -66,6 +66,10 @@ const PURE_VEX_LIB_MODULES = new Set([
   // the agent runtime, the IPC schema and the renderer form, and it is pure by
   // construction (no imports at all) so the renderer may hold it.
   "@vex-lib/token-metadata-text-policy.js",
+  // The measured on-chain metadata length caps. Same reason and same purity as
+  // the text policy above: one definition across the agent runtime, the IPC
+  // schema and the renderer form, and it imports nothing at all.
+  "@vex-lib/token-metadata-limits.js",
 ]);
 
 function isForbiddenRootAliasImport(spec) {
