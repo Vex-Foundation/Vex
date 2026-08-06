@@ -41,6 +41,7 @@
  */
 
 import { ComputeBudgetInstruction, ComputeBudgetProgram, SystemInstruction, SystemProgram } from "@solana/web3.js";
+import { formatUnits } from "viem";
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import { inferDefaultComputeUnitBudget } from "../../shared/solana-transaction/default-compute-unit-budget.js";
@@ -290,8 +291,14 @@ export function assertComputeBudgetWithinPolicy(
     // 13,766,234 -> 465,330 -> 14,601 lamports within minutes on 2026-07-25.
     // The `Basis:` tail is diagnostics and is deliberately last, so truncation
     // eats it first.
+    // The ONE lamport figure the agent acts on gets its SOL twin (rule 90):
+    // a bare 8-digit lamport number reads as SOL to anyone who skips the
+    // suffix. Only this one, because the message is budgeted for 200 characters
+    // and the remedy after it must survive truncation. `formatUnits` is used
+    // directly rather than `protocols/amount-display.ts` because that owner
+    // lives under `src/vex-agent`, which `src/tools` must never import.
     fail(
-      `Refusing to sign: priority fee ${priorityFeeLamports} lamports exceeds the ${JUPITER_SWAP_MAX_PRIORITY_FEE_LAMPORTS}-lamport cap. `
+      `Refusing to sign: priority fee ${priorityFeeLamports} lamports (${formatUnits(priorityFeeLamports, 9)} SOL) exceeds the ${JUPITER_SWAP_MAX_PRIORITY_FEE_LAMPORTS}-lamport cap. `
         + "Nothing signed or spent. Lower computeUnitPricePercentile or re-quote — priority fees swing by the minute. "
         + `Basis: ${effectiveComputeUnitLimit.units} CU ${effectiveComputeUnitLimit.origin} x ${computeUnitPriceMicroLamports} microLamports/CU.`,
     );

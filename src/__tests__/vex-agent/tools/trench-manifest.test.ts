@@ -92,12 +92,34 @@ describe("trench manifest", () => {
     }
   });
 
-  // The dry-run always simulates EMPTY image bytes, so the param must not
-  // promise to price the image's gas — the real launch costs materially more.
-  it("does not promise that the preview prices image gas", () => {
+  // U1: the dry-run now has TWO pricing modes and the manifest must send the
+  // agent to the one that is accurate. `imageByteLength` alone still simulates
+  // EMPTY bytes, so its caveat stays; `imageId` is the param that prices the
+  // real image, and the caveat must NOT be repeated over it as if it applied.
+  it("keeps the empty-image caveat on imageByteLength and points at imageId instead", () => {
     const preview = TRENCH_TOOLS.find((t) => t.toolId === "trench.launch_preview");
     const imageParam = preview?.params?.find((p) => p.key === "imageByteLength");
     expect(imageParam?.description).toMatch(/EXCLUDES image bytes/);
+    expect(imageParam?.description).toMatch(/pass imageId instead/i);
     expect(imageParam?.description).not.toMatch(/preview its gas impact/);
+  });
+
+  it("advertises imageId as the way to price the REAL image bytes", () => {
+    const preview = TRENCH_TOOLS.find((t) => t.toolId === "trench.launch_preview");
+    const imageIdParam = preview?.params?.find((p) => p.key === "imageId");
+    expect(imageIdParam?.type).toBe("string");
+    expect(imageIdParam?.required).toBeUndefined();
+    expect(imageIdParam?.description).toMatch(/REFUSES/);
+    expect(imageIdParam?.description).toMatch(/digest mismatch/i);
+  });
+
+  // The stale copy said "Simulated with an empty image" unconditionally. That
+  // is now only one of two modes, and stating it as the rule teaches the agent
+  // to distrust an estimate that is in fact exact.
+  it("does not state the empty-image simulation as unconditional in the tool description", () => {
+    const preview = TRENCH_TOOLS.find((t) => t.toolId === "trench.launch_preview");
+    expect(preview?.description).not.toMatch(/Simulated with an empty image/i);
+    expect(preview?.description).toMatch(/imagePriced/);
+    expect(preview?.description).toMatch(/noPrebuyBalanceVerdict/);
   });
 });

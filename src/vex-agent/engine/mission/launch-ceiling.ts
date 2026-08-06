@@ -82,12 +82,21 @@ export type AutonomousLaunchCeilings = MaxLaunchValueContract & MaxLaunchCountCo
  * have burned gas, but it produced no token, and the cap counts TOKENS THE
  * MISSION CREATED, not attempts it paid for. A user who set "launch at most 3"
  * means three tokens.
+ *
+ * `superseded_unproven` DOES count, and that is the conservative reading on
+ * purpose. It is terminal but it is not a proven non-event: the replacement
+ * that consumed the nonce may have carried the same calldata and minted the
+ * token. Freeing the slot would let a mission exceed the owner's cap on the
+ * strength of an outcome nobody checked, and the cap guards real funds. Making
+ * the slot visible in the launch list (P2) was authorized; relaxing the cap was
+ * not.
  */
 export const LAUNCH_COUNT_CEILING_STATUSES = [
   "authorized",
   "consuming",
   "broadcast_pending",
   "confirmed",
+  "superseded_unproven",
 ] as const;
 
 /**

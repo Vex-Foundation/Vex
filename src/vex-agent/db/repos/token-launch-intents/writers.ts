@@ -433,6 +433,45 @@ export async function failWith(
 }
 
 /**
+ * `broadcast_pending → superseded_unproven` — the MIRROR of a terminal answer
+ * the pending lane already wrote on this launch's sibling `agent_activity` row.
+ *
+ * NOT A SECOND OPINION. This writer never classifies anything: the only caller
+ * is the identity sweep, and only after it has READ `superseded_unproven` off
+ * the durable sibling keyed by this exact `tx_hash`. The lane owns the A6 clocks
+ * and the claim fence; this copies its conclusion onto the intent so the launch
+ * can finally leave `broadcast_pending` instead of being re-checked forever.
+ *
+ * `txHash` is in the PREDICATE, not just the payload. Two rows that agree on
+ * session and intent id but not on hash are not the same broadcast, and the
+ * evidence being mirrored is evidence about ONE hash. Migration 072's
+ * `token_launch_intents_superseded_has_hash` is the database's half of the same
+ * rule.
+ *
+ * NO `failure_reason` is written, deliberately. Nothing here established that
+ * the create did not happen — writing a failure label would turn "unproven"
+ * into "failed" in every reader that shows one.
+ */
+export async function markSupersededUnprovenWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+  txHash: string,
+): Promise<TokenLaunchIntent | null> {
+  return casRow(
+    client,
+    `UPDATE token_launch_intents
+        SET status = 'superseded_unproven'
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND status = 'broadcast_pending'
+        AND tx_hash = $3
+      RETURNING ${SELECT_COLUMNS}`,
+    [intentId, sessionId, txHash],
+  );
+}
+
+/**
  * `awaiting_user_form → cancelled` — the user dismissed the dialog.
  *
  * Only from `awaiting_user_form`, so a cancel can never race an in-flight

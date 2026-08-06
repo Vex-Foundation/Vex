@@ -309,6 +309,8 @@ describe("trench.launch_preview handler", () => {
     const data = parse(res.output);
     expect(data.simulated).toBe(false);
     expect(data.creationFeeEth).toBe("0.001");
+    // Nothing was priced at all, so no affordability claim is made either way.
+    expect(data.noPrebuyBalanceVerdict).toBeUndefined();
   });
 
   // The preview is a COST surface. A total that omits the 25 bps Vex fee leg
@@ -360,5 +362,12 @@ describe("trench.launch_preview handler", () => {
     expect(BigInt(data.estimatedTotalCostWei as string)).toBe(
       1_000_000_000_000_000n + 2_500_000_000_000n + gasCost + feeLegGas,
     );
+    // U1/U2 on the same surface: the gas PRICE carries its gwei twin, and an
+    // empty-image sim never claims the launch is affordable.
+    expect(data.gasPriceGwei).toBe("1");
+    expect(data.imagePriced).toBe("empty_fallback");
+    expect(data.imagePricedFallbackReason).toBe("no_image_id");
+    expect(data.noPrebuyBalanceVerdict).toBe("unpriced");
+    expect(data.noPrebuyShortfallWei).toBeUndefined();
   });
 });

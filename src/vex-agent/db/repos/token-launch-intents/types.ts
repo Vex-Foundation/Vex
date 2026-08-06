@@ -20,7 +20,23 @@ export type TokenLaunchIntentStatus =
   | "confirmed"
   | "terminal_failure"
   | "cancelled"
-  | "expired";
+  | "expired"
+  /**
+   * NO LONGER TRACKED, OUTCOME UNPROVEN - terminal, and deliberately NOT a
+   * failure. Mirrors `agent_activity.superseded_unproven` (migration 068) and
+   * means exactly the same thing here: no node can account for this hash and
+   * the pending lane stopped tracking it. The lane reaches that terminal from
+   * EITHER a proven nonce supersession OR a transaction unknown to the node,
+   * and the intent does not record which - so nothing downstream may claim
+   * "another transaction replaced it" (Codex final review 2026-08-05). What
+   * actually happened was never established. The token may exist.
+   *
+   * `terminal_failure` would assert the create did not happen, which nothing
+   * established, so this status carries NO `failure_reason`. Migration 072
+   * admits it and requires `tx_hash IS NOT NULL` - the hash is the whole
+   * evidence.
+   */
+  | "superseded_unproven";
 
 /**
  * Which C0 authorization variant authorized this launch.

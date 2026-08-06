@@ -51,11 +51,15 @@
 
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
-import { stampLaunchOutputIdentityByTxHash } from "@vex-agent/db/repos/agent-activity.js";
+import {
+  findLaunchActivityTerminalByTxHash,
+  stampLaunchOutputIdentityByTxHash,
+} from "@vex-agent/db/repos/agent-activity.js";
 import {
   claimBroadcastPendingForSweep,
   confirmWith,
   failWith,
+  markSupersededUnprovenWith,
   type TokenLaunchIntent,
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -160,6 +164,13 @@ export interface LaunchIdentityRepairResult {
   readonly indexed: number;
   /** Intents moved `broadcast_pending → terminal_failure` by a PROVEN on-chain revert. */
   readonly failed: number;
+  /**
+   * Intents moved `broadcast_pending → superseded_unproven` by MIRRORING the
+   * pending lane's own terminal verdict on the sibling `agent_activity` row.
+   * Not a failure and not a confirmation: the launch stops being re-checked and
+   * starts saying what is actually known about it.
+   */
+  readonly supersededMirrored: number;
   readonly stillPending: number;
 }
 
@@ -170,9 +181,26 @@ export async function repairLaunchIdentities(
   let repaired = 0;
   let indexed = 0;
   let failed = 0;
+  let supersededMirrored = 0;
   let stillPending = 0;
 
   for (const intent of candidates) {
+    // THE DURABLE SIBLING IS ASKED FIRST, before any provider call. The pending
+    // lane may already have terminalized this broadcast as `superseded_unproven`
+    // — it owns that transition — and its verdict is a durable record, not a
+    // classification this sweep would have to re-derive. Consulting it first is
+    // what makes the recovery work with the RPC completely unavailable, which is
+    // the exact condition a superseded launch tends to be discovered in.
+    const mirrored = await mirrorSupersededSibling(intent);
+    if (mirrored === "mirrored") {
+      supersededMirrored++;
+      continue;
+    }
+    if (mirrored === "cas_miss") {
+      stillPending++;
+      continue;
+    }
+
     const outcome = await lookupOutcome(deps, intent);
     if (outcome === null) {
       stillPending++;
@@ -252,7 +280,62 @@ export async function repairLaunchIdentities(
     }
   }
 
-  return { checked: candidates.length, repaired, indexed, failed, stillPending };
+  return { checked: candidates.length, repaired, indexed, failed, supersededMirrored, stillPending };
+}
+
+/** What consulting the durable sibling settled for one claimed intent. */
+type SiblingMirrorOutcome = "mirrored" | "cas_miss" | "no_answer";
+
+/**
+ * Copy the pending lane's `superseded_unproven` verdict from the launch's
+ * sibling `agent_activity` row onto the intent.
+ *
+ * `no_answer` covers every case that is not that one verdict: no sibling row, a
+ * sibling still `pending`, a sibling `confirmed`, or a lookup that threw. All of
+ * them fall through to the ordinary RPC classification, which is unchanged and
+ * still defers on a fresh `superseded`.
+ *
+ * A THROW IS CONTAINED. This runs inside the shared sync worker, and a transient
+ * DB error while reading a sibling must never abort the sweep for every other
+ * claimed row, nor terminalize anything.
+ */
+async function mirrorSupersededSibling(
+  intent: TokenLaunchIntent,
+): Promise<SiblingMirrorOutcome> {
+  const txHash = intent.txHash;
+  if (!txHash) return "no_answer";
+
+  let sibling: { readonly status: string } | null;
+  try {
+    sibling = await findLaunchActivityTerminalByTxHash(txHash);
+  } catch (err) {
+    logger.warn("trench.launch_identity_repair.sibling_lookup_failed", {
+      intentId: intent.intentId,
+      error: summarizeProtocolError(err).message,
+    });
+    return "no_answer";
+  }
+  if (sibling === null || sibling.status !== "superseded_unproven") return "no_answer";
+
+  const applied = await withSessionControlLock(intent.sessionId, (client) =>
+    markSupersededUnprovenWith(client, intent.intentId, intent.sessionId, txHash));
+  if (!applied) {
+    logger.info("trench.launch_identity_repair.superseded_cas_miss", {
+      intentId: intent.intentId,
+    });
+    return "cas_miss";
+  }
+
+  // Said at `info`, once per row, because the row leaves the candidate set here:
+  // this is the END of the runaway re-check loop, not another lap of it.
+  logger.info("trench.launch_identity_repair.superseded_mirrored", {
+    intentId: intent.intentId,
+    chainId: intent.chainId,
+    hint: "the pending lane stopped tracking this hash with its outcome unproven; the intent "
+      + "now says so instead of waiting for a receipt that will not arrive. The token may "
+      + "exist - this is NOT a failure and NOT a licence to launch again.",
+  });
+  return "mirrored";
 }
 
 /**

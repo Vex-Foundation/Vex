@@ -30,3 +30,27 @@ export function formatRawAmount(
     return null;
   }
 }
+
+/** Both native display units below are 9 decimals from their base unit. */
+const NATIVE_SUBUNIT_DECIMALS = 9;
+
+/**
+ * Wei as GWEI, for gas PRICES only.
+ *
+ * A gas price is the one launch figure whose bare integer reads as a plausible
+ * gwei number: `22518000` wei is 0.0225 gwei, and an agent that reads it as
+ * 22.5 is off by a thousand on the number it prices a transaction from. Gas
+ * UNITS (`gasEstimate`, `gasLimitWithHeadroom`) are unitless counts and must
+ * never be passed here.
+ */
+export function formatWeiAsGwei(wei: string | bigint | null | undefined): string | null {
+  return formatRawAmount(wei, NATIVE_SUBUNIT_DECIMALS);
+}
+
+/** Lamports as SOL. Same reason: a bare lamport figure is unreadable as a price. */
+export function formatLamportsAsSol(lamports: string | bigint | number | null | undefined): string | null {
+  if (typeof lamports === "number") {
+    return Number.isSafeInteger(lamports) ? formatRawAmount(BigInt(lamports), NATIVE_SUBUNIT_DECIMALS) : null;
+  }
+  return formatRawAmount(lamports, NATIVE_SUBUNIT_DECIMALS);
+}

@@ -140,7 +140,24 @@ export async function listOutstandingUserFormResumes(
 }
 
 /**
- * IN-FLIGHT launches for a set of wallets — the read behind "My Launches shows
+ * The statuses a launch can hold once it has been SIGNED AND PAID FOR but has
+ * no proven token identity — the exact set `launched_tokens` will never contain
+ * and the user must still be able to see.
+ *
+ * `broadcast_pending` is the launch still being checked. `superseded_unproven`
+ * is the launch whose hash is no longer tracked, with its outcome never
+ * established (migration 072). Both spent the user's gas; neither
+ * proves a token. Terminalizing the second one WITHOUT adding it here would have
+ * made a paid-for launch vanish from the list the moment it stopped being
+ * re-checked, which is the very defect this read exists to close.
+ *
+ * `terminal_failure`, `cancelled` and `expired` are deliberately absent: a
+ * proven revert minted nothing and the other two never signed.
+ */
+const UNSETTLED_MY_LAUNCH_STATUSES = ["broadcast_pending", "superseded_unproven"] as const;
+
+/**
+ * UNSETTLED launches for a set of wallets — the read behind "My Launches shows
  * the launch you just made, not only the ones that finished".
  *
  * The defect it closes: `launched_tokens` is written ONLY once a token identity
@@ -153,11 +170,13 @@ export async function listOutstandingUserFormResumes(
  * intent id is known. Addresses are compared case-insensitively because EVM
  * addresses are persisted in mixed checksum case by different writers.
  *
- * `broadcast_pending` ONLY. An `awaiting_user_form` or `authorized` intent is
- * not a launch yet — nothing was signed, nothing was spent, and listing it would
- * turn a form the user abandoned into a launch they appear to have made.
+ * Scoped to {@link UNSETTLED_MY_LAUNCH_STATUSES}. An `awaiting_user_form` or
+ * `authorized` intent is not a launch yet — nothing was signed, nothing was
+ * spent, and listing it would turn a form the user abandoned into a launch they
+ * appear to have made. The caller reads each row's `status` to say which of the
+ * two unsettled things it is; this read never collapses them.
  */
-export async function listInFlightForWallets(input: {
+export async function listUnsettledForWallets(input: {
   readonly walletAddresses: readonly string[];
   readonly chainId: number;
   readonly limit: number;
@@ -165,12 +184,17 @@ export async function listInFlightForWallets(input: {
   if (input.walletAddresses.length === 0) return [];
   const rows = await query<Record<string, unknown>>(
     `SELECT ${SELECT_COLUMNS} FROM token_launch_intents
-      WHERE status = 'broadcast_pending'
+      WHERE status = ANY($4::text[])
         AND chain_id = $2
         AND LOWER(wallet_address) = ANY($1::text[])
       ORDER BY COALESCE(broadcast_at, created_at) DESC, intent_id DESC
       LIMIT $3`,
-    [input.walletAddresses.map((address) => address.toLowerCase()), input.chainId, input.limit],
+    [
+      input.walletAddresses.map((address) => address.toLowerCase()),
+      input.chainId,
+      input.limit,
+      UNSETTLED_MY_LAUNCH_STATUSES,
+    ],
   );
   return rows.map(mapRow);
 }

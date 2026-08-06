@@ -84,7 +84,18 @@ export type LaunchFormOutcome =
   /** A refusal or a mined revert. `reason` is already user-safe prose. */
   | { readonly kind: "failed"; readonly reason: string }
   | { readonly kind: "dismissed" }
-  | { readonly kind: "expired" };
+  | { readonly kind: "expired" }
+  /**
+   * NO LONGER TRACKED, OUTCOME UNPROVEN — the recovery outcome for a form whose
+   * launch was broadcast and whose intent has since been terminalized
+   * `superseded_unproven` (migration 072).
+   *
+   * It exists because the crash window has an honest answer and `expired` is not
+   * it. `expired` says the form's moment passed with nothing signed; this launch
+   * WAS signed and DID spend gas, and its token may exist. Telling the model
+   * "expired" here would invite exactly the relaunch this state cannot rule out.
+   */
+  | { readonly kind: "superseded_unproven"; readonly txHash: string };
 
 export type LaunchFormResumeResult =
   | { readonly resumed: true }
@@ -425,6 +436,19 @@ function describeOutcome(outcome: LaunchFormOutcome): string {
       return (
         `The launch did not go through: ${outcome.reason} `
         + "No token was created. Tell the user what happened before trying anything else."
+      );
+    case "superseded_unproven":
+      // Mirrors the `unconfirmed` arm's discipline and stops short of its
+      // promise: that one resolves automatically, this one already did and
+      // resolved to "nobody knows". Neither "deployed" nor "did not go through"
+      // is a sentence the evidence supports.
+      return (
+        "The user reviewed the form and submitted the launch. It was broadcast, but the "
+        + "transaction is no longer tracked and what actually happened was never "
+        + `established. Transaction: ${outcome.txHash}. `
+        + "The token MAY exist. Vex has stopped checking this hash, so it will not resolve on its "
+        + "own. DO NOT launch again on the assumption it failed - tell the user it is unresolved "
+        + "and check whether the token exists before doing anything else."
       );
     case "dismissed":
       return userFormDismissalOutput("dismissed");

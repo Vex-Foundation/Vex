@@ -39,6 +39,7 @@ import {
   type AgentActivityFailureCode,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
 import logger from "@utils/logger.js";
 
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../../constants/solana-chain.js";
@@ -318,6 +319,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     };
   }
 
+  const feePreview = buildJupiterFeePreview(prepared);
   return {
     success: false,
     output: `Swap broadcast (signature ${signedTx.signature}) — confirmation pending, tracked automatically. Do not retry.`,
@@ -328,7 +330,18 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
       explorerUrl: solanaExplorerUrl(signedTx.signature),
       inputToken: inputToken.symbol,
       outputToken: outputToken.symbol,
-      feePreview: buildJupiterFeePreview(prepared),
+      // The lamport figures the AGENT reads this swap's cost from, each with
+      // its SOL twin (rule 90). The twins are added HERE and not inside
+      // `buildJupiterFeePreview`, because that builder lives under `src/tools`
+      // and the twin owner (`protocols/amount-display.ts`) is under
+      // `src/vex-agent` — `src/tools` must never import it (`check:boundaries`).
+      // Raw lamports stay verbatim; SOL travels alongside, never instead.
+      feePreview: {
+        ...feePreview,
+        approvedTipSol: formatLamportsAsSol(feePreview.tipLamports),
+        priorityFeeSolEstimate: formatLamportsAsSol(feePreview.priorityFeeLamportsEstimate),
+        ataRentSol: formatLamportsAsSol(feePreview.ataRentLamports),
+      },
     },
   };
 };

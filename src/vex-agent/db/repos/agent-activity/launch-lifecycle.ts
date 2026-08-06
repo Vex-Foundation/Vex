@@ -143,6 +143,37 @@ export async function stampLaunchOutputIdentityByTxHash(
 }
 
 /**
+ * The DURABLE ANSWER the pending lane already wrote about a launch broadcast,
+ * looked up by its transaction hash.
+ *
+ * The identity sweep needs this because the lane is the ONLY writer allowed to
+ * terminalize a superseded broadcast (it holds the claim fence and owns both A6
+ * clocks), while the launch INTENT it also stalls is a row the lane never
+ * touches. Reading the sibling's verdict is how the intent learns it, and it is
+ * a read of a durable record rather than a second RPC classification — so the
+ * mirror works with the provider completely unavailable.
+ *
+ * `event_role = 'token_launch'` is REQUIRED in the predicate. `tx_hash` is
+ * globally unique on this table (migration 044), so a hash match alone would
+ * silently accept a swap or transfer row and let a non-launch verdict decide a
+ * launch's terminal status.
+ *
+ * `null` means "no launch row for this hash", which is not the same as "the row
+ * is still pending" — the caller must treat both as no answer.
+ */
+export async function findLaunchActivityTerminalByTxHash(
+  txHash: string,
+): Promise<{ readonly status: string } | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT status FROM agent_activity
+      WHERE tx_hash = $1 AND event_role = 'token_launch'
+      LIMIT 1`,
+    [txHash],
+  );
+  return row === null ? null : { status: row.status as string };
+}
+
+/**
  * The BENIGN-MISS fill-in: write the discovered identity and amounts onto a
  * launch row that is ALREADY `confirmed`.
  *

@@ -19,12 +19,23 @@
  * gas is budgeted into the total too, on the same constant the pre-sign balance
  * gate uses.
  *
- * The simulation uses an empty image, so real gas will be higher — that is
- * disclosed. The on-chain leg degrades to a validation-only preview when no
- * wallet is selected or the RPC is unreachable, rather than throwing.
+ * IMAGE PRICING (U1). Pass `imageId` and the dry-run prices the REAL staged
+ * bytes: they are resolved through the C2b locker seam and encoded with the
+ * SAME `buildCreateCalldata` the execute leg signs, so the estimate is the
+ * launch's, not a stand-in's. Without it the simulation still uses an empty
+ * image and real gas will be materially higher — the live probe measured
+ * 4,534,423 gas for a 3.3 KB image against ~1M for an empty one.
+ *
+ * Every response says WHICH of the two it is (`imagePriced`), because the
+ * difference is an order of magnitude and an unlabelled estimate is the number
+ * an agent budgets a launch from. A resolver I/O failure is a REFUSAL by name,
+ * never a quiet degrade to the empty sim.
+ *
+ * The on-chain leg degrades to a validation-only preview when no wallet is
+ * selected or the RPC is unreachable, rather than throwing.
  */
 
-import { encodeFunctionData, decodeFunctionResult, formatEther, type Hex } from "viem";
+import { encodeFunctionData, decodeFunctionResult, formatEther, type Address, type Hex } from "viem";
 import { TRENCH_DIAMOND_ABI } from "@tools/trench-express/abi.js";
 import { TRENCH_DIAMOND_ADDRESS, TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
@@ -35,8 +46,15 @@ import {
   buildTrenchFeeSkippedDisclosure,
   splitTrenchEthForFee,
 } from "@tools/trench-express/fee/index.js";
+import { buildCreateCalldata } from "@tools/trench-express/evm/create-launch.js";
 import { resolveSelectedAddressForRead } from "../../../internal/wallet/resolve.js";
-import { LAUNCH_FEE_LEG_GAS_LIMIT } from "./launch/plan.js";
+import { formatWeiAsGwei } from "../../amount-display.js";
+import {
+  LaunchImageResolverUnavailableError,
+  resolveLaunchImageBytes,
+} from "../launch-image-byte-resolver.js";
+import { launchImageDigest } from "./launch/authorization.js";
+import { LAUNCH_FEE_LEG_GAS_LIMIT, readNativeBalance } from "./launch/plan.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import { ok, fail } from "../../handler-helpers.js";
 import { readNumber, readStringList } from "../../runtime/list-params.js";
@@ -74,7 +92,33 @@ interface ValidatedLaunch {
   description: string;
   links: string[];
   imageByteLength: number | null;
+  imageId: string | null;
 }
+
+/**
+ * WHY the estimate is what it is. `staged_bytes` means the real locker bytes
+ * were encoded into the simulated call; `empty_fallback` means the historical
+ * empty-image sim ran and the figure UNDERSTATES a real launch.
+ */
+type ImagePricing =
+  | { readonly kind: "staged_bytes"; readonly bytes: Uint8Array }
+  | { readonly kind: "empty_fallback"; readonly reason: ImageFallbackReason };
+
+/** Each reason is a distinct, actionable state. `no_image_id` is the default. */
+type ImageFallbackReason = "no_image_id" | "image_not_found" | "image_digest_mismatch";
+
+const IMAGE_FALLBACK_NOTE: Record<ImageFallbackReason, string> = {
+  no_image_id:
+    "No imageId was given, so the dry-run simulated an EMPTY image. Real gas scales with the image bytes "
+    + "the launch writes on-chain and will be materially higher (measured: 4,534,423 gas for a 3.3 KB image). "
+    + "Pass imageId to price the staged bytes.",
+  image_not_found:
+    "That imageId is not in the Trench Photos locker, so the dry-run fell back to an EMPTY image and the gas "
+    + "figure EXCLUDES the image. Upload the image or name one already stored, then preview again.",
+  image_digest_mismatch:
+    "The locker's recorded digest does not match the bytes it returned, so those bytes were NOT priced and the "
+    + "dry-run fell back to an EMPTY image. Re-upload the image; a launch would refuse on the same mismatch.",
+};
 
 function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | string {
   const name = typeof p.name === "string" ? p.name.trim() : "";
@@ -100,7 +144,128 @@ function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | str
   const imageRead = readNumber(p, "imageByteLength", IMAGE_NUMERIC_PARAMS);
   if (!imageRead.ok) return imageRead.reason;
 
-  return { name, symbol, description, links, imageByteLength: imageRead.value };
+  const imageIdRaw = typeof p.imageId === "string" ? p.imageId.trim() : "";
+  if (p.imageId !== undefined && p.imageId !== null && imageIdRaw === "") {
+    return "imageId must be a non-empty locker image id.";
+  }
+
+  return {
+    name,
+    symbol,
+    description,
+    links,
+    imageByteLength: imageRead.value,
+    imageId: imageIdRaw === "" ? null : imageIdRaw,
+  };
+}
+
+/** The refusal shape `resolveImagePricing` returns instead of a silent degrade. */
+type ImagePricingOutcome = ImagePricing | { readonly kind: "refusal"; readonly reason: string };
+
+/**
+ * Resolve what the simulation should encode as the image.
+ *
+ * The three outcomes are deliberately NOT interchangeable:
+ *
+ *   - staged bytes resolved  -> price the real launch;
+ *   - the image is absent or its digest disagrees -> degrade to the empty sim,
+ *     LABELLED, because a preview is read-only and a labelled under-estimate is
+ *     more useful to the agent than no preview at all;
+ *   - the image STORE is not mounted -> REFUSE by name. That is an I/O failure,
+ *     not a fact about the image, and answering it with a silent empty-image
+ *     estimate would report a number as if the locker had been consulted.
+ */
+async function resolveImagePricing(validated: ValidatedLaunch): Promise<ImagePricingOutcome> {
+  if (validated.imageId === null) return { kind: "empty_fallback", reason: "no_image_id" };
+
+  let resolved: Awaited<ReturnType<typeof resolveLaunchImageBytes>>;
+  try {
+    resolved = await resolveLaunchImageBytes(validated.imageId);
+  } catch (err) {
+    if (err instanceof LaunchImageResolverUnavailableError) {
+      return { kind: "refusal", reason: err.message };
+    }
+    throw err;
+  }
+
+  if (resolved === null) return { kind: "empty_fallback", reason: "image_not_found" };
+  if (launchImageDigest(resolved.bytes) !== resolved.digest) {
+    return { kind: "empty_fallback", reason: "image_digest_mismatch" };
+  }
+
+  // Two sources for one fact. Preferring either one silently would hide an
+  // agent that is reasoning about a different image than the one it named.
+  if (validated.imageByteLength !== null && validated.imageByteLength !== resolved.bytes.length) {
+    return {
+      kind: "refusal",
+      reason:
+        `imageByteLength ${validated.imageByteLength} contradicts image "${validated.imageId}", whose stored `
+        + `bytes are ${resolved.bytes.length} long. Drop imageByteLength (imageId prices the real bytes) or `
+        + "name the image you actually mean.",
+    };
+  }
+
+  return { kind: "staged_bytes", bytes: resolved.bytes };
+}
+
+/** The calldata the dry-run simulates: the real create for staged bytes, the historical empty-image call otherwise. */
+function buildPreviewCalldata(validated: ValidatedLaunch, pricing: ImagePricing): Hex {
+  if (pricing.kind === "staged_bytes") {
+    return buildCreateCalldata({
+      name: validated.name,
+      symbol: validated.symbol,
+      description: validated.description,
+      links: validated.links,
+      imageBytes: pricing.bytes,
+      // The preview models a NO-PREBUY launch; that scope is stated in the
+      // response and is what `noPrebuyBalanceVerdict` is named after.
+      prebuyWei: 0n,
+    });
+  }
+  return encodeFunctionData({
+    abi: TRENCH_DIAMOND_ABI,
+    functionName: "create",
+    args: [validated.name, validated.symbol, validated.description, "0x", validated.links, "0x", 0, 0, 0n],
+  });
+}
+
+/**
+ * Can this wallet afford the launch this preview just priced?
+ *
+ * SCOPE IS THE WHOLE POINT (R8). `trench.launch_execute` ALWAYS requires an
+ * image, so an empty-image simulation cannot prove ANY real launch affordable —
+ * its gas figure is an order of magnitude low. Every `empty_fallback` path
+ * therefore answers `unpriced` and NEVER a shortfall, however large the balance
+ * is: a "sufficient" derived from an under-estimate is exactly the false comfort
+ * that sends an agent into an on-chain failure it already paid gas for.
+ */
+async function judgeNoPrebuyBalance(
+  publicClient: ReturnType<typeof getLocalPublicClient>,
+  walletAddress: Address,
+  pricing: ImagePricing,
+  totalCostWei: bigint,
+): Promise<Record<string, unknown>> {
+  if (pricing.kind !== "staged_bytes") return { noPrebuyBalanceVerdict: "unpriced" };
+
+  const balanceRead = await readNativeBalance(publicClient, walletAddress);
+  if (!balanceRead.ok) return { noPrebuyBalanceVerdict: "unpriced" };
+
+  if (balanceRead.balanceWei >= totalCostWei) {
+    return {
+      noPrebuyBalanceVerdict: "sufficient",
+      walletBalanceWei: balanceRead.balanceWei.toString(),
+      walletBalanceEth: formatEther(balanceRead.balanceWei),
+    };
+  }
+  // Exact wei, no tolerance and no percentage (rule 90).
+  const shortfallWei = totalCostWei - balanceRead.balanceWei;
+  return {
+    noPrebuyBalanceVerdict: "insufficient",
+    walletBalanceWei: balanceRead.balanceWei.toString(),
+    walletBalanceEth: formatEther(balanceRead.balanceWei),
+    noPrebuyShortfallWei: shortfallWei.toString(),
+    noPrebuyShortfallEth: formatEther(shortfallWei),
+  };
 }
 
 export async function trenchLaunchPreviewHandler(
@@ -148,8 +313,6 @@ export async function trenchLaunchPreviewHandler(
     feeNote:
       "Costs shown are for a launch with NO prebuy. A prebuy is added to msg.value and the Vex fee is 25 bps of "
       + "that whole ETH leg, so both rise with it.",
-    imageNote:
-      "Simulated with an EMPTY image — the real launch uploads image bytes on-chain and gas scales with image size (practical cap ~20 KB).",
   };
 
   // On-chain simulation needs a `from` with balance for the payable value.
@@ -173,13 +336,26 @@ export async function trenchLaunchPreviewHandler(
     return fail(`Robinhood Chain (${TRENCH_CHAIN_ID}) is not in the local chain registry.`);
   }
 
+  const pricing = await resolveImagePricing(validated);
+  if (pricing.kind === "refusal") return fail(pricing.reason);
+  const imageProvenance = pricing.kind === "staged_bytes"
+    ? {
+        imagePriced: "staged_bytes",
+        imageId: validated.imageId,
+        imageByteLengthPriced: pricing.bytes.length,
+        imageNote:
+          "Priced with the REAL staged image bytes, encoded exactly as the launch would encode them, so this gas "
+          + "figure is the launch's own. A prebuy is still not modelled.",
+      }
+    : {
+        imagePriced: "empty_fallback",
+        imagePricedFallbackReason: pricing.reason,
+        imageNote: IMAGE_FALLBACK_NOTE[pricing.reason],
+      };
+
   try {
     const publicClient = getLocalPublicClient(chainConfig);
-    const data = encodeFunctionData({
-      abi: TRENCH_DIAMOND_ABI,
-      functionName: "create",
-      args: [validated.name, validated.symbol, validated.description, "0x", validated.links, "0x", 0, 0, 0n],
-    });
+    const data = buildPreviewCalldata(validated, pricing);
 
     const sim = await publicClient.call({
       account: fromAddress as Hex,
@@ -212,14 +388,29 @@ export async function trenchLaunchPreviewHandler(
     const feeLegGasCostWei = vexFeeWei > 0n ? LAUNCH_FEE_LEG_GAS_LIMIT * gasPrice : 0n;
     const totalCostWei = costBeforeGasWei + gasCostWei + feeLegGasCostWei;
 
+    const balanceVerdict = await judgeNoPrebuyBalance(
+      publicClient,
+      fromAddress as Address,
+      pricing,
+      totalCostWei,
+    );
+
     return ok({
       ...base,
+      ...imageProvenance,
+      ...balanceVerdict,
       simulated: true,
       predictedTokenAddress: predictedToken,
       from: fromAddress,
       gasEstimate: gasEstimate.toString(),
       gasLimitWithHeadroom: gasLimit.toString(),
       gasPriceWei: gasPrice.toString(),
+      /**
+       * The gas PRICE twin. `gasEstimate` and `gasLimitWithHeadroom` above are
+       * gas UNITS, not wei, so they deliberately get no gwei twin — quoting one
+       * would invent a unit they do not have.
+       */
+      gasPriceGwei: formatWeiAsGwei(gasPrice),
       estimatedGasCostWei: gasCostWei.toString(),
       estimatedGasCostEth: formatEther(gasCostWei),
       feeLegGasLimit: LAUNCH_FEE_LEG_GAS_LIMIT.toString(),
@@ -231,8 +422,10 @@ export async function trenchLaunchPreviewHandler(
       estimatedTotalCostEth: formatEther(totalCostWei),
       note:
         "Read-only preview. Nothing was signed or broadcast; gas shown uses our safety headroom over a fresh estimate "
-        + "with an empty image. estimatedTotalCost = creation fee + Vex fee + gas for BOTH transactions (the launch "
-        + "and the separate fee transfer).",
+        + (pricing.kind === "staged_bytes" ? "with the staged image bytes. " : "with an EMPTY image. ")
+        + "estimatedTotalCost = creation fee + Vex fee + gas for BOTH transactions (the launch and the separate fee "
+        + "transfer). noPrebuyBalanceVerdict covers a NO-PREBUY launch only, and is 'unpriced' whenever the image was "
+        + "not priced, because a real launch always carries an image.",
     });
   } catch (err) {
     return fail(`Launch preview simulation failed (${trenchFailureDetail("trench.launch_preview", err)})`);

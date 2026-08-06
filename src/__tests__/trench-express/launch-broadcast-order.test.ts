@@ -364,6 +364,16 @@ describe("attribution never affects the launch", () => {
     });
   });
 
+  // U6 grounding: a token `create()` just minted is on its bonding curve BY
+  // DEFINITION. Leaving that unstated let the agent infer curve state from an
+  // absent field and describe a brand-new token as graduated or unknown.
+  it("grounds a fresh launch as on-curve, never graduated", async () => {
+    const result = await broadcastLaunch(input());
+    const data = result.data as { curveState: string; curveNote: string };
+    expect(data.curveState).toBe("bonding_curve");
+    expect(data.curveNote).toMatch(/has not graduated/i);
+  });
+
   it("still confirms the launch when the wallet refuses to sign, and posts nothing", async () => {
     mockSignMessage.mockRejectedValue(new Error("wallet is locked"));
 
