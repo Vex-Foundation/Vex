@@ -193,6 +193,9 @@ export type { ConfirmLaunchWithOutputIdentityInput } from "./agent-activity/laun
 export {
   confirmLaunchWithOutputIdentity,
   fillLaunchOutputIdentityOnConfirmed,
+  // The sweep's read of the lane's own durable verdict for a launch hash — the
+  // ONE way `sync/launch-identity-repair.ts` may reach this table.
+  findLaunchActivityTerminalByTxHash,
   stampLaunchOutputIdentityByTxHash,
 } from "./agent-activity/launch-lifecycle.js";
 

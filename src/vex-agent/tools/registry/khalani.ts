@@ -90,7 +90,7 @@ export function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSch
 
 function internalDescription(name: string, protocolDescription: string): string {
   if (name === "token_find") {
-    return "Resolve a token symbol/name to its exact on-chain contract address(es) + decimals per chain (the canonical EVM token resolver). Use BEFORE any swap or bridge.";
+    return "Resolve a token symbol/name to its exact on-chain contract address(es) + decimals per chain (the canonical EVM token resolver). Use BEFORE any swap or bridge. It covers KHALANI-REGISTERED CHAINS ONLY, and that set is dynamic - list it with `khalani.chains.list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener.search` (symbol to address lookup on the chain slug), `wallet_track_token` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `wallet_balances` (the tokens the wallet actually holds).";
   }
   return `${protocolDescription} Direct shortcut to ${KHALANI_INTERNAL_TO_PROTOCOL[name as KhalaniInternalToolName]}.`;
 }

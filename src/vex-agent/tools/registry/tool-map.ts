@@ -39,6 +39,9 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   { label: "Live state reads", toolNames: ["wallet_balances", "chain_read", "agent_scan"] },
   { label: "Local-chain token pinning (Robinhood — DB bookmark, no tx)", toolNames: ["wallet_track_token"] },
   { label: "Token resolution", toolNames: ["token_find"] },
+  // Sits with the reads because it is one: exact arithmetic the model must not
+  // do in its head (wei/gwei, raw/human, bps, USD).
+  { label: "Unit and fee math (exact, no rounding up)", toolNames: ["units_convert"] },
   {
     label: "Swap & bridge previews (read-only)",
     // `bridge_quote_relay` mirrors `swap_quote_uniswap`: a hidden, route-bound

@@ -45,6 +45,7 @@ import {
   launchChargeableWei,
   type AutonomousLaunchCeilings,
 } from "@vex-agent/engine/mission/launch-ceiling.js";
+import { formatWeiAsGwei } from "../../../amount-display.js";
 import { trenchErrorCategory, trenchFailureDetail } from "../failure.js";
 import { composeLaunchMsgValue, type LaunchAuthorizationBinding } from "./authorization.js";
 import type { PlanTrenchFeeLeg, TrenchFeeLegPlan } from "./fee-seam.js";
@@ -145,9 +146,19 @@ export interface LaunchPreviewDto {
   readonly msgValueWei: string;
   readonly vexFeeWei: string;
   readonly vexFeeCharged: boolean;
+  /** Gas UNITS. Unitless by definition, so it carries no unit twin. */
   readonly estimatedGasLimit: string;
   readonly estimatedGasPriceWei: string;
+  /**
+   * The gas PRICE in gwei, travelling ALONGSIDE the raw wei (rule 90: a raw
+   * amount must travel with the decimals needed to read it). A bare
+   * `estimatedGasPriceWei` of `"22518000"` reads as 22.5 gwei to anyone who
+   * skips the suffix; it is 0.0225. `null` only if the raw string is malformed.
+   */
+  readonly estimatedGasPriceGwei: string | null;
   readonly estimatedNetworkFeeWei: string;
+  /** The same network fee in ETH. A wei figure this large is unreadable raw. */
+  readonly estimatedNetworkFeeEth: string;
   readonly anchorBlockNumber: string;
   readonly predictedTokenAddress: string | null;
   readonly chainId: number;
@@ -353,10 +364,12 @@ export async function buildLaunchPlan(
         vexFeeCharged: vexFeeWei > 0n,
         estimatedGasLimit: gas.gasLimit.toString(),
         estimatedGasPriceWei: gas.gasPriceWei.toString(),
+        estimatedGasPriceGwei: formatWeiAsGwei(gas.gasPriceWei),
         // EVERY transaction this launch causes, as the shared schema promises:
         // the create's gas AND the fee leg's. Quoting only the create's understated
         // the network cost of a two-transaction action in the consent modal.
         estimatedNetworkFeeWei: (gas.networkFeeWei + feeLegGasWei).toString(),
+        estimatedNetworkFeeEth: formatEther(gas.networkFeeWei + feeLegGasWei),
         anchorBlockNumber: anchorBlockNumber.toString(),
         predictedTokenAddress: null,
         chainId: TRENCH_CHAIN_ID,
@@ -408,8 +421,16 @@ async function estimateLaunchGas(
   }
 }
 
-/** The wallet's native balance, or the named refusal for not being able to read it. */
-async function readNativeBalance(
+/**
+ * The wallet's native balance, or the named refusal for not being able to read
+ * it.
+ *
+ * Exported because `trench.launch_preview` prices the SAME wallet against the
+ * SAME chain for its no-prebuy affordability verdict. A second copy there would
+ * be a second place for the read (and its failure handling) to drift from the
+ * gate that actually refuses a launch.
+ */
+export async function readNativeBalance(
   publicClient: PublicClient<Transport, Chain>,
   walletAddress: Address,
 ): Promise<{ ok: true; balanceWei: bigint } | { ok: false; refusal: BuildLaunchPlanResult }> {

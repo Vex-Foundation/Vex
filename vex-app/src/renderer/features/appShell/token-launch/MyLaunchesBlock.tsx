@@ -123,12 +123,28 @@ function LaunchRow({ row }: { readonly row: LaunchedTokenDto }): JSX.Element {
           non-null address, and this branch is what proves it has one.
         */}
         {row.tokenAddress === null ? (
-          <span
-            className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
-            title="Broadcast — Vex is still checking whether this launch was included on-chain. No token address is proven yet."
-          >
-            in flight — no token address yet
-          </span>
+          row.lifecycle === "superseded_unproven" ? (
+            /*
+              TERMINAL, BUT NOT A FAILURE. Vex has STOPPED checking this hash, so
+              saying "in flight" here would promise a check that is no longer
+              running. It also may not say the launch failed, nor name a cause:
+              the intent records only that tracking stopped with the outcome
+              unproven. The token may exist.
+            */
+            <span
+              className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+              title="No longer tracked - Vex stopped checking this transaction and what actually happened was never established. The token may or may not exist; do not launch again without checking."
+            >
+              no longer tracked - outcome unproven
+            </span>
+          ) : (
+            <span
+              className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+              title="Broadcast — Vex is still checking whether this launch was included on-chain. No token address is proven yet."
+            >
+              in flight — no token address yet
+            </span>
+          )
         ) : (
           <AddressDisplay address={row.tokenAddress} />
         )}

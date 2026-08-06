@@ -39,8 +39,10 @@ describe("Jupiter fee-bearing disclosure preview (typed, unspoofable)", () => {
       { prequoteVerdict: "pass", feePreview: FEE_PREVIEW },
     );
     expect(preview.criticalArgs.feeDisclosure).toBe(
+      // U2: every lamport figure the HUMAN approves from now carries its SOL
+      // twin alongside it (rule 90). The lamport number stays exact and first.
       "Vex fee: 0.25% of the input (~0.0025 of the input token, raw 2500000), paid to treasury ATA TreasuryAta111111111111111111111111111111. "
-      + "Tip: 1000000 lamports. Priority-fee strategy: high (estimated ~200 lamports). Landing: self_managed_submit.",
+      + "Tip: 1000000 lamports (0.001 SOL). Priority-fee strategy: high (estimated ~200 lamports / 0.0000002 SOL). Landing: self_managed_submit.",
     );
   });
 
@@ -50,7 +52,9 @@ describe("Jupiter fee-bearing disclosure preview (typed, unspoofable)", () => {
       { inputToken: "SOL", outputToken: "USDC", amount: 1 },
       { prequoteVerdict: "pass", feePreview: { ...FEE_PREVIEW, feeAccountExists: false, ataRentLamports: 2_039_280 } },
     );
-    expect(preview.criticalArgs.feeDisclosure).toContain("(new account, ~2039280 lamports rent)");
+    expect(preview.criticalArgs.feeDisclosure).toContain(
+      "(new account, ~2039280 lamports / 0.00203928 SOL rent)",
+    );
   });
 
   it("IGNORES a model-supplied args.feeDisclosure (not in the allow-list)", () => {

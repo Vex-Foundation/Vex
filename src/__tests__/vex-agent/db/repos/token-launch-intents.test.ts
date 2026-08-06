@@ -373,6 +373,87 @@ describe("failWith — reachable only where something could actually fail", () =
   });
 });
 
+/**
+ * The client-bound writers take a real `PoolClient`. `fakeClient` is the
+ * established double in this file; typing it through the writer's own parameter
+ * keeps the new tests off the unsafe-escape ladder (`as never` / `!`) that the
+ * repo gate exists to stop growing.
+ */
+type LaunchWriterClient = Parameters<typeof repo.confirmWith>[0];
+
+function writerClient(rows: Record<string, unknown>[] = []) {
+  const client = fakeClient(rows);
+  return { client: client as LaunchWriterClient, spy: client };
+}
+
+describe("markSupersededUnprovenWith — mirroring the lane's verdict, not forming one", () => {
+  it("is fenced on session, status AND the exact hash the evidence is about", async () => {
+    const { client, spy } = writerClient([dbRow({ status: "superseded_unproven", tx_hash: TX_HASH })]);
+    await repo.markSupersededUnprovenWith(client, INTENT_ID, SESSION_ID, TX_HASH);
+    const sql = sqlOf(spy);
+    expect(sql).toContain("SET status = 'superseded_unproven'");
+    expect(sql).toContain("AND session_id = $2");
+    expect(sql).toContain("AND status = 'broadcast_pending'");
+    // The hash is in the PREDICATE: two rows that agree on session and intent id
+    // but not on hash are not the same broadcast.
+    expect(sql).toContain("AND tx_hash = $3");
+    expect(spy.query.mock.lastCall?.[1]).toEqual([INTENT_ID, SESSION_ID, TX_HASH]);
+  });
+
+  it("writes NO failure_reason — 'unproven' must never render as 'failed'", async () => {
+    const { client, spy } = writerClient([dbRow({ status: "superseded_unproven", tx_hash: TX_HASH })]);
+    const row = await repo.markSupersededUnprovenWith(client, INTENT_ID, SESSION_ID, TX_HASH);
+    // The SET clause alone — `failure_reason` is legitimately in RETURNING,
+    // because every writer here returns the whole row.
+    const setClause = sqlOf(spy).split(" WHERE ")[0] ?? "";
+    expect(setClause).not.toContain("failure_reason");
+    expect(row?.failureReason).toBeNull();
+  });
+
+  it("returns null on a CAS miss — never a silent success", async () => {
+    const { client } = writerClient([]);
+    expect(
+      await repo.markSupersededUnprovenWith(client, INTENT_ID, OTHER_SESSION, TX_HASH),
+    ).toBeNull();
+  });
+});
+
+describe("listUnsettledForWallets — every launch that was PAID FOR but proves no token", () => {
+  it("serves broadcast_pending AND superseded_unproven, and nothing else", async () => {
+    await repo.listUnsettledForWallets({
+      walletAddresses: [WALLET],
+      chainId: 4663,
+      limit: 25,
+    });
+    const lastCall = mockQuery.mock.lastCall;
+    expect(String(lastCall?.[0]).replace(/\s+/g, " ")).toContain("WHERE status = ANY($4::text[])");
+    // A terminalized superseded launch must not vanish from My Launches: it
+    // spent the user's gas and `launched_tokens` will never hold a row for it.
+    expect(lastCall?.[1]?.[3]).toEqual(["broadcast_pending", "superseded_unproven"]);
+  });
+
+  it("still excludes the pre-signature states — an abandoned form is not a launch", async () => {
+    await repo.listUnsettledForWallets({ walletAddresses: [WALLET], chainId: 4663, limit: 25 });
+    const statuses = mockQuery.mock.lastCall?.[1]?.[3];
+    // Never signed, never spent: listing one would turn an abandoned form into a
+    // launch the user appears to have made.
+    for (const notALaunch of ["awaiting_user_form", "authorized", "consuming"]) {
+      expect(statuses).not.toContain(notALaunch);
+    }
+    // And the states that prove a non-event or a proven token stay out too.
+    for (const settled of ["confirmed", "terminal_failure", "cancelled", "expired"]) {
+      expect(statuses).not.toContain(settled);
+    }
+  });
+
+  it("returns nothing for an empty wallet set rather than every launch in the table", async () => {
+    expect(
+      await repo.listUnsettledForWallets({ walletAddresses: [], chainId: 4663, limit: 25 }),
+    ).toEqual([]);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
 describe("cancel / expire — pre-authorization exits only", () => {
   it("cancel leaves only awaiting_user_form", async () => {
     const client = fakeClient([dbRow({ status: "cancelled" })]);

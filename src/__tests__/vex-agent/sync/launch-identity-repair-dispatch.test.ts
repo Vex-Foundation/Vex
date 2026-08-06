@@ -46,6 +46,10 @@ vi.mock("@vex-agent/db/repos/launched-tokens.js", () => ({
 }));
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   stampLaunchOutputIdentityByTxHash: (...a: unknown[]) => mockStampIdentity(...a),
+  // No sibling verdict: every row here falls through to the RPC classification
+  // this file is about. The durable-sibling mirror is pinned separately, in
+  // `launch-identity-repair-superseded.test.ts`.
+  findLaunchActivityTerminalByTxHash: async () => null,
 }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: async (_s: string, fn: (c: unknown) => Promise<unknown>) => fn({}),

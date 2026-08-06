@@ -1,5 +1,6 @@
 /**
- * D4 — THE THIRD ANSWER THE CHAIN CAN GIVE ABOUT A STAGED CREATE.
+ * D4 / U5 — THE THIRD ANSWER THE CHAIN CAN GIVE ABOUT A STAGED CREATE, AND WHAT
+ * FINALLY ENDS IT.
  *
  * The owner's live case: launch tx `0x09b84e…e955` was unknown to the RPC ~24 h
  * after broadcast. The sweep could only say `created`, `reverted`, or `null`, so
@@ -7,18 +8,22 @@
  * re-checked forever, explained never, and invisible in My Launches because
  * `launched_tokens` is written only on confirm.
  *
- * `superseded` is that missing answer. What it does and does not do:
+ * `superseded` was that missing answer, and the sweep DEFERRED on it — correctly,
+ * because the `superseded_unproven` transition on the sibling `agent_activity`
+ * row is claim-fenced and belongs to the pending lane. But nothing then carried
+ * the lane's verdict back to the INTENT, so the launch was stuck forever anyway.
  *
- * - It NEVER terminalizes here. The `superseded_unproven` transition is CLAIM
- *   FENCED (`markSupersededUnproven` requires the lane's `evm_claim_token`), and
- *   a launch's `agent_activity` row is already covered by the EVM pending lane —
- *   which holds that claim and owns both A6 clocks. Two writers for one terminal
- *   transition is precisely the stale-over-fresh race the fence exists to stop,
- *   so this sweep CLASSIFIES and the lane TERMINALIZES.
- * - It is therefore counted as STILL PENDING, not as a failure. Nothing here
- *   establishes that the launch did not happen: a replacement reusing the nonce
- *   may have carried the same calldata and created the token.
- * - It is logged ONCE per state, not once per poll — the runaway-loop lesson.
+ * This file pins both halves of the fix (owner approved changing the previous
+ * defer-forever pin):
+ *
+ * - FRESH `superseded` from the RPC still defers. Unchanged.
+ * - The lane's DURABLE verdict on the sibling row is consulted FIRST, before any
+ *   provider call, and mirrored onto the intent. That is what works with the RPC
+ *   completely unavailable, which is the state a superseded launch is usually
+ *   discovered in.
+ * - The sibling must be a `token_launch` row. `agent_activity.tx_hash` is
+ *   globally unique, so a hash match alone would let a swap's verdict terminalize
+ *   a launch.
  */
 
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -30,6 +35,8 @@ let mockConfirm: Mock;
 let mockFail: Mock;
 let mockRecord: Mock;
 let mockStampIdentity: Mock;
+let mockFindSibling: Mock;
+let mockMarkSuperseded: Mock;
 
 function reset(): void {
   pending = [];
@@ -37,6 +44,8 @@ function reset(): void {
   mockFail = vi.fn(async () => ({ intentId: "i1" }));
   mockRecord = vi.fn(async () => ({ inserted: true }));
   mockStampIdentity = vi.fn(async () => true);
+  mockFindSibling = vi.fn(async () => null);
+  mockMarkSuperseded = vi.fn(async () => ({ intentId: "i1" }));
 }
 reset();
 
@@ -44,12 +53,14 @@ vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
   claimBroadcastPendingForSweep: async () => pending,
   confirmWith: (...a: unknown[]) => mockConfirm(...a),
   failWith: (...a: unknown[]) => mockFail(...a),
+  markSupersededUnprovenWith: (...a: unknown[]) => mockMarkSuperseded(...a),
 }));
 vi.mock("@vex-agent/db/repos/launched-tokens.js", () => ({
   record: (...a: unknown[]) => mockRecord(...a),
 }));
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   stampLaunchOutputIdentityByTxHash: (...a: unknown[]) => mockStampIdentity(...a),
+  findLaunchActivityTerminalByTxHash: (...a: unknown[]) => mockFindSibling(...a),
 }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: async (_s: string, fn: (c: unknown) => Promise<unknown>) => fn({}),
@@ -70,6 +81,13 @@ const INTENT = {
   prebuyDecimals: 18,
 };
 
+/** The dependency a superseded launch is usually discovered WITHOUT. */
+const RPC_UNAVAILABLE = {
+  resolveLaunchOutcome: async (): Promise<never> => {
+    throw new Error("no provider reachable");
+  },
+};
+
 let warnSpy: ReturnType<typeof vi.spyOn>;
 let infoSpy: ReturnType<typeof vi.spyOn>;
 
@@ -80,7 +98,7 @@ beforeEach(() => {
   infoSpy = vi.spyOn(logger, "info").mockReturnThis();
 });
 
-describe("a launch hash no node can account for", () => {
+describe("a FRESH superseded classification from the chain", () => {
   it("is classified, not terminalized — and never counted as a failure", async () => {
     pending = [INTENT];
 
@@ -89,9 +107,17 @@ describe("a launch hash no node can account for", () => {
     });
 
     // Still pending: the A6 transition belongs to the claim-holding EVM lane.
-    expect(result).toMatchObject({ checked: 1, repaired: 0, indexed: 0, failed: 0, stillPending: 1 });
+    expect(result).toMatchObject({
+      checked: 1,
+      repaired: 0,
+      indexed: 0,
+      failed: 0,
+      supersededMirrored: 0,
+      stillPending: 1,
+    });
     expect(mockFail).not.toHaveBeenCalled();
     expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockMarkSuperseded).not.toHaveBeenCalled();
     // No identity row for a launch nothing proved.
     expect(mockRecord).not.toHaveBeenCalled();
   });
@@ -121,5 +147,108 @@ describe("a launch hash no node can account for", () => {
     const logged = JSON.stringify(infoSpy.mock.calls);
     expect(logged.toLowerCase()).not.toContain("safe to retry");
     expect(logged.toLowerCase()).not.toContain("nothing was spent");
+  });
+});
+
+describe("the lane's DURABLE verdict on the sibling activity row", () => {
+  it("terminalizes the intent WITHOUT any provider call — the sweep works offline", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue({ status: "superseded_unproven" });
+
+    const result = await repairLaunchIdentities(RPC_UNAVAILABLE);
+
+    expect(mockFindSibling).toHaveBeenCalledWith("0xhash");
+    expect(result).toMatchObject({ checked: 1, supersededMirrored: 1, stillPending: 0, failed: 0 });
+    // The CAS is session-scoped AND hash-scoped: the evidence is about ONE hash.
+    expect(mockMarkSuperseded).toHaveBeenCalledWith({}, "i1", "sess-1", "0xhash");
+    // Never a failure, never an identity.
+    expect(mockFail).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  it("is consulted BEFORE the RPC, so a superseded launch costs no provider call", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue({ status: "superseded_unproven" });
+    const resolveLaunchOutcome = vi.fn(async () => null);
+
+    await repairLaunchIdentities({ resolveLaunchOutcome });
+
+    expect(resolveLaunchOutcome).not.toHaveBeenCalled();
+  });
+
+  it("says what is known and refuses to license a relaunch", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue({ status: "superseded_unproven" });
+
+    await repairLaunchIdentities(RPC_UNAVAILABLE);
+
+    const calls = infoSpy.mock.calls.filter(
+      (call: readonly unknown[]) =>
+        call[0] === "trench.launch_identity_repair.superseded_mirrored",
+    );
+    expect(calls).toHaveLength(1);
+    const logged = JSON.stringify(calls).toLowerCase();
+    expect(logged).toContain("not a failure");
+    expect(logged).not.toContain("safe to retry");
+    expect(logged).not.toContain("nothing was spent");
+  });
+
+  it("counts a CAS miss as still pending, never as a mirror that happened", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue({ status: "superseded_unproven" });
+    mockMarkSuperseded.mockResolvedValue(null);
+
+    const result = await repairLaunchIdentities(RPC_UNAVAILABLE);
+
+    expect(result).toMatchObject({ checked: 1, supersededMirrored: 0, stillPending: 1 });
+  });
+
+  it("ignores a sibling that is still pending and falls through to the RPC", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue({ status: "pending" });
+    const resolveLaunchOutcome = vi.fn(async () => null);
+
+    const result = await repairLaunchIdentities({ resolveLaunchOutcome });
+
+    expect(mockMarkSuperseded).not.toHaveBeenCalled();
+    expect(resolveLaunchOutcome).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ supersededMirrored: 0, stillPending: 1 });
+  });
+
+  it("defers when there is NO sibling row at all", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue(null);
+    const resolveLaunchOutcome = vi.fn(async () => null);
+
+    const result = await repairLaunchIdentities({ resolveLaunchOutcome });
+
+    expect(mockMarkSuperseded).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ supersededMirrored: 0, stillPending: 1 });
+  });
+
+  it("contains a sibling lookup failure instead of aborting the sweep", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockRejectedValue(new Error("db down"));
+    const resolveLaunchOutcome = vi.fn(async () => null);
+
+    const result = await repairLaunchIdentities({ resolveLaunchOutcome });
+
+    expect(mockMarkSuperseded).not.toHaveBeenCalled();
+    expect(resolveLaunchOutcome).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ checked: 1, stillPending: 1 });
+  });
+
+  it("still confirms a launch whose sibling is confirmed and whose receipt decodes", async () => {
+    pending = [INTENT];
+    mockFindSibling.mockResolvedValue({ status: "confirmed" });
+
+    const result = await repairLaunchIdentities({
+      resolveLaunchOutcome: async () => ({
+        kind: "created" as const,
+        identity: { tokenAddress: "0xtoken" },
+      }),
+    });
+
+    expect(result).toMatchObject({ repaired: 1, supersededMirrored: 0, stillPending: 0 });
   });
 });

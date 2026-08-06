@@ -27,6 +27,7 @@ import { resolveInjectedProtocolTool } from "../../tools/registry/injected-proto
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
+import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
 import { describeApprovalVexFee } from "./approval-vex-fee.js";
 
 /**
@@ -334,11 +335,16 @@ export function buildIntentPreview(
     const fp = extras.feePreview;
     const rentNote = fp.feeAccountExists
       ? ""
-      : ` (new account, ~${fp.ataRentLamports ?? "?"} lamports rent)`;
+      : ` (new account, ~${fp.ataRentLamports ?? "?"} lamports / ${formatLamportsAsSol(fp.ataRentLamports) ?? "?"} SOL rent)`;
     criticalArgs.feeDisclosure =
       `Vex fee: ${fp.feeBps / 100}% of the input (~${fp.feeAmountDecimal} of the input token, raw ${fp.feeAmountRaw}), `
       + `paid to treasury ATA ${fp.feeAccount}${rentNote}. `
-      + `Tip: ${fp.tipLamports} lamports. Priority-fee strategy: ${fp.priorityFeeStrategy} `
+      // Rule 90: a raw amount travels with what is needed to read it. A bare
+      // lamport figure in the disclosure the HUMAN approves from is exactly the
+      // thousandfold misread that rule names, so SOL travels alongside it —
+      // never instead of it, since the lamport figure is the exact one.
+      + `Tip: ${fp.tipLamports} lamports (${formatLamportsAsSol(fp.tipLamports) ?? "?"} SOL). `
+      + `Priority-fee strategy: ${fp.priorityFeeStrategy} `
       // When the /build response carried a CU price WITHOUT a CU limit, the
       // denominator is the budget SIMD-0170 grants the transaction. Do NOT
       // relabel this an UPPER BOUND (it was, until 2026-07-25, when the
@@ -346,8 +352,8 @@ export function buildIntentPreview(
       // fee on the granted budget, so the number is what the swap costs — the
       // only thing worth disclosing is where the limit came from.
       + (fp.priorityFeeIsUpperBound
-        ? `(~${fp.priorityFeeLamportsEstimate} lamports at the default compute budget — response set no compute-unit limit). `
-        : `(estimated ~${fp.priorityFeeLamportsEstimate} lamports). `)
+        ? `(~${fp.priorityFeeLamportsEstimate} lamports / ${formatLamportsAsSol(fp.priorityFeeLamportsEstimate) ?? "?"} SOL at the default compute budget — response set no compute-unit limit). `
+        : `(estimated ~${fp.priorityFeeLamportsEstimate} lamports / ${formatLamportsAsSol(fp.priorityFeeLamportsEstimate) ?? "?"} SOL). `)
       + `Landing: ${fp.landingMode}.`;
   }
 

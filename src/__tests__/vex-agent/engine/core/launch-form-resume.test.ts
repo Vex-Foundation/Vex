@@ -350,6 +350,49 @@ describe("dismissal and expiry resume honestly instead of hanging", () => {
     expect(output).not.toContain("null");
   });
 
+  /**
+   * U5's crash window. The identity sweep mirrors the lane's
+   * `superseded_unproven` verdict onto the intent and the process dies before
+   * the parked turn is woken; the expiry sweep is then the only thing left to
+   * answer it, and it used to answer "expired" — a false statement about a
+   * launch that WAS signed and DID spend gas.
+   */
+  it("a SUPERSEDED launch is neither expired, nor failed, nor deployed", async () => {
+    await resumeAgentAfterUserForm({
+      intentId: INTENT_ID,
+      sessionId: SESSION_ID,
+      outcome: { kind: "superseded_unproven", txHash: "0x09b84e" },
+    });
+    const result = onlyCommitted();
+    const output = String(result.output);
+    expect(result.success).toBe(false);
+    expect(output).toContain("0x09b84e");
+    expect(output).toContain("no longer tracked");
+    expect(output).toContain("MAY exist");
+    // Regression (Codex final review 2026-08-05): the lane reaches
+    // `superseded_unproven` from EITHER a proven nonce supersession OR a
+    // transaction unknown to the node, and the intent does not record which.
+    // The copy must therefore never assert a cause - not a replacement, not a
+    // network drop, nothing the intent did not persist.
+    expect(output).not.toMatch(/replaced|dropped/i);
+    // Not "expired" (nothing signed), not "deployed" (nothing proved), and not
+    // "No token was created" (the one sentence the evidence rules out).
+    expect(output).not.toBe(userFormDismissalOutput("expired"));
+    expect(output).not.toMatch(/deployed|No token was created/i);
+  });
+
+  it("a superseded launch forbids a blind relaunch and promises no auto-resolution", async () => {
+    await resumeAgentAfterUserForm({
+      intentId: INTENT_ID,
+      sessionId: SESSION_ID,
+      outcome: { kind: "superseded_unproven", txHash: "0x09b84e" },
+    });
+    const output = String(onlyCommitted().output);
+    expect(output).toContain("DO NOT launch again");
+    // The `unconfirmed` arm's promise would be a lie here: nothing is checking.
+    expect(output).not.toContain("will resolve automatically");
+  });
+
   it("a failed launch tells the model nothing was created", async () => {
     await resumeAgentAfterUserForm({
       intentId: INTENT_ID,

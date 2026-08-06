@@ -197,6 +197,10 @@ export const launchedTokenDtoSchema = z
      * merged in from `token_launch_intents` (OD-3). Before this, such a launch
      * was invisible: the identity index is written only on confirm, so a user
      * who had just paid for a launch saw nothing at all.
+     * `superseded_unproven` — the same paid-for launch, now TERMINAL: Vex no
+     * longer tracks its hash and the outcome was never established. It is not
+     * a failure and not a confirmation, and it stays listed precisely because
+     * dropping it would repeat the disappearance above.
      *
      * A BOUNDED OPEN STRING, per the tolerant-reader law: a future lifecycle
      * must not blank the list on an older renderer.

@@ -52,7 +52,10 @@ import {
   type UserFormContinuationCloseReason,
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import { isSessionResumable } from "@vex-agent/db/repos/sessions.js";
-import { resumeAgentAfterUserForm } from "@vex-agent/engine/core/launch-form-resume.js";
+import {
+  resumeAgentAfterUserForm,
+  type LaunchFormOutcome,
+} from "@vex-agent/engine/core/launch-form-resume.js";
 import {
   describeFailureForLog,
   summarizeProtocolError,
@@ -201,6 +204,30 @@ async function deliverOutstandingContinuations(): Promise<{
 type ParkedTurnOutcome = "resumed" | "nothing_parked" | "failed" | "closed";
 
 /**
+ * What to TELL the model about a form the sweep is answering on the recovery
+ * path, read off the intent's own status.
+ *
+ * `expired` is the ordinary answer and remains the default: a form whose window
+ * lapsed with nothing signed. It was ALSO the answer for a
+ * `superseded_unproven` intent, and that was a false statement about the user's
+ * money — the launch WAS signed, gas WAS spent, and the token may exist. The
+ * crash window is real: the identity sweep can mirror the terminal status and
+ * the process can die before the parked turn is woken, at which point this sweep
+ * is the only thing left to answer it.
+ *
+ * The hash is required by migration 072 on that status, so the fallback here is
+ * belt-and-braces rather than a case that should occur; a superseded intent
+ * somehow without one is answered `expired` rather than with a sentence naming
+ * a transaction that is not there.
+ */
+function recoveryOutcomeFor(intent: TokenLaunchIntent): LaunchFormOutcome {
+  if (intent.status === "superseded_unproven" && intent.txHash !== null) {
+    return { kind: "superseded_unproven", txHash: intent.txHash };
+  }
+  return { kind: "expired" };
+}
+
+/**
  * Wake the parked turn, or report why not.
  *
  * `no_parked_call` is NOT a failure: a user-started launch has no pending tool
@@ -230,7 +257,7 @@ async function resumeParkedTurn(intent: TokenLaunchIntent): Promise<ParkedTurnOu
     const result = await resumeAgentAfterUserForm({
       intentId,
       sessionId,
-      outcome: { kind: "expired" },
+      outcome: recoveryOutcomeFor(intent),
     });
     if (result.resumed) {
       forgetContinuation(intentId);

@@ -69,7 +69,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     toolId: "khalani.tokens.search",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `token_find`, the canonical token resolver — prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `token_find` is not enough. Use either before any EVM mutation to get exact contract addresses.",
+    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `token_find`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `token_find` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani.chains.list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener.search` (symbol to address lookup on the chain slug), `wallet_track_token` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `wallet_balances` (the tokens the wallet actually holds).",
     mutating: false,
     actionKind: "read",
     params: [

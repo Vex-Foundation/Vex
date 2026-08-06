@@ -175,6 +175,47 @@ describe("the durable floor delivers continuations the resume could not", () => 
     expect(result.recoveryFailures).toBe(0);
   });
 
+  /**
+   * U5's crash window: the identity sweep terminalized this intent
+   * `superseded_unproven` and the process died before the parked turn was woken.
+   * This sweep is the only thing left to answer it, and "expired" would tell the
+   * agent nothing was signed about a launch that spent the user's gas.
+   */
+  it("answers a SUPERSEDED intent truthfully instead of calling it expired", async () => {
+    outstanding = [
+      {
+        intentId: "superseded-1",
+        sessionId: "s-1",
+        status: "superseded_unproven",
+        txHash: "0x09b84e",
+      },
+    ];
+
+    await expireOverdueLaunchForms();
+
+    expect(mockResume).toHaveBeenCalledWith({
+      intentId: "superseded-1",
+      sessionId: "s-1",
+      outcome: { kind: "superseded_unproven", txHash: "0x09b84e" },
+    });
+  });
+
+  it("falls back to expired for a superseded row with no hash rather than naming a missing one", async () => {
+    // Migration 072 makes this unwritable; the fallback exists so a sentence can
+    // never name a transaction that is not there.
+    outstanding = [
+      { intentId: "hashless", sessionId: "s-1", status: "superseded_unproven", txHash: null },
+    ];
+
+    await expireOverdueLaunchForms();
+
+    expect(mockResume).toHaveBeenCalledWith({
+      intentId: "hashless",
+      sessionId: "s-1",
+      outcome: { kind: "expired" },
+    });
+  });
+
   it("counts a still-busy session as a recovery failure, not a delivery", async () => {
     outstanding = [{ intentId: "busy-1", sessionId: "s-1" }];
     mockResume = vi.fn(async () => ({ resumed: false, reason: "busy" }));

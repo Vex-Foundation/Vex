@@ -40,6 +40,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // protocol tools remain reachable via discover_tools + execute_tool)
   token_find: async () => (await import("../internal/khalani.js")).handleTokenFind,
 
+  // Deterministic money math — no provider, no wallet, always available
+  units_convert: async () => (await import("../internal/units-convert.js")).handleUnitsConvert,
+
   // Action-named read-only aliases (Stage 8a) — quote/preview/status routers
   swap_quote: async () => (await import("../internal/action-aliases.js")).handleSwapQuote,
   // Hidden Uniswap fallback quote (Agent Scan plan §11.2) — session-scoped

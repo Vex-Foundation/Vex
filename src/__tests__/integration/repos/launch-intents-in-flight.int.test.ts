@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { execute, getPool, queryOne } from "@vex-agent/db/client.js";
 import {
   createWith,
-  listInFlightForWallets,
+  listUnsettledForWallets,
 } from "@vex-agent/db/repos/token-launch-intents.js";
 
 const CHAIN_ID = 4663;
@@ -98,7 +98,7 @@ async function seedIntent(input: {
 }
 
 async function inFlightIds(wallets: readonly string[]): Promise<string[]> {
-  const rows = await listInFlightForWallets({
+  const rows = await listUnsettledForWallets({
     walletAddresses: wallets,
     chainId: CHAIN_ID,
     limit: 25,
@@ -136,7 +136,7 @@ describe("in-flight launches for a wallet set", () => {
   it("carries the prebuy WITH its decimals, or neither", async () => {
     await seedIntent({ walletAddress: WALLET, broadcast: true, prebuyRaw: "300000000000000" });
 
-    const [row] = await listInFlightForWallets({
+    const [row] = await listUnsettledForWallets({
       walletAddresses: [WALLET],
       chainId: CHAIN_ID,
       limit: 25,
@@ -150,5 +150,41 @@ describe("in-flight launches for a wallet set", () => {
     await seedIntent({ walletAddress: WALLET, broadcast: true });
 
     expect(await inFlightIds([])).toEqual([]);
+  });
+});
+
+/**
+ * Migration 072 against a real Postgres — the half a mocked client cannot check.
+ */
+describe("the superseded_unproven terminal status", () => {
+  it("keeps a terminalized launch VISIBLE — the read is the only place it lives", async () => {
+    const intentId = await seedIntent({ walletAddress: WALLET, broadcast: true });
+    await execute(
+      "UPDATE token_launch_intents SET status = 'superseded_unproven' WHERE intent_id = $1",
+      [intentId],
+    );
+
+    expect(await inFlightIds([WALLET])).toContain(intentId);
+  });
+
+  it("is REJECTED by the database without a tx hash — the hash is the whole evidence", async () => {
+    const intentId = await seedIntent({ walletAddress: WALLET, broadcast: false });
+
+    await expect(
+      execute(
+        "UPDATE token_launch_intents SET status = 'superseded_unproven' WHERE intent_id = $1",
+        [intentId],
+      ),
+    ).rejects.toThrow(/token_launch_intents_superseded_has_hash/);
+  });
+
+  it("still excludes the states that prove a non-event", async () => {
+    const intentId = await seedIntent({ walletAddress: WALLET, broadcast: true });
+    await execute(
+      "UPDATE token_launch_intents SET status = 'terminal_failure' WHERE intent_id = $1",
+      [intentId],
+    );
+
+    expect(await inFlightIds([WALLET])).not.toContain(intentId);
   });
 });

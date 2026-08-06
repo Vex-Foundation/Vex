@@ -113,15 +113,20 @@ export {
   expireIfAwaitingWith,
   failWith,
   markBroadcastPendingWith,
+  // Mirror the pending lane's `superseded_unproven` verdict onto the intent, so
+  // a launch whose hash is no longer tracked can leave `broadcast_pending`.
+  markSupersededUnprovenWith,
   stampResultMessageWith,
 } from "./token-launch-intents/writers.js";
 
 export {
   getAwaitingForSession,
   getById,
-  // IN-FLIGHT launches for a wallet set — what "My Launches" needs to show a
-  // launch that has been paid for but whose token identity is not proven yet.
-  listInFlightForWallets,
+  // UNSETTLED launches for a wallet set — what "My Launches" needs to show a
+  // launch that has been paid for but whose token identity is not proven yet,
+  // whether it is still being checked or is no longer tracked with its
+  // outcome unproven.
+  listUnsettledForWallets,
   listOutstandingUserFormResumes,
   listOverdueAwaitingForms,
 } from "./token-launch-intents/reads.js";

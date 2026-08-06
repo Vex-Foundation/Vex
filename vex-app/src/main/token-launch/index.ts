@@ -21,7 +21,7 @@ import { formatEther } from "viem";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import {
   getAwaitingForSession,
-  listInFlightForWallets,
+  listUnsettledForWallets,
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import type {
   AwaitingLaunchFormDto,
@@ -128,19 +128,25 @@ export async function previewLaunch(input: {
 }
 
 /**
- * The user's own launches — PROVEN and IN-FLIGHT, merged (OD-3).
+ * The user's own launches — PROVEN and UNSETTLED, merged (OD-3).
  *
  * WHY THE MERGE EXISTS. `launched_tokens` is written only once a token identity
  * is proven, so a launch that was broadcast and then stalled appeared NOWHERE:
  * the owner watched a launch he had paid for vanish from his own list, with
- * nothing to tell him why. The in-flight half comes from the intent table, which
+ * nothing to tell him why. The unsettled half comes from the intent table, which
  * has the name and symbol he typed and the hash he can look up.
+ *
+ * UNSETTLED IS TWO THINGS, and the merge keeps them apart. `broadcast_pending`
+ * is still being checked; `superseded_unproven` is terminal but proves nothing
+ * (migration 072). Both spent real gas with no token to show, so both stay
+ * listed — terminalizing the second one without listing it would have made a
+ * paid-for launch disappear all over again, which is the whole defect above.
  *
  * IT IS A READ-SIDE MERGE, AND ONLY THAT. No `launched_tokens` row is ever
  * written for an unproven launch — that table is the durable identity index, and
  * a token that may not exist must never enter it.
  *
- * IN-FLIGHT ROWS COME FIRST: they are the ones the user is waiting on, and the
+ * UNSETTLED ROWS COME FIRST: they are the ones the user is waiting on, and the
  * proven ones are already history.
  *
  * `initialBuyRaw` and `initialBuyDecimals` travel TOGETHER and are null together
@@ -152,17 +158,20 @@ export async function listMyLaunches(
   chainId: number,
   limit: number,
 ): Promise<LaunchedTokenDto[]> {
-  const [proven, inFlight] = await Promise.all([
+  const [proven, unsettled] = await Promise.all([
     launchedTokens.listForWallets({ walletAddresses, chainId, limit }),
-    listInFlightForWallets({ walletAddresses, chainId, limit }),
+    listUnsettledForWallets({ walletAddresses, chainId, limit }),
   ]);
 
-  const inFlightRows: LaunchedTokenDto[] = inFlight
+  const unsettledRows: LaunchedTokenDto[] = unsettled
     // A launch with no hash was never broadcast: there is nothing to show and
     // nothing to look up, and listing it would invent a launch that never left.
     .filter((intent) => intent.txHash !== null)
     .map((intent) => ({
-      lifecycle: "in_flight",
+      // The row's OWN status decides, never a default. A superseded launch
+      // rendered as "in flight" would tell the user Vex is still checking a
+      // hash it has already stopped checking.
+      lifecycle: intent.status === "superseded_unproven" ? "superseded_unproven" : "in_flight",
       // NULL, never "": the row must be structurally unable to render as a token.
       tokenAddress: null,
       name: intent.name,
@@ -188,7 +197,7 @@ export async function listMyLaunches(
     initialBuyDecimals: row.initialBuyRaw === null ? null : row.initialBuyDecimals,
   }));
 
-  return [...inFlightRows, ...provenRows].slice(0, limit);
+  return [...unsettledRows, ...provenRows].slice(0, limit);
 }
 
 /**

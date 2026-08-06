@@ -99,11 +99,20 @@ describe("enforceLaunchCountCeiling", () => {
       "broadcast_pending",
       "confirmed",
       "consuming",
+      "superseded_unproven",
     ]);
     // cancelled / expired never spent; terminal_failure minted no token.
     expect(LAUNCH_COUNT_CEILING_STATUSES).not.toContain("cancelled");
     expect(LAUNCH_COUNT_CEILING_STATUSES).not.toContain("expired");
     expect(LAUNCH_COUNT_CEILING_STATUSES).not.toContain("terminal_failure");
+  });
+
+  it("KEEPS counting a superseded_unproven launch — the cap does not free on an unproven outcome", () => {
+    // Terminal, but not a proven non-event: the replacement that consumed the
+    // nonce may have minted the token. Freeing the slot would let a mission
+    // exceed the owner's cap on an outcome nobody checked.
+    expect(LAUNCH_COUNT_CEILING_STATUSES).toContain("superseded_unproven");
+    expect(enforceLaunchCountCeiling({ maxLaunchCount: 1 }, 1).ok).toBe(false);
   });
 });
 

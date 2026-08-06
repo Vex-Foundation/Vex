@@ -415,6 +415,16 @@ async function finalizeConfirmedLaunch(
     prebuyDecimals: PREBUY_DECIMALS,
     prebuyTokensOutRaw: decoded.prebuyTokensOutRaw?.toString() ?? null,
     vexFee,
+    /**
+     * Grounding (U6), not a reading: a token that `create()` just minted is on
+     * its bonding curve BY DEFINITION — graduation is a later, separate event.
+     * Stating it here stops the agent inferring curve state from the absence of
+     * a field and calling a fresh token "graduated" or "unknown".
+     */
+    curveState: "bonding_curve",
+    curveNote:
+      "Freshly created, so this token trades on its Trench bonding curve. It has not graduated to a DEX; "
+      + "graduation happens later, once the curve fills.",
     status: "confirmed",
     _executionId: executionId,
   };

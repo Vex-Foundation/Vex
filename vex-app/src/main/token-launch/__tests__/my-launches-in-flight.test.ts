@@ -25,13 +25,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const mockListLaunched = vi.fn();
-const mockListInFlight = vi.fn();
+const mockListUnsettled = vi.fn();
 
 vi.mock("@vex-agent/db/repos/launched-tokens.js", () => ({
   listForWallets: (...a: unknown[]) => mockListLaunched(...a),
 }));
 vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
-  listInFlightForWallets: (...a: unknown[]) => mockListInFlight(...a),
+  listUnsettledForWallets: (...a: unknown[]) => mockListUnsettled(...a),
   getAwaitingForSession: vi.fn(),
 }));
 
@@ -56,6 +56,7 @@ const IN_FLIGHT_INTENT = {
   intentId: "i-1",
   name: "Waiting",
   symbol: "WAIT",
+  status: "broadcast_pending",
   txHash: "0xpending",
   chainId: CHAIN_ID,
   walletAddress: WALLET,
@@ -68,12 +69,12 @@ const IN_FLIGHT_INTENT = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockListLaunched.mockResolvedValue([CONFIRMED_ROW]);
-  mockListInFlight.mockResolvedValue([]);
+  mockListUnsettled.mockResolvedValue([]);
 });
 
 describe("an in-flight launch appears in My Launches", () => {
   it("surfaces it with NO token address, as its own lifecycle", async () => {
-    mockListInFlight.mockResolvedValue([IN_FLIGHT_INTENT]);
+    mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
     const inFlight = launches.find((row) => row.createTxHash === "0xpending");
@@ -86,7 +87,7 @@ describe("an in-flight launch appears in My Launches", () => {
   });
 
   it("puts in-flight launches AHEAD of confirmed ones — the newest news first", async () => {
-    mockListInFlight.mockResolvedValue([IN_FLIGHT_INTENT]);
+    mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
 
@@ -95,7 +96,7 @@ describe("an in-flight launch appears in My Launches", () => {
   });
 
   it("shows only the AUTHORIZED prebuy — nothing was decoded, so nothing else is claimed", async () => {
-    mockListInFlight.mockResolvedValue([IN_FLIGHT_INTENT]);
+    mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const [inFlight] = await listMyLaunches([WALLET], CHAIN_ID, 25);
 
@@ -105,7 +106,7 @@ describe("an in-flight launch appears in My Launches", () => {
   });
 
   it("pairs a null prebuy with null decimals — never a bare raw or a lone scale", async () => {
-    mockListInFlight.mockResolvedValue([
+    mockListUnsettled.mockResolvedValue([
       { ...IN_FLIGHT_INTENT, prebuyRaw: null, prebuyDecimals: 18 },
     ]);
 
@@ -116,12 +117,65 @@ describe("an in-flight launch appears in My Launches", () => {
   });
 
   it("never invents a row for a launch with no tx hash — nothing was broadcast", async () => {
-    mockListInFlight.mockResolvedValue([{ ...IN_FLIGHT_INTENT, txHash: null }]);
+    mockListUnsettled.mockResolvedValue([{ ...IN_FLIGHT_INTENT, txHash: null }]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
 
     expect(launches.every((row) => row.createTxHash !== null)).toBe(true);
     expect(launches).toHaveLength(1);
+  });
+});
+
+/**
+ * U5 / P2. Terminalizing a stuck launch `superseded_unproven` (migration 072)
+ * takes it out of `broadcast_pending`, and `launched_tokens` will NEVER hold a
+ * row for it. Without this merge arm the row would disappear the moment Vex
+ * stopped checking it — repeating, exactly, the disappearance OD-3 exists to
+ * prevent, and this time permanently.
+ */
+describe("a superseded launch stays listed, under its own lifecycle", () => {
+  const SUPERSEDED_INTENT = {
+    ...IN_FLIGHT_INTENT,
+    intentId: "i-2",
+    status: "superseded_unproven",
+    txHash: "0xsuperseded",
+    name: "Replaced",
+    symbol: "RPL",
+  };
+
+  it("is listed, with no token address and NOT as in-flight", async () => {
+    mockListUnsettled.mockResolvedValue([SUPERSEDED_INTENT]);
+
+    const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
+    const row = launches.find((entry) => entry.createTxHash === "0xsuperseded");
+
+    expect(row).toBeDefined();
+    expect(row?.tokenAddress).toBeNull();
+    // Saying "in_flight" would promise a check that is no longer running.
+    expect(row?.lifecycle).toBe("superseded_unproven");
+    expect(row).toMatchObject({ name: "Replaced", symbol: "RPL" });
+  });
+
+  it("does not disturb the in-flight row beside it", async () => {
+    mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT, SUPERSEDED_INTENT]);
+
+    const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
+
+    expect(launches.map((row) => row.lifecycle)).toEqual([
+      "in_flight",
+      "superseded_unproven",
+      "launched",
+    ]);
+  });
+
+  it("still parses against the strict DTO", async () => {
+    mockListUnsettled.mockResolvedValue([SUPERSEDED_INTENT]);
+
+    const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
+
+    for (const row of launches) {
+      expect(launchedTokenDtoSchema.safeParse(row).success).toBe(true);
+    }
   });
 });
 
@@ -138,7 +192,7 @@ describe("a proven launch is unchanged", () => {
 
 describe("the strict DTO carries every merged row", () => {
   it("parses BOTH shapes — a drifted field would drop the whole payload", async () => {
-    mockListInFlight.mockResolvedValue([IN_FLIGHT_INTENT]);
+    mockListUnsettled.mockResolvedValue([IN_FLIGHT_INTENT]);
 
     const launches = await listMyLaunches([WALLET], CHAIN_ID, 25);
 

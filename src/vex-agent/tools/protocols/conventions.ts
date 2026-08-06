@@ -86,6 +86,10 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["page", "1-based FIRST provider page of a windowed read; the reply names the next page to continue from"],
   ["pageSize", "rows fetched per provider page; distinct from `limit`, which caps what is RETURNED after filtering"],
   ["dryRun", "preview switch, reserved by runtime/params.ts"],
+  [
+    "imageId",
+    "opaque id of an image already in the user's locker; the agent can never create one, only name one a read tool listed",
+  ],
 ]);
 
 /**
