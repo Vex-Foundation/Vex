@@ -53,7 +53,8 @@ import {
   LaunchImageResolverUnavailableError,
   resolveLaunchImageBytes,
 } from "../launch-image-byte-resolver.js";
-import { launchImageDigest } from "./launch/authorization.js";
+import { launchImageDigestMatches } from "./launch/authorization.js";
+import { rejectForbiddenTokenMetadataText } from "../../../../../lib/token-metadata-text-policy.js";
 import { LAUNCH_FEE_LEG_GAS_LIMIT, readNativeBalance } from "./launch/plan.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import { ok, fail } from "../../handler-helpers.js";
@@ -121,6 +122,14 @@ const IMAGE_FALLBACK_NOTE: Record<ImageFallbackReason, string> = {
 };
 
 function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | string {
+  // The on-chain metadata policy is SHARED with the execution path, so a text
+  // this preview accepts is exactly a text a launch would accept. Raw values,
+  // before any trim and before the scheme check (see `lib/token-metadata-text-policy.ts`).
+  for (const field of ["name", "symbol", "description", "links"] as const) {
+    const refusal = rejectForbiddenTokenMetadataText(field, p[field]);
+    if (refusal) return refusal;
+  }
+
   const name = typeof p.name === "string" ? p.name.trim() : "";
   if (!name) return "Missing required: name.";
   if (name.length > NAME_MAX) return `name must be at most ${NAME_MAX} characters.`;
@@ -189,7 +198,7 @@ async function resolveImagePricing(validated: ValidatedLaunch): Promise<ImagePri
   }
 
   if (resolved === null) return { kind: "empty_fallback", reason: "image_not_found" };
-  if (launchImageDigest(resolved.bytes) !== resolved.digest) {
+  if (!launchImageDigestMatches(resolved.bytes, resolved.digest)) {
     return { kind: "empty_fallback", reason: "image_digest_mismatch" };
   }
 

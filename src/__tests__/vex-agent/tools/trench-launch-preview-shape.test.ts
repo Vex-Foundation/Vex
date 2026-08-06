@@ -63,8 +63,19 @@ function mockClient(over: { balanceWei?: bigint; failBalance?: boolean } = {}): 
 /** 3.3 KB of bytes, the live probe's image size. */
 const IMAGE_BYTES = new Uint8Array(3_300).fill(7);
 
+/**
+ * The digest is spelled the way the REAL locker spells it: node's `createHash`
+ * output, BARE hex with no `0x`. Defaulting to this side's `0x`-prefixed
+ * spelling is what hid the live defect - the fixture agreed with the code
+ * instead of with the producer, so every image mismatched in production while
+ * the suite stayed green (live report 2026-08-06).
+ */
+function lockerSpelling(bytes: Uint8Array): string {
+  return launchImageDigest(bytes).replace(/^0x/, "");
+}
+
 function stageImage(bytes: Uint8Array = IMAGE_BYTES, digest?: string): void {
-  const resolved: LaunchImageBytes = { bytes, digest: digest ?? launchImageDigest(bytes) };
+  const resolved: LaunchImageBytes = { bytes, digest: digest ?? lockerSpelling(bytes) };
   registerLaunchImageByteResolver(async (id) => (id === "img_1" ? resolved : null));
 }
 
@@ -172,10 +183,26 @@ describe("trench.launch_preview image pricing (U1)", () => {
     expect(data.gasEstimate).toBe(EMPTY_IMAGE_GAS.toString());
   });
 
+  it("prices the staged bytes when the locker spells the digest WITHOUT 0x", async () => {
+    // The regression: two producers, two spellings of one hash. A bare-hex
+    // digest names the same bytes and must be priced, not called a mismatch.
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient();
+    stageImage(IMAGE_BYTES, lockerSpelling(IMAGE_BYTES).toUpperCase());
+
+    const handler = TRENCH_HANDLERS["trench.launch_preview"];
+    if (handler === undefined) throw new Error("trench.launch_preview is not registered");
+    const res = await handler({ name: "My Token", symbol: "MYT", imageId: "img_1" }, READ_CTX);
+    expect(res.success).toBe(true);
+    const data = parse(res.output);
+    expect(data.imagePriced).toBe("staged_bytes");
+    expect(data.imagePricedFallbackReason).toBeUndefined();
+  });
+
   it("degrades to the empty-image sim, labelled, when the stored digest disagrees", async () => {
     vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
     mockClient();
-    stageImage(IMAGE_BYTES, `0x${"ab".repeat(32)}`);
+    stageImage(IMAGE_BYTES, "ab".repeat(32));
 
     const res = await TRENCH_HANDLERS["trench.launch_preview"]!(
       { name: "My Token", symbol: "MYT", imageId: "img_1" },

@@ -20,7 +20,6 @@ import {
 } from "@vex-agent/tools/protocols/trench/handlers/launch/plan.js";
 import { validateLaunchRequest } from "@vex-agent/tools/protocols/trench/handlers/launch/validate.js";
 import type { ValidatedLaunchRequest } from "@vex-agent/tools/protocols/trench/handlers/launch/validate.js";
-import { checkLaunchAuthorizationUnchanged } from "@vex-agent/tools/protocols/trench/handlers/launch/authorization.js";
 import {
   planTrenchLaunchFeeLeg,
   type PlanTrenchFeeLeg,
@@ -79,49 +78,6 @@ export type TokenLaunchRefusal =
  * signing path is precisely the unprovable number rule 90 forbids.
  */
 export const NO_FEE_LEG: PlanTrenchFeeLeg = () => null;
-
-/**
- * Re-derive a plan and confirm it still matches what the preview showed.
- *
- * THE STALENESS CHECK IS THE SAME MECHANISM AS THE AUTHORIZATION GATE, not a
- * second one. A stale preview is just a re-derivation whose bound fields no
- * longer match — so there is one code path, one comparison, and one refusal
- * carrying both sets of numbers. A separate "fee drift" check would be a second
- * place to get it wrong, and would miss any anchored value that is not the fee.
- */
-export function checkPreviewStillValid(
-  previewedPlan: LaunchPlan,
-  currentPlan: LaunchPlan,
-  previewId: string,
-): TokenLaunchRefusal | null {
-  // VALUE-anchored, never block-anchored: `previewId` is
-  // `lp_<anchorBlock>_<msgValueWei>` and the anchor block advances roughly
-  // every second on Robinhood Chain, so literal id equality refused every
-  // honest Deploy (proven live 2026-08-02: identical fee, five blocks apart,
-  // called "changed"). The consented figure is the msgValue component; the
-  // binding compare below covers every other bound field, and it already
-  // excludes the anchor block deliberately (authorization.ts).
-  const previewIdShape = /^lp_\d+_(\d+)$/.exec(previewId);
-  const shownMsgValueWei = previewIdShape?.[1] ?? null;
-  if (shownMsgValueWei === null || shownMsgValueWei !== currentPlan.preview.msgValueWei) {
-    return {
-      kind: "preview_stale",
-      detail:
-        `The launch cost changed since you were shown it: the total to send now reads `
-        + `${currentPlan.preview.msgValueWei} wei (creation fee ${currentPlan.preview.creationFeeWei} `
-        + `at block ${currentPlan.preview.anchorBlockNumber}), while you were shown `
-        + `${shownMsgValueWei ?? "an unreadable preview id"}. Nothing was signed — review the new figures.`,
-    };
-  }
-
-  const unchanged = checkLaunchAuthorizationUnchanged(
-    previewedPlan.binding,
-    currentPlan.binding,
-  );
-  if (!unchanged.ok) return { kind: "preview_stale", detail: unchanged.reason };
-
-  return null;
-}
 
 /** Map a plan refusal code onto the main-side refusal vocabulary. */
 export function refusalFromPlanCode(

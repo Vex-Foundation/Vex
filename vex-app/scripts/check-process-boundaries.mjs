@@ -55,12 +55,17 @@ const rootAgentDir = path.resolve(root, "..", "src", "vex-agent");
 
 // The only `@vex-lib` modules the renderer/shared may import: deliberately
 // pure, dependency-free constants/schemas with zero privileged imports
-// (verified: agent-config and embedding-constants import nothing;
-// bug-report-schema imports only zod). Anything else fails the gate.
+// (verified: agent-config, embedding-constants and token-metadata-text-policy
+// import nothing; bug-report-schema imports only zod). Anything else fails the
+// gate.
 const PURE_VEX_LIB_MODULES = new Set([
   "@vex-lib/agent-config.js",
   "@vex-lib/embedding-constants.js",
   "@vex-lib/diagnostics/bug-report-schema.js",
+  // The on-chain token metadata text policy. It must be ONE definition across
+  // the agent runtime, the IPC schema and the renderer form, and it is pure by
+  // construction (no imports at all) so the renderer may hold it.
+  "@vex-lib/token-metadata-text-policy.js",
 ]);
 
 function isForbiddenRootAliasImport(spec) {

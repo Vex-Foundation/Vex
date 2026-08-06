@@ -39,7 +39,6 @@ import {
 
 export {
   buildLaunchPlan,
-  checkPreviewStillValid,
   NO_FEE_LEG,
   planLaunchContext,
   refusalFromPlanCode,
@@ -61,9 +60,9 @@ export type {
 /**
  * How long the dialog TELLS the user a preview is good for.
  *
- * Advisory only, and deliberately so: the binding check is `previewId`
- * re-derivation on submit, which catches a moved fee or a moved anchor whatever
- * the clock says. A countdown that could ARM a submit would be a second, weaker
+ * Advisory only, and deliberately so: the binding check is the creation-fee CAS
+ * on submit, which catches a moved creation fee whatever the clock says. A
+ * countdown that could ARM a submit would be a second, weaker
  * staleness mechanism — this one only prompts a re-preview.
  */
 const PREVIEW_ADVISORY_TTL_MS = 60_000;
