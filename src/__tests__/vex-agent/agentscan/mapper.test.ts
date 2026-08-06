@@ -129,7 +129,7 @@ const CONTRACT_KEYS = [
 describe("mapActivityToEvent — allowlist shape", () => {
   it("emits exactly the contract key set, nothing more", () => {
     const event = mapActivityToEvent(confirmedSwapRow(), { status: "confirmed" });
-    expect(Object.keys(event as unknown as Record<string, unknown>).sort()).toEqual(CONTRACT_KEYS);
+    expect(Object.keys(event).sort()).toEqual(CONTRACT_KEYS);
   });
 
   it("maps a confirmed swap faithfully and validates against the server schema mirror", () => {

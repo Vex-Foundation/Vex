@@ -37,6 +37,13 @@ async function resetAgentscanTables(): Promise<void> {
   await execute(`DELETE FROM agentscan_reporting_state`, []);
 }
 
+/** Index into an array without a non-null assertion: a miss throws, honestly. */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`expected an item at index ${index}, got ${items.length} item(s)`);
+  return item;
+}
+
 afterEach(async () => {
   await resetAgentscanTables();
   await cleanupSeeded();
@@ -162,7 +169,7 @@ describe("reporter lane — register + one-time backfill (AC1/AC2)", () => {
 
     // register: once, valid shapes, consent v1
     expect(client.registerCalls).toHaveLength(1);
-    const register = client.registerCalls[0]!;
+    const register = at(client.registerCalls, 0);
     expect(register.agentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(register.ingestToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(register.consentVersion).toBe(1);
@@ -170,7 +177,7 @@ describe("reporter lane — register + one-time backfill (AC1/AC2)", () => {
 
     // backfill batch: flag true, exactly the two eligible rows, correct envelope identity
     expect(client.sendCalls).toHaveLength(1);
-    const batch = client.sendCalls[0]!;
+    const batch = at(client.sendCalls, 0);
     expect(batch.backfill).toBe(true);
     expect(batch.agentHash).toBe(register.agentHash);
     expect(batch.ingestToken).toBe(register.ingestToken);
@@ -215,11 +222,11 @@ describe("reporter lane — register + one-time backfill (AC1/AC2)", () => {
     const third = await lane.runAgentscanReport(depsWith(client));  // run 3: the confirmed pair
     expect(third.sent).toBe(1);
     expect(client.sendCalls).toHaveLength(2);
-    const incremental = client.sendCalls[1]!;
+    const incremental = at(client.sendCalls, 1);
     expect(incremental.backfill).toBe(false);
     expect(incremental.events).toHaveLength(1);
-    expect(incremental.events[0]!.status).toBe("confirmed");
-    expect(incremental.events[0]!.executedInRaw).not.toBeNull();
+    expect(at(incremental.events, 0).status).toBe("confirmed");
+    expect(at(incremental.events, 0).executedInRaw).not.toBeNull();
   });
 });
 
@@ -289,7 +296,7 @@ describe("reporter lane — server-answer table", () => {
 
     const second = await lane.runAgentscanReport(depsWith(client));
     expect(client.registerCalls).toHaveLength(2);
-    expect(client.registerCalls[1]!.agentHash).toBe(client.registerCalls[0]!.agentHash);
+    expect(at(client.registerCalls, 1).agentHash).toBe(at(client.registerCalls, 0).agentHash);
     expect(second.sent).toBe(1);
   });
 

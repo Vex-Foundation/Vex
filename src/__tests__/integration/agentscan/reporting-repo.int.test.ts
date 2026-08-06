@@ -28,6 +28,13 @@ async function resetAgentscanTables(): Promise<void> {
   await execute(`DELETE FROM agentscan_reporting_state`, []);
 }
 
+/** Index into an array without a non-null assertion: a miss throws, honestly. */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`expected an item at index ${index}, got ${items.length} item(s)`);
+  return item;
+}
+
 afterEach(async () => {
   await resetAgentscanTables();
   await cleanupSeeded();
@@ -155,7 +162,7 @@ describe("agentscan_outbox — diff scan", () => {
     expect(await repo.enqueueEligibleActivity(true)).toBe(1);
     const claimed = await repo.claimDueOutbox(10);
     expect(claimed).toHaveLength(1);
-    expect(claimed[0]!.backfill).toBe(true);
+    expect(at(claimed, 0).backfill).toBe(true);
   });
 
   it("never enqueues contract-inexpressible rows: allowance role, wrap kind, superseded_unproven status", async () => {
@@ -195,7 +202,7 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
 
     const first = await repo.claimDueOutbox(10);
     expect(first).toHaveLength(1);
-    expect(first[0]!.activity).not.toBeNull();
+    expect(at(first, 0).activity).not.toBeNull();
 
     const second = await repo.claimDueOutbox(10);
     expect(second).toHaveLength(0);
@@ -209,7 +216,7 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
 
     const claimed = await repo.claimDueOutbox(10);
     expect(claimed).toHaveLength(1);
-    const outboxId = claimed[0]!.outboxId;
+    const outboxId = at(claimed, 0).outboxId;
 
     // Retry-After override: due again once the (test-shortened) delay passes.
     await repo.rescheduleOutbox([outboxId], 0);
@@ -228,7 +235,7 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
     await seedEligibleSwap();
     await repo.enqueueEligibleActivity(false);
     const claimed = await repo.claimDueOutbox(10);
-    const outboxId = claimed[0]!.outboxId;
+    const outboxId = at(claimed, 0).outboxId;
 
     await repo.markOutboxRejected(outboxId, "validation_failed");
     await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
