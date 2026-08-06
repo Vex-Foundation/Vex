@@ -18,6 +18,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 import { rejectForbiddenTokenMetadataText } from "../../lib/token-metadata-text-policy.js";
 import { validateLaunchRequest } from "@vex-agent/tools/protocols/trench/handlers/launch/validate.js";
@@ -72,6 +73,17 @@ vi.mock("@tools/evm-chains/evm-client.js", () => ({
 const { trenchLaunchPreviewHandler } = await import(
   "@vex-agent/tools/protocols/trench/handlers/launch-preview.js"
 );
+
+/**
+ * A real read context, not a cast: the preview needs nothing privileged, and a
+ * typed value keeps the suite honest about the surface it calls.
+ */
+const READ_CTX: ProtocolExecutionContext = {
+  sessionPermission: "restricted",
+  approved: false,
+  walletResolution: { source: "default" },
+  walletPolicy: { kind: "none" },
+};
 
 const VALID = {
   name: "Vex x Trench",
@@ -168,14 +180,14 @@ describe("trench.launch_preview refuses IDENTICALLY and never builds calldata", 
   it("control: clean params get PAST validation, so the refusals below are not vacuous", async () => {
     // No wallet in this context, so the preview degrades to validation-only.
     // That it answers at all proves the metadata gate let the clean text through.
-    const result = await trenchLaunchPreviewHandler({ ...VALID, name: "Vex 🚀 Café" }, {} as never);
+    const result = await trenchLaunchPreviewHandler({ ...VALID, name: "Vex 🚀 Café" }, READ_CTX);
     expect(result.success).toBe(true);
   });
 
   for (const entry of REJECTED) {
     it(`refuses ${entry.label} without calling buildCreateCalldata`, async () => {
       const params = { ...VALID, ...entry.params };
-      const result = await trenchLaunchPreviewHandler(params, {} as never);
+      const result = await trenchLaunchPreviewHandler(params, READ_CTX);
 
       expect(result.success).toBe(false);
       const executionResult = validateLaunchRequest(params);
@@ -196,7 +208,7 @@ describe("the ordering claim, with a wallet and a priced image", () => {
 
   it("REACHES buildCreateCalldata for accepted text", async () => {
     selectedAddress = WALLET;
-    const result = await trenchLaunchPreviewHandler({ ...VALID }, {} as never);
+    const result = await trenchLaunchPreviewHandler({ ...VALID }, READ_CTX);
     // The fake client answers the simulation with no data, so the preview
     // fails AFTER the calldata was built. That is the point: the encoder is
     // reachable, so the refusals below are proving the gate, not the fixture.
@@ -207,7 +219,7 @@ describe("the ordering claim, with a wallet and a priced image", () => {
   for (const entry of REJECTED) {
     it(`never reaches buildCreateCalldata for ${entry.label}`, async () => {
       selectedAddress = WALLET;
-      const result = await trenchLaunchPreviewHandler({ ...VALID, ...entry.params }, {} as never);
+      const result = await trenchLaunchPreviewHandler({ ...VALID, ...entry.params }, READ_CTX);
       expect(result.success).toBe(false);
       expect(result.output).toContain(entry.field);
       expect(buildCreateCalldata).not.toHaveBeenCalled();

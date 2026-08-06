@@ -36,8 +36,24 @@
  * the codex P1 #3 first round.
  */
 
+/**
+ * The system-block sentinels, as a pattern rather than the two literals: a
+ * forged close only has to LOOK like the marker to the model, so case and
+ * incidental spacing are covered too. `system-boundary.test.ts` pins that this
+ * matches both exported constants, so a rename cannot desync the two.
+ */
+const SYSTEM_BLOCK_SENTINEL = /<<<\s*VEX_SYSTEM_BLOCK_(?:START|END)\s*>>>/gi;
+
 export function sanitizeForSystemPrompt(raw: string): string {
   let s = raw;
+  // FIRST, because it is the one device that can forge the boundary itself:
+  // untrusted text is rendered INSIDE the wrapped static block (loaded
+  // documents, memory, user instructions), so a document carrying
+  // `<<<VEX_SYSTEM_BLOCK_END>>>` would announce that the operator block ended
+  // and everything after it is ordinary content. Fractured like the other
+  // structure-forging devices below - every character survives, the marker
+  // does not (Codex review 2026-08-06).
+  s = s.replace(SYSTEM_BLOCK_SENTINEL, (m) => m.replace("<", "<​"));
   s = s.replace(/`{3,}/g, "`​`​`");
   s = s.replace(/<\/?\s*(system|assistant|user|developer)\s*>/gi, (m) =>
     m.replace("<", "<​"),

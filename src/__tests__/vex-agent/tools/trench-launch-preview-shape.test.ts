@@ -24,6 +24,10 @@ import {
   type LaunchImageBytes,
 } from "../../../vex-agent/tools/protocols/trench/launch-image-byte-resolver.js";
 import { launchImageDigest } from "../../../vex-agent/tools/protocols/trench/handlers/launch/authorization.js";
+import { validateLaunchRequest } from "../../../vex-agent/tools/protocols/trench/handlers/launch/validate.js";
+import { composeLaunchMsgValue } from "../../../vex-agent/tools/protocols/trench/handlers/launch/authorization.js";
+import { TRENCH_DIAMOND_ABI } from "@tools/trench-express/abi.js";
+import { decodeFunctionData } from "viem";
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -47,11 +51,28 @@ function parse(output: string): Record<string, unknown> {
  * A client whose gas estimate depends on the calldata SIZE, the way the chain's
  * does. Short calldata = the empty-image sim; long calldata = staged bytes.
  */
-function mockClient(over: { balanceWei?: bigint; failBalance?: boolean } = {}): void {
+function mockClient(
+  over: {
+    balanceWei?: bigint;
+    failBalance?: boolean;
+    /**
+     * Records the arguments of every eth_call / eth_estimateGas the preview
+     * issues. On this ONE client factory rather than a second one, so the
+     * capturing tests exercise exactly the client the rest of the suite does.
+     */
+    capture?: (args: { data: string; value: bigint }) => void;
+  } = {},
+): void {
   vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
-    call: async () => ({ data: PREDICTED }),
-    estimateGas: async ({ data }: { data: string }) =>
-      data.length > 2_000 ? STAGED_IMAGE_GAS : EMPTY_IMAGE_GAS,
+    call: async (args: { data: string; value: bigint }) => {
+      over.capture?.(args);
+      return { data: PREDICTED };
+    },
+    estimateGas: async (args: { data: string; value: bigint }) => {
+      over.capture?.(args);
+      const { data } = args;
+      return data.length > 2_000 ? STAGED_IMAGE_GAS : EMPTY_IMAGE_GAS;
+    },
     getGasPrice: async () => GAS_PRICE_WEI,
     getBalance: async () => {
       if (over.failBalance === true) throw new Error("rpc down");
@@ -255,7 +276,7 @@ describe("trench.launch_preview image pricing (U1)", () => {
   });
 });
 
-describe("trench.launch_preview no-prebuy balance verdict (U1)", () => {
+describe("trench.launch_preview balance verdict (U1)", () => {
   it("is 'sufficient' when the staged-bytes total fits the wallet", async () => {
     vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
     mockClient({ balanceWei: 10_000_000_000_000_000_000n });
@@ -266,8 +287,8 @@ describe("trench.launch_preview no-prebuy balance verdict (U1)", () => {
       READ_CTX,
     );
     const data = parse(res.output);
-    expect(data.noPrebuyBalanceVerdict).toBe("sufficient");
-    expect(data.noPrebuyShortfallWei).toBeUndefined();
+    expect(data.balanceVerdict).toBe("sufficient");
+    expect(data.balanceShortfallWei).toBeUndefined();
     // The balance itself travels with its ETH twin (Codex final review
     // 2026-08-05): a bare-wei balance would recreate the raw-unit trap this
     // arc exists to close.
@@ -284,12 +305,12 @@ describe("trench.launch_preview no-prebuy balance verdict (U1)", () => {
       READ_CTX,
     );
     const data = parse(res.output);
-    expect(data.noPrebuyBalanceVerdict).toBe("insufficient");
+    expect(data.balanceVerdict).toBe("insufficient");
     expect(data.walletBalanceEth).toBe("0.000000000000000001");
-    const shortfall = BigInt(data.noPrebuyShortfallWei as string);
+    const shortfall = BigInt(data.balanceShortfallWei as string);
     expect(shortfall).toBe(BigInt(data.estimatedTotalCostWei as string) - 1n);
-    expect(data.noPrebuyShortfallEth).toBe(data.noPrebuyShortfallEth as string);
-    expect(typeof data.noPrebuyShortfallEth).toBe("string");
+    expect(data.balanceShortfallEth).toBe(data.balanceShortfallEth as string);
+    expect(typeof data.balanceShortfallEth).toBe("string");
   });
 
   it("is 'unpriced' with NO shortfall on EVERY empty-image fallback, however rich the wallet", async () => {
@@ -303,9 +324,9 @@ describe("trench.launch_preview no-prebuy balance verdict (U1)", () => {
     const data = parse(res.output);
     // Execute ALWAYS requires an image, so an empty-image sim can never prove
     // any real launch affordable — not even a wallet holding 10 ETH.
-    expect(data.noPrebuyBalanceVerdict).toBe("unpriced");
-    expect(data.noPrebuyShortfallWei).toBeUndefined();
-    expect(data.noPrebuyShortfallEth).toBeUndefined();
+    expect(data.balanceVerdict).toBe("unpriced");
+    expect(data.balanceShortfallWei).toBeUndefined();
+    expect(data.balanceShortfallEth).toBeUndefined();
   });
 
   it("is 'unpriced' with NO shortfall when the balance itself cannot be read", async () => {
@@ -319,8 +340,8 @@ describe("trench.launch_preview no-prebuy balance verdict (U1)", () => {
     );
     const data = parse(res.output);
     expect(data.imagePriced).toBe("staged_bytes");
-    expect(data.noPrebuyBalanceVerdict).toBe("unpriced");
-    expect(data.noPrebuyShortfallWei).toBeUndefined();
+    expect(data.balanceVerdict).toBe("unpriced");
+    expect(data.balanceShortfallWei).toBeUndefined();
   });
 
   it("omits the verdict entirely when no wallet resolves", async () => {
@@ -334,6 +355,241 @@ describe("trench.launch_preview no-prebuy balance verdict (U1)", () => {
     );
     const data = parse(res.output);
     expect(data.simulated).toBe(false);
-    expect(data.noPrebuyBalanceVerdict).toBeUndefined();
+    expect(data.balanceVerdict).toBeUndefined();
+  });
+});
+
+/**
+ * TASK 7 — the preview PRICES A PREBUY.
+ *
+ * The defect this closes: the preview priced a no-prebuy launch only, so an
+ * agent asked for a prebuy had to compute its cost freehand. Freehand money
+ * arithmetic by a model is exactly what this surface exists to remove.
+ *
+ * The prebuy is parsed by the EXECUTION PATH'S parser and composed into
+ * msg.value by the EXECUTION PATH'S composer, so these tests assert against
+ * that path rather than against a second opinion written here.
+ */
+describe("trench.launch_preview prebuy pricing (task 7)", () => {
+  const PREBUY_ETH = "0.25";
+  const PREBUY_WEI = 250_000_000_000_000_000n;
+
+  async function preview(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const handler = TRENCH_HANDLERS["trench.launch_preview"];
+    if (handler === undefined) throw new Error("trench.launch_preview is not registered");
+    const res = await handler(params, READ_CTX);
+    expect(res.success).toBe(true);
+    return parse(res.output);
+  }
+
+  it("raises msg.value and the total by EXACTLY the parsed wei", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient();
+    stageImage();
+
+    const without = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1" });
+    const with_ = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: PREBUY_ETH });
+
+    expect(BigInt(with_.prebuyWei as string)).toBe(PREBUY_WEI);
+    expect(with_.prebuyEth).toBe(PREBUY_ETH);
+    expect(BigInt(with_.msgValueWei as string) - BigInt(without.msgValueWei as string)).toBe(PREBUY_WEI);
+    // msg.value is the creation fee plus the prebuy, exactly — no remainder.
+    expect(BigInt(with_.msgValueWei as string)).toBe(BigInt(with_.creationFeeWei as string) + PREBUY_WEI);
+
+    // The total rises by the prebuy PLUS the 25 bps Vex fee on it. Gas is
+    // unchanged here because the mock prices calldata size, and the prebuy is a
+    // fixed-width word.
+    const vexFeeDelta = (PREBUY_WEI * 25n) / 10_000n;
+    expect(BigInt(with_.estimatedTotalCostWei as string) - BigInt(without.estimatedTotalCostWei as string)).toBe(
+      PREBUY_WEI + vexFeeDelta,
+    );
+  });
+
+  it("refuses an invalid prebuy BY NAME, with the same words the execution path uses", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient();
+    stageImage();
+
+    const handler = TRENCH_HANDLERS["trench.launch_preview"];
+    if (handler === undefined) throw new Error("trench.launch_preview is not registered");
+    const res = await handler({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: "1e18" }, READ_CTX);
+    expect(res.success).toBe(false);
+
+    const execution = validateLaunchRequest({
+      name: "My Token",
+      symbol: "MYT",
+      imageId: "img_1",
+      prebuy: "1e18",
+    });
+    expect(execution.ok).toBe(false);
+    if (execution.ok) throw new Error("the execution path accepted an invalid prebuy");
+    expect(res.output).toContain(execution.reason);
+  });
+
+  it("refuses a prebuy far outside any plausible launch rather than pricing it", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient();
+    stageImage();
+
+    const handler = TRENCH_HANDLERS["trench.launch_preview"];
+    if (handler === undefined) throw new Error("trench.launch_preview is not registered");
+    const res = await handler({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: "5000" }, READ_CTX);
+    expect(res.success).toBe(false);
+    expect(res.output).toMatch(/far outside any plausible launch/);
+  });
+
+  it("names the scenario it priced: prebuy_included when a prebuy was priced", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient({ balanceWei: 10_000_000_000_000_000_000n });
+    stageImage();
+
+    const data = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: PREBUY_ETH });
+    expect(data.balanceVerdict).toBe("sufficient");
+    expect(data.balanceVerdictScope).toBe("prebuy_included");
+  });
+
+  it("names the scenario it priced: no_prebuy when none was given", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient({ balanceWei: 10_000_000_000_000_000_000n });
+    stageImage();
+
+    const data = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1" });
+    expect(data.balanceVerdictScope).toBe("no_prebuy");
+  });
+
+  it("prices the shortfall against the WHOLE prebuy launch, not a no-prebuy one", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient({ balanceWei: 1n });
+    stageImage();
+
+    const data = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: PREBUY_ETH });
+    expect(data.balanceVerdict).toBe("insufficient");
+    expect(data.balanceVerdictScope).toBe("prebuy_included");
+    expect(BigInt(data.balanceShortfallWei as string)).toBe(
+      BigInt(data.estimatedTotalCostWei as string) - 1n,
+    );
+  });
+
+  it("still answers 'unpriced' with NO shortfall on an empty-image fallback, prebuy or not", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient({ balanceWei: 10_000_000_000_000_000_000n });
+
+    const data = await preview({ name: "My Token", symbol: "MYT", prebuy: PREBUY_ETH });
+    expect(data.imagePriced).toBe("empty_fallback");
+    expect(data.balanceVerdict).toBe("unpriced");
+    expect(data.balanceVerdictScope).toBe("prebuy_included");
+    expect(data.balanceShortfallWei).toBeUndefined();
+  });
+
+  it("REGRESSION: an absent prebuy and an explicit \"0\" price identically", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    mockClient();
+    stageImage();
+
+    const absent = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1" });
+    const zero = await preview({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: "0" });
+    expect(zero).toEqual(absent);
+    expect(BigInt(absent.msgValueWei as string)).toBe(BigInt(absent.creationFeeWei as string));
+    expect(absent.prebuyWei).toBe("0");
+  });
+});
+
+/**
+ * TASK 7, THE PART THE RESPONSE CANNOT PROVE (Codex review, non-blocking).
+ *
+ * The tests above assert the NUMBERS THE PREVIEW REPORTS. That is not the same
+ * claim as "the number is what we would actually send": a stale `value` on the
+ * eth_call, or an `initialBuy` argument left at zero, would leave every reported
+ * figure correct while the simulation and the gas estimate priced a DIFFERENT
+ * transaction — an under-estimate on the surface an agent budgets a launch from.
+ *
+ * So this block captures the RPC arguments and DECODES the calldata with viem
+ * against the real Diamond ABI (never a hand-sliced hex offset, which would be a
+ * second, unverified decoder in the test).
+ */
+describe("trench.launch_preview sends what it prices (RPC arguments)", () => {
+  const CREATION_FEE_WEI = 1_000_000_000_000_000n;
+  const PREBUY_ETH = "0.25";
+  const PREBUY_WEI = 250_000_000_000_000_000n;
+  /** `create(name, symbol, description, image, links, data, strategy, dex, initialBuy)`. */
+  const INITIAL_BUY_ARG_INDEX = 8;
+
+  interface CapturedCall {
+    readonly data: string;
+    readonly value: bigint;
+  }
+
+  /** Records every eth_call / eth_estimateGas the preview issues. */
+  function recordingClient(): CapturedCall[] {
+    const sent: CapturedCall[] = [];
+    mockClient({ capture: (args) => sent.push(args) });
+    return sent;
+  }
+
+  function decodeInitialBuy(data: string): bigint {
+    const decoded = decodeFunctionData({ abi: TRENCH_DIAMOND_ABI, data: data as `0x${string}` });
+    expect(decoded.functionName).toBe("create");
+    const initialBuy = (decoded.args ?? [])[INITIAL_BUY_ARG_INDEX];
+    if (typeof initialBuy !== "bigint") {
+      throw new Error(`create() argument ${INITIAL_BUY_ARG_INDEX} is not a bigint: ${String(initialBuy)}`);
+    }
+    return initialBuy;
+  }
+
+  async function runPreview(params: Record<string, unknown>): Promise<void> {
+    const handler = TRENCH_HANDLERS["trench.launch_preview"];
+    if (handler === undefined) throw new Error("trench.launch_preview is not registered");
+    const res = await handler(params, READ_CTX);
+    expect(res.success).toBe(true);
+  }
+
+  it("sends msg.value = fee + prebuy and initialBuy = the prebuy, to BOTH call and estimateGas", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    const sent = recordingClient();
+    stageImage();
+
+    await runPreview({ name: "My Token", symbol: "MYT", imageId: "img_1", prebuy: PREBUY_ETH });
+
+    // The expected value comes from the EXECUTION PATH'S composer, not from
+    // arithmetic re-typed here.
+    const expectedValue = composeLaunchMsgValue(CREATION_FEE_WEI, PREBUY_WEI);
+    expect(expectedValue).toBe(CREATION_FEE_WEI + PREBUY_WEI);
+
+    // Two RPCs: the eth_call that predicts the address and the fresh
+    // eth_estimateGas. BOTH must carry the same value and the same initialBuy.
+    expect(sent).toHaveLength(2);
+    for (const rpcArgs of sent) {
+      expect(rpcArgs.value).toBe(expectedValue);
+      expect(decodeInitialBuy(rpcArgs.data)).toBe(PREBUY_WEI);
+    }
+  });
+
+  it("sends the BARE creation fee and initialBuy = 0 when no prebuy was named", async () => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    const sent = recordingClient();
+    stageImage();
+
+    await runPreview({ name: "My Token", symbol: "MYT", imageId: "img_1" });
+
+    expect(sent).toHaveLength(2);
+    for (const rpcArgs of sent) {
+      expect(rpcArgs.value).toBe(CREATION_FEE_WEI);
+      expect(decodeInitialBuy(rpcArgs.data)).toBe(0n);
+    }
+  });
+
+  it("carries the prebuy into the EMPTY-IMAGE calldata too, so the fallback prices the same launch", async () => {
+    // The fallback encodes create() by hand rather than through
+    // buildCreateCalldata, which is exactly where a zero could be left behind.
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+    const sent = recordingClient();
+
+    await runPreview({ name: "My Token", symbol: "MYT", prebuy: PREBUY_ETH });
+
+    expect(sent).toHaveLength(2);
+    for (const rpcArgs of sent) {
+      expect(rpcArgs.value).toBe(CREATION_FEE_WEI + PREBUY_WEI);
+      expect(decodeInitialBuy(rpcArgs.data)).toBe(PREBUY_WEI);
+    }
   });
 });

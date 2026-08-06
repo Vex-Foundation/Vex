@@ -26,6 +26,13 @@
 
 import { z } from "zod";
 import { rejectForbiddenTokenMetadataText } from "@vex-lib/token-metadata-text-policy.js";
+import {
+  TOKEN_METADATA_NAME_MAX,
+  TOKEN_METADATA_SYMBOL_MAX,
+  TOKEN_METADATA_DESCRIPTION_MAX,
+  TOKEN_METADATA_LINKS_MAX,
+  TOKEN_METADATA_LINK_LENGTH_MAX,
+} from "@vex-lib/token-metadata-limits.js";
 
 /** A raw wei amount: non-negative decimal digits only. No sign, point or exponent. */
 const weiStringSchema = z
@@ -35,15 +42,15 @@ const weiStringSchema = z
 /** Opaque ids. The renderer never parses them; it echoes what it was given. */
 const opaqueIdSchema = z.string().min(1).max(128);
 
-// MEASURED ON-CHAIN limits (bisected via free eth_estimateGas, 2026-08-02):
-// the Diamond's create() reverts past name 18, symbol 18, description 512,
-// links 4 (hardcoded in facet bytecode — not readable from storage). The form
-// caps at the chain's real limits so the user hears it while typing, not at
-// signing time; symbol stays deliberately tighter at 16.
-export const TOKEN_LAUNCH_NAME_MAX = 18;
-export const TOKEN_LAUNCH_SYMBOL_MAX = 16;
-export const TOKEN_LAUNCH_DESCRIPTION_MAX = 512;
-export const TOKEN_LAUNCH_LINKS_MAX = 4;
+// The measured on-chain limits, from the ONE definition in
+// `@vex-lib/token-metadata-limits.js` (pure, allowlisted for the renderer).
+// The form caps at them so the user hears it while typing, not at signing time.
+// Re-exported under the launch-facing names the renderer already imports, so
+// this schema stays the renderer's single import for the launch contract.
+export const TOKEN_LAUNCH_NAME_MAX = TOKEN_METADATA_NAME_MAX;
+export const TOKEN_LAUNCH_SYMBOL_MAX = TOKEN_METADATA_SYMBOL_MAX;
+export const TOKEN_LAUNCH_DESCRIPTION_MAX = TOKEN_METADATA_DESCRIPTION_MAX;
+export const TOKEN_LAUNCH_LINKS_MAX = TOKEN_METADATA_LINKS_MAX;
 
 /**
  * A metadata field `create()` writes ON-CHAIN, IMMUTABLY.
@@ -76,7 +83,7 @@ export const tokenLaunchFormSchema = z
     symbol: onChainMetadataText("symbol").trim().min(1).max(TOKEN_LAUNCH_SYMBOL_MAX),
     description: onChainMetadataText("description").trim().max(TOKEN_LAUNCH_DESCRIPTION_MAX).default(""),
     links: z
-      .array(onChainMetadataText("link").url().startsWith("https://").max(128))
+      .array(onChainMetadataText("link").url().startsWith("https://").max(TOKEN_METADATA_LINK_LENGTH_MAX))
       .max(TOKEN_LAUNCH_LINKS_MAX)
       .default([]),
     imageId: opaqueIdSchema,

@@ -569,6 +569,7 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "trench.launch_preview", rule: "param-key", detail: "imageByteLength", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_preview", rule: "param-key", detail: "links", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_preview", rule: "param-key", detail: "name", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
+  { subject: "trench.launch_preview", rule: "param-key", detail: "prebuy", reason: "deliberately the SAME spelling as trench.launch_execute's own `prebuy`, which this preview prices through that path's parser; renaming it on one of the two surfaces alone would make the agent translate between them on a money path" },
   { subject: "trench.launch_preview", rule: "param-key", detail: "symbol", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_request_form", rule: "param-key", detail: "description", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },
   { subject: "trench.launch_request_form", rule: "param-key", detail: "links", reason: "pre-convention param key; deleted by the rename waves (W5/W6)" },

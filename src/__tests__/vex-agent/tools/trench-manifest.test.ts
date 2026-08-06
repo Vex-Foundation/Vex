@@ -120,6 +120,6 @@ describe("trench manifest", () => {
     const preview = TRENCH_TOOLS.find((t) => t.toolId === "trench.launch_preview");
     expect(preview?.description).not.toMatch(/Simulated with an empty image/i);
     expect(preview?.description).toMatch(/imagePriced/);
-    expect(preview?.description).toMatch(/noPrebuyBalanceVerdict/);
+    expect(preview?.description).toMatch(/balanceVerdict/);
   });
 });
