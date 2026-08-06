@@ -60,6 +60,14 @@ const SYNC_JOBS = [
   // long, so a sub-minute cadence would only add lock traffic.
   { namespace: "_global", syncType: "launch_form_expiry", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
 
+  // AgentScan reporting lane — diff-scans agent_activity into agentscan_outbox
+  // and drains due rows to the AgentScan ingest API (pseudonymous; dark until
+  // services.agentscanApiUrl is configured). Never signs, never blocks the
+  // money path; offline just accumulates outbox rows. 30s mirrors the per-tx
+  // repair cadence so a confirmed swap reaches the public feed promptly.
+  // See sync/agentscan-report.ts.
+  { namespace: "_global", syncType: "agentscan_report", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
+
   // Wave P — post-terminalization portfolio snapshot. ENQUEUED, never timed
   // (`intervalSeconds: null`, `post_mutation`): the fast lane and the repair
   // sweeps enqueue it the moment a transaction terminalizes, so the portfolio
