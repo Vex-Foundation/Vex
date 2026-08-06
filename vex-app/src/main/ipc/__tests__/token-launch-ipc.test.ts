@@ -365,6 +365,89 @@ describe("submit", () => {
   });
 });
 
+// ── Immutable on-chain metadata: rejected RAW, before any trim ───────────
+
+/**
+ * The launchpad operator's report: a control character or a double quote in
+ * name, symbol, description or a link writes BROKEN metadata on-chain, and
+ * `create()` makes it immutable, so the damage is permanent.
+ *
+ * The trap this pins is ORDERING. `tokenLaunchFormSchema` trims name, symbol
+ * and description, so a LEADING or TRAILING newline used to be erased on its
+ * way in and the launch proceeded with text the policy never got to see. A
+ * silent repair is exactly what the reject-never-transform contract forbids:
+ * `submit` can sign, and the user never reviewed the repaired string.
+ */
+describe("forbidden metadata characters are refused at the IPC boundary", () => {
+  const FORBIDDEN_SAMPLES = [
+    ["leading newline", "\nMoon"],
+    ["trailing newline", "Moon\n"],
+    ["interior newline", "Mo\non"],
+    ["leading tab", "\tMoon"],
+    ["trailing tab", "Moon\t"],
+    ["double quote", 'Mo"on'],
+    ["DEL", "Moon\u007F"],
+  ] as const;
+
+  for (const [label, value] of FORBIDDEN_SAMPLES) {
+    for (const field of ["name", "symbol", "description"] as const) {
+      it(`preview refuses a ${label} in ${field} without pricing anything`, async () => {
+        const result = await call(CH.tokenLaunch.preview, {
+          sessionId: SESSION_ID,
+          form: { ...FORM, [field]: value },
+        });
+        expectError(result, "validation.invalid_input");
+        expect(previewLaunch).not.toHaveBeenCalled();
+      });
+
+      it(`submit refuses a ${label} in ${field} without signing anything`, async () => {
+        const result = await call(CH.tokenLaunch.submit, {
+          sessionId: SESSION_ID,
+          intentId: null,
+          previewId: PREVIEW.previewId,
+          form: { ...FORM, [field]: value },
+        });
+        expectError(result, "validation.invalid_input");
+        expect(submitLaunch).not.toHaveBeenCalled();
+      });
+    }
+
+    it(`preview refuses a ${label} in ANY link row`, async () => {
+      for (const links of [
+        [`https://vex.example/${value}`],
+        ["https://ok.example", `https://vex.example/${value}`],
+      ]) {
+        const result = await call(CH.tokenLaunch.preview, {
+          sessionId: SESSION_ID,
+          form: { ...FORM, links },
+        });
+        expectError(result, "validation.invalid_input");
+        expect(previewLaunch).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it("still accepts ordinary text, emoji and accented letters", async () => {
+    previewLaunch.mockResolvedValue({ ok: true, preview: PREVIEW });
+    const result = await call(CH.tokenLaunch.preview, {
+      sessionId: SESSION_ID,
+      form: { ...FORM, name: "Moon Caf\u00e9 \ud83d\ude80", description: "Vex's token - it's fine" },
+    });
+    expect(isError(result)).toBe(false);
+    expect(previewLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still trims ordinary surrounding whitespace rather than refusing it", async () => {
+    previewLaunch.mockResolvedValue({ ok: true, preview: PREVIEW });
+    await call(CH.tokenLaunch.preview, {
+      sessionId: SESSION_ID,
+      form: { ...FORM, name: "  Moon  " },
+    });
+    const input = previewLaunch.mock.calls[0]?.[0] as { form: { name: string } };
+    expect(input.form.name).toBe("Moon");
+  });
+});
+
 describe("cancel", () => {
   it("reports the cancellation and whether an agent turn actually resumed", async () => {
     cancelLaunch.mockResolvedValue({

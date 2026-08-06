@@ -1,7 +1,7 @@
 /**
  * Launch boundary validation — the first gate every launch request passes.
  *
- * Two responsibilities, both rule-90:
+ * Three responsibilities, all rule-90:
  *
  * 1. **Forbidden params are rejected BY NAME.** `min`, `minOut`, `deadline`,
  *    `recipient`, `fee` and `value` may never originate from model input. A
@@ -13,6 +13,10 @@
  *    into wei at 18 decimals, and every later stage handles bigint wei only.
  *    `"1047061"` next to a bare mint is 1.05 at 6 decimals and 0.00105 at 9 — a
  *    thousandfold error for whoever guesses, so nothing downstream is allowed to.
+ * 3. **Metadata that create() writes forever is rejected, never repaired.** A
+ *    control character or a double quote in name, symbol, description or a link
+ *    breaks the token's on-chain metadata permanently, so `lib/token-metadata-text-policy.ts`
+ *    refuses it by field name instead of rewriting text the user never reviewed.
  *
  * The IMAGE is required. That is a Vex product rule, not a contract rule (the
  * Diamond accepts empty image bytes and `launch_preview` proves it), and the
@@ -22,6 +26,7 @@
 import { parseUnits } from "viem";
 
 import { readStringList } from "../../../runtime/list-params.js";
+import { rejectForbiddenTokenMetadataText } from "../../../../../../lib/token-metadata-text-policy.js";
 
 /**
  * Params that must NEVER come from model input. Rejected by name, never dropped.
@@ -96,6 +101,14 @@ export function validateLaunchRequest(p: Record<string, unknown>): LaunchValidat
         + "Vex composes the launch's value from the creation fee it reads on-chain and the prebuy you name as `prebuy`; "
         + "a caller-supplied fee, value, limit, deadline or recipient is rejected rather than ignored.",
     );
+  }
+
+  // 1b. On-chain metadata text — checked on the RAW values, before any trim and
+  //     before the link scheme check, because create() writes these fields
+  //     immutably and a repaired string is not the string the user reviewed.
+  for (const field of ["name", "symbol", "description", "links"] as const) {
+    const refusal = rejectForbiddenTokenMetadataText(field, p[field]);
+    if (refusal) return refuse(refusal);
   }
 
   const name = typeof p.name === "string" ? p.name.trim() : "";

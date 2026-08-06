@@ -69,10 +69,12 @@ const { submitLaunch } = await import("../submit.js");
 
 const SESSION_ID = "3f0d2f7a-1c2b-4b3c-8d4e-5f6a7b8c9d0e";
 const OWNER = "0x1111111111111111111111111111111111111111";
-// The value component MUST match the mocked plan's `preview.msgValueWei` —
-// the CAS is value-anchored (block-anchored equality refused every honest
-// Deploy on a ~1s-block chain; proven live 2026-08-02).
-const PREVIEW_ID = "lp_100_11000000000000000";
+// FEE-SHAPED, as `launchPreviewId` mints it: the payload is
+// `preview.creationFeeWei` and never the total. A total-shaped fixture here is
+// exactly what let the nonzero-prebuy hard block ship, so this constant is
+// pinned against the mocked plan's fee below and the cross-seam suite proves
+// the shape against the real builder rather than a hand-written string.
+const PREVIEW_ID = "lp_100_1000000000000000";
 
 const FORM = {
   name: "Moon",
@@ -173,9 +175,9 @@ afterEach(() => {
 });
 
 describe("the preview CAS", () => {
-  it("refuses a submit whose consented FIGURE no longer re-derives, and writes NO row", async () => {
-    const moved = plan("lp_205_1500000000000000");
-    (moved.preview as { msgValueWei: string }).msgValueWei = "1500000000000000";
+  it("refuses a submit whose CREATION FEE no longer re-derives, and writes NO row", async () => {
+    const moved = plan("lp_205_2000000000000000");
+    (moved.preview as { creationFeeWei: string }).creationFeeWei = "2000000000000000";
     buildLaunchPlan.mockResolvedValue({ ok: true, plan: moved });
     const executor = vi.fn();
 
@@ -202,7 +204,7 @@ describe("the preview CAS", () => {
     // Two derivations five blocks apart with the same fee refused every honest
     // Deploy under literal id equality (funded UI-path probe, 2026-08-02).
     const executor = vi.fn().mockResolvedValue(CONFIRMED);
-    buildLaunchPlan.mockResolvedValue({ ok: true, plan: plan("lp_205_11000000000000000") });
+    buildLaunchPlan.mockResolvedValue({ ok: true, plan: plan("lp_205_1000000000000000") });
     const outcome = await submitLaunch(submitInput(), executor);
     expect(outcome.ok).toBe(true);
   });

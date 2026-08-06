@@ -20,6 +20,7 @@
  */
 
 import type { JSX } from "react";
+import { hasForbiddenTokenMetadataText } from "@vex-lib/token-metadata-text-policy.js";
 import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { cn } from "../../../lib/utils.js";
@@ -57,6 +58,26 @@ export const EMPTY_LAUNCH_FORM: LaunchFormValues = {
 };
 
 /**
+ * What the user is told when a field carries text `create()` cannot write.
+ *
+ * Main is authoritative and refuses the same text with its own worded reason;
+ * this exists so the user sees WHY the form will not price, next to the field,
+ * instead of discovering it after committing.
+ */
+const FORBIDDEN_TEXT_MESSAGE =
+  "Remove control characters, including line breaks and tabs, and double quotes. This text is written on-chain permanently and cannot be edited later.";
+
+/** Does any on-chain metadata field carry forbidden RAW text? */
+function formHasForbiddenMetadataText(values: LaunchFormValues): boolean {
+  return (
+    hasForbiddenTokenMetadataText(values.name)
+    || hasForbiddenTokenMetadataText(values.symbol)
+    || hasForbiddenTokenMetadataText(values.description)
+    || values.links.some((link) => hasForbiddenTokenMetadataText(link))
+  );
+}
+
+/**
  * Form values → the IPC parameter set, or `null` when the form cannot be
  * priced yet. Returning `null` is what keeps the preview (and therefore
  * Deploy) disarmed, so every rule below is a reason the user is NOT yet able
@@ -78,6 +99,11 @@ export const EMPTY_LAUNCH_FORM: LaunchFormValues = {
 export function launchFormToParameters(
   values: LaunchFormValues,
 ): TokenLaunchForm | null {
+  // BEFORE the trims below. A leading or trailing line break would otherwise be
+  // erased here and never reach the policy, and this form is where the user can
+  // still see and fix it.
+  if (formHasForbiddenMetadataText(values)) return null;
+
   const name = values.name.trim();
   const symbol = values.symbol.trim();
   if (name.length === 0 || name.length > LAUNCH_NAME_MAX) return null;
@@ -144,6 +170,7 @@ export function LaunchForm({
           placeholder="The token's full name"
         />
         <FieldCounter length={values.name.length} max={LAUNCH_NAME_MAX} />
+        <ForbiddenTextWarning value={values.name} />
       </div>
 
       <div className="flex flex-col gap-2">
@@ -161,6 +188,7 @@ export function LaunchForm({
           className="font-mono uppercase"
         />
         <FieldCounter length={values.symbol.length} max={LAUNCH_SYMBOL_MAX} />
+        <ForbiddenTextWarning value={values.symbol} />
       </div>
 
       <div className="flex flex-col gap-2">
@@ -184,6 +212,7 @@ export function LaunchForm({
           length={values.description.length}
           max={LAUNCH_DESCRIPTION_MAX}
         />
+        <ForbiddenTextWarning value={values.description} />
       </div>
 
       <LaunchImagePicker
@@ -255,7 +284,9 @@ function LinkRows({
               onChange={(e) => onChangeLink(index, e.target.value)}
               placeholder="https://"
             />
-            {invalid ? (
+            {hasForbiddenTokenMetadataText(link) ? (
+              <ForbiddenTextWarning value={link} />
+            ) : invalid ? (
               <p className="text-sm text-destructive" role="alert">
                 Only https:// links are accepted.
               </p>
@@ -274,6 +305,19 @@ function LinkRows({
         </button>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The forbidden-character notice. Renders nothing for clean text, so it is safe
+ * to place under every metadata field.
+ */
+function ForbiddenTextWarning({ value }: { readonly value: string }): JSX.Element | null {
+  if (!hasForbiddenTokenMetadataText(value)) return null;
+  return (
+    <p className="text-sm text-destructive" role="alert">
+      {FORBIDDEN_TEXT_MESSAGE}
+    </p>
   );
 }
 

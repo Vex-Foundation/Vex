@@ -166,6 +166,29 @@ export function launchImageDigest(bytes: Uint8Array): string {
 }
 
 /**
+ * Does `recorded` name these exact bytes?
+ *
+ * TWO PRODUCERS, TWO SPELLINGS OF THE SAME HASH. This side hashes with viem,
+ * which returns `0x`-prefixed hex; the locker hashes with node's `createHash`
+ * and stores BARE hex (`vex-app/src/main/images/byte-store.ts`). Comparing the
+ * two strings directly is therefore ALWAYS unequal, whatever the bytes are.
+ *
+ * That is not hypothetical: a raw `!==` shipped in the launch preview and made
+ * every staged image report `image_digest_mismatch`, so the dry-run silently
+ * fell back to the empty-image simulation (understating gas roughly fourfold)
+ * and told the user their image was corrupt and a launch would refuse - while
+ * the same launch executed fine. Live report 2026-08-06, three images in a row.
+ *
+ * Comparison, not coercion: the digest a binding stores stays in this side's
+ * spelling, so nothing persisted changes shape.
+ */
+export function launchImageDigestMatches(bytes: Uint8Array, recorded: string): boolean {
+  const lower = recorded.toLowerCase();
+  const normalized = lower.startsWith("0x") ? lower : `0x${lower}`;
+  return launchImageDigest(bytes).toLowerCase() === normalized;
+}
+
+/**
  * Recompose `msg.value` and REFUSE unless it is the exact bigint sum.
  *
  * No tolerance, deliberately. A percentage or absolute slack on a value

@@ -25,6 +25,7 @@
  */
 
 import { z } from "zod";
+import { rejectForbiddenTokenMetadataText } from "@vex-lib/token-metadata-text-policy.js";
 
 /** A raw wei amount: non-negative decimal digits only. No sign, point or exponent. */
 const weiStringSchema = z
@@ -45,16 +46,39 @@ export const TOKEN_LAUNCH_DESCRIPTION_MAX = 512;
 export const TOKEN_LAUNCH_LINKS_MAX = 4;
 
 /**
+ * A metadata field `create()` writes ON-CHAIN, IMMUTABLY.
+ *
+ * ORDER IS THE CONTRACT. The forbidden-character policy runs on the RAW string,
+ * BEFORE the trim and before any length or URL check. Trimming first is what
+ * silently erased a leading or trailing newline: the launch then proceeded with
+ * text the policy never saw, and `submit` can sign it. Vex refuses that text
+ * instead of repairing it, because a repaired string is not the string the user
+ * reviewed and `create()` cannot be undone.
+ *
+ * The policy itself lives in `@vex-lib/token-metadata-text-policy.js` so this
+ * schema, the renderer form and the agent runtime share ONE definition.
+ */
+function onChainMetadataText(field: string) {
+  return z.string().check((ctx) => {
+    const refusal = rejectForbiddenTokenMetadataText(field, ctx.value);
+    if (refusal) ctx.issues.push({ code: "custom", input: ctx.value, message: refusal });
+  });
+}
+
+/**
  * The form the user filled. Note what is NOT here: no fee, no value, no
  * recipient, no deadline, no gas. The renderer describes the TOKEN; main decides
  * the money.
  */
 export const tokenLaunchFormSchema = z
   .object({
-    name: z.string().trim().min(1).max(TOKEN_LAUNCH_NAME_MAX),
-    symbol: z.string().trim().min(1).max(TOKEN_LAUNCH_SYMBOL_MAX),
-    description: z.string().trim().max(TOKEN_LAUNCH_DESCRIPTION_MAX).default(""),
-    links: z.array(z.string().url().startsWith("https://").max(128)).max(TOKEN_LAUNCH_LINKS_MAX).default([]),
+    name: onChainMetadataText("name").trim().min(1).max(TOKEN_LAUNCH_NAME_MAX),
+    symbol: onChainMetadataText("symbol").trim().min(1).max(TOKEN_LAUNCH_SYMBOL_MAX),
+    description: onChainMetadataText("description").trim().max(TOKEN_LAUNCH_DESCRIPTION_MAX).default(""),
+    links: z
+      .array(onChainMetadataText("link").url().startsWith("https://").max(128))
+      .max(TOKEN_LAUNCH_LINKS_MAX)
+      .default([]),
     imageId: opaqueIdSchema,
     /**
      * The prebuy as a plain decimal ETH string, exactly as typed. Main parses it
