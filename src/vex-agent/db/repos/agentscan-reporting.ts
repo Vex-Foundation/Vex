@@ -126,6 +126,7 @@ export async function ensureIdentity(
 }
 
 export async function markRegistered(): Promise<void> {
+  await ensureSingleton();
   await execute(
     `UPDATE agentscan_reporting_state
         SET registered_at = NOW(), register_attempt_count = 0,
@@ -136,6 +137,7 @@ export async function markRegistered(): Promise<void> {
 
 /** A failed register attempt: bump the counter, hold the next try for `delaySeconds`. */
 export async function noteRegisterAttemptFailed(delaySeconds: number): Promise<void> {
+  await ensureSingleton();
   await execute(
     `UPDATE agentscan_reporting_state
         SET register_attempt_count = register_attempt_count + 1,
@@ -152,6 +154,7 @@ export async function noteRegisterAttemptFailed(delaySeconds: number): Promise<v
  * identity next tick; only the stamp resets, never the identity.
  */
 export async function clearRegistration(): Promise<void> {
+  await ensureSingleton();
   await execute(
     `UPDATE agentscan_reporting_state
         SET registered_at = NULL, updated_at = NOW()
@@ -161,6 +164,7 @@ export async function clearRegistration(): Promise<void> {
 
 /** Permanent stop — 410, 403-quarantined, or a register 409. Never auto-cleared. */
 export async function markStopped(reason: AgentscanStopReason): Promise<void> {
+  await ensureSingleton();
   await execute(
     `UPDATE agentscan_reporting_state
         SET stopped_reason = $1, stopped_at = NOW(), updated_at = NOW()
