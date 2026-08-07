@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS agentscan_reporting_state (
   consent_version INT NOT NULL DEFAULT 1,
   accepted_at TIMESTAMPTZ,
   -- Set on the first 200 from /v1/agents/register; cleared on a 401 from
-  -- /v1/events so the lane re-registers (server-side reset recovery).
+  -- /v1/events so the lane re-registers (server-side reset recovery). The
+  -- same reset also re-owes every already-sent outbox row, so a 401 triggers
+  -- a full-history resend, not just a bare re-register.
   registered_at TIMESTAMPTZ,
   register_attempt_count INT NOT NULL DEFAULT 0,
   next_register_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -64,7 +66,9 @@ CREATE TABLE IF NOT EXISTS agentscan_outbox (
   -- Status SNAPSHOT at enqueue time — the event reports this status even if
   -- the live row has since moved on (the server orders statuses itself).
   status TEXT NOT NULL CHECK (status IN ('pending','confirmed','definitively_failed')),
-  -- TRUE only for rows enqueued by the one-time post-registration history scan.
+  -- TRUE for rows enqueued by the one-time post-registration history scan,
+  -- and also for rows a server-side reset re-owes for a full resend
+  -- (`resetForReRegistration` flips existing sent rows back to TRUE).
   backfill BOOLEAN NOT NULL DEFAULT FALSE,
   enqueued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   -- Terminal outcomes: accepted (or deduplicated) by the server / rejected by

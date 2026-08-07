@@ -148,9 +148,21 @@ export async function runAgentscanReport(
  * server-stopped) all report `"unregistered"` — the push lane has nothing
  * useful to distinguish between them, and the periodic lane above is what
  * gets the state past any of them. No register, no backfill, no
- * register-backoff interaction: those stay the periodic lane's job, and this
- * function never writes `agentscan_reporting_state`. State is read fresh on
- * every call, never cached across invocations.
+ * register-backoff interaction: those stay the periodic lane's job. The
+ * function itself never registers/backfills/writes state proactively, but the
+ * drain it shares with the periodic lane honors server verdicts via
+ * `sendGroup` (`resetForReRegistration()` on auth_lost, `markStopped()` on
+ * 410/quarantine), so a push-lane fire CAN reset or stop the lane's state.
+ * State is read fresh on every call, never cached across invocations.
+ *
+ * The `backfillEnqueuedAt === null` guard below is load-bearing: between the
+ * periodic lane's `markRegistered()` commit and its later
+ * `enqueueEligibleActivity(true)` + `markBackfillEnqueued()` commit — a
+ * window that is wide on first GA registration with months of history, and
+ * re-opens after every `resetForReRegistration` — a push-lane fire must not
+ * run `enqueueEligibleActivity(false)`, or it permanently mislabels the whole
+ * eligible history as live activity (backfill=false) and the periodic
+ * backfill that follows inserts zero rows and stamps the flag anyway.
  */
 export async function runAgentscanIncremental(
   deps: AgentscanReporterDeps,
@@ -164,6 +176,7 @@ export async function runAgentscanIncremental(
     return { skipped: "unregistered", ...NOTHING };
   }
   if (state.registeredAt === null) return { skipped: "unregistered", ...NOTHING };
+  if (state.backfillEnqueuedAt === null) return { skipped: "unregistered", ...NOTHING };
 
   const client = deps.buildClient(baseUrl);
   const incremental = await drainIncremental(client, state.agentHash, state.ingestToken);

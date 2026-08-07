@@ -406,6 +406,37 @@ describe("runAgentscanIncremental — push-lane drain-only entry (AC2)", () => {
     expect(stoppedClient.sendCalls).toHaveLength(0);
   });
 
+  it("registered but backfill not yet enqueued: a push-lane fire in the register→backfill window is a zero-touch no-op", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const { queryOne } = await import("@vex-agent/db/client.js");
+
+    await seedEligibleSwap();
+    await stateRepo.ensureIdentity(lane.generateAgentscanIdentity);
+    await stateRepo.markRegistered();
+
+    const stateBefore = await stateRepo.getReportingState();
+    expect(stateBefore.registeredAt).not.toBeNull();
+    expect(stateBefore.backfillEnqueuedAt).toBeNull();
+
+    const client = new FakeClient();
+    const result = await lane.runAgentscanIncremental(depsWith(client));
+
+    expect(result.skipped).toBe("unregistered");
+    expect(result.enqueued).toBe(0);
+    expect(result.sent).toBe(0);
+    expect(client.registerCalls).toHaveLength(0);
+    expect(client.sendCalls).toHaveLength(0);
+
+    const stateAfter = await stateRepo.getReportingState();
+    expect(stateAfter.backfillEnqueuedAt).toBeNull();
+
+    const outboxCount = await queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM agentscan_outbox`,
+    );
+    expect(outboxCount?.count).toBe("0");
+  });
+
   it("registered state enqueues the incremental scan and drains, touching neither register nor backfill", async () => {
     const lane = await import("../../../vex-agent/sync/agentscan-report.js");
     const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
