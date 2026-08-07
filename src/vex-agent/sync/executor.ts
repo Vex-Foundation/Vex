@@ -12,6 +12,7 @@
 
 import { initSync, syncTick, type InitSyncOptions } from "./index.js";
 import { startFastLane, type FastLaneHandle } from "./fast-lane.js";
+import { startAgentscanPush } from "./agentscan-push.js";
 import logger from "@utils/logger.js";
 
 export interface SyncExecutorHandle {
@@ -35,6 +36,12 @@ export interface SyncStartOptions {
    * subscription leaks between cases.
    */
   fastLane?: boolean;
+  /**
+   * Start the AgentScan seconds-level push lane alongside the tick. Defaults
+   * to `true`; tests that only exercise tick/fast-lane scheduling turn it off
+   * so no debounce timer or bus subscription leaks between cases.
+   */
+  agentscanPush?: boolean;
 }
 
 // 30s: the tick is a hard FLOOR for every periodic job's cadence, and the
@@ -93,14 +100,21 @@ export function startSyncExecutor(options: SyncStartOptions = {}): SyncExecutorH
   // lanes through the bus, and a subscription taken afterwards would miss them.
   const fastLane: FastLaneHandle | null =
     (options.fastLane ?? true) ? startFastLane() : null;
+  const stopAgentscanPush: (() => void) | null =
+    (options.agentscanPush ?? true) ? startAgentscanPush() : null;
 
   schedule(0);
-  logger.info("sync.executor.started", { intervalMs, fastLane: fastLane !== null });
+  logger.info("sync.executor.started", {
+    intervalMs,
+    fastLane: fastLane !== null,
+    agentscanPush: stopAgentscanPush !== null,
+  });
 
   return {
     async stop(): Promise<void> {
       stopped = true;
       fastLane?.stop();
+      stopAgentscanPush?.();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

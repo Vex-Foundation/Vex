@@ -130,19 +130,44 @@ export async function runAgentscanReport(
 
   // The one-time backfill (AC2): first enqueue after a successful registration
   // carries the whole eligible history; every later scan is incremental.
-  let backfillEnqueued = false;
-  let enqueued = 0;
   if (state.backfillEnqueuedAt === null) {
-    enqueued = await reportingRepo.enqueueEligibleActivity(true);
+    const enqueued = await reportingRepo.enqueueEligibleActivity(true);
     await reportingRepo.markBackfillEnqueued();
-    backfillEnqueued = true;
     if (enqueued > 0) logger.info("agentscan.report.backfill_enqueued", { rows: enqueued });
-  } else {
-    enqueued = await reportingRepo.enqueueEligibleActivity(false);
+    const drain = await drainOutbox(client, agentHash, ingestToken);
+    return { skipped: null, enqueued, backfillEnqueued: true, ...drain };
   }
 
-  const drain = await drainOutbox(client, agentHash, ingestToken);
-  return { skipped: null, enqueued, backfillEnqueued, ...drain };
+  const incremental = await drainIncremental(client, agentHash, ingestToken);
+  return { skipped: null, backfillEnqueued: false, ...incremental };
+}
+
+/**
+ * Drain-only entry for the seconds-level PUSH lane (`agentscan-push.ts`).
+ * Precondition misses (base URL unset, identity missing, never registered,
+ * server-stopped) all report `"unregistered"` — the push lane has nothing
+ * useful to distinguish between them, and the periodic lane above is what
+ * gets the state past any of them. No register, no backfill, no
+ * register-backoff interaction: those stay the periodic lane's job, and this
+ * function never writes `agentscan_reporting_state`. State is read fresh on
+ * every call, never cached across invocations.
+ */
+export async function runAgentscanIncremental(
+  deps: AgentscanReporterDeps,
+): Promise<AgentscanReportResult> {
+  const baseUrl = deps.baseUrl();
+  if (baseUrl === null) return { skipped: "unregistered", ...NOTHING };
+
+  const state = await reportingRepo.getReportingState();
+  if (state.stoppedReason !== null) return { skipped: "unregistered", ...NOTHING };
+  if (state.agentHash === null || state.ingestToken === null) {
+    return { skipped: "unregistered", ...NOTHING };
+  }
+  if (state.registeredAt === null) return { skipped: "unregistered", ...NOTHING };
+
+  const client = deps.buildClient(baseUrl);
+  const incremental = await drainIncremental(client, state.agentHash, state.ingestToken);
+  return { skipped: null, backfillEnqueued: false, ...incremental };
 }
 
 // ── register ────────────────────────────────────────────────────────────────
@@ -194,6 +219,21 @@ function registerBackoffSeconds(attemptCount: number): number {
 }
 
 // ── drain ───────────────────────────────────────────────────────────────────
+
+/**
+ * The incremental scan-then-drain step: shared verbatim by the periodic
+ * lane's non-backfill tick and the push lane's `runAgentscanIncremental`, so
+ * there is exactly one place that enqueues an incremental diff and drains it.
+ */
+async function drainIncremental(
+  client: AgentscanClient,
+  agentHash: string,
+  ingestToken: string,
+): Promise<Pick<AgentscanReportResult, "enqueued" | "sent" | "rejected" | "deferred">> {
+  const enqueued = await reportingRepo.enqueueEligibleActivity(false);
+  const drain = await drainOutbox(client, agentHash, ingestToken);
+  return { enqueued, ...drain };
+}
 
 async function drainOutbox(
   client: AgentscanClient,

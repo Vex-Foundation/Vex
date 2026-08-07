@@ -376,3 +376,65 @@ describe("reporter lane — server-answer table", () => {
     expect(client.sendCalls).toHaveLength(1);
   });
 });
+
+describe("runAgentscanIncremental — push-lane drain-only entry (AC2)", () => {
+  it("every precondition miss is a zero-touch 'unregistered' skip: no enqueue, no register, no send", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+
+    const disabledClient = new FakeClient();
+    const disabled = await lane.runAgentscanIncremental(depsWith(disabledClient, null));
+    expect(disabled.skipped).toBe("unregistered");
+    expect(disabled.enqueued).toBe(0);
+    expect(disabledClient.registerCalls).toHaveLength(0);
+    expect(disabledClient.sendCalls).toHaveLength(0);
+
+    await seedEligibleSwap();
+    const neverRegisteredClient = new FakeClient();
+    const neverRegistered = await lane.runAgentscanIncremental(depsWith(neverRegisteredClient));
+    expect(neverRegistered.skipped).toBe("unregistered");
+    expect(neverRegistered.enqueued).toBe(0);
+    expect(neverRegisteredClient.registerCalls).toHaveLength(0);
+    expect(neverRegisteredClient.sendCalls).toHaveLength(0);
+    expect((await stateRepo.getReportingState()).registeredAt).toBeNull();
+
+    await stateRepo.markStopped("consent_revoked");
+    const stoppedClient = new FakeClient();
+    const stopped = await lane.runAgentscanIncremental(depsWith(stoppedClient));
+    expect(stopped.skipped).toBe("unregistered");
+    expect(stoppedClient.registerCalls).toHaveLength(0);
+    expect(stoppedClient.sendCalls).toHaveLength(0);
+  });
+
+  it("registered state enqueues the incremental scan and drains, touching neither register nor backfill", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+
+    await seedEligibleSwap();
+    const bootstrapClient = new FakeClient();
+    await lane.runAgentscanReport(depsWith(bootstrapClient));
+    expect(bootstrapClient.registerCalls).toHaveLength(1);
+
+    const stateBefore = await stateRepo.getReportingState();
+    expect(stateBefore.registeredAt).not.toBeNull();
+    expect(stateBefore.backfillEnqueuedAt).not.toBeNull();
+
+    const seededB = await seedEligibleSwap();
+    const pushClient = new FakeClient();
+    const result = await lane.runAgentscanIncremental(depsWith(pushClient));
+
+    expect(result.skipped).toBeNull();
+    expect(result.backfillEnqueued).toBe(false);
+    expect(result.enqueued).toBe(1);
+    expect(pushClient.registerCalls).toHaveLength(0);
+    expect(pushClient.sendCalls).toHaveLength(1);
+    const batch = at(pushClient.sendCalls, 0);
+    expect(batch.backfill).toBe(false);
+    expect(batch.events.map((e) => e.sourceRowId)).toEqual([String(seededB.activityId)]);
+    expect(result.sent).toBe(1);
+
+    const stateAfter = await stateRepo.getReportingState();
+    expect(stateAfter.backfillEnqueuedAt).toEqual(stateBefore.backfillEnqueuedAt);
+    expect(stateAfter.registeredAt).toEqual(stateBefore.registeredAt);
+  });
+});
