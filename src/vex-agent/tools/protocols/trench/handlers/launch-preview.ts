@@ -31,6 +31,16 @@
  * an agent budgets a launch from. A resolver I/O failure is a REFUSAL by name,
  * never a quiet degrade to the empty sim.
  *
+ * PREBUY PRICING. An optional `prebuy` prices a launch that buys into its own
+ * curve: it is parsed by the execution path's OWN parser (`launch/validate.ts`
+ * `parsePrebuy`, refusals and fat-finger ceiling included) and composed into
+ * `msg.value` by the execution path's OWN composer (`launch/authorization.ts`
+ * `composeLaunchMsgValue`), so the simulated call, the gas estimate, the Vex fee
+ * and every total describe the launch the caller named. Before this the agent
+ * had to do that arithmetic freehand, which is exactly what this surface exists
+ * to remove. It comes from the caller's own parameter and nowhere else, and the
+ * preview remains strictly read-only: nothing here signs, approves or spends.
+ *
  * The on-chain leg degrades to a validation-only preview when no wallet is
  * selected or the RPC is unreachable, rather than throwing.
  */
@@ -53,7 +63,16 @@ import {
   LaunchImageResolverUnavailableError,
   resolveLaunchImageBytes,
 } from "../launch-image-byte-resolver.js";
-import { launchImageDigest } from "./launch/authorization.js";
+import { composeLaunchMsgValue, launchImageDigestMatches } from "./launch/authorization.js";
+import { parsePrebuy } from "./launch/validate.js";
+import { rejectForbiddenTokenMetadataText } from "../../../../../lib/token-metadata-text-policy.js";
+import {
+  TOKEN_METADATA_NAME_MAX as NAME_MAX,
+  TOKEN_METADATA_SYMBOL_MAX as SYMBOL_MAX,
+  TOKEN_METADATA_DESCRIPTION_MAX as DESCRIPTION_MAX,
+  TOKEN_METADATA_LINKS_MAX as LINKS_MAX,
+  TOKEN_METADATA_LINK_LENGTH_MAX as LINK_LEN_MAX,
+} from "../../../../../lib/token-metadata-limits.js";
 import { LAUNCH_FEE_LEG_GAS_LIMIT, readNativeBalance } from "./launch/plan.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import { ok, fail } from "../../handler-helpers.js";
@@ -69,16 +88,10 @@ import { trenchFailureDetail } from "./failure.js";
  */
 const TRENCH_CREATION_FEE_WEI = 1_000_000_000_000_000n; // 0.001 ETH
 
-/**
- * The chain's limit, not a house style: `create()` reverts `invalid name` past
- * 18 characters (`handlers/launch/validate.ts`). A looser cap here would let a
- * preview succeed for a name the real launch cannot carry.
- */
-const NAME_MAX = 18;
-const SYMBOL_MAX = 16;
-const DESCRIPTION_MAX = 512;
-const LINKS_MAX = 4;
-const LINK_LEN_MAX = 128;
+// The metadata length caps are the chain's own, not a house style, and come
+// from the ONE definition in `lib/token-metadata-limits.ts` that the execution
+// path and the IPC form schema also import. A looser cap here would let a
+// preview succeed for a name the real launch cannot carry.
 /** Practical on-chain image cap: ~20 KB before the create reverts at the block gas limit. */
 const IMAGE_BYTES_MAX = 20_000;
 
@@ -93,6 +106,11 @@ interface ValidatedLaunch {
   links: string[];
   imageByteLength: number | null;
   imageId: string | null;
+  /**
+   * Wei, from the CALLER'S OWN `prebuy` param and nowhere else. Zero means the
+   * preview prices a no-prebuy launch, which is what it always did.
+   */
+  prebuyWei: bigint;
 }
 
 /**
@@ -121,6 +139,14 @@ const IMAGE_FALLBACK_NOTE: Record<ImageFallbackReason, string> = {
 };
 
 function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | string {
+  // The on-chain metadata policy is SHARED with the execution path, so a text
+  // this preview accepts is exactly a text a launch would accept. Raw values,
+  // before any trim and before the scheme check (see `lib/token-metadata-text-policy.ts`).
+  for (const field of ["name", "symbol", "description", "links"] as const) {
+    const refusal = rejectForbiddenTokenMetadataText(field, p[field]);
+    if (refusal) return refusal;
+  }
+
   const name = typeof p.name === "string" ? p.name.trim() : "";
   if (!name) return "Missing required: name.";
   if (name.length > NAME_MAX) return `name must be at most ${NAME_MAX} characters.`;
@@ -149,6 +175,12 @@ function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | str
     return "imageId must be a non-empty locker image id.";
   }
 
+  // The SAME parser the execution path uses, so a prebuy this preview prices is
+  // a prebuy a launch would accept, and an invalid one is refused here with the
+  // exact words `trench.launch_execute` would use.
+  const prebuy = parsePrebuy(p.prebuy);
+  if (typeof prebuy === "string") return prebuy;
+
   return {
     name,
     symbol,
@@ -156,6 +188,7 @@ function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | str
     links,
     imageByteLength: imageRead.value,
     imageId: imageIdRaw === "" ? null : imageIdRaw,
+    prebuyWei: prebuy,
   };
 }
 
@@ -189,7 +222,7 @@ async function resolveImagePricing(validated: ValidatedLaunch): Promise<ImagePri
   }
 
   if (resolved === null) return { kind: "empty_fallback", reason: "image_not_found" };
-  if (launchImageDigest(resolved.bytes) !== resolved.digest) {
+  if (!launchImageDigestMatches(resolved.bytes, resolved.digest)) {
     return { kind: "empty_fallback", reason: "image_digest_mismatch" };
   }
 
@@ -208,7 +241,14 @@ async function resolveImagePricing(validated: ValidatedLaunch): Promise<ImagePri
   return { kind: "staged_bytes", bytes: resolved.bytes };
 }
 
-/** The calldata the dry-run simulates: the real create for staged bytes, the historical empty-image call otherwise. */
+/**
+ * The calldata the dry-run simulates: the real create for staged bytes, the
+ * historical empty-image call otherwise.
+ *
+ * The prebuy travels as `initialBuy` in BOTH shapes, so the simulation and the
+ * gas estimate price the launch the caller actually described. A zero prebuy
+ * encodes exactly the calldata this preview has always built.
+ */
 function buildPreviewCalldata(validated: ValidatedLaunch, pricing: ImagePricing): Hex {
   if (pricing.kind === "staged_bytes") {
     return buildCreateCalldata({
@@ -217,15 +257,23 @@ function buildPreviewCalldata(validated: ValidatedLaunch, pricing: ImagePricing)
       description: validated.description,
       links: validated.links,
       imageBytes: pricing.bytes,
-      // The preview models a NO-PREBUY launch; that scope is stated in the
-      // response and is what `noPrebuyBalanceVerdict` is named after.
-      prebuyWei: 0n,
+      prebuyWei: validated.prebuyWei,
     });
   }
   return encodeFunctionData({
     abi: TRENCH_DIAMOND_ABI,
     functionName: "create",
-    args: [validated.name, validated.symbol, validated.description, "0x", validated.links, "0x", 0, 0, 0n],
+    args: [
+      validated.name,
+      validated.symbol,
+      validated.description,
+      "0x",
+      validated.links,
+      "0x",
+      0,
+      0,
+      validated.prebuyWei,
+    ],
   });
 }
 
@@ -238,21 +286,34 @@ function buildPreviewCalldata(validated: ValidatedLaunch, pricing: ImagePricing)
  * therefore answers `unpriced` and NEVER a shortfall, however large the balance
  * is: a "sufficient" derived from an under-estimate is exactly the false comfort
  * that sends an agent into an on-chain failure it already paid gas for.
+ *
+ * WHY THE FIELD IS NO LONGER CALLED `noPrebuyBalanceVerdict`. That name was
+ * earned: the preview could only price a launch with no prebuy, and a verdict
+ * that did not say so would have claimed more than it priced. Now the preview
+ * CAN price a prebuy, so the same honesty rule forces the opposite move — a
+ * fixed "no prebuy" in the name would be a lie whenever one was priced. The
+ * verdict is therefore `balanceVerdict`, and it carries `balanceVerdictScope`
+ * naming the exact scenario it judged (`no_prebuy` or `prebuy_included`). The
+ * verdict never implies a scenario it did not price.
  */
-async function judgeNoPrebuyBalance(
+async function judgePricedLaunchBalance(
   publicClient: ReturnType<typeof getLocalPublicClient>,
   walletAddress: Address,
   pricing: ImagePricing,
   totalCostWei: bigint,
+  prebuyWei: bigint,
 ): Promise<Record<string, unknown>> {
-  if (pricing.kind !== "staged_bytes") return { noPrebuyBalanceVerdict: "unpriced" };
+  const scope = { balanceVerdictScope: prebuyWei > 0n ? "prebuy_included" : "no_prebuy" };
+
+  if (pricing.kind !== "staged_bytes") return { balanceVerdict: "unpriced", ...scope };
 
   const balanceRead = await readNativeBalance(publicClient, walletAddress);
-  if (!balanceRead.ok) return { noPrebuyBalanceVerdict: "unpriced" };
+  if (!balanceRead.ok) return { balanceVerdict: "unpriced", ...scope };
 
   if (balanceRead.balanceWei >= totalCostWei) {
     return {
-      noPrebuyBalanceVerdict: "sufficient",
+      balanceVerdict: "sufficient",
+      ...scope,
       walletBalanceWei: balanceRead.balanceWei.toString(),
       walletBalanceEth: formatEther(balanceRead.balanceWei),
     };
@@ -260,11 +321,12 @@ async function judgeNoPrebuyBalance(
   // Exact wei, no tolerance and no percentage (rule 90).
   const shortfallWei = totalCostWei - balanceRead.balanceWei;
   return {
-    noPrebuyBalanceVerdict: "insufficient",
+    balanceVerdict: "insufficient",
+    ...scope,
     walletBalanceWei: balanceRead.balanceWei.toString(),
     walletBalanceEth: formatEther(balanceRead.balanceWei),
-    noPrebuyShortfallWei: shortfallWei.toString(),
-    noPrebuyShortfallEth: formatEther(shortfallWei),
+    balanceShortfallWei: shortfallWei.toString(),
+    balanceShortfallEth: formatEther(shortfallWei),
   };
 }
 
@@ -277,26 +339,30 @@ export async function trenchLaunchPreviewHandler(
 
   const feeEth = formatEther(TRENCH_CREATION_FEE_WEI);
 
-  // The Vex fee is 25 bps of the launch's ETH leg (`msg.value`). This preview
-  // carries no prebuy, so the leg here is the creation fee alone — a real launch
-  // with a prebuy raises BOTH `msg.value` and this fee proportionally, which the
-  // note says out loud rather than leaving the agent to infer it. Stating the
-  // creation fee and gas as "the total" while omitting this leg under-states the
-  // cost of launching on the surface the agent prices launches from.
-  const feeSplit = splitTrenchEthForFee(TRENCH_CREATION_FEE_WEI);
+  // `msg.value` is composed by the SAME function the execution path composes it
+  // with — creation fee + prebuy, exact bigint sum, no tolerance — so the
+  // simulated call, the gas estimate and every total below describe the launch
+  // the caller named rather than a no-prebuy stand-in for it.
+  const msgValueWei = composeLaunchMsgValue(TRENCH_CREATION_FEE_WEI, validated.prebuyWei);
+
+  // The Vex fee is 25 bps of the launch's WHOLE ETH leg (`msg.value`), so a
+  // prebuy raises it proportionally. Stating the creation fee and gas as "the
+  // total" while omitting this leg would under-state the cost of launching on
+  // the surface the agent prices launches from.
+  const feeSplit = splitTrenchEthForFee(msgValueWei);
   const vexFee = feeSplit.charged
     ? buildTrenchFeeDisclosure({
         basis: "launch_msg_value",
-        baseWei: TRENCH_CREATION_FEE_WEI,
+        baseWei: msgValueWei,
         feeWei: feeSplit.feeRaw,
       })
     : buildTrenchFeeSkippedDisclosure({
         basis: "launch_msg_value",
-        baseWei: TRENCH_CREATION_FEE_WEI,
+        baseWei: msgValueWei,
         reason: "25 bps of this launch's ETH leg floors to zero.",
       });
   const vexFeeWei = feeSplit.charged ? feeSplit.feeRaw : 0n;
-  const costBeforeGasWei = TRENCH_CREATION_FEE_WEI + vexFeeWei;
+  const costBeforeGasWei = msgValueWei + vexFeeWei;
 
   const base = {
     chain: "robinhood",
@@ -306,13 +372,22 @@ export async function trenchLaunchPreviewHandler(
     linksCount: validated.links.length,
     creationFeeWei: TRENCH_CREATION_FEE_WEI.toString(),
     creationFeeEth: feeEth,
+    /** The caller's own prebuy, priced. Zero when none was named. */
+    prebuyWei: validated.prebuyWei.toString(),
+    prebuyEth: formatEther(validated.prebuyWei),
+    /** Creation fee + prebuy, exactly — the ETH leg the launch would send. */
+    msgValueWei: msgValueWei.toString(),
+    msgValueEth: formatEther(msgValueWei),
     vexFee,
-    /** Creation fee + Vex fee. Network gas is separate and only an estimate. */
+    /** msg.value + Vex fee. Network gas is separate and only an estimate. */
     costBeforeGasWei: costBeforeGasWei.toString(),
     costBeforeGasEth: formatEther(costBeforeGasWei),
     feeNote:
-      "Costs shown are for a launch with NO prebuy. A prebuy is added to msg.value and the Vex fee is 25 bps of "
-      + "that whole ETH leg, so both rise with it.",
+      validated.prebuyWei > 0n
+        ? `Costs shown INCLUDE the prebuy of ${formatEther(validated.prebuyWei)} ETH: it is part of msg.value and the `
+          + "Vex fee is 25 bps of that whole ETH leg."
+        : "Costs shown are for a launch with NO prebuy. Pass prebuy to price one: it is added to msg.value and the "
+          + "Vex fee is 25 bps of that whole ETH leg, so both rise with it.",
   };
 
   // On-chain simulation needs a `from` with balance for the payable value.
@@ -325,9 +400,9 @@ export async function trenchLaunchPreviewHandler(
       ...base,
       simulated: false,
       note:
-        "No EVM wallet is selected, so the on-chain dry-run was skipped. Params validated; the creation fee and the "
-        + "Vex fee are shown (costBeforeGas is their sum). Select a wallet to simulate the launch and get the "
-        + "predicted token address and gas cost.",
+        "No EVM wallet is selected, so the on-chain dry-run was skipped. Params validated; msg.value (creation fee "
+        + "+ prebuy) and the Vex fee on it are shown (costBeforeGas is their sum). Select a wallet to simulate the "
+        + "launch and get the predicted token address and gas cost.",
     });
   }
 
@@ -345,7 +420,7 @@ export async function trenchLaunchPreviewHandler(
         imageByteLengthPriced: pricing.bytes.length,
         imageNote:
           "Priced with the REAL staged image bytes, encoded exactly as the launch would encode them, so this gas "
-          + "figure is the launch's own. A prebuy is still not modelled.",
+          + "figure is the launch's own.",
       }
     : {
         imagePriced: "empty_fallback",
@@ -361,7 +436,7 @@ export async function trenchLaunchPreviewHandler(
       account: fromAddress as Hex,
       to: TRENCH_DIAMOND_ADDRESS as Hex,
       data,
-      value: TRENCH_CREATION_FEE_WEI,
+      value: msgValueWei,
     });
     if (!sim.data) {
       return fail("Launch simulation returned no data — cannot predict the token address.");
@@ -376,7 +451,7 @@ export async function trenchLaunchPreviewHandler(
       account: fromAddress as Hex,
       to: TRENCH_DIAMOND_ADDRESS as Hex,
       data,
-      value: TRENCH_CREATION_FEE_WEI,
+      value: msgValueWei,
     });
     const gasLimit = gasLimitWithHeadroom(gasEstimate);
     const gasPrice = await publicClient.getGasPrice();
@@ -388,11 +463,12 @@ export async function trenchLaunchPreviewHandler(
     const feeLegGasCostWei = vexFeeWei > 0n ? LAUNCH_FEE_LEG_GAS_LIMIT * gasPrice : 0n;
     const totalCostWei = costBeforeGasWei + gasCostWei + feeLegGasCostWei;
 
-    const balanceVerdict = await judgeNoPrebuyBalance(
+    const balanceVerdict = await judgePricedLaunchBalance(
       publicClient,
       fromAddress as Address,
       pricing,
       totalCostWei,
+      validated.prebuyWei,
     );
 
     return ok({
@@ -423,9 +499,12 @@ export async function trenchLaunchPreviewHandler(
       note:
         "Read-only preview. Nothing was signed or broadcast; gas shown uses our safety headroom over a fresh estimate "
         + (pricing.kind === "staged_bytes" ? "with the staged image bytes. " : "with an EMPTY image. ")
-        + "estimatedTotalCost = creation fee + Vex fee + gas for BOTH transactions (the launch and the separate fee "
-        + "transfer). noPrebuyBalanceVerdict covers a NO-PREBUY launch only, and is 'unpriced' whenever the image was "
-        + "not priced, because a real launch always carries an image.",
+        + "estimatedTotalCost = msg.value (creation fee + prebuy) + Vex fee + gas for BOTH transactions (the launch "
+        + "and the separate fee transfer). balanceVerdict judges exactly the scenario named in balanceVerdictScope "
+        + (validated.prebuyWei > 0n
+          ? "('prebuy_included' — this prebuy is part of every figure above), "
+          : "('no_prebuy' — pass prebuy to price one), ")
+        + "and is 'unpriced' whenever the image was not priced, because a real launch always carries an image.",
     });
   } catch (err) {
     return fail(`Launch preview simulation failed (${trenchFailureDetail("trench.launch_preview", err)})`);

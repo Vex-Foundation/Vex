@@ -15,14 +15,16 @@
  * afterwards would leave the claim with nothing to claim.
  *
  * WHAT THE STALENESS CHECK CAN AND CANNOT SEE, stated plainly because the gap is
- * load-bearing: `previewId` binds the anchored block AND the creation fee read
- * there, so a moved fee or a moved anchor is caught here. Everything else in the
+ * load-bearing: `previewId` carries the CREATION FEE read at the anchored block,
+ * so a moved creation fee is caught here. Nothing else is. The rest of the
  * binding is derived from the SAME form object this submit carries, so it cannot
- * drift between the two derivations. The one thing that CAN drift and is not
- * caught is the image DIGEST behind an unchanged `imageId` — catching that needs
- * the previewed binding to have been persisted, which is what the
- * `authorizationJson` consent snapshot is for. Until that snapshot is read back
- * as a gate input, this is a previewId CAS and is described as nothing more.
+ * drift between the two derivations, but neither can it be checked against what
+ * the user actually previewed: main keeps no record of the previews it issued.
+ * The image DIGEST behind an unchanged `imageId` can drift and is not caught
+ * either. Catching those needs the previewed binding to have been persisted,
+ * which is what the `authorizationJson` consent snapshot is for. Until that
+ * snapshot is read back as a gate input, this is a creation-fee CAS and is
+ * described as nothing more.
  */
 
 import { randomUUID } from "node:crypto";
@@ -187,32 +189,47 @@ export async function submitLaunch(
     return { ok: false, refusal: refusalFromPlanCode(planned.code, planned.reason) };
   }
 
-  // THE PREVIEW CAS — VALUE-anchored, not block-anchored. `previewId` is
-  // `lp_<anchorBlock>_<msgValueWei>`, and the anchor block advances roughly
-  // every second on Robinhood Chain, so literal id equality refused every
-  // honest Deploy (proven by the funded UI-path probe, 2026-08-02: two reads
-  // five blocks apart with an IDENTICAL creation fee were called "changed").
-  // The user consents to the FIGURE they were shown — msgValue = creation fee
-  // + prebuy, exactly — so that is what must still hold; the block is
-  // provenance. The prebuy comes from the same form on both derivations, so a
-  // moved msgValue can only mean a moved creation fee. The full field-by-field
-  // gate (fee, image digest, calldata fingerprint) runs AGAIN in the executor
-  // against the persisted consent snapshot; this check exists to catch the
-  // moved fee before an intent row is ever written.
+  // THE PREVIEW CAS — CREATION-FEE anchored, because that is the only quantity
+  // the id has ever carried. `launchPreviewId` (plan.ts) mints
+  // `lp_<anchorBlock>_<creationFeeWei>`, so this compare must read the creation
+  // fee back out of it. Comparing the payload against `msgValueWei` was the
+  // 2026-08-06 incident: `msgValue` is fee + prebuy, so every launch with a
+  // NONZERO PREBUY refused forever, and re-previewing could never break the loop
+  // because the id is byte-identical whatever the prebuy is. Proven with a
+  // no-funds reproduction through the real plan builder against mainnet reads:
+  // prebuy 0 and prebuy 0.0005 both minted lp_29489845_1000000000000000, while
+  // msgValue differed by exactly the prebuy.
+  //
+  // The block is PROVENANCE, not a gate: the anchor advances roughly every
+  // second on Robinhood Chain, so literal id equality refused every honest
+  // Deploy (funded UI-path probe, 2026-08-02: two reads five blocks apart with
+  // an identical creation fee were called "changed").
+  //
+  // WHAT THIS DELIBERATELY DOES NOT DO, so nobody reads more into it: it cannot
+  // bind the SUBMITTED form to the PREVIEWED form. Main holds no record of the
+  // previews it issued, so a submit that carries a different prebuy from the one
+  // priced in the dialog passes here. Binding that needs an opaque id plus an
+  // issued-preview register, which is a separate patch and is NOT covered by
+  // this guard. The full field-by-field gate (fee, image digest, calldata
+  // fingerprint) runs AGAIN in the executor against the persisted consent
+  // snapshot; this check exists to catch a moved creation fee before an intent
+  // row is ever written.
   const previewIdShape = /^lp_\d+_(\d+)$/.exec(input.previewId);
-  const shownMsgValueWei = previewIdShape?.[1] ?? null;
-  if (shownMsgValueWei === null || shownMsgValueWei !== planned.plan.preview.msgValueWei) {
+  const shownCreationFeeWei = previewIdShape?.[1] ?? null;
+  if (
+    shownCreationFeeWei === null
+    || shownCreationFeeWei !== planned.plan.preview.creationFeeWei
+  ) {
     return {
       ok: false,
       refusal: {
         kind: "preview_stale",
         detail:
-          `The launch cost changed since you were shown it: the total to send now reads `
-          + `${planned.plan.preview.msgValueWei} wei (creation fee `
-          + `${planned.plan.preview.creationFeeWei} at block `
-          + `${planned.plan.preview.anchorBlockNumber}), while you were shown `
-          + `${shownMsgValueWei ?? "an unreadable preview id"}. Nothing was signed — preview the `
-          + `launch again and review the new figures before deploying.`,
+          `The launchpad's creation fee changed since you were shown it: it now reads `
+          + `${planned.plan.preview.creationFeeWei} wei at block `
+          + `${planned.plan.preview.anchorBlockNumber}, while the preview you are looking at was `
+          + `priced at ${shownCreationFeeWei ?? "an unreadable preview id"} wei. Nothing was `
+          + `signed. Preview the launch again and review the new figures before deploying.`,
       },
     };
   }

@@ -280,7 +280,11 @@ describe("the fee comes from the anchored read, and fails closed", () => {
     expect(result.code).toBe("fee_unreadable");
   });
 
-  it("the previewId binds the anchored block AND the fee read there", async () => {
+  // ONE CONTRACT: the payload is the CREATION FEE, never `msg.value`. The
+  // main-side submit CAS reads it back as the fee, and the cross-seam suite in
+  // `vex-app/src/main/token-launch/__tests__/submit-preview-id-cross-seam.test.ts`
+  // proves the two agree without a hand-written id on either side.
+  it("the previewId carries the anchored block AND the CREATION FEE read there", async () => {
     mountImage();
     const result = await buildLaunchPlan(baseInput() as never);
     expect(result.ok).toBe(true);

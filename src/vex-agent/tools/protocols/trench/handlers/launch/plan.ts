@@ -175,12 +175,22 @@ function refuse(code: LaunchPlanRefusalCode, reason: string): BuildLaunchPlanRes
 }
 
 /**
- * The `previewId` binds the anchored block AND the fee read there.
+ * The `previewId` carries the anchored block AND the CREATION FEE read there.
  *
- * That is what makes staleness detectable WITHOUT a second mechanism: submitting
- * against a preview whose fee no longer re-derives is the same failure as any
- * other authorization drift, and produces the same `tokenLaunch.preview_stale`
- * refusal with both numbers.
+ * ONE CONTRACT, and it is the fee. The payload is `creationFeeWei` and nothing
+ * else — not `msg.value`, which also contains the user's prebuy. Every consumer
+ * must read it back as the fee: the main-side submit CAS compared it against
+ * `msgValueWei` and thereby hard-blocked every launch with a nonzero prebuy
+ * forever (2026-08-06), because the id is byte-identical whatever the prebuy is.
+ *
+ * The fee is the right anchor precisely BECAUSE it is not the total: it is the
+ * one component of `msg.value` the user does not control, so it is the one that
+ * can move under them between preview and Deploy. A total-only anchor would also
+ * be blind at the privileged boundary, since a fee rise exactly offset by a
+ * lower submitted prebuy keeps the total constant.
+ *
+ * The block is provenance, not a gate. Anchors advance roughly every second on
+ * Robinhood Chain, so no consumer may require literal id equality.
  */
 export function launchPreviewId(anchorBlockNumber: bigint, creationFeeWei: bigint): string {
   return `lp_${anchorBlockNumber.toString()}_${creationFeeWei.toString()}`;
