@@ -144,6 +144,13 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const expiryResult = await expireOverdueLaunchForms();
         result = { ...expiryResult };
         rowsAffected = expiryResult.expired;
+      } else if (syncType === "agentscan_report") {
+        // AgentScan reporting lane — see sync/agentscan-report.ts. Keyless
+        // telemetry POST only; never signs, never money-path.
+        const { runAgentscanReport, buildProductionAgentscanReporterDeps } = await import("./agentscan-report.js");
+        const reportResult = await runAgentscanReport(buildProductionAgentscanReporterDeps());
+        result = { ...reportResult };
+        rowsAffected = reportResult.sent;
       } else if (syncType === "balances_snapshot") {
         // Wave P — a transaction terminalized, so take a fresh portfolio
         // snapshot now rather than at the next 300s periodic cycle.
@@ -238,6 +245,13 @@ export async function processNextRun(): Promise<boolean> {
       const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
       const expiryResult = await expireOverdueLaunchForms();
       await syncRepo.completeRun(run.id, { ...expiryResult }, expiryResult.expired);
+    } else if (job.syncType === "agentscan_report") {
+      // AgentScan reporting lane — BOTH dispatchers need this branch; the
+      // bridge job shipped with one missing and its timer silently fired
+      // nothing for weeks. See sync/agentscan-report.ts.
+      const { runAgentscanReport, buildProductionAgentscanReporterDeps } = await import("./agentscan-report.js");
+      const reportResult = await runAgentscanReport(buildProductionAgentscanReporterDeps());
+      await syncRepo.completeRun(run.id, { ...reportResult }, reportResult.sent);
     } else if (job.syncType === "balances_snapshot") {
       // Wave P — see the same branch in `drainPendingRuns` above. BOTH
       // dispatchers need it: the bridge job shipped with a branch missing from

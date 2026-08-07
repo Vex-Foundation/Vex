@@ -83,6 +83,10 @@ export interface VexConfig {
     kyberswapAggregatorUrl: string;
     kyberswapTokenApiUrl: string;
     kyberswapCommonServiceUrl: string;
+    // AgentScan ingest base URL (public activity explorer). Empty = reporting
+    // fully off — dark until the AgentScan domain is decided; the deep-merge in
+    // loadConfig() fills the key for existing installs when a default lands.
+    agentscanApiUrl: string;
   };
   solana: {
     cluster: "mainnet-beta" | "devnet" | "testnet" | "custom";
@@ -143,6 +147,7 @@ export function getDefaultConfig(): VexConfig {
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
+      agentscanApiUrl: "",
     },
   };
 }

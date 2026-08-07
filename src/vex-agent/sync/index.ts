@@ -178,6 +178,14 @@ export async function syncTick(): Promise<void> {
         const expiryResult = await expireOverdueLaunchForms();
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(runId, { ...expiryResult, periodic: true }, expiryResult.expired);
+      } else if (job.syncType === "agentscan_report") {
+        // AgentScan reporting lane — periodic driver, mirroring the branch
+        // above exactly. Omitting it is the silent C1 defect the bridge sweep
+        // hit. Keyless telemetry POST only; never signs, never money-path.
+        const { runAgentscanReport, buildProductionAgentscanReporterDeps } = await import("./agentscan-report.js");
+        const reportResult = await runAgentscanReport(buildProductionAgentscanReporterDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...reportResult, periodic: true }, reportResult.sent);
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });
       }
