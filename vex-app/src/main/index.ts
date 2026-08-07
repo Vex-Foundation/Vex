@@ -37,6 +37,7 @@ import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
+import { exposeAppVersionToEngine } from "./agent/engine-env.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupCompactionPreparationWorker } from "./agent/compaction-preparation-worker.js";
@@ -191,7 +192,10 @@ async function initializeMainRuntime(): Promise<void> {
   // gate — sync makes no inference calls; it does public-address network reads.
   // It stays idle until the protocol_sync_jobs schema is ready (supervisor
   // probe), independent of vault unlock (an accepted privacy trade-off; no key
-  // material is touched).
+  // material is touched). The engine's AgentScan reporter (invoked from this
+  // executor) reads VEX_APP_VERSION from env, so it must be stamped before
+  // the worker can dynamically import that code.
+  exposeAppVersionToEngine();
   const stopSyncWorker = setupSyncWorker();
 
   // 6a-memory. Own the engine memory_manager executor so enqueued memory_jobs
