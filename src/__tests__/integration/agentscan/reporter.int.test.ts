@@ -300,6 +300,64 @@ describe("reporter lane — server-answer table", () => {
     expect(second.sent).toBe(1);
   });
 
+  it("auth_lost triggers a FULL idempotent resend: previously-sent rows come back backfill:true; a previously-rejected row is never resent (AC1)", async () => {
+    const { execute, queryOne } = await import("@vex-agent/db/client.js");
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const seededA = await seedEligibleSwap();
+    const seededB = await seedEligibleSwap();
+    const client = new FakeClient();
+
+    // Run 1: register + backfill both rows; one accepted, one rejected.
+    client.sendOutcomes = [{ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [1] }];
+    const first = await lane.runAgentscanReport(depsWith(client));
+    expect(first.sent).toBe(1);
+    expect(first.rejected).toBe(1);
+    const registeredHash = at(client.registerCalls, 0).agentHash;
+
+    // Ordering of the backfill batch is not guaranteed, so read the DB to
+    // find out which seeded activity landed sent vs. rejected.
+    async function pendingRow(activityId: number) {
+      return queryOne<{ sent_at: Date | null; rejected_at: Date | null }>(
+        `SELECT sent_at, rejected_at FROM agentscan_outbox WHERE activity_id = $1 AND status = 'pending'`,
+        [activityId],
+      );
+    }
+    const aRow = await pendingRow(seededA.activityId);
+    const sentActivityId = aRow?.sent_at != null ? seededA.activityId : seededB.activityId;
+    const rejectedActivityId = aRow?.sent_at != null ? seededB.activityId : seededA.activityId;
+
+    // Run 2: a fresh incremental row (the confirm transition) arrives, but
+    // the server has forgotten the token (simulated server-side DB reset).
+    await confirmRow(sentActivityId);
+    client.sendOutcomes = [{ kind: "auth_lost" }];
+    const second = await lane.runAgentscanReport(depsWith(client));
+    expect(second.deferred).toBe(1);
+    expect((await stateRepo.getReportingState()).registeredAt).toBeNull();
+
+    // Force everything due (test shortcut) and let run 3 re-register + resend.
+    await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
+    client.sendOutcomes = [];
+
+    const third = await lane.runAgentscanReport(depsWith(client));
+
+    expect(client.registerCalls).toHaveLength(2);
+    expect(at(client.registerCalls, 1).agentHash).toBe(registeredHash);
+    expect(third.sent).toBe(2);
+
+    const resentRow = await pendingRow(sentActivityId);
+    expect(resentRow?.sent_at).not.toBeNull();
+    const resentBackfillRow = await queryOne<{ backfill: boolean }>(
+      `SELECT backfill FROM agentscan_outbox WHERE activity_id = $1 AND status = 'pending'`,
+      [sentActivityId],
+    );
+    expect(resentBackfillRow?.backfill).toBe(true);
+
+    const stillRejected = await pendingRow(rejectedActivityId);
+    expect(stillRejected?.rejected_at).not.toBeNull();
+    expect(stillRejected?.sent_at).toBeNull();
+  });
+
   it("per-item rejection → that row is terminal-rejected and never resent", async () => {
     const { execute } = await import("@vex-agent/db/client.js");
     const lane = await import("../../../vex-agent/sync/agentscan-report.js");

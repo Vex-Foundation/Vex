@@ -109,7 +109,7 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(second.ingestToken).toBe(IDENTITY_A.ingestToken);
   });
 
-  it("registration lifecycle: backoff failure → registered → cleared (401 recovery)", async () => {
+  it("registration lifecycle: backoff failure → registered → reset for full resend (auth_lost recovery)", async () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await repo.ensureIdentity(() => IDENTITY_A);
 
@@ -119,13 +119,16 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeGreaterThan(Date.now() + 500_000);
 
     await repo.markRegistered();
+    await repo.markBackfillEnqueued();
     state = await repo.getReportingState();
     expect(state.registeredAt).not.toBeNull();
+    expect(state.backfillEnqueuedAt).not.toBeNull();
 
-    await repo.clearRegistration();
+    await repo.resetForReRegistration();
     state = await repo.getReportingState();
     expect(state.registeredAt).toBeNull();
-    // identity survives a 401 recovery — only the registration stamp resets
+    expect(state.backfillEnqueuedAt).toBeNull();
+    // identity survives an auth_lost recovery — only the progress stamps reset
     expect(state.agentHash).toBe(IDENTITY_A.agentHash);
   });
 
@@ -246,5 +249,83 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
     );
     expect(row?.last_error).toBe("validation_failed");
     expect(row?.rejected_at).not.toBeNull();
+  });
+});
+
+describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", () => {
+  it("resends previously-sent rows with backfill:true; rejected rows stay terminal; unsent rows are untouched", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const { execute, queryOne } = await import("@vex-agent/db/client.js");
+
+    const sentActivityId = await seedEligibleSwap();
+    const rejectedActivityId = await seedEligibleSwap();
+    const unsentActivityId = await seedEligibleSwap();
+    await repo.enqueueEligibleActivity(false);
+
+    const claimed = await repo.claimDueOutbox(10);
+    expect(claimed).toHaveLength(3);
+    function claimedFor(activityId: number) {
+      const row = claimed.find((c) => c.activityId === activityId);
+      if (!row) throw new Error(`expected a claimed row for activity ${activityId}`);
+      return row;
+    }
+    const sentOutboxId = claimedFor(sentActivityId).outboxId;
+    const rejectedOutboxId = claimedFor(rejectedActivityId).outboxId;
+    const unsentOutboxId = claimedFor(unsentActivityId).outboxId;
+
+    await repo.markOutboxSent([sentOutboxId]);
+    await repo.markOutboxRejected(rejectedOutboxId, "validation_failed");
+
+    await repo.resetForReRegistration();
+
+    const sentRow = await queryOne<{
+      sent_at: Date | null;
+      attempt_count: number;
+      backfill: boolean;
+      last_error: string | null;
+    }>(
+      `SELECT sent_at, attempt_count, backfill, last_error FROM agentscan_outbox WHERE id = $1`,
+      [sentOutboxId],
+    );
+    expect(sentRow?.sent_at).toBeNull();
+    expect(sentRow?.attempt_count).toBe(0);
+    expect(sentRow?.backfill).toBe(true);
+    expect(sentRow?.last_error).toBeNull();
+
+    const rejectedRow = await queryOne<{ rejected_at: Date | null; sent_at: Date | null }>(
+      `SELECT rejected_at, sent_at FROM agentscan_outbox WHERE id = $1`,
+      [rejectedOutboxId],
+    );
+    expect(rejectedRow?.rejected_at).not.toBeNull();
+    expect(rejectedRow?.sent_at).toBeNull();
+
+    const unsentRow = await queryOne<{ sent_at: Date | null; rejected_at: Date | null; backfill: boolean }>(
+      `SELECT sent_at, rejected_at, backfill FROM agentscan_outbox WHERE id = $1`,
+      [unsentOutboxId],
+    );
+    expect(unsentRow?.sent_at).toBeNull();
+    expect(unsentRow?.rejected_at).toBeNull();
+    expect(unsentRow?.backfill).toBe(false);
+
+    // Force-due everything: the resent row must be reclaimable as backfill;
+    // the rejected row must stay out of the candidate set forever.
+    await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
+    const reclaimed = await repo.claimDueOutbox(10);
+    const resent = reclaimed.find((c) => c.outboxId === sentOutboxId);
+    if (!resent) throw new Error("expected the previously-sent row to be reclaimable");
+    expect(resent.backfill).toBe(true);
+    expect(reclaimed.some((c) => c.outboxId === rejectedOutboxId)).toBe(false);
+  });
+
+  it("state reset is a no-op when nothing was ever sent", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.markRegistered();
+
+    await repo.resetForReRegistration();
+
+    const state = await repo.getReportingState();
+    expect(state.registeredAt).toBeNull();
+    expect(state.agentHash).toBe(IDENTITY_A.agentHash);
   });
 });

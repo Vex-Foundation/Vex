@@ -28,7 +28,7 @@
  * status `superseded_unproven`) out of the outbox entirely.
  */
 
-import { query, queryOne, execute } from "../client.js";
+import { query, queryOne, execute, withTransaction } from "../client.js";
 
 export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict";
 
@@ -149,17 +149,32 @@ export async function noteRegisterAttemptFailed(delaySeconds: number): Promise<v
 }
 
 /**
- * 401 recovery: the server no longer knows this token (server-side reset).
- * Registration is idempotent, so the lane simply re-registers the SAME
- * identity next tick; only the stamp resets, never the identity.
+ * `auth_lost` recovery (401/403-not_registered on send): the server no longer
+ * knows this install (a server-side reset is the expected cause), so it also
+ * has none of the history this install already sent. Registration is
+ * idempotent — the lane simply re-registers the SAME identity next tick — but
+ * the diff scan's NOT-EXISTS can never re-enqueue a pair that already has an
+ * outbox row, so a full resend has to come from resetting the existing rows,
+ * not from re-scanning: every already-sent row becomes owed again, flagged
+ * `backfill` (a historical resend, not fresh activity), in the SAME
+ * transaction as the state reset so a crash can't leave one half applied.
+ * Poisoned rows (`rejected_at`) stay poisoned — a validation refusal the
+ * server made once does not become valid by resending the identical payload.
  */
-export async function clearRegistration(): Promise<void> {
+export async function resetForReRegistration(): Promise<void> {
   await ensureSingleton();
-  await execute(
-    `UPDATE agentscan_reporting_state
-        SET registered_at = NULL, updated_at = NOW()
-      WHERE id = 1`,
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE agentscan_reporting_state
+          SET registered_at = NULL, backfill_enqueued_at = NULL, updated_at = NOW()
+        WHERE id = 1`,
+    );
+    await client.query(
+      `UPDATE agentscan_outbox
+          SET sent_at = NULL, attempt_count = 0, next_attempt_at = NOW(), backfill = TRUE, last_error = NULL
+        WHERE sent_at IS NOT NULL`,
+    );
+  });
 }
 
 /** Permanent stop — 410, 403-quarantined, or a register 409. Never auto-cleared. */

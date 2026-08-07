@@ -25,8 +25,10 @@
  * from key material. Payloads go through the mapper's structural allowlist —
  * the banned columns are unreadable from its output by construction. Server
  * verdicts are honored exactly: 410 / 403-quarantined / register-409 stop the
- * lane permanently; a 401 re-registers the SAME identity (server-side reset
- * recovery); only 429/5xx/network are retried.
+ * lane permanently; a 401 re-registers the SAME identity AND resends the full
+ * eligible history (a server-side reset means the server has nothing, so
+ * every already-sent row comes back owed, flagged `backfill`); only
+ * 429/5xx/network are retried.
  */
 
 import { randomBytes } from "node:crypto";
@@ -271,8 +273,10 @@ async function sendGroup(
   if (outcome.kind === "auth_lost") {
     // Server no longer knows the token (server-side reset) or disputes the
     // hash binding. Registration is idempotent: re-register the SAME identity
-    // next run; a genuine conflict surfaces there as a terminal 409.
-    await reportingRepo.clearRegistration();
+    // next run — but a server-side reset also means the server has nothing,
+    // so the full eligible history must go out again, not just what is still
+    // owed; a genuine conflict surfaces at that re-register as a terminal 409.
+    await reportingRepo.resetForReRegistration();
     logger.warn("agentscan.report.auth_lost_reregistering");
     return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
   }
