@@ -151,6 +151,13 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const reportResult = await runAgentscanReport(buildProductionAgentscanReporterDeps());
         result = { ...reportResult };
         rowsAffected = reportResult.sent;
+      } else if (syncType === "agentscan_attest") {
+        // AgentScan token-attestation sweep — see sync/agentscan-attest.ts.
+        // Keyless telemetry POST only; never signs, never money-path.
+        const { runAgentscanAttest, buildProductionAgentscanAttestDeps } = await import("./agentscan-attest.js");
+        const attestResult = await runAgentscanAttest(buildProductionAgentscanAttestDeps());
+        result = { ...attestResult };
+        rowsAffected = attestResult.attested;
       } else if (syncType === "balances_snapshot") {
         // Wave P — a transaction terminalized, so take a fresh portfolio
         // snapshot now rather than at the next 300s periodic cycle.
@@ -252,6 +259,12 @@ export async function processNextRun(): Promise<boolean> {
       const { runAgentscanReport, buildProductionAgentscanReporterDeps } = await import("./agentscan-report.js");
       const reportResult = await runAgentscanReport(buildProductionAgentscanReporterDeps());
       await syncRepo.completeRun(run.id, { ...reportResult }, reportResult.sent);
+    } else if (job.syncType === "agentscan_attest") {
+      // AgentScan token-attestation sweep — BOTH dispatchers need this
+      // branch, for the same reason. See sync/agentscan-attest.ts.
+      const { runAgentscanAttest, buildProductionAgentscanAttestDeps } = await import("./agentscan-attest.js");
+      const attestResult = await runAgentscanAttest(buildProductionAgentscanAttestDeps());
+      await syncRepo.completeRun(run.id, { ...attestResult }, attestResult.attested);
     } else if (job.syncType === "balances_snapshot") {
       // Wave P — see the same branch in `drainPendingRuns` above. BOTH
       // dispatchers need it: the bridge job shipped with a branch missing from

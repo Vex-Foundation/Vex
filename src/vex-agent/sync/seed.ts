@@ -68,6 +68,17 @@ const SYNC_JOBS = [
   // See sync/agentscan-report.ts.
   { namespace: "_global", syncType: "agentscan_report", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
+  // AgentScan token-ATTESTATION sweep — delivers the SAME creator signature
+  // already stored for the trench.express VEX badge (attest_signature,
+  // migration 071) to the AgentScan attestation registry, over its own
+  // keyless POST. Cloned from the trench attribution sweep's architecture;
+  // dark until services.agentscanApiUrl is configured. Never signs, never
+  // blocks the money path. 300s: an attestation badge is not latency-critical
+  // (unlike the 30s per-tx repair sweeps), so 5 minutes is politeness rather
+  // than urgency — matching the reporting lane's own non-urgent cadences.
+  // See sync/agentscan-attest.ts.
+  { namespace: "_global", syncType: "agentscan_attest", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
+
   // Wave P — post-terminalization portfolio snapshot. ENQUEUED, never timed
   // (`intervalSeconds: null`, `post_mutation`): the fast lane and the repair
   // sweeps enqueue it the moment a transaction terminalizes, so the portfolio
