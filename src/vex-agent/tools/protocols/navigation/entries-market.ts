@@ -370,6 +370,52 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
     ],
   },
   {
+    namespace: "lighter",
+    advertised: true,
+    groupId: "market-research",
+    groupLabel: "Market Research",
+    summary:
+      "Read-only Lighter market data for Core and Robinhood Chain: public system status, market catalog, one-market detail, order book depth, recent trades, and OHLCV candles.",
+    whenToUse:
+      "Use when the user asks about Lighter markets, RHC/Core market ids, order book depth, latest fills, candles, or whether the public Lighter environments are reachable. Every tool requires environment: core or rhc.",
+    preferInstead:
+      "Use `dexscreener` for broad multi-chain DEX pair research and use execution venues only after a separate quote/approval flow; Lighter currently exposes no order placement through Vex.",
+    exampleQueries: [
+      'discover_tools(query="lighter market data", namespace="lighter")',
+      'discover_tools(query="rhc order book depth", namespace="lighter")',
+      'discover_tools(query="lighter candles for market id", namespace="lighter")',
+    ],
+    aliases: ["lighter", "rhc lighter", "lighter core", "lighter market data", "lighter order book"],
+    discoveryHints: [
+      "lighter markets",
+      "lighter market id",
+      "rhc order book",
+      "lighter recent trades",
+      "lighter candles",
+      "lighter system status",
+    ],
+    facets: [
+      {
+        label: "Markets and system",
+        summary: "Check Lighter environment status/config and list or inspect public markets.",
+        toolPrefixes: ["lighter.system", "lighter.markets", "lighter.market"],
+        hints: ["lighter status", "lighter markets", "market id", "core config", "rhc config"],
+      },
+      {
+        label: "Depth and trade tape",
+        summary: "Read public order book depth and recent trades for one Lighter market.",
+        toolPrefixes: ["lighter.orderbook", "lighter.recentTrades"],
+        hints: ["order book", "bid ask depth", "recent trades", "latest fills", "trade tape"],
+      },
+      {
+        label: "Candles",
+        summary: "Read OHLCV candle history for one Lighter market using epoch-millisecond windows.",
+        toolPrefixes: ["lighter.candles"],
+        hints: ["candles", "ohlcv", "price history", "chart", "volatility"],
+      },
+    ],
+  },
+  {
     namespace: "virtuals",
     advertised: true,
     groupId: "market-research",

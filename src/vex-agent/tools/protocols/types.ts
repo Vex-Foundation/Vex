@@ -24,6 +24,7 @@ export type ProtocolNamespace =
   | "relay"
   | "solana"
   | "dexscreener"
+  | "lighter"
   | "virtuals"
   | "pendle"
   | "trench";

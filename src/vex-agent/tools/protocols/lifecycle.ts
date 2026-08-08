@@ -38,6 +38,7 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   relay: "active",
   solana: "active",
   dexscreener: "active",
+  lighter: "active",
   virtuals: "active",
   pendle: "active",
   trench: "active",
