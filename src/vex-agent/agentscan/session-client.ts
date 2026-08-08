@@ -108,7 +108,7 @@ export function buildAgentscanSessionClient(baseUrl: string): AgentscanSessionCl
 async function sessionStart(baseUrl: string, input: SessionStartInput): Promise<SessionStartOutcome> {
   let response: Response;
   try {
-    response = await fetchWithTimeout(joinUrl(baseUrl, "v2/agents/session/start"), {
+    response = await fetchWithTimeout(joinUrl(baseUrl, "v1/agents/session/start"), {
       method: "POST",
       timeoutMs: REQUEST_TIMEOUT_MS,
       headers: { "Content-Type": "application/json" },
@@ -155,7 +155,7 @@ async function sessionComplete(
 
   let response: Response;
   try {
-    response = await fetchWithTimeout(joinUrl(baseUrl, "v2/agents/session/complete"), {
+    response = await fetchWithTimeout(joinUrl(baseUrl, "v1/agents/session/complete"), {
       method: "POST",
       timeoutMs: REQUEST_TIMEOUT_MS,
       headers,

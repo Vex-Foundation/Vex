@@ -1,7 +1,7 @@
 -- 075 — AgentScan wallet-binding HANDSHAKE state (sprint 3, wire contract v2).
 --
 -- Registration (v1, `/v1/agents/register`) is replaced client-side by the
--- handshake (v2, `/v2/agents/session/start` + `/v2/agents/session/complete`):
+-- handshake (v2, `/v1/agents/session/start` + `/v1/agents/session/complete`):
 -- the install proves ownership of its wallet addresses by signing a
 -- server-issued challenge, and the server answers with a rotated ingest
 -- token, the bound agent's display name, and a sync cursor. Four columns

@@ -61,7 +61,7 @@ const COMPLETE_INPUT = {
 };
 
 describe("sessionStart — wire shape", () => {
-  it("POSTs agentHash + addresses to /v2/agents/session/start with NO auth header", async () => {
+  it("POSTs agentHash + addresses to /v1/agents/session/start with NO auth header", async () => {
     const mock = stubFetch(
       jsonResponse(200, { challengeId: "chal-1", nonce: NONCE, domain: "agentscan.example", expiresAt: "2026-08-08T00:05:00.000Z" }),
     );
@@ -77,7 +77,7 @@ describe("sessionStart — wire shape", () => {
     });
     expect(mock).toHaveBeenCalledTimes(1);
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost/v2/agents/session/start");
+    expect(url).toBe("http://localhost/v1/agents/session/start");
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
     expect(JSON.parse(init.body as string)).toEqual(START_INPUT);
   });
@@ -89,7 +89,7 @@ describe("sessionStart — wire shape", () => {
     const client = buildAgentscanSessionClient("https://example.org/scan/");
     await client.sessionStart(START_INPUT);
     const [url] = mock.mock.calls[0] as [string];
-    expect(url).toBe("https://example.org/scan/v2/agents/session/start");
+    expect(url).toBe("https://example.org/scan/v1/agents/session/start");
   });
 
   it("maps a malformed 200 body to invalid rather than throwing", async () => {
@@ -127,7 +127,7 @@ describe("sessionStart — wire shape", () => {
 });
 
 describe("sessionComplete — wire shape", () => {
-  it("POSTs the envelope to /v2/agents/session/complete WITH the Bearer token when one is passed", async () => {
+  it("POSTs the envelope to /v1/agents/session/complete WITH the Bearer token when one is passed", async () => {
     const mock = stubFetch(
       jsonResponse(200, { status: "bound", ingestToken: TOKEN, agentName: "agent-007", syncState: { lastAcceptedRowId: "42" } }),
     );
@@ -136,7 +136,7 @@ describe("sessionComplete — wire shape", () => {
 
     expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-007", lastAcceptedRowId: 42 });
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost/v2/agents/session/complete");
+    expect(url).toBe("http://localhost/v1/agents/session/complete");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer current-token-xyz");
     expect(JSON.parse(init.body as string)).toEqual(COMPLETE_INPUT);
   });
