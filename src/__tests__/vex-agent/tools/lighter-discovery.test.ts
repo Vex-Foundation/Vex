@@ -107,4 +107,22 @@ describe("Lighter agent discovery surface", () => {
     expect(result.success).toBe(true);
     expect(result.tools[0]?.toolId).toBe("lighter.orderbook");
   });
+
+  it("recalls Lighter tools from natural market-data queries", async () => {
+    const depth = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "rhc order book depth and bids asks",
+      limit: 3,
+    });
+    expect(depth.success).toBe(true);
+    expect(depth.tools.map((tool) => tool.toolId)).toContain("lighter.orderbook");
+
+    const candles = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "price history candles for a lighter market",
+      limit: 3,
+    });
+    expect(candles.success).toBe(true);
+    expect(candles.tools.map((tool) => tool.toolId)).toContain("lighter.candles");
+  });
 });
