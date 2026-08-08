@@ -1,0 +1,210 @@
+import { getLighterClient } from "@tools/lighter/client.js";
+import { VexError } from "../../../../../errors.js";
+import logger from "@utils/logger.js";
+import type { ProtocolHandler } from "../../types.js";
+import { fail, ok } from "../../handler-helpers.js";
+import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
+import {
+  LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
+  readCountBack,
+  readEnvironment,
+  readMarketFilter,
+  readMarketId,
+  readMarketListLimit,
+  readOrderBookLimit,
+  readRecentTradesLimit,
+  readResolution,
+  readSetTimestampToEnd,
+  readTimestamp,
+} from "../params.js";
+import {
+  projectCandles,
+  projectMarket,
+  projectMarketDetails,
+  projectOrderBook,
+  projectRecentTrades,
+  projectSystem,
+  takeFirst,
+} from "../projectors.js";
+
+function failureDetail(toolId: string, err: unknown): string {
+  logger.warn("lighter.handler.error", {
+    toolId,
+    code: err instanceof VexError ? err.code : "UNEXPECTED",
+    error: describeFailureForLog(err),
+  });
+  return describeFailureForAgent(err);
+}
+
+export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
+  "lighter.system": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+
+    try {
+      const client = getLighterClient();
+      const [status, systemConfig] = await Promise.all([
+        client.getStatus(environment.value),
+        client.getSystemConfig(environment.value),
+      ]);
+      return ok({
+        environment: environment.value,
+        ...projectSystem(status, systemConfig),
+      });
+    } catch (err) {
+      return fail(`Lighter system read unavailable (${failureDetail("lighter.system", err)})`);
+    }
+  },
+
+  "lighter.markets": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params, false);
+    if (!marketId.ok) return fail(marketId.reason);
+    const filter = readMarketFilter(params);
+    if (!filter.ok) return fail(filter.reason);
+    const limit = readMarketListLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getMarkets(environment.value, {
+        ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
+        ...(filter.value === undefined ? {} : { filter: filter.value }),
+      });
+      const projected = response.order_books.map(projectMarket);
+      const window = takeFirst(projected, limit.value);
+      return ok({
+        environment: environment.value,
+        marketId: marketId.value ?? null,
+        filter: filter.value ?? null,
+        count: window.count,
+        totalProviderRows: window.total,
+        truncated: window.truncated,
+        markets: window.rows,
+      });
+    } catch (err) {
+      return fail(`Lighter markets unavailable (${failureDetail("lighter.markets", err)})`);
+    }
+  },
+
+  "lighter.market.get": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params, true);
+    if (!marketId.ok) return fail(marketId.reason);
+    const filter = readMarketFilter(params);
+    if (!filter.ok) return fail(filter.reason);
+
+    try {
+      const response = await getLighterClient().getMarketDetails(environment.value, {
+        marketId: marketId.value!,
+        ...(filter.value === undefined ? {} : { filter: filter.value }),
+      });
+      const details = projectMarketDetails(response);
+      const exact = details.filter((detail) => detail.marketId === marketId.value);
+      if (exact.length === 0) {
+        return fail(`No Lighter market detail found for marketId ${marketId.value} on ${environment.value}.`);
+      }
+      return ok({
+        environment: environment.value,
+        marketId: marketId.value,
+        filter: filter.value ?? null,
+        count: exact.length,
+        details: exact,
+      });
+    } catch (err) {
+      return fail(`Lighter market detail unavailable (${failureDetail("lighter.market.get", err)})`);
+    }
+  },
+
+  "lighter.orderbook": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params, true);
+    if (!marketId.ok) return fail(marketId.reason);
+    const limit = readOrderBookLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getOrderBookOrders(environment.value, {
+        marketId: marketId.value!,
+        limit: limit.value,
+      });
+      return ok({
+        environment: environment.value,
+        marketId: marketId.value,
+        limit: limit.value,
+        ...projectOrderBook(response, limit.value),
+      });
+    } catch (err) {
+      return fail(`Lighter order book unavailable (${failureDetail("lighter.orderbook", err)})`);
+    }
+  },
+
+  "lighter.recentTrades": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params, true);
+    if (!marketId.ok) return fail(marketId.reason);
+    const limit = readRecentTradesLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getRecentTrades(environment.value, {
+        marketId: marketId.value!,
+        limit: limit.value,
+      });
+      return ok({
+        environment: environment.value,
+        marketId: marketId.value,
+        limit: limit.value,
+        ...projectRecentTrades(response, limit.value),
+      });
+    } catch (err) {
+      return fail(`Lighter recent trades unavailable (${failureDetail("lighter.recentTrades", err)})`);
+    }
+  },
+
+  "lighter.candles": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params, true);
+    if (!marketId.ok) return fail(marketId.reason);
+    const resolution = readResolution(params);
+    if (!resolution.ok) return fail(resolution.reason);
+    const startTimestamp = readTimestamp(params, "startTimestamp");
+    if (!startTimestamp.ok) return fail(startTimestamp.reason);
+    const endTimestamp = readTimestamp(params, "endTimestamp");
+    if (!endTimestamp.ok) return fail(endTimestamp.reason);
+    if (endTimestamp.value <= startTimestamp.value) {
+      return fail("endTimestamp must be greater than startTimestamp.");
+    }
+    const countBack = readCountBack(params);
+    if (!countBack.ok) return fail(countBack.reason);
+    const setTimestampToEnd = readSetTimestampToEnd(params);
+
+    try {
+      const response = await getLighterClient().getCandles(environment.value, {
+        marketId: marketId.value!,
+        resolution: resolution.value,
+        startTimestamp: startTimestamp.value,
+        endTimestamp: endTimestamp.value,
+        ...(countBack.value === undefined ? {} : { countBack: countBack.value }),
+        ...(setTimestampToEnd === undefined ? {} : { setTimestampToEnd }),
+      });
+      return ok({
+        environment: environment.value,
+        marketId: marketId.value,
+        requestedWindow: {
+          startTimestamp: startTimestamp.value,
+          endTimestamp: endTimestamp.value,
+        },
+        countBack: countBack.value ?? null,
+        outputLimit: LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
+        ...projectCandles(response, LIGHTER_AGENT_CANDLE_OUTPUT_MAX),
+      });
+    } catch (err) {
+      return fail(`Lighter candles unavailable (${failureDetail("lighter.candles", err)})`);
+    }
+  },
+};
