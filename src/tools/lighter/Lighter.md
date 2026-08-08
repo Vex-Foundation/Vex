@@ -80,10 +80,11 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
   descending numeric price before applying the agent output limit. Vex does not
   rely on provider row order for top-of-book reasoning.
 - Core order book rows can expose `order_index` values larger than JavaScript's
-  safe integer range. Phase 1 treats those numeric indexes as display-only
-  provider fields: agent output sets `orderIndex: null`,
-  `orderIndexPrecision: "unsafe_provider_number_omitted"`, and keeps the exact
-  `orderId` string.
+  safe integer range; Core and RHC recent-trade rows can do the same for order
+  ids such as `ask_id` and `bid_id`. Phase 1 treats those numeric ids as
+  display-only provider fields: agent output sets the unsafe numeric field to
+  `null`, adds an `*Precision: "unsafe_provider_number_omitted"` marker, and
+  keeps the exact provider string id when Lighter supplies one.
 - Candle timestamps are JavaScript epoch milliseconds. Seconds-scale Unix
   timestamps are rejected before a provider request is sent.
 - Candle ranges are bounded by Vex before the provider request. In Phase 1,
@@ -109,13 +110,13 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 
 ## Live Verification Notes
 
-2026-08-09 local time (`2026-08-08T23:11Z`): `pnpm run test:lighter:live`
+2026-08-09 local time (`2026-08-08T23:18Z`): `pnpm run test:lighter:live`
 passed against real public Lighter infrastructure.
 
 | Environment | Network id | Selected market | Reads proven |
 |-------------|------------|-----------------|--------------|
-| Core | 1 | `0` / `ETH` | system, markets, market detail, order book, recent trades, candles |
-| RHC | 1 | `1` / `BTC` | system, markets, market detail, order book, recent trades, candles |
+| Core | 1 | `1` / `BTC` | system, markets, market detail, order book, recent trades, candles |
+| RHC | 1 | `0` / `ETH` | system, markets, market detail, order book, recent trades, candles |
 
 The live smoke selected active markets from `lighter.markets`, then reused the
 selected `marketId` for detail, depth, recent trades, and 1-minute candles.

@@ -169,8 +169,12 @@ export function projectOrderBook(response: LighterOrderBookOrdersResponse, limit
 }
 
 export function projectTrade(trade: LighterTrade): Record<string, unknown> {
+  const tradeId = safeIntegerOrNull(trade.trade_id);
+  const askOrderId = safeIntegerOrNull(trade.ask_id);
+  const bidOrderId = safeIntegerOrNull(trade.bid_id);
   return {
-    tradeId: trade.trade_id,
+    tradeId,
+    tradeIdPrecision: tradeId === null ? "unsafe_provider_number_omitted" : "safe",
     tradeIdStr: trade.trade_id_str ?? null,
     type: trade.type,
     marketId: trade.market_id,
@@ -180,8 +184,12 @@ export function projectTrade(trade: LighterTrade): Record<string, unknown> {
     isMakerAsk: trade.is_maker_ask,
     askAccountId: trade.ask_account_id,
     bidAccountId: trade.bid_account_id,
-    askOrderId: trade.ask_id,
-    bidOrderId: trade.bid_id,
+    askOrderId,
+    askOrderIdPrecision: askOrderId === null ? "unsafe_provider_number_omitted" : "safe",
+    askOrderIdStr: trade.ask_id_str ?? null,
+    bidOrderId,
+    bidOrderIdPrecision: bidOrderId === null ? "unsafe_provider_number_omitted" : "safe",
+    bidOrderIdStr: trade.bid_id_str ?? null,
     blockHeight: trade.block_height,
     timestamp: trade.timestamp,
     transactionTime: trade.transaction_time ?? null,
