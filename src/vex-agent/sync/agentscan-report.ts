@@ -24,14 +24,29 @@
  * until the public rollout). The identity is CSPRNG-random, never derived
  * from key material. Payloads go through the mapper's structural allowlist —
  * the banned columns are unreadable from its output by construction. Server
- * verdicts are honored exactly: 410 / 403-quarantined / register-409 stop the
- * lane permanently; a 401 re-registers the SAME identity AND resends the full
+ * verdicts are honored exactly: 410 / 403-quarantined stop the lane
+ * permanently; a 401 re-handshakes the SAME identity AND resends the full
  * eligible history (a server-side reset means the server has nothing, so
  * every already-sent row comes back owed, flagged `backfill`); only
  * 429/5xx/network are retried.
+ *
+ * ── Binding: a signed handshake, not a v1 register call ────────────────────
+ *
+ * `handshakeOnce` below replaces v1's `/v1/agents/register` with the v2
+ * wallet-binding handshake (`session/start` → sign → `session/complete`, see
+ * `agentscan/session-client.ts`): the trading key proves ownership of the
+ * install's wallet addresses by signing a server-issued challenge, never a
+ * blind message — the server's returned `domain` is checked against the
+ * configured `agentscanApiUrl`'s hostname before anything is ever signed. A
+ * handshake fires when never yet handshaken, when the bound wallet set
+ * changed (a sha256 fingerprint over the sorted inventory), or after a 401
+ * clears `registered_at`. `wallet_conflict` (a session/complete 409) is kept
+ * as a DEFENSIVE permanent stop — transfer-on-proof means the current server
+ * no longer emits it in ordinary operation (a valid proof for a wallet bound
+ * to a different agent now transfers the binding instead of refusing).
  */
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 
 import { loadConfig } from "../../config/store.js";
 import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
@@ -41,7 +56,19 @@ import {
   type AgentscanClient,
   type SendOutcome,
 } from "../agentscan/client.js";
+import {
+  buildAgentscanSessionClient,
+  type AgentscanSessionClient,
+} from "../agentscan/session-client.js";
+import {
+  signAgentscanChallenge,
+  type SignAgentscanChallengeInput,
+  type HandshakeSigningResult,
+} from "../agentscan/handshake.js";
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
+import { listWallets } from "@tools/wallet/inventory.js";
+import { getKeystorePassword } from "@utils/env.js";
+import type { ChainFamily } from "@tools/khalani/types.js";
 import logger from "@utils/logger.js";
 
 /** Contract batch ceiling (server rejects larger batches with 413). */
@@ -56,23 +83,30 @@ export const AGENTSCAN_BATCH_LIMIT = 500;
  */
 export const AGENTSCAN_MAX_BATCHES_PER_TICK = 6;
 
-/** Register backoff: 5 min · 2^n capped at 1 h — the register endpoint allows only 10/h per IP. */
+/** Handshake attempt backoff: 5 min · 2^n capped at 1 h — reuses the same counters the old register flow did. */
 const REGISTER_BACKOFF_BASE_SECONDS = 300;
 const REGISTER_BACKOFF_MAX_SECONDS = 3600;
 
 /** An envelope-level 400 is a client bug, not weather — hold the rows a full hour and say so loudly. */
 const INVALID_BATCH_HOLD_SECONDS = 3600;
 
+/** session/complete's invalid_signature/validation_failed is a client bug — same long-hold discipline as INVALID_BATCH_HOLD_SECONDS. */
+const HANDSHAKE_INVALID_HOLD_SECONDS = 3600;
+
 export interface AgentscanReporterDeps {
   /** Resolved ingest base URL, or null when reporting is disabled/misconfigured. */
   readonly baseUrl: () => string | null;
   readonly buildClient: (baseUrl: string) => AgentscanClient;
-  /** App version for the register record, when the host process knows it. */
+  /** The v2 wallet-binding handshake's HTTP boundary (session/start + session/complete). */
+  readonly buildSessionClient: (baseUrl: string) => AgentscanSessionClient;
+  /** The vault-gated signer for a handshake challenge — production wires T10's `signAgentscanChallenge`. */
+  readonly signChallenge: (input: SignAgentscanChallengeInput) => Promise<HandshakeSigningResult>;
+  /** App version for the handshake record, when the host process knows it. */
   readonly appVersion: () => string | null;
 }
 
 export interface AgentscanReportResult {
-  readonly skipped: "disabled" | "stopped" | "unregistered" | null;
+  readonly skipped: "disabled" | "stopped" | "unregistered" | "vault_locked" | "no_wallets" | null;
   /** Outbox rows enqueued by this run's diff scan. */
   readonly enqueued: number;
   /** Whether THIS run performed the one-time backfill enqueue. */
@@ -114,19 +148,22 @@ export async function runAgentscanReport(
     state = await reportingRepo.ensureIdentity(generateAgentscanIdentity);
   }
   const agentHash = state.agentHash;
-  const ingestToken = state.ingestToken;
+  let ingestToken = state.ingestToken;
   if (agentHash === null || ingestToken === null) {
     // Unreachable after ensureIdentity; named so a future regression is loud.
     logger.error("agentscan.report.identity_missing_after_ensure");
     return { skipped: "unregistered", ...NOTHING };
   }
 
-  const client = deps.buildClient(baseUrl);
-
-  if (state.registeredAt === null) {
-    const registered = await registerOnce(client, deps, state, agentHash, ingestToken);
-    if (registered !== "registered") return { skipped: registered, ...NOTHING };
+  const fingerprint = computeWalletsFingerprint();
+  const handshakeNeeded = state.registeredAt === null || fingerprint !== state.boundWalletsFingerprint;
+  if (handshakeNeeded) {
+    const attempt = await handshakeOnce(deps, baseUrl, state, agentHash, ingestToken, fingerprint);
+    if (attempt.kind !== "handshaken") return { skipped: attempt.reason, ...NOTHING };
+    ingestToken = attempt.ingestToken;
   }
+
+  const client = deps.buildClient(baseUrl);
 
   // The one-time backfill (AC2): first enqueue after a successful registration
   // carries the whole eligible history; every later scan is incremental.
@@ -183,45 +220,145 @@ export async function runAgentscanIncremental(
   return { skipped: null, backfillEnqueued: false, ...incremental };
 }
 
-// ── register ────────────────────────────────────────────────────────────────
+// ── handshake ───────────────────────────────────────────────────────────────
 
-async function registerOnce(
-  client: AgentscanClient,
+/** sha256 over the sorted `chainFamily:address` inventory list — changes whenever a wallet is added or removed. */
+function computeWalletsFingerprint(): string {
+  const evm = listWallets("evm").map((entry) => `eip155:${entry.address.toLowerCase()}`);
+  const solana = listWallets("solana").map((entry) => `solana:${entry.address}`);
+  const sorted = [...evm, ...solana].sort();
+  return createHash("sha256").update(sorted.join("\n")).digest("hex");
+}
+
+/** Localhost stacks answer with a literal `localhost` domain too, so one hostname comparison covers both cases. */
+function domainMatches(baseUrl: string, serverDomain: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === serverDomain;
+  } catch {
+    return false;
+  }
+}
+
+type HandshakeAttemptOutcome =
+  | { readonly kind: "handshaken"; readonly ingestToken: string }
+  | { readonly kind: "skip"; readonly reason: "unregistered" | "vault_locked" | "no_wallets" | "stopped" };
+
+/**
+ * One handshake attempt: session/start → domain check → sign → session/complete
+ * → `markHandshakeComplete`. The wallet-inventory / vault-lock gate runs FIRST,
+ * directly (not via `deps.signChallenge`), so a locked vault or an empty
+ * inventory costs ZERO session calls and never burns the attempt backoff —
+ * `deps.signChallenge` (production: T10's `signAgentscanChallenge`) is reached
+ * only once we actually have a real challenge to sign, and still re-checks
+ * both as a safety net for a lock that lands mid-flight.
+ */
+async function handshakeOnce(
   deps: AgentscanReporterDeps,
+  baseUrl: string,
   state: reportingRepo.AgentscanReportingState,
   agentHash: string,
   ingestToken: string,
-): Promise<"registered" | "unregistered" | "stopped"> {
-  if (new Date(state.nextRegisterAttemptAt).getTime() > Date.now()) return "unregistered";
+  fingerprint: string,
+): Promise<HandshakeAttemptOutcome> {
+  if (new Date(state.nextRegisterAttemptAt).getTime() > Date.now()) {
+    return { kind: "skip", reason: "unregistered" };
+  }
 
+  const evmEntries = listWallets("evm");
+  const solanaEntries = listWallets("solana");
+  if (evmEntries.length === 0 && solanaEntries.length === 0) {
+    return { kind: "skip", reason: "no_wallets" };
+  }
+  if (getKeystorePassword() === null) {
+    return { kind: "skip", reason: "vault_locked" };
+  }
+
+  const addresses: ReadonlyArray<{ chainFamily: ChainFamily; address: string }> = [
+    ...evmEntries.map((entry) => ({ chainFamily: "eip155" as const, address: entry.address })),
+    ...solanaEntries.map((entry) => ({ chainFamily: "solana" as const, address: entry.address })),
+  ];
+
+  const session = deps.buildSessionClient(baseUrl);
   const appVersion = deps.appVersion();
-  const outcome = await client.register({
-    agentHash,
-    ingestToken,
-    consentVersion: state.consentVersion,
-    acceptedAt: state.acceptedAt ?? new Date().toISOString(),
-    ...(appVersion !== null ? { appVersion: appVersion.slice(0, 32) } : {}),
-  });
 
-  if (outcome.kind === "registered") {
-    await reportingRepo.markRegistered();
-    logger.info("agentscan.report.registered");
-    return "registered";
+  const started = await session.sessionStart({ agentHash, addresses });
+  if (started.kind !== "started") {
+    const delay =
+      started.kind === "retryable" && started.retryAfterSeconds !== null
+        ? started.retryAfterSeconds
+        : registerBackoffSeconds(state.registerAttemptCount);
+    await reportingRepo.noteRegisterAttemptFailed(delay);
+    logger.warn("agentscan.report.handshake_start_failed", { detail: started.detail, retryInSeconds: delay });
+    return { kind: "skip", reason: "unregistered" };
   }
-  if (outcome.kind === "conflict") {
-    // The hash is bound to a different token server-side. This identity can
-    // never report again; a silent retry loop would only re-refuse.
-    await reportingRepo.markStopped("agent_conflict");
-    logger.error("agentscan.report.register_conflict_stopped");
-    return "stopped";
+
+  if (!domainMatches(baseUrl, started.domain)) {
+    // A hostile or misbehaving server answering with a domain that doesn't
+    // match what we dialed — treated as a retryable transport anomaly.
+    // NEVER signs.
+    await reportingRepo.noteRegisterAttemptFailed(registerBackoffSeconds(state.registerAttemptCount));
+    logger.warn("agentscan.report.handshake_domain_mismatch");
+    return { kind: "skip", reason: "unregistered" };
   }
-  const delay =
-    outcome.kind === "retryable" && outcome.retryAfterSeconds !== null
-      ? outcome.retryAfterSeconds
-      : registerBackoffSeconds(state.registerAttemptCount);
+
+  const signed = await deps.signChallenge({ domain: started.domain, agentHash, nonce: started.nonce });
+  if (signed.kind === "vault_locked") return { kind: "skip", reason: "vault_locked" };
+  if (signed.kind === "no_wallets") return { kind: "skip", reason: "no_wallets" };
+
+  const completed = await session.sessionComplete(
+    {
+      challengeId: started.challengeId,
+      agentHash,
+      consentVersion: state.consentVersion,
+      ...(appVersion !== null ? { appVersion: appVersion.slice(0, 32) } : {}),
+      proofs: signed.proofs,
+    },
+    ingestToken,
+  );
+
+  if (completed.kind === "bound") {
+    await reportingRepo.markHandshakeComplete({
+      agentName: completed.agentName,
+      ingestToken: completed.ingestToken,
+      serverCursorRowId: completed.lastAcceptedRowId,
+      walletsFingerprint: fingerprint,
+    });
+    logger.info("agentscan.report.handshake_bound");
+    return { kind: "handshaken", ingestToken: completed.ingestToken };
+  }
+  if (completed.kind === "challenge_expired") {
+    // Not a failure worth punishing — just restart the flow next run.
+    logger.warn("agentscan.report.handshake_challenge_expired");
+    return { kind: "skip", reason: "unregistered" };
+  }
+  if (completed.kind === "auth_lost") {
+    // Token mismatch on an existing agentHash: treat exactly like the events
+    // endpoint's auth_lost — re-handshake the SAME identity next run.
+    await reportingRepo.resetForReRegistration();
+    logger.warn("agentscan.report.handshake_auth_lost_reregistering");
+    return { kind: "skip", reason: "unregistered" };
+  }
+  if (completed.kind === "wallet_conflict") {
+    // Defensive: the current server transfers a proven wallet instead of
+    // refusing with 409 in ordinary operation, but the reserved code path
+    // stays honored in case a future policy reintroduces the refusal.
+    await reportingRepo.markStopped("wallet_conflict");
+    logger.error("agentscan.report.handshake_wallet_conflict_stopped");
+    return { kind: "skip", reason: "stopped" };
+  }
+  if (completed.kind === "invalid") {
+    // Our own signed envelope failed the server's validation — a client bug,
+    // not weather. Held long and logged loud, same discipline as an
+    // envelope-level 400 on the events endpoint.
+    await reportingRepo.noteRegisterAttemptFailed(HANDSHAKE_INVALID_HOLD_SECONDS);
+    logger.error("agentscan.report.handshake_invalid", { detail: completed.detail });
+    return { kind: "skip", reason: "unregistered" };
+  }
+  // retryable — 429/5xx/network.
+  const delay = completed.retryAfterSeconds ?? registerBackoffSeconds(state.registerAttemptCount);
   await reportingRepo.noteRegisterAttemptFailed(delay);
-  logger.warn("agentscan.report.register_failed", { detail: outcome.detail, retryInSeconds: delay });
-  return "unregistered";
+  logger.warn("agentscan.report.handshake_complete_failed", { detail: completed.detail, retryInSeconds: delay });
+  return { kind: "skip", reason: "unregistered" };
 }
 
 function registerBackoffSeconds(attemptCount: number): number {
@@ -391,6 +528,8 @@ export function buildProductionAgentscanReporterDeps(): AgentscanReporterDeps {
   return {
     baseUrl: () => resolveAgentscanBaseUrl(loadConfig().services.agentscanApiUrl),
     buildClient: buildAgentscanClient,
+    buildSessionClient: buildAgentscanSessionClient,
+    signChallenge: signAgentscanChallenge,
     appVersion: () => {
       const version = process.env.VEX_APP_VERSION;
       return typeof version === "string" && version.trim().length > 0 ? version.trim() : null;
