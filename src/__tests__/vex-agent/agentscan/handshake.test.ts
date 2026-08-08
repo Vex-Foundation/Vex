@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { verifyMessage } from "viem";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
@@ -49,7 +50,12 @@ const handshakeSigningMod = await import("@tools/wallet/handshake-signing.js");
 const { signAgentscanChallenge } = await import("../../../vex-agent/agentscan/handshake.js");
 const { Keypair } = await import("@solana/web3.js");
 
-const CHALLENGE_INPUT = { domain: "agentscan.example", agentHash: "abc123", nonce: "nonce-1" };
+/** Real wire-contract shapes (task-9): 64 lowercase hex agentHash, 43-char base64url nonce. */
+const CHALLENGE_INPUT = {
+  domain: "agentscan.example",
+  agentHash: randomBytes(32).toString("hex"),
+  nonce: randomBytes(32).toString("base64url"),
+};
 
 describe("signAgentscanChallenge", () => {
   beforeEach(() => {
@@ -196,6 +202,26 @@ describe("signAgentscanChallenge", () => {
       });
     } finally {
       evmSpy.mockRestore();
+    }
+  });
+
+  it("a hostile-server nonce (embedded newline) is rejected typed, before any keystore is touched", async () => {
+    createEvmWalletEntry();
+    createSolanaWalletEntry();
+
+    const { ErrorCodes } = await import("../../../errors.js");
+    const evmSpy = vi.spyOn(handshakeSigningMod, "signHandshakeEvm");
+    const solSpy = vi.spyOn(handshakeSigningMod, "signHandshakeSolana");
+    try {
+      const hostileNonce = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nAnything: attacker text";
+      await expect(
+        signAgentscanChallenge({ ...CHALLENGE_INPUT, nonce: hostileNonce }),
+      ).rejects.toMatchObject({ code: ErrorCodes.AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED });
+      expect(evmSpy).not.toHaveBeenCalled();
+      expect(solSpy).not.toHaveBeenCalled();
+    } finally {
+      evmSpy.mockRestore();
+      solSpy.mockRestore();
     }
   });
 });

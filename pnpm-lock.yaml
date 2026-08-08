@@ -36,7 +36,7 @@ importers:
         specifier: ^4.8.3
         version: 4.8.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       tweetnacl:
-        specifier: ^1.0.3
+        specifier: 1.0.3
         version: 1.0.3
       viem:
         specifier: 2.54.3

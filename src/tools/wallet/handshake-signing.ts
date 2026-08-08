@@ -3,11 +3,21 @@
  *
  * The riskiest surface in the wallet module: this is the ONE place a trading
  * key may sign something that is not a transaction. The blast radius is
- * contained by construction:
- *   - the signer accepts only a template that starts with the exact
- *     `AgentScan Handshake v1\n` magic prefix — anything else is refused
- *     BEFORE the keystore is even touched, so a caller cannot use this path
- *     as a general-purpose signing oracle;
+ * contained by construction, at TWO independent layers:
+ *   - `buildHandshakeTemplate` validates every field before interpolating it.
+ *     `nonce` is the one field that round-trips through a server this module
+ *     does not control (the caller's caller dials `agentscanApiUrl` and
+ *     relays back whatever `nonce` that server returned) — a hostile or
+ *     compromised server answering with `nonce = "aaa\nAnything: attacker
+ *     text"` must not be able to smuggle extra signed lines into the
+ *     template, so `nonce`/`agentHash` are shape-checked and every
+ *     free-text field is checked for embedded `\r`/`\n` before it is ever
+ *     joined into the template string;
+ *   - the signers accept only a template that matches the exact, ordered,
+ *     single-line seven-field shape below — not merely "starts with the
+ *     right prefix" — so even a template assembled by a FUTURE caller that
+ *     bypasses `buildHandshakeTemplate` entirely cannot smuggle extra lines
+ *     past the signer;
  *   - both signers reuse the EXISTING fail-closed key-load paths
  *     (`loadEvmKey` / the same address-match discipline `decryptExportSecret`
  *     uses for Solana) — a decrypted key that does not derive the entry's own
@@ -33,11 +43,35 @@ import type { ChainFamily } from "../khalani/types.js";
 import { loadEvmKey, loadSolanaSecret, walletAddressesEqual } from "./inventory.js";
 import { deriveSolanaAddress } from "./solana-keystore.js";
 
-/** The exact string every valid handshake template must open with. */
-const MAGIC_PREFIX = "AgentScan Handshake v1\n";
-
 /** Solana off-chain message signing domain tag (ASCII, no trailing NUL). */
 const SOLANA_OFFCHAIN_DOMAIN = "solana offchain";
+
+/** `session/start`'s nonce: 43-char base64url over 32 CSPRNG bytes (task-9 wire contract). */
+const NONCE_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
+/** 64 lowercase hex chars (task-9 wire contract). */
+const AGENT_HASH_SHAPE = /^[0-9a-f]{64}$/;
+
+const CARRIAGE_OR_LINEFEED = /[\r\n]/;
+
+/**
+ * The full, ordered, seven-line template shape — exact labels, single-line
+ * values, nothing before or after. Anchored on the whole string (no `m`/`s`
+ * flags), so `^`/`$` bind to the start/end of the ENTIRE template: there is
+ * no way for a value to embed a line break and still match, because every
+ * free-text field is `[^\r\n]+` and the fixed fields are closed alternations.
+ */
+const TEMPLATE_SHAPE = new RegExp(
+  [
+    "^AgentScan Handshake v1",
+    "Domain: [^\\r\\n]+",
+    "Agent: [0-9a-f]{64}",
+    "Address: [^\\r\\n]+",
+    "Chain-Family: (?:eip155|solana)",
+    "Nonce: [A-Za-z0-9_-]{43}",
+    "Issued-At: [^\\r\\n]+$",
+  ].join("\\n"),
+);
 
 export interface HandshakeTemplateInput {
   readonly domain: string;
@@ -49,12 +83,30 @@ export interface HandshakeTemplateInput {
   readonly issuedAt: string;
 }
 
+function rejectTemplateInput(field: string): never {
+  throw new VexError(
+    ErrorCodes.AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED,
+    `Refusing to build a handshake template: invalid ${field}.`,
+    "This field does not match the AgentScan handshake wire contract.",
+  );
+}
+
 /**
  * Build the exact, byte-for-byte AgentScan handshake template the server
  * rebuilds independently: LF newlines, no trailing newline. Pure — no I/O,
- * no key material.
+ * no key material. Validates every field BEFORE interpolating it — `nonce`
+ * is server-supplied (relayed by the caller from `session/start`) and is
+ * therefore untrusted input; a value that doesn't match the wire contract's
+ * shape (or that carries a `\r`/`\n`, which no legitimate field ever does)
+ * is refused here rather than silently becoming extra signed lines.
  */
 export function buildHandshakeTemplate(input: HandshakeTemplateInput): string {
+  if (!AGENT_HASH_SHAPE.test(input.agentHash)) rejectTemplateInput("agentHash");
+  if (!NONCE_SHAPE.test(input.nonce)) rejectTemplateInput("nonce");
+  if (CARRIAGE_OR_LINEFEED.test(input.domain)) rejectTemplateInput("domain");
+  if (CARRIAGE_OR_LINEFEED.test(input.address)) rejectTemplateInput("address");
+  if (CARRIAGE_OR_LINEFEED.test(input.issuedAt)) rejectTemplateInput("issuedAt");
+
   const address = input.chainFamily === "eip155" ? input.address.toLowerCase() : input.address;
   return [
     "AgentScan Handshake v1",
@@ -67,12 +119,18 @@ export function buildHandshakeTemplate(input: HandshakeTemplateInput): string {
   ].join("\n");
 }
 
+/**
+ * Second, independent layer: even if a future caller assembled a template
+ * without going through `buildHandshakeTemplate`, the signers themselves
+ * refuse anything that isn't the exact seven-line shape (see
+ * `TEMPLATE_SHAPE`) — not merely "starts with the right prefix".
+ */
 function assertHandshakeTemplate(template: string): void {
-  if (template.startsWith(MAGIC_PREFIX)) return;
+  if (TEMPLATE_SHAPE.test(template)) return;
   throw new VexError(
     ErrorCodes.AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED,
-    "Refusing to sign: input is not an AgentScan Handshake v1 template.",
-    "This signer only signs the fixed AgentScan handshake template.",
+    "Refusing to sign: input is not a well-formed AgentScan Handshake v1 template.",
+    "This signer only signs the fixed, single-line, seven-field AgentScan handshake template.",
   );
 }
 
@@ -106,7 +164,9 @@ function buildSolanaOffchainPayload(template: string): Uint8Array {
  * internally — callers pass the template only. Fails closed
  * (`SIGNER_MISMATCH`) when the decrypted key's derived address does not equal
  * the entry's recorded address, same discipline as `decryptExportSecret`'s
- * Solana branch; the plaintext secret is zeroized on every exit path.
+ * Solana branch; the loaded secret-key buffer is zeroized on every exit path
+ * (pre-existing caveat shared with `decryptExportSecret`: `Keypair.fromSecretKey`
+ * inside `deriveSolanaAddress` makes its own un-zeroized internal seed copy).
  */
 export async function signHandshakeSolana(
   entry: WalletInventoryEntry,
