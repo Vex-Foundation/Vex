@@ -13,6 +13,7 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:lighter:live": "VEX_LIGHTER_LIVE=1 vitest run src/__tests__/lighter/lighter-live-market-data.test.ts",
     "typecheck:test:ratchet": "node scripts/check-test-type-baseline.mjs",
     "typecheck:test:baseline-diff": "node scripts/check-test-type-baseline-change.mjs",
     "test:unsafe-escapes": "node scripts/check-test-unsafe-escapes.mjs",
