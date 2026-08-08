@@ -43,6 +43,10 @@ function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function safeIntegerOrNull(value: number): number | null {
+  return Number.isSafeInteger(value) ? value : null;
+}
+
 export function projectMarket(market: LighterMarket): Record<string, unknown> {
   return {
     marketId: market.market_id,
@@ -104,8 +108,10 @@ export function projectMarketDetails(response: LighterMarketDetailsResponse): Re
 }
 
 export function projectOrder(order: LighterSimpleOrder): Record<string, unknown> {
+  const orderIndex = safeIntegerOrNull(order.order_index);
   return {
-    orderIndex: order.order_index,
+    orderIndex,
+    orderIndexPrecision: orderIndex === null ? "unsafe_provider_number_omitted" : "safe",
     orderId: order.order_id,
     ownerAccountIndex: order.owner_account_index,
     price: order.price,

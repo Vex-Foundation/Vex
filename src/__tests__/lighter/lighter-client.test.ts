@@ -201,6 +201,22 @@ describe("LighterClient validation", () => {
     expect(book.asks[0].remaining_base_amount).toBe("5");
   });
 
+  it("accepts Core order indexes that exceed JavaScript's safe integer range", async () => {
+    const unsafeOrderIndex = Number.MAX_SAFE_INTEGER + 1;
+    mockOk({
+      code: 200,
+      total_asks: 1,
+      asks: [{ ...ORDER, order_index: unsafeOrderIndex }],
+      total_bids: 0,
+      bids: [],
+    });
+
+    const book = await client.getOrderBookOrders("core", { marketId: 0, limit: 1 });
+
+    expect(Number.isSafeInteger(book.asks[0]!.order_index)).toBe(false);
+    expect(book.asks[0]!.order_id).toBe(ORDER.order_id);
+  });
+
   it("validates recent trades", async () => {
     mockOk({ code: 200, trades: [TRADE] });
     const tape = await client.getRecentTrades("core", { marketId: 0, limit: 1 });

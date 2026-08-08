@@ -15,6 +15,10 @@ import type {
 } from "./types.js";
 
 const int = z.number().int().finite();
+const providerInteger = z
+  .number()
+  .finite()
+  .refine((value) => Number.isInteger(value), { message: "Expected integer" });
 const finiteNumber = z.number().finite();
 const numericString = z.string().min(1);
 const optionalNumericString = z.string().optional();
@@ -75,7 +79,7 @@ const marketDetailSchema = marketSchema
 
 const simpleOrderSchema = z
   .object({
-    order_index: int,
+    order_index: providerInteger,
     order_id: numericString,
     owner_account_index: int,
     initial_base_amount: numericString,

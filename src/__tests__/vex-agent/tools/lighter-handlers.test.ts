@@ -232,7 +232,12 @@ describe("Lighter agent read handlers", () => {
   });
 
   it("sorts order book orders into best price order before truncating", async () => {
-    const asks = Object.freeze([order(1, "3503"), order(2, "3501"), order(3, "3502")]);
+    const unsafeOrderIndex = Number.MAX_SAFE_INTEGER + 1;
+    const asks = Object.freeze([
+      order(1, "3503"),
+      { ...order(2, "3501"), order_index: unsafeOrderIndex },
+      order(3, "3502"),
+    ]);
     const bids = Object.freeze([order(4, "3498"), order(5, "3500"), order(6, "3499")]);
     mocks.client.getOrderBookOrders.mockResolvedValue({
       code: 200,
@@ -259,6 +264,10 @@ describe("Lighter agent read handlers", () => {
     });
     expect((data.asks as Record<string, unknown>[]).map((row) => row.price)).toEqual(["3501", "3502"]);
     expect((data.bids as Record<string, unknown>[]).map((row) => row.price)).toEqual(["3500", "3499"]);
+    expect((data.asks as Record<string, unknown>[])[0]?.orderIndex).toBeNull();
+    expect((data.asks as Record<string, unknown>[])[0]?.orderIndexPrecision).toBe(
+      "unsafe_provider_number_omitted",
+    );
   });
 
   it("reads recent trades with bounded rows and next cursor disclosure", async () => {
