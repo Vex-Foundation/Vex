@@ -1,3 +1,9 @@
+import {
+  LIGHTER_CACHE_TTL_MS,
+  LIGHTER_ENDPOINT_PATHS,
+  LIGHTER_ENDPOINTS,
+  type LighterEnvironment,
+} from "@tools/lighter/constants.js";
 import { getLighterClient } from "@tools/lighter/client.js";
 import { VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
@@ -36,6 +42,31 @@ function failureDetail(toolId: string, err: unknown): string {
   return describeFailureForAgent(err);
 }
 
+function liveProvenance(
+  environment: LighterEnvironment,
+  toolId: string,
+  endpointPaths: readonly string[],
+  details: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    source: "live_lighter_public_api",
+    provenance: {
+      source: "live_lighter_public_api",
+      provider: "lighter",
+      dataPlane: "provider_public_rest",
+      toolId,
+      environment,
+      restBaseUrl: LIGHTER_ENDPOINTS[environment].restBaseUrl,
+      endpointPaths,
+      retrievedAt: new Date().toISOString(),
+      cacheStatus: "fresh_or_short_cache",
+      maxDataAgeMs: LIGHTER_CACHE_TTL_MS,
+      independentOnchainVerification: false,
+      ...details,
+    },
+  };
+}
+
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.system": async (params) => {
     const environment = readEnvironment(params);
@@ -48,6 +79,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         client.getSystemConfig(environment.value),
       ]);
       return ok({
+        ...liveProvenance(environment.value, "lighter.system", [
+          LIGHTER_ENDPOINT_PATHS.status,
+          LIGHTER_ENDPOINT_PATHS.systemConfig,
+        ]),
         environment: environment.value,
         ...projectSystem(status, systemConfig),
       });
@@ -74,6 +109,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const projected = response.order_books.map(projectMarket);
       const window = takeFirst(projected, limit.value);
       return ok({
+        ...liveProvenance(environment.value, "lighter.markets", [
+          LIGHTER_ENDPOINT_PATHS.orderBooks,
+        ], {
+          marketId: marketId.value ?? null,
+          filter: filter.value ?? null,
+          outputLimit: limit.value,
+        }),
         environment: environment.value,
         marketId: marketId.value ?? null,
         filter: filter.value ?? null,
@@ -106,6 +148,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         return fail(`No Lighter market detail found for marketId ${marketId.value} on ${environment.value}.`);
       }
       return ok({
+        ...liveProvenance(environment.value, "lighter.market.get", [
+          LIGHTER_ENDPOINT_PATHS.orderBookDetails,
+        ], {
+          marketId: marketId.value,
+          filter: filter.value ?? null,
+        }),
         environment: environment.value,
         marketId: marketId.value,
         filter: filter.value ?? null,
@@ -131,6 +179,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         limit: limit.value,
       });
       return ok({
+        ...liveProvenance(environment.value, "lighter.orderbook", [
+          LIGHTER_ENDPOINT_PATHS.orderBookOrders,
+        ], {
+          marketId: marketId.value,
+          outputLimit: limit.value,
+        }),
         environment: environment.value,
         marketId: marketId.value,
         limit: limit.value,
@@ -155,6 +209,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         limit: limit.value,
       });
       return ok({
+        ...liveProvenance(environment.value, "lighter.recentTrades", [
+          LIGHTER_ENDPOINT_PATHS.recentTrades,
+        ], {
+          marketId: marketId.value,
+          outputLimit: limit.value,
+        }),
         environment: environment.value,
         marketId: marketId.value,
         limit: limit.value,
@@ -193,6 +253,15 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ...(setTimestampToEnd === undefined ? {} : { setTimestampToEnd }),
       });
       return ok({
+        ...liveProvenance(environment.value, "lighter.candles", [
+          LIGHTER_ENDPOINT_PATHS.candles,
+        ], {
+          marketId: marketId.value,
+          resolution: resolution.value,
+          startTimestamp: startTimestamp.value,
+          endTimestamp: endTimestamp.value,
+          countBack: countBack.value ?? null,
+        }),
         environment: environment.value,
         marketId: marketId.value,
         requestedWindow: {

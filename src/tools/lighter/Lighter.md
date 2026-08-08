@@ -66,6 +66,20 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 | `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
 | `lighter.candles` | `getCandles` | Newest candle rows up to the agent output cap |
 
+Every successful agent response includes provenance:
+
+| Field | Meaning |
+|-------|---------|
+| `source` | Always `live_lighter_public_api` for these tools |
+| `provenance.provider` | `lighter` |
+| `provenance.dataPlane` | `provider_public_rest`, not a mock, fixture, or local simulator |
+| `provenance.environment` | Explicit `core` or `rhc` |
+| `provenance.endpointPaths` | Public Lighter REST paths used for the read |
+| `provenance.retrievedAt` | Time Vex produced the tool response |
+| `provenance.cacheStatus` | `fresh_or_short_cache`; the bytes are from live provider reads and may be served from Vex's short in-process cache |
+| `provenance.maxDataAgeMs` | Current maximum cache age for repeated identical reads |
+| `provenance.independentOnchainVerification` | `false` until a later phase adds independent chain/RPC verification |
+
 ## Safety Notes
 
 - Every call requires an explicit `environment`: `core` or `rhc`.
@@ -96,6 +110,9 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
   emitting a huge payload.
 - Provider error bodies are redacted and length-bounded before they enter a
   `VexError`.
+- Lighter public market data is live provider API data, not mock data. Do not
+  describe it as independently on-chain verified unless a later verifier proves
+  the same rows through a chain/RPC source.
 
 ## Verification
 
@@ -106,19 +123,24 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
   namespace list-mode tests.
 - Live market-data proof: `pnpm run test:lighter:live` runs the gated
   `VEX_LIGHTER_LIVE=1` smoke against real Core and RHC public APIs through
-  `executeProtocolTool`.
+  `executeProtocolTool`, including provenance assertions on every Lighter tool
+  response.
 
 ## Live Verification Notes
 
-2026-08-09 local time (`2026-08-08T23:18Z`): `pnpm run test:lighter:live`
-passed against real public Lighter infrastructure.
+2026-08-09 local time (`2026-08-08T23:36Z`): `pnpm run test:lighter:live`
+passed against real public Lighter infrastructure, including provenance
+assertions on every successful Lighter tool response.
 
-| Environment | Network id | Selected market | Reads proven |
-|-------------|------------|-----------------|--------------|
-| Core | 1 | `1` / `BTC` | system, markets, market detail, order book, recent trades, candles |
+| Environment | Network id | Latest selected market | Reads proven |
+|-------------|------------|------------------------|--------------|
+| Core | 1 | `56` / `ZK` | system, markets, market detail, order book, recent trades, candles |
 | RHC | 1 | `0` / `ETH` | system, markets, market detail, order book, recent trades, candles |
 
 The live smoke selected active markets from `lighter.markets`, then reused the
 selected `marketId` for detail, depth, recent trades, and 1-minute candles.
 Both environments returned 10 ask rows, 10 bid rows, 10 recent trade rows, and
-12 candle rows within the configured live smoke limits.
+12 candle rows within the configured live smoke limits. The selected Core
+market can vary because the live proof chooses an active market from the
+provider feed when preferred symbols are not present in the bounded market
+window.

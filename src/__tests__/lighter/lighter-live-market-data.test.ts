@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LIGHTER_ENVIRONMENTS,
+  LIGHTER_ENDPOINT_PATHS,
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
 import { executeProtocolTool } from "@vex-agent/tools/protocols/runtime.js";
@@ -72,6 +73,36 @@ function expectSorted(values: readonly number[], direction: "ascending" | "desce
   }
 }
 
+function expectLiveProvenance(
+  data: Record<string, unknown>,
+  options: {
+    readonly environment: LighterEnvironment;
+    readonly toolId: string;
+    readonly endpointPaths: readonly string[];
+    readonly marketId?: number;
+  },
+): void {
+  expect(data.source).toBe("live_lighter_public_api");
+  const provenance = data.provenance as Record<string, unknown>;
+  expect(provenance).toEqual(expect.objectContaining({
+    source: "live_lighter_public_api",
+    provider: "lighter",
+    dataPlane: "provider_public_rest",
+    toolId: options.toolId,
+    environment: options.environment,
+    endpointPaths: options.endpointPaths,
+    cacheStatus: "fresh_or_short_cache",
+    independentOnchainVerification: false,
+  }));
+  expect(typeof provenance.restBaseUrl).toBe("string");
+  expect((provenance.restBaseUrl as string).startsWith("https://")).toBe(true);
+  expect(Number.isNaN(Date.parse(stringValue(provenance.retrievedAt)))).toBe(false);
+  expect(finiteNumber(provenance.maxDataAgeMs)).toBeGreaterThan(0);
+  if (options.marketId !== undefined) {
+    expect(provenance.marketId).toBe(options.marketId);
+  }
+}
+
 function chooseMarket(markets: readonly Record<string, unknown>[]): MarketChoice {
   const active = markets.filter((market) => market.status === "active");
   expect(active.length).toBeGreaterThan(0);
@@ -99,6 +130,11 @@ describeLive("Lighter live market data through protocol runtime", () => {
     it(`reads ${environment} market data through executeProtocolTool`, { timeout: 60_000 }, async () => {
       const system = await runTool("lighter.system", { environment });
       expect(system.environment).toBe(environment);
+      expectLiveProvenance(system, {
+        environment,
+        toolId: "lighter.system",
+        endpointPaths: [LIGHTER_ENDPOINT_PATHS.status, LIGHTER_ENDPOINT_PATHS.systemConfig],
+      });
       expect(system.status).toEqual(expect.objectContaining({
         networkId: expect.any(Number),
         timestamp: expect.any(Number),
@@ -110,6 +146,11 @@ describeLive("Lighter live market data through protocol runtime", () => {
         limit: 50,
       });
       expect(marketList.environment).toBe(environment);
+      expectLiveProvenance(marketList, {
+        environment,
+        toolId: "lighter.markets",
+        endpointPaths: [LIGHTER_ENDPOINT_PATHS.orderBooks],
+      });
       expect(marketList.truncated).toBeDefined();
       const marketRows = rows(marketList.markets);
       expect(marketRows.length).toBeGreaterThan(0);
@@ -123,6 +164,12 @@ describeLive("Lighter live market data through protocol runtime", () => {
       });
       expect(detail.environment).toBe(environment);
       expect(detail.marketId).toBe(market.marketId);
+      expectLiveProvenance(detail, {
+        environment,
+        toolId: "lighter.market.get",
+        endpointPaths: [LIGHTER_ENDPOINT_PATHS.orderBookDetails],
+        marketId: market.marketId,
+      });
       expect(rows(detail.details).length).toBeGreaterThan(0);
 
       const book = await runTool("lighter.orderbook", {
@@ -133,6 +180,12 @@ describeLive("Lighter live market data through protocol runtime", () => {
       expect(book.environment).toBe(environment);
       expect(book.marketId).toBe(market.marketId);
       expect(book.limit).toBe(ORDERBOOK_LIMIT);
+      expectLiveProvenance(book, {
+        environment,
+        toolId: "lighter.orderbook",
+        endpointPaths: [LIGHTER_ENDPOINT_PATHS.orderBookOrders],
+        marketId: market.marketId,
+      });
       expect(book.sorting).toEqual({
         asks: "price_ascending",
         bids: "price_descending",
@@ -153,6 +206,12 @@ describeLive("Lighter live market data through protocol runtime", () => {
       });
       expect(trades.environment).toBe(environment);
       expect(trades.marketId).toBe(market.marketId);
+      expectLiveProvenance(trades, {
+        environment,
+        toolId: "lighter.recentTrades",
+        endpointPaths: [LIGHTER_ENDPOINT_PATHS.recentTrades],
+        marketId: market.marketId,
+      });
       const tradeRows = rows(trades.trades);
       expect(tradeRows.length).toBeLessThanOrEqual(TRADES_LIMIT);
       expect(finiteNumber(trades.count)).toBe(tradeRows.length);
@@ -169,6 +228,12 @@ describeLive("Lighter live market data through protocol runtime", () => {
       expect(candles.environment).toBe(environment);
       expect(candles.marketId).toBe(market.marketId);
       expect(candles.resolution).toBe("1m");
+      expectLiveProvenance(candles, {
+        environment,
+        toolId: "lighter.candles",
+        endpointPaths: [LIGHTER_ENDPOINT_PATHS.candles],
+        marketId: market.marketId,
+      });
       const candleRows = rows(candles.candles);
       expect(candleRows.length).toBeLessThanOrEqual(100);
       expect(finiteNumber(candles.count)).toBe(candleRows.length);
