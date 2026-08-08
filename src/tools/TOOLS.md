@@ -2,7 +2,7 @@
 
 > All protocol-specific SDK wrappers, API clients, and on-chain utilities. Each subfolder is a self-contained integration with its own types, validation, and client layer. vex-agent tools (`src/vex-agent/tools/protocols/`) consume these clients.
 >
-> **Last updated: 2026-08-08 (Lighter read-only foundation)**
+> **Last updated: 2026-08-08 (Lighter agent market data tools)**
 >
 > **LLM maintainers:** If you add/remove a protocol or change a module's scope, update this file AND the subfolder's own .md doc.
 
@@ -13,7 +13,7 @@
 | Folder | Protocol / Service | Chain | Files | Docs |
 |--------|--------------------|-------|-------|------|
 | `dexscreener/` | DexScreener analytics (REST + WS) | Multi-chain | 5 | [DexScreener.md](dexscreener/DexScreener.md) |
-| `lighter/` | Lighter Core + RHC market data — P1 read client | Core + RHC | 7 | [Lighter.md](lighter/Lighter.md) |
+| `lighter/` | Lighter Core + RHC market data — read client consumed by agent tools | Core + RHC | 7 | [Lighter.md](lighter/Lighter.md) |
 | `trench-express/` | Trench Express launchpad — P1 read client (tokens/token/search/trades/stats) | RBC 4663 | 8 | [TrenchExpress.md](trench-express/TrenchExpress.md) |
 | `khalani/` | Khalani cross-chain bridge (40+ chains) | Multi-chain | 7 | [Khalani.md](khalani/Khalani.md) |
 | `kyberswap/` | KyberSwap aggregator swaps (limit orders + ZaaS deleted, Agent Scan Phase 1) | 19 EVM chains | 23 | [KyberSwap.md](kyberswap/KyberSwap.md) |
@@ -71,7 +71,8 @@ extension shape.)
 | Khalani | https://khalani.gitbook.io/khalani-docs |
 | KyberSwap | https://docs.kyberswap.com/ |
 | DexScreener | https://docs.dexscreener.com/api/reference |
-| Lighter | https://apidocs.lighter.xyz/ |
+| Lighter Core | https://apidocs.lighter.xyz/ |
+| Lighter RHC | https://apidocs.rh.lighter.xyz/ |
 
 ---
 
