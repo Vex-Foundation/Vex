@@ -17,6 +17,15 @@
  * network egress may begin pre-unlock — an accepted privacy trade-off (the
  * addresses are public; no secret material is touched).
  *
+ * The ONE deliberate exception to "no keystore unlock involved": the
+ * `agentscan_report` sync job's wallet-binding HANDSHAKE
+ * (`src/vex-agent/sync/agentscan-report.ts`'s `handshakeOnce`, running inside
+ * this same executor) is vault-gated — it signs a server-issued challenge
+ * with the trading key to prove wallet ownership, so it makes zero decrypt
+ * attempts while locked (`vault_locked`, retried next tick) and only reaches
+ * the keystore once the vault is unlocked. Every other job this executor runs
+ * stays public-address-only.
+ *
  * Lifecycle mirrors `wake-worker.ts`: tick immediately then every
  * `SUPERVISOR_INTERVAL_MS` until the DB is ready, then start the executor
  * EXACTLY ONCE and clear the interval (the executor self-schedules thereafter).
