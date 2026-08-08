@@ -28,6 +28,23 @@ async function resetAgentscanTables(): Promise<void> {
   await execute(`DELETE FROM agentscan_reporting_state`, []);
 }
 
+/**
+ * Test-only state-setter: stamps `registered_at` + resets the attempt backoff
+ * directly, without going through `markHandshakeComplete` (which also rotates
+ * the token / stores name+fingerprint — more than these tests need). Replaces
+ * the old `markRegistered()` repo function, which production code no longer
+ * calls now that the v2 handshake owns registration.
+ */
+async function stampRegistered(): Promise<void> {
+  const { execute } = await import("@vex-agent/db/client.js");
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET registered_at = NOW(), register_attempt_count = 0, next_register_attempt_at = NOW()
+      WHERE id = 1`,
+    [],
+  );
+}
+
 /** Index into an array without a non-null assertion: a miss throws, honestly. */
 function at<T>(items: readonly T[], index: number): T {
   const item = items[index];
@@ -118,7 +135,7 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(state.registerAttemptCount).toBe(1);
     expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeGreaterThan(Date.now() + 500_000);
 
-    await repo.markRegistered();
+    await stampRegistered();
     await repo.markBackfillEnqueued();
     state = await repo.getReportingState();
     expect(state.registeredAt).not.toBeNull();
@@ -376,15 +393,62 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     expect(reclaimed.some((c) => c.outboxId === rejectedOutboxId)).toBe(false);
   });
 
+  it("resetIdentityForRecovery shares the same full-resend outbox reset", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const { queryOne } = await import("@vex-agent/db/client.js");
+
+    await seedEligibleSwap();
+    await repo.enqueueEligibleActivity(false);
+    const claimed = await repo.claimDueOutbox(10);
+    const sentOutboxId = claimed[0]?.outboxId;
+    if (sentOutboxId === undefined) throw new Error("expected a claimed row");
+    await repo.markOutboxSent([sentOutboxId]);
+
+    await repo.resetIdentityForRecovery();
+
+    const sentRow = await queryOne<{ sent_at: Date | null; backfill: boolean }>(
+      `SELECT sent_at, backfill FROM agentscan_outbox WHERE id = $1`,
+      [sentOutboxId],
+    );
+    expect(sentRow?.sent_at).toBeNull();
+    expect(sentRow?.backfill).toBe(true);
+  });
+
   it("state reset is a no-op when nothing was ever sent", async () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await repo.ensureIdentity(() => IDENTITY_A);
-    await repo.markRegistered();
+    await stampRegistered();
 
     await repo.resetForReRegistration();
 
     const state = await repo.getReportingState();
     expect(state.registeredAt).toBeNull();
     expect(state.agentHash).toBe(IDENTITY_A.agentHash);
+  });
+
+  it("resetIdentityForRecovery abandons the identity entirely (session/complete auth_lost recovery) -- registered_at, agent_hash, ingest_token all clear", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.markHandshakeComplete({
+      agentName: "agent-x",
+      ingestToken: IDENTITY_A.ingestToken,
+      serverCursorRowId: 7,
+      walletsFingerprint: "fp-1",
+    });
+    await repo.noteRegisterAttemptFailed(600);
+
+    await repo.resetIdentityForRecovery();
+
+    const state = await repo.getReportingState();
+    expect(state.agentHash).toBeNull();
+    expect(state.ingestToken).toBeNull();
+    expect(state.agentName).toBeNull();
+    expect(state.boundWalletsFingerprint).toBeNull();
+    expect(state.registeredAt).toBeNull();
+    expect(state.backfillEnqueuedAt).toBeNull();
+    expect(state.lastHandshakeAt).toBeNull();
+    expect(state.serverCursorRowId).toBeNull();
+    expect(state.registerAttemptCount).toBe(0);
+    expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
   });
 });

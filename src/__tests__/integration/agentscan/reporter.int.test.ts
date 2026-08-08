@@ -13,8 +13,9 @@
  *         and only that once; a second run with an unchanged wallet set does
  *         NOT re-handshake; a wallet-inventory change (different fingerprint)
  *         DOES re-handshake; vault_locked / no_wallets skip with zero
- *         session calls and no backoff burn; a domain mismatch never signs
- *         and never calls session/complete;
+ *         session calls and no backoff burn; a domain mismatch (including a
+ *         mixed-case one that should MATCH) never signs and never calls
+ *         session/complete;
  *   AC3 — privacy: the serialized batches never contain the seeded wallet /
  *         session / from-address values (the mapper's allowlist, proven at
  *         the lane boundary).
@@ -22,9 +23,15 @@
  * Plus the server-answer table: session/complete 409 (wallet_conflict, kept
  * defensive — the current server transfers a proven wallet instead) →
  * permanent stop; events-endpoint 410 → permanent stop; events-endpoint 401
- * → re-handshake the SAME identity next run; session/complete 401 → same
- * treatment; per-item rejection → terminal rejected row that is never
- * resent; session/start retryable → backoff without touching the outbox.
+ * → re-handshake the SAME identity next run (`resetForReRegistration`);
+ * session/complete 401 → a DIFFERENT recovery — the FakeSessionClient
+ * enforces the server's real Bearer rule via a per-agentHash bound-token
+ * ledger, so a genuine crash-after-rotation lockout (server holds T_new,
+ * this install's stored token is stale) is reproduced and proven recovered:
+ * the identity is abandoned entirely (`resetIdentityForRecovery`), and the
+ * next run mints a fresh one that binds cleanly, no infinite 401 loop;
+ * per-item rejection → terminal rejected row that is never resent;
+ * session/start retryable → backoff without touching the outbox.
  */
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -152,12 +159,24 @@ class FakeClient implements AgentscanClient {
 
 const DEFAULT_DOMAIN = "localhost";
 
-/** Scripted v2 handshake client: defaults to a well-formed happy path unless a test scripts otherwise. */
+/**
+ * Scripted v2 handshake client: defaults to a well-formed happy path unless a
+ * test scripts otherwise. The unscripted `sessionComplete` ENFORCES the
+ * server's real Bearer rule via a per-agentHash bound-token ledger --
+ * "harmless for a new one" (no ledger entry yet: any bearer is accepted, and
+ * the ledger is seeded), "required for an existing one" (a ledger entry
+ * exists: the presented bearer must match it exactly, else `auth_lost`) --
+ * so a test can genuinely reproduce a stale-token lockout by corrupting the
+ * LOCALLY stored token out from under an identity this fake already bound,
+ * rather than the lane always sailing through on a lenient always-succeeds
+ * double.
+ */
 class FakeSessionClient implements AgentscanSessionClient {
   readonly sessionStartCalls: SessionStartInput[] = [];
   readonly sessionCompleteCalls: Array<{ input: SessionCompleteInput; bearerToken: string | null }> = [];
   sessionStartOutcomes: SessionStartOutcome[] = [];
   sessionCompleteOutcomes: SessionCompleteOutcome[] = [];
+  private readonly serverBoundTokens = new Map<string, string>();
 
   async sessionStart(input: SessionStartInput): Promise<SessionStartOutcome> {
     this.sessionStartCalls.push(input);
@@ -177,15 +196,17 @@ class FakeSessionClient implements AgentscanSessionClient {
     bearerToken: string | null,
   ): Promise<SessionCompleteOutcome> {
     this.sessionCompleteCalls.push({ input, bearerToken });
-    return (
-      this.sessionCompleteOutcomes.shift() ?? {
-        kind: "bound",
-        // Must satisfy the wire contract's ingest_token shape (43-char base64url).
-        ingestToken: `rotated-token-${this.sessionCompleteCalls.length}`.padEnd(43, "A"),
-        agentName: "agent-default",
-        lastAcceptedRowId: null,
-      }
-    );
+    const scripted = this.sessionCompleteOutcomes.shift();
+    if (scripted !== undefined) return scripted;
+
+    const boundToken = this.serverBoundTokens.get(input.agentHash);
+    if (boundToken !== undefined && boundToken !== bearerToken) {
+      return { kind: "auth_lost" };
+    }
+    // Must satisfy the wire contract's ingest_token shape (43-char base64url).
+    const rotated = `rotated-token-${this.sessionCompleteCalls.length}`.padEnd(43, "A");
+    this.serverBoundTokens.set(input.agentHash, rotated);
+    return { kind: "bound", ingestToken: rotated, agentName: "agent-default", lastAcceptedRowId: null };
   }
 }
 
@@ -522,6 +543,23 @@ describe("reporter lane — server-answer table", () => {
     expect((await stateRepo.getReportingState()).registeredAt).toBeNull();
   });
 
+  it("a mixed-case server domain matches the lowercase configured host (case-insensitive comparison)", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    await seedWallet();
+    const client = new FakeClient();
+    const session = new FakeSessionClient();
+    session.sessionStartOutcomes = [
+      { kind: "started", challengeId: "chal-y", nonce: "N".repeat(43), domain: "LocalHost", expiresAt: "2026-08-08T00:05:00.000Z" },
+    ];
+    const signer = new FakeSigner();
+
+    const result = await lane.runAgentscanReport(depsWith(client, "http://localhost", session, signer));
+
+    expect(result.skipped).toBeNull();
+    expect(signer.calls).toHaveLength(1);
+    expect(session.sessionCompleteCalls).toHaveLength(1);
+  });
+
   it("send 410 -> permanent stop; the following run is a stopped no-op", async () => {
     const lane = await import("../../../vex-agent/sync/agentscan-report.js");
     const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
@@ -561,22 +599,58 @@ describe("reporter lane — server-answer table", () => {
     expect(second.sent).toBe(1);
   });
 
-  it("session/complete 401 (token mismatch) -> re-handshake the SAME identity next run", async () => {
+  it("session/complete auth_lost after a crash-after-rotation abandons the identity; the next run mints a fresh one and recovers (no infinite 401 loop)", async () => {
+    const { execute } = await import("@vex-agent/db/client.js");
     const lane = await import("../../../vex-agent/sync/agentscan-report.js");
     const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await seedWallet();
     const client = new FakeClient();
     const session = new FakeSessionClient();
-    session.sessionCompleteOutcomes = [{ kind: "auth_lost" }];
 
+    // Run 1: a normal first-ever handshake. The FakeSessionClient's
+    // bearer-enforcing ledger now binds this agentHash to whatever token this
+    // run persisted.
     const first = await lane.runAgentscanReport(depsWith(client, "http://localhost", session));
-    expect(first.skipped).toBe("unregistered");
-    expect((await stateRepo.getReportingState()).registeredAt).toBeNull();
+    expect(first.skipped).toBeNull();
+    const stateAfterFirst = await stateRepo.getReportingState();
+    const originalAgentHash = stateAfterFirst.agentHash;
+    expect(originalAgentHash).not.toBeNull();
 
+    // Simulate a crash AFTER the (fake) server committed a rotation but
+    // BEFORE this install persisted it via markHandshakeComplete: corrupt the
+    // locally-stored token directly so it no longer matches what the fake
+    // server's ledger holds for this agentHash -- in effect identical to a
+    // real crash between session/complete's 200 and our own write.
+    await execute(
+      `UPDATE agentscan_reporting_state SET ingest_token = $1 WHERE id = 1`,
+      ["stale-pre-crash-token".padEnd(43, "A")],
+    );
+
+    // A second wallet forces a re-handshake attempt on the next run.
+    await seedWallet();
     const second = await lane.runAgentscanReport(depsWith(client, "http://localhost", session));
-    expect(session.sessionStartCalls).toHaveLength(2);
-    expect(at(session.sessionStartCalls, 1).agentHash).toBe(at(session.sessionStartCalls, 0).agentHash);
-    expect(second.skipped).toBeNull();
+    expect(second.skipped).toBe("unregistered");
+    expect(session.sessionCompleteCalls).toHaveLength(2); // the failed attempt landed here
+    expect(at(session.sessionCompleteCalls, 1).bearerToken).toBe("stale-pre-crash-token".padEnd(43, "A"));
+
+    // The FULL identity is abandoned, not just registration.
+    const stateAfterSecond = await stateRepo.getReportingState();
+    expect(stateAfterSecond.agentHash).toBeNull();
+    expect(stateAfterSecond.ingestToken).toBeNull();
+    expect(stateAfterSecond.agentName).toBeNull();
+    expect(stateAfterSecond.boundWalletsFingerprint).toBeNull();
+    expect(stateAfterSecond.registeredAt).toBeNull();
+
+    // Run 3: ensureIdentity mints a FRESH identity; the fake server's ledger
+    // has no entry for it yet ("harmless for a new one"), so it binds cleanly
+    // -- no infinite 401 loop.
+    const third = await lane.runAgentscanReport(depsWith(client, "http://localhost", session));
+    expect(third.skipped).toBeNull();
+    const stateAfterThird = await stateRepo.getReportingState();
+    expect(stateAfterThird.agentHash).not.toBeNull();
+    expect(stateAfterThird.agentHash).not.toBe(originalAgentHash);
+    expect(stateAfterThird.registeredAt).not.toBeNull();
+    expect(session.sessionCompleteCalls).toHaveLength(3); // 1 bound + 1 failed + 1 recovered, never more
   });
 
   it("auth_lost triggers a FULL idempotent resend: previously-sent rows come back backfill:true; a previously-rejected row is never resent (AC1)", async () => {
@@ -697,11 +771,17 @@ describe("runAgentscanIncremental — push-lane drain-only entry (AC2)", () => {
   it("registered but backfill not yet enqueued: a push-lane fire in the handshake->backfill window is a zero-touch no-op", async () => {
     const lane = await import("../../../vex-agent/sync/agentscan-report.js");
     const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
-    const { queryOne } = await import("@vex-agent/db/client.js");
+    const { queryOne, execute } = await import("@vex-agent/db/client.js");
 
     await seedEligibleSwap();
     await stateRepo.ensureIdentity(lane.generateAgentscanIdentity);
-    await stateRepo.markRegistered();
+    // Direct SQL state-setter (markRegistered no longer exists -- production
+    // now stamps registered_at via markHandshakeComplete): fast-forward past
+    // the handshake without needing session/complete's fuller contract.
+    await execute(
+      `UPDATE agentscan_reporting_state SET registered_at = NOW() WHERE id = 1`,
+      [],
+    );
 
     const stateBefore = await stateRepo.getReportingState();
     expect(stateBefore.registeredAt).not.toBeNull();

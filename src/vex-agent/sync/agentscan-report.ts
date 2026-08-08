@@ -25,10 +25,11 @@
  * from key material. Payloads go through the mapper's structural allowlist —
  * the banned columns are unreadable from its output by construction. Server
  * verdicts are honored exactly: 410 / 403-quarantined stop the lane
- * permanently; a 401 re-handshakes the SAME identity AND resends the full
- * eligible history (a server-side reset means the server has nothing, so
- * every already-sent row comes back owed, flagged `backfill`); only
- * 429/5xx/network are retried.
+ * permanently; a 401 on the EVENTS endpoint re-handshakes the SAME identity
+ * AND resends the full eligible history (a server-side reset means the
+ * server has nothing, so every already-sent row comes back owed, flagged
+ * `backfill`); only 429/5xx/network are retried. A 401 from
+ * session/complete is a DIFFERENT recovery — see "Binding" below.
  *
  * ── Binding: a signed handshake, not a v1 register call ────────────────────
  *
@@ -37,13 +38,27 @@
  * `agentscan/session-client.ts`): the trading key proves ownership of the
  * install's wallet addresses by signing a server-issued challenge, never a
  * blind message — the server's returned `domain` is checked against the
- * configured `agentscanApiUrl`'s hostname before anything is ever signed. A
- * handshake fires when never yet handshaken, when the bound wallet set
- * changed (a sha256 fingerprint over the sorted inventory), or after a 401
- * clears `registered_at`. `wallet_conflict` (a session/complete 409) is kept
- * as a DEFENSIVE permanent stop — transfer-on-proof means the current server
- * no longer emits it in ordinary operation (a valid proof for a wallet bound
- * to a different agent now transfers the binding instead of refusing).
+ * configured `agentscanApiUrl`'s hostname, case-insensitively (the server's
+ * JSON is untrusted casing), before anything is ever signed. A handshake
+ * fires when never yet handshaken, when the bound wallet set changed (a
+ * sha256 fingerprint over the sorted inventory), or after `registered_at`
+ * clears via either recovery path below. `wallet_conflict` (a
+ * session/complete 409) is kept as a DEFENSIVE permanent stop —
+ * transfer-on-proof means the current server no longer emits it in ordinary
+ * operation (a valid proof for a wallet bound to a different agent now
+ * transfers the binding instead of refusing).
+ *
+ * session/complete's OWN 401 is NOT the events endpoint's recovery: it means
+ * the server holds SOME current token for this `agent_hash` that this
+ * install does not know — the canonical cause is a crash between the server
+ * committing session/complete's token rotation and this install persisting
+ * it via `markHandshakeComplete`. Retrying with the SAME identity would just
+ * keep presenting the same now-stale bearer forever (an infinite 401 loop),
+ * so `resetIdentityForRecovery` abandons the identity entirely (agent_hash,
+ * ingest_token, name, fingerprint, every stamp, one transaction with a full
+ * outbox resend). The next run's `ensureIdentity` mints a fresh identity, and
+ * the server's transfer-on-proof re-binds the same proven wallets to it —
+ * that IS the designed recovery, not a data-loss path.
  */
 
 import { randomBytes, createHash } from "node:crypto";
@@ -193,7 +208,7 @@ export async function runAgentscanReport(
  * State is read fresh on every call, never cached across invocations.
  *
  * The `backfillEnqueuedAt === null` guard below is load-bearing: between the
- * periodic lane's `markRegistered()` commit and its later
+ * periodic lane's `markHandshakeComplete()` commit and its later
  * `enqueueEligibleActivity(true)` + `markBackfillEnqueued()` commit — a
  * window that is wide on first GA registration with months of history, and
  * re-opens after every `resetForReRegistration` — a push-lane fire must not
@@ -230,10 +245,17 @@ function computeWalletsFingerprint(): string {
   return createHash("sha256").update(sorted.join("\n")).digest("hex");
 }
 
-/** Localhost stacks answer with a literal `localhost` domain too, so one hostname comparison covers both cases. */
+/**
+ * Localhost stacks answer with a literal `localhost` domain too, so one
+ * hostname comparison covers both cases. Both sides are lowercased before
+ * comparing: `URL#hostname` is already normalized, but `serverDomain` is raw
+ * untrusted JSON text and must not be compared case-sensitively against it —
+ * a legitimately-matching domain answered as e.g. `AgentScan.Example` must
+ * not be refused as a mismatch.
+ */
 function domainMatches(baseUrl: string, serverDomain: string): boolean {
   try {
-    return new URL(baseUrl).hostname === serverDomain;
+    return new URL(baseUrl).hostname.toLowerCase() === serverDomain.toLowerCase();
   } catch {
     return false;
   }
@@ -332,10 +354,15 @@ async function handshakeOnce(
     return { kind: "skip", reason: "unregistered" };
   }
   if (completed.kind === "auth_lost") {
-    // Token mismatch on an existing agentHash: treat exactly like the events
-    // endpoint's auth_lost — re-handshake the SAME identity next run.
-    await reportingRepo.resetForReRegistration();
-    logger.warn("agentscan.report.handshake_auth_lost_reregistering");
+    // Token mismatch on an EXISTING binding is NOT the events endpoint's
+    // recovery: the server holds SOME current token for this agent_hash that
+    // we don't know (canonically a crash between the server's rotation and
+    // our own markHandshakeComplete persist), so retrying the SAME identity
+    // would keep presenting the same stale bearer forever. Abandon the
+    // identity; ensureIdentity mints a fresh one next run, and the server's
+    // transfer-on-proof re-binds the same proven wallets to it.
+    await reportingRepo.resetIdentityForRecovery();
+    logger.warn("agentscan.report.handshake_auth_lost_identity_reset");
     return { kind: "skip", reason: "unregistered" };
   }
   if (completed.kind === "wallet_conflict") {
