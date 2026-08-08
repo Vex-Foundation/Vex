@@ -79,6 +79,11 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 - Order book projections sort asks by ascending numeric price and bids by
   descending numeric price before applying the agent output limit. Vex does not
   rely on provider row order for top-of-book reasoning.
+- Core order book rows can expose `order_index` values larger than JavaScript's
+  safe integer range. Phase 1 treats those numeric indexes as display-only
+  provider fields: agent output sets `orderIndex: null`,
+  `orderIndexPrecision: "unsafe_provider_number_omitted"`, and keeps the exact
+  `orderId` string.
 - Candle timestamps are JavaScript epoch milliseconds. Seconds-scale Unix
   timestamps are rejected before a provider request is sent.
 - Candle ranges are bounded by Vex before the provider request. In Phase 1,
@@ -98,3 +103,21 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 - Agent handlers: `pnpm test src/__tests__/vex-agent/tools/lighter-handlers.test.ts`
 - Protocol guardrails: manifest lint, embedding lint, registry completeness, and
   namespace list-mode tests.
+- Live market-data proof: `pnpm run test:lighter:live` runs the gated
+  `VEX_LIGHTER_LIVE=1` smoke against real Core and RHC public APIs through
+  `executeProtocolTool`.
+
+## Live Verification Notes
+
+2026-08-09 local time (`2026-08-08T23:11Z`): `pnpm run test:lighter:live`
+passed against real public Lighter infrastructure.
+
+| Environment | Network id | Selected market | Reads proven |
+|-------------|------------|-----------------|--------------|
+| Core | 1 | `0` / `ETH` | system, markets, market detail, order book, recent trades, candles |
+| RHC | 1 | `1` / `BTC` | system, markets, market detail, order book, recent trades, candles |
+
+The live smoke selected active markets from `lighter.markets`, then reused the
+selected `marketId` for detail, depth, recent trades, and 1-minute candles.
+Both environments returned 10 ask rows, 10 bid rows, 10 recent trade rows, and
+12 candle rows within the configured live smoke limits.
