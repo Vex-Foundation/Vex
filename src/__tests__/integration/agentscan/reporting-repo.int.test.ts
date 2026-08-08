@@ -140,6 +140,65 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(state.backfillEnqueuedAt).not.toBeNull();
     expect(state.stoppedReason).toBe("consent_revoked");
   });
+
+  it("markStopped accepts wallet_conflict (migration 075 widened CHECK)", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.markStopped("wallet_conflict");
+    const state = await repo.getReportingState();
+    expect(state.stoppedReason).toBe("wallet_conflict");
+  });
+});
+
+describe("agentscan_reporting_state — handshake fields (migration 075)", () => {
+  it("self-creates with every handshake field null", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const state = await repo.getReportingState();
+    expect(state.agentName).toBeNull();
+    expect(state.lastHandshakeAt).toBeNull();
+    expect(state.serverCursorRowId).toBeNull();
+    expect(state.boundWalletsFingerprint).toBeNull();
+  });
+
+  it("markHandshakeComplete rotates the token, stamps registered_at + last_handshake_at, stores name/cursor/fingerprint, and resets the attempt backoff", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.noteRegisterAttemptFailed(600);
+    const before = await repo.getReportingState();
+    expect(before.registerAttemptCount).toBe(1);
+
+    await repo.markHandshakeComplete({
+      agentName: "agent-007",
+      ingestToken: IDENTITY_B.ingestToken,
+      serverCursorRowId: 42,
+      walletsFingerprint: "deadbeef",
+    });
+
+    const state = await repo.getReportingState();
+    expect(state.agentHash).toBe(IDENTITY_A.agentHash); // identity itself never rotates
+    expect(state.ingestToken).toBe(IDENTITY_B.ingestToken); // token IS rotated
+    expect(state.agentName).toBe("agent-007");
+    expect(state.serverCursorRowId).toBe(42);
+    expect(state.boundWalletsFingerprint).toBe("deadbeef");
+    expect(state.registeredAt).not.toBeNull();
+    expect(state.lastHandshakeAt).not.toBeNull();
+    expect(state.registerAttemptCount).toBe(0);
+    expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it("markHandshakeComplete accepts a null server cursor (brand-new agent, no history yet)", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+
+    await repo.markHandshakeComplete({
+      agentName: "agent-fresh",
+      ingestToken: IDENTITY_A.ingestToken,
+      serverCursorRowId: null,
+      walletsFingerprint: "fingerprint-1",
+    });
+
+    const state = await repo.getReportingState();
+    expect(state.serverCursorRowId).toBeNull();
+  });
 });
 
 describe("agentscan_outbox — diff scan", () => {

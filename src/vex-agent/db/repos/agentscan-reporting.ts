@@ -30,7 +30,7 @@
 
 import { query, queryOne, execute, withTransaction } from "../client.js";
 
-export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict";
+export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict" | "wallet_conflict";
 
 export interface AgentscanReportingState {
   readonly agentHash: string | null;
@@ -42,6 +42,14 @@ export interface AgentscanReportingState {
   readonly nextRegisterAttemptAt: string;
   readonly backfillEnqueuedAt: string | null;
   readonly stoppedReason: AgentscanStopReason | null;
+  /** Display name AgentScan bound to this install (session/complete response). */
+  readonly agentName: string | null;
+  /** When the last successful wallet-binding handshake completed. */
+  readonly lastHandshakeAt: string | null;
+  /** session/complete's syncState.lastAcceptedRowId — null for a brand-new agent. */
+  readonly serverCursorRowId: number | null;
+  /** sha256 of the sorted chainFamily:address inventory list the last handshake covered. */
+  readonly boundWalletsFingerprint: string | null;
 }
 
 export interface ClaimedOutboxEvent {
@@ -83,6 +91,10 @@ interface StateRow {
   next_register_attempt_at: Date;
   backfill_enqueued_at: Date | null;
   stopped_reason: AgentscanStopReason | null;
+  agent_name: string | null;
+  last_handshake_at: Date | null;
+  server_cursor_row_id: string | number | null;
+  bound_wallets_fingerprint: string | null;
 }
 
 function mapState(row: StateRow): AgentscanReportingState {
@@ -96,6 +108,10 @@ function mapState(row: StateRow): AgentscanReportingState {
     nextRegisterAttemptAt: new Date(row.next_register_attempt_at).toISOString(),
     backfillEnqueuedAt: row.backfill_enqueued_at ? new Date(row.backfill_enqueued_at).toISOString() : null,
     stoppedReason: row.stopped_reason,
+    agentName: row.agent_name,
+    lastHandshakeAt: row.last_handshake_at ? new Date(row.last_handshake_at).toISOString() : null,
+    serverCursorRowId: row.server_cursor_row_id === null ? null : Number(row.server_cursor_row_id),
+    boundWalletsFingerprint: row.bound_wallets_fingerprint,
   };
 }
 
@@ -132,6 +148,43 @@ export async function markRegistered(): Promise<void> {
         SET registered_at = NOW(), register_attempt_count = 0,
             next_register_attempt_at = NOW(), updated_at = NOW()
       WHERE id = 1`,
+  );
+}
+
+export interface MarkHandshakeCompleteInput {
+  /** Display name AgentScan bound to this install (session/complete response). */
+  readonly agentName: string;
+  /** The ROTATED token session/complete returned — replaces whatever was stored. */
+  readonly ingestToken: string;
+  /** session/complete's syncState.lastAcceptedRowId — null for a brand-new agent. */
+  readonly serverCursorRowId: number | null;
+  /** sha256 of the sorted chainFamily:address inventory list this handshake covered. */
+  readonly walletsFingerprint: string;
+}
+
+/**
+ * A successful wallet-binding handshake (session/start → sign → session/complete):
+ * rotate the stored token, stamp `registered_at` (kept in sync so the existing
+ * backfill/drain gate needs no change) and `last_handshake_at`, store the
+ * server's name/cursor/fingerprint, and reset the attempt backoff exactly like
+ * `markRegistered` did — a stale attempt count from a PRIOR failed handshake
+ * must not throttle the NEXT one this success has nothing to do with.
+ */
+export async function markHandshakeComplete(input: MarkHandshakeCompleteInput): Promise<void> {
+  await ensureSingleton();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET ingest_token = $1,
+            agent_name = $2,
+            server_cursor_row_id = $3,
+            bound_wallets_fingerprint = $4,
+            registered_at = NOW(),
+            last_handshake_at = NOW(),
+            register_attempt_count = 0,
+            next_register_attempt_at = NOW(),
+            updated_at = NOW()
+      WHERE id = 1`,
+    [input.ingestToken, input.agentName, input.serverCursorRowId, input.walletsFingerprint],
   );
 }
 

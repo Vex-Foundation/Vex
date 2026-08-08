@@ -35,10 +35,11 @@ CREATE TABLE IF NOT EXISTS agentscan_reporting_state (
   ingest_token TEXT CHECK (ingest_token ~ '^[A-Za-z0-9_-]{43}$'),
   consent_version INT NOT NULL DEFAULT 1,
   accepted_at TIMESTAMPTZ,
-  -- Set on the first 200 from /v1/agents/register; cleared on a 401 from
-  -- /v1/events so the lane re-registers (server-side reset recovery). The
+  -- Set on a successful wallet-binding handshake (migration 075 replaces v1
+  -- register with the v2 handshake client-side); cleared on a 401 from
+  -- /v1/events so the lane re-handshakes (server-side reset recovery). The
   -- same reset also re-owes every already-sent outbox row, so a 401 triggers
-  -- a full-history resend, not just a bare re-register.
+  -- a full-history resend, not just a bare re-handshake.
   registered_at TIMESTAMPTZ,
   register_attempt_count INT NOT NULL DEFAULT 0,
   next_register_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
