@@ -2,7 +2,7 @@
 
 > Encrypted keystore management for EVM and Solana wallets. AES-256-GCM encryption with scrypt KDF, atomic file writes, viem clients for on-chain reads/writes, multi-chain auth dispatch, and native balance fetching across 40+ chains.
 >
-> **Last updated: 2026-03-30**
+> **Last updated: 2026-08-08**
 >
 > **LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove files, update descriptions, fix stale references.
 
@@ -24,6 +24,7 @@ src/tools/wallet/
   solana-create.ts    — Solana wallet creation (Keypair.generate → encrypt → save config)
   solana-import.ts    — Solana wallet import (base58/JSON → encrypt → save config)
   native-balances.ts  — Native balance fetching across EVM + Solana chains via Khalani metadata
+  handshake-signing.ts — AgentScan wallet-binding handshake signing primitives (Sprint 3)
 ```
 
 ---
@@ -163,6 +164,28 @@ Fetches native currency balance across multiple chains:
 
 ---
 
+## AgentScan Handshake Signing (`handshake-signing.ts`)
+
+The one place a trading key signs something that is not a transaction: the
+AgentScan wallet-binding handshake (Sprint 3 T10). Deliberately kept OUT of
+every other API surface — not exported through any tool-layer barrel or tool
+registration, reachable only from `vex-agent/agentscan/handshake.ts`.
+
+| Function | Purpose |
+|----------|---------|
+| `buildHandshakeTemplate(input)` | Pure — builds the exact `AgentScan Handshake v1` template (EVM address lowercased) |
+| `signHandshakeEvm(entry, template)` | EIP-191 `personal_sign` via `loadEvmKey` (fails closed on address mismatch) |
+| `signHandshakeSolana(entry, template)` | ed25519 over `0xFF \|\| ascii("solana offchain") \|\| utf8(template)`, base58-encoded; fails closed on pubkey mismatch |
+
+Both signers refuse (typed `AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED`) any input
+that does not start with `AgentScan Handshake v1\n`, checked BEFORE the
+keystore is touched. The `0xFF` prefix is applied internally by
+`signHandshakeSolana` only — callers never see or control the raw signed
+bytes, and cannot construct a valid Solana transaction message with them (see
+`src/__tests__/wallet/handshake-signing.test.ts`).
+
+---
+
 ## Dependencies
 
 | Module | What's used |
@@ -171,6 +194,7 @@ Fetches native currency balance across multiple chains:
 | `viem` | PublicClient, WalletClient, privateKeyToAddress/Account |
 | `@solana/web3.js` | Keypair, Connection, PublicKey |
 | `bs58` | Solana key encoding/decoding |
+| `tweetnacl` | Raw ed25519 sign (`handshake-signing.ts` Solana signer only) |
 | `config/store.ts` | `loadConfig()`, `saveConfig()` — wallet address persistence |
 | `config/paths.ts` | `KEYSTORE_FILE`, `SOLANA_KEYSTORE_FILE` |
 | `utils/env.ts` | `requireKeystorePassword()` |
@@ -184,6 +208,7 @@ Fetches native currency balance across multiple chains:
 Nearly every module that touches on-chain:
 - `tools/khalani/` — cross-chain bridge execution
 - `tools/kyberswap/`, `tools/uniswap/` — EVM swap signing (staged sign→persist→broadcast)
+- `vex-agent/agentscan/handshake.ts` — the ONLY consumer of `handshake-signing.ts`
 
 (`tools/polymarket/` — EIP-712 order signing — removed with the Polymarket integration,
 Agent Scan Phase 1.)
@@ -212,3 +237,4 @@ npx vitest run src/__tests__/solana/
 | `wallet-solana-ops.test.ts` | Solana keystore ops |
 | `solana-keystore.test.ts` | Base58/JSON normalization, encrypt/decrypt |
 | `native-balances-solana-rpc.test.ts` | Solana balance fetching |
+| `handshake-signing.test.ts` | Template goldens, refusal matrix, 0xFF prefix + tx-unspendability proofs |
