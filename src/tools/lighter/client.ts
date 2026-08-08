@@ -1,0 +1,313 @@
+import { ErrorCodes, VexError } from "../../errors.js";
+import { fetchWithTimeout, readJson } from "../../utils/http.js";
+import {
+  LIGHTER_CANDLE_RESOLUTION_MS,
+  LIGHTER_CANDLES_COUNT_MAX,
+  LIGHTER_CANDLES_COUNT_MIN,
+  LIGHTER_ENDPOINT_PATHS,
+  LIGHTER_ENDPOINTS,
+  LIGHTER_ORDER_BOOK_LIMIT_MAX,
+  LIGHTER_ORDER_BOOK_LIMIT_MIN,
+  LIGHTER_RECENT_TRADES_LIMIT_MAX,
+  LIGHTER_RECENT_TRADES_LIMIT_MIN,
+  LIGHTER_TIMESTAMP_MAX,
+  LIGHTER_TIMESTAMP_MIN,
+  type LighterCandleResolution,
+  type LighterEndpointConfig,
+  type LighterEnvironment,
+} from "./constants.js";
+import { mapLighterError, mapLighterTransportError, readLighterErrorBody } from "./errors.js";
+import { LighterThrottle, parseRetryAfterMs } from "./throttle.js";
+import type {
+  LighterCandlesParams,
+  LighterCandlesResponse,
+  LighterMarketDetailQuery,
+  LighterMarketDetailsResponse,
+  LighterMarketQuery,
+  LighterMarketsResponse,
+  LighterOrderBookOrdersParams,
+  LighterOrderBookOrdersResponse,
+  LighterRecentTradesParams,
+  LighterRecentTradesResponse,
+  LighterStatusResponse,
+  LighterSystemConfigResponse,
+} from "./types.js";
+import {
+  validateLighterCandles,
+  validateLighterMarketDetails,
+  validateLighterMarkets,
+  validateLighterOrderBookOrders,
+  validateLighterRecentTrades,
+  validateLighterStatus,
+  validateLighterSystemConfig,
+} from "./validation.js";
+
+const REQUEST_HEADERS = {
+  "User-Agent": "Vex-Agent/1.0 (+https://vexlabs.ai)",
+  Accept: "application/json",
+} as const;
+
+type QueryValue = string | undefined;
+
+export class LighterClient {
+  private readonly throttle: LighterThrottle;
+
+  constructor(
+    private readonly endpoints: Record<LighterEnvironment, LighterEndpointConfig> = LIGHTER_ENDPOINTS,
+    throttle = new LighterThrottle(),
+  ) {
+    this.throttle = throttle;
+  }
+
+  endpointFor(environment: LighterEnvironment): LighterEndpointConfig {
+    const endpoint = (this.endpoints as Partial<Record<string, LighterEndpointConfig>>)[
+      environment
+    ];
+    if (endpoint === undefined) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        `Invalid Lighter environment: ${String(environment)}`,
+        "Use one of: core, rhc.",
+      );
+    }
+    return endpoint;
+  }
+
+  private buildUrl(
+    environment: LighterEnvironment,
+    path: string,
+    query?: Record<string, QueryValue>,
+  ): string {
+    const baseUrl = this.endpointFor(environment).restBaseUrl;
+    const url = new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value.length > 0) {
+          url.searchParams.set(key, value);
+        }
+      }
+    }
+    return url.toString();
+  }
+
+  private async request<T>(
+    environment: LighterEnvironment,
+    path: string,
+    validator: (raw: unknown) => T,
+    query?: Record<string, QueryValue>,
+  ): Promise<T> {
+    const url = this.buildUrl(environment, path, query);
+    try {
+      return await this.throttle.run(url, environment, this.throttle.defaultTtlMs, async () => {
+        const response = await fetchWithTimeout(url, { headers: REQUEST_HEADERS });
+
+        if (!response.ok) {
+          if (response.status === 429) {
+            const retryMs = parseRetryAfterMs(response.headers.get("retry-after"));
+            this.throttle.penalize(environment, retryMs);
+          }
+          throw mapLighterError(environment, response.status, await readLighterErrorBody(response));
+        }
+
+        const raw = await readJson(response);
+        return validator(raw);
+      });
+    } catch (err) {
+      mapLighterTransportError(err);
+    }
+  }
+
+  getStatus(environment: LighterEnvironment): Promise<LighterStatusResponse> {
+    return this.request(environment, LIGHTER_ENDPOINT_PATHS.status, validateLighterStatus);
+  }
+
+  getSystemConfig(environment: LighterEnvironment): Promise<LighterSystemConfigResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.systemConfig,
+      validateLighterSystemConfig,
+    );
+  }
+
+  async getMarkets(
+    environment: LighterEnvironment,
+    params: LighterMarketQuery = {},
+  ): Promise<LighterMarketsResponse> {
+    const query: Record<string, QueryValue> = {};
+    if (params.marketId !== undefined) query.market_id = String(readUint16(params.marketId, "marketId"));
+    if (params.filter !== undefined) query.filter = params.filter;
+    return this.request(environment, LIGHTER_ENDPOINT_PATHS.orderBooks, validateLighterMarkets, query);
+  }
+
+  async getMarketDetails(
+    environment: LighterEnvironment,
+    params: LighterMarketDetailQuery,
+  ): Promise<LighterMarketDetailsResponse> {
+    const marketId = readUint16(params.marketId, "marketId");
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.orderBookDetails,
+      validateLighterMarketDetails,
+      {
+        market_id: String(marketId),
+        filter: params.filter,
+      },
+    );
+  }
+
+  async getOrderBookOrders(
+    environment: LighterEnvironment,
+    params: LighterOrderBookOrdersParams,
+  ): Promise<LighterOrderBookOrdersResponse> {
+    const marketId = readUint16(params.marketId, "marketId");
+    const limit = readBoundedInt(
+      params.limit ?? 25,
+      "limit",
+      LIGHTER_ORDER_BOOK_LIMIT_MIN,
+      LIGHTER_ORDER_BOOK_LIMIT_MAX,
+    );
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.orderBookOrders,
+      validateLighterOrderBookOrders,
+      {
+        market_id: String(marketId),
+        limit: String(limit),
+      },
+    );
+  }
+
+  async getRecentTrades(
+    environment: LighterEnvironment,
+    params: LighterRecentTradesParams,
+  ): Promise<LighterRecentTradesResponse> {
+    const marketId = readUint16(params.marketId, "marketId");
+    const limit = readBoundedInt(
+      params.limit ?? 25,
+      "limit",
+      LIGHTER_RECENT_TRADES_LIMIT_MIN,
+      LIGHTER_RECENT_TRADES_LIMIT_MAX,
+    );
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.recentTrades,
+      validateLighterRecentTrades,
+      {
+        market_id: String(marketId),
+        limit: String(limit),
+      },
+    );
+  }
+
+  async getCandles(
+    environment: LighterEnvironment,
+    params: LighterCandlesParams,
+  ): Promise<LighterCandlesResponse> {
+    const query = buildCandlesQuery(params);
+    const response = await this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.candles,
+      validateLighterCandles,
+      query,
+    );
+    if (response.c.length > LIGHTER_CANDLES_COUNT_MAX) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_RESPONSE,
+        `Lighter candles response exceeded ${LIGHTER_CANDLES_COUNT_MAX} rows`,
+        "Narrow the candle time range before retrying.",
+      );
+    }
+    return response;
+  }
+}
+
+function readUint16(value: number, field: string): number {
+  return readBoundedInt(value, field, 0, 65_535);
+}
+
+function readBoundedInt(value: number, field: string, min: number, max: number): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < min || value > max) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Invalid Lighter ${field}: expected an integer from ${min} to ${max}`,
+    );
+  }
+  return value;
+}
+
+function readTimestamp(value: number, field: string): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Invalid Lighter ${field}: expected an epoch-milliseconds integer`,
+    );
+  }
+  if (value < LIGHTER_TIMESTAMP_MIN) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Invalid Lighter ${field}: expected epoch milliseconds, not seconds`,
+      "Pass JavaScript epoch milliseconds, for example Date.now().",
+    );
+  }
+  if (value > LIGHTER_TIMESTAMP_MAX) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Invalid Lighter ${field}: timestamp is too far in the future`,
+    );
+  }
+  return value;
+}
+
+function buildCandlesQuery(params: LighterCandlesParams): Record<string, QueryValue> {
+  const marketId = readUint16(params.marketId, "marketId");
+  const startTimestamp = readTimestamp(params.startTimestamp, "startTimestamp");
+  const endTimestamp = readTimestamp(params.endTimestamp, "endTimestamp");
+  if (endTimestamp <= startTimestamp) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Invalid Lighter candle range: endTimestamp must be greater than startTimestamp",
+    );
+  }
+
+  const resolutionMs = resolutionToMs(params.resolution);
+  const rangeCandles = Math.ceil((endTimestamp - startTimestamp) / resolutionMs);
+  const countBack =
+    params.countBack === undefined
+      ? readBoundedInt(rangeCandles, "countBack", LIGHTER_CANDLES_COUNT_MIN, LIGHTER_CANDLES_COUNT_MAX)
+      : readBoundedInt(
+          params.countBack,
+          "countBack",
+          LIGHTER_CANDLES_COUNT_MIN,
+          LIGHTER_CANDLES_COUNT_MAX,
+        );
+
+  if (rangeCandles > countBack) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Invalid Lighter candle range: range exceeds countBack at the requested resolution",
+      "Narrow the time range or increase countBack up to 500.",
+    );
+  }
+
+  return {
+    market_id: String(marketId),
+    resolution: params.resolution,
+    start_timestamp: String(startTimestamp),
+    end_timestamp: String(endTimestamp),
+    count_back: String(countBack),
+    set_timestamp_to_end:
+      params.setTimestampToEnd === undefined ? undefined : String(params.setTimestampToEnd),
+  };
+}
+
+function resolutionToMs(resolution: LighterCandleResolution): number {
+  return LIGHTER_CANDLE_RESOLUTION_MS[resolution];
+}
+
+let cachedClient: LighterClient | null = null;
+
+export function getLighterClient(): LighterClient {
+  if (cachedClient) return cachedClient;
+  cachedClient = new LighterClient();
+  return cachedClient;
+}
