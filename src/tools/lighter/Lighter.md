@@ -62,7 +62,7 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 | `lighter.system` | `getStatus`, `getSystemConfig` | Status, network id, public pool/config fields |
 | `lighter.markets` | `getMarkets` | Bounded market rows with count/truncation disclosure |
 | `lighter.market.get` | `getMarketDetails` | One-market detail rows for a numeric `marketId` |
-| `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids with provider totals and truncation flags |
+| `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
 | `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
 | `lighter.candles` | `getCandles` | Newest candle rows up to the agent output cap |
 
@@ -76,6 +76,9 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 - Agent handlers call only the public read client. There is no renderer, preload,
   wallet, vault, approval, order, deposit, withdrawal, transfer, or signing path
   in the Lighter namespace.
+- Order book projections sort asks by ascending numeric price and bids by
+  descending numeric price before applying the agent output limit. Vex does not
+  rely on provider row order for top-of-book reasoning.
 - Candle timestamps are JavaScript epoch milliseconds. Seconds-scale Unix
   timestamps are rejected before a provider request is sent.
 - Candle ranges are bounded by Vex before the provider request. In Phase 1,

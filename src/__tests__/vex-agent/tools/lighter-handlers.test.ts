@@ -36,6 +36,7 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { LIGHTER_HANDLERS } = await import("@vex-agent/tools/protocols/lighter/handlers.js");
+const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime.js");
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -230,13 +231,15 @@ describe("Lighter agent read handlers", () => {
     expect(output).toContain("No Lighter market detail found");
   });
 
-  it("reads order book orders with side totals and truncation flags", async () => {
+  it("sorts order book orders into best price order before truncating", async () => {
+    const asks = Object.freeze([order(1, "3503"), order(2, "3501"), order(3, "3502")]);
+    const bids = Object.freeze([order(4, "3498"), order(5, "3500"), order(6, "3499")]);
     mocks.client.getOrderBookOrders.mockResolvedValue({
       code: 200,
       total_asks: 3,
-      asks: [order(1, "3501"), order(2, "3502"), order(3, "3503")],
-      total_bids: 2,
-      bids: [order(4, "3499"), order(5, "3498")],
+      asks,
+      total_bids: 3,
+      bids,
     });
 
     const data = await callJson("lighter.orderbook", {
@@ -249,8 +252,13 @@ describe("Lighter agent read handlers", () => {
     expect(data.shownAsks).toBe(2);
     expect(data.shownBids).toBe(2);
     expect(data.asksTruncated).toBe(true);
-    expect(data.bidsTruncated).toBe(false);
-    expect((data.asks as Record<string, unknown>[])[0]?.price).toBe("3501");
+    expect(data.bidsTruncated).toBe(true);
+    expect(data.sorting).toEqual({
+      asks: "price_ascending",
+      bids: "price_descending",
+    });
+    expect((data.asks as Record<string, unknown>[]).map((row) => row.price)).toEqual(["3501", "3502"]);
+    expect((data.bids as Record<string, unknown>[]).map((row) => row.price)).toEqual(["3500", "3499"]);
   });
 
   it("reads recent trades with bounded rows and next cursor disclosure", async () => {
@@ -319,6 +327,26 @@ describe("Lighter agent read handlers", () => {
 
     expect(mocks.client.getOrderBookOrders).not.toHaveBeenCalled();
     expect(mocks.client.getCandles).not.toHaveBeenCalled();
+  });
+
+  it("enforces the production runtime parameter gate before handlers run", async () => {
+    const unknownParam = await executeProtocolTool({
+      toolId: "lighter.markets",
+      params: { environment: "rhc", unexpected: true },
+    }, READ_CTX);
+    expect(unknownParam.success).toBe(false);
+    expect(unknownParam.output).toContain('Unknown parameter "unexpected"');
+    expect(unknownParam.output).toContain("Allowed parameters: environment, marketId, filter, limit");
+
+    const badEnvironment = await executeProtocolTool({
+      toolId: "lighter.markets",
+      params: { environment: "robinhood" },
+    }, READ_CTX);
+    expect(badEnvironment.success).toBe(false);
+    expect(badEnvironment.output).toContain('Allowed values for "environment"');
+    expect(badEnvironment.output).toContain("core, rhc");
+
+    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
   });
 
   it("returns a scrubbed failure when the public client rejects", async () => {

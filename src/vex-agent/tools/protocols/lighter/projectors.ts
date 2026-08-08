@@ -116,14 +116,45 @@ export function projectOrder(order: LighterSimpleOrder): Record<string, unknown>
   };
 }
 
+function priceNumber(order: LighterSimpleOrder): number | null {
+  const value = Number(order.price);
+  return Number.isFinite(value) ? value : null;
+}
+
+function sortOrdersByPrice(
+  rows: readonly LighterSimpleOrder[],
+  direction: "ascending" | "descending",
+): LighterSimpleOrder[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftPrice = priceNumber(left.row);
+      const rightPrice = priceNumber(right.row);
+      if (leftPrice === null && rightPrice === null) return left.index - right.index;
+      if (leftPrice === null) return 1;
+      if (rightPrice === null) return -1;
+      const diff = direction === "ascending"
+        ? leftPrice - rightPrice
+        : rightPrice - leftPrice;
+      return diff === 0 ? left.index - right.index : diff;
+    })
+    .map(({ row }) => row);
+}
+
 export function projectOrderBook(response: LighterOrderBookOrdersResponse, limit: number): Record<string, unknown> {
-  const asks = takeFirst(response.asks.map(projectOrder), limit);
-  const bids = takeFirst(response.bids.map(projectOrder), limit);
+  const sortedAsks = sortOrdersByPrice(response.asks, "ascending");
+  const sortedBids = sortOrdersByPrice(response.bids, "descending");
+  const asks = takeFirst(sortedAsks.map(projectOrder), limit);
+  const bids = takeFirst(sortedBids.map(projectOrder), limit);
   return {
     totalAsks: response.total_asks,
     totalBids: response.total_bids,
     shownAsks: asks.count,
     shownBids: bids.count,
+    sorting: {
+      asks: "price_ascending",
+      bids: "price_descending",
+    },
     asksTruncated: asks.truncated || response.total_asks > asks.count,
     bidsTruncated: bids.truncated || response.total_bids > bids.count,
     asks: asks.rows,
