@@ -129,7 +129,7 @@ describe("sessionStart — wire shape", () => {
 describe("sessionComplete — wire shape", () => {
   it("POSTs the envelope to /v2/agents/session/complete WITH the Bearer token when one is passed", async () => {
     const mock = stubFetch(
-      jsonResponse(200, { status: "bound", ingestToken: TOKEN, agentName: "agent-007", syncState: { lastAcceptedRowId: 42 } }),
+      jsonResponse(200, { status: "bound", ingestToken: TOKEN, agentName: "agent-007", syncState: { lastAcceptedRowId: "42" } }),
     );
     const client = buildAgentscanSessionClient("http://localhost");
     const outcome = await client.sessionComplete(COMPLETE_INPUT, "current-token-xyz");
@@ -139,6 +139,26 @@ describe("sessionComplete — wire shape", () => {
     expect(url).toBe("http://localhost/v2/agents/session/complete");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer current-token-xyz");
     expect(JSON.parse(init.body as string)).toEqual(COMPLETE_INPUT);
+  });
+
+  it("accepts syncState.lastAcceptedRowId as a numeric STRING (source_row_id is TEXT on the wire) and converts it to a number for server_cursor_row_id", async () => {
+    stubFetch(
+      jsonResponse(200, { status: "bound", ingestToken: TOKEN, agentName: "agent-cursor", syncState: { lastAcceptedRowId: "4000" } }),
+    );
+    const client = buildAgentscanSessionClient("http://localhost");
+    const outcome = await client.sessionComplete(COMPLETE_INPUT, "current-token-xyz");
+
+    expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-cursor", lastAcceptedRowId: 4000 });
+  });
+
+  it("rejects a non-digit syncState.lastAcceptedRowId string, degrading to null rather than throwing", async () => {
+    stubFetch(
+      jsonResponse(200, { status: "bound", ingestToken: TOKEN, agentName: "agent-bad-cursor", syncState: { lastAcceptedRowId: "12abc" } }),
+    );
+    const client = buildAgentscanSessionClient("http://localhost");
+    const outcome = await client.sessionComplete(COMPLETE_INPUT, "current-token-xyz");
+
+    expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-bad-cursor", lastAcceptedRowId: null });
   });
 
   it("omits the Authorization header when no current token is passed (brand-new agent)", async () => {

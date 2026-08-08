@@ -221,6 +221,7 @@ function parseSessionCompleteBody(
   if (isRecord(body.syncState)) {
     const raw = body.syncState.lastAcceptedRowId;
     if (typeof raw === "number" && Number.isInteger(raw)) lastAcceptedRowId = raw;
+    else if (typeof raw === "string" && /^\d+$/.test(raw)) lastAcceptedRowId = Number(raw);
   }
   return { ingestToken, agentName, lastAcceptedRowId };
 }

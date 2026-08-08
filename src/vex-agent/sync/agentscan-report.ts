@@ -46,7 +46,13 @@
  * session/complete 409) is kept as a DEFENSIVE permanent stop —
  * transfer-on-proof means the current server no longer emits it in ordinary
  * operation (a valid proof for a wallet bound to a different agent now
- * transfers the binding instead of refusing).
+ * transfers the binding instead of refusing). A THROW out of `signChallenge`
+ * itself (a typed signer error — mismatch, corrupt keystore, a rejected
+ * template — as opposed to one of its named `HandshakeSigningResult`
+ * outcomes) is caught around the call and held the same long
+ * `HANDSHAKE_INVALID_HOLD_SECONDS` as an invalid session/complete response,
+ * so a signer bug can never bypass the backoff into a hot loop of fresh
+ * session/starts.
  *
  * session/complete's OWN 401 is NOT the events endpoint's recovery: it means
  * the server holds SOME current token for this `agent_hash` that this
@@ -85,6 +91,7 @@ import { listWallets } from "@tools/wallet/inventory.js";
 import { getKeystorePassword } from "@utils/env.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
 import logger from "@utils/logger.js";
+import { VexError } from "../../errors.js";
 
 /** Contract batch ceiling (server rejects larger batches with 413). */
 export const AGENTSCAN_BATCH_LIMIT = 500;
@@ -323,7 +330,19 @@ async function handshakeOnce(
     return { kind: "skip", reason: "unregistered" };
   }
 
-  const signed = await deps.signChallenge({ domain: started.domain, agentHash, nonce: started.nonce });
+  let signed: HandshakeSigningResult;
+  try {
+    signed = await deps.signChallenge({ domain: started.domain, agentHash, nonce: started.nonce });
+  } catch (err) {
+    // A typed throw out of the signer (SIGNER_MISMATCH, a corrupt keystore, a
+    // rejected handshake template, …) is a client bug, not weather — same
+    // long-hold discipline as an invalid session/complete response, so it
+    // never bypasses the lane's backoff into a hot loop of fresh
+    // session/starts.
+    await reportingRepo.noteRegisterAttemptFailed(HANDSHAKE_INVALID_HOLD_SECONDS);
+    logger.error("agentscan.report.handshake_sign_failed", { detail: signFailureDetail(err) });
+    return { kind: "skip", reason: "unregistered" };
+  }
   if (signed.kind === "vault_locked") return { kind: "skip", reason: "vault_locked" };
   if (signed.kind === "no_wallets") return { kind: "skip", reason: "no_wallets" };
 
@@ -393,6 +412,13 @@ function registerBackoffSeconds(attemptCount: number): number {
     REGISTER_BACKOFF_BASE_SECONDS * 2 ** Math.min(attemptCount, 20),
     REGISTER_BACKOFF_MAX_SECONDS,
   );
+}
+
+/** The signer's error CODE for a `VexError`, else the error's NAME only — never a message that could carry key material. */
+function signFailureDetail(err: unknown): string {
+  if (err instanceof VexError) return err.code;
+  if (err instanceof Error) return err.name;
+  return "unknown";
 }
 
 // ── drain ───────────────────────────────────────────────────────────────────

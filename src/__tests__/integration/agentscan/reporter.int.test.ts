@@ -31,7 +31,11 @@
  * the identity is abandoned entirely (`resetIdentityForRecovery`), and the
  * next run mints a fresh one that binds cleanly, no infinite 401 loop;
  * per-item rejection → terminal rejected row that is never resent;
- * session/start retryable → backoff without touching the outbox.
+ * session/start retryable → backoff without touching the outbox; a signer
+ * that THROWS a typed error (never one of its own named outcomes) is caught
+ * around the call and held the same long invalid-hold as a bad
+ * session/complete response, so it can never bypass the backoff into a hot
+ * loop of fresh session/starts.
  */
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -55,6 +59,7 @@ import type {
   HandshakeProof,
 } from "../../../vex-agent/agentscan/handshake.js";
 import type { AgentscanReporterDeps } from "../../../vex-agent/sync/agentscan-report.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 
 // The handshake gate reads the REAL wallet inventory (`listWallets`) and the
 // REAL keystore-password resolver (`getKeystorePassword`) directly — see
@@ -221,9 +226,16 @@ const DEFAULT_PROOF: HandshakeProof = {
 class FakeSigner {
   readonly calls: SignAgentscanChallengeInput[] = [];
   outcomes: HandshakeSigningResult[] = [];
+  /** Scripted THROW for the next call — proves a typed signer error never escapes `handshakeOnce`. */
+  throwsOnNextCall: unknown = null;
 
   sign = async (input: SignAgentscanChallengeInput): Promise<HandshakeSigningResult> => {
     this.calls.push(input);
+    if (this.throwsOnNextCall !== null) {
+      const err = this.throwsOnNextCall;
+      this.throwsOnNextCall = null;
+      throw err;
+    }
     return this.outcomes.shift() ?? { kind: "signed", proofs: [DEFAULT_PROOF] };
   };
 }
@@ -558,6 +570,35 @@ describe("reporter lane — server-answer table", () => {
     expect(result.skipped).toBeNull();
     expect(signer.calls).toHaveLength(1);
     expect(session.sessionCompleteCalls).toHaveLength(1);
+  });
+
+  it("a signer that THROWS (typed error, not a HandshakeSigningResult outcome) is caught: backoff stamped, exactly one session/start, no throw escapes", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await seedWallet();
+    const client = new FakeClient();
+    const session = new FakeSessionClient();
+    const signer = new FakeSigner();
+    signer.throwsOnNextCall = new VexError(ErrorCodes.SIGNER_MISMATCH, "signer mismatch");
+
+    const result = await lane.runAgentscanReport(depsWith(client, "http://localhost", session, signer));
+
+    expect(result.skipped).toBe("unregistered");
+    expect(session.sessionStartCalls).toHaveLength(1);
+    expect(session.sessionCompleteCalls).toHaveLength(0);
+    expect(client.sendCalls).toHaveLength(0);
+
+    const state = await stateRepo.getReportingState();
+    expect(state.registeredAt).toBeNull();
+    // HANDSHAKE_INVALID_HOLD_SECONDS discipline (1h), not the short register backoff.
+    const heldUntil = new Date(state.nextRegisterAttemptAt).getTime();
+    expect(heldUntil).toBeGreaterThan(Date.now() + 3500 * 1000);
+    expect(heldUntil).toBeLessThanOrEqual(Date.now() + 3700 * 1000);
+
+    // The 30s tick never hot-loops fresh session/starts against a held lane.
+    const second = await lane.runAgentscanReport(depsWith(client, "http://localhost", session, signer));
+    expect(second.skipped).toBe("unregistered");
+    expect(session.sessionStartCalls).toHaveLength(1);
   });
 
   it("send 410 -> permanent stop; the following run is a stopped no-op", async () => {
