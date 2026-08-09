@@ -157,6 +157,7 @@ Every successful agent response includes provenance:
 ## Verification
 
 - Client foundation: `pnpm test src/__tests__/lighter/lighter-client.test.ts src/__tests__/lighter/lighter-throttle.test.ts`
+- Auth boundary: `pnpm test src/__tests__/lighter/lighter-auth-token.test.ts src/__tests__/lighter/lighter-credentials.test.ts`
 - Agent discovery: `pnpm test src/__tests__/vex-agent/tools/lighter-discovery.test.ts`
 - Agent handlers: `pnpm test src/__tests__/vex-agent/tools/lighter-handlers.test.ts`
 - Protocol guardrails: manifest lint, embedding lint, registry completeness, and
@@ -165,6 +166,13 @@ Every successful agent response includes provenance:
   `VEX_LIGHTER_LIVE=1` smoke against real Core and RHC public APIs through
   `executeProtocolTool`, including provenance assertions on every Lighter tool
   response.
+- Live read-only auth proof: `pnpm run test:lighter:live:auth` runs the gated
+  `VEX_LIGHTER_AUTH_LIVE=1` smoke against real Core and RHC account endpoints.
+  It requires `LIGHTER_CORE_READ_ONLY_AUTH_TOKEN` and
+  `LIGHTER_RHC_READ_ONLY_AUTH_TOKEN` to be present through the encrypted local
+  secret vault or process environment. If either real token is absent, expired,
+  or malformed, the live auth proof fails rather than substituting fixtures,
+  mocks, or simulated provider responses.
 
 ## Live Verification Notes
 
