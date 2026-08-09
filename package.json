@@ -15,6 +15,8 @@
     "test:watch": "vitest",
     "test:lighter:live": "VEX_LIGHTER_LIVE=1 vitest run src/__tests__/lighter/lighter-live-market-data.test.ts",
     "test:lighter:live:auth": "VEX_LIGHTER_AUTH_LIVE=1 vitest run src/__tests__/lighter/lighter-live-auth.test.ts",
+    "lighter:probe:auth": "tsx src/tools/lighter/scripts/probe-account-endpoint-auth.ts --full",
+    "lighter:probe:auth:public": "tsx src/tools/lighter/scripts/probe-account-endpoint-auth.ts --public-only",
     "typecheck:test:ratchet": "node scripts/check-test-type-baseline.mjs",
     "typecheck:test:baseline-diff": "node scripts/check-test-type-baseline-change.mjs",
     "test:unsafe-escapes": "node scripts/check-test-unsafe-escapes.mjs",

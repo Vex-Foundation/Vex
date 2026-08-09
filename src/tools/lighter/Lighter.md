@@ -156,9 +156,61 @@ Every successful agent response includes provenance:
   describe it as independently on-chain verified unless a later verifier proves
   the same rows through a chain/RPC source.
 
+## Account Endpoint Auth Matrix
+
+Which account endpoints require a credential is live-verified per endpoint, not
+inferred from the docs. Lighter's behavior is not uniform, and two endpoints
+that look equally account-scoped can sit on opposite sides of the auth line.
+
+Public classifications were rechecked on 2026-08-10. The auth-required rows are
+also covered by the Milestone 4 live auth smoke for Core and RHC
+(`/trades`, `/accountActiveOrders`, `/accountInactiveOrders`), but the full
+matrix probe must still be run with both tokens before S1 is closed.
+`pnpm run lighter:probe:auth` exits non-zero when that proof is incomplete.
+
+| Endpoint | Without credentials | With read-only token | Access |
+|---|---|---|---|
+| `/api/v1/account` | 200 | not required | public |
+| `/api/v1/accountsByL1Address` | 200 | not required | public |
+| `/api/v1/apikeys` | 200 | not required | public |
+| `/api/v1/accountActiveOrders` | 400, code 20001 | accepted in Milestone 4 live auth smoke | read-only token required |
+| `/api/v1/accountInactiveOrders` | 400, code 20001 | accepted in Milestone 4 live auth smoke | read-only token required |
+| `/api/v1/trades` | 400, code 20001 | accepted in Milestone 4 live auth smoke | read-only token required |
+| `/api/v1/tokens` | 400, `invalid param` | Core rejected with 401 in Milestone 4; full probe pending | closed to the read-only lane unless later proven otherwise |
+
+Consequences for the tool surface:
+
+- Account state, positions, sub-account lookup by L1 address, and API key
+  metadata are public. Vex must not require a credential for them. Gating a
+  public read would lock keyless users out of data they are entitled to, and
+  presenting a public read as authenticated account visibility would be
+  untruthful.
+- Only open orders, order history, and account trades consume the read-only
+  credential.
+- A 200 response obtained while holding a token is not evidence that the token
+  was required. Only the credential-less call separates public from auth-gated,
+  which is why the matrix is regenerated from both directions.
+
+Two provider behaviors that the client must account for:
+
+- Missing credentials are signalled as HTTP `400` with body
+  `{"code":20001,"message":"invalid param : auth query param and Authorization
+  header are empty"}`, not as `401`. Status-based error mapping alone will
+  report a missing or expired token as a malformed request.
+- The provider also accepts credentials as an `auth` query parameter. Vex sends
+  credentials only as an `Authorization` header. A token must never enter a URL,
+  where it would reach logs, proxies, referrers, and error strings.
+
+Regenerate the full matrix with `pnpm run lighter:probe:auth`. The probe is
+read-only and never prints token material. It requires both Core and RHC
+read-only tokens and exits non-zero when the matrix is incomplete or unknown.
+Run `pnpm run lighter:probe:auth:public` for a public-only drift check; that
+mode does not prove read-only token reachability.
+
 ## Verification
 
 - Client foundation: `pnpm test src/__tests__/lighter/lighter-client.test.ts src/__tests__/lighter/lighter-throttle.test.ts`
+- Account endpoint auth matrix: `pnpm run lighter:probe:auth`
 - Auth boundary: `pnpm test src/__tests__/lighter/lighter-auth-token.test.ts src/__tests__/lighter/lighter-credentials.test.ts`
 - Agent discovery: `pnpm test src/__tests__/vex-agent/tools/lighter-discovery.test.ts`
 - Agent handlers: `pnpm test src/__tests__/vex-agent/tools/lighter-handlers.test.ts`
@@ -178,7 +230,9 @@ Every successful agent response includes provenance:
   account data endpoints: `/api/v1/trades`, `/api/v1/accountActiveOrders`, and
   `/api/v1/accountInactiveOrders`. `/api/v1/tokens` is not treated as proof for
   a read-only token because live Core rejected that endpoint with a read-only
-  token while accepting account trade history.
+  token while accepting account trade history. This smoke also calls
+  `/api/v1/account`, which the auth matrix later showed to be public. That call
+  exercises the client path but is not evidence of authenticated access.
 
 ## Live Verification Notes
 
