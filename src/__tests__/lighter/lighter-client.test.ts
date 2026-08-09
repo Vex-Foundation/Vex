@@ -129,6 +129,42 @@ describe("LighterClient URL selection", () => {
     expect(url.searchParams.get("filter")).toBe("perp");
   });
 
+  it("does not attach Authorization to public reads", async () => {
+    mockOk({ status: 1, network_id: 304, timestamp: 1717777777 });
+    await client.getStatus("core");
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+  });
+
+  it("attaches Authorization from the privileged provider for authenticated reads", async () => {
+    mockOk({ code: 200, tokens: [] });
+    const authClient = new LighterClient(
+      ENDPOINTS,
+      undefined,
+      (environment, mode) => `ro-token-for-${environment}-${mode}`,
+    );
+
+    await authClient.getReadOnlyTokens("rhc", { accountIndex: 42 });
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/tokens");
+    expect(url.searchParams.get("account_index")).toBe("42");
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get("Authorization")).toBe("ro-token-for-rhc-read-only");
+  });
+
+  it("does not cache authenticated reads", async () => {
+    mockOk({ code: 200, tokens: [{ token_id: "first" }] });
+    mockOk({ code: 200, tokens: [{ token_id: "second" }] });
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+
+    const first = await authClient.getReadOnlyTokens("core", { accountIndex: 42 });
+    const second = await authClient.getReadOnlyTokens("core", { accountIndex: 42 });
+
+    expect(first.tokens[0]?.token_id).toBe("first");
+    expect(second.tokens[0]?.token_id).toBe("second");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds order book limits before sending", async () => {
     await expect(client.getOrderBookOrders("core", { marketId: 0, limit: 251 })).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,
