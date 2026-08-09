@@ -30,10 +30,13 @@ export const LIGHTER_ENDPOINTS: Record<LighterEnvironment, LighterEndpointConfig
 export const LIGHTER_ENDPOINT_PATHS = {
   status: "/",
   systemConfig: "/api/v1/systemConfig",
+  account: "/api/v1/account",
+  tokens: "/api/v1/tokens",
   orderBooks: "/api/v1/orderBooks",
   orderBookDetails: "/api/v1/orderBookDetails",
   orderBookOrders: "/api/v1/orderBookOrders",
   recentTrades: "/api/v1/recentTrades",
+  trades: "/api/v1/trades",
   candles: "/api/v1/candles",
 } as const;
 

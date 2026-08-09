@@ -1,12 +1,14 @@
 # Lighter Module Map
 
-**Last updated: 2026-08-08**
+**Last updated: 2026-08-09**
 
-Lighter support starts as Core + Robinhood Chain read-only market data. This
-module has no credentials, no auth tokens, no signing helpers, and no
-state-changing order/deposit/withdrawal/transfer paths. The Vex agent protocol
-surface consumes this module through read-only tools under the `lighter`
-namespace.
+Lighter support starts as Core + Robinhood Chain read-only market data.
+Milestone 4 adds the safety boundary for later read-only account visibility:
+Vex may recognize read-only auth tokens and authenticated account-read endpoint
+paths, but it still has no API private keys, signer client, order execution,
+deposit, withdrawal, transfer, or other state-changing path. The Vex agent
+protocol surface consumes this module through read-only tools under the
+`lighter` namespace.
 
 ## Sources
 
@@ -46,11 +48,42 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 |---------------|----------|-------|
 | `getStatus(environment)` | `GET /` | Public status |
 | `getSystemConfig(environment)` | `GET /api/v1/systemConfig` | Public system config |
+| `getAccount(environment, params)` | `GET /api/v1/account` | Public by index/L1 address; private auth boundary applies before account tools expose it |
+| `getReadOnlyTokens(environment, params)` | `GET /api/v1/tokens` | Auth-gated read-only token inventory candidate |
 | `getMarkets(environment, params)` | `GET /api/v1/orderBooks` | Optional `market_id`, `filter` |
 | `getMarketDetails(environment, params)` | `GET /api/v1/orderBookDetails` | Required `market_id`; optional `filter` |
 | `getOrderBookOrders(environment, params)` | `GET /api/v1/orderBookOrders` | Required `market_id`; `limit` 1-250 |
 | `getRecentTrades(environment, params)` | `GET /api/v1/recentTrades` | Required `market_id`; `limit` 1-100 |
+| `getAccountTrades(environment, params)` | `GET /api/v1/trades` | Auth-gated account trade history candidate |
 | `getCandles(environment, params)` | `GET /api/v1/candles` | Required market, resolution, epoch-ms timestamp range, bounded `count_back` |
+
+## Milestone 4 Auth Boundary
+
+Milestone 4 is the read-only credential and request boundary, not account-tool
+activation and not trading. It must use Lighter read-only auth tokens only:
+`ro:{account_index}:{single|all}:{expiry_unix}:{random_hex}`. Normal Lighter
+API keys can read and write, so API private keys and signer-client material are
+explicitly excluded from this milestone.
+
+Allowed:
+
+- read-only token format validation;
+- environment-scoped vault labels for read-only tokens;
+- credential status metadata, such as configured capability and token expiry;
+- authenticated REST request helpers that receive token material only through a
+  privileged provider function;
+- live probes of auth-gated account-read endpoints when real read-only tokens
+  are present.
+
+Not allowed:
+
+- API private keys;
+- signer-client initialization;
+- auth-token generation from API private keys inside Vex;
+- `sendTx`, order create, cancel, modify, deposit, withdrawal, transfer, or
+  nonce handling;
+- returning raw auth tokens to renderer, preload, agent output, logs, errors,
+  test snapshots, docs, or telemetry.
 
 ## Agent Tools
 
