@@ -106,6 +106,19 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.order.preview": {
+    embeddingText: embeddingText(
+      `Create a read-only Lighter order preview for Core or Robinhood Chain using live market detail, live order book, and live account data before any future order approval or submission. ` +
+      `Use when: the user asks to preview, preflight, check, or prepare a Lighter limit or market order without placing it. ` +
+      `Returns a session-scoped preview id, exact identity hash, integer base amount and price, minimum checks, best bid and ask, position context, and risk notes. ` +
+      `This never signs, submits, places, cancels, deposits, withdraws, transfers, or calls sendTx. Example queries: preview lighter order, preflight rhc buy order, check core reduce-only sell.`,
+    ),
+    aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],
+    exampleIntents: ["preview lighter order", "preflight rhc buy order", "check core reduce-only sell"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.orderbook": {
     embeddingText: embeddingText(
       `Read resting Lighter order book orders for one market on Core or Robinhood Chain, with a strict visible depth cap on each side. ` +
@@ -147,7 +160,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 11;
+const EXPECTED_COUNT = 12;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

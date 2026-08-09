@@ -1,4 +1,12 @@
 import {
+  LIGHTER_ORDER_SIDES,
+  LIGHTER_ORDER_TIME_IN_FORCE,
+  LIGHTER_ORDER_TYPES,
+  type LighterOrderSide,
+  type LighterOrderTimeInForce,
+  type LighterOrderType,
+} from "@tools/lighter/order-preview.js";
+import {
   LIGHTER_CANDLE_RESOLUTIONS,
   LIGHTER_CANDLES_COUNT_MAX,
   LIGHTER_ENVIRONMENTS,
@@ -37,6 +45,20 @@ export interface LighterAccountLookup {
   readonly accountIndex: number | null;
   readonly l1Address: string | null;
   readonly activeOnly?: boolean;
+}
+
+export interface LighterOrderPreviewParams {
+  readonly accountIndex: number;
+  readonly apiKeyIndex?: number | null;
+  readonly marketId: number;
+  readonly side: LighterOrderSide;
+  readonly baseAmount: string;
+  readonly price: string;
+  readonly orderType: LighterOrderType;
+  readonly timeInForce: LighterOrderTimeInForce;
+  readonly reduceOnly: boolean;
+  readonly orderExpiry: number;
+  readonly clientOrderIndexPolicy: string;
 }
 
 function readString(params: Record<string, unknown>, key: string): string | undefined {
@@ -268,4 +290,75 @@ export function readMarketListPage(params: Record<string, unknown>): ParamRead<n
   });
   if (!read.ok) return read;
   return { ok: true, value: read.value ?? 1 };
+}
+
+export function readLighterOrderPreviewParams(
+  params: Record<string, unknown>,
+): ParamRead<LighterOrderPreviewParams> {
+  const accountIndex = readOptionalAccountIndex(params);
+  if (!accountIndex.ok) return accountIndex;
+  if (accountIndex.value === undefined) return { ok: false, reason: "Missing required: accountIndex." };
+  const apiKeyIndex = readOptionalApiKeyIndex(params);
+  if (!apiKeyIndex.ok) return apiKeyIndex;
+  const marketId = readMarketId(params, true);
+  if (!marketId.ok) return marketId;
+  const side = readEnum(params, "side", LIGHTER_ORDER_SIDES, true);
+  if (!side.ok) return side;
+  const orderType = readEnum(params, "orderType", LIGHTER_ORDER_TYPES, true);
+  if (!orderType.ok) return orderType;
+  const timeInForce = readEnum(params, "timeInForce", LIGHTER_ORDER_TIME_IN_FORCE, true);
+  if (!timeInForce.ok) return timeInForce;
+  const baseAmount = readRequiredString(params, "baseAmount");
+  if (!baseAmount.ok) return baseAmount;
+  const price = readRequiredString(params, "price");
+  if (!price.ok) return price;
+  const orderExpiry = readEpochMs(params, "orderExpiry");
+  if (!orderExpiry.ok) return orderExpiry;
+  const reduceOnly = readBoolean(params, "reduceOnly");
+  if (reduceOnly === undefined) return { ok: false, reason: "Missing required: reduceOnly." };
+  const clientOrderIndexPolicy = readRequiredString(params, "clientOrderIndexPolicy");
+  if (!clientOrderIndexPolicy.ok) return clientOrderIndexPolicy;
+  return {
+    ok: true,
+    value: {
+      accountIndex: accountIndex.value,
+      apiKeyIndex: apiKeyIndex.value ?? null,
+      marketId: marketId.value!,
+      side: side.value as LighterOrderSide,
+      baseAmount: baseAmount.value,
+      price: price.value,
+      orderType: orderType.value as LighterOrderType,
+      timeInForce: timeInForce.value as LighterOrderTimeInForce,
+      reduceOnly,
+      orderExpiry: orderExpiry.value,
+      clientOrderIndexPolicy: clientOrderIndexPolicy.value,
+    },
+  };
+}
+
+function readRequiredString(
+  params: Record<string, unknown>,
+  key: string,
+): ParamRead<string> {
+  const value = readString(params, key);
+  if (value === undefined) return { ok: false, reason: `Missing required: ${key}.` };
+  return { ok: true, value };
+}
+
+function readOptionalApiKeyIndex(params: Record<string, unknown>): ParamRead<number | undefined> {
+  const value = readNumber(params, "apiKeyIndex");
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!Number.isInteger(value) || value < 0 || value > 255) {
+    return { ok: false, reason: "apiKeyIndex must be an integer from 0 to 255." };
+  }
+  return { ok: true, value };
+}
+
+function readEpochMs(params: Record<string, unknown>, key: "orderExpiry"): ParamRead<number> {
+  const value = readNumber(params, key);
+  if (value === undefined) return { ok: false, reason: `Missing required: ${key}.` };
+  if (!Number.isInteger(value)) return { ok: false, reason: `${key} must be an epoch-milliseconds integer.` };
+  if (value < LIGHTER_TIMESTAMP_MIN) return { ok: false, reason: `${key} must use epoch milliseconds, not seconds.` };
+  if (value > LIGHTER_TIMESTAMP_MAX) return { ok: false, reason: `${key} is too far in the future.` };
+  return { ok: true, value };
 }

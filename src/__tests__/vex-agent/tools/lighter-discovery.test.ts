@@ -20,6 +20,7 @@ const LIGHTER_TOOL_IDS = [
   "lighter.openOrders",
   "lighter.orderHistory",
   "lighter.trades",
+  "lighter.order.preview",
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
@@ -111,6 +112,17 @@ describe("Lighter agent discovery surface", () => {
     const result = await discoverProtocolCapabilities({ query: "lighter.orderbook", limit: 5 });
     expect(result.success).toBe(true);
     expect(result.tools[0]?.toolId).toBe("lighter.orderbook");
+  });
+
+  it("recalls the order preview gate from preview-order queries", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "preview a rhc lighter order before placing it",
+      limit: 5,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tools.map((tool) => tool.toolId)).toContain("lighter.order.preview");
   });
 
   it("recalls Lighter tools from natural market-data queries", async () => {

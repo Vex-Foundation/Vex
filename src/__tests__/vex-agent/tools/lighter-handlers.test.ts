@@ -25,6 +25,9 @@ const mocks = vi.hoisted(() => ({
     getRecentTrades: vi.fn(),
     getCandles: vi.fn(),
   },
+  previewsRepo: {
+    create: vi.fn(),
+  },
   logger: {
     warn: vi.fn(),
     info: vi.fn(),
@@ -35,6 +38,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@tools/lighter/client.js", () => ({
   getLighterClient: () => mocks.client,
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-order-previews.js", () => ({
+  create: mocks.previewsRepo.create,
 }));
 
 vi.mock("@utils/logger.js", () => ({
@@ -50,6 +57,7 @@ const READ_CTX: ProtocolExecutionContext = {
   approved: false,
   walletResolution: { source: "default" },
   walletPolicy: { kind: "none" },
+  sessionId: "session-1",
 };
 
 const UNSAFE_INTEGER = Number.MAX_SAFE_INTEGER + 1;
@@ -454,6 +462,88 @@ describe("Lighter agent read handlers", () => {
     expect(fill.tradeIdNumeric).toBeNull();
     expect(fill.askOrderId).toBe(String(UNSAFE_INTEGER));
     expect(fill.bidOrderId).toBe(String(UNSAFE_INTEGER_2));
+  });
+
+  it("creates a persisted order preview from live market, order book, and account reads", async () => {
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      accounts: [ACCOUNT],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketId: 0,
+      side: "buy",
+      baseAmount: "0.25",
+      price: "3499.99",
+      orderType: "limit",
+      timeInForce: "good-till-time",
+      reduceOnly: false,
+      orderExpiry: Date.now() + 10 * 60 * 1000,
+      clientOrderIndexPolicy: "vex_assigned_uint48",
+    });
+
+    expect(mocks.client.getMarketDetails).toHaveBeenCalledWith("rhc", {
+      marketId: 0,
+      filter: "all",
+    });
+    expect(mocks.client.getOrderBookOrders).toHaveBeenCalledWith("rhc", {
+      marketId: 0,
+      limit: 10,
+    });
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
+      by: "index",
+      value: 42,
+      activeOnly: true,
+    });
+    expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: { readonly matchHash: string };
+    };
+    expect(persisted.preview.matchHash).toBe(data.matchHash);
+    expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
+    expect(data.source).toBe("live_lighter_public_api");
+    expect((data.preview as Record<string, unknown>).symbol).toBe("ETH-USD");
+    expect(((data.preview as Record<string, unknown>).baseAmount as Record<string, unknown>).integer).toBe("2500");
+    expect(((data.preview as Record<string, unknown>).price as Record<string, unknown>).integer).toBe("349999");
+  });
+
+  it("refuses order preview without a host session id", async () => {
+    const handler = LIGHTER_HANDLERS["lighter.order.preview"];
+    expect(handler).toBeDefined();
+    const result = await handler!({
+      environment: "rhc",
+      accountIndex: 42,
+      marketId: 0,
+      side: "buy",
+      baseAmount: "0.25",
+      price: "3499.99",
+      orderType: "limit",
+      timeInForce: "good-till-time",
+      reduceOnly: false,
+      orderExpiry: Date.now() + 10 * 60 * 1000,
+      clientOrderIndexPolicy: "vex_assigned_uint48",
+    }, { ...READ_CTX, sessionId: undefined });
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("host session id");
+    expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
+    expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
   });
 
   it("sorts order book orders into best price order before truncating", async () => {

@@ -3,6 +3,11 @@ import {
   LIGHTER_ENVIRONMENTS,
   LIGHTER_MARKET_FILTERS,
 } from "@tools/lighter/constants.js";
+import {
+  LIGHTER_ORDER_SIDES,
+  LIGHTER_ORDER_TIME_IN_FORCE,
+  LIGHTER_ORDER_TYPES,
+} from "@tools/lighter/order-preview.js";
 import type { ProtocolParamDef, ProtocolToolManifest } from "../../types.js";
 import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-data.js";
 import {
@@ -115,6 +120,80 @@ const TRADES_LIMIT_PARAM: ProtocolParamDef = {
     `Max recent trade rows to return (default ${LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT}, max ${LIGHTER_AGENT_RECENT_TRADES_LIMIT_MAX}). Out-of-range values are rejected, not clamped.`,
 };
 
+const ORDER_SIDE_PARAM: ProtocolParamDef = {
+  key: "side",
+  type: "string",
+  required: true,
+  enum: LIGHTER_ORDER_SIDES,
+  description:
+    "Order side to preview: buy for bid/long-increasing orders, sell for ask/long-reducing orders. Unsupported values are rejected.",
+};
+
+const BASE_AMOUNT_PARAM: ProtocolParamDef = {
+  key: "baseAmount",
+  type: "string",
+  required: true,
+  description:
+    "Human base amount as a decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
+};
+
+const ORDER_PRICE_PARAM: ProtocolParamDef = {
+  key: "price",
+  type: "string",
+  required: true,
+  description:
+    "Human price as a decimal string. For limit previews this is the limit price; for market previews it is the worst acceptable price. Vex converts it exactly using live Lighter price decimals.",
+};
+
+const ORDER_TYPE_PARAM: ProtocolParamDef = {
+  key: "orderType",
+  type: "string",
+  required: true,
+  enum: LIGHTER_ORDER_TYPES,
+  description:
+    "Order type supported by this preview gate: limit or market. Conditional and TWAP order previews are intentionally refused in this wave.",
+};
+
+const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
+  key: "timeInForce",
+  type: "string",
+  required: true,
+  enum: LIGHTER_ORDER_TIME_IN_FORCE,
+  description:
+    "Lighter time-in-force for the preview: good-till-time, immediate-or-cancel, or post-only. Market previews require immediate-or-cancel.",
+};
+
+const REDUCE_ONLY_PARAM: ProtocolParamDef = {
+  key: "reduceOnly",
+  type: "boolean",
+  required: true,
+  description:
+    "Whether the preview is reduce-only. When true, Vex requires live account position evidence that the side reduces the current position.",
+};
+
+const ORDER_EXPIRY_PARAM: ProtocolParamDef = {
+  key: "orderExpiry",
+  type: "number",
+  required: true,
+  description:
+    "Order expiry as a JavaScript epoch-milliseconds integer. Vex requires it to be between 5 minutes and 30 days from preview time.",
+};
+
+const API_KEY_INDEX_PARAM: ProtocolParamDef = {
+  key: "apiKeyIndex",
+  type: "number",
+  description:
+    "Optional Lighter API-key index to bind into the preview identity. This does not require or expose API private key material.",
+};
+
+const CLIENT_ORDER_INDEX_POLICY_PARAM: ProtocolParamDef = {
+  key: "clientOrderIndexPolicy",
+  type: "string",
+  required: true,
+  description:
+    "Client order index policy string to bind into the preview identity, for example vex_assigned_uint48. A later create path must match it exactly.",
+};
+
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
   {
     toolId: "lighter.system",
@@ -211,6 +290,43 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
     exampleParams: { environment: "rhc", limit: 25 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.trades"],
+  },
+  {
+    toolId: "lighter.order.preview",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Create a live-data-backed Lighter order preview on Core or Robinhood Chain for a future exact matching order. Reads live market detail, order book top-of-book context, and public account position data, converts display amount/price into exact integer fields, stores a session-scoped preview identity, and returns the preview id/hash. Read-only: no signer, API private key, signature, sendTx, order placement, cancellation, deposit, withdrawal, or transfer path.",
+    mutating: false,
+    actionKind: "read",
+    params: [
+      ENVIRONMENT_PARAM,
+      AUTH_ACCOUNT_INDEX_PARAM,
+      API_KEY_INDEX_PARAM,
+      MARKET_ID_REQUIRED_PARAM,
+      ORDER_SIDE_PARAM,
+      BASE_AMOUNT_PARAM,
+      ORDER_PRICE_PARAM,
+      ORDER_TYPE_PARAM,
+      TIME_IN_FORCE_PARAM,
+      REDUCE_ONLY_PARAM,
+      ORDER_EXPIRY_PARAM,
+      CLIENT_ORDER_INDEX_POLICY_PARAM,
+    ],
+    exampleParams: {
+      environment: "rhc",
+      accountIndex: 42,
+      marketId: 0,
+      side: "buy",
+      baseAmount: "0.25",
+      price: "3000",
+      orderType: "limit",
+      timeInForce: "good-till-time",
+      reduceOnly: false,
+      orderExpiry: 1786233600000,
+      clientOrderIndexPolicy: "vex_assigned_uint48",
+    },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],
   },
   {
     toolId: "lighter.orderbook",

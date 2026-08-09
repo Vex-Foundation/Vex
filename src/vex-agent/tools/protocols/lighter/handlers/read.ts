@@ -5,10 +5,13 @@ import {
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
 import { getLighterClient } from "@tools/lighter/client.js";
+import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
+import type { LighterMarketDetail } from "@tools/lighter/types.js";
 import { VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
+import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
@@ -18,6 +21,7 @@ import {
   readAccountLookup,
   readCountBack,
   readEnvironment,
+  readLighterOrderPreviewParams,
   readMarketFilter,
   readMarketId,
   readMarketListLimit,
@@ -102,6 +106,19 @@ function liveProvenance(
       ...details,
     },
   };
+}
+
+function findMarketDetail(
+  response: {
+    readonly order_book_details: readonly LighterMarketDetail[];
+    readonly spot_order_book_details: readonly LighterMarketDetail[];
+  },
+  marketId: number,
+): LighterMarketDetail | null {
+  return [
+    ...response.order_book_details,
+    ...response.spot_order_book_details,
+  ].find((detail) => detail.market_id === marketId) ?? null;
 }
 
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
@@ -410,6 +427,83 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       return fail(`Lighter account trades unavailable (${failureDetail("lighter.trades", err)})`);
+    }
+  },
+
+  "lighter.order.preview": async (params, context) => {
+    const sessionId = context.sessionId;
+    if (!sessionId) return fail("Lighter order preview requires a host session id.");
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const previewParams = readLighterOrderPreviewParams(params);
+    if (!previewParams.ok) return fail(previewParams.reason);
+
+    try {
+      const client = getLighterClient();
+      const [marketDetails, orderBook, account] = await Promise.all([
+        client.getMarketDetails(environment.value, {
+          marketId: previewParams.value.marketId,
+          filter: "all",
+        }),
+        client.getOrderBookOrders(environment.value, {
+          marketId: previewParams.value.marketId,
+          limit: 10,
+        }),
+        client.getAccount(environment.value, {
+          by: "index",
+          value: previewParams.value.accountIndex,
+          activeOnly: true,
+        }),
+      ]);
+      const market = findMarketDetail(marketDetails, previewParams.value.marketId);
+      if (!market) {
+        return fail(
+          `No live Lighter market detail found for marketId ${previewParams.value.marketId} on ${environment.value}.`,
+        );
+      }
+      const source = liveProvenance(environment.value, "lighter.order.preview", [
+        LIGHTER_ENDPOINT_PATHS.orderBookDetails,
+        LIGHTER_ENDPOINT_PATHS.orderBookOrders,
+        LIGHTER_ENDPOINT_PATHS.account,
+      ], {
+        marketId: previewParams.value.marketId,
+        accountIndex: previewParams.value.accountIndex,
+        authenticated: false,
+        persistedPreview: true,
+      });
+      const preview = buildLighterOrderPreview({
+        sessionId,
+        environment: environment.value,
+        accountIndex: previewParams.value.accountIndex,
+        apiKeyIndex: previewParams.value.apiKeyIndex,
+        marketId: previewParams.value.marketId,
+        side: previewParams.value.side,
+        baseAmount: previewParams.value.baseAmount,
+        price: previewParams.value.price,
+        orderType: previewParams.value.orderType,
+        timeInForce: previewParams.value.timeInForce,
+        reduceOnly: previewParams.value.reduceOnly,
+        orderExpiry: previewParams.value.orderExpiry,
+        clientOrderIndexPolicy: previewParams.value.clientOrderIndexPolicy,
+      }, {
+        market,
+        orderBook,
+        account,
+      });
+      await lighterOrderPreviewsRepo.create({
+        preview,
+        liveSourceJson: source.provenance as Record<string, unknown>,
+      });
+      return ok({
+        ...source,
+        environment: environment.value,
+        previewId: preview.previewId,
+        matchHash: preview.matchHash,
+        expiresAt: preview.expiresAt,
+        preview: preview.preview,
+      });
+    } catch (err) {
+      return fail(`Lighter order preview unavailable (${failureDetail("lighter.order.preview", err)})`);
     }
   },
 
