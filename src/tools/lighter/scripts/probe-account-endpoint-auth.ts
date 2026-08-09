@@ -106,8 +106,8 @@ const CANDIDATES: readonly Candidate[] = [
   {
     tool: "(not a tool) read-only token listing",
     path: LIGHTER_ENDPOINT_PATHS.tokens,
-    query: () => ({}),
-    note: "known 401 with a read-only token during Milestone 4; probed as a regression check",
+    query: (accountIndex) => ({ account_index: String(accountIndex) }),
+    note: "known rejection with a read-only token during Milestone 4; probed with account_index as a regression check",
   },
 ];
 
