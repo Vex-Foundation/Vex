@@ -69,6 +69,32 @@ const TRADE = {
 };
 
 const UNSAFE_INTEGER = Number.MAX_SAFE_INTEGER + 1;
+const UNSAFE_INTEGER_2 = Number.MAX_SAFE_INTEGER + 3;
+
+const ACCOUNT_ORDER = {
+  order_index: UNSAFE_INTEGER,
+  client_order_index: UNSAFE_INTEGER_2,
+  order_id: String(UNSAFE_INTEGER),
+  client_order_id: String(UNSAFE_INTEGER_2),
+  market_index: 0,
+  owner_account_index: 42,
+  initial_base_amount: "100",
+  price: "300000",
+  remaining_base_amount: "50",
+  filled_base_amount: "50",
+  filled_quote_amount: "15000000",
+  side: "buy",
+  type: "limit",
+  time_in_force: "good_till_time",
+  reduce_only: false,
+  order_expiry: 1786233600000,
+  status: "open",
+  block_height: 99,
+  timestamp: 1786147200000,
+  created_at: 1786147200000,
+  updated_at: 1786147200001,
+  transaction_time: 1786147200000,
+};
 
 const originalFetch = globalThis.fetch;
 let client: LighterClient;
@@ -266,6 +292,28 @@ describe("LighterClient validation", () => {
     mockOk({ code: 200, total_asks: 1, asks: [ORDER], total_bids: 1, bids: [ORDER] });
     const book = await client.getOrderBookOrders("core", { marketId: 0, limit: 1 });
     expect(book.asks[0].remaining_base_amount).toBe("5");
+  });
+
+  it("preserves exact string ids on account order reads", async () => {
+    mockOk({ code: 200, next_cursor: "cursor-1", orders: [ACCOUNT_ORDER] });
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+
+    const response = await authClient.getAccountActiveOrders("core", { accountIndex: 42 });
+
+    expect(response.next_cursor).toBe("cursor-1");
+    expect(response.orders[0]?.order_id).toBe(String(UNSAFE_INTEGER));
+    expect(response.orders[0]?.client_order_id).toBe(String(UNSAFE_INTEGER_2));
+    expect(response.orders[0]?.order_index).toBe(UNSAFE_INTEGER);
+  });
+
+  it("requires exact string ids on account order reads", async () => {
+    const { client_order_id: _clientOrderId, ...orderWithoutClientString } = ACCOUNT_ORDER;
+    mockOk({ code: 200, orders: [orderWithoutClientString] });
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+
+    await expect(authClient.getAccountActiveOrders("core", { accountIndex: 42 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
   });
 
   it("rejects non-decimal exact order ids", async () => {

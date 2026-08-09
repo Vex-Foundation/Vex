@@ -208,11 +208,51 @@ const accountTradesResponseSchema = z
   })
   .passthrough();
 
+const accountOrderSchema = z
+  .object({
+    order_index: providerInteger,
+    client_order_index: providerInteger,
+    order_id: integerString,
+    client_order_id: integerString,
+    market_index: int,
+    owner_account_index: int,
+    initial_base_amount: numericString,
+    price: numericString,
+    nonce: providerInteger.optional(),
+    remaining_base_amount: optionalNumericString,
+    is_ask: z.boolean().optional(),
+    base_size: providerInteger.optional(),
+    base_price: providerInteger.optional(),
+    filled_base_amount: optionalNumericString,
+    filled_quote_amount: optionalNumericString,
+    side: z.string().optional(),
+    type: z.string().optional(),
+    time_in_force: z.string().optional(),
+    reduce_only: z.boolean().optional(),
+    trigger_price: optionalNumericString,
+    order_expiry: providerInteger.optional(),
+    status: z.string().optional(),
+    trigger_status: z.string().optional(),
+    trigger_time: providerInteger.optional(),
+    parent_order_index: providerInteger.optional(),
+    parent_order_id: optionalIntegerString,
+    to_trigger_order_id_0: optionalIntegerString,
+    to_trigger_order_id_1: optionalIntegerString,
+    to_cancel_order_id_0: optionalIntegerString,
+    block_height: providerInteger.optional(),
+    timestamp: providerInteger.optional(),
+    created_at: providerInteger.optional(),
+    updated_at: providerInteger.optional(),
+    transaction_time: providerInteger.optional(),
+  })
+  .passthrough();
+
 const accountOrdersResponseSchema = z
   .object({
     code: int,
     message,
-    orders: z.unknown().optional(),
+    next_cursor: z.string().optional(),
+    orders: z.array(accountOrderSchema).default([]),
   })
   .passthrough();
 

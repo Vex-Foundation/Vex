@@ -64,10 +64,49 @@ export interface LighterAccountTradesResponse {
   [key: string]: unknown;
 }
 
+export interface LighterAccountOrder {
+  order_index: number;
+  client_order_index: number;
+  order_id: string;
+  client_order_id: string;
+  market_index: number;
+  owner_account_index: number;
+  initial_base_amount: string;
+  price: string;
+  nonce?: number;
+  remaining_base_amount?: string;
+  is_ask?: boolean;
+  base_size?: number;
+  base_price?: number;
+  filled_base_amount?: string;
+  filled_quote_amount?: string;
+  side?: string;
+  type?: string;
+  time_in_force?: string;
+  reduce_only?: boolean;
+  trigger_price?: string;
+  order_expiry?: number;
+  status?: string;
+  trigger_status?: string;
+  trigger_time?: number;
+  parent_order_index?: number;
+  parent_order_id?: string;
+  to_trigger_order_id_0?: string;
+  to_trigger_order_id_1?: string;
+  to_cancel_order_id_0?: string;
+  block_height?: number;
+  timestamp?: number;
+  created_at?: number;
+  updated_at?: number;
+  transaction_time?: number;
+  [key: string]: unknown;
+}
+
 export interface LighterAccountOrdersResponse {
   code: number;
   message?: string;
-  orders?: unknown;
+  next_cursor?: string;
+  orders: LighterAccountOrder[];
   [key: string]: unknown;
 }
 

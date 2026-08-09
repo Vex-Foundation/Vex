@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type {
+  LighterAccountOrder,
   LighterCandle,
   LighterMarket,
   LighterMarketDetail,
@@ -36,6 +37,7 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { LIGHTER_HANDLERS } = await import("@vex-agent/tools/protocols/lighter/handlers.js");
+const { projectAccountOrders } = await import("@vex-agent/tools/protocols/lighter/projectors.js");
 const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime.js");
 
 const READ_CTX: ProtocolExecutionContext = {
@@ -120,6 +122,32 @@ function trade(id: number): LighterTrade {
     block_height: 99,
     timestamp: 1786147200000 + id,
     transaction_time: 1786147200000 + id,
+  };
+}
+
+function accountOrder(): LighterAccountOrder {
+  return {
+    order_index: UNSAFE_INTEGER,
+    client_order_index: UNSAFE_INTEGER_2,
+    order_id: String(UNSAFE_INTEGER),
+    client_order_id: String(UNSAFE_INTEGER_2),
+    market_index: 0,
+    owner_account_index: 42,
+    initial_base_amount: "100",
+    remaining_base_amount: "50",
+    filled_base_amount: "50",
+    filled_quote_amount: "15000000",
+    price: "300000",
+    side: "buy",
+    type: "limit",
+    time_in_force: "good_till_time",
+    reduce_only: false,
+    order_expiry: 1786233600000,
+    status: "open",
+    timestamp: 1786147200000,
+    created_at: 1786147200000,
+    updated_at: 1786147200001,
+    transaction_time: 1786147200000,
   };
 }
 
@@ -348,6 +376,25 @@ describe("Lighter agent read handlers", () => {
     expect(first.bidOrderId).toBe(String(UNSAFE_INTEGER_2));
     expect(first.bidOrderIdNumeric).toBeNull();
     expect(first.bidOrderIdNumericPrecision).toBe("unsafe_provider_number_omitted");
+  });
+
+  it("projects account order identifiers as exact provider strings", () => {
+    const data = projectAccountOrders({
+      code: 200,
+      next_cursor: "cursor-1",
+      orders: [accountOrder()],
+    }, 1);
+
+    const first = data.orders[0] as Record<string, unknown>;
+    expect(data.nextCursor).toBe("cursor-1");
+    expect(first.orderIndex).toBe(String(UNSAFE_INTEGER));
+    expect(first.orderIndexPrecision).toBe("provider_string_canonical");
+    expect(first.orderIndexNumeric).toBeNull();
+    expect(first.orderIndexNumericPrecision).toBe("unsafe_provider_number_omitted");
+    expect(first.clientOrderIndex).toBe(String(UNSAFE_INTEGER_2));
+    expect(first.clientOrderIndexPrecision).toBe("provider_string_canonical");
+    expect(first.clientOrderIndexNumeric).toBeNull();
+    expect(first.clientOrderIndexNumericPrecision).toBe("unsafe_provider_number_omitted");
   });
 
   it("reads candles with millisecond timestamps and caps agent output to newest rows", async () => {

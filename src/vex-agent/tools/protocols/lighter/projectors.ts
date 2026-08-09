@@ -1,4 +1,6 @@
 import type {
+  LighterAccountOrder,
+  LighterAccountOrdersResponse,
   LighterCandle,
   LighterCandlesResponse,
   LighterMarket,
@@ -160,6 +162,61 @@ export function projectOrder(order: LighterSimpleOrder): Record<string, unknown>
     remainingBaseAmount: order.remaining_base_amount,
     orderExpiry: order.order_expiry,
     transactionTime: order.transaction_time,
+  };
+}
+
+export function projectAccountOrder(order: LighterAccountOrder): Record<string, unknown> {
+  const orderIndexNumeric = safeIntegerOrNull(order.order_index);
+  const clientOrderIndexNumeric = safeIntegerOrNull(order.client_order_index);
+  return {
+    orderIndex: order.order_id,
+    orderIndexPrecision: "provider_string_canonical",
+    orderIndexNumeric,
+    orderIndexNumericPrecision: orderIndexNumeric === null ? "unsafe_provider_number_omitted" : "safe",
+    orderId: order.order_id,
+    clientOrderIndex: order.client_order_id,
+    clientOrderIndexPrecision: "provider_string_canonical",
+    clientOrderIndexNumeric,
+    clientOrderIndexNumericPrecision: clientOrderIndexNumeric === null ? "unsafe_provider_number_omitted" : "safe",
+    clientOrderId: order.client_order_id,
+    marketIndex: order.market_index,
+    ownerAccountIndex: order.owner_account_index,
+    side: order.side ?? null,
+    type: order.type ?? null,
+    status: order.status ?? null,
+    timeInForce: order.time_in_force ?? null,
+    reduceOnly: order.reduce_only ?? null,
+    price: order.price,
+    initialBaseAmount: order.initial_base_amount,
+    remainingBaseAmount: order.remaining_base_amount ?? null,
+    filledBaseAmount: order.filled_base_amount ?? null,
+    filledQuoteAmount: order.filled_quote_amount ?? null,
+    triggerPrice: order.trigger_price ?? null,
+    orderExpiry: order.order_expiry ?? null,
+    blockHeight: order.block_height ?? null,
+    timestamp: order.timestamp ?? null,
+    createdAt: order.created_at ?? null,
+    updatedAt: order.updated_at ?? null,
+    transactionTime: order.transaction_time ?? null,
+    parentOrderId: order.parent_order_id ?? null,
+    triggerOrderIds: [
+      order.to_trigger_order_id_0 ?? null,
+      order.to_trigger_order_id_1 ?? null,
+    ].filter((value): value is string => value !== null),
+    cancelOrderIds: [
+      order.to_cancel_order_id_0 ?? null,
+    ].filter((value): value is string => value !== null),
+  };
+}
+
+export function projectAccountOrders(response: LighterAccountOrdersResponse, limit: number): Record<string, unknown> {
+  const orders = takeFirst(response.orders.map(projectAccountOrder), limit);
+  return {
+    count: orders.count,
+    totalProviderRows: orders.total,
+    truncated: orders.truncated,
+    nextCursor: response.next_cursor ?? null,
+    orders: orders.rows,
   };
 }
 
