@@ -67,6 +67,45 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.openOrders": {
+    embeddingText: embeddingText(
+      `Read authenticated Lighter open orders for the account authorized by a read-only token on Core or Robinhood Chain, optionally filtered by market id and market type. ` +
+      `Use when: the user asks for their current resting orders, active orders, open bids or asks, or order exposure. ` +
+      `Requires a Lighter read-only auth token; defaults to the token's account and refuses mismatched single-account tokens. It never places, cancels, signs, deposits, or withdraws. ` +
+      `Example queries: my lighter open orders, rhc active orders for market 0, core open bids.`,
+    ),
+    aliases: ["lighter open orders", "active orders", "my orders", "resting orders"],
+    exampleIntents: ["my lighter open orders", "rhc active orders for market 0", "core open bids"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
+  "lighter.orderHistory": {
+    embeddingText: embeddingText(
+      `Read authenticated Lighter inactive order history for the account authorized by a read-only token on Core or Robinhood Chain, with bounded rows and exact order identifiers. ` +
+      `Use when: the user asks for filled, cancelled, inactive, or historical orders. ` +
+      `Requires a Lighter read-only auth token; defaults to the token's account and refuses mismatched single-account tokens. It is read-only and cannot submit or cancel orders. ` +
+      `Example queries: lighter order history, rhc filled orders, cancelled core lighter orders.`,
+    ),
+    aliases: ["lighter order history", "inactive orders", "filled orders", "cancelled orders"],
+    exampleIntents: ["lighter order history", "rhc filled orders", "cancelled core lighter orders"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
+  "lighter.trades": {
+    embeddingText: embeddingText(
+      `Read authenticated Lighter account trade history for the account authorized by a read-only token on Core or Robinhood Chain, with bounded rows and exact provider string ids. ` +
+      `Use when: the user asks for their account fills, personal trade history, executed trades, or account-level fills rather than the public market tape. ` +
+      `Requires a Lighter read-only auth token; defaults to the token's account and refuses mismatched single-account tokens. It is read-only and cannot place, cancel, or sign. ` +
+      `Example queries: my lighter trades, rhc account fills, core executed trades.`,
+    ),
+    aliases: ["lighter account trades", "my trades", "account fills", "lighter fills"],
+    exampleIntents: ["my lighter trades", "rhc account fills", "core executed trades"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.orderbook": {
     embeddingText: embeddingText(
       `Read resting Lighter order book orders for one market on Core or Robinhood Chain, with a strict visible depth cap on each side. ` +
@@ -108,7 +147,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 8;
+const EXPECTED_COUNT = 11;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

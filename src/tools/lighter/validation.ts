@@ -204,7 +204,7 @@ const accountTradesResponseSchema = z
     code: int,
     message,
     next_cursor: z.string().optional(),
-    trades: z.array(z.record(z.string(), z.unknown())),
+    trades: z.array(tradeSchema),
   })
   .passthrough();
 

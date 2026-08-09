@@ -60,7 +60,7 @@ export interface LighterAccountTradesResponse {
   code: number;
   message?: string;
   next_cursor?: string;
-  trades: Record<string, unknown>[];
+  trades: LighterTrade[];
   [key: string]: unknown;
 }
 

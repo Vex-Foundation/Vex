@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
     getMarkets: vi.fn(),
     getMarketDetails: vi.fn(),
     getAccount: vi.fn(),
+    getAccountActiveOrders: vi.fn(),
+    getAccountInactiveOrders: vi.fn(),
+    getAccountTrades: vi.fn(),
     getOrderBookOrders: vi.fn(),
     getRecentTrades: vi.fn(),
     getCandles: vi.fn(),
@@ -366,6 +369,91 @@ describe("Lighter agent read handlers", () => {
 
     expect(output).toContain("Provide either accountIndex or l1Address, not both");
     expect(mocks.client.getAccount).not.toHaveBeenCalled();
+  });
+
+  it("reads authenticated open orders with credential-defaulted account provenance", async () => {
+    mocks.client.getAccountActiveOrders.mockResolvedValue({
+      code: 200,
+      orders: [accountOrder()],
+    });
+
+    const data = await callJson("lighter.openOrders", {
+      environment: "rhc",
+      marketId: 0,
+      filter: "perp",
+      limit: 1,
+    });
+
+    expect(mocks.client.getAccountActiveOrders).toHaveBeenCalledWith("rhc", {
+      marketId: 0,
+      marketType: "perp",
+    });
+    expect(data.source).toBe("live_lighter_read_only_account_api");
+    expect((data.provenance as Record<string, unknown>).authenticated).toBe(true);
+    expect((data.provenance as Record<string, unknown>).credentialCapability).toBe("read_only_account_data");
+    expect(data.accountIndexSource).toBe("credential");
+    const order = (data.orders as Record<string, unknown>[])[0]!;
+    expect(order.orderIndex).toBe(String(UNSAFE_INTEGER));
+    expect(order.clientOrderIndex).toBe(String(UNSAFE_INTEGER_2));
+  });
+
+  it("reads authenticated order history for an explicit account", async () => {
+    mocks.client.getAccountInactiveOrders.mockResolvedValue({
+      code: 200,
+      next_cursor: "cursor-1",
+      orders: [accountOrder(), { ...accountOrder(), order_id: "2", client_order_id: "3" }],
+    });
+
+    const data = await callJson("lighter.orderHistory", {
+      environment: "core",
+      accountIndex: 42,
+      limit: 1,
+    });
+
+    expect(mocks.client.getAccountInactiveOrders).toHaveBeenCalledWith("core", {
+      accountIndex: 42,
+      limit: 1,
+    });
+    expect(data.accountIndexSource).toBe("caller");
+    expect(data.accountIndex).toBe(42);
+    expect(data.truncated).toBe(true);
+    expect(data.nextCursor).toBe("cursor-1");
+    expect((data.orders as Record<string, unknown>[])).toHaveLength(1);
+  });
+
+  it("reads authenticated account trades with exact trade ids", async () => {
+    const unsafeTrade: LighterTrade = {
+      ...trade(1),
+      trade_id: UNSAFE_INTEGER,
+      trade_id_str: String(UNSAFE_INTEGER),
+      ask_id: UNSAFE_INTEGER,
+      ask_id_str: String(UNSAFE_INTEGER),
+      bid_id: UNSAFE_INTEGER_2,
+      bid_id_str: String(UNSAFE_INTEGER_2),
+    };
+    mocks.client.getAccountTrades.mockResolvedValue({
+      code: 200,
+      next_cursor: "cursor-1",
+      trades: [unsafeTrade],
+    });
+
+    const data = await callJson("lighter.trades", {
+      environment: "rhc",
+      accountIndex: 42,
+      limit: 1,
+    });
+
+    expect(mocks.client.getAccountTrades).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      limit: 1,
+      sortBy: "timestamp",
+    });
+    expect(data.source).toBe("live_lighter_read_only_account_api");
+    const fill = (data.trades as Record<string, unknown>[])[0]!;
+    expect(fill.tradeId).toBe(String(UNSAFE_INTEGER));
+    expect(fill.tradeIdNumeric).toBeNull();
+    expect(fill.askOrderId).toBe(String(UNSAFE_INTEGER));
+    expect(fill.bidOrderId).toBe(String(UNSAFE_INTEGER_2));
   });
 
   it("sorts order book orders into best price order before truncating", async () => {

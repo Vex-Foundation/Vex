@@ -24,6 +24,8 @@ export const LIGHTER_AGENT_RECENT_TRADES_LIMIT_MAX = Math.min(50, LIGHTER_RECENT
 export const LIGHTER_AGENT_CANDLE_OUTPUT_MAX = 100;
 export const LIGHTER_AGENT_ACCOUNT_ROW_MAX = 10;
 export const LIGHTER_AGENT_ACCOUNT_POSITION_MAX = 25;
+export const LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT = 25;
+export const LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX = 50;
 
 export type ParamRead<T> =
   | { readonly ok: true; readonly value: T }
@@ -156,6 +158,15 @@ export function readAccountLookup(params: Record<string, unknown>): ParamRead<Li
   };
 }
 
+export function readOptionalAccountIndex(params: Record<string, unknown>): ParamRead<number | undefined> {
+  const accountIndex = readNumber(params, "accountIndex");
+  if (accountIndex === undefined) return { ok: true, value: undefined };
+  if (!Number.isInteger(accountIndex) || accountIndex < 0 || accountIndex > Number.MAX_SAFE_INTEGER) {
+    return { ok: false, reason: "accountIndex must be a safe non-negative integer." };
+  }
+  return { ok: true, value: accountIndex };
+}
+
 export function readLimit(
   params: Record<string, unknown>,
   options: {
@@ -226,6 +237,16 @@ export function readRecentTradesLimit(params: Record<string, unknown>): ParamRea
   });
   if (!read.ok) return read;
   return { ok: true, value: read.value ?? LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT };
+}
+
+export function readAccountOrderLimit(params: Record<string, unknown>): ParamRead<number> {
+  const read = readLimit(params, {
+    min: 1,
+    max: LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX,
+    defaultValue: LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT,
+  });
+  if (!read.ok) return read;
+  return { ok: true, value: read.value ?? LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT };
 }
 
 export function readMarketListLimit(params: Record<string, unknown>): ParamRead<number> {

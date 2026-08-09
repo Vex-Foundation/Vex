@@ -359,6 +359,17 @@ describe("LighterClient validation", () => {
     expect(tape.trades[0].ask_id_str).toBe("1");
   });
 
+  it("validates account trades with exact string ids", async () => {
+    mockOk({ code: 200, trades: [TRADE] });
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:single:4102444800:abcdef");
+
+    const tape = await authClient.getAccountTrades("core", { limit: 1 });
+
+    expect(lastUrl().searchParams.get("account_index")).toBe("42");
+    expect(tape.trades[0]?.trade_id_str).toBe("1");
+    expect(tape.trades[0]?.ask_id_str).toBe("1");
+  });
+
   it("requires exact string ids on recent trades", async () => {
     const { ask_id_str: _askIdStr, ...tradeWithoutAskString } = TRADE;
     mockOk({ code: 200, trades: [tradeWithoutAskString] });

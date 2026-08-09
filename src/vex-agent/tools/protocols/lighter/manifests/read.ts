@@ -8,6 +8,8 @@ import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-d
 import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+  LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT,
+  LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
   LIGHTER_AGENT_MARKET_LIMIT_DEFAULT,
   LIGHTER_AGENT_MARKET_LIMIT_MAX,
@@ -57,6 +59,13 @@ const ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
     "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or l1Address.",
 };
 
+const AUTH_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
+  key: "accountIndex",
+  type: "number",
+  description:
+    "Optional account index. Omit to use the account embedded in the read-only token. Single-account tokens refuse mismatches.",
+};
+
 const L1_ADDRESS_PARAM: ProtocolParamDef = {
   key: "l1Address",
   type: "string",
@@ -90,6 +99,13 @@ const ORDERBOOK_LIMIT_PARAM: ProtocolParamDef = {
   type: "number",
   description:
     `Max ask rows and max bid rows to return (default ${LIGHTER_AGENT_ORDERBOOK_LIMIT_DEFAULT}, max ${LIGHTER_AGENT_ORDERBOOK_LIMIT_MAX}). The response reports provider totals and truncation flags.`,
+};
+
+const ACCOUNT_ORDER_LIMIT_PARAM: ProtocolParamDef = {
+  key: "limit",
+  type: "number",
+  description:
+    `Max account order/trade rows to return (default ${LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT}, max ${LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX}). Out-of-range values are rejected.`,
 };
 
 const TRADES_LIMIT_PARAM: ProtocolParamDef = {
@@ -159,6 +175,42 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, L1_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
     exampleParams: { environment: "rhc", accountIndex: 42 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.positions"],
+  },
+  {
+    toolId: "lighter.openOrders",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      `Read authenticated open Lighter orders for the account authorized by the configured Core or Robinhood Chain read-only token. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. Defaults to the token's account when accountIndex is omitted; single-account tokens refuse mismatches. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
+    exampleParams: { environment: "rhc", marketId: 0, limit: 25 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.openOrders"],
+  },
+  {
+    toolId: "lighter.orderHistory",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      `Read authenticated inactive Lighter order history for the account authorized by the configured Core or Robinhood Chain read-only token. Use when the user asks for filled, cancelled, inactive, or historical orders. Defaults to the token's account when accountIndex is omitted; single-account tokens refuse mismatches. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
+    exampleParams: { environment: "rhc", limit: 25 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.orderHistory"],
+  },
+  {
+    toolId: "lighter.trades",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      `Read authenticated Lighter account trade history for the account authorized by the configured Core or Robinhood Chain read-only token. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. Defaults to the token's account when accountIndex is omitted; single-account tokens refuse mismatches. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
+    exampleParams: { environment: "rhc", limit: 25 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.trades"],
   },
   {
     toolId: "lighter.orderbook",

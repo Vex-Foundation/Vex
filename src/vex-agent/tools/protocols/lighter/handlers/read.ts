@@ -14,6 +14,7 @@ import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+  readAccountOrderLimit,
   readAccountLookup,
   readCountBack,
   readEnvironment,
@@ -21,6 +22,7 @@ import {
   readMarketId,
   readMarketListLimit,
   readMarketListPage,
+  readOptionalAccountIndex,
   readOrderBookLimit,
   readRecentTradesLimit,
   readResolution,
@@ -30,6 +32,7 @@ import {
 import {
   projectCandles,
   projectAccountResponse,
+  projectAccountOrders,
   projectMarket,
   projectMarketDetails,
   projectOrderBook,
@@ -47,6 +50,33 @@ function failureDetail(toolId: string, err: unknown): string {
     error: describeFailureForLog(err),
   });
   return describeFailureForAgent(err);
+}
+
+function readOnlyAccountProvenance(
+  environment: LighterEnvironment,
+  toolId: string,
+  endpointPaths: readonly string[],
+  details: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    source: "live_lighter_read_only_account_api",
+    provenance: {
+      source: "live_lighter_read_only_account_api",
+      provider: "lighter",
+      dataPlane: "provider_read_only_auth_rest",
+      toolId,
+      environment,
+      restBaseUrl: LIGHTER_ENDPOINTS[environment].restBaseUrl,
+      endpointPaths,
+      retrievedAt: new Date().toISOString(),
+      cacheStatus: "fresh_no_cache",
+      maxDataAgeMs: 0,
+      authenticated: true,
+      credentialCapability: "read_only_account_data",
+      independentOnchainVerification: false,
+      ...details,
+    },
+  };
 }
 
 function liveProvenance(
@@ -264,6 +294,122 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       return fail(`Lighter positions read unavailable (${failureDetail("lighter.positions", err)})`);
+    }
+  },
+
+  "lighter.openOrders": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const accountIndex = readOptionalAccountIndex(params);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const marketId = readMarketId(params, false);
+    if (!marketId.ok) return fail(marketId.reason);
+    const filter = readMarketFilter(params);
+    if (!filter.ok) return fail(filter.reason);
+    const limit = readAccountOrderLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getAccountActiveOrders(environment.value, {
+        ...(accountIndex.value === undefined ? {} : { accountIndex: accountIndex.value }),
+        ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
+        ...(filter.value === undefined ? {} : { marketType: filter.value }),
+      });
+      return ok({
+        ...readOnlyAccountProvenance(environment.value, "lighter.openOrders", [
+          LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
+        ], {
+          accountIndex: accountIndex.value ?? null,
+          accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+          marketId: marketId.value ?? null,
+          filter: filter.value ?? null,
+          outputLimit: limit.value,
+        }),
+        environment: environment.value,
+        accountIndex: accountIndex.value ?? null,
+        accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+        marketId: marketId.value ?? null,
+        filter: filter.value ?? null,
+        limit: limit.value,
+        ...projectAccountOrders(response, limit.value),
+      });
+    } catch (err) {
+      return fail(`Lighter open orders unavailable (${failureDetail("lighter.openOrders", err)})`);
+    }
+  },
+
+  "lighter.orderHistory": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const accountIndex = readOptionalAccountIndex(params);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const marketId = readMarketId(params, false);
+    if (!marketId.ok) return fail(marketId.reason);
+    const filter = readMarketFilter(params);
+    if (!filter.ok) return fail(filter.reason);
+    const limit = readAccountOrderLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getAccountInactiveOrders(environment.value, {
+        ...(accountIndex.value === undefined ? {} : { accountIndex: accountIndex.value }),
+        ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
+        ...(filter.value === undefined ? {} : { marketType: filter.value }),
+        limit: limit.value,
+      });
+      return ok({
+        ...readOnlyAccountProvenance(environment.value, "lighter.orderHistory", [
+          LIGHTER_ENDPOINT_PATHS.accountInactiveOrders,
+        ], {
+          accountIndex: accountIndex.value ?? null,
+          accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+          marketId: marketId.value ?? null,
+          filter: filter.value ?? null,
+          outputLimit: limit.value,
+        }),
+        environment: environment.value,
+        accountIndex: accountIndex.value ?? null,
+        accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+        marketId: marketId.value ?? null,
+        filter: filter.value ?? null,
+        limit: limit.value,
+        ...projectAccountOrders(response, limit.value),
+      });
+    } catch (err) {
+      return fail(`Lighter order history unavailable (${failureDetail("lighter.orderHistory", err)})`);
+    }
+  },
+
+  "lighter.trades": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const accountIndex = readOptionalAccountIndex(params);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const limit = readAccountOrderLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getAccountTrades(environment.value, {
+        ...(accountIndex.value === undefined ? {} : { accountIndex: accountIndex.value }),
+        limit: limit.value,
+        sortBy: "timestamp",
+      });
+      return ok({
+        ...readOnlyAccountProvenance(environment.value, "lighter.trades", [
+          LIGHTER_ENDPOINT_PATHS.trades,
+        ], {
+          accountIndex: accountIndex.value ?? null,
+          accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+          outputLimit: limit.value,
+        }),
+        environment: environment.value,
+        accountIndex: accountIndex.value ?? null,
+        accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+        limit: limit.value,
+        ...projectRecentTrades(response, limit.value),
+      });
+    } catch (err) {
+      return fail(`Lighter account trades unavailable (${failureDetail("lighter.trades", err)})`);
     }
   },
 
