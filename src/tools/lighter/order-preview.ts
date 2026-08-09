@@ -159,8 +159,18 @@ export function buildLighterOrderPreview(
           context.market.supported_price_decimals,
           "triggerPrice",
         );
-  const minBaseAmount = readIntegerString(context.market.min_base_amount, "market min_base_amount");
-  const minQuoteAmount = readIntegerString(context.market.min_quote_amount, "market min_quote_amount");
+  const minBaseAmount = decimalToInteger(
+    context.market.min_base_amount,
+    context.market.supported_size_decimals,
+    "market min_base_amount",
+    { allowZero: true },
+  );
+  const minQuoteAmount = decimalToInteger(
+    context.market.min_quote_amount,
+    context.market.supported_quote_decimals,
+    "market min_quote_amount",
+    { allowZero: true },
+  );
   const quoteNotionalInteger = baseAmountInteger * priceInteger;
 
   if (baseAmountInteger < minBaseAmount) {
@@ -364,7 +374,12 @@ function assertOrderCombination(input: LighterOrderPreviewInput): void {
   }
 }
 
-function decimalToInteger(value: string, decimals: number, field: string): bigint {
+function decimalToInteger(
+  value: string,
+  decimals: number,
+  field: string,
+  options: { readonly allowZero?: boolean } = {},
+): bigint {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
     throw invalidRequest(`${field} decimals must be an integer from 0 to 18.`);
   }
@@ -379,15 +394,10 @@ function decimalToInteger(value: string, decimals: number, field: string): bigin
   }
   const padded = strippedFraction.padEnd(decimals, "0");
   const integer = BigInt(`${whole}${padded}`.replace(/^0+(?=\d)/, ""));
-  if (integer <= 0n) throw invalidRequest(`${field} must be greater than zero.`);
-  return integer;
-}
-
-function readIntegerString(value: string, field: string): bigint {
-  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) {
-    throw invalidRequest(`${field} must be a non-negative integer string.`);
+  if (integer < 0n || (integer === 0n && options.allowZero !== true)) {
+    throw invalidRequest(`${field} must be greater than zero.`);
   }
-  return BigInt(value);
+  return integer;
 }
 
 function formatInteger(value: bigint, decimals: number): string {

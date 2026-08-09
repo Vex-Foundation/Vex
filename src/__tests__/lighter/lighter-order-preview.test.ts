@@ -24,8 +24,8 @@ const MARKET: LighterMarketDetail = {
   taker_fee: "0.0280",
   maker_fee: "0.0040",
   liquidation_fee: "0",
-  min_base_amount: "10",
-  min_quote_amount: "100000000",
+  min_base_amount: "0.001",
+  min_quote_amount: "100",
   supported_size_decimals: 4,
   supported_price_decimals: 2,
   supported_quote_decimals: 6,
@@ -132,6 +132,8 @@ describe("Lighter order preview", () => {
       integer: "3749987500",
       decimals: 6,
     });
+    expect(result.preview.minimumChecks.minBaseAmountInteger).toBe("10");
+    expect(result.preview.minimumChecks.minQuoteAmountInteger).toBe("100000000");
     expect(result.preview.minimumChecks.baseAmountPasses).toBe(true);
     expect(result.preview.minimumChecks.quoteAmountPasses).toBe(true);
     expect(result.preview.marketData.priceComparison).toBe("resting");
