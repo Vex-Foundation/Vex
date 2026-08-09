@@ -17,6 +17,7 @@ import {
   readMarketFilter,
   readMarketId,
   readMarketListLimit,
+  readMarketListPage,
   readOrderBookLimit,
   readRecentTradesLimit,
   readResolution,
@@ -30,7 +31,8 @@ import {
   projectOrderBook,
   projectRecentTrades,
   projectSystem,
-  takeFirst,
+  sortMarketsForDisplay,
+  takePage,
 } from "../projectors.js";
 
 function failureDetail(toolId: string, err: unknown): string {
@@ -100,14 +102,21 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!filter.ok) return fail(filter.reason);
     const limit = readMarketListLimit(params);
     if (!limit.ok) return fail(limit.reason);
+    const page = readMarketListPage(params);
+    if (!page.ok) return fail(page.reason);
 
     try {
       const response = await getLighterClient().getMarkets(environment.value, {
         ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
         ...(filter.value === undefined ? {} : { filter: filter.value }),
       });
-      const projected = response.order_books.map(projectMarket);
-      const window = takeFirst(projected, limit.value);
+      const projected = sortMarketsForDisplay(response.order_books).map(projectMarket);
+      const window = takePage(projected, page.value, limit.value);
+      if (window.total > 0 && page.value > window.lastPage) {
+        return fail(
+          `Lighter markets page ${page.value} is past the last page (${window.lastPage}) for ${window.total} matching markets. Request page ${window.lastPage} or lower.`,
+        );
+      }
       return ok({
         ...liveProvenance(environment.value, "lighter.markets", [
           LIGHTER_ENDPOINT_PATHS.orderBooks,
@@ -115,13 +124,25 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           marketId: marketId.value ?? null,
           filter: filter.value ?? null,
           outputLimit: limit.value,
+          page: page.value,
+          lastPage: window.lastPage,
+          sortOrder: "active_first_market_id_ascending",
         }),
         environment: environment.value,
         marketId: marketId.value ?? null,
         filter: filter.value ?? null,
+        page: page.value,
+        lastPage: window.lastPage,
+        nextPage: window.hasMore ? page.value + 1 : null,
+        sorting: {
+          markets: "active_first_market_id_ascending",
+        },
         count: window.count,
         totalProviderRows: window.total,
         truncated: window.truncated,
+        truncationNote: window.truncated
+          ? `Showing page ${page.value} (${window.count} rows) from ${window.total} markets after active-first, market-id ascending ordering.${window.hasMore ? ` Request page ${page.value + 1} to continue.` : " No later page remains."}`
+          : null,
         markets: window.rows,
       });
     } catch (err) {

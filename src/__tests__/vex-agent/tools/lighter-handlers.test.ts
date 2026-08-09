@@ -187,7 +187,40 @@ describe("Lighter agent read handlers", () => {
     expect((data.systemConfig as Record<string, unknown>).liquidityPoolIndex).toBe(1);
   });
 
-  it("lists markets with an explicit environment and bounded output", async () => {
+  it("lists markets with deterministic ordering, paging, and bounded output", async () => {
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [
+        { ...MARKET, market_id: 56, symbol: "ZK" },
+        { ...MARKET, market_id: 2, symbol: "SOL-USD", status: "inactive" },
+        { ...MARKET, market_id: 2, symbol: "SOL-USD" },
+        { ...MARKET, market_id: 1, symbol: "BTC-USD" },
+        MARKET,
+      ],
+    });
+
+    const data = await callJson("lighter.markets", {
+      environment: "core",
+      filter: "perp",
+      limit: 2,
+      page: 1,
+    });
+
+    expect(mocks.client.getMarkets).toHaveBeenCalledWith("core", { filter: "perp" });
+    expect(data.count).toBe(2);
+    expect(data.totalProviderRows).toBe(5);
+    expect(data.truncated).toBe(true);
+    expect(data.lastPage).toBe(3);
+    expect(data.nextPage).toBe(2);
+    expect(data.sorting).toEqual({ markets: "active_first_market_id_ascending" });
+    expect(data.truncationNote).toContain("Request page 2");
+    expect((data.markets as Record<string, unknown>[]).map((market) => market.symbol)).toEqual([
+      "ETH-USD",
+      "BTC-USD",
+    ]);
+  });
+
+  it("rejects a market page past the live result set", async () => {
     mocks.client.getMarkets.mockResolvedValue({
       code: 200,
       order_books: [
@@ -197,17 +230,14 @@ describe("Lighter agent read handlers", () => {
       ],
     });
 
-    const data = await callJson("lighter.markets", {
+    const output = await callFail("lighter.markets", {
       environment: "core",
-      filter: "perp",
       limit: 2,
+      page: 10,
     });
 
-    expect(mocks.client.getMarkets).toHaveBeenCalledWith("core", { filter: "perp" });
-    expect(data.count).toBe(2);
-    expect(data.totalProviderRows).toBe(3);
-    expect(data.truncated).toBe(true);
-    expect((data.markets as Record<string, unknown>[])[0]?.symbol).toBe("ETH-USD");
+    expect(output).toContain("page 10 is past the last page (2)");
+    expect(output).toContain("Request page 2 or lower");
   });
 
   it("gets one market detail and refuses a missing market cleanly", async () => {
@@ -375,7 +405,7 @@ describe("Lighter agent read handlers", () => {
     }, READ_CTX);
     expect(unknownParam.success).toBe(false);
     expect(unknownParam.output).toContain('Unknown parameter "unexpected"');
-    expect(unknownParam.output).toContain("Allowed parameters: environment, marketId, filter, limit");
+    expect(unknownParam.output).toContain("Allowed parameters: environment, marketId, filter, limit, page");
 
     const badEnvironment = await executeProtocolTool({
       toolId: "lighter.markets",

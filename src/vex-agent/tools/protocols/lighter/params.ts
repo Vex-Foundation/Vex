@@ -16,6 +16,7 @@ import {
 
 export const LIGHTER_AGENT_MARKET_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_MARKET_LIMIT_MAX = 50;
+export const LIGHTER_AGENT_MARKET_PAGE_MAX = 1_000;
 export const LIGHTER_AGENT_ORDERBOOK_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_ORDERBOOK_LIMIT_MAX = Math.min(50, LIGHTER_ORDER_BOOK_LIMIT_MAX);
 export const LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT = 25;
@@ -103,7 +104,7 @@ export function readMarketId(
 export function readLimit(
   params: Record<string, unknown>,
   options: {
-    readonly key?: "limit" | "countBack";
+    readonly key?: "limit" | "countBack" | "page";
     readonly min: number;
     readonly max: number;
     readonly defaultValue?: number;
@@ -180,4 +181,15 @@ export function readMarketListLimit(params: Record<string, unknown>): ParamRead<
   });
   if (!read.ok) return read;
   return { ok: true, value: read.value ?? LIGHTER_AGENT_MARKET_LIMIT_DEFAULT };
+}
+
+export function readMarketListPage(params: Record<string, unknown>): ParamRead<number> {
+  const read = readLimit(params, {
+    key: "page",
+    min: 1,
+    max: LIGHTER_AGENT_MARKET_PAGE_MAX,
+    defaultValue: 1,
+  });
+  if (!read.ok) return read;
+  return { ok: true, value: read.value ?? 1 };
 }

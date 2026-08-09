@@ -60,7 +60,7 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 | Tool | Client calls | Returns |
 |------|--------------|---------|
 | `lighter.system` | `getStatus`, `getSystemConfig` | Status, network id, public pool/config fields |
-| `lighter.markets` | `getMarkets` | Bounded market rows with count/truncation disclosure |
+| `lighter.markets` | `getMarkets` | Deterministically ordered, paged market rows with count/truncation disclosure |
 | `lighter.market.get` | `getMarketDetails` | One-market detail rows for a numeric `marketId` |
 | `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
 | `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
@@ -90,15 +90,22 @@ Every successful agent response includes provenance:
 - Agent handlers call only the public read client. There is no renderer, preload,
   wallet, vault, approval, order, deposit, withdrawal, transfer, or signing path
   in the Lighter namespace.
+- Market list projections sort active markets first, then by ascending
+  `market_id`, before applying the agent page and limit. Broad lists return
+  `page`, `lastPage`, `nextPage`, `sorting`, and a truncation note so the agent
+  can walk the live provider list instead of depending on provider row order.
+  A page past the live result set fails clearly with the last valid page number
+  instead of returning an empty list that could be mistaken for no markets.
 - Order book projections sort asks by ascending numeric price and bids by
   descending numeric price before applying the agent output limit. Vex does not
   rely on provider row order for top-of-book reasoning.
 - Core order book rows can expose `order_index` values larger than JavaScript's
   safe integer range; Core and RHC recent-trade rows can do the same for order
-  ids such as `ask_id` and `bid_id`. Phase 1 treats those numeric ids as
-  display-only provider fields: agent output sets the unsafe numeric field to
-  `null`, adds an `*Precision: "unsafe_provider_number_omitted"` marker, and
-  keeps the exact provider string id when Lighter supplies one.
+  ids such as `trade_id`, `ask_id`, and `bid_id`. Phase 1 treats Lighter's
+  `*_id_str` fields as canonical for recent trades: agent output exposes those
+  digit-only strings as the primary ids, keeps unsafe numeric provider fields
+  as `null`, and marks the numeric precision when JavaScript cannot represent
+  the number exactly.
 - Candle timestamps are JavaScript epoch milliseconds. Seconds-scale Unix
   timestamps are rejected before a provider request is sent.
 - Candle ranges are bounded by Vex before the provider request. In Phase 1,
@@ -128,19 +135,18 @@ Every successful agent response includes provenance:
 
 ## Live Verification Notes
 
-2026-08-09 local time (`2026-08-08T23:36Z`): `pnpm run test:lighter:live`
+2026-08-09 local time (`2026-08-09T00:09Z`): `pnpm run test:lighter:live`
 passed against real public Lighter infrastructure, including provenance
 assertions on every successful Lighter tool response.
 
 | Environment | Network id | Latest selected market | Reads proven |
 |-------------|------------|------------------------|--------------|
-| Core | 1 | `56` / `ZK` | system, markets, market detail, order book, recent trades, candles |
+| Core | 1 | `0` / `ETH` | system, markets, market detail, order book, recent trades, candles |
 | RHC | 1 | `0` / `ETH` | system, markets, market detail, order book, recent trades, candles |
 
 The live smoke selected active markets from `lighter.markets`, then reused the
 selected `marketId` for detail, depth, recent trades, and 1-minute candles.
 Both environments returned 10 ask rows, 10 bid rows, 10 recent trade rows, and
-12 candle rows within the configured live smoke limits. The selected Core
-market can vary because the live proof chooses an active market from the
-provider feed when preferred symbols are not present in the bounded market
-window.
+12 candle rows within the configured live smoke limits. The latest proof
+selected ETH on both Core and RHC after market-list output was hardened to sort
+before paging.

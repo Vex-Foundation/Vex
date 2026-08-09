@@ -9,6 +9,7 @@ import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_MARKET_LIMIT_DEFAULT,
   LIGHTER_AGENT_MARKET_LIMIT_MAX,
+  LIGHTER_AGENT_MARKET_PAGE_MAX,
   LIGHTER_AGENT_ORDERBOOK_LIMIT_DEFAULT,
   LIGHTER_AGENT_ORDERBOOK_LIMIT_MAX,
   LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT,
@@ -54,6 +55,13 @@ const MARKET_LIST_LIMIT_PARAM: ProtocolParamDef = {
     `Max market rows to return after the provider response is read (default ${LIGHTER_AGENT_MARKET_LIMIT_DEFAULT}, max ${LIGHTER_AGENT_MARKET_LIMIT_MAX}). Out-of-range values are rejected.`,
 };
 
+const MARKET_LIST_PAGE_PARAM: ProtocolParamDef = {
+  key: "page",
+  type: "number",
+  description:
+    `1-based page over Vex's deterministic market ordering (default 1, max ${LIGHTER_AGENT_MARKET_PAGE_MAX}). Pair it with nextPage to continue broad lists.`,
+};
+
 const ORDERBOOK_LIMIT_PARAM: ProtocolParamDef = {
   key: "limit",
   type: "number",
@@ -86,11 +94,11 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "List Lighter public markets/order books on Core or Robinhood Chain. Use when the user needs symbols, market ids, active/inactive status, spot versus perp coverage, fee strings, minimum order amounts, quote limits, or decimal metadata before requesting detail, depth, trades, or candles. Returns bounded market rows plus provider row count and a truncation flag so broad market lists are never silently shortened. Read-only: no account, key, signing, order, deposit, or withdrawal access.",
+      "List Lighter public markets/order books on Core or Robinhood Chain. Use when the user needs symbols, market ids, active/inactive status, spot versus perp coverage, fee strings, minimum order amounts, quote limits, or decimal metadata before requesting detail, depth, trades, or candles. Returns deterministically ordered, bounded market rows plus provider row count, page, nextPage, and truncation disclosure so broad market lists are walkable instead of silently shortened. Read-only: no account, key, signing, order, deposit, or withdrawal access.",
     mutating: false,
     actionKind: "read",
-    params: [ENVIRONMENT_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, MARKET_LIST_LIMIT_PARAM],
-    exampleParams: { environment: "rhc", filter: "all", limit: 25 },
+    params: [ENVIRONMENT_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, MARKET_LIST_LIMIT_PARAM, MARKET_LIST_PAGE_PARAM],
+    exampleParams: { environment: "rhc", filter: "all", limit: 25, page: 1 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.markets"],
   },
   {

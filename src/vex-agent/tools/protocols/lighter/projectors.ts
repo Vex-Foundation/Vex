@@ -39,12 +39,53 @@ export function takeLast<T>(rows: readonly T[], limit: number): LighterSlice<T> 
   };
 }
 
+export function takePage<T>(
+  rows: readonly T[],
+  page: number,
+  limit: number,
+): LighterSlice<T> & {
+  readonly offset: number;
+  readonly hasMore: boolean;
+  readonly lastPage: number;
+} {
+  const offset = (page - 1) * limit;
+  const sliced = rows.slice(offset, offset + limit);
+  const lastPage = Math.max(1, Math.ceil(rows.length / limit));
+  return {
+    rows: sliced,
+    total: rows.length,
+    count: sliced.length,
+    truncated: rows.length > sliced.length,
+    offset,
+    hasMore: offset + sliced.length < rows.length,
+    lastPage,
+  };
+}
+
 function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function safeIntegerOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
+}
+
+function marketStatusRank(market: LighterMarket): number {
+  return market.status === "active" ? 0 : 1;
+}
+
+export function sortMarketsForDisplay(markets: readonly LighterMarket[]): LighterMarket[] {
+  return markets
+    .map((market, index) => ({ market, index }))
+    .sort((left, right) => {
+      const status = marketStatusRank(left.market) - marketStatusRank(right.market);
+      if (status !== 0) return status;
+      const marketId = left.market.market_id - right.market.market_id;
+      if (marketId !== 0) return marketId;
+      const symbol = left.market.symbol.localeCompare(right.market.symbol);
+      return symbol === 0 ? left.index - right.index : symbol;
+    })
+    .map(({ market }) => market);
 }
 
 export function projectMarket(market: LighterMarket): Record<string, unknown> {
