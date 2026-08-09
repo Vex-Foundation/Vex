@@ -152,6 +152,32 @@ describe("LighterClient URL selection", () => {
     expect(new Headers(init.headers).get("Authorization")).toBe("ro-token-for-rhc-read-only");
   });
 
+  it("builds authenticated account order read params", async () => {
+    mockOk({ code: 200, orders: [] });
+    mockOk({ code: 200, orders: [] });
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:all:4102444800:abcdef");
+
+    await authClient.getAccountActiveOrders("core", {
+      accountIndex: 42,
+      marketId: 0,
+      marketType: "perp",
+    });
+    let url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/accountActiveOrders");
+    expect(url.searchParams.get("account_index")).toBe("42");
+    expect(url.searchParams.get("market_id")).toBe("0");
+    expect(url.searchParams.get("market_type")).toBe("perp");
+
+    await authClient.getAccountInactiveOrders("core", {
+      accountIndex: 42,
+      limit: 1,
+    });
+    url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/accountInactiveOrders");
+    expect(url.searchParams.get("account_index")).toBe("42");
+    expect(url.searchParams.get("limit")).toBe("1");
+  });
+
   it("does not cache authenticated reads", async () => {
     mockOk({ code: 200, tokens: [{ token_id: "first" }] });
     mockOk({ code: 200, tokens: [{ token_id: "second" }] });

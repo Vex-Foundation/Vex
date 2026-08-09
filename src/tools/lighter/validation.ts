@@ -5,6 +5,7 @@ import {
   LIGHTER_MARKET_FILTERS,
 } from "./constants.js";
 import type {
+  LighterAccountOrdersResponse,
   LighterAccountResponse,
   LighterAccountTradesResponse,
   LighterCandlesResponse,
@@ -207,6 +208,14 @@ const accountTradesResponseSchema = z
   })
   .passthrough();
 
+const accountOrdersResponseSchema = z
+  .object({
+    code: int,
+    message,
+    orders: z.unknown().optional(),
+  })
+  .passthrough();
+
 const marketsResponseSchema = z
   .object({
     code: int,
@@ -291,6 +300,10 @@ export function validateLighterReadOnlyTokens(raw: unknown): LighterReadOnlyToke
 
 export function validateLighterAccountTrades(raw: unknown): LighterAccountTradesResponse {
   return parseOrThrow(accountTradesResponseSchema, raw, "account trades");
+}
+
+export function validateLighterAccountOrders(raw: unknown): LighterAccountOrdersResponse {
+  return parseOrThrow(accountOrdersResponseSchema, raw, "account orders");
 }
 
 export function validateLighterMarketDetails(raw: unknown): LighterMarketDetailsResponse {

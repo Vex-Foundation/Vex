@@ -64,6 +64,13 @@ export interface LighterAccountTradesResponse {
   [key: string]: unknown;
 }
 
+export interface LighterAccountOrdersResponse {
+  code: number;
+  message?: string;
+  orders?: unknown;
+  [key: string]: unknown;
+}
+
 export type LighterMarketType = "perp" | "spot";
 export type LighterMarketStatus = "inactive" | "active";
 
@@ -226,6 +233,16 @@ export interface LighterAccountTradesParams {
   accountIndex: number;
   limit?: number;
   sortBy?: "timestamp";
+}
+
+export interface LighterAccountActiveOrdersParams {
+  accountIndex: number;
+  marketId?: number;
+  marketType?: LighterMarketFilter;
+}
+
+export interface LighterAccountInactiveOrdersParams extends LighterAccountActiveOrdersParams {
+  limit?: number;
 }
 
 export interface LighterMarketDetailQuery {

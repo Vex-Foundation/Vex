@@ -35,6 +35,15 @@ describeLiveAuth("Lighter live read-only authenticated account boundary", () => 
       });
       expect(trades.code).toBeGreaterThanOrEqual(0);
       expect(Array.isArray(trades.trades)).toBe(true);
+
+      const activeOrders = await client.getAccountActiveOrders(environment, { accountIndex });
+      expect(activeOrders.code).toBeGreaterThanOrEqual(0);
+
+      const inactiveOrders = await client.getAccountInactiveOrders(environment, {
+        accountIndex,
+        limit: 1,
+      });
+      expect(inactiveOrders.code).toBeGreaterThanOrEqual(0);
     });
   }
 });

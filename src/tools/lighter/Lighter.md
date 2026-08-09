@@ -49,6 +49,8 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `getStatus(environment)` | `GET /` | Public status |
 | `getSystemConfig(environment)` | `GET /api/v1/systemConfig` | Public system config |
 | `getAccount(environment, params)` | `GET /api/v1/account` | Public by index/L1 address; private auth boundary applies before account tools expose it |
+| `getAccountActiveOrders(environment, params)` | `GET /api/v1/accountActiveOrders` | Auth-gated active account orders candidate |
+| `getAccountInactiveOrders(environment, params)` | `GET /api/v1/accountInactiveOrders` | Auth-gated inactive account orders candidate |
 | `getReadOnlyTokens(environment, params)` | `GET /api/v1/tokens` | Auth-gated read-only token inventory candidate |
 | `getMarkets(environment, params)` | `GET /api/v1/orderBooks` | Optional `market_id`, `filter` |
 | `getMarketDetails(environment, params)` | `GET /api/v1/orderBookDetails` | Required `market_id`; optional `filter` |
@@ -173,8 +175,9 @@ Every successful agent response includes provenance:
   secret vault or process environment. If either real token is absent, expired,
   or malformed, the live auth proof fails rather than substituting fixtures,
   mocks, or simulated provider responses. The proof uses read-only-compatible
-  account data endpoints; `/api/v1/tokens` is not treated as proof for a
-  read-only token because live Core rejected that endpoint with a read-only
+  account data endpoints: `/api/v1/trades`, `/api/v1/accountActiveOrders`, and
+  `/api/v1/accountInactiveOrders`. `/api/v1/tokens` is not treated as proof for
+  a read-only token because live Core rejected that endpoint with a read-only
   token while accepting account trade history.
 
 ## Live Verification Notes

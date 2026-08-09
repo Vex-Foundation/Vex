@@ -19,6 +19,9 @@ import {
 import { mapLighterError, mapLighterTransportError, readLighterErrorBody } from "./errors.js";
 import { LighterThrottle, parseRetryAfterMs } from "./throttle.js";
 import type {
+  LighterAccountActiveOrdersParams,
+  LighterAccountInactiveOrdersParams,
+  LighterAccountOrdersResponse,
   LighterAccountQuery,
   LighterAccountResponse,
   LighterAccountTradesParams,
@@ -40,6 +43,7 @@ import type {
 } from "./types.js";
 import {
   validateLighterAccount,
+  validateLighterAccountOrders,
   validateLighterAccountTrades,
   validateLighterCandles,
   validateLighterMarketDetails,
@@ -195,6 +199,41 @@ export class LighterClient {
     );
   }
 
+  async getAccountActiveOrders(
+    environment: LighterEnvironment,
+    params: LighterAccountActiveOrdersParams,
+  ): Promise<LighterAccountOrdersResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
+      validateLighterAccountOrders,
+      buildAccountOrdersQuery(params),
+      { auth: "read-only" },
+    );
+  }
+
+  async getAccountInactiveOrders(
+    environment: LighterEnvironment,
+    params: LighterAccountInactiveOrdersParams,
+  ): Promise<LighterAccountOrdersResponse> {
+    const limit = readBoundedInt(
+      params.limit ?? 25,
+      "limit",
+      LIGHTER_RECENT_TRADES_LIMIT_MIN,
+      LIGHTER_RECENT_TRADES_LIMIT_MAX,
+    );
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.accountInactiveOrders,
+      validateLighterAccountOrders,
+      {
+        ...buildAccountOrdersQuery(params),
+        limit: String(limit),
+      },
+      { auth: "read-only" },
+    );
+  }
+
   async getMarkets(
     environment: LighterEnvironment,
     params: LighterMarketQuery = {},
@@ -317,6 +356,18 @@ function readUint16(value: number, field: string): number {
 
 function readAccountIndex(value: number): number {
   return readBoundedInt(value, "accountIndex", 0, Number.MAX_SAFE_INTEGER);
+}
+
+function buildAccountOrdersQuery(
+  params: LighterAccountActiveOrdersParams,
+): Record<string, QueryValue> {
+  const accountIndex = readAccountIndex(params.accountIndex);
+  const marketId = params.marketId === undefined ? undefined : readUint16(params.marketId, "marketId");
+  return {
+    account_index: String(accountIndex),
+    market_id: marketId === undefined ? undefined : String(marketId),
+    market_type: params.marketType,
+  };
 }
 
 function readBoundedInt(value: number, field: string, min: number, max: number): number {

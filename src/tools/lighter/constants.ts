@@ -31,6 +31,8 @@ export const LIGHTER_ENDPOINT_PATHS = {
   status: "/",
   systemConfig: "/api/v1/systemConfig",
   account: "/api/v1/account",
+  accountActiveOrders: "/api/v1/accountActiveOrders",
+  accountInactiveOrders: "/api/v1/accountInactiveOrders",
   tokens: "/api/v1/tokens",
   orderBooks: "/api/v1/orderBooks",
   orderBookDetails: "/api/v1/orderBookDetails",
