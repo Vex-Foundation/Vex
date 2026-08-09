@@ -28,10 +28,6 @@ describeLiveAuth("Lighter live read-only authenticated account boundary", () => 
       expect(account.code).toBeGreaterThanOrEqual(0);
       expect(Array.isArray(account.accounts)).toBe(true);
 
-      const tokens = await client.getReadOnlyTokens(environment, { accountIndex });
-      expect(tokens.code).toBeGreaterThanOrEqual(0);
-      expect(Array.isArray(tokens.tokens)).toBe(true);
-
       const trades = await client.getAccountTrades(environment, {
         accountIndex,
         limit: 1,

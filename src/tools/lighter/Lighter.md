@@ -172,7 +172,10 @@ Every successful agent response includes provenance:
   `LIGHTER_RHC_READ_ONLY_AUTH_TOKEN` to be present through the encrypted local
   secret vault or process environment. If either real token is absent, expired,
   or malformed, the live auth proof fails rather than substituting fixtures,
-  mocks, or simulated provider responses.
+  mocks, or simulated provider responses. The proof uses read-only-compatible
+  account data endpoints; `/api/v1/tokens` is not treated as proof for a
+  read-only token because live Core rejected that endpoint with a read-only
+  token while accepting account trade history.
 
 ## Live Verification Notes
 
