@@ -22,10 +22,20 @@ export const LIGHTER_AGENT_ORDERBOOK_LIMIT_MAX = Math.min(50, LIGHTER_ORDER_BOOK
 export const LIGHTER_AGENT_RECENT_TRADES_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_RECENT_TRADES_LIMIT_MAX = Math.min(50, LIGHTER_RECENT_TRADES_LIMIT_MAX);
 export const LIGHTER_AGENT_CANDLE_OUTPUT_MAX = 100;
+export const LIGHTER_AGENT_ACCOUNT_ROW_MAX = 10;
+export const LIGHTER_AGENT_ACCOUNT_POSITION_MAX = 25;
 
 export type ParamRead<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly reason: string };
+
+export interface LighterAccountLookup {
+  readonly by: "index" | "l1_address";
+  readonly value: number | string;
+  readonly accountIndex: number | null;
+  readonly l1Address: string | null;
+  readonly activeOnly?: boolean;
+}
 
 function readString(params: Record<string, unknown>, key: string): string | undefined {
   const value = params[key];
@@ -40,6 +50,12 @@ function readNumber(params: Record<string, unknown>, key: string): number | unde
 function readBoolean(params: Record<string, unknown>, key: string): boolean | undefined {
   const value = params[key];
   return typeof value === "boolean" ? value : undefined;
+}
+
+function readAddress(params: Record<string, unknown>, key: string): string | undefined {
+  const value = readString(params, key);
+  if (value === undefined) return undefined;
+  return /^0x[a-fA-F0-9]{40}$/.test(value) ? value : "__INVALID_ADDRESS__";
 }
 
 function allowedList(values: readonly string[]): string {
@@ -99,6 +115,45 @@ export function readMarketId(
     return { ok: false, reason: "marketId must be an integer from 0 to 65535." };
   }
   return { ok: true, value };
+}
+
+export function readAccountLookup(params: Record<string, unknown>): ParamRead<LighterAccountLookup> {
+  const accountIndex = readNumber(params, "accountIndex");
+  const l1Address = readAddress(params, "l1Address");
+  if (accountIndex !== undefined && l1Address !== undefined) {
+    return { ok: false, reason: "Provide either accountIndex or l1Address, not both." };
+  }
+  if (accountIndex === undefined && l1Address === undefined) {
+    return { ok: false, reason: "Missing required: accountIndex or l1Address." };
+  }
+  if (accountIndex !== undefined) {
+    if (!Number.isInteger(accountIndex) || accountIndex < 0 || accountIndex > Number.MAX_SAFE_INTEGER) {
+      return { ok: false, reason: "accountIndex must be a safe non-negative integer." };
+    }
+    return {
+      ok: true,
+      value: {
+        by: "index",
+        value: accountIndex,
+        accountIndex,
+        l1Address: null,
+        activeOnly: readBoolean(params, "activeOnly"),
+      },
+    };
+  }
+  if (l1Address === "__INVALID_ADDRESS__") {
+    return { ok: false, reason: "l1Address must be a 0x-prefixed 20-byte EVM address." };
+  }
+  return {
+    ok: true,
+    value: {
+      by: "l1_address",
+      value: l1Address!,
+      accountIndex: null,
+      l1Address: l1Address!,
+      activeOnly: readBoolean(params, "activeOnly"),
+    },
+  };
 }
 
 export function readLimit(

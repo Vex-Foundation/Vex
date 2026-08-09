@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type {
+  LighterAccount,
   LighterAccountOrder,
   LighterCandle,
   LighterMarket,
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     getSystemConfig: vi.fn(),
     getMarkets: vi.fn(),
     getMarketDetails: vi.fn(),
+    getAccount: vi.fn(),
     getOrderBookOrders: vi.fn(),
     getRecentTrades: vi.fn(),
     getCandles: vi.fn(),
@@ -87,6 +89,20 @@ const DETAIL: LighterMarketDetail = {
   funding_clamp_small: "0.001",
   funding_clamp_big: "0.005",
   base_interest_rate: "0.02",
+};
+
+const ACCOUNT: LighterAccount = {
+  index: 42,
+  l1_address: "0x1111111111111111111111111111111111111111",
+  status: 1,
+  collateral: "1000",
+  available_balance: "750",
+  positions: [
+    { market_id: 0, symbol: "ETH", position: "1.25", avg_entry_price: "3000" },
+  ],
+  assets: [
+    { asset_id: 1, symbol: "USDC", balance: "750" },
+  ],
 };
 
 function order(id: number, price: string): LighterSimpleOrder {
@@ -292,6 +308,64 @@ describe("Lighter agent read handlers", () => {
     });
     const output = await callFail("lighter.market.get", { environment: "rhc", marketId: 999 });
     expect(output).toContain("No Lighter market detail found");
+  });
+
+  it("reads public account state by account index without credentials", async () => {
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      total: 1,
+      accounts: [ACCOUNT],
+    });
+
+    const data = await callJson("lighter.account.get", {
+      environment: "rhc",
+      accountIndex: 42,
+      activeOnly: true,
+    });
+
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
+      by: "index",
+      value: 42,
+      activeOnly: true,
+    });
+    expect((data.provenance as Record<string, unknown>).authenticated).toBe(false);
+    expect(data.count).toBe(1);
+    const account = (data.accounts as Record<string, unknown>[])[0]!;
+    expect(account.accountIndex).toBe(42);
+    expect(account.positionCount).toBe(1);
+  });
+
+  it("reads public positions by l1 address", async () => {
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200,
+      total: 1,
+      accounts: [ACCOUNT],
+    });
+
+    const data = await callJson("lighter.positions", {
+      environment: "core",
+      l1Address: "0x1111111111111111111111111111111111111111",
+    });
+
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
+      by: "l1_address",
+      value: "0x1111111111111111111111111111111111111111",
+      activeOnly: undefined,
+    });
+    const account = (data.accounts as Record<string, unknown>[])[0]!;
+    expect(account.count).toBe(1);
+    expect(account.positions).toEqual(ACCOUNT.positions);
+  });
+
+  it("rejects ambiguous account lookup params before reaching the client", async () => {
+    const output = await callFail("lighter.account.get", {
+      environment: "core",
+      accountIndex: 42,
+      l1Address: "0x1111111111111111111111111111111111111111",
+    });
+
+    expect(output).toContain("Provide either accountIndex or l1Address, not both");
+    expect(mocks.client.getAccount).not.toHaveBeenCalled();
   });
 
   it("sorts order book orders into best price order before truncating", async () => {

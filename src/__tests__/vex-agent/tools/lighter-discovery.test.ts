@@ -15,6 +15,8 @@ const LIGHTER_TOOL_IDS = [
   "lighter.system",
   "lighter.markets",
   "lighter.market.get",
+  "lighter.account.get",
+  "lighter.positions",
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
@@ -44,7 +46,7 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
-  it("registers exactly the read-only Milestone 2 market data tools", () => {
+  it("registers the read-only Lighter public and account tools", () => {
     expect(LIGHTER_TOOLS.map((tool) => tool.toolId)).toEqual(LIGHTER_TOOL_IDS);
 
     for (const tool of LIGHTER_TOOLS) {

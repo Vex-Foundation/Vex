@@ -41,6 +41,32 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.account.get": {
+    embeddingText: embeddingText(
+      `Read public Lighter account state on Core or Robinhood Chain by account index or L1 address, including collateral, available balance, assets, and inline positions when the provider includes them. ` +
+      `Use when: the user asks to inspect a Lighter account, check account state, find public balances, or review account-level data without credentials. ` +
+      `This is public provider data from the account endpoint; it does not prove private authenticated access and never uses a token, wallet, signer, or order path. ` +
+      `Example queries: get lighter account 42, inspect rhc account by address, lighter account balance.`,
+    ),
+    aliases: ["lighter account", "lighter account get", "account state", "lighter balances"],
+    exampleIntents: ["get lighter account 42", "inspect rhc account by address", "lighter account balance"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
+  "lighter.positions": {
+    embeddingText: embeddingText(
+      `Read public Lighter positions exposed on the account payload for Core or Robinhood Chain by account index or L1 address, with bounded account and position rows. ` +
+      `Use when: the user asks for positions, exposure, open account holdings, or account market state visible through Lighter's public account endpoint. ` +
+      `This is public provider data and must not be described as authenticated private account visibility unless a later auth-gated tool proves that path. ` +
+      `Example queries: lighter positions for account 42, rhc account exposure, core positions by wallet address.`,
+    ),
+    aliases: ["lighter positions", "account positions", "lighter exposure", "rhc positions"],
+    exampleIntents: ["lighter positions for account 42", "rhc account exposure", "core positions by wallet address"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.orderbook": {
     embeddingText: embeddingText(
       `Read resting Lighter order book orders for one market on Core or Robinhood Chain, with a strict visible depth cap on each side. ` +
@@ -82,7 +108,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 6;
+const EXPECTED_COUNT = 8;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

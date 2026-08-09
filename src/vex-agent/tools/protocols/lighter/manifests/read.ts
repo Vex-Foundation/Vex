@@ -7,6 +7,8 @@ import type { ProtocolParamDef, ProtocolToolManifest } from "../../types.js";
 import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-data.js";
 import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
+  LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+  LIGHTER_AGENT_ACCOUNT_ROW_MAX,
   LIGHTER_AGENT_MARKET_LIMIT_DEFAULT,
   LIGHTER_AGENT_MARKET_LIMIT_MAX,
   LIGHTER_AGENT_MARKET_PAGE_MAX,
@@ -46,6 +48,27 @@ const MARKET_FILTER_PARAM: ProtocolParamDef = {
   enum: LIGHTER_MARKET_FILTERS,
   description:
     "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+};
+
+const ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
+  key: "accountIndex",
+  type: "number",
+  description:
+    "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or l1Address.",
+};
+
+const L1_ADDRESS_PARAM: ProtocolParamDef = {
+  key: "l1Address",
+  type: "string",
+  description:
+    "Optional 0x-prefixed L1 EVM wallet address. Provide exactly one of l1Address or accountIndex.",
+};
+
+const ACTIVE_ONLY_PARAM: ProtocolParamDef = {
+  key: "activeOnly",
+  type: "boolean",
+  description:
+    "Optional Lighter account filter forwarded to the public account endpoint when supported.",
 };
 
 const MARKET_LIST_LIMIT_PARAM: ProtocolParamDef = {
@@ -112,6 +135,30 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     params: [ENVIRONMENT_PARAM, MARKET_ID_REQUIRED_PARAM, MARKET_FILTER_PARAM],
     exampleParams: { environment: "rhc", marketId: 0, filter: "all" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.market.get"],
+  },
+  {
+    toolId: "lighter.account.get",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      `Read public Lighter account state on Core or Robinhood Chain by account index or L1 address. Use when the user asks for public account balances, collateral, account status, assets, or account rows before deeper order/trade reads. Returns at most ${LIGHTER_AGENT_ACCOUNT_ROW_MAX} account rows and ${LIGHTER_AGENT_ACCOUNT_POSITION_MAX} inline positions/assets per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support.`,
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, L1_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
+    exampleParams: { environment: "rhc", accountIndex: 42 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.account.get"],
+  },
+  {
+    toolId: "lighter.positions",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      `Read positions exposed through Lighter's public account endpoint on Core or Robinhood Chain by account index or L1 address. Use when the user asks for public account positions, exposure, or holdings visible in Lighter account data. Returns bounded account rows and at most ${LIGHTER_AGENT_ACCOUNT_POSITION_MAX} positions per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support.`,
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, ACCOUNT_INDEX_PARAM, L1_ADDRESS_PARAM, ACTIVE_ONLY_PARAM],
+    exampleParams: { environment: "rhc", accountIndex: 42 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.positions"],
   },
   {
     toolId: "lighter.orderbook",

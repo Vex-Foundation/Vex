@@ -12,6 +12,9 @@ import { fail, ok } from "../../handler-helpers.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
+  LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+  LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+  readAccountLookup,
   readCountBack,
   readEnvironment,
   readMarketFilter,
@@ -26,9 +29,11 @@ import {
 } from "../params.js";
 import {
   projectCandles,
+  projectAccountResponse,
   projectMarket,
   projectMarketDetails,
   projectOrderBook,
+  projectPositions,
   projectRecentTrades,
   projectSystem,
   sortMarketsForDisplay,
@@ -183,6 +188,82 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       return fail(`Lighter market detail unavailable (${failureDetail("lighter.market.get", err)})`);
+    }
+  },
+
+  "lighter.account.get": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const lookup = readAccountLookup(params);
+    if (!lookup.ok) return fail(lookup.reason);
+
+    try {
+      const response = await getLighterClient().getAccount(environment.value, {
+        by: lookup.value.by,
+        value: lookup.value.value,
+        activeOnly: lookup.value.activeOnly,
+      });
+      return ok({
+        ...liveProvenance(environment.value, "lighter.account.get", [
+          LIGHTER_ENDPOINT_PATHS.account,
+        ], {
+          accountIndex: lookup.value.accountIndex,
+          l1Address: lookup.value.l1Address,
+          accountLookupSource: lookup.value.by,
+          authenticated: false,
+          outputAccountLimit: LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+          outputPositionLimit: LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+        }),
+        environment: environment.value,
+        accountIndex: lookup.value.accountIndex,
+        l1Address: lookup.value.l1Address,
+        activeOnly: lookup.value.activeOnly ?? null,
+        ...projectAccountResponse(
+          response,
+          LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+          LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+        ),
+      });
+    } catch (err) {
+      return fail(`Lighter account read unavailable (${failureDetail("lighter.account.get", err)})`);
+    }
+  },
+
+  "lighter.positions": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const lookup = readAccountLookup(params);
+    if (!lookup.ok) return fail(lookup.reason);
+
+    try {
+      const response = await getLighterClient().getAccount(environment.value, {
+        by: lookup.value.by,
+        value: lookup.value.value,
+        activeOnly: lookup.value.activeOnly,
+      });
+      return ok({
+        ...liveProvenance(environment.value, "lighter.positions", [
+          LIGHTER_ENDPOINT_PATHS.account,
+        ], {
+          accountIndex: lookup.value.accountIndex,
+          l1Address: lookup.value.l1Address,
+          accountLookupSource: lookup.value.by,
+          authenticated: false,
+          outputAccountLimit: LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+          outputPositionLimit: LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+        }),
+        environment: environment.value,
+        accountIndex: lookup.value.accountIndex,
+        l1Address: lookup.value.l1Address,
+        activeOnly: lookup.value.activeOnly ?? null,
+        ...projectPositions(
+          response,
+          LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+          LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
+        ),
+      });
+    } catch (err) {
+      return fail(`Lighter positions read unavailable (${failureDetail("lighter.positions", err)})`);
     }
   },
 

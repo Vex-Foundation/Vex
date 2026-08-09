@@ -1,6 +1,8 @@
 import type {
+  LighterAccount,
   LighterAccountOrder,
   LighterAccountOrdersResponse,
+  LighterAccountResponse,
   LighterCandle,
   LighterCandlesResponse,
   LighterMarket,
@@ -148,6 +150,62 @@ export function projectMarketDetails(response: LighterMarketDetailsResponse): Re
     ...response.order_book_details,
     ...response.spot_order_book_details,
   ].map(projectMarketDetail);
+}
+
+export function projectAccount(account: LighterAccount, positionLimit: number): Record<string, unknown> {
+  const positions = Array.isArray(account.positions) ? takeFirst(account.positions, positionLimit) : null;
+  const assets = Array.isArray(account.assets) ? takeFirst(account.assets, positionLimit) : null;
+  return {
+    accountIndex: account.index ?? account.account_index ?? null,
+    l1Address: account.l1_address ?? null,
+    status: account.status ?? null,
+    collateral: account.collateral ?? null,
+    availableBalance: account.available_balance ?? null,
+    positionCount: positions?.total ?? 0,
+    positionsTruncated: positions?.truncated ?? false,
+    positions: positions?.rows ?? [],
+    assetCount: assets?.total ?? 0,
+    assetsTruncated: assets?.truncated ?? false,
+    assets: assets?.rows ?? [],
+  };
+}
+
+export function projectAccountResponse(
+  response: LighterAccountResponse,
+  accountLimit: number,
+  positionLimit: number,
+): Record<string, unknown> {
+  const accounts = takeFirst(response.accounts.map((account) => projectAccount(account, positionLimit)), accountLimit);
+  return {
+    count: accounts.count,
+    totalProviderRows: response.total ?? accounts.total,
+    truncated: accounts.truncated || (response.total ?? accounts.total) > accounts.count,
+    accounts: accounts.rows,
+  };
+}
+
+export function projectPositions(
+  response: LighterAccountResponse,
+  accountLimit: number,
+  positionLimit: number,
+): Record<string, unknown> {
+  const accounts = takeFirst(response.accounts.map((account) => {
+    const positions = Array.isArray(account.positions) ? takeFirst(account.positions, positionLimit) : null;
+    return {
+      accountIndex: account.index ?? account.account_index ?? null,
+      l1Address: account.l1_address ?? null,
+      count: positions?.count ?? 0,
+      totalProviderRows: positions?.total ?? 0,
+      truncated: positions?.truncated ?? false,
+      positions: positions?.rows ?? [],
+    };
+  }), accountLimit);
+  return {
+    accountCount: accounts.count,
+    totalProviderAccounts: response.total ?? accounts.total,
+    truncatedAccounts: accounts.truncated || (response.total ?? accounts.total) > accounts.count,
+    accounts: accounts.rows,
+  };
 }
 
 export function projectOrder(order: LighterSimpleOrder): Record<string, unknown> {
