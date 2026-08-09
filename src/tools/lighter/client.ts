@@ -19,6 +19,10 @@ import {
 import { mapLighterError, mapLighterTransportError, readLighterErrorBody } from "./errors.js";
 import { LighterThrottle, parseRetryAfterMs } from "./throttle.js";
 import type {
+  LighterAccountQuery,
+  LighterAccountResponse,
+  LighterAccountTradesParams,
+  LighterAccountTradesResponse,
   LighterCandlesParams,
   LighterCandlesResponse,
   LighterMarketDetailQuery,
@@ -27,20 +31,26 @@ import type {
   LighterMarketsResponse,
   LighterOrderBookOrdersParams,
   LighterOrderBookOrdersResponse,
+  LighterReadOnlyTokensParams,
+  LighterReadOnlyTokensResponse,
   LighterRecentTradesParams,
   LighterRecentTradesResponse,
   LighterStatusResponse,
   LighterSystemConfigResponse,
 } from "./types.js";
 import {
+  validateLighterAccount,
+  validateLighterAccountTrades,
   validateLighterCandles,
   validateLighterMarketDetails,
   validateLighterMarkets,
   validateLighterOrderBookOrders,
+  validateLighterReadOnlyTokens,
   validateLighterRecentTrades,
   validateLighterStatus,
   validateLighterSystemConfig,
 } from "./validation.js";
+import { requireLighterReadOnlyAuthToken } from "./credentials.js";
 
 const REQUEST_HEADERS = {
   "User-Agent": "Vex-Agent/1.0 (+https://vexlabs.ai)",
@@ -48,6 +58,15 @@ const REQUEST_HEADERS = {
 } as const;
 
 type QueryValue = string | undefined;
+type LighterAuthMode = "read-only";
+export type LighterAuthTokenProvider = (
+  environment: LighterEnvironment,
+  mode: LighterAuthMode,
+) => string;
+
+interface RequestOptions {
+  readonly auth?: LighterAuthMode;
+}
 
 export class LighterClient {
   private readonly throttle: LighterThrottle;
@@ -55,6 +74,7 @@ export class LighterClient {
   constructor(
     private readonly endpoints: Record<LighterEnvironment, LighterEndpointConfig> = LIGHTER_ENDPOINTS,
     throttle = new LighterThrottle(),
+    private readonly authTokenProvider: LighterAuthTokenProvider = defaultAuthTokenProvider,
   ) {
     this.throttle = throttle;
   }
@@ -95,11 +115,14 @@ export class LighterClient {
     path: string,
     validator: (raw: unknown) => T,
     query?: Record<string, QueryValue>,
+    options: RequestOptions = {},
   ): Promise<T> {
     const url = this.buildUrl(environment, path, query);
+    const headers = this.headersFor(environment, options.auth);
     try {
-      return await this.throttle.run(url, environment, this.throttle.defaultTtlMs, async () => {
-        const response = await fetchWithTimeout(url, { headers: REQUEST_HEADERS });
+      const ttlMs = options.auth === undefined ? this.throttle.defaultTtlMs : 0;
+      return await this.throttle.run(url, environment, ttlMs, async () => {
+        const response = await fetchWithTimeout(url, { headers });
 
         if (!response.ok) {
           if (response.status === 429) {
@@ -117,6 +140,17 @@ export class LighterClient {
     }
   }
 
+  private headersFor(
+    environment: LighterEnvironment,
+    auth?: LighterAuthMode,
+  ): Record<string, string> {
+    if (auth === undefined) return { ...REQUEST_HEADERS };
+    return {
+      ...REQUEST_HEADERS,
+      Authorization: this.authTokenProvider(environment, auth),
+    };
+  }
+
   getStatus(environment: LighterEnvironment): Promise<LighterStatusResponse> {
     return this.request(environment, LIGHTER_ENDPOINT_PATHS.status, validateLighterStatus);
   }
@@ -126,6 +160,38 @@ export class LighterClient {
       environment,
       LIGHTER_ENDPOINT_PATHS.systemConfig,
       validateLighterSystemConfig,
+    );
+  }
+
+  async getAccount(
+    environment: LighterEnvironment,
+    params: LighterAccountQuery,
+  ): Promise<LighterAccountResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.account,
+      validateLighterAccount,
+      {
+        by: params.by,
+        value: String(params.value),
+        active_only: params.activeOnly === undefined ? undefined : String(params.activeOnly),
+      },
+    );
+  }
+
+  async getReadOnlyTokens(
+    environment: LighterEnvironment,
+    params: LighterReadOnlyTokensParams,
+  ): Promise<LighterReadOnlyTokensResponse> {
+    const accountIndex = readAccountIndex(params.accountIndex);
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.tokens,
+      validateLighterReadOnlyTokens,
+      {
+        account_index: String(accountIndex),
+      },
+      { auth: "read-only" },
     );
   }
 
@@ -199,6 +265,30 @@ export class LighterClient {
     );
   }
 
+  async getAccountTrades(
+    environment: LighterEnvironment,
+    params: LighterAccountTradesParams,
+  ): Promise<LighterAccountTradesResponse> {
+    const accountIndex = readAccountIndex(params.accountIndex);
+    const limit = readBoundedInt(
+      params.limit ?? 25,
+      "limit",
+      LIGHTER_RECENT_TRADES_LIMIT_MIN,
+      LIGHTER_RECENT_TRADES_LIMIT_MAX,
+    );
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.trades,
+      validateLighterAccountTrades,
+      {
+        account_index: String(accountIndex),
+        limit: String(limit),
+        sort_by: params.sortBy ?? "timestamp",
+      },
+      { auth: "read-only" },
+    );
+  }
+
   async getCandles(
     environment: LighterEnvironment,
     params: LighterCandlesParams,
@@ -223,6 +313,10 @@ export class LighterClient {
 
 function readUint16(value: number, field: string): number {
   return readBoundedInt(value, field, 0, 65_535);
+}
+
+function readAccountIndex(value: number): number {
+  return readBoundedInt(value, "accountIndex", 0, Number.MAX_SAFE_INTEGER);
 }
 
 function readBoundedInt(value: number, field: string, min: number, max: number): number {
@@ -305,6 +399,14 @@ function resolutionToMs(resolution: LighterCandleResolution): number {
 }
 
 let cachedClient: LighterClient | null = null;
+
+const defaultAuthTokenProvider: LighterAuthTokenProvider = (environment, mode) => {
+  if (mode === "read-only") return requireLighterReadOnlyAuthToken(environment);
+  throw new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `Unsupported Lighter auth mode: ${String(mode)}`,
+  );
+};
 
 export function getLighterClient(): LighterClient {
   if (cachedClient) return cachedClient;

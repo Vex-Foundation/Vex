@@ -118,6 +118,11 @@ export class LighterThrottle {
     ttlMs: number,
     fetcher: () => Promise<T>,
   ): Promise<T> {
+    if (ttlMs <= 0) {
+      await this.bucketFor(bucketKey).acquire();
+      return fetcher();
+    }
+
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > this.deps.now()) {
       return cached.value as T;

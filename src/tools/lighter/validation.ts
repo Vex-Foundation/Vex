@@ -5,10 +5,13 @@ import {
   LIGHTER_MARKET_FILTERS,
 } from "./constants.js";
 import type {
+  LighterAccountResponse,
+  LighterAccountTradesResponse,
   LighterCandlesResponse,
   LighterMarketDetailsResponse,
   LighterMarketsResponse,
   LighterOrderBookOrdersResponse,
+  LighterReadOnlyTokensResponse,
   LighterRecentTradesResponse,
   LighterStatusResponse,
   LighterSystemConfigResponse,
@@ -165,6 +168,45 @@ const systemConfigSchema = z
   })
   .passthrough();
 
+const accountSchema = z
+  .object({
+    index: int.optional(),
+    account_index: int.optional(),
+    l1_address: z.string().optional(),
+    status: int.optional(),
+    collateral: optionalNumericString,
+    available_balance: optionalNumericString,
+    positions: z.array(z.unknown()).optional(),
+    assets: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
+
+const accountResponseSchema = z
+  .object({
+    code: int,
+    message,
+    total: int.optional(),
+    accounts: z.array(accountSchema),
+  })
+  .passthrough();
+
+const readOnlyTokensResponseSchema = z
+  .object({
+    code: int,
+    message,
+    tokens: z.array(z.record(z.string(), z.unknown())).default([]),
+  })
+  .passthrough();
+
+const accountTradesResponseSchema = z
+  .object({
+    code: int,
+    message,
+    next_cursor: z.string().optional(),
+    trades: z.array(z.record(z.string(), z.unknown())),
+  })
+  .passthrough();
+
 const marketsResponseSchema = z
   .object({
     code: int,
@@ -237,6 +279,18 @@ export function validateLighterSystemConfig(raw: unknown): LighterSystemConfigRe
 
 export function validateLighterMarkets(raw: unknown): LighterMarketsResponse {
   return parseOrThrow(marketsResponseSchema, raw, "markets");
+}
+
+export function validateLighterAccount(raw: unknown): LighterAccountResponse {
+  return parseOrThrow(accountResponseSchema, raw, "account");
+}
+
+export function validateLighterReadOnlyTokens(raw: unknown): LighterReadOnlyTokensResponse {
+  return parseOrThrow(readOnlyTokensResponseSchema, raw, "read-only tokens");
+}
+
+export function validateLighterAccountTrades(raw: unknown): LighterAccountTradesResponse {
+  return parseOrThrow(accountTradesResponseSchema, raw, "account trades");
 }
 
 export function validateLighterMarketDetails(raw: unknown): LighterMarketDetailsResponse {

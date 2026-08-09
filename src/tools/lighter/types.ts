@@ -29,6 +29,41 @@ export interface LighterSystemConfigResponse {
   [key: string]: unknown;
 }
 
+export interface LighterAccount {
+  index?: number;
+  account_index?: number;
+  l1_address?: string;
+  status?: number;
+  collateral?: string;
+  available_balance?: string;
+  positions?: unknown[];
+  assets?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface LighterAccountResponse {
+  code: number;
+  message?: string;
+  total?: number;
+  accounts: LighterAccount[];
+  [key: string]: unknown;
+}
+
+export interface LighterReadOnlyTokensResponse {
+  code: number;
+  message?: string;
+  tokens: Record<string, unknown>[];
+  [key: string]: unknown;
+}
+
+export interface LighterAccountTradesResponse {
+  code: number;
+  message?: string;
+  next_cursor?: string;
+  trades: Record<string, unknown>[];
+  [key: string]: unknown;
+}
+
 export type LighterMarketType = "perp" | "spot";
 export type LighterMarketStatus = "inactive" | "active";
 
@@ -175,6 +210,22 @@ export interface LighterCandlesResponse {
 export interface LighterMarketQuery {
   marketId?: number;
   filter?: LighterMarketFilter;
+}
+
+export interface LighterAccountQuery {
+  by: "index" | "l1_address";
+  value: number | string;
+  activeOnly?: boolean;
+}
+
+export interface LighterReadOnlyTokensParams {
+  accountIndex: number;
+}
+
+export interface LighterAccountTradesParams {
+  accountIndex: number;
+  limit?: number;
+  sortBy?: "timestamp";
 }
 
 export interface LighterMarketDetailQuery {
