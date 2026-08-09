@@ -162,10 +162,8 @@ Which account endpoints require a credential is live-verified per endpoint, not
 inferred from the docs. Lighter's behavior is not uniform, and two endpoints
 that look equally account-scoped can sit on opposite sides of the auth line.
 
-Public classifications were rechecked on 2026-08-10. The auth-required rows are
-also covered by the Milestone 4 live auth smoke for Core and RHC
-(`/trades`, `/accountActiveOrders`, `/accountInactiveOrders`), but the full
-matrix probe must still be run with both tokens before S1 is closed.
+Full Core and RHC classifications were verified on 2026-08-10 with real
+read-only tokens through `pnpm run test:lighter:live:auth:prompt`.
 `pnpm run lighter:probe:auth` exits non-zero when that proof is incomplete.
 
 | Endpoint | Without credentials | With read-only token | Access |
@@ -173,10 +171,10 @@ matrix probe must still be run with both tokens before S1 is closed.
 | `/api/v1/account` | 200 | not required | public |
 | `/api/v1/accountsByL1Address` | 200 | not required | public |
 | `/api/v1/apikeys` | 200 | not required | public |
-| `/api/v1/accountActiveOrders` | 400, code 20001 | accepted in Milestone 4 live auth smoke | read-only token required |
-| `/api/v1/accountInactiveOrders` | 400, code 20001 | accepted in Milestone 4 live auth smoke | read-only token required |
-| `/api/v1/trades` | 400, code 20001 | accepted in Milestone 4 live auth smoke | read-only token required |
-| `/api/v1/tokens` | 400, `invalid param` | Core rejected with 401 in Milestone 4; full probe pending | closed to the read-only lane unless later proven otherwise |
+| `/api/v1/accountActiveOrders` | 400, code 20001 | 200 | read-only token required |
+| `/api/v1/accountInactiveOrders` | 400, code 20001 | 200 | read-only token required |
+| `/api/v1/trades` | 400, code 20001 | 200 | read-only token required |
+| `/api/v1/tokens` | 400, code 20001 | 401, invalid auth | closed to the read-only lane |
 
 Consequences for the tool surface:
 
@@ -255,3 +253,12 @@ Both environments returned 10 ask rows, 10 bid rows, 10 recent trade rows, and
 12 candle rows within the configured live smoke limits. The latest proof
 selected ETH on both Core and RHC after market-list output was hardened to sort
 before paging.
+
+2026-08-10 local time: `pnpm run test:lighter:live:auth:prompt` passed against
+real Core and RHC read-only tokens. The live auth runtime test proved
+`lighter.account.get`, `lighter.positions`, `lighter.openOrders`,
+`lighter.orderHistory`, and `lighter.trades` through `executeProtocolTool` for
+both environments. The full account auth matrix also completed for both
+environments: `/account`, `/accountsByL1Address`, and `/apikeys` were public;
+`/accountActiveOrders`, `/accountInactiveOrders`, and `/trades` required a
+read-only token; `/tokens` rejected the read-only lane with `401 invalid auth`.
