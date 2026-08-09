@@ -172,6 +172,7 @@ describe("local secret vault", () => {
       envFile,
       [
         'OPENROUTER_API_KEY="legacy"',
+        'LIGHTER_CORE_READ_ONLY_AUTH_TOKEN="ro:1:single:4102444800:abcdef"',
         'VEX_KEYSTORE_PASSWORD="legacy-password"',
         'AGENT_MODEL="openai/test"',
       ].join("\n") + "\n",
@@ -180,6 +181,7 @@ describe("local secret vault", () => {
     stripManagedSecretsFromDotenvFile(envFile);
     const raw = readFileSync(envFile, "utf8");
     expect(raw).not.toContain("OPENROUTER_API_KEY");
+    expect(raw).not.toContain("LIGHTER_CORE_READ_ONLY_AUTH_TOKEN");
     expect(raw).not.toContain("VEX_KEYSTORE_PASSWORD");
     expect(raw).toContain('AGENT_MODEL="openai/test"');
   });

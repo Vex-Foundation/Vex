@@ -9,6 +9,8 @@ export const VAULT_SECRET_KEYS = [
   // rate limits. Deliberately NOT a `requiresEnv` on any relay manifest — that
   // would hide the bridge tools from every keyless user.
   "RELAY_API_KEY",
+  "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
+  "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
   // Polymarket integration removed (Agent Scan §4.6): the 4 POLYMARKET_* keys
   // were dropped from this registry deliberately. Any already-vaulted values
   // are NOT migrated or purged here — the vault's `extraSecrets` retention
