@@ -316,6 +316,16 @@ describe("Lighter error mapping", () => {
     expect(excerpt?.length).toBeLessThanOrEqual(203);
   });
 
+  it("redacts Lighter read-only auth tokens from provider bodies", () => {
+    const token = "ro:42:all:4102444800:abcdef0123456789";
+    const excerpt = describeLighterBody({
+      message: `Authorization failed for ${token} and auth=${token}`,
+    });
+    expect(excerpt).not.toContain(token);
+    expect(excerpt).not.toContain("abcdef0123456789");
+    expect(excerpt).toContain("[auth]");
+  });
+
   it("keeps HTTP status when surfacing provider bodies", () => {
     const error = mapLighterError("rhc", 400, { error: { message: "bad market_id" } });
     expect(error.code).toBe(ErrorCodes.LIGHTER_INVALID_REQUEST);

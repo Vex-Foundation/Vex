@@ -81,6 +81,8 @@ const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 const SENSITIVE_FRAGMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   // Bearer tokens — BEFORE the header-name pattern below. See ordering note above.
   [/\bbearer\s+\S+/gi, "[auth]"],
+  // Lighter read-only auth tokens. These can appear without a scheme/header.
+  [/\bro:\d+:(?:single|all):\d+:[0-9a-fA-F]+\b/g, "[auth]"],
   // Auth headers (header: value OR header=value) — value consumes to
   // end-of-line/segment, not just one token. See fail-closed note above.
   [/\b(authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]+/gi, "[auth]"],
@@ -97,7 +99,7 @@ const SENSITIVE_FRAGMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   // Key/secret/token ASSIGNMENTS (key=value shape) — single-token value is
   // the established convention for this shape (unlike headers, an assignment
   // is not observed to carry multi-part semicolon-separated values).
-  [/\b(api[_-]?key|apikey|access[_-]?token|secret|password|passwd|pwd|token|key)\s*[:=]\s*\S+/gi, "[auth]"],
+  [/\b(api[_-]?key|apikey|access[_-]?token|secret|password|passwd|pwd|token|auth|key)\s*[:=]\s*\S+/gi, "[auth]"],
 ];
 
 /**
