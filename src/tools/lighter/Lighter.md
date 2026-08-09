@@ -233,6 +233,10 @@ mode does not prove read-only token reachability.
   token while accepting account trade history. This smoke also calls
   `/api/v1/account`, which the auth matrix later showed to be public. That call
   exercises the client path but is not evidence of authenticated access.
+- Prompted live proof: `pnpm run test:lighter:live:auth:prompt` asks for the
+  Core read-only token, then the RHC read-only token, hides both inputs, and
+  runs the live auth smoke followed by the full account auth matrix probe with
+  those tokens only in child-process environment variables.
 
 ## Live Verification Notes
 
