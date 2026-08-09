@@ -114,6 +114,7 @@ export type LighterTradeType = "trade" | "liquidation" | "deleverage" | "market-
 
 export interface LighterTrade {
   trade_id: number;
+  trade_id_str: string;
   tx_hash: string;
   type: LighterTradeType;
   market_id: number;
@@ -121,7 +122,9 @@ export interface LighterTrade {
   price: string;
   usd_amount: string;
   ask_id: number;
+  ask_id_str: string;
   bid_id: number;
+  bid_id_str: string;
   ask_account_id: number;
   bid_account_id: number;
   is_maker_ask: boolean;
@@ -134,9 +137,6 @@ export interface LighterTrade {
   bid_client_id?: number;
   ask_client_id_str?: string;
   bid_client_id_str?: string;
-  ask_id_str?: string;
-  bid_id_str?: string;
-  trade_id_str?: string;
   [key: string]: unknown;
 }
 

@@ -45,6 +45,9 @@ const READ_CTX: ProtocolExecutionContext = {
   walletPolicy: { kind: "none" },
 };
 
+const UNSAFE_INTEGER = Number.MAX_SAFE_INTEGER + 1;
+const UNSAFE_INTEGER_2 = Number.MAX_SAFE_INTEGER + 3;
+
 const MARKET: LighterMarket = {
   symbol: "ETH-USD",
   market_id: 0,
@@ -100,6 +103,7 @@ function order(id: number, price: string): LighterSimpleOrder {
 function trade(id: number): LighterTrade {
   return {
     trade_id: id,
+    trade_id_str: String(id),
     tx_hash: `0x${id}`,
     type: "trade",
     market_id: 0,
@@ -107,14 +111,15 @@ function trade(id: number): LighterTrade {
     price: "3500",
     usd_amount: "875",
     ask_id: 10,
+    ask_id_str: "10",
     bid_id: 11,
+    bid_id_str: "11",
     ask_account_id: 12,
     bid_account_id: 13,
     is_maker_ask: true,
     block_height: 99,
     timestamp: 1786147200000 + id,
     transaction_time: 1786147200000 + id,
-    trade_id_str: `trade-${id}`,
   };
 }
 
@@ -232,8 +237,16 @@ describe("Lighter agent read handlers", () => {
   });
 
   it("sorts order book orders into best price order before truncating", async () => {
-    const asks = Object.freeze([order(1, "3503"), order(2, "3501"), order(3, "3502")]);
-    const bids = Object.freeze([order(4, "3498"), order(5, "3500"), order(6, "3499")]);
+    const asks = Object.freeze([
+      order(1, "3503"),
+      { ...order(2, "3501"), order_index: UNSAFE_INTEGER, order_id: String(UNSAFE_INTEGER) },
+      order(3, "3502"),
+    ]);
+    const bids = Object.freeze([
+      order(4, "3498"),
+      { ...order(5, "3500"), order_index: UNSAFE_INTEGER_2, order_id: String(UNSAFE_INTEGER_2) },
+      order(6, "3499"),
+    ]);
     mocks.client.getOrderBookOrders.mockResolvedValue({
       code: 200,
       total_asks: 3,
@@ -257,15 +270,30 @@ describe("Lighter agent read handlers", () => {
       asks: "price_ascending",
       bids: "price_descending",
     });
-    expect((data.asks as Record<string, unknown>[]).map((row) => row.price)).toEqual(["3501", "3502"]);
-    expect((data.bids as Record<string, unknown>[]).map((row) => row.price)).toEqual(["3500", "3499"]);
+    const projectedAsks = data.asks as Record<string, unknown>[];
+    const projectedBids = data.bids as Record<string, unknown>[];
+    expect(projectedAsks.map((row) => row.price)).toEqual(["3501", "3502"]);
+    expect(projectedBids.map((row) => row.price)).toEqual(["3500", "3499"]);
+    expect(projectedAsks[0]?.orderIndex).toBeNull();
+    expect(projectedAsks[0]?.orderIndexPrecision).toBe("unsafe_provider_number_omitted");
+    expect(projectedBids[0]?.orderIndex).toBeNull();
+    expect(projectedBids[0]?.orderIndexPrecision).toBe("unsafe_provider_number_omitted");
   });
 
   it("reads recent trades with bounded rows and next cursor disclosure", async () => {
+    const unsafeTrade: LighterTrade = {
+      ...trade(1),
+      trade_id: UNSAFE_INTEGER,
+      trade_id_str: String(UNSAFE_INTEGER),
+      ask_id: UNSAFE_INTEGER,
+      ask_id_str: String(UNSAFE_INTEGER),
+      bid_id: UNSAFE_INTEGER_2,
+      bid_id_str: String(UNSAFE_INTEGER_2),
+    };
     mocks.client.getRecentTrades.mockResolvedValue({
       code: 200,
       next_cursor: "cursor-1",
-      trades: [trade(1), trade(2), trade(3)],
+      trades: [unsafeTrade, trade(2), trade(3)],
     });
 
     const data = await callJson("lighter.recentTrades", {
@@ -279,6 +307,17 @@ describe("Lighter agent read handlers", () => {
     expect(data.totalProviderRows).toBe(3);
     expect(data.truncated).toBe(true);
     expect(data.nextCursor).toBe("cursor-1");
+    const first = (data.trades as Record<string, unknown>[])[0]!;
+    expect(first.tradeId).toBe(String(UNSAFE_INTEGER));
+    expect(first.tradeIdPrecision).toBe("provider_string_canonical");
+    expect(first.tradeIdNumeric).toBeNull();
+    expect(first.tradeIdNumericPrecision).toBe("unsafe_provider_number_omitted");
+    expect(first.askOrderId).toBe(String(UNSAFE_INTEGER));
+    expect(first.askOrderIdNumeric).toBeNull();
+    expect(first.askOrderIdNumericPrecision).toBe("unsafe_provider_number_omitted");
+    expect(first.bidOrderId).toBe(String(UNSAFE_INTEGER_2));
+    expect(first.bidOrderIdNumeric).toBeNull();
+    expect(first.bidOrderIdNumericPrecision).toBe("unsafe_provider_number_omitted");
   });
 
   it("reads candles with millisecond timestamps and caps agent output to newest rows", async () => {

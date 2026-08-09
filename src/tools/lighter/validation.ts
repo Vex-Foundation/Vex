@@ -21,6 +21,10 @@ const providerInteger = z
   .refine((value) => Number.isInteger(value), { message: "Expected integer" });
 const finiteNumber = z.number().finite();
 const numericString = z.string().min(1);
+const integerString = z.string().regex(/^\d+$/, {
+  message: "Expected decimal integer string",
+});
+const optionalIntegerString = integerString.optional();
 const optionalNumericString = z.string().optional();
 const message = z.string().optional();
 
@@ -80,7 +84,7 @@ const marketDetailSchema = marketSchema
 const simpleOrderSchema = z
   .object({
     order_index: providerInteger,
-    order_id: numericString,
+    order_id: integerString,
     owner_account_index: int,
     initial_base_amount: numericString,
     remaining_base_amount: numericString,
@@ -93,6 +97,7 @@ const simpleOrderSchema = z
 const tradeSchema = z
   .object({
     trade_id: providerInteger,
+    trade_id_str: integerString,
     tx_hash: z.string().min(1),
     type: z.enum(["trade", "liquidation", "deleverage", "market-settlement"]),
     market_id: int,
@@ -100,7 +105,9 @@ const tradeSchema = z
     price: numericString,
     usd_amount: numericString,
     ask_id: providerInteger,
+    ask_id_str: integerString,
     bid_id: providerInteger,
+    bid_id_str: integerString,
     ask_account_id: int,
     bid_account_id: int,
     is_maker_ask: z.boolean(),
@@ -111,11 +118,8 @@ const tradeSchema = z
     maker_fee: int.optional(),
     ask_client_id: providerInteger.optional(),
     bid_client_id: providerInteger.optional(),
-    ask_client_id_str: z.string().optional(),
-    bid_client_id_str: z.string().optional(),
-    ask_id_str: z.string().optional(),
-    bid_id_str: z.string().optional(),
-    trade_id_str: z.string().optional(),
+    ask_client_id_str: optionalIntegerString,
+    bid_client_id_str: optionalIntegerString,
   })
   .passthrough();
 

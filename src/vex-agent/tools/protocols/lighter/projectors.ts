@@ -43,8 +43,8 @@ function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function safeIntegerOrNull(value: number): number | null {
-  return Number.isSafeInteger(value) ? value : null;
+function safeIntegerOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 
 export function projectMarket(market: LighterMarket): Record<string, unknown> {
@@ -169,13 +169,15 @@ export function projectOrderBook(response: LighterOrderBookOrdersResponse, limit
 }
 
 export function projectTrade(trade: LighterTrade): Record<string, unknown> {
-  const tradeId = safeIntegerOrNull(trade.trade_id);
-  const askOrderId = safeIntegerOrNull(trade.ask_id);
-  const bidOrderId = safeIntegerOrNull(trade.bid_id);
+  const tradeIdNumeric = safeIntegerOrNull(trade.trade_id);
+  const askOrderIdNumeric = safeIntegerOrNull(trade.ask_id);
+  const bidOrderIdNumeric = safeIntegerOrNull(trade.bid_id);
   return {
-    tradeId,
-    tradeIdPrecision: tradeId === null ? "unsafe_provider_number_omitted" : "safe",
-    tradeIdStr: trade.trade_id_str ?? null,
+    tradeId: trade.trade_id_str,
+    tradeIdPrecision: "provider_string_canonical",
+    tradeIdNumeric,
+    tradeIdNumericPrecision: tradeIdNumeric === null ? "unsafe_provider_number_omitted" : "safe",
+    tradeIdStr: trade.trade_id_str,
     type: trade.type,
     marketId: trade.market_id,
     price: trade.price,
@@ -184,12 +186,16 @@ export function projectTrade(trade: LighterTrade): Record<string, unknown> {
     isMakerAsk: trade.is_maker_ask,
     askAccountId: trade.ask_account_id,
     bidAccountId: trade.bid_account_id,
-    askOrderId,
-    askOrderIdPrecision: askOrderId === null ? "unsafe_provider_number_omitted" : "safe",
-    askOrderIdStr: trade.ask_id_str ?? null,
-    bidOrderId,
-    bidOrderIdPrecision: bidOrderId === null ? "unsafe_provider_number_omitted" : "safe",
-    bidOrderIdStr: trade.bid_id_str ?? null,
+    askOrderId: trade.ask_id_str,
+    askOrderIdPrecision: "provider_string_canonical",
+    askOrderIdNumeric,
+    askOrderIdNumericPrecision: askOrderIdNumeric === null ? "unsafe_provider_number_omitted" : "safe",
+    askOrderIdStr: trade.ask_id_str,
+    bidOrderId: trade.bid_id_str,
+    bidOrderIdPrecision: "provider_string_canonical",
+    bidOrderIdNumeric,
+    bidOrderIdNumericPrecision: bidOrderIdNumeric === null ? "unsafe_provider_number_omitted" : "safe",
+    bidOrderIdStr: trade.bid_id_str,
     blockHeight: trade.block_height,
     timestamp: trade.timestamp,
     transactionTime: trade.transaction_time ?? null,

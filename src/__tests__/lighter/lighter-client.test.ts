@@ -50,6 +50,7 @@ const ORDER = {
 
 const TRADE = {
   trade_id: 1,
+  trade_id_str: "1",
   tx_hash: "0xabc",
   type: "trade",
   market_id: 0,
@@ -57,13 +58,17 @@ const TRADE = {
   price: "3000",
   usd_amount: "300",
   ask_id: 1,
+  ask_id_str: "1",
   bid_id: 2,
+  bid_id_str: "2",
   ask_account_id: 3,
   bid_account_id: 4,
   is_maker_ask: false,
   block_height: 5,
   timestamp: 1717777777,
 };
+
+const UNSAFE_INTEGER = Number.MAX_SAFE_INTEGER + 1;
 
 const originalFetch = globalThis.fetch;
 let client: LighterClient;
@@ -201,10 +206,46 @@ describe("LighterClient validation", () => {
     expect(book.asks[0].remaining_base_amount).toBe("5");
   });
 
+  it("rejects non-decimal exact order ids", async () => {
+    mockOk({
+      code: 200,
+      total_asks: 1,
+      asks: [{ ...ORDER, order_id: "order-1" }],
+      total_bids: 0,
+      bids: [],
+    });
+    await expect(client.getOrderBookOrders("core", { marketId: 0, limit: 1 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
+  });
+
   it("validates recent trades", async () => {
     mockOk({ code: 200, trades: [TRADE] });
     const tape = await client.getRecentTrades("core", { marketId: 0, limit: 1 });
     expect(tape.trades[0].price).toBe("3000");
+    expect(tape.trades[0].ask_id_str).toBe("1");
+  });
+
+  it("requires exact string ids on recent trades", async () => {
+    const { ask_id_str: _askIdStr, ...tradeWithoutAskString } = TRADE;
+    mockOk({ code: 200, trades: [tradeWithoutAskString] });
+    await expect(client.getRecentTrades("core", { marketId: 0, limit: 1 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
+  });
+
+  it("rejects non-decimal exact trade ids", async () => {
+    mockOk({
+      code: 200,
+      trades: [{
+        ...TRADE,
+        trade_id: UNSAFE_INTEGER,
+        trade_id_str: "trade-9007199254740992",
+      }],
+    });
+    await expect(client.getRecentTrades("core", { marketId: 0, limit: 1 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
   });
 
   it("rejects malformed provider responses", async () => {
