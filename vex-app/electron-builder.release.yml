@@ -9,17 +9,20 @@
 #
 # Release matrix (owner-agreed 2026-07-05, see vex-expand/dystrybucja-macos-github.md
 # §"Ustalenia platformowe"): macOS arm64 + x64 (Developer ID + notarization,
-# two separate per-arch artifacts) and Linux x64 (AppImage + deb, unsigned).
-# Windows is a deliberate SECOND release (needs an OV/EV cert) and is absent here.
+# two separate per-arch artifacts), Windows x64 (NSIS, Azure Trusted Signing,
+# added 2026-08) and Linux x64 (AppImage + deb, unsigned).
 #
 # Secrets are read from the CI ENVIRONMENT ONLY — never stored in this repo:
-#   CSC_LINK           Developer ID Application cert (.p12, base64)
-#   CSC_KEY_PASSWORD   password protecting that .p12
-#   APPLE_API_KEY      path to the App Store Connect API key (.p8); the release
-#                      workflow decodes APPLE_API_KEY_B64 to a temp file and sets it
-#   APPLE_API_KEY_ID   App Store Connect API Key ID (notarytool)
-#   APPLE_API_ISSUER   App Store Connect Issuer ID (notarytool)
-#   GH_TOKEN           GitHub Releases upload (CI: secrets.GITHUB_TOKEN)
+#   CSC_LINK            Developer ID Application cert (.p12, base64)
+#   CSC_KEY_PASSWORD    password protecting that .p12
+#   APPLE_API_KEY       path to the App Store Connect API key (.p8); the release
+#                       workflow decodes APPLE_API_KEY_B64 to a temp file and sets it
+#   APPLE_API_KEY_ID    App Store Connect API Key ID (notarytool)
+#   APPLE_API_ISSUER    App Store Connect Issuer ID (notarytool)
+#   AZURE_TENANT_ID     Entra tenant id (Windows signing, EnvironmentCredential)
+#   AZURE_CLIENT_ID     service principal appId (Windows signing)
+#   AZURE_CLIENT_SECRET service principal secret (Windows signing)
+#   GH_TOKEN            GitHub Releases upload (CI: secrets.GITHUB_TOKEN)
 
 # appId: permanent app-identity / auto-updater / userData contract. Locked to
 # ai.projectvex.app (reverse-DNS of app.projectvex.ai) by owner decision before
@@ -37,8 +40,8 @@ productName: Vex
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 # Production MUST be signed. Fails the build if a signing identity is missing on
-# a code-signed platform (macOS here) — prevents an accidental unsigned release.
-# No-op for Linux targets (AppImage/deb are not code-signed).
+# a code-signed platform (macOS and Windows here) — prevents an accidental
+# unsigned release. No-op for Linux targets (AppImage/deb are not code-signed).
 forceCodeSigning: true
 
 asar: true
@@ -92,6 +95,38 @@ mac:
   # notarization with only a warning — the release workflow's preflight fails fast
   # beforehand so an un-notarized build is never published.
   notarize: true
+
+win:
+  target:
+    - target: nsis # electron-updater's Windows path (emits latest.yml + blockmap)
+      arch: [x64] # x64 only for the first Windows release; arm64 later
+  icon: build/icon.ico
+  # electron-updater compares the publisher of a downloaded update against
+  # azureSignOptions.publisherName before installing. true is the default -
+  # pinned explicitly because the release profile must never flip it off.
+  verifyUpdateCodeSignature: true
+  # Azure Trusted Signing via electron-builder's native path. Signing happens
+  # INSIDE the build: latest.yml sha512 hashes are computed AFTER signing, so a
+  # post-build signing step would corrupt auto-update for every client - never
+  # add one. Auth comes from the CI environment only (EnvironmentCredential):
+  # AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET.
+  azureSignOptions:
+    # MUST equal the certificate Subject CN character-for-character, including
+    # the trailing period after "LTD" - verified against the live certificate
+    # profile 2026-08-08. Do not alter, do not "tidy". A mismatch makes every
+    # installed app silently refuse its own updates. This value is also written
+    # into app-update.yml as the publisherName electron-updater verifies
+    # downloaded installers against (app-builder-lib PublishManager).
+    publisherName: "VEX LABS PTE. LTD."
+    endpoint: https://eus.codesigning.azure.net/
+    codeSigningAccountName: vexlabssigning
+    certificateProfileName: vex-app-signing
+    # app-builder-lib 26.8.1 defaults both keys to exactly these values; pinned
+    # so an electron-builder upgrade cannot silently drop timestamping. Trusted
+    # Signing leaf certs live ~72h - an untimestamped signature dies with them
+    # and Defender then flags the binary.
+    timestampRfc3161: http://timestamp.acs.microsoft.com
+    timestampDigest: SHA256
 
 linux:
   category: Finance

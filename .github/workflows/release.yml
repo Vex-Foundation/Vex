@@ -1,15 +1,19 @@
 # Vex — release pipeline (Wave 4).
 #
 # Builds, signs, notarizes, and publishes the desktop app to GitHub Releases on
-# a version tag. Two independent jobs run in parallel on OS-native runners:
+# a version tag. Three independent jobs run in parallel on OS-native runners:
 #   - macOS  (macos-latest): dmg + zip, arm64 AND x64, Developer ID signed +
 #     notarized. Consumes the 5 Apple/signing secrets.
 #   - Linux  (ubuntu-latest): AppImage + deb, x64, unsigned. Needs no signing
 #     secrets, so it ships even while Apple account approval is pending
 #     (owner-agreed strategy — Linux is independent of macOS/Apple delays).
+#   - Windows (windows-latest): NSIS installer, x64, signed + RFC3161
+#     timestamped via Azure Trusted Signing (electron-builder azureSignOptions,
+#     account vexlabssigning / profile vex-app-signing). Consumes the 3 Azure
+#     secrets.
 #
 # electron-updater (GitHub provider) consumes latest-mac.yml / latest-linux.yml
-# that electron-builder emits into each release. The packaged app auto-loads the
+# / latest.yml (Windows) that electron-builder emits into each release. The packaged app auto-loads the
 # app-update.yml electron-builder generates from the `publish` block in
 # vex-app/electron-builder.release.yml — no feed URL is hardcoded in app source.
 #
@@ -31,9 +35,12 @@
 #   APPLE_API_KEY_B64  App Store Connect API key (.p8) base64-encoded (notarytool)
 #   APPLE_API_KEY_ID   App Store Connect API Key ID
 #   APPLE_API_ISSUER   App Store Connect Issuer ID (UUID)
+#   AZURE_TENANT_ID    Entra tenant id (Windows signing, EnvironmentCredential)
+#   AZURE_CLIENT_ID    appId of the vex-github-signing service principal
+#   AZURE_CLIENT_SECRET client secret of that principal (github-actions-release-4,
+#                      expires 2028-08-09 - when it lapses the windows job fails
+#                      with a 401; rotate in Entra and update this secret)
 #   GITHUB_TOKEN       provided automatically by Actions (no setup)
-#
-# Windows is a deliberate SECOND release (needs an OV/EV cert) and is not built here.
 
 name: Release
 
@@ -300,3 +307,109 @@ jobs:
         run: pnpm exec electron-builder --linux --publish always --config electron-builder.release.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    name: Build, sign & publish Windows (x64)
+    needs: create-release
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            vex-app/pnpm-lock.yaml
+
+      - name: Verify tag matches vex-app/package.json version
+        working-directory: vex-app
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match vex-app/package.json version $PKG - bump the version before tagging."
+            exit 1
+          fi
+          echo "Version OK: $PKG"
+
+      # Fail closed BEFORE the ~15-minute build: a missing Azure credential
+      # otherwise surfaces as a confusing TrustedSigning/signtool error deep
+      # inside packaging. forceCodeSigning only catches a FAILED sign attempt,
+      # not an absent credential.
+      - name: Preflight - require Azure signing credentials
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          missing=""
+          for v in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required Windows signing secret(s):$missing - add them in repo Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          echo "Azure signing credentials present."
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        working-directory: vex-app
+        run: pnpm install --frozen-lockfile
+
+      - name: Build app
+        working-directory: vex-app
+        run: pnpm run build
+
+      # app-builder-lib's WindowsSignAzureManager authenticates through
+      # DefaultAzureCredential's EnvironmentCredential using these three vars.
+      # Verified in the installed 26.8.1: initialize() hard-requires
+      # AZURE_TENANT_ID + AZURE_CLIENT_ID plus a secret/certificate credential,
+      # so an azure/login OIDC session alone CANNOT satisfy it - switching to
+      # OIDC needs upstream electron-builder support first. The same manager
+      # applies the RFC3161 timestamp (pinned in the release profile).
+      - name: Package, sign & publish
+        working-directory: vex-app
+        run: pnpm exec electron-builder --win --x64 --publish always --config electron-builder.release.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      # Windows analogue of the macOS stapler/spctl gate. Fail closed if any
+      # produced .exe is unsigned, untimestamped, or attributed to the wrong
+      # publisher. Runs after --publish uploaded to the DRAFT release, which
+      # stays invisible to updaters until the owner publishes it.
+      - name: Verify Authenticode signature
+        working-directory: vex-app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem -Path dist-electron -Filter *.exe -Recurse
+          if ($files.Count -eq 0) {
+            Write-Error "No .exe produced in dist-electron - packaging failed."
+          }
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            Write-Host "$($f.Name): $($sig.Status) | $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') {
+              Write-Error "Signature not Valid for $($f.Name): $($sig.Status)"
+            }
+            if ($sig.SignerCertificate.Subject -notmatch 'VEX LABS PTE\. LTD\.') {
+              Write-Error "Unexpected signer for $($f.Name): $($sig.SignerCertificate.Subject)"
+            }
+            if (-not $sig.TimeStamperCertificate) {
+              Write-Error "No RFC3161 timestamp on $($f.Name) - an untimestamped signature dies with the ~72h Trusted Signing leaf cert."
+            }
+          }
+          Write-Host "All Windows artifacts signed, timestamped and attributed correctly."
