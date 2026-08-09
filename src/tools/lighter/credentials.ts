@@ -18,6 +18,13 @@ export interface LighterReadOnlyCredentialStatus {
   readonly metadata: LighterReadOnlyAuthTokenMetadata | null;
 }
 
+export interface LighterReadOnlyAccountAuthorization {
+  readonly token: string;
+  readonly metadata: LighterReadOnlyAuthTokenMetadata;
+  readonly accountIndex: number;
+  readonly accountIndexSource: "credential" | "caller";
+}
+
 export function lighterReadOnlyAuthTokenEnvKey(
   environment: LighterEnvironment,
 ): (typeof LIGHTER_READ_ONLY_AUTH_TOKEN_ENV_KEYS)[LighterEnvironment] {
@@ -70,4 +77,45 @@ export function requireLighterReadOnlyAuthToken(
     );
   }
   return token;
+}
+
+export function authorizeLighterReadOnlyAuthTokenForAccount(
+  environment: LighterEnvironment,
+  token: string,
+  requestedAccountIndex?: number,
+  nowMs = Date.now(),
+): LighterReadOnlyAccountAuthorization {
+  const metadata = parseLighterReadOnlyAuthToken(environment, token, nowMs);
+  if (metadata.expired) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Expired Lighter read-only auth token for ${environment}.`,
+      `Replace ${lighterReadOnlyAuthTokenEnvKey(environment)} with a current Lighter read-only token. Do not use a Lighter API private key.`,
+    );
+  }
+
+  const accountIndex = requestedAccountIndex ?? metadata.accountIndex;
+  if (metadata.scope === "single" && accountIndex !== metadata.accountIndex) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Lighter read-only auth token for ${environment} is scoped to account ${metadata.accountIndex}, not account ${accountIndex}.`,
+      "Use the account index embedded in the read-only token, or generate an all-subaccount read-only token.",
+    );
+  }
+
+  return {
+    token,
+    metadata,
+    accountIndex,
+    accountIndexSource: requestedAccountIndex === undefined ? "credential" : "caller",
+  };
+}
+
+export function requireLighterReadOnlyAuthForAccount(
+  environment: LighterEnvironment,
+  requestedAccountIndex?: number,
+  nowMs = Date.now(),
+): LighterReadOnlyAccountAuthorization {
+  const token = requireLighterReadOnlyAuthToken(environment, nowMs);
+  return authorizeLighterReadOnlyAuthTokenForAccount(environment, token, requestedAccountIndex, nowMs);
 }

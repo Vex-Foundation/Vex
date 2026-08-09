@@ -204,6 +204,29 @@ describe("LighterClient URL selection", () => {
     expect(url.searchParams.get("limit")).toBe("1");
   });
 
+  it("defaults authenticated account reads to the token account index", async () => {
+    mockOk({ code: 200, orders: [] });
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:single:4102444800:abcdef");
+
+    await authClient.getAccountActiveOrders("core", {});
+
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/accountActiveOrders");
+    expect(url.searchParams.get("account_index")).toBe("42");
+  });
+
+  it("refuses account reads outside a single-account token before sending", async () => {
+    const authClient = new LighterClient(ENDPOINTS, undefined, () => "ro:42:single:4102444800:abcdef");
+
+    await expect(
+      authClient.getAccountActiveOrders("core", { accountIndex: 43 }),
+    ).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+      message: "Lighter read-only auth token for core is scoped to account 42, not account 43.",
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("does not cache authenticated reads", async () => {
     mockOk({ code: 200, tokens: [{ token_id: "first" }] });
     mockOk({ code: 200, tokens: [{ token_id: "second" }] });

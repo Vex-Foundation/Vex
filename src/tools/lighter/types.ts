@@ -269,13 +269,13 @@ export interface LighterReadOnlyTokensParams {
 }
 
 export interface LighterAccountTradesParams {
-  accountIndex: number;
+  accountIndex?: number;
   limit?: number;
   sortBy?: "timestamp";
 }
 
 export interface LighterAccountActiveOrdersParams {
-  accountIndex: number;
+  accountIndex?: number;
   marketId?: number;
   marketType?: LighterMarketFilter;
 }

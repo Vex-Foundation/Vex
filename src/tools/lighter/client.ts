@@ -54,7 +54,11 @@ import {
   validateLighterStatus,
   validateLighterSystemConfig,
 } from "./validation.js";
-import { requireLighterReadOnlyAuthToken } from "./credentials.js";
+import {
+  authorizeLighterReadOnlyAuthTokenForAccount,
+  requireLighterReadOnlyAuthToken,
+  type LighterReadOnlyAccountAuthorization,
+} from "./credentials.js";
 
 const REQUEST_HEADERS = {
   "User-Agent": "Vex-Agent/1.0 (+https://vexlabs.ai)",
@@ -70,6 +74,7 @@ export type LighterAuthTokenProvider = (
 
 interface RequestOptions {
   readonly auth?: LighterAuthMode;
+  readonly authToken?: string;
 }
 
 export class LighterClient {
@@ -122,7 +127,7 @@ export class LighterClient {
     options: RequestOptions = {},
   ): Promise<T> {
     const url = this.buildUrl(environment, path, query);
-    const headers = this.headersFor(environment, options.auth);
+    const headers = this.headersFor(environment, options.auth, options.authToken);
     try {
       const ttlMs = options.auth === undefined ? this.throttle.defaultTtlMs : 0;
       return await this.throttle.run(url, environment, ttlMs, async () => {
@@ -147,12 +152,24 @@ export class LighterClient {
   private headersFor(
     environment: LighterEnvironment,
     auth?: LighterAuthMode,
+    authToken?: string,
   ): Record<string, string> {
     if (auth === undefined) return { ...REQUEST_HEADERS };
     return {
       ...REQUEST_HEADERS,
-      Authorization: this.authTokenProvider(environment, auth),
+      Authorization: authToken ?? this.authTokenProvider(environment, auth),
     };
+  }
+
+  private readOnlyAuthForAccount(
+    environment: LighterEnvironment,
+    requestedAccountIndex?: number,
+  ): LighterReadOnlyAccountAuthorization {
+    return authorizeLighterReadOnlyAuthTokenForAccount(
+      environment,
+      this.authTokenProvider(environment, "read-only"),
+      requestedAccountIndex,
+    );
   }
 
   getStatus(environment: LighterEnvironment): Promise<LighterStatusResponse> {
@@ -203,12 +220,13 @@ export class LighterClient {
     environment: LighterEnvironment,
     params: LighterAccountActiveOrdersParams,
   ): Promise<LighterAccountOrdersResponse> {
+    const auth = this.readOnlyAuthForAccount(environment, params.accountIndex);
     return this.request(
       environment,
       LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
       validateLighterAccountOrders,
-      buildAccountOrdersQuery(params),
-      { auth: "read-only" },
+      buildAccountOrdersQuery({ ...params, accountIndex: auth.accountIndex }),
+      { auth: "read-only", authToken: auth.token },
     );
   }
 
@@ -216,6 +234,7 @@ export class LighterClient {
     environment: LighterEnvironment,
     params: LighterAccountInactiveOrdersParams,
   ): Promise<LighterAccountOrdersResponse> {
+    const auth = this.readOnlyAuthForAccount(environment, params.accountIndex);
     const limit = readBoundedInt(
       params.limit ?? 25,
       "limit",
@@ -227,10 +246,10 @@ export class LighterClient {
       LIGHTER_ENDPOINT_PATHS.accountInactiveOrders,
       validateLighterAccountOrders,
       {
-        ...buildAccountOrdersQuery(params),
+        ...buildAccountOrdersQuery({ ...params, accountIndex: auth.accountIndex }),
         limit: String(limit),
       },
-      { auth: "read-only" },
+      { auth: "read-only", authToken: auth.token },
     );
   }
 
@@ -308,7 +327,8 @@ export class LighterClient {
     environment: LighterEnvironment,
     params: LighterAccountTradesParams,
   ): Promise<LighterAccountTradesResponse> {
-    const accountIndex = readAccountIndex(params.accountIndex);
+    const auth = this.readOnlyAuthForAccount(environment, params.accountIndex);
+    const accountIndex = readAccountIndex(auth.accountIndex);
     const limit = readBoundedInt(
       params.limit ?? 25,
       "limit",
@@ -324,7 +344,7 @@ export class LighterClient {
         limit: String(limit),
         sort_by: params.sortBy ?? "timestamp",
       },
-      { auth: "read-only" },
+      { auth: "read-only", authToken: auth.token },
     );
   }
 
@@ -359,7 +379,7 @@ function readAccountIndex(value: number): number {
 }
 
 function buildAccountOrdersQuery(
-  params: LighterAccountActiveOrdersParams,
+  params: LighterAccountActiveOrdersParams & { readonly accountIndex: number },
 ): Record<string, QueryValue> {
   const accountIndex = readAccountIndex(params.accountIndex);
   const marketId = params.marketId === undefined ? undefined : readUint16(params.marketId, "marketId");
