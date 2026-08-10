@@ -324,6 +324,9 @@ export const ErrorCodes = {
   TRENCH_INVALID_RESPONSE: "TRENCH_INVALID_RESPONSE",
   TRENCH_INVALID_REQUEST: "TRENCH_INVALID_REQUEST",
   TRENCH_NOT_FOUND: "TRENCH_NOT_FOUND",
+
+  // AgentScan wallet-binding handshake (Sprint 3)
+  AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED: "AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

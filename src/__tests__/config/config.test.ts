@@ -15,9 +15,15 @@ vi.mock("@config/paths.js", () => ({
 }));
 
 // Import after mocking
-const { loadConfig, saveConfig, saveConfigPatch, getDefaultConfig, configExists, ensureConfigDir } = await import(
-  "@config/store.js"
-);
+const {
+  loadConfig,
+  saveConfig,
+  saveConfigPatch,
+  getDefaultConfig,
+  configExists,
+  ensureConfigDir,
+  dropEmptyAgentscanApiUrl,
+} = await import("@config/store.js");
 
 describe("config store", () => {
   beforeEach(() => {
@@ -131,6 +137,88 @@ describe("config store", () => {
       const config = loadConfig();
 
       expect(config.version).toBe(1);
+    });
+
+    describe("agentscanApiUrl sentinel (AC2)", () => {
+      it("a missing agentscanApiUrl falls back to the default", () => {
+        mkdirSync(testDir, { recursive: true });
+        writeFileSync(testConfigFile, JSON.stringify({ version: 1 }), "utf-8");
+
+        const config = loadConfig();
+
+        expect(config.services.agentscanApiUrl).toBe(getDefaultConfig().services.agentscanApiUrl);
+      });
+
+      it("an empty stored agentscanApiUrl falls back to the default", () => {
+        mkdirSync(testDir, { recursive: true });
+        writeFileSync(
+          testConfigFile,
+          JSON.stringify({ version: 1, services: { agentscanApiUrl: "" } }),
+          "utf-8",
+        );
+
+        const config = loadConfig();
+
+        expect(config.services.agentscanApiUrl).toBe(getDefaultConfig().services.agentscanApiUrl);
+      });
+
+      it("a whitespace-only stored agentscanApiUrl falls back to the default", () => {
+        mkdirSync(testDir, { recursive: true });
+        writeFileSync(
+          testConfigFile,
+          JSON.stringify({ version: 1, services: { agentscanApiUrl: "   " } }),
+          "utf-8",
+        );
+
+        const config = loadConfig();
+
+        expect(config.services.agentscanApiUrl).toBe(getDefaultConfig().services.agentscanApiUrl);
+      });
+
+      it("a non-empty stored agentscanApiUrl still wins over the default", () => {
+        mkdirSync(testDir, { recursive: true });
+        writeFileSync(
+          testConfigFile,
+          JSON.stringify({ version: 1, services: { agentscanApiUrl: "https://agentscan.example/ingest" } }),
+          "utf-8",
+        );
+
+        const config = loadConfig();
+
+        expect(config.services.agentscanApiUrl).toBe("https://agentscan.example/ingest");
+      });
+    });
+  });
+
+  describe("dropEmptyAgentscanApiUrl — a future non-empty default is never shadowed", () => {
+    it("drops an empty agentscanApiUrl so a non-empty default is not overridden", () => {
+      const defaults = { agentscanApiUrl: "https://future-default.example" };
+      const merged = { ...defaults, ...dropEmptyAgentscanApiUrl({ agentscanApiUrl: "" }) };
+
+      expect(merged.agentscanApiUrl).toBe("https://future-default.example");
+    });
+
+    it("drops a whitespace-only agentscanApiUrl", () => {
+      const defaults = { agentscanApiUrl: "https://future-default.example" };
+      const merged = { ...defaults, ...dropEmptyAgentscanApiUrl({ agentscanApiUrl: "   " }) };
+
+      expect(merged.agentscanApiUrl).toBe("https://future-default.example");
+    });
+
+    it("keeps a non-empty stored value", () => {
+      expect(dropEmptyAgentscanApiUrl({ agentscanApiUrl: "https://stored.example" })).toEqual({
+        agentscanApiUrl: "https://stored.example",
+      });
+    });
+
+    it("passes through a services object with no agentscanApiUrl key untouched", () => {
+      expect(dropEmptyAgentscanApiUrl({ dexScreenerApiUrl: "https://dex.example" })).toEqual({
+        dexScreenerApiUrl: "https://dex.example",
+      });
+    });
+
+    it("passes through undefined services untouched", () => {
+      expect(dropEmptyAgentscanApiUrl(undefined)).toEqual({});
     });
   });
 

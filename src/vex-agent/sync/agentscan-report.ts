@@ -2,6 +2,10 @@
  * AgentScan REPORTING lane — register once, backfill once, then drain the
  * outbox every tick.
  *
+ * This file is the lane's public facade and state machine; the implementation
+ * lives in `agentscan-report/` (handshake-lane, drain, production-deps), one
+ * responsibility per file, per the 550-line facade decree.
+ *
  * ── What this is not ───────────────────────────────────────────────────────
  *
  * NOT ON THE MONEY PATH. No handler waits for this lane; it reads committed
@@ -24,53 +28,83 @@
  * until the public rollout). The identity is CSPRNG-random, never derived
  * from key material. Payloads go through the mapper's structural allowlist —
  * the banned columns are unreadable from its output by construction. Server
- * verdicts are honored exactly: 410 / 403-quarantined / register-409 stop the
- * lane permanently; a 401 re-registers the SAME identity (server-side reset
- * recovery); only 429/5xx/network are retried.
+ * verdicts are honored exactly: 410 / 403-quarantined stop the lane
+ * permanently; a 401 on the EVENTS endpoint re-handshakes the SAME identity
+ * AND resends the full eligible history (a server-side reset means the
+ * server has nothing, so every already-sent row comes back owed, flagged
+ * `backfill`); only 429/5xx/network are retried. A 401 from
+ * session/complete is a DIFFERENT recovery — see "Binding" below.
+ *
+ * ── Binding: a signed handshake, not a v1 register call ────────────────────
+ *
+ * `handshakeOnce` (in `agentscan-report/handshake-lane.ts`) replaces v1's
+ * `/v1/agents/register` with the v2 wallet-binding handshake
+ * (`session/start` → sign → `session/complete`, see
+ * `agentscan/session-client.ts`): the trading key proves ownership of the
+ * install's wallet addresses by signing a server-issued challenge, never a
+ * blind message — the server's returned `domain` is checked against the
+ * configured `agentscanApiUrl`'s hostname, case-insensitively (the server's
+ * JSON is untrusted casing), before anything is ever signed. A handshake
+ * fires when never yet handshaken, when the bound wallet set changed (a
+ * sha256 fingerprint over the sorted inventory), or after `registered_at`
+ * clears via either recovery path below. `wallet_conflict` (a
+ * session/complete 409) is kept as a DEFENSIVE permanent stop —
+ * transfer-on-proof means the current server no longer emits it in ordinary
+ * operation (a valid proof for a wallet bound to a different agent now
+ * transfers the binding instead of refusing). A THROW out of `signChallenge`
+ * itself (a typed signer error — mismatch, corrupt keystore, a rejected
+ * template — as opposed to one of its named `HandshakeSigningResult`
+ * outcomes) is caught around the call and held the same long
+ * `HANDSHAKE_INVALID_HOLD_SECONDS` as an invalid session/complete response,
+ * so a signer bug can never bypass the backoff into a hot loop of fresh
+ * session/starts.
+ *
+ * session/complete's OWN 401 is NOT the events endpoint's recovery: it means
+ * the server holds SOME current token for this `agent_hash` that this
+ * install does not know — the canonical cause is a crash between the server
+ * committing session/complete's token rotation and this install persisting
+ * it via `markHandshakeComplete`. Retrying with the SAME identity would just
+ * keep presenting the same now-stale bearer forever (an infinite 401 loop),
+ * so `resetIdentityForRecovery` abandons the identity entirely (agent_hash,
+ * ingest_token, name, fingerprint, every stamp, one transaction with a full
+ * outbox resend). The next run's `ensureIdentity` mints a fresh identity, and
+ * the server's transfer-on-proof re-binds the same proven wallets to it —
+ * that IS the designed recovery, not a data-loss path.
  */
 
 import { randomBytes } from "node:crypto";
 
-import { loadConfig } from "../../config/store.js";
 import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
-import { mapActivityToEvent } from "../agentscan/mapper.js";
-import {
-  buildAgentscanClient,
-  type AgentscanClient,
-  type SendOutcome,
-} from "../agentscan/client.js";
-import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
+import type { AgentscanClient } from "../agentscan/client.js";
+import type { AgentscanSessionClient } from "../agentscan/session-client.js";
+import type {
+  SignAgentscanChallengeInput,
+  HandshakeSigningResult,
+} from "../agentscan/handshake.js";
 import logger from "@utils/logger.js";
+import { handshakeOnce, computeWalletsFingerprint } from "./agentscan-report/handshake-lane.js";
+import { drainIncremental, drainOutbox } from "./agentscan-report/drain.js";
 
-/** Contract batch ceiling (server rejects larger batches with 413). */
-export const AGENTSCAN_BATCH_LIMIT = 500;
-
-/**
- * Bounded batches per run: the lane does serial HTTP inside the shared sync
- * worker, and an unbounded backlog (a first backfill can be the whole
- * history) would starve the balance and activity sync sharing the drain.
- * 6 × 500 events/tick clears even a large backfill in a few minutes while
- * staying far under the server's 60 req/min per-token limit.
- */
-export const AGENTSCAN_MAX_BATCHES_PER_TICK = 6;
-
-/** Register backoff: 5 min · 2^n capped at 1 h — the register endpoint allows only 10/h per IP. */
-const REGISTER_BACKOFF_BASE_SECONDS = 300;
-const REGISTER_BACKOFF_MAX_SECONDS = 3600;
-
-/** An envelope-level 400 is a client bug, not weather — hold the rows a full hour and say so loudly. */
-const INVALID_BATCH_HOLD_SECONDS = 3600;
+export { AGENTSCAN_BATCH_LIMIT, AGENTSCAN_MAX_BATCHES_PER_TICK } from "./agentscan-report/drain.js";
+export {
+  resolveAgentscanBaseUrl,
+  buildProductionAgentscanReporterDeps,
+} from "./agentscan-report/production-deps.js";
 
 export interface AgentscanReporterDeps {
   /** Resolved ingest base URL, or null when reporting is disabled/misconfigured. */
   readonly baseUrl: () => string | null;
   readonly buildClient: (baseUrl: string) => AgentscanClient;
-  /** App version for the register record, when the host process knows it. */
+  /** The v2 wallet-binding handshake's HTTP boundary (session/start + session/complete). */
+  readonly buildSessionClient: (baseUrl: string) => AgentscanSessionClient;
+  /** The vault-gated signer for a handshake challenge — production wires T10's `signAgentscanChallenge`. */
+  readonly signChallenge: (input: SignAgentscanChallengeInput) => Promise<HandshakeSigningResult>;
+  /** App version for the handshake record, when the host process knows it. */
   readonly appVersion: () => string | null;
 }
 
 export interface AgentscanReportResult {
-  readonly skipped: "disabled" | "stopped" | "unregistered" | null;
+  readonly skipped: "disabled" | "stopped" | "unregistered" | "vault_locked" | "no_wallets" | null;
   /** Outbox rows enqueued by this run's diff scan. */
   readonly enqueued: number;
   /** Whether THIS run performed the one-time backfill enqueue. */
@@ -112,231 +146,74 @@ export async function runAgentscanReport(
     state = await reportingRepo.ensureIdentity(generateAgentscanIdentity);
   }
   const agentHash = state.agentHash;
-  const ingestToken = state.ingestToken;
+  let ingestToken = state.ingestToken;
   if (agentHash === null || ingestToken === null) {
     // Unreachable after ensureIdentity; named so a future regression is loud.
     logger.error("agentscan.report.identity_missing_after_ensure");
     return { skipped: "unregistered", ...NOTHING };
   }
 
-  const client = deps.buildClient(baseUrl);
-
-  if (state.registeredAt === null) {
-    const registered = await registerOnce(client, deps, state, agentHash, ingestToken);
-    if (registered !== "registered") return { skipped: registered, ...NOTHING };
+  const fingerprint = computeWalletsFingerprint();
+  const handshakeNeeded = state.registeredAt === null || fingerprint !== state.boundWalletsFingerprint;
+  if (handshakeNeeded) {
+    const attempt = await handshakeOnce(deps, baseUrl, state, agentHash, ingestToken, fingerprint);
+    if (attempt.kind !== "handshaken") return { skipped: attempt.reason, ...NOTHING };
+    ingestToken = attempt.ingestToken;
   }
+
+  const client = deps.buildClient(baseUrl);
 
   // The one-time backfill (AC2): first enqueue after a successful registration
   // carries the whole eligible history; every later scan is incremental.
-  let backfillEnqueued = false;
-  let enqueued = 0;
   if (state.backfillEnqueuedAt === null) {
-    enqueued = await reportingRepo.enqueueEligibleActivity(true);
+    const enqueued = await reportingRepo.enqueueEligibleActivity(true);
     await reportingRepo.markBackfillEnqueued();
-    backfillEnqueued = true;
     if (enqueued > 0) logger.info("agentscan.report.backfill_enqueued", { rows: enqueued });
-  } else {
-    enqueued = await reportingRepo.enqueueEligibleActivity(false);
+    const drain = await drainOutbox(client, agentHash, ingestToken);
+    return { skipped: null, enqueued, backfillEnqueued: true, ...drain };
   }
 
-  const drain = await drainOutbox(client, agentHash, ingestToken);
-  return { skipped: null, enqueued, backfillEnqueued, ...drain };
+  const incremental = await drainIncremental(client, agentHash, ingestToken);
+  return { skipped: null, backfillEnqueued: false, ...incremental };
 }
-
-// ── register ────────────────────────────────────────────────────────────────
-
-async function registerOnce(
-  client: AgentscanClient,
-  deps: AgentscanReporterDeps,
-  state: reportingRepo.AgentscanReportingState,
-  agentHash: string,
-  ingestToken: string,
-): Promise<"registered" | "unregistered" | "stopped"> {
-  if (new Date(state.nextRegisterAttemptAt).getTime() > Date.now()) return "unregistered";
-
-  const appVersion = deps.appVersion();
-  const outcome = await client.register({
-    agentHash,
-    ingestToken,
-    consentVersion: state.consentVersion,
-    acceptedAt: state.acceptedAt ?? new Date().toISOString(),
-    ...(appVersion !== null ? { appVersion: appVersion.slice(0, 32) } : {}),
-  });
-
-  if (outcome.kind === "registered") {
-    await reportingRepo.markRegistered();
-    logger.info("agentscan.report.registered");
-    return "registered";
-  }
-  if (outcome.kind === "conflict") {
-    // The hash is bound to a different token server-side. This identity can
-    // never report again; a silent retry loop would only re-refuse.
-    await reportingRepo.markStopped("agent_conflict");
-    logger.error("agentscan.report.register_conflict_stopped");
-    return "stopped";
-  }
-  const delay =
-    outcome.kind === "retryable" && outcome.retryAfterSeconds !== null
-      ? outcome.retryAfterSeconds
-      : registerBackoffSeconds(state.registerAttemptCount);
-  await reportingRepo.noteRegisterAttemptFailed(delay);
-  logger.warn("agentscan.report.register_failed", { detail: outcome.detail, retryInSeconds: delay });
-  return "unregistered";
-}
-
-function registerBackoffSeconds(attemptCount: number): number {
-  return Math.min(
-    REGISTER_BACKOFF_BASE_SECONDS * 2 ** Math.min(attemptCount, 20),
-    REGISTER_BACKOFF_MAX_SECONDS,
-  );
-}
-
-// ── drain ───────────────────────────────────────────────────────────────────
-
-async function drainOutbox(
-  client: AgentscanClient,
-  agentHash: string,
-  ingestToken: string,
-): Promise<{ sent: number; rejected: number; deferred: number }> {
-  let sent = 0;
-  let rejected = 0;
-  let deferred = 0;
-
-  for (let batch = 0; batch < AGENTSCAN_MAX_BATCHES_PER_TICK; batch++) {
-    const claimed = await reportingRepo.claimDueOutbox(AGENTSCAN_BATCH_LIMIT);
-    if (claimed.length === 0) break;
-
-    // One envelope carries one backfill flag — a mixed claim is split.
-    const groups = [claimed.filter((c) => c.backfill), claimed.filter((c) => !c.backfill)]
-      .filter((group) => group.length > 0);
-
-    let stop = false;
-    for (const group of groups) {
-      const outcome = await sendGroup(client, agentHash, ingestToken, group);
-      sent += outcome.sent;
-      rejected += outcome.rejected;
-      deferred += outcome.deferred;
-      if (outcome.stop) {
-        stop = true;
-        break;
-      }
-    }
-    if (stop) break;
-  }
-
-  return { sent, rejected, deferred };
-}
-
-async function sendGroup(
-  client: AgentscanClient,
-  agentHash: string,
-  ingestToken: string,
-  group: ClaimedOutboxEvent[],
-): Promise<{ sent: number; rejected: number; deferred: number; stop: boolean }> {
-  // A vanished activity row (cascade already removed its outbox rows) has
-  // nothing to send and nothing to mark.
-  const mappable = group.filter((c) => c.activity !== null);
-  if (mappable.length === 0) return { sent: 0, rejected: 0, deferred: 0, stop: false };
-
-  const events = mappable.map((c) =>
-    mapActivityToEvent(c.activity as Record<string, unknown>, { status: c.status }),
-  );
-  const outcome: SendOutcome = await client.sendEvents({
-    agentHash,
-    ingestToken,
-    backfill: group[0]?.backfill === true,
-    events,
-  });
-
-  if (outcome.kind === "ok") {
-    const rejectedIndexes = new Set(outcome.rejectedIndexes);
-    const sentIds = mappable
-      .filter((_, index) => !rejectedIndexes.has(index))
-      .map((c) => c.outboxId);
-    await reportingRepo.markOutboxSent(sentIds);
-    for (const index of outcome.rejectedIndexes) {
-      const item = mappable[index];
-      if (item === undefined) continue;
-      await reportingRepo.markOutboxRejected(item.outboxId, "validation_failed");
-      logger.warn("agentscan.report.event_rejected", {
-        activityId: item.activityId,
-        status: item.status,
-      });
-    }
-    return { sent: sentIds.length, rejected: outcome.rejectedIndexes.length, deferred: 0, stop: false };
-  }
-
-  const owedIds = mappable.map((c) => c.outboxId);
-
-  if (outcome.kind === "auth_lost") {
-    // Server no longer knows the token (server-side reset) or disputes the
-    // hash binding. Registration is idempotent: re-register the SAME identity
-    // next run; a genuine conflict surfaces there as a terminal 409.
-    await reportingRepo.clearRegistration();
-    logger.warn("agentscan.report.auth_lost_reregistering");
-    return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
-  }
-  if (outcome.kind === "stopped") {
-    await reportingRepo.markStopped(outcome.reason);
-    logger.warn("agentscan.report.stopped_by_server", { reason: outcome.reason });
-    return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
-  }
-  if (outcome.kind === "invalid") {
-    // OUR envelope failed the server's schema — a client bug, not weather.
-    // Data is never dropped; the rows hold for an hour so the log is seen
-    // before the next thundering retry.
-    await reportingRepo.rescheduleOutbox(owedIds, INVALID_BATCH_HOLD_SECONDS);
-    logger.error("agentscan.report.batch_invalid", { detail: outcome.detail, rows: owedIds.length });
-    return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
-  }
-  // retryable — the claim already stamped exponential backoff; the server's
-  // own Retry-After overrides it when present.
-  if (outcome.retryAfterSeconds !== null) {
-    await reportingRepo.rescheduleOutbox(owedIds, outcome.retryAfterSeconds);
-  }
-  logger.info("agentscan.report.batch_deferred", {
-    detail: outcome.detail,
-    rows: owedIds.length,
-  });
-  return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
-}
-
-// ── production wiring ───────────────────────────────────────────────────────
-
-/** Warn once per process about a refused non-HTTPS URL — the lane ticks every 30 s. */
-let warnedInsecureUrl = false;
 
 /**
- * Resolve the configured base URL. HTTPS-only, except localhost for local
- * development against the compose stack — the contract is HTTPS-only and a
- * plaintext ingest URL would leak the token to the network path.
+ * Drain-only entry for the seconds-level PUSH lane (`agentscan-push.ts`).
+ * Precondition misses (base URL unset, identity missing, never registered,
+ * server-stopped) all report `"unregistered"` — the push lane has nothing
+ * useful to distinguish between them, and the periodic lane above is what
+ * gets the state past any of them. No register, no backfill, no
+ * register-backoff interaction: those stay the periodic lane's job. The
+ * function itself never registers/backfills/writes state proactively, but the
+ * drain it shares with the periodic lane honors server verdicts via
+ * `sendGroup` (`resetForReRegistration()` on auth_lost, `markStopped()` on
+ * 410/quarantine), so a push-lane fire CAN reset or stop the lane's state.
+ * State is read fresh on every call, never cached across invocations.
+ *
+ * The `backfillEnqueuedAt === null` guard below is load-bearing: between the
+ * periodic lane's `markHandshakeComplete()` commit and its later
+ * `enqueueEligibleActivity(true)` + `markBackfillEnqueued()` commit — a
+ * window that is wide on first GA registration with months of history, and
+ * re-opens after every `resetForReRegistration` — a push-lane fire must not
+ * run `enqueueEligibleActivity(false)`, or it permanently mislabels the whole
+ * eligible history as live activity (backfill=false) and the periodic
+ * backfill that follows inserts zero rows and stamps the flag anyway.
  */
-export function resolveAgentscanBaseUrl(rawUrl: string): string | null {
-  const trimmed = rawUrl.trim();
-  if (trimmed.length === 0) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol === "https:") return trimmed;
-  const isLocalhost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-  if (parsed.protocol === "http:" && isLocalhost) return trimmed;
-  if (!warnedInsecureUrl) {
-    warnedInsecureUrl = true;
-    logger.warn("agentscan.report.insecure_url_refused");
-  }
-  return null;
-}
+export async function runAgentscanIncremental(
+  deps: AgentscanReporterDeps,
+): Promise<AgentscanReportResult> {
+  const baseUrl = deps.baseUrl();
+  if (baseUrl === null) return { skipped: "unregistered", ...NOTHING };
 
-export function buildProductionAgentscanReporterDeps(): AgentscanReporterDeps {
-  return {
-    baseUrl: () => resolveAgentscanBaseUrl(loadConfig().services.agentscanApiUrl),
-    buildClient: buildAgentscanClient,
-    appVersion: () => {
-      const version = process.env.VEX_APP_VERSION;
-      return typeof version === "string" && version.trim().length > 0 ? version.trim() : null;
-    },
-  };
+  const state = await reportingRepo.getReportingState();
+  if (state.stoppedReason !== null) return { skipped: "unregistered", ...NOTHING };
+  if (state.agentHash === null || state.ingestToken === null) {
+    return { skipped: "unregistered", ...NOTHING };
+  }
+  if (state.registeredAt === null) return { skipped: "unregistered", ...NOTHING };
+  if (state.backfillEnqueuedAt === null) return { skipped: "unregistered", ...NOTHING };
+
+  const client = deps.buildClient(baseUrl);
+  const incremental = await drainIncremental(client, state.agentHash, state.ingestToken);
+  return { skipped: null, backfillEnqueued: false, ...incremental };
 }

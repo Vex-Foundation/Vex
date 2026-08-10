@@ -186,6 +186,15 @@ export async function syncTick(): Promise<void> {
         const reportResult = await runAgentscanReport(buildProductionAgentscanReporterDeps());
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(runId, { ...reportResult, periodic: true }, reportResult.sent);
+      } else if (job.syncType === "agentscan_attest") {
+        // AgentScan token-attestation sweep — periodic driver, mirroring the
+        // branch above exactly. Omitting it is the silent C1 defect the
+        // bridge sweep hit. Keyless telemetry POST only; never signs, never
+        // money-path.
+        const { runAgentscanAttest, buildProductionAgentscanAttestDeps } = await import("./agentscan-attest.js");
+        const attestResult = await runAgentscanAttest(buildProductionAgentscanAttestDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...attestResult, periodic: true }, attestResult.attested);
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });
       }

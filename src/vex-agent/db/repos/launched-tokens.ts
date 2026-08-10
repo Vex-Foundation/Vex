@@ -243,6 +243,74 @@ export async function markAttributed(id: number): Promise<boolean> {
 }
 
 /**
+ * What the AgentScan attestation sweep needs to make one POST. A SEPARATE
+ * candidate set from `AttributionCandidate` — same signature, two independent
+ * consumers — plus the creation tx hash the AgentScan wire contract requires
+ * as a validated hint (trench.express's own `/vex/attribute` never asked for
+ * one).
+ */
+export interface AgentscanAttestCandidate {
+  id: number;
+  chainId: number;
+  tokenAddress: string;
+  attestSignature: string;
+  createTxHash: string;
+}
+
+/**
+ * Claim up to `limit` signed-but-unattested (AgentScan) tokens, least-recently-
+ * attempted first, stamping `agentscan_attest_attempted_at` in the SAME
+ * statement. Mirrors `claimAttributionCandidates` verbatim in shape, over the
+ * 074 pair of columns instead of 071's — a permanently-refused row moves to
+ * the back of the queue instead of starving row 26, and `FOR UPDATE SKIP
+ * LOCKED` gives two concurrent sweeps disjoint batches.
+ */
+export async function claimAgentscanAttestCandidates(input: {
+  chainId: number;
+  limit: number;
+  retryAfterSeconds: number;
+}): Promise<AgentscanAttestCandidate[]> {
+  const rows = await query<Record<string, unknown>>(
+    `WITH candidates AS (
+       SELECT id AS candidate_id
+         FROM launched_tokens
+        WHERE chain_id = $1
+          AND agentscan_attested_at IS NULL
+          AND attest_signature IS NOT NULL
+          AND (agentscan_attest_attempted_at IS NULL
+               OR agentscan_attest_attempted_at < NOW() - ($3 || ' seconds')::interval)
+        ORDER BY agentscan_attest_attempted_at ASC NULLS FIRST, id ASC
+        LIMIT $2
+        FOR UPDATE SKIP LOCKED
+     )
+     UPDATE launched_tokens t
+        SET agentscan_attest_attempted_at = NOW()
+       FROM candidates c
+      WHERE t.id = c.candidate_id
+      RETURNING t.id, t.chain_id, t.token_address, t.attest_signature, t.create_tx_hash`,
+    [input.chainId, input.limit, String(input.retryAfterSeconds)],
+  );
+  return rows.map((r) => ({
+    id: Number(r.id),
+    chainId: Number(r.chain_id),
+    tokenAddress: r.token_address as string,
+    attestSignature: r.attest_signature as string,
+    createTxHash: r.create_tx_hash as string,
+  }));
+}
+
+/** The AgentScan attestation landed. Terminal — the row leaves the sweep's candidate set for good. */
+export async function markAgentscanAttested(id: number): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launched_tokens SET agentscan_attested_at = NOW()
+      WHERE id = $1 AND agentscan_attested_at IS NULL
+      RETURNING id`,
+    [id],
+  );
+  return row !== null;
+}
+
+/**
  * Tokens on this chain that can NEVER be attributed by the sweep: unattributed,
  * with no stored signature. Counted rather than claimed, because the sweep holds
  * no signer and re-serving them would be a loop that can only fail.
