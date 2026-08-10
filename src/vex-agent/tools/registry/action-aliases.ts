@@ -164,7 +164,7 @@ export const ACTION_ALIAS_TOOLS: readonly ToolDef[] = [
     // toolId/description regardless of catalog visibility.
     visibility: { requiresUniswapReveal: true },
     description:
-      "Preview a token swap on Uniswap WITHOUT executing — the KyberSwap fallback venue. Only usable after a KyberSwap swap_quote/swap_execute failure revealed it for this session (a route-not-found class failure, or the Kyber swap transaction reverting on-chain). EVM ONLY (chain must NOT be \"solana\"). Tokens must be a CONTRACT ADDRESS or native ETH/native. `amountIn` is the HUMAN decimal of tokenIn. Call this BEFORE swap_execute_uniswap: a fresh matching quote unlocks execution, and only on THIS venue (a KyberSwap quote cannot authorize a Uniswap execute).",
+      "Preview a token swap on Uniswap WITHOUT executing — the KyberSwap fallback venue. Only usable after a KyberSwap swap_quote/swap_execute failure revealed it for this session (a route-not-found class failure, an unsafe or pre-sign-refused build, the Kyber swap transaction reverting on-chain, or KyberSwap being unavailable to us at all). EVM ONLY (chain must NOT be \"solana\"). Tokens must be a CONTRACT ADDRESS or native ETH/native. `amountIn` is the HUMAN decimal of tokenIn. Call this BEFORE swap_execute_uniswap: a fresh matching quote unlocks execution, and only on THIS venue (a KyberSwap quote cannot authorize a Uniswap execute).",
     parameters: {
       type: "object",
       properties: UNISWAP_SWAP_SCHEMA_PROPERTIES,

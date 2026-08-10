@@ -15,6 +15,12 @@ import { isRecord } from "../../utils/validation-helpers.js";
  * contract classifies on before it reads any prose, and re-wrapping used to
  * destroy it — a 403 reached the agent labelled `provider_error`, which invites
  * the one retry that can never succeed.
+ *
+ * A TRANSPORT failure carries no status at all, and state-level blocking
+ * usually arrives here as a connection reset or a DNS failure rather than a
+ * clean 403. That is why it maps to `KYBER_UNREACHABLE` and not to
+ * `KYBER_API_ERROR`: this remap is the shape the fallback-venue classifier
+ * reads for that case.
  */
 export function mapKyberTransportError(err: unknown): never {
   if (err instanceof VexError && err.code.startsWith("KYBER_")) {
@@ -24,7 +30,7 @@ export function mapKyberTransportError(err: unknown): never {
     throw carryStatus(new VexError(ErrorCodes.KYBER_TIMEOUT, err.message, err.hint), err.httpStatus);
   }
   if (err instanceof VexError && err.code === ErrorCodes.HTTP_REQUEST_FAILED) {
-    throw carryStatus(new VexError(ErrorCodes.KYBER_API_ERROR, err.message, err.hint), err.httpStatus);
+    throw carryStatus(new VexError(ErrorCodes.KYBER_UNREACHABLE, err.message, err.hint), err.httpStatus);
   }
   throw err;
 }

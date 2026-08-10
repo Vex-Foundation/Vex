@@ -21,7 +21,7 @@ export function requireDeployment(chain: string): UniswapDeployment {
     throw new VexError(
       ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
       `Uniswap has no verified deployment for chain "${chain}".`,
-      "Uniswap is a hidden fallback venue, available after an eligible KyberSwap route-not-found failure, or the Kyber swap transaction reverting on-chain.",
+      "Uniswap is a hidden fallback venue, available after an eligible KyberSwap swap failure: a route or token KyberSwap cannot price, an unsafe or pre-sign-refused build, the Kyber swap transaction reverting on-chain, or KyberSwap being unavailable to us at all.",
     );
   }
   return deployment;

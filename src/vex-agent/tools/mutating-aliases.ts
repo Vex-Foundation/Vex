@@ -47,7 +47,7 @@ import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { khalaniSlippageRejection } from "./protocols/khalani/slippage-unsupported.js";
-import { isUniswapPairRevealed } from "./registry/uniswap-reveal.js";
+import { isUniswapPairRevealed, UNISWAP_REVEAL_TRIGGER_SUMMARY } from "./registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "./registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 
@@ -238,9 +238,7 @@ function routeSwapExecuteUniswap(
 ): ResolvedAliasTarget {
   if (!isUniswapPairRevealed(sessionId)) {
     throw new MutatingAliasRouteError(
-      "swap_execute_uniswap is not available yet for this session — it unlocks after an eligible "
-        + "KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting "
-        + "on-chain at execute time (try swap_quote first).",
+      `swap_execute_uniswap is not available yet for this session. ${UNISWAP_REVEAL_TRIGGER_SUMMARY}`,
     );
   }
 
