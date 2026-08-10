@@ -238,3 +238,146 @@ describe("mapActivityToEvent — malformed-value guards", () => {
     expect(serverEventSchema.safeParse(event).success).toBe(true);
   });
 });
+
+/**
+ * The widened reporting predicate (migration 076) pulls `lend`, `prediction`,
+ * `wrap`, `yield` and `launch` rows into the outbox. Those kinds sit NEXT TO
+ * genuinely re-identifying data — a prediction position handle is joinable to
+ * its owner wallet through a public API, and a token launch is inherently
+ * self-identifying.
+ *
+ * Each row below is loaded with that data ON PURPOSE, beyond what a real
+ * `SELECT * FROM agent_activity` would even return, so the assertion proves the
+ * ALLOWLIST rather than the accident that a column happened to be absent: the
+ * mapper reads named fields only, so an extra key on the input cannot reach the
+ * output whatever it is called.
+ */
+const POSITION_PUBKEY = "7Yx4mQnKpL2vR8sT1uW3zA5bC6dE9fG0hJ2kM4nP6qRs";
+const MARKET_ID = "market-id-11ff-secret";
+const VAULT_ID = "vault-id-22ee-secret";
+const POSITION_ID = "position-id-33dd-secret";
+const PENDLE_MARKET = "0x" + "7".repeat(40);
+const PT_ADDRESS = "0x" + "8".repeat(40);
+const LAUNCH_NAME = "My Very Personal Token Name";
+const LAUNCH_SYMBOL = "MVPTN";
+const LAUNCH_DESCRIPTION = "a description written by the user themselves";
+const LAUNCH_LINK = "https://x.com/the-users-own-handle";
+
+/** Every banned key spelling, snake and camel, the contract forbids. */
+const BANNED_KEYS = [
+  "wallet_address", "walletAddress", "from_address", "fromAddress",
+  "session_id", "sessionId", "nonce",
+  "failure_reason", "failureReason", "route_provenance", "routeProvenance",
+];
+
+function expectNoLeak(json: string, secrets: readonly string[]): void {
+  for (const bannedKey of BANNED_KEYS) {
+    expect(json).not.toContain(`"${bannedKey}"`);
+  }
+  for (const secret of secrets) {
+    expect(json).not.toContain(secret);
+  }
+}
+
+describe("mapActivityToEvent — privacy under the widened vocabulary", () => {
+  it("a prediction row leaks neither its positionPubkey nor its market/side", () => {
+    const row = {
+      ...confirmedSwapRow(),
+      kind: "prediction",
+      event_role: "predict_sell",
+      protocol: "jupiter",
+      chain_family: "solana",
+      route_provenance: {
+        prediction_order: { version: 1, positionPubkey: POSITION_PUBKEY },
+      },
+      // Never on agent_activity — these live on protocol_executions.params,
+      // which the outbox claim never selects and never joins.
+      market_id: MARKET_ID,
+      side: "yes",
+    };
+    const json = JSON.stringify(mapActivityToEvent(row, { status: "confirmed" }));
+    expectNoLeak(json, [POSITION_PUBKEY, MARKET_ID]);
+    expect(json).not.toContain("prediction_order");
+    expect(json).not.toContain("positionPubkey");
+  });
+
+  it("a launch row leaks none of its self-identifying sibling metadata", () => {
+    const row = {
+      ...confirmedSwapRow(),
+      kind: "launch",
+      event_role: "token_launch",
+      protocol: "trench",
+      // Never on agent_activity — these live on token_launch_intents /
+      // launched_tokens, separate tables the outbox claim never reads.
+      name: LAUNCH_NAME,
+      symbol: LAUNCH_SYMBOL,
+      description: LAUNCH_DESCRIPTION,
+      links: { x: LAUNCH_LINK },
+    };
+    const json = JSON.stringify(mapActivityToEvent(row, { status: "confirmed" }));
+    expectNoLeak(json, [LAUNCH_NAME, LAUNCH_DESCRIPTION, LAUNCH_LINK]);
+    for (const bannedKey of ["description", "links"]) {
+      expect(json).not.toContain(`"${bannedKey}"`);
+    }
+  });
+
+  it("a lend row leaks neither vaultId/positionId nor its position pubkey", () => {
+    const row = {
+      ...confirmedSwapRow(),
+      kind: "lend",
+      event_role: "lend_deposit",
+      protocol: "morpho",
+      route_provenance: { vaultId: VAULT_ID, positionId: POSITION_ID },
+      // protocol_executions.external_refs territory — never selected here.
+      external_refs: { positionPubkey: POSITION_PUBKEY },
+    };
+    const json = JSON.stringify(mapActivityToEvent(row, { status: "confirmed" }));
+    expectNoLeak(json, [VAULT_ID, POSITION_ID, POSITION_PUBKEY]);
+    expect(json).not.toContain("external_refs");
+  });
+
+  it("a yield row leaks none of its Pendle market or PT/YT/SY addresses", () => {
+    const row = {
+      ...confirmedSwapRow(),
+      kind: "yield",
+      event_role: "yield_pt",
+      protocol: "pendle",
+      route_provenance: {
+        pendle: { marketAddress: PENDLE_MARKET, ptAddress: PT_ADDRESS },
+      },
+    };
+    const json = JSON.stringify(mapActivityToEvent(row, { status: "confirmed" }));
+    expectNoLeak(json, [PENDLE_MARKET, PT_ADDRESS]);
+    expect(json).not.toContain("marketAddress");
+  });
+
+  it("emits exactly the contract key set for every widened kind", () => {
+    for (const [kind, eventRole] of [
+      ["lend", "lend_deposit"],
+      ["prediction", "predict_buy"],
+      ["wrap", "wrap"],
+      ["yield", "yield_claim"],
+      ["launch", "token_launch"],
+    ]) {
+      const event = mapActivityToEvent(
+        { ...confirmedSwapRow(), kind, event_role: eventRole },
+        { status: "confirmed" },
+      );
+      expect(Object.keys(event).sort(), `kind=${kind}`).toEqual(CONTRACT_KEYS);
+      expect(event.kind).toBe(kind);
+      expect(event.eventRole).toBe(eventRole);
+    }
+  });
+});
+
+describe("mapActivityToEvent — superseded_unproven is terminal, not a failure", () => {
+  it("emits no failureCode, no executed amounts and no confirmedAt", () => {
+    const row = { ...confirmedSwapRow(), status: "superseded_unproven", failure_code: "slippage" };
+    const event = mapActivityToEvent(row, { status: "superseded_unproven" });
+    expect(event.status).toBe("superseded_unproven");
+    expect(event.failureCode).toBeNull();
+    expect(event.executedInRaw).toBeNull();
+    expect(event.executedOutRaw).toBeNull();
+    expect(event.confirmedAt).toBeNull();
+  });
+});

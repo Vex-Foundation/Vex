@@ -279,6 +279,12 @@ async function seedEligibleSwap(): Promise<SeededRow> {
   return { activityId: event.id, walletAddress, sessionId };
 }
 
+/**
+ * The INELIGIBLE control: an `allowance` row. The predicate reports every kind
+ * and status but deliberately holds the two approval roles back, because
+ * AgentScan's never-recomputed `daily_aggregates.tx_count` would count them
+ * forever (see `DELIBERATELY_UNREPORTED_ROLES`).
+ */
 async function seedIneligibleAllowance(): Promise<void> {
   const repo = await import("@vex-agent/db/repos/agent-activity.js");
   const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
@@ -439,7 +445,8 @@ describe("reporter lane — handshake + one-time backfill (AC1/AC2)", () => {
     expect(state.registeredAt).not.toBeNull();
     expect(state.lastHandshakeAt).not.toBeNull();
 
-    // backfill batch: flag true, exactly the two eligible rows, correct envelope identity
+    // backfill batch: flag true, exactly the two eligible rows (the allowance
+    // leg is held back by the predicate), correct envelope identity
     expect(client.sendCalls).toHaveLength(1);
     const batch = at(client.sendCalls, 0);
     expect(batch.backfill).toBe(true);

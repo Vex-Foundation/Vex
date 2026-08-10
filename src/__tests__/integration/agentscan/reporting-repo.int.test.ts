@@ -20,6 +20,7 @@
  * production writes face) via the shared `_fixtures.ts` intent seeder.
  */
 import { afterEach, describe, it, expect } from "vitest";
+import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../constants/solana-chain.js";
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
 
 async function resetAgentscanTables(): Promise<void> {
@@ -52,9 +53,50 @@ function at<T>(items: readonly T[], index: number): T {
   return item;
 }
 
+/**
+ * Bridge rows cannot come from the generic intent path (they need route
+ * endpoints and the logical `bridge_fill_expected` row), so the bridge kind is
+ * seeded through its OWN repo — and tracked here, because `seedIntent` never
+ * saw the execution it creates.
+ */
+const seededBridgeExecutionIds: number[] = [];
+
+async function seedBridgeIntent(): Promise<void> {
+  const { randomUUID } = await import("node:crypto");
+  const repo = await import("@vex-agent/db/repos/agent-activity.js");
+  const sessionId = `agentscan-bridge-${randomUUID()}`;
+  const result = await repo.createBridgeActivityIntent({
+    toolId: "khalani.bridge",
+    namespace: "khalani",
+    protocol: "khalani",
+    intentParams: { marker: sessionId },
+    walletAddress: `0x${randomUUID().replace(/-/g, "").padEnd(40, "0").slice(0, 40)}`,
+    sessionId,
+    route: {
+      fromChainId: 8453, fromChainSlug: "base", fromChainFamily: "eip155", fromToken: "0xUSDC",
+      toChainId: 42161, toChainSlug: "arbitrum", toChainFamily: "eip155", toToken: "0xUSDCe",
+    },
+    legs: [
+      { eventIndex: 0, eventRole: "bridge_deposit", chainId: 8453, chainSlug: "base", chainFamily: "eip155", tokenIn: { tokenSymbol: "USDC", amountRaw: "2000000" } },
+    ],
+    expectedFill: {
+      eventIndex: 1, chainId: 42161, chainSlug: "arbitrum", chainFamily: "eip155",
+      tokenOut: { tokenSymbol: "USDC", amountRaw: "1990000" },
+    },
+  });
+  if (result.outcome !== "created") throw new Error(`expected a created bridge intent, got ${result.outcome}`);
+  seededBridgeExecutionIds.push(result.executionId);
+}
+
 afterEach(async () => {
   await resetAgentscanTables();
   await cleanupSeeded();
+  if (seededBridgeExecutionIds.length > 0) {
+    const { execute } = await import("@vex-agent/db/client.js");
+    const ids = seededBridgeExecutionIds.splice(0, seededBridgeExecutionIds.length);
+    await execute(`DELETE FROM agent_activity WHERE protocol_execution_id = ANY($1::bigint[])`, [ids]);
+    await execute(`DELETE FROM protocol_executions WHERE id = ANY($1::bigint[])`, [ids]);
+  }
 });
 
 const IDENTITY_A = {
@@ -244,32 +286,133 @@ describe("agentscan_outbox — diff scan", () => {
     expect(at(claimed, 0).backfill).toBe(true);
   });
 
-  it("never enqueues contract-inexpressible rows: allowance role, wrap kind, superseded_unproven status", async () => {
+  it("enqueues every one of the seven activity kinds", async () => {
     const agentActivity = await import("@vex-agent/db/repos/agent-activity.js");
-    const { execute } = await import("@vex-agent/db/client.js");
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
 
     const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
-    await agentActivity.createPendingActivityEvent({
-      protocolExecutionId, eventIndex: 0, eventRole: "allowance", kind: "swap",
-      protocol: "kyberswap", chainId: 8453, walletAddress, sessionId,
-    });
-    await agentActivity.createPendingActivityEvent({
-      protocolExecutionId, eventIndex: 1, eventRole: "wrap", kind: "wrap",
-      protocol: "uniswap", chainId: 8453, walletAddress, sessionId,
-    });
-    const superseded = await agentActivity.createPendingActivityEvent({
-      protocolExecutionId, eventIndex: 2, eventRole: "swap", kind: "swap",
-      protocol: "kyberswap", chainId: 8453, walletAddress, sessionId,
-    });
+    // `lend` and `prediction` are Solana-only by the 049 kind/family binding.
+    const genericKinds = [
+      { eventRole: "swap", kind: "swap", protocol: "kyberswap", chainId: 8453, chainFamily: "eip155" },
+      { eventRole: "lend_deposit", kind: "lend", protocol: "morpho", chainId: SOLANA_SYNTHETIC_CHAIN_ID, chainFamily: "solana" },
+      { eventRole: "predict_buy", kind: "prediction", protocol: "jupiter", chainId: SOLANA_SYNTHETIC_CHAIN_ID, chainFamily: "solana" },
+      { eventRole: "wrap", kind: "wrap", protocol: "uniswap", chainId: 8453, chainFamily: "eip155" },
+      { eventRole: "yield_pt", kind: "yield", protocol: "pendle", chainId: 8453, chainFamily: "eip155" },
+      { eventRole: "token_launch", kind: "launch", protocol: "trench", chainId: 4663, chainFamily: "eip155" },
+    ] as const;
+    for (const [eventIndex, row] of genericKinds.entries()) {
+      await agentActivity.createPendingActivityEvent({
+        protocolExecutionId, eventIndex, walletAddress, sessionId,
+        eventRole: row.eventRole, kind: row.kind, protocol: row.protocol,
+        chainId: row.chainId, chainFamily: row.chainFamily,
+      });
+    }
+    await seedBridgeIntent();
+
+    await repo.enqueueEligibleActivity(false);
+    const claimed = await repo.claimDueOutbox(50);
+    const kinds = [...new Set(claimed.map((c) => c.activity?.kind))].sort();
+    expect(kinds).toEqual(["bridge", "launch", "lend", "prediction", "swap", "wrap", "yield"]);
+  });
+
+  it("enqueues the fee and wrap roles the old predicate silently dropped", async () => {
+    const agentActivity = await import("@vex-agent/db/repos/agent-activity.js");
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+
+    const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
+    const roles = [
+      { eventRole: "swap_fee", kind: "swap" },
+      { eventRole: "trench_fee", kind: "launch" },
+      { eventRole: "unwrap", kind: "wrap" },
+    ] as const;
+    for (const [eventIndex, row] of roles.entries()) {
+      await agentActivity.createPendingActivityEvent({
+        protocolExecutionId, eventIndex, walletAddress, sessionId, chainId: 8453,
+        eventRole: row.eventRole, kind: row.kind, protocol: "kyberswap",
+      });
+    }
+
+    expect(await repo.enqueueEligibleActivity(false)).toBe(roles.length);
+  });
+
+  /**
+   * Approvals stay out of the outbox on purpose: AgentScan's
+   * `daily_aggregates.tx_count` is never recomputed from raw events, so one
+   * reported approval inflates the published count permanently.
+   */
+  it("never enqueues an approval row (allowance, allowance_reset)", async () => {
+    const agentActivity = await import("@vex-agent/db/repos/agent-activity.js");
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+
+    const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
+    const approvalRoles = ["allowance_reset", "allowance"] as const;
+    for (const [eventIndex, eventRole] of approvalRoles.entries()) {
+      await agentActivity.createPendingActivityEvent({
+        protocolExecutionId, eventIndex, walletAddress, sessionId, chainId: 8453,
+        eventRole, kind: "swap", protocol: "kyberswap",
+      });
+    }
+
+    expect(await repo.enqueueEligibleActivity(false)).toBe(0);
+  });
+
+  it("enqueues a superseded_unproven row — the outbox CHECK admits it (migration 076)", async () => {
+    const { execute, queryOne } = await import("@vex-agent/db/client.js");
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+
+    const activityId = await seedEligibleSwap();
     // Test-only direct SQL: production reaches superseded_unproven through the
     // claim-fenced CAS; the scan only cares about the resulting status value.
     await execute(
       `UPDATE agent_activity SET status = 'superseded_unproven' WHERE id = $1`,
-      [superseded.id],
+      [activityId],
     );
 
-    expect(await repo.enqueueEligibleActivity(false)).toBe(0);
+    expect(await repo.enqueueEligibleActivity(false)).toBe(1);
+    const stored = await queryOne<{ status: string }>(
+      `SELECT status FROM agentscan_outbox WHERE activity_id = $1`, [activityId],
+    );
+    expect(stored?.status).toBe("superseded_unproven");
+
+    const claimed = await repo.claimDueOutbox(10);
+    expect(at(claimed, 0).status).toBe("superseded_unproven");
+  });
+
+  it("never enqueues a role outside the reported vocabulary (the predicate is fail-closed)", async () => {
+    const agentActivity = await import("@vex-agent/db/repos/agent-activity.js");
+    const { execute, query } = await import("@vex-agent/db/client.js");
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+
+    const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
+    const row = await agentActivity.createPendingActivityEvent({
+      protocolExecutionId, eventIndex: 0, eventRole: "swap", kind: "swap",
+      protocol: "kyberswap", chainId: 8453, walletAddress, sessionId,
+    });
+
+    // The role CHECK makes an unknown role unrepresentable, so the only way to
+    // exercise the predicate's OWN guard is to step around the CHECK for the
+    // length of this test and put it back exactly as it was.
+    const guards = await query<{ conname: string; def: string }>(
+      `SELECT con.conname, pg_get_constraintdef(con.oid) AS def
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'agent_activity' AND con.conname = ANY($1::text[])`,
+      [["agent_activity_event_role_valid", "agent_activity_kind_role_binding"]],
+    );
+    expect(guards).toHaveLength(2);
+
+    for (const guard of guards) {
+      await execute(`ALTER TABLE agent_activity DROP CONSTRAINT ${guard.conname}`, []);
+    }
+    try {
+      await execute(`UPDATE agent_activity SET event_role = 'role_from_the_future' WHERE id = $1`, [row.id]);
+      expect(await repo.enqueueEligibleActivity(false)).toBe(0);
+    } finally {
+      await execute(`UPDATE agent_activity SET event_role = 'swap' WHERE id = $1`, [row.id]);
+      for (const guard of guards) {
+        await execute(`ALTER TABLE agent_activity ADD CONSTRAINT ${guard.conname} ${guard.def}`, []);
+      }
+    }
   });
 });
 

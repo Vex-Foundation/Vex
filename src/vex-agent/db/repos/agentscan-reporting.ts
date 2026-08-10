@@ -24,12 +24,16 @@
  *
  * `last_error` carries status/code words only ("429 rate_limited"), never
  * response bodies and never the ingest token. The eligibility predicate keeps
- * contract-inexpressible rows (kinds beyond swap/bridge, non-public roles,
- * status `superseded_unproven`) out of the outbox entirely.
+ * rows outside the REPORTED vocabulary below out of the outbox entirely.
  */
 
 import type { PoolClient } from "pg";
 import { query, queryOne, execute, withTransaction } from "../client.js";
+import type {
+  AgentActivityEventRole,
+  AgentActivityKind,
+  AgentActivityStatus,
+} from "./agent-activity/types.js";
 
 export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict" | "wallet_conflict";
 
@@ -56,21 +60,81 @@ export interface AgentscanReportingState {
 export interface ClaimedOutboxEvent {
   readonly outboxId: number;
   readonly activityId: number;
-  readonly status: "pending" | "confirmed" | "definitively_failed";
+  readonly status: AgentActivityStatus;
   readonly backfill: boolean;
   /** Raw `agent_activity` row for payload building; null if the row vanished between claim and read. */
   readonly activity: Record<string, unknown> | null;
 }
 
 /**
- * The contract-v1 eligibility predicate — the single source of truth for what
- * is reportable at all. Kept as one fragment so the scan can never drift from
- * the vocabulary the server's closed enums accept.
+ * WHAT IS REPORTABLE — as data, not as a hand-written SQL list.
+ *
+ * Every kind and status Vex records is reported, and every role except the two
+ * approval roles named below: AgentScan's contract accepts that vocabulary, so
+ * no contract-inexpressible arm is left to filter. Any FURTHER exclusion has to
+ * be named here WITH its reason and added to `DELIBERATELY_UNREPORTED_KINDS` /
+ * `DELIBERATELY_UNREPORTED_ROLES` in
+ * `src/__tests__/vex-agent/agentscan/reporting-vocabulary-lockstep.test.ts` —
+ * an omission is a bug, never a decision.
+ *
+ * DELIBERATELY UNREPORTED: `allowance` and `allowance_reset`. AgentScan's
+ * `daily_aggregates` carries a `tx_count` that is written incrementally and
+ * NEVER recomputed from raw events (it has to survive the raw-event purge).
+ * Reporting approval rows would make that published count mean "operations plus
+ * an unpredictable number of ERC-20 approvals" rather than "operations", and
+ * because the aggregate can never be rebuilt, the pollution would be permanent.
+ * Excluding now is reversible; including now is not. An approval also moves no
+ * value and has no meaningful amount or USD figure, so it buys no explorer
+ * value to set against that cost. AgentScan's contract rejects both roles at
+ * ingest on every kind, so emitting them would only earn a terminal validation
+ * refusal.
+ *
+ * Two guards, because neither alone is enough. `satisfies` makes a value that
+ * is not in the vocabulary a COMPILE error (membership), and the lockstep test
+ * makes a vocabulary addition nobody made a reporting decision about a FAILING
+ * test (completeness) — a union cannot be asserted at runtime, and a list
+ * cannot notice what was never added to it.
+ *
+ * Widening these lists is the SECOND half of a rollout: AgentScan must already
+ * accept a value before Vex may emit it (see the outbox status CHECK, migration
+ * 076).
+ */
+export const REPORTED_KINDS = [
+  "swap", "bridge", "lend", "prediction", "wrap", "yield", "launch",
+] as const satisfies readonly AgentActivityKind[];
+
+export const REPORTED_ROLES = [
+  "swap",
+  "bridge_deposit", "bridge_fee", "bridge_fill_expected", "bridge_fill_observed", "bridge_refund",
+  "lend_deposit", "lend_withdraw", "lend_borrow_operate",
+  "predict_buy", "predict_sell", "predict_claim", "predict_close",
+  "wrap", "unwrap",
+  "yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_sy", "yield_claim",
+  "token_launch", "trench_fee", "swap_fee",
+] as const satisfies readonly AgentActivityEventRole[];
+
+/**
+ * `superseded_unproven` is reported as a fourth TERMINAL, NON-FAILURE status.
+ * The mapper emits no `failureCode` for it (it is neither `confirmed` nor
+ * `definitively_failed`), which is exactly its meaning: no longer in flight,
+ * outcome unproven.
+ */
+export const REPORTED_STATUSES = [
+  "pending", "confirmed", "definitively_failed", "superseded_unproven",
+] as const satisfies readonly AgentActivityStatus[];
+
+function sqlLiteralList(values: readonly string[]): string {
+  return values.map((value) => `'${value}'`).join(",");
+}
+
+/**
+ * The eligibility predicate — the single source of truth for what is reportable
+ * at all, built from the lists above so the scan can never drift from them.
  */
 const ELIGIBILITY_SQL = `
-      a.kind IN ('swap','bridge')
-  AND a.event_role IN ('swap','bridge_deposit','bridge_fill_expected','bridge_fill_observed','bridge_refund')
-  AND a.status IN ('pending','confirmed','definitively_failed')
+      a.kind IN (${sqlLiteralList(REPORTED_KINDS)})
+  AND a.event_role IN (${sqlLiteralList(REPORTED_ROLES)})
+  AND a.status IN (${sqlLiteralList(REPORTED_STATUSES)})
   AND a.chain_family IN ('eip155','solana')`;
 
 /** Exponential claim backoff: 30 s · 2^n, capped at 1 h (exponent clamped so POWER stays finite). */
