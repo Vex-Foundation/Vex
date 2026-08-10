@@ -145,7 +145,7 @@ export function getDefaultConfig(): VexConfig {
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
-      agentscanApiUrl: "",
+      agentscanApiUrl: "https://agentscan.projectvex.ai",
     },
   };
 }
