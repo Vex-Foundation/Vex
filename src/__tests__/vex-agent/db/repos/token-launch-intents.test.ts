@@ -378,12 +378,19 @@ describe("failWith — reachable only where something could actually fail", () =
  * established double in this file; typing it through the writer's own parameter
  * keeps the new tests off the unsafe-escape ladder (`as never` / `!`) that the
  * repo gate exists to stop growing.
+ *
+ * The double reaches that parameter in two typed steps: the `Partial`
+ * annotation makes TypeScript CHECK the one member the double implements
+ * (`query`) against the real client's signature, and the assertion then only
+ * vouches for the members the writers never touch. A direct one-step cast is
+ * TS2352 (insufficient overlap) and would grow the test-type ratchet.
  */
 type LaunchWriterClient = Parameters<typeof repo.confirmWith>[0];
 
 function writerClient(rows: Record<string, unknown>[] = []) {
   const client = fakeClient(rows);
-  return { client: client as LaunchWriterClient, spy: client };
+  const checkedSlice: Partial<LaunchWriterClient> = client;
+  return { client: checkedSlice as LaunchWriterClient, spy: client };
 }
 
 describe("markSupersededUnprovenWith — mirroring the lane's verdict, not forming one", () => {
