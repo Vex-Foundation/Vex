@@ -41,6 +41,7 @@
  * now ACTIVE (`describe.skip` removed).
  */
 import { describe, it, expect } from "vitest";
+import type { KyberVenueUnavailableReason } from "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js";
 
 describe("Kyber-failure reveal eligibility (target contract)", () => {
   it("local chain-not-Kyber-supported is eligible", async () => {
@@ -71,6 +72,38 @@ describe("Kyber-failure reveal eligibility (target contract)", () => {
     expect(
       isRevealEligibleKyberFailure({ kind: "kyber_code", code: 4011 }),
     ).toBe(false); // omitted defaults to "not yet validated" — fail closed
+  });
+
+  // Live 2026-08-10: a user in Vietnam was answered HTTP 403 by KyberSwap's
+  // edge and the fallback stayed locked. The venue failed to serve us at all
+  // rather than refusing this trade, so no fresh quote and no corrected
+  // amount can clear it - a second venue is the only remedy Vex has.
+  describe("a venue-availability failure unlocks the fallback venue", () => {
+    it("every closed availability reason is eligible", async () => {
+      const { isRevealEligibleKyberFailure } = await import(
+        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      );
+      for (const reason of ["edge_refused", "endpoint_missing", "rate_limited", "server_error", "timeout", "unreachable"] as const) {
+        expect(isRevealEligibleKyberFailure({ kind: "venue_unavailable", reason })).toBe(true);
+      }
+    });
+
+    it("an off-union reason is NOT eligible (closed set, not a deny-list)", async () => {
+      const { isRevealEligibleKyberFailure } = await import(
+        "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+      );
+      // The single cast simulates a reason arriving through an untyped
+      // boundary, which is the only way an off-union value can reach here.
+      const offUnionReason = "probably_fine" as KyberVenueUnavailableReason;
+      expect(isRevealEligibleKyberFailure({ kind: "venue_unavailable", reason: offUnionReason })).toBe(false);
+    });
+  });
+
+  it("a MINED on-chain revert of the swap leg is eligible", async () => {
+    const { isRevealEligibleKyberFailure } = await import(
+      "../../../vex-agent/tools/registry/uniswap-reveal-eligibility.js"
+    );
+    expect(isRevealEligibleKyberFailure({ kind: "swap_mined_revert" })).toBe(true);
   });
 
   it("4221 is NEVER eligible, even though it is numerically adjacent to the route-not-found family", async () => {

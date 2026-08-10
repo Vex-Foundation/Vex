@@ -42,14 +42,22 @@ export function mapAggregatorError(status: number, code: number | null, message:
   // and routing verdicts, and a Cloudflare challenge body carries no KyberSwap
   // `code` at all. Live-reproduced 2026-08-03: without a `User-Agent`, all
   // three hosts answer 403 `cf-mitigated: challenge` with an HTML page.
-  if (status === 401 || status === 403) {
+  // 451 is the status an edge returns when it blocks a whole REGION - the same
+  // verdict as a 403 challenge, and it must not fall through to the generic
+  // 4xx tail.
+  //
+  // No `externalName`: `httpStatus` already carries the status, and stamping it
+  // here put an HTTP status into the KyberSwap numeric-code namespace, where a
+  // 403 read downstream as "Kyber body code 403". Only a real KyberSwap body
+  // code belongs in `externalName`.
+  if (status === 401 || status === 403 || status === 451) {
     return withStatus(withMeta(
       new VexError(
         ErrorCodes.KYBER_API_ERROR,
         `KyberSwap refused the request (HTTP ${status}): ${message}${suffix}`,
-        "The venue's edge rejected our client, not the trade. Do not retry unchanged — report it.",
+        "The venue's edge rejected our client, not the trade. The same request will be refused the same way, so do not repeat it unchanged on this venue.",
       ),
-      false, String(status),
+      false,
     ), status);
   }
 
@@ -60,14 +68,14 @@ export function mapAggregatorError(status: number, code: number | null, message:
         `KyberSwap has no such endpoint (HTTP 404): ${message}${suffix}`,
         "The chain slug or the API path is wrong for this venue — check the chain before retrying.",
       ),
-      false, "404",
+      false,
     ), status);
   }
 
   if (status === 429) {
     return withStatus(withMeta(
       new VexError(ErrorCodes.KYBER_RATE_LIMITED, `KyberSwap rate limit exceeded${suffix}`, "Retry with backoff."),
-      true, "429",
+      true,
     ), status);
   }
 

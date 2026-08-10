@@ -36,6 +36,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { ToolCallRequest } from "@vex-agent/tools/types.js";
+import { VexError } from "../../../errors.js";
 import { makeTestContext } from "../tools/_test-context.js";
 
 // The real-boundary tests dynamically import the full dispatcher module graph
@@ -219,6 +220,12 @@ describe("canonical executeProtocolTool gate for the hidden Uniswap pair (C3)", 
     );
     expect(result.success).toBe(false);
     expect(uniswapQuoteHandler).not.toHaveBeenCalled();
+    // The denial recites the ONE shared trigger summary, never its own copy:
+    // four lock surfaces each had their own and three had drifted.
+    const { UNISWAP_REVEAL_TRIGGER_SUMMARY } = await import(
+      "../../../vex-agent/tools/registry/uniswap-reveal.js"
+    );
+    expect(result.output).toContain(UNISWAP_REVEAL_TRIGGER_SUMMARY);
   });
 
   it("allows a REVEALED session's canonical uniswap.swap.quote through to the handler", async () => {
@@ -270,5 +277,53 @@ describe("clear-on-success — reveal is removed from the real tool list, not ju
     const namesAfterClear = getVisibleToolDefs(defaultVisibilityContext({ sessionId })).map((t) => t.name);
     expect(namesAfterClear).not.toContain("swap_quote_uniswap");
     expect(namesAfterClear).not.toContain("swap_execute_uniswap");
+  });
+});
+
+// ── Drift guard across every agent-facing recitation of the unlock trigger ───
+
+/**
+ * The enumeration of what unlocks the hidden pair lives in six agent-facing
+ * places. It went stale twice already (once when `unsafe_build` and
+ * `pre_sign_revert` were added, once when the availability class was), and a
+ * stale enumeration tells the agent a venue it now has is unavailable. One
+ * shared needle, asserted everywhere.
+ */
+describe("every agent-facing recitation of the unlock trigger names the availability class", () => {
+  const NEEDLE = "KyberSwap being unavailable";
+
+  it("the shared trigger summary, both manifests, the alias, the prompt, and the deployment hint", async () => {
+    const { UNISWAP_REVEAL_TRIGGER_SUMMARY } = await import(
+      "../../../vex-agent/tools/registry/uniswap-reveal.js"
+    );
+    expect(UNISWAP_REVEAL_TRIGGER_SUMMARY).toContain("KyberSwap being unavailable to us at all");
+
+    const { UNISWAP_SWAP_TOOLS } = await import(
+      "../../../vex-agent/tools/protocols/uniswap/manifests/swap.js"
+    );
+    for (const manifest of UNISWAP_SWAP_TOOLS) {
+      expect(manifest.description, manifest.toolId).toContain(NEEDLE);
+    }
+
+    const { ACTION_ALIAS_TOOLS } = await import("../../../vex-agent/tools/registry/action-aliases.js");
+    const quoteAlias = ACTION_ALIAS_TOOLS.find((tool) => tool.name === "swap_quote_uniswap");
+    expect(quoteAlias?.description).toContain(NEEDLE);
+
+    const { buildProtocolsPrompt, resetProtocolsPromptCache } = await import(
+      "../../../vex-agent/engine/prompts/protocols.js"
+    );
+    resetProtocolsPromptCache();
+    expect(buildProtocolsPrompt()).toContain(NEEDLE);
+
+    const { requireDeployment } = await import(
+      "../../../vex-agent/tools/protocols/uniswap/handlers/swap/deployment.js"
+    );
+    let deploymentHint: string | undefined;
+    try {
+      requireDeployment("no-such-chain-for-this-test");
+    } catch (err) {
+      deploymentHint = err instanceof VexError ? err.hint : undefined;
+    }
+    expect(deploymentHint).toContain(NEEDLE);
   });
 });

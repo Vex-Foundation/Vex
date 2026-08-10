@@ -159,11 +159,15 @@ export function buildProtocolsPrompt(): string {
   // BRIDGE routing section is DYNAMIC (live Khalani `/v1/chains` list) and
   // renders as a per-turn layer via `buildBridgeCapabilityPrompt` — deliberately
   // NOT here, so nothing mutable sits behind this permanent cache (R13/B7).
+  //
+  // The backup-venue trigger clause describes the failure CLASS rather than
+  // enumerating codes, because the enumeration went stale twice - most
+  // recently when a geo-blocked user's HTTP 403 matched nothing it listed.
   lines.push("## Swap Venue Routing");
   lines.push("");
   lines.push("Swap venue by chain:");
   lines.push("- On KyberSwap-supported EVM chains, prefer `kyberswap.*` (aggregated pricing plus honeypot/fee-on-transfer flags).");
-  lines.push("- If KyberSwap cannot route a swap (no aggregator support for the chain, a route/token-not-found class failure, or the swap execute transaction reverting on-chain), its failure output tells you a backup venue is now available for this session and how to reach it — do not try to reach it yourself. Only that specific failure output unlocks it, and only as a QUOTE candidate: request a fresh quote from the backup venue before considering execution, and never resubmit the identical failing KyberSwap route. A bad KyberSwap price quote is never a trigger by itself.");
+  lines.push("- If KyberSwap cannot serve a swap (no aggregator support for the chain, a route or token it cannot price, a build or pre-sign check that its own route fails, the swap execute transaction reverting on-chain, or KyberSwap being unavailable to us at all: refused at its edge, unreachable, rate limited, or erroring), its failure output tells you a backup venue is now available for this session and how to reach it. Do not try to reach it yourself. Only that specific failure output unlocks it, and only as a QUOTE candidate: request a fresh quote from the backup venue before considering execution, and never resubmit the identical failing KyberSwap route. A bad KyberSwap price quote is never a trigger by itself, and neither is a slippage, balance, allowance, or deadline failure: each of those clears with a fresh quote or a corrected amount.");
   lines.push("- On Robinhood Chain (4663), `kyberswap.*` is primary (provisional aggregator support). $VEX and other Virtuals agent tokens trade against VIRTUAL there, so route through VIRTUAL (or WETH) as the base pair.");
   lines.push("- Robinhood caution: KyberSwap's indexed reserves can be stale on thin pairs there. A quote whose priceImpact is strongly NEGATIVE (output supposedly worth more than input), or an execute reverting with 'Return amount is not enough', means the quote overestimated the pool — do NOT retry with higher slippage; re-quote, or tell the user KyberSwap's pricing looks unreliable for this pair.");
   lines.push("- Trench exception, Robinhood Chain (4663): a Trench Express token that is still on its bonding curve trades ONLY against ETH on that curve — quote with `trench.trade_quote`, then execute with `trench.trade_execute`. `kyberswap.*` has no route for a curve token, so a failed swap quote there is not evidence the token is untradeable. Once a Trench token GRADUATES it leaves the curve for a WETH-paired pool and the normal venue rules apply again.");

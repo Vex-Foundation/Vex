@@ -74,6 +74,69 @@ describe("mapAggregatorError", () => {
     expect(err.externalName).toBe("4008");
   });
 
+  // An HTTP status must never be stamped into `externalName`: that field is
+  // the KyberSwap BODY-code namespace, and a 403 landing in it read
+  // downstream as "Kyber code 403" and kept the fallback venue locked for a
+  // geo-blocked user. `httpStatus` already carries the status.
+  const EDGE_REFUSAL_HINT =
+    "The venue's edge rejected our client, not the trade. The same request will be refused the same way, so do not repeat it unchanged on this venue.";
+
+  it("maps 403 to KYBER_API_ERROR with the status on httpStatus and NOT on externalName", () => {
+    const err = mapAggregatorError(403, null, "blocked");
+    expect(err.code).toBe(ErrorCodes.KYBER_API_ERROR);
+    expect(err.message).toContain("KyberSwap refused the request (HTTP 403)");
+    expect(err.httpStatus).toBe(403);
+    expect(err.retryable).toBe(false);
+    expect(err.externalName).toBeUndefined();
+    expect(err.hint).toBe(EDGE_REFUSAL_HINT);
+  });
+
+  it("maps 401 through the same edge-refusal branch", () => {
+    const err = mapAggregatorError(401, null, "unauthorized");
+    expect(err.code).toBe(ErrorCodes.KYBER_API_ERROR);
+    expect(err.httpStatus).toBe(401);
+    expect(err.retryable).toBe(false);
+    expect(err.externalName).toBeUndefined();
+    expect(err.hint).toBe(EDGE_REFUSAL_HINT);
+  });
+
+  // 451 is what an edge returns when it blocks a whole region - the exact
+  // scenario the availability class exists for, so it must not fall through
+  // to the generic 4xx tail.
+  it("maps 451 through the edge-refusal branch, not the generic 4xx tail", () => {
+    const err = mapAggregatorError(451, null, "unavailable for legal reasons");
+    expect(err.code).toBe(ErrorCodes.KYBER_API_ERROR);
+    expect(err.message).toContain("KyberSwap refused the request (HTTP 451)");
+    expect(err.httpStatus).toBe(451);
+    expect(err.retryable).toBe(false);
+    expect(err.externalName).toBeUndefined();
+    expect(err.hint).toBe(EDGE_REFUSAL_HINT);
+  });
+
+  it("maps 404 with the status on httpStatus only", () => {
+    const err = mapAggregatorError(404, null, "no such path");
+    expect(err.code).toBe(ErrorCodes.KYBER_API_ERROR);
+    expect(err.httpStatus).toBe(404);
+    expect(err.externalName).toBeUndefined();
+  });
+
+  it("maps 429 to KYBER_RATE_LIMITED with the status on httpStatus only", () => {
+    const err = mapAggregatorError(429, null, "Rate limited");
+    expect(err.code).toBe(ErrorCodes.KYBER_RATE_LIMITED);
+    expect(err.httpStatus).toBe(429);
+    expect(err.retryable).toBe(true);
+    expect(err.externalName).toBeUndefined();
+  });
+
+  // Scope guard: a REAL KyberSwap body code still belongs in `externalName`.
+  it("keeps a real body code in externalName on the 5xx tail", () => {
+    expect(mapAggregatorError(500, 4008, "x").externalName).toBe("4008");
+  });
+
+  it("no longer tells the agent a geo-block is unrecoverable with no alternative", () => {
+    expect(mapAggregatorError(403, null, "blocked").hint).not.toContain("Do not retry unchanged");
+  });
+
   it("handles unknown code on non-5xx", () => {
     const err = mapAggregatorError(400, 9999, "Unknown");
     expect(err.code).toBe(ErrorCodes.KYBER_API_ERROR);

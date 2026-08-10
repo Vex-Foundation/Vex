@@ -1,0 +1,122 @@
+/**
+ * Kind, generic-kind, event-role, and chain-family vocabulary for
+ * `agent_activity` rows. Pure types, no imports.
+ */
+
+/**
+ * Swap rows (Phase 1), bridge rows (Phase 2, migration 045), or the W5
+ * (migration 049) `lend`/`prediction` rows. Jupiter swaps reuse the existing
+ * `swap` kind (protocol='jupiter') rather than adding a fifth kind.
+ * `wrap` is migration 051 (native <-> wrapped-native, no route/price/slippage);
+ * `yield` is migration 053 (Pendle PT/YT/PY/LP/claim, protocol='pendle') — kept
+ * out of `swap` because `py.mint` is a 1->2 split, `lp.add` a deposit and
+ * `yield_claim` an income sweep with NO input leg, none of which a swap's
+ * route/price/counterparty assertions describe.
+ * `launch` is migration 062 (Trench Express token creation on Robinhood Chain
+ * 4663, protocol='trench'): ONE payable `create` transaction that mints a token
+ * and — when a prebuy was asked for — buys some of it in the SAME transaction.
+ * The prebuy is therefore a LEG of the launch, recorded in this row's ordinary
+ * first-leg columns (native in, the new token out), NEVER a second `swap` row
+ * sharing the create's tx hash.
+ */
+export type AgentActivityKind =
+  | "swap"
+  | "bridge"
+  | "lend"
+  | "prediction"
+  | "wrap"
+  | "yield"
+  | "launch";
+
+/**
+ * Kinds valid through the GENERIC write path (`./swap-intent.js` +
+ * `./swap-lifecycle.js` — `createAgentActivityIntent`/
+ * `createAgentActivityPreBroadcastFailure`/`createPendingActivityEvent`/
+ * `recordPreBroadcastFailure`). `bridge` is deliberately excluded: it has
+ * its own dedicated `./bridge-intent.js`/`./bridge-lifecycle.js` API with a
+ * different required shape (route endpoints, a logical `bridge_fill_expected`
+ * row, provider-order-id CAS) — routing a bridge row through the generic
+ * path would bypass that machinery and create a malformed row.
+ */
+export type AgentActivityGenericKind = Exclude<AgentActivityKind, "bridge">;
+
+/**
+ * Event roles. Phase-1 swap roles, the Phase-2 bridge roles (migration 045),
+ * and the W5 lend/prediction roles (migration 049 — one role per on-chain
+ * tx; a lend `/operate` delta shape lives in `intent_params`, not in this
+ * vocabulary). `bridge_fill_expected` is the LOGICAL-row marker (B2) — exactly
+ * one per execution, carrying the route endpoints + amounts +
+ * `provider_order_id` that every feed/dedup/in-flight-guard keys on.
+ * `bridge_deposit` is the Vex-signed origin leg; `bridge_fee` (migration 050)
+ * is the Vex integrator-fee transfer — the FINAL Vex-signed origin leg, taken
+ * only after the deposit succeeded, so a bridge that never lands never pays a
+ * fee. It was recorded as `allowance` until 050 (see
+ * `src/tools/bridge-fee/constants.ts`); `bridge_deposit` was and remains
+ * disqualified for it because the bridge repair sweep correlates the provider
+ * order by selecting the sibling `bridge_deposit` row.
+ * `bridge_fill_observed`/`bridge_refund` are externally-observed
+ * (solver-signed) evidence rows.
+ * `predict_sell` is a SINGLE-position close (`solana.predict.sell` ->
+ * `DELETE /positions/{positionPubkey}`, one activity row); `predict_close`
+ * is reserved for the `closeAll` bulk fan-out (`DELETE /positions`, N
+ * independent activity rows, one per tx). Both cover Forecast(bisonfi)
+ * orders identically — the provider distinction lives in how the row is
+ * SUBMITTED (managed `/execute` vs the generic path), never in the role.
+ * `wrap`/`unwrap` are migration 051. The six `yield_*` roles are migration 053
+ * (Pendle): `yield_pt`/`yield_yt`/`yield_sy` are one-in-one-out, `yield_py`
+ * carries a SECOND leg on exactly one side (mint splits 1->PT+YT, redeem burns
+ * PT+YT->1), `yield_lp` may carry one for the dual add/remove variants, and
+ * `yield_claim` has NO input leg at all. `yield_sy` is the SY wrapper leg
+ * (`pendle.sy.mint`/`pendle.sy.redeem`) — a wrap, never a split, and therefore
+ * barred from the second-leg family. A Pendle ERC-20 approval REUSES `allowance` /
+ * `allowance_reset` rather than forking a Pendle-specific role.
+ * `token_launch` is migration 062 — ONE role for the whole Trench launch, not
+ * two. A launch has no allowance step (the creation fee and the prebuy are both
+ * paid in NATIVE ETH as `msg.value`, and native value needs no ERC-20 approval)
+ * and no separate prebuy role, because the prebuy happens in the same
+ * transaction and rides this row's first-leg columns. It is likewise barred from
+ * the Option-C second-leg family: a create-with-prebuy is one-in one-out.
+ * `trench_fee` is migration 063 — Vex's 25 bps integrator fee on Trench Express,
+ * a SEPARATE native transfer to the treasury that runs after the trade or launch
+ * confirms. `bridge_fee` could not be reused: the kind↔role binding admits it
+ * only on the `kind='bridge'` arm. It is admitted on the `swap` AND `launch`
+ * arms because a trade fee rides a `swap` execution and a launch fee rides a
+ * `launch` one, and they are the same kind of leg.
+ * `swap_fee` is migration 066 — Vex's 25 bps integrator fee on a SWAP venue whose
+ * router takes no fee parameter (Uniswap V2 Router02 / V3 SwapRouter02), charged
+ * as a separate transfer of the INPUT token that runs after the swap confirms.
+ * Admitted on the `swap` arm only. Neither `bridge_fee` (barred by the binding
+ * to `kind='bridge'`) nor `trench_fee` (which names another venue, and whose
+ * rows answer "what did Trench Express earn") could carry it. The name is
+ * venue-neutral so a later fee-parameterless swap venue reuses it.
+ */
+export type AgentActivityEventRole =
+  | "allowance_reset"
+  | "allowance"
+  | "swap"
+  | "bridge_deposit"
+  | "bridge_fee"
+  | "bridge_fill_expected"
+  | "bridge_fill_observed"
+  | "bridge_refund"
+  | "lend_deposit"
+  | "lend_withdraw"
+  | "lend_borrow_operate"
+  | "predict_buy"
+  | "predict_sell"
+  | "predict_claim"
+  | "predict_close"
+  | "wrap"
+  | "unwrap"
+  | "yield_pt"
+  | "yield_yt"
+  | "yield_py"
+  | "yield_lp"
+  | "yield_sy"
+  | "yield_claim"
+  | "token_launch"
+  | "trench_fee"
+  | "swap_fee";
+
+/** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
+export type BridgeChainFamily = "eip155" | "solana";

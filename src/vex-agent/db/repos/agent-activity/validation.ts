@@ -33,6 +33,7 @@ export const CLOSED_FAILURE_CODES: ReadonlySet<string> = new Set<AgentActivityFa
   "bridge_failed",
   "bridge_refunded",
   "solana_signature_expired",
+  "venue_unavailable",
 ]);
 
 /**

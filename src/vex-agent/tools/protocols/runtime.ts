@@ -40,7 +40,7 @@ import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/ga
 import { captureExecution } from "./runtime/capture.js";
 import { isAbortError } from "@utils/cancellation.js";
 import logger from "@utils/logger.js";
-import { isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { isUniswapPairRevealed, UNISWAP_REVEAL_TRIGGER_SUMMARY } from "../registry/uniswap-reveal.js";
 import { REVEAL_GATED_RELAY_TOOL_IDS, evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 
 export { discoverProtocolCapabilities } from "./discovery.js";
@@ -148,9 +148,7 @@ export async function executeProtocolTool(
     logger.info("protocol.execute.uniswap_reveal_denied", { toolId: request.toolId });
     return withActionKind({
       success: false,
-      output: `${request.toolId} is not available yet for this session — it unlocks after an eligible `
-        + `KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting `
-        + `on-chain at execute time (try swap_quote first).`,
+      output: `${request.toolId} is not available yet for this session. ${UNISWAP_REVEAL_TRIGGER_SUMMARY}`,
     }, effectiveActionKind);
   }
 
