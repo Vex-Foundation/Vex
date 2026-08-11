@@ -153,6 +153,7 @@ export async function processMissionSetupTurn(
     missionSetupContext: setupState ? {
       currentDraft: setupState.currentDraft,
       missingFields: setupState.missingFields,
+      warnings: setupState.warnings,
     } : undefined,
   };
 

@@ -282,6 +282,46 @@ describe("runner", () => {
   // ── processMissionSetupTurn ────────────────────────────────
 
   describe("processMissionSetupTurn", () => {
+    it("threads measurability warnings into runTurnLoop's prompt options", async () => {
+      // The renew gap: warnings were computed by getMissionSetupState but
+      // never forwarded, so a renewed draft's stale-denominator warning was
+      // invisible until the model happened to call mission_draft_update.
+      // This pins the WIRING, runner-level: the prompt options handed to the
+      // turn loop must carry the warnings for the current draft.
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      const numberlessCriterion = makeMission({
+        title: "Renewed hunt",
+        successCriteriaJson: ["Win big"],
+      });
+      mockGetMission
+        .mockResolvedValueOnce(numberlessCriterion)
+        .mockResolvedValueOnce(numberlessCriterion);
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Draft reviewed.",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+      });
+
+      await processMissionSetupTurn("session-1", "review the draft");
+
+      // Located by SHAPE, not position: the prompt-options argument is the
+      // one carrying missionSetupContext, wherever the signature puts it.
+      const call = mockRunTurnLoop.mock.calls.at(0);
+      expect(call).toBeDefined();
+      const promptOptions = call?.find(
+        (arg): arg is { missionSetupContext?: { warnings?: string[] } } =>
+          typeof arg === "object" && arg !== null && "missionSetupContext" in arg,
+      );
+      expect(promptOptions).toBeDefined();
+      expect(promptOptions?.missionSetupContext?.warnings).toEqual([
+        expect.stringContaining("contains no number"),
+      ]);
+    });
+
     it("adds a DB-not-ready correction when setup text suggests starting a draft", async () => {
       mockHydrate.mockResolvedValueOnce(makeHydratedSession({
         sessionKind: "mission",

@@ -219,9 +219,36 @@ describe("mission state prompts", () => {
           },
         },
         missingFields: [],
+        warnings: [],
       });
       expect(prompt).not.toContain("[object Object]");
       expect(prompt).toContain("\"amountRaw\":\"3044000000000000000000\"");
+    });
+
+    it("surfaces measurability warnings in the setup prompt itself, even on a READY draft", () => {
+      // The renew gap: a renewed draft clones the previous deployedCapital
+      // verbatim and no tool call fires, so the prompt is the only surface
+      // that can show the model a stale-denominator warning unprompted.
+      const prompt = buildMissionSetupPrompt(makeMissionContext(), {
+        currentDraft: { title: "Renewed hunt" },
+        missingFields: [],
+        warnings: [
+          "A success criterion states an absolute portfolio value.",
+        ],
+      });
+      expect(prompt).toContain("## Status: READY");
+      expect(prompt).toContain("## Measurability Warnings");
+      expect(prompt).toContain("A success criterion states an absolute portfolio value.");
+      expect(prompt).toContain("tell the user plainly why you are leaving it as is");
+    });
+
+    it("omits the warnings section entirely when there are none", () => {
+      const prompt = buildMissionSetupPrompt(makeMissionContext(), {
+        currentDraft: { title: "Clean" },
+        missingFields: ["goal"],
+        warnings: [],
+      });
+      expect(prompt).not.toContain("## Measurability Warnings");
     });
   });
 });
