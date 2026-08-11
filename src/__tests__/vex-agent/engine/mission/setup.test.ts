@@ -7,6 +7,7 @@ const mockGetMission = vi.fn();
 const mockGetMissionForUpdate = vi.fn();
 const mockUpdateDraft = vi.fn();
 const mockSetStatus = vi.fn();
+const mockClearAcceptance = vi.fn();
 
 vi.mock("@vex-agent/db/repos/missions.js", () => ({
   createDraft: (...a: unknown[]) => mockCreateDraft(...a),
@@ -14,6 +15,7 @@ vi.mock("@vex-agent/db/repos/missions.js", () => ({
   getMissionForUpdate: (...a: unknown[]) => mockGetMissionForUpdate(...a),
   updateDraft: (...a: unknown[]) => mockUpdateDraft(...a),
   setStatus: (...a: unknown[]) => mockSetStatus(...a),
+  clearAcceptance: (...a: unknown[]) => mockClearAcceptance(...a),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({
@@ -282,6 +284,30 @@ describe("mission setup", () => {
         }),
         expect.anything(),
       );
+    });
+
+    it("clears acceptance on a deployedCapital-ONLY patch of an accepted mission", async () => {
+      // The declaration is hash material (contract v6), but the guard that
+      // actually protects an edit is the unconditional acceptance clear - it
+      // works even for a mission accepted under a pre-v6 hash version whose
+      // recorded hash never saw the field. Pin it for the capital-only patch.
+      const locked = makeMission({ acceptedContractHash: "0xabc" });
+      mockGetMission.mockResolvedValueOnce(makeMission({ acceptedContractHash: "0xabc" }));
+      mockGetMissionForUpdate.mockResolvedValueOnce(locked);
+      mockGetMission.mockResolvedValueOnce(makeMission());
+
+      await applyMissionPatch("mission-1", {
+        deployedCapital: {
+          amountRaw: "3044000000000000000000",
+          decimals: 18,
+          chainId: 4663,
+          assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+          assetSymbol: "VEX",
+        },
+      });
+
+      expect(mockUpdateDraft).toHaveBeenCalledTimes(1);
+      expect(mockClearAcceptance).toHaveBeenCalledTimes(1);
     });
   });
 

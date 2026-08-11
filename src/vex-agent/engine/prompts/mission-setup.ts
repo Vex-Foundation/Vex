@@ -14,6 +14,15 @@ import type { EngineContext, MissionDraft } from "../types.js";
 export interface MissionSetupContext {
   currentDraft: Partial<MissionDraft>;
   missingFields: string[];
+  /**
+   * Measurability warnings for the CURRENT draft (engine/mission/
+   * measurability.ts), re-assessed on every setup turn. Carried here so the
+   * model sees them without having to call `mission_draft_update` first - the
+   * gap that let a RENEWED draft inherit a stale deployedCapital declaration
+   * silently (renew clones capital_source_json wholesale and fires no tool
+   * call of its own).
+   */
+  warnings: string[];
 }
 
 export function buildMissionSetupPrompt(
@@ -114,6 +123,18 @@ export function buildMissionSetupPrompt(
     } else {
       lines.push("## Status: READY");
       lines.push("All required fields are populated. The draft is ready for the host Accept contract step.");
+      lines.push("");
+    }
+
+    // Rendered in BOTH branches: a draft can be field-complete and still
+    // carry an unmeasurable or stale-denominator criterion (e.g. right after
+    // a renew, which clones the previous declaration verbatim).
+    if (setupContext.warnings.length > 0) {
+      lines.push("## Measurability Warnings");
+      for (const warning of setupContext.warnings) {
+        lines.push(`- ${warning}`);
+      }
+      lines.push("- Fix the draft, or tell the user plainly why you are leaving it as is.");
       lines.push("");
     }
   }
