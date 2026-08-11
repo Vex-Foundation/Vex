@@ -22,13 +22,20 @@ import {
   createBridgeOrderStatusEvaluator,
 } from "./bridge-order-status.js";
 
-export { BRIDGE_ORDER_STATUS_WATCH_TYPE } from "./bridge-order-status.js";
+import { TOKEN_PRICE_WATCH_TYPE, createTokenPriceEvaluator } from "./token-price.js";
 
-const BUILT_IN_EVALUATORS = [createBridgeOrderStatusEvaluator()] as const;
+export { BRIDGE_ORDER_STATUS_WATCH_TYPE } from "./bridge-order-status.js";
+export { TOKEN_PRICE_WATCH_TYPE } from "./token-price.js";
+
+const BUILT_IN_EVALUATORS = [
+  createBridgeOrderStatusEvaluator(),
+  createTokenPriceEvaluator(),
+] as const;
 
 /** Every watch type a `loop_defer` call may name. Used in refusal text. */
 export const SUPPORTED_WAKE_WATCH_TYPES: readonly string[] = [
   BRIDGE_ORDER_STATUS_WATCH_TYPE,
+  TOKEN_PRICE_WATCH_TYPE,
 ];
 
 export function registerBuiltInWakeWatchEvaluators(): void {

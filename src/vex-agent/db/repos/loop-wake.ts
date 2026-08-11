@@ -26,69 +26,29 @@
  * dedicated short-lived `PoolClient` so the SKIP LOCKED predicate and the
  * UPDATE live in the same transaction — race-safe across concurrent
  * executor ticks.
+ *
+ * Structural split: this file owns the row LIFECYCLE (enqueue, cancel, claim,
+ * session-scoped primitives) and stays the public entry point. The row mapping
+ * lives in `./loop-wake/row.ts` and the watch reads + promotion in
+ * `./loop-wake/watch-queries.ts`, both re-exported below so no caller's import
+ * changed.
  */
 
 import type { PoolClient } from "pg";
 import { getPool, query, queryOneWith, execute, executeWith } from "../client.js";
 import { nullableJsonb } from "../params.js";
+import { mapRow, type LoopWakeRow } from "./loop-wake/row.js";
 
-// ── Types ───────────────────────────────────────────────────────────
+export type { LoopWakeRequest, LoopWakeStatus } from "./loop-wake/row.js";
+export {
+  getPendingWithWatch,
+  getPendingWithWatchType,
+  promotePendingWake,
+  type PromotePendingWakeInput,
+  type WakeTriggeredBy,
+} from "./loop-wake/watch-queries.js";
 
-export type LoopWakeStatus = "pending" | "consumed" | "cancelled";
-
-export interface LoopWakeRequest {
-  id: string;
-  sessionId: string;
-  /** `null` for a session-scoped agent continuation — see the module header. */
-  missionRunId: string | null;
-  dueAt: string;
-  status: LoopWakeStatus;
-  reason: string | null;
-  payload: Record<string, unknown> | null;
-  createdAt: string;
-  consumedAt: string | null;
-  cancelledAt: string | null;
-  cancelledReason: string | null;
-}
-
-interface LoopWakeRow {
-  id: string;
-  session_id: string;
-  mission_run_id: string | null;
-  due_at: string | Date;
-  status: string;
-  reason: string | null;
-  payload: Record<string, unknown> | null;
-  created_at: string | Date;
-  consumed_at: string | Date | null;
-  cancelled_at: string | Date | null;
-  cancelled_reason: string | null;
-}
-
-function isoOrNull(v: string | Date | null): string | null {
-  if (v === null) return null;
-  return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
-}
-
-function iso(v: string | Date): string {
-  return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
-}
-
-function mapRow(r: LoopWakeRow): LoopWakeRequest {
-  return {
-    id: r.id,
-    sessionId: r.session_id,
-    missionRunId: r.mission_run_id,
-    dueAt: iso(r.due_at),
-    status: r.status as LoopWakeStatus,
-    reason: r.reason,
-    payload: r.payload,
-    createdAt: iso(r.created_at),
-    consumedAt: isoOrNull(r.consumed_at),
-    cancelledAt: isoOrNull(r.cancelled_at),
-    cancelledReason: r.cancelled_reason,
-  };
-}
+import type { LoopWakeRequest } from "./loop-wake/row.js";
 
 // ── Enqueue ─────────────────────────────────────────────────────────
 
@@ -347,65 +307,4 @@ export async function getPendingForSession(
     [sessionId],
   );
   return row ? mapRow(row) : null;
-}
-
-/** Pending rows with a versioned generic watch payload. */
-export async function getPendingWithWatch(): Promise<LoopWakeRequest[]> {
-  const rows = await query<LoopWakeRow>(
-    `SELECT * FROM loop_wake_requests
-     WHERE status = 'pending'
-       AND payload ? 'watchId'
-       AND payload ? 'conditions'
-     ORDER BY due_at ASC`,
-  );
-  return rows.map(mapRow);
-}
-
-/**
- * Move a matching wake deadline to now, NEVER later — `LEAST(due_at, NOW())`,
- * so a promotion can only ever make the session wake sooner. A watch is an
- * optimization over the timer; it must not be able to extend a wait.
- *
- * TWO SHAPES, matching the two shapes of wake row (module header):
- *
- *   - MISSION RUN (`missionRunId` set) joins `mission_runs` and requires the run
- *     to still be `paused_wake`. That predicate is what stops a stale trigger
- *     from promoting a run that a user message or a terminal transition already
- *     resumed.
- *   - AGENT SESSION (`missionRunId === null`) has no run row to join, so the
- *     pending wake row IS the park — exactly the invariant
- *     `scheduleAgentSessionContinuation` already relies on. `mission_run_id IS
- *     NULL` is asserted explicitly rather than left to a parameter compare,
- *     because `= NULL` is never true in SQL and would silently promote nothing.
- */
-export async function promotePendingWake(input: {
-  readonly sessionId: string;
-  readonly missionRunId: string | null;
-  readonly watchId: string;
-}): Promise<boolean> {
-  if (input.missionRunId === null) {
-    const affected = await execute(
-      `UPDATE loop_wake_requests AS wake
-       SET due_at = LEAST(wake.due_at, NOW())
-       WHERE wake.session_id = $1
-         AND wake.mission_run_id IS NULL
-         AND wake.status = 'pending'
-         AND wake.payload->>'watchId' = $2`,
-      [input.sessionId, input.watchId],
-    );
-    return affected > 0;
-  }
-  const affected = await execute(
-    `UPDATE loop_wake_requests AS wake
-     SET due_at = LEAST(wake.due_at, NOW())
-     FROM mission_runs AS run
-     WHERE wake.session_id = $1
-       AND wake.mission_run_id = $2
-       AND wake.status = 'pending'
-       AND wake.payload->>'watchId' = $3
-       AND run.id = wake.mission_run_id
-       AND run.status = 'paused_wake'`,
-    [input.sessionId, input.missionRunId, input.watchId],
-  );
-  return affected > 0;
 }

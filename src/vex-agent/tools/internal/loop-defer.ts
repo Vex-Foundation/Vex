@@ -40,6 +40,15 @@
  * watch is an optimization over the timer. When it cannot be honoured, the
  * defer still parks on its timer and the refusal comes back as a named warning.
  *
+ * ## ONE watch outcome does cancel the defer: the condition is already true
+ *
+ * A `token_price` watch whose threshold has ALREADY been crossed when the model
+ * arms it is not a watch, it is news. Parking on it would sleep the session
+ * through the very move it asked to be woken for, so no wake row is written, no
+ * `defer_until` signal is emitted, and the model is handed the observed price
+ * and told to act. This is the ONLY outcome that suppresses the park; an
+ * unarmable condition still parks on its timer, per the paragraph above.
+ *
  * One-pending-per-session is enforced at the DB level (partial unique
  * index, see migration 011). `loopWakeRepo.enqueue` returns `null` when
  * the conflict fires — we surface that back to the model as a soft
@@ -163,7 +172,30 @@ export async function handleLoopDefer(
   }
 
   const dueAt = new Date(dueAtMs);
-  const { payload, rejectedWatch } = await buildWatchPayload(watch, context);
+  const { payload, rejectedWatch, satisfiedWatch } = await buildWatchPayload(watch, context);
+
+  // A condition that is ALREADY TRUE is the one watch outcome that must stop the
+  // park: sleeping on an event that has happened costs the session its whole
+  // timer for nothing. No row is written, so nothing has to be cancelled later.
+  if (satisfiedWatch.length > 0) {
+    return {
+      success: true,
+      output:
+        `Not deferred - ${satisfiedWatch.join(" | ")} Act on it now.`
+        + (payload === null
+          ? ""
+          : " Your other watch conditions were NOT armed either, because nothing was scheduled;"
+            + " re-send them with a fresh loop_defer if you still want them.")
+        + (rejectedWatch.length === 0
+          ? ""
+          : ` A separate condition was also unusable (${rejectedWatch.join(" | ")}).`),
+      data: {
+        deferred: false,
+        watch_satisfied: satisfiedWatch,
+        watch_rejected: rejectedWatch,
+      },
+    };
+  }
 
   const row = shape.kind === "mission"
     ? await loopWakeRepo.enqueue({
@@ -190,13 +222,9 @@ export async function handleLoopDefer(
     );
   }
 
-  const watchNote = rejectedWatch.length === 0
-    ? ""
-    : ` Watch NOT armed (${rejectedWatch.join(" | ")}). The wake above still fires on time.`;
-
   return {
     success: true,
-    output: `Loop deferred until ${row.dueAt} (defer_id=${row.id}).${watchNote}`,
+    output: `Loop deferred until ${row.dueAt} (defer_id=${row.id}).${watchNote(rejectedWatch)}`,
     data: {
       defer_id: row.id,
       due_at: row.dueAt,
@@ -265,14 +293,25 @@ async function buildWatchPayload(
 ): Promise<{
   payload: Record<string, unknown> | null;
   rejectedWatch: readonly string[];
+  satisfiedWatch: readonly string[];
 }> {
-  if (watch === undefined) return { payload: null, rejectedWatch: [] };
+  if (watch === undefined) return { payload: null, rejectedWatch: [], satisfiedWatch: [] };
 
   registerBuiltInWakeWatchEvaluators();
-  const { accepted, rejected } = await validateWakeWatchConditions(watch, context);
-  if (accepted.length === 0) return { payload: null, rejectedWatch: rejected };
+  const { accepted, rejected, satisfied } = await validateWakeWatchConditions(watch, context);
+  if (accepted.length === 0) {
+    return { payload: null, rejectedWatch: rejected, satisfiedWatch: satisfied };
+  }
   return {
     payload: { watchId: randomUUID(), watchVersion: 1, conditions: accepted },
     rejectedWatch: rejected,
+    satisfiedWatch: satisfied,
   };
+}
+
+/** The rejected-watch warning, phrased identically wherever it is appended. */
+function watchNote(rejectedWatch: readonly string[]): string {
+  return rejectedWatch.length === 0
+    ? ""
+    : ` Watch NOT armed (${rejectedWatch.join(" | ")}). The wake above still fires on time.`;
 }

@@ -1,0 +1,174 @@
+[
+  {
+    "chainId": "base",
+    "dexId": "aerodrome",
+    "url": "https://dexscreener.com/base/0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d",
+    "pairAddress": "0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d",
+    "baseToken": {
+      "address": "0x940181a94A35A4569E4529A3CDfB74e38FD98631",
+      "name": "Aerodrome",
+      "symbol": "AERO"
+    },
+    "quoteToken": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.4168",
+    "priceUsd": "0.4168",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 25,
+        "sells": 47
+      },
+      "h6": {
+        "buys": 48,
+        "sells": 399
+      },
+      "h24": {
+        "buys": 310,
+        "sells": 1561
+      }
+    },
+    "volume": {
+      "h24": 905120.45,
+      "h6": 145066.11,
+      "h1": 33084.6,
+      "m5": 0.13
+    },
+    "priceChange": {
+      "h1": 0.48,
+      "h6": -0.67,
+      "h24": -0.94
+    },
+    "liquidity": {
+      "usd": 26774716.21,
+      "base": 32114740,
+      "quote": 13387358
+    },
+    "fdv": 814811426,
+    "marketCap": 814811426,
+    "pairCreatedAt": 1694127045000,
+    "info": null,
+    "labels": null,
+    "boosts": null
+  },
+  {
+    "chainId": "base",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/base/0xa0ab20a64f46b5676fe1542cb87b454e5104007689e0eef4212aa0cbe34933a1",
+    "pairAddress": "0xa0ab20a64f46b5676fe1542cb87b454e5104007689e0eef4212aa0cbe34933a1",
+    "labels": [
+      "v4"
+    ],
+    "baseToken": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+      "name": "USD Base Coin",
+      "symbol": "USDbC"
+    },
+    "priceNative": "0.9999",
+    "priceUsd": "0.9999",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h24": {
+        "buys": 0,
+        "sells": 1
+      }
+    },
+    "volume": {
+      "h24": 675.29,
+      "h6": 0,
+      "h1": 0,
+      "m5": 0
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 907377.41,
+      "base": 905037,
+      "quote": 2387.7754
+    },
+    "fdv": 4180628326,
+    "marketCap": 60897981421,
+    "pairCreatedAt": 1757414875000,
+    "info": null,
+    "boosts": null
+  },
+  {
+    "chainId": "base",
+    "dexId": "aerodrome",
+    "url": "https://dexscreener.com/base/0x6b0f53cbd9272d8117e9535fe25371dedf39a1be",
+    "pairAddress": "0x6b0F53cbD9272D8117e9535FE25371dedF39a1bE",
+    "baseToken": {
+      "address": "0xbF927b841994731C573BDF09ceB0c6B0Aa887cDd",
+      "name": "Velvet",
+      "symbol": "VELVET"
+    },
+    "quoteToken": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.4252",
+    "priceUsd": "0.4252",
+    "txns": {
+      "m5": {
+        "buys": 11,
+        "sells": 9
+      },
+      "h1": {
+        "buys": 284,
+        "sells": 283
+      },
+      "h6": {
+        "buys": 1998,
+        "sells": 2315
+      },
+      "h24": {
+        "buys": 9241,
+        "sells": 10044
+      }
+    },
+    "volume": {
+      "h24": 1076650.74,
+      "h6": 244455.61,
+      "h1": 34141.46,
+      "m5": 1140.38
+    },
+    "priceChange": {
+      "m5": 0.12,
+      "h1": -0.17,
+      "h6": -5.26,
+      "h24": -6.12
+    },
+    "liquidity": {
+      "usd": 3074944.93,
+      "base": 5235241,
+      "quote": 848653
+    },
+    "fdv": 3307032,
+    "marketCap": 105575664,
+    "info": null,
+    "labels": null,
+    "boosts": null
+  }
+]

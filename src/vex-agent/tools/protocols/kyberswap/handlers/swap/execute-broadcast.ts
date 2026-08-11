@@ -14,6 +14,7 @@ import {
 } from "@tools/kyberswap/evm-utils.js";
 import { priorLegAnchorFrom, type ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
+import { verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
 import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import logger from "@utils/logger.js";
@@ -178,12 +179,24 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       // confirmed-but-undecodable settlement can never skip it (the acquired
       // ERC-20 must join tracked_tokens or balance scans miss it forever).
       // Token-in (spent) is deliberately NOT pinned. Never fails the swap.
+      let deliveryVerdict: string | null = null;
       if (!tokenOut.isNative && getLocalChain(chainId)) {
         try {
           await pinTrackedToken({ walletAddress, chainId, tokenAddress: tokenOut.address, source: "swap" });
         } catch (err) {
           logger.warn("kyberswap.swap.execute.auto_pin_failed", { chain: slug, error: err instanceof Error ? err.name : "unknown" });
         }
+        // A1: the receipt's Transfer logs are contract-authored, so a
+        // fake-transfer token settles decodably and delivers nothing (live TOM
+        // incident 2026-08-10). Ask the token itself, once, and claim only on
+        // an exact zero. Fail-soft in every direction.
+        deliveryVerdict = await verifyPostBuyDelivery({
+          client: publicClient,
+          tokenAddress: tokenOut.address,
+          owner: walletAddress,
+          chainLabel: slug,
+          txHash: outcome.txHash,
+        });
       }
 
       // Bounded (Codex final-review round 2, finding 4 / C32): the receipt
@@ -232,7 +245,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         await noteHandlerPendingReason(toolId, eventRow.id, "settlement_undecodable");
         return {
           success: true,
-          output: `${toolId}: swap confirmed on-chain (tx ${outcome.txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.${safetyDisclosure ? ` ${safetyDisclosure}` : ""}`,
+          output: `${toolId}: swap confirmed on-chain (tx ${outcome.txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.${safetyDisclosure ? ` ${safetyDisclosure}` : ""}${deliveryVerdict ? ` ${deliveryVerdict}` : ""}`,
           data: {
             _executionId: executionId,
             txHash: outcome.txHash,
@@ -299,7 +312,9 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         + `Tx: ${outcome.txHash}` + (buildResp.data.amountInUsd ? ` (~$${buildResp.data.amountInUsd} in / ~$${buildResp.data.amountOutUsd} out, estimated).` : ".")
         // W2b: a swap that ran without honeypot protection says so in the
         // FIRST line the agent reads, not only in a machine field.
-        + (safetyDisclosure ? ` ${safetyDisclosure}` : "");
+        + (safetyDisclosure ? ` ${safetyDisclosure}` : "")
+        // A1: and so does a buy the token did not actually deliver.
+        + (deliveryVerdict ? ` ${deliveryVerdict}` : "");
 
       // The build response's own cost disclosure was validated and then
       // dropped: `additionalCostUsd` is a real charge on this settlement
@@ -323,6 +338,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         // C33: a failed confirm-write means Vex's own record of the
         // (real, on-chain) settlement did not persist — never claim
         // ordinary "confirmed".
+        ...(deliveryVerdict ? { deliveryCheck: deliveryVerdict } : {}),
         status: confirmWriteFailed ? "confirmed_unrecorded" : "confirmed",
         ...(safetyCheckUnavailable.length > 0 ? { safetyCheckUnavailable } : {}),
         _executionId: executionId,

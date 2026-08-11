@@ -90,6 +90,22 @@ export async function syncLocalChainForWallet(
     return { chainId, tokensUpdated: 0, skipped: true };
   }
 
+  // A4: `replaceBalancesForChain` replaces the chain's WHOLE snapshot, so it
+  // may only run on a COMPLETE read. `multicall({ allowFailure: true })` answers
+  // per contract, so one token can fail while the rest succeed - writing that
+  // partial set would DELETE a previously valid row, and the agent would read
+  // the deletion as "you hold none of it". Preserve the last-good rows instead.
+  if (read.tokenFailures.length > 0) {
+    logger.warn("sync.local_chain.read_incomplete", {
+      chainId,
+      address: walletAddress.slice(0, 10) + "...",
+      failedTokens: read.tokenFailures.length,
+      scanned: tokenAddrs.length,
+      reasons: [...new Set(read.tokenFailures.map((failure) => failure.reason))],
+    });
+    return { chainId, tokensUpdated: 0, skipped: true };
+  }
+
   const rows = buildBalanceRows(family, walletAddress, config, read);
 
   // DB WRITE — propagates. A failed transactional replace must fail the sync
@@ -158,7 +174,8 @@ function buildBalanceRows(
     );
   }
 
-  // ERC-20s: the reader already skipped zero balances and failed reads.
+  // ERC-20s: the reader skipped zero balances, and a read failure has already
+  // short-circuited this whole pass above.
   for (const token of read.tokens) {
     rows.push(
       toRow(family, walletAddress, config.id, {

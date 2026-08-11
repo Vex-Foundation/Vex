@@ -72,6 +72,18 @@ const WalletReadArgs = z.object({
   response_format: z.enum(["concise", "detailed"]).optional().default("detailed"),
 }).strict();
 
+/**
+ * One token the chain scan could not answer for. Deliberately NOT a
+ * `chainError`: the chain itself scanned, and its other tokens and totals are
+ * still in the snapshot. Reported so "the read failed" can never be mistaken
+ * for "you hold none of it" (the 2026-08-10 incident's core confusion).
+ */
+interface TokenReadError {
+  chainId: number;
+  tokenAddress: string;
+  reason: string;
+}
+
 interface WalletSnapshot {
   wallet: ChainFamily;
   address: string;
@@ -79,8 +91,17 @@ interface WalletSnapshot {
   totalUsd: number;
   scannedChainIds: number[];
   chainErrors: Array<{ chainId: number; chainName?: string; message: string }>;
+  tokenErrors: TokenReadError[];
+  /** Present only when the bound below dropped entries. */
+  tokenErrorsOmitted?: number;
   tokens: ConciseKhalaniToken[];
 }
+
+/**
+ * A broken scan set can fail on hundreds of tokens; the agent needs to know it
+ * happened and on which tokens, not to have its context filled with the list.
+ */
+const MAX_TOKEN_ERRORS_PER_SNAPSHOT = 20;
 
 // ── Chain scope (Khalani-first, local fallback) ─────────────────
 
@@ -135,7 +156,7 @@ async function partitionBalanceChainScope(raw: string | undefined): Promise<Bala
 // ── Local-chain live snapshot ───────────────────────────────────
 
 type LocalChainSnapshot =
-  | { ok: true; tokens: ConciseKhalaniToken[]; totalUsd: number }
+  | { ok: true; tokens: ConciseKhalaniToken[]; totalUsd: number; tokenErrors: TokenReadError[] }
   | { ok: false; chainName?: string; message: string };
 
 /**
@@ -194,7 +215,16 @@ async function readLocalChainSnapshot(
       });
       totalUsd += heldUsd(token.balanceWei, token.decimals, token.priceUsd);
     }
-    return { ok: true, tokens, totalUsd };
+    return {
+      ok: true,
+      tokens,
+      totalUsd,
+      tokenErrors: read.tokenFailures.map((failure) => ({
+        chainId: config.id,
+        tokenAddress: failure.address,
+        reason: failure.reason,
+      })),
+    };
   } catch (err) {
     // Owner decree (2026-08-02): the REAL cause reaches the agent. This was a
     // bare `catch {}` — the error object was dropped on the floor, so a dead
@@ -283,6 +313,8 @@ export async function handleWalletBalances(
       let totalUsd = scan.totalUsd;
       const scannedChainIds = [...scan.scannedChainIds];
       const chainErrors = [...scan.chainErrors];
+      const tokenErrors: TokenReadError[] = [];
+      let tokenErrorsOmitted = 0;
 
       // Local (non-Khalani) chains — direct RPC, same failure surface as a
       // Khalani per-chain error (the family snapshot survives a dead chain).
@@ -313,6 +345,10 @@ export async function handleWalletBalances(
           projected.push(...local.tokens);
           totalUsd += local.totalUsd;
           scannedChainIds.push(localChainId);
+          for (const tokenError of local.tokenErrors) {
+            if (tokenErrors.length < MAX_TOKEN_ERRORS_PER_SNAPSHOT) tokenErrors.push(tokenError);
+            else tokenErrorsOmitted += 1;
+          }
         } else {
           chainErrors.push({ chainId: localChainId, chainName: local.chainName, message: local.message });
         }
@@ -325,6 +361,8 @@ export async function handleWalletBalances(
         totalUsd,
         scannedChainIds,
         chainErrors,
+        tokenErrors,
+        ...(tokenErrorsOmitted > 0 ? { tokenErrorsOmitted } : {}),
         tokens: trimTokens(projected, parsed.data.limit, parsed.data.response_format),
       });
     } catch (err) {

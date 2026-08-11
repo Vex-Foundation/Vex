@@ -81,7 +81,12 @@ export async function handleAgentSessionClaimed(
     ttlMs: LEASE_TTL_MS,
   });
   try {
-    await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
+    await deps.injectWakeBanner(
+      wake.sessionId,
+      wake.reason,
+      wake.dueAt,
+      wake.payload?.triggeredBy,
+    );
     await deps.continueAgentSession(wake.sessionId, ownerId);
     return { kind: "agent_session_continued", sessionId: wake.sessionId };
   } finally {
