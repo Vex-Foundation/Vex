@@ -22,6 +22,9 @@ AuthKey_*.p8
 .claude/
 AGENTS.md
 agents.md
+CLAUDE.md
+claude.md
+.context/
 .codex/
 .agents/
 *.swp
