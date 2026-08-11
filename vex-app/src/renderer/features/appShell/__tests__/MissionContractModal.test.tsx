@@ -57,6 +57,7 @@ const SAMPLE_DRAFT = {
   updatedAt: "2026-05-22T09:00:00.000Z",
   approvedAt: null,
   acceptance: null,
+  deployedCapital: null,
   renewedFromMissionId: null,
 };
 

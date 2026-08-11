@@ -40,6 +40,7 @@ import {
   normaliseConstraints,
   normalisePgArray,
   normaliseStatus,
+  normaliseDeployedCapital,
   normaliseHyperliquidMissionRisk,
   normaliseStringList,
   projectAcceptance,
@@ -165,6 +166,10 @@ function toDraftDto(row: MissionRow): MissionDraftDto {
     updatedAt: toIso(row.updated_at),
     approvedAt: toIsoOrNull(row.approved_at),
     acceptance,
+    // C3 - hash-bound measurement base, projected so the contract card can show
+    // the host what the acceptance actually covers. Null means "not declared",
+    // which is itself meaningful (it is what suppresses measurability warnings).
+    deployedCapital: normaliseDeployedCapital(row.capital_source_json),
     renewedFromMissionId: row.renewed_from_mission_id ?? null,
   };
 }
