@@ -52,6 +52,7 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `getAccount(environment, params)` | `GET /api/v1/account` | Public by index/L1 address; private auth boundary applies before account tools expose it |
 | `getAccountActiveOrders(environment, params)` | `GET /api/v1/accountActiveOrders` | Auth-gated active account orders candidate |
 | `getAccountInactiveOrders(environment, params)` | `GET /api/v1/accountInactiveOrders` | Auth-gated inactive account orders candidate |
+| `getApiKeys(environment, params)` | `GET /api/v1/apikeys` | Public API-key index, public key, and nonce metadata for execution planning |
 | `getReadOnlyTokens(environment, params)` | `GET /api/v1/tokens` | Auth-gated read-only token inventory candidate |
 | `getMarkets(environment, params)` | `GET /api/v1/orderBooks` | Optional `market_id`, `filter` |
 | `getMarketDetails(environment, params)` | `GET /api/v1/orderBookDetails` | Required `market_id`; optional `filter` |
@@ -147,6 +148,13 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 | `lighter.system` | `getStatus`, `getSystemConfig` | Status, network id, public pool/config fields |
 | `lighter.markets` | `getMarkets` | Deterministically ordered, paged market rows with count/truncation disclosure |
 | `lighter.market.get` | `getMarketDetails` | One-market detail rows for a numeric `marketId` |
+| `lighter.account.get` | `getAccount` | Public account rows by account index or L1 address |
+| `lighter.positions` | `getAccount` | Public inline positions from account rows |
+| `lighter.openOrders` | `getAccountActiveOrders` | Authenticated open-order rows through read-only token |
+| `lighter.orderHistory` | `getAccountInactiveOrders` | Authenticated inactive/historical order rows through read-only token |
+| `lighter.trades` | `getAccountTrades` | Authenticated account trade rows through read-only token |
+| `lighter.apiKeys.inspect` | `getApiKeys` | Public API-key indexes, public keys, and nonce metadata |
+| `lighter.order.preview` | market detail, order book, public account | Persisted preview-only Lighter order preflight |
 | `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
 | `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
 | `lighter.candles` | `getCandles` | Newest candle rows up to the agent output cap |
@@ -170,11 +178,12 @@ Every successful agent response includes provenance:
 - Every call requires an explicit `environment`: `core` or `rhc`.
 - The agent tools never infer an environment from chain, symbol, or conversation
   context; the selected environment is always echoed in the result.
-- The module never reads environment variables, local secret vault entries, API
-  keys, auth tokens, private keys, wallets, or signer state.
-- Agent handlers call only the public read client. There is no renderer, preload,
-  wallet, vault, approval, order, deposit, withdrawal, transfer, or signing path
-  in the Lighter namespace.
+- Public tools never read environment variables, local secret vault entries, API
+  keys, auth tokens, private keys, wallets, or signer state. Authenticated
+  account reads use read-only tokens only through the privileged provider path.
+- Agent handlers call only the read client and preview persistence. There is no
+  renderer, preload, wallet, approval, order submit, order cancel, deposit,
+  withdrawal, transfer, or signing path in the Lighter namespace.
 - Market list projections sort active markets first, then by ascending
   `market_id`, before applying the agent page and limit. Broad lists return
   `page`, `lastPage`, `nextPage`, `sorting`, and a truncation note so the agent
@@ -268,6 +277,11 @@ mode does not prove read-only token reachability.
   `VEX_LIGHTER_LIVE=1` smoke against real Core and RHC public APIs through
   `executeProtocolTool`, including provenance assertions on every Lighter tool
   response.
+- Live public API-key nonce proof: `pnpm run test:lighter:live:apikeys` runs
+  the gated `VEX_LIGHTER_API_KEYS_LIVE=1` smoke against real Core and RHC
+  public `/api/v1/apikeys` reads through `executeProtocolTool`. It requires no
+  credential and must never be described as trading authority; it proves only
+  public API-key index, public key, and nonce metadata visibility.
 - Live read-only auth proof: `pnpm run test:lighter:live:auth` runs the gated
   `VEX_LIGHTER_AUTH_LIVE=1` smoke against real Core and RHC account endpoints.
   It requires `LIGHTER_CORE_READ_ONLY_AUTH_TOKEN` and
@@ -320,3 +334,11 @@ proof created persisted `lighter_order` previews for both environments from
 live market details, live order books, and live public account reads. No signer,
 API private key, signature, `sendTx`, order placement, cancellation, deposit,
 withdrawal, or transfer path was introduced.
+
+2026-08-12 local time: `pnpm run test:lighter:live:apikeys` passed against real
+Core and RHC public `/api/v1/apikeys` reads through `executeProtocolTool`. The
+proof exercised `lighter.apiKeys.inspect` for account `1` with API-key index
+`255`, returned at least one public API-key metadata row for each environment,
+and asserted live public provenance. No credential, API private key, signer,
+signature, `sendTx`, order placement, cancellation, deposit, withdrawal, or
+transfer path was introduced.
