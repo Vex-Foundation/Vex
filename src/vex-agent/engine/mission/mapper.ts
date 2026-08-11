@@ -6,6 +6,8 @@
  */
 
 import type { MissionDraft } from "../types.js";
+import { normalizeDeployedCapital } from "./deployed-capital.js";
+import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 
 // ── Domain ↔ Row conversion ────────────────────────────────────
@@ -19,6 +21,11 @@ export function missionToDraft(m: Mission): MissionDraft {
     goal: m.goal,
     capitalSource: (src?.type as string) ?? null,
     startingCapital: (src?.amount as string) ?? (src?.startingCapital as string) ?? null,
+    // C3 declaration - read through the ONE shared normalizer, the same one the
+    // contract hash and the patch parser use. Hand-mirroring it here (as the C6
+    // pair below had to be) is what would let a draft hash as one thing and
+    // read back as another. A partial or malformed blob reads as absent.
+    deployedCapital: normalizeDeployedCapital(src?.deployedCapital),
     allowedWallets: m.allowedWallets.length > 0 ? m.allowedWallets : null,
     allowedChains: m.allowedChains.length > 0 ? m.allowedChains : null,
     allowedProtocols: m.allowedProtocols.length > 0 ? m.allowedProtocols : null,
@@ -84,10 +91,18 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
   if (draft.stopConditions !== undefined) row.stop_conditions_json = draft.stopConditions ?? [];
 
   // capitalSource + startingCapital → capital_source_json
-  if (draft.capitalSource !== undefined || draft.startingCapital !== undefined) {
+  if (
+    draft.capitalSource !== undefined ||
+    draft.startingCapital !== undefined ||
+    draft.deployedCapital !== undefined
+  ) {
     row.capital_source_json = {
       ...(draft.capitalSource !== undefined ? { type: draft.capitalSource } : {}),
       ...(draft.startingCapital !== undefined ? { amount: draft.startingCapital } : {}),
+      // `setup.ts` read-merge-writes `capital_source_json` under the row lock,
+      // so a deployed-capital-only patch keeps `type`/`amount`, and an explicit
+      // `null` correctly clears the declaration.
+      ...(draft.deployedCapital !== undefined ? { deployedCapital: draft.deployedCapital } : {}),
     };
   }
 
@@ -166,6 +181,19 @@ export function draftToPromptContext(m: Mission): string {
   lines.push("");
   if (draft.goal) lines.push(`**Goal:** ${draft.goal}`);
   if (draft.capitalSource) lines.push(`**Capital:** ${draft.startingCapital ?? "?"} from ${draft.capitalSource}`);
+  // C3 - the typed declaration the runtime measures against. The human figure
+  // comes from `formatRawAmount`, the repo's single owner for raw-to-human
+  // display; when it cannot read the pair we render the raw pair ONLY and never
+  // guess a figure, because a wrong amount next to money is worse than none.
+  if (draft.deployedCapital !== null) {
+    const { amountRaw, decimals, chainId, assetAddress, assetSymbol } = draft.deployedCapital;
+    const human = formatRawAmount(amountRaw, decimals);
+    const figure = human === null ? `${assetSymbol}` : `${human} ${assetSymbol}`;
+    lines.push(
+      `**Deployed capital:** ${figure} (raw ${amountRaw} at ${decimals} decimals) on chain ${chainId}, ` +
+        `asset ${assetAddress}. This is the declared measurement base, not a spend limit.`,
+    );
+  }
   if (draft.riskProfile) lines.push(`**Risk:** ${draft.riskProfile}`);
   // C6 — the model READS its ceiling (it can never write it) so it chooses an
   // amount up to the limit instead of discovering the refusal at signing time.

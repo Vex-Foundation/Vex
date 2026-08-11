@@ -58,6 +58,7 @@ export function buildMissionRunPrompt(
   lines.push("- A slice is one bounded stretch of work between engine yields, and its limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
+  lines.push("- Deployed capital and portfolio change since this run started are given to you each turn in `# Mission Capital`. Read them there. Do not recompute them from the transcript, and never treat a balance that existed before the run started as progress. If that section is absent, say the start value is unknown instead of assuming one");
   // The old hard-coded research-tool list here drifted from the real routing
   // rule (and named `solana` unconditionally, in an install that may not have
   // the key). `## Token Research Map` in `# Research` owns which surface

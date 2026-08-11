@@ -15,6 +15,7 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as sessionPlansRepo from "@vex-agent/db/repos/session-plans.js";
 import { getUserProfile, type UserProfile } from "@vex-agent/db/repos/soul.js";
+import { readMissionBaseline } from "../mission/baseline.js";
 
 export interface HydratedSession {
   context: EngineContext;
@@ -158,6 +159,10 @@ export async function hydrateEngineSession(sessionId: string): Promise<HydratedS
       planMode: plan?.enabled ?? false,
       planMd: plan?.enabled ? plan.planMd : null,
       planAccepted: plan?.accepted ?? false,
+      // Frozen start-of-run capital baseline. ZERO extra queries: `activeRun`
+      // is already loaded above and every run read is `SELECT *`. The blob is
+      // immutable once written, so a hydration snapshot cannot go stale.
+      missionBaseline: readMissionBaseline(activeRun?.baselineJson ?? null),
     },
     messages,
     summary: session.summary ?? null,

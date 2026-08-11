@@ -1,0 +1,21 @@
+-- 077: mission_runs.baseline_json - the frozen start-of-run capital baseline.
+--
+-- WHY: on 2026-08-10 a live mission agent recomputed "deployed capital vs
+-- target" by hand in every turn, disagreed with itself across turns, and its
+-- success criterion was nearly satisfied before the first trade because ETH the
+-- wallet already held counted toward a portfolio target. Nothing anywhere
+-- recorded what the portfolio was worth when the run started, so every later
+-- turn had to reconstruct it from prose.
+--
+-- The column stores ONE versioned, zod-validated-on-read blob per run, written
+-- once inside the run-creation transaction and never updated. Same shape and
+-- same discipline as `stop_evidence_json` (mig 002) and
+-- `contract_snapshot_json` (mig 015): JSONB, no CHECK, validated in TypeScript.
+--
+-- Nullable with no backfill on purpose: a run that started before this column
+-- existed HAS no baseline, and inventing one would be a fabricated money figure.
+-- The absence is read as absent and surfaced by name.
+--
+-- Mirrored into vex-app by: node vex-app/scripts/copy-migrations.mjs
+
+ALTER TABLE mission_runs ADD COLUMN IF NOT EXISTS baseline_json JSONB;

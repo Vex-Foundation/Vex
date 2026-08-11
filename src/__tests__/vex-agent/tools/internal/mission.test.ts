@@ -59,6 +59,7 @@ describe("mission_draft_update tool", () => {
       currentDraft: { title: "SOL Flip" },
       missingFields: [],
       ready: true,
+      warnings: [],
     });
 
     const result = await handleMissionDraftUpdate(
@@ -89,6 +90,7 @@ describe("mission_draft_update tool", () => {
       currentDraft: { stopConditions: ["capital_depleted"] },
       missingFields: [],
       ready: true,
+      warnings: [],
     });
 
     const result = await handleMissionDraftUpdate(
@@ -112,6 +114,7 @@ describe("mission_draft_update tool", () => {
       currentDraft: { durationMinutes: 30 },
       missingFields: [],
       ready: true,
+      warnings: [],
     });
 
     const result = await handleMissionDraftUpdate(
@@ -141,6 +144,7 @@ describe("mission_draft_update tool", () => {
       currentDraft: { title: "SOL Flip" },
       missingFields: [],
       ready: true,
+      warnings: [],
     });
     mockGetRunBySession.mockResolvedValueOnce({ id: "run-prior" });
 
@@ -182,6 +186,7 @@ describe("mission_draft_update tool", () => {
       currentDraft: { title: "SOL Flip" },
       missingFields: [],
       ready: true,
+      warnings: [],
     });
 
     const result = await handleMissionDraftUpdate(
@@ -223,6 +228,7 @@ describe("mission_draft_update tool", () => {
       currentDraft: { title: "SOL Flip" },
       missingFields: [],
       ready: true,
+      warnings: [],
     });
 
     const result = await handleMissionDraftUpdate(
@@ -349,5 +355,75 @@ describe("mission_stop tool", () => {
       baseContext,
     );
     expect(result.success).toBe(false);
+  });
+  // ── C3 measurability warnings ───────────────────────────────────
+  describe("measurability warnings", () => {
+    function mockResultWithWarnings(warnings: string[]) {
+      mockApplyMissionPatch.mockResolvedValueOnce({
+        missionId: "mission-1",
+        status: "draft",
+        currentDraft: { title: "SOL Flip" },
+        missingFields: ["goal"],
+        ready: false,
+        warnings,
+      });
+    }
+
+    it("surfaces warnings in the model-facing output in BOTH response formats", async () => {
+      for (const response_format of ["concise", "detailed"]) {
+        mockResultWithWarnings(["no denominator to measure it against"]);
+        const result = await handleMissionDraftUpdate(
+          { title: "SOL Flip", response_format },
+          { ...baseContext, missionRunId: null },
+        );
+        expect(JSON.parse(result.output as string).warnings).toEqual([
+          "no denominator to measure it against",
+        ]);
+      }
+    });
+
+    it("keeps warnings OUT of the host-facing data block", async () => {
+      mockResultWithWarnings(["no denominator to measure it against"]);
+      const result = await handleMissionDraftUpdate(
+        { title: "SOL Flip" },
+        { ...baseContext, missionRunId: null },
+      );
+      expect("warnings" in (result.data as object)).toBe(false);
+    });
+
+    it("omits the key entirely when there is nothing to warn about", async () => {
+      mockResultWithWarnings([]);
+      const result = await handleMissionDraftUpdate(
+        { title: "SOL Flip" },
+        { ...baseContext, missionRunId: null },
+      );
+      expect("warnings" in JSON.parse(result.output as string)).toBe(false);
+    });
+
+    it("accepts a well-formed deployedCapital through the tool schema", async () => {
+      mockResultWithWarnings([]);
+      const declared = {
+        amountRaw: "3044000000000000000000",
+        decimals: 18,
+        chainId: 4663,
+        assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+        assetSymbol: "VEX",
+      };
+      const result = await handleMissionDraftUpdate(
+        { deployedCapital: declared },
+        { ...baseContext, missionRunId: null },
+      );
+      expect(result.success).toBe(true);
+      expect(mockApplyMissionPatch).toHaveBeenCalledWith("mission-1", { deployedCapital: declared });
+    });
+
+    it("reports a LOCATED path when the model sends a partial deployedCapital", async () => {
+      const result = await handleMissionDraftUpdate(
+        { deployedCapital: { amountRaw: "3044", decimals: 18, chainId: 4663, assetAddress: "0x0f9f0000000000000000000000000000000000ee" } },
+        { ...baseContext, missionRunId: null },
+      );
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("deployedCapital.assetSymbol");
+    });
   });
 });

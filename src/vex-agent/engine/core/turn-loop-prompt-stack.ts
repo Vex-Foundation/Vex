@@ -42,6 +42,7 @@ import {
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import { buildContextPressureBanner } from "../prompts/context-pressure.js";
 import { buildOwnTokenBanner } from "../prompts/own-token-banner.js";
+import { buildMissionCapitalBanner } from "../prompts/mission-capital-banner.js";
 import { buildResumePacket } from "../prompts/resume-packet.js";
 import { buildToolCatalogPrompt } from "../prompts/tool-catalog.js";
 import { buildBridgeCapabilityPrompt } from "../prompts/protocols.js";
@@ -107,6 +108,13 @@ export async function buildTurnPromptStack(args: {
   // any fetch error yields "" so the banner is omitted and the turn is never
   // blocked. Throttled + cached at the client, so repeated turns hit cache.
   promptOptions.ownTokenBanner = await buildOwnTokenBanner();
+
+  // Mission capital (turn-state). Fully fail-soft inside the builder: any error
+  // yields "" so the banner is omitted and the turn is never blocked. Skipped
+  // entirely outside a mission run, and when the run has no baseline.
+  promptOptions.missionCapitalBanner = args.context.missionRunId
+    ? await buildMissionCapitalBanner(args.context.missionBaseline ?? null)
+    : "";
 
   // Bridge-routing capability layer (DYNAMIC): the live Khalani `/v1/chains`
   // list + the Relay-health-gated Robinhood line. Stale-while-revalidate

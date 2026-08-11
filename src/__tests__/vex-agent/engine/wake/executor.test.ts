@@ -100,6 +100,7 @@ function makeRun(overrides: Partial<MissionRun> = {}): MissionRun {
     stopEvidenceJson: null,
     iterationCount: 3,
     contractSnapshotJson: null,
+    baselineJson: null,
     recoveredFromRunId: null,
     errorRetryCount: 0,
     autoRetryUnsafe: false,

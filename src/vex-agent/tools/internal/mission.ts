@@ -35,6 +35,17 @@ const MissionDraftUpdateArgs = z
     goal: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     capitalSource: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     startingCapital: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
+    // C3 - all five parts or none. Bounds mirror DEPLOYED_CAPITAL_BOUNDS so the
+    // model gets a located zod path (e.g. `deployedCapital.decimals`) instead of
+    // a silent drop; the identity/family rules are applied afterwards by the one
+    // shared normalizer in `engine/mission/deployed-capital.ts`.
+    deployedCapital: z.object({
+      amountRaw: z.string().trim().regex(/^\d+$/, "amountRaw must be an integer base-unit amount, digits only (no decimal point, sign or exponent)").max(80),
+      decimals: z.number().int().min(0).max(36),
+      chainId: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+      assetAddress: z.string().trim().min(1).max(128),
+      assetSymbol: z.string().trim().min(1).max(32),
+    }).strict().nullable().optional(),
     allowedWallets: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     allowedChains: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     allowedProtocols: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
@@ -101,6 +112,12 @@ export async function handleMissionDraftUpdate(
     ready: result.ready,
     missingFields: result.missingFields,
     ...(responseFormat === "detailed" ? { currentDraft: result.currentDraft } : {}),
+    // Measurability advisories, in BOTH formats next to nextAction: a success
+    // criterion nobody can decide is exactly the thing the model must see
+    // whether or not it asked for the verbose draft echo. Deliberately absent
+    // from `data` below - that is the host-facing structured block, and the
+    // host surface for this stays out of v1.
+    ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
     nextAction,
   };
 
