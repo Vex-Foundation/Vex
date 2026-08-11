@@ -64,8 +64,8 @@ const LAUNCH_FEE_DEPS: LaunchExecuteDeps = {
 } satisfies LaunchExecuteDeps;
 
 export const TRENCH_HANDLERS: Record<string, ProtocolHandler> = {
-  "trench.tokens": (p) => trenchTokensHandler(p),
-  "trench.search": (p) => trenchSearchHandler(p),
+  "trench.tokens": (p, context) => trenchTokensHandler(p, context),
+  "trench.search": (p, context) => trenchSearchHandler(p, context),
   "trench.trades": (p) => trenchTradesHandler(p),
   "trench.launch_preview": (p, context) => trenchLaunchPreviewHandler(p, context),
   "trench.trade_quote": (p, context) => trenchTradeQuoteHandler(p, context),

@@ -30,6 +30,8 @@ import {
 } from "../manifests/tokens-params.js";
 import { trenchFailureDetail } from "./failure.js";
 import { readCurveSnapshot, applyCurveProgress } from "./curve-progress.js";
+import { resolveOwnLaunchCreator, applyOwnLaunchFlag } from "./own-launch.js";
+import type { ProtocolExecutionContext } from "../../types.js";
 import type { Address } from "viem";
 
 /** Provider hard page-size cap (mirrors the client clamp). */
@@ -48,6 +50,12 @@ export interface TokenRow {
   ruggedFlagged: boolean | null;
   /** Opt-in on-chain hunting signal (0-100). Present only when a curve-progress param is set. */
   curveProgressPct?: number;
+  /**
+   * Whether this token was launched BY the session's own wallet. Tri-state:
+   * absent means "not determinable" (no creator reported, or no resolvable
+   * session wallet) and never means "not ours". See `./own-launch.ts`.
+   */
+  isOwnLaunch?: boolean;
 }
 
 export function projectToken(row: TrenchToken): TokenRow {
@@ -65,7 +73,10 @@ export function projectToken(row: TrenchToken): TokenRow {
   };
 }
 
-export async function trenchTokensHandler(p: Record<string, unknown>) {
+export async function trenchTokensHandler(
+  p: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+) {
   // Reject structurally unsupported filters BY NAME (never a silent no-op).
   for (const key of Object.keys(TRENCH_UNSUPPORTED_PARAMS)) {
     if (!isAbsent(p[key])) {
@@ -176,6 +187,11 @@ export async function trenchTokensHandler(p: Record<string, unknown>) {
       census.curveProgressUnreadable = curveProgressUnreadable;
       census.droppedByCurveProgress = droppedByCurveProgress;
     }
+
+    // Marks the rows the session wallet launched itself, so the agent stops
+    // mistaking its own test launches for market opportunities. Never removes a
+    // row, and never fails the list.
+    projected = applyOwnLaunchFlag(projected, resolveOwnLaunchCreator(context));
 
     return ok({
       chain: "robinhood",
