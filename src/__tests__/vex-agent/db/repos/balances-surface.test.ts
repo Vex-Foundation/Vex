@@ -2,7 +2,7 @@
  * Façade-surface guard for the balances repo structural split (A-013).
  *
  * `src/vex-agent/db/repos/balances.ts` was split into sibling modules under
- * `./balances/` (types, mappers, write, read, snapshots, history, aggregate)
+ * `./balances/` (types, mappers, write, read, snapshots, history, aggregate, valuation)
  * while the original path stays a compatibility façade. This test pins the
  * EXACT public runtime surface so a later edit cannot silently drop, rename, or
  * add an export. Behavior of each symbol is covered by the dedicated
@@ -28,6 +28,9 @@ import {
   getSnapshotHistory,
   getAggregateSnapshots,
   getLatestAggregateSnapshot,
+  getPortfolioValuation,
+  getAssetHolding,
+  DEFAULT_VALUATION_STATEMENT_TIMEOUT_MS,
 } from "../../../../vex-agent/db/repos/balances.js";
 
 // Type-only imports must compile against the façade re-exports.
@@ -39,6 +42,8 @@ import type {
   InsertSnapshotArgs,
   InsertSnapshotResult,
   AggregateSnapshot,
+  PortfolioValuation,
+  AssetHolding,
 } from "../../../../vex-agent/db/repos/balances.js";
 
 describe("balances façade — public surface", () => {
@@ -53,6 +58,9 @@ describe("balances façade — public surface", () => {
     expect(typeof getSnapshotHistory).toBe("function");
     expect(typeof getAggregateSnapshots).toBe("function");
     expect(typeof getLatestAggregateSnapshot).toBe("function");
+    expect(typeof getPortfolioValuation).toBe("function");
+    expect(typeof getAssetHolding).toBe("function");
+    expect(typeof DEFAULT_VALUATION_STATEMENT_TIMEOUT_MS).toBe("number");
   });
 
   it("named re-exports are identity-equal to the namespace import", () => {
@@ -68,6 +76,11 @@ describe("balances façade — public surface", () => {
     expect(balancesFacade.getLatestAggregateSnapshot).toBe(
       getLatestAggregateSnapshot,
     );
+    expect(balancesFacade.getPortfolioValuation).toBe(getPortfolioValuation);
+    expect(balancesFacade.getAssetHolding).toBe(getAssetHolding);
+    expect(balancesFacade.DEFAULT_VALUATION_STATEMENT_TIMEOUT_MS).toBe(
+      DEFAULT_VALUATION_STATEMENT_TIMEOUT_MS,
+    );
   });
 
   it("type-only re-exports compile against the façade", () => {
@@ -80,6 +93,8 @@ describe("balances façade — public surface", () => {
     const insertArgs: InsertSnapshotArgs | null = null;
     const insertResult: InsertSnapshotResult | null = null;
     const aggregate: AggregateSnapshot | null = null;
+    const valuation: PortfolioValuation | null = null;
+    const holding: AssetHolding | null = null;
     expect(row).toBeNull();
     expect(chain).toBeNull();
     expect(snapshot).toBeNull();
@@ -87,6 +102,8 @@ describe("balances façade — public surface", () => {
     expect(insertArgs).toBeNull();
     expect(insertResult).toBeNull();
     expect(aggregate).toBeNull();
+    expect(valuation).toBeNull();
+    expect(holding).toBeNull();
   });
 
   it("exports EXACTLY the expected runtime keys — no more, no less", () => {
@@ -103,6 +120,9 @@ describe("balances façade — public surface", () => {
         "getSnapshotHistory",
         "getAggregateSnapshots",
         "getLatestAggregateSnapshot",
+        "getPortfolioValuation",
+        "getAssetHolding",
+        "DEFAULT_VALUATION_STATEMENT_TIMEOUT_MS",
       ].sort(),
     );
   });

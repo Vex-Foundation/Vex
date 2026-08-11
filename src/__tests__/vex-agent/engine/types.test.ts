@@ -122,6 +122,7 @@ describe("engine types", () => {
         goal: null,
         capitalSource: null,
         startingCapital: null,
+        deployedCapital: null,
         allowedWallets: null,
         allowedChains: null,
         allowedProtocols: null,
@@ -137,7 +138,9 @@ describe("engine types", () => {
       // Puzzle 04 removed `stopConditionsAccepted` from MissionDraft —
       // acceptance is host-only via `missions.accepted_contract_hash`.
       // WP-I1 added `durationMinutes` (hard time-box, minutes).
-      expect(Object.keys(draft)).toHaveLength(15);
+      // C3 added `deployedCapital` (the typed measurement base; optional, so it
+      // is NOT in MISSION_DRAFT_REQUIRED_FIELDS).
+      expect(Object.keys(draft)).toHaveLength(16);
     });
 
     it("accepts populated values", () => {
@@ -146,6 +149,13 @@ describe("engine types", () => {
         goal: "Accumulate 10 SOL over 7 days",
         capitalSource: "wallet",
         startingCapital: "500 USDC",
+        deployedCapital: {
+          amountRaw: "500000000",
+          decimals: 6,
+          chainId: 4663,
+          assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+          assetSymbol: "USDC",
+        },
         allowedWallets: ["solana"],
         allowedChains: ["solana"],
         allowedProtocols: ["solana"],

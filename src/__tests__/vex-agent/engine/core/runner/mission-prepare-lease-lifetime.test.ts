@@ -26,6 +26,7 @@ const mockResolveProvider = vi.fn();
 const mockClaimSessionLease = vi.fn();
 const mockGetSession = vi.fn();
 const mockCommitMissionStart = vi.fn();
+const mockBuildMissionBaseline = vi.fn();
 const mockRelease = vi.fn();
 const mockReleaseLeaseAndEmitControlState = vi.fn();
 const mockStopHeartbeat = vi.fn();
@@ -49,6 +50,25 @@ vi.mock("@vex-agent/inference/registry.js", () => ({
 
 vi.mock("../../../../../vex-agent/engine/mission/commit-start.js", () => ({
   commitMissionStart: (...a: unknown[]) => mockCommitMissionStart(...a),
+}));
+
+/**
+ * The baseline builder is now on the tested path. Its own contract is that it
+ * NEVER rejects; the mock exists so this suite can violate that contract on
+ * purpose and prove the seam holds anyway.
+ */
+vi.mock("../../../../../vex-agent/engine/mission/baseline.js", () => ({
+  buildMissionBaseline: (...a: unknown[]) => mockBuildMissionBaseline(...a),
+  absentBaseline: (reason: string) => ({
+    version: 1,
+    capturedAt: "2026-08-10T00:00:00.000Z",
+    status: "absent",
+    reasons: [reason],
+    source: "proj_balances",
+    scope: { addresses: [] },
+    portfolio: null,
+    deployedCapitalAtStart: null,
+  }),
 }));
 
 vi.mock("../../../../../vex-agent/engine/runtime/lease-and-status.js", () => ({
@@ -101,6 +121,22 @@ beforeEach(() => {
     lease: { sessionId: SESSION },
   });
   mockGetSession.mockResolvedValue({ permission: "restricted" });
+  mockBuildMissionBaseline.mockResolvedValue({
+    version: 1,
+    capturedAt: "2026-08-10T00:00:00.000Z",
+    status: "recorded",
+    reasons: [],
+    source: "proj_balances",
+    scope: { addresses: [] },
+    portfolio: {
+      totalUsdEstimate: 1,
+      pricedRowCount: 1,
+      unpricedRowCount: 0,
+      oldestSyncedAt: null,
+      newestSyncedAt: null,
+    },
+    deployedCapitalAtStart: null,
+  });
   mockCommitMissionStart.mockResolvedValue({
     outcome: "committed",
     mission: { id: MISSION },
@@ -160,6 +196,36 @@ describe("prepareMissionStart lease lifetime", () => {
 
     expect(outcome.outcome).toBe("session_not_found");
     expect(mockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * FAIL-OPEN, proven at the seam rather than inside the module. A balance read
+   * is measurement, not authorization: it must never be able to refuse a
+   * mission the user asked to start, and it must never leak the lease on its
+   * way out. This holds even if `buildMissionBaseline`'s own no-throw guarantee
+   * regresses.
+   */
+  it("still starts the mission and never leaks the lease when the baseline builder REJECTS", async () => {
+    mockBuildMissionBaseline.mockRejectedValueOnce(new Error("valuation blew up"));
+
+    const outcome = await prepareMissionStart({ missionId: MISSION });
+
+    expect(outcome.outcome).toBe("prepared");
+    expect(mockCommitMissionStart).toHaveBeenCalledTimes(1);
+    // An absent baseline with a NAMED reason is still committed with the run:
+    // a NULL column would be indistinguishable from a pre-migration run.
+    expect(mockCommitMissionStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        missionId: MISSION,
+        baseline: expect.objectContaining({
+          status: "absent",
+          reasons: ["valuation_failed"],
+        }),
+      }),
+    );
+    // Ownership TRANSFERS on the prepared path; nothing was leaked or released.
+    expect(mockRelease).not.toHaveBeenCalled();
+    expect(mockStopHeartbeat).not.toHaveBeenCalled();
   });
 
   it("releases exactly once — never double-released on a refusal", async () => {

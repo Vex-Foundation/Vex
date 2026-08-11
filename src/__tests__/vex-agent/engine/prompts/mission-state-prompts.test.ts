@@ -187,4 +187,41 @@ describe("mission state prompts", () => {
     else process.env.JUPITER_API_KEY = savedJupiterKey;
   });
 
+  // ── C3: typed deployed capital guidance ─────────────────────────
+  describe("deployed capital guidance", () => {
+    it("documents deployedCapital as an optional typed field in the setup prompt", () => {
+      const prompt = buildMissionSetupPrompt(makeMissionContext());
+      expect(prompt).toContain("- **deployedCapital** (optional, and strongly recommended whenever a success criterion mentions gain, loss, or a portfolio value)");
+      expect(prompt).toContain("Save all five parts together or none, because a raw amount without its decimals cannot be read");
+    });
+
+    it("tells the model what the warnings list means in the setup prompt", () => {
+      const prompt = buildMissionSetupPrompt(makeMissionContext());
+      expect(prompt).toContain("mission_draft_update returns a warnings list when it sees this: fix the draft, or tell the user plainly why you are leaving it");
+    });
+
+    it("points the run prompt at the Mission Capital section instead of the transcript", () => {
+      const prompt = buildMissionRunPrompt(makeMissionContext({ missionRunId: "run-1" }));
+      expect(prompt).toContain("Deployed capital and portfolio change since this run started are given to you each turn in `# Mission Capital`");
+      expect(prompt).toContain("never treat a balance that existed before the run started as progress");
+    });
+
+    it("renders a NESTED draft field as JSON, never as [object Object]", () => {
+      const prompt = buildMissionSetupPrompt(makeMissionContext(), {
+        currentDraft: {
+          title: "SOL DCA",
+          deployedCapital: {
+            amountRaw: "3044000000000000000000",
+            decimals: 18,
+            chainId: 4663,
+            assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+            assetSymbol: "VEX",
+          },
+        },
+        missingFields: [],
+      });
+      expect(prompt).not.toContain("[object Object]");
+      expect(prompt).toContain("\"amountRaw\":\"3044000000000000000000\"");
+    });
+  });
 });

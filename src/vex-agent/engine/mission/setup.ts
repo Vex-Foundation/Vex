@@ -13,6 +13,7 @@ import type { MissionDraft } from "../types.js";
 import { extractMissionPatch, sanitizePatch } from "./patch-parser.js";
 import { domainToRow, missionToDraft } from "./mapper.js";
 import { validateDraft } from "./validator.js";
+import { assessMissionMeasurability } from "./measurability.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 import { withTransaction } from "@vex-agent/db/client.js";
@@ -24,6 +25,13 @@ export interface SetupResult {
   currentDraft: Partial<MissionDraft>;
   missingFields: string[];
   ready: boolean;
+  /**
+   * Model-facing measurability advisories (see `measurability.ts`). Never a
+   * refusal and never part of the host-facing `data` block: these exist to make
+   * the model fix an undecidable success criterion while the draft is still
+   * being written.
+   */
+  warnings: string[];
 }
 
 // Detects prose that implies the mission can start while the DB draft is not
@@ -67,6 +75,7 @@ export async function createMissionDraft(sessionId: string): Promise<SetupResult
       "riskProfile", "successCriteria", "stopConditions",
     ],
     ready: false,
+    warnings: [],
   };
 }
 
@@ -175,6 +184,7 @@ export async function applyMissionPatch(
     currentDraft,
     missingFields: validation.missing,
     ready: validation.valid,
+    warnings: assessMissionMeasurability(currentDraft).map((w) => w.message),
   };
 }
 
@@ -194,5 +204,6 @@ export async function getMissionSetupState(missionId: string): Promise<SetupResu
     currentDraft,
     missingFields: validation.missing,
     ready: validation.valid,
+    warnings: assessMissionMeasurability(currentDraft).map((w) => w.message),
   };
 }

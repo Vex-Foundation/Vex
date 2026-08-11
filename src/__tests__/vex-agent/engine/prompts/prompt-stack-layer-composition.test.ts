@@ -69,6 +69,7 @@ describe("prompt-stack — layer composition", () => {
       memorySection: "# Memory\n\n[Session memories: 2 chunk(s) across 1 compact(s). Tool: session_memory_search(semantic_intent, k≤5).]\n\n## Memory Routing\n\n- routing line",
       activePlanBlock: "# Active Plan\n\n1. do the thing",
       toolCatalogPrompt: "# Available Tool Map\n\n- wallet_balances",
+      missionCapitalBanner: "# Mission Capital\n\n- Portfolio at start: $32.10 across 2 wallet(s).",
       planOffNotice: "[Plan mode was switched off]",
     };
 
@@ -89,6 +90,11 @@ describe("prompt-stack — layer composition", () => {
       expect(staticJoined).not.toContain("[Long-term memory:");
       expect(staticJoined).not.toContain("# Available Tool Map");
       expect(staticJoined).not.toContain("Iteration:");
+      // Mission Capital carries a live "now" figure: in the cached static
+      // prefix it would bust the prefix on every balance move. The mission-run
+      // doctrine legitimately NAMES the section (constant text, same as the
+      // `# Active Plan` reference above), so match the banner BODY.
+      expect(staticJoined).not.toContain("Portfolio at start:");
       expect(staticJoined).not.toContain("Context pressure");
       expect(staticJoined).not.toContain("Resume packet");
       // Active-plan LAYER body absent (tool-usage legitimately NAMES the
@@ -115,6 +121,7 @@ describe("prompt-stack — layer composition", () => {
         "## Memory Routing", // P3 heading fix: H2 under the # Memory layer H1
         "# Active Plan",
         "# Available Tool Map",
+        "# Mission Capital",
         "Iteration: 5",
         "[Plan mode was switched off]",
       ];
@@ -163,6 +170,14 @@ describe("prompt-stack — layer composition", () => {
       expect(staticJoined).not.toContain("Memory Routing block above");
       expect(staticJoined).toContain("Tool Map provided in the turn state");
       expect(staticJoined).toContain("The turn state carries their live counts.");
+    });
+
+    it("the Mission Capital banner is mission-run only, never in an agent session", () => {
+      const agent = buildPromptStack(makeContext({ sessionKind: "agent" }), {
+        ...FULL_OPTIONS,
+      });
+      expect(agent.turnLayers.join("\n")).not.toContain("# Mission Capital");
+      expect(agent.staticLayers.join("\n")).not.toContain("Portfolio at start:");
     });
 
     it("turn layers always start with the runtime clock; memorySection lands only when provided", () => {

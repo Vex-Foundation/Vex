@@ -42,6 +42,7 @@ export function buildMissionSetupPrompt(
   lines.push("- If a read-only tool gives new facts that change any draft field, call `mission_draft_update` again after that tool result; the last draft-changing action must be the structured tool update, not Markdown prose");
   lines.push("- `mission_draft_update` is the source of truth for readiness. Assistant prose does not make a draft ready");
   lines.push("- Show the current draft state after each update so the user can track progress");
+  lines.push("- A success criterion phrased as a percentage, a multiple, or a portfolio total needs deployedCapital set. Without it, coins the wallet already held count toward the target and the criterion can read as met before the mission trades. mission_draft_update returns a warnings list when it sees this: fix the draft, or tell the user plainly why you are leaving it");
   lines.push("- Activation sequence: when the most recent `mission_draft_update` returns ready=true, tell the user to review the contract (and plan when plan mode is on) and click Accept contract. Only after that acceptance does the host show Start mission. Never claim the mission has launched during setup");
   lines.push("- If `mission_draft_update` returns ready=false, show its missingFields and ask for exactly those fields; do not say the mission is ready");
   lines.push("- Never use `undefined` as a mission field value. Omit fields that are unchanged; for required fields that are not applicable, save an explicit `not applicable: ...` reason");
@@ -53,6 +54,7 @@ export function buildMissionSetupPrompt(
   lines.push("- **goal** — what the mission should achieve");
   lines.push("- **capitalSource** — where capital comes from (wallet, protocol, etc.)");
   lines.push("- **startingCapital** — amount and token to start with");
+  lines.push("- **deployedCapital** (optional, and strongly recommended whenever a success criterion mentions gain, loss, or a portfolio value) - the capital this mission actually puts to work, typed: amountRaw, decimals, chainId, assetAddress, assetSymbol. amountRaw is the integer base-unit amount as a string, so 1.5 ETH is \"1500000000000000000\" at 18 decimals. Save all five parts together or none, because a raw amount without its decimals cannot be read. startingCapital stays the plain-language sentence for the user; this is the machine-readable declaration the runtime measures against");
   lines.push("- **allowedWallets** — which wallets to use");
   lines.push("- **allowedChains** — which chains to operate on");
   lines.push("- **allowedProtocols** — which protocols to use");
@@ -89,7 +91,14 @@ export function buildMissionSetupPrompt(
       lines.push("## Current Draft");
       for (const [key, value] of Object.entries(setupContext.currentDraft)) {
         if (value !== null && value !== undefined) {
-          const display = Array.isArray(value) ? value.join(", ") : String(value);
+          // A nested draft field (deployedCapital) would print as
+          // "[object Object]" through String(), showing the user and the model
+          // garbage where a number belongs. Render objects as JSON.
+          const display = Array.isArray(value)
+            ? value.join(", ")
+            : typeof value === "object"
+              ? JSON.stringify(value)
+              : String(value);
           lines.push(`- **${key}**: ${display}`);
         }
       }

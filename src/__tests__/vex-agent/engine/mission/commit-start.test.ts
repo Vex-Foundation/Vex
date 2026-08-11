@@ -8,6 +8,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { MissionBaseline } from "../../../../vex-agent/engine/mission/baseline.js";
+
 const mockGetMissionForUpdate = vi.fn();
 const mockSetStatus = vi.fn();
 const mockSetApprovedAt = vi.fn();
@@ -144,6 +146,28 @@ function makePlan(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * A minimal recorded baseline. `commitMissionStart` treats it as OPAQUE data
+ * measured by the caller before the transaction: this test asserts it reaches
+ * `createRun` unchanged, not what it contains.
+ */
+const BASELINE: MissionBaseline = {
+  version: 1,
+  capturedAt: "2026-08-10T13:12:04.000Z",
+  status: "recorded",
+  reasons: [],
+  source: "proj_balances",
+  scope: { addresses: ["0xA"] },
+  portfolio: {
+    totalUsdEstimate: 32.1,
+    pricedRowCount: 2,
+    unpricedRowCount: 0,
+    oldestSyncedAt: null,
+    newestSyncedAt: "2026-08-10T13:12:04.000Z",
+  },
+  deployedCapitalAtStart: null,
+};
+
 describe("commitMissionStart", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -158,6 +182,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "missing",
       runId: "run-1",
+      baseline: BASELINE,
     });
     expect(outcome.outcome).toBe("mission_not_found");
     expect(mockSetStatus).not.toHaveBeenCalled();
@@ -169,6 +194,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
     expect(outcome.outcome).toBe("not_accepted");
     expect(mockCreateRun).not.toHaveBeenCalled();
@@ -183,6 +209,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
     expect(outcome.outcome).toBe("not_accepted");
   });
@@ -196,6 +223,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
     expect(outcome.outcome).toBe("stale_acceptance");
     if (outcome.outcome === "stale_acceptance") {
@@ -214,6 +242,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
     expect(outcome.outcome).toBe("not_ready");
     if (outcome.outcome === "not_ready") {
@@ -232,6 +261,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
     expect(outcome.outcome).toBe("active_run_exists");
     if (outcome.outcome === "active_run_exists") {
@@ -249,6 +279,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
 
     expect(outcome.outcome).toBe("committed");
@@ -272,6 +303,10 @@ describe("commitMissionStart", () => {
     // 4th arg = options object; 5th arg = tx client.
     expect(createArgs[4]).toBeDefined();
     expect(typeof createArgs[4]).toBe("object");
+    // The baseline the caller measured at the pre-commit seam rides the SAME
+    // transaction as the run row, as pure data. This transaction does no
+    // fallible IO of its own to obtain it.
+    expect((createArgs[3] as { baselineJson: unknown }).baselineJson).toBe(BASELINE);
   });
 
   // Agent Scan Phase 3 (Hyperliquid removal): a mission accepted while
@@ -299,7 +334,7 @@ describe("commitMissionStart", () => {
     mockGetMissionForUpdate.mockResolvedValueOnce(acceptedMission);
     mockGetActiveRun.mockResolvedValueOnce(null);
 
-    const outcome = await commitMissionStart({ missionId: "mission-1", runId: "run-1" });
+    const outcome = await commitMissionStart({ missionId: "mission-1", runId: "run-1", baseline: BASELINE });
 
     expect(outcome.outcome).toBe("committed");
     if (outcome.outcome === "committed") {
@@ -311,7 +346,7 @@ describe("commitMissionStart", () => {
   it("opens and closes a single tx (BEGIN + COMMIT)", async () => {
     mockGetMissionForUpdate.mockResolvedValueOnce(makeAcceptedMission());
     mockGetActiveRun.mockResolvedValueOnce(null);
-    await commitMissionStart({ missionId: "mission-1", runId: "run-1" });
+    await commitMissionStart({ missionId: "mission-1", runId: "run-1", baseline: BASELINE });
     const sqlCalls = fakeClientQuery.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(sqlCalls).toContain("BEGIN");
     expect(sqlCalls).toContain("COMMIT");
@@ -326,7 +361,7 @@ describe("commitMissionStart", () => {
     mockSetStatus.mockRejectedValueOnce(new Error("simulated flip failure"));
 
     await expect(
-      commitMissionStart({ missionId: "mission-1", runId: "run-1" }),
+      commitMissionStart({ missionId: "mission-1", runId: "run-1", baseline: BASELINE }),
     ).rejects.toThrow("simulated flip failure");
 
     expect(mockCreateRun).not.toHaveBeenCalled();
@@ -348,6 +383,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
 
     expect(outcome.outcome).toBe("plan_not_accepted");
@@ -370,6 +406,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
 
     expect(outcome.outcome).toBe("plan_not_accepted");
@@ -388,6 +425,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
 
     expect(outcome.outcome).toBe("committed");
@@ -404,6 +442,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
 
     expect(outcome.outcome).toBe("committed");
@@ -420,6 +459,7 @@ describe("commitMissionStart", () => {
     const outcome = await commitMissionStart({
       missionId: "mission-1",
       runId: "run-1",
+      baseline: BASELINE,
     });
 
     expect(outcome.outcome).toBe("committed");

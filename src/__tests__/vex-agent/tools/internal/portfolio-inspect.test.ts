@@ -17,10 +17,23 @@ vi.mock("@vex-agent/db/repos/activity.js", () => ({
 vi.mock("@vex-agent/db/repos/executions.js", () => ({
   getByNamespace: (...a: unknown[]) => mockGetByNamespace(...a),
 }));
+const mockGetPortfolioValuation = vi.fn().mockResolvedValue({
+  totalUsdEstimate: 34.4,
+  pricedRowCount: 2,
+  unpricedRowCount: 0,
+  oldestSyncedAt: "2026-08-10T13:40:04.000Z",
+  newestSyncedAt: "2026-08-10T13:42:04.000Z",
+});
+const mockGetRun = vi.fn();
+
 vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getTotalUsd: (...a: unknown[]) => mockGetTotalUsd(...a),
   getLatestAggregateSnapshot: (...a: unknown[]) => mockGetLatestAggregateSnapshot(...a),
   getAggregateSnapshots: (...a: unknown[]) => mockGetAggregateSnapshots(...a),
+  getPortfolioValuation: (...a: unknown[]) => mockGetPortfolioValuation(...a),
+}));
+vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
+  getRun: (...a: unknown[]) => mockGetRun(...a),
 }));
 
 // Mock ONLY resolveSelectedAddressSetForRead (the read-side resolver the
@@ -43,6 +56,13 @@ import { makeTestContext } from "../_test-context.js";
 import { VexError, ErrorCodes } from "../../../../errors.js";
 
 const ctx = makeTestContext({ sessionId: "s1" });
+
+/** The structured block, without a non-null assertion at every read site. */
+function dataOf(result: { data?: Record<string, unknown> }): Record<string, unknown> {
+  const { data } = result;
+  if (data === undefined) throw new Error("tool result carried no structured data");
+  return data;
+}
 
 describe("agent_scan tool", () => {
   beforeEach(() => {
@@ -174,6 +194,127 @@ describe("agent_scan tool", () => {
     });
   });
 
+  // The mission start baseline: a frozen figure the agent compares against, so
+  // the view must never present an unreadable or missing one as usable.
+  describe("mission_baseline", () => {
+    const RECORDED_BLOB = {
+      version: 1,
+      capturedAt: "2026-08-10T13:12:30.000Z",
+      status: "recorded",
+      reasons: [],
+      source: "proj_balances",
+      scope: { addresses: ["0xEVM", "SOL"] },
+      portfolio: {
+        totalUsdEstimate: 32.1,
+        pricedRowCount: 2,
+        unpricedRowCount: 0,
+        oldestSyncedAt: "2026-08-10T13:10:04.000Z",
+        newestSyncedAt: "2026-08-10T13:12:04.000Z",
+      },
+      deployedCapitalAtStart: {
+        chainId: 4663,
+        assetAddress: "0x0f9f",
+        assetSymbol: "VEX",
+        declaredAmountRaw: "3044000000000000000000",
+        declaredDecimals: 18,
+        heldAmountRaw: "6802264854000000000000",
+        heldDecimals: 18,
+        heldUsdEstimate: 1.98,
+      },
+    };
+
+    const missionCtx = makeTestContext({ sessionId: "s1", missionRunId: "run-1" });
+
+    it("refuses outside an active mission run and points at the views that do work", async () => {
+      const r = await handleAgentScan({ view: "mission_baseline" }, ctx);
+      expect(r.success).toBe(false);
+      expect(r.output).toContain("only available during an active mission run");
+      expect(r.output).toContain('view="transactions"');
+      expect(mockGetRun).not.toHaveBeenCalled();
+    });
+
+    it("reports an unrecorded baseline as absent instead of inventing a start value", async () => {
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: null });
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      expect(r.success).toBe(true);
+      expect(dataOf(r).status).toBe("absent");
+      expect(dataOf(r).reasons).toEqual(["not_recorded"]);
+      expect(String(dataOf(r).note)).toContain("Do not assume a start value");
+    });
+
+    it("an unreadable stored blob reads as absent, never as a usable figure", async () => {
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: { version: 99 } });
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      expect(dataOf(r).status).toBe("absent");
+      expect(dataOf(r).reasons).toEqual(["not_recorded"]);
+    });
+
+    it("returns the frozen start, the now figure over the SAME wallet set, and the change", async () => {
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: RECORDED_BLOB });
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      expect(r.success).toBe(true);
+      expect(mockGetPortfolioValuation).toHaveBeenCalledWith(["0xEVM", "SOL"]);
+      expect(dataOf(r).status).toBe("recorded");
+      expect(dataOf(r).scopeAddresses).toEqual(["0xEVM", "SOL"]);
+      expect((dataOf(r).start as Record<string, unknown>).totalUsdEstimate).toBe(32.1);
+      expect((dataOf(r).now as Record<string, unknown>).totalUsdEstimate).toBe(34.4);
+      expect(dataOf(r).changeSinceStartUsdEstimate).toBeCloseTo(2.3, 6);
+      const deployed = dataOf(r).deployedCapital as Record<string, unknown>;
+      expect(deployed.declaredAmountHuman).toBe("3044");
+      expect(deployed.heldAtStartHuman).toBe("6802.264854");
+      expect(String(dataOf(r).note)).toContain("not trade PnL");
+      expect(dataOf(r).scopeNote).toBeUndefined();
+    });
+
+    it("a failed now read leaves the frozen start standing and names the gap", async () => {
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: RECORDED_BLOB });
+      mockGetPortfolioValuation.mockRejectedValueOnce(new Error("db down"));
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      expect(r.success).toBe(true);
+      expect((dataOf(r).start as Record<string, unknown>).totalUsdEstimate).toBe(32.1);
+      expect(dataOf(r).now).toBeNull();
+      expect(dataOf(r).changeSinceStartUsdEstimate).toBeNull();
+    });
+
+    // Base58 case IS identity on Solana: two mint-style addresses differing
+    // only in case are DIFFERENT wallets, and folding their case would hide a
+    // real scope divergence behind a clean-looking comparison.
+    it("two Solana wallets differing only in case are a divergence, not a match", async () => {
+      const frozen = { ...RECORDED_BLOB, scope: { addresses: ["AbCdEfGhJkLmNpQrStUvWxYz123456789ABCDEFGHJK"] } };
+      mockResolveSet.mockReturnValueOnce({
+        evm: null,
+        solana: "abcdefghjklmnpqrstuvwxyz123456789abcdefghjk",
+        all: ["abcdefghjklmnpqrstuvwxyz123456789abcdefghjk"],
+      });
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: frozen });
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      expect(mockGetPortfolioValuation).toHaveBeenCalledWith(["AbCdEfGhJkLmNpQrStUvWxYz123456789ABCDEFGHJK"]);
+      expect(String(dataOf(r).scopeNote)).toContain("differ from the wallets this baseline was recorded for");
+    });
+
+    // EVM addresses ARE case-insensitive: a checksum rewrite is the same wallet.
+    it("an EVM checksum rewrite of the same wallet is not a divergence", async () => {
+      const frozen = { ...RECORDED_BLOB, scope: { addresses: ["0xAbCdEf0123456789AbCdEf0123456789AbCdEf01"] } };
+      mockResolveSet.mockReturnValueOnce({
+        evm: "0xabcdef0123456789abcdef0123456789abcdef01",
+        solana: null,
+        all: ["0xabcdef0123456789abcdef0123456789abcdef01"],
+      });
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: frozen });
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      expect(dataOf(r).scopeNote).toBeUndefined();
+    });
+
+    it("says so when the session's selected wallets differ from the recorded set", async () => {
+      mockResolveSet.mockReturnValueOnce({ evm: "0xOTHER", solana: null, all: ["0xOTHER"] });
+      mockGetRun.mockResolvedValueOnce({ id: "run-1", baselineJson: RECORDED_BLOB });
+      const r = await handleAgentScan({ view: "mission_baseline" }, missionCtx);
+      // The figures still use the RECORDED set, or the comparison is not like for like.
+      expect(mockGetPortfolioValuation).toHaveBeenCalledWith(["0xEVM", "SOL"]);
+      expect(String(dataOf(r).scopeNote)).toContain("differ from the wallets this baseline was recorded for");
+    });
+  });
+
   describe("per-session wallet scoping", () => {
     it("scopes reads to ONLY the session's selected wallet set", async () => {
       mockResolveSet.mockReturnValueOnce({ evm: "0xEVM", solana: "SOL", all: ["0xEVM", "SOL"] });
@@ -187,6 +328,18 @@ describe("agent_scan tool", () => {
       mockResolveSet.mockReturnValueOnce({ evm: null, solana: null, all: [] });
       await handleAgentScan({ view: "summary" }, ctx);
       expect(mockGetTotalUsd).toHaveBeenCalledWith([]);
+    });
+
+    it("mission_baseline fails closed on scope drift too, before any run read", async () => {
+      mockResolveSet.mockImplementationOnce(() => {
+        throw new VexError(ErrorCodes.WALLET_SCOPE_MISMATCH, "contract drift");
+      });
+      const r = await handleAgentScan(
+        { view: "mission_baseline" },
+        makeTestContext({ sessionId: "s1", missionRunId: "run-1" }),
+      );
+      expect(r.success).toBe(false);
+      expect(mockGetRun).not.toHaveBeenCalled();
     });
 
     it("fails closed on invalid wallet policy / scope drift (no repo query)", async () => {
