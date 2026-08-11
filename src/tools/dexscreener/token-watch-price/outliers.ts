@@ -1,15 +1,27 @@
 /**
- * Cross-pool outlier assessment over candidates ALREADY NORMALIZED to the
- * watched token.
+ * The cross-pool median/order-of-magnitude outlier rule, and the watch's
+ * adapter onto it.
  *
- * The protocol layer owns the agent-facing version of this rule
- * (`tools/protocols/dexscreener/pair-list/price-sanity.ts`), and it assesses the
- * provider's raw BASE-token `priceUsd` over its own row shape. That is the wrong
- * population for a watch: a quote-side pool must be normalized FIRST, otherwise
- * the median is computed over prices of different assets. This module is that
- * same fixed-order-of-magnitude rule restated over the normalized population,
- * and it lives in `src/tools` so the low-level client layer does not have to
- * import a `vex-agent` protocol module.
+ * OWNERSHIP. This module OWNS the rule. `assessMedianOutliers` is the generic
+ * primitive: minimum population, median-as-ELEMENT, and a fixed ratio in both
+ * directions. Two populations consume it and neither restates it:
+ *
+ *   - `assessNormalizedCandidates` (below) over watch candidates already
+ *     normalized to the watched token, in exact decimal arithmetic;
+ *   - `vex-agent/tools/protocols/dexscreener/pair-list/price-sanity.ts`, whose
+ *     adapter adds only the pair-list projection shapes: the provider's raw
+ *     base-token `priceUsdNumeric`, the per-row verdicts, and the exact-decimal
+ *     median STRING the agent reads.
+ *
+ * The rule lives here, in `src/tools`, so the low-level client layer does not
+ * have to import a `vex-agent` protocol module: `vex-agent` may import
+ * `src/tools`, never the reverse.
+ *
+ * WHY THE VALUE TYPE IS A PARAMETER. The two populations are not comparable in
+ * the same arithmetic. The watch compares exact decimals because a money
+ * threshold must not round; the pair-list assessor divides the provider's own
+ * float to report "4,892x the median" in the agent-facing note. The population
+ * rule is what they share, so the value algebra is the caller's.
  *
  * The threshold is a FIXED order of magnitude, not a percentage of the sample:
  * a band that widened with the spread would be widest exactly when the data is
@@ -23,15 +35,79 @@ import {
 } from "./decimal.js";
 import type { TokenWatchPriceCandidate } from "./normalize.js";
 
-export const WATCH_PRICE_OUTLIER_RATIO = 10;
+export const MEDIAN_OUTLIER_RATIO = 10;
 
 /**
  * Below this many priced pools there is no population to be an outlier FROM:
- * one pool cannot disagree with itself and two have no majority. Matching the
- * protocol assessor's own minimum keeps the two rules from disagreeing about
- * the same token.
+ * one pool cannot disagree with itself and two have no majority.
  */
-const MIN_POOLS_FOR_MEDIAN = 3;
+export const MIN_POOLS_FOR_MEDIAN = 3;
+
+/**
+ * The value algebra for one population. Each predicate is asked about values the
+ * caller extracted, never about the items themselves.
+ */
+export interface MedianOutlierRule<TValue> {
+  /** Ascending order: negative, zero, positive, as an `Array#sort` comparator. */
+  readonly compare: (left: TValue, right: TValue) => number;
+  /** A median we are willing to divide by or compare against. */
+  readonly isUsableMedian: (median: TValue) => boolean;
+  /** An order of magnitude off the median, in either direction. */
+  readonly isOutlierAgainstMedian: (value: TValue, median: TValue) => boolean;
+}
+
+/**
+ * Why the assessment did or did not produce a median. The two empty cases are
+ * kept apart because callers report them differently: a thin token is normal,
+ * an unusable median means the population itself was not readable.
+ */
+export type MedianOutlierPopulation = "too_small" | "unusable_median" | "assessed";
+
+export interface MedianOutlierAssessment<TItem, TValue> {
+  readonly population: MedianOutlierPopulation;
+  /** The median ELEMENT, so a caller can read its exact original value. */
+  readonly medianItem: TItem | null;
+  readonly medianValue: TValue | null;
+  /** Items an order of magnitude off the median. Never the whole set. */
+  readonly outliers: ReadonlySet<TItem>;
+}
+
+function emptyAssessment<TItem, TValue>(
+  population: MedianOutlierPopulation,
+): MedianOutlierAssessment<TItem, TValue> {
+  return { population, medianItem: null, medianValue: null, outliers: new Set() };
+}
+
+/**
+ * Flag, never drop. Below {@link MIN_POOLS_FOR_MEDIAN} items the assessment is
+ * EMPTY rather than hostile: a thin token with one honest pool must still be
+ * usable, and the caller is told the population size so it can say so.
+ *
+ * The median is chosen as an ELEMENT rather than averaged: averaging would
+ * invent a value no source ever reported, which the exact-decimal rule forbids
+ * for a money value the agent reads. For an even count this is the lower-middle
+ * element.
+ */
+export function assessMedianOutliers<TItem, TValue>(
+  items: readonly TItem[],
+  valueOf: (item: TItem) => TValue,
+  rule: MedianOutlierRule<TValue>,
+): MedianOutlierAssessment<TItem, TValue> {
+  if (items.length < MIN_POOLS_FOR_MEDIAN) return emptyAssessment("too_small");
+
+  const ordered = [...items].sort((left, right) => rule.compare(valueOf(left), valueOf(right)));
+  const medianItem = ordered[Math.floor((ordered.length - 1) / 2)] ?? null;
+  if (medianItem === null) return emptyAssessment("unusable_median");
+
+  const medianValue = valueOf(medianItem);
+  if (!rule.isUsableMedian(medianValue)) return emptyAssessment("unusable_median");
+
+  const outliers = new Set<TItem>();
+  for (const item of items) {
+    if (rule.isOutlierAgainstMedian(valueOf(item), medianValue)) outliers.add(item);
+  }
+  return { population: "assessed", medianItem, medianValue, outliers };
+}
 
 export interface OutlierAssessment {
   /** The median candidate's own exact price, or `null` when there is no median. */
@@ -40,33 +116,30 @@ export interface OutlierAssessment {
   readonly outliers: ReadonlySet<TokenWatchPriceCandidate>;
 }
 
-/**
- * Flag, never drop. With fewer than {@link MIN_POOLS_FOR_MEDIAN} candidates the
- * assessment is EMPTY rather than hostile: a thin token with one honest pool
- * must still be watchable, and the caller is told the population size so it can
- * say so.
- */
+const normalizedCandidateRule: MedianOutlierRule<BoundedDecimal> = {
+  compare: compareBoundedDecimals,
+  isUsableMedian: (median) => median.units !== 0n,
+  isOutlierAgainstMedian: (value, median) => {
+    const tooHigh = compareBoundedDecimals(
+      value,
+      multiplyDecimalByInteger(median, MEDIAN_OUTLIER_RATIO),
+    ) >= 0;
+    const tooLow = compareBoundedDecimals(
+      multiplyDecimalByInteger(value, MEDIAN_OUTLIER_RATIO),
+      median,
+    ) <= 0;
+    return tooHigh || tooLow;
+  },
+};
+
+/** The rule over candidates ALREADY NORMALIZED to the watched token. */
 export function assessNormalizedCandidates(
   candidates: readonly TokenWatchPriceCandidate[],
 ): OutlierAssessment {
-  if (candidates.length < MIN_POOLS_FOR_MEDIAN) {
-    return { median: null, outliers: new Set() };
-  }
-
-  const ordered = [...candidates].sort((a, b) =>
-    compareBoundedDecimals(a.priceUsd, b.priceUsd));
-  const median = ordered[Math.floor((ordered.length - 1) / 2)]?.priceUsd ?? null;
-  if (median === null || median.units === 0n) {
-    return { median: null, outliers: new Set() };
-  }
-
-  const outliers = new Set<TokenWatchPriceCandidate>();
-  const upperBound = multiplyDecimalByInteger(median, WATCH_PRICE_OUTLIER_RATIO);
-  for (const candidate of candidates) {
-    const scaledCandidate = multiplyDecimalByInteger(candidate.priceUsd, WATCH_PRICE_OUTLIER_RATIO);
-    const tooHigh = compareBoundedDecimals(candidate.priceUsd, upperBound) >= 0;
-    const tooLow = compareBoundedDecimals(scaledCandidate, median) <= 0;
-    if (tooHigh || tooLow) outliers.add(candidate);
-  }
-  return { median, outliers };
+  const assessment = assessMedianOutliers(
+    candidates,
+    (candidate) => candidate.priceUsd,
+    normalizedCandidateRule,
+  );
+  return { median: assessment.medianValue, outliers: assessment.outliers };
 }

@@ -20,7 +20,23 @@
  * FLAG, NEVER DROP. Suppressing an outlier row would be truncation of
  * agent-facing output. The agent gets every pool, the median, and a per-row
  * verdict, and decides.
+ *
+ * WHO OWNS THE RULE. Not this file. The population rule - minimum population,
+ * median-as-ELEMENT, fixed ratio in both directions - is owned by
+ * `tools/dexscreener/token-watch-price/outliers.ts` and consumed here through
+ * `assessMedianOutliers`; the `token_price` wake watch consumes the same
+ * primitive over its normalized candidates. This module is the PAIR-LIST
+ * ADAPTER onto it and adds only what is pair-list-shaped: the projection from a
+ * `PairRow` to the provider's raw base-token `priceUsdNumeric`, the float ratio
+ * the agent-facing note quotes, the per-row verdicts, and the median pool's own
+ * exact-decimal price STRING.
  */
+
+import {
+  MEDIAN_OUTLIER_RATIO,
+  assessMedianOutliers,
+  type MedianOutlierRule,
+} from "@tools/dexscreener/token-watch-price/outliers.js";
 
 import type { PairRow } from "./pair-metrics.js";
 
@@ -31,9 +47,10 @@ import type { PairRow } from "./pair-metrics.js";
  * A FIXED order of magnitude, not a percentage of anything and not adaptive to
  * the sample: a band that widens with the spread would be widest exactly when
  * the data is worst. Genuine pools of one token sit within a few percent of each
- * other; nothing legitimate is 10× off its siblings.
+ * other; nothing legitimate is 10× off its siblings. It is the primitive's
+ * threshold, re-exported here because the pair-list envelope documents it.
  */
-export const PRICE_OUTLIER_RATIO = 10;
+export const PRICE_OUTLIER_RATIO = MEDIAN_OUTLIER_RATIO;
 
 export type PriceSanityVerdict =
   /** Within the band of the median across this token's returned pools. */
@@ -77,6 +94,43 @@ function outlierNote(ratio: number): string {
 }
 
 /**
+ * One priced pool, projected for the primitive: the row it came from, plus its
+ * price already narrowed to a number so the value algebra never sees a `null`.
+ */
+interface PricedPool {
+  readonly row: PairRow;
+  readonly priceUsd: number;
+}
+
+const rawPoolPriceRule: MedianOutlierRule<number> = {
+  compare: (left, right) => (left === right ? 0 : left < right ? -1 : 1),
+  isUsableMedian: (median) => median > 0,
+  isOutlierAgainstMedian: (value, median) => {
+    const ratio = value / median;
+    return ratio >= PRICE_OUTLIER_RATIO || ratio <= 1 / PRICE_OUTLIER_RATIO;
+  },
+};
+
+function projectPricedPools(rows: readonly PairRow[]): PricedPool[] {
+  const priced: PricedPool[] = [];
+  for (const row of rows) {
+    const priceUsd = row.metrics.priceUsdNumeric;
+    if (priceUsd !== null) priced.push({ row, priceUsd });
+  }
+  return priced;
+}
+
+function allVerdictsUnknown(rows: readonly PairRow[]): Map<string, PriceSanityVerdict> {
+  const verdictByPairAddress = new Map<string, PriceSanityVerdict>();
+  for (const row of rows) {
+    if (typeof row.pair.pairAddress === "string") {
+      verdictByPairAddress.set(row.pair.pairAddress, "unknown");
+    }
+  }
+  return verdictByPairAddress;
+}
+
+/**
  * Assess every pool the provider returned for one token.
  *
  * Runs over the FULL provider window, before any Vex filter: a median computed
@@ -84,48 +138,43 @@ function outlierNote(ratio: number): string {
  * property of the token.
  */
 export function assessCrossPoolPrices(rows: readonly PairRow[]): CrossPoolPriceSanity {
-  const priced = rows.filter((row) => row.metrics.priceUsdNumeric !== null);
-  const verdictByPairAddress = new Map<string, PriceSanityVerdict>();
+  const priced = projectPricedPools(rows);
+  const assessment = assessMedianOutliers(priced, (pool) => pool.priceUsd, rawPoolPriceRule);
 
   // One pool cannot disagree with itself, and two have no majority — a median
-  // is only evidence once there is a population to be an outlier from.
-  if (priced.length < 3) {
-    for (const row of rows) {
-      if (typeof row.pair.pairAddress === "string") {
-        verdictByPairAddress.set(row.pair.pairAddress, "unknown");
-      }
-    }
+  // is only evidence once there is a population to be an outlier from. Every row
+  // is then `unknown`, including the priced ones: there was nothing to judge.
+  if (assessment.population === "too_small") {
     return {
       priceUsdMedianAcrossPools: null,
       pricePoolOutliers: [],
-      verdictByPairAddress,
+      verdictByPairAddress: allVerdictsUnknown(rows),
+    };
+  }
+  if (assessment.population === "unusable_median" || assessment.medianValue === null) {
+    return {
+      priceUsdMedianAcrossPools: null,
+      pricePoolOutliers: [],
+      verdictByPairAddress: new Map(),
     };
   }
 
-  const ordered = [...priced].sort((a, b) => {
-    const left = a.metrics.priceUsdNumeric ?? 0;
-    const right = b.metrics.priceUsdNumeric ?? 0;
-    if (left === right) return 0;
-    return left < right ? -1 : 1;
-  });
-  const medianRow = ordered[Math.floor((ordered.length - 1) / 2)];
-  const medianPrice = medianRow?.metrics.priceUsdNumeric ?? null;
-  const medianString = typeof medianRow?.pair.priceUsd === "string" ? medianRow.pair.priceUsd : null;
+  const medianPrice = assessment.medianValue;
+  const medianPair = assessment.medianItem?.row.pair;
+  const medianString = typeof medianPair?.priceUsd === "string" ? medianPair.priceUsd : null;
 
-  if (medianPrice === null || medianPrice <= 0) {
-    return { priceUsdMedianAcrossPools: null, pricePoolOutliers: [], verdictByPairAddress };
-  }
-
+  const verdictByPairAddress = new Map<string, PriceSanityVerdict>();
   const pricePoolOutliers: PricePoolOutlier[] = [];
+  const pricedByRow = new Map(priced.map((pool) => [pool.row, pool] as const));
   for (const row of rows) {
-    const price = row.metrics.priceUsdNumeric;
     const pairAddress = typeof row.pair.pairAddress === "string" ? row.pair.pairAddress : null;
-    if (price === null) {
+    const pool = pricedByRow.get(row);
+    if (pool === undefined) {
       if (pairAddress !== null) verdictByPairAddress.set(pairAddress, "unknown");
       continue;
     }
-    const ratio = price / medianPrice;
-    const isOutlier = ratio >= PRICE_OUTLIER_RATIO || ratio <= 1 / PRICE_OUTLIER_RATIO;
+    const ratio = pool.priceUsd / medianPrice;
+    const isOutlier = assessment.outliers.has(pool);
     if (pairAddress !== null) {
       verdictByPairAddress.set(pairAddress, isOutlier ? "outlier_vs_pool_median" : "ok");
     }

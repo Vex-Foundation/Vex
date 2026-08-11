@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { TRENCH_HANDLERS } from "../../../vex-agent/tools/protocols/trench/handlers.js";
 import { getTrenchExpressClient } from "@tools/trench-express/client.js";
 import type { TrenchToken } from "@tools/trench-express/types.js";
@@ -40,6 +40,20 @@ function parse(output: string): Record<string, unknown> {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+// READ_CTX carries source: "default", and the trench projector resolves that
+// through the REAL resolver, which reads THIS MACHINE's configured wallets. A
+// developer with a wallet and a wallet-less CI runner therefore drove different
+// code here (own-launch flagging on, versus off) with nothing in the suite
+// saying so. Pin the seam to the unresolved shape for every test that does not
+// state its own wallet expectation; the tests below that DO care re-stub it,
+// and both flag shapes are asserted in
+// protocols/trench/own-launch-flag.test.ts, which owns that behavior.
+beforeEach(() => {
+  vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockImplementation(() => {
+    throw new Error("WALLET_NOT_SELECTED");
+  });
+});
 
 describe("trench.tokens handler", () => {
   it("rejects a structurally unsupported filter by name", async () => {
