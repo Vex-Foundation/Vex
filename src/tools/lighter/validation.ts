@@ -8,6 +8,7 @@ import type {
   LighterAccountOrdersResponse,
   LighterAccountResponse,
   LighterAccountTradesResponse,
+  LighterApiKeysResponse,
   LighterCandlesResponse,
   LighterMarketDetailsResponse,
   LighterMarketsResponse,
@@ -199,6 +200,24 @@ const readOnlyTokensResponseSchema = z
   })
   .passthrough();
 
+const apiKeySchema = z
+  .object({
+    account_index: int,
+    api_key_index: int,
+    nonce: providerInteger,
+    public_key: z.string().min(1),
+    transaction_time: providerInteger,
+  })
+  .passthrough();
+
+const apiKeysResponseSchema = z
+  .object({
+    code: int,
+    message,
+    api_keys: z.array(apiKeySchema).default([]),
+  })
+  .passthrough();
+
 const accountTradesResponseSchema = z
   .object({
     code: int,
@@ -336,6 +355,10 @@ export function validateLighterAccount(raw: unknown): LighterAccountResponse {
 
 export function validateLighterReadOnlyTokens(raw: unknown): LighterReadOnlyTokensResponse {
   return parseOrThrow(readOnlyTokensResponseSchema, raw, "read-only tokens");
+}
+
+export function validateLighterApiKeys(raw: unknown): LighterApiKeysResponse {
+  return parseOrThrow(apiKeysResponseSchema, raw, "api keys");
 }
 
 export function validateLighterAccountTrades(raw: unknown): LighterAccountTradesResponse {

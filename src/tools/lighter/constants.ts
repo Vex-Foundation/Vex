@@ -33,6 +33,7 @@ export const LIGHTER_ENDPOINT_PATHS = {
   account: "/api/v1/account",
   accountActiveOrders: "/api/v1/accountActiveOrders",
   accountInactiveOrders: "/api/v1/accountInactiveOrders",
+  apiKeys: "/api/v1/apikeys",
   tokens: "/api/v1/tokens",
   orderBooks: "/api/v1/orderBooks",
   orderBookDetails: "/api/v1/orderBookDetails",
@@ -76,6 +77,9 @@ export const LIGHTER_RECENT_TRADES_LIMIT_MIN = 1;
 export const LIGHTER_RECENT_TRADES_LIMIT_MAX = 100;
 export const LIGHTER_CANDLES_COUNT_MIN = 1;
 export const LIGHTER_CANDLES_COUNT_MAX = 500;
+export const LIGHTER_API_KEY_INDEX_MIN = 0;
+export const LIGHTER_API_KEY_INDEX_ALL = 255;
+export const LIGHTER_API_KEY_INDEX_MAX = LIGHTER_API_KEY_INDEX_ALL;
 /** Reject seconds-scale Unix timestamps; Lighter candle calls use epoch milliseconds. */
 export const LIGHTER_TIMESTAMP_MIN = 1_000_000_000_000;
 export const LIGHTER_TIMESTAMP_MAX = 5_000_000_000_000;

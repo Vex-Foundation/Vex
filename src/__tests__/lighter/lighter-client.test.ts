@@ -162,6 +162,29 @@ describe("LighterClient URL selection", () => {
     expect(new Headers(init.headers).has("Authorization")).toBe(false);
   });
 
+  it("reads public API-key nonce metadata without Authorization", async () => {
+    mockOk({
+      code: 200,
+      api_keys: [{
+        account_index: 42,
+        api_key_index: 1,
+        nonce: 1784732515923,
+        public_key: "96432015bb5cb590489b59727a29deeca4a55d6f416cd28c48220ec3572a1fcfe0d6b21b9b1f852a",
+        transaction_time: 1784732516903382,
+      }],
+    });
+
+    const response = await client.getApiKeys("rhc", { accountIndex: 42, apiKeyIndex: 255 });
+
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/apikeys");
+    expect(url.searchParams.get("account_index")).toBe("42");
+    expect(url.searchParams.get("api_key_index")).toBe("255");
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+    expect(response.api_keys[0]?.nonce).toBe(1784732515923);
+  });
+
   it("attaches Authorization from the privileged provider for authenticated reads", async () => {
     mockOk({ code: 200, tokens: [] });
     const authClient = new LighterClient(
@@ -243,6 +266,14 @@ describe("LighterClient URL selection", () => {
   it("bounds order book limits before sending", async () => {
     await expect(client.getOrderBookOrders("core", { marketId: 0, limit: 251 })).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("bounds API-key index reads before sending", async () => {
+    await expect(client.getApiKeys("core", { accountIndex: 42, apiKeyIndex: 256 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+      message: "Invalid Lighter apiKeyIndex: expected an integer from 0 to 255",
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -357,6 +388,41 @@ describe("LighterClient validation", () => {
     const tape = await client.getRecentTrades("core", { marketId: 0, limit: 1 });
     expect(tape.trades[0].price).toBe("3000");
     expect(tape.trades[0].ask_id_str).toBe("1");
+  });
+
+  it("validates public API-key nonce metadata", async () => {
+    mockOk({
+      code: 200,
+      api_keys: [{
+        account_index: 1,
+        api_key_index: 1,
+        nonce: 1784732515923,
+        public_key: "96432015bb5cb590489b59727a29deeca4a55d6f416cd28c48220ec3572a1fcfe0d6b21b9b1f852a",
+        transaction_time: 1784732516903382,
+      }],
+    });
+
+    const response = await client.getApiKeys("core", { accountIndex: 1 });
+
+    expect(response.api_keys).toHaveLength(1);
+    expect(response.api_keys[0]?.api_key_index).toBe(1);
+    expect(response.api_keys[0]?.public_key).toMatch(/^[a-f0-9]+$/);
+  });
+
+  it("rejects malformed API-key metadata", async () => {
+    mockOk({
+      code: 200,
+      api_keys: [{
+        account_index: 1,
+        api_key_index: 1,
+        public_key: "public",
+        transaction_time: 1784732516903382,
+      }],
+    });
+
+    await expect(client.getApiKeys("core", { accountIndex: 1 })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
   });
 
   it("validates account trades with exact string ids", async () => {

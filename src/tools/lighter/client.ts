@@ -1,6 +1,9 @@
 import { ErrorCodes, VexError } from "../../errors.js";
 import { fetchWithTimeout, readJson } from "../../utils/http.js";
 import {
+  LIGHTER_API_KEY_INDEX_ALL,
+  LIGHTER_API_KEY_INDEX_MAX,
+  LIGHTER_API_KEY_INDEX_MIN,
   LIGHTER_CANDLE_RESOLUTION_MS,
   LIGHTER_CANDLES_COUNT_MAX,
   LIGHTER_CANDLES_COUNT_MIN,
@@ -26,6 +29,8 @@ import type {
   LighterAccountResponse,
   LighterAccountTradesParams,
   LighterAccountTradesResponse,
+  LighterApiKeysParams,
+  LighterApiKeysResponse,
   LighterCandlesParams,
   LighterCandlesResponse,
   LighterMarketDetailQuery,
@@ -45,6 +50,7 @@ import {
   validateLighterAccount,
   validateLighterAccountOrders,
   validateLighterAccountTrades,
+  validateLighterApiKeys,
   validateLighterCandles,
   validateLighterMarketDetails,
   validateLighterMarkets,
@@ -213,6 +219,28 @@ export class LighterClient {
         account_index: String(accountIndex),
       },
       { auth: "read-only" },
+    );
+  }
+
+  async getApiKeys(
+    environment: LighterEnvironment,
+    params: LighterApiKeysParams,
+  ): Promise<LighterApiKeysResponse> {
+    const accountIndex = readAccountIndex(params.accountIndex);
+    const apiKeyIndex = readBoundedInt(
+      params.apiKeyIndex ?? LIGHTER_API_KEY_INDEX_ALL,
+      "apiKeyIndex",
+      LIGHTER_API_KEY_INDEX_MIN,
+      LIGHTER_API_KEY_INDEX_MAX,
+    );
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.apiKeys,
+      validateLighterApiKeys,
+      {
+        account_index: String(accountIndex),
+        api_key_index: String(apiKeyIndex),
+      },
     );
   }
 

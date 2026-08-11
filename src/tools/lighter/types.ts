@@ -56,6 +56,22 @@ export interface LighterReadOnlyTokensResponse {
   [key: string]: unknown;
 }
 
+export interface LighterApiKey {
+  account_index: number;
+  api_key_index: number;
+  nonce: number;
+  public_key: string;
+  transaction_time: number;
+  [key: string]: unknown;
+}
+
+export interface LighterApiKeysResponse {
+  code: number;
+  message?: string;
+  api_keys: LighterApiKey[];
+  [key: string]: unknown;
+}
+
 export interface LighterAccountTradesResponse {
   code: number;
   message?: string;
@@ -266,6 +282,11 @@ export interface LighterAccountQuery {
 
 export interface LighterReadOnlyTokensParams {
   accountIndex: number;
+}
+
+export interface LighterApiKeysParams {
+  accountIndex: number;
+  apiKeyIndex?: number;
 }
 
 export interface LighterAccountTradesParams {
