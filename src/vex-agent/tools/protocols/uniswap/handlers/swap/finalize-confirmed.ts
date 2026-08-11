@@ -8,9 +8,11 @@
  * through `status`, never through `success`.
  */
 
-import { formatUnits, type Hex } from "viem";
+import { formatUnits, getAddress, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
+import { verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
+import type { Erc20ReadClient } from "@tools/evm-chains/erc20-reads.js";
 import { decodeUniswapExecutedLegs, type UniswapDecodableReceipt } from "@tools/uniswap/receipt-decoder.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
@@ -36,6 +38,8 @@ export interface FinalizeConfirmedSwapInput {
   readonly quoted: QuotedRoute;
   readonly receipt: UniswapDecodableReceipt;
   readonly txHash: Hex;
+  /** Read-only client for the post-buy delivery check. */
+  readonly publicClient: Erc20ReadClient;
 }
 
 export interface FinalizeConfirmedSwapOutcome {
@@ -74,6 +78,20 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     }
   }
 
+  // A1: ask the acquired token what the wallet actually holds. Receipt logs
+  // are contract-authored, so a fake-transfer token can settle decodably and
+  // deliver nothing (live TOM incident 2026-08-10). Same gate as the auto-pin
+  // above: local chain, acquired ERC-20. Fail-soft in every direction.
+  const deliveryVerdict = getLocalChain(deployment.chainId) && !tokenOut.isNative
+    ? await verifyPostBuyDelivery({
+        client: x.publicClient,
+        tokenAddress: getAddress(tokenOut.address),
+        owner: getAddress(x.walletAddress),
+        chainLabel: deployment.key,
+        txHash,
+      })
+    : null;
+
   // C38 (Codex final-review round 3, finding 2): the swap ALREADY
   // confirmed on-chain at this point — a throw from the decoder itself
   // must NEVER escape to the generic outer post-intent catch (C18), which
@@ -109,7 +127,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
       outputPayload: null,
       result: {
         success: true,
-        output: `${TOOL_ID}: swap confirmed on-chain (tx ${txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.`,
+        output: `${TOOL_ID}: swap confirmed on-chain (tx ${txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.${deliveryVerdict ? ` ${deliveryVerdict}` : ""}`,
         data: { txHash, _executionId: executionId, status: "confirmed_pending_amounts" },
       },
     };
@@ -137,6 +155,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
     amountIn: amountInHuman, amountOut: amountOutHuman,
     route: { version: x.quoted.route.version, path: x.quoted.route.path },
+    ...(deliveryVerdict ? { deliveryCheck: deliveryVerdict } : {}),
   };
 
   return {

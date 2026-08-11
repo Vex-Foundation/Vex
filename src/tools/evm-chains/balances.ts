@@ -22,33 +22,10 @@
 import { getAddress, type Chain, type PublicClient, type Transport } from "viem";
 
 import { getDexScreenerClient } from "../dexscreener/client.js";
+import { ERC20_READ_ABI } from "./erc20-reads.js";
 import { getLocalPublicClient } from "./evm-client.js";
 import type { LocalChainConfig } from "./registry.js";
 import logger from "../../utils/logger.js";
-
-export const ERC20_READ_ABI = [
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
-    outputs: [{ type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "decimals",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint8" }],
-  },
-  {
-    type: "function",
-    name: "symbol",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "string" }],
-  },
-] as const;
 
 /** DexScreener tokens/v1 caps at 30 addresses per request. */
 const DEXSCREENER_TOKENS_BATCH = 30;
@@ -74,16 +51,33 @@ export interface LocalChainTokenRead {
   priceUsd: number | null;
 }
 
+/**
+ * One scanned token whose read did NOT produce an answer. Reported separately
+ * from `tokens` because "the read failed" and "the balance is zero" are
+ * different facts: `multicall({ allowFailure: true })` answers per contract, so
+ * a single token can fail while the rest succeed, and a caller that replaces a
+ * whole-chain snapshot from the survivors would DELETE a real holding.
+ */
+export interface LocalChainTokenReadFailure {
+  address: `0x${string}`;
+  reason: "balance-read-failed" | "metadata-read-failed";
+}
+
 export interface LocalChainBalancesRead {
   nativeWei: bigint;
   /** Rides on the wrapped-native seed token's DexScreener price (ETH ≈ WETH). */
   nativePriceUsd: number | null;
   /**
-   * Non-zero ERC-20 holdings only (Khalani parity: zero balances are skipped);
-   * tokens whose balance/metadata read failed are omitted (can't represent
-   * safely).
+   * Non-zero ERC-20 holdings only (Khalani parity: zero balances are skipped).
+   * Tokens that could not be read are NOT here; they are in `tokenFailures`.
    */
   tokens: LocalChainTokenRead[];
+  /**
+   * Per-token read failures, never conflated with a zero balance. A metadata
+   * failure is only reported for a token that HAS a non-zero balance: a zero
+   * balance produces no row either way, so its missing decimals lose nothing.
+   */
+  tokenFailures: LocalChainTokenReadFailure[];
 }
 
 /**
@@ -109,11 +103,20 @@ export async function readLocalChainBalances(
   const nativePriceUsd = wrappedNativeLower ? priceByLower.get(wrappedNativeLower) ?? null : null;
 
   const tokens: LocalChainTokenRead[] = [];
+  const tokenFailures: LocalChainTokenReadFailure[] = [];
   for (const address of tokenAddrs) {
     const lower = address.toLowerCase();
     const balance = balances.get(lower);
     const tokenMeta = meta.get(lower);
-    if (balance === undefined || balance === 0n || !tokenMeta) continue;
+    if (balance === undefined) {
+      tokenFailures.push({ address, reason: "balance-read-failed" });
+      continue;
+    }
+    if (balance === 0n) continue;
+    if (!tokenMeta) {
+      tokenFailures.push({ address, reason: "metadata-read-failed" });
+      continue;
+    }
     tokens.push({
       address,
       symbol: tokenMeta.symbol,
@@ -123,7 +126,7 @@ export async function readLocalChainBalances(
     });
   }
 
-  return { nativeWei, nativePriceUsd, tokens };
+  return { nativeWei, nativePriceUsd, tokens, tokenFailures };
 }
 
 // ── On-chain reads ──────────────────────────────────────────────────

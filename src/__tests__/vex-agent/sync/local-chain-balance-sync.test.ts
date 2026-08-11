@@ -231,6 +231,63 @@ describe("syncLocalChainForWallet", () => {
     expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 
+  // ── A4: a partial read must never REPLACE a complete snapshot ──
+  //
+  // `multicall({ allowFailure: true })` answers per contract, so one token's
+  // read can fail while the rest succeed. That partial set used to flow
+  // straight into `replaceBalancesForChain`, which replaces the WHOLE chain:
+  // a transient per-token RPC failure silently DELETED a previously valid
+  // balance row, and the agent then read the deletion as "you hold none".
+  it("SKIPS the whole-chain replacement when one token's balanceOf read failed", async () => {
+    fakeClient.multicall.mockImplementation((args: { contracts: Array<{ address: string; functionName: string }> }) =>
+      Promise.resolve(
+        args.contracts.map((c) => {
+          const addr = c.address.toLowerCase();
+          if (c.functionName === "balanceOf") {
+            return addr === SEED.VEX.toLowerCase()
+              ? { status: "failure", error: new Error("execution reverted") }
+              : { status: "success", result: BALANCES[addr] };
+          }
+          if (c.functionName === "decimals") return { status: "success", result: DECIMALS[addr] };
+          return { status: "success", result: SYMBOLS[addr] };
+        }),
+      ),
+    );
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(true);
+    expect(res.tokensUpdated).toBe(0);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("SKIPS the replacement when a HELD token's metadata read failed", async () => {
+    fakeClient.multicall.mockImplementation((args: { contracts: Array<{ address: string; functionName: string }> }) =>
+      Promise.resolve(
+        args.contracts.map((c) => {
+          const addr = c.address.toLowerCase();
+          if (c.functionName === "balanceOf") return { status: "success", result: BALANCES[addr] };
+          // VEX has a non-zero balance, so losing its decimals loses a real row.
+          if (addr === SEED.VEX.toLowerCase()) return { status: "failure", error: new Error("no decimals()") };
+          if (c.functionName === "decimals") return { status: "success", result: DECIMALS[addr] };
+          return { status: "success", result: SYMBOLS[addr] };
+        }),
+      ),
+    );
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("still replaces normally when every required read succeeded", async () => {
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(false);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
   it("skips non-EVM families and unknown chains without any RPC call", async () => {
     const solResult = await syncLocalChainForWallet("solana", WALLET, 4663);
     expect(solResult.skipped).toBe(true);

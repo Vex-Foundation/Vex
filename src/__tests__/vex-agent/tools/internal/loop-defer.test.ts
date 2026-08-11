@@ -411,12 +411,16 @@ describe("loop_defer — watch never kills the defer", () => {
   // THE regression this suite exists for: an unsupported watch type used to
   // fail the whole call, so the run did NOT park and the agent stayed in its
   // loop — the exact "unlimited thoughts" pathology loop_defer exists to stop.
+  // Pin updated 2026-08-10: `token_price` is now a REGISTERED type, so it no
+  // longer demonstrates the unknown-type path. The pathology this test guards
+  // is unchanged, only the type used to provoke it. The token_price condition's
+  // own rejections live in `engine/wake/token-price-watch.test.ts`.
   it("still parks on the timer when the watch type is unknown, naming what IS supported", async () => {
     const result = await handleLoopDefer(
       {
         after_ms: 60_000,
         reason: "waiting",
-        watch: [{ type: "token_price", token: "ETH" }],
+        watch: [{ type: "token_liquidity", token: "ETH" }],
       },
       ctxMissionActive(),
     );
@@ -424,8 +428,9 @@ describe("loop_defer — watch never kills the defer", () => {
     expect(result.success).toBe(true);
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
     expect(result.engineSignal?.type).toBe("defer_until");
-    expect(result.output).toContain("token_price");
+    expect(result.output).toContain("token_liquidity");
     expect(result.output).toContain("bridge_order_status");
+    expect(result.output).toContain("token_price");
     expect(mockEnqueue.mock.calls[0][0].payload).toBeNull();
     expect(result.data?.watch_rejected).toHaveLength(1);
   });

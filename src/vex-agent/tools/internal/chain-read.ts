@@ -3,11 +3,17 @@
  * public client.
  *
  * Read-only, scoped actions:
- *   tx_receipt   — transaction receipt (status, gasUsed, logs count)
- *   erc721_mint  — extract minted NFT IDs from receipt logs
+ *   tx_receipt    - transaction receipt (status, gasUsed, logs count)
+ *   erc721_mint   - extract minted NFT IDs from receipt logs
+ *   erc20_balance - direct `balanceOf` for one token and one owner
  *
- * Native balances are owned by `wallet_balances`; token metadata
- * (decimals/symbol/name) by `token_find` (khalani.tokens.search).
+ * `erc20_balance` is the ONE-contract question `wallet_balances` cannot answer:
+ * that tool reports a scan-set projection, while this asks the token itself.
+ * The live TOM incident (2026-08-10) turned on that difference - a confirmed
+ * buy with a decodable Transfer log and a wallet balance of zero.
+ *
+ * Native balances are owned by `wallet_balances`; token symbol/name by
+ * `token_find` (khalani.tokens.search).
  *
  * Chain resolution is INCLUSIVE (`resolveInclusiveEvmChain`, same seam
  * `wallet_balances` uses): Khalani-registry chains keep the dynamic Khalani
@@ -24,7 +30,13 @@ import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { createDynamicPublicClient } from "@tools/khalani/evm-client.js";
 import { extractMintedNftId } from "@tools/kyberswap/evm-utils.js";
+import { readErc20Balance, readErc20Decimals } from "@tools/evm-chains/erc20-reads.js";
+import {
+  resolveSelectedAddressForRead,
+  walletScopeErrorToResult,
+} from "@vex-agent/tools/internal/wallet/resolve.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { formatUnits, getAddress, type Address } from "viem";
 
 type DynamicPublicClient = ReturnType<typeof createDynamicPublicClient>;
 
@@ -32,9 +44,22 @@ function str(p: Record<string, unknown>, k: string): string {
   const v = p[k]; return typeof v === "string" ? v : "";
 }
 
+/**
+ * Model-supplied addresses are untrusted text. A rejection therefore names the
+ * PARAMETER and the expected shape, never the value: echoing it back would put
+ * arbitrary attacker-authored content into the next turn's context.
+ */
+function parseAddressParam(raw: string): Address | null {
+  try {
+    return getAddress(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function handleChainRead(
   params: Record<string, unknown>,
-  _context: InternalToolContext,
+  context: InternalToolContext,
 ): Promise<ToolResult> {
   const action = str(params, "action");
   const chainRaw = str(params, "chain");
@@ -42,7 +67,7 @@ export async function handleChainRead(
   if (!action) {
     return {
       success: false,
-      output: missingOrWrongTypeMessage(params, "action", 'a string ("tx_receipt" or "erc721_mint")'),
+      output: missingOrWrongTypeMessage(params, "action", 'a string ("tx_receipt", "erc721_mint" or "erc20_balance")'),
     };
   }
   // W6a renamed `chainId` → `chain`. Internal tools have no strict unknown-key
@@ -173,7 +198,67 @@ export async function handleChainRead(
       };
     }
 
+    case "erc20_balance": {
+      const tokenRaw = str(params, "tokenAddress");
+      if (!tokenRaw) return { success: false, output: "Missing required: tokenAddress" };
+      const token = parseAddressParam(tokenRaw);
+      if (!token) {
+        return { success: false, output: "tokenAddress must be a 0x-prefixed 20-byte EVM address." };
+      }
+
+      const ownerRaw = str(params, "owner");
+      let owner: Address;
+      if (ownerRaw) {
+        const parsedOwner = parseAddressParam(ownerRaw);
+        if (!parsedOwner) {
+          return { success: false, output: "owner must be a 0x-prefixed 20-byte EVM address, or omitted to read your own wallet." };
+        }
+        owner = parsedOwner;
+      } else {
+        // Address-only resolution: this action never touches key material, and
+        // a mission-scope refusal fails the read closed rather than widening it.
+        try {
+          owner = getAddress(resolveSelectedAddressForRead(context.walletResolution, context.walletPolicy, "eip155"));
+        } catch (err) {
+          return walletScopeErrorToResult(err);
+        }
+      }
+
+      let balance: bigint;
+      try {
+        balance = await readErc20Balance(client, token, owner);
+      } catch (err) {
+        return { success: false, output: summarizeProtocolError(err).message };
+      }
+
+      // Money-path rule: a raw amount travels with the decimals needed to read
+      // it, or it is not presented as a human amount at all. A token whose
+      // `decimals()` cannot be read still returns its raw balance, with the
+      // gap NAMED, rather than a number that could be off by a thousandfold.
+      let decimals: number | null = null;
+      let decimalsError: string | null = null;
+      try {
+        decimals = await readErc20Decimals(client, token);
+      } catch (err) {
+        decimalsError = `decimals() could not be read (${summarizeProtocolError(err).message}); balanceRaw is in the token's smallest unit and has NOT been converted.`;
+      }
+
+      return {
+        success: true,
+        output: JSON.stringify({
+          chain: chainName,
+          chainId,
+          tokenAddress: token,
+          owner,
+          balanceRaw: balance.toString(),
+          decimals,
+          balance: decimals === null ? null : formatUnits(balance, decimals),
+          ...(decimalsError ? { decimalsError } : {}),
+        }, null, 2),
+      };
+    }
+
     default:
-      return { success: false, output: `Unknown action: ${action}. Valid: tx_receipt, erc721_mint` };
+      return { success: false, output: `Unknown action: ${action}. Valid: tx_receipt, erc721_mint, erc20_balance` };
   }
 }

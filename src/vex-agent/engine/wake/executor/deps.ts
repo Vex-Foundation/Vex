@@ -39,8 +39,21 @@ export interface WakeDeps {
     runId: string,
     fromStatuses: readonly MissionRunStatus[],
   ): Promise<MissionRunStatus | null>;
-  /** Persist a `wake_due` banner for the resume path to pick up. */
-  injectWakeBanner(sessionId: string, reason: string | null, dueAt: string): Promise<void>;
+  /**
+   * Persist a `wake_due` banner for the resume path to pick up.
+   *
+   * `triggeredBy` is the wake row's raw `payload.triggeredBy` - the cause the
+   * promotion stamped, or `undefined` for an ordinary timer wake. It is passed
+   * through UNPARSED because the banner builder owns the validation: every wake
+   * path forwards the same untrusted value, and none of them gets to decide
+   * what a renderable cause looks like.
+   */
+  injectWakeBanner(
+    sessionId: string,
+    reason: string | null,
+    dueAt: string,
+    triggeredBy?: unknown,
+  ): Promise<void>;
   /**
    * Resume a mission run, under the run/session lease the executor already
    * holds. `runnerOwnerId` is REQUIRED: the resumed turn loop can only force a
@@ -75,6 +88,7 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { isWakeProviderConfigured } from "./provider.js";
 import { claimSessionWakeAtomically } from "./claim-session-wake.js";
+import { formatWakeBanner, parseWakeTrigger } from "./wake-banner.js";
 
 export function buildProductionDeps(): WakeDeps {
   return {
@@ -85,15 +99,16 @@ export function buildProductionDeps(): WakeDeps {
     getMissionRun: (runId) => missionRunsRepo.getRun(runId),
     casFlipToRunning: (runId, fromStatuses) =>
       missionRunsRepo.casFlipToRunning(runId, fromStatuses),
-    injectWakeBanner: async (sessionId, reason, dueAt) => {
+    injectWakeBanner: async (sessionId, reason, dueAt, triggeredBy) => {
+      const trigger = parseWakeTrigger(triggeredBy);
       await appendEngineMessage(
         sessionId,
-        `[Engine: wake_due — ${reason ?? "no reason provided"} (scheduled: ${dueAt})]`,
+        formatWakeBanner(reason, dueAt, triggeredBy),
         {
           source: "engine",
           messageType: "wake_due",
           visibility: "internal",
-          payload: { reason: reason ?? null, dueAt },
+          payload: { reason: reason ?? null, dueAt, triggeredBy: trigger },
         },
       );
     },

@@ -110,6 +110,9 @@ beforeEach(() => {
     tokens: [
       { address: VEX, symbol: "VEX", decimals: 18, balanceWei: 2_000000000000000000n, priceUsd: 0.5 },
     ],
+    // A4: every scanned token answered; per-token read failures are reported
+    // separately from the tokens themselves.
+    tokenFailures: [],
   });
 });
 

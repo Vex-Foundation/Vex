@@ -264,6 +264,7 @@ export async function executeUniswapSwap(
         quoted,
         receipt: outcome.receipt,
         txHash: outcome.txHash,
+        publicClient: clients.publicClient,
       });
 
       // ── The fee leg, LAST, and only now that the swap is CONFIRMED ──

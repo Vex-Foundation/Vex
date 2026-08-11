@@ -219,6 +219,7 @@ describe("wake.executor.tick", () => {
         "sess-1",
         "iteration_limit: runtime slice exhausted; continue autonomously",
         "2026-04-20T12:00:00.000Z",
+        undefined, // pin: every wake path forwards payload.triggeredBy; a timer wake has none
       );
       // The EXACT lease the executor claimed reaches the slice — the slice's
       // turn loop can only apply a prepared compaction by proving ownership.
@@ -411,6 +412,7 @@ describe("wake.executor.tick", () => {
       "sess-1",
       "continue monitoring",
       "2026-04-20T12:00:00.000Z",
+      undefined,
     );
     expect(deps.resumeMissionRun).toHaveBeenCalledWith(
       "run-1",
