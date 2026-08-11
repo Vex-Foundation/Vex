@@ -97,7 +97,19 @@ describe("CardBody deployed capital", () => {
     expect(field.textContent).toContain("Not declared");
   });
 
-  it("drops a hostile symbol through the shared sanitizer rather than printing it", () => {
+  it("renders a leading-$ ticker, which the engine charset accepts", () => {
+    // $VEX is the project's own token symbol and is valid hash-bound metadata.
+    // A display check stricter than the engine's would silently omit it.
+    const field = renderBody({ ...DECLARED, assetSymbol: "$VEX" });
+    expect(field.textContent).toContain("3044 $VEX on Robinhood");
+  });
+
+  it("renders a leading-punctuation ticker the engine charset accepts", () => {
+    const field = renderBody({ ...DECLARED, assetSymbol: ".TOKEN" });
+    expect(field.textContent).toContain("3044 .TOKEN on Robinhood");
+  });
+
+  it("drops a hostile symbol rather than printing it", () => {
     // A token symbol is attacker-influenceable text. The sanitizer rejects
     // anything that is not a plain ASCII ticker; a rejected symbol must not
     // reach the DOM at all.

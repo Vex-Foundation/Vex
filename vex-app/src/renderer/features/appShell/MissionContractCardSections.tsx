@@ -16,8 +16,31 @@
 import type { JSX } from "react";
 import type { MissionDeployedCapital, MissionDraftDto } from "@shared/schemas/mission.js";
 import { chainDisplay } from "@shared/chains/display.js";
-import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { cn } from "../../lib/utils.js";
+
+/**
+ * The deployed-capital ticker charset, mirrored BY VALUE from the engine's
+ * `ASSET_SYMBOL_PATTERN` (`src/vex-agent/engine/mission/deployed-capital.ts`),
+ * which is the charset the acceptance hash was computed under.
+ *
+ * Deliberately NOT the shared `sanitizeTokenSymbol`. That sanitizer guards
+ * provider-sourced symbols on other surfaces and additionally requires an
+ * ALPHANUMERIC FIRST CHARACTER, which is stricter than the engine here: it
+ * would drop `$VEX` (the project's own token symbol), `_TOKEN` and `.TOKEN`.
+ * Omitting valid hash-bound metadata is its own honesty failure, so this
+ * surface matches the engine exactly rather than borrowing a stricter rule.
+ * The shared sanitizer is left untouched for its own callers.
+ *
+ * The shared DTO schema already enforces this same charset at the IPC
+ * boundary; this check is defense in depth against a schema drift, so a
+ * symbol that somehow reaches the renderer outside the charset is still
+ * dropped from the line rather than rendered.
+ */
+const DEPLOYED_CAPITAL_SYMBOL_PATTERN = /^[A-Za-z0-9_.$-]{1,32}$/;
+
+function displayableAssetSymbol(symbol: string): string | null {
+  return DEPLOYED_CAPITAL_SYMBOL_PATTERN.test(symbol) ? symbol : null;
+}
 
 /**
  * Contract state machine kinds shared by the modal. Kept here (rather than in
@@ -123,10 +146,10 @@ function Field({ label, hint, children }: FieldProps): JSX.Element {
  *     measurability warnings, so "Not declared" is real information about the
  *     contract, not an empty state to hide.
  *
- * `assetSymbol` is model-written, attacker-influenceable text, so it goes
- * through the shared token-symbol sanitizer; a rejected symbol is dropped from
- * the line rather than printed, and the asset address below remains the
- * unambiguous identity.
+ * `assetSymbol` is model-written, attacker-influenceable text, so it is checked
+ * against the engine's ticker charset (see `DEPLOYED_CAPITAL_SYMBOL_PATTERN`);
+ * a rejected symbol is dropped from the line rather than printed, and the asset
+ * address below remains the unambiguous identity.
  */
 function DeployedCapitalField({
   capital,
@@ -142,7 +165,7 @@ function DeployedCapitalField({
       </Field>
     );
   }
-  const symbol = sanitizeTokenSymbol(capital.assetSymbol);
+  const symbol = displayableAssetSymbol(capital.assetSymbol);
   const amount = capital.amountHuman ?? `${capital.amountRaw} raw`;
   const chain = chainDisplay(capital.chainId).name;
   return (
