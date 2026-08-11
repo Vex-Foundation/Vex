@@ -84,6 +84,13 @@ interface TokenReadError {
   reason: string;
 }
 
+/**
+ * A projected token row as `wallet_balances` emits it. `priceUnavailable` is
+ * added only by the concise trim, on a held token with no price feed, so the
+ * agent can tell "no USD price" from "not held".
+ */
+type WalletTokenRow = ConciseKhalaniToken & { priceUnavailable?: true };
+
 interface WalletSnapshot {
   wallet: ChainFamily;
   address: string;
@@ -94,7 +101,9 @@ interface WalletSnapshot {
   tokenErrors: TokenReadError[];
   /** Present only when the bound below dropped entries. */
   tokenErrorsOmitted?: number;
-  tokens: ConciseKhalaniToken[];
+  /** Held-but-unpriced rows the concise trim's cap dropped. Present only when non-zero. */
+  unpricedOmitted?: number;
+  tokens: WalletTokenRow[];
 }
 
 /**
@@ -102,6 +111,13 @@ interface WalletSnapshot {
  * happened and on which tokens, not to have its context filled with the list.
  */
 const MAX_TOKEN_ERRORS_PER_SNAPSHOT = 20;
+
+/**
+ * Same bound, same reason, for the held-but-unpriced rows the concise trim
+ * retains outside the caller's `limit`: the agent must learn that unpriced
+ * holdings exist without a dust wallet flooding its context.
+ */
+const MAX_UNPRICED_TOKENS_PER_SNAPSHOT = 20;
 
 // ── Chain scope (Khalani-first, local fallback) ─────────────────
 
@@ -354,6 +370,7 @@ export async function handleWalletBalances(
         }
       });
 
+      const trimmed = trimTokens(projected, parsed.data.limit, parsed.data.response_format);
       snapshots.push({
         wallet: family,
         address,
@@ -363,7 +380,8 @@ export async function handleWalletBalances(
         chainErrors,
         tokenErrors,
         ...(tokenErrorsOmitted > 0 ? { tokenErrorsOmitted } : {}),
-        tokens: trimTokens(projected, parsed.data.limit, parsed.data.response_format),
+        ...(trimmed.unpricedOmitted > 0 ? { unpricedOmitted: trimmed.unpricedOmitted } : {}),
+        tokens: trimmed.tokens,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -413,22 +431,68 @@ function projectedTokenUsd(token: ConciseKhalaniToken): number {
 }
 
 /**
+ * True when the row carries a usable USD price feed. A finite ZERO is a feed
+ * (the provider quoted it), so only a missing, malformed, or negative price
+ * counts as "no price".
+ */
+function hasUsdPrice(token: ConciseKhalaniToken): boolean {
+  if (token.priceUsd === undefined || token.priceUsd.trim() === "") return false;
+  const price = Number(token.priceUsd);
+  return Number.isFinite(price) && price >= 0;
+}
+
+/** True when the row reports a balance the wallet actually holds. */
+function holdsBalance(token: ConciseKhalaniToken): boolean {
+  if (!token.balance) return false;
+  try {
+    return BigInt(token.balance) !== 0n;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Optionally trim a projected token list to the top-N by held USD value.
  *
  * Compatibility-first: a trim only happens when `response_format` is 'concise'
  * AND a positive `limit` was supplied. The default 'detailed' format (or an
  * omitted `limit`) returns every row untouched, so existing callers are
  * unaffected. The sort is a stable copy (no in-place mutation of the input).
+ *
+ * A held token with NO price feed scores 0 here, so the limit used to cut it
+ * first and the agent could not tell it apart from a token it does not hold
+ * (2026-08-10 incident). Such rows are therefore retained, after the priced
+ * rows and outside the limit, flagged with `priceUnavailable` so the missing
+ * USD figure reads as "no price feed", not "no balance".
+ *
+ * Retention is bounded BY THE CAP below, not by the scan set: only the local
+ * chains scan a bounded set (seed ∪ pinned), while the Khalani read requests
+ * every holding the provider knows with no token cap of its own
+ * (`tools/khalani/balances/scan.ts`), so a wallet full of unpriced dust would
+ * otherwise turn `limit:1` into an unbounded answer. Drops are reported as
+ * `unpricedOmitted`, mirroring `tokenErrorsOmitted`.
+ *
+ * Totals are computed upstream off the full scan and are untouched by this
+ * display trim.
  */
 function trimTokens(
   tokens: ConciseKhalaniToken[],
   limit: number | undefined,
   responseFormat: "concise" | "detailed",
-): ConciseKhalaniToken[] {
-  if (responseFormat === "detailed" || limit === undefined) return tokens;
-  return [...tokens]
-    .sort((a, b) => projectedTokenUsd(b) - projectedTokenUsd(a))
-    .slice(0, limit);
+): { tokens: WalletTokenRow[]; unpricedOmitted: number } {
+  if (responseFormat === "detailed" || limit === undefined) return { tokens, unpricedOmitted: 0 };
+  // Stable sort: rows with equal held USD (every unpriced row scores 0) keep
+  // their scan order, so the retained set is deterministic.
+  const sorted = [...tokens].sort((a, b) => projectedTokenUsd(b) - projectedTokenUsd(a));
+  const priced = sorted.filter(hasUsdPrice).slice(0, limit);
+  const unpricedHeld = sorted.filter((token) => !hasUsdPrice(token) && holdsBalance(token));
+  const retained: WalletTokenRow[] = unpricedHeld
+    .slice(0, MAX_UNPRICED_TOKENS_PER_SNAPSHOT)
+    .map((token) => ({ ...token, priceUnavailable: true as const }));
+  return {
+    tokens: [...priced, ...retained],
+    unpricedOmitted: unpricedHeld.length - retained.length,
+  };
 }
 
 function formatWalletErrors(errors: Array<{ wallet: ChainFamily; message: string }>): string {

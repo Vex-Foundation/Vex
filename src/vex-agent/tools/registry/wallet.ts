@@ -30,7 +30,7 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
         description: "Optional. Omit (or pass empty) to scan all supported chains (Khalani + local). To restrict, pass chain IDs/aliases either comma-separated ('ethereum,base,solana') or as an array (['ethereum','base']).",
       },
       response_format: { type: "string", enum: ["concise", "detailed"], description: "Output verbosity. Default 'detailed' returns every token per wallet. Set 'concise' to enable the `limit` trim (top tokens by held USD value)." },
-      limit: { type: "number", description: "Optional. Max tokens returned per wallet snapshot, top-N by held USD value. Only applied when response_format='concise'; ignored under the default 'detailed'. `tokenCount`/`totalUsd` always reflect the full scan." },
+      limit: { type: "number", description: "Optional. Caps the PRICED rows per wallet snapshot, top-N by held USD value. Held tokens with no usable price are appended after them, outside this limit, marked `priceUnavailable` so 'no price feed' never reads as 'not held'; they are capped at 20 with the surplus counted in `unpricedOmitted`. Only applied when response_format='concise'; ignored under the default 'detailed'. `tokenCount`/`totalUsd` always reflect the full scan." },
     } },
   },
   {

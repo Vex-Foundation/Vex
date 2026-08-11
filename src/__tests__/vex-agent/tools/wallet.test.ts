@@ -163,8 +163,12 @@ describe("wallet_balances", () => {
   // The EVM mock returns 3 tokens: ETH (~15000 held USD), USDC (~100),
   // NOPX (no price → 0 held USD). `trimTokens` only trims when
   // response_format is 'concise' AND a positive limit is supplied.
+  //
+  // NOPX holds a real balance with no price feed. Since 2026-08-11 the limit
+  // applies to PRICED rows only and such a row is always retained (flagged
+  // `priceUnavailable`), so "no price feed" can never read as "not held".
 
-  it("concise + limit=1 trims to the single highest held-USD token (ETH)", async () => {
+  it("concise + limit=1 trims priced rows to the highest held-USD token (ETH), keeping the unpriced holding", async () => {
     const result = await handleWalletBalances(
       { walletFamily: "eip155", response_format: "concise", limit: 1 },
       baseContext,
@@ -172,8 +176,8 @@ describe("wallet_balances", () => {
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     const tokens = data.wallets[0].tokens;
-    expect(tokens).toHaveLength(1);
-    expect(tokens[0].symbol).toBe("ETH");
+    expect(tokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "NOPX"]);
+    expect(tokens[1].priceUnavailable).toBe(true);
     // tokenCount/totalUsd are computed off the FULL scan — a trim must not
     // distort the held totals.
     expect(data.wallets[0].tokenCount).toBe(3);
@@ -189,7 +193,7 @@ describe("wallet_balances", () => {
     expect(data.wallets[0].tokens).toHaveLength(3);
   });
 
-  it("concise + limit is null-safe for a token with no priceUsd (sinks to bottom, no throw)", async () => {
+  it("concise + limit is null-safe for a token with no priceUsd (sinks to the bottom, retained, no throw)", async () => {
     const result = await handleWalletBalances(
       { walletFamily: "eip155", response_format: "concise", limit: 2 },
       baseContext,
@@ -197,10 +201,12 @@ describe("wallet_balances", () => {
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     const tokens = data.wallets[0].tokens;
-    // Top 2 by held USD = ETH then USDC; the price-less NOPX row is trimmed
-    // out (sorted last), proving the sort never threw on a missing price.
-    expect(tokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "USDC"]);
-    expect(tokens.map((t: { symbol: string }) => t.symbol)).not.toContain("NOPX");
+    // Top 2 priced rows by held USD = ETH then USDC; the price-less NOPX row
+    // sorts last and is kept outside the limit, marked, proving the sort never
+    // threw on a missing price and that a holding is never silently hidden.
+    expect(tokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "USDC", "NOPX"]);
+    expect(tokens[2].priceUnavailable).toBe(true);
+    expect(tokens[2].priceUsd).toBeUndefined();
   });
 
   it("default (no limit / detailed) returns all tokens unchanged", async () => {
