@@ -34,6 +34,8 @@ export const LIGHTER_AGENT_ACCOUNT_ROW_MAX = 10;
 export const LIGHTER_AGENT_ACCOUNT_POSITION_MAX = 25;
 export const LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX = 50;
+export const LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT = 25;
+export const LIGHTER_AGENT_API_KEY_LIMIT_MAX = 50;
 
 export type ParamRead<T> =
   | { readonly ok: true; readonly value: T }
@@ -189,6 +191,13 @@ export function readOptionalAccountIndex(params: Record<string, unknown>): Param
   return { ok: true, value: accountIndex };
 }
 
+export function readRequiredAccountIndex(params: Record<string, unknown>): ParamRead<number> {
+  const accountIndex = readOptionalAccountIndex(params);
+  if (!accountIndex.ok) return accountIndex;
+  if (accountIndex.value === undefined) return { ok: false, reason: "Missing required: accountIndex." };
+  return { ok: true, value: accountIndex.value };
+}
+
 export function readLimit(
   params: Record<string, unknown>,
   options: {
@@ -271,6 +280,16 @@ export function readAccountOrderLimit(params: Record<string, unknown>): ParamRea
   return { ok: true, value: read.value ?? LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT };
 }
 
+export function readApiKeyLimit(params: Record<string, unknown>): ParamRead<number> {
+  const read = readLimit(params, {
+    min: 1,
+    max: LIGHTER_AGENT_API_KEY_LIMIT_MAX,
+    defaultValue: LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT,
+  });
+  if (!read.ok) return read;
+  return { ok: true, value: read.value ?? LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT };
+}
+
 export function readMarketListLimit(params: Record<string, unknown>): ParamRead<number> {
   const read = readLimit(params, {
     min: 1,
@@ -298,7 +317,7 @@ export function readLighterOrderPreviewParams(
   const accountIndex = readOptionalAccountIndex(params);
   if (!accountIndex.ok) return accountIndex;
   if (accountIndex.value === undefined) return { ok: false, reason: "Missing required: accountIndex." };
-  const apiKeyIndex = readOptionalApiKeyIndex(params);
+  const apiKeyIndex = readApiKeyIndex(params);
   if (!apiKeyIndex.ok) return apiKeyIndex;
   const marketId = readMarketId(params, true);
   if (!marketId.ok) return marketId;
@@ -345,7 +364,7 @@ function readRequiredString(
   return { ok: true, value };
 }
 
-function readOptionalApiKeyIndex(params: Record<string, unknown>): ParamRead<number | undefined> {
+export function readApiKeyIndex(params: Record<string, unknown>): ParamRead<number | undefined> {
   const value = readNumber(params, "apiKeyIndex");
   if (value === undefined) return { ok: true, value: undefined };
   if (!Number.isInteger(value) || value < 0 || value > 255) {

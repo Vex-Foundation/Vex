@@ -3,6 +3,8 @@ import type {
   LighterAccountOrder,
   LighterAccountOrdersResponse,
   LighterAccountResponse,
+  LighterApiKey,
+  LighterApiKeysResponse,
   LighterCandle,
   LighterCandlesResponse,
   LighterMarket,
@@ -275,6 +277,30 @@ export function projectAccountOrders(response: LighterAccountOrdersResponse, lim
     truncated: orders.truncated,
     nextCursor: response.next_cursor ?? null,
     orders: orders.rows,
+  };
+}
+
+export function projectApiKey(apiKey: LighterApiKey): Record<string, unknown> {
+  const nonce = safeIntegerOrNull(apiKey.nonce);
+  const transactionTime = safeIntegerOrNull(apiKey.transaction_time);
+  return {
+    accountIndex: apiKey.account_index,
+    apiKeyIndex: apiKey.api_key_index,
+    nonce,
+    noncePrecision: nonce === null ? "unsafe_provider_number_omitted" : "safe",
+    publicKey: apiKey.public_key,
+    transactionTime,
+    transactionTimePrecision: transactionTime === null ? "unsafe_provider_number_omitted" : "safe",
+  };
+}
+
+export function projectApiKeys(response: LighterApiKeysResponse, limit: number): Record<string, unknown> {
+  const apiKeys = takeFirst(response.api_keys.map(projectApiKey), limit);
+  return {
+    count: apiKeys.count,
+    totalProviderRows: apiKeys.total,
+    truncated: apiKeys.truncated,
+    apiKeys: apiKeys.rows,
   };
 }
 

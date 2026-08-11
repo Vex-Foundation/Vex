@@ -18,6 +18,8 @@ import {
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
   readAccountOrderLimit,
+  readApiKeyIndex,
+  readApiKeyLimit,
   readAccountLookup,
   readCountBack,
   readEnvironment,
@@ -27,6 +29,7 @@ import {
   readMarketListLimit,
   readMarketListPage,
   readOptionalAccountIndex,
+  readRequiredAccountIndex,
   readOrderBookLimit,
   readRecentTradesLimit,
   readResolution,
@@ -36,6 +39,7 @@ import {
 import {
   projectCandles,
   projectAccountResponse,
+  projectApiKeys,
   projectAccountOrders,
   projectMarket,
   projectMarketDetails,
@@ -427,6 +431,41 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
     } catch (err) {
       return fail(`Lighter account trades unavailable (${failureDetail("lighter.trades", err)})`);
+    }
+  },
+
+  "lighter.apiKeys.inspect": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const accountIndex = readRequiredAccountIndex(params);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
+    const apiKeyIndex = readApiKeyIndex(params);
+    if (!apiKeyIndex.ok) return fail(apiKeyIndex.reason);
+    const limit = readApiKeyLimit(params);
+    if (!limit.ok) return fail(limit.reason);
+
+    try {
+      const response = await getLighterClient().getApiKeys(environment.value, {
+        accountIndex: accountIndex.value,
+        ...(apiKeyIndex.value === undefined ? {} : { apiKeyIndex: apiKeyIndex.value }),
+      });
+      return ok({
+        ...liveProvenance(environment.value, "lighter.apiKeys.inspect", [
+          LIGHTER_ENDPOINT_PATHS.apiKeys,
+        ], {
+          accountIndex: accountIndex.value,
+          apiKeyIndex: apiKeyIndex.value ?? null,
+          authenticated: false,
+          outputLimit: limit.value,
+        }),
+        environment: environment.value,
+        accountIndex: accountIndex.value,
+        apiKeyIndex: apiKeyIndex.value ?? null,
+        limit: limit.value,
+        ...projectApiKeys(response, limit.value),
+      });
+    } catch (err) {
+      return fail(`Lighter API-key metadata unavailable (${failureDetail("lighter.apiKeys.inspect", err)})`);
     }
   },
 

@@ -15,6 +15,8 @@ import {
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
   LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT,
   LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX,
+  LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT,
+  LIGHTER_AGENT_API_KEY_LIMIT_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
   LIGHTER_AGENT_MARKET_LIMIT_DEFAULT,
   LIGHTER_AGENT_MARKET_LIMIT_MAX,
@@ -71,6 +73,14 @@ const AUTH_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
     "Optional account index. Omit to use the account embedded in the read-only token. Single-account tokens refuse mismatches.",
 };
 
+const REQUIRED_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
+  key: "accountIndex",
+  type: "number",
+  required: true,
+  description:
+    "Required Lighter account index as a safe non-negative integer. This is public account-index metadata, not a private credential.",
+};
+
 const L1_ADDRESS_PARAM: ProtocolParamDef = {
   key: "l1Address",
   type: "string",
@@ -111,6 +121,20 @@ const ACCOUNT_ORDER_LIMIT_PARAM: ProtocolParamDef = {
   type: "number",
   description:
     `Max account order/trade rows to return (default ${LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_DEFAULT}, max ${LIGHTER_AGENT_ACCOUNT_ORDER_LIMIT_MAX}). Out-of-range values are rejected.`,
+};
+
+const API_KEY_LIMIT_PARAM: ProtocolParamDef = {
+  key: "limit",
+  type: "number",
+  description:
+    `Max API-key metadata rows to return (default ${LIGHTER_AGENT_API_KEY_LIMIT_DEFAULT}, max ${LIGHTER_AGENT_API_KEY_LIMIT_MAX}). Out-of-range values are rejected.`,
+};
+
+const API_KEY_INSPECT_INDEX_PARAM: ProtocolParamDef = {
+  key: "apiKeyIndex",
+  type: "number",
+  description:
+    "Optional Lighter API-key index from 0 to 255. Omit it to request the provider's all-keys sentinel, which is useful for nonce planning before a future signer path.",
 };
 
 const TRADES_LIMIT_PARAM: ProtocolParamDef = {
@@ -290,6 +314,18 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
     exampleParams: { environment: "rhc", limit: 25 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.trades"],
+  },
+  {
+    toolId: "lighter.apiKeys.inspect",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      `Read public Lighter API-key metadata for an account on Core or Robinhood Chain, including API key indexes, public keys, and current nonce values needed for future nonce planning. Requires accountIndex and optionally apiKeyIndex. Public read: no credential, API private key, wallet, signer, auth-token minting, order placement, cancellation, deposit, or withdrawal support.`,
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, REQUIRED_ACCOUNT_INDEX_PARAM, API_KEY_INSPECT_INDEX_PARAM, API_KEY_LIMIT_PARAM],
+    exampleParams: { environment: "rhc", accountIndex: 1, apiKeyIndex: 255, limit: 25 },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.apiKeys.inspect"],
   },
   {
     toolId: "lighter.order.preview",

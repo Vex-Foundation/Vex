@@ -106,6 +106,19 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.apiKeys.inspect": {
+    embeddingText: embeddingText(
+      `Read public Lighter API-key metadata for one account on Core or Robinhood Chain, including API key indexes, public keys, current nonce values, and transaction timestamps. ` +
+      `Use when: the user asks which Lighter API-key indexes exist, what nonce a future order signer would need to reconcile, or wants public key metadata before execution architecture work. ` +
+      `This endpoint is public provider data; it never reads an API private key, never mints an auth token, never signs, never submits, and cannot place or cancel orders. ` +
+      `Example queries: inspect lighter api keys, get rhc api key nonce, list core lighter api key indexes.`,
+    ),
+    aliases: ["lighter api keys", "api key nonce", "lighter nonce", "api key index"],
+    exampleIntents: ["inspect lighter api keys", "get rhc api key nonce", "list core lighter api key indexes"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
   "lighter.order.preview": {
     embeddingText: embeddingText(
       `Create a read-only Lighter order preview for Core or Robinhood Chain using live market detail, live order book, and live account data before any future order approval or submission. ` +
@@ -160,7 +173,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 12;
+const EXPECTED_COUNT = 13;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

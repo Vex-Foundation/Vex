@@ -20,6 +20,7 @@ const LIGHTER_TOOL_IDS = [
   "lighter.openOrders",
   "lighter.orderHistory",
   "lighter.trades",
+  "lighter.apiKeys.inspect",
   "lighter.order.preview",
   "lighter.orderbook",
   "lighter.recentTrades",

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     getAccountActiveOrders: vi.fn(),
     getAccountInactiveOrders: vi.fn(),
     getAccountTrades: vi.fn(),
+    getApiKeys: vi.fn(),
     getOrderBookOrders: vi.fn(),
     getRecentTrades: vi.fn(),
     getCandles: vi.fn(),
@@ -462,6 +463,60 @@ describe("Lighter agent read handlers", () => {
     expect(fill.tradeIdNumeric).toBeNull();
     expect(fill.askOrderId).toBe(String(UNSAFE_INTEGER));
     expect(fill.bidOrderId).toBe(String(UNSAFE_INTEGER_2));
+  });
+
+  it("reads public API-key nonce metadata with bounded rows", async () => {
+    mocks.client.getApiKeys.mockResolvedValue({
+      code: 200,
+      api_keys: [
+        {
+          account_index: 42,
+          api_key_index: 1,
+          nonce: 1784732515923,
+          public_key: "96432015bb5cb590489b59727a29deeca4a55d6f416cd28c48220ec3572a1fcfe0d6b21b9b1f852a",
+          transaction_time: 1784732516903382,
+        },
+        {
+          account_index: 42,
+          api_key_index: 2,
+          nonce: UNSAFE_INTEGER,
+          public_key: "994b3b72a6a10aa0e549653fef776c0b89a29dd127a723b17d42f0b563ee1496ea78262e2899d573",
+          transaction_time: UNSAFE_INTEGER,
+        },
+      ],
+    });
+
+    const data = await callJson("lighter.apiKeys.inspect", {
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 255,
+      limit: 1,
+    });
+
+    expect(mocks.client.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 255,
+    });
+    expect(data.source).toBe("live_lighter_public_api");
+    expect(data.accountIndex).toBe(42);
+    expect(data.apiKeyIndex).toBe(255);
+    expect(data.count).toBe(1);
+    expect(data.totalProviderRows).toBe(2);
+    expect(data.truncated).toBe(true);
+    const key = (data.apiKeys as Record<string, unknown>[])[0]!;
+    expect(key.apiKeyIndex).toBe(1);
+    expect(key.nonce).toBe(1784732515923);
+    expect(key.noncePrecision).toBe("safe");
+    expect(key.publicKey).toContain("96432015");
+  });
+
+  it("refuses API-key metadata without accountIndex before provider reads", async () => {
+    const output = await callFail("lighter.apiKeys.inspect", {
+      environment: "core",
+    });
+
+    expect(output).toBe("Missing required: accountIndex.");
+    expect(mocks.client.getApiKeys).not.toHaveBeenCalled();
   });
 
   it("creates a persisted order preview from live market, order book, and account reads", async () => {
