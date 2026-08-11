@@ -302,4 +302,38 @@ describe("mission setup", () => {
       expect(result!.ready).toBe(false);
     });
   });
+  // ── C3 measurability warnings on SetupResult ────────────────────
+  describe("measurability warnings", () => {
+    it("returns an empty warnings list from createMissionDraft", async () => {
+      const result = await createMissionDraft("session-1");
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("surfaces a warning from getMissionSetupState for an undecidable criterion", async () => {
+      mockGetMission.mockResolvedValueOnce(makeMission({
+        successCriteriaJson: ["Portfolio value reaches $15+ (50% gain)"],
+      }));
+      const result = await getMissionSetupState("mission-1");
+      expect(result?.warnings.length).toBe(2);
+      expect(result?.warnings[0]).toContain("no denominator to measure it against");
+      expect(result?.warnings[1]).toContain("can read as met before the mission does anything");
+    });
+
+    it("returns no warnings from getMissionSetupState for a decidable criterion", async () => {
+      mockGetMission.mockResolvedValueOnce(makeMission({
+        successCriteriaJson: ["Accumulated 10 SOL"],
+      }));
+      expect((await getMissionSetupState("mission-1"))?.warnings).toEqual([]);
+    });
+
+    it("surfaces warnings from applyMissionPatch", async () => {
+      mockGetMission.mockResolvedValue(makeMission({
+        successCriteriaJson: ["Sold the position"],
+      }));
+      const result = await applyMissionPatch("mission-1", { title: "T" });
+      expect(result.warnings).toEqual([
+        "Success criterion 1 contains no number, so nothing can decide whether it was met. Restate it with a figure and a named asset, or move it to the goal as intent.",
+      ]);
+    });
+  });
 });

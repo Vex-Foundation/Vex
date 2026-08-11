@@ -97,7 +97,7 @@ function snapshotOf(res: { data?: unknown }): Snapshot {
 
 /** Each chain holds exactly 1 native unit priced at $1 — so totals are countable. */
 function oneDollarPerChain() {
-  return { nativeWei: 1_000000000000000000n, nativePriceUsd: 1, tokens: [] };
+  return { nativeWei: 1_000000000000000000n, nativePriceUsd: 1, tokens: [], tokenFailures: [] };
 }
 
 beforeEach(() => {

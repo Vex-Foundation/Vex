@@ -26,6 +26,8 @@
  *   6. Session permission read (fallible — runs BEFORE the durable
  *      `commitMissionStart` so a missing session row doesn't orphan
  *      a `running` mission_runs row).
+ *   6b. Start capital baseline (fallible IO, fail-open) - the last
+ *      step before the transaction, for the same reason as #6.
  *   7. `commitMissionStart` — atomic acceptance gate + readiness +
  *      no-overlapping-run + status flip + createRun. After this
  *      step, NO fallible IO before the prepared return.
@@ -45,9 +47,15 @@ import { resolveProvider } from "@vex-agent/inference/registry.js";
 import logger from "@utils/logger.js";
 
 import {
+  absentBaseline,
+  buildMissionBaseline,
+  type MissionBaseline,
+} from "../../mission/baseline.js";
+import {
   commitMissionStart,
   type CommitMissionStartOutcome,
 } from "../../mission/commit-start.js";
+import { missionToDraft } from "../../mission/mapper.js";
 import type { MissionRunContractSnapshot } from "../../mission/run-contract.js";
 import {
   claimSessionLease,
@@ -232,12 +240,48 @@ export async function prepareMissionStart(
     }
     const permission = session.permission;
 
+    // 6b. START BASELINE (contract C3). The ONE sanctioned seam: fallible IO
+    //     must precede `commitMissionStart`, which is DB-only under the session
+    //     control lock (see step 7 and the `commit-start.ts` header). FAIL-OPEN
+    //     by construction: `buildMissionBaseline` never throws and never returns
+    //     a refusal, so a valuation problem records an absent baseline with a
+    //     named reason instead of blocking a mission the user asked to start.
+    //     The try/catch is suspenders to the module's belt: if that contract
+    //     ever regresses, a balance read still cannot refuse a mission start.
+    //
+    //     Read from the UNLOCKED preflight row, which is safe because both
+    //     inputs are canonical contract material: `allowedWallets` and
+    //     `deployedCapital` are both hashed. If either drifted between this
+    //     read and the commit, the commit's rehash refuses with
+    //     `stale_acceptance` and this baseline is discarded unwritten.
+    let baseline: MissionBaseline;
+    try {
+      baseline = await buildMissionBaseline({
+        missionId: input.missionId,
+        allowedWallets: preflight.allowedWallets,
+        deployedCapital: missionToDraft(preflight).deployedCapital,
+      });
+    } catch (err) {
+      logger.warn("engine.mission.baseline.build_rejected", {
+        missionId: input.missionId,
+        error: err instanceof Error ? err.name : "unknown",
+      });
+      baseline = absentBaseline("valuation_failed");
+    }
+    logger.info("engine.mission.baseline.captured", {
+      missionId: input.missionId,
+      runIdPending: true,
+      status: baseline.status,
+      reasons: baseline.reasons,
+    });
+
     // 7. Atomic commitMissionStart. After this step, NO fallible IO
     //    before the prepared return.
     const runId = `run-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const commit: CommitMissionStartOutcome = await commitMissionStart({
       missionId: input.missionId,
       runId,
+      baseline,
     });
     if (commit.outcome !== "committed") {
       return mapCommitOutcomeToPrepareOutcome(commit);

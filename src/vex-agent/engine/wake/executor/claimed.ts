@@ -87,7 +87,12 @@ export async function handleClaimed(
     ttlMs: 5 * 60_000,
   });
   try {
-    await deps.injectWakeBanner(wake.sessionId, wake.reason, wake.dueAt);
+    await deps.injectWakeBanner(
+      wake.sessionId,
+      wake.reason,
+      wake.dueAt,
+      wake.payload?.triggeredBy,
+    );
     await deps.resumeMissionRun(run.id, ownerId);
     return { kind: "resumed", runId: run.id };
   } finally {

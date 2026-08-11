@@ -38,7 +38,15 @@ describe("mission-runs repo", () => {
       expect(mockExecute).toHaveBeenCalledTimes(1);
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("INSERT INTO mission_runs");
-      expect(params).toEqual(["run-1", "mission-1", "session-1", null, null]);
+      expect(params).toEqual(["run-1", "mission-1", "session-1", null, null, null]);
+    });
+
+    it("serializes the start baseline into baseline_json", async () => {
+      const baseline = { version: 1, status: "absent", reasons: ["valuation_failed"] };
+      await createRun("run-1", "mission-1", "session-1", { baselineJson: baseline });
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("baseline_json");
+      expect(params[5]).toBe(JSON.stringify(baseline));
     });
   });
 

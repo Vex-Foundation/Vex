@@ -146,6 +146,16 @@ export const ErrorCodes = {
   KYBER_API_ERROR: "KYBER_API_ERROR",
   KYBER_TIMEOUT: "KYBER_TIMEOUT",
   KYBER_RATE_LIMITED: "KYBER_RATE_LIMITED",
+  /**
+   * The venue was never reached: DNS, TLS, connection reset, or any other
+   * transport failure that produced no HTTP response at all. Distinct from
+   * KYBER_API_ERROR, which means a response DID arrive and we could not use
+   * it. The split is load-bearing, not cosmetic: only the first is evidence
+   * that KyberSwap cannot serve this client, and `verifyRouterAddress` plus
+   * the response-schema validators also throw KYBER_API_ERROR with no status,
+   * so "KYBER_API_ERROR and no httpStatus" cannot stand in for "unreachable".
+   */
+  KYBER_UNREACHABLE: "KYBER_UNREACHABLE",
   KYBER_UNSUPPORTED_CHAIN: "KYBER_UNSUPPORTED_CHAIN",
 
   // KyberSwap Aggregator
@@ -332,6 +342,9 @@ export const ErrorCodes = {
   TRENCH_INVALID_RESPONSE: "TRENCH_INVALID_RESPONSE",
   TRENCH_INVALID_REQUEST: "TRENCH_INVALID_REQUEST",
   TRENCH_NOT_FOUND: "TRENCH_NOT_FOUND",
+
+  // AgentScan wallet-binding handshake (Sprint 3)
+  AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED: "AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

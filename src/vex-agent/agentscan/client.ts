@@ -1,5 +1,11 @@
 /**
- * AgentScan ingest HTTP client — register + events, contract v1.
+ * AgentScan ingest HTTP client — events, contract v1.
+ *
+ * Registration (v1 `/v1/agents/register`) is dead client-side: the
+ * wallet-binding handshake (`agentscan/session-client.js`, v2
+ * `session/start` + `session/complete`) replaces it. This module keeps only
+ * `sendEvents` — the OUTBOX drain endpoint, untouched by the handshake work
+ * and still v1 on the wire.
  *
  * NOTHING THROWS. Reporting is telemetry: every expected failure — a refusal,
  * a rate limit, an unreachable host — comes back as a named outcome for the
@@ -7,13 +13,13 @@
  * throw escaping this module would be contained by the lane anyway, but the
  * outcome unions ARE the retry policy, so they carry everything the lane
  * needs: the contract says only 429/5xx/network are retryable, 401 and
- * 403-`not_registered` are recoverable auth loss (re-register the same
+ * 403-`not_registered` are recoverable auth loss (re-handshake the same
  * identity), 410 / 403-`quarantined` are permanent stops, and any other 4xx
  * is a client bug that must never be hot-retried.
  *
- * TOKEN HYGIENE. The ingest token travels ONLY in the register body and the
- * `Authorization: Bearer` header — never in a URL, never in a detail string
- * (details are sanitized and length-capped before they can reach a log).
+ * TOKEN HYGIENE. The ingest token travels ONLY in the `Authorization: Bearer`
+ * header — never in a URL, never in a detail string (details are sanitized
+ * and length-capped before they can reach a log).
  */
 
 import { fetchWithTimeout, readJson } from "@utils/http.js";
@@ -24,17 +30,6 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DETAIL_LEN = 120;
 /** Contract v1 wire version — the server hard-rejects anything else. */
 const SCHEMA_VERSION = 1;
-
-export type RegisterOutcome =
-  | { readonly kind: "registered" }
-  | { readonly kind: "conflict" }
-  | { readonly kind: "invalid"; readonly detail: string }
-  | {
-      readonly kind: "retryable";
-      readonly status: number | null;
-      readonly retryAfterSeconds: number | null;
-      readonly detail: string;
-    };
 
 export type SendOutcome =
   | {
@@ -53,14 +48,6 @@ export type SendOutcome =
       readonly detail: string;
     };
 
-export interface RegisterInput {
-  readonly agentHash: string;
-  readonly ingestToken: string;
-  readonly consentVersion: number;
-  readonly acceptedAt: string;
-  readonly appVersion?: string;
-}
-
 export interface SendEventsInput {
   readonly agentHash: string;
   readonly ingestToken: string;
@@ -69,45 +56,13 @@ export interface SendEventsInput {
 }
 
 export interface AgentscanClient {
-  register(input: RegisterInput): Promise<RegisterOutcome>;
   sendEvents(input: SendEventsInput): Promise<SendOutcome>;
 }
 
 export function buildAgentscanClient(baseUrl: string): AgentscanClient {
   return {
-    register: (input) => register(baseUrl, input),
     sendEvents: (input) => sendEvents(baseUrl, input),
   };
-}
-
-async function register(baseUrl: string, input: RegisterInput): Promise<RegisterOutcome> {
-  const body: Record<string, unknown> = {
-    agentHash: input.agentHash,
-    ingestToken: input.ingestToken,
-    consentVersion: input.consentVersion,
-    acceptedAt: input.acceptedAt,
-  };
-  if (input.appVersion !== undefined) body.appVersion = input.appVersion;
-
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(joinUrl(baseUrl, "v1/agents/register"), {
-      method: "POST",
-      timeoutMs: REQUEST_TIMEOUT_MS,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    return { kind: "retryable", status: null, retryAfterSeconds: null, detail: safeDetail(err) };
-  }
-
-  if (response.ok) return { kind: "registered" };
-  const errorBody = await readJson(response).catch(() => null);
-  if (response.status === 409) return { kind: "conflict" };
-  if (response.status === 429 || response.status >= 500) {
-    return retryableFrom(response, errorBody);
-  }
-  return { kind: "invalid", detail: describeError(response.status, errorBody) };
 }
 
 async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<SendOutcome> {

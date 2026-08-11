@@ -39,3 +39,12 @@ export {
   getAggregateSnapshots,
   getLatestAggregateSnapshot,
 } from "./balances/aggregate.js";
+export type {
+  AssetHolding,
+  PortfolioValuation,
+} from "./balances/valuation.js";
+export {
+  DEFAULT_VALUATION_STATEMENT_TIMEOUT_MS,
+  getAssetHolding,
+  getPortfolioValuation,
+} from "./balances/valuation.js";

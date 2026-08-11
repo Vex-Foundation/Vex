@@ -72,7 +72,6 @@ export interface VexConfig {
     solana: WalletInventoryEntry[];
   };
   services: {
-    vexApiUrl: string;
     khalaniApiUrl: string;
     relayApiUrl: string;
     dexScreenerApiUrl: string;
@@ -136,7 +135,6 @@ export function getDefaultConfig(): VexConfig {
       jupiterApiKey: "",
     },
     services: {
-      vexApiUrl: "https://backend.vexlabs.ai/api",
       khalaniApiUrl: "https://api.hyperstream.dev",
       relayApiUrl: "https://api.relay.link",
       dexScreenerApiUrl: "https://api.dexscreener.com",
@@ -147,7 +145,7 @@ export function getDefaultConfig(): VexConfig {
       kyberswapAggregatorUrl: "https://aggregator-api.kyberswap.com",
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
-      agentscanApiUrl: "",
+      agentscanApiUrl: "https://agentscan.projectvex.ai",
     },
   };
 }
@@ -172,6 +170,22 @@ function parseChainRpcUrls(raw: unknown): Record<string, string> | undefined {
     if (typeof value === "string" && value.length > 0) out[key] = value;
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * A stored `agentscanApiUrl` that is empty (or whitespace-only) must never
+ * shadow a future non-empty default — the lane stays dark until that default
+ * lands, and an existing install's persisted `""` would otherwise pin it dark
+ * forever. Dropping the key lets the defaults spread underneath it win.
+ */
+export function dropEmptyAgentscanApiUrl(
+  services: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!services) return {};
+  const raw = services.agentscanApiUrl;
+  if (typeof raw !== "string" || raw.trim().length > 0) return services;
+  const { agentscanApiUrl: _empty, ...rest } = services;
+  return rest;
 }
 
 function parseClaudeConfig(raw: unknown): VexConfig["claude"] | undefined {
@@ -297,7 +311,7 @@ export function loadConfig(): VexConfig {
       },
       services: {
         ...defaults.services,
-        ...((parsed.services as Record<string, unknown> | undefined) ?? {}),
+        ...dropEmptyAgentscanApiUrl(parsed.services as Record<string, unknown> | undefined),
       },
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),

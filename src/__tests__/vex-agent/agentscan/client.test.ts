@@ -1,9 +1,12 @@
 /**
  * AgentScan ingest client — wire shape + outcome mapping.
  *
+ * Registration is dead client-side (see `client.ts`'s header) — this suite
+ * covers what remains, `sendEvents`, the outbox drain endpoint.
+ *
  * Pinned here:
- *   - exact URLs, headers and bodies for register / events (the token travels
- *     ONLY in the register body / the Authorization header — never in a URL);
+ *   - exact URL, headers and body for events (the token travels ONLY in the
+ *     Authorization header — never in a URL);
  *   - every server answer maps to the outcome the reporter keys off:
  *     contract retry rule (only 429/5xx/network are retryable), 401 and
  *     403-not_registered as recoverable auth loss, 410 / 403-quarantined as
@@ -39,82 +42,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const REGISTER_INPUT = {
-  agentHash: HASH,
-  ingestToken: TOKEN,
-  consentVersion: 1,
-  acceptedAt: "2026-08-06T10:00:00.000Z",
-  appVersion: "0.2.3",
-};
-
 const SEND_INPUT = {
   agentHash: HASH,
   ingestToken: TOKEN,
   backfill: false,
   events: [] as never[],
 };
-
-describe("register — wire shape", () => {
-  it("POSTs the register body to /v1/agents/register with NO auth header", async () => {
-    const mock = stubFetch(jsonResponse(200, { status: "registered" }));
-    const client = buildAgentscanClient("http://localhost");
-    const outcome = await client.register(REGISTER_INPUT);
-
-    expect(outcome).toEqual({ kind: "registered" });
-    expect(mock).toHaveBeenCalledTimes(1);
-    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost/v1/agents/register");
-    expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
-    expect(JSON.parse(init.body as string)).toEqual(REGISTER_INPUT);
-    expect(url).not.toContain(TOKEN);
-  });
-
-  it("omits appVersion when not provided", async () => {
-    const mock = stubFetch(jsonResponse(200, { status: "registered" }));
-    const client = buildAgentscanClient("http://localhost");
-    const { appVersion: _omit, ...noVersion } = REGISTER_INPUT;
-    await client.register(noVersion);
-    const [, init] = mock.mock.calls[0] as [string, RequestInit];
-    expect("appVersion" in JSON.parse(init.body as string)).toBe(false);
-  });
-
-  it("preserves a base-URL subpath", async () => {
-    const mock = stubFetch(jsonResponse(200, { status: "registered" }));
-    const client = buildAgentscanClient("https://example.org/scan/");
-    await client.register(REGISTER_INPUT);
-    const [url] = mock.mock.calls[0] as [string];
-    expect(url).toBe("https://example.org/scan/v1/agents/register");
-  });
-
-  it.each([
-    [409, { error: { code: "agent_conflict", message: "bound to a different token" } }, "conflict"],
-    [400, { error: { code: "validation_failed", message: "bad body" } }, "invalid"],
-  ])("maps %s to %s", async (status, body, kind) => {
-    stubFetch(jsonResponse(status as number, body));
-    const client = buildAgentscanClient("http://localhost");
-    const outcome = await client.register(REGISTER_INPUT);
-    expect(outcome.kind).toBe(kind);
-  });
-
-  it("maps 429 to retryable carrying Retry-After", async () => {
-    stubFetch(jsonResponse(429, { error: { code: "rate_limited", message: "slow down" } }, { "retry-after": "120" }));
-    const client = buildAgentscanClient("http://localhost");
-    const outcome = await client.register(REGISTER_INPUT);
-    expect(outcome).toMatchObject({ kind: "retryable", status: 429, retryAfterSeconds: 120 });
-  });
-
-  it("maps 500 and network failure to retryable, without leaking the token", async () => {
-    stubFetch(jsonResponse(500, { error: { code: "internal", message: "boom" } }));
-    const client = buildAgentscanClient("http://localhost");
-    const server = await client.register(REGISTER_INPUT);
-    expect(server).toMatchObject({ kind: "retryable", status: 500 });
-
-    stubFetch(new Error(`connect ECONNREFUSED with ${TOKEN} echoed`));
-    const network = await client.register(REGISTER_INPUT);
-    expect(network.kind).toBe("retryable");
-    expect(JSON.stringify(network)).not.toContain(TOKEN);
-  });
-});
 
 describe("sendEvents — wire shape", () => {
   it("POSTs the envelope to /v1/events with the Bearer token, never in the URL", async () => {

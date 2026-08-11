@@ -51,6 +51,7 @@ import {
   computeContractHash,
   isKnownContractHashVersion,
 } from "./contract-hash.js";
+import type { MissionBaseline } from "./baseline.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
 import {
   buildMissionRunContractSnapshot,
@@ -63,6 +64,13 @@ export interface CommitMissionStartInput {
   /** Caller supplies the run id so the lease handle + cleanup paths
    *  can address the run before this tx commits. */
   readonly runId: string;
+  /**
+   * Frozen start-of-run capital baseline. PURE DATA, measured by the caller at
+   * the pre-commit seam, because this transaction admits no fallible IO (see
+   * the header and `mission-prepare.ts`). It is written with the run row and
+   * never updated.
+   */
+  readonly baseline: MissionBaseline;
 }
 
 export type CommitMissionStartOutcome =
@@ -253,7 +261,7 @@ export async function commitMissionStart(
       input.runId,
       input.missionId,
       mission.rootSessionId,
-      { contractSnapshotJson: contractSnapshot },
+      { contractSnapshotJson: contractSnapshot, baselineJson: input.baseline },
       client,
     );
 

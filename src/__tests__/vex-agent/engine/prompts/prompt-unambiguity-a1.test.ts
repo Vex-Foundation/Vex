@@ -21,6 +21,7 @@ import {
   resetProtocolsPromptCache,
 } from "@vex-agent/engine/prompts/index.js";
 import { buildContextPressureBanner } from "@vex-agent/engine/prompts/context-pressure.js";
+import { renderMissionCapitalBanner } from "@vex-agent/engine/prompts/mission-capital-banner.js";
 import { buildWalletStateBanner } from "@vex-agent/engine/prompts/wallet-state.js";
 import { getToolDef } from "@vex-agent/tools/registry.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
@@ -147,6 +148,33 @@ describe("prompt unambiguity (A1)", () => {
       expect(iteration).toContain("Iteration: 7");
       // The number needs a meaning, or it reads as a budget.
       expect(iteration).toContain("not a budget and not a stop condition");
+    });
+
+    it("gives the mission capital banner its own H1 and keeps its USD figures honest", () => {
+      const banner = renderMissionCapitalBanner({
+        baseline: {
+          version: 1,
+          capturedAt: "2026-08-10T13:12:30.000Z",
+          status: "recorded",
+          reasons: [],
+          source: "proj_balances",
+          scope: { addresses: ["0xAAA"] },
+          portfolio: {
+            totalUsdEstimate: 32.1,
+            pricedRowCount: 1,
+            unpricedRowCount: 0,
+            oldestSyncedAt: null,
+            newestSyncedAt: null,
+          },
+          deployedCapitalAtStart: null,
+        },
+        now: null,
+      });
+      expect(banner).toContain("# Mission Capital");
+      // Exactly one H1 in the layer.
+      expect(banner.split("\n").filter(line => line.startsWith("# "))).toHaveLength(1);
+      // A projection total is an estimate, and the banner has to say so.
+      expect(banner).toContain("ESTIMATE");
     });
 
     it("normal pressure still renders nothing at all", () => {

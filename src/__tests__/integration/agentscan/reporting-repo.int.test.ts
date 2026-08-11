@@ -28,6 +28,23 @@ async function resetAgentscanTables(): Promise<void> {
   await execute(`DELETE FROM agentscan_reporting_state`, []);
 }
 
+/**
+ * Test-only state-setter: stamps `registered_at` + resets the attempt backoff
+ * directly, without going through `markHandshakeComplete` (which also rotates
+ * the token / stores name+fingerprint — more than these tests need). Replaces
+ * the old `markRegistered()` repo function, which production code no longer
+ * calls now that the v2 handshake owns registration.
+ */
+async function stampRegistered(): Promise<void> {
+  const { execute } = await import("@vex-agent/db/client.js");
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET registered_at = NOW(), register_attempt_count = 0, next_register_attempt_at = NOW()
+      WHERE id = 1`,
+    [],
+  );
+}
+
 /** Index into an array without a non-null assertion: a miss throws, honestly. */
 function at<T>(items: readonly T[], index: number): T {
   const item = items[index];
@@ -109,7 +126,7 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(second.ingestToken).toBe(IDENTITY_A.ingestToken);
   });
 
-  it("registration lifecycle: backoff failure → registered → cleared (401 recovery)", async () => {
+  it("registration lifecycle: backoff failure → registered → reset for full resend (auth_lost recovery)", async () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await repo.ensureIdentity(() => IDENTITY_A);
 
@@ -118,14 +135,17 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(state.registerAttemptCount).toBe(1);
     expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeGreaterThan(Date.now() + 500_000);
 
-    await repo.markRegistered();
+    await stampRegistered();
+    await repo.markBackfillEnqueued();
     state = await repo.getReportingState();
     expect(state.registeredAt).not.toBeNull();
+    expect(state.backfillEnqueuedAt).not.toBeNull();
 
-    await repo.clearRegistration();
+    await repo.resetForReRegistration();
     state = await repo.getReportingState();
     expect(state.registeredAt).toBeNull();
-    // identity survives a 401 recovery — only the registration stamp resets
+    expect(state.backfillEnqueuedAt).toBeNull();
+    // identity survives an auth_lost recovery — only the progress stamps reset
     expect(state.agentHash).toBe(IDENTITY_A.agentHash);
   });
 
@@ -136,6 +156,65 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     const state = await repo.getReportingState();
     expect(state.backfillEnqueuedAt).not.toBeNull();
     expect(state.stoppedReason).toBe("consent_revoked");
+  });
+
+  it("markStopped accepts wallet_conflict (migration 075 widened CHECK)", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.markStopped("wallet_conflict");
+    const state = await repo.getReportingState();
+    expect(state.stoppedReason).toBe("wallet_conflict");
+  });
+});
+
+describe("agentscan_reporting_state — handshake fields (migration 075)", () => {
+  it("self-creates with every handshake field null", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const state = await repo.getReportingState();
+    expect(state.agentName).toBeNull();
+    expect(state.lastHandshakeAt).toBeNull();
+    expect(state.serverCursorRowId).toBeNull();
+    expect(state.boundWalletsFingerprint).toBeNull();
+  });
+
+  it("markHandshakeComplete rotates the token, stamps registered_at + last_handshake_at, stores name/cursor/fingerprint, and resets the attempt backoff", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.noteRegisterAttemptFailed(600);
+    const before = await repo.getReportingState();
+    expect(before.registerAttemptCount).toBe(1);
+
+    await repo.markHandshakeComplete({
+      agentName: "agent-007",
+      ingestToken: IDENTITY_B.ingestToken,
+      serverCursorRowId: 42,
+      walletsFingerprint: "deadbeef",
+    });
+
+    const state = await repo.getReportingState();
+    expect(state.agentHash).toBe(IDENTITY_A.agentHash); // identity itself never rotates
+    expect(state.ingestToken).toBe(IDENTITY_B.ingestToken); // token IS rotated
+    expect(state.agentName).toBe("agent-007");
+    expect(state.serverCursorRowId).toBe(42);
+    expect(state.boundWalletsFingerprint).toBe("deadbeef");
+    expect(state.registeredAt).not.toBeNull();
+    expect(state.lastHandshakeAt).not.toBeNull();
+    expect(state.registerAttemptCount).toBe(0);
+    expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it("markHandshakeComplete accepts a null server cursor (brand-new agent, no history yet)", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+
+    await repo.markHandshakeComplete({
+      agentName: "agent-fresh",
+      ingestToken: IDENTITY_A.ingestToken,
+      serverCursorRowId: null,
+      walletsFingerprint: "fingerprint-1",
+    });
+
+    const state = await repo.getReportingState();
+    expect(state.serverCursorRowId).toBeNull();
   });
 });
 
@@ -246,5 +325,130 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
     );
     expect(row?.last_error).toBe("validation_failed");
     expect(row?.rejected_at).not.toBeNull();
+  });
+});
+
+describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", () => {
+  it("resends previously-sent rows with backfill:true; rejected rows stay terminal; unsent rows are untouched", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const { execute, queryOne } = await import("@vex-agent/db/client.js");
+
+    const sentActivityId = await seedEligibleSwap();
+    const rejectedActivityId = await seedEligibleSwap();
+    const unsentActivityId = await seedEligibleSwap();
+    await repo.enqueueEligibleActivity(false);
+
+    const claimed = await repo.claimDueOutbox(10);
+    expect(claimed).toHaveLength(3);
+    function claimedFor(activityId: number) {
+      const row = claimed.find((c) => c.activityId === activityId);
+      if (!row) throw new Error(`expected a claimed row for activity ${activityId}`);
+      return row;
+    }
+    const sentOutboxId = claimedFor(sentActivityId).outboxId;
+    const rejectedOutboxId = claimedFor(rejectedActivityId).outboxId;
+    const unsentOutboxId = claimedFor(unsentActivityId).outboxId;
+
+    await repo.markOutboxSent([sentOutboxId]);
+    await repo.markOutboxRejected(rejectedOutboxId, "validation_failed");
+
+    await repo.resetForReRegistration();
+
+    const sentRow = await queryOne<{
+      sent_at: Date | null;
+      attempt_count: number;
+      backfill: boolean;
+      last_error: string | null;
+    }>(
+      `SELECT sent_at, attempt_count, backfill, last_error FROM agentscan_outbox WHERE id = $1`,
+      [sentOutboxId],
+    );
+    expect(sentRow?.sent_at).toBeNull();
+    expect(sentRow?.attempt_count).toBe(0);
+    expect(sentRow?.backfill).toBe(true);
+    expect(sentRow?.last_error).toBeNull();
+
+    const rejectedRow = await queryOne<{ rejected_at: Date | null; sent_at: Date | null }>(
+      `SELECT rejected_at, sent_at FROM agentscan_outbox WHERE id = $1`,
+      [rejectedOutboxId],
+    );
+    expect(rejectedRow?.rejected_at).not.toBeNull();
+    expect(rejectedRow?.sent_at).toBeNull();
+
+    const unsentRow = await queryOne<{ sent_at: Date | null; rejected_at: Date | null; backfill: boolean }>(
+      `SELECT sent_at, rejected_at, backfill FROM agentscan_outbox WHERE id = $1`,
+      [unsentOutboxId],
+    );
+    expect(unsentRow?.sent_at).toBeNull();
+    expect(unsentRow?.rejected_at).toBeNull();
+    expect(unsentRow?.backfill).toBe(false);
+
+    // Force-due everything: the resent row must be reclaimable as backfill;
+    // the rejected row must stay out of the candidate set forever.
+    await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
+    const reclaimed = await repo.claimDueOutbox(10);
+    const resent = reclaimed.find((c) => c.outboxId === sentOutboxId);
+    if (!resent) throw new Error("expected the previously-sent row to be reclaimable");
+    expect(resent.backfill).toBe(true);
+    expect(reclaimed.some((c) => c.outboxId === rejectedOutboxId)).toBe(false);
+  });
+
+  it("resetIdentityForRecovery shares the same full-resend outbox reset", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const { queryOne } = await import("@vex-agent/db/client.js");
+
+    await seedEligibleSwap();
+    await repo.enqueueEligibleActivity(false);
+    const claimed = await repo.claimDueOutbox(10);
+    const sentOutboxId = claimed[0]?.outboxId;
+    if (sentOutboxId === undefined) throw new Error("expected a claimed row");
+    await repo.markOutboxSent([sentOutboxId]);
+
+    await repo.resetIdentityForRecovery();
+
+    const sentRow = await queryOne<{ sent_at: Date | null; backfill: boolean }>(
+      `SELECT sent_at, backfill FROM agentscan_outbox WHERE id = $1`,
+      [sentOutboxId],
+    );
+    expect(sentRow?.sent_at).toBeNull();
+    expect(sentRow?.backfill).toBe(true);
+  });
+
+  it("state reset is a no-op when nothing was ever sent", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await stampRegistered();
+
+    await repo.resetForReRegistration();
+
+    const state = await repo.getReportingState();
+    expect(state.registeredAt).toBeNull();
+    expect(state.agentHash).toBe(IDENTITY_A.agentHash);
+  });
+
+  it("resetIdentityForRecovery abandons the identity entirely (session/complete auth_lost recovery) -- registered_at, agent_hash, ingest_token all clear", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.markHandshakeComplete({
+      agentName: "agent-x",
+      ingestToken: IDENTITY_A.ingestToken,
+      serverCursorRowId: 7,
+      walletsFingerprint: "fp-1",
+    });
+    await repo.noteRegisterAttemptFailed(600);
+
+    await repo.resetIdentityForRecovery();
+
+    const state = await repo.getReportingState();
+    expect(state.agentHash).toBeNull();
+    expect(state.ingestToken).toBeNull();
+    expect(state.agentName).toBeNull();
+    expect(state.boundWalletsFingerprint).toBeNull();
+    expect(state.registeredAt).toBeNull();
+    expect(state.backfillEnqueuedAt).toBeNull();
+    expect(state.lastHandshakeAt).toBeNull();
+    expect(state.serverCursorRowId).toBeNull();
+    expect(state.registerAttemptCount).toBe(0);
+    expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
   });
 });

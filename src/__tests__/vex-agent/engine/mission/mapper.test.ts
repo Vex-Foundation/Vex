@@ -36,6 +36,30 @@ describe("mission mapper", () => {
   // ── missionToDraft ──────────────────────────────────────────
 
   describe("missionToDraft", () => {
+    // Characterization: the WHOLE projected draft, field for field. Captured
+    // before the deployed-capital work so a new field is a visible, deliberate
+    // line in this object rather than a silent widening of the domain model.
+    it("pins the full projected draft for a fixture row", () => {
+      expect(missionToDraft(makeMission())).toEqual({
+        title: "SOL DCA",
+        goal: "Accumulate 10 SOL over 7 days",
+        capitalSource: "wallet",
+        startingCapital: "500 USDC",
+        deployedCapital: null,
+        allowedWallets: ["solana"],
+        allowedChains: ["solana"],
+        allowedProtocols: ["solana"],
+        riskProfile: "conservative",
+        successCriteria: ["Accumulated 10 SOL"],
+        stopConditions: ["capital_depleted", "deadline_reached"],
+        deadline: "2026-04-04",
+        durationMinutes: null,
+        maxLaunchValueRaw: null,
+        maxLaunchValueDecimals: null,
+        maxLaunchCount: null,
+      });
+    });
+
     it("converts Mission row to domain MissionDraft", () => {
       const draft = missionToDraft(makeMission());
       expect(draft.title).toBe("SOL DCA");
@@ -208,6 +232,71 @@ describe("mission mapper", () => {
       }));
       expect(ctx).toContain("(untitled)");
       expect(ctx).not.toContain("undefined");
+    });
+  });
+  // ── C3 deployed capital ─────────────────────────────────────
+  describe("deployedCapital", () => {
+    const DECLARED = {
+      amountRaw: "3044000000000000000000",
+      decimals: 18,
+      chainId: 4663,
+      assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+      assetSymbol: "VEX",
+    };
+
+    it("round-trips a declaration through domainToRow and back", () => {
+      const row = domainToRow({ deployedCapital: DECLARED });
+      const draft = missionToDraft(makeMission({
+        capitalSourceJson: row.capital_source_json as Record<string, unknown>,
+      }));
+      expect(draft.deployedCapital).toEqual(DECLARED);
+    });
+
+    it("reads a PARTIAL or malformed stored blob as absent, never as a usable denominator", () => {
+      for (const stored of [
+        { amountRaw: "1000" },
+        { ...DECLARED, decimals: undefined },
+        { ...DECLARED, amountRaw: "0" },
+        { ...DECLARED, assetAddress: "not-an-address" },
+        "a string",
+        null,
+      ]) {
+        const draft = missionToDraft(makeMission({
+          capitalSourceJson: { type: "wallet", amount: "500 USDC", deployedCapital: stored },
+        }));
+        expect(draft.deployedCapital).toBeNull();
+      }
+    });
+
+    it("writes the declaration WITHOUT dropping type or amount on a capital-only patch", () => {
+      // domainToRow emits only the keys the patch carried; `setup.ts`
+      // read-merge-writes the blob under the row lock, so the untouched
+      // `type`/`amount` survive. This pins that the writer does not clobber them.
+      const row = domainToRow({ deployedCapital: DECLARED });
+      expect(row.capital_source_json).toEqual({ deployedCapital: DECLARED });
+      expect("type" in (row.capital_source_json as object)).toBe(false);
+      expect("amount" in (row.capital_source_json as object)).toBe(false);
+    });
+
+    it("writes an explicit null so the declaration can be cleared", () => {
+      expect(domainToRow({ deployedCapital: null }).capital_source_json).toEqual({
+        deployedCapital: null,
+      });
+    });
+
+    it("emits no capital blob at all when no capital key was patched", () => {
+      expect(domainToRow({ goal: "x" }).capital_source_json).toBeUndefined();
+    });
+
+    it("renders the prompt line with the human figure and the not-a-spend-limit clause", () => {
+      const context = draftToPromptContext(makeMission({
+        capitalSourceJson: { type: "wallet", amount: "500 USDC", deployedCapital: DECLARED },
+      }));
+      expect(context).toContain("**Deployed capital:** 3044 VEX (raw 3044000000000000000000 at 18 decimals) on chain 4663, asset 0x0f9f0000000000000000000000000000000000ee. This is the declared measurement base, not a spend limit.");
+    });
+
+    it("omits the prompt line entirely when nothing was declared", () => {
+      expect(draftToPromptContext(makeMission())).not.toContain("**Deployed capital:**");
     });
   });
 });

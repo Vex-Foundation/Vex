@@ -70,6 +70,20 @@
  *     `maxLaunchCount` is normalized ALONE, not paired with the value
  *     ceiling: the two are independently authored, and requiring both to be
  *     present just to hash one would make an edit to either invisible.
+ *   - v5 - FROZEN (contract C3 bump). The C6b shape, carrying both launch
+ *     ceilings but not the typed deployed capital. Still produced for
+ *     verifying/renewing a mission accepted while it was current; never
+ *     produced for a new draft.
+ *   - v6 - CURRENT (contract C3). Adds the typed `deployedCapital` declaration:
+ *     the machine-readable amount + decimals + chain + asset the mission puts to
+ *     work, which the runtime measures progress against. The bump follows this
+ *     file's own mandate rather than widening v5 in place: v5 material already
+ *     ships, and a shape change without a bump would let a v5-accepted mission
+ *     and a v6 draft carrying a declaration hash identically - the number the
+ *     user accepted could then be edited without dirtying acceptance.
+ *     The declaration is hashed as ONE OBJECT, not five keys: a partial object
+ *     has no readable meaning, and `canonicalStringify` sorts nested keys at
+ *     every depth, so a nested shape hashes deterministically.
  *
  * Normalization rules:
  *
@@ -93,6 +107,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { MissionDraft } from "../types.js";
+import { normalizeDeployedCapital } from "./deployed-capital.js";
 import {
   CanonicalContractMaterialLegacyV2Schema,
   normalizeLegacyHyperliquidRiskV2,
@@ -100,7 +115,7 @@ import {
 } from "./contract-hash-legacy-v2.js";
 
 /** Bumped when the canonical shape or hashing rules change. Produced for every new draft. */
-export const CONTRACT_HASH_VERSION = 5;
+export const CONTRACT_HASH_VERSION = 6;
 export const LEGACY_CONTRACT_HASH_VERSION = 1;
 /**
  * Frozen historical version — see the "Version history" note above. Accepted
@@ -120,11 +135,18 @@ export const LEGACY_V3_CONTRACT_HASH_VERSION = 3;
  * mission accepted while it was current; never produced for a new draft.
  */
 export const LEGACY_V4_CONTRACT_HASH_VERSION = 4;
+/**
+ * Frozen historical version - the C6b shape, carrying both launch ceilings but
+ * not the C3 typed deployed capital. Still produced for verifying/renewing a
+ * mission accepted while it was current; never produced for a new draft.
+ */
+export const LEGACY_V5_CONTRACT_HASH_VERSION = 5;
 export type ContractHashVersion =
   | typeof LEGACY_CONTRACT_HASH_VERSION
   | typeof LEGACY_V2_CONTRACT_HASH_VERSION
   | typeof LEGACY_V3_CONTRACT_HASH_VERSION
   | typeof LEGACY_V4_CONTRACT_HASH_VERSION
+  | typeof LEGACY_V5_CONTRACT_HASH_VERSION
   | typeof CONTRACT_HASH_VERSION;
 
 /**
@@ -143,6 +165,7 @@ export function isKnownContractHashVersion(
     || version === LEGACY_V2_CONTRACT_HASH_VERSION
     || version === LEGACY_V3_CONTRACT_HASH_VERSION
     || version === LEGACY_V4_CONTRACT_HASH_VERSION
+    || version === LEGACY_V5_CONTRACT_HASH_VERSION
     || version === CONTRACT_HASH_VERSION;
 }
 
@@ -179,10 +202,36 @@ const CanonicalContractMaterialV4Schema = CanonicalContractMaterialV1Schema.omit
  * v5 — v4's fields plus the C6b count ceiling. Built from V4's FIELDS the same
  * way v4 was built from V1's, so v4 stays byte-reproducible for every mission
  * accepted under it.
+ *
+ * FROZEN by the C3 bump: the version literal is anchored to the pinned
+ * `LEGACY_V5_CONTRACT_HASH_VERSION` const, exactly as v4 is anchored to its own.
+ * Anchoring it to `CONTRACT_HASH_VERSION` would have made this schema silently
+ * claim 6 the moment that const moved, breaking every stored v5 hash.
  */
 const CanonicalContractMaterialV5Schema = CanonicalContractMaterialV4Schema.omit({ v: true }).extend({
-  v: z.literal(CONTRACT_HASH_VERSION),
+  v: z.literal(LEGACY_V5_CONTRACT_HASH_VERSION),
   maxLaunchCount: z.number().int().nullable(),
+}).strict();
+
+/**
+ * v6 - v5's fields plus the typed deployed capital. Built from V5's FIELDS the
+ * same way v5 was built from V4's, so v5 stays byte-reproducible for every
+ * mission accepted under it.
+ *
+ * The declaration is ONE OBJECT, not five keys: a partial object has no
+ * readable meaning, and `canonicalStringify` already sorts nested keys at every
+ * depth (see this file's header), so a nested shape hashes deterministically.
+ * `null` is the material a mission with no declaration produces.
+ */
+const CanonicalContractMaterialV6Schema = CanonicalContractMaterialV5Schema.omit({ v: true }).extend({
+  v: z.literal(CONTRACT_HASH_VERSION),
+  deployedCapital: z.object({
+    amountRaw: z.string(),
+    decimals: z.number().int(),
+    chainId: z.number().int(),
+    assetAddress: z.string(),
+    assetSymbol: z.string(),
+  }).strict().nullable(),
 }).strict();
 
 export type CanonicalContractMaterial =
@@ -190,7 +239,8 @@ export type CanonicalContractMaterial =
   | CanonicalContractMaterialLegacyV2
   | z.infer<typeof CanonicalContractMaterialV3Schema>
   | z.infer<typeof CanonicalContractMaterialV4Schema>
-  | z.infer<typeof CanonicalContractMaterialV5Schema>;
+  | z.infer<typeof CanonicalContractMaterialV5Schema>
+  | z.infer<typeof CanonicalContractMaterialV6Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -298,11 +348,23 @@ export function buildContractMaterial(
       ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
     });
   }
-  return CanonicalContractMaterialV5Schema.parse({
+  if (version === LEGACY_V5_CONTRACT_HASH_VERSION) {
+    return CanonicalContractMaterialV5Schema.parse({
+      v: LEGACY_V5_CONTRACT_HASH_VERSION,
+      ...base,
+      ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
+      maxLaunchCount: normalizeLaunchCount(draft.maxLaunchCount),
+    });
+  }
+  return CanonicalContractMaterialV6Schema.parse({
     v: CONTRACT_HASH_VERSION,
     ...base,
     ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
     maxLaunchCount: normalizeLaunchCount(draft.maxLaunchCount),
+    // The ONE shared normalizer (`deployed-capital.ts`), so what the user's
+    // acceptance is bound to can never diverge from what the mapper reads back
+    // or what the patch parser was allowed to write.
+    deployedCapital: normalizeDeployedCapital(draft.deployedCapital),
   });
 }
 

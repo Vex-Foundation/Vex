@@ -79,6 +79,16 @@ export interface PromptStackOptions {
    */
   ownTokenBanner?: string;
   /**
+   * Pre-formatted `# Mission Capital` banner from `buildMissionCapitalBanner`:
+   * the run's frozen start baseline, the current value of the SAME wallet set,
+   * and the change between them. TURN-STATE (the "now" half is volatile) - sits
+   * with the mission turn-state layers, immediately before the iteration
+   * snapshot. Built async + fail-soft in `buildTurnPromptStack`; any failure
+   * yields "" so the section is omitted (never blocks a turn). Rendered only
+   * during an active mission run. Empty/undefined omits the section.
+   */
+  missionCapitalBanner?: string;
+  /**
    * Pre-formatted context-pressure banner from `buildContextPressureBanner`.
    * Empty string (band='normal') omits the section. Built by `runTurnLoop`
    * from the lagging token-count + context-limit before invoking `executeTurn`.
@@ -265,6 +275,14 @@ export function buildPromptStack(
   // KV-cache prefix.
   if (options.bridgeCapabilityPrompt && options.bridgeCapabilityPrompt.length > 0) {
     turnLayers.push(options.bridgeCapabilityPrompt);
+  }
+
+  // Mission capital: the run's frozen start baseline paired with the current
+  // value of the same wallet set. Carries a volatile "now" figure, so it never
+  // enters the static prefix; the frozen half rides along with it because a
+  // stale cached baseline beside a fresh "now" would be the worst pairing.
+  if (context.missionRunId && options.missionCapitalBanner && options.missionCapitalBanner.length > 0) {
+    turnLayers.push(options.missionCapitalBanner);
   }
 
   // Mission turn-state: the frozen per-slice iteration snapshot

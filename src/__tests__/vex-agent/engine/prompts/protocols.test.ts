@@ -35,6 +35,25 @@ describe("buildProtocolsPrompt", () => {
     expect(prompt).toContain("backup venue is now available");
   });
 
+  // The routing line describes the failure CLASS rather than enumerating
+  // codes, because the enumeration went stale twice - most recently when a
+  // geo-blocked user's 403 matched nothing it listed.
+  it("names the availability class and the conditions that are NOT triggers", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    expect(prompt).toContain("KyberSwap being unavailable to us at all");
+    expect(prompt).toContain("neither is a slippage, balance, allowance, or deadline failure");
+  });
+
+  it("the routing line carries no em dash (owner decree 2026-08-05)", () => {
+    resetProtocolsPromptCache();
+    const routingLine = buildProtocolsPrompt()
+      .split("\n")
+      .find((line) => line.includes("backup venue is now available"));
+    expect(routingLine).toBeDefined();
+    expect(routingLine).not.toContain("—");
+  });
+
   // Owner add-on (2026-07-23): the kyberswap entry's chain list must be
   // DERIVED from the live registry, never hand-written, so a future chain
   // add/drop in `@tools/kyberswap/chains.ts` flows into the prompt

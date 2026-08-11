@@ -56,6 +56,10 @@ import {
   startWakeWatchPromoter,
   type WakeWatchPromoterHandle,
 } from "./watch-promoter.js";
+import {
+  startPriceWatchPoller,
+  type PriceWatchPollerHandle,
+} from "./price-watch-poller.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
@@ -81,6 +85,12 @@ export interface StartOptions {
    * with no executor would advance deadlines nothing would ever claim.
    */
   startWatchPromoter?: () => WakeWatchPromoterHandle;
+  /**
+   * Price-watch poller override for tests. Same lifetime argument as the
+   * promoter: it is the PULL half of the same mechanism, and a poller advancing
+   * deadlines in a process with no executor to claim them is pure provider cost.
+   */
+  startPriceWatchPoller?: () => PriceWatchPollerHandle;
 }
 
 /**
@@ -98,6 +108,7 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const now = options.now ?? (() => new Date());
   const deps = options.deps ?? buildProductionDeps();
   const promoter = (options.startWatchPromoter ?? startWakeWatchPromoter)();
+  const pricePoller = (options.startPriceWatchPoller ?? (() => startPriceWatchPoller()))();
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
@@ -130,6 +141,8 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
     async stop(): Promise<void> {
       stopped = true;
       promoter.stop();
+      // The poller abandons its in-flight wait at once and promotes nothing.
+      await pricePoller.stop();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

@@ -188,6 +188,11 @@ export async function prepareMissionRecover(
         {
           contractSnapshotJson: failed.contractSnapshotJson,
           recoveredFromRunId: failed.id,
+          // The recovery continues the SAME attempt: the money already moved.
+          // Re-baselining here would erase every gain and loss the failed run
+          // produced and reset "change since start" to zero on a wallet that is
+          // no longer at its starting state.
+          baselineJson: failed.baselineJson,
         },
         client,
       );

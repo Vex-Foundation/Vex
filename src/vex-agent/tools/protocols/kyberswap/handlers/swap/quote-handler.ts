@@ -15,6 +15,7 @@ import { formatRouteSummary } from "../../helpers.js";
 import type { ProtocolHandler } from "../../../types.js";
 import { str, ok, fail } from "../../../handler-helpers.js";
 import { kyberFailureMessage } from "./error-output.js";
+import { negativePriceImpactNote } from "./price-impact-note.js";
 import { revealOnEligibleFailure } from "./reveal-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { resolveQuoteSafetyLeg, type QuoteSafety, type QuoteSafetyLeg } from "./quote-safety.js";
@@ -112,7 +113,12 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     // On an L2 the L1 data fee can rival or exceed execution gas — quoting
     // only `gasUsd` understated the real cost of the trade.
     + (route.l1FeeUsd !== null ? ` L1 data fee ~$${route.l1FeeUsd} est.` : "")
-    + (route.priceImpact !== null ? ` Price impact ${(route.priceImpact * 100).toFixed(2)}%.` : "");
+    + (route.priceImpact !== null ? ` Price impact ${(route.priceImpact * 100).toFixed(2)}%.` : "")
+    // Display-only annotation: a negative impact means the quoted output is
+    // priced above the reference input value, which reads as free money to an
+    // agent that has not re-derived the formula. The number, the threshold
+    // behavior and `routeSummary` are untouched.
+    + negativePriceImpactNote(route.priceImpact);
 
   return ok({
     summary,

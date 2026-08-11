@@ -13,7 +13,8 @@
  * the security regression guard.
  */
 
-import type { MissionDraft, MissionPatch } from "../types.js";
+import type { DeployedCapital, MissionDraft, MissionPatch } from "../types.js";
+import { normalizeDeployedCapital } from "./deployed-capital.js";
 
 // ── Allowed keys ────────────────────────────────────────────────
 
@@ -35,6 +36,19 @@ const ALLOWED_ARRAY_KEYS = new Set<keyof MissionDraft>([
  * the model or the operator).
  */
 const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>(["durationMinutes"]);
+
+/**
+ * `deployedCapital` is a nested OBJECT, so it can go through neither the string
+ * nor the array nor the number sanitizer. It is normalized as a whole by the
+ * one shared normalizer in `deployed-capital.ts`.
+ *
+ * It is deliberately NOT in `MODEL_FORBIDDEN_KEYS`. It is a DECLARATION, not a
+ * fee, limit or destination: nothing refuses a spend because of it, so rule
+ * 90's model-input prohibition does not attach. It is exactly as model-writable
+ * as `startingCapital` already is, and any write clears acceptance
+ * (`setup.ts`), so the user re-reads the number before it can bind again.
+ */
+const ALLOWED_OBJECT_KEYS = new Set<keyof MissionDraft>(["deployedCapital"]);
 
 /**
  * DELIBERATELY NOT ALLOWED — do not add these, whatever a later task seems to
@@ -63,6 +77,7 @@ const ALL_ALLOWED_KEYS = new Set<string>(
     ...ALLOWED_STRING_KEYS,
     ...ALLOWED_ARRAY_KEYS,
     ...ALLOWED_NUMBER_KEYS,
+    ...ALLOWED_OBJECT_KEYS,
   ].filter((key) => !MODEL_FORBIDDEN_KEYS.has(key)),
 );
 
@@ -128,6 +143,11 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
+    } else if (ALLOWED_OBJECT_KEYS.has(key as keyof MissionDraft)) {
+      const sanitized = sanitizeDeployedCapital(value);
+      if (sanitized !== undefined) {
+        (result as Record<string, unknown>)[key] = sanitized;
+      }
     }
   }
 
@@ -158,6 +178,24 @@ function sanitizeDurationMinutes(value: unknown): number | null | undefined {
   const wholeMinutes = Math.trunc(value);
   if (wholeMinutes < 1) return undefined;
   return Math.min(wholeMinutes, MAX_DURATION_MINUTES);
+}
+
+/**
+ * Sanitize the C3 deployed-capital declaration.
+ *
+ * Three outcomes, and the middle one is the deliberate part:
+ *   - `null` (the model's explicit clear) is PRESERVED and written as absent;
+ *   - a non-object is REJECTED (`undefined`, no key in the result, no write) -
+ *     a wrong-typed value is a mistake, not an instruction to clear;
+ *   - an object is normalized as a whole and a MALFORMED one lands as `null`
+ *     rather than being dropped. A half-typed capital that silently persisted
+ *     would be worse than none: the draft would carry a denominator nobody can
+ *     read, and the measurability warnings would go quiet as if it were fine.
+ */
+function sanitizeDeployedCapital(value: unknown): DeployedCapital | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return undefined;
+  return normalizeDeployedCapital(value);
 }
 
 // ── Model output parser ─────────────────────────────────────────

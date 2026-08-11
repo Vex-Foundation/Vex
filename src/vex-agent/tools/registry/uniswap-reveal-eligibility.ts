@@ -67,6 +67,19 @@
  *       - `deadline_expired`    — the quote went stale; re-quote promptly.
  *     Every other code (including `broadcast_error` and `chain_unsupported`,
  *     neither of which is a refusal of THIS route) stays ineligible by default.
+ *   - `venue_unavailable` - KyberSwap failed to serve us AT ALL rather than
+ *     refusing this trade, so no fresh quote and no corrected amount can clear
+ *     it: that is the exact boundary the excluded conditions above sit on the
+ *     other side of, and a second venue is the only remedy Vex has. Added
+ *     2026-08-10 after a live user in Vietnam was answered HTTP 403 by
+ *     KyberSwap's edge on the aggregator quote call and the fallback stayed
+ *     locked. CLOSED REASON SET: `edge_refused` (401/403/451),
+ *     `endpoint_missing` (404), `rate_limited` (429), `server_error` (5xx),
+ *     `timeout`, `unreachable` (no HTTP response at all). Malformed params and
+ *     trade-condition failures (slippage, balance, deadline, price floor) are
+ *     NOT in the class. The R2/R3 limits apply unchanged: it makes a
+ *     separately-quoted venue a reasonable QUOTE candidate, it does not prove
+ *     Kyber is at fault for the trade, and no execution follows automatically.
  *
  * Never eligible: `4221` (`KYBER_WETH_NOT_CONFIGURED` — a config anomaly, not
  * route-not-found, even though it is numerically adjacent to the 4008/4010/4011
@@ -89,7 +102,21 @@ export type KyberRevealFailure =
   | { readonly kind: "kyber_code"; readonly code: number; readonly tokenInputsValidated?: boolean }
   | { readonly kind: "swap_mined_revert" }
   | { readonly kind: "unsafe_build" }
-  | { readonly kind: "pre_sign_revert"; readonly failureCode: EvmRouterRevertFailureCode };
+  | { readonly kind: "pre_sign_revert"; readonly failureCode: EvmRouterRevertFailureCode }
+  | { readonly kind: "venue_unavailable"; readonly reason: KyberVenueUnavailableReason };
+
+/**
+ * Closed reason vocabulary for the availability class. Strings, never numbers:
+ * putting an HTTP status into a numeric field is what made a 403 arrive as
+ * "Kyber code 403" in the first place.
+ */
+export type KyberVenueUnavailableReason =
+  | "edge_refused"      // 401 / 403 / 451
+  | "endpoint_missing"  // 404
+  | "rate_limited"      // 429
+  | "server_error"      // 500-599
+  | "timeout"           // KYBER_TIMEOUT, HTTP 408
+  | "unreachable";      // no HTTP response at all
 
 const ROUTE_NOT_FOUND_CODES: ReadonlySet<number> = new Set([4008, 4010]);
 const TOKEN_NOT_FOUND_CODE = 4011;
@@ -101,12 +128,24 @@ const REVEAL_ELIGIBLE_PRE_SIGN_FAILURE_CODES: ReadonlySet<EvmRouterRevertFailure
   "insufficient_liquidity",
 ]);
 
+/**
+ * Closed set, not "every reason". Every member is currently admitted, and the
+ * set still exists so that narrowing it later is a one-line policy change with
+ * a test, not a rewrite of a `return true`.
+ */
+const REVEAL_ELIGIBLE_UNAVAILABLE_REASONS: ReadonlySet<KyberVenueUnavailableReason> = new Set([
+  "edge_refused", "endpoint_missing", "rate_limited", "server_error", "timeout", "unreachable",
+]);
+
 export function isRevealEligibleKyberFailure(failure: KyberRevealFailure): boolean {
   if (failure.kind === "chain_unsupported") return true;
   if (failure.kind === "swap_mined_revert") return true;
   if (failure.kind === "unsafe_build") return true;
   if (failure.kind === "pre_sign_revert") {
     return REVEAL_ELIGIBLE_PRE_SIGN_FAILURE_CODES.has(failure.failureCode);
+  }
+  if (failure.kind === "venue_unavailable") {
+    return REVEAL_ELIGIBLE_UNAVAILABLE_REASONS.has(failure.reason);
   }
   if (failure.kind !== "kyber_code") return false;
 

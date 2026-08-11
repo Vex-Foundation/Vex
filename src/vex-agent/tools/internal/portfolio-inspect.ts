@@ -4,7 +4,7 @@
  * is deleted; views shrink to plain recorded session-wallet history).
  *
  * Views: transactions (primary), activity, balances, snapshots, summary,
- * executions.
+ * executions, mission_baseline (mission runs only).
  *
  * View implementations in inspect-views/*.ts — this file is the router only.
  */
@@ -19,9 +19,11 @@ import { inspectActivity } from "./inspect-views/activity.js";
 import { inspectTransactions } from "./inspect-views/transactions.js";
 // Portfolio views
 import { inspectSummary, inspectBalances, inspectSnapshots, inspectExecutions } from "./inspect-views/portfolio.js";
+import { inspectMissionBaseline } from "./inspect-views/mission-baseline.js";
 
 const VALID_VIEWS = new Set<string>([
   "transactions", "activity", "balances", "snapshots", "summary", "executions",
+  "mission_baseline",
 ]);
 
 /**
@@ -31,6 +33,11 @@ const VALID_VIEWS = new Set<string>([
  */
 const WALLET_SCOPED_VIEWS = new Set<string>([
   "summary", "balances", "snapshots", "activity", "transactions",
+  // `mission_baseline` joins the scoped set so the fail-closed contract-drift
+  // guard runs before it reads: a drifted contract must not read. Its FIGURES
+  // still use the baseline's frozen wallet set; the resolved addresses only
+  // decide whether an honest scope-divergence note is added.
+  "mission_baseline",
 ]);
 
 export async function handleAgentScan(
@@ -59,6 +66,7 @@ export async function handleAgentScan(
     }
     switch (view) {
       case "summary": return inspectSummary(addresses);
+      case "mission_baseline": return inspectMissionBaseline(context.missionRunId, addresses);
       case "balances": return inspectBalances(addresses);
       case "snapshots": return inspectSnapshots(addresses);
       case "activity": return inspectActivity(addresses, namespace, productType, limit);

@@ -24,19 +24,67 @@
  * Neither of the first two re-derives `mapAggregatorError`'s VexError mapping
  * (`tools/kyberswap/aggregator/errors.ts`) — both read the ALREADY-MAPPED
  * VexError's `code` + the raw numeric Kyber code carried in `externalName`
- * (set by `withMeta` at the mapping site).
+ * (set by `withMeta` at the mapping site). `deriveKyberRevealFailure` now also
+ * reads `httpStatus`, because the status is the one field the error contract
+ * classifies on before it reads any prose.
  */
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import type { AgentActivityFailureCode, AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
 import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
-import type { KyberRevealFailure } from "../../registry/uniswap-reveal-eligibility.js";
+import type { KyberRevealFailure, KyberVenueUnavailableReason } from "../../registry/uniswap-reveal-eligibility.js";
 
 /** The raw numeric Kyber error code, when the caught error carries one (`mapAggregatorError`'s `externalName`). */
 function rawKyberCode(err: unknown): number | undefined {
   if (!(err instanceof VexError) || err.externalName === undefined) return undefined;
   const parsed = Number(err.externalName);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * KyberSwap HTTP statuses that mean THE VENUE COULD NOT SERVE US, mapped to the
+ * closed reason vocabulary the reveal classifier decides on.
+ *
+ * Closed by construction: a status not named here is not an availability
+ * failure and derivation falls through to the Kyber-code path. 400 is
+ * deliberately absent (a malformed request is OUR parameter, not the venue's
+ * availability), and so is every other unlisted 4xx. 451 is listed because it
+ * is the status an edge returns when it blocks a whole region, which is the
+ * exact scenario this class exists for.
+ */
+function unavailableReasonForStatus(status: number): KyberVenueUnavailableReason | null {
+  if (status === 401 || status === 403 || status === 451) return "edge_refused";
+  if (status === 404) return "endpoint_missing";
+  if (status === 408) return "timeout";
+  if (status === 429) return "rate_limited";
+  if (status >= 500 && status <= 599) return "server_error";
+  return null;
+}
+
+/**
+ * The availability class: the venue could not serve us at all, so no fresh
+ * quote and no corrected amount can clear it and a SECOND VENUE is the only
+ * remedy Vex has.
+ *
+ * Read from the VexError CODE first and the HTTP status second, never from
+ * message text. The code gate is what keeps the class closed: whenever the
+ * response body carried a KyberSwap code, `mapAggregatorError` has already
+ * produced a SEMANTIC error (route-not-found, malformed-params, ...), so only
+ * the codes below can mean "no usable verdict came back at all".
+ *
+ * `KYBER_API_ERROR` with NO `httpStatus` is deliberately NOT in the class: that
+ * is also the shape of `verifyRouterAddress`'s build-integrity abort and of the
+ * response-schema validators, neither of which is evidence about availability.
+ * `KYBER_UNREACHABLE` exists precisely so the genuine transport case does not
+ * have to be identified by that ambiguous absence.
+ */
+function deriveVenueUnavailable(err: VexError): KyberRevealFailure | null {
+  if (err.code === ErrorCodes.KYBER_UNREACHABLE) return { kind: "venue_unavailable", reason: "unreachable" };
+  if (err.code === ErrorCodes.KYBER_TIMEOUT) return { kind: "venue_unavailable", reason: "timeout" };
+  if (err.code === ErrorCodes.KYBER_RATE_LIMITED) return { kind: "venue_unavailable", reason: "rate_limited" };
+  if (err.code !== ErrorCodes.KYBER_API_ERROR || err.httpStatus === undefined) return null;
+  const reason = unavailableReasonForStatus(err.httpStatus);
+  return reason === null ? null : { kind: "venue_unavailable", reason };
 }
 
 /**
@@ -72,8 +120,13 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
         return "allowance_or_balance";
       case ErrorCodes.APPROVAL_FAILED:
         return "allowance_or_balance";
+      // Migration 076. Reuses the SAME derivation the reveal path decides on,
+      // so the recorded code and the reveal verdict cannot drift apart. It
+      // sits in the default arm because the availability class turns on
+      // `httpStatus` as well as `code`, which a case label cannot express;
+      // a `KYBER_API_ERROR` with no status still records `unknown`.
       default:
-        return "unknown";
+        return deriveVenueUnavailable(err) ? "venue_unavailable" : "unknown";
     }
   }
   return "unknown";
@@ -106,6 +159,13 @@ export function deriveKyberRevealFailure(
   if (err.code === ErrorCodes.KYBER_UNSAFE_BUILD) {
     return { kind: "unsafe_build" };
   }
+  // BEFORE the numeric-code path. `mapAggregatorError` used to stamp the HTTP
+  // STATUS into `externalName`, which put 403 into the KyberSwap code namespace
+  // and made a geo-block read as an unknown provider code. That stamping is
+  // gone at the source; this ordering is the second guard, so an availability
+  // verdict can never be re-read as a Kyber body code.
+  const unavailable = deriveVenueUnavailable(err);
+  if (unavailable) return unavailable;
   const code = rawKyberCode(err);
   if (code === undefined) return null;
   return { kind: "kyber_code", code, tokenInputsValidated };

@@ -28,9 +28,10 @@
  * status `superseded_unproven`) out of the outbox entirely.
  */
 
-import { query, queryOne, execute } from "../client.js";
+import type { PoolClient } from "pg";
+import { query, queryOne, execute, withTransaction } from "../client.js";
 
-export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict";
+export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict" | "wallet_conflict";
 
 export interface AgentscanReportingState {
   readonly agentHash: string | null;
@@ -42,6 +43,14 @@ export interface AgentscanReportingState {
   readonly nextRegisterAttemptAt: string;
   readonly backfillEnqueuedAt: string | null;
   readonly stoppedReason: AgentscanStopReason | null;
+  /** Display name AgentScan bound to this install (session/complete response). */
+  readonly agentName: string | null;
+  /** When the last successful wallet-binding handshake completed. */
+  readonly lastHandshakeAt: string | null;
+  /** session/complete's syncState.lastAcceptedRowId — null for a brand-new agent. */
+  readonly serverCursorRowId: number | null;
+  /** sha256 of the sorted chainFamily:address inventory list the last handshake covered. */
+  readonly boundWalletsFingerprint: string | null;
 }
 
 export interface ClaimedOutboxEvent {
@@ -83,6 +92,10 @@ interface StateRow {
   next_register_attempt_at: Date;
   backfill_enqueued_at: Date | null;
   stopped_reason: AgentscanStopReason | null;
+  agent_name: string | null;
+  last_handshake_at: Date | null;
+  server_cursor_row_id: string | number | null;
+  bound_wallets_fingerprint: string | null;
 }
 
 function mapState(row: StateRow): AgentscanReportingState {
@@ -96,6 +109,10 @@ function mapState(row: StateRow): AgentscanReportingState {
     nextRegisterAttemptAt: new Date(row.next_register_attempt_at).toISOString(),
     backfillEnqueuedAt: row.backfill_enqueued_at ? new Date(row.backfill_enqueued_at).toISOString() : null,
     stoppedReason: row.stopped_reason,
+    agentName: row.agent_name,
+    lastHandshakeAt: row.last_handshake_at ? new Date(row.last_handshake_at).toISOString() : null,
+    serverCursorRowId: row.server_cursor_row_id === null ? null : Number(row.server_cursor_row_id),
+    boundWalletsFingerprint: row.bound_wallets_fingerprint,
   };
 }
 
@@ -125,13 +142,40 @@ export async function ensureIdentity(
   return getReportingState();
 }
 
-export async function markRegistered(): Promise<void> {
+export interface MarkHandshakeCompleteInput {
+  /** Display name AgentScan bound to this install (session/complete response). */
+  readonly agentName: string;
+  /** The ROTATED token session/complete returned — replaces whatever was stored. */
+  readonly ingestToken: string;
+  /** session/complete's syncState.lastAcceptedRowId — null for a brand-new agent. */
+  readonly serverCursorRowId: number | null;
+  /** sha256 of the sorted chainFamily:address inventory list this handshake covered. */
+  readonly walletsFingerprint: string;
+}
+
+/**
+ * A successful wallet-binding handshake (session/start → sign → session/complete):
+ * rotate the stored token, stamp `registered_at` (kept in sync so the existing
+ * backfill/drain gate needs no change) and `last_handshake_at`, store the
+ * server's name/cursor/fingerprint, and reset the attempt backoff to 0/now —
+ * a stale attempt count from a PRIOR failed handshake must not throttle the
+ * NEXT one this success has nothing to do with.
+ */
+export async function markHandshakeComplete(input: MarkHandshakeCompleteInput): Promise<void> {
   await ensureSingleton();
   await execute(
     `UPDATE agentscan_reporting_state
-        SET registered_at = NOW(), register_attempt_count = 0,
-            next_register_attempt_at = NOW(), updated_at = NOW()
+        SET ingest_token = $1,
+            agent_name = $2,
+            server_cursor_row_id = $3,
+            bound_wallets_fingerprint = $4,
+            registered_at = NOW(),
+            last_handshake_at = NOW(),
+            register_attempt_count = 0,
+            next_register_attempt_at = NOW(),
+            updated_at = NOW()
       WHERE id = 1`,
+    [input.ingestToken, input.agentName, input.serverCursorRowId, input.walletsFingerprint],
   );
 }
 
@@ -149,17 +193,83 @@ export async function noteRegisterAttemptFailed(delaySeconds: number): Promise<v
 }
 
 /**
- * 401 recovery: the server no longer knows this token (server-side reset).
- * Registration is idempotent, so the lane simply re-registers the SAME
- * identity next tick; only the stamp resets, never the identity.
+ * Shared by `resetForReRegistration` and `resetIdentityForRecovery`: every
+ * already-sent row becomes owed again, flagged `backfill` (a historical
+ * resend, not fresh activity). Poisoned rows (`rejected_at`) stay poisoned —
+ * a validation refusal the server made once does not become valid by
+ * resending the identical payload. Caller runs this inside its own
+ * transaction alongside its own state reset, so a crash can't leave one half
+ * applied.
  */
-export async function clearRegistration(): Promise<void> {
-  await ensureSingleton();
-  await execute(
-    `UPDATE agentscan_reporting_state
-        SET registered_at = NULL, updated_at = NOW()
-      WHERE id = 1`,
+async function resetOutboxForFullResend(client: PoolClient): Promise<void> {
+  await client.query(
+    `UPDATE agentscan_outbox
+        SET sent_at = NULL, attempt_count = 0, next_attempt_at = NOW(), backfill = TRUE, last_error = NULL
+      WHERE sent_at IS NOT NULL`,
   );
+}
+
+/**
+ * `auth_lost` recovery (401/403-not_registered on send): the server no longer
+ * knows this install (a server-side reset is the expected cause), so it also
+ * has none of the history this install already sent. Registration is
+ * idempotent — the lane simply re-registers the SAME identity next tick — but
+ * the diff scan's NOT-EXISTS can never re-enqueue a pair that already has an
+ * outbox row, so a full resend has to come from resetting the existing rows,
+ * not from re-scanning. The identity itself (agent_hash/ingest_token) is left
+ * untouched: this path is for when the SERVER has forgotten the install, not
+ * for when the CLIENT's stored token has drifted from what the server
+ * actually holds (that case is `resetIdentityForRecovery`, below).
+ */
+export async function resetForReRegistration(): Promise<void> {
+  await ensureSingleton();
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE agentscan_reporting_state
+          SET registered_at = NULL, backfill_enqueued_at = NULL, updated_at = NOW()
+        WHERE id = 1`,
+    );
+    await resetOutboxForFullResend(client);
+  });
+}
+
+/**
+ * `auth_lost` recovery for a session/complete `401` on an EXISTING binding
+ * (token mismatch): unlike `resetForReRegistration`, this is NOT recoverable
+ * by retrying the same identity, because the server holds SOME current token
+ * for this agent_hash that this install does not know (the canonical cause:
+ * a crash between the server committing a rotation and this install
+ * persisting it via `markHandshakeComplete` — the next handshake attempt
+ * would keep presenting the same stale bearer forever, an infinite 401 loop).
+ * The only way out is to abandon the identity entirely: clear agent_hash,
+ * ingest_token, agent_name, bound_wallets_fingerprint, and every
+ * registration/backfill/handshake stamp, and reset the attempt backoff so
+ * the next tick retries immediately. `ensureIdentity` then mints a FRESH
+ * agent_hash/ingest_token next run, and the server's transfer-on-proof
+ * semantics (sprint lead addendum) re-bind the same proven wallets to it —
+ * that is the designed recovery, not a data-loss path. The outbox reset is
+ * the same full-resend as `resetForReRegistration`, in the same transaction.
+ */
+export async function resetIdentityForRecovery(): Promise<void> {
+  await ensureSingleton();
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE agentscan_reporting_state
+          SET agent_hash = NULL,
+              ingest_token = NULL,
+              agent_name = NULL,
+              bound_wallets_fingerprint = NULL,
+              registered_at = NULL,
+              backfill_enqueued_at = NULL,
+              last_handshake_at = NULL,
+              server_cursor_row_id = NULL,
+              register_attempt_count = 0,
+              next_register_attempt_at = NOW(),
+              updated_at = NOW()
+        WHERE id = 1`,
+    );
+    await resetOutboxForFullResend(client);
+  });
 }
 
 /** Permanent stop — 410, 403-quarantined, or a register 409. Never auto-cleared. */

@@ -2,8 +2,8 @@
  * Lockstep guard, sibling of `agent-activity-failure-code-lockstep.test.ts`:
  * the SQL `agent_activity_kind_valid` / `agent_activity_event_role_valid`
  * CHECKs and the TypeScript `AgentActivityKind` / `AgentActivityEventRole`
- * unions (`db/repos/agent-activity/types.ts`) MUST list the exact same
- * vocabulary.
+ * unions (`db/repos/agent-activity/types/vocabulary.ts`) MUST list the exact
+ * same vocabulary.
  *
  * WHY. Migration 051 added `wrap`/`unwrap` to SQL and the TS unions were never
  * updated — the drift survived a full green suite because a TYPE cannot be
@@ -13,7 +13,8 @@
  * failing test instead of a discovery.
  *
  * Both sides are parsed from SOURCE — every migration file (the LAST definition
- * of each constraint in migration order is the live one) and `types.ts` itself.
+ * of each constraint in migration order is the live one) and the union-owning
+ * `types/vocabulary.ts` itself (re-exported by `types.ts`).
  * Parsing the TS union text is the only way to compare a compile-time union
  * against runtime data; there is deliberately no runtime kind/role array in the
  * engine to compare against instead.
@@ -32,8 +33,17 @@ const MIGRATION_SQL = readdirSync(MIGRATIONS_DIR)
   .map((name) => readFileSync(join(MIGRATIONS_DIR, name), "utf-8"))
   .join("\n");
 
-const TYPES_TS = readFileSync(
-  join(getPackageRoot(), "src", "vex-agent", "db", "repos", "agent-activity", "types.ts"),
+const VOCABULARY_TS = readFileSync(
+  join(
+    getPackageRoot(),
+    "src",
+    "vex-agent",
+    "db",
+    "repos",
+    "agent-activity",
+    "types",
+    "vocabulary.ts",
+  ),
   "utf-8",
 );
 
@@ -60,9 +70,9 @@ function parseInListCheck(constraintName: string, column: string): string[] {
 /** Extract the string-literal members of an `export type X = "a" | "b";` union. */
 function parseTsUnion(typeName: string): string[] {
   const re = new RegExp(`export type ${typeName} =([^;]*);`);
-  const match = re.exec(TYPES_TS);
+  const match = re.exec(VOCABULARY_TS);
   if (!match) {
-    throw new Error(`lockstep: TS union '${typeName}' not found in types.ts`);
+    throw new Error(`lockstep: TS union '${typeName}' not found in types/vocabulary.ts`);
   }
   const members = match[1]!.match(/"([^"]+)"/g);
   if (!members) {

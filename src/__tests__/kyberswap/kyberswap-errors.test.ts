@@ -15,11 +15,19 @@ describe("mapKyberTransportError", () => {
     );
   });
 
-  it("maps HTTP_REQUEST_FAILED to KYBER_API_ERROR", () => {
+  // The venue was never reached at all. Distinct from KYBER_API_ERROR, which
+  // means a response DID arrive and we could not use it - only the first is
+  // evidence that KyberSwap cannot serve this client.
+  it("maps HTTP_REQUEST_FAILED to KYBER_UNREACHABLE", () => {
     const err = new VexError(ErrorCodes.HTTP_REQUEST_FAILED, "Failed", "hint");
     expect(() => mapKyberTransportError(err)).toThrow(
-      expect.objectContaining({ code: ErrorCodes.KYBER_API_ERROR }),
+      expect.objectContaining({ code: ErrorCodes.KYBER_UNREACHABLE }),
     );
+  });
+
+  it("re-throws a KYBER_UNREACHABLE handed back to it as-is", () => {
+    const err = new VexError(ErrorCodes.KYBER_UNREACHABLE, "fetch failed");
+    expect(() => mapKyberTransportError(err)).toThrow(err);
   });
 
   it("re-throws non-VexError as-is", () => {

@@ -69,7 +69,7 @@ import { findCallerSuppliedForbiddenParamOrDestinationKey } from "@tools/khalani
 import { khalaniSlippageRejection } from "../protocols/khalani/slippage-unsupported.js";
 import { rejectBridgeStatusModeConflict } from "../protocols/khalani/bridge-status-mode.js";
 import { dropEmptyModelValues, formatZodIssuesForModel } from "./arg-validation.js";
-import { revealUniswapPair, isUniswapPairRevealed } from "../registry/uniswap-reveal.js";
+import { revealUniswapPair, isUniswapPairRevealed, UNISWAP_REVEAL_TRIGGER_SUMMARY } from "../registry/uniswap-reveal.js";
 import { evaluateRelayRevealGate } from "../registry/relay-reveal.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 import logger from "@utils/logger.js";
@@ -216,11 +216,7 @@ export async function handleSwapQuoteUniswap(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   if (!isUniswapPairRevealed(context.sessionId)) {
-    return fail(
-      "swap_quote_uniswap is not available yet for this session — it unlocks after an eligible "
-        + "KyberSwap route-not-found failure at quote time, or the Kyber swap transaction reverting "
-        + "on-chain at execute time (try swap_quote first).",
-    );
+    return fail(`swap_quote_uniswap is not available yet for this session. ${UNISWAP_REVEAL_TRIGGER_SUMMARY}`);
   }
 
   const parsed = SwapQuoteUniswapArgs.safeParse(args);

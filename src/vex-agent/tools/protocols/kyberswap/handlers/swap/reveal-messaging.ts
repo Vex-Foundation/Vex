@@ -8,11 +8,17 @@
  * eligibility decision itself stays in the coordinator-fixed classifier
  * (`registry/uniswap-reveal-eligibility.ts`); these functions only derive the
  * signal, honour the fail-closed session gate, and own the wording.
+ *
+ * The availability class is the fourth failure shape this module words, and
+ * the only one that picks between two suffixes: "the venue is throttling us"
+ * and "the venue's edge refuses this client" call for opposite first moves.
  */
 
 import type { AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
+import logger from "@utils/logger.js";
 import { revealUniswapPair } from "../../../../registry/uniswap-reveal.js";
 import { isRevealEligibleKyberFailure } from "../../../../registry/uniswap-reveal-eligibility.js";
+import type { KyberVenueUnavailableReason } from "../../../../registry/uniswap-reveal-eligibility.js";
 import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
 import {
   deriveKyberRevealFailure,
@@ -23,6 +29,33 @@ import {
 /** The ONE sentence that tells the agent the hidden pair is now usable — shared so a second copy cannot drift from the tool names it must name exactly. */
 const FALLBACK_VENUE_AVAILABLE_SUFFIX =
   " Uniswap (swap_quote_uniswap / swap_execute_uniswap) is now available for this session as a fallback venue.";
+
+/**
+ * Appended to every availability reveal. The reveal is session-wide and
+ * chain-blind on purpose (an edge that refuses us on one chain refuses us on
+ * all of them), but Uniswap's coverage is not, so the sentence says so rather
+ * than letting the agent discover it as a second failure.
+ */
+const UNISWAP_COVERAGE_CAVEAT =
+  " Uniswap covers only the EVM chains with a verified Vex deployment, so quote there first and act on what that quote says.";
+
+/** Availability class, terminal: repeating the same KyberSwap request cannot clear it. */
+const VENUE_UNAVAILABLE_TERMINAL_LEAD =
+  " That is a venue-availability failure, not a refusal of this trade: KyberSwap did not price the route at all, and repeating the same request there will be answered the same way.";
+
+/** Availability class, possibly transient: one backed-off retry on KyberSwap is the cheaper first move. */
+const VENUE_UNAVAILABLE_RETRY_FIRST_LEAD =
+  " That is a venue-availability failure, not a refusal of this trade, and it may be temporary: retry the same KyberSwap request once after a short backoff before switching venue.";
+
+/**
+ * Which availability reasons are worth one retry on KyberSwap FIRST. Messaging
+ * policy, so it lives with the wording; eligibility policy stays in the
+ * classifier. An edge refusal and a missing endpoint are terminal for this
+ * client, so telling the agent to retry them would be false advice.
+ */
+const RETRY_KYBER_FIRST_REASONS: ReadonlySet<KyberVenueUnavailableReason> = new Set([
+  "rate_limited", "server_error", "timeout", "unreachable",
+]);
 
 /**
  * On an eligible Kyber failure, reveal the hidden Uniswap pair for this
@@ -40,6 +73,13 @@ export function revealOnEligibleFailure(
     return "";
   }
   revealUniswapPair(sessionId);
+  if (revealFailure.kind === "venue_unavailable") {
+    logger.info("kyberswap.reveal.venue_unavailable", { reason: revealFailure.reason });
+    const lead = RETRY_KYBER_FIRST_REASONS.has(revealFailure.reason)
+      ? VENUE_UNAVAILABLE_RETRY_FIRST_LEAD
+      : VENUE_UNAVAILABLE_TERMINAL_LEAD;
+    return `${lead}${FALLBACK_VENUE_AVAILABLE_SUFFIX}${UNISWAP_COVERAGE_CAVEAT}`;
+  }
   return FALLBACK_VENUE_AVAILABLE_SUFFIX;
 }
 

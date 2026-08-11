@@ -54,6 +54,37 @@ describe("ensureErc20Balance", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("tells a have-NOTHING caller what zero means and how to verify it (A2)", async () => {
+    // The live TOM incident: the sell guard said "have 0" and the agent read it
+    // as indexer lag. Zero is the one case where the wallet holding NONE is the
+    // whole story, so it names that and points at the read that settles it.
+    const rejection = ensureErc20Balance(client(0n), {
+      token: TOKEN,
+      owner: OWNER,
+      required: 1_000n,
+      decimals: 6,
+    });
+
+    await expect(rejection).rejects.toMatchObject({
+      code: ErrorCodes.INSUFFICIENT_BALANCE,
+      message: expect.stringContaining("you hold none of this token on this chain"),
+    });
+    await expect(
+      ensureErc20Balance(client(0n), { token: TOKEN, owner: OWNER, required: 1_000n, decimals: 6 }),
+    ).rejects.toThrow("chain_read");
+    await expect(
+      ensureErc20Balance(client(0n), { token: TOKEN, owner: OWNER, required: 1_000n, decimals: 6 }),
+    ).rejects.toThrow("erc20_balance");
+  });
+
+  it("leaves every NON-zero shortfall message byte-identical (12 production callers)", async () => {
+    await expect(
+      ensureErc20Balance(client(5n), { token: TOKEN, owner: OWNER, required: 10n, decimals: 0 }),
+    ).rejects.toThrow(
+      `Insufficient balance for token ${TOKEN}: have 5, requested 10.`,
+    );
+  });
+
   it("only appends a bounded safe label from untrusted token metadata", async () => {
     await expect(
       ensureErc20Balance(client(0n) as never, {

@@ -38,6 +38,8 @@ export interface MissionRun {
   stopEvidenceJson: Record<string, unknown> | null;
   iterationCount: number;
   contractSnapshotJson: Record<string, unknown> | null;
+  /** Frozen start-of-run capital baseline (mig 077); NULL for a pre-077 run. */
+  baselineJson: Record<string, unknown> | null;
   recoveredFromRunId: string | null;
   /** Phase 4d: count of auto-retries scheduled for this run (budget + wake epoch). */
   errorRetryCount: number;
@@ -84,6 +86,7 @@ function mapRow(r: Record<string, unknown>): MissionRun {
     stopEvidenceJson: r.stop_evidence_json as Record<string, unknown> | null,
     iterationCount: (r.iteration_count as number) ?? 0,
     contractSnapshotJson: r.contract_snapshot_json as Record<string, unknown> | null,
+    baselineJson: r.baseline_json as Record<string, unknown> | null,
     recoveredFromRunId: r.recovered_from_run_id as string | null,
     errorRetryCount: (r.error_retry_count as number) ?? 0,
     autoRetryUnsafe: (r.auto_retry_unsafe as boolean) ?? false,
@@ -99,18 +102,22 @@ export async function createRun(
   options: {
     contractSnapshotJson?: Record<string, unknown> | null;
     recoveredFromRunId?: string | null;
+    /** Frozen start-of-run capital baseline; written once, never updated. */
+    baselineJson?: Record<string, unknown> | null;
   } = {},
   client?: PoolClient,
 ): Promise<void> {
   const sql = `INSERT INTO mission_runs (
-       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id
-     ) VALUES ($1, $2, $3, $4::jsonb, $5)`;
+       id, mission_id, session_id, contract_snapshot_json, recovered_from_run_id,
+       baseline_json
+     ) VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb)`;
   const params = [
     id,
     missionId,
     sessionId,
     nullableJsonb(options.contractSnapshotJson ?? null),
     options.recoveredFromRunId ?? null,
+    nullableJsonb(options.baselineJson ?? null),
   ];
   if (client) {
     await client.query(sql, params);

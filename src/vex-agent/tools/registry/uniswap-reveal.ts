@@ -45,6 +45,20 @@ const REVEAL_MAX_AGE_MS = PREQUOTE_MAX_AGE_MS;
 /** Hard cap on concurrently-tracked sessions — a memory-bounding guard, not a security boundary (a dropped entry just re-fails-closed to hidden). */
 const MAX_REVEAL_ENTRIES = 10_000;
 
+/**
+ * The ONE agent-facing sentence describing what unlocks the hidden pair.
+ * Four lock/denial surfaces each recited their own copy and three of them had
+ * drifted to a route-not-found-only description that stopped being true when
+ * `unsafe_build` and `pre_sign_revert` were added. Shared so the next change to
+ * the eligible set cannot land in some of them only. It names no venue: each
+ * caller prefixes its own subject.
+ */
+export const UNISWAP_REVEAL_TRIGGER_SUMMARY =
+  "It unlocks after an eligible KyberSwap swap failure: a route or token KyberSwap cannot price, "
+  + "a build or pre-sign check its own route fails, the Kyber swap transaction reverting on-chain, "
+  + "or KyberSwap being unavailable to us at all (refused at its edge, unreachable, rate limited, or erroring). "
+  + "Try swap_quote first.";
+
 /** Lazy global sweep: purge every expired entry, then drop-oldest down to `MAX_REVEAL_ENTRIES` if still over. Runs on every reveal/check call. */
 function sweepAndBound(): void {
   const now = Date.now();
@@ -97,10 +111,7 @@ export function isUniswapPairRevealed(sessionId: string | undefined): boolean {
 export function assertUniswapPairRevealed(sessionId: string | undefined): void {
   if (!isUniswapPairRevealed(sessionId)) {
     throw new Error(
-      "swap_quote_uniswap/swap_execute_uniswap is not available yet for this session — "
-        + "reveal requires an eligible KyberSwap failure first (route-not-found, an unsafe "
-        + "build, the swap leg's pre-sign gas estimate reverting, or the Kyber swap "
-        + "transaction reverting on-chain).",
+      `swap_quote_uniswap/swap_execute_uniswap is not available yet for this session. ${UNISWAP_REVEAL_TRIGGER_SUMMARY}`,
     );
   }
 }
