@@ -65,7 +65,7 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
-import { NEGATIVE_PRICE_IMPACT_NOTE } from "@vex-agent/tools/protocols/kyberswap/handlers/swap/price-impact-note.js";
+import { NEGATIVE_PRICE_IMPACT_NOTE } from "@vex-agent/tools/protocols/price-impact-note.js";
 
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";

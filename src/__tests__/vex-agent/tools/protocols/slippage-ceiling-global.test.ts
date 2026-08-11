@@ -15,7 +15,14 @@
  * for an agent running a mission with no user present.
  *
  * The refusals here are param-only and fire BEFORE any wallet resolution or
- * provider call, which is why these handlers can be driven with no mocks at all.
+ * provider call, which is why the refusal cases need no mocks at all. The
+ * LEGAL-tolerance cases are different: they deliberately run past the gate, and
+ * past the gate sits `resolveSelectedAddress`, which reads THIS MACHINE's
+ * configured wallets. On a developer machine with a wallet those calls went on
+ * to resolve tokens over a real RPC; on a wallet-less CI runner they stopped at
+ * the resolver. Same assertion, two different code paths, decided by ambient
+ * state. The wallet seam is therefore pinned below to the unresolved shape, so
+ * every case here stops at a known place for a known reason.
  *
  * Pendle's 5,000 bps clamp — the last venue-local exemption, previously deferred
  * to phase 4 — was REMOVED in R5a: `pendle/handlers/shared.ts` now resolves every
@@ -24,8 +31,10 @@
  * because a Pendle handler reads token decimals ON-CHAIN before it reaches the
  * tolerance, so it cannot be driven mock-free the way the four below can.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+import * as walletResolve from "@vex-agent/tools/internal/wallet/resolve.js";
+import { VexError, ErrorCodes } from "../../../../errors.js";
 import { SOLANA_JUPITER_HANDLERS } from "@vex-agent/tools/protocols/solana-jupiter/handlers.js";
 import { UNISWAP_HANDLERS } from "@vex-agent/tools/protocols/uniswap/handlers.js";
 import { checkSlippageBps, VEX_MAX_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
@@ -66,6 +75,14 @@ const CASES = [
     run: (slippageBps: number) => UNISWAP_HANDLERS["uniswap.swap.execute"]!({ ...UNISWAP_SWAP, slippageBps }, CTX),
   },
 ] as const;
+
+beforeEach(() => {
+  vi.spyOn(walletResolve, "resolveSelectedAddress").mockImplementation(() => {
+    throw new VexError(ErrorCodes.WALLET_NOT_CONFIGURED, "no wallet configured");
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("the Vex slippage ceiling binds on Jupiter and Uniswap, not only KyberSwap", () => {
   for (const { toolId, run } of CASES) {

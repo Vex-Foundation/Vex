@@ -15,7 +15,7 @@ import { formatRouteSummary } from "../../helpers.js";
 import type { ProtocolHandler } from "../../../types.js";
 import { str, ok, fail } from "../../../handler-helpers.js";
 import { kyberFailureMessage } from "./error-output.js";
-import { negativePriceImpactNote } from "./price-impact-note.js";
+import { negativePriceImpactNote } from "../../../price-impact-note.js";
 import { revealOnEligibleFailure } from "./reveal-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import { resolveQuoteSafetyLeg, type QuoteSafety, type QuoteSafetyLeg } from "./quote-safety.js";

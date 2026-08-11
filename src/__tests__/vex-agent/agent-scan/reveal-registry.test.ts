@@ -36,7 +36,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { ToolCallRequest } from "@vex-agent/tools/types.js";
-import { VexError } from "../../../errors.js";
+import { VexError, ErrorCodes } from "../../../errors.js";
 import { makeTestContext } from "../tools/_test-context.js";
 
 // The real-boundary tests dynamically import the full dispatcher module graph
@@ -45,6 +45,7 @@ vi.setConfig({ testTimeout: 120_000 });
 
 const revealedSessionsToClear: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   if (revealedSessionsToClear.length === 0) return;
   const { clearUniswapPairReveal } = await import("../../../vex-agent/tools/registry/uniswap-reveal.js");
   for (const sessionId of revealedSessionsToClear.splice(0, revealedSessionsToClear.length)) {
@@ -232,6 +233,17 @@ describe("canonical executeProtocolTool gate for the hidden Uniswap pair (C3)", 
     mockGetProtocolManifest.mockReturnValue(FAKE_UNISWAP_QUOTE_MANIFEST);
     mockGetProtocolHandler.mockReturnValue(uniswapQuoteHandler);
     uniswapQuoteHandler.mockClear();
+
+    // Past the reveal gate, the runtime records a swap prequote, and that
+    // recorder resolves the context's source: "default" wallet against THIS
+    // MACHINE's configured wallets. The gate assertion below holds either way,
+    // but the path taken should not be decided by ambient state, so the seam is
+    // pinned to the unresolved shape (a documented, bounded skip in the
+    // recorder). The recorder's own wallet behavior is not this suite's subject.
+    const walletResolve = await import("@vex-agent/tools/internal/wallet/resolve.js");
+    vi.spyOn(walletResolve, "resolveSelectedAddress").mockImplementation(() => {
+      throw new VexError(ErrorCodes.WALLET_NOT_CONFIGURED, "no wallet configured");
+    });
 
     const { revealUniswapPair } = await import("../../../vex-agent/tools/registry/uniswap-reveal.js");
     const sessionId = "session-canonical-revealed";
