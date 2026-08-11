@@ -14,8 +14,33 @@
  */
 
 import type { JSX } from "react";
-import type { MissionDraftDto } from "@shared/schemas/mission.js";
+import type { MissionDeployedCapital, MissionDraftDto } from "@shared/schemas/mission.js";
+import { chainDisplay } from "@shared/chains/display.js";
 import { cn } from "../../lib/utils.js";
+
+/**
+ * The deployed-capital ticker charset, mirrored BY VALUE from the engine's
+ * `ASSET_SYMBOL_PATTERN` (`src/vex-agent/engine/mission/deployed-capital.ts`),
+ * which is the charset the acceptance hash was computed under.
+ *
+ * Deliberately NOT the shared `sanitizeTokenSymbol`. That sanitizer guards
+ * provider-sourced symbols on other surfaces and additionally requires an
+ * ALPHANUMERIC FIRST CHARACTER, which is stricter than the engine here: it
+ * would drop `$VEX` (the project's own token symbol), `_TOKEN` and `.TOKEN`.
+ * Omitting valid hash-bound metadata is its own honesty failure, so this
+ * surface matches the engine exactly rather than borrowing a stricter rule.
+ * The shared sanitizer is left untouched for its own callers.
+ *
+ * The shared DTO schema already enforces this same charset at the IPC
+ * boundary; this check is defense in depth against a schema drift, so a
+ * symbol that somehow reaches the renderer outside the charset is still
+ * dropped from the line rather than rendered.
+ */
+const DEPLOYED_CAPITAL_SYMBOL_PATTERN = /^[A-Za-z0-9_.$-]{1,32}$/;
+
+function displayableAssetSymbol(symbol: string): string | null {
+  return DEPLOYED_CAPITAL_SYMBOL_PATTERN.test(symbol) ? symbol : null;
+}
 
 /**
  * Contract state machine kinds shared by the modal. Kept here (rather than in
@@ -54,6 +79,7 @@ export function CardBody({ draft }: CardBodyProps): JSX.Element {
           </ul>
         </Field>
       ) : null}
+      <DeployedCapitalField capital={draft.deployedCapital} />
       {restrictions.length > 0 ? (
         <Field label="Restrictions">
           <ChipList items={restrictions} />
@@ -97,6 +123,63 @@ function Field({ label, hint, children }: FieldProps): JSX.Element {
       </div>
       <div className="text-sm">{children}</div>
     </div>
+  );
+}
+
+/**
+ * C3 - the deployed-capital declaration, ALWAYS rendered.
+ *
+ * This field is bound into the acceptance hash (contract v6), so the host must
+ * be able to see it before accepting; a hash-covered field the card hides is a
+ * blind signature. It is a measurement base, not a spend ceiling, which is why
+ * it sits on its own rather than in the constraints list.
+ *
+ * Two rules this component must keep:
+ *
+ *   - NO CONVERSION HERE. `amountHuman` arrives already derived in the main
+ *     process. When it is null the primary line prints the raw pair instead;
+ *     the renderer never performs a base-unit shift, because a decimals slip in
+ *     the UI is a thousandfold misstatement of the mission's own denominator
+ *     (rule 90). The raw + decimals detail line is shown either way, so the
+ *     underlying figure is always auditable.
+ *   - ABSENCE IS SHOWN, NOT OMITTED. An undeclared base is what suppresses the
+ *     measurability warnings, so "Not declared" is real information about the
+ *     contract, not an empty state to hide.
+ *
+ * `assetSymbol` is model-written, attacker-influenceable text, so it is checked
+ * against the engine's ticker charset (see `DEPLOYED_CAPITAL_SYMBOL_PATTERN`);
+ * a rejected symbol is dropped from the line rather than printed, and the asset
+ * address below remains the unambiguous identity.
+ */
+function DeployedCapitalField({
+  capital,
+}: {
+  readonly capital: MissionDeployedCapital | null;
+}): JSX.Element {
+  if (capital === null) {
+    return (
+      <Field label="Deployed capital">
+        <div data-vex-field="deployed-capital">
+          <span className="italic text-[var(--vex-text-3)]">Not declared</span>
+        </div>
+      </Field>
+    );
+  }
+  const symbol = displayableAssetSymbol(capital.assetSymbol);
+  const amount = capital.amountHuman ?? `${capital.amountRaw} raw`;
+  const chain = chainDisplay(capital.chainId).name;
+  return (
+    <Field label="Deployed capital">
+      <div data-vex-field="deployed-capital" className="space-y-0.5">
+        <p className="text-foreground">
+          {symbol === null ? `${amount} on ${chain}` : `${amount} ${symbol} on ${chain}`}
+        </p>
+        <p className="break-all font-mono text-[11px] text-[var(--vex-text-3)]">
+          {capital.amountRaw} raw @ {capital.decimals} decimals ·{" "}
+          {capital.assetAddress}
+        </p>
+      </div>
+    </Field>
   );
 }
 

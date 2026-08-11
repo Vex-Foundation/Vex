@@ -112,6 +112,41 @@ export const missionAcceptanceSchema = z
   .strict();
 export type MissionAcceptance = z.infer<typeof missionAcceptanceSchema>;
 
+/**
+ * C3 - the mission's typed deployed-capital declaration, as the renderer reads
+ * it. This is HASH-BOUND material (contract v6): the host accepts a contract
+ * whose hash covers these exact five parts, so the card must be able to SHOW
+ * what is being accepted. A field bound into an acceptance the UI cannot render
+ * is a blind signature, which is what this DTO exists to end.
+ *
+ * READ-ONLY, and DERIVED-HUMAN-ONLY. `amountHuman` is computed MAIN-SIDE from
+ * `amountRaw` + `decimals` and is nullable; the renderer must NEVER perform the
+ * base-unit shift itself (rule 90 - a display-side rescale of a money figure is
+ * the thousandfold-slip trap). When `amountHuman` is null the renderer falls
+ * back to printing the raw pair verbatim, never to a conversion of its own.
+ *
+ * NULLABLE, NOT OPTIONAL. Absence is meaningful - an undeclared capital base is
+ * exactly what suppresses the measurability warnings - so the key is always
+ * present and an omitted key fails the strict parse loudly rather than reading
+ * as "not declared" by accident.
+ *
+ * The bounds mirror the engine's `DEPLOYED_CAPITAL_BOUNDS`; this schema is a
+ * transport contract, and the authoritative normalizer is main-side.
+ */
+export const missionDeployedCapitalSchema = z
+  .object({
+    /** Base-10 integer string; never a number (a wei amount exceeds MAX_SAFE_INTEGER). */
+    amountRaw: z.string().max(80).regex(/^\d+$/),
+    decimals: z.number().int().min(0).max(36),
+    chainId: z.number().int().positive(),
+    assetAddress: z.string().max(128),
+    assetSymbol: z.string().max(32).regex(/^[A-Za-z0-9_.$-]+$/),
+    /** Main-derived display figure; null when it could not be derived. */
+    amountHuman: z.string().nullable(),
+  })
+  .strict();
+export type MissionDeployedCapital = z.infer<typeof missionDeployedCapitalSchema>;
+
 export const missionDraftDtoSchema = z
   .object({
     missionId: z.string(),
@@ -137,6 +172,12 @@ export const missionDraftDtoSchema = z
     approvedAt: z.string().datetime({ offset: true }).nullable(),
     /** Null when unaccepted; non-null block when host-accepted. */
     acceptance: missionAcceptanceSchema.nullable(),
+    /**
+     * C3 declaration, or null when the mission declared no capital base.
+     * Top-level rather than nested under `constraints`: it is not a ceiling and
+     * enforces nothing, it is the measurement base the acceptance hash covers.
+     */
+    deployedCapital: missionDeployedCapitalSchema.nullable(),
     /** `/mission-renew` lineage — id of the mission this one was renewed from. */
     renewedFromMissionId: z.string().nullable(),
   })
