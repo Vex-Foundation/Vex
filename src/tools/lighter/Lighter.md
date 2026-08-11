@@ -1,14 +1,14 @@
 # Lighter Module Map
 
-**Last updated: 2026-08-09**
+**Last updated: 2026-08-12**
 
-Lighter support starts as Core + Robinhood Chain read-only market data.
-Milestone 4 adds the safety boundary for later read-only account visibility:
-Vex may recognize read-only auth tokens and authenticated account-read endpoint
-paths, but it still has no API private keys, signer client, order execution,
-deposit, withdrawal, transfer, or other state-changing path. The Vex agent
-protocol surface consumes this module through read-only tools under the
-`lighter` namespace.
+Lighter support now covers Core + Robinhood Chain public market data,
+read-only account visibility, and a preview-only Lighter order gate. The
+preview gate persists live-data-backed `lighter_order` identities for a future
+exact matching order, but Vex still has no API private keys, signer client,
+`sendTx`, order create, order cancel, deposit, withdrawal, transfer, or other
+state-changing Lighter path. The Vex agent protocol surface consumes this
+module through read-only tools under the `lighter` namespace.
 
 ## Sources
 
@@ -29,6 +29,7 @@ protocol surface consumes this module through read-only tools under the
 | `errors.ts` | Lighter HTTP/provider failures mapped to `LIGHTER_*` `VexError`s |
 | `throttle.ts` | Per-process public REST throttle, small TTL cache, in-flight dedupe |
 | `client.ts` | Read-only REST client and singleton |
+| `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 
@@ -58,6 +59,55 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `getRecentTrades(environment, params)` | `GET /api/v1/recentTrades` | Required `market_id`; `limit` 1-100 |
 | `getAccountTrades(environment, params)` | `GET /api/v1/trades` | Auth-gated account trade history candidate |
 | `getCandles(environment, params)` | `GET /api/v1/candles` | Required market, resolution, epoch-ms timestamp range, bounded `count_back` |
+
+## Milestone 8 Execution Boundary
+
+The next build slice is the execution architecture, not live trading. The
+preview gate may feed a future exact matching order, but no order can be sent
+until these boundaries are implemented and reviewed:
+
+- Lighter order writes classify as external exchange mutations. If the existing
+  taxonomy is used, the first create/cancel tools must be `external_post`;
+  adding a narrower `exchange_order` action kind requires a separate approval
+  and mutation-matrix review.
+- `lighter.order.create` must require a fresh persisted `lighter.order.preview`
+  match by session, environment, account index, optional API key index, market,
+  side, exact integer amount, exact integer price, order type, time in force,
+  reduce-only flag, expiry, client-order policy, and provider/version marker.
+- Approval disclosures must be rebuilt from the persisted preview plus fresh
+  provider/account reads. Handler parameters and model text may not populate
+  price, size, account, or market facts in the approval surface.
+- Signing belongs only in the privileged runtime. The renderer, preload, agent
+  transcript, logs, telemetry, CLI arguments, and provider error text must never
+  receive API private keys, signatures, signed payloads, auth tokens, or raw
+  trading credential material.
+- Nonces are per `(environment, accountIndex, apiKeyIndex)`. Vex must serialize
+  signing for that key, persist the nonce before submit, and reconcile from
+  provider state after ambiguous failures.
+- `sendTx` acceptance is not an execution result. Vex may report API accepted or
+  sequencer pending, but may report open, partial fill, fill, cancel, or reject
+  only after provider/WebSocket/account-order evidence proves that state.
+
+Execution lifecycle vocabulary:
+
+| State | Meaning |
+|---|---|
+| `previewed` | Vex generated and stored a live-data-backed order preview |
+| `approval_pending` | The user has not approved the exact previewed order |
+| `signed` | Vex signed locally inside the privileged runtime |
+| `submitted` | Vex attempted provider submission |
+| `api_accepted` | Lighter accepted the request syntax/API submission |
+| `sequencer_pending` | Final provider outcome is not yet known |
+| `open` | Provider evidence shows the order is live on the book |
+| `partially_filled` | Provider evidence shows a partial fill |
+| `filled` | Provider evidence proves full fill |
+| `canceled` | Provider evidence proves cancellation |
+| `rejected` | Provider evidence proves rejection |
+| `ambiguous` | Vex cannot prove the final state and must not suggest blind retry |
+
+Milestone 8 is complete only when the signer strategy, nonce model, durable
+activity lifecycle, and failure/repair policy are reviewed. Live order
+submission belongs to the later approval-gated create milestone.
 
 ## Milestone 4 Auth Boundary
 
@@ -262,3 +312,11 @@ both environments. The full account auth matrix also completed for both
 environments: `/account`, `/accountsByL1Address`, and `/apikeys` were public;
 `/accountActiveOrders`, `/accountInactiveOrders`, and `/trades` required a
 read-only token; `/tokens` rejected the read-only lane with `401 invalid auth`.
+
+2026-08-10 local time: `pnpm run test:lighter:live:preview` passed against real
+Core and RHC live data through `executeProtocolTool`, with the repo e2e
+Postgres on port 5777 and migration `074_lighter_order_previews` applied. The
+proof created persisted `lighter_order` previews for both environments from
+live market details, live order books, and live public account reads. No signer,
+API private key, signature, `sendTx`, order placement, cancellation, deposit,
+withdrawal, or transfer path was introduced.
