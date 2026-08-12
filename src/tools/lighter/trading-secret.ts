@@ -7,6 +7,7 @@ export interface LighterTradingSecretMaterial {
   readonly kind: "lighter_api_private_key_secret";
   readonly privateKey: string;
   readonly [LIGHTER_TRADING_SECRET_BRAND]: true;
+  readonly toJSON: () => { readonly kind: "lighter_api_private_key_secret"; readonly privateKey: "[redacted]" };
 }
 
 export interface LighterTradingSecretReader {
@@ -54,11 +55,27 @@ export function materialFromSecret(secret: string): LighterTradingSecretMaterial
       "Use a Lighter trading API private key stored in the encrypted local vault.",
     );
   }
-  return {
-    kind: "lighter_api_private_key_secret",
-    privateKey,
-    [LIGHTER_TRADING_SECRET_BRAND]: true,
-  };
+  return Object.defineProperties({} as LighterTradingSecretMaterial, {
+    kind: {
+      value: "lighter_api_private_key_secret",
+      enumerable: true,
+    },
+    privateKey: {
+      value: privateKey,
+      enumerable: false,
+    },
+    [LIGHTER_TRADING_SECRET_BRAND]: {
+      value: true,
+      enumerable: false,
+    },
+    toJSON: {
+      value: () => ({
+        kind: "lighter_api_private_key_secret",
+        privateKey: "[redacted]" as const,
+      }),
+      enumerable: false,
+    },
+  });
 }
 
 function validateReference(reference: LighterTradingCredentialVaultReference): void {

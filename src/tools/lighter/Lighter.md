@@ -34,7 +34,7 @@ transfer, or other provider state-changing Lighter path.
 | `client.ts` | Read-only REST client and singleton |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
-| `trading-secret.ts` | Typed private-key material loader that only accepts an injected privileged reader and refuses env/managed-vault shortcuts |
+| `trading-secret.ts` | Typed private-key material loader that accepts only an injected privileged reader and redacts ordinary serialization |
 | `signer-order.ts` | Unsigned create-order request builder and deterministic Vex-assigned uint48 client-order-index derivation |
 | `signer-adapter.ts` | Official Lighter signer adapter interface plus create-order signer input/range validation; no provider submission |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
@@ -154,7 +154,8 @@ Signer and credential strategy:
   privileged reader and refuses missing, incomplete, or read-only-token material.
   It deliberately does not read `process.env`, handler params, CLI args, or the
   current managed vault keys that are mirrored into environment variables on
-  unlock.
+  unlock. The material keeps key bytes non-enumerable and returns a redacted
+  JSON shape if ordinary serialization is attempted.
 - `signer-order.ts` maps a ready-for-signer plan into unsigned Lighter
   create-order fields, including official order type and time-in-force enum
   codes, ask/bid side, integer size/price, expiry, and a deterministic uint48

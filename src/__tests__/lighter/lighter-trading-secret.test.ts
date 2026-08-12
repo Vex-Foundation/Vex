@@ -28,6 +28,16 @@ describe("Lighter trading secret boundary", () => {
     expect(material.privateKey).toBe("lighter-private-key-material-1234567890");
   });
 
+  it("redacts private-key material from ordinary object serialization", () => {
+    const material = materialFromSecret("lighter-private-key-material-1234567890");
+
+    expect(material.privateKey).toBe("lighter-private-key-material-1234567890");
+    expect(Object.keys(material)).toEqual(["kind"]);
+    expect(JSON.stringify(material)).toBe(
+      "{\"kind\":\"lighter_api_private_key_secret\",\"privateKey\":\"[redacted]\"}",
+    );
+  });
+
   it("fails closed without echoing secret material when the reader cannot read", async () => {
     const reader: LighterTradingSecretReader = {
       readTradingApiPrivateKey: vi.fn(async () => {
