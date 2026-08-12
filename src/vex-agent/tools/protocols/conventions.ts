@@ -87,6 +87,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["pageSize", "rows fetched per provider page; distinct from `limit`, which caps what is RETURNED after filtering"],
   ["environment", "explicit public service environment selector, such as Lighter core vs rhc"],
   ["marketId", "protocol-native market identifier returned by a market catalog read"],
+  ["marketSymbol", "protocol-native market symbol used to resolve a market id"],
   ["filter", "closed provider-side category/status filter declared with an enum"],
   ["resolution", "candle or chart bucket size declared with an enum"],
   ["startTimestamp", "epoch-millisecond start bound for time-series reads"],

@@ -7,6 +7,7 @@
 
 export const LIGHTER_ENVIRONMENTS = ["core", "rhc"] as const;
 export type LighterEnvironment = (typeof LIGHTER_ENVIRONMENTS)[number];
+export const LIGHTER_DEFAULT_ENVIRONMENT: LighterEnvironment = "rhc";
 
 export interface LighterEndpointConfig {
   restBaseUrl: string;
