@@ -46,6 +46,7 @@ export function isLighterOrderTerminalExecutionState(
 export const LIGHTER_ORDER_EXECUTION_REQUIRED_BOUNDARIES = [
   "fresh_matching_lighter_order_preview",
   "approval_disclosure_from_persisted_preview_and_live_reads",
+  "encrypted_vault_trading_credential_reference",
   "privileged_runtime_signing_only",
   "nonce_lock_per_environment_account_api_key",
   "durable_activity_intent_before_submit",
