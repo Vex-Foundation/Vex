@@ -221,9 +221,8 @@ const API_KEY_INDEX_PARAM: ProtocolParamDef = {
 const CLIENT_ORDER_INDEX_POLICY_PARAM: ProtocolParamDef = {
   key: "clientOrderIndexPolicy",
   type: "string",
-  required: true,
   description:
-    "Client order index policy string to bind into the preview identity, for example vex_assigned_uint48. A later create path must match it exactly.",
+    "Optional internal client-order-index policy override. Omit for normal conversational preview requests; Vex defaults this to its local uint48 assignment policy.",
 };
 
 export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
@@ -371,7 +370,6 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       timeInForce: "good-till-time",
       reduceOnly: false,
       orderExpiryOffsetMinutes: 30,
-      clientOrderIndexPolicy: "vex_assigned_uint48",
     },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],
   },

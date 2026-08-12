@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  defaultLighterTradingVaultCredentialId,
   evaluateLighterTradingCredentialReadiness,
 } from "@tools/lighter/trading-credentials.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -22,6 +23,14 @@ function readRequiredString(
   return { ok: true, value: value.trim() };
 }
 
+function readOptionalString(
+  params: Record<string, unknown>,
+  key: "previewId" | "vaultCredentialId",
+): string | null {
+  const value = params[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 function executionIntentExpiresAt(previewExpiresAt: string): string {
   const previewMs = Date.parse(previewExpiresAt);
   return new Date(Number.isFinite(previewMs) ? previewMs : Date.now()).toISOString();
@@ -40,19 +49,19 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
 
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
-    const previewId = readRequiredString(params, "previewId");
-    if (!previewId.ok) return fail(previewId.reason);
-    const vaultCredentialId = readRequiredString(params, "vaultCredentialId");
-    if (!vaultCredentialId.ok) return fail(vaultCredentialId.reason);
-
-    const preview = await lighterOrderPreviewsRepo.findFreshById(
-      sessionId,
-      environment.value,
-      previewId.value,
-    );
+    const previewId = readOptionalString(params, "previewId");
+    const preview = previewId
+      ? await lighterOrderPreviewsRepo.findFreshById(
+          sessionId,
+          environment.value,
+          previewId,
+        )
+      : await lighterOrderPreviewsRepo.findLatestFresh(sessionId, environment.value);
     if (!preview) {
       return fail(
-        `No fresh Lighter order preview ${previewId.value} found for ${environment.value} in this session. Run lighter.order.preview again.`,
+        previewId
+          ? `No fresh Lighter order preview ${previewId} found for ${environment.value} in this session. Run lighter.order.preview again.`
+          : `No fresh Lighter order preview found for ${environment.value} in this session. Run lighter.order.preview first.`,
       );
     }
     if (preview.apiKeyIndex === null) {
@@ -61,11 +70,18 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       );
     }
 
+    const vaultCredentialId =
+      readOptionalString(params, "vaultCredentialId")
+      ?? defaultLighterTradingVaultCredentialId({
+        environment: preview.environment,
+        accountIndex: preview.accountIndex,
+        apiKeyIndex: preview.apiKeyIndex,
+      });
     const readiness = evaluateLighterTradingCredentialReadiness({
       environment: preview.environment,
       accountIndex: preview.accountIndex,
       apiKeyIndex: preview.apiKeyIndex,
-      vaultCredentialId: vaultCredentialId.value,
+      vaultCredentialId,
     });
     if (!readiness.ready) {
       return fail(`Lighter trading credential is not ready: ${readiness.reason}`);

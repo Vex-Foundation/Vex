@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   previewsRepo: {
     create: vi.fn(),
     findFreshById: vi.fn(),
+    findLatestFresh: vi.fn(),
   },
   executionIntentsRepo: {
     findLiveByPreview: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock("@tools/lighter/client.js", () => ({
 vi.mock("@vex-agent/db/repos/lighter-order-previews.js", () => ({
   create: mocks.previewsRepo.create,
   findFreshById: mocks.previewsRepo.findFreshById,
+  findLatestFresh: mocks.previewsRepo.findLatestFresh,
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
@@ -311,22 +313,20 @@ beforeEach(() => {
 
 describe("Lighter agent read handlers", () => {
   it("prepares an approval-gated Lighter order create without signing or submitting", async () => {
-    mocks.previewsRepo.findFreshById.mockResolvedValueOnce(previewRow());
+    mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce(previewRow());
     mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);
     mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValueOnce(executionIntentRow());
 
     const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
       environment: "rhc",
-      previewId: "lighter-preview-1",
-      vaultCredentialId: "lighter/rhc/account-42/api-key-7",
     }, READ_CTX);
 
     expect(result.success, result.output).toBe(true);
-    expect(mocks.previewsRepo.findFreshById).toHaveBeenCalledWith(
+    expect(mocks.previewsRepo.findLatestFresh).toHaveBeenCalledWith(
       "session-1",
       "rhc",
-      "lighter-preview-1",
     );
+    expect(mocks.previewsRepo.findFreshById).not.toHaveBeenCalled();
     expect(mocks.executionIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith(
       {},
       expect.objectContaining({
@@ -337,6 +337,9 @@ describe("Lighter agent read handlers", () => {
         }),
         credentialReadiness: expect.objectContaining({
           ready: true,
+          reference: expect.objectContaining({
+            vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+          }),
           nonceScope: {
             environment: "rhc",
             accountIndex: 42,
@@ -824,14 +827,19 @@ describe("Lighter agent read handlers", () => {
         timeInForce: "good-till-time",
         reduceOnly: false,
         orderExpiryOffsetMinutes: 30,
-        clientOrderIndexPolicy: "vex_assigned_uint48",
       });
 
       expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
       const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
-        readonly preview: { readonly identity: { readonly expiryMs: string } };
+        readonly preview: {
+          readonly identity: {
+            readonly expiryMs: string;
+            readonly clientOrderIndexPolicy: string;
+          };
+        };
       };
       expect(persisted.preview.identity.expiryMs).toBe(String(nowMs + 30 * 60 * 1000));
+      expect(persisted.preview.identity.clientOrderIndexPolicy).toBe("vex_assigned_uint48");
       expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     } finally {
       nowSpy.mockRestore();

@@ -1,4 +1,5 @@
 import {
+  LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT,
   LIGHTER_ORDER_SIDES,
   LIGHTER_ORDER_TIME_IN_FORCE,
   LIGHTER_ORDER_TYPES,
@@ -338,8 +339,8 @@ export function readLighterOrderPreviewParams(
   if (!orderExpiry.ok) return orderExpiry;
   const reduceOnly = readBoolean(params, "reduceOnly");
   if (reduceOnly === undefined) return { ok: false, reason: "Missing required: reduceOnly." };
-  const clientOrderIndexPolicy = readRequiredString(params, "clientOrderIndexPolicy");
-  if (!clientOrderIndexPolicy.ok) return clientOrderIndexPolicy;
+  const clientOrderIndexPolicy =
+    readString(params, "clientOrderIndexPolicy") ?? LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT;
   return {
     ok: true,
     value: {
@@ -353,7 +354,7 @@ export function readLighterOrderPreviewParams(
       timeInForce: timeInForce.value as LighterOrderTimeInForce,
       reduceOnly,
       orderExpiry: orderExpiry.value,
-      clientOrderIndexPolicy: clientOrderIndexPolicy.value,
+      clientOrderIndexPolicy,
     },
   };
 }

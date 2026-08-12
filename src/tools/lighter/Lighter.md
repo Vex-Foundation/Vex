@@ -141,11 +141,12 @@ Signer and credential strategy:
   `protocol_executions` anchors, and the opaque encrypted-vault credential
   reference. It does not store key bytes, auth tokens, signatures, signed
   payloads, or provider submit bodies.
-- `lighter.order.create.prepare` is the only user-facing bridge from preview
-  to approval today. It requires the fresh preview id and an opaque encrypted
-  vault credential reference, creates the local execution-intent row, then uses
-  Vex's trusted prepared-action registry to request approval for
-  `lighter.order.create`.
+- `lighter.order.create.prepare` is the user-facing bridge from preview to
+  approval today. In the normal conversational flow it uses the latest fresh
+  preview in the session and derives the local encrypted-vault reference from
+  the preview's environment, account index, and API-key index, then creates the
+  local execution-intent row and uses Vex's trusted prepared-action registry to
+  request approval for `lighter.order.create`.
 - Approved `lighter.order.create` records the approval decision against the
   local Lighter execution intent, then refuses before signer initialization or
   provider submission. This is intentional until the privileged signer adapter

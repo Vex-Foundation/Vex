@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 
 export const LIGHTER_ORDER_PREVIEW_PROVIDER_VERSION = "lighter-order-preview-v1";
+export const LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT = "vex_assigned_uint48";
 
 export const LIGHTER_ORDER_TYPES = ["limit", "market"] as const;
 export const LIGHTER_ORDER_SIDES = ["buy", "sell"] as const;

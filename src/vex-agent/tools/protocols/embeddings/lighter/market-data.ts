@@ -135,12 +135,12 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.order.create.prepare": {
     embeddingText: embeddingText(
       `Prepare an approval-gated Lighter order create from a fresh persisted preview and an opaque encrypted-vault credential reference. ` +
-      `Use when: the user has already run lighter.order.preview and wants Vex to request approval for the exact order before any signer or submission path can run. ` +
+      `Use when: the user has already run lighter.order.preview and says to prepare that order, create that order, or send it for approval before any signer or submission path can run. Use the latest fresh preview when no preview id is specified; Vex derives the local vault reference from the preview-bound environment, account index, and API-key index. ` +
       `Creates local durable execution intent state and hands off to the approval card; it never reads API private key bytes, signs, submits, cancels, deposits, withdraws, transfers, or calls sendTx. ` +
-      `Example queries: prepare lighter order create approval, approve rhc lighter preview, ready this lighter preview for order create.`,
+      `Example queries: prepare that lighter order for approval, create that RHC order after approval, ready the latest lighter preview for order create.`,
     ),
     aliases: ["lighter create prepare", "lighter order approval", "prepare order create", "approval gated lighter order"],
-    exampleIntents: ["prepare lighter order create approval", "approve rhc lighter preview", "ready this lighter preview for order create"],
+    exampleIntents: ["prepare that lighter order for approval", "create that RHC order after approval", "ready the latest lighter preview for order create"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "low",

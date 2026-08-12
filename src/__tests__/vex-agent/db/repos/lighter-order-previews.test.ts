@@ -236,4 +236,21 @@ describe("lighter order previews repo", () => {
     expect(params).toEqual([SESSION_ID, "rhc", built.previewId]);
     expect(found?.previewId).toBe(built.previewId);
   });
+
+  it("finds the latest fresh preview for a session and environment", async () => {
+    const built = preview();
+    mockQueryOne.mockResolvedValueOnce(row());
+
+    const found = await repo.findLatestFresh(SESSION_ID, "rhc");
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("FROM lighter_order_previews");
+    expect(sql).toContain("WHERE session_id = $1");
+    expect(sql).toContain("AND environment = $2");
+    expect(sql).toContain("AND expires_at > NOW()");
+    expect(sql).toContain("ORDER BY created_at DESC");
+    expect(sql).toContain("LIMIT 1");
+    expect(params).toEqual([SESSION_ID, "rhc"]);
+    expect(found?.previewId).toBe(built.previewId);
+  });
 });

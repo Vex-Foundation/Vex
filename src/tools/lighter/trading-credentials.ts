@@ -67,6 +67,14 @@ export interface LighterTradingCredentialReadinessInput {
   readonly vaultCredentialId?: string | null;
 }
 
+export function defaultLighterTradingVaultCredentialId(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+}): string {
+  return `lighter/${input.environment}/account-${input.accountIndex}/api-key-${input.apiKeyIndex}`;
+}
+
 export function evaluateLighterTradingCredentialReadiness(
   input: LighterTradingCredentialReadinessInput,
 ): LighterTradingCredentialReadiness {
