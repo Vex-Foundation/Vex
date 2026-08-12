@@ -33,6 +33,7 @@ transfer, or other provider state-changing Lighter path.
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
 | `trading-secret.ts` | Typed private-key material loader that only accepts an injected privileged reader and refuses env/managed-vault shortcuts |
+| `signer-order.ts` | Unsigned create-order request builder and deterministic Vex-assigned uint48 client-order-index derivation |
 | `../vex-agent/tools/protocols/lighter/execution-plan.ts` | Approved-intent to signer-bound execution plan; refuses while live trading is disabled |
 
 Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
@@ -150,6 +151,11 @@ Signer and credential strategy:
   It deliberately does not read `process.env`, handler params, CLI args, or the
   current managed vault keys that are mirrored into environment variables on
   unlock.
+- `signer-order.ts` maps a ready-for-signer plan into unsigned Lighter
+  create-order fields, including official order type and time-in-force enum
+  codes, ask/bid side, integer size/price, expiry, and a deterministic uint48
+  Vex-assigned client order index derived from the preview match hash. It
+  creates no signature and performs no provider call.
 - `lighter_order_execution_intents` now stores the durable bridge between a
   preview and any future signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /

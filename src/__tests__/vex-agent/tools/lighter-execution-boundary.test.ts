@@ -28,6 +28,8 @@ const EXECUTION_BOUNDARY_SOURCE = join(
 
 const FORBIDDEN_UNTIL_CREATE_MILESTONE =
   /\b(sendTx|sendTxBatch|createOrder|cancelOrder|signOrder|signTransaction)\s*\(/;
+const FORBIDDEN_SIGNED_ARTIFACT_RE =
+  /\b(signature|signedPayload|signedTransaction|transactionHash|sendTxPayload)\b/;
 const TRADING_CREDENTIAL_ENV_KEY_RE = /\bLIGHTER_(CORE|RHC)_API_PRIVATE_KEY\b/;
 const FORBIDDEN_TRADING_SECRET_SHORTCUT_RE =
   /\b(process\.env|readUnlockedSecret|writeSecretVaultSecrets|VAULT_SECRET_KEYS)\b/;
@@ -145,5 +147,12 @@ describe("Lighter execution boundary", () => {
     const source = readFileSync(file, "utf-8");
     expect(source).not.toMatch(FORBIDDEN_TRADING_SECRET_SHORTCUT_RE);
     expect(source).not.toMatch(TRADING_CREDENTIAL_ENV_KEY_RE);
+  });
+
+  it("keeps the signer-order adapter unsigned and provider-disconnected", () => {
+    const file = join(ROOT, "src/tools/lighter/signer-order.ts");
+    const source = readFileSync(file, "utf-8");
+    expect(source).not.toMatch(FORBIDDEN_UNTIL_CREATE_MILESTONE);
+    expect(source).not.toMatch(FORBIDDEN_SIGNED_ARTIFACT_RE);
   });
 });
