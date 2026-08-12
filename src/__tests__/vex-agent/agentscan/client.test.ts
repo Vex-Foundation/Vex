@@ -55,13 +55,16 @@ describe("sendEvents — wire shape", () => {
     const client = buildAgentscanClient("http://localhost");
     const outcome = await client.sendEvents({ ...SEND_INPUT, backfill: true });
 
-    expect(outcome).toEqual({ kind: "ok", accepted: 2, duplicates: 1, rejectedIndexes: [] });
+    expect(outcome).toEqual({ kind: "ok", accepted: 2, duplicates: 1, rejectedIndexes: [], agentHealth: null });
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost/v1/events");
     expect(url).not.toContain(TOKEN);
     expect((init.headers as Record<string, string>)["Authorization"]).toBe(`Bearer ${TOKEN}`);
     expect(JSON.parse(init.body as string)).toEqual({
-      schemaVersion: 1,
+      // 2 declares that this build's confirmedAt is the settling block time
+      // (or null), never local observation time - the server side's request
+      // so it can later relax the time rule for version-1 clients only.
+      schemaVersion: 2,
       agentHash: HASH,
       backfill: true,
       events: [],
@@ -72,7 +75,33 @@ describe("sendEvents — wire shape", () => {
     stubFetch(jsonResponse(200, { accepted: 1, duplicates: 0, rejected: [{ index: 3, code: "validation_failed" }] }));
     const client = buildAgentscanClient("http://localhost");
     const outcome = await client.sendEvents(SEND_INPUT);
-    expect(outcome).toEqual({ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [3] });
+    expect(outcome).toEqual({ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [3], agentHealth: null });
+  });
+
+  it("reads the additive agent-health field, tolerantly", async () => {
+    stubFetch(jsonResponse(200, {
+      accepted: 1, duplicates: 0, rejected: [],
+      agent: { strikeCount: 2, status: "active" },
+    }));
+    const client = buildAgentscanClient("http://localhost");
+    const outcome = await client.sendEvents(SEND_INPUT);
+    expect(outcome).toMatchObject({ kind: "ok", agentHealth: { strikeCount: 2, status: "active" } });
+  });
+
+  it.each([
+    ["missing entirely", {}],
+    ["not a record", { agent: "quarantined" }],
+    ["negative strikes", { agent: { strikeCount: -1, status: "active" } }],
+    ["missing status", { agent: { strikeCount: 1 } }],
+    ["null strikes (Number(null) is 0)", { agent: { strikeCount: null, status: "active" } }],
+    ["boolean strikes (Number(true) is 1)", { agent: { strikeCount: true, status: "active" } }],
+    ["stringly strikes", { agent: { strikeCount: "2", status: "active" } }],
+    ["whitespace-only status", { agent: { strikeCount: 1, status: "   " } }],
+  ])("agent-health reads as null when %s", async (_label, extra) => {
+    stubFetch(jsonResponse(200, { accepted: 1, duplicates: 0, rejected: [], ...extra }));
+    const client = buildAgentscanClient("http://localhost");
+    const outcome = await client.sendEvents(SEND_INPUT);
+    expect(outcome).toMatchObject({ kind: "ok", agentHealth: null });
   });
 
   it.each([

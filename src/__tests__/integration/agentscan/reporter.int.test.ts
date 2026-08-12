@@ -157,6 +157,7 @@ class FakeClient implements AgentscanClient {
         accepted: input.events.length,
         duplicates: 0,
         rejectedIndexes: [],
+        agentHealth: null,
       }
     );
   }
@@ -705,7 +706,7 @@ describe("reporter lane — server-answer table", () => {
     const session = new FakeSessionClient();
 
     // Run 1: handshake + backfill both rows; one accepted, one rejected.
-    client.sendOutcomes = [{ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [1] }];
+    client.sendOutcomes = [{ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [1], agentHealth: null }];
     const first = await lane.runAgentscanReport(depsWith(client, "http://localhost", session));
     expect(first.sent).toBe(1);
     expect(first.rejected).toBe(1);
@@ -761,7 +762,7 @@ describe("reporter lane — server-answer table", () => {
     await seedEligibleSwap();
     await seedEligibleSwap();
     const client = new FakeClient();
-    client.sendOutcomes = [{ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [1] }];
+    client.sendOutcomes = [{ kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [1], agentHealth: null }];
 
     const first = await lane.runAgentscanReport(depsWith(client));
     expect(first.sent).toBe(1);

@@ -110,6 +110,16 @@ async function sendGroup(
   });
 
   if (outcome.kind === "ok") {
+    // The server's additive health field (2026-08-12): a non-zero strike
+    // count means the install is on the road to quarantine (403 at the
+    // server's threshold) - surface it BEFORE reporting goes dark, so the
+    // operator can act while the identity is still healthy.
+    if (outcome.agentHealth !== null && outcome.agentHealth.strikeCount > 0) {
+      logger.warn("agentscan.report.agent_strikes", {
+        strikeCount: outcome.agentHealth.strikeCount,
+        status: outcome.agentHealth.status,
+      });
+    }
     const rejectedIndexes = new Set(outcome.rejectedIndexes);
     const sentIds = mappable
       .filter((_, index) => !rejectedIndexes.has(index))

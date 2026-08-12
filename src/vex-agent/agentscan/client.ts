@@ -28,8 +28,26 @@ import type { AgentscanEvent } from "./mapper.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DETAIL_LEN = 120;
-/** Contract v1 wire version — the server hard-rejects anything else. */
-const SCHEMA_VERSION = 1;
+/**
+ * Wire version. The server accepts 1|2|3 and does not branch on it — it only
+ * records the value. 2 declares, at the server side's request (2026-08-12),
+ * that this build sends `confirmedAt` as the settling block time (or null),
+ * never the local observation time: that lets the server later relax its
+ * time-tolerance rule for version-1 clients only, without weakening the
+ * trust model for current ones.
+ */
+const SCHEMA_VERSION = 2;
+
+/**
+ * Additive `agent` field of the ingest response (server 2026-08-12): the
+ * install's strike count and standing, so the client can warn BEFORE a
+ * quarantine turns into a hard 403. Tolerant reader — absent on older
+ * servers, and any unreadable shape reads as "not reported".
+ */
+export interface AgentHealth {
+  readonly strikeCount: number;
+  readonly status: string;
+}
 
 export type SendOutcome =
   | {
@@ -37,6 +55,7 @@ export type SendOutcome =
       readonly accepted: number;
       readonly duplicates: number;
       readonly rejectedIndexes: number[];
+      readonly agentHealth: AgentHealth | null;
     }
   | { readonly kind: "auth_lost" }
   | { readonly kind: "stopped"; readonly reason: "consent_revoked" | "quarantined" }
@@ -89,7 +108,7 @@ async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<Send
   const body = await readJson(response).catch(() => null);
 
   if (response.ok) {
-    // TOLERANT READER: only the three result fields are consumed; anything
+    // TOLERANT READER: only the known result fields are consumed; anything
     // extra the server sends is ignored rather than allowed to fail the parse.
     const record = isRecord(body) ? body : {};
     const rejected = Array.isArray(record.rejected) ? record.rejected : [];
@@ -100,6 +119,7 @@ async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<Send
       rejectedIndexes: rejected
         .map((item) => (isRecord(item) ? Number(item.index) : Number.NaN))
         .filter((index) => Number.isInteger(index) && index >= 0),
+      agentHealth: readAgentHealth(record.agent),
     };
   }
 
@@ -142,6 +162,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function toCount(value: unknown): number {
   const n = Number(value);
   return Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+/**
+ * The additive `agent` response field, or null when absent or unreadable.
+ * No coercion: `strikeCount` must BE a number (Number(null) is 0 and
+ * Number(true) is 1, so coercing would read garbage as a valid count).
+ */
+function readAgentHealth(value: unknown): AgentHealth | null {
+  if (!isRecord(value)) return null;
+  const strikeCount = value.strikeCount;
+  if (typeof strikeCount !== "number" || !Number.isInteger(strikeCount) || strikeCount < 0) return null;
+  if (typeof value.status !== "string" || value.status.trim().length === 0) return null;
+  return { strikeCount, status: value.status };
 }
 
 function errorCode(body: unknown): string | null {
