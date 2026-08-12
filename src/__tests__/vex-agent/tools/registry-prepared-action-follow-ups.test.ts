@@ -103,18 +103,20 @@ describe("prepared-action follow-up registry", () => {
         },
       }),
     ).toEqual({ ok: false, reason: "invalid_contract" });
-    expect(
-      validatePreparedActionFollowUp("execute_tool", {
-        ...lighterCandidate(),
-        approvalPreview: {
-          ...lighterCandidate().approvalPreview,
-          criticalArgs: {
-            ...lighterCandidate().approvalPreview.criticalArgs,
-            apiKeyIndex: 255,
+    for (const apiKeyIndex of [0, 1, 2, 3, 255]) {
+      expect(
+        validatePreparedActionFollowUp("execute_tool", {
+          ...lighterCandidate(),
+          approvalPreview: {
+            ...lighterCandidate().approvalPreview,
+            criticalArgs: {
+              ...lighterCandidate().approvalPreview.criticalArgs,
+              apiKeyIndex,
+            },
           },
-        },
-      }),
-    ).toEqual({ ok: false, reason: "invalid_contract" });
+        }),
+      ).toEqual({ ok: false, reason: "invalid_contract" });
+    }
   });
 
   it("rejects extra confirm args and spoofed or malformed trusted previews", () => {

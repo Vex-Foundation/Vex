@@ -168,6 +168,17 @@ export async function getPending(): Promise<ApprovalItem[]> {
   return rows.map(mapRow);
 }
 
+export async function getByIdForSession(
+  id: string,
+  sessionId: string,
+): Promise<ApprovalItem | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    "SELECT * FROM approval_queue WHERE id = $1 AND session_id = $2",
+    [id, sessionId],
+  );
+  return row ? mapRow(row) : null;
+}
+
 export async function getPendingCount(): Promise<number> {
   const r = await queryOne<{ c: string }>("SELECT COUNT(*) AS c FROM approval_queue WHERE status = 'pending'");
   return parseInt(r?.c ?? "0", 10);

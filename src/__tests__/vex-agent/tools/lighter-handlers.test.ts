@@ -37,6 +37,12 @@ const mocks = vi.hoisted(() => ({
     findByIntentId: vi.fn(),
     markApprovalDecision: vi.fn(),
   },
+  approvalsRepo: {
+    getByIdForSession: vi.fn(),
+  },
+  approvalIntentsRepo: {
+    getByApprovalId: vi.fn(),
+  },
   sessionLock: {
     withSessionControlLock: vi.fn(),
   },
@@ -63,6 +69,14 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
   createApprovalPendingWith: mocks.executionIntentsRepo.createApprovalPendingWith,
   findByIntentId: mocks.executionIntentsRepo.findByIntentId,
   markApprovalDecision: mocks.executionIntentsRepo.markApprovalDecision,
+}));
+
+vi.mock("@vex-agent/db/repos/approvals.js", () => ({
+  getByIdForSession: mocks.approvalsRepo.getByIdForSession,
+}));
+
+vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
+  getByApprovalId: mocks.approvalIntentsRepo.getByApprovalId,
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -290,6 +304,69 @@ function executionIntentRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function approvalQueueRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "approval-1",
+    toolCall: {
+      command: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: {
+          intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+        },
+      },
+    },
+    reasoning: "Lighter order create prepared; approval required.",
+    status: "approved",
+    sessionId: "session-1",
+    toolCallId: "tool-call-1",
+    permissionAtEnqueue: "restricted",
+    createdAt: "2026-08-12T00:00:03.000Z",
+    resolvedAt: "2026-08-12T00:00:04.000Z",
+    ...overrides,
+  };
+}
+
+function approvalIntentAuditRow(overrides: Record<string, unknown> = {}) {
+  return {
+    approvalId: "approval-1",
+    sessionId: "session-1",
+    missionRunId: null,
+    toolCallId: "tool-call-1",
+    actionKind: "external_post",
+    riskLevel: "high",
+    previewJson: {
+      toolName: "execute_tool",
+      criticalArgs: {
+        toolId: "lighter.order.create",
+        intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        marketIndex: 0,
+        side: "buy",
+        baseAmountInteger: "10000",
+        priceInteger: "300000",
+        orderType: "limit",
+        timeInForce: "good-till-time",
+        reduceOnly: false,
+        previewId: "lighter-preview-1",
+        matchHash: "a".repeat(64),
+      },
+    },
+    policyJson: {},
+    expiresAt: "2030-01-01T00:00:00.000Z",
+    idempotencyKey: null,
+    createdAt: "2026-08-12T00:00:03.000Z",
+    decidedAt: "2026-08-12T00:00:04.000Z",
+    decision: "approved",
+    decisionReason: "user approved exact Lighter order create intent",
+    executionStatus: "dispatching",
+    executionResultHash: null,
+    ...overrides,
+  };
+}
+
 async function callJson(toolId: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
   const handler = LIGHTER_HANDLERS[toolId];
   if (handler === undefined) throw new Error(`missing handler for ${toolId}`);
@@ -311,6 +388,8 @@ beforeEach(() => {
   delete process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN;
   delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
+  mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
+  mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
 });
 
 describe("Lighter agent read handlers", () => {
@@ -420,6 +499,11 @@ describe("Lighter agent read handlers", () => {
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
+    expect(mocks.approvalsRepo.getByIdForSession).toHaveBeenCalledWith(
+      "approval-1",
+      "session-1",
+    );
+    expect(mocks.approvalIntentsRepo.getByApprovalId).toHaveBeenCalledWith("approval-1");
     expect(mocks.executionIntentsRepo.markApprovalDecision).toHaveBeenCalledWith({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
       decision: "approved",
@@ -430,6 +514,57 @@ describe("Lighter agent read handlers", () => {
     expect(result.output).toContain("live trading is disabled");
     expect(result.output).toContain("No order was signed or submitted.");
     expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
+  });
+
+  it("refuses approved Lighter create when the approval row targets another intent", async () => {
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
+    mocks.approvalsRepo.getByIdForSession.mockResolvedValueOnce(approvalQueueRow({
+      toolCall: {
+        command: "execute_tool",
+        args: {
+          toolId: "lighter.order.create",
+          params: {
+            intentId: "lighter-exec-00000000-0000-4000-8000-000000000002",
+          },
+        },
+      },
+    }));
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+    }, APPROVED_CTX);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("approval record does not match");
+    expect(result.output).toContain("No order was signed or submitted.");
+    expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
+    expect(mocks.executionIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
+  });
+
+  it("refuses approved Lighter create when the approval preview no longer matches the intent", async () => {
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
+    const approvedAudit = approvalIntentAuditRow();
+    const approvedPreview = approvedAudit.previewJson as Record<string, unknown>;
+    const approvedCriticalArgs = approvedPreview.criticalArgs as Record<string, unknown>;
+    mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValueOnce(approvalIntentAuditRow({
+      previewJson: {
+        ...approvedPreview,
+        criticalArgs: {
+          ...approvedCriticalArgs,
+          matchHash: "b".repeat(64),
+        },
+      },
+    }));
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+    }, APPROVED_CTX);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("approval record does not match");
+    expect(result.output).toContain("No order was signed or submitted.");
+    expect(result.output).not.toContain("lighter/rhc/account-42/api-key-7");
+    expect(mocks.executionIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
   });
 
   it("refuses approved Lighter create when unsigned signer order assembly no longer matches policy", async () => {

@@ -202,7 +202,7 @@ function validateLighterOrderCreateFollowUp(
     criticalArgs.accountIndex < 0 ||
     typeof criticalArgs.apiKeyIndex !== "number" ||
     !Number.isSafeInteger(criticalArgs.apiKeyIndex) ||
-    criticalArgs.apiKeyIndex < 2 ||
+    criticalArgs.apiKeyIndex < 4 ||
     criticalArgs.apiKeyIndex > 254 ||
     typeof criticalArgs.marketIndex !== "number" ||
     !Number.isSafeInteger(criticalArgs.marketIndex) ||

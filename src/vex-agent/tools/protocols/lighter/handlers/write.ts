@@ -21,6 +21,7 @@ import {
   executeApprovedLighterCreateOrder,
   getConfiguredLighterCreateOrderExecutionDeps,
 } from "../order-create-execution.js";
+import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -183,6 +184,15 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     const intent = await lighterOrderExecutionIntentsRepo.findByIntentId(sessionId, intentId.value);
     if (!intent) {
       return fail(`No Lighter order execution intent ${intentId.value} found in this session.`);
+    }
+    try {
+      await assertLighterOrderCreateApprovalBinding({
+        approvalId: context.approvalId,
+        sessionId,
+        intent,
+      });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await lighterOrderExecutionIntentsRepo.markApprovalDecision({
