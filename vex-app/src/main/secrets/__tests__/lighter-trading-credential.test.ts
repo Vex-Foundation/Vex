@@ -14,6 +14,7 @@ const REFERENCE: LighterTradingCredentialVaultReference = {
 
 const mockRequireUnlockedMasterPassword = vi.fn();
 const mockUnlockSecretVault = vi.fn();
+const mockWriteSecretVaultExtraSecrets = vi.fn();
 
 vi.mock("../session.js", () => ({
   requireUnlockedMasterPassword: () => mockRequireUnlockedMasterPassword(),
@@ -21,6 +22,8 @@ vi.mock("../session.js", () => ({
 
 vi.mock("@vex-lib/local-secret-vault.js", () => ({
   unlockSecretVault: (...args: unknown[]) => mockUnlockSecretVault(...args),
+  writeSecretVaultExtraSecrets: (...args: unknown[]) =>
+    mockWriteSecretVaultExtraSecrets(...args),
 }));
 
 vi.mock("../../paths/config-dir.js", () => ({
@@ -35,6 +38,7 @@ async function loadModule(): Promise<typeof import("../lighter-trading-credentia
 beforeEach(() => {
   mockRequireUnlockedMasterPassword.mockReset();
   mockUnlockSecretVault.mockReset();
+  mockWriteSecretVaultExtraSecrets.mockReset();
   delete process.env[REFERENCE.vaultCredentialId];
 });
 
@@ -114,5 +118,146 @@ describe("Lighter trading credential vault reader", () => {
     expect(() => readUnlockedLighterTradingApiPrivateKey(REFERENCE))
       .toThrow("local vault is locked");
     expect(mockUnlockSecretVault).not.toHaveBeenCalled();
+  });
+});
+
+describe("Lighter trading credential vault import", () => {
+  it("writes a validated key into vault extraSecrets only", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockWriteSecretVaultExtraSecrets.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+      },
+    });
+    const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
+
+    const status = writeUnlockedLighterTradingApiPrivateKey(
+      REFERENCE,
+      `  ${PRIVATE_KEY}  `,
+    );
+
+    expect(status).toEqual({ present: true, reference: REFERENCE });
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
+      "correct-password",
+      { [REFERENCE.vaultCredentialId]: PRIVATE_KEY },
+      { filePath: "/tmp/vex-test-vault" },
+    );
+    expect(mockUnlockSecretVault).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid key material before touching the vault", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
+
+    expect(() =>
+      writeUnlockedLighterTradingApiPrivateKey(
+        REFERENCE,
+        "ro:42:single:4102444800:abcdef",
+      ),
+    ).toThrow("Read-only Lighter tokens cannot sign");
+    expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
+    expect(mockUnlockSecretVault).not.toHaveBeenCalled();
+  });
+
+  it("rejects mismatched references before validating or writing", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
+
+    expect(() =>
+      writeUnlockedLighterTradingApiPrivateKey(
+        { ...REFERENCE, vaultCredentialId: "lighter/rhc/account-42/api-key-8" },
+        PRIVATE_KEY,
+      ),
+    ).toThrow("does not match");
+    expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without echoing credential material when import fails", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockWriteSecretVaultExtraSecrets.mockImplementation(() => {
+      throw new Error(`raw secret ${PRIVATE_KEY}`);
+    });
+    const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
+
+    let caught: unknown = null;
+    try {
+      writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(String(caught)).toContain("could not be saved");
+    expect(String(caught)).not.toContain(PRIVATE_KEY);
+  });
+
+  it("fails closed while the vault is locked", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({
+      ok: false,
+      error: {
+        code: "wallet.keystore_locked",
+        message: "raw internal detail",
+      },
+    });
+    const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
+
+    expect(() =>
+      writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY),
+    ).toThrow("local vault is locked");
+    expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
+  });
+});
+
+describe("Lighter trading credential vault status and removal", () => {
+  it("reports presence without returning key material", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+      },
+    });
+    const { getUnlockedLighterTradingCredentialStatus } = await loadModule();
+
+    const status = getUnlockedLighterTradingCredentialStatus(REFERENCE);
+
+    expect(status).toEqual({ present: true, reference: REFERENCE });
+    expect(JSON.stringify(status)).not.toContain(PRIVATE_KEY);
+  });
+
+  it("reports absence when the matching extra secret is missing", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {},
+    });
+    const { getUnlockedLighterTradingCredentialStatus } = await loadModule();
+
+    expect(getUnlockedLighterTradingCredentialStatus(REFERENCE)).toEqual({
+      present: false,
+      reference: REFERENCE,
+    });
+  });
+
+  it("deletes the matching key from vault extraSecrets", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockWriteSecretVaultExtraSecrets.mockReturnValue({
+      version: 1,
+      secrets: {},
+    });
+    const { deleteUnlockedLighterTradingApiPrivateKey } = await loadModule();
+
+    const status = deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
+
+    expect(status).toEqual({ present: false, reference: REFERENCE });
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
+      "correct-password",
+      { [REFERENCE.vaultCredentialId]: null },
+      { filePath: "/tmp/vex-test-vault" },
+    );
   });
 });

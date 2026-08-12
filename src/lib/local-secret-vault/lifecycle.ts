@@ -7,7 +7,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { VAULT_SECRET_KEYS, type VaultSecretKey } from "../secret-keys.js";
+import {
+  VAULT_SECRET_KEYS,
+  isVaultSecretKey,
+  type VaultSecretKey,
+} from "../secret-keys.js";
 import {
   LocalSecretVaultError,
   resolveVaultPath,
@@ -175,6 +179,38 @@ export function writeSecretVaultSecrets(
     // a write here cannot strip them (forward-compat round-trip).
     ...(current.extraSecrets && Object.keys(current.extraSecrets).length > 0
       ? { extraSecrets: current.extraSecrets }
+      : {}),
+  };
+  atomicWriteJson(resolveVaultPath(options), encryptContents(next, password));
+  return next;
+}
+
+export function writeSecretVaultExtraSecrets(
+  password: string,
+  updates: Readonly<Record<string, string | null>>,
+  options: LocalSecretVaultOptions = {},
+): LocalSecretVaultContents {
+  const current = secretVaultExists(options)
+    ? unlockSecretVault(password, options)
+    : createSecretVault(password, options);
+  const nextExtraSecrets: Record<string, string> = {
+    ...(current.extraSecrets ?? {}),
+  };
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (isVaultSecretKey(key)) continue;
+    if (typeof value === "string" && value.length > 0) {
+      nextExtraSecrets[key] = value;
+    } else {
+      delete nextExtraSecrets[key];
+    }
+  }
+
+  const next: LocalSecretVaultContents = {
+    version: VAULT_VERSION,
+    secrets: { ...current.secrets },
+    ...(Object.keys(nextExtraSecrets).length > 0
+      ? { extraSecrets: nextExtraSecrets }
       : {}),
   };
   atomicWriteJson(resolveVaultPath(options), encryptContents(next, password));

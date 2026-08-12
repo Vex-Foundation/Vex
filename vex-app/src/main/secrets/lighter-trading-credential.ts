@@ -2,17 +2,107 @@ import {
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
-import type { LighterTradingSecretReader } from "@tools/lighter/trading-secret.js";
+import {
+  materialFromSecret,
+  type LighterTradingSecretReader,
+} from "@tools/lighter/trading-secret.js";
 import { ErrorCodes, VexError } from "../../../../src/errors.js";
-import { unlockSecretVault } from "@vex-lib/local-secret-vault.js";
+import {
+  unlockSecretVault,
+  writeSecretVaultExtraSecrets,
+} from "@vex-lib/local-secret-vault.js";
 import { SECRETS_VAULT_FILE } from "../paths/config-dir.js";
 import { requireUnlockedMasterPassword } from "./session.js";
+
+export interface UnlockedLighterTradingCredentialStatus {
+  readonly present: boolean;
+  readonly reference: LighterTradingCredentialVaultReference;
+}
 
 export function createUnlockedVaultLighterTradingSecretReader(): LighterTradingSecretReader {
   return {
     readTradingApiPrivateKey: async (reference) =>
       readUnlockedLighterTradingApiPrivateKey(reference),
   };
+}
+
+export function writeUnlockedLighterTradingApiPrivateKey(
+  reference: LighterTradingCredentialVaultReference,
+  privateKey: string,
+): UnlockedLighterTradingCredentialStatus {
+  assertReference(reference);
+  const material = materialFromSecret(privateKey);
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) {
+    throw lockedCredentialError("saved");
+  }
+
+  try {
+    writeSecretVaultExtraSecrets(
+      password.data,
+      { [reference.vaultCredentialId]: material.privateKey },
+      { filePath: SECRETS_VAULT_FILE },
+    );
+    return { present: true, reference };
+  } catch {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Lighter trading credential could not be saved through the privileged vault boundary.",
+      "Unlock Vex and retry importing the Lighter trading credential.",
+    );
+  }
+}
+
+export function deleteUnlockedLighterTradingApiPrivateKey(
+  reference: LighterTradingCredentialVaultReference,
+): UnlockedLighterTradingCredentialStatus {
+  assertReference(reference);
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) {
+    throw lockedCredentialError("removed");
+  }
+
+  try {
+    writeSecretVaultExtraSecrets(
+      password.data,
+      { [reference.vaultCredentialId]: null },
+      { filePath: SECRETS_VAULT_FILE },
+    );
+    return { present: false, reference };
+  } catch {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Lighter trading credential could not be removed through the privileged vault boundary.",
+      "Unlock Vex and retry removing the Lighter trading credential.",
+    );
+  }
+}
+
+export function getUnlockedLighterTradingCredentialStatus(
+  reference: LighterTradingCredentialVaultReference,
+): UnlockedLighterTradingCredentialStatus {
+  assertReference(reference);
+  const password = requireUnlockedMasterPassword();
+  if (!password.ok) {
+    throw lockedCredentialError("checked");
+  }
+
+  try {
+    const contents = unlockSecretVault(password.data, {
+      filePath: SECRETS_VAULT_FILE,
+    });
+    const value = contents.extraSecrets?.[reference.vaultCredentialId];
+    return {
+      present: typeof value === "string" && value.trim().length > 0,
+      reference,
+    };
+  } catch {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Lighter trading credential status is not readable through the privileged vault boundary.",
+      "Unlock Vex and retry after the Lighter trading credential is imported.",
+    );
+  }
 }
 
 export function readUnlockedLighterTradingApiPrivateKey(
@@ -41,6 +131,14 @@ export function readUnlockedLighterTradingApiPrivateKey(
       "Unlock Vex and retry after the Lighter trading credential is imported.",
     );
   }
+}
+
+function lockedCredentialError(action: "saved" | "removed" | "checked"): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `Lighter trading credential cannot be ${action} because the local vault is locked.`,
+    "Unlock Vex before changing Lighter trading credentials.",
+  );
 }
 
 function assertReference(reference: LighterTradingCredentialVaultReference): void {
