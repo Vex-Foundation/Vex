@@ -95,6 +95,23 @@ export async function findLatestFreshByMatch(
   return row ? mapRow(row) : null;
 }
 
+export async function findFreshById(
+  sessionId: string,
+  environment: LighterEnvironment,
+  previewId: string,
+): Promise<LighterOrderPreviewRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM lighter_order_previews
+      WHERE session_id = $1
+        AND environment = $2
+        AND preview_id = $3
+        AND expires_at > NOW()
+      LIMIT 1`,
+    [sessionId, environment, previewId],
+  );
+  return row ? mapRow(row) : null;
+}
+
 function mapRow(row: Record<string, unknown>): LighterOrderPreviewRow {
   return {
     previewId: row.preview_id as string,
