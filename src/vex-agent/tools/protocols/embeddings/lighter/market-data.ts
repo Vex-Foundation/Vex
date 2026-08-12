@@ -132,6 +132,32 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.order.create.prepare": {
+    embeddingText: embeddingText(
+      `Prepare an approval-gated Lighter order create from a fresh persisted preview and an opaque encrypted-vault credential reference. ` +
+      `Use when: the user has already run lighter.order.preview and wants Vex to request approval for the exact order before any signer or submission path can run. ` +
+      `Creates local durable execution intent state and hands off to the approval card; it never reads API private key bytes, signs, submits, cancels, deposits, withdraws, transfers, or calls sendTx. ` +
+      `Example queries: prepare lighter order create approval, approve rhc lighter preview, ready this lighter preview for order create.`,
+    ),
+    aliases: ["lighter create prepare", "lighter order approval", "prepare order create", "approval gated lighter order"],
+    exampleIntents: ["prepare lighter order create approval", "approve rhc lighter preview", "ready this lighter preview for order create"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
+  "lighter.order.create": {
+    embeddingText: embeddingText(
+      `Approval-gated Lighter order create resume target for a prepared execution intent. ` +
+      `Use only as the trusted approval follow-up after lighter.order.create.prepare; direct model calls without a prepared intent and approval-resume context are refused. ` +
+      `Current implementation records approval and refuses before privileged signer support, so it never signs, submits, cancels, deposits, withdraws, transfers, or calls sendTx. ` +
+      `Example queries: execute approved lighter order intent, resume lighter order create approval.`,
+    ),
+    aliases: ["lighter order create", "approved lighter order", "lighter order intent execute"],
+    exampleIntents: ["execute approved lighter order intent", "resume lighter order create approval"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "high",
+  },
   "lighter.orderbook": {
     embeddingText: embeddingText(
       `Read resting Lighter order book orders for one market on Core or Robinhood Chain, with a strict visible depth cap on each side. ` +
@@ -173,7 +199,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 13;
+const EXPECTED_COUNT = 15;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

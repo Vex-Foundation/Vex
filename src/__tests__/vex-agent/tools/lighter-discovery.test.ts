@@ -25,6 +25,8 @@ const LIGHTER_TOOL_IDS = [
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.order.create.prepare",
+  "lighter.order.create",
 ] as const;
 
 describe("Lighter agent discovery surface", () => {
@@ -51,22 +53,30 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
-  it("registers the read-only Lighter public and account tools", () => {
+  it("registers the Lighter public, account, preview, and approval-gated order tools", () => {
     expect(LIGHTER_TOOLS.map((tool) => tool.toolId)).toEqual(LIGHTER_TOOL_IDS);
 
     for (const tool of LIGHTER_TOOLS) {
       expect(tool.namespace).toBe("lighter");
       expect(tool.lifecycle).toBe("active");
-      expect(tool.mutating).toBe(false);
-      expect(tool.actionKind).toBe("read");
       expect(tool.requiresEnv).toBeUndefined();
       expect(getProtocolManifest(tool.toolId)).toBe(tool);
       expect(getProtocolHandler(tool.toolId)).toBe(LIGHTER_HANDLERS[tool.toolId]);
     }
+    expect(getProtocolManifest("lighter.order.create.prepare")).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    expect(getProtocolManifest("lighter.order.create")).toMatchObject({
+      mutating: true,
+      actionKind: "external_post",
+    });
   });
 
-  it("requires an explicit core or rhc environment on every tool", () => {
-    for (const tool of LIGHTER_TOOLS) {
+  it("requires an explicit core or rhc environment on environment-scoped tools", () => {
+    for (const tool of LIGHTER_TOOLS.filter((candidate) =>
+      candidate.params.some((param) => param.key === "environment"),
+    )) {
       const environment = tool.params.find((param) => param.key === "environment");
       expect(environment, `${tool.toolId} environment param`).toBeDefined();
       expect(environment?.required, `${tool.toolId} environment required`).toBe(true);
@@ -87,9 +97,19 @@ describe("Lighter agent discovery surface", () => {
 
     for (const tool of result.tools) {
       expect(isRankedDiscoveryItem(tool)).toBe(false);
-      expect(tool.mutating).toBe(false);
-      expect(tool.actionKind).toBe("read");
-      expect(tool.requiredParams).toContain("environment");
+      if (tool.toolId === "lighter.order.create") {
+        expect(tool.mutating).toBe(true);
+        expect(tool.actionKind).toBe("external_post");
+        expect(tool.requiredParams).toContain("intentId");
+      } else if (tool.toolId === "lighter.order.create.prepare") {
+        expect(tool.mutating).toBe(false);
+        expect(tool.actionKind).toBe("approval_prepare");
+        expect(tool.requiredParams).toContain("environment");
+      } else {
+        expect(tool.mutating).toBe(false);
+        expect(tool.actionKind).toBe("read");
+        expect(tool.requiredParams).toContain("environment");
+      }
       expect(tool).not.toHaveProperty("params");
     }
   });
@@ -104,8 +124,12 @@ describe("Lighter agent discovery surface", () => {
       expect(isRankedDiscoveryItem(tool)).toBe(true);
       if (!isRankedDiscoveryItem(tool)) continue;
       expect(tool.namespace).toBe("lighter");
-      expect(tool.required).toContain("environment");
-      expect(tool.exampleParams.environment).toMatch(/^(core|rhc)$/);
+      if (tool.toolId === "lighter.order.create") {
+        expect(tool.required).toContain("intentId");
+      } else {
+        expect(tool.required).toContain("environment");
+        expect(tool.exampleParams.environment).toMatch(/^(core|rhc)$/);
+      }
     }
   });
 
@@ -124,6 +148,17 @@ describe("Lighter agent discovery surface", () => {
 
     expect(result.success).toBe(true);
     expect(result.tools.map((tool) => tool.toolId)).toContain("lighter.order.preview");
+  });
+
+  it("recalls the order create preparation gate from approval queries", async () => {
+    const result = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "prepare approval to create this rhc lighter order preview",
+      limit: 5,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tools.map((tool) => tool.toolId)).toContain("lighter.order.create.prepare");
   });
 
   it("recalls Lighter tools from natural market-data queries", async () => {

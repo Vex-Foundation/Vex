@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validatePreparedActionFollowUp } from "../../../vex-agent/tools/registry/prepared-action-follow-ups.js";
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
+const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
 
 function candidate() {
@@ -22,10 +23,49 @@ function candidate() {
   };
 }
 
+function lighterCandidate() {
+  return {
+    toolName: "execute_tool",
+    args: {
+      toolId: "lighter.order.create",
+      params: { intentId: LIGHTER_INTENT_ID },
+    },
+    expiresAt: EXPIRES_AT,
+    approvalPreview: {
+      toolName: "execute_tool",
+      criticalArgs: {
+        toolId: "lighter.order.create",
+        intentId: LIGHTER_INTENT_ID,
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        marketIndex: 0,
+        side: "buy",
+        baseAmountInteger: "10000",
+        priceInteger: "300000",
+        orderType: "limit",
+        timeInForce: "good-till-time",
+        reduceOnly: false,
+        previewId: "lighter-preview-1",
+        matchHash: "a".repeat(64),
+      },
+    },
+  };
+}
+
 describe("prepared-action follow-up registry", () => {
   it("allows and canonicalizes wallet_send_prepare → wallet_send_confirm", () => {
     const input = candidate();
     const result = validatePreparedActionFollowUp("wallet_send_prepare", input);
+    expect(result).toEqual({
+      ok: true,
+      followUp: input,
+    });
+  });
+
+  it("allows and canonicalizes execute_tool lighter.order.create.prepare → execute_tool lighter.order.create", () => {
+    const input = lighterCandidate();
+    const result = validatePreparedActionFollowUp("execute_tool", input);
     expect(result).toEqual({
       ok: true,
       followUp: input,
@@ -44,13 +84,37 @@ describe("prepared-action follow-up registry", () => {
     ).toEqual({ ok: false, reason: "unknown_mapping" });
   });
 
-  it("rejects a second mapping attempt (maintainer decision: wallet-only, exactly one mapping)", () => {
+  it("rejects unlisted mapping attempts", () => {
     expect(
       validatePreparedActionFollowUp("kyberswap_prequote", {
         ...candidate(),
         toolName: "kyberswap_execute",
       }),
     ).toEqual({ ok: false, reason: "unknown_mapping" });
+  });
+
+  it("rejects malformed Lighter create follow-ups", () => {
+    expect(
+      validatePreparedActionFollowUp("execute_tool", {
+        ...lighterCandidate(),
+        args: {
+          toolId: "lighter.order.create",
+          params: { intentId: "not-a-lighter-intent" },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_contract" });
+    expect(
+      validatePreparedActionFollowUp("execute_tool", {
+        ...lighterCandidate(),
+        approvalPreview: {
+          ...lighterCandidate().approvalPreview,
+          criticalArgs: {
+            ...lighterCandidate().approvalPreview.criticalArgs,
+            apiKeyIndex: 255,
+          },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "invalid_contract" });
   });
 
   it("rejects extra confirm args and spoofed or malformed trusted previews", () => {

@@ -21,9 +21,9 @@
  *     reclassification would change phase 2+ approval semantics, so each
  *     critical tool is pinned explicitly.
  *
- * Distribution at 1B ship (140 protocol tools): 112 read, 17
- * user_wallet_broadcast, 11 external_post; 0 destructive,
- * approval_prepare, schedule, local_write.
+ * Protocol approval-prepare tools are allowed to be non-mutating even though
+ * their action kind is not `read`: they create local preparation state for a
+ * later human approval, not an external side effect.
  */
 
 import { describe, it, expect } from "vitest";
@@ -57,11 +57,11 @@ describe("ProtocolToolManifest taxonomy — coverage", () => {
 });
 
 describe("ProtocolToolManifest taxonomy — mutating ↔ taxonomy invariant", () => {
-  it("non-mutating protocol tools classify as 'read'", () => {
+  it("non-mutating protocol tools classify as 'read' unless they are approval preparation", () => {
     const violations = PROTOCOL_TOOLS
-      .filter((m) => !m.mutating && m.actionKind !== "read")
+      .filter((m) => !m.mutating && m.actionKind !== "read" && m.actionKind !== "approval_prepare")
       .map((m) => `${m.toolId}: mutating=false but actionKind=${m.actionKind}`);
-    expect(violations, "non-mutating tools mis-classified as something other than read").toEqual([]);
+    expect(violations, "non-mutating tools mis-classified as something other than read/approval_prepare").toEqual([]);
   });
 
   it("mutating protocol tools do NOT classify as 'read'", () => {
@@ -111,6 +111,11 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["dexscreener.search", "read"],
     ["dexscreener.tokens", "read"],
     ["dexscreener.trending", "read"],
+
+    // Lighter — create.prepare records local approval intent state; create is
+    // the external exchange mutation resume target.
+    ["lighter.order.create.prepare", "approval_prepare"],
+    ["lighter.order.create", "external_post"],
   ];
 
   it.each(CRITICAL_MAPPINGS)("%s → %s", (toolId, expectedKind) => {

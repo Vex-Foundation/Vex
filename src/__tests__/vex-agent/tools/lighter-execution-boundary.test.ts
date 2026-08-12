@@ -92,13 +92,29 @@ describe("Lighter execution boundary", () => {
     ]);
   });
 
-  it("does not register create or cancel tools before the reviewed milestone", () => {
+  it("registers create only through the approval-gated execution path", () => {
     const toolIds = new Set(LIGHTER_TOOLS.map((tool) => tool.toolId));
     const handlerIds = new Set(Object.keys(LIGHTER_HANDLERS));
-    for (const toolId of LIGHTER_ORDER_WRITE_TOOL_IDS) {
-      expect(toolIds.has(toolId)).toBe(false);
-      expect(handlerIds.has(toolId)).toBe(false);
-    }
+    expect(toolIds.has("lighter.order.create.prepare")).toBe(true);
+    expect(handlerIds.has("lighter.order.create.prepare")).toBe(true);
+    expect(toolIds.has("lighter.order.create")).toBe(true);
+    expect(handlerIds.has("lighter.order.create")).toBe(true);
+
+    const prepare = LIGHTER_TOOLS.find((tool) => tool.toolId === "lighter.order.create.prepare");
+    expect(prepare).toMatchObject({
+      mutating: false,
+      actionKind: "approval_prepare",
+    });
+    const create = LIGHTER_TOOLS.find((tool) => tool.toolId === "lighter.order.create");
+    expect(create).toMatchObject({
+      mutating: true,
+      actionKind: LIGHTER_ORDER_WRITE_ACTION_KIND,
+    });
+
+    expect(toolIds.has("lighter.order.cancel.preview")).toBe(false);
+    expect(handlerIds.has("lighter.order.cancel.preview")).toBe(false);
+    expect(toolIds.has("lighter.order.cancel")).toBe(false);
+    expect(handlerIds.has("lighter.order.cancel")).toBe(false);
   });
 
   it("keeps Lighter source free of submit, cancel, signer, and trading-key hooks", () => {
