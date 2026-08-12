@@ -118,6 +118,52 @@ export function mapLighterError(
   );
 }
 
+export function mapLighterSubmitError(
+  environment: LighterEnvironment,
+  status: number,
+): VexError {
+  const name = environmentName(environment);
+
+  if (status === 429) {
+    const err = new VexError(
+      ErrorCodes.LIGHTER_RATE_LIMITED,
+      `${name} rate limited signed transaction submission (HTTP 429).`,
+      "Wait before retrying. Do not retry blindly until the nonce state has been reconciled.",
+    );
+    err.retryable = true;
+    return withStatus(err, status);
+  }
+
+  if (status >= 500) {
+    const err = new VexError(
+      ErrorCodes.LIGHTER_API_ERROR,
+      `${name} server error during signed transaction submission (HTTP ${status}).`,
+      "Treat the order state as ambiguous until Lighter nonce and order state are re-read.",
+    );
+    err.retryable = true;
+    return withStatus(err, status);
+  }
+
+  if (status >= 400) {
+    return withStatus(
+      new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        `${name} rejected signed transaction submission (HTTP ${status}).`,
+        "Check approval, account, API-key nonce, margin, market, price protection, and order constraints before trying again.",
+      ),
+      status,
+    );
+  }
+
+  return withStatus(
+    new VexError(
+      ErrorCodes.LIGHTER_API_ERROR,
+      `${name} returned HTTP ${status} during signed transaction submission.`,
+    ),
+    status,
+  );
+}
+
 export function mapLighterTransportError(err: unknown): never {
   if (err instanceof VexError && err.code.startsWith("LIGHTER_")) {
     throw err;

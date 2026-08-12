@@ -15,6 +15,7 @@ import type {
   LighterOrderBookOrdersResponse,
   LighterReadOnlyTokensResponse,
   LighterRecentTradesResponse,
+  LighterSendTxResponse,
   LighterStatusResponse,
   LighterSystemConfigResponse,
 } from "./types.js";
@@ -218,6 +219,16 @@ const apiKeysResponseSchema = z
   })
   .passthrough();
 
+const sendTxResponseSchema = z
+  .object({
+    code: int,
+    message,
+    tx_hash: z.string().min(1),
+    predicted_execution_time_ms: int,
+    volume_quota_remaining: int.optional(),
+  })
+  .passthrough();
+
 const accountTradesResponseSchema = z
   .object({
     code: int,
@@ -359,6 +370,10 @@ export function validateLighterReadOnlyTokens(raw: unknown): LighterReadOnlyToke
 
 export function validateLighterApiKeys(raw: unknown): LighterApiKeysResponse {
   return parseOrThrow(apiKeysResponseSchema, raw, "api keys");
+}
+
+export function validateLighterSendTx(raw: unknown): LighterSendTxResponse {
+  return parseOrThrow(sendTxResponseSchema, raw, "sendTx");
 }
 
 export function validateLighterAccountTrades(raw: unknown): LighterAccountTradesResponse {

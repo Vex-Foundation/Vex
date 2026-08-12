@@ -42,6 +42,7 @@ export const LIGHTER_ENDPOINT_PATHS = {
   recentTrades: "/api/v1/recentTrades",
   trades: "/api/v1/trades",
   candles: "/api/v1/candles",
+  sendTx: "/api/v1/sendTx",
 } as const;
 
 export const LIGHTER_MARKET_FILTERS = ["all", "spot", "perp"] as const;

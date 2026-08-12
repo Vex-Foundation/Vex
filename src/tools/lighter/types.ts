@@ -72,6 +72,21 @@ export interface LighterApiKeysResponse {
   [key: string]: unknown;
 }
 
+export interface LighterSendTxParams {
+  txType: number;
+  txInfo: string;
+  priceProtection?: boolean;
+}
+
+export interface LighterSendTxResponse {
+  code: number;
+  message?: string;
+  tx_hash: string;
+  predicted_execution_time_ms: number;
+  volume_quota_remaining?: number;
+  [key: string]: unknown;
+}
+
 export interface LighterAccountTradesResponse {
   code: number;
   message?: string;

@@ -25,9 +25,10 @@ const EXECUTION_BOUNDARY_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/execution-boundary.ts",
 );
+const LOW_LEVEL_SUBMIT_CLIENT_SOURCE = join(ROOT, "src/tools/lighter/client.ts");
 
-const FORBIDDEN_UNTIL_CREATE_MILESTONE =
-  /\b(sendTx|sendTxBatch|createOrder|cancelOrder|signOrder|signTransaction)\s*\(/;
+const FORBIDDEN_AGENT_SUBMIT_RE = /\b(sendTx|sendTxBatch|createOrder|cancelOrder)\s*\(/;
+const FORBIDDEN_SIGNER_RE = /\b(signOrder|signTransaction)\s*\(/;
 const FORBIDDEN_SIGNED_ARTIFACT_RE =
   /\b(signature|signedPayload|signedTransaction|transactionHash|sendTxPayload)\b/;
 const TRADING_CREDENTIAL_ENV_KEY_RE = /\bLIGHTER_(CORE|RHC)_API_PRIVATE_KEY\b/;
@@ -125,16 +126,32 @@ describe("Lighter execution boundary", () => {
     expect(handlerIds.has("lighter.order.cancel")).toBe(false);
   });
 
-  it("keeps Lighter source free of submit, cancel, signer, and trading-key hooks", () => {
+  it("keeps agent Lighter source free of submit, cancel, signer, and trading-key hooks", () => {
     const offenders: string[] = [];
-    for (const root of LIGHTER_SOURCE_ROOTS) {
+    for (const root of [join(ROOT, "src/vex-agent/tools/protocols/lighter")]) {
       for (const file of walk(root)) {
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (
-          FORBIDDEN_UNTIL_CREATE_MILESTONE.test(source)
+          FORBIDDEN_AGENT_SUBMIT_RE.test(source)
+          || FORBIDDEN_SIGNER_RE.test(source)
           || TRADING_CREDENTIAL_ENV_KEY_RE.test(source)
         ) {
+          offenders.push(relative(ROOT, file));
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the low-level submit client isolated from agent handlers and signer code", () => {
+    const offenders: string[] = [];
+    for (const root of LIGHTER_SOURCE_ROOTS) {
+      for (const file of walk(root)) {
+        if (file === LOW_LEVEL_SUBMIT_CLIENT_SOURCE) continue;
+        if (file === EXECUTION_BOUNDARY_SOURCE) continue;
+        const source = readFileSync(file, "utf-8");
+        if (/\bsendTx\s*\(/.test(source) || /\bsendTxBatch\s*\(/.test(source)) {
           offenders.push(relative(ROOT, file));
         }
       }
@@ -152,7 +169,8 @@ describe("Lighter execution boundary", () => {
   it("keeps the signer-order adapter unsigned and provider-disconnected", () => {
     const file = join(ROOT, "src/tools/lighter/signer-order.ts");
     const source = readFileSync(file, "utf-8");
-    expect(source).not.toMatch(FORBIDDEN_UNTIL_CREATE_MILESTONE);
+    expect(source).not.toMatch(FORBIDDEN_AGENT_SUBMIT_RE);
+    expect(source).not.toMatch(FORBIDDEN_SIGNER_RE);
     expect(source).not.toMatch(FORBIDDEN_SIGNED_ARTIFACT_RE);
   });
 

@@ -9,9 +9,12 @@ path persists `lighter_order_execution_intents` and can ask the Vex approval
 runtime for consent. Approved create can now build an internal signer-bound
 execution plan and unsigned signer order from the durable intent. Vex also has a
 validated official-signer adapter boundary for a future `SignCreateOrder` call,
-but still has no concrete API private-key reader, signer binary/process
-implementation, `sendTx`, order submission, order cancel, deposit, withdrawal,
-transfer, or other provider state-changing Lighter path.
+and a low-level signed-transaction submit client for Lighter's official
+`sendTx` form contract. The submit client is not reachable from agent order
+handlers yet. Vex still has no concrete API private-key reader, signer
+binary/process implementation, agent-facing order submission, order cancel,
+deposit, withdrawal, transfer, or other reachable provider state-changing
+Lighter path.
 
 ## Sources
 
@@ -27,11 +30,11 @@ transfer, or other provider state-changing Lighter path.
 | File | Role |
 |------|------|
 | `constants.ts` | Public base URLs, endpoint paths, explicit environment names, limits |
-| `types.ts` | TypeScript request and response shapes for Phase 1 market reads |
-| `validation.ts` | Runtime validators for the public REST responses |
-| `errors.ts` | Lighter HTTP/provider failures mapped to `LIGHTER_*` `VexError`s |
+| `types.ts` | TypeScript request and response shapes for Lighter reads and the low-level submit boundary |
+| `validation.ts` | Runtime validators for Lighter REST responses |
+| `errors.ts` | Lighter HTTP/provider failures mapped to `LIGHTER_*` `VexError`s; submit errors avoid provider-body disclosure |
 | `throttle.ts` | Per-process public REST throttle, small TTL cache, in-flight dedupe |
-| `client.ts` | Read-only REST client and singleton |
+| `client.ts` | REST client and singleton; `sendTx` exists only as a low-level signed-submit transport |
 | `order-preview.ts` | Preview identity, exact decimal conversion, freshness, and non-spoofable match hashing |
 | `trading-credentials.ts` | Non-submitting trading credential readiness boundary for future signer work |
 | `trading-secret.ts` | Typed private-key material loader that accepts only an injected privileged reader and redacts ordinary serialization |
@@ -72,6 +75,18 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `getRecentTrades(environment, params)` | `GET /api/v1/recentTrades` | Required `market_id`; `limit` 1-100 |
 | `getAccountTrades(environment, params)` | `GET /api/v1/trades` | Auth-gated account trade history candidate |
 | `getCandles(environment, params)` | `GET /api/v1/candles` | Required market, resolution, epoch-ms timestamp range, bounded `count_back` |
+
+## Low-Level Submit Boundary
+
+| Client method | Endpoint | Notes |
+|---------------|----------|-------|
+| `sendTx(environment, params)` | `POST /api/v1/sendTx` | Accepts already-signed `tx_type` / `tx_info` form data and optional `price_protection`; validates API-acceptance response only |
+
+The submit boundary deliberately does not cache requests, does not attach
+read-only auth headers, does not expose provider rejection bodies, and is not
+called by `lighter.order.create` yet. A `code=200` response means API
+acceptance only; final open/fill/cancel/reject state still requires provider
+evidence.
 
 ## Milestone 8 Execution Boundary
 
@@ -167,8 +182,15 @@ Signer and credential strategy:
   chain id (`304` Core, `466324` RHC), account/API-key scope, nonce, and order
   fields. It validates the official integer ranges before any future native
   signer call. The adapter result must still match the prepared order identity.
-  The module deliberately creates no `sendTx` body and performs no provider
-  submission.
+  The module deliberately creates no provider submission.
+- `client.ts` now exposes the low-level `sendTx` transport that posts official
+  form data (`tx_type`, `tx_info`, optional `price_protection`) and validates
+  the API-acceptance response (`code`, `tx_hash`,
+  `predicted_execution_time_ms`, and optional `volume_quota_remaining`). Submit rejection
+  errors do not include provider response bodies because those may echo signed
+  payload material. This client method is disconnected from agent order
+  handlers until the concrete privileged signer and durable post-submit
+  lifecycle are wired.
 - `lighter_order_execution_intents` now stores the durable bridge between a
   preview and any future signer path. It records preview identity fields,
   approval status, execution state, optional `approval_queue` /
@@ -185,8 +207,8 @@ Signer and credential strategy:
   local Lighter execution intent, builds the signer-bound execution plan, builds
   the unsigned create-order request, then refuses at the explicit live-trading
   gate before any private-key read, signer initialization, signature, or
-  provider submission. This is intentional until the privileged signer adapter
-  and `sendTx` milestone is explicitly approved.
+  provider submission. This is intentional until the privileged signer adapter,
+  durable post-submit lifecycle, and handler-level `sendTx` wiring are verified.
 
 Milestone 8 is complete only when the signer strategy, nonce model, durable
 activity lifecycle, and failure/repair policy are reviewed. Live order
@@ -240,7 +262,7 @@ Not allowed:
 - API private keys;
 - signer-client initialization;
 - auth-token generation from API private keys inside Vex;
-- `sendTx`, order create, cancel, modify, deposit, withdrawal, transfer, or
+- order create, cancel, modify, deposit, withdrawal, transfer, or
   nonce handling;
 - returning raw auth tokens to renderer, preload, agent output, logs, errors,
   test snapshots, docs, or telemetry.

@@ -278,6 +278,52 @@ describe("LighterClient URL selection", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it("builds signed transaction submit form data without auth headers", async () => {
+    mockOk({
+      code: 200,
+      tx_hash: "0xabc123",
+      predicted_execution_time_ms: 250,
+      volume_quota_remaining: 10780,
+    });
+
+    const response = await client.sendTx("rhc", {
+      txType: 14,
+      txInfo: "{\"Nonce\":123,\"Sig\":\"0xabc\"}",
+      priceProtection: true,
+    });
+
+    const url = lastUrl();
+    expect(url.origin).toBe("https://rhc.example");
+    expect(url.pathname).toBe("/api/v1/sendTx");
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/x-www-form-urlencoded");
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
+    const body = init.body as URLSearchParams;
+    expect(body.get("tx_type")).toBe("14");
+    expect(body.get("tx_info")).toBe("{\"Nonce\":123,\"Sig\":\"0xabc\"}");
+    expect(body.get("price_protection")).toBe("true");
+    expect(response.tx_hash).toBe("0xabc123");
+  });
+
+  it("bounds signed transaction submit params before sending", async () => {
+    await expect(client.sendTx("core", {
+      txType: 256,
+      txInfo: "{\"Nonce\":123}",
+    })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+      message: "Invalid Lighter txType: expected an integer from 0 to 255",
+    });
+    await expect(client.sendTx("core", {
+      txType: 14,
+      txInfo: "   ",
+    })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+      message: "Invalid Lighter txInfo: expected signed transaction info",
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("fails closed on an unknown environment before sending", async () => {
     await expect(client.getStatus("prod" as never)).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -480,6 +526,58 @@ describe("LighterClient validation", () => {
       hint: "Narrow the candle time range before retrying.",
     });
   });
+
+  it("validates signed transaction submit acceptance shape", async () => {
+    mockOk({
+      code: 200,
+      message: "ok",
+      tx_hash: "0xabc123",
+      predicted_execution_time_ms: 250,
+      volume_quota_remaining: 10780,
+    });
+
+    const response = await client.sendTx("core", {
+      txType: 14,
+      txInfo: "{\"Nonce\":123,\"Sig\":\"0xabc\"}",
+    });
+
+    expect(response).toMatchObject({
+      code: 200,
+      tx_hash: "0xabc123",
+      predicted_execution_time_ms: 250,
+      volume_quota_remaining: 10780,
+    });
+  });
+
+  it("accepts signed transaction submit responses without quota metadata", async () => {
+    mockOk({
+      code: 200,
+      tx_hash: "0xabc123",
+      predicted_execution_time_ms: 250,
+    });
+
+    const response = await client.sendTx("core", {
+      txType: 14,
+      txInfo: "{\"Nonce\":123,\"Sig\":\"0xabc\"}",
+    });
+
+    expect(response.tx_hash).toBe("0xabc123");
+    expect(response.volume_quota_remaining).toBeUndefined();
+  });
+
+  it("rejects malformed signed transaction submit responses", async () => {
+    mockOk({
+      code: 200,
+      volume_quota_remaining: 10780,
+    });
+
+    await expect(client.sendTx("core", {
+      txType: 14,
+      txInfo: "{\"Nonce\":123,\"Sig\":\"0xabc\"}",
+    })).rejects.toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_RESPONSE,
+    });
+  });
 });
 
 describe("Lighter error mapping", () => {
@@ -542,5 +640,29 @@ describe("Lighter error mapping", () => {
     expect(error.httpStatus).toBe(400);
     expect(error.message).toContain("HTTP 400");
     expect(error.message).toContain("bad market_id");
+  });
+
+  it("redacts signed submit payloads from provider rejection errors", async () => {
+    mockError(400, {
+      message: "bad tx_info {\"Nonce\":123,\"Sig\":\"0xabc\",\"Secret\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
+    });
+    let thrown: unknown;
+    try {
+      await client.sendTx("rhc", {
+        txType: 14,
+        txInfo: "{\"Nonce\":123,\"Sig\":\"0xabc\"}",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toMatchObject({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+      httpStatus: 400,
+    });
+    const { message } = thrown as { message: string };
+    expect(message).toContain("signed transaction submission");
+    expect(message).not.toContain("tx_info");
+    expect(message).not.toContain("Sig");
+    expect(message).not.toContain("0123456789abcdef");
   });
 });

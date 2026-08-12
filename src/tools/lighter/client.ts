@@ -19,7 +19,12 @@ import {
   type LighterEndpointConfig,
   type LighterEnvironment,
 } from "./constants.js";
-import { mapLighterError, mapLighterTransportError, readLighterErrorBody } from "./errors.js";
+import {
+  mapLighterError,
+  mapLighterSubmitError,
+  mapLighterTransportError,
+  readLighterErrorBody,
+} from "./errors.js";
 import { LighterThrottle, parseRetryAfterMs } from "./throttle.js";
 import type {
   LighterAccountActiveOrdersParams,
@@ -43,6 +48,8 @@ import type {
   LighterReadOnlyTokensResponse,
   LighterRecentTradesParams,
   LighterRecentTradesResponse,
+  LighterSendTxParams,
+  LighterSendTxResponse,
   LighterStatusResponse,
   LighterSystemConfigResponse,
 } from "./types.js";
@@ -57,6 +64,7 @@ import {
   validateLighterOrderBookOrders,
   validateLighterReadOnlyTokens,
   validateLighterRecentTrades,
+  validateLighterSendTx,
   validateLighterStatus,
   validateLighterSystemConfig,
 } from "./validation.js";
@@ -155,6 +163,39 @@ export class LighterClient {
     }
   }
 
+  private async postForm<T>(
+    environment: LighterEnvironment,
+    path: string,
+    body: URLSearchParams,
+    validator: (raw: unknown) => T,
+  ): Promise<T> {
+    const url = this.buildUrl(environment, path);
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: {
+          ...REQUEST_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          const retryMs = parseRetryAfterMs(response.headers.get("retry-after"));
+          this.throttle.penalize(environment, retryMs);
+        }
+        await readLighterErrorBody(response);
+        throw mapLighterSubmitError(environment, response.status);
+      }
+
+      const raw = await readJson(response);
+      return validator(raw);
+    } catch (err) {
+      mapLighterTransportError(err);
+    }
+  }
+
   private headersFor(
     environment: LighterEnvironment,
     auth?: LighterAuthMode,
@@ -241,6 +282,34 @@ export class LighterClient {
         account_index: String(accountIndex),
         api_key_index: String(apiKeyIndex),
       },
+    );
+  }
+
+  async sendTx(
+    environment: LighterEnvironment,
+    params: LighterSendTxParams,
+  ): Promise<LighterSendTxResponse> {
+    const txType = readBoundedInt(params.txType, "txType", 0, 255);
+    const txInfo = params.txInfo.trim();
+    if (txInfo.length === 0) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        "Invalid Lighter txInfo: expected signed transaction info",
+      );
+    }
+
+    const body = new URLSearchParams();
+    body.set("tx_type", String(txType));
+    body.set("tx_info", txInfo);
+    if (params.priceProtection !== undefined) {
+      body.set("price_protection", String(params.priceProtection));
+    }
+
+    return this.postForm(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.sendTx,
+      body,
+      validateLighterSendTx,
     );
   }
 
