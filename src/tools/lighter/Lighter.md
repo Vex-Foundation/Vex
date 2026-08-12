@@ -204,8 +204,10 @@ Not allowed:
 
 ## Agent Tools
 
-Every tool requires `environment: "core" | "rhc"` and is registered as
-`mutating: false`, `actionKind: "read"`.
+Agent tools accept `environment: "core" | "rhc"` as an advanced override and
+default to `rhc` for normal conversational Lighter requests. Tools are
+registered as read-only or approval-preparation surfaces; the only execution
+resume target records approval and still refuses before signer/provider submit.
 
 | Tool | Client calls | Returns |
 |------|--------------|---------|
@@ -218,7 +220,7 @@ Every tool requires `environment: "core" | "rhc"` and is registered as
 | `lighter.orderHistory` | `getAccountInactiveOrders` | Authenticated inactive/historical order rows through read-only token |
 | `lighter.trades` | `getAccountTrades` | Authenticated account trade rows through read-only token |
 | `lighter.apiKeys.inspect` | `getApiKeys` | Public API-key indexes, public keys, and nonce metadata |
-| `lighter.order.preview` | market detail, order book, public account | Persisted preview-only Lighter order preflight |
+| `lighter.order.preview` | live market resolution, public API-key metadata, market detail, order book, public account | Persisted preview-only Lighter order preflight from conversational asset/price/expiry requests |
 | `lighter.order.create.prepare` | persisted preview, local vault reference boundary | Local approval-prepared execution intent |
 | `lighter.order.create` | approval resume context, local execution intent | Records approval then refuses before signer/provider submit |
 | `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
@@ -241,9 +243,17 @@ Every successful agent response includes provenance:
 
 ## Safety Notes
 
-- Every call requires an explicit `environment`: `core` or `rhc`.
-- The agent tools never infer an environment from chain, symbol, or conversation
-  context; the selected environment is always echoed in the result.
+- Normal conversational calls default to `rhc`; callers can still explicitly
+  choose `core` or `rhc`, and the selected environment is always echoed in the
+  result.
+- `lighter.order.preview` resolves normal user language such as ETH, amount,
+  price, and relative expiry into live Lighter market, account, and public
+  trading API-key metadata. It does not ask users for account indexes, API-key
+  indexes, market ids, or client-order-index policy unless they explicitly
+  override the advanced fields.
+- Vex still requires the user to choose buy or sell for order previews. If that
+  direction is missing, the agent should ask a plain-language clarification
+  instead of guessing.
 - Public tools never read environment variables, local secret vault entries, API
   keys, auth tokens, private keys, wallets, or signer state. Authenticated
   account reads use read-only tokens only through the privileged provider path.
