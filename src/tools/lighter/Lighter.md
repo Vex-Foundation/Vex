@@ -39,6 +39,7 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `manifests/read.ts` | Six read-only market-data tool schemas |
 | `handlers.ts` | Aggregates handler maps for the namespace |
 | `handlers/read.ts` | Calls the public client and projects bounded results |
+| `nonce-sync.ts` | Internal helper that records public API-key nonce observations into durable state |
 | `params.ts` | Agent-layer param readers and stricter output caps |
 | `projectors.ts` | Compact model-facing result projection |
 | `../embeddings/lighter/market-data.ts` | Discovery passages and aliases |
@@ -109,6 +110,24 @@ Execution lifecycle vocabulary:
 Milestone 8 is complete only when the signer strategy, nonce model, durable
 activity lifecycle, and failure/repair policy are reviewed. Live order
 submission belongs to the later approval-gated create milestone.
+
+Nonce foundation now has durable storage in `lighter_nonce_state` and an
+internal public nonce sync helper:
+
+- The state key is `(environment, accountIndex, apiKeyIndex)`.
+- Provider nonces are stored as decimal strings after a safe-integer check. If a
+  provider nonce cannot be represented exactly from the current JSON response,
+  Vex refuses to reserve it rather than sign with an imprecise value.
+- `recordObserved` updates only rows that are still `observed`; it does not
+  overwrite an in-flight reservation.
+- `reserveObserved` is a compare-and-set transition from `observed` to
+  `reserved`, copying `provider_nonce` into `reserved_nonce` and attaching a
+  reservation id before any future signer path can consume it.
+- The status vocabulary includes `submitted` and `ambiguous` for the future
+  order path, so a lost response or sequencer uncertainty can be tracked without
+  suggesting a blind retry.
+- This nonce foundation stores no API private key, read-only auth token,
+  signature, signed transaction JSON, `sendTx` payload, or provider auth error.
 
 ## Milestone 4 Auth Boundary
 
@@ -282,6 +301,12 @@ mode does not prove read-only token reachability.
   public `/api/v1/apikeys` reads through `executeProtocolTool`. It requires no
   credential and must never be described as trading authority; it proves only
   public API-key index, public key, and nonce metadata visibility.
+- Nonce-state guardrails: `pnpm test
+  src/__tests__/vex-agent/db/repos/lighter-nonce-state.test.ts
+  src/__tests__/vex-agent/tools/lighter-nonce-sync.test.ts
+  src/__tests__/vex-agent/tools/lighter-execution-boundary.test.ts` verifies
+  durable nonce observation/reservation behavior and confirms no Lighter
+  create/cancel/submit/sign hook has been introduced.
 - Live read-only auth proof: `pnpm run test:lighter:live:auth` runs the gated
   `VEX_LIGHTER_AUTH_LIVE=1` smoke against real Core and RHC account endpoints.
   It requires `LIGHTER_CORE_READ_ONLY_AUTH_TOKEN` and
