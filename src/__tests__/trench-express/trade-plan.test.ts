@@ -16,6 +16,7 @@ const base = {
   walletAddress: WALLET,
   sessionId: "s1",
   tokenDecimals: 18,
+  tokenSymbol: "PEPE",
   minOut: 900n,
   deadline: 111n,
 };
@@ -40,5 +41,24 @@ describe("buildTradePlan", () => {
     expect(plans[1]!.txParams.to).toBe(DIAMOND);
     expect(plans[1]!.txParams.value).toBe(0n);
     expect(decodeFunctionData({ abi: TRENCH_DIAMOND_ABI, data: plans[1]!.txParams.data }).functionName).toBe("sell");
+  });
+
+  // The AgentScan mapper builds a token ref only when address, symbol AND
+  // decimals are all present, so a memecoin leg without its symbol is reported
+  // with a null token ref and prices at zero.
+  it("BUY carries the memecoin symbol on the tokenOut leg", () => {
+    const plans = buildTradePlan({ ...base, side: "buy", amountInRaw: 5_000n, amountInHuman: "0.000000000000005", expectedOutRaw: 1_000n });
+    expect(plans.at(0)?.event.tokenOut).toMatchObject({ tokenAddress: TOKEN, tokenSymbol: "PEPE", tokenDecimals: 18 });
+  });
+
+  it("SELL carries the memecoin symbol on the tokenIn leg", () => {
+    const plans = buildTradePlan({ ...base, side: "sell", amountInRaw: 100n, amountInHuman: "0.0000000000000001", expectedOutRaw: 5_000n });
+    expect(plans.at(1)?.event.tokenIn).toMatchObject({ tokenAddress: TOKEN, tokenSymbol: "PEPE", tokenDecimals: 18 });
+  });
+
+  it("omits the symbol when the token did not report one, leaving the rest of the leg intact", () => {
+    const plans = buildTradePlan({ ...base, tokenSymbol: null, side: "buy", amountInRaw: 5_000n, amountInHuman: "0.000000000000005", expectedOutRaw: 1_000n });
+    expect(plans.at(0)?.event.tokenOut?.tokenSymbol).toBeUndefined();
+    expect(plans.at(0)?.event.tokenOut?.tokenAddress).toBe(TOKEN);
   });
 });

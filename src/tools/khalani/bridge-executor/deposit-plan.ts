@@ -16,7 +16,7 @@
  * never charges a fee.
  */
 
-import { encodeFunctionData, getAddress } from "viem";
+import { encodeFunctionData, getAddress, type Address } from "viem";
 
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { ERC20_ABI } from "../../../constants/chain.js";
@@ -37,6 +37,7 @@ import type {
   SolanaApproval,
   TransferDepositPlan,
 } from "../types.js";
+import { decodeErc20Approve, type ApprovedSpender } from "@tools/evm-chains/erc20-approval.js";
 import {
   assertEvmApproval,
   classifyEvmApprovalRole,
@@ -66,6 +67,31 @@ function planLegNativeValue(
     vexPlatformFee: vexDerived?.platformFee,
     provenProtocolFee: null,
   });
+}
+
+/**
+ * Every spender this plan's approvals grant, each bound to the token contract
+ * that granted it - the approval transaction's own target. The binding is the
+ * point: a spender approved for token B is not an authorized destination for a
+ * transfer of token A, so the confirm site can only admit the pairs whose token
+ * IS the deposit's input.
+ */
+function contractCallApprovedSpenders(
+  legs: readonly KhalaniStagedLeg[],
+  depositIndex: number,
+): ApprovedSpender[] {
+  const approved: ApprovedSpender[] = [];
+  // Only approvals this plan signs BEFORE the deposit can authorize it, and they
+  // are kept in plan order: the confirm site replays them, so an `approve(x, 0)`
+  // after a grant must be able to revoke it.
+  for (const [index, leg] of legs.entries()) {
+    if (index >= depositIndex) break;
+    if (leg.kind !== "evm" || leg.isDeposit) continue;
+    const approval = decodeErc20Approve(leg.tx.data);
+    if (approval === null) continue;
+    approved.push({ token: leg.tx.to, spender: approval.spender, amountRaw: approval.amount });
+  }
+  return approved;
 }
 
 function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain): KhalaniStagedLeg[] {
@@ -106,7 +132,26 @@ function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain
       nativeValue: planLegNativeValue(chain.id, tx),
     });
   }
-  return legs;
+  return attachContractCallDepositEvidence(legs);
+}
+
+/**
+ * Stamp the deposit leg with the recipients its plan authorizes, so the confirm
+ * site can look for the input transfer in the receipt. The stamp says only
+ * WHERE the input may go; the amount stays a receipt question.
+ */
+function attachContractCallDepositEvidence(legs: KhalaniStagedLeg[]): KhalaniStagedLeg[] {
+  return legs.map((leg, index) => {
+    if (leg.kind !== "evm" || !leg.isDeposit) return leg;
+    return {
+      ...leg,
+      depositEvidence: {
+        kind: "provider_contract_call",
+        callTarget: leg.tx.to,
+        approvedSpenders: contractCallApprovedSpenders(legs, index),
+      },
+    };
+  });
 }
 
 function planTransferLeg(plan: TransferDepositPlan, chain: KhalaniChain): KhalaniStagedLeg[] {
@@ -152,6 +197,18 @@ function planTransferLeg(plan: TransferDepositPlan, chain: KhalaniChain): Khalan
   return [{
     role: "bridge_deposit", purpose: "bridge", family: "eip155",
     isDeposit: true, kind: "evm", tx, nativeValue,
+    // Vex composed this transfer, so the exact token, recipient and amount are
+    // known before signing. They NARROW which receipt log is ours; they do not
+    // replace it, because a fee-on-transfer or otherwise non-standard token can
+    // log an amount that differs from the one our calldata encoded.
+    depositEvidence: isNative
+      ? { kind: "vex_built_native_transfer", valueWei: BigInt(plan.amount) }
+      : {
+          kind: "vex_built_erc20_transfer",
+          token: getAddress(plan.token),
+          recipient: getAddress(plan.depositAddress),
+          amountRaw: BigInt(plan.amount),
+        },
   }];
 }
 

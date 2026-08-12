@@ -182,6 +182,17 @@ export interface AgentActivityEvent {
   lastValidBlockHeight: number | null;
   broadcastAt: string | null;
   confirmedAt: string | null;
+  /**
+   * The BLOCK time of the settling transaction (migration 078), as read from
+   * the chain — never `NOW()`, and never derived from `confirmedAt`, which is
+   * the time we OBSERVED the settlement and can trail the block by however long
+   * the app was not running.
+   *
+   * NULL wherever no writer could read a block time, which includes every row
+   * written before 078. The AgentScan reporter treats that NULL as "state no
+   * confirmation time", rather than falling back to `confirmedAt`.
+   */
+  settledBlockTime: string | null;
   lastCheckedAt: string | null;
   /**
    * Consecutive INCONCLUSIVE verification attempts (migration 065). Resets to 0

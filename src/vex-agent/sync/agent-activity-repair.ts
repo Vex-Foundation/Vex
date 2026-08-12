@@ -1,6 +1,6 @@
 /**
  * `agent_activity` EVM repair sweep — a STATUS-ONLY pending-transaction
- * resolver (owner decree 2026-07-30).
+ * resolver.
  *
  * ONE QUESTION PER ROW: take the pending row's tx hash, resolve a read-only RPC
  * for the chain the transaction was made on, and ask the chain whether it
@@ -17,7 +17,7 @@
  * lifecycle sweep that cannot report a settled transaction as settled is worse
  * than one that reports the status without the amounts.
  *
- * AMOUNTS ARE DEFERRED, NOT FAKED (owner decree; rule `90-vex-project.md`). A
+ * AMOUNTS ARE DEFERRED, NOT FAKED (rule `90-vex-project.md`). A
  * status-only confirm writes NO `executed_*` column — see
  * `confirmActivityEventStatusOnly`. Agent Scan then shows the QUOTED amount
  * explicitly labelled "estimated". Copying the quote into the executed columns
@@ -66,6 +66,7 @@ import {
   nextEvmCheckInMs,
   noteNonInclusionObserved,
   notePendingReason,
+  noteSettledBlockTime,
   releaseEvmClaim,
   touchLastChecked,
   type AgentActivityEvent,
@@ -396,7 +397,7 @@ async function applyObservation(
       // not cover it — by the time a lease has expired, that window is long past.
       return observation.status === "reverted"
         ? await failMinedRevert(event, claimToken)
-        : await confirmMinedSuccess(event, claimToken);
+        : await confirmMinedSuccess(event, claimToken, observation.blockTimeIso);
     }
 
     case "unreadable_receipt": {
@@ -510,13 +511,35 @@ async function failMinedRevert(
 async function confirmMinedSuccess(
   event: PendingEvmRow,
   claimToken: string,
+  blockTimeIso: string | null,
 ): Promise<EvmRepairOutcome> {
   const outcome = await confirmActivityEventStatusOnly(
     event.id,
     "receipt_status_only_evm",
     { kind: "claim", claimToken },
   );
-  if (outcome.applied) return "confirmed";
+  if (outcome.applied) {
+    // A SEPARATE FACT, WRITTEN AFTER THE STATUS. The block time is not part of
+    // the status transition and not a money value: it is the settling block's
+    // own clock, which the AgentScan reporter sends INSTEAD of our observation
+    // time so an honest late confirm cannot read as a time mismatch. Its writer
+    // is confirmed-only and write-once, so a crash between the two statements
+    // costs the report its precision and nothing else — a row with no block
+    // time simply reports no confirmation time. Caught, never thrown: a
+    // transient DB failure on this precision write must not turn a successful
+    // terminalization into a failed repair invocation.
+    if (blockTimeIso) {
+      try {
+        await noteSettledBlockTime(event.id, blockTimeIso);
+      } catch (error) {
+        logger.warn("agent_activity_repair.block_time_write_failed", {
+          id: event.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return "confirmed";
+  }
   if (outcome.reason === "claim_lost") return "claim_lost";
   logDuplicateCas(event.id, "confirm");
   return outcome.row.status === "pending" ? "pending" : "duplicate";

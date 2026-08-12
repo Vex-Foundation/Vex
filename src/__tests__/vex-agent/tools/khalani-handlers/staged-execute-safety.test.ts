@@ -144,6 +144,8 @@ const mockFailActivityEvent = vi.fn();
 const mockAbortPlannedEvents = vi.fn();
 const mockNotePendingReason = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
 const mockNoteBridgeProviderObservation = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
+const mockFillExecutedAmounts = vi.fn(async (..._a: unknown[]) => ({ outcome: "applied" }));
+const mockNoteSettlementDeclined = vi.fn(async (..._a: unknown[]) => ({ applied: true }));
 vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   createBridgeActivityIntent: (...a: unknown[]) => mockCreateBridgeActivityIntent(...a),
   createBridgePreBroadcastFailure: (...a: unknown[]) => mockCreateBridgePreBroadcastFailure(...a),
@@ -159,6 +161,10 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   // point of the confirm assertions below is WHICH amounts a leg may claim, so
   // stubbing the evidence matrix would test the stub.
   provenLegAmounts: (await importOriginal<Record<string, unknown>>()).provenLegAmounts,
+  // The deposit confirm site's money writers: the late-fill CAS for the
+  // status-only race, and the named decline when no receipt evidence exists.
+  fillExecutedAmountsOnConfirmed: (...a: unknown[]) => mockFillExecutedAmounts(...a),
+  noteSettlementDeclined: (...a: unknown[]) => mockNoteSettlementDeclined(...a),
   notePendingReason: (...a: unknown[]) => mockNotePendingReason(...a),
   noteBridgeProviderObservation: (...a: unknown[]) => mockNoteBridgeProviderObservation(...a),
 }));

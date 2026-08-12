@@ -82,7 +82,7 @@ function pendingRow(eventRole: AgentActivityEvent["eventRole"]): AgentActivityEv
     submitAttemptedAt: "2026-07-23T09:00:00.000Z",
     recentBlockhash: null, lastValidBlockHeight: null,
     broadcastAt: "2026-07-23T09:00:01.000Z",
-    confirmedAt: null, lastCheckedAt: null,
+    confirmedAt: null, settledBlockTime: null, lastCheckedAt: null,
     createdAt: "2026-07-23T09:00:00.000Z", updatedAt: "2026-07-23T09:00:01.000Z",
     // Columns the live contract requires that this fixture never exercises.
     verificationAttempts: 0,

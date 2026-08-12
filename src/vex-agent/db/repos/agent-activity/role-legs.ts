@@ -38,13 +38,19 @@ export type RoleLegRow = Pick<
  * Roles that carry settlement amounts at all. Excluded, by evidence rather than
  * by omission: `allowance`/`allowance_reset` (an approve moves nothing), the fee
  * legs (their single amount already rides the row's own first leg),
- * `bridge_fill_expected` (proven by the provider lane, not by a decode), the
- * externally-observed evidence rows, and `bridge_deposit` — a deposit legitimately
- * carries an executed INPUT and no output, so demanding both would leave every
- * healthy deposit permanently "incomplete".
+ * `bridge_fill_expected` (proven by the provider lane, not by a decode) and the
+ * externally-observed evidence rows.
+ *
+ * `bridge_deposit` IS included, under the INPUT-ONLY rule below. A deposit
+ * legitimately carries an executed input and no output — the output lands on the
+ * destination chain, in a different transaction, on the fill row — so requiring
+ * both would leave every healthy deposit permanently "incomplete". Requiring the
+ * INPUT only is what a deposit can actually prove, and it is the amount AgentScan
+ * prices; the same asymmetry `yield_claim` has on the opposite side.
  */
 const AMOUNT_BEARING_ROLES: ReadonlySet<AgentActivityEventRole> = new Set([
   "swap",
+  "bridge_deposit",
   "wrap",
   "unwrap",
   "token_launch",
@@ -73,6 +79,8 @@ export function isAmountBearingRole(role: AgentActivityEventRole): boolean {
  * A role that bears no amounts is never "incomplete" — there is nothing to be
  * missing. `yield_claim` requires the OUTPUT only (a claim spends nothing, so an
  * executed input would be evidence the decoder read the wrong thing).
+ * `bridge_deposit` requires the INPUT only (its output lands on the destination
+ * chain, in another transaction, on the fill row).
  * `yield_py`/`yield_lp` require their second legs ONLY where the row itself
  * populated the second-leg tokens, exactly as migration 053's CHECK does.
  */
@@ -81,6 +89,7 @@ export function roleLegsIncomplete(row: RoleLegRow): boolean {
   if (!isAmountBearingRole(role)) return false;
 
   if (role === "yield_claim") return !row.executedAmountOutRaw;
+  if (role === "bridge_deposit") return !row.executedAmountInRaw;
 
   if (!row.executedAmountInRaw || !row.executedAmountOutRaw) return true;
 

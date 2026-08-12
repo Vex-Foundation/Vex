@@ -360,6 +360,9 @@ export async function executeKhalaniBridge(
   const legLoop = await runKhalaniBridgeLegs({
     executionId, stagedLegs, bridgeLegCount, intentLegs: intent.legs,
     sourceChain, chains, signer, fromChainId, fromChainName,
+    // The deposit leg's amount evidence is bound to the token Vex quoted and to
+    // the amount it was quoted for — never to a provider echo.
+    fromToken, quotedAmountRaw: quoted.quotedAmountRaw,
     sessionId, params, pendingBase, recordedLegs,
   });
   if (legLoop.outcome === "halted") return legLoop.result;

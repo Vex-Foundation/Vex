@@ -11,10 +11,11 @@
  *
  * SELL: the tokens spent are read from the ERC-20 `Transfer(from=wallet)` log.
  * The ETH received is decoded from the `Sold` event ONLY when its token-leg
- * argument matches the exact amount we sold — that cross-check is the proof that
- * the event's positional arguments mean what we think; without it the ETH amount
- * is declined (the `Sold` argument names are `a/b/v1/v2/v3` in the verified ABI,
- * so the ETH leg is trusted only after the token leg proves the mapping).
+ * argument equals THAT summed receipt transfer, bounded above by the amount the
+ * plan asked to sell — that cross-check is the proof that the event's positional
+ * arguments mean what we think; without it the ETH amount is declined (the
+ * `Sold` argument names are `a/b/v1/v2/v3` in the verified ABI, so the ETH leg is
+ * trusted only after the token leg proves the mapping against the chain).
  */
 
 import { decodeEventLog, getAddress, type Address, type Hex } from "viem";
@@ -120,8 +121,9 @@ export function decodeCurveBuy(input: {
 /**
  * Decode a confirmed curve SELL. Returns the tokens spent (proven from the
  * Transfer out of the wallet) and the ETH received — the latter ONLY when the
- * `Sold` event's token-leg argument (`v2`) matches the exact amount sold, which
- * proves the event's positional mapping; otherwise `ethOutRaw` is null (declined).
+ * `Sold` event's token-leg argument (`v2`) equals that summed receipt transfer
+ * and the transfer is within `amountInRaw`, which proves the event's positional
+ * mapping; otherwise `ethOutRaw` is null (declined).
  */
 export function decodeCurveSell(input: {
   readonly logs: readonly DecodedLog[];
@@ -134,7 +136,17 @@ export function decodeCurveSell(input: {
   if (!sold) return null;
   const spent = sumTransfers(input.logs, input.token, (from) => sameAddress(from, input.wallet));
   // The ETH leg (`v1`) is trusted only after the token leg (`v2`) proves the
-  // positional mapping against the amount we actually sold.
-  const ethOutRaw = sold.v2 === input.amountInRaw ? sold.v1 : null;
+  // positional mapping against WHAT THE RECEIPT SHOWS LEAVING THE WALLET, with
+  // the planned amount as an absolute upper bound.
+  //
+  // Comparing `v2` to the PLANNED amount instead was the defect: the plan is
+  // what we asked for, so a receipt whose actual token leg differs (a partial
+  // fill, a fee-on-transfer token) would have had its ETH proceeds accepted on
+  // the strength of a match against a number the chain never confirmed - and a
+  // receipt that agrees with itself but not with the plan would be refused even
+  // though it proves the mapping.
+  const ethOutRaw = spent !== null && spent > 0n && sold.v2 === spent && spent <= input.amountInRaw
+    ? sold.v1
+    : null;
   return { tokensInRaw: spent, ethOutRaw };
 }

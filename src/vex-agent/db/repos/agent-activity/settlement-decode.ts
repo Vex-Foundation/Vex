@@ -59,8 +59,22 @@ const launchVariant = z.object({
   chainId: z.number().int().positive(),
 });
 
+/**
+ * A bridge DEPOSIT carries no router to match and no second leg to value: the
+ * origin transaction pays a depository or a spender the same execution approved,
+ * and both are reconstructed from the mined transaction plus this execution's own
+ * allowance rows. So the hint carries the chain and nothing else - anything more
+ * would be a claim the repair lane must re-prove from chain anyway.
+ */
+const bridgeDepositVariant = z.object({
+  v: z.literal(SETTLEMENT_DECODE_VERSION),
+  chainId: z.number().int().positive(),
+});
+
 export const settlementDecodeSchema = z.discriminatedUnion("decoder", [
   routedVariant.extend({ decoder: z.literal("kyberswap") }),
+  bridgeDepositVariant.extend({ decoder: z.literal("relay_bridge_deposit") }),
+  bridgeDepositVariant.extend({ decoder: z.literal("khalani_bridge_deposit") }),
   routedVariant.extend({ decoder: z.literal("uniswap") }),
   routedVariant.extend({ decoder: z.literal("pendle") }),
   routedVariant.extend({ decoder: z.literal("trench_trade") }),

@@ -53,7 +53,9 @@ describe("migration 067 provenance vocabularies — lockstep with their writers"
       if (member.startsWith("receipt_status_only")) {
         const sweeps = [
           readFileSync(path.join(REPO_ROOT, "src/vex-agent/sync/agent-activity-repair.ts"), "utf8"),
-          readFileSync(path.join(REPO_ROOT, "src/vex-agent/sync/solana-activity-repair.ts"), "utf8"),
+          // The Solana sweep's terminal writes moved into the sibling folder
+          // with the facade split; the call site lives in row-resolution now.
+          readFileSync(path.join(REPO_ROOT, "src/vex-agent/sync/solana-activity-repair/row-resolution.ts"), "utf8"),
         ].join("\n");
         expect(sweeps, `no sweep passes '${member}'`).toContain(`"${member}"`);
         continue;
