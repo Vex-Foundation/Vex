@@ -882,6 +882,8 @@ describe("Lighter agent read handlers", () => {
       code: 200,
       api_keys: [
         { account_index: 42, api_key_index: 1, nonce: 10, public_key: "reserved", transaction_time: 1 },
+        { account_index: 42, api_key_index: 2, nonce: 11, public_key: "reserved", transaction_time: 2 },
+        { account_index: 42, api_key_index: 3, nonce: 12, public_key: "reserved", transaction_time: 3 },
         { account_index: 42, api_key_index: 7, nonce: 11, public_key: "trading", transaction_time: 2 },
       ],
     });

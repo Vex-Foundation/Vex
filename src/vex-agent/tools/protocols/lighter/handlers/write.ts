@@ -71,7 +71,7 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     }
     if (preview.apiKeyIndex === null) {
       return fail(
-        "Lighter order create preparation requires a preview bound to a trading API key index from 2 to 254.",
+        "Lighter order create preparation requires a preview bound to a trading API key index from 4 to 254.",
       );
     }
 

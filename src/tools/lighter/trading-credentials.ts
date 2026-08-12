@@ -4,7 +4,7 @@ import {
   type LighterEnvironment,
 } from "./constants.js";
 
-export const LIGHTER_TRADING_API_KEY_INDEX_MIN = 2;
+export const LIGHTER_TRADING_API_KEY_INDEX_MIN = 4;
 export const LIGHTER_TRADING_API_KEY_INDEX_MAX = 254;
 
 export const LIGHTER_SIGNER_SECRET_POLICY = {
@@ -23,7 +23,7 @@ export const LIGHTER_SIGNER_SECRET_POLICY = {
     min: LIGHTER_TRADING_API_KEY_INDEX_MIN,
     max: LIGHTER_TRADING_API_KEY_INDEX_MAX,
   },
-  reservedApiKeyIndexes: [0, 1, LIGHTER_API_KEY_INDEX_ALL],
+  reservedApiKeyIndexes: [0, 1, 2, 3, LIGHTER_API_KEY_INDEX_ALL],
 } as const;
 
 export type LighterTradingCredentialCapability = "lighter_transaction_signing";
@@ -99,7 +99,7 @@ export function evaluateLighterTradingCredentialReadiness(
   ) {
     return blocked(
       "invalid_api_key_index",
-      "apiKeyIndex must be a trading API key index from 2 to 254.",
+      "apiKeyIndex must be a trading API key index from 4 to 254.",
     );
   }
 

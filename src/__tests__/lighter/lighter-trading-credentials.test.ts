@@ -11,8 +11,8 @@ describe("Lighter trading credential boundary", () => {
     const readiness = evaluateLighterTradingCredentialReadiness({
       environment: "core",
       accountIndex: 42,
-      apiKeyIndex: 2,
-      vaultCredentialId: "lighter/core/account-42/api-key-2",
+      apiKeyIndex: 4,
+      vaultCredentialId: "lighter/core/account-42/api-key-4",
     });
 
     expect(readiness).toEqual({
@@ -22,29 +22,29 @@ describe("Lighter trading credential boundary", () => {
         kind: "encrypted_vault_reference",
         environment: "core",
         accountIndex: 42,
-        apiKeyIndex: 2,
-        vaultCredentialId: "lighter/core/account-42/api-key-2",
+        apiKeyIndex: 4,
+        vaultCredentialId: "lighter/core/account-42/api-key-4",
       },
       nonceScope: {
         environment: "core",
         accountIndex: 42,
-        apiKeyIndex: 2,
+        apiKeyIndex: 4,
       },
     });
   });
 
   it("blocks reserved API-key indexes before signer initialization", () => {
-    for (const apiKeyIndex of [0, 1, 255, -1, 1.5]) {
+    for (const apiKeyIndex of [0, 1, 2, 3, 255, -1, 1.5]) {
       expect(evaluateLighterTradingCredentialReadiness({
         environment: "rhc",
         accountIndex: 7,
         apiKeyIndex,
-        vaultCredentialId: "lighter/rhc/account-7/api-key-2",
+        vaultCredentialId: "lighter/rhc/account-7/api-key-4",
       })).toEqual({
         ready: false,
         capability: "lighter_transaction_signing",
         code: "invalid_api_key_index",
-        reason: "apiKeyIndex must be a trading API key index from 2 to 254.",
+        reason: "apiKeyIndex must be a trading API key index from 4 to 254.",
       });
     }
   });
@@ -59,7 +59,7 @@ describe("Lighter trading credential boundary", () => {
       const readiness = evaluateLighterTradingCredentialReadiness({
         environment: "core",
         accountIndex: 42,
-        apiKeyIndex: 2,
+        apiKeyIndex: 4,
         vaultCredentialId,
       });
 
@@ -76,7 +76,7 @@ describe("Lighter trading credential boundary", () => {
     expect(() => requireLighterTradingCredentialReadiness({
       environment: "core",
       accountIndex: 42,
-      apiKeyIndex: 2,
+      apiKeyIndex: 4,
       vaultCredentialId: "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     })).toThrow(expect.objectContaining({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -98,10 +98,10 @@ describe("Lighter trading credential boundary", () => {
         "provider_error_text",
       ],
       allowedApiKeyIndexes: {
-        min: 2,
+        min: 4,
         max: 254,
       },
-      reservedApiKeyIndexes: [0, 1, 255],
+      reservedApiKeyIndexes: [0, 1, 2, 3, 255],
     });
   });
 });

@@ -113,9 +113,9 @@ until these boundaries are implemented and reviewed:
   encrypted-vault reference. Vex must reject raw private-key-shaped strings,
   read-only tokens, handler params, CLI args, and environment variables as
   trading credential sources.
-- Lighter API key indexes `0` and `1` are reserved for Lighter interfaces, and
-  index `255` is the all-keys inspection sentinel. Future trading paths may use
-  only indexes `2` through `254`.
+- Official Lighter API-key docs reserve indexes `0`, `1`, `2`, and `3` for
+  Lighter interfaces, and index `255` is the all-keys inspection sentinel.
+  Future trading paths may use only indexes `4` through `254`.
 - Nonces are per `(environment, accountIndex, apiKeyIndex)`. Vex must serialize
   signing for that key, persist the nonce before submit, and reconcile from
   provider state after ambiguous failures.
