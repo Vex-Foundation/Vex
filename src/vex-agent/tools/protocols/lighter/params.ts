@@ -8,6 +8,7 @@ import {
   type LighterOrderType,
 } from "@tools/lighter/order-preview.js";
 import {
+  LIGHTER_DEFAULT_ENVIRONMENT,
   LIGHTER_CANDLE_RESOLUTIONS,
   LIGHTER_CANDLES_COUNT_MAX,
   LIGHTER_ENVIRONMENTS,
@@ -53,9 +54,10 @@ export interface LighterAccountLookup {
 }
 
 export interface LighterOrderPreviewParams {
-  readonly accountIndex: number;
+  readonly accountIndex?: number;
   readonly apiKeyIndex?: number | null;
-  readonly marketId: number;
+  readonly marketId?: number;
+  readonly marketSymbol?: string;
   readonly side: LighterOrderSide;
   readonly baseAmount: string;
   readonly price: string;
@@ -112,9 +114,9 @@ function readEnum<T extends string>(
 export function readEnvironment(
   params: Record<string, unknown>,
 ): ParamRead<LighterEnvironment> {
-  const env = readEnum(params, "environment", LIGHTER_ENVIRONMENTS, true);
+  const env = readEnum(params, "environment", LIGHTER_ENVIRONMENTS, false);
   if (!env.ok) return env;
-  return { ok: true, value: env.value as LighterEnvironment };
+  return { ok: true, value: (env.value ?? LIGHTER_DEFAULT_ENVIRONMENT) as LighterEnvironment };
 }
 
 export function readMarketFilter(
@@ -320,16 +322,22 @@ export function readLighterOrderPreviewParams(
 ): ParamRead<LighterOrderPreviewParams> {
   const accountIndex = readOptionalAccountIndex(params);
   if (!accountIndex.ok) return accountIndex;
-  if (accountIndex.value === undefined) return { ok: false, reason: "Missing required: accountIndex." };
   const apiKeyIndex = readApiKeyIndex(params);
   if (!apiKeyIndex.ok) return apiKeyIndex;
-  const marketId = readMarketId(params, true);
+  const marketId = readMarketId(params, false);
   if (!marketId.ok) return marketId;
-  const side = readEnum(params, "side", LIGHTER_ORDER_SIDES, true);
+  const marketSymbol = readString(params, "marketSymbol");
+  if (marketId.value === undefined && marketSymbol === undefined) {
+    return { ok: false, reason: "Missing required: marketId or marketSymbol." };
+  }
+  const side = readEnum(params, "side", LIGHTER_ORDER_SIDES, false);
   if (!side.ok) return side;
-  const orderType = readEnum(params, "orderType", LIGHTER_ORDER_TYPES, true);
+  if (side.value === undefined) {
+    return { ok: false, reason: "Please choose buy or sell for the Lighter order preview." };
+  }
+  const orderType = readEnum(params, "orderType", LIGHTER_ORDER_TYPES, false);
   if (!orderType.ok) return orderType;
-  const timeInForce = readEnum(params, "timeInForce", LIGHTER_ORDER_TIME_IN_FORCE, true);
+  const timeInForce = readEnum(params, "timeInForce", LIGHTER_ORDER_TIME_IN_FORCE, false);
   if (!timeInForce.ok) return timeInForce;
   const baseAmount = readRequiredString(params, "baseAmount");
   if (!baseAmount.ok) return baseAmount;
@@ -338,7 +346,9 @@ export function readLighterOrderPreviewParams(
   const orderExpiry = readOrderExpiry(params, nowMs);
   if (!orderExpiry.ok) return orderExpiry;
   const reduceOnly = readBoolean(params, "reduceOnly");
-  if (reduceOnly === undefined) return { ok: false, reason: "Missing required: reduceOnly." };
+  if (reduceOnly !== undefined && typeof reduceOnly !== "boolean") {
+    return { ok: false, reason: "reduceOnly must be boolean." };
+  }
   const clientOrderIndexPolicy =
     readString(params, "clientOrderIndexPolicy") ?? LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT;
   return {
@@ -346,13 +356,14 @@ export function readLighterOrderPreviewParams(
     value: {
       accountIndex: accountIndex.value,
       apiKeyIndex: apiKeyIndex.value ?? null,
-      marketId: marketId.value!,
+      marketId: marketId.value,
+      marketSymbol,
       side: side.value as LighterOrderSide,
       baseAmount: baseAmount.value,
       price: price.value,
-      orderType: orderType.value as LighterOrderType,
-      timeInForce: timeInForce.value as LighterOrderTimeInForce,
-      reduceOnly,
+      orderType: (orderType.value ?? "limit") as LighterOrderType,
+      timeInForce: (timeInForce.value ?? "good-till-time") as LighterOrderTimeInForce,
+      reduceOnly: reduceOnly ?? false,
       orderExpiry: orderExpiry.value,
       clientOrderIndexPolicy,
     },

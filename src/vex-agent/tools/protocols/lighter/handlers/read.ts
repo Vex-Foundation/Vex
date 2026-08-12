@@ -1,13 +1,19 @@
 import {
+  LIGHTER_API_KEY_INDEX_ALL,
   LIGHTER_CACHE_TTL_MS,
   LIGHTER_ENDPOINT_PATHS,
   LIGHTER_ENDPOINTS,
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
-import { getLighterClient } from "@tools/lighter/client.js";
+import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import { getLighterReadOnlyCredentialStatus } from "@tools/lighter/credentials.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
-import type { LighterMarketDetail } from "@tools/lighter/types.js";
-import { VexError } from "../../../../../errors.js";
+import {
+  LIGHTER_TRADING_API_KEY_INDEX_MAX,
+  LIGHTER_TRADING_API_KEY_INDEX_MIN,
+} from "@tools/lighter/trading-credentials.js";
+import type { LighterMarket, LighterMarketDetail } from "@tools/lighter/types.js";
+import { ErrorCodes, VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
@@ -123,6 +129,97 @@ function findMarketDetail(
     ...response.order_book_details,
     ...response.spot_order_book_details,
   ].find((detail) => detail.market_id === marketId) ?? null;
+}
+
+function normalizeMarketSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase().replace(/^\$/, "");
+}
+
+function marketSymbolScore(market: LighterMarket, wanted: string): number {
+  const symbol = normalizeMarketSymbol(market.symbol);
+  if (symbol === wanted) return 0;
+  if (symbol === `${wanted}-USD`) return 1;
+  if (symbol === `${wanted}/USD`) return 2;
+  if (symbol.split(/[-/]/)[0] === wanted) return 3;
+  return Number.POSITIVE_INFINITY;
+}
+
+async function resolvePreviewMarketId(
+  client: LighterClient,
+  environment: LighterEnvironment,
+  params: { readonly marketId?: number; readonly marketSymbol?: string },
+): Promise<number> {
+  if (params.marketId !== undefined) return params.marketId;
+  if (params.marketSymbol === undefined) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Lighter order preview needs a market symbol or market id.",
+      "Say the asset symbol, for example ETH.",
+    );
+  }
+
+  const wanted = normalizeMarketSymbol(params.marketSymbol);
+  const markets = await client.getMarkets(environment, { filter: "all" });
+  const selected = markets.order_books
+    .map((market) => ({ market, score: marketSymbolScore(market, wanted) }))
+    .filter((candidate) => Number.isFinite(candidate.score))
+    .sort((left, right) => {
+      const activeDiff =
+        (left.market.status === "active" ? 0 : 1) - (right.market.status === "active" ? 0 : 1);
+      if (activeDiff !== 0) return activeDiff;
+      if (left.score !== right.score) return left.score - right.score;
+      return left.market.market_id - right.market.market_id;
+    })[0]?.market;
+  if (!selected) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `No live Lighter ${environment} market found for ${wanted}.`,
+      "Use a listed Lighter market symbol, for example ETH.",
+    );
+  }
+  return selected.market_id;
+}
+
+function resolvePreviewAccountIndex(
+  environment: LighterEnvironment,
+  requestedAccountIndex?: number,
+): number {
+  if (requestedAccountIndex !== undefined) return requestedAccountIndex;
+  const status = getLighterReadOnlyCredentialStatus(environment);
+  if (!status.configured || !status.metadata || status.metadata.expired) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `No active Lighter ${environment} read-only account credential is configured.`,
+      "Connect or refresh the Lighter account credential in Vex, then ask again without an account id.",
+    );
+  }
+  return status.metadata.accountIndex;
+}
+
+async function resolvePreviewApiKeyIndex(
+  client: LighterClient,
+  environment: LighterEnvironment,
+  accountIndex: number,
+  requestedApiKeyIndex: number | null | undefined,
+): Promise<number | null> {
+  if (requestedApiKeyIndex !== null && requestedApiKeyIndex !== undefined) return requestedApiKeyIndex;
+  const response = await client.getApiKeys(environment, {
+    accountIndex,
+    apiKeyIndex: LIGHTER_API_KEY_INDEX_ALL,
+  });
+  const selected = response.api_keys
+    .filter((key) =>
+      key.api_key_index >= LIGHTER_TRADING_API_KEY_INDEX_MIN
+      && key.api_key_index <= LIGHTER_TRADING_API_KEY_INDEX_MAX)
+    .sort((left, right) => left.api_key_index - right.api_key_index)[0];
+  if (!selected) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `No public Lighter trading API-key index found for account ${accountIndex} on ${environment}.`,
+      "Create or connect a Lighter trading API key in Vex before preparing order previews for approval.",
+    );
+  }
+  return selected.api_key_index;
 }
 
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
@@ -480,43 +577,60 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
 
     try {
       const client = getLighterClient();
+      const accountIndex = resolvePreviewAccountIndex(
+        environment.value,
+        previewParams.value.accountIndex,
+      );
+      const [marketId, apiKeyIndex] = await Promise.all([
+        resolvePreviewMarketId(client, environment.value, previewParams.value),
+        resolvePreviewApiKeyIndex(
+          client,
+          environment.value,
+          accountIndex,
+          previewParams.value.apiKeyIndex,
+        ),
+      ]);
       const [marketDetails, orderBook, account] = await Promise.all([
         client.getMarketDetails(environment.value, {
-          marketId: previewParams.value.marketId,
+          marketId,
           filter: "all",
         }),
         client.getOrderBookOrders(environment.value, {
-          marketId: previewParams.value.marketId,
+          marketId,
           limit: 10,
         }),
         client.getAccount(environment.value, {
           by: "index",
-          value: previewParams.value.accountIndex,
+          value: accountIndex,
           activeOnly: true,
         }),
       ]);
-      const market = findMarketDetail(marketDetails, previewParams.value.marketId);
+      const market = findMarketDetail(marketDetails, marketId);
       if (!market) {
         return fail(
-          `No live Lighter market detail found for marketId ${previewParams.value.marketId} on ${environment.value}.`,
+          `No live Lighter market detail found for marketId ${marketId} on ${environment.value}.`,
         );
       }
       const source = liveProvenance(environment.value, "lighter.order.preview", [
+        ...(previewParams.value.marketId === undefined ? [LIGHTER_ENDPOINT_PATHS.orderBooks] : []),
+        ...(previewParams.value.apiKeyIndex === null ? [LIGHTER_ENDPOINT_PATHS.apiKeys] : []),
         LIGHTER_ENDPOINT_PATHS.orderBookDetails,
         LIGHTER_ENDPOINT_PATHS.orderBookOrders,
         LIGHTER_ENDPOINT_PATHS.account,
       ], {
-        marketId: previewParams.value.marketId,
-        accountIndex: previewParams.value.accountIndex,
+        marketId,
+        marketSymbol: previewParams.value.marketSymbol ?? null,
+        accountIndex,
+        apiKeyIndex,
         authenticated: false,
         persistedPreview: true,
       });
       const preview = buildLighterOrderPreview({
         sessionId,
         environment: environment.value,
-        accountIndex: previewParams.value.accountIndex,
-        apiKeyIndex: previewParams.value.apiKeyIndex,
-        marketId: previewParams.value.marketId,
+        accountIndex,
+        apiKeyIndex,
+        marketId,
         side: previewParams.value.side,
         baseAmount: previewParams.value.baseAmount,
         price: previewParams.value.price,
